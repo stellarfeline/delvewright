@@ -416,7 +416,7 @@ fn site_plan_campaign(
         let p = camp.join("world.json");
         let mut world = read(&p);
         let content = world["content"].as_object_mut().unwrap();
-        content.insert("horizon".into(), h);
+        content.insert("horizon".into(), stated(h));
         content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
         write(&p, &world);
     }
@@ -524,7 +524,7 @@ fn dw0886_choosing_a_horizon_with_no_sea_seats_a_place_cut_below_grade() {
     let ocean = site_plan_campaign(
         "dw0886-cache-ocean",
         "blockout",
-        Some(serde_json::json!("ocean")),
+        Some(stated(serde_json::json!("ocean"))),
         |_| {},
     );
     let (code, before) = analyze(&ocean, &prefabs);
@@ -543,7 +543,7 @@ fn dw0886_choosing_a_horizon_with_no_sea_seats_a_place_cut_below_grade() {
         let camp = site_plan_campaign(
             &format!("dw0886-cache-{base}"),
             "blockout",
-            Some(serde_json::json!({ "base": base })),
+            Some(stated(serde_json::json!({ "base": base }))),
             |_| {},
         );
         let (code, after) = analyze(&camp, &prefabs);
@@ -764,7 +764,7 @@ fn two_areas(tag: &str, horizon: serde_json::Value, prefabs: &Path) -> PathBuf {
     camp
 }
 
-/// **`set `horizon` to `void` or `ocean`.`** The move `DW0855` names for a
+/// **`set `horizon.base` to `void` or `ocean`.`** The move `DW0855` names for a
 /// campaign that places `areas[]` and states no extent.
 ///
 /// The fixture is two areas rather than one, and that is the refusal's own
@@ -780,7 +780,7 @@ fn dw0855_setting_a_base_that_needs_no_map_builds() {
     assert_eq!(code, 1, "refused at validation:\n{before}");
     assert!(before.contains("DW0855"), "{before}");
     assert!(
-        before.contains("set `horizon` to `void` or `ocean`"),
+        before.contains("set `horizon.base` to `void` or `ocean`"),
         "the message names the move:\n{before}"
     );
 
@@ -1055,7 +1055,7 @@ fn dw0887_deleting_or_correcting_the_declaration_makes_the_claim_true() {
 // DW0320 — the boundary an ocean needs
 // ---------------------------------------------------------------------------
 
-/// **`Add a boundary`, or `set `horizon` to `void``** — `DW0320`'s two moves,
+/// **`Add a boundary`, or `set `horizon.base` to `void``** — `DW0320`'s two moves,
 /// and the second is the one that names a base.
 ///
 /// This code is in this file because the cross-check put it here: nothing about
@@ -1074,7 +1074,7 @@ fn dw0320_adding_a_boundary_or_choosing_void_both_reach_a_different_verdict() {
     world["content"]
         .as_object_mut()
         .unwrap()
-        .insert("horizon".into(), serde_json::json!("ocean"));
+        .insert("horizon".into(), stated(serde_json::json!("ocean")));
     let write = |camp: &Path, world: &serde_json::Value| {
         std::fs::write(
             camp.join("world.json"),
@@ -1087,7 +1087,7 @@ fn dw0320_adding_a_boundary_or_choosing_void_both_reach_a_different_verdict() {
     assert_eq!(code, 1, "refused at validation:\n{before}");
     assert!(before.contains("DW0320"), "{before}");
     assert!(
-        before.contains("set `horizon` to `void`"),
+        before.contains("set `horizon.base` to `void`"),
         "the message names the move:\n{before}"
     );
 
@@ -1111,7 +1111,7 @@ fn dw0320_adding_a_boundary_or_choosing_void_both_reach_a_different_verdict() {
     as_void["content"]
         .as_object_mut()
         .unwrap()
-        .insert("horizon".into(), serde_json::json!("void"));
+        .insert("horizon".into(), stated(serde_json::json!("void")));
     let camp_b = tmp("camp-boundary-void");
     common::copy_dir_all(&camp, &camp_b);
     write(&camp_b, &as_void);

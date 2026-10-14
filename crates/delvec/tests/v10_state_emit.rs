@@ -107,6 +107,7 @@ static WORLD: LazyLock<String> = LazyLock::new(|| {
     "seed": 20260729,
     "target_minutes": 5,
     "time": "noon",
+    "horizon": { "base": "void", "attributes": { "audio/background_music": {} } },
     "weather": "clear",
     "difficulty": "normal",
     "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]

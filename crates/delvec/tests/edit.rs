@@ -322,7 +322,7 @@ fn set_ocean_horizon_at(dir: &Path, dsl_version: &str) {
     let mut doc: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     doc["dsl_version"] = serde_json::json!(dsl_version);
-    doc["content"]["horizon"] = serde_json::json!("ocean");
+    doc["content"]["horizon"] = common::horizon("ocean");
     // `DW0320`: an ocean horizon needs a return rule; the default margin is fine.
     doc["content"]["boundary"] = serde_json::json!({});
     std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();

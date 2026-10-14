@@ -65,7 +65,7 @@ fn ocean_campaign(tag: &str) -> PathBuf {
         serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
     world["dsl_version"] = serde_json::json!(DSL_VERSION);
     let content = world["content"].as_object_mut().unwrap();
-    content.insert("horizon".into(), serde_json::json!("ocean"));
+    content.insert("horizon".into(), common::horizon("ocean"));
     content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
     std::fs::write(
         camp.join("world.json"),

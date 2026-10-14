@@ -648,7 +648,7 @@ fn an_area_is_painted_over_its_claim_and_every_eye_in_it_is_measured() {
         json!([atmosphere(
             "atmosphere/close-air",
             "none",
-            json!({ "visual/fog_end_distance": 14.2 })
+            json!({ "visual/fog_end_distance": 14.2, "audio/background_music": {} })
         )])
     };
     let c = campaign(close_air(), Some("atmosphere/close-air"), vec![]);

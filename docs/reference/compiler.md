@@ -2191,8 +2191,13 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   confirmed; K stop-sound effect(s), M of K cut a play-out, N a stinger, Q a
   hiccup; P sound(s) in a category other than master`, every figure computed
   from the declarations, zeroes included, and writes `validation/music.json`:
-  `documents` (the canonical sha256 of the world, quests, dialogue and site-plan
-  documents it was read from); per biome (`atmosphere`, `ground`, `band`) its
+  `measured_sha256` (the canonical sha256 of every declaration the ledger
+  reads — each atmosphere and the horizon, each place's carried atmosphere, and
+  every `set-atmosphere`, `cutscene` (its normalized shots and `hears`),
+  `stop-sound` and `play-sound` with its path, and each pulse's category — so a
+  change music does not read, a translated line or another mechanic's field,
+  moves no byte of the ledger, and an integral float hashes as its integer);
+  per biome (`atmosphere`, `ground`, `band`) its
   `id`, `music` (`silence`, or the `default` / `underwater` tracks), the declared
   `music_volume`, `entering` (`replaces`, `plays-out`, `fades`,
   `plays-out-at-gain` — what a playing track does when the camera enters), for a

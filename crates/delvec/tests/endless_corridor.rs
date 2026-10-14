@@ -478,7 +478,7 @@ fn fogged(dir: &Path) {
         w["content"]["atmospheres"] = json!([{
             "id": "atmosphere/murk",
             "precipitation": "none",
-            "attributes": { "visual/fog_end_distance": 3.0 }
+            "attributes": { "visual/fog_end_distance": 3.0, "audio/background_music": {} }
         }]);
         w["content"]["areas"][0]["atmosphere"] = json!("atmosphere/murk");
     });

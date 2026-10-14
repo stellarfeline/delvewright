@@ -1314,3 +1314,11 @@ pub fn plan_structures_with_trap_triggers(
     }
     out
 }
+
+/// A `horizon` of `base` in the object form, its ground a declared silence
+/// that lets a playing track run out (spec-0109: every ground states its
+/// music). For a case about something other than music.
+#[allow(dead_code)]
+pub fn horizon(base: &str) -> serde_json::Value {
+    serde_json::json!({ "base": base, "attributes": { "audio/background_music": {} } })
+}

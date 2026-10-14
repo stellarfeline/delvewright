@@ -304,9 +304,9 @@ pub struct MusicLedger {
     pub stops: Vec<StopRow>,
     /// Every played sound and its category.
     pub categorised: Vec<CategoryRow>,
-    /// The canonical sha256 of each stage document the ledger was computed
-    /// from.
-    pub documents: BTreeMap<String, String>,
+    /// The canonical sha256 of the declarations the ledger read
+    /// ([`measured_hash`]).
+    pub measured_sha256: String,
 }
 
 impl MusicLedger {
@@ -374,7 +374,7 @@ impl MusicLedger {
             None => Value::Null,
         };
         json!({
-            "documents": self.documents,
+            "measured_sha256": self.measured_sha256,
             "biomes": self.biomes.iter().map(|b| {
                 let mut row = json!({
                     "id": b.id,
@@ -826,14 +826,18 @@ fn sha256_hex(bytes: &[u8]) -> String {
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// The canonical sha256 of each stage document a music reading is computed
-/// from: the world (atmospheres, horizon), the quests (every effect, pulse
-/// and cutscene), the dialogue (respawn bundles) and the site plan (a box's
-/// atmosphere) when present.
+/// The canonical sha256 of what a music reading measured: every declaration
+/// the ledger reads, and nothing it does not — each atmosphere and the
+/// horizon as declared, each place's carried atmosphere, and every
+/// `set-atmosphere`, `cutscene` (its normalized shots and `hears`),
+/// `stop-sound` and `play-sound` with its JSON path, and each pulse's
+/// category. A change music does not read — a translated line, a field of
+/// another mechanic, the other spelling of one cutscene — moves no byte of
+/// the ledger, and a change it does read moves the hash.
 ///
 /// A number is hashed as the value it is, so a float written `0` or `0.0` —
-/// one value to every reader — is one document to the hash as well.
-fn documents(plan: &Plan<'_>) -> BTreeMap<String, String> {
+/// one value to every reader — is one declaration to the hash as well.
+fn measured_hash(plan: &Plan<'_>, events: &[Event<'_>]) -> String {
     fn integral(v: Value) -> Value {
         match v {
             Value::Number(n) => match n.as_f64() {
@@ -847,25 +851,36 @@ fn documents(plan: &Plan<'_>) -> BTreeMap<String, String> {
             other => other,
         }
     }
-    fn hash<T: serde::Serialize>(doc: &T) -> Option<String> {
-        let v = integral(serde_json::to_value(doc).ok()?);
-        let text = delvewright_dsl::to_canonical_string(&v).ok()?;
-        Some(sha256_hex(text.as_bytes()))
-    }
     let c = plan.campaign;
-    let mut out = BTreeMap::new();
-    let mut put = |name: &str, h: Option<String>| {
-        if let Some(h) = h {
-            out.insert(name.to_string(), h);
-        }
-    };
-    put("world", hash(&c.world));
-    put("quests", hash(&c.quests));
-    put("dialogue", hash(&c.dialogue));
-    if let Some(sp) = &c.site_plan {
-        put("site-plan", hash(sp));
-    }
-    out
+    let effects: Vec<Value> = events
+        .iter()
+        .filter_map(|e| {
+            let read = match &e.effect.verb {
+                Verb::Cutscene { hears, .. } => json!({
+                    "shots": e.effect.cutscene_shots(),
+                    "hears": hears,
+                }),
+                Verb::SetAtmosphere { .. } | Verb::StopSound { .. } | Verb::PlaySound { .. } => {
+                    serde_json::to_value(&e.effect.verb).ok()?
+                }
+                _ => return None,
+            };
+            Some(json!({ "path": e.path, "stage": e.stage, "read": read }))
+        })
+        .collect();
+    let subject = json!({
+        "atmospheres": c.world.content.atmospheres,
+        "horizon": c.world.content.horizon,
+        "places": crate::compiler::horizon::carried_places(c),
+        "effects": effects,
+        "pulses": c.quests.content.pulses.iter().map(|p| json!({
+            "id": p.id.as_str(),
+            "category": p.category.unwrap_or_default().token(),
+        })).collect::<Vec<_>>(),
+    });
+    let text =
+        delvewright_dsl::to_canonical_string(&integral(subject)).expect("a JSON value serialises");
+    sha256_hex(text.as_bytes())
 }
 
 /// **Read every music statement back** (spec-0109 §5.1, §6.2) over the plan,
@@ -883,7 +898,7 @@ pub fn measure(
     let first = crate::compiler::horizon::biome_map(plan);
     let evs = events(plan);
     let mut ledger = MusicLedger {
-        documents: documents(plan),
+        measured_sha256: measured_hash(plan, &evs),
         ..MusicLedger::default()
     };
     // The biomes: every declared atmosphere, the ground, and each band.

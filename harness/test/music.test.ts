@@ -14,7 +14,7 @@ import {
 // eye. Each failure mode is planted here and must red.
 
 const ledger = {
-  documents: { world: "x" },
+  measured_sha256: "x",
   biomes: [
     {
       id: "demo:atmosphere/hall",

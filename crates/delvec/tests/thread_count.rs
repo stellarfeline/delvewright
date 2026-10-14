@@ -89,7 +89,7 @@ fn the_output_is_the_same_at_every_thread_count() {
     let campaign = common::campaign_bound_to(&root.join("campaign"), "tiled-corridor");
     common::patch_file(&campaign.join("world.json"), |v| {
         let c = v["content"].as_object_mut().unwrap();
-        c.insert("horizon".into(), serde_json::json!("valley"));
+        c.insert("horizon".into(), common::horizon("valley"));
         c.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
     });
 

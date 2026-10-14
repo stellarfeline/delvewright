@@ -807,7 +807,7 @@ MOVE_VERB_RE = re.compile(
     # numbers it: DW0855 names two moves in one sentence and would otherwise
     # have escaped this obligation while being exactly the code that motivated
     # it.
-    r"|(?:Give the campaign|[Ss]et `horizon` to|[Rr]e-?author|[Ss]plit the pool)"
+    r"|(?:Give the campaign|[Ss]et `horizon(?:\.base)?` to|[Rr]e-?author|[Ss]plit the pool)"
 )
 # **The subject of a move: a backticked field, or a named object** (spec-0062
 # §10.8). It began as bases and documents, which is the quantifier spec-0060 §10.3

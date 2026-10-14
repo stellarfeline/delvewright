@@ -1229,7 +1229,7 @@ pub(crate) fn horizon_param_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                  region is then the map's extent, which is how a site (a building with its \
                  island, its moat and its banks in one box) is placed; or give the campaign a \
                  site plan and declare `areas` empty, which is the same choice `DW0839` asks for; \
-                 or set `horizon` to `void` or `ocean`, which need no map to be a horizon of.",
+                 or set `horizon.base` to `void` or `ocean`, which need no map to be a horizon of.",
                 base = r.base.token(),
                 n = c.world.content.areas.len(),
                 how = one_piece_gap(c),
@@ -1441,7 +1441,7 @@ pub(crate) fn world_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             "/content/horizon".to_string(),
             format!(
                 "`horizon` base `{base}` needs a `boundary` — {why}. Add a `boundary` (a \
-                 bare `{{}}` uses the default margin), or set `horizon` to `void`"
+                 bare `{{}}` uses the default margin), or set `horizon.base` to `void`"
             ),
         ));
     }

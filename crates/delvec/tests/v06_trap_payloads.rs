@@ -69,6 +69,7 @@ fn world_v06() -> serde_json::Value {
             "seed": 20260729,
             "target_minutes": 5,
             "time": "noon",
+            "horizon": { "base": "void", "attributes": { "audio/background_music": {} } },
             "weather": "clear",
             "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
         }

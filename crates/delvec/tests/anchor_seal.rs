@@ -423,6 +423,7 @@ fn worldless_campaign(volley_anchor: &str) -> Campaign {
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729, "target_minutes": 5,
     "time": "noon", "weather": "clear",
+    "horizon": { "base": "void", "attributes": { "audio/background_music": {} } },
     "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
   }
 }"#,

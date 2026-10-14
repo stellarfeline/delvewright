@@ -674,7 +674,7 @@ fn a_volume_spelling_moves_no_byte() {
 // --- criterion 8: the binding line -----------------------------------------------------
 
 /// Every build prints the line, zeroes included, and writes the ledger with
-/// the hash of the documents it read.
+/// the hash of the declarations it read.
 #[test]
 fn every_build_prints_the_music_binding_line() {
     let out_dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("music-binding-line");
@@ -710,13 +710,7 @@ fn every_build_prints_the_music_binding_line() {
     .unwrap();
     assert_eq!(l["biomes"][0]["kind"], json!("ground"));
     assert_eq!(l["biomes"][0]["entering"], json!("plays-out-at-gain"));
-    for doc in ["world", "quests", "dialogue"] {
-        assert_eq!(
-            l["documents"][doc].as_str().map(str::len),
-            Some(64),
-            "{doc}"
-        );
-    }
+    assert_eq!(l["measured_sha256"].as_str().map(str::len), Some(64));
 }
 
 /// The words of the cut: a spaced or silent scene is cut, a looping one
