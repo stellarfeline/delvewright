@@ -168,7 +168,7 @@ fn a_manifest_loads_as_the_whole_assembled_zone() {
 /// sliced at a packaging plane — a review that passes and means nothing.
 #[test]
 fn one_tile_of_a_set_is_refused_and_the_manifest_is_named() {
-    let (dir, manifest, _) = stage("fragment");
+    let (dir, manifest, _) = stage("one-tile");
 
     let err = load_piece(&dir.join("zone.x0y0z1.nbt")).unwrap_err();
     assert!(err.0.contains("one tile of the zone"), "{}", err.0);

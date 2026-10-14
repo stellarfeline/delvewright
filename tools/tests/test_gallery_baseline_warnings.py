@@ -94,7 +94,7 @@ def test_a_warning_line_is_recognised_as_one_even_when_it_does_not_parse():
 
 def test_a_non_warning_line_is_not_mistaken_for_one():
     for line in [
-        "DW0161 [error] world /content/areas/1/prefab_pool: area pool is not declared",
+        "DW0842 [error] detail-plan /content/details/0/piece: the piece is not in the library",
         "gallery coverage: 801 unit(s) enumerated",
         "",
     ]:

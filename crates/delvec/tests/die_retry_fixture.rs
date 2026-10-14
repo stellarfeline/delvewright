@@ -33,11 +33,10 @@
 //! diagnostic tells an author not to do, because it retunes the fight to hide a
 //! placement bug.
 //!
-//! So the area is the `pool/stone-keep` jigsaw, whose pieces carry every anchor
-//! this fixture names (`keeper-stand`, `door`, `exit`) in separate rooms: the
-//! guard rises 27.7 blocks from the stone the party comes back to, and the walk
-//! between them IS the loop under test. It is still one area — areas sit
-//! `AREA_SPACING` apart across void, which a pathfinder-free bot cannot cross.
+//! So the map is two places of the site plan in a row, joined by an arch: the
+//! hall holds the keeper and the door, the yard the exit, and the guard rises
+//! in the yard, a room away from the stone the party comes back to; the walk
+//! between them IS the loop under test.
 //!
 //! # What this test holds
 //!
