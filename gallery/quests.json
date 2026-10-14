@@ -802,7 +802,7 @@
             "id": "obj/press-the-case",
             "missing_item_hint": "The Curator gave you the case key. It only opens the case from your hand.",
             "prop": {
-              "block": "minecraft:stone_button"
+              "block": "minecraft:stone_button[face=floor,facing=north]"
             },
             "requires_flags": [],
             "requires_item": "minecraft:iron_pickaxe",

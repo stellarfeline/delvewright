@@ -822,6 +822,27 @@ pub fn build_with_warnings(
         &asm_locks,
         &pulse_gate.rows,
     );
+    // DW1002's write arms over the FINAL function list, read off the shipped
+    // commands so what is judged is what is emitted: the load as the server
+    // runs it — `setup`, the ground, the templates, the world build,
+    // `setup_finish` — one write at a time, each changed cell and its
+    // neighbours judged as the write lands; then every write outside the load,
+    // at once, over the loaded world. Both bindings are printed whichever way
+    // it goes.
+    let mut refusals: Vec<String> = attached_refusal.into_iter().collect();
+    if assembles_world(plan) {
+        let writes = crate::compiler::attached::judge_writes(plan, structures, &functions);
+        eprintln!("{}", writes.sequence.line());
+        eprintln!("{}", writes.runtime.line());
+        refusals.extend(writes.sequence.refusal());
+        refusals.extend(writes.runtime.refusal());
+    }
+    if !refusals.is_empty() {
+        return Err(BuildFailure::Diagnostic {
+            code: crate::compiler::attached::DW_BLOCK_DROPPED,
+            message: refusals.join("\n"),
+        });
+    }
     // `DW0852` over the FINAL function list — after every emitter has had its say,
     // so a later pass that rewrote a judge cannot slip past a check that ran
     // earlier. The ledger is UNCONDITIONAL, on the `fluid-escape.json` terms and
@@ -831,29 +852,6 @@ pub fn build_with_warnings(
     // stealth beat is "nothing here can carry the defect". Those are different
     // facts and the gate can only tell them apart if the file exists and says
     // zero.
-    // DW1002's write-sequence arm over the FINAL function list: the load as the
-    // server runs it — `setup`, the ground, the templates, the world build,
-    // `setup_finish` — one write at a time, each changed cell and its
-    // neighbours judged as the write lands. Read off the shipped commands, so
-    // the order judged is the order emitted. The binding is printed whichever
-    // way it goes.
-    let sequence_refusal = if assembles_world(plan) {
-        let sequence = crate::compiler::attached::judge_sequence(plan, structures, &functions);
-        eprintln!("{}", sequence.line());
-        sequence.refusal()
-    } else {
-        None
-    };
-    let refusals: Vec<String> = attached_refusal
-        .into_iter()
-        .chain(sequence_refusal)
-        .collect();
-    if !refusals.is_empty() {
-        return Err(BuildFailure::Diagnostic {
-            code: crate::compiler::attached::DW_BLOCK_DROPPED,
-            message: refusals.join("\n"),
-        });
-    }
     let audit = audit_stealth_judges(&functions, plan.stealth_beats.len());
     if let Some((code, message)) = audit.finding() {
         return Err(BuildFailure::Diagnostic { code, message });
