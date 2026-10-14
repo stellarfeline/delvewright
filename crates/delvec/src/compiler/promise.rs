@@ -1390,20 +1390,21 @@ fn note(
 }
 
 // ---------------------------------------------------------------------------
-// DW1015 — a title names the act its type completes on (spec-0104 §4)
+// DW1015 — a title names the act its type completes on (spec-0104 §5), a warning
 // ---------------------------------------------------------------------------
 
 delvewright_dsl::dw_code! {
-    /// `DW1015`: an objective's **title** carries no verb of its own kind's set
-    /// in the act lexicon (`crates/dsl/data/act-verbs.json`) — it names another
-    /// kind's act, or no act — or its **hint** names another kind's act and none
-    /// of its own (spec-0104 §4).
+    /// `DW1015` (a **warning**): an objective's **title** carries no verb of its
+    /// own kind's set in the act lexicon (`crates/dsl/data/act-verbs.json`) — it
+    /// names another kind's act, or no act — or its **hint** names another
+    /// kind's act and none of its own (spec-0104 §5).
     ///
     /// The objective's `type` is the engine's record of what the hands must do;
-    /// the verb a title opens with is the author's claim about it. Two authored
-    /// fields that disagree are judged as a contradiction between declarations,
-    /// by membership in a closed set, never by reading the prose for meaning.
-    /// A hint with no lexicon verb passes: a hint may be a place.
+    /// the verb a title opens with is the author's claim about it. A closed set
+    /// cannot tell a noun from a verb or reported speech from an instruction, so
+    /// the finding is the creator's question, with its evidence, and never a
+    /// refusal. A hint with no lexicon verb is not reported: a hint may be a
+    /// place.
     pub const DW_ACT_MISNAMED: DwCode = DwCode::new("DW1015", ExitTier::Build);
 }
 
@@ -1418,8 +1419,8 @@ pub struct ActVerbBinding {
     pub languages: usize,
     /// Objective strings in sidecar languages with no table — unjudged.
     pub unjudged: usize,
-    /// Strings refused.
-    pub refused: usize,
+    /// Strings warned about.
+    pub warned: usize,
 }
 
 impl ActVerbBinding {
@@ -1427,14 +1428,15 @@ impl ActVerbBinding {
     pub fn line(&self) -> String {
         format!(
             "DW1015 binding: {} title(s) and {} hint(s) over {} language(s) judged ({} string(s) \
-             in languages with no table); {} refused",
-            self.titles, self.hints, self.languages, self.unjudged, self.refused
+             in languages with no table); {} warned",
+            self.titles, self.hints, self.languages, self.unjudged, self.warned
         )
     }
 }
 
-/// **A title names the act its type completes on** (`DW1015`), over the English
-/// document and every sidecar whose language has a table in the act lexicon.
+/// **A title names the act its type completes on** (`DW1015`, a warning), over
+/// the English document and every sidecar whose language has a table in the act
+/// lexicon. Every finding is [`Diagnostic::warning`]: the creator adjudicates.
 pub fn check_act_verbs(
     c: &Campaign,
     sidecars: &std::collections::BTreeMap<String, delvewright_dsl::l10n::L10nDoc>,
@@ -1496,7 +1498,7 @@ pub fn check_act_verbs(
                     let shown = delvewright_dsl::l10n::plain(&title).into_owned();
                     let found = table.verbs_in(&shown);
                     if !found.iter().any(|f| f.kind == kind) {
-                        b.refused += 1;
+                        b.warned += 1;
                         let what = match found.first() {
                             Some(f) => {
                                 format!("names another act: `{}` is a `{}` verb", f.verb, f.kind)
@@ -1504,20 +1506,19 @@ pub fn check_act_verbs(
                             None => "names no act: it carries no verb of the lexicon".to_string(),
                         };
                         let (stage, path) = at("title");
-                        d.push(Diagnostic::error(
+                        d.push(Diagnostic::warning(
                             DW_ACT_MISNAMED,
                             stage,
                             path,
                             format!(
                                 "the {lang} title of `{kind}` objective `{id}` (`{shown}`) {what}. \
-                                 A title is the party's instruction, and its verb is a claim \
-                                 about what the hands will do; a `{kind}` completes on its own \
-                                 act, so its title carries one of the `{kind}` verbs: {own}. \
-                                 Rewrite the title with one of them (the rest of the title is \
-                                 yours: `Go up the stair and ring the bell` is an `interact`). A \
-                                 verb this kind needs that is not listed is an engine edit to \
-                                 `crates/dsl/data/act-verbs.json`, not a reason to keep the \
-                                 title."
+                                 A `{kind}` completes on its own act, and the lexicon's `{kind}` \
+                                 verbs are: {own}. Decide whether this title names what the \
+                                 hands do: if it does (the verb read is a noun, or the act is \
+                                 named another way), keep it; if it does not, rewrite it with \
+                                 the act the objective completes on (`Go up the stair and ring \
+                                 the bell` names an `interact`). The lexicon reads words, not \
+                                 meaning, so this is a question for you, never a refusal."
                             ),
                         ));
                     }
@@ -1530,20 +1531,22 @@ pub fn check_act_verbs(
                     if let Some(f) = other
                         && !found.iter().any(|f| f.kind == kind)
                     {
-                        b.refused += 1;
+                        b.warned += 1;
                         let (stage, path) = at("hint");
-                        d.push(Diagnostic::error(
+                        d.push(Diagnostic::warning(
                             DW_ACT_MISNAMED,
                             stage,
                             path,
                             format!(
-                                "the {lang} hint of `{kind}` objective `{id}` (`{shown}`) names \
-                                 another act: `{}` is a `{}` verb, and the hint carries none of \
-                                 the `{kind}` verbs ({own}). A hint that tells the party to do \
-                                 something the objective does not complete on sends them to do \
-                                 the wrong thing. Name the act this objective completes on, or \
-                                 write the hint as a place (`Past the bell, left of the arch.`), \
-                                 which passes.",
+                                "the {lang} hint of `{kind}` objective `{id}` (`{shown}`) reads \
+                                 as another act: `{}` is a `{}` verb, and the hint carries none \
+                                 of the `{kind}` verbs ({own}). Decide whether the hint tells \
+                                 the party to do something this objective does not complete on: \
+                                 if the word is a noun or reported speech, keep it; if it sends \
+                                 the party to the wrong act, name the act this objective \
+                                 completes on, or write the hint as a place (`Past the bell, \
+                                 left of the arch.`). The lexicon reads words, not meaning, so \
+                                 this is a question for you, never a refusal.",
                                 f.verb, f.kind
                             ),
                         ));

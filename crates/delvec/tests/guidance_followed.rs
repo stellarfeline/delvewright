@@ -398,10 +398,12 @@ fn obj(kind: &str, title: Option<&str>, hint: Option<&str>) -> Value {
     o
 }
 
+/// The `DW1015` findings on the objective under test — every one a warning.
 fn verb_refusals(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<String> {
     let d = promise::check_act_verbs(c, sidecars).0;
     assert!(
-        d.iter().all(|d| d.code == promise::DW_ACT_MISNAMED),
+        d.iter().all(|d| d.code == promise::DW_ACT_MISNAMED
+            && d.severity == delvewright_dsl::Severity::Warning),
         "{d:?}"
     );
     d.into_iter()
@@ -410,8 +412,8 @@ fn verb_refusals(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<Stri
         .collect()
 }
 
-/// spec-0104 criterion 3: titles carry their kind's verb, hints never name
-/// only another kind's act, in English.
+/// spec-0104 criterion 3: a title without its kind's verb, and a hint naming
+/// only another kind's act, are `DW1015` warnings, in English.
 #[test]
 fn a_title_names_its_kinds_act() {
     let none = BTreeMap::new();
@@ -487,10 +489,58 @@ fn a_sidecar_title_is_judged_by_its_own_table_or_counted_unjudged() {
     );
     let (_, b) = promise::check_act_verbs(&c, &s);
     assert_eq!((b.languages, b.unjudged), (2, 1), "{}", b.line());
+    assert!(b.line().ends_with("; 0 warned"), "{}", b.line());
     assert!(
         b.line()
             .contains("(1 string(s) in languages with no table)")
     );
+}
+
+/// spec-0104 criterion 3: `delvec validate` exits 0 on a document whose only
+/// finding is a `DW1015` warning, and prints the warning and its binding.
+#[test]
+fn a_misnamed_title_warns_and_validation_exits_zero() {
+    for (n, (kind, title)) in [
+        ("reach-anchor", "Talk to the miller"),
+        ("talk-to", "Go to the mill"),
+        ("talk-to", "The Mill"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut q = quests(nulls());
+        let o = &mut q["content"]["quests"][0]["objectives"][0];
+        if kind == "reach-anchor" {
+            *o = json!({ "type": "reach-anchor", "id": "obj/talk", "anchor": "anchor/keeper-stand",
+                         "radius": 2, "title": title, "hint": "He stands by the door." });
+        } else {
+            o["title"] = json!(title);
+        }
+        let mut d = dialogue(GREETING);
+        if kind != "talk-to" {
+            d["content"]["dialogues"][0]["nodes"][0]["options"] = json!([{ "label": "Farewell." }]);
+        }
+        let dir = variant(&format!("verb-exit-{n}"), q, d);
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
+            .arg("--prefabs")
+            .arg(common::prefabs_dir())
+            .arg("validate")
+            .arg(&dir)
+            .output()
+            .expect("`delvec validate` runs");
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(out.status.code(), Some(0), "{title}: {text}");
+        assert!(
+            text.lines()
+                .any(|l| l.starts_with("DW1015") && l.contains(title)),
+            "{title}: {text}"
+        );
+        assert!(text.contains("; 1 warned"), "{title}: {text}");
+    }
 }
 
 // ---------------------------------------------------------------------------
