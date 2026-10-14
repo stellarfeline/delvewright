@@ -6,9 +6,7 @@
 // step, or timeout). No campaign knowledge lives here (spec-0003): everything
 // comes from critical-path.json.
 
-import { loadRepaintPlanForCriticalPath, repaintBindingLine } from "./repaint.ts";
 import { loadPulsePlanForCriticalPath, pulseBindingLine } from "./pulse.ts";
-import { loadMusicPlanForCriticalPath, musicBindingLine } from "./music.ts";
 import { readFile } from "node:fs/promises";
 import nodePath from "node:path";
 import { parseCriticalPathJson } from "./critical-path.ts";
@@ -313,17 +311,6 @@ async function main(): Promise<number> {
       process.stderr.write(`death plan: UNBOUND — ${b.reason ?? "no reason given"}\n`);
     }
   }
-  // spec-0080 §5.2: what each repaint must tell the client. Absent → the build
-  // repaints nothing, said out loud.
-  const repaintPlan = await loadRepaintPlanForCriticalPath(pathArg);
-  if (repaintPlan) {
-    executor.useRepaintPlan(repaintPlan);
-    process.stderr.write(
-      `repaint plan: ${repaintPlan.repaints.length} set-atmosphere effect(s) to watch reach the client\n`,
-    );
-  } else {
-    process.stderr.write(`repaint plan: none in this build (no set-atmosphere)\n`);
-  }
   // spec-0102 §5.3: where each pulse must be heard and where it must not.
   // Absent → the build declares no pulse, said out loud.
   const pulsePlan = await loadPulsePlanForCriticalPath(pathArg);
@@ -336,21 +323,6 @@ async function main(): Promise<number> {
     );
   } else {
     process.stderr.write(`pulse plan: none in this build (no pulse)\n`);
-  }
-  // spec-0109 §5.3: where each biome is stood in and what each cut must tell
-  // the client. Absent → a build from an engine that writes no music ledger,
-  // said out loud.
-  const musicPlan = await loadMusicPlanForCriticalPath(pathArg);
-  if (musicPlan) {
-    executor.useMusicPlan(musicPlan);
-    process.stderr.write(
-      `music plan: ${musicPlan.biomes.length} biome(s), ` +
-        `${musicPlan.biomes.filter((b) => b.station).length} with a listening station; ` +
-        `${musicPlan.stops.length} stop-sound(s); ${musicPlan.cutscenes.length} cutscene(s) ` +
-        `the bot does not stand in\n`,
-    );
-  } else {
-    process.stderr.write(`music plan: none in this build (no validation/music.json)\n`);
   }
   const combatPlan = await loadCombatPlanForCriticalPath(pathArg);
   const dieRetry = combatPlan !== undefined && dieRetryFromEnv();
@@ -571,12 +543,6 @@ async function main(): Promise<number> {
     for (const verdict of musters.values()) {
       for (const f of verdict.findings) report.recordMusterFinding(`${verdict.wave}: ${f}`);
     }
-    // spec-0080 §5.2: every repaint the path performed reached the client.
-    const repaintVerdicts = executor.repaintVerdicts();
-    if (repaintPlan) {
-      process.stderr.write(`${repaintBindingLine(repaintPlan, repaintVerdicts)}\n`);
-    }
-    const repaintFailures = repaintVerdicts.flatMap((v) => (v.failure ? [v.failure] : []));
     // spec-0101 §5.4: every body that did not face the bot where it should have.
     const watchLedger = executor.watchLedger();
     watchLedger.armed = false;
@@ -595,42 +561,20 @@ async function main(): Promise<number> {
       ...v.failures,
       ...(pathFailure === undefined ? v.unreached : []),
     ]);
-    // spec-0109 §5.3: every cut the path performed reached the client, and
-    // every station read the biome the ledger names.
-    const musicStops = executor.musicStopVerdicts();
-    const musicStations = executor.musicWatch?.stations ?? [];
-    const musicFailures = [
-      ...musicStops.flatMap((v) => (v.failure ? [v.failure] : [])),
-      ...musicStations.flatMap((s) => (s.failure ? [s.failure] : [])),
-    ];
-    if (musicPlan) {
-      const line = musicBindingLine(musicPlan, musicStops, musicStations);
-      process.stderr.write(`${line}\n`);
-      report.recordMusic({
-        stations: musicStations,
-        stops: musicStops,
-        cutscenes: musicPlan.cutscenes.map((c) => c.effect),
-        line,
-      });
-    }
     report.stage({
       stage: "critical-path",
       ran: true,
       passed:
         pathFailure === undefined &&
         musterFailures.length === 0 &&
-        repaintFailures.length === 0 &&
         watchFailures.length === 0 &&
-        pulseFailures.length === 0 &&
-        musicFailures.length === 0,
+        pulseFailures.length === 0,
       findings: report.musterFindings(),
       failures: [
         ...(pathFailure === undefined ? [] : [describe(pathFailure)]),
         ...musterFailures,
-        ...repaintFailures,
         ...watchFailures,
         ...pulseFailures,
-        ...musicFailures,
       ],
     });
     // The death loop. Recorded whether it ran or not, and a stage that

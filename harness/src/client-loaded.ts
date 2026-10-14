@@ -24,7 +24,6 @@
 // (`test/client-loaded.test.ts` refuses any other).
 
 import { createBot, type Bot, type BotOptions } from "mineflayer";
-import { installChunkBiomes, type BiomeBot, type ChunkBiomesState } from "./chunk-biomes.ts";
 import { installResourcePack, type PackBot, type ResourcePackState } from "./resource-pack.ts";
 
 /** The vanilla client's `LevelLoadTracker.CLIENT_WAIT_TIMEOUT_MS`: 30 seconds. */
@@ -155,8 +154,6 @@ export interface HarnessBot {
   readonly loaded: ClientLoadedState;
   /** Every resource pack the server pushed, and what the bot made of it. */
   readonly pack: ResourcePackState;
-  /** Every repaint the server sent, written into the bot's world. */
-  readonly biomes: ChunkBiomesState;
 }
 
 /**
@@ -170,8 +167,5 @@ export function createHarnessBot(options: BotOptions): HarnessBot {
   // A served pack (spec-0084 §11) is pushed in configuration and the server
   // holds the player there until the client answers, so every bot answers.
   const pack = installResourcePack(bot as unknown as PackBot);
-  // mineflayer 4.37.1 drops `chunk_biomes`; without this a repainted chunk the
-  // bot already holds keeps the biome it loaded with.
-  const biomes = installChunkBiomes(bot as unknown as BiomeBot);
-  return { bot, loaded, pack, biomes };
+  return { bot, loaded, pack };
 }

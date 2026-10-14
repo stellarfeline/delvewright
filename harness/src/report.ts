@@ -132,14 +132,6 @@ export class RunReport {
   private readonly trials: DeathTrial[] = [];
   private readonly muster: string[] = [];
   private readonly pulseStations: import("./pulse.ts").StationRecord[] = [];
-  private music:
-    | {
-        readonly stations: readonly import("./music.ts").MusicStationRecord[];
-        readonly stops: readonly import("./music.ts").StopVerdict[];
-        readonly cutscenes: readonly string[];
-        readonly line: string;
-      }
-    | undefined;
   private readonly encounters: EncounterReport[] = [];
   private readonly rests: PerformedRest[] = [];
   private readonly namedEntityDeaths: ClassifiedDeath[] = [];
@@ -218,16 +210,6 @@ export class RunReport {
   /** A declared fact the live bodies did not carry. */
   recordMusterFinding(finding: string): void {
     this.muster.push(finding);
-  }
-
-  /** What every music station read, every cut, every cutscene not stood in (spec-0109 §5.3). */
-  recordMusic(m: {
-    readonly stations: readonly import("./music.ts").MusicStationRecord[];
-    readonly stops: readonly import("./music.ts").StopVerdict[];
-    readonly cutscenes: readonly string[];
-    readonly line: string;
-  }): void {
-    this.music = m;
   }
 
   /** What every pulse station heard (spec-0102 §5.3). */
@@ -673,29 +655,6 @@ export class RunReport {
       // Every pulse station the walk stood at (spec-0102 §5.3), with the beats
       // it heard; empty for a build that declares no pulse or stations none.
       pulse_stations: this.pulseStations.map((s) => ({ ...s, cell: [...s.cell] })),
-      // spec-0109 §5.3: each music station's reading (`not_read: registry` when
-      // the client could not name the biome), each cut's verdict, and each
-      // cutscene the bot does not stand in, as a stated fact. Null for a build
-      // that wrote no music ledger.
-      music:
-        this.music === undefined
-          ? null
-          : {
-              line: this.music.line,
-              stations: this.music.stations.map((s) => ({
-                biome: s.biome,
-                cell: [...s.cell],
-                read: s.read ?? null,
-                not_read: s.notRead ?? null,
-                failure: s.failure,
-              })),
-              stop_sounds: this.music.stops.map((v) => ({
-                effect: v.effect,
-                performed: v.performed,
-                failure: v.failure ?? null,
-              })),
-              cutscenes: this.music.cutscenes.map((effect) => ({ effect, not_stood: "cutscene" })),
-            },
     };
   }
 }

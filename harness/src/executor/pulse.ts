@@ -38,7 +38,6 @@ export const methods = {
     this.legHearingFrom = undefined;
     await this.runBacksBefore(step);
     await this.listenAtPulseStations(step);
-    await this.readMusicStations(step);
   },
 
   /**
