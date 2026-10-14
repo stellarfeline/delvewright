@@ -2538,7 +2538,7 @@ fn a_blockout_build_defers_a_container_its_place_owes_and_counts_it() {
     assert_eq!(code, Some(0), "{err}");
     assert!(
         err.contains(
-            "container binding: 1 container fill(s) (0 loot, 1 adopting collect), 0 judged \
+            "holder binding: 1 fill(s) (0 loot, 1 adopting collect; by kind: none: 1), 0 judged \
              against the assembled world, 1 deferred"
         ),
         "the deferral is counted against its denominator: {err}"
@@ -2645,7 +2645,7 @@ fn a_blockout_build_defers_loot_its_place_owes_by_the_same_rule() {
     assert_eq!(code, Some(0), "{err}");
     assert!(
         err.contains(
-            "container binding: 2 container fill(s) (1 loot, 1 adopting collect), 0 judged \
+            "holder binding: 2 fill(s) (1 loot, 1 adopting collect; by kind: none: 2), 0 judged \
              against the assembled world, 2 deferred"
         ),
         "{err}"

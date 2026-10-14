@@ -1075,9 +1075,147 @@ struct BlockEntry {
     state: i32,
 }
 
-/// The structure carries no entities — every body is summoned by the datapack.
-#[derive(Serialize)]
-struct Entity {}
+/// **One item holder the piece carries** (spec-0111 §3.1): a template entity —
+/// its position, its `blockPos` and its `nbt`, which says what the holder looks
+/// like and nothing else. The engine strips it from the template it ships and
+/// summons it with the NBT it owns; every other body is summoned by the
+/// datapack from a declaration.
+#[derive(Serialize, Clone)]
+struct Entity {
+    pos: [f64; 3],
+    #[serde(rename = "blockPos")]
+    block_pos: [i32; 3],
+    nbt: BTreeMap<String, fastnbt::Value>,
+}
+
+impl Entity {
+    /// The same entity `dy` courses higher.
+    fn raised(&self, dy: i32) -> Entity {
+        let mut e = self.clone();
+        e.pos[1] += f64::from(dy);
+        e.block_pos[1] += dy;
+        e
+    }
+
+    /// `(type id, nbt keys)`, the shape the holder invariant reads.
+    fn shape(&self) -> (&str, Vec<&str>) {
+        let id = match self.nbt.get("id") {
+            Some(fastnbt::Value::String(s)) => s.as_str(),
+            _ => "",
+        };
+        (id, self.nbt.keys().map(String::as_str).collect())
+    }
+}
+
+/// **An item holder in the hall** (spec-0111 §7.1): an anchor whose cell holds
+/// a frame or a stand the piece carries, rather than a block.
+struct Holder {
+    name: &'static str,
+    /// `minecraft:item_frame`, `minecraft:glow_item_frame` or
+    /// `minecraft:armor_stand`.
+    kind: &'static str,
+    /// A frame's own cell, or a stand's foot cell.
+    pos: [i32; 3],
+    /// The way a frame faces (it hangs on the block behind it), or the way a
+    /// stand is turned.
+    facing: &'static str,
+    note: &'static str,
+}
+
+/// **The hall's item holders** (spec-0111 §7.1). The glow frame and the
+/// armour stand on the reliquary wall carry `loot`; the plain frame on the near
+/// hall's south wall is the one a `collect` on the critical path takes from;
+/// the second plain frame beside it is the gallery's empty holder, which the
+/// census prints as frozen and exempt.
+const HOLDERS: &[Holder] = &[
+    Holder {
+        name: "anchor/map-frame",
+        kind: "minecraft:glow_item_frame",
+        pos: [17, 2, 29],
+        facing: "north",
+        note: "a glow frame on the reliquary wall, filled by a `loot` entry's `contents`",
+    },
+    Holder {
+        name: "anchor/sword-stand",
+        kind: "minecraft:armor_stand",
+        pos: [18, 1, 28],
+        facing: "north",
+        note: "an armour stand beside the reliquary, a helmet on its head and a sword in its \
+               hand, filled by a `loot` entry that names both slots",
+    },
+    Holder {
+        name: "anchor/seal-frame",
+        kind: "minecraft:item_frame",
+        pos: [12, 2, 1],
+        facing: "south",
+        note: "a frame on the near hall's south wall a `collect` takes the seal from, on the \
+               critical path",
+    },
+    Holder {
+        name: "anchor/bare-frame",
+        kind: "minecraft:item_frame",
+        pos: [10, 2, 1],
+        facing: "south",
+        note: "an empty frame beside it: frozen scenery that does nothing, exempt from the \
+               scenery rules because its contents show",
+    },
+];
+
+/// The direction a cardinal names.
+fn facing_unit(f: &str) -> [i32; 3] {
+    match f {
+        "north" => [0, 0, -1],
+        "south" => [0, 0, 1],
+        "west" => [-1, 0, 0],
+        _ => [1, 0, 0],
+    }
+}
+
+/// The hall's holders as template entities: a frame's `Facing`, a stand's
+/// `Rotation`, and nothing the engine owns.
+fn holder_entities() -> Vec<Entity> {
+    HOLDERS
+        .iter()
+        .map(|h| {
+            let mut nbt = BTreeMap::new();
+            nbt.insert("id".to_string(), fastnbt::Value::String(h.kind.to_string()));
+            let frame = h.kind != "minecraft:armor_stand";
+            if frame {
+                let byte = match h.facing {
+                    "north" => 2,
+                    "south" => 3,
+                    "west" => 4,
+                    _ => 5,
+                };
+                nbt.insert("Facing".to_string(), fastnbt::Value::Byte(byte));
+            } else {
+                let yaw = match h.facing {
+                    "south" => 0.0,
+                    "west" => 90.0,
+                    "north" => 180.0,
+                    _ => 270.0,
+                };
+                nbt.insert(
+                    "Rotation".to_string(),
+                    fastnbt::Value::List(vec![
+                        fastnbt::Value::Float(yaw),
+                        fastnbt::Value::Float(0.0),
+                    ]),
+                );
+            }
+            let [x, y, z] = h.pos;
+            Entity {
+                pos: [
+                    f64::from(x) + 0.5,
+                    f64::from(y) + if frame { 0.5 } else { 0.0 },
+                    f64::from(z) + 0.5,
+                ],
+                block_pos: h.pos,
+                nbt,
+            }
+        })
+        .collect()
+}
 
 struct Palette {
     entries: Vec<PaletteEntry>,
@@ -1367,7 +1505,7 @@ fn build() -> Structure {
         size: SIZE,
         palette: palette.entries,
         blocks,
-        entities: Vec::new(),
+        entities: holder_entities(),
     }
 }
 
@@ -1420,6 +1558,39 @@ fn assert_anchors_are_standable(s: &Structure) {
             "{ID}: anchor `{}` has no floor under it: `{floor}` holds no body",
             a.name
         );
+    }
+    // A frame's own cell is air and the block behind it is stone (the game
+    // drops a frame from anything else within five seconds); a stand stands on
+    // a floor with headroom.
+    for h in HOLDERS {
+        assert_eq!(
+            at(h.pos),
+            "minecraft:air",
+            "{ID}: holder `{}` stands in a solid cell",
+            h.name
+        );
+        if h.kind == "minecraft:armor_stand" {
+            assert!(
+                delvewright_dsl::blockshape::supports_body(at([h.pos[0], h.pos[1] - 1, h.pos[2]])),
+                "{ID}: stand `{}` has no floor under it",
+                h.name
+            );
+            assert!(
+                delvewright_dsl::blockshape::passes_body(at([h.pos[0], h.pos[1] + 1, h.pos[2]])),
+                "{ID}: stand `{}` has no headroom",
+                h.name
+            );
+        } else {
+            let u = facing_unit(h.facing);
+            let behind = [h.pos[0] - u[0], h.pos[1] - u[1], h.pos[2] - u[2]];
+            assert_eq!(
+                at(behind),
+                "minecraft:stone",
+                "{ID}: frame `{}` hangs on `{}`, not stone",
+                h.name,
+                at(behind)
+            );
+        }
     }
     for a in CONTAINERS {
         let found = at(a.pos);
@@ -2012,6 +2183,13 @@ fn metadata() -> serde_json::Value {
         }
         anchors.insert(a.name.into(), Value::Object(m));
     }
+    for h in HOLDERS {
+        let mut m = Map::new();
+        m.insert("pos".into(), json!(h.pos));
+        m.insert("facing".into(), json!(h.facing));
+        m.insert("note".into(), json!(h.note));
+        anchors.insert(h.name.into(), Value::Object(m));
+    }
     for g in GATE_ANCHORS {
         let mut m = Map::new();
         m.insert("region".into(), json!({ "from": g.from, "to": g.to }));
@@ -2072,6 +2250,12 @@ fn write_piece(out: &Path) {
     connections::assert_shape_is_stated(ID, &cells);
     connections::assert_attachments_are_supported(ID, &cells);
     invariants::assert_fluid_is_contained(ID, s.size, &cells);
+    let shapes: Vec<(&str, Vec<&str>)> = s.entities.iter().map(Entity::shape).collect();
+    invariants::assert_entities_are_holders(ID, &shapes);
+    println!(
+        "{ID}: {} item holder(s) carried, judged against the holder table",
+        shapes.len()
+    );
 
     let nbt = fastnbt::to_bytes(&s).expect("structure serializes to NBT");
     let mut gz = GzBuilder::new()
@@ -2321,7 +2505,8 @@ fn lift_to_shore(s: &Structure, pool: &[(i32, i32)]) -> Structure {
         size: [s.size[0], s.size[1] + SHORE_PLINTH, s.size[2]],
         palette,
         blocks,
-        entities: Vec::new(), // the gallery's pieces carry none, and a lift invents none
+        // The holders rise with the blocks, and a lift invents none.
+        entities: s.entities.iter().map(|e| e.raised(SHORE_PLINTH)).collect(),
     }
 }
 
@@ -4045,6 +4230,12 @@ fn long_gallery_at(x: i32, y: i32, z: i32) -> Option<BlockWithState> {
     // The brewing stand at the far end: what the end room holds, and what a
     // body arriving there looks at.
     if w == sw - 2 && u == 2 && v == 1 {
+        return Some(("minecraft:brewing_stand", BREWING_STAND));
+    }
+    // And an empty one beside it: a brewing stand shows its bottles, so an
+    // empty one beside a filled one is a row a player reads at a glance, exempt
+    // from the scenery rules (spec-0105 §9.5).
+    if w == sw - 2 && u == 3 && v == 1 {
         return Some(("minecraft:brewing_stand", BREWING_STAND));
     }
     Some(("minecraft:air", None))

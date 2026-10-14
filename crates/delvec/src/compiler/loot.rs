@@ -510,7 +510,20 @@ pub fn split_owed_by_detail(
         loot: loot.len(),
         collect: fills.len(),
         deferred: Vec::new(),
+        by_kind: BTreeMap::new(),
     };
+    for cell in loot
+        .iter()
+        .map(|l| l.cell)
+        .chain(fills.iter().map(|f| f.cell))
+    {
+        let kind = match found_at(blocks, entities, cell) {
+            Found::Container(..) => crate::compiler::holders::CONTAINER_KIND,
+            Found::Entity(h) => h.kind.token,
+            Found::Ambiguous(_) | Found::Nothing(_) => "none",
+        };
+        *binding.by_kind.entry(kind.to_string()).or_insert(0) += 1;
+    }
     let place = |cell: [i32; 3]| {
         if blocks.get(&cell).is_some_and(|b| is_container(b.as_str()))
             || entities.iter().any(|e| e.cell == cell)
@@ -547,6 +560,9 @@ pub struct ContainerBinding {
     pub collect: usize,
     /// The fills owed to a place's detail, each naming the fill and the place.
     pub deferred: Vec<String>,
+    /// Fills by the kind of holder standing at their cell (`none` for a cell
+    /// holding none yet).
+    pub by_kind: BTreeMap<String, usize>,
 }
 
 impl ContainerBinding {
@@ -565,12 +581,23 @@ impl ContainerBinding {
                 self.deferred.join(", ")
             )
         };
+        let kinds = self
+            .by_kind
+            .iter()
+            .map(|(k, n)| format!("{k}: {n}"))
+            .collect::<Vec<_>>()
+            .join(", ");
         format!(
-            "container binding: {total} container fill(s) ({l} loot, {c} adopting collect), {judged} \
+            "holder binding: {total} fill(s) ({l} loot, {c} adopting collect{kinds}), {judged} \
              judged against the assembled world, {d} deferred to the detail of a place still \
              standing in its stand-in{named}.",
             l = self.loot,
             c = self.collect,
+            kinds = if kinds.is_empty() {
+                String::new()
+            } else {
+                format!("; by kind: {kinds}")
+            },
             d = self.deferred.len(),
         )
     }

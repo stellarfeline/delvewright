@@ -609,6 +609,34 @@
             "item": "minecraft:glass_bottle"
           }
         ]
+      },
+      {
+        "anchor": "anchor/map-frame",
+        "id": "loot/map-frame",
+        "items": [
+          {
+            "count": 1,
+            "item": "minecraft:map",
+            "name": "Reliquary Chart",
+            "slot": "contents"
+          }
+        ]
+      },
+      {
+        "anchor": "anchor/sword-stand",
+        "id": "loot/sword-stand",
+        "items": [
+          {
+            "count": 1,
+            "item": "minecraft:iron_helmet",
+            "slot": "armor.head"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:iron_sword",
+            "slot": "weapon.mainhand"
+          }
+        ]
       }
     ],
     "on_death": [
@@ -910,6 +938,30 @@
             "stealth": false,
             "title": "Reach the counter",
             "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/take-the-emeralds"
+            ],
+            "anchor": "anchor/pedestal",
+            "holder": "anchor/seal-frame",
+            "count": 1,
+            "forbids_flags": [
+              "flag/hall-sealed"
+            ],
+            "happening": {
+              "subject": "anchor/seal-frame",
+              "text": "They knock the seal out of its frame.",
+              "verb": "gains"
+            },
+            "hint": "A frame on the south wall holds it.",
+            "id": "obj/take-the-seal",
+            "item": "minecraft:paper",
+            "item_name": "Hall Seal",
+            "requires_flags": [],
+            "stealth": false,
+            "title": "Take the seal",
+            "type": "collect"
           }
         ],
         "on_complete": [

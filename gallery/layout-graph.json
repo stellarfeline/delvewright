@@ -96,6 +96,11 @@
         "node": "node/near-hall",
         "objective": "obj/back-in-the-hall",
         "quest": "quest/far-hall"
+      },
+      {
+        "node": "node/near-hall",
+        "objective": "obj/take-the-seal",
+        "quest": "quest/near-hall"
       }
     ],
     "critical_path": [
