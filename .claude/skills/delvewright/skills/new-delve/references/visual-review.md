@@ -65,13 +65,14 @@ and it is cheap only if you catch it on the first frame instead of after reading
 the set: an hour that is wrong is wrong in every frame, and re-rendering the set
 costs what *What the set costs* says it costs.
 
-**The frame carries the hour and not the weather, and it carries the hour the
-delve STARTS at.** Chunky has no rain, so a `rain` or `thunder` row is judged on
-everything except its sky and no frame is evidence about it either way; and if
-your story moves the clock with `set-time`, every frame is still of the hour
-`world.json` declares, because that is what the world save was written at. Say
-both in the review rather than reading a clear noon render as a contradiction of
-a row that belongs to a later beat.
+**The frame carries the hour and the weather's light, and it carries the hour
+the delve STARTS at.** A `rain` or `thunder` frame is lit and skied as the game
+lights and skies that hour under that weather, but Chunky draws no rain, no
+clouds and no rain fog, so nothing falls and the distance is clearer than the
+game's; and if your story moves the clock with `set-time`, every frame is still
+of the hour `world.json` declares, because that is what the world save was
+written at. Say both in the review rather than reading a clear noon render as a
+contradiction of a row that belongs to a later beat.
 
 **A delve declared at `night` or `midnight` renders dark, and that is the
 frame.** The sun is below the horizon at those hours, exactly as it is in the
@@ -83,11 +84,18 @@ keyword night is a full moon; the phase the brief asked for is confirmed in the
 game, never on a render. Declared-dark areas with a `night-vision` mitigation are the one thing the
 scene emitter makes legible, and it marks those frames as emulations; everything
 else you read as the player will see it. Never raise a budget, an exposure or an
-hour to make a picture come out: a clear sky is drawn as the game draws it at
-that hour, at exposure 1, with the game's mid-tone, and its lanterns lit, on
-average, as bright as the game's, so an exterior that reads dark is dark in the
-game. Near a lantern a render is brighter than the game and far from it
-dimmer, so judge how a lit place reads in the game.
+hour to make a picture come out: every sky — clear, rain or thunder — is drawn
+as the game draws it at that hour under that weather, at exposure 1, with the
+game's mid-tone, and its lanterns lit, on average, as bright as the game's, so
+an exterior that reads dark is dark in the game. Near a lantern a render is
+brighter than the game and far from it dimmer, so judge how a lit place reads in
+the game.
+
+**A change to how frames are rendered is judged on the standard level first:
+The Glasshouse** (content `demo/the-glasshouse`), its seven showcase cameras
+under every sky the change can move, measured against the game's own values
+(`$DELVEWRIGHT_ENGINE/docs/reference/showcase-shots.md` §6). A campaign's set is
+never where a render change is first looked at.
 
 What the machine cannot say, and this review can: **the place is that place
 with something wrong in it** — a floating slab, a seam that does not meet,

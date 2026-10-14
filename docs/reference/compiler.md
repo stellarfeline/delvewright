@@ -3437,9 +3437,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   rows equal to that whole reachable set), and a still frame has one sun and is
   not evidence about the beats after the cut. The renderer derives the sun from the **ticks** and never
   from the keyword, so a state vanilla does not name is worth as much as one it
-  does. The **weather** reaches a frame as an overcast sky (`scene::sky_of`,
-  below): the pinned Chunky core draws no rain, but it draws the sky's radiance
-  and colour, the sun's intensity and disc, and fog. The panorama and the review
+  does. The **weather** reaches a frame as the game's sky under that weather
+  (`scene::sky_of`, below): the pinned Chunky core draws no rain, but the light
+  the sky casts and the sky the lens sees are the client's under its weather
+  layer. The panorama and the review
   frames take this sky; a showcase camera takes its picture's (§7 `delvec
   cameras`).
 - **The Chunky sun** (`crate::view::scene::sun_at`, used by `delvec scene` **and**
@@ -3474,8 +3475,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   writer of every `sky`, `sun` and `fog` key under `compiler::view`; the review
   frames (`scene::scenes_from_plan`), the panorama and every showcase camera
   (`camera::world_scene`) take their sky through it, and every scene carries
-  the whole block. **`clear`** is the **clear cell** of the scene's tick
-  (`scene::clear_cell`): the pinned game's day, one function for every hour,
+  the whole block. Every scene's block is the **sky cell** of its tick and
+  weather (`scene::sky_cell`). **`clear`** is the pinned game's day, one
+  function for every hour,
   with noon, the dusk and dawn ramps and the night plateau as points of it. The
   game lights the world from the sky alone — a cell open to the sky is drawn at
   the lightmap's sky colour whatever the sun's direction, and nothing casts a
@@ -3484,7 +3486,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   | Key | Value | Cited | Authored |
   |---|---|---|---|
   | the light the sky casts (`sky.color` and the cell's `sky_light`) | the lightmap's full-sky colour, decoded to linear: `L` | `assets/minecraft/shaders/core/lightmap.fsh` of the pinned client at sky light 15 with `SkyFactor` = `visual/sky_light_factor` and `SkyLightColor` = `visual/sky_light_color` (the two attributes `LightTexture` reads), `ambient_light` 0, the `gamma` option's default 0.5 as `BrightnessFactor`; the two tracks at the tick | decoding by `x^2.2` (`Scene.DEFAULT_GAMMA`, by arithmetic: `scene::to_linear`) and reading it as the radiance a top face is lit by — a Lambertian face under an open sky returns `albedo ×` the sky's cosine-weighted mean radiance, so the face shows at the shader's colour |
-  | `sky.mode SKYMAP_EQUIRECTANGULAR`, `sky.skymap`, `sky.skyMirrored false`, `sky.apparentSkyLight` 1 | what the lens sees: the game's own sky, as a 360 × 180 linear-float map `<scene>.sky.pfm` drawn for the scene's camera at its tick (`sky_image::clear_sky`) and written beside the scene by the scene writer from the scene's own `delvewrightSky.daytimeTicks` and orientation (`sky_image::companion`) | the pinned client's drawing, off its bytecode through Mojang's mappings: the clear colour of `AtmosphericFogEnvironment.getBaseColor` (`visual/fog_color` × `#c0d8ff`, lerped toward the opaque `visual/sunrise_sunset_color` by the camera look's dot with the sun's side times the colour's alpha, then toward `visual/sky_color` × `#7ba4ff` by `1 − clamp(min(512/16, 12)/32, 0.25, 1)^0.25`); the sky disc of `SkyRenderer.buildSkyDisc` (an octagon at height 16, rim at 512, every 45° from −180°) in the sky colour with `sky.fsh`'s fog at `sky_end` = `min(12 × 16, 512)` on the distances interpolated from centre to rim; the sunrise fan of `buildSunriseFan` / `renderSunriseAndSunset` (centre `(0, 100, 0)`, 17 rim vertices `(sin a · 120, cos a · 120, −cos a · 40)`, turned `XP 90°` then `ZP 90°` or `270°` by the sun's side, depth scaled by the alpha, `TRANSLUCENT`); render distance 12 (`options.renderDistance`) and `visual/sky_fog_end_distance` 512 at their defaults; the core's unmirrored equirectangular lookup and its `.pfm` reader (linear, no gamma) | — |
+  | `sky.mode SKYMAP_EQUIRECTANGULAR`, `sky.skymap`, `sky.skyMirrored false`, `sky.apparentSkyLight` 1 | what the lens sees: the game's own sky, as a 360 × 180 linear-float map `<scene>.sky.pfm` drawn for the scene's camera at its tick and weather (`sky_image::sky_map`) and written beside the scene by the scene writer from the scene's own `delvewrightSky` (`daytimeTicks`, and `weather` when it is not clear) and orientation (`sky_image::companion`) | the pinned client's drawing, off its bytecode through Mojang's mappings: the clear colour of `AtmosphericFogEnvironment.getBaseColor` (`visual/fog_color` × `#c0d8ff`, lerped toward the opaque `visual/sunrise_sunset_color` by the camera look's dot with the sun's side times the colour's alpha, then toward `visual/sky_color` × `#7ba4ff` by `1 − clamp(min(512/16, 12)/32, 0.25, 1)^0.25`); the sky disc of `SkyRenderer.buildSkyDisc` (an octagon at height 16, rim at 512, every 45° from −180°) in the sky colour with `sky.fsh`'s fog at `sky_end` = `min(12 × 16, 512)` on the distances interpolated from centre to rim; the sunrise fan of `buildSunriseFan` / `renderSunriseAndSunset` (centre `(0, 100, 0)`, 17 rim vertices `(sin a · 120, cos a · 120, −cos a · 40)`, turned `XP 90°` then `ZP 90°` or `270°` by the sun's side, depth scaled by the alpha, `TRANSLUCENT`); render distance 12 (`options.renderDistance`) and `visual/sky_fog_end_distance` 512 at their defaults; the core's unmirrored equirectangular lookup and its `.pfm` reader (linear, no gamma) | — |
   | `sky.skyLight` | the multiplier that makes the map's light `L`: the largest `s ≤ 50` with the veil `R = L/s − Ē ≥ 0` in every channel, `Ē` the game's sky's cosine-weighted mean over the upper hemisphere; the map is the game's sky plus `R` | `Sky.MAX_INTENSITY` 50; the core lights the scene with the map the lens sees — `getSkyColorInterpolated` and `getSkyColorDiffuseSun` both read `getSkyDiffuseColorInner`, scaled by `apparentSkyLight` or `skyLight` | the least uniform veil that makes the light exact; the lens carries it |
   | `fog.uniformDensity` 0, `fog.skyFogDensity` 0, `fog.color` | none: the client's sky fog is in the map | `visual/fog_color` × `#c0d8ff` as the colour no ray reads | — |
   | `sun.intensity` 0, `sun.color` white | no light | nothing in the lightmap depends on the sun's direction | the core's sun is a directional light the game does not have |
@@ -3513,9 +3515,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   hue: at noon the light is white and the sky blue, so the veil is the light's
   yellow remainder and the lens sees a pale zenith; at the setting sun it is
   small; at night, under a black sky, `skyLight` is 50 and the veil `L/50`.
-  Pinned by `the_clear_cell_is_the_timeline_at_its_tick` (the night plateau,
+  Pinned by `the_clear_sky_is_the_timeline_at_its_tick` (the night plateau,
   noon and the setting sun read back from the timeline's keyframes),
-  `the_clear_cell_has_no_seam_over_the_day` (the largest change of the cell's
+  `the_sky_cell_has_no_seam_over_the_day` (under each weather, the largest change of the cell's
   light between two adjacent ticks: 0.0005 `skyLight`, 0.0081
   `sky.color.red`), `sky_image`'s tests (the fan on the sun's side, the clear
   colour following the look, the light exact, the map byte-stable and moved by
@@ -3531,39 +3533,125 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   from the sun with an orange-red band toward it. spec-0079 criteria 4 and 5 —
   byte identity with the base for a clear scene with the sun up, and "no
   block keys" on it — do not hold: **a loosening of what those criteria
-  assert, replaced by the clear sky's own assertions above**. **`rain`** and **`thunder`** write
-  the whole overcast block on every scene: the sun's direction from `sun_at`,
-  `sun.intensity`, `sun.color` and `sun.drawTexture false`; `sky.mode
-  SOLID_COLOR`, `sky.color`, `sky.skyLight` (the light the sky casts) and
-  `sky.apparentSkyLight` (the brightness the lens sees); `fog.mode UNIFORM`,
-  `fog.uniformDensity`, `fog.color` and `fog.skyFogDensity 0` (so the fog colour
-  never paints the sky). The block's values are a cell of a **look table** keyed
-  by weather and by a **daylight class read off the emitted sun's altitude**,
-  never the hour's name: `high` at or above 20° (`noon` 90°, `day` 27.55°), `low`
-  from 0° up to 20° (`dusk` 12.37°), `below` under 0° (`night`, `dawn` −3.52°,
-  `midnight` −90°). Every cell shares `sky.color` (0.10, 0.11, 0.14), `sun.color`
-  (0.9, 0.75, 0.65) and `fog.color` (0.20, 0.22, 0.26):
+  assert, replaced by the clear sky's own assertions above**. **`rain`** and **`thunder`** are
+  the same function under the client's **weather layer** (`scene::sky_attributes`,
+  `scene::WeatherLayer`): `WeatherAttributes` lays a `RAIN` and a `THUNDER` map
+  over the dimension, the biome and the day timeline in every level that
+  `canHaveWeather` (`EnvironmentAttributeSystem.addDefaultLayers`), and the
+  lightmap and the sky are drawn from the result. An attribute's value `v`
+  becomes `lerp(rain − thunder, v, RAIN(v))`, then `lerp(thunder, ·,
+  THUNDER(·))`; a `rain` delve stands at rain level 1 and thunder level 0, a
+  `thunder` delve at both 1 (`Level.getThunderLevel` is the thunder level
+  times the rain level), so each applies its own map whole. Read off the
+  pinned client's bytecode through Mojang's client mappings (`client.txt`
+  sha1 `031a68be…`), **cited** value by value:
 
-  | Cell | `skyLight` | `apparentSkyLight` | `sun.intensity` | `fog.uniformDensity` |
-  |---|---|---|---|---|
-  | `high` × `rain` | 3.2 | 1.2 | 0.25 | 0.002 |
-  | `low` × `rain` | 1.6 | 0.6 | 0.25 | 0.002 |
-  | `below` × `rain` | 0.16 | 0.06 | 0 | 0.002 |
-  | `high` × `thunder` | 1.92 | 0.72 | 0.125 | 0.003 |
-  | `low` × `thunder` | 0.96 | 0.36 | 0.125 | 0.003 |
-  | `below` × `thunder` | 0.096 | 0.036 | 0 | 0.003 |
+  | Attribute | `RAIN` | `THUNDER` | What reads it |
+  |---|---|---|---|
+  | `visual/sky_light_factor` | `alpha_blend` 0.24 at 0.3125 | `alpha_blend` 0.24 at 0.52734375 | the lightmap (`LightTexture`) |
+  | `visual/sky_light_color` | `alpha_blend` `#7a7aff` at 0.3125 | `alpha_blend` `#7a7aff` at 0.52734375 | the lightmap |
+  | `visual/sky_color` | `blend_to_gray` 0.6, 0.75 | `blend_to_gray` 0.24, 0.94 | the sky disc; the clear colour's sky term |
+  | `visual/fog_color` | `multiply` (0.5, 0.5, 0.6) | `multiply` (0.25, 0.25, 0.3) | the clear colour |
+  | `visual/sunrise_sunset_color` | `multiply` (0.5, 0.5, 0.6) | `multiply` (0.25, 0.25, 0.3) | the clear colour's tint; the fan |
 
-  `low` × `rain` is the overcast dusk measured on one delve
-  (`docs/reference/showcase-shots.md` §2b); the other five derive from it by two
-  rules — `high` doubles both sky-light modifiers, `below` takes a tenth of them
-  and puts the sun (under the horizon) at 0; `thunder` takes its class's `rain`
-  cell at 0.6 of both modifiers, half its sun and 1.5 times its fog — asserted by
-  `the_look_table_is_the_measured_cell_and_two_rules`. This table is the record
-  of what the engine emits; the constants are `scene::{HIGH,LOW,BELOW}_{RAIN,
-  THUNDER}`. A night-vision review emulation (`REVIEW_POLICY`) is a material
-  override and independent of the sky: a declared-dark room under rain gets both. The panorama's
-  bearing decides only which side is in shot; under a clear sky no face is in
-  the sun's shadow, and a bearing that looks into the sun puts its disc in
+  `#7a7aff` is `Timelines.NIGHT_SKY_LIGHT_COLOR` (`ARGB.colorFromFloat(1,
+  0.48, 0.48, 1)`); a float `alpha_blend` is `Mth.lerp(alpha, v, value)`, a
+  colour one `ARGB.alphaBlend` (an opaque `#rrggbb` under an alpha of
+  `floor(alpha × 255)`), `blend_to_gray` the colour's `ARGB.greyscale` scaled
+  by the brightness and `srgbLerp`ed in by the factor, `multiply`
+  `ARGB.multiply`. The layer's cloud colour, star brightness and sky light
+  level reach nothing a scene carries. Two steps of the client's drawing read
+  the weather levels directly: the clear colour is lerped toward the sky
+  colour `AtmosphericFogEnvironment.applyWeatherDarken` scales by `(1 − 0.5r,
+  1 − 0.5r, 1 − 0.4r)` at rain level `r` and by `1 − 0.5t` at thunder level
+  `t` (the disc keeps the layer's sky colour), and the sun is drawn at the
+  alpha `1 − r` (`SkyRenderer.extractRenderState` → `renderSunMoonAndStars`).
+  So a rain or thunder scene carries the clear scene's keys, with the light
+  the lightmap's under the weather, the map the client's sky under it, the
+  marker `delvewrightSky.weather`, and `sun.drawTexture false`. At noon the
+  light falls from the clear 0.967729 to 0.743987 under rain and 0.593479
+  under thunder (peak channel, blue), at the setting sun from 0.374446 to
+  0.32354 and 0.287972, and on the night plateau, where the layer blends
+  toward the night's own factor and colour, it is the clear night's 0.209457
+  under every weather (to the float the client blends in). The arithmetic is
+  integer channels and the client's float where it is float
+  (`the_weather_is_the_clients_layer`, values worked by hand; the whole-map
+  gate holds the emitted map and light to its own Python port of the same
+  layer, `tools/ci/check-whole-map-render.py`). **Not expressed under
+  weather:** the rain itself and the clouds, which the core cannot draw, and
+  the client's **rain fog** — `AtmosphericFogEnvironment.setupFog` pulls the
+  environmental fog's start in by `160 m` and its end to `max(min(96, end),
+  end − 256 m)` (`end` 1024, the overworld's `visual/fog_end_distance`), `m`
+  the rain level × `clamp((sky light at the camera − 8) / 7, 0, 1)` × (1 in a
+  biome with precipitation, else 0.5), so a camera in the open in the
+  Glasshouse's `windswept_forest` sees a linear fog of `(d + 160) / 928` toward
+  the clear colour: 17% at the lens, 23% at 50 blocks. The pinned core's
+  uniform fog cannot carry it: its in-scatter is the light of the sun's
+  direction where the sun is unoccluded (`PathTracer` → `Fog.addGroundFog`),
+  and these scenes cast no sun light, whose direction is under the ground at
+  the setting sun and at night — the fog would only darken. **A recorded
+  debt**; rain and thunder scenes write `fog.uniformDensity` 0 like a clear
+  one. **No preset table is left**: every value a scene carries about its
+  sky has a formula in the pinned client, so the finite set a render chooses
+  from is the three weathers, each a function of the tick. Measured on the
+  standard level (`showcase-shots.md` §6), the seven showcase cameras of the
+  Glasshouse at exposure 1 —
+  content `demo/the-glasshouse` at `c45f340`, built by delvec 1.13.0 (manifest
+  `044b3edb…`), each camera stating its sky through the record, 400 × 225 at
+  128 samples (512 in `potting-room` and `stoke-hole`), denoised; *before* is
+  this branch's engine with the look table, *now* the weather layer (the
+  clear scenes are byte-identical between the two, so they were rendered
+  once). Mean luma, clipped (any channel at 254 or more) and crushed (Rec. 709
+  luma at 8 or less) read by Pillow and again from an ffmpeg decode, which
+  agree to 0.0000 over 112 frames; a patch is every pixel the camera's ray
+  meets on that face of a full cube of that block (plank top: oak and spruce
+  planks; grass top; stone face: the sides of stone, andesite, cobblestone and
+  stone bricks; a lit lantern's own box), its render luma pooled over the
+  frames that show it, pixel-weighted, beside the game's: the texture's
+  texels × the pinned client's lightmap at the face's own block and sky light
+  (both flooded over the same world) under the weather × `ClientLevel.getShade`:
+
+  | Sky | mean luma, avg of 7 (before / now) | clipped, worst | crushed, worst | grass top: game; render | stone face: game; render | plank top: game; render | lit lantern: game; render |
+  |---|---|---|---|---|---|---|---|
+  | clear, rising sun | 54.9 / 54.9 | 1.04% / 1.04% | 4.75% / 4.75% | 63.9; 47.0 / 47.0 | 44.9; 45.1 / 45.1 | 83.0; 50.5 / 50.5 | 93.8; 214.1 / 214.1 |
+  | clear, noon | 92.6 / 92.6 | 1.04% / 1.04% | 4.71% / 4.71% | 96.6; 90.5 / 90.5 | 50.9; 50.9 / 50.9 | 101.7; 51.4 / 51.4 | 93.8; 214.5 / 214.5 |
+  | clear, setting sun | 55.7 / 55.7 | 1.04% / 1.04% | 4.75% / 4.75% | 63.9; 47.0 / 47.0 | 44.9; 45.2 / 45.2 | 83.0; 50.8 / 50.8 | 93.8; 214.1 / 214.1 |
+  | clear, midnight | 38.5 / 38.5 | 1.04% / 1.04% | 4.73% / 4.73% | 55.6; 39.2 / 39.2 | 43.5; 43.8 / 43.8 | 79.6; 50.7 / 50.7 | 93.8; 214.9 / 214.9 |
+  | rain, noon | 64.4 / 69.5 | 1.04% / 1.04% | 4.76% / 4.74% | 87.1; 65.8 / 72.4 | 48.4; 47.6 / 48.7 | 93.9; 50.9 / 50.8 | 93.8; 214.5 / 214.2 |
+  | rain, setting sun | 37.0 / 48.4 | 1.03% / 1.03% | 4.72% / 4.71% | 61.3; 33.3 / 44.5 | 44.5; 42.4 / 44.7 | 81.9; 50.6 / 50.6 | 93.8; 215.0 / 214.2 |
+  | rain, midnight | 36.5 / 38.4 | 1.03% / 1.03% | 4.72% / 4.69% | 55.6; 33.2 / 39.5 | 43.5; 42.4 / 43.6 | 79.6; 50.2 / 50.8 | 93.8; 215.0 / 214.7 |
+  | thunder, noon | 56.3 / 54.6 | 1.04% / 1.04% | 4.71% / 4.69% | 77.4; 54.3 / 60.6 | 46.8; 46.0 / 47.2 | 88.9; 50.7 / 51.0 | 93.8; 214.3 / 214.2 |
+  | thunder, setting sun | 35.9 / 42.5 | 1.04% / 1.03% | 4.72% / 4.73% | 59.4; 32.4 / 42.8 | 44.1; 42.2 / 44.4 | 81.1; 50.6 / 50.6 | 93.8; 215.2 / 214.4 |
+  | thunder, midnight | 35.2 / 38.4 | 1.04% / 1.04% | 8.98% / 4.70% | 55.6; 31.2 / 39.2 | 43.5; 42.1 / 43.7 | 79.6; 50.4 / 50.4 | 93.8; 215.2 / 214.7 |
+
+  The lantern and the room-lit planks do not move with the sky, as the
+  game's do not. What the look table got wrong is read in the ratio of
+  render to game on a face the sky lights, which a correct sky holds at the
+  clear sky's ratio of the same hour (walls and trees hide sky the game's
+  light ignores, so the ratio is below 1 and the same under every weather):
+  grass top at the setting sun 0.74 clear against 0.54 / 0.55 under rain /
+  thunder before and 0.73 / 0.72 now, at midnight 0.70 against 0.60 / 0.56
+  before and 0.71 / 0.71 now; stone face 1.01 clear against 0.95 / 0.96 before
+  and 1.01 / 1.01 now at the setting sun. At noon the grass reads 0.94 clear and
+  0.83 / 0.78 now (0.76 / 0.70 before): the clear noon light saturates the
+  lightmap's clamp, which the curve's shoulder does not. The look table's
+  `below` cells, which a setting sun takes (its altitude is −0.0021°), lit
+  the sky at a tenth of the game's light; no frame under any sky clips more
+  than 1.04%, and that is the cellar's candles.
+
+  This replaces spec-0079 §4.3–4.4 — the look table keyed by a daylight class
+  read off the sun's altitude, its one cell judged by eye and five scaled by
+  authored rules — with the client's formula, and loosens what criterion 6
+  asserts, in those words: **a loosening** — the daylight class it asserts no
+  longer exists, and thunder is darker than rain in the light only where the
+  sky is lit (at noon and the setting sun; on the night plateau the light is
+  equal, as the game's is), and no denser in fog (the client's rain fog is the
+  same under both, and neither carries one); `the_weather_is_the_clients_layer`
+  asserts what replaces it. The binding line names no class. A night-vision
+  review emulation (`REVIEW_POLICY`) is a material override and independent
+  of the sky: a declared-dark room under rain gets both. The panorama's
+  bearing decides only which side is in shot; no face is in the sun's shadow,
+  and under a clear sky a bearing that looks into the sun puts its disc in
   frame.
 - **The post-process** (`scene::POSTPROCESS`): every scene is written with
   `TONEMAP3`, the pinned core's Hable filmic curve, with the settings derived
@@ -5896,10 +5984,9 @@ the party can be in. The record's sky rule (`camera::resolve_sky`) is asked by
 alike (`compiler::design::answered`, exit 3), one sentence wherever it is read.
 **Binding line**, printed by every `delvec cameras` run, refused or not, beside
 the `answers:` sentence: one line per camera this run frames — `sky: <name>
-<time>+<weather> <derived from <row> | stated> class <high|low|below> — <clear
-cell at daytime <tick>: the game's sky as a map, its light … (the lightmap's,
-peak channel), sun … | overcast cell <class>×<weather>: skyLight …,
-apparentSkyLight …, sun …, fog …, sky fog …>` — and `skies: D derived, S stated, over C
+<time>+<weather> <derived from <row> | stated> — <weather> sky at daytime
+<tick>: the game's sky as a map, its light … (the lightmap's, peak channel),
+sun …` — and `skies: D derived, S stated, over C
 camera(s)[ (R refused)]; weathers emitted: {…}`, whose set names the non-clear
 weathers. A record stating no sky prints `0
 stated`; a rain delve rendering clear prints the empty set. Beside them, per

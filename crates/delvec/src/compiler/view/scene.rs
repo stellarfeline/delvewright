@@ -2139,8 +2139,8 @@ mod tests {
     /// value at noon, where every attribute it touches is lit: the sky light's
     /// factor and colour `alpha_blend`ed toward 0.24 and `#7a7aff` at 0.3125
     /// (rain) and 0.52734375 (thunder), the sky colour `blend_to_gray`ed — the
-    /// void and ocean biomes' `#7ba4ff` to `#667187` under rain and
-    /// `#2b2d33` under thunder, worked by hand from `ARGB.greyscale`,
+    /// void and ocean biomes' `#7ba4ff` to (102, 113, 135) under rain and
+    /// (43, 45, 51) under thunder, worked by hand from `ARGB.greyscale`,
     /// `scaleRGB` and `srgbLerp` — and the fog and sunrise colours multiplied.
     /// Thunder is darker than rain and rain than clear wherever the sky is lit;
     /// on the night plateau the layer blends toward the night's own light, so
