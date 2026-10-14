@@ -387,8 +387,10 @@ pub const STRUCTURE_VOID: &str = "minecraft:structure_void";
 
 /// **The template as `/place template` must receive it**: every
 /// `minecraft:structure_void` cell omitted from the block list and its palette
-/// entry dropped, or `None` when the template holds none (the bytes are then
-/// already right and are shipped unchanged).
+/// entry dropped, and its `entities` list emptied — the engine summons every
+/// holder a piece carries itself, with the NBT it owns (spec-0111 §4.1) — or
+/// `None` when the template holds neither (the bytes are then already right
+/// and are shipped unchanged).
 ///
 /// A template's `structure_void` means "the piece places nothing here", and
 /// every model the engine builds reads it so (`assembled.rs`, the light and
@@ -404,8 +406,8 @@ pub const STRUCTURE_VOID: &str = "minecraft:structure_void";
 /// `StructureBlockEntity.saveStructure` appends `Blocks.STRUCTURE_VOID` to the
 /// ignored list `fillFromWorld` skips.
 ///
-/// Everything else in the file — entities, block entities, `DataVersion`,
-/// keys this reader does not know — is carried through unchanged; compounds are
+/// Everything else in the file — block entities, `DataVersion`, keys this
+/// reader does not know — is carried through unchanged; compounds are
 /// re-serialised in `BTreeMap` order with gzip mtime 0, so the result is a
 /// function of the input bytes alone (ADR-0006). Bytes that do not parse as a
 /// structure template are returned as `None`: what reads them later refuses
@@ -448,8 +450,12 @@ pub fn as_placed(bytes: &[u8]) -> Option<Vec<u8>> {
         }
         _ => BTreeSet::new(),
     };
-    if void_states.is_empty() {
+    let has_entities = matches!(root.get("entities"), Some(Nbt::List(l)) if !l.is_empty());
+    if void_states.is_empty() && !has_entities {
         return None;
+    }
+    if has_entities {
+        root.insert("entities".to_string(), Nbt::List(Vec::new()));
     }
     // Each surviving index moves down by the voids below it.
     let shift = |s: i32| s - void_states.range(..s).count() as i32;
