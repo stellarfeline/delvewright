@@ -310,8 +310,16 @@ pub(super) fn emit_functions(
     // piece's bbox is derived, not typed, and a horizon rings it with a surround
     // wider still, so a legal piece reaches a span one command may not name. That
     // helper splits it and the command validator refuses anything that skipped it.
+    //
+    // One span per distinct footprint, in placement order: a site plan's place
+    // carries its shell's record and the piece bound in it over one box, and
+    // one chunk set marked twice is the same marking.
+    let mut loaded: BTreeSet<([i32; 2], [i32; 2])> = BTreeSet::new();
     for piece in plan.placed_pieces() {
         let (min, max) = piece.bbox();
+        if !loaded.insert(([min[0], min[2]], [max[0], max[2]])) {
+            continue;
+        }
         setup.extend(crate::compiler::commands::forceload_add_lines(
             min[0], min[2], max[0], max[2],
         ));
