@@ -230,13 +230,14 @@ impl CutsceneRow {
 /// What a `stop-sound` cuts where it fires.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cut {
-    /// It reaches the music, in a scene that declares silence: the play-out
-    /// stops and nothing restarts.
+    /// It reaches the music in a scene that declares silence or a spaced
+    /// track: the play-out stops, and nothing starts before the scene's own
+    /// delay (never, for silence).
     Cut,
     /// It cannot reach the music manager's track: a played sound's cut.
     Stinger,
-    /// It reaches the music in a scene that declares a track: the track
-    /// restarts by the scene's own rule.
+    /// It reaches the music in a scene whose track restarts at once
+    /// ([`RESTART_TICKS`]): a hiccup of a few ticks.
     Hiccup,
 }
 
@@ -757,6 +758,23 @@ fn repaint_volumes(
         .collect()
 }
 
+/// The longest delay, in ticks, after which a track the client re-arms is
+/// still heard as the same scene's music resuming rather than as silence: the
+/// `CONSTANT` frequency's own gap (`MusicManager$MusicFrequency`, 100 ticks).
+pub const RESTART_TICKS: i64 = 100;
+
+/// Whether a biome's track restarts at once after a cut (spec-0109 §2.3): it
+/// declares a `default` track whose `max_delay` is at most [`RESTART_TICKS`],
+/// so the client's countdown re-arms within five seconds. A spaced track waits
+/// its declared delay, and silence never restarts: a cut there is a cut.
+fn restarts_at_once(music: &Value) -> bool {
+    music
+        .get("default")
+        .and_then(|t| t.get("max_delay"))
+        .and_then(Value::as_i64)
+        .is_some_and(|d| d <= RESTART_TICKS)
+}
+
 /// Whether a `stop-sound` reaches the music manager's track: the `music`
 /// category, every category, or a named `music.*` event in any category.
 fn reaches_music(category: Option<SoundCategory>, sound: Option<&str>) -> bool {
@@ -947,17 +965,15 @@ pub fn measure(
                     if !reaches_music(*category, sound.as_deref()) {
                         return Cut::Stinger;
                     }
-                    let silent = ledger
-                        .biomes
-                        .iter()
-                        .find(|r| r.id == *b)
-                        .map(|r| match (&r.statement, &r.vanilla) {
-                            (Some(s), _) => s.entering.silent(),
-                            (None, Some((_, hears))) => hears.get("default").is_none(),
-                            (None, None) => false,
-                        })
-                        .unwrap_or(false);
-                    if silent { Cut::Cut } else { Cut::Hiccup }
+                    let restarts =
+                        ledger.biomes.iter().find(|r| r.id == *b).is_some_and(|r| {
+                            match (&r.statement, &r.vanilla) {
+                                (Some(s), _) => restarts_at_once(&s.music),
+                                (None, Some((_, hears))) => restarts_at_once(hears),
+                                (None, None) => false,
+                            }
+                        });
+                    if restarts { Cut::Hiccup } else { Cut::Cut }
                 });
                 ledger.stops.push(StopRow {
                     stage: ev.stage,

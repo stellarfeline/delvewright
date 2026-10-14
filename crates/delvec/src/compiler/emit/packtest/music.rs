@@ -71,10 +71,23 @@ pub(super) fn emit_music_packtests(
         for (i, (q, _, shot)) in j.row.cells.iter().enumerate() {
             let at = crate::compiler::music::sample(*q);
             if *declared == map.ground.id && !inside(at) {
+                // Outside every paint the cell stands in whatever the PackTest
+                // world's generator laid, which is not the delve's ground: the
+                // reading is that no atmosphere stands there.
                 b.push(format!(
-                    "# shot {shot} cell {q:?} ({at:?}) stands in the ground the generator lays; a \
-                     PackTest world is not the delve's own, so no reading is made"
+                    "# shot {shot} cell {q:?}: the ground, outside every paint — no atmosphere \
+                     stands here"
                 ));
+                for (k, a) in c.world.content.atmospheres.iter().enumerate() {
+                    let biome = crate::compiler::atmosphere::biome_id(ns, a.id.as_str());
+                    super::atmosphere::biome_assert(
+                        &format!("#mh{n}_{i}_{k}"),
+                        at,
+                        &biome,
+                        false,
+                        &mut b,
+                    );
+                }
                 continue;
             }
             b.push(format!("# shot {shot} cell {q:?}"));

@@ -82,7 +82,7 @@ pub struct WorldContent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub difficulty: Option<WorldDifficulty>,
     /// The scenic horizon: the ground and the sky the map stands in
-    /// (spec-0026). Absent or `void` is the void world. `ocean` swaps the world
+    /// (spec-0026). `void` is the void world. `ocean` swaps the world
     /// generator for a deterministic superflat sea (bedrock/stone/water, sea
     /// level y=62) and drops the area datum to y=60 so island pieces meet the
     /// sea at their authored waterline. `valley` rings the map in a generated
@@ -93,8 +93,8 @@ pub struct WorldContent {
     /// wire type still reads an absent field and the retired string shorthand,
     /// so that both are refused by name (`DW1031`) rather than as a parse
     /// error; the exported schema carries the object form alone.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(required, with = "HorizonSpec")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(required, schema_with = "horizon_object_schema")]
     pub horizon: Option<Horizon>,
     /// **How far a player must be able to see**, in chunks (spec-0091): the
     /// server's `view-distance`, declared by the campaign whose far views need
@@ -713,6 +713,13 @@ impl HorizonBase {
     pub fn has_surround(self) -> bool {
         matches!(self, HorizonBase::Valley)
     }
+}
+
+/// The exported schema of `world.horizon`: the object form alone, by
+/// reference ([`HorizonSpec`]). The retired shorthand is read only to be
+/// refused by name (`DW1031`), so it is no part of the surface.
+fn horizon_object_schema(g: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    g.subschema_for::<HorizonSpec>()
 }
 
 /// The `horizon` object form: a `base` plus that base's params, all optional

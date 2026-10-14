@@ -1,0 +1,13 @@
+{
+  "code": "DW1031",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/horizon/attributes/visual~1sky_color",
+      "value": "#7ba4ff"
+    }
+  ],
+  "units": [],
+  "why": "One edit: a `visual/sky_color` under `horizon.attributes`. The ground's attributes admit the `audio/` ids only: the ground's look is the horizon base's own, and only what it sounds like is the campaign's to state there. `DW1031` refuses the line. It declares no unit."
+}

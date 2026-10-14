@@ -2995,6 +2995,30 @@
       "note": "The same class as `vh-02` on land. The route proofs could not see it: they take the walk step only, so a hedge top reached by a jump off a garden boulder was in no proof's reach. `DW0921` floods the player's own movement (`nav::World::body_moves`: the walk step, falls to the deepest an unarmoured body survives, and cardinal gap jumps inside `dsl::metrics::JUMP_REACH`, measured by `tools/spike-jump-arc/simulate.mjs at 84f364997d24`, which reproduces the live jump spike's 14 verdicts) from the critical path's route cells, once per quest configuration, and refuses every reached cell from which no movement leads back; a cell the boundary clock returns and a shortcut lever the pocket reaches are ways out. A room the story shuts the party into holds the objective the story waits on and is not refused, with no declaration. Measured on this campaign at `dd4429c`: 6 configurations, 316580 cells reached, 827 a body cannot leave, in 78 pockets over 5 configurations -- on land in each, the four hedge beds (the one at `[140, 82, 110]` among them: 25 cells, entered `by a fall of 2 block(s)` off the hedge top), a ruin hole in the curtain top, a tower slit one step under the wall walk and nine hollows in the east ditch between the crag and the field wall; and the Undertide well (`vh-02`) in three. At the fixed content: 0. Limits, named in the diagnostic: diagonal jumps, climbing, standing on a fence or wall top and diving are not moves.",
       "round": 2,
       "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "cutscene"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1031",
+        "kind": "dw"
+      },
+      "finding": "vanilla ambient music played over scenes it contradicted, with no way for the campaign to silence it or choose a track",
+      "general_form": "a campaign controls music per scene: silence or a chosen track, declared, with vanilla's ambient music never playing over a scene that declares otherwise",
+      "id": "str-11",
+      "note": "The general form is `DW1031` (spec-0109, `dsl::music`, validation tier): every biome a camera can stand in states its music — each `world.atmospheres[]` entry carries `audio/background_music` and the ground does too, through the required object form of `horizon` and its `attributes` — `{}` for silence or a `default` track, so vanilla's overworld music (the dimension's `music.game`, which a biome declaring none inherits) never plays over a scene that did not name it. A story stage moves the music by repainting the place (`set-atmosphere`), `stop-sound` is the hard cut, every played sound names a `category`, and a cutscene may declare what it `hears`, which `DW1032` confirms against the biome every 4-cell its camera passes wears. Every build prints `music binding:` and writes `validation/music.json`. The binding counts cutscenes, the scenes where an unchosen track is most audible.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"

@@ -1,0 +1,13 @@
+{
+  "code": "DW0100",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/1/on_objective_complete/obj~1answer-the-marshal/0/category",
+      "value": "orchestra"
+    }
+  ],
+  "units": [],
+  "why": "One edit: the marshal's cut names the category `orchestra`. A `stop-sound`'s category is one of the eleven literals the pinned command tree spells, one `SoundCategory` enum, so a word outside it is a schema refusal, `DW0100`. It declares no unit: every `SoundCategory` variant is bound by the primary."
+}

@@ -3,9 +3,14 @@
   "patch": [
     {
       "doc": "world.json",
-      "op": "add",
+      "op": "replace",
       "path": "/content/horizon",
-      "value": "ocean"
+      "value": {
+        "attributes": {
+          "audio/background_music": {}
+        },
+        "base": "ocean"
+      }
     },
     {
       "doc": "overlays/site-plan/site-plan.json",
