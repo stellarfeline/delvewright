@@ -528,7 +528,7 @@ this section is what they are *for* and the traps in each.
   fall must be fatal, a lava pit, an acid pool, an out-of-bounds plane: all one
   declaration, `lethal_volumes[] {id, region{anchor,extent}, message,
   damage_type?}`. Never obtain the behaviour by changing the world instead —
-  making the horizon `void` so the fall kills serves exactly one fiction and is
+  making the horizon's `base` `void` so the fall kills serves exactly one fiction and is
   never the move here. `message` is REQUIRED and is what the player reads as
   they die (blank is `DW0512`); `damage_type` words vanilla's own broadcast
   (`fall`, `on_fire`, …). The volume is geometry the completability proof
