@@ -219,21 +219,32 @@ def test_every_directory_up_mints_is_recorded():
     """The half of the cycle no test can execute, asserted statically.
 
     `up` binds host 25565 with a hardcoded `-p 25565:25565`, so nothing in this
-    suite may run it — and `down` can only reclaim what `up` wrote down. A THIRD
-    `mktemp -d` added later without a `session_record` beside it would leak
-    exactly as the first two did, with every test here still green, so the count
-    is the thing asserted: it moves the moment somebody mints a directory this
-    script does not account for.
+    suite may run it — and `down` can only reclaim what `up` wrote down. So every
+    `mktemp -d` the script assigns is read, by the variable it lands in: a
+    session directory is recorded under one of the keys `down` reclaims, and a
+    function's own scratch directory is removed by that function. A directory
+    added later with neither would leak exactly as the first two did, with every
+    other test here still green.
     """
     text = SCRIPT.read_text(encoding="utf-8")
     code = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
-    minted = code.count("mktemp -d")
-    recorded = code.count("session_record ")
-    assert minted == 2, f"{minted} temporary directories minted; update this test"
-    assert recorded == minted, (
-        f"{minted} `mktemp -d` but {recorded} `session_record` — a directory this "
-        f"script mints and does not record cannot be reclaimed by `down`, which is "
-        f"given nothing but --name"
+    minted = re.findall(r'(\w+)="\$\(mktemp -d ', code)
+    assert len(minted) == code.count("mktemp -d"), "a `mktemp -d` this test cannot attribute to a variable"
+    keys = re.search(r'^DW_PLAYTEST_SESSION_DIRS="([^"]*)"', code, re.MULTILINE)
+    assert keys, "DW_PLAYTEST_SESSION_DIRS is the list `down` reclaims; not found"
+    reclaimed = set(keys.group(1).split()) | {"build-dir"}
+    unaccounted = []
+    for var in minted:
+        rec = re.search(rf'session_record (\S+) "\${var}"', code)
+        if rec:
+            assert rec.group(1) in reclaimed, (var, rec.group(1), reclaimed)
+        elif not re.search(rf'rm -rf "\${var}"', code):
+            unaccounted.append(var)
+    print(f"mktemp -d: {len(minted)} assignment(s): {minted}")
+    assert len(minted) >= 6, minted
+    assert not unaccounted, (
+        f"{unaccounted}: minted and neither recorded for `down` (given nothing but "
+        f"--name) nor removed by the code that minted it"
     )
 
 

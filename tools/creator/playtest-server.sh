@@ -7,8 +7,35 @@
 #                                [--memory SIZE]
 #                                [--run-report FILE --written-world FILE]
 #                                [--stage-anyway "REASON" --acknowledge-red N]
-#   tools/creator/playtest-server.sh down [--name NAME]
-#   tools/creator/playtest-server.sh status
+#   tools/creator/playtest-server.sh down [--name NAME] [--prune]
+#   tools/creator/playtest-server.sh status [--name NAME]
+#
+# ## A campaign is served from a kept image, and reopening is `docker run`
+#
+# `up` on a CAMPAIGN ends in a local OCI image of the admitted build with its
+# world already placed, and serves by running it:
+#
+#   delvewright/playtest-build:<manifest sha256>  validation/Dockerfile.delve
+#       over the build output: the shipped delve image (ADR-0010), unchanged.
+#   delvewright/playtest:<manifest sha256>        validation/Dockerfile.playtest
+#       over that: the world the shipped image placed at its first boot, the
+#       staging gate's token, and the creator overlay and resource pack.
+#
+# Both carry `delvewright.playtest.*` labels: the INPUTS key (the delvec binary,
+# the campaign tree, the prefab library, `--lang`, the findings ledger and the
+# staging gate, the two Dockerfiles and this script, each hashed), the
+# manifest's sha256, the admission token's sha256 and the pack's SHA-1.
+#
+# A later `up` of the same inputs finds the image by its inputs label and goes
+# straight to `docker run`: no build, no gate, no placement. Before it serves,
+# the image's own manifest and token are copied out and held to its labels and
+# to each other (`validation/staging-admission.sh`, the verifier the other
+# owner-facing path runs); a mismatch is refused, named. Any input that moved —
+# a campaign edit, another engine, a new ledger row — is a different key, and
+# the build is made and gated afresh.
+#
+# A reopen is a FRESH delve: every run starts from the placed world in the
+# image, never from a previous session's progress.
 #
 # ## One command, one path, two kinds of thing
 #
@@ -75,13 +102,22 @@
 # `tools/lib/delvec-bin.sh` holds the rule and is shared with the other creator
 # step that reaches for `delvec`, `validation/render-shots.sh`.
 #
-# Owner-facing contract: `up` ends by printing the connect address and, if the
-# build ships a resource pack, where it is served and its SHA-1. `down` removes
-# the containers, reclaims the staged world directory and prints what it
-# reclaimed (server lifecycle rule: tear down as soon as feedback arrives).
-# `status` lists the containers and what the session is holding on disk.
+# Owner-facing contract: `up` ends by printing the connect address, how many
+# seconds the run took from the command to joinable and, if the build ships a
+# resource pack, where it is served and its SHA-1. `down` removes the
+# containers, reclaims the session's directories and prints what it reclaimed
+# (server lifecycle rule: tear down as soon as feedback arrives); it KEEPS the
+# playtest images and lists them with their sizes. `down --prune` also removes
+# every kept playtest image, printing each one's size. `status` lists the
+# containers, what the session is holding on disk, and the kept images with
+# their manifest and size.
 #
 # ## The delve's resource pack is SERVED, never installed (spec-0084 §11)
+#
+# (What follows is the prefab path's staging. On a campaign the sidecar serves
+# the pack copied out of the playtest image, and the URL reaches the server as
+# DELVE_RESOURCE_PACK_URL, which the delve image's entrypoint turns into
+# `resource-pack` with the manifest's SHA-1.)
 #
 # A pack copied into a player's own `resourcepacks/` stays enabled in every world
 # and server they open until they find the toggle — a delve that replaces the
@@ -101,8 +137,9 @@
 # in the copied file as it stands. DELVEWRIGHT_RESOURCEPACKS_DIR is never
 # written: when it is set, this says so and leaves it alone.
 #
-# The container is a throwaway itzg/minecraft-server pinned to the project MC
-# version. It binds host 25565 — with `validation/owner-play.yaml`, one of the two
+# A campaign's container runs its playtest image (above); a prefab's is a
+# throwaway itzg/minecraft-server pinned to the project MC version over a
+# staged /data. Either binds host 25565 — with `validation/owner-play.yaml`, one of the two
 # sanctioned 25565 bindings; nothing else in the repo may publish that port
 # (`tools/ci/check-compose-isolation.py`, and validation ladders are project-scoped
 # with no host port at all). Because 25565 is the one genuinely shared resource
@@ -198,6 +235,281 @@ dw_playtest_pack_properties() {
     "$url" "$sha1" '{"text":"This delve brings its own resource pack."}'
 }
 
+# ---- the playtest image: names, labels, and the seams that build its argv ----
+#
+# Two repositories in the daemon's image store, both keyed by the build's
+# manifest sha256 (validation/Dockerfile.playtest's header says what each holds).
+# Not a compose project's tag (validation/lib/delve-image.sh): a playtest image
+# is one admitted build, wanted again by any later session of the same inputs,
+# so it is named by the build and not by the session.
+PLAYTEST_REPO="delvewright/playtest"
+PLAYTEST_BUILD_REPO="delvewright/playtest-build"
+PLAYTEST_LABEL="delvewright.playtest"
+
+# dw_playtest_image_tag <repo> <manifest sha256>
+dw_playtest_image_tag() {
+  printf '%s:%s\n' "$1" "$2"
+}
+
+# The serving container's docker-run argv, one token per line — the same seam
+# as the prefab path's: a test asserts the flags without a docker. <heap_env>
+# is `dw_server_heap_env`'s output; <pack_url> is empty for a build with no
+# resource pack (the delve image's entrypoint turns it into `resource-pack`
+# with the manifest's SHA-1).
+dw_playtest_serve_argv() {
+  local name="$1" image="$2" rcon_pw="$3" heap_env="$4" stage="$5" pack_url="$6"
+  printf '%s\n' docker run -d --name "$name" -p 25565:25565 \
+    -e EULA=TRUE -e RCON_PASSWORD="$rcon_pw" -e "$heap_env"
+  if [ -n "$pack_url" ]; then printf '%s\n' -e "DELVE_RESOURCE_PACK_URL=$pack_url"; fi
+  printf '%s\n' -v "$stage:/data" "$image"
+}
+
+# The placement boot's argv: the shipped delve image, run once to place its
+# world. NO host port — nobody can join a world that is still being built, and
+# this boot does not need 25565 to be judged (rcon is `docker exec`). The
+# creator overlay, when the build has one, is mounted read-only where the
+# playtest image will carry it, and named in DATAPACKS, so the world is placed
+# with the same packs it is later served with.
+#
+# The vanilla watchdog is OFF here (`max-tick-time=-1`, itzg's MAX_TICK_TIME).
+# Placing a world is a few very long ticks by design, and how long a tick takes
+# is the host's business: on a laptop running other builds a placement tick
+# passed the default 60 s, the watchdog halted the server (`A single server tick
+# took 60.00 seconds`, exit 1) and the placement failed with nothing wrong with
+# the delve. A placement that truly hangs is still bounded, by name, by
+# DW_PLAYTEST_PLACED_BUDGET_S. The serving boot keeps the shipped default.
+DW_PLAYTEST_PLACE_TICK_ENV="MAX_TICK_TIME=-1"
+dw_playtest_place_argv() {
+  local name="$1" image="$2" rcon_pw="$3" heap_env="$4" stage="$5" creator="$6"
+  printf '%s\n' docker run -d --name "$name-place" \
+    -e EULA=TRUE -e RCON_PASSWORD="$rcon_pw" -e "$heap_env" -e "$DW_PLAYTEST_PLACE_TICK_ENV"
+  if [ -n "$creator" ]; then
+    printf '%s\n' -v "$creator:/delve/extras/creator-datapack:ro" \
+      -e "DATAPACKS=/delve/datapack,/delve/extras/creator-datapack"
+  fi
+  printf '%s\n' -v "$stage:/data" "$image"
+}
+
+# dw_sha256_file <file> — bare hex, `sha256sum` where it exists, else `shasum`.
+dw_sha256_file() {
+  local out
+  if command -v sha256sum >/dev/null 2>&1; then out="$(sha256sum "$1")" || return 1
+  else out="$(shasum -a 256 "$1")" || return 1; fi
+  printf '%s\n' "${out%% *}"
+}
+
+# The engine files an admitted image depends on beyond the build itself: the
+# findings ledger and the gate that judged it, the two Dockerfiles the image is
+# made from, the token's verifier, and this script (which places the world).
+DW_PLAYTEST_INPUT_FILES="docs/playtest-findings.json tools/creator/staging-gate.py validation/Dockerfile.delve validation/Dockerfile.playtest validation/staging-admission.sh tools/creator/playtest-server.sh"
+
+# dw_playtest_inputs_key <delvec> <campaign> <prefabs dir or empty> <lang> <repo root>
+#
+# The identity of everything a campaign build and its admission are made from,
+# BEFORE building: an image whose inputs label equals this is the build these
+# inputs make (ADR-0006: same inputs, same bytes) and the admission they get.
+# Each component is printed, then the key, so what the key resolved to is on
+# the page. A tree is hashed with `tools/ci/tree-digest.py` (relative paths
+# beside content hashes, a symlink refused); a component that cannot be read
+# fails the key rather than dropping out of it.
+dw_playtest_inputs_key() {
+  local scratch rc=0
+  scratch="$(mktemp -d "${TMPDIR:-/tmp}/dw-playtest-key.XXXXXX")" || return 1
+  dw_playtest_inputs_list "$@" >"$scratch/inputs" || rc=1
+  if [ "$rc" = 0 ]; then
+    sed 's/^/  inputs: /' "$scratch/inputs" >&2
+    dw_sha256_file "$scratch/inputs" || rc=1
+  fi
+  rm -rf "$scratch"
+  return "$rc"
+}
+
+# dw_playtest_inputs_list — the components, one `<name> <sha256>` per line.
+# A tree's digest file goes to a scratch directory of its own, removed on every
+# path out.
+dw_playtest_inputs_list() {
+  local delvec="$1" campaign="$2" prefabs="$3" lang="$4" root="$5" scratch rel sum rc=0
+  scratch="$(mktemp -d "${TMPDIR:-/tmp}/dw-playtest-tree.XXXXXX")" || return 1
+  if ! sum="$(dw_sha256_file "$delvec")"; then
+    echo "playtest-server: inputs key: cannot read the delvec binary $delvec" >&2; rc=1
+  fi
+  [ "$rc" = 0 ] && printf 'delvec %s\n' "$sum"
+  if [ "$rc" = 0 ]; then
+    if python3 "$root/tools/ci/tree-digest.py" --root "$campaign" --out "$scratch/campaign" >/dev/null 2>&1; then
+      printf 'campaign %s\n' "$(dw_sha256_file "$scratch/campaign")"
+    else
+      echo "playtest-server: inputs key: cannot digest the campaign tree $campaign" >&2; rc=1
+    fi
+  fi
+  if [ "$rc" = 0 ]; then
+    if [ -n "$prefabs" ] && [ -d "$prefabs" ]; then
+      if python3 "$root/tools/ci/tree-digest.py" --root "$prefabs" --out "$scratch/prefabs" >/dev/null 2>&1; then
+        printf 'prefabs %s\n' "$(dw_sha256_file "$scratch/prefabs")"
+      else
+        echo "playtest-server: inputs key: cannot digest the prefab library $prefabs" >&2; rc=1
+      fi
+    else
+      printf 'prefabs absent:%s\n' "$prefabs"
+    fi
+  fi
+  [ "$rc" = 0 ] && printf 'lang %s\n' "${lang:-default}"
+  if [ "$rc" = 0 ]; then
+    for rel in $DW_PLAYTEST_INPUT_FILES; do
+      if [ -f "$root/$rel" ]; then
+        printf '%s %s\n' "$rel" "$(dw_sha256_file "$root/$rel")"
+      else
+        echo "playtest-server: inputs key: $root/$rel is missing" >&2; rc=1; break
+      fi
+    done
+  fi
+  rm -rf "$scratch"
+  return "$rc"
+}
+
+# dw_playtest_identity_check <dir> <tag manifest> <label manifest> <label admission>
+#
+# <dir> holds the image's own `manifest.json` and `staging-admission.json`,
+# copied out of it. Four readings must agree: the manifest's sha256, the tag it
+# is served under, its manifest label, and the token's `build_fingerprint`
+# (read by validation/staging-admission.sh, the one verifier of a token); and
+# the token's sha256 with the admission label. On a mismatch sets
+# DW_IDENTITY_FAILURE to the readings that disagree and returns 1.
+dw_playtest_identity_check() {
+  local dir="$1" tag="$2" lmanifest="$3" ladmit="$4" actual admit verdict
+  DW_IDENTITY_FAILURE=""
+  [ -f "$dir/manifest.json" ] || { DW_IDENTITY_FAILURE="the image carries no /delve/manifest.json"; return 1; }
+  [ -f "$dir/staging-admission.json" ] || { DW_IDENTITY_FAILURE="the image carries no /delve/staging-admission.json — it was never admitted"; return 1; }
+  actual="$(dw_sha256_file "$dir/manifest.json")"
+  if [ "$actual" != "$tag" ] || [ "$actual" != "$lmanifest" ]; then
+    DW_IDENTITY_FAILURE="manifest mismatch: the image's manifest.json hashes to $actual, its tag says ${tag:-nothing}, its label says ${lmanifest:-nothing}"
+    return 1
+  fi
+  admit="$(dw_sha256_file "$dir/staging-admission.json")"
+  if [ "$admit" != "$ladmit" ]; then
+    DW_IDENTITY_FAILURE="admission mismatch: the image's staging-admission.json hashes to $admit, its label says ${ladmit:-nothing}"
+    return 1
+  fi
+  if ! verdict="$(bash "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/validation/staging-admission.sh" "$dir" 2>&1)"; then
+    DW_IDENTITY_FAILURE="the image's token does not admit its own manifest: $verdict"
+    return 1
+  fi
+  printf '%s\n' "$verdict"
+}
+
+# The line the vanilla watchdog logs as it halts a server whose tick ran past
+# `max-tick-time`; read so a halt is reported as what it is, not as whatever
+# probe it interrupted.
+DW_SERVER_WATCHDOG_MARKER='A single server tick took'
+
+# dw_server_log_shows_watchdog <text>
+dw_server_log_shows_watchdog() {
+  case "${1-}" in
+    *"$DW_SERVER_WATCHDOG_MARKER"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# dw_playtest_wait_done <container> <budget_s> <poll_s>
+#
+# Poll the container's log for the server's `Done (` line. A container that
+# stopped, an OOM in the log, or a spent budget sets DW_DONE_FAILURE and returns
+# 1. Each container here is fresh, so its log holds this boot and no other.
+dw_playtest_wait_done() {
+  local container="$1" budget="$2" poll="$3" waited=0 log state
+  DW_DONE_FAILURE=""
+  while :; do
+    log="$(docker logs "$container" 2>&1 || true)"
+    if [[ $log == *"Done ("* ]]; then return 0; fi
+    if dw_server_log_shows_oom "$log"; then
+      DW_DONE_FAILURE="booting: $(dw_server_oom_advice)"; return 1
+    fi
+    state="$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null || true)"
+    if [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
+      DW_DONE_FAILURE="the server stopped ($state) before it logged \`Done (\`"; return 1
+    fi
+    if [ "$waited" -ge "$budget" ]; then
+      DW_DONE_FAILURE="the server did not log \`Done (\` within ${budget}s"; return 1
+    fi
+    sleep "$poll"
+    waited=$((waited + poll))
+  done
+}
+
+# dw_playtest_bake_context <world> <bake dir> <token> <creator dir or ""> <pack zip or "">
+#
+# Assembles validation/Dockerfile.playtest's context and prints the DATAPACKS
+# value the image boots with. The world MOVES (no copy). Its `datapacks/` stay
+# behind, because every boot copies them in from /delve, and so does the lock
+# of a server now stopped. Every file is made readable by any user: the server
+# writes level.dat 0600, a layer keeps that mode under root, and the image's
+# server runs as another user, which then cannot read the world it is handed.
+dw_playtest_bake_context() {
+  local world="$1" bake="$2" token="$3" creator="$4" pack="$5" datapacks="/delve/datapack"
+  mkdir -p "$bake/extras" || return 1
+  mv "$world" "$bake/placed-world" || return 1
+  rm -rf "$bake/placed-world/datapacks" "$bake/placed-world/session.lock"
+  cp "$token" "$bake/staging-admission.json" || return 1
+  if [ -n "$creator" ]; then
+    cp -R "$creator" "$bake/extras/creator-datapack" || return 1
+    datapacks="$datapacks,/delve/extras/creator-datapack"
+  fi
+  if [ -n "$pack" ]; then cp "$pack" "$bake/extras/resourcepack.zip" || return 1; fi
+  chmod -R a+rX "$bake" || return 1
+  printf '%s\n' "$datapacks"
+}
+
+# The server runtime a fresh /data needs before it can start without fetching:
+# the pinned jar, itzg's "already installed" marker, and what the jar unpacks
+# on its first start (`libraries/`, `versions/`). Kept on the creator's own
+# disk, never in an image (ADR-0010), and copied — not bind-mounted — into each
+# run's /data, because itzg's installer replaces the jar by rename.
+DW_PLAYTEST_RUNTIME_ENTRIES=".vanilla-manifest.json libraries versions"
+
+# dw_playtest_runtime_cache_dir <mc version>
+dw_playtest_runtime_cache_dir() {
+  printf '%s\n' "${DW_PLAYTEST_RUNTIME_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/delvewright/playtest-runtime}/$1"
+}
+
+# dw_playtest_runtime_keep <from /data> <cache dir> <mc version> <jar sha256>
+# Copies the runtime out of a /data a server has started in, once the jar there
+# is the pinned one. A jar that is not is refused into the cache, said, and
+# left to be fetched again.
+dw_playtest_runtime_keep() {
+  local from="$1" cache="$2" ver="$3" want="$4" jar entry have
+  jar="minecraft_server.$ver.jar"
+  [ -f "$from/$jar" ] || { echo "runtime cache: $from holds no $jar — nothing kept"; return 0; }
+  have="$(dw_sha256_file "$from/$jar")"
+  if [ "$have" != "$want" ]; then
+    echo "runtime cache: $from/$jar hashes to $have, versions.toml pins $want — NOT kept"
+    return 0
+  fi
+  rm -rf "$cache"; mkdir -p "$cache"
+  cp "$from/$jar" "$cache/$jar"
+  for entry in $DW_PLAYTEST_RUNTIME_ENTRIES; do
+    if [ -e "$from/$entry" ]; then cp -R "$from/$entry" "$cache/$entry"; fi
+  done
+  echo "runtime cache: kept $jar (sha256 $have) and its unpacked runtime at $cache"
+}
+
+# dw_playtest_runtime_seed <cache dir> <to /data> <mc version> <jar sha256>
+# Seeds a fresh /data from the cache when its jar is the pinned one; otherwise
+# says so, and the server fetches its own.
+dw_playtest_runtime_seed() {
+  local cache="$1" to="$2" ver="$3" want="$4" jar have
+  jar="minecraft_server.$ver.jar"
+  if [ ! -f "$cache/$jar" ]; then
+    echo "runtime: no cached $jar at $cache — the server fetches it"
+    return 0
+  fi
+  have="$(dw_sha256_file "$cache/$jar")"
+  if [ "$have" != "$want" ]; then
+    echo "runtime: cached $jar hashes to $have, versions.toml pins $want — not used; the server fetches it"
+    return 0
+  fi
+  cp -R "$cache/." "$to/"
+  echo "runtime: seeded /data from $cache ($jar sha256 $have)"
+}
+
 # The `up` EXIT trap. Defined here (above the test seam) rather than beside
 # where it is armed, so a test can call it directly — with NAME, STAGE,
 # SESSION_FILE and UP_OK set by hand and a fake docker on PATH — without going
@@ -222,6 +534,18 @@ dw_playtest_pack_properties() {
 # has nothing else to diagnose from.
 up_failed() {
   [ "${UP_OK:-0}" = 1 ] && return 0
+  # The placement boot (a campaign's first `up`): its world is in the session's
+  # place-dir, which `down` reclaims; its wrapper log is captured beside it.
+  if dw_playtest_container_exists "$NAME-place"; then
+    if [ -n "${PLACE:-}" ] && [ -d "${PLACE:-}" ]; then
+      docker logs "$NAME-place" >"$PLACE/docker-boot.log" 2>&1 || true
+    fi
+    if docker rm -f "$NAME-place" >/dev/null 2>&1; then
+      echo "playtest-server: removed the placement boot this failed session started ($NAME-place)" >&2
+    else
+      echo "playtest-server: could not remove $NAME-place — remove it by hand: docker rm -f $NAME-place" >&2
+    fi
+  fi
   if dw_playtest_container_exists "$NAME-pack"; then
     if docker rm -f "$NAME-pack" >/dev/null 2>&1; then
       echo "playtest-server: removed the pack sidecar this failed session started ($NAME-pack)" >&2
@@ -372,6 +696,7 @@ cmd="${1:-}"; shift || true
 case "$cmd" in up|down|status) ;; *) die "usage: up|down|status (see header)";; esac
 
 CAMPAIGN=""
+PRUNE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --lang)    LANG_ARG="$2"; shift 2;;
@@ -391,9 +716,12 @@ while [ $# -gt 0 ]; do
     # The two machine proofs the gate admits on, handed straight to it.
     --run-report)      RUN_REPORT="$2"; shift 2;;
     --written-world)   WRITTEN_WORLD="$2"; shift 2;;
+    # `down` only: also remove the kept playtest images.
+    --prune)           PRUNE=1; shift;;
     *) [ -z "$CAMPAIGN" ] && CAMPAIGN="$1" || die "unexpected arg: $1"; shift;;
   esac
 done
+if [ "$PRUNE" = 1 ] && [ "$cmd" != "down" ]; then die "--prune belongs to down"; fi
 
 # Checked by default (tools/lib/rcon.sh, sourced above): a staging command the
 # server refused must not pass for one that worked. `rcon_raw` is the unjudged
@@ -458,17 +786,44 @@ human_kib() {
   }'
 }
 
+# The session's directories, every class `down` reclaims, in one list so
+# `status`, `down` and `up`'s stale-record sweep cannot name different sets:
+#   stage-dir  the serving container's /data — a whole world once it has run
+#   place-dir  the placement boot's /data (a campaign's first `up` only)
+#   image-dir  files copied out of the playtest image: its manifest, token,
+#              and the resource pack the sidecar serves
+DW_PLAYTEST_SESSION_DIRS="stage-dir place-dir image-dir"
+
+# Bytes to the same units `human_kib` prints.
+human_bytes() {
+  human_kib "$(awk -v b="${1:-0}" 'BEGIN {printf "%d\n", b/1024}')"
+}
+
+# The kept playtest images, one per line: `<ref or id>\t<size bytes>\t<manifest>\t<campaign>`.
+# Every image carrying the manifest label, dangling ones too (a rebake of the
+# same build leaves the previous image untagged), so `--prune` reaches all of
+# them and `status` hides none.
+dw_playtest_kept_images() {
+  local ids id info
+  ids="$(docker images -q --no-trunc --filter "label=$PLAYTEST_LABEL.manifest-sha256" 2>/dev/null | sort -u)" || return 0
+  for id in $ids; do
+    info="$(docker image inspect -f "{{if .RepoTags}}{{index .RepoTags 0}}{{else}}{{.Id}}{{end}}	{{.Size}}	{{index .Config.Labels \"$PLAYTEST_LABEL.manifest-sha256\"}}	{{index .Config.Labels \"$PLAYTEST_LABEL.campaign\"}}" "$id" 2>/dev/null)" || continue
+    printf '%s\n' "$info"
+  done
+}
+
 if [ "$cmd" = "status" ]; then
   # The container half must not abort the disk half. An unguarded `docker ps`
   # exits 127 where docker is absent, and `set -e` then killed the script before
   # it could say what the session is still holding on disk — which is the half
-  # that matters most on a machine that is not running the session.
-  docker ps --filter "name=$NAME" --format '{{.Names}}\t{{.Status}}\t{{.Ports}}' \
+  # that matters most on a machine that is not running the session. `-a`: a
+  # container that stopped is still a container this session holds.
+  docker ps -a --filter "name=$NAME" --format '{{.Names}}\t{{.Status}}\t{{.Ports}}' \
     || echo "docker unavailable — container state unknown" >&2
   # What the session is holding on disk, so a leak is visible without a teardown.
   if [ -f "$SESSION_FILE" ]; then
     echo "session record: $SESSION_FILE"
-    for key in stage-dir build-dir; do
+    for key in $DW_PLAYTEST_SESSION_DIRS build-dir; do
       path="$(session_path "$key")"
       if [ -z "$path" ]; then
         continue
@@ -478,8 +833,21 @@ if [ "$cmd" = "status" ]; then
         echo "  $key  $path  (already gone)"
       fi
     done
+    image="$(session_path image)"
+    if [ -n "$image" ]; then echo "  image  $image"; fi
   else
     echo "session record: none at $SESSION_FILE"
+  fi
+  # The kept images are not this session's: any later `up` of the same inputs
+  # runs one. Listed so their disk is visible; `down --prune` removes them.
+  KEPT="$(dw_playtest_kept_images || true)"
+  if [ -z "$KEPT" ]; then
+    echo "kept playtest images: none"
+  else
+    echo "kept playtest images (sizes include the shared base layers; remove with: down --prune):"
+    while IFS=$'\t' read -r ref size manifest campaign; do
+      echo "  $ref  campaign ${campaign:-?}  manifest ${manifest:-?}  ($(human_bytes "$size"))"
+    done <<<"$KEPT"
   fi
   exit 0
 fi
@@ -506,20 +874,39 @@ if [ "$cmd" = "down" ]; then
   else
     echo "no $NAME-pack sidecar to remove"
   fi
-  # The staged world. This is `up`'s own copy — a server.properties, the campaign
-  # datapack and whatever the server then generated on top — so nothing outside
-  # the session refers to it and `down` is the moment it stops being wanted.
-  STAGE_PATH="$(session_path stage-dir)"
-  if [ -z "$STAGE_PATH" ]; then
+  # The placement boot exists only while a campaign's first `up` is placing its
+  # world; one left here is an `up` that died mid-placement.
+  if dw_playtest_container_exists "$NAME-place"; then
+    docker rm -f "$NAME-place" >/dev/null 2>&1 && echo "$NAME-place removed" || echo "$NAME-place existed but could not be removed"
+  fi
+  # The session's directories. Each is `up`'s own — a /data tree, or files
+  # copied out of an image — so nothing outside the session refers to it and
+  # `down` is the moment it stops being wanted.
+  RECLAIMED_ANY=0
+  for key in $DW_PLAYTEST_SESSION_DIRS; do
+    DIR_PATH="$(session_path "$key")"
+    [ -n "$DIR_PATH" ] || continue
+    RECLAIMED_ANY=1
+    if [ -d "$DIR_PATH" ]; then
+      DIR_KIB="$(dir_kib "$DIR_PATH")"
+      rm -rf "$DIR_PATH"
+      if [ "$key" = "stage-dir" ]; then
+        echo "staged world reclaimed: $DIR_PATH ($(human_kib "$DIR_KIB"))"
+      else
+        echo "$key reclaimed: $DIR_PATH ($(human_kib "$DIR_KIB"))"
+      fi
+    else
+      # Already gone is not a failure: a `down` after a `down`, or after a manual
+      # sweep, must still release the port and finish clean.
+      if [ "$key" = "stage-dir" ]; then
+        echo "staged world already gone: $DIR_PATH (0 KiB reclaimed)"
+      else
+        echo "$key already gone: $DIR_PATH (0 KiB reclaimed)"
+      fi
+    fi
+  done
+  if [ "$RECLAIMED_ANY" = 0 ]; then
     echo "no staged world recorded at $SESSION_FILE — nothing to reclaim"
-  elif [ -d "$STAGE_PATH" ]; then
-    STAGE_KIB="$(dir_kib "$STAGE_PATH")"
-    rm -rf "$STAGE_PATH"
-    echo "staged world reclaimed: $STAGE_PATH ($(human_kib "$STAGE_KIB"))"
-  else
-    # Already gone is not a failure: a `down` after a `down`, or after a manual
-    # sweep, must still release the port and finish clean.
-    echo "staged world already gone: $STAGE_PATH (0 KiB reclaimed)"
   fi
   # The build output is KEPT, and said rather than silently skipped: it holds
   # the resource pack, and its sibling `.gate` directory holds the staging-gate
@@ -538,6 +925,38 @@ if [ "$cmd" = "down" ]; then
     fi
   fi
   rm -f "$SESSION_FILE"
+  # The images. Kept by default — they are what makes the next `up` of the same
+  # inputs a `docker run` — and listed with their sizes, so keeping them is a
+  # decision. `--prune` removes every one; an image a running container still
+  # uses is refused by docker and reported kept.
+  KEPT="$(dw_playtest_kept_images || true)"
+  if [ -z "$KEPT" ]; then
+    echo "kept playtest images: none"
+  elif [ "$PRUNE" = 1 ]; then
+    # Playtest images first: each is a child of a build image, which docker
+    # will not remove while the child stands.
+    for pass in playtest build other; do
+      while IFS=$'\t' read -r ref size manifest campaign; do
+        [ -n "$ref" ] || continue
+        case "$ref" in
+          "$PLAYTEST_REPO:"*)       kind=playtest;;
+          "$PLAYTEST_BUILD_REPO:"*) kind=build;;
+          *)                        kind=other;;
+        esac
+        [ "$kind" = "$pass" ] || continue
+        if docker rmi "$ref" >/dev/null 2>&1; then
+          echo "image removed: $ref  campaign ${campaign:-?}  ($(human_bytes "$size"))"
+        else
+          echo "image KEPT (docker refused — a container still uses it?): $ref  ($(human_bytes "$size"))"
+        fi
+      done <<<"$KEPT"
+    done
+  else
+    echo "playtest images KEPT (the next \`up\` of the same inputs runs one; remove with: down --prune):"
+    while IFS=$'\t' read -r ref size manifest campaign; do
+      echo "  $ref  campaign ${campaign:-?}  manifest ${manifest:-?}  ($(human_bytes "$size"))"
+    done <<<"$KEPT"
+  fi
   # Give 25565 back. Cross-shell by construction (`up` ran in another shell), so
   # release BY NAME — which refuses if anything still publishes the port, and
   # refuses outright if the holder is somebody else.
@@ -622,11 +1041,13 @@ trap up_failed EXIT
 # leak this file exists to close, one session further back.
 if [ -f "$SESSION_FILE" ]; then
   echo "a previous '$NAME' session left a record — reclaiming it first"
-  OLD_STAGE="$(session_path stage-dir)"
-  if [ -n "$OLD_STAGE" ] && [ -d "$OLD_STAGE" ]; then
-    echo "  staged world reclaimed: $OLD_STAGE ($(human_kib "$(dir_kib "$OLD_STAGE")"))"
-    rm -rf "$OLD_STAGE"
-  fi
+  for key in $DW_PLAYTEST_SESSION_DIRS; do
+    OLD_DIR="$(session_path "$key")"
+    if [ -n "$OLD_DIR" ] && [ -d "$OLD_DIR" ]; then
+      echo "  $key reclaimed: $OLD_DIR ($(human_kib "$(dir_kib "$OLD_DIR")"))"
+      rm -rf "$OLD_DIR"
+    fi
+  done
   OLD_BUILD="$(session_path build-dir)"
   if [ -n "$OLD_BUILD" ] && [ -d "$OLD_BUILD" ]; then
     echo "  build output KEPT: $OLD_BUILD ($(human_kib "$(dir_kib "$OLD_BUILD")"))"
@@ -643,7 +1064,34 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=tools/lib/delvec-bin.sh
 . "$REPO_ROOT/tools/lib/delvec-bin.sh"
 DELVEC="$(dw_resolve_delvec "$DELVEC" "$REPO_ROOT" "playtest-server")" || exit 1
-if [ -z "$OUT_DIR" ]; then
+
+# ---- a campaign: is its admitted image already kept? --------------------------
+# The inputs key names everything the build and its admission are made from
+# (dw_playtest_inputs_key, above). An image carrying it is the build these
+# inputs make, already gated and placed, so nothing below the build is redone.
+PLAYTEST_IMAGE=""
+if [ "$SUBJECT_KIND" = "campaign" ]; then
+  echo "inputs key: hashing what this build and its admission are made from"
+  INPUTS_KEY="$(dw_playtest_inputs_key "$DELVEC" "$CAMPAIGN" "${PREFABS_ARG:-campaigns/prefabs}" "$LANG_ARG" "$REPO_ROOT")" \
+    || die "cannot compute the inputs key (the line above names the input it could not read)"
+  echo "inputs key: $INPUTS_KEY"
+  FOUND="$(docker images --filter "reference=$PLAYTEST_REPO" --filter "label=$PLAYTEST_LABEL.inputs=$INPUTS_KEY" \
+    --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | sort -u || true)"
+  FOUND_N="$(printf '%s' "$FOUND" | awk 'NF {n++} END {print n+0}')"
+  if [ "$FOUND_N" -gt 1 ]; then
+    die "the inputs key $INPUTS_KEY labels $FOUND_N playtest images with different manifests — the same inputs built different bytes (ADR-0006). Not choosing one:
+$FOUND"
+  elif [ "$FOUND_N" = 1 ]; then
+    PLAYTEST_IMAGE="$FOUND"
+    echo "kept image: $PLAYTEST_IMAGE carries these inputs — no build, no staging gate, no placement"
+    [ -z "$OUT_DIR" ] || echo "  --out $OUT_DIR is not written: nothing is built"
+    [ -z "$RUN_REPORT$WRITTEN_WORLD$STAGE_ANYWAY" ] || echo "  --run-report/--written-world/--stage-anyway are not read: this build was admitted when the image was made, and its token is checked below"
+  else
+    echo "kept image: none for these inputs — building, gating and placing"
+  fi
+fi
+
+if [ -z "$PLAYTEST_IMAGE" ] && [ -z "$OUT_DIR" ]; then
   OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dw-playtest-out.XXXXXX")"
   # Recorded the instant it exists — an unguessable path nothing else knows about
   # is exactly as lost as an unrecorded one. A caller-supplied `--out` is NOT
@@ -651,7 +1099,9 @@ if [ -z "$OUT_DIR" ]; then
   session_record build-dir "$OUT_DIR"
 fi
 
-if [ "$SUBJECT_KIND" = "campaign" ]; then
+if [ -n "$PLAYTEST_IMAGE" ]; then
+  :
+elif [ "$SUBJECT_KIND" = "campaign" ]; then
   BUILD_ARGS=(build "$CAMPAIGN" --out "$OUT_DIR")
   [ -n "$LANG_ARG" ]    && BUILD_ARGS+=(--lang "$LANG_ARG")
   [ -n "$PREFABS_ARG" ] && BUILD_ARGS+=(--prefabs "$PREFABS_ARG")
@@ -709,6 +1159,202 @@ else
   echo "  against the pinned $MC_VERSION command tree, a lone tile of a tiled zone"
   echo "  refused (DW0739), and a manifest that does not tile its own zone refused."
   echo "  It is a building to look at, not a delve, and it ships to nobody."
+fi
+
+# A probe that would otherwise read as "the pack did not do X" is told the
+# truth instead when the log shows why: an OOM loading structures or NPCs is
+# not a content defect, and reporting it as one sends a creator chasing a
+# datapack that is not broken. <container> defaults to the serving one.
+die_or_oom() {
+  local plain="$1" container="${2:-$NAME}" log
+  log="$(docker logs "$container" 2>&1 || true)"
+  if dw_server_log_shows_oom "$log"; then
+    die "$plain — AND $(dw_server_oom_advice) Current: $HEAP_ENV. $LOG_HINT"
+  fi
+  if dw_server_log_shows_watchdog "$log"; then
+    die "$plain — the vanilla watchdog halted it: one tick ran past max-tick-time (the host was too loaded to tick; the crash report is in crash-reports/ beside the log). $LOG_HINT"
+  fi
+  die "$plain. $LOG_HINT"
+}
+
+if [ "$SUBJECT_KIND" = "campaign" ]; then
+  # The heap: the shared rule (tools/lib/server-heap.sh), read from the build's
+  # own server/resources.properties — the build directory on a first `up`, the
+  # copy taken out of the image on a reopen — so both boots get the value the
+  # delve image's entrypoint would apply, and `--memory` overrides either.
+  HEAP_ENV=""
+  JAR_SHA256="$(python3 "$REPO_ROOT/tools/lib/versions.py" minecraft.server_jar_sha256)" \
+    || die "cannot read [minecraft].server_jar_sha256 from versions.toml"
+  RUNTIME_CACHE="$(dw_playtest_runtime_cache_dir "$MC_VERSION")"
+
+  # ---- first `up` of these inputs: the image, and its placed world -----------
+  if [ -z "$PLAYTEST_IMAGE" ]; then
+    MANIFEST_SHA="$(dw_sha256_file "$OUT_DIR/manifest.json")" || die "the build wrote no manifest.json"
+    [ -f "$OUT_DIR/staging-admission.json" ] || die "the staging gate passed and left no $OUT_DIR/staging-admission.json"
+    ADMIT_SHA="$(dw_sha256_file "$OUT_DIR/staging-admission.json")"
+    PACK_SHA1=""
+    if [ -f "$OUT_DIR/resourcepack.zip" ]; then
+      PACK_SHA1="$(python3 -c 'import json, sys; sys.stdout.reconfigure(newline="\n"); print(json.load(open(sys.argv[1])).get("resource_pack_sha1", ""))' "$OUT_DIR/manifest.json")" \
+        || die "cannot read resource_pack_sha1 from $OUT_DIR/manifest.json"
+      [ -n "$PACK_SHA1" ] || die "$OUT_DIR ships resourcepack.zip and its manifest records no resource_pack_sha1"
+    fi
+    LABEL_ARGS=(--label "$PLAYTEST_LABEL.inputs=$INPUTS_KEY"
+                --label "$PLAYTEST_LABEL.manifest-sha256=$MANIFEST_SHA"
+                --label "$PLAYTEST_LABEL.admission-sha256=$ADMIT_SHA"
+                --label "$PLAYTEST_LABEL.pack-sha1=$PACK_SHA1"
+                --label "$PLAYTEST_LABEL.campaign=$(basename "$CAMPAIGN")")
+    BUILD_IMAGE="$(dw_playtest_image_tag "$PLAYTEST_BUILD_REPO" "$MANIFEST_SHA")"
+    echo "image: the shipped delve image of this build -> $BUILD_IMAGE (validation/Dockerfile.delve)"
+    docker build -q -f "$REPO_ROOT/validation/Dockerfile.delve" "${LABEL_ARGS[@]}" -t "$BUILD_IMAGE" "$OUT_DIR" >/dev/null \
+      || die "docker build of the delve image refused (validation/Dockerfile.delve over $OUT_DIR)"
+
+    HEAP_ENV="$(dw_server_heap_env "$MEMORY_ARG" "$OUT_DIR")" || die "cannot read the heap ceiling (the build's server/resources.properties, else versions.toml [server].heap_max)"
+    echo "container heap (placement): $HEAP_ENV (the build's own statement; override with --memory)"
+    # The placement boot: the shipped image, run once, with no host port.
+    PLACE="$(mktemp -d "${TMPDIR:-/tmp}/dw-playtest-place.XXXXXX")"
+    session_record place-dir "$PLACE"
+    LOG_HINT="placement log: $PLACE/logs/latest.log (docker-boot.log alongside it once cleanup runs)"
+    CREATOR_DIR=""
+    if [ -d "$OUT_DIR/creator-datapack" ]; then CREATOR_DIR="$OUT_DIR/creator-datapack"; fi
+    dw_playtest_runtime_seed "$RUNTIME_CACHE" "$PLACE" "$MC_VERSION" "$JAR_SHA256"
+    PLACE_ARGV=()
+    while IFS= read -r dw_argv_line; do
+      PLACE_ARGV+=("$dw_argv_line")
+    done < <(dw_playtest_place_argv "$NAME" "$BUILD_IMAGE" "$RCON_PW" "$HEAP_ENV" "$PLACE" "$CREATOR_DIR")
+    PLACE_T0=$SECONDS
+    "${PLACE_ARGV[@]}" >/dev/null || die "could not start the placement boot $NAME-place"
+    echo "placement: booting the shipped image to place its world (no host port)…"
+    dw_playtest_wait_done "$NAME-place" 600 2 || die_or_oom "$DW_DONE_FAILURE" "$NAME-place"
+    dw_playtest_verify_campaign "$NAME-place" "$CAMPAIGN" "$PLACE/world" \
+      "$DW_PLAYTEST_PLACED_BUDGET_S" "$DW_PLAYTEST_PLACED_POLL_S" \
+      || die_or_oom "$DW_VERIFY_FAILURE" "$NAME-place"
+    # A clean stop is the server's own save: every chunk and entity written,
+    # then the process exits 0. Anything else is not a world to bake.
+    docker stop -t 120 "$NAME-place" >/dev/null || die "could not stop $NAME-place"
+    PLACE_EXIT="$(docker inspect -f '{{.State.ExitCode}}' "$NAME-place" 2>/dev/null || echo '?')"
+    docker logs "$NAME-place" >"$PLACE/docker-boot.log" 2>&1 || true
+    [ "$PLACE_EXIT" = 0 ] || die "the placement boot exited $PLACE_EXIT on stop, not 0 — its world is not baked. $LOG_HINT"
+    docker rm "$NAME-place" >/dev/null || die "could not remove $NAME-place"
+    echo "placement: placed, probed, saved and stopped in $((SECONDS - PLACE_T0))s"
+    dw_playtest_runtime_keep "$PLACE" "$RUNTIME_CACHE" "$MC_VERSION" "$JAR_SHA256"
+
+    # The bake context, inside the place-dir so `down` reclaims it either way.
+    # The world moves (no copy); its datapacks stay behind because every boot
+    # copies them in from /delve, and so does the lock of a server now stopped.
+    BAKE="$PLACE/bake"
+    BAKE_PACK=""
+    if [ -n "$PACK_SHA1" ]; then BAKE_PACK="$OUT_DIR/resourcepack.zip"; fi
+    BAKE_DATAPACKS="$(dw_playtest_bake_context "$PLACE/world" "$BAKE" "$OUT_DIR/staging-admission.json" "$CREATOR_DIR" "$BAKE_PACK")" \
+      || die "cannot assemble the bake context at $BAKE"
+    PLAYTEST_IMAGE="$(dw_playtest_image_tag "$PLAYTEST_REPO" "$MANIFEST_SHA")"
+    echo "image: the placed world ($(human_kib "$(dir_kib "$BAKE/placed-world")")) -> $PLAYTEST_IMAGE (validation/Dockerfile.playtest)"
+    docker build -q -f "$REPO_ROOT/validation/Dockerfile.playtest" \
+      --build-arg "PLAYTEST_BUILD_IMAGE=$BUILD_IMAGE" --build-arg "DATAPACKS=$BAKE_DATAPACKS" \
+      "${LABEL_ARGS[@]}" -t "$PLAYTEST_IMAGE" "$BAKE" >/dev/null \
+      || die "docker build of the playtest image refused (validation/Dockerfile.playtest over $BAKE)"
+    rm -rf "$PLACE"
+    echo "image: kept $PLAYTEST_IMAGE — the next \`up\` of these inputs runs it"
+  fi
+
+  # ---- the reopen proves it is serving the admitted build ---------------------
+  # Copied out of the image itself, never read from the build directory: the
+  # bytes that serve are the bytes judged. Held to the image's labels, to each
+  # other, and — on a first `up` — to the build this run just gated.
+  SERVE_T0=$SECONDS
+  IMAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dw-playtest-image.XXXXXX")"
+  session_record image-dir "$IMAGE_DIR"
+  session_record image "$PLAYTEST_IMAGE"
+  L_MANIFEST="$(docker image inspect -f "{{index .Config.Labels \"$PLAYTEST_LABEL.manifest-sha256\"}}" "$PLAYTEST_IMAGE")" \
+    || die "cannot inspect $PLAYTEST_IMAGE"
+  L_ADMIT="$(docker image inspect -f "{{index .Config.Labels \"$PLAYTEST_LABEL.admission-sha256\"}}" "$PLAYTEST_IMAGE")"
+  L_PACK="$(docker image inspect -f "{{index .Config.Labels \"$PLAYTEST_LABEL.pack-sha1\"}}" "$PLAYTEST_IMAGE")"
+  # Created to copy from, never started: the entrypoint named is the one no
+  # server can come from.
+  CID="$(docker create --entrypoint /bin/true "$PLAYTEST_IMAGE")" || die "cannot create a container from $PLAYTEST_IMAGE to read its files"
+  COPY_OK=1
+  mkdir -p "$IMAGE_DIR/server"
+  docker cp "$CID:/delve/server/resources.properties" "$IMAGE_DIR/server/resources.properties" >/dev/null 2>&1 || true
+  docker cp "$CID:/delve/manifest.json" "$IMAGE_DIR/manifest.json" >/dev/null 2>&1 || COPY_OK=0
+  docker cp "$CID:/delve/staging-admission.json" "$IMAGE_DIR/staging-admission.json" >/dev/null 2>&1 || COPY_OK=0
+  docker cp "$CID:/delve/server/server.properties" "$IMAGE_DIR/server.properties" >/dev/null 2>&1 || COPY_OK=0
+  if [ -n "$L_PACK" ]; then
+    docker cp "$CID:/delve/extras/resourcepack.zip" "$IMAGE_DIR/resourcepack.zip" >/dev/null 2>&1 || COPY_OK=0
+  fi
+  docker rm "$CID" >/dev/null 2>&1 || true
+  [ "$COPY_OK" = 1 ] || echo "identity: a file could not be copied out of $PLAYTEST_IMAGE — judged as missing below" >&2
+  IMAGE_TAG_MANIFEST="${PLAYTEST_IMAGE##*:}"
+  dw_playtest_identity_check "$IMAGE_DIR" "$IMAGE_TAG_MANIFEST" "$L_MANIFEST" "$L_ADMIT" \
+    || die "REFUSING to serve $PLAYTEST_IMAGE: $DW_IDENTITY_FAILURE. Remove it with: tools/creator/playtest-server.sh down --name $NAME --prune"
+  if [ -n "${MANIFEST_SHA:-}" ] && [ "$MANIFEST_SHA" != "$L_MANIFEST" ]; then
+    die "REFUSING to serve $PLAYTEST_IMAGE: it carries manifest $L_MANIFEST and this run gated $MANIFEST_SHA"
+  fi
+  session_record manifest-sha256 "$L_MANIFEST"
+  session_record admission-sha256 "$L_ADMIT"
+  echo "identity: $PLAYTEST_IMAGE serves manifest $L_MANIFEST, admitted by token $L_ADMIT"
+
+  # ---- the delve's resource pack: served, never installed (spec-0084 §11) ----
+  PACK_NOTE="no resource pack in this build"
+  PACK_URL=""
+  if [ -n "${DELVEWRIGHT_RESOURCEPACKS_DIR:-}" ]; then
+    echo "resource pack: DELVEWRIGHT_RESOURCEPACKS_DIR is set and is NOT written — a delve's pack is served by the server, never installed into a player's own folder (spec-0084 §11)"
+  fi
+  if [ -n "$L_PACK" ]; then
+    M_PACK="$(python3 -c 'import json, sys; sys.stdout.reconfigure(newline="\n"); print(json.load(open(sys.argv[1])).get("resource_pack_sha1", ""))' "$IMAGE_DIR/manifest.json")" \
+      || die "cannot read resource_pack_sha1 from the image's manifest"
+    [ "$M_PACK" = "$L_PACK" ] || die "REFUSING to serve $PLAYTEST_IMAGE: its pack label says $L_PACK and its manifest $M_PACK"
+    PACK_URL="http://127.0.0.1:$PACK_PORT/resourcepack.zip"
+    PACK_ARGV=()
+    while IFS= read -r dw_argv_line; do
+      PACK_ARGV+=("$dw_argv_line")
+    done < <(dw_playtest_pack_run_argv "$NAME" "$PACK_IMAGE" "$PACK_PORT" "$IMAGE_DIR")
+    "${PACK_ARGV[@]}" >/dev/null || die "could not start the resource-pack sidecar $NAME-pack"
+    # The response is READ: the bytes a client will download, hashed, and held to
+    # the manifest's SHA-1 — which is the hash the client checks them against.
+    SERVED_SHA1=""
+    for _ in $(seq 1 40); do
+      SERVED_SHA1="$(python3 -c 'import hashlib, sys, urllib.request; sys.stdout.reconfigure(newline="\n"); print(hashlib.sha1(urllib.request.urlopen(sys.argv[1], timeout=5).read()).hexdigest())' "$PACK_URL" 2>/dev/null || true)"
+      [ -n "$SERVED_SHA1" ] && break
+      sleep 0.5
+    done
+    [ "$SERVED_SHA1" = "$M_PACK" ] || die "the pack sidecar serves sha1 '${SERVED_SHA1:-nothing}' at $PACK_URL, and the manifest records $M_PACK — a client would refuse the pack"
+    PACK_NOTE="resource pack: served at $PACK_URL (sha1 $M_PACK) — accept the prompt when you join"
+    if grep -q '^require-resource-pack=true$' "$IMAGE_DIR/server.properties"; then
+      PACK_NOTE="$PACK_NOTE; this delve REQUIRES it (declining disconnects)"
+    fi
+  fi
+
+  # ---- the serving run --------------------------------------------------------
+  HEAP_ENV="$(dw_server_heap_env "$MEMORY_ARG" "$IMAGE_DIR")" || die "cannot read the heap ceiling (the image's server/resources.properties, else versions.toml [server].heap_max)"
+  echo "container heap: $HEAP_ENV (the build's own statement, read from the image; override with --memory)"
+  STAGE="$(mktemp -d "${TMPDIR:-/tmp}/dw-playtest-data.XXXXXX")"
+  session_record stage-dir "$STAGE"
+  LOG_HINT="server log: $STAGE/logs/latest.log (docker-boot.log alongside it once cleanup runs)"
+  dw_playtest_runtime_seed "$RUNTIME_CACHE" "$STAGE" "$MC_VERSION" "$JAR_SHA256"
+  SERVE_ARGV=()
+  while IFS= read -r dw_argv_line; do
+    SERVE_ARGV+=("$dw_argv_line")
+  done < <(dw_playtest_serve_argv "$NAME" "$PLAYTEST_IMAGE" "$RCON_PW" "$HEAP_ENV" "$STAGE" "$PACK_URL")
+  RUN_T0=$SECONDS
+  "${SERVE_ARGV[@]}" >/dev/null || die "could not start $NAME from $PLAYTEST_IMAGE"
+  echo "waiting for the server…"
+  dw_playtest_wait_done "$NAME" 600 1 || die_or_oom "$DW_DONE_FAILURE"
+  DONE_S=$((SECONDS - RUN_T0))
+  # The same readiness the first boot was judged by: the datapack reports the
+  # world placed, its objectives exist, and every NPC standing at world init is
+  # in the save. On a world the image already holds placed, the first reading
+  # answers `placed`.
+  dw_playtest_verify_campaign "$NAME" "$CAMPAIGN" "$STAGE/world" \
+    "$DW_PLAYTEST_PLACED_BUDGET_S" 1 \
+    || die_or_oom "$DW_VERIFY_FAILURE"
+  READY_S=$((SECONDS - RUN_T0))
+
+  UP_OK=1   # the session exists; the 25565 mutex stays held until `down`
+  echo
+  echo "READY — Multiplayer -> Direct Connect: localhost:25565"
+  echo "joinable ${SECONDS}s after the command: $((SERVE_T0)) s to the image, $((RUN_T0 - SERVE_T0)) s identity + pack, ${DONE_S}s boot to \`Done (\`, $((READY_S - DONE_S))s placed + probes"
+  echo "$PACK_NOTE"
+  echo "teardown: tools/creator/playtest-server.sh down --name $NAME  (also removes $NAME-pack and frees the 25565 mutex; keeps $PLAYTEST_IMAGE)"
+  exit 0
 fi
 
 STAGE="$(mktemp -d "${TMPDIR:-/tmp}/dw-playtest-data.XXXXXX")"
@@ -783,19 +1429,6 @@ done < <(dw_playtest_docker_run_argv "$NAME" "$MC_VERSION" "$RCON_PW" "$HEAP_ENV
 # removal; the wrapper's stdout does not, which is why `up_failed` captures it
 # into the same directory first.
 LOG_HINT="server log: $STAGE/logs/latest.log (docker-boot.log alongside it once cleanup runs)"
-
-# A probe that would otherwise read as "the pack did not do X" is told the
-# truth instead when the log shows why: an OOM loading structures or NPCs is
-# not a content defect, and reporting it as one sends a creator chasing a
-# datapack that is not broken.
-die_or_oom() {
-  local plain="$1" log
-  log="$(docker logs "$NAME" 2>&1 || true)"
-  if dw_server_log_shows_oom "$log"; then
-    die "$plain — AND $(dw_server_oom_advice) Current: $HEAP_ENV. $LOG_HINT"
-  fi
-  die "$plain. $LOG_HINT"
-}
 
 echo "waiting for world generation…"
 READY=0
