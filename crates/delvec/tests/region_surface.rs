@@ -1,4 +1,4 @@
-//! **A region holds a whole site** (spec-0106 §3.1–§3.5, criteria 1–5).
+//! **A region holds a whole site** (spec-0106 §3.1–§3.5, criteria 1–5 and 7).
 //!
 //! One fixture: a one-box site plan whose place owns its ground
 //! (`base: {"owned": 7}`, floor 64, so its claim's bottom is 56) on an `open`
