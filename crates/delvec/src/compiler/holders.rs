@@ -125,6 +125,14 @@ pub struct Claim {
     pub slots: Vec<String>,
 }
 
+/// The brewing stand's block id: the one container whose contents partly show.
+pub const BREWING_STAND: &str = "minecraft:brewing_stand";
+
+/// The brewing stand's bottle slots, the ones its block state draws
+/// (`has_bottle_0`–`has_bottle_2`, `BrewingStandBlock`): read from the pinned
+/// game, the same jar and mappings as the container table.
+pub const BREWING_BOTTLE_SLOTS: [&str; 3] = ["container.0", "container.1", "container.2"];
+
 /// The census kind token of a container row.
 pub const CONTAINER_KIND: &str = "container";
 
@@ -158,10 +166,41 @@ impl HolderRow {
 
     /// Whether no declaration claims this container — scenery `DW1018` and §9
     /// count. An unclaimed frame or stand is [`HolderRow::is_frozen`], never
-    /// decoration.
+    /// decoration, and no holder whose contents show is
+    /// ([`HolderRow::is_exempt`]).
     #[must_use]
     pub fn is_decoration(&self) -> bool {
-        self.is_container() && self.claims.is_empty()
+        self.is_container() && self.claims.is_empty() && !self.is_exempt()
+    }
+
+    /// **Whether the holder's contents show from outside** (spec-0105 /
+    /// spec-0111 amendment): a frame, a stand, or a brewing stand whose bottle
+    /// slots are all that is in question — unclaimed, or filled by `loot` /
+    /// `collect` in its bottle slots (`container.0`–`container.2`, drawn as
+    /// `has_bottle_N`) and nowhere else. A player sees what it holds without
+    /// opening it, so it is exempt from the empty and scenery rules: no
+    /// decoration cell, no place in the cap, free to stand among holders that
+    /// matter, and owed no notice. A brewing stand with a device claim, or any
+    /// fill in its ingredient or fuel slot, is an ordinary container.
+    #[must_use]
+    pub fn is_exempt(&self) -> bool {
+        if !self.is_container() {
+            return true;
+        }
+        if self.block != BREWING_STAND {
+            return false;
+        }
+        if self.claims.is_empty() {
+            return true;
+        }
+        self.claims
+            .iter()
+            .all(|(k, _)| matches!(k, ClaimKind::Loot | ClaimKind::Collect))
+            && !self.filled.is_empty()
+            && self
+                .filled
+                .iter()
+                .all(|s| BREWING_BOTTLE_SLOTS.contains(&s.as_str()))
     }
 
     /// Whether this is an entity holder no fill claims: the engine summons it
@@ -360,6 +399,12 @@ impl Census {
         self.rows.iter().filter(|r| r.is_frozen()).count()
     }
 
+    /// Holders whose contents show from outside ([`HolderRow::is_exempt`]).
+    #[must_use]
+    pub fn exempt(&self) -> usize {
+        self.rows.iter().filter(|r| r.is_exempt()).count()
+    }
+
     /// Container cells (what `DW1018` and §9 range over).
     #[must_use]
     pub fn containers(&self) -> usize {
@@ -386,9 +431,9 @@ impl Census {
     pub fn arrangement(&self) -> (Vec<PlaceFinding>, Vec<PlaceFinding>) {
         let mut places: BTreeMap<&str, (Vec<HolderRow>, Vec<HolderRow>)> = BTreeMap::new();
         for r in &self.rows {
-            // A frozen frame or stand is neither scenery to search nor a
-            // holder that matters: it does nothing.
-            if r.is_frozen() {
+            // A holder whose contents show is neither scenery to search nor a
+            // holder hidden among it: a player sees what it holds.
+            if r.is_exempt() {
                 continue;
             }
             let e = places.entry(r.place.as_str()).or_default();
@@ -477,7 +522,8 @@ impl Census {
         };
         format!(
             "holder census: {n} holder(s) in the assembled world{kinds}; {l} loot, {c} collect, \
-             {v} device, {d} decoration, {e} empty (frozen); notice {notice}; by place: \
+             {v} device, {d} decoration, {e} empty (frozen), {x} exempt (contents show from \
+             outside); notice {notice}; by place: \
              {places}; arrangement: {m} mixed place(s), {o} over the cap of {cap} decoration \
              cell(s) per place.{stance}{deferred}",
             n = self.rows.len(),
@@ -491,6 +537,7 @@ impl Census {
             v = self.count(ClaimKind::Device),
             d = self.decoration(),
             e = self.empty(),
+            x = self.exempt(),
             notice = if self.notice.is_some() {
                 "declared"
             } else {
@@ -653,6 +700,7 @@ impl Census {
             "device": self.count(ClaimKind::Device),
             "decoration": self.decoration(),
             "empty": self.empty(),
+            "exempt": self.exempt(),
             "by_kind": self.by(|r| r.kind.to_string()),
             "by_block": self.by(|r| r.block.clone()),
             "by_place": self.by(|r| r.place.clone()),
@@ -676,6 +724,7 @@ impl Census {
                 "block": r.block,
                 "slots": r.slots.iter().map(|s| json!({"slot": s, "filled": r.filled.contains(s)})).collect::<Vec<_>>(),
                 "frozen": r.is_frozen(),
+                "exempt": r.is_exempt(),
                 "place": r.place,
                 "claims": r.claims.iter().map(|(k, id)| json!({"kind": k.token(), "id": id})).collect::<Vec<_>>(),
             })).collect::<Vec<_>>(),
@@ -1865,5 +1914,66 @@ mod tests {
             a["census_input_sha256"],
             census(&blocks, &moved, &claims, &one_place, None).to_json()["census_input_sha256"]
         );
+    }
+
+    /// The amendment: a row of brewing stands, some holding potions and some
+    /// empty, is legitimate — an empty stand shows it holds no bottle, so it is
+    /// no decoration cell, owes no notice and takes no place in the cap.
+    #[test]
+    fn an_empty_brewing_stand_beside_a_filled_one_is_exempt() {
+        let blocks = model(&[
+            (
+                [0, 0, 0],
+                "minecraft:brewing_stand[has_bottle_0=false,has_bottle_1=false,has_bottle_2=false]",
+            ),
+            (
+                [2, 0, 0],
+                "minecraft:brewing_stand[has_bottle_0=false,has_bottle_1=false,has_bottle_2=false]",
+            ),
+            (
+                [4, 0, 0],
+                "minecraft:brewing_stand[has_bottle_0=false,has_bottle_1=false,has_bottle_2=false]",
+            ),
+            (
+                [6, 0, 0],
+                "minecraft:brewing_stand[has_bottle_0=false,has_bottle_1=false,has_bottle_2=false]",
+            ),
+        ]);
+        let mut filled = claim(ClaimKind::Loot, "loot/potions", [0, 0, 0], None);
+        filled.slots = vec!["container.0".to_string(), "container.1".to_string()];
+        let c = census(&blocks, &[], &[filled], &one_place, None);
+        assert_eq!(c.decoration(), 0);
+        assert_eq!(c.exempt(), 4);
+        assert!(c.check_declared(&BTreeMap::new()).is_ok());
+        assert!(c.check_arrangement().is_ok());
+        assert!(
+            c.line().contains("4 exempt (contents show from outside)"),
+            "{}",
+            c.line()
+        );
+    }
+
+    /// A brewing stand filled only in its hidden slots (ingredient, fuel) is an
+    /// ordinary container, and is still judged: among scenery it is the mixed
+    /// arm of `DW1024`.
+    #[test]
+    fn a_hidden_slot_brewing_stand_fill_is_still_judged() {
+        let blocks = model(&[
+            ([0, 0, 0], "minecraft:brewing_stand"),
+            ([2, 0, 0], "minecraft:barrel"),
+        ]);
+        let mut hidden = claim(ClaimKind::Loot, "loot/powder", [0, 0, 0], None);
+        hidden.slots = vec!["container.4".to_string()];
+        let c = census(&blocks, &[], &[hidden.clone()], &one_place, Some(&notice()));
+        assert_eq!(c.exempt(), 0);
+        let e = c.check_arrangement().unwrap_err();
+        assert_eq!(e.code, "DW1024");
+        assert!(e.message.contains("loot `loot/powder`"), "{}", e.message);
+        // The same stand filled in a bottle slot shows it: no longer judged.
+        let mut bottle = hidden;
+        bottle.slots = vec!["container.0".to_string()];
+        let c = census(&blocks, &[], &[bottle], &one_place, Some(&notice()));
+        assert_eq!(c.exempt(), 1);
+        assert!(c.check_arrangement().is_ok());
     }
 }
