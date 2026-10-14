@@ -56,120 +56,155 @@ const LEDGER = {
 
 const ROOT: SeenEntity = { id: 7, name: "item_display", pos: [23.5, 67, 12.5] };
 const LENS = [17.5, 70.5, 9.5] as const;
+const PATH = "/content/quests/0/on_complete/0";
+/** The game time of driver tick 0. */
+const G0 = 1000;
 
-/**
- * One cutscene as the server plays it: driver tick `t` sends a lens packet,
- * and the end function runs in the same server tick as the last driver tick
- * (`total - 1`), its gamemode change arriving after that tick's lens packet.
- * `perTick(t)` is the entity table as the server left it at the end of tick
- * `t`; `total` is the driver ticks played (the ledger plans 10).
- */
-function play(o: ShotSubjectObserver, perTick: (t: number) => readonly SeenEntity[], total: number) {
-  o.gameModeChanged("spectator", []);
-  for (let t = 0; t < total; t++) o.lensTick("spectator", LENS, t === 0 ? [] : perTick(t - 1));
-  o.gameModeChanged("adventure", perTick(total - 1));
+interface Play {
+  /** The entity table as the server left it at the end of driver tick `d`
+   * (`d = -1` is the start function's tick). */
+  table?: (d: number) => readonly SeenEntity[];
+  /** Driver ticks the server plays before the end function (the ledger plans 10). */
+  total?: number;
+  /** Driver ticks whose gap between server ticks no reading lands in. */
+  missed?: readonly number[];
+  /** Driver ticks in which the client is told a body-typed entity spawned or left. */
+  churn?: readonly number[];
+  /** Game ticks between the end and the reading after it (1 places it). */
+  afterGap?: number;
+  /** Where the first lens stands. */
+  lens?: readonly [number, number, number];
 }
 
-function run(perTick: (t: number) => readonly SeenEntity[], total = 10) {
+/**
+ * One cutscene as the server sends it: the start function's gamemode change
+ * in tick `G0 - 1`; each driver tick `d` at game time `G0 + d` (lens packets
+ * at the first two, entity churn, then a reading in the gap after it); the
+ * end function in the same game tick as the last driver tick, after which one
+ * reading answers.
+ */
+function play(o: ShotSubjectObserver, p: Play = {}) {
+  const table = p.table ?? (() => [ROOT]);
+  const total = p.total ?? 10;
+  const missed = new Set(p.missed ?? []);
+  const churn = new Set(p.churn ?? []);
+  const last = total - 1;
+  o.gameModeChanged("spectator", []);
+  if (churn.has(-1)) o.entityChanged("item_display");
+  o.clock(G0 - 1, table(-1));
+  for (let d = 0; d < last; d++) {
+    if (d < 2) o.lensTick("spectator", p.lens ?? LENS);
+    if (churn.has(d)) o.entityChanged("minecraft:item_display");
+    if (!missed.has(d)) o.clock(G0 + d, table(d));
+  }
+  o.gameModeChanged("adventure", table(last - 1));
+  o.clock(G0 + last + (p.afterGap ?? 1) - 1, []);
+}
+
+function run(p: Play = {}) {
   const plan = parseShotSubjectPlan(LEDGER);
   const o = new ShotSubjectObserver(plan);
-  play(o, perTick, total);
-  return { plan, records: o.records, spans: o.spans };
+  play(o, p);
+  return { plan, records: o.records, spans: o.spans, watching: o.watching };
 }
 
 test("only cutscenes that frame a body are watched", () => {
   const plan = parseShotSubjectPlan(LEDGER);
   assert.equal(plan.cutscenes.length, 1);
   assert.equal(plan.cutscenes[0]!.shots.length, 1);
+  assert.equal(plan.cutscenes[0]!.driverTicks, 10);
 });
 
 test("a body spawned before its shot and kept through it reads true", () => {
-  const { plan, records } = run(() => [ROOT]);
+  const { plan, records, spans, watching } = run();
+  assert.equal(watching, false);
   assert.equal(records.length, 1);
-  assert.deepEqual(
-    [records[0]!.spawnedBefore, records[0]!.spawnedThrough],
-    [true, true],
+  assert.deepEqual([records[0]!.spawnedBefore, records[0]!.spawnedThrough], [true, true]);
+  assert.deepEqual(spans, [{ cutscene: PATH, planned: 10, placed: true, read: 10, unplaced: 0, overrun: false }]);
+  assert.deepEqual(shotSubjectFailures(records, spans), []);
+  assert.match(
+    shotSubjectBindingLine(plan, records, spans),
+    /1 of 1 framed body row.*1 spawned before and through.*1 of 1 cutscene run\(s\) placed on the server's clock, 10 of 10 driver tick\(s\) read, 0 unplaced/,
   );
-  assert.deepEqual(shotSubjectFailures(records), []);
-  assert.match(shotSubjectBindingLine(plan, records), /1 of 1 framed body row/);
+});
+
+// The defect this clock removes: a shot that ends its cutscene. Its last
+// driver tick and the end function share one server tick, so no client sees
+// that tick in spectator; counting the client's own physics ticks recorded
+// the shot unfinished, as a body that left. On the server's clock the end
+// is the last driver tick, and the row reads true.
+test("a shot that ends its cutscene is closed by the end, not recorded as a body that left", () => {
+  const { records } = run();
+  assert.deepEqual(
+    records.map((r) => [r.shot, r.spawnedBefore, r.spawnedThrough]),
+    [[1, true, true]],
+  );
 });
 
 test("a body that is not there at the shot's first tick reads false", () => {
-  const { records } = run((t) => (t >= 7 ? [ROOT] : []));
+  const { records } = run({ table: (d) => (d >= 7 ? [ROOT] : []), churn: [7] });
   assert.equal(records[0]!.spawnedBefore, false);
   assert.equal(shotSubjectFailures(records).length, 1);
 });
 
 test("a body that leaves mid-shot reads spawned before, not through", () => {
-  const { records } = run((t) => (t === 7 ? [] : [ROOT]));
-  assert.deepEqual(
-    [records[0]!.spawnedBefore, records[0]!.spawnedThrough],
-    [true, false],
-  );
-});
-
-test("an entity of another type or far from the mark is not the body", () => {
-  const { records } = run(() => [
-    { id: 8, name: "block_display", pos: [23.5, 67, 12.5] },
-    { id: 9, name: "item_display", pos: [40, 67, 12.5] },
-  ]);
-  assert.equal(records[0]!.spawnedBefore, false);
-});
-
-test("a cutscene cut short records its unfinished shot as not through", () => {
-  const { records, spans } = run(() => [ROOT], 7);
-  assert.equal(records.length, 1);
-  assert.equal(records[0]!.spawnedThrough, false);
-  assert.deepEqual(spans, [{ cutscene: "/content/quests/0/on_complete/0", played: 7, planned: 10 }]);
-  assert.match(shotSubjectFailures(records, spans).join("\n"), /played 7 driver tick\(s\) of the 10/);
-});
-
-// The defect this clock removes: a shot that ends its cutscene. Its last
-// driver tick and the end function share one server tick, so a client never
-// sees that tick in spectator; counting the client's own physics ticks
-// recorded the shot unfinished, as a body that left. On the server's clock
-// the end closes the last tick, and the row reads true.
-test("a shot that ends its cutscene is closed by the end, not recorded as a body that left", () => {
-  const { plan, records, spans } = run(() => [ROOT]);
-  assert.deepEqual(
-    records.map((r) => [r.shot, r.spawnedBefore, r.spawnedThrough]),
-    [[1, true, true]],
-  );
-  assert.equal(plan.cutscenes[0]!.driverTicks, 10);
-  assert.deepEqual(spans, [{ cutscene: "/content/quests/0/on_complete/0", played: 10, planned: 10 }]);
-  assert.deepEqual(shotSubjectFailures(records, spans), []);
-  assert.match(shotSubjectBindingLine(plan, records, spans), /10 of 10 planned driver tick\(s\) played/);
-});
-
-test("a body that leaves on the cutscene's last tick reads not through", () => {
-  const { records } = run((t) => (t === 9 ? [] : [ROOT]));
+  const { records } = run({ table: (d) => (d === 7 ? [] : [ROOT]), churn: [7, 8] });
   assert.deepEqual([records[0]!.spawnedBefore, records[0]!.spawnedThrough], [true, false]);
 });
 
-test("a body spawned to the client as the lens arrives counts as there at tick 0's end", () => {
-  // The client is teleported to the lens in tick 0; the server tracks what
-  // stands near the lens at the end of that tick.
-  const plan = parseShotSubjectPlan({
-    cutscenes: [{ ...LEDGER.cutscenes[0]!, shots: [{ ...LEDGER.cutscenes[0]!.shots[1]!, start_tick: 0, ticks: 9 }] }],
+test("a body gone at the end reads not through", () => {
+  const { records } = run({ table: (d) => (d === 8 ? [] : [ROOT]), churn: [8] });
+  assert.deepEqual([records[0]!.spawnedBefore, records[0]!.spawnedThrough], [true, false]);
+});
+
+test("an entity of another type or far from the mark is not the body", () => {
+  const { records } = run({
+    table: () => [
+      { id: 8, name: "block_display", pos: [23.5, 67, 12.5] },
+      { id: 9, name: "item_display", pos: [40, 67, 12.5] },
+    ],
   });
-  const o = new ShotSubjectObserver(plan);
-  play(o, () => [ROOT], 10);
-  assert.deepEqual([o.records[0]!.spawnedBefore, o.records[0]!.spawnedThrough], [true, true]);
+  assert.equal(records[0]!.spawnedBefore, false);
+});
+
+test("a tick no reading landed on takes its neighbours' table when nothing churned", () => {
+  const { records, spans } = run({ missed: [5, 6] });
+  assert.deepEqual([records[0]!.spawnedBefore, records[0]!.spawnedThrough], [true, true]);
+  assert.deepEqual([spans[0]!.read, spans[0]!.unplaced], [8, 0]);
+});
+
+test("a tick no reading landed on, with churn around it, is unplaced and counts as absent", () => {
+  const { records, spans } = run({ missed: [6], churn: [6] });
+  assert.deepEqual([records[0]!.spawnedBefore, records[0]!.spawnedThrough], [true, false]);
+  assert.deepEqual([spans[0]!.read, spans[0]!.unplaced], [9, 1]);
+  assert.match(shotSubjectFailures(records, spans)[0]!, /1 tick\(s\) of the shot no reading placed/);
+});
+
+test("an end the readings do not place judges nothing and fails", () => {
+  const { records, spans } = run({ missed: [8], afterGap: 1 });
+  // The last reading before the end is at driver tick 7; the one after is at
+  // the end's tick: two game ticks apart, so the end could be either.
+  assert.deepEqual(records, []);
+  assert.equal(spans[0]!.placed, false);
+  assert.match(shotSubjectFailures(records, spans)[0]!, /not one game tick apart/);
+});
+
+test("a cutscene that plays longer than its plan fails", () => {
+  const { spans, records } = run({ total: 12 });
+  assert.equal(spans[0]!.overrun, true);
+  assert.match(shotSubjectFailures(records, spans).join("\n"), /longer from its start to its end than its 10 planned/);
 });
 
 test("a cutscene whose first lens is no watched cutscene's is not recorded", () => {
-  const plan = parseShotSubjectPlan(LEDGER);
-  const o = new ShotSubjectObserver(plan);
-  o.gameModeChanged("spectator", []);
-  for (let t = 0; t < 10; t++) o.lensTick("spectator", [0, 80, 0], [ROOT]);
-  o.gameModeChanged("adventure", [ROOT]);
-  assert.deepEqual([o.records, o.spans], [[], []]);
+  const { records, spans, watching } = run({ lens: [0, 80, 0] });
+  assert.deepEqual([records, spans, watching], [[], [], false]);
 });
 
-test("a lens packet outside spectator is not a driver tick", () => {
+test("a lens packet outside spectator names nothing", () => {
   const plan = parseShotSubjectPlan(LEDGER);
   const o = new ShotSubjectObserver(plan);
-  o.lensTick("adventure", LENS, [ROOT]);
+  o.lensTick("adventure", LENS);
+  o.clock(G0, [ROOT]);
   o.gameModeChanged("adventure", [ROOT]);
-  assert.deepEqual([o.records, o.spans], [[], []]);
+  assert.deepEqual([o.records, o.spans, o.watching], [[], [], false]);
 });

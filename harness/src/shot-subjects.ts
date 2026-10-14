@@ -8,17 +8,20 @@
 // to it by the shot's first tick and stayed spawned through the shot, read
 // from its own entity table. What a client DRAWS cannot be read from a bot.
 //
-// The clock is the server's, never the client's physics ticks. Every driver
-// tick re-aims the client with `spectate`, alternating between the camera
-// pair, so the server sends one `camera` packet naming a lens entity per
-// driver tick (`ServerPlayer.setCamera`: the position packet, then the camera
-// packet). The cutscene's end function runs in the same server tick as the
-// last driver tick and returns the gamemode (`ServerPlayer.setGameMode`: the
-// game event, then a camera packet naming the player itself). So the lens
-// packets count the driver ticks the server played, the gamemode change is
-// the end, and both arrive in the server's order whatever the client's frame
-// timing. Tick `t` is read from the entity table as the server left it at
-// the end of tick `t`: at the next lens packet, or at the end.
+// The clock is the server's game time, never the client's physics ticks
+// (which run behind the server and miss the last driver tick: the end
+// function returns the gamemode in the same server tick as the last driver
+// tick, so no client sees that tick in spectator). While the bot spectates,
+// the executor reads the game time over and over (`executor/clock.ts`); a
+// reading answered at game time `g` is an exact place in the packet stream:
+// everything before it was sent at `g` or earlier. The end is the server's
+// own record of the span: the end function runs at the last driver tick
+// (`driverTicks - 1`), so the reading after the end places it, and with it
+// every reading before. Driver tick `d` is judged on the entity table as the
+// server left it at the end of `d` — the reading at `d`, or for the last tick
+// the table at the end. A tick no reading landed on takes its neighbours'
+// table when no body-typed entity was spawned or removed between them;
+// otherwise it is unplaced, and a body is not counted there.
 //
 // The compiler computes everything (`validation/shot-subjects.json`): where
 // the lens stands at each cutscene's first tick (the point a watching client
@@ -182,6 +185,8 @@ export interface BodyRecord {
   readonly spawnedBefore: boolean;
   /** Still spawned at every tick of the shot (false when never spawned). */
   readonly spawnedThrough: boolean;
+  /** Ticks of the shot whose table no reading decides (counted as absent). */
+  readonly unplacedTicks: number;
 }
 
 const bare = (s: string): string => s.replace(/^minecraft:/, "");
@@ -207,29 +212,46 @@ export function cutsceneAt(plan: ShotSubjectPlan, pos: Vec3): PlannedCutscene | 
   return plan.cutscenes.find((c) => dist(c.startLens, pos) <= LENS_TOLERANCE);
 }
 
-/** How many driver ticks the server played in one watched cutscene. */
+/** One watched cutscene run, on the server's clock. */
 export interface CutsceneSpan {
   readonly cutscene: string;
-  /** Lens packets received before the end. */
-  readonly played: number;
   /** Driver ticks the build plans. */
   readonly planned: number;
+  /** Whether the reading after the end placed it (the readings around the
+   * end are one game tick apart). Nothing else is judged when it did not. */
+  readonly placed: boolean;
+  /** Driver ticks a reading (or the end) landed on. */
+  readonly read: number;
+  /** Driver ticks whose table no reading decides. */
+  readonly unplaced: number;
+  /** A reading earlier than the tick before driver tick 0: the server took
+   * longer from the start to the end than the plan. */
+  readonly overrun: boolean;
+}
+
+type Entry =
+  | { readonly kind: "clock"; readonly g: number; readonly seen: readonly SeenEntity[] }
+  | { readonly kind: "change"; readonly name: string }
+  | { readonly kind: "end"; readonly seen: readonly SeenEntity[] };
+
+interface Run {
+  /** `null` until the first lens packet names the cutscene; `undefined`
+   * when it names none this plan watches. */
+  cs: PlannedCutscene | undefined | null;
+  readonly log: Entry[];
+  ended: boolean;
 }
 
 /**
- * Watches the client during cutscenes, on the server's clock: fed once per
- * lens packet (a driver tick) and once per gamemode change, each with the
- * gamemode, the bot's position and the entities it tracks.
+ * Watches the client during cutscenes, on the server's clock. Fed, in the
+ * order the packets arrive: every gamemode change, the lens packets (the
+ * first names the cutscene by where the bot stands), every game-time reading
+ * answered, and every entity spawned to or removed from the client.
  */
 export class ShotSubjectObserver {
   readonly records: BodyRecord[] = [];
   readonly spans: CutsceneSpan[] = [];
-  /** The cutscene playing (`cs` undefined: one that frames no body), and the
-   * driver tick of the last lens packet. */
-  private active: { cs: PlannedCutscene | undefined; tick: number } | undefined;
-  private seenIds = new Map<string, number | undefined>();
-  private through = new Map<string, boolean>();
-  private done = new Set<string>();
+  private run: Run | undefined;
 
   private readonly plan: ShotSubjectPlan;
 
@@ -237,84 +259,147 @@ export class ShotSubjectObserver {
     this.plan = plan;
   }
 
-  /**
-   * The server aimed this client at a lens entity (not at itself): one driver
-   * tick. The first one names the cutscene by where the client now stands,
-   * and each later one closes the tick before it.
-   */
-  lensTick(gameMode: string | undefined, pos: Vec3, seen: readonly SeenEntity[]): void {
-    if (gameMode !== "spectator") return;
-    if (!this.active) {
-      this.active = { cs: cutsceneAt(this.plan, pos), tick: 0 };
+  /** Whether a cutscene is playing or awaits the reading that places its end. */
+  get watching(): boolean {
+    return this.run !== undefined;
+  }
+
+  /** The gamemode changed: spectator begins a run, leaving it is the end. */
+  gameModeChanged(gameMode: string | undefined, seen: readonly SeenEntity[]): void {
+    if (gameMode === "spectator") {
+      if (!this.run) this.run = { cs: null, log: [], ended: false };
       return;
     }
-    this.judge(this.active.cs, this.active.tick, seen);
-    this.active.tick += 1;
+    const run = this.run;
+    if (!run || run.ended) return;
+    if (!run.cs) {
+      this.run = undefined;
+      return;
+    }
+    run.log.push({ kind: "end", seen });
+    run.ended = true;
   }
 
-  /** The gamemode changed: leaving spectator is the end function, which
-   * closes the last driver tick. */
-  gameModeChanged(gameMode: string | undefined, seen: readonly SeenEntity[]): void {
-    if (gameMode === "spectator" || !this.active) return;
-    this.judge(this.active.cs, this.active.tick, seen);
-    this.finish();
+  /** The server aimed the client at a lens entity (not at itself). */
+  lensTick(gameMode: string | undefined, pos: Vec3): void {
+    if (gameMode !== "spectator" || !this.run || this.run.cs !== null) return;
+    this.run.cs = cutsceneAt(this.plan, pos);
   }
 
-  /** Driver tick `tick` of `cs`, read from the entity table it left. */
-  private judge(cs: PlannedCutscene | undefined, tick: number, seen: readonly SeenEntity[]): void {
-    if (!cs) return;
-    for (const shot of cs.shots) {
-      if (tick < shot.startTick || tick > shot.startTick + shot.ticks) continue;
-      for (const body of shot.bodies) {
-        const key = `${cs.path}#${shot.index}#${body.field}`;
-        if (tick === shot.startTick) {
-          const e = findBody(body, seen);
-          this.seenIds.set(key, e?.id);
-          this.through.set(key, e !== undefined);
-        } else if (this.seenIds.has(key)) {
-          const id = this.seenIds.get(key);
-          if (id === undefined || !seen.some((e) => e.id === id)) this.through.set(key, false);
-        }
-        if (tick === shot.startTick + shot.ticks) this.record(cs, shot, body, key);
+  /** A game-time reading answered at `gameTime`, with the table it found. */
+  clock(gameTime: number, seen: readonly SeenEntity[]): void {
+    const run = this.run;
+    if (!run) return;
+    if (!run.ended) {
+      run.log.push({ kind: "clock", g: gameTime, seen });
+      return;
+    }
+    this.run = undefined;
+    if (run.cs) this.settle(run.cs, run.log, gameTime);
+  }
+
+  /** An entity named `name` was spawned to or removed from the client. */
+  entityChanged(name: string): void {
+    if (this.run && !this.run.ended) this.run.log.push({ kind: "change", name });
+  }
+
+  /** The run ended and the reading after it answered `after`: judge it. */
+  private settle(cs: PlannedCutscene, log: readonly Entry[], after: number): void {
+    const last = cs.driverTicks - 1;
+    let before: number | undefined;
+    for (const e of log) if (e.kind === "clock") before = Math.max(before ?? e.g, e.g);
+    if (before === undefined || after !== before + 1) {
+      this.spans.push({ cutscene: cs.path, planned: cs.driverTicks, placed: false, read: 0, unplaced: 0, overrun: false });
+      return;
+    }
+    // The end ran in game tick `after`, at driver tick `last`.
+    const first = after - last;
+    const types = new Set(cs.shots.flatMap((s) => s.bodies.map((b) => bare(b.entity))));
+    const anchors: { d: number; at: number; seen: readonly SeenEntity[] }[] = [];
+    let overrun = false;
+    log.forEach((e, at) => {
+      if (e.kind === "clock") {
+        const d = e.g - first;
+        if (d < -1) overrun = true;
+        anchors.push({ d, at, seen: e.seen });
+      } else if (e.kind === "end") {
+        anchors.push({ d: last, at, seen: e.seen });
       }
+    });
+    const changedBetween = (from: number, to: number): boolean => {
+      for (let i = from + 1; i < to; i++) {
+        const e = log[i]!;
+        if (e.kind === "change" && types.has(bare(e.name))) return true;
+      }
+      return false;
+    };
+    const table: (readonly SeenEntity[] | undefined)[] = [];
+    let read = 0;
+    for (let d = 0; d <= last; d++) {
+      let exact: (typeof anchors)[number] | undefined;
+      let prev: (typeof anchors)[number] | undefined;
+      let next: (typeof anchors)[number] | undefined;
+      for (const a of anchors) {
+        if (a.d === d) exact = a;
+        else if (a.d < d && (!prev || a.at > prev.at)) prev = a;
+        else if (a.d > d && (!next || a.at < next.at)) next = a;
+      }
+      if (exact) {
+        read += 1;
+        table.push(exact.seen);
+      } else if (prev && next) {
+        table.push(changedBetween(prev.at, next.at) ? undefined : prev.seen);
+      } else if (next) {
+        table.push(changedBetween(-1, next.at) ? undefined : next.seen);
+      } else {
+        table.push(undefined);
+      }
+    }
+    this.spans.push({
+      cutscene: cs.path,
+      planned: cs.driverTicks,
+      placed: true,
+      read,
+      unplaced: table.filter((t) => t === undefined).length,
+      overrun,
+    });
+    for (const shot of cs.shots) {
+      for (const body of shot.bodies) this.judge(cs, shot, body, table);
     }
   }
 
-  private record(cs: PlannedCutscene, shot: PlannedShot, body: PlannedBody, key: string): void {
-    if (this.done.has(key) || !this.seenIds.has(key)) return;
-    this.done.add(key);
+  /** One body over its shot, on the per-tick tables. */
+  private judge(
+    cs: PlannedCutscene,
+    shot: PlannedShot,
+    body: PlannedBody,
+    table: readonly (readonly SeenEntity[] | undefined)[],
+  ): void {
+    const end = Math.min(shot.startTick + shot.ticks, table.length - 1);
+    const at = table[shot.startTick];
+    const e = at ? findBody(body, at) : undefined;
+    let through = e !== undefined && shot.startTick + shot.ticks <= table.length - 1;
+    let unplaced = at === undefined ? 1 : 0;
+    for (let t = shot.startTick + 1; t <= end; t++) {
+      const seen = table[t];
+      if (seen === undefined) unplaced += 1;
+      if (!e || !seen || !seen.some((x) => x.id === e.id)) through = false;
+    }
     this.records.push({
       cutscene: cs.path,
       shot: shot.index,
       subject: body.subject,
       entity: body.entity,
-      spawnedBefore: this.seenIds.get(key) !== undefined,
-      spawnedThrough: this.through.get(key) === true,
+      spawnedBefore: e !== undefined,
+      spawnedThrough: through,
+      unplacedTicks: unplaced,
     });
-  }
-
-  /** The cutscene ended: record every shot it started and did not finish. */
-  private finish(): void {
-    const a = this.active;
-    this.active = undefined;
-    if (!a?.cs) return;
-    this.spans.push({ cutscene: a.cs.path, played: a.tick + 1, planned: a.cs.driverTicks });
-    for (const shot of a.cs.shots) {
-      for (const body of shot.bodies) {
-        const key = `${a.cs.path}#${shot.index}#${body.field}`;
-        if (this.seenIds.has(key) && !this.done.has(key)) {
-          this.through.set(key, false);
-          this.record(a.cs, shot, body, key);
-        }
-      }
-    }
   }
 }
 
 /**
  * The failures among the records: every row must read true, and every
- * watched cutscene must play exactly the driver ticks the build plans — a
- * span that disagrees means the record's timing is not the server's.
+ * watched cutscene must be placed on the server's clock and fit its plan.
  */
 export function shotSubjectFailures(
   records: readonly BodyRecord[],
@@ -327,16 +412,21 @@ export function shotSubjectFailures(
         `cutscene ${r.cutscene} shot ${r.shot}: ${r.subject} (${r.entity}) ` +
         (r.spawnedBefore
           ? "was spawned to the bot at the shot's first tick and left before the shot ended"
-          : "was not spawned to the bot by the shot's first tick"),
+          : "was not spawned to the bot by the shot's first tick") +
+        (r.unplacedTicks > 0 ? ` (${r.unplacedTicks} tick(s) of the shot no reading placed)` : ""),
     );
-  const timing = spans
-    .filter((s) => s.played !== s.planned)
-    .map(
-      (s) =>
-        `cutscene ${s.cutscene}: the server played ${s.played} driver tick(s) of the ` +
-        `${s.planned} the build plans`,
-    );
-  return [...rows, ...timing];
+  const spanFailures = spans.flatMap((s) => {
+    if (!s.placed) {
+      return [
+        `cutscene ${s.cutscene}: the readings around its end were not one game tick apart, ` +
+          `so the server's clock did not place it and no shot was judged`,
+      ];
+    }
+    return s.overrun
+      ? [`cutscene ${s.cutscene}: the server took longer from its start to its end than its ${s.planned} planned driver tick(s)`]
+      : [];
+  });
+  return [...rows, ...spanFailures];
 }
 
 /** The one line the run prints, with its denominator. */
@@ -350,12 +440,14 @@ export function shotSubjectBindingLine(
     0,
   );
   const good = records.filter((r) => r.spawnedBefore && r.spawnedThrough).length;
-  const played = spans.reduce((n, s) => n + s.played, 0);
-  const planned = spans.reduce((n, s) => n + s.planned, 0);
+  const placed = spans.filter((s) => s.placed);
+  const planned = placed.reduce((n, s) => n + s.planned, 0);
+  const read = placed.reduce((n, s) => n + s.read, 0);
+  const unplaced = placed.reduce((n, s) => n + s.unplaced, 0);
   return (
     `shot subjects (live): ${records.length} of ${owed} framed body row(s) observed in ` +
     `${plan.cutscenes.length} cutscene(s), ${good} spawned before and through their shot; ` +
-    `${spans.length} cutscene run(s) watched on the server's clock, ${played} of ${planned} ` +
-    `planned driver tick(s) played`
+    `${placed.length} of ${spans.length} cutscene run(s) placed on the server's clock, ` +
+    `${read} of ${planned} driver tick(s) read, ${unplaced} unplaced`
   );
 }
