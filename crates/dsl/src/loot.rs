@@ -10,8 +10,12 @@ use crate::{AnchorId, LootId};
 #[cfg(doc)]
 use crate::enchantment_component;
 
-/// A stage-5 container fill (DSL v0.6, spec-0021): contents for a chest or
-/// barrel the prefab already placed.
+/// A stage-5 container fill (DSL v0.6, spec-0021): contents for a container
+/// the prefab already placed — any of the twelve container kinds of the pinned
+/// game (spec-0105): a chest, trapped
+/// chest, barrel or shulker box (27 slots), a hopper or brewing stand (5), a
+/// dispenser, dropper or crafter (9), a furnace, blast furnace or smoker (3:
+/// input, fuel, result).
 ///
 /// The container is **hardware the prefab authored**, exactly like a trap's
 /// dispenser: this declaration gives an already-placed, already-lit, already
@@ -67,8 +71,8 @@ pub struct LootItem {
 pub struct Containers {
     /// The line that tells each player, at arrival, what the containers no
     /// fill claims hold — the one `narrate` payload ([`crate::Narration`]),
-    /// emitted in every class's apply function after the party's quests are
-    /// armed and before the warp in. Inventoried for translation as
+    /// emitted in every class's apply function after the warp in, so its sound
+    /// plays where the player arrives. Inventoried for translation as
     /// `containers.decoration_notice`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decoration_notice: Option<crate::Narration>,

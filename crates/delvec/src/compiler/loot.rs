@@ -208,7 +208,7 @@ fn container_remedy(available: &[ContainerAnchor], what: &str) -> String {
     format!(
         "**No anchor anywhere in this campaign's assembled world holds a container**, so there is \
          nothing to point {what} at and no edit to these campaign documents can create one. A \
-         chest, trapped chest or barrel is FURNITURE: a placed piece puts it there, exactly as a \
+         container — a chest, a barrel, a smoker, a brewing stand — is FURNITURE: a placed piece puts it there, exactly as a \
          piece places a trap's dispenser, and the campaign fills what the piece placed. The two \
          ways forward are both about the piece, and only the first is yours: bind one of this \
          campaign's areas to a piece that already carries a container, or have the piece you are \
