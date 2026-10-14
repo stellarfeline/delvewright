@@ -55,8 +55,12 @@ fn pieces() -> Vec<(Program, Box3)> {
 fn every_library_piece_builds_something_inside_its_box() {
     let mut judged = 0usize;
     for (program, region) in pieces() {
-        let out = expand(&program, region, &ExpandOptions::seeded(1))
-            .unwrap_or_else(|e| panic!("{}: {e}", program.name));
+        let out = expand(
+            &program,
+            region,
+            &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
+        )
+        .unwrap_or_else(|e| panic!("{}: {e}", program.name));
         let filled = out.model.filled_cells();
         let volume = region.volume() as usize;
         assert!(
@@ -109,7 +113,8 @@ fn every_library_program_gives_the_recorded_verdict_at_its_declared_expansion() 
         let out = expand(
             &program,
             Box3::at_origin(entry.region),
-            &ExpandOptions::seeded(entry.seed),
+            &ExpandOptions::seeded(entry.seed)
+                .with_pieces(delvec::grammar::library::corpus_pieces()),
         )
         .unwrap_or_else(|e| panic!("{}: {e}", entry.id));
         let report = gates::judge(&out, entry.gates);
@@ -144,7 +149,7 @@ fn every_library_program_gives_the_recorded_verdict_at_its_declared_expansion() 
     }
     // Binding counts, so a corpus that quietly stopped reaching these gates is
     // a red rather than a shorter green list (CLAUDE.md's first vacuity mode).
-    assert_eq!(library::PROGRAMS.len(), 36, "the corpus this swept");
+    assert_eq!(library::PROGRAMS.len(), 37, "the corpus this swept");
     for (id, floor) in [
         ("blocks-exist", 100usize),
         ("shape-complete", 100),
@@ -176,7 +181,12 @@ fn temple_columns(program: &Program, depth: u32) -> usize {
     // The peristyle is a gap/column rhythm along Z, so a deeper box gets more
     // columns. Count the distinct solid runs along the front row.
     let region = Box3::at_origin([13, 14, depth]);
-    let out = expand(program, region, &ExpandOptions::seeded(1)).unwrap();
+    let out = expand(
+        program,
+        region,
+        &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
+    )
+    .unwrap();
     let mut runs = 0;
     let mut prev_solid = false;
     for z in 0..depth as i32 {
@@ -223,7 +233,12 @@ fn a_nine_deep_box_reproduces_upstreams_four_columns() {
 
 #[test]
 fn the_church_lays_directional_stairs_and_a_two_half_door() {
-    let out = expand(&church(), CHURCH_REGION, &ExpandOptions::seeded(1)).unwrap();
+    let out = expand(
+        &church(),
+        CHURCH_REGION,
+        &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
+    )
+    .unwrap();
     let names: Vec<String> = out.model.palette().iter().map(|b| b.to_string()).collect();
     // Block states, not bare ids: the roof needs facings and the door needs
     // halves. This is the assertion behind "block states from day one".
@@ -248,7 +263,7 @@ fn undersized_regions_are_loud() {
     let err = expand(
         &temple(),
         Box3::at_origin([13, 6, 21]),
-        &ExpandOptions::seeded(1),
+        &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
     )
     .unwrap_err();
     assert!(
@@ -259,7 +274,7 @@ fn undersized_regions_are_loud() {
     let err = expand(
         &castle(),
         Box3::at_origin([12, 14, 12]),
-        &ExpandOptions::seeded(1),
+        &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
     )
     .unwrap_err();
     assert!(
@@ -277,12 +292,18 @@ fn the_documented_minimum_regions_are_the_real_ones() {
         expand(
             program,
             Box3::at_origin(smallest),
-            &ExpandOptions::seeded(1),
+            &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
         )
         .unwrap_or_else(|e| panic!("{name} should expand at its documented minimum: {e}"));
         for &size in too_small {
             assert!(
-                expand(program, Box3::at_origin(size), &ExpandOptions::seeded(1)).is_err(),
+                expand(
+                    program,
+                    Box3::at_origin(size),
+                    &ExpandOptions::seeded(1)
+                        .with_pieces(delvec::grammar::library::corpus_pieces())
+                )
+                .is_err(),
                 "{name} expanded at {size:?}, below its documented minimum {smallest:?}"
             );
         }
@@ -307,11 +328,20 @@ fn the_documented_minimum_regions_are_the_real_ones() {
     // width, because it steps in two blocks per course.
     for (width, min_height) in [(9u32, 8u32), (15, 12), (21, 16)] {
         let ok = Box3::at_origin([width, min_height, 30]);
-        expand(&church(), ok, &ExpandOptions::seeded(1))
-            .unwrap_or_else(|e| panic!("church {width}x{min_height}: {e}"));
+        expand(
+            &church(),
+            ok,
+            &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
+        )
+        .unwrap_or_else(|e| panic!("church {width}x{min_height}: {e}"));
         let squat = Box3::at_origin([width, min_height - 1, 30]);
         assert!(
-            expand(&church(), squat, &ExpandOptions::seeded(1)).is_err(),
+            expand(
+                &church(),
+                squat,
+                &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces())
+            )
+            .is_err(),
             "church expanded at {width} wide and only {} tall",
             min_height - 1
         );
@@ -327,8 +357,18 @@ fn programs_round_trip_through_json() {
         // and the round trip is stable, not merely lossless
         assert_eq!(serde_json::to_string_pretty(&back).unwrap(), json);
         // ...and the deserialised program expands to the same blocks.
-        let a = expand(&program, region, &ExpandOptions::seeded(3)).unwrap();
-        let b = expand(&back, region, &ExpandOptions::seeded(3)).unwrap();
+        let a = expand(
+            &program,
+            region,
+            &ExpandOptions::seeded(3).with_pieces(delvec::grammar::library::corpus_pieces()),
+        )
+        .unwrap();
+        let b = expand(
+            &back,
+            region,
+            &ExpandOptions::seeded(3).with_pieces(delvec::grammar::library::corpus_pieces()),
+        )
+        .unwrap();
         assert_eq!(a.model.canonical_bytes(), b.model.canonical_bytes());
     }
 }
@@ -357,8 +397,18 @@ fn a_palette_swap_restyles_without_touching_a_rule() {
             Paint::block(BlockState::simple("smooth_sandstone")),
         )
         .unwrap();
-    let marble = expand(&temple(), TEMPLE_REGION, &ExpandOptions::seeded(1)).unwrap();
-    let sand = expand(&sandstone, TEMPLE_REGION, &ExpandOptions::seeded(1)).unwrap();
+    let marble = expand(
+        &temple(),
+        TEMPLE_REGION,
+        &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
+    )
+    .unwrap();
+    let sand = expand(
+        &sandstone,
+        TEMPLE_REGION,
+        &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
+    )
+    .unwrap();
     assert_eq!(
         marble.model.filled_cells(),
         sand.model.filled_cells(),
@@ -391,8 +441,18 @@ fn a_weathered_palette_mixes_per_cell_under_the_seed() {
             ]),
         )
         .unwrap();
-    let a = expand(&weathered, TEMPLE_REGION, &ExpandOptions::seeded(11)).unwrap();
-    let b = expand(&weathered, TEMPLE_REGION, &ExpandOptions::seeded(12)).unwrap();
+    let a = expand(
+        &weathered,
+        TEMPLE_REGION,
+        &ExpandOptions::seeded(11).with_pieces(delvec::grammar::library::corpus_pieces()),
+    )
+    .unwrap();
+    let b = expand(
+        &weathered,
+        TEMPLE_REGION,
+        &ExpandOptions::seeded(12).with_pieces(delvec::grammar::library::corpus_pieces()),
+    )
+    .unwrap();
     assert!(
         a.model
             .palette()
@@ -440,7 +500,12 @@ fn every_library_program_paints_only_blocks_that_exist() {
     let mut examined = 0usize;
     let mut bad: Vec<String> = Vec::new();
     for (program, region) in programs() {
-        let out = expand(&program, region, &ExpandOptions::seeded(4)).unwrap();
+        let out = expand(
+            &program,
+            region,
+            &ExpandOptions::seeded(4).with_pieces(delvec::grammar::library::corpus_pieces()),
+        )
+        .unwrap();
         for state in out.model.palette() {
             examined += 1;
             if let Err(e) = registry.validate(&state.name, &state.properties) {
@@ -498,8 +563,12 @@ fn every_library_program_passes_the_settling_gates() {
     let swept = corpus.len();
     let mut uncontained: Vec<String> = Vec::new();
     for (program, region) in corpus {
-        let out = expand(&program, region, &ExpandOptions::seeded(1))
-            .unwrap_or_else(|e| panic!("{}: {e}", program.name));
+        let out = expand(
+            &program,
+            region,
+            &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
+        )
+        .unwrap_or_else(|e| panic!("{}: {e}", program.name));
         let report = gates::judge(&out, gates::Options::default());
         stairs_bound += report.measurements.stairs;
         fluid_bound += report.measurements.fluid_cells;
@@ -582,7 +651,8 @@ fn no_library_program_reports_a_gate_that_is_green_over_nothing() {
         let out = expand(
             &program,
             Box3::at_origin(entry.region),
-            &ExpandOptions::seeded(entry.seed),
+            &ExpandOptions::seeded(entry.seed)
+                .with_pieces(delvec::grammar::library::corpus_pieces()),
         )
         .unwrap_or_else(|e| panic!("{}: {e}", entry.id));
         let report = gates::judge(&out, entry.gates);
@@ -644,8 +714,12 @@ fn every_library_program_passes_the_shape_and_orientation_gates() {
     use delvec::grammar::gates;
     let (mut states_bound, mut fills_bound, mut carrying) = (0usize, 0usize, 0u64);
     for (program, region) in programs() {
-        let out = expand(&program, region, &ExpandOptions::seeded(1))
-            .unwrap_or_else(|e| panic!("{}: {e}", program.name));
+        let out = expand(
+            &program,
+            region,
+            &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
+        )
+        .unwrap_or_else(|e| panic!("{}: {e}", program.name));
         carrying += out.oriented.carrying;
         let report = gates::judge(&out, gates::Options::default());
         for id in ["shape-complete", "oriented-fills"] {

@@ -77,6 +77,7 @@ pub mod elite_ground;
 pub mod far_side_bar;
 pub mod hearth_ward;
 pub mod idioms;
+pub mod kit_row;
 pub mod lift_shaft;
 pub mod negated_guard;
 pub mod rafter_hall;
@@ -385,6 +386,10 @@ pub struct LibraryProgram {
     pub gates: crate::grammar::gates::Options,
     /// Which corpus this belongs to.
     pub kind: Kind,
+    /// The library pieces the program's `prefab` nodes place (spec-0106
+    /// §3.8): the corpus is self-contained, so an entry that places one hands
+    /// its expansion the piece. Empty for every other entry.
+    pub pieces: fn() -> crate::grammar::pieces::Pieces,
 }
 
 /// What a library entry IS — a thing to build with, or a thing to learn from.
@@ -463,6 +468,7 @@ const fn entry(
         seed,
         gates,
         kind,
+        pieces: crate::grammar::pieces::Pieces::none,
     }
 }
 
@@ -583,6 +589,17 @@ pub const PROGRAMS: &[LibraryProgram] = &[
         Kind::Piece,
         NO_CLAIM,
     ),
+    // The one example that places a library piece by name (spec-0106 §3.8),
+    // with the kit part it places.
+    LibraryProgram {
+        id: "kit-row",
+        build: kit_row::kit_row,
+        region: [11, 4, 5],
+        seed: 1,
+        gates: NO_CLAIM,
+        kind: Kind::Example,
+        pieces: kit_row::kit_pieces,
+    },
     // The idiom index (`idioms`): one minimal program per technique, plus one
     // composition demonstration. They are here because `delvec grammar list` and
     // `show` are the only way an author reaches the corpus at all. Their
@@ -749,6 +766,20 @@ pub const PROGRAMS: &[LibraryProgram] = &[
     ),
     entry("watch-bay", watch_bay, [7, 7, 24], 1, Kind::Piece, NO_CLAIM),
 ];
+
+/// Every library piece any entry's `prefab` nodes place (spec-0106 §3.8), in
+/// one set — what a caller expanding the corpus at large hands the expansion.
+pub fn corpus_pieces() -> crate::grammar::pieces::Pieces {
+    let mut out = crate::grammar::pieces::Pieces::none();
+    for entry in PROGRAMS {
+        for id in crate::grammar::pieces::named(&(entry.build)()) {
+            if let Some(p) = (entry.pieces)().get(&id) {
+                out.insert(p.clone());
+            }
+        }
+    }
+    out
+}
 
 /// Look one library entry up by its `PROGRAMS` id.
 pub fn entry_by_id(id: &str) -> Option<&'static LibraryProgram> {

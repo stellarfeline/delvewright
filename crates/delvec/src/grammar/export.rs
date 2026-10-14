@@ -550,6 +550,7 @@ pub fn export_prefab(
             size,
             &options.overrides,
             None,
+            &expansion.prefabs,
         )),
         // **The piece's own walk plane, measured** (spec-0060 §4). A grammar
         // program says where its floors are and the expansion says where a body
@@ -673,6 +674,7 @@ pub fn export_zone(
             size,
             &options.overrides,
             Some((plan.grid, tiles.len())),
+            &expansion.prefabs,
         )),
         // **The piece's own walk plane, measured** (spec-0060 §4). A grammar
         // program says where its floors are and the expansion says where a body
@@ -1104,7 +1106,32 @@ fn license_metadata(
     size: [i32; 3],
     overrides: &Overrides,
     tiling: Option<([i32; 3], usize)>,
+    prefabs: &[crate::grammar::expand::PlacedPiece],
 ) -> LicenseMetadata {
+    // Every library piece the expansion holds, with its bytes' hash and its own
+    // provenance row (spec-0106 §3.8, ADR-0013): the piece's provenance travels
+    // into every export that places it.
+    let held = if prefabs.is_empty() {
+        String::new()
+    } else {
+        let mut by: std::collections::BTreeMap<&str, (usize, &str, &str)> =
+            std::collections::BTreeMap::new();
+        for p in prefabs {
+            by.entry(p.piece.as_str())
+                .or_insert((0, p.hash.as_str(), p.provenance.as_str()))
+                .0 += 1;
+        }
+        format!(
+            " It holds {} library piece(s), placed by name: {}.",
+            by.len(),
+            by.iter()
+                .map(|(id, (n, hash, prov))| format!(
+                    "{id} ({hash}, placed {n} time(s); its own provenance: {prov:?})"
+                ))
+                .collect::<Vec<_>>()
+                .join("; ")
+        )
+    };
     let packaging = match tiling {
         None => String::new(),
         Some((grid, count)) => format!(
@@ -1145,7 +1172,7 @@ fn license_metadata(
         provenance: format!(
             "Generated deterministically by {GENERATOR} (spec-0027) from grammar program \
              {:?}{restyled} ({hash}) at seed {seed} over a {}x{}x{} region; ADR-0006: the \
-             inputs in `generated_by` regenerate this NBT byte for byte.{packaging}",
+             inputs in `generated_by` regenerate this NBT byte for byte.{packaging}{held}",
             program.name, size[0], size[1], size[2]
         ),
         // Optional in the document — an ingested piece has nothing that

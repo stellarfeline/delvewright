@@ -316,7 +316,11 @@ pub fn declared_anchors(program: &Program) -> BTreeSet<String> {
                 walk(body, into)
             }
             Node::Split(split) => split.children.iter().for_each(|c| walk(c, into)),
-            Node::Void | Node::Skip | Node::Fill { .. } | Node::Call { .. } => {}
+            Node::Void
+            | Node::Skip
+            | Node::Fill { .. }
+            | Node::Call { .. }
+            | Node::Prefab { .. } => {}
         }
     }
     let mut found = BTreeSet::new();
@@ -427,6 +431,12 @@ fn node(prefix: &str, renames: &AnchorRenames<'_>, node: &Node) -> Node {
         Node::Claim { region, body } => Node::Claim {
             region: qualify(prefix, region),
             body: Box::new(self::node(prefix, renames, body)),
+        },
+        // A library piece is the library's name, not the program's: it never
+        // takes the include prefix.
+        Node::Prefab { piece, rotation } => Node::Prefab {
+            piece: piece.clone(),
+            rotation: *rotation,
         },
         // A binding's KEYS are the source's own parameter and role names, so
         // they take the prefix exactly as the declarations they override do. A

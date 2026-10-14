@@ -493,6 +493,7 @@ fn run_expand(
     id_override: Option<&str>,
     options: gates::Options,
     out: &Path,
+    prefabs: &Path,
 ) -> ExitCode {
     let (default_id, loaded) = match source.load() {
         Ok(p) => p,
@@ -598,7 +599,18 @@ fn run_expand(
             .insert(name.trim().to_string(), value.trim().to_string());
     }
 
-    let opts = ExpandOptions::seeded(seed).with_overrides(overrides);
+    // The library pieces a `prefab` node places, loaded only when one is named.
+    // A library entry hands its own (the corpus is self-contained).
+    let pieces = match source.program.as_deref().and_then(library::entry_by_id) {
+        Some(entry) => (entry.pieces)(),
+        None => match crate::grammar::pieces::Pieces::load_for(&program, prefabs) {
+            Ok(p) => p,
+            Err(e) => return bad_input(format!("{id}: {e}")),
+        },
+    };
+    let opts = ExpandOptions::seeded(seed)
+        .with_overrides(overrides)
+        .with_pieces(pieces);
     let box3 = Box3::at_origin(size);
 
     // Judge before freezing: the report is about the expansion, and a red gate
@@ -829,7 +841,18 @@ const ZONE_MANIFEST: &str = "zones.json";
 /// One thing to audit: what to call it, what to expand, where, at which seed,
 /// which optional gates it claims, and how many program documents it composed
 /// to become the program that is expanded.
-type AuditItem = (String, Program, [u32; 3], u64, gates::Options, usize);
+/// One program to audit: its label, the program, the region and seed it is
+/// judged at, the gates it claims, its document-include count, and the library
+/// pieces its `prefab` nodes place.
+type AuditItem = (
+    String,
+    Program,
+    [u32; 3],
+    u64,
+    gates::Options,
+    usize,
+    crate::grammar::pieces::Pieces,
+);
 
 /// What one gate id totalled to across the corpus.
 #[derive(Default)]
@@ -923,11 +946,12 @@ fn audit_one(
     region: [u32; 3],
     seed: u64,
     opts: gates::Options,
+    pieces: crate::grammar::pieces::Pieces,
 ) -> Result<Audited, String> {
     let expansion = expand(
         program,
         Box3::at_origin(region),
-        &ExpandOptions::seeded(seed),
+        &ExpandOptions::seeded(seed).with_pieces(pieces),
     )
     .map_err(|e| {
         format!(
@@ -1046,6 +1070,20 @@ fn collect_campaign_zones(root: &Path) -> Result<Vec<AuditItem>, Vec<String>> {
                 composed_files.insert(document::normalised_path(&c.source));
             }
             let program = loaded.program;
+            // The content library a zone's `prefab` nodes place from: the
+            // root's own `prefabs/`.
+            let pieces =
+                match crate::grammar::pieces::Pieces::load_for(&program, &root.join("prefabs")) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        errors.push(format!(
+                            "{}: zone {:?}: {e}",
+                            manifest_path.display(),
+                            zone.id
+                        ));
+                        continue;
+                    }
+                };
             let symmetric = match zone.symmetric.as_deref().map(parse_axis).transpose() {
                 Ok(a) => a,
                 Err(e) => {
@@ -1069,6 +1107,7 @@ fn collect_campaign_zones(root: &Path) -> Result<Vec<AuditItem>, Vec<String>> {
                     reachable_floor: zone.reachable_floor,
                 },
                 composed_here,
+                pieces,
             ));
         }
         for file in &files {
@@ -1122,6 +1161,7 @@ fn run_audit(
                 // here is a fact about the corpus, not a gap in the sweep, and
                 // the summary line below says which corpus the total came from.
                 0,
+                (lib.pieces)(),
             ));
         }
     }
@@ -1197,10 +1237,10 @@ fn run_audit(
     let mut failed = false;
     let mut document_includes = 0usize;
     let mut composing_programs = 0usize;
-    for (label, program, region, seed, opts, includes) in work {
+    for (label, program, region, seed, opts, includes, pieces) in work {
         document_includes += includes;
         composing_programs += usize::from(includes > 0);
-        match audit_one(label, &program, region, seed, opts) {
+        match audit_one(label, &program, region, seed, opts, pieces) {
             Ok(a) => audited.push(a),
             Err(e) => {
                 eprintln!("error: {e}");
@@ -1434,8 +1474,9 @@ fn run_audit(
     }
 }
 
-/// Run `delvec grammar`.
-pub fn run(args: GrammarArgs) -> ExitCode {
+/// Run `delvec grammar`. `prefabs` is the library a `prefab` node places from
+/// (`--prefabs`, spec-0106 §3.8).
+pub fn run(args: GrammarArgs, prefabs: &Path) -> ExitCode {
     match args.command {
         GrammarCommand::List => run_list(),
         GrammarCommand::Audit {
@@ -1480,6 +1521,7 @@ pub fn run(args: GrammarArgs) -> ExitCode {
                     reachable_floor,
                 },
                 &out,
+                prefabs,
             )
         }
     }

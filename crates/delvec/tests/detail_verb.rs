@@ -1513,16 +1513,17 @@ fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_i
     assert_eq!(report["contract"]["sealed"], true, "{}", report["contract"]);
     assert_eq!(report["contract"]["owners"], 1, "{}", report["contract"]);
 
-    let refused_strictly = |nbt: &Path, why: &str| {
+    let refused_as = |nbt: &Path, kind: &str, why: &str| {
         let out = audit(nbt);
         let t = text(&out);
         assert_eq!(code(&out), 1, "{why}: {t}");
         assert!(
-            t.contains("DW0782")
-                && t.contains("contract-coverage FAILED")
-                && t.contains("place kind: reached (strict)"),
-            "{why}: the strict judgement refuses the leaf tops: {t}"
+            t.contains("DW0782") && t.contains("contract-coverage FAILED") && t.contains(kind),
+            "{why}: the judgement as `{kind}` refuses the leaf tops: {t}"
         );
+    };
+    let refused_strictly = |nbt: &Path, why: &str| {
+        refused_as(nbt, "place kind: reached (strict)", why);
     };
 
     // (c) A piece vouching for itself. Under its own id, with hand-written
@@ -1568,7 +1569,13 @@ fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_i
             }
         }
     });
-    refused_strictly(&piece, "a reached node's piece owes its floor");
+    // The beacon is allocated no seam (spec-0106 §3.4), so reached it owes no
+    // way in — and still owes its floor.
+    refused_as(
+        &piece,
+        "place kind: reached, allocated no seam",
+        "a reached node's piece owes its floor",
+    );
     std::fs::write(&graph, graph_bytes).unwrap();
     assert_eq!(code(&audit(&piece)), 0, "restored, it passes again");
     // ...and the row placing the piece removed: no campaign places it.

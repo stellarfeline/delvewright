@@ -33,7 +33,7 @@ use delvec::grammar::ir::{Alternative, Cond, Node, Program, ProgramError, Reorie
 use delvec::grammar::library;
 use delvec::grammar::version::{
     BIND_SINCE, CONTRACT_SINCE, LATEST_PROGRAM_VERSION, LOCAL_FRAME_SINCE, MIRROR_SINCE,
-    SHOWN_FACES_SINCE, SUPPORTED_PROGRAM_VERSIONS, has_mirror,
+    PREFAB_SINCE, SHOWN_FACES_SINCE, SUPPORTED_PROGRAM_VERSIONS, has_mirror,
 };
 
 /// **The fences this sweep claims the corpus stands behind**, named once rather
@@ -44,12 +44,13 @@ use delvec::grammar::version::{
 /// fence not on it. It failed loudly, by name, which is what a list beside a
 /// ledger owes. The obligation each entry carries is asserted below: a fence
 /// here with no library program behind it is a red.
-const CORPUS_FENCES: [&str; 5] = [
+const CORPUS_FENCES: [&str; 6] = [
     MIRROR_SINCE,
     CONTRACT_SINCE,
     BIND_SINCE,
     LOCAL_FRAME_SINCE,
     SHOWN_FACES_SINCE,
+    PREFAB_SINCE,
 ];
 
 /// A one-rule program whose body carries the frame request it is given.

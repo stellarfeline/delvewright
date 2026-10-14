@@ -44,8 +44,12 @@ fn grammar() -> Command {
 const PIECE: Box3 = Box3::at_origin([11, 6, 15]);
 
 fn run(program: &Program, region: Box3, seed: u64) -> Expansion {
-    expand(program, region, &ExpandOptions::seeded(seed))
-        .unwrap_or_else(|e| panic!("{}: {e}", program.name))
+    expand(
+        program,
+        region,
+        &ExpandOptions::seeded(seed).with_pieces(delvec::grammar::library::corpus_pieces()),
+    )
+    .unwrap_or_else(|e| panic!("{}: {e}", program.name))
 }
 
 // ---------------------------------------------------------------------------
@@ -86,6 +90,7 @@ const CORPUS: &[(&str, [u32; 3])] = &[
     ("idiom-shape", [15, 9, 3]),
     ("idiom-skip", [7, 5, 5]),
     ("idiom-surface-detail", [9, 12, 9]),
+    ("kit-row", [11, 4, 5]),
     ("lift-shaft", [5, 16, 7]),
     ("negated-guard", [5, 4, 12]),
     ("rafter-hall", [13, 6, 25]),
@@ -175,7 +180,11 @@ fn strip_claims(mut program: Program) -> Program {
             // node whole, the "stripped" program would still declare regions its
             // contract no longer classifies, and the comparison this exists for
             // would be against a program that was never stripped.
-            node @ (Node::Void | Node::Skip | Node::Fill { .. } | Node::Call { .. }) => node,
+            node @ (Node::Void
+            | Node::Skip
+            | Node::Fill { .. }
+            | Node::Call { .. }
+            | Node::Prefab { .. }) => node,
         }
     }
     let rules = std::mem::take(&mut program.rules);
@@ -348,8 +357,20 @@ fn the_exported_contract_is_the_one_this_expansion_resolved() {
     // where its CONTRACT holds, not the one where its rules merely expand.
     let small = Box3::at_origin([9, 6, 11]);
 
-    let a = export_prefab(&program, PIECE, &ExpandOptions::seeded(1), "piece").unwrap();
-    let b = export_prefab(&program, small, &ExpandOptions::seeded(1), "piece").unwrap();
+    let a = export_prefab(
+        &program,
+        PIECE,
+        &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
+        "piece",
+    )
+    .unwrap();
+    let b = export_prefab(
+        &program,
+        small,
+        &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
+        "piece",
+    )
+    .unwrap();
 
     let ca = a.metadata.spatial_contract.as_ref().unwrap();
     let cb = b.metadata.spatial_contract.as_ref().unwrap();
@@ -412,7 +433,13 @@ fn the_exported_contract_is_the_one_this_expansion_resolved() {
 fn a_tiled_zone_carries_its_contract_on_the_manifest() {
     let program = spatial_contract();
     let big = Box3::at_origin([11, 6, 61]);
-    let export = export_zone(&program, big, &ExpandOptions::seeded(1), "piece").unwrap();
+    let export = export_zone(
+        &program,
+        big,
+        &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
+        "piece",
+    )
+    .unwrap();
     let json = export.metadata_json();
     let value: serde_json::Value = serde_json::from_str(json).unwrap();
     assert!(value.get("structure_set").is_some(), "not a tiled export");
@@ -432,7 +459,7 @@ fn the_metadata_block_round_trips_and_its_absence_is_preserved() {
     let export = export_prefab(
         &spatial_contract(),
         PIECE,
-        &ExpandOptions::seeded(1),
+        &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
         "piece",
     )
     .unwrap();
@@ -1202,7 +1229,7 @@ fn the_exported_metadata_carries_the_way_and_the_anchor_inside_it_names_it() {
     let export = export_prefab(
         &spatial_contract_as_a_cleared_way(),
         PIECE,
-        &ExpandOptions::seeded(1),
+        &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
         "piece",
     )
     .expect("the respelled piece exports green");
@@ -1242,7 +1269,7 @@ fn the_exported_metadata_carries_the_way_and_the_anchor_inside_it_names_it() {
     let barred = export_prefab(
         &spatial_contract(),
         PIECE,
-        &ExpandOptions::seeded(1),
+        &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
         "piece",
     )
     .unwrap()
@@ -1359,7 +1386,7 @@ fn no_corpus_piece_writes_a_way_and_every_bar_still_writes_bar() {
         &export_prefab(
             &spatial_contract_as_a_cleared_way(),
             PIECE,
-            &ExpandOptions::seeded(1),
+            &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
             "piece",
         )
         .unwrap()
@@ -1503,7 +1530,7 @@ fn a_laid_way_exports_the_sign_and_the_block_it_will_be_filled_with() {
     let export = export_prefab(
         &spatial_contract_as_a_laid_deck(),
         PIECE,
-        &ExpandOptions::seeded(1),
+        &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
         "piece",
     )
     .expect("the broken threshold exports green with its way declared");
@@ -1544,7 +1571,12 @@ fn a_laid_way_exports_the_sign_and_the_block_it_will_be_filled_with() {
         expansion.model.canonical_bytes(),
         "the two twins must be one DECLARATION apart and zero blocks apart"
     );
-    match export_prefab(&undeclared, PIECE, &ExpandOptions::seeded(1), "piece") {
+    match export_prefab(
+        &undeclared,
+        PIECE,
+        &ExpandOptions::seeded(1).with_pieces(delvec::grammar::library::corpus_pieces()),
+        "piece",
+    ) {
         Err(delvec::grammar::ExportError::Contract { gates }) => {
             let joined = gates.join(" · ");
             assert!(joined.contains("contract-edge-proof"), "{joined}");

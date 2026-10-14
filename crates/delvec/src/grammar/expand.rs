@@ -104,7 +104,7 @@ impl Overrides {
 }
 
 /// Everything an expansion needs beyond the program and the box.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExpandOptions {
     /// The one seed every random choice derives from.
     pub seed: u64,
@@ -125,6 +125,11 @@ pub struct ExpandOptions {
     /// §3.4): its entry owes no `exterior` edge. Set by `delvec detail` from
     /// the plan, the place's kind, never the piece's own word.
     pub seamless: bool,
+    /// The admitted library pieces a `prefab` node may place (spec-0106
+    /// §3.8), loaded by the caller ([`crate::grammar::pieces::Pieces::load_for`]).
+    /// Empty unless the program names one; a piece absent here is refused by
+    /// name.
+    pub pieces: std::sync::Arc<crate::grammar::pieces::Pieces>,
 }
 
 impl ExpandOptions {
@@ -138,7 +143,14 @@ impl ExpandOptions {
             overrides: Overrides::none(),
             sealed: false,
             seamless: false,
+            pieces: std::sync::Arc::new(crate::grammar::pieces::Pieces::none()),
         }
+    }
+
+    /// Hand the expansion the library pieces its `prefab` nodes place.
+    pub fn with_pieces(mut self, pieces: crate::grammar::pieces::Pieces) -> ExpandOptions {
+        self.pieces = std::sync::Arc::new(pieces);
+        self
     }
 
     /// Declare what the caller overrode on the program before expanding it.
@@ -440,6 +452,20 @@ pub struct Expansion {
     pub sealed: bool,
     /// Carried from [`ExpandOptions::seamless`].
     pub seamless: bool,
+    /// Every library piece a `prefab` node placed (spec-0106 §3.8), in
+    /// expansion order — what the export's provenance names.
+    pub prefabs: Vec<PlacedPiece>,
+    /// Every `prefab` the expansion reached through a weighted draw among two
+    /// or more applicable alternatives, as `(rule, piece)` — what the
+    /// `prefab-placed-by-design` gate refuses. Empty when every piece stands
+    /// where the documents put it.
+    pub prefab_draws: Vec<(String, String)>,
+    /// The static half of the same gate
+    /// ([`crate::grammar::pieces::drawn_by_seed`]), read off the program.
+    pub prefab_drawable: Vec<(String, String)>,
+    /// How many distinct library pieces the program's `prefab` nodes name —
+    /// zero for a program that places none, which then owes the gate nothing.
+    pub prefab_named: usize,
 }
 
 /// The scope at a refusal site, in the terms guards read it.
@@ -664,6 +690,46 @@ pub enum ExpandError {
         /// The failure.
         error: PaletteFull,
     },
+    /// A `prefab` node names a piece the library handed to this expansion
+    /// does not hold (spec-0106 §3.8).
+    UnknownPiece {
+        /// The rule that placed it.
+        symbol: String,
+        /// The piece id.
+        piece: String,
+    },
+    /// A `prefab` node's scope is not the piece's size (spec-0106 §3.8): a
+    /// part exceeding its box is a refusal, and an undersized one alike.
+    PieceShape {
+        /// The rule that placed it.
+        symbol: String,
+        /// The piece id.
+        piece: String,
+        /// The piece's size after its rotation.
+        piece_size: [i32; 3],
+        /// The scope's size.
+        scope_size: [u32; 3],
+    },
+}
+
+/// One library piece a `prefab` node placed (spec-0106 §3.8).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlacedPiece {
+    /// `prefab/<id>`.
+    pub piece: String,
+    /// The piece's block-grid hash, as the library handed it.
+    pub hash: String,
+    /// The piece's own provenance row.
+    pub provenance: String,
+    /// The import's prefix: the wrapping claim's name, else the piece stem —
+    /// numbered when it repeats.
+    pub prefix: String,
+    /// Where it stands, local to the expansion region.
+    pub at: Box3,
+    /// Its quarter turns clockwise.
+    pub quarter_turns: u32,
+    /// The rule that placed it.
+    pub declared_by: String,
 }
 
 impl fmt::Display for ExpandError {
@@ -833,6 +899,30 @@ impl fmt::Display for ExpandError {
                 crate::schem::blocks::DW_LOCAL_FRAME_UNRESOLVABLE
             ),
             ExpandError::PaletteFull { symbol, error } => write!(f, "rule {symbol:?}: {error}"),
+            ExpandError::UnknownPiece { symbol, piece } => write!(
+                f,
+                "rule {symbol:?} places {piece:?}, and the prefab library holds no such piece. A \
+                 `prefab` node places an admitted piece by the id its document declares; admit \
+                 the piece, or name one the library holds (`--prefabs` names the library)"
+            ),
+            ExpandError::PieceShape {
+                symbol,
+                piece,
+                piece_size,
+                scope_size,
+            } => write!(
+                f,
+                "rule {symbol:?} places {piece:?} in a scope of {}x{}x{}, and the piece is \
+                 {}x{}x{}: a library piece fills its box exactly, so a scope larger or smaller \
+                 than the piece is refused. Size the scope to the piece (a split of absolute \
+                 sizes), or place a piece of the scope's size",
+                scope_size[0],
+                scope_size[1],
+                scope_size[2],
+                piece_size[0],
+                piece_size[1],
+                piece_size[2]
+            ),
         }
     }
 }
@@ -896,6 +986,10 @@ pub fn expand(
         oriented_resolved: 0,
         oriented_unguarded: std::collections::BTreeSet::new(),
         oriented_undecided: std::collections::BTreeSet::new(),
+        pieces: &options.pieces,
+        drawn: Vec::new(),
+        placed: Vec::new(),
+        prefab_draws: Vec::new(),
     };
     // The root binding frame is the program's own declarations, which are its
     // defaults; every `bind` pushes a frame over this one.
@@ -935,10 +1029,20 @@ pub fn expand(
         }
     }
     expander.canonicalise_regions();
-    let contract = resolve_contract(program, &mut expander.regions);
+    let placed = expander.number_placed();
+    expander.import_anchors(&placed)?;
+    let mut contract = resolve_contract(program, &mut expander.regions);
+    if let Some(c) = contract.as_mut() {
+        join_pieces(c, &placed, &options.pieces);
+    }
+    let prefab_draws = std::mem::take(&mut expander.prefab_draws);
     Ok(Expansion {
         model: expander.model,
         anchors: expander.anchors,
+        prefabs: placed,
+        prefab_draws,
+        prefab_drawable: crate::grammar::pieces::drawn_by_seed(program),
+        prefab_named: crate::grammar::pieces::named(program).len(),
         contract,
         stats: expander.stats,
         oriented: OrientedFillAudit {
@@ -951,6 +1055,281 @@ pub fn expand(
         sealed: options.sealed,
         seamless: options.seamless,
     })
+}
+
+/// A piece-local cell after `turns` quarter turns clockwise (viewed from
+/// above, `x` east and `z` south), shifted back into the turned box.
+fn turn_cell(p: [i32; 3], size: [i32; 3], turns: u32) -> [i32; 3] {
+    let [x, y, z] = p;
+    match turns % 4 {
+        0 => [x, y, z],
+        1 => [size[2] - 1 - z, y, x],
+        2 => [size[0] - 1 - x, y, size[2] - 1 - z],
+        _ => [z, y, size[0] - 1 - x],
+    }
+}
+
+/// A piece-local box after `turns` quarter turns, as its two turned corners.
+fn turn_box(lo: [i32; 3], hi: [i32; 3], size: [i32; 3], turns: u32) -> ([i32; 3], [i32; 3]) {
+    let a = turn_cell(lo, size, turns);
+    let b = turn_cell(hi, size, turns);
+    (
+        [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])],
+        [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])],
+    )
+}
+
+/// A block state turned as vanilla turns a template's (`facing`, `axis`,
+/// `rotation`, the connection sides, rail shapes): the one table
+/// [`crate::compiler::assembled::rotate_state`] holds.
+fn turn_state(b: &BlockState, turns: u32) -> BlockState {
+    use crate::compiler::solver::Rotation;
+    let r = match turns % 4 {
+        0 => return b.clone(),
+        1 => Rotation::Cw90,
+        2 => Rotation::Cw180,
+        _ => Rotation::Ccw90,
+    };
+    let turned = crate::compiler::assembled::rotate_state(&b.to_string(), r);
+    turned.parse().unwrap_or_else(|_| b.clone())
+}
+
+fn parse_facing(s: &str) -> Option<Facing> {
+    match s {
+        "north" => Some(Facing::North),
+        "south" => Some(Facing::South),
+        "west" => Some(Facing::West),
+        "east" => Some(Facing::East),
+        _ => None,
+    }
+}
+
+fn turn_facing(f: Facing, turns: u32) -> Facing {
+    let mut f = f;
+    for _ in 0..turns % 4 {
+        f = match f {
+            Facing::North => Facing::East,
+            Facing::East => Facing::South,
+            Facing::South => Facing::West,
+            Facing::West => Facing::North,
+        };
+    }
+    f
+}
+
+/// A face direction keyword after `turns` quarter turns.
+fn turn_dir(dir: &str, turns: u32) -> String {
+    match parse_facing(dir) {
+        Some(f) => format!("{:?}", turn_facing(f, turns)).to_lowercase(),
+        None => dir.to_string(),
+    }
+}
+
+fn dir_vector(dir: &str) -> [i32; 3] {
+    match dir {
+        "east" => [1, 0, 0],
+        "west" => [-1, 0, 0],
+        "south" => [0, 0, 1],
+        "north" => [0, 0, -1],
+        "up" => [0, 1, 0],
+        "down" => [0, -1, 0],
+        _ => [0, 0, 0],
+    }
+}
+
+/// The class keyword a resolved edge carries, from the string a piece's
+/// document writes.
+fn class_keyword(class: &str) -> &'static str {
+    match class {
+        "walk" => "walk",
+        "stair" => "stair",
+        "climb" => "climb",
+        "drop" => "drop",
+        "barred" => "barred",
+        "vision" => "vision",
+        _ => "walk",
+    }
+}
+
+/// **Join every placed piece's contract to the program's** (spec-0106 §3.8):
+/// its spaces and out-of-walk regions under `<prefix>/<name>`, its internal
+/// edges renamed, and each exterior edge joined to the program space its
+/// declared face meets one cell outward — or kept as an exterior edge where
+/// no program space is there (the piece's face is the expansion's own).
+fn join_pieces(
+    contract: &mut ResolvedContract,
+    placed: &[PlacedPiece],
+    pieces: &crate::grammar::pieces::Pieces,
+) {
+    let own: Vec<(String, Vec<Box3>)> = contract
+        .spaces
+        .iter()
+        .map(|(n, s)| (n.clone(), s.region.boxes.clone()))
+        .collect();
+    for p in placed {
+        let Some(piece) = pieces.get(&p.piece) else {
+            continue;
+        };
+        let Some(pc) = piece.contract.as_ref() else {
+            continue;
+        };
+        let name = |n: &str| format!("{}/{n}", p.prefix);
+        let boxes = |regions: &[delvewright_dsl::prefab::Region]| -> Vec<Box3> {
+            let mut out: Vec<Box3> = regions
+                .iter()
+                .map(|r| {
+                    let (lo, hi) = turn_box(r.from, r.to, piece.size, p.quarter_turns);
+                    Box3::new(
+                        [
+                            p.at.origin[0] + lo[0],
+                            p.at.origin[1] + lo[1],
+                            p.at.origin[2] + lo[2],
+                        ],
+                        [
+                            (hi[0] - lo[0] + 1) as u32,
+                            (hi[1] - lo[1] + 1) as u32,
+                            (hi[2] - lo[2] + 1) as u32,
+                        ],
+                    )
+                })
+                .collect();
+            out.sort_by_key(|b| (b.origin, b.size));
+            out.dedup();
+            out
+        };
+        let region = |regions: &[delvewright_dsl::prefab::Region]| ResolvedRegion {
+            boxes: boxes(regions),
+            declared_by: vec![p.declared_by.clone()],
+        };
+        for (n, sp) in &pc.spaces {
+            let envelope = match sp.envelope.as_str() {
+                "open_top" | "open-top" => Envelope::OpenTop,
+                "open" => Envelope::Open,
+                _ => Envelope::Enclosed,
+            };
+            contract.spaces.insert(
+                name(n),
+                ResolvedSpace {
+                    envelope,
+                    region: region(&sp.boxes),
+                },
+            );
+        }
+        for (n, nb) in &pc.no_body {
+            contract.no_body.insert(
+                name(n),
+                ResolvedNoBody {
+                    reason: nb.reason.clone(),
+                    region: region(&nb.boxes),
+                },
+            );
+        }
+        for e in &pc.edges {
+            let ext_a = e.a == crate::grammar::ir::EXTERIOR;
+            let ext_b = e.b == crate::grammar::ir::EXTERIOR;
+            let class = class_keyword(&e.class);
+            let via = e.via.as_ref().map(|v| ResolvedVolume {
+                region: name(&v.region),
+                boxes: boxes(&v.boxes),
+            });
+            let bar = e.bar.as_ref().map(|b| ResolvedBar {
+                region: name(&b.region),
+                boxes: boxes(&b.boxes),
+                role: b.block.clone(),
+                block: b.block.parse().unwrap_or_else(|_| BlockState::air()),
+            });
+            if !ext_a && !ext_b {
+                contract.edges.push(ResolvedEdge {
+                    a: name(&e.a),
+                    b: name(&e.b),
+                    class,
+                    rise: e.rise,
+                    via,
+                    bar,
+                    way: None,
+                });
+                continue;
+            }
+            let space = if ext_a { &e.b } else { &e.a };
+            // The program space the piece's declared face meets, one cell out,
+            // with the face's opening as the joined edge's own volume.
+            let meets = pc
+                .faces
+                .iter()
+                .filter(|f| &f.space == space && f.class == e.class)
+                .find_map(|f| {
+                    let dir = turn_dir(&f.dir, p.quarter_turns);
+                    let d = dir_vector(&dir);
+                    let (lo, hi) =
+                        turn_box(f.opening.from, f.opening.to, piece.size, p.quarter_turns);
+                    let at = |c: [i32; 3], k: i32| {
+                        [
+                            p.at.origin[0] + c[0] + k * d[0],
+                            p.at.origin[1] + c[1] + k * d[1],
+                            p.at.origin[2] + c[2] + k * d[2],
+                        ]
+                    };
+                    let (a, z) = (at(lo, 1), at(hi, 1));
+                    let other = own.iter().find(|(_, bs)| {
+                        bs.iter().any(|b| {
+                            let bmax = b.maximum();
+                            (0..3).all(|i| a[i] < bmax[i] && z[i] >= b.origin[i])
+                        })
+                    })?;
+                    let (olo, ohi) = (at(lo, 0), at(hi, 0));
+                    let opening = Box3::new(
+                        olo,
+                        [
+                            (ohi[0] - olo[0] + 1) as u32,
+                            (ohi[1] - olo[1] + 1) as u32,
+                            (ohi[2] - olo[2] + 1) as u32,
+                        ],
+                    );
+                    Some((other.0.clone(), dir, opening))
+                });
+            let traversal = class != "vision";
+            match meets {
+                Some((other, dir, opening)) => {
+                    // The rise is derived from the boxes, as the edge proof
+                    // measures it: the far floor less the near one.
+                    let floor = |boxes: &[Box3]| boxes.iter().map(|b| b.origin[1]).min();
+                    let near = contract
+                        .spaces
+                        .get(&name(space))
+                        .and_then(|s| floor(&s.region.boxes));
+                    let far = contract
+                        .spaces
+                        .get(&other)
+                        .and_then(|s| floor(&s.region.boxes));
+                    let rise = match (traversal, near, far) {
+                        (true, Some(n), Some(f)) => Some(i64::from(f - n)),
+                        _ => None,
+                    };
+                    contract.edges.push(ResolvedEdge {
+                        a: name(space),
+                        b: other,
+                        class,
+                        rise,
+                        via: Some(ResolvedVolume {
+                            region: name(&format!("{space}-{dir}")),
+                            boxes: vec![opening],
+                        }),
+                        bar,
+                        way: None,
+                    });
+                }
+                None => contract.edges.push(ResolvedEdge {
+                    a: name(space),
+                    b: crate::grammar::ir::EXTERIOR.to_string(),
+                    class,
+                    rise: None,
+                    via,
+                    bar,
+                    way: None,
+                }),
+            }
+        }
+    }
 }
 
 /// Turn the program's declared contract into the resolved one, using the boxes
@@ -1238,6 +1617,16 @@ struct Expander<'a> {
     oriented_unguarded: std::collections::BTreeSet<OrientedFinding>,
     /// `DW0742` records, deduplicated for the same reason.
     oriented_undecided: std::collections::BTreeSet<UndecidedFinding>,
+    /// The library pieces a `prefab` node may place.
+    pieces: &'a crate::grammar::pieces::Pieces,
+    /// The rules whose alternative was drawn by weight among two or more
+    /// applicable ones, innermost last — the scope a `prefab` under them
+    /// stands in was chosen by the seed.
+    drawn: Vec<String>,
+    /// The pieces placed, in expansion order, before their anchors are named.
+    placed: Vec<PlacedPiece>,
+    /// `(rule, piece)` for every `prefab` reached under a draw.
+    prefab_draws: Vec<(String, String)>,
 }
 
 impl<'a> Expander<'a> {
@@ -1353,6 +1742,12 @@ impl<'a> Expander<'a> {
             .rng
             .weighted(&weights)
             .expect("validate() proved every weight is positive")];
+        // A draw among two or more applicable alternatives: whatever this
+        // scope holds was chosen by the seed (`prefab-placed-by-design`).
+        let drawn = candidates.len() > 1;
+        if drawn {
+            self.drawn.push(symbol.to_string());
+        }
         self.stats.rules_applied += 1;
         // A passed guard that *entails* an orientation pins the frame: the
         // author wrote this alternative for the frame the guard names — the
@@ -1367,7 +1762,11 @@ impl<'a> Expander<'a> {
             },
             ..*state
         };
-        self.run_node(symbol, &alts[picked].body, &state, depth + 1)
+        let result = self.run_node(symbol, &alts[picked].body, &state, depth + 1);
+        if drawn {
+            self.drawn.pop();
+        }
+        result
     }
 
     fn run_node(
@@ -1522,12 +1921,175 @@ impl<'a> Expander<'a> {
                 self.declare(symbol, mark, state)?;
                 self.run_node(symbol, body, state, depth + 1)
             }
+            // An import claim names the piece's prefix; it is no region.
+            Node::Claim { region, body } if matches!(**body, Node::Prefab { .. }) => {
+                let Node::Prefab { piece, rotation } = &**body else {
+                    unreachable!("matched above")
+                };
+                self.place_prefab(symbol, piece, *rotation, Some(region), state)
+            }
             Node::Claim { region, body } => {
                 self.claim(symbol, region, state);
                 self.run_node(symbol, body, state, depth + 1)
             }
+            Node::Prefab { piece, rotation } => {
+                self.place_prefab(symbol, piece, *rotation, None, state)
+            }
             Node::Split(split) => self.run_split(symbol, split, state, depth),
         }
+    }
+
+    /// Place one library piece at the scope's box (spec-0106 §3.8): its blocks
+    /// written now, its anchors and contract joined once every placement is
+    /// known (a piece placed twice numbers both).
+    fn place_prefab(
+        &mut self,
+        symbol: &str,
+        id: &str,
+        rotation: crate::grammar::ir::PrefabRotation,
+        claim: Option<&str>,
+        state: &ScopeState<'_>,
+    ) -> Result<(), ExpandError> {
+        let Some(piece) = self.pieces.get(id) else {
+            return Err(ExpandError::UnknownPiece {
+                symbol: symbol.to_string(),
+                piece: id.to_string(),
+            });
+        };
+        let turns = rotation.quarter_turns();
+        let size = piece.size;
+        let turned = if turns % 2 == 1 {
+            [size[2], size[1], size[0]]
+        } else {
+            size
+        };
+        let scope = state.region.size;
+        if (0..3).any(|a| i64::from(scope[a]) != i64::from(turned[a])) {
+            return Err(ExpandError::PieceShape {
+                symbol: symbol.to_string(),
+                piece: id.to_string(),
+                piece_size: turned,
+                scope_size: scope,
+            });
+        }
+        if let Some(rule) = self.drawn.last() {
+            self.prefab_draws.push((rule.clone(), id.to_string()));
+        }
+        let o = state.region.origin;
+        let air = BlockState::air();
+        for x in 0..size[0] {
+            for y in 0..size[1] {
+                for z in 0..size[2] {
+                    let block = piece.model.get([x, y, z]).unwrap_or(&air);
+                    if block.name == "minecraft:structure_void" {
+                        continue;
+                    }
+                    let block = turn_state(block, turns);
+                    let [lx, ly, lz] = turn_cell([x, y, z], size, turns);
+                    self.model
+                        .set([o[0] + lx, o[1] + ly, o[2] + lz], &block)
+                        .map_err(|error| ExpandError::PaletteFull {
+                            symbol: symbol.to_string(),
+                            error,
+                        })?;
+                }
+            }
+        }
+        let origin = self.model.region().origin;
+        self.placed.push(PlacedPiece {
+            piece: id.to_string(),
+            hash: piece.hash.clone(),
+            provenance: piece.provenance.clone(),
+            prefix: claim.map_or_else(
+                || id.strip_prefix("prefab/").unwrap_or(id).to_string(),
+                str::to_string,
+            ),
+            at: Box3::new(
+                [o[0] - origin[0], o[1] - origin[1], o[2] - origin[2]],
+                state.region.size,
+            ),
+            quarter_turns: turns,
+            declared_by: symbol.to_string(),
+        });
+        Ok(())
+    }
+
+    /// The placements, each prefix numbered `-<n>` in expansion order when it
+    /// repeats (`index: auto`).
+    fn number_placed(&mut self) -> Vec<PlacedPiece> {
+        let mut count: BTreeMap<String, u32> = BTreeMap::new();
+        for p in &self.placed {
+            *count.entry(p.prefix.clone()).or_default() += 1;
+        }
+        let mut seen: BTreeMap<String, u32> = BTreeMap::new();
+        let mut out = std::mem::take(&mut self.placed);
+        for p in &mut out {
+            if count[&p.prefix] > 1 {
+                let n = seen.entry(p.prefix.clone()).or_default();
+                *n += 1;
+                p.prefix = format!("{}-{n}", p.prefix);
+            }
+        }
+        out
+    }
+
+    /// Every placed piece's anchors, under a mark's naming: `anchor/<stem>`,
+    /// or `anchor/<stem>-<n>` in expansion order for a piece placed more than
+    /// once (`index: auto`).
+    fn import_anchors(&mut self, placed: &[PlacedPiece]) -> Result<(), ExpandError> {
+        let mut count: BTreeMap<&str, u32> = BTreeMap::new();
+        for p in placed {
+            *count.entry(p.piece.as_str()).or_default() += 1;
+        }
+        let mut seen: BTreeMap<&str, u32> = BTreeMap::new();
+        for p in placed {
+            let piece = self
+                .pieces
+                .get(&p.piece)
+                .expect("a placed piece was loaded");
+            let n = {
+                let n = seen.entry(p.piece.as_str()).or_default();
+                *n += 1;
+                *n
+            };
+            for (key, a) in &piece.anchors {
+                let Some(pos) = a.pos.or_else(|| a.region.as_ref().map(|r| r.from)) else {
+                    continue;
+                };
+                let stem = key.strip_prefix("anchor/").unwrap_or(key);
+                let name = if count[p.piece.as_str()] > 1 {
+                    format!("anchor/{stem}-{n}")
+                } else {
+                    format!("anchor/{stem}")
+                };
+                let t = turn_cell(pos, piece.size, p.quarter_turns);
+                let anchor = Anchor {
+                    pos: [
+                        p.at.origin[0] + t[0],
+                        p.at.origin[1] + t[1],
+                        p.at.origin[2] + t[2],
+                    ],
+                    facing: turn_facing(
+                        a.facing
+                            .as_deref()
+                            .and_then(parse_facing)
+                            .unwrap_or(Facing::South),
+                        p.quarter_turns,
+                    ),
+                    role: a.role,
+                    declared_by: format!("{} ({})", p.declared_by, p.piece),
+                };
+                if let Some(first) = self.anchors.get(&name) {
+                    return Err(ExpandError::AnchorCollision {
+                        anchor: name,
+                        first: first.declared_by.clone(),
+                        second: anchor.declared_by,
+                    });
+                }
+                self.anchors.insert(name, anchor);
+            }
+        }
+        Ok(())
     }
 
     /// Record one [`Node::Claim`]: the scope's box, rebased local, under the

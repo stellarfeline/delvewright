@@ -561,6 +561,12 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
     let used = placed_states(model);
     gates.push(gate_shape_complete(&used));
     gates.push(gate_states_complete(&used));
+    // Only over a program that places a library piece: one that names none has
+    // nothing this gate could judge, as a program with no contract owes the
+    // contract gates nothing.
+    if expansion.prefab_named > 0 {
+        gates.push(gate_prefab_placed_by_design(expansion));
+    }
 
     // --- Gate: oriented block states were guarded where the scope turns. ----
     //
@@ -1137,6 +1143,57 @@ fn gate_fluid_contained_over(fluid: &settle::FluidAudit) -> Option<Gate> {
             settle::fluid_detail(fluid)
         },
     })
+}
+
+/// **`prefab-placed-by-design`** (spec-0106 §3.8, ADR-0035 §3): which library
+/// piece stands where is a function of the program's documents alone, never
+/// of the seed. Refused: a `prefab` the expansion reached through a weighted
+/// draw among two or more applicable alternatives, and — read off the program,
+/// so a draw this region did not take is refused too — a `prefab` reachable
+/// from a rule with two or more unguarded alternatives. Each refusal names the
+/// rule and the piece. Bound to the placements; a program placing no piece
+/// states the zero.
+pub(crate) fn gate_prefab_placed_by_design(expansion: &Expansion) -> Gate {
+    let mut drawn: Vec<String> = expansion
+        .prefab_draws
+        .iter()
+        .chain(expansion.prefab_drawable.iter())
+        .map(|(rule, piece)| format!("rule {rule:?} draws {piece:?} by weight"))
+        .collect();
+    drawn.sort();
+    drawn.dedup();
+    let placed = expansion.prefabs.len();
+    Gate {
+        id: "prefab-placed-by-design",
+        state: verdict(drawn.is_empty()),
+        undecided: 0,
+        empty_ok: (placed == 0 && drawn.is_empty()).then(|| {
+            format!(
+                "{} library piece(s) named, 0 placed at this region: every `prefab` sits under \
+                 a guard this region did not take",
+                expansion.prefab_named
+            )
+        }),
+        bound: placed,
+        detail: if drawn.is_empty() {
+            format!(
+                "{placed} library piece(s) placed, none through a weighted choice: {}",
+                expansion
+                    .prefabs
+                    .iter()
+                    .map(|p| format!("{} as `{}`", p.piece, p.prefix))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        } else {
+            format!(
+                "{} — a library piece stands where the documents put it, never where the seed \
+                 does: move the `prefab` out from under the weighted alternatives, or guard \
+                 each alternative so exactly one applies wherever the rule runs",
+                drawn.join("; ")
+            )
+        },
+    }
 }
 
 /// `non-empty`: the model holds something.
@@ -1955,6 +2012,10 @@ mod tests {
             oriented: Default::default(),
             sealed: false,
             seamless: false,
+            prefabs: Vec::new(),
+            prefab_draws: Vec::new(),
+            prefab_drawable: Vec::new(),
+            prefab_named: 0,
         }
     }
 
@@ -2118,6 +2179,10 @@ mod tests {
             oriented: Default::default(),
             sealed: false,
             seamless: false,
+            prefabs: Vec::new(),
+            prefab_draws: Vec::new(),
+            prefab_drawable: Vec::new(),
+            prefab_named: 0,
         };
         assert!(
             nav::standable_cells(&expansion.model).contains(&[5, 1, 2]),

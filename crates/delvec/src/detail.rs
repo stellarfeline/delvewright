@@ -141,7 +141,7 @@ fn run(
     // replace, so the order of the targets decides nothing.
     let mut prepared: Vec<Prepared> = Vec::new();
     for node in &targets {
-        prepared.push(prepare(campaign_dir, &campaign, node, json)?);
+        prepared.push(prepare(campaign_dir, &campaign, node, prefabs_dir, json)?);
     }
     judge_run(&campaign, &library, &prepared, json)?;
     let mut done: Vec<String> = Vec::new();
@@ -632,6 +632,7 @@ fn prepare(
     campaign_dir: &Path,
     campaign: &Campaign,
     node: &NodeId,
+    prefabs_dir: &Path,
     json: bool,
 ) -> Result<Prepared, u8> {
     let stem = stem_of(node);
@@ -767,7 +768,17 @@ fn prepare(
         .layout_graph
         .as_ref()
         .is_some_and(|g| delvec::admit::scenery::is_scenery(&g.content, node));
-    let mut opts = ExpandOptions::seeded(seed).with_overrides(overrides);
+    // The library pieces the program places by name (spec-0106 §3.8).
+    let pieces = match delvec::grammar::pieces::Pieces::load_for(&program, prefabs_dir) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("error: `{place}`: {e}");
+            return Err(1);
+        }
+    };
+    let mut opts = ExpandOptions::seeded(seed)
+        .with_overrides(overrides)
+        .with_pieces(pieces);
     opts.sealed = scenery;
     // A place the plan allocates no seam (spec-0106 §3.4): entered by the
     // `spawn` or a carry's mark, so its entry owes no `exterior` edge.

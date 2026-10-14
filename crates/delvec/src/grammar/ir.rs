@@ -26,9 +26,9 @@ use crate::grammar::export::AnchorRole;
 use crate::grammar::geom::{Axis, Mirror, Orientation};
 use crate::grammar::version::{
     ANCHOR_ROLE_SINCE, BIND_SINCE, CLIMB_SINCE, CONTRACT_SINCE, INCLUDE_SINCE,
-    LATEST_PROGRAM_VERSION, LOCAL_FRAME_SINCE, MIRROR_SINCE, SHOWN_FACES_SINCE, WAY_SINCE,
-    has_anchor_role, has_bind, has_climb, has_contract, has_include, has_local_frame, has_mirror,
-    has_shown_faces, has_way, is_supported_version,
+    LATEST_PROGRAM_VERSION, LOCAL_FRAME_SINCE, MIRROR_SINCE, PREFAB_SINCE, SHOWN_FACES_SINCE,
+    WAY_SINCE, has_anchor_role, has_bind, has_climb, has_contract, has_include, has_local_frame,
+    has_mirror, has_prefab, has_shown_faces, has_way, is_supported_version,
 };
 
 // ---------------------------------------------------------------------------
@@ -1329,6 +1329,61 @@ pub enum Node {
         /// What to expand in the same scope.
         body: Box<Node>,
     },
+    /// **Place an admitted library piece at this scope's box** (spec-0106
+    /// §3.8): its blocks written cell for cell, its anchors imported under a
+    /// mark's naming, its spatial contract joined to the program's.
+    ///
+    /// The scope's box must be exactly the piece's size (after `rotation`): a
+    /// part exceeding its box is a refusal, and an undersized one is refused
+    /// alike. The piece is placed in world axes, whatever the scope's frame —
+    /// a library piece is a template, turned only by its own `rotation`.
+    ///
+    /// A `claim` wrapping this node directly names the import: the piece's
+    /// spaces arrive as `<claim>/<space>` and the claim needs no
+    /// classification of its own. Without one, the prefix is the piece's
+    /// stem. A piece placed more than once numbers its anchors and its prefix
+    /// in expansion order (`index: auto`).
+    ///
+    /// Which piece stands where is a function of the documents alone: a
+    /// `prefab` reached through a weighted choice among a rule's alternatives
+    /// is refused by the `prefab-placed-by-design` gate. No pool, no weight,
+    /// no count.
+    Prefab {
+        /// The library piece, `prefab/<id>`.
+        piece: String,
+        /// The quarter turn about `y` applied to the piece, as vanilla rotates
+        /// a structure template; block states turn with it.
+        #[serde(default, skip_serializing_if = "is_default")]
+        rotation: PrefabRotation,
+    },
+}
+
+/// The quarter turn a [`Node::Prefab`] applies to its piece, viewed from
+/// above — vanilla's structure-template rotation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PrefabRotation {
+    /// As the piece was exported.
+    #[default]
+    None,
+    /// A quarter turn clockwise.
+    Clockwise90,
+    /// A half turn.
+    Clockwise180,
+    /// A quarter turn counter-clockwise.
+    Counterclockwise90,
+}
+
+impl PrefabRotation {
+    /// Quarter turns clockwise.
+    pub fn quarter_turns(self) -> u32 {
+        match self {
+            PrefabRotation::None => 0,
+            PrefabRotation::Clockwise90 => 1,
+            PrefabRotation::Clockwise180 => 2,
+            PrefabRotation::Counterclockwise90 => 3,
+        }
+    }
 }
 
 impl Node {
@@ -1675,6 +1730,13 @@ pub enum ProgramError {
         /// The name as written.
         region: String,
     },
+    /// A `prefab` node names something that is not a `prefab/<kebab>` id.
+    BadPrefabId {
+        /// The rule that wrote it.
+        symbol: String,
+        /// The id as written.
+        piece: String,
+    },
     /// The contract names a region no rule ever claims, so nothing can resolve
     /// it to a box.
     UnclaimedRegion {
@@ -1860,6 +1922,11 @@ impl fmt::Display for ProgramError {
                  composed piece's regions take their include prefix, as its rules do), and \
                  {EXTERIOR:?} is reserved for the endpoint that means outside the piece"
             ),
+            ProgramError::BadPrefabId { symbol, piece } => write!(
+                f,
+                "rule {symbol:?} places {piece:?}, which is not a library piece id: a `prefab` \
+                 node names an admitted piece as `prefab/<kebab>`, the id its document declares"
+            ),
             ProgramError::UnclaimedRegion {
                 region,
                 referenced_by,
@@ -1982,6 +2049,10 @@ impl Program {
     pub fn claimed_regions(&self) -> BTreeMap<String, String> {
         fn walk(symbol: &str, node: &Node, into: &mut BTreeMap<String, String>) {
             match node {
+                // A claim directly wrapping a `prefab` names the import's
+                // prefix (spec-0106 §3.8): the piece's own spaces are what
+                // the contract gains, and the claim is classified by them.
+                Node::Claim { body, .. } if matches!(**body, Node::Prefab { .. }) => {}
                 Node::Claim { region, body } => {
                     into.entry(region.clone())
                         .or_insert_with(|| symbol.to_string());
@@ -1991,7 +2062,11 @@ impl Program {
                     walk(symbol, body, into)
                 }
                 Node::Split(split) => split.children.iter().for_each(|c| walk(symbol, c, into)),
-                Node::Void | Node::Skip | Node::Fill { .. } | Node::Call { .. } => {}
+                Node::Void
+                | Node::Skip
+                | Node::Fill { .. }
+                | Node::Call { .. }
+                | Node::Prefab { .. } => {}
             }
         }
         let mut found = BTreeMap::new();
@@ -2494,10 +2569,46 @@ impl Program {
                 }
                 self.check_node(symbol, body, in_split)
             }
+            // An import claim (one wrapping a `prefab`) is a prefix, never a
+            // contract region, so its name is checked here.
+            Node::Claim { region, body } if matches!(**body, Node::Prefab { .. }) => {
+                if !is_region_name(region) {
+                    return Err(ProgramError::BadRegionName {
+                        written_by: format!("rule {symbol:?}"),
+                        region: region.clone(),
+                    });
+                }
+                self.check_node(symbol, body, in_split)
+            }
             // The claim's own name, and its place in the contract, are checked
             // once over the whole program in `check_contract`: a claim is a
             // reference to a contract this walk has not read yet.
             Node::Claim { body, .. } => self.check_node(symbol, body, in_split),
+            Node::Prefab { piece, rotation } => {
+                if *rotation != PrefabRotation::None && !has_prefab(&self.version) {
+                    return Err(ProgramError::FencedConstruct {
+                        construct: "a `rotation` on a `prefab` node",
+                        since: PREFAB_SINCE,
+                        declared: self.version.clone(),
+                        written_by: format!("rule {symbol:?}"),
+                    });
+                }
+                if !has_prefab(&self.version) {
+                    return Err(ProgramError::FencedConstruct {
+                        construct: "a `prefab` node",
+                        since: PREFAB_SINCE,
+                        declared: self.version.clone(),
+                        written_by: format!("rule {symbol:?}"),
+                    });
+                }
+                match piece.strip_prefix("prefab/") {
+                    Some(stem) if is_kebab(stem) => Ok(()),
+                    _ => Err(ProgramError::BadPrefabId {
+                        symbol: symbol.to_string(),
+                        piece: piece.clone(),
+                    }),
+                }
+            }
             Node::Split(split) => {
                 if split.sizes.is_empty() || split.children.is_empty() {
                     return Err(ProgramError::EmptySplit {

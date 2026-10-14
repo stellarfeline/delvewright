@@ -70,7 +70,7 @@
 
 /// The latest program document version this crate implements — what
 /// [`Program::new`](crate::grammar::ir::Program::new) stamps on a program built today.
-pub const LATEST_PROGRAM_VERSION: &str = "1.10.0";
+pub const LATEST_PROGRAM_VERSION: &str = "1.11.0";
 
 /// Every program document version the format has, oldest first — the ledger.
 ///
@@ -100,9 +100,11 @@ pub const LATEST_PROGRAM_VERSION: &str = "1.10.0";
 ///   exported prefab's own `shown_faces` on every expansion.
 /// * `1.10.0` — a climb inside one piece: the `climb` class of a contract edge,
 ///   a way a body climbs on a ladder or a vine between two spaces.
+/// * `1.11.0` — a library piece placed by name (spec-0106 §3.8): the `prefab`
+///   node, with its optional `rotation`.
 pub const SUPPORTED_PROGRAM_VERSIONS: &[&str] = &[
     "1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.6.0", "1.7.0", "1.8.0", "1.9.0",
-    "1.10.0",
+    "1.10.0", "1.11.0",
 ];
 
 /// Ledger entries whose surface a **sibling** change introduces: the version,
@@ -153,6 +155,10 @@ pub const SHOWN_FACES_SINCE: &str = "1.9.0";
 /// The version at which a contract edge may be a `climb` — a ladder or a vine
 /// between two spaces of one piece (spec-0099).
 pub const CLIMB_SINCE: &str = "1.10.0";
+
+/// The version at which a rule may place an admitted library piece by name —
+/// the `prefab` node (spec-0106 §3.8).
+pub const PREFAB_SINCE: &str = "1.11.0";
 
 /// The fence constant that introduces `version`'s surface, when `version` is a
 /// ledger entry this crate does not implement; `None` otherwise.
@@ -249,6 +255,11 @@ pub fn has_climb(version: &str) -> bool {
     is_supported_version(version) && minor_ordinal(version) >= minor_ordinal(CLIMB_SINCE)
 }
 
+/// True if `version` may write a `prefab` node.
+pub fn has_prefab(version: &str) -> bool {
+    is_supported_version(version) && minor_ordinal(version) >= minor_ordinal(PREFAB_SINCE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,6 +280,7 @@ mod tests {
         ("ANCHOR_ROLE_SINCE", ANCHOR_ROLE_SINCE, has_anchor_role),
         ("SHOWN_FACES_SINCE", SHOWN_FACES_SINCE, has_shown_faces),
         ("CLIMB_SINCE", CLIMB_SINCE, has_climb),
+        ("PREFAB_SINCE", PREFAB_SINCE, has_prefab),
     ];
 
     /// **The ordinal IS the ledger's order**, asserted over the ledger rather

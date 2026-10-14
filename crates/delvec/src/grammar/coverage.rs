@@ -108,6 +108,8 @@ constructs! {
         Claim = "node:claim",
         /// [`Node::Bind`].
         Bind = "node:bind",
+        /// [`Node::Prefab`].
+        Prefab = "node:prefab",
     }
 }
 
@@ -128,6 +130,7 @@ impl NodeKind {
             Node::Mark { .. } => NodeKind::Mark,
             Node::Claim { .. } => NodeKind::Claim,
             Node::Bind { .. } => NodeKind::Bind,
+            Node::Prefab { .. } => NodeKind::Prefab,
         }
     }
 }
@@ -406,7 +409,7 @@ impl Tally {
                 Material::Role { .. } => {}
                 Material::Inline(paint) => self.paint(paint),
             },
-            Node::Void | Node::Skip | Node::Call { .. } => {}
+            Node::Void | Node::Skip | Node::Call { .. } | Node::Prefab { .. } => {}
             Node::Mark { body, .. } | Node::Claim { body, .. } => self.node(body),
             // A frame request is counted at BOTH the places the IR carries one.
             // Counting only the `reorient` node would report `frame:mirror` as
@@ -663,6 +666,7 @@ mod tests {
                 reachable_floor: false,
             },
             kind: crate::grammar::library::Kind::Example,
+            pieces: crate::grammar::pieces::Pieces::none,
         }
     }
 

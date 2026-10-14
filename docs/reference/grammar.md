@@ -151,7 +151,38 @@ Program ─ expand(program, region, {seed, limits, orientation}) ─▶ VoxelMod
 | `shown_faces` | `["north"\|"south"\|"east"\|"west"\|"up"\|"down"]` | which of this building's own six sides are finished exterior surface (§2f); written into the exported prefab's `shown_faces` on every expansion, and read there by `DW0885` |
 
 **Rule bodies** (`op`): `fill` (a role or an inline paint), `void` (air), `skip`
-(leave as-is), `call`, `split`, `reorient`, `bind`, `mark`, `claim`.
+(leave as-is), `call`, `split`, `reorient`, `bind`, `mark`, `claim`, `prefab`.
+
+**`prefab`** places an admitted library piece at the scope's box (spec-0106
+§3.8, ADR-0035):
+
+```json
+{ "op": "claim", "region": "tower",
+  "body": { "op": "prefab", "piece": "prefab/watch-tower", "rotation": "clockwise_90" } }
+```
+
+The scope's box must be **exactly** the piece's size after its `rotation`
+(`none`, `clockwise_90`, `clockwise_180`, `counterclockwise_90` — vanilla's
+template rotation about the vertical, block states turned with it); a scope
+larger or smaller is refused naming both sizes, and a piece the library does not
+hold is refused naming it. The piece is placed in world axes whatever the
+scope's frame. Its blocks are written cell for cell (its `structure_void` places
+nothing); its anchors arrive under a mark's naming — `anchor/<stem>`, numbered
+`anchor/<stem>-<n>` in expansion order when the piece is placed more than once;
+its spatial contract is joined to the program's: each space and out-of-walk
+region as `<prefix>/<name>`, each internal edge renamed, and each exterior edge
+joined to the program space its declared face meets one cell outward — the face's
+opening becomes the joined edge's `via` and its `rise` is measured off the boxes —
+or kept as an exterior edge where nothing of the program is there. The prefix is
+the name of a `claim` wrapping the `prefab` directly (an import claim, which the
+contract does not classify), else the piece's stem; a prefix that repeats is
+numbered `-<n>`. The expansion stays one piece, and the export's provenance row
+names every library piece it holds with its block-grid hash and its own
+provenance (ADR-0013). `delvec grammar expand` and `delvec detail` load the pieces
+a program names from `--prefabs`; a library entry hands its own (`kit-row`).
+Which piece stands where is a function of the documents alone: the
+`prefab-placed-by-design` gate (§4) refuses a `prefab` reached through a weighted
+draw. No pool, weight or count is written on the node.
 
 **`version`** is the document's compatibility surface. A version this engine does
 not accept is refused outright rather than parsed for the parts that look
@@ -177,6 +208,7 @@ source is `crates/delvec/src/grammar/version.rs` (`SUPPORTED_PROGRAM_VERSIONS`,
 | `1.8.0` | what a mark is FOR — `role` on a `mark`, written through to the exported anchor's metadata | yes |
 | `1.9.0` | which of the building's own sides are finished exterior surface — the program-level `shown_faces`, written through to the exported prefab's `shown_faces` (`DW0885`) | yes |
 | `1.10.0` | a climb inside one piece — the `climb` class of a contract edge, a way a body climbs on a ladder or a vine between two spaces | yes |
+| `1.11.0` | a library piece placed by name — the `prefab` node, with its optional `rotation` (spec-0106 §3.8) | yes |
 
 A number names exactly one surface, in every engine build that knows the number;
 otherwise two engines both call themselves `1.1.0`, disagree about what a
@@ -1166,6 +1198,7 @@ Two mechanisms answer it, and both are enforced by
 | `ir::Include.rename_anchors` | `1.5.0` | `via ir::Program.include` |
 | `ir::Node.palette` | `1.3.0` | `BIND_SINCE` |
 | `ir::Node.params` | `1.3.0` | `BIND_SINCE` |
+| `ir::Node.rotation` | `1.11.0` | `PREFAB_SINCE` |
 | `ir::Program.contract` | `1.2.0` | `CONTRACT_SINCE` |
 | `ir::Program.include` | `1.5.0` | `INCLUDE_SINCE` |
 | `ir::Program.shown_faces` | `1.9.0` | `SHOWN_FACES_SINCE` |
@@ -1276,8 +1309,9 @@ is not kebab-case, a `bind` that binds nothing, and a `bind` naming a parameter
 or role the program does not declare). During expansion: `NoApplicableRule`,
 `Split{Overflow|ZeroStride}`, `Orient`, `BadSize`, `Eval`, `PaletteFull` (more
 than 65 536 distinct block states in one model), `MarkOutsideScope`,
-`MarkFacingNotCardinal`, `AnchorCollision`, and the `DepthLimit` / `ScopeLimit` /
-`VolumeLimit` budgets. Errors carry the rule name and print as prose, never as a
+`MarkFacingNotCardinal`, `AnchorCollision`, `UnknownPiece` and `PieceShape` (a
+`prefab` naming a piece the library lacks, or a scope not the piece's size, §2),
+and the `DepthLimit` / `ScopeLimit` / `VolumeLimit` budgets. Errors carry the rule name and print as prose, never as a
 `Debug` struct.
 
 **A refusal names the comparison, not just the rule.** A guard exhaustion
@@ -1469,6 +1503,22 @@ over a campaign's own zone programs, which is where a zone that has left the
 engine's copy behind is caught.
 
 ## 4c. Opt-in gates — the claims a piece makes
+
+**The `prefab` node's gates are not opt-in, and are stated here beside the
+claims because they judge what a program places** (spec-0106 §3.8). Three
+refusals hold a library piece placed by name: the expansion refuses a piece the
+library does not hold (`UnknownPiece`, naming it) and a scope that is not the
+piece's size after its rotation (`PieceShape`, naming both sizes — the shape gate
+of a placed part), and the **`prefab-placed-by-design`** gate, on every
+expansion of a program that names a `prefab`, refuses a `prefab` reached through a
+weighted draw: one the expansion reached under a rule that drew among two or
+more applicable alternatives, and — read off the program, so a draw this region
+did not take is refused too — one reachable from a rule with two or more
+unguarded alternatives. Each refusal names the rule and the piece; the remedy is
+to move the `prefab` out from under the weighted alternatives, or guard each so
+exactly one applies. Its binding is the pieces placed; a program whose every
+`prefab` sits under a guard the region did not take states the zero, and a
+program naming no `prefab` owes the gate nothing.
 
 Three gates run only when the author says the piece makes their claim, because
 each is a claim about a *kind* of piece rather than about every piece.

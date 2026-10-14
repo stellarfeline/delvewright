@@ -55,8 +55,12 @@ fn grammar() -> Command {
 const REGION: [u32; 3] = [15, 7, 15];
 
 fn run(program: &Program, size: [u32; 3], seed: u64) -> Expansion {
-    expand(program, Box3::at_origin(size), &ExpandOptions::seeded(seed))
-        .unwrap_or_else(|e| panic!("{}: {e}", program.name))
+    expand(
+        program,
+        Box3::at_origin(size),
+        &ExpandOptions::seeded(seed).with_pieces(delvec::grammar::library::corpus_pieces()),
+    )
+    .unwrap_or_else(|e| panic!("{}: {e}", program.name))
 }
 
 // ---------------------------------------------------------------------------
@@ -549,6 +553,7 @@ const CORPUS: &[(&str, [u32; 3])] = &[
     ("idiom-shape", [15, 9, 3]),
     ("idiom-skip", [7, 5, 5]),
     ("idiom-surface-detail", [9, 12, 9]),
+    ("kit-row", [11, 4, 5]),
     ("lift-shaft", [5, 16, 7]),
     ("negated-guard", [5, 4, 12]),
     ("rafter-hall", [13, 6, 25]),
@@ -621,7 +626,11 @@ fn binds(program: &Program) -> usize {
                 walk(body)
             }
             Node::Split(split) => split.children.iter().map(walk).sum(),
-            Node::Void | Node::Skip | Node::Fill { .. } | Node::Call { .. } => 0,
+            Node::Void
+            | Node::Skip
+            | Node::Fill { .. }
+            | Node::Call { .. }
+            | Node::Prefab { .. } => 0,
         }
     }
     program
@@ -973,7 +982,7 @@ fn an_argument_that_never_reaches_its_base_case_hits_the_depth_budget() {
     let err = expand(
         &program,
         Box3::at_origin([1, 1, 1]),
-        &ExpandOptions::seeded(0),
+        &ExpandOptions::seeded(0).with_pieces(delvec::grammar::library::corpus_pieces()),
     )
     .expect_err("an endless recursion must not expand");
     assert_eq!(
