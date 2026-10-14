@@ -3664,3 +3664,127 @@ fn dw0995_a_gate_the_route_opens_is_heard() {
     assert!(!after.contains("DW0995"), "{after}");
     assert!(after.contains("1 of 1 with a listening station"), "{after}");
 }
+
+// ---------------------------------------------------------------------------
+// DW1025 — a body the party talks to has its back to them
+// ---------------------------------------------------------------------------
+
+/// A library holding only hello-room, with `anchor/keeper-stand` facing `facing`.
+fn hello_room_facing(tag: &str, facing: &str) -> PathBuf {
+    let dir = tmp(&format!("lib-{tag}"));
+    let src = common::prefabs_dir();
+    std::fs::copy(src.join("hello-room.nbt"), dir.join("hello-room.nbt")).unwrap();
+    std::fs::copy(src.join("hello-room.json"), dir.join("hello-room.json")).unwrap();
+    edit_meta(&dir, "hello-room", |m| {
+        m["anchors"]["anchor/keeper-stand"]["facing"] = serde_json::json!(facing);
+    });
+    dir
+}
+
+/// **DECLARE the `watch` the message prints.** hello-world's keeper stands
+/// facing east while the route delivers the party from the west, so the party
+/// walks up to its back; the message names the declaration, with the reach,
+/// and the same campaign with that declaration added builds.
+#[test]
+fn dw1025_declaring_the_watch_it_names_turns_the_keeper_to_the_party() {
+    let dir = hello_room_facing("dw1025", "east");
+    let camp = campaign("dw1025", None);
+    let (code, before) = build("dw1025-back", &camp, &dir);
+    assert_eq!(code, 3, "a back-turned stand is refused:\n{before}");
+    let named = "Declare `watch: { \"who\": \"nearest\", \"within\": 3 }` on `npc/keeper`";
+    assert!(
+        before.contains("DW1025") && before.contains(named),
+        "the message names the move:\n{before}"
+    );
+    edit_doc(&camp, "npcs.json", |v| {
+        v["content"]["npcs"][0]["watch"] = serde_json::json!({ "who": "nearest", "within": 3 });
+    });
+    let (code, after) = build("dw1025-watched", &camp, &dir);
+    assert_eq!(code, 0, "the declared watch builds:\n{after}");
+    assert!(!after.contains("DW1025 ["), "{after}");
+    assert!(after.contains("1 drawn by a watch"), "{after}");
+}
+
+// ---------------------------------------------------------------------------
+// DW1026 — one named character, two bodies at once
+// ---------------------------------------------------------------------------
+
+/// hello-world with a deferred second NPC carrying `name`, spawned when the
+/// keeper is talked to.
+fn two_keepers(tag: &str, name: &str) -> PathBuf {
+    let camp = campaign(tag, None);
+    edit_doc(&camp, "npcs.json", |v| {
+        let mut n = v["content"]["npcs"][0].clone();
+        n["id"] = serde_json::json!("npc/keeper-later");
+        n["name"] = serde_json::json!(name);
+        n["deferred"] = serde_json::json!(true);
+        v["content"]["npcs"].as_array_mut().unwrap().push(n);
+    });
+    edit_doc(&camp, "quests.json", |v| {
+        v["content"]["quests"][0]["cast"]["npc/keeper-later"] =
+            serde_json::json!({ "at": "offstage" });
+        v["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "type": "spawn-npc", "npc": "npc/keeper-later",
+                "happening": { "verb": "arrives", "text": "the keeper comes back" }
+            }));
+    });
+    camp
+}
+
+fn validate(camp: &Path) -> (i32, String) {
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+    ]);
+    (r.status.code().unwrap_or(-1), log(&r))
+}
+
+/// **DESPAWN the leaving body in the list that brings the next one in**, the
+/// first move `DW1026` names.
+#[test]
+fn dw1026_despawning_the_leaving_body_beside_the_spawn_validates() {
+    let camp = two_keepers("dw1026-hand", "The Keeper");
+    let (code, before) = validate(&camp);
+    assert_ne!(code, 0, "{before}");
+    assert!(
+        before.contains("DW1026") && before.contains("despawn the body that is leaving"),
+        "the message names the move:\n{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        v["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "type": "despawn-npc", "npc": "npc/keeper",
+                "happening": { "verb": "departs", "text": "the keeper steps away" }
+            }));
+    });
+    let (_, after) = validate(&camp);
+    assert!(!after.contains("DW1026 ["), "{after}");
+    assert!(after.contains("0 character(s) refused"), "{after}");
+}
+
+/// **GIVE each its own `name`**, the second move `DW1026` names.
+#[test]
+fn dw1026_a_name_of_its_own_validates() {
+    let camp = two_keepers("dw1026-name", "The Keeper");
+    let (_, before) = validate(&camp);
+    assert!(
+        before.contains("DW1026") && before.contains("give each its own `name`"),
+        "{before}"
+    );
+    edit_doc(&camp, "npcs.json", |v| {
+        v["content"]["npcs"][1]["name"] = serde_json::json!("The Keeper's Brother");
+    });
+    let (_, after) = validate(&camp);
+    assert!(!after.contains("DW1026 ["), "{after}");
+    assert!(
+        after.contains("0 name(s) carried by more than one declaration"),
+        "{after}"
+    );
+}

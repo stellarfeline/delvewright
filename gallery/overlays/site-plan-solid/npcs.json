@@ -52,7 +52,11 @@
           "motivation": "Trade for whatever the hall's visitors are carrying.",
           "speech_style": "Brisk, transactional, never impolite."
         },
-        "role": "flavor"
+        "role": "flavor",
+        "watch": {
+          "who": "nearest",
+          "within": 3
+        }
       },
       {
         "anchor": "anchor/node-loft",
