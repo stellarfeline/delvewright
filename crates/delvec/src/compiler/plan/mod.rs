@@ -426,6 +426,22 @@ impl LinkTakes {
 }
 
 impl<'a> Plan<'a> {
+    /// **Whether `p` is the blockout's record of a place a `details[]` row
+    /// binds** — a record standing over the same cells as the piece that is
+    /// the place, which a count of pieces counts once, as the piece.
+    pub fn is_bound_record(&self, p: &PiecePlacement) -> bool {
+        let Some(node) = p
+            .prefab_id
+            .strip_prefix(crate::compiler::blockout::STAND_IN_PREFIX)
+        else {
+            return false;
+        };
+        self.campaign
+            .detail_plan
+            .as_ref()
+            .is_some_and(|d| d.content.details.iter().any(|row| row.place.0 == node))
+    }
+
     /// Build the plan. Requires a validated campaign and loaded prefab metadata.
     pub fn build(campaign: &'a Campaign, prefabs: &PrefabRegistry) -> Result<Self, PlanError> {
         Self::build_with(campaign, prefabs, Perturb::none())

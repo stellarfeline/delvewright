@@ -4,7 +4,7 @@
     "boxes": [
       {
         "ceiling": {
-          "clearance": 6
+          "clearance": 5
         },
         "extent": [
           16,
@@ -17,7 +17,46 @@
           1,
           1
         ],
-        "node": "node/keep"
+        "node": "node/gate"
+      },
+      {
+        "ceiling": {
+          "clearance": 5
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "y": 65
+        },
+        "node": "node/store"
+      },
+      {
+        "ceiling": {
+          "clearance": 5
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "y": 65
+        },
+        "node": "node/post"
+      },
+      {
+        "ceiling": {
+          "clearance": 5
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "y": 65
+        },
+        "node": "node/breach"
       }
     ],
     "fill": {
@@ -48,17 +87,42 @@
     },
     "region": {
       "extent": [
-        18,
-        9,
+        69,
+        8,
         18
       ],
       "min": [
         0,
-        63,
+        64,
         0
       ]
     },
-    "seams": []
+    "seams": [
+      {
+        "at": 7,
+        "edge": "edge/gate-store",
+        "face": "east",
+        "form": "a stone arch",
+        "meets": 7,
+        "opening": "arch"
+      },
+      {
+        "at": 7,
+        "edge": "edge/store-post",
+        "face": "east",
+        "form": "a stone arch",
+        "meets": 7,
+        "opening": "arch"
+      },
+      {
+        "at": 7,
+        "edge": "edge/post-breach",
+        "face": "east",
+        "form": "a stone arch",
+        "meets": 7,
+        "opening": "arch"
+      }
+    ]
   },
   "dsl_version": "0.44.0",
   "stage": "site-plan"

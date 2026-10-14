@@ -3,46 +3,59 @@
   "content": {
     "beats": [
       {
-        "node": "node/keep",
+        "node": "node/hall",
         "objective": "obj/talk",
         "quest": "quest/greet"
       },
       {
-        "node": "node/keep",
+        "node": "node/north",
         "objective": "obj/ward-north",
         "quest": "quest/wards"
       },
       {
-        "node": "node/keep",
+        "node": "node/south",
         "objective": "obj/ward-south",
         "quest": "quest/wards"
       },
       {
-        "node": "node/keep",
+        "node": "node/shrine",
         "objective": "obj/shrine",
         "quest": "quest/wards"
       }
     ],
     "critical_path": [
-      "node/keep"
+      "node/hall",
+      "node/north",
+      "node/south",
+      "node/shrine"
     ],
-    "edges": [],
-    "entry": "node/keep",
-    "goal": "node/keep",
+    "edges": [
+      {
+        "a": "node/hall",
+        "b": "node/north",
+        "class": "walk",
+        "id": "edge/hall-north"
+      },
+      {
+        "a": "node/north",
+        "b": "node/south",
+        "class": "walk",
+        "id": "edge/north-south"
+      },
+      {
+        "a": "node/south",
+        "b": "node/shrine",
+        "class": "walk",
+        "id": "edge/south-shrine"
+      }
+    ],
+    "entry": "node/hall",
+    "goal": "node/shrine",
     "nodes": [
       {
-        "id": "node/keep",
-        "intent": "the whole site",
-        "note": "The campaign's one place.",
+        "id": "node/hall",
+        "intent": "a room",
         "stations": [
-          {
-            "anchor": "anchor/chest",
-            "kind": "point"
-          },
-          {
-            "anchor": "anchor/door",
-            "kind": "point"
-          },
           {
             "anchor": "anchor/gate",
             "kind": "gate"
@@ -50,7 +63,33 @@
           {
             "anchor": "anchor/keeper-stand",
             "kind": "point"
-          },
+          }
+        ]
+      },
+      {
+        "id": "node/north",
+        "intent": "a room",
+        "stations": [
+          {
+            "anchor": "anchor/door",
+            "kind": "point"
+          }
+        ]
+      },
+      {
+        "id": "node/south",
+        "intent": "a room",
+        "stations": [
+          {
+            "anchor": "anchor/chest",
+            "kind": "point"
+          }
+        ]
+      },
+      {
+        "id": "node/shrine",
+        "intent": "a room",
+        "stations": [
           {
             "anchor": "anchor/objective",
             "kind": "point"

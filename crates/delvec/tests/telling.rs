@@ -16,11 +16,27 @@ fn hw(name: &str) -> serde_json::Value {
     serde_json::from_str(&read_hw(name)).unwrap()
 }
 
+/// The label every name test reads: a body over the exit whose nameplate shows
+/// `The Keep` — a name shown, never told.
+fn keep_sign(name: &str) -> serde_json::Value {
+    serde_json::json!({
+        "id": "actor/keep-sign", "entity": "minecraft:villager",
+        "name": name, "anchor": "anchor/exit"
+    })
+}
+
 fn parse(
     world: &serde_json::Value,
     quests: &serde_json::Value,
     dialogue: &serde_json::Value,
 ) -> Campaign {
+    let mut quests = quests.clone();
+    if quests["content"]["actors"]
+        .as_array()
+        .is_none_or(|a| a.is_empty())
+    {
+        quests["content"]["actors"] = serde_json::json!([keep_sign("The Keep")]);
+    }
     let raw = RawCampaign {
         world: world.to_string(),
         npcs: read_hw("npcs.json"),
@@ -117,8 +133,8 @@ fn a_question_asked_only_in_chinese_is_dw0981_naming_the_language() {
 }
 
 /// The playtest shape for names: the player's own option names a thing shown
-/// only as a label — here the area's name, `The Keep` — before anything has
-/// said what it is.
+/// only as a label — here a nameplate, `The Keep` — before anything has said
+/// what it is.
 #[test]
 fn a_name_shown_only_as_a_label_is_dw0982() {
     let c = with_dialogue(|d| {
@@ -130,7 +146,11 @@ fn a_name_shown_only_as_a_label_is_dw0982() {
     assert_eq!(d[0].code, DW_NAME_UNTOLD.id());
     assert_eq!(d[0].severity, Severity::Error);
     assert_eq!(d[0].path, "/content/dialogues/0/nodes/0/options/1/label");
-    assert!(d[0].message.contains("area.keep.name"), "{}", d[0].message);
+    assert!(
+        d[0].message.contains("actor.keep-sign.name"),
+        "{}",
+        d[0].message
+    );
     assert_eq!(bind.untold, 1);
     assert!(
         bind.uses >= 1 && bind.walks >= 1 && bind.names >= 1,
@@ -347,26 +367,21 @@ fn a_styled_gloss_tells_the_name() {
     assert_eq!(bind.untold, 0);
 }
 
-/// N1's refinement read through styled text: an area's name drawn in a span is
-/// still only a nameplate, which introduces nothing — the use is refused, and
-/// the name is matched by the words it draws, not its markup.
+/// N1's refinement read through styled text: a name drawn in a span is still
+/// only a nameplate, which introduces nothing — the use is refused, and the name
+/// is matched by the words it draws, not its markup.
 #[test]
-fn a_styled_area_name_is_still_only_a_label() {
-    let mut world = hw("world.json");
-    let areas = world["content"]["areas"].as_array_mut().unwrap();
-    let keep = areas
-        .iter_mut()
-        .find(|a| a["name"] == "The Keep")
-        .expect("hello-world names its area `The Keep`");
-    keep["name"] = "[[bold|The Keep]]".into();
+fn a_styled_nameplate_is_still_only_a_label() {
+    let mut quests = hw("quests.json");
+    quests["content"]["actors"] = serde_json::json!([keep_sign("[[bold|The Keep]]")]);
     let mut d = hw("dialogue.json");
     option(&mut d, 0, 1)["label"] = "Open the keep, please.".into();
-    let c = parse(&world, &hw("quests.json"), &d);
+    let c = parse(&hw("world.json"), &quests, &d);
     let (diags, _) = telling::check_names_told_bound(&c);
     assert!(
         diags
             .iter()
-            .any(|x| x.code == "DW0982" && x.message.contains("area.keep.name")),
+            .any(|x| x.code == "DW0982" && x.message.contains("actor.keep-sign.name")),
         "{diags:#?}"
     );
 }

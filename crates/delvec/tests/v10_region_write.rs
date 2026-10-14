@@ -32,6 +32,7 @@ fn prefabs_with_anchor(name: &str, anchor: &str, pos: [i32; 3]) -> PathBuf {
         serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     meta["anchors"][anchor] = serde_json::json!({ "pos": pos });
     std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+    common::declare_piece_anchor("prefab/hello-room", anchor);
     dir
 }
 

@@ -576,6 +576,18 @@ pub fn build_with_warnings(
         Some(prove_assemblies(plan, &world, &population)?);
 
     // ---- the stage-5 blockout battery (spec-0049 §5.3) ----
+    //
+    // Fluid running out of the built volume (`DW0318`) is a false premise of
+    // the battery's reach proof, as it is of the boundary proof's: a cell the
+    // escaped water floods is no floor, so a leaking place reads as one no
+    // body can reach. The leak is the cause and is refused first; the ledger is
+    // measured again, unconditionally, where the world block owes it.
+    if let Some(e) = crate::compiler::nav::measure_fluid_escape(&world).finding() {
+        return Err(BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        });
+    }
     prove_blockout(plan, assembled, &mut warnings)?;
 
     // ---- the declaration proofs: no occupancy model, `DW0360` first ----

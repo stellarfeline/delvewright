@@ -341,9 +341,10 @@ fn aggro_edge_mobs_spawn_on_the_perception_ring() {
             ((p[0] - centre[0]).powi(2) + (p[1] - centre[1]).powi(2) + (p[2] - centre[2]).powi(2))
                 .sqrt();
         assert!(
-            (11.0..=12.0).contains(&d),
+            (10.0..=11.0).contains(&d),
             "a husk materialized {d:.2} blocks from the defended point, outside \
-             the one-sided ring [follow_range-1, follow_range] = [11, 12]: {line}"
+             the band one block inside perception [follow_range-2, follow_range-1] = \
+             [10, 11]: {line}"
         );
         seen += 1;
     }
@@ -460,19 +461,19 @@ fn lane_waypoints_are_required_anchors_in_a_pool_area() {
 /// is one the engine quietly stops following.
 #[test]
 fn a_short_lane_leg_is_dw0386() {
-    // Point the FIRST waypoint at the squad's own spawn anchor's neighbour four
-    // blocks away: every other leg still passes, so the diagnostic is the spacing
-    // rule and nothing else.
+    // Point the FIRST waypoint at the station beside the squad's own spawn
+    // anchor, in the breach room it musters in: every other leg still passes, so
+    // the diagnostic is the spacing rule and nothing else.
     let err = build_patched(
         "shortleg",
         "\"waypoints\": [\n            \"anchor/keeper-stand\",",
-        "\"waypoints\": [\n            \"spawn\",",
+        "\"waypoints\": [\n            \"anchor/door\",",
     )
     .expect_err("a short leg must fail the build");
     assert_eq!(code_of(&err), "DW0386", "{err:?}");
     match &err {
         BuildFailure::Diagnostic { message, .. } => assert!(
-            message.contains("4.0 blocks") && message.contains("not more than 10"),
+            message.contains("anchor/door") && message.contains("not more than 10"),
             "the message names the measured leg: {message}"
         ),
         other => panic!("expected a diagnostic, got {other:?}"),

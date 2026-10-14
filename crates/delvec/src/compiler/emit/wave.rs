@@ -107,6 +107,14 @@ pub(super) fn plan_wave_spawns(
 /// (see [`crate::compiler::nav::World::annulus_standable_cells`]).
 pub(super) const AGGRO_RING_TOLERANCE: f64 = 1.0;
 
+/// The outer radius of the band an aggro-edge stack is seated in, for a
+/// `follow_range` of `radius`: one block inside perception (the band is
+/// `[outer - AGGRO_RING_TOLERANCE, outer]`). The one rule the placement and
+/// the PackTest that checks it both read.
+pub(super) fn aggro_band_outer(radius: f64) -> f64 {
+    (radius - 1.0).max(2.0)
+}
+
 /// Seat a `summon: aggro-edge` wave (spec-0016 §6) on the boundary of its own
 /// perception: for each mob stack, the standable, reachable, line-of-sight cells
 /// at that stack's `attributes.follow_range` from the defended anchor, nearest
@@ -149,7 +157,7 @@ pub(super) fn plan_aggro_edge_spawns(
         // forever, timing out the kill objective. One block of margin turns
         // "materializes at the edge of what it can sense" from fiction into
         // guaranteed engagement.
-        let band_outer = (radius - 1.0).max(2.0);
+        let band_outer = aggro_band_outer(radius);
         let ring = world.annulus_standable_cells(anchor, bounds, band_outer, AGGRO_RING_TOLERANCE);
         let picked: Vec<[i32; 3]> = ring
             .iter()

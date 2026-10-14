@@ -320,7 +320,7 @@ pub fn check(
     // ---- the pieces, and what each of them says about its own sides ---------
     let mut pieces: Vec<Piece> = Vec::new();
     for area in &plan.areas {
-        for placement in &area.pieces {
+        for placement in area.pieces.iter().filter(|p| !plan.is_bound_record(p)) {
             binding.placed += 1;
             let (min, max) = placement.bbox();
             let meta: Option<&PrefabMeta> = prefabs.get(&placement.prefab_id);

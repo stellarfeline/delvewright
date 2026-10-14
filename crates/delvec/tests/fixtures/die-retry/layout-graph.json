@@ -3,38 +3,51 @@
   "content": {
     "beats": [
       {
-        "node": "node/keep",
+        "node": "node/hall",
         "objective": "obj/talk",
         "quest": "quest/greet"
       },
       {
-        "node": "node/keep",
+        "node": "node/yard",
         "objective": "obj/slay",
         "quest": "quest/trial"
       }
     ],
     "critical_path": [
-      "node/keep"
+      "node/hall",
+      "node/yard"
     ],
-    "edges": [],
-    "entry": "node/keep",
-    "goal": "node/keep",
+    "edges": [
+      {
+        "a": "node/hall",
+        "b": "node/yard",
+        "class": "walk",
+        "id": "edge/hall-yard"
+      }
+    ],
+    "entry": "node/hall",
+    "goal": "node/yard",
     "nodes": [
       {
-        "id": "node/keep",
-        "intent": "the whole site",
-        "note": "The campaign's one place.",
+        "id": "node/hall",
+        "intent": "a room",
         "stations": [
           {
             "anchor": "anchor/door",
             "kind": "gate"
           },
           {
-            "anchor": "anchor/exit",
-            "kind": "point"
-          },
-          {
             "anchor": "anchor/keeper-stand",
+            "kind": "point"
+          }
+        ]
+      },
+      {
+        "id": "node/yard",
+        "intent": "a room",
+        "stations": [
+          {
+            "anchor": "anchor/exit",
             "kind": "point"
           }
         ]

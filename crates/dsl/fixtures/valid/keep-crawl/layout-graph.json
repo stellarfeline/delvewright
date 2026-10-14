@@ -3,37 +3,47 @@
   "content": {
     "beats": [
       {
-        "node": "node/gatehouse",
+        "node": "node/hall",
         "objective": "obj/talk",
         "quest": "quest/greet-keeper"
       },
       {
-        "node": "node/gatehouse",
+        "node": "node/passage",
         "objective": "obj/arrive",
         "quest": "quest/reach-shrine"
       },
       {
-        "node": "node/gatehouse",
+        "node": "node/shrine",
         "objective": "obj/reach",
         "quest": "quest/reach-shrine"
       }
     ],
     "critical_path": [
-      "node/gatehouse"
+      "node/hall",
+      "node/passage",
+      "node/shrine"
     ],
-    "edges": [],
-    "entry": "node/gatehouse",
-    "goal": "node/gatehouse",
+    "edges": [
+      {
+        "a": "node/hall",
+        "b": "node/passage",
+        "class": "walk",
+        "id": "edge/hall-passage"
+      },
+      {
+        "a": "node/passage",
+        "b": "node/shrine",
+        "class": "walk",
+        "id": "edge/passage-shrine"
+      }
+    ],
+    "entry": "node/hall",
+    "goal": "node/shrine",
     "nodes": [
       {
-        "id": "node/gatehouse",
-        "intent": "the whole site",
-        "note": "The campaign's one place.",
+        "id": "node/hall",
+        "intent": "a room",
         "stations": [
-          {
-            "anchor": "anchor/exit",
-            "kind": "point"
-          },
           {
             "anchor": "anchor/gate",
             "kind": "gate"
@@ -41,7 +51,23 @@
           {
             "anchor": "anchor/keeper-stand",
             "kind": "point"
-          },
+          }
+        ]
+      },
+      {
+        "id": "node/passage",
+        "intent": "a room",
+        "stations": [
+          {
+            "anchor": "anchor/exit",
+            "kind": "point"
+          }
+        ]
+      },
+      {
+        "id": "node/shrine",
+        "intent": "a room",
+        "stations": [
           {
             "anchor": "anchor/objective",
             "kind": "point"

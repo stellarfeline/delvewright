@@ -20,8 +20,9 @@ use super::*;
 ///   the lane; with a player inside it, every mob is `Patrolling:0b`.
 /// * `souls_td_aggro_edge` — a `summon: aggro-edge` wave really materializes on
 ///   its perception ring around the defended anchor: full authored count, every
-///   mob at its own `follow_range` from the defended point, measured from the
-///   same snapped centre the compiler placed them around.
+///   mob in the band one block inside its own `follow_range` from the defended
+///   point (`wave::aggro_band_outer`), measured from the same snapped centre the
+///   compiler placed them around.
 pub(super) fn emit_td_lane_packtests(
     plan: &Plan,
     out: &mut BuildOutput,
@@ -240,8 +241,9 @@ pub(super) fn emit_td_lane_packtests(
         let c = ent_xyz(centre);
         for (i, ((entity, radius), count)) in groups.iter().enumerate() {
             let radius: f64 = radius.parse().unwrap_or_default();
-            let lo = fmt_f64((radius - AGGRO_RING_TOLERANCE - 0.1).max(0.0));
-            let hi = fmt_f64(radius + 0.1);
+            let outer = super::super::wave::aggro_band_outer(radius);
+            let lo = fmt_f64((outer - AGGRO_RING_TOLERANCE - 0.1).max(0.0));
+            let hi = fmt_f64(outer + 0.1);
             b.push(format!(
                 "execute positioned {} {} {} store result score #r{i}_tdedg dw.sys if entity \
                  @e[tag={tag},type={entity},distance={lo}..{hi}]",

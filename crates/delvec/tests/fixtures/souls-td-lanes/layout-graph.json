@@ -3,43 +3,85 @@
   "content": {
     "beats": [
       {
-        "node": "node/keep",
+        "node": "node/post",
         "objective": "obj/take-post",
         "quest": "quest/hold-the-keep"
       },
       {
-        "node": "node/keep",
-        "objective": "obj/break-warband",
+        "node": "node/post",
+        "objective": "obj/break-husks",
         "quest": "quest/hold-the-keep"
       },
       {
-        "node": "node/keep",
-        "objective": "obj/break-husks",
+        "node": "node/breach",
+        "objective": "obj/break-warband",
         "quest": "quest/hold-the-keep"
       }
     ],
     "critical_path": [
-      "node/keep"
+      "node/gate",
+      "node/store",
+      "node/post",
+      "node/breach"
     ],
-    "edges": [],
-    "entry": "node/keep",
-    "goal": "node/keep",
+    "edges": [
+      {
+        "a": "node/gate",
+        "b": "node/store",
+        "class": "walk",
+        "id": "edge/gate-store"
+      },
+      {
+        "a": "node/store",
+        "b": "node/post",
+        "class": "walk",
+        "id": "edge/store-post"
+      },
+      {
+        "a": "node/post",
+        "b": "node/breach",
+        "class": "walk",
+        "id": "edge/post-breach"
+      }
+    ],
+    "entry": "node/gate",
+    "goal": "node/breach",
     "nodes": [
       {
-        "id": "node/keep",
-        "intent": "the whole site",
-        "note": "The campaign's one place.",
+        "id": "node/gate",
+        "intent": "a room",
+        "stations": []
+      },
+      {
+        "id": "node/store",
+        "intent": "a room",
         "stations": [
           {
             "anchor": "anchor/chest",
             "kind": "point"
-          },
+          }
+        ]
+      },
+      {
+        "id": "node/post",
+        "intent": "a room",
+        "stations": [
           {
-            "anchor": "anchor/exit",
+            "anchor": "anchor/keeper-stand",
+            "kind": "point"
+          }
+        ]
+      },
+      {
+        "id": "node/breach",
+        "intent": "a room",
+        "stations": [
+          {
+            "anchor": "anchor/door",
             "kind": "point"
           },
           {
-            "anchor": "anchor/keeper-stand",
+            "anchor": "anchor/exit",
             "kind": "point"
           }
         ]

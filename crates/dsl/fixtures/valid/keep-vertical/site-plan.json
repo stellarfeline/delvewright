@@ -4,25 +4,54 @@
     "boxes": [
       {
         "ceiling": {
-          "clearance": 6
+          "clearance": 8
         },
         "extent": [
-          16,
+          12,
           16
         ],
         "floor": {
-          "y": 65
+          "datum": "datum/grade"
         },
         "min": [
-          1,
-          1
+          4,
+          8
         ],
-        "node": "node/keep"
+        "node": "node/hall"
+      },
+      {
+        "ceiling": {
+          "open": 3
+        },
+        "extent": [
+          8,
+          8
+        ],
+        "floor": {
+          "datum": "datum/loft"
+        },
+        "node": "node/loft"
+      }
+    ],
+    "datums": [
+      {
+        "id": "datum/grade",
+        "note": "The plane the delve opens on, and the one every place but the loft stands at.",
+        "y": 64
+      },
+      {
+        "id": "datum/loft",
+        "y": 68
       }
     ],
     "fill": {
-      "block": "minecraft:stone",
-      "kind": "solid"
+      "below": "minecraft:stone",
+      "kind": "open",
+      "surface": "minecraft:grass_block",
+      "terrain": {
+        "datum": "datum/grade",
+        "kind": "flat"
+      }
     },
     "identities": [
       {
@@ -40,6 +69,31 @@
           "axis": "z",
           "of": "region-extent"
         }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/hall-span",
+        "measure": {
+          "axis": "x",
+          "node": "node/hall",
+          "of": "box-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/loft-datum",
+        "measure": {
+          "datum": "datum/loft",
+          "of": "datum-y"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/hall-height",
+        "measure": {
+          "node": "node/hall",
+          "of": "box-height"
+        }
       }
     ],
     "lighting": {
@@ -48,17 +102,40 @@
     },
     "region": {
       "extent": [
-        18,
-        9,
-        18
+        64,
+        32,
+        64
       ],
       "min": [
         0,
-        63,
+        56,
         0
       ]
     },
-    "seams": []
+    "seams": [
+      {
+        "at": 6,
+        "edge": "edge/hall-loft",
+        "face": "east",
+        "form": "a stone arch, reached by a stone stair",
+        "meets": 2,
+        "opening": "arch",
+        "stair_in": "node/hall"
+      },
+      {
+        "at": 0,
+        "contact": {
+          "extent": [
+            6,
+            3
+          ]
+        },
+        "edge": "edge/loft-drop",
+        "face": "west",
+        "form": "an open front where the two ground surfaces meet over a drop",
+        "meets": 4
+      }
+    ]
   },
   "dsl_version": "0.44.0",
   "stage": "site-plan"

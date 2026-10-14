@@ -55,6 +55,7 @@ fn prefabs_with_doorstep(name: &str) -> PathBuf {
     let mut meta: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     meta["anchors"]["anchor/doorstep"] = serde_json::json!({ "pos": [4, 0, 6] });
+    common::declare_piece_anchor("prefab/hello-room", "anchor/doorstep");
     std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
     dir
 }

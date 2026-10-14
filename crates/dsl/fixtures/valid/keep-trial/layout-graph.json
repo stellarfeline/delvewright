@@ -3,51 +3,64 @@
   "content": {
     "beats": [
       {
-        "node": "node/keep",
+        "node": "node/hall",
         "objective": "obj/talk",
         "quest": "quest/greet"
       },
       {
-        "node": "node/keep",
+        "node": "node/hall",
         "objective": "obj/slay",
         "quest": "quest/trial"
       },
       {
-        "node": "node/keep",
+        "node": "node/store",
         "objective": "obj/key",
         "quest": "quest/trial"
       },
       {
-        "node": "node/keep",
+        "node": "node/crypt",
         "objective": "obj/door",
         "quest": "quest/trial"
       },
       {
-        "node": "node/keep",
+        "node": "node/shrine",
         "objective": "obj/shrine",
         "quest": "quest/trial"
       }
     ],
     "critical_path": [
-      "node/keep"
+      "node/hall",
+      "node/store",
+      "node/crypt",
+      "node/shrine"
     ],
-    "edges": [],
-    "entry": "node/keep",
-    "goal": "node/keep",
+    "edges": [
+      {
+        "a": "node/hall",
+        "b": "node/store",
+        "class": "walk",
+        "id": "edge/hall-store"
+      },
+      {
+        "a": "node/store",
+        "b": "node/crypt",
+        "class": "walk",
+        "id": "edge/store-crypt"
+      },
+      {
+        "a": "node/crypt",
+        "b": "node/shrine",
+        "class": "walk",
+        "id": "edge/crypt-shrine"
+      }
+    ],
+    "entry": "node/hall",
+    "goal": "node/shrine",
     "nodes": [
       {
-        "id": "node/keep",
-        "intent": "the whole site",
-        "note": "The campaign's one place.",
+        "id": "node/hall",
+        "intent": "a room",
         "stations": [
-          {
-            "anchor": "anchor/chest",
-            "kind": "point"
-          },
-          {
-            "anchor": "anchor/door",
-            "kind": "point"
-          },
           {
             "anchor": "anchor/gate",
             "kind": "gate"
@@ -55,7 +68,33 @@
           {
             "anchor": "anchor/keeper-stand",
             "kind": "point"
-          },
+          }
+        ]
+      },
+      {
+        "id": "node/store",
+        "intent": "a room",
+        "stations": [
+          {
+            "anchor": "anchor/chest",
+            "kind": "point"
+          }
+        ]
+      },
+      {
+        "id": "node/crypt",
+        "intent": "a room",
+        "stations": [
+          {
+            "anchor": "anchor/door",
+            "kind": "point"
+          }
+        ]
+      },
+      {
+        "id": "node/shrine",
+        "intent": "a room",
+        "stations": [
           {
             "anchor": "anchor/objective",
             "kind": "point"

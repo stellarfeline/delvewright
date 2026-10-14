@@ -4,15 +4,33 @@
     "facts": [
       {
         "id": "fact/site-span",
-        "note": "The site's span east to west: the one place and its ring.",
+        "note": "The whole map is sixty-four blocks east to west, which is as far as a party should have to walk without arriving somewhere.",
         "unit": "blocks",
-        "value": 18.0
+        "value": 64.0
       },
       {
         "id": "fact/site-depth",
-        "note": "The site's depth north to south: the one place and its ring.",
+        "note": "Sixty-four blocks north to south as well: the site is square, so no approach is the long way round.",
         "unit": "blocks",
-        "value": 18.0
+        "value": 64.0
+      },
+      {
+        "id": "fact/hall-span",
+        "note": "The hall is twelve blocks wide — wide enough that the stair up to the loft costs a third of it and is felt.",
+        "unit": "blocks",
+        "value": 12.0
+      },
+      {
+        "id": "fact/loft-datum",
+        "note": "The loft stands four blocks over the hall floor, a storey a stair climbs and a body can fall from.",
+        "unit": "blocks",
+        "value": 68.0
+      },
+      {
+        "id": "fact/hall-height",
+        "note": "The hall stands eight blocks to its ceiling, which is what makes the loft read as a level above rather than a shelf.",
+        "unit": "blocks",
+        "value": 8.0
       }
     ]
   },

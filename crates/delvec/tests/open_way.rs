@@ -258,22 +258,18 @@ fn broken_flight(block: &str) -> Program {
         )
 }
 
-/// Give the exported piece the bare `spawn` anchor an area needs to be
-/// transported INTO.
-///
-/// Written into the metadata rather than declared in the program, and that is
-/// not a shortcut: a grammar `mark` always exports as `anchor/<stem>`, so a
-/// generated piece cannot name the un-namespaced `spawn` key the inter-area
-/// transport looks up (`plan::build_critical_path`). Any campaign that puts a
-/// generated zone in an area of its own meets this, and it is reported with this
-/// step rather than worked around silently.
+/// Give the exported piece the near room's places the campaign's first quest
+/// stands on: the entry (`role: entry`, under the shaft a body falls through),
+/// the keeper's stand and the way out of the near room.
 fn with_a_spawn(dir: &Path, id: &str) {
     let path = dir.join(format!("{id}.json"));
     let mut meta: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    // The near room's floor, under the shaft a body falls through.
     meta["anchors"]["spawn"] =
         serde_json::json!({ "pos": [4, 1, 2], "facing": "south", "role": "entry" });
+    meta["anchors"]["anchor/keeper-stand"] =
+        serde_json::json!({ "pos": [2, 1, 2], "facing": "east" });
+    meta["anchors"]["anchor/exit"] = serde_json::json!({ "pos": [6, 1, 2], "facing": "south" });
     std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
 }
 
@@ -403,7 +399,7 @@ fn hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
 }
 
-/// Hello-world's world with a second area holding the way-carrying piece.
+/// Hello-world's world; its one place is the way-carrying piece ([`bound_map`]).
 fn world_doc() -> String {
     common::at_dsl_version(r#"{
   "dsl_version": "%dsl_version%",
@@ -487,8 +483,7 @@ enum Opening {
 }
 
 fn quests_doc(opening: Opening, tower: bool) -> String {
-    let mut first: Vec<serde_json::Value> =
-        vec![serde_json::json!({ "type": "open-gate", "anchor": "anchor/door" })];
+    let mut first: Vec<serde_json::Value> = Vec::new();
     let mut cross: Vec<serde_json::Value> = Vec::new();
     let mut on_death: Vec<serde_json::Value> = Vec::new();
     match opening {
@@ -534,8 +529,29 @@ fn campaign(opening: Opening) -> Campaign {
     campaign_with(world_doc(), quests_doc(opening, true), true)
 }
 
+/// The one place, bound to the tower piece.
+fn bound_map() -> &'static (String, String, String, String, std::path::PathBuf) {
+    static MAP: std::sync::OnceLock<(String, String, String, String, std::path::PathBuf)> =
+        std::sync::OnceLock::new();
+    MAP.get_or_init(|| {
+        let (lib, _, _) = library("bind", "oak_planks");
+        let dir = std::env::temp_dir().join(format!("dw-open-way-{}-map", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        common::campaign_bound_to(&dir, &lib, "broken-threshold");
+        let read = |n: &str| std::fs::read_to_string(dir.join(n)).unwrap();
+        (
+            read("geometry-brief.json"),
+            read("layout-graph.json"),
+            read("site-plan.json"),
+            read("detail-plan.json"),
+            lib,
+        )
+    })
+}
+
 fn campaign_with(world: String, quests: String, tower: bool) -> Campaign {
-    let raw = RawCampaign {
+    let (brief, graph, plan, detail, _) = bound_map().clone();
+    let mut raw = RawCampaign {
         world,
         npcs: hw("npcs.json"),
         classes: hw("classes.json"),
@@ -543,13 +559,34 @@ fn campaign_with(world: String, quests: String, tower: bool) -> Campaign {
         quests,
         dialogue: hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: Some(hw("geometry-brief.json")),
-        layout_graph: Some(hw("layout-graph.json")),
-        site_plan: Some(hw("site-plan.json")),
-        detail_plan: Some(hw("detail-plan.json")),
+        geometry_brief: Some(brief),
+        layout_graph: Some(graph),
+        site_plan: Some(plan),
+        detail_plan: Some(detail),
         design: None,
     };
+    common::sync_map_raw_in(&mut raw, "open-way", Some(&bound_map().4));
     common::parse_campaign(&raw).expect("campaign parses")
+}
+
+/// hello-world as the places `places` (see `common::bind_places`), with this
+/// file's quests and quest plan.
+fn campaign_of_places(
+    tag: &str,
+    lib: &Path,
+    places: &[(&str, &str, &[&str])],
+    quests: String,
+    tower: bool,
+) -> Campaign {
+    let dir = std::env::temp_dir().join(format!("dw-open-way-{}-places-{tag}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    common::copy_dir_all(&common::hello_world_dir(), &dir);
+    common::bind_places(&dir, lib, places);
+    std::fs::write(dir.join("world.json"), world_doc()).unwrap();
+    std::fs::write(dir.join("quests.json"), quests).unwrap();
+    std::fs::write(dir.join("quest-plan.json"), quest_plan_doc(tower)).unwrap();
+    let loaded = delvec::compiler::load::load_campaign_dir(&dir).unwrap();
+    delvewright_dsl::parse_campaign(&loaded.raw).expect("campaign parses")
 }
 
 /// The refusal a campaign earns at plan time, or a panic naming what it built
@@ -607,12 +644,12 @@ fn fill_lines(out: &BuildOutput) -> Vec<String> {
 /// Where the tower piece was placed, so a local cell can be turned into the
 /// world cell the emitted command must carry.
 fn tower_origin(plan: &Plan) -> [i32; 3] {
-    let area = plan
-        .areas
+    plan.areas
         .iter()
-        .find(|a| a.area_id == "area/tower")
-        .expect("the tower area is placed");
-    area.pieces[0].pos
+        .flat_map(|a| a.pieces.iter())
+        .find(|p| p.prefab_id == TOWER)
+        .expect("the tower piece is placed")
+        .pos
 }
 
 // ---------------------------------------------------------------------------
@@ -1040,23 +1077,24 @@ fn an_open_way_in_a_world_that_stages_no_way_is_still_dw0547() {
 #[test]
 fn a_piece_placed_twice_makes_its_way_reference_ambiguous() {
     let (dir, _, _) = library("twice", "oak_planks");
-    let mut world: serde_json::Value = serde_json::from_str(&world_doc()).unwrap();
-    let areas = world["content"]["areas"].as_array_mut().unwrap();
-    let mut twin = areas[1].clone();
-    twin["id"] = serde_json::json!("area/tower-b");
-    twin["name"] = serde_json::json!("The Other Tower");
-    areas.push(twin);
-    let world = serde_json::to_string_pretty(&world).unwrap();
-    let c = campaign_with(world, quests_doc(Opening::Before, true), true);
+    let c = campaign_of_places(
+        "twice",
+        &dir,
+        &[
+            (
+                "node/tower",
+                "broken-threshold",
+                &["anchor/keeper-stand", "anchor/exit", "anchor/goal"],
+            ),
+            ("node/tower-b", "broken-threshold", &[]),
+        ],
+        quests_doc(Opening::Before, true),
+        true,
+    );
     let err = plan_err(&c, &dir, "two placements, one reference");
     assert_eq!(err.failure.code.id(), "DW0547");
     assert!(
         err.failure.message.contains("2 placed pieces"),
-        "{}",
-        err.failure.message
-    );
-    assert!(
-        err.failure.message.contains("area/tower-b"),
         "{}",
         err.failure.message
     );
@@ -1073,7 +1111,22 @@ fn a_piece_placed_twice_makes_its_way_reference_ambiguous() {
 fn ways_with_no_required_element_behind_them_raise_dw0555() {
     let (dir, _, _) = library("unbound", "oak_planks");
     let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
-    let c = campaign_with(world_doc(), quests_doc(Opening::Before, false), false);
+    // The keep holds every required element; the tower stands beside it,
+    // its way staged and nothing behind it.
+    let c = campaign_of_places(
+        "unbound",
+        &dir,
+        &[
+            (
+                "node/keep",
+                "hello-room",
+                &["anchor/keeper-stand", "anchor/exit"],
+            ),
+            ("node/tower", "broken-threshold", &[]),
+        ],
+        quests_doc(Opening::Before, false),
+        false,
+    );
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
     let gate = plan.way_gate.as_ref().expect("a staged way has a ledger");
     assert_eq!(gate.staged, 1);

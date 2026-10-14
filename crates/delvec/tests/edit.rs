@@ -63,8 +63,17 @@ fn prefabs_arg() -> String {
 /// declares neither, so an ocean campaign that seats it is `DW0886` before
 /// anything is placed — correctly, and that is what `common::OceanRoom`
 /// exists to give a fixture a way past.
-fn ocean_prefabs_arg(tag: &str, room: common::OceanRoom) -> String {
-    common::ocean_prefabs_dir(tag, room).display().to_string()
+/// The ocean library for `tag`, with the campaign at `dir`'s one place bound to
+/// its shore piece, seated so its walk plane stands one course over the sea.
+fn ocean_prefabs_arg(dir: &Path, tag: &str, room: common::OceanRoom) -> String {
+    let lib = common::ocean_prefabs_dir(tag, room);
+    let meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(lib.join("hello-room.json")).unwrap())
+            .unwrap();
+    let walk = meta["walk_y"].as_i64().unwrap_or(1);
+    let y = i64::from(delvec::compiler::horizon::OCEAN_WALK_REF_Y) - walk;
+    common::bind_region_at(dir, &lib, "hello-room", y);
+    lib.display().to_string()
 }
 
 /// A private mutable copy of the v06-edits fixture (whole dir, incl. the
@@ -365,7 +374,7 @@ fn edit_select_only_batch_on_an_ocean_horizon_is_green() {
         "-o",
         out.to_str().unwrap(),
         "--prefabs",
-        &ocean_prefabs_arg("edit-ocean-select", common::OceanRoom::Shore),
+        &ocean_prefabs_arg(&dir, "edit-ocean-select", common::OceanRoom::Shore),
     ]);
     let stdout = format!(
         "{}{}",
@@ -428,7 +437,7 @@ fn edit_ocean_a_carve_that_puts_a_walk_cell_under_the_sea_is_refused_dw0344() {
             "-o",
             out.to_str().unwrap(),
             "--prefabs",
-            &ocean_prefabs_arg("edit-ocean-breach", common::OceanRoom::Shore),
+            &ocean_prefabs_arg(&dir, "edit-ocean-breach", common::OceanRoom::Shore),
         ]);
         let stdout = format!(
             "{}{}",
@@ -494,7 +503,7 @@ fn edit_ocean_unbreached_hull_is_green_and_says_what_it_examined() {
         "-o",
         out.to_str().unwrap(),
         "--prefabs",
-        &ocean_prefabs_arg("edit-ocean-hull", common::OceanRoom::Shore),
+        &ocean_prefabs_arg(&dir, "edit-ocean-hull", common::OceanRoom::Shore),
     ]);
     let stdout = format!(
         "{}{}",
@@ -659,7 +668,7 @@ fn the_batch_manifest_pieces_listing_resolves_a_piece_local_frame() {
         .as_array()
         .expect("pieces listing")
         .iter()
-        .find(|p| p["area"] == "area/keep")
+        .find(|p| p["prefab"] == "prefab/hello-room")
         .expect("the keep's piece is listed")
         .clone();
     let index = piece["index"].as_u64().expect("index");
@@ -895,8 +904,8 @@ fn snapshot_renders_the_edited_world() {
 }
 
 /// The L1 verbs materialize through the same world build: the
-/// scatter's dressing, the planted oak (logs + persistent leaves), the
-/// stamped fragment and the baked relight torch all lower to `fill`/`setblock`
+/// scatter's dressing, the planted oak (logs + persistent leaves) and the
+/// baked relight torch all lower to `fill`/`setblock`
 /// lines — and `setup` forceloads every batch's write AABB so a write that
 /// leaves the piece bboxes (a leaning canopy) cannot silently fail on an
 /// unloaded chunk.
@@ -929,12 +938,6 @@ fn pr2_verbs_materialize_and_their_bounds_are_forceloaded() {
         body.contains("minecraft:poppy") || body.contains("minecraft:oxeye_daisy"),
         "scatter: dressing"
     );
-    // The fragment stamp (a full hello-room copy 7 blocks down) contributes
-    // its iron-bars door row at y = 64 - 7 + 1..3.
-    assert!(
-        body.contains("minecraft:iron_bars"),
-        "fragment: stamped annex content"
-    );
     let setup =
         std::fs::read_to_string(out.join("datapack/data/hello-world/function/setup.mcfunction"))
             .expect("setup emitted");
@@ -942,45 +945,6 @@ fn pr2_verbs_materialize_and_their_bounds_are_forceloaded() {
     assert!(
         forceloads > 1,
         "edit-write AABBs are forceloaded beside the piece bboxes ({forceloads})"
-    );
-}
-
-/// A `fragment` naming a prefab outside the admitted library is a loud
-/// `DW0323` — only library prefabs (with ADR-0013 provenance/license
-/// metadata) can be stamped.
-#[test]
-fn fragment_outside_the_library_is_dw0323() {
-    let dir = edits_copy("edits-frag-unknown");
-    set_batches(
-        &dir,
-        serde_json::json!([{
-            "id": "batch/bad-stamp",
-            "edits": [
-                { "verb": "fragment", "prefab": "prefab/not-in-library",
-                  "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
-                  "at": [0, -7, 0] }
-            ]
-        }]),
-    );
-    let out = tmp("edits-frag-unknown-out");
-    let r = delvec(&[
-        "build",
-        dir.to_str().unwrap(),
-        "-o",
-        out.to_str().unwrap(),
-        "--prefabs",
-        &prefabs_arg(),
-    ]);
-    assert_eq!(r.status.code(), Some(3));
-    let all = format!(
-        "{}{}",
-        String::from_utf8_lossy(&r.stdout),
-        String::from_utf8_lossy(&r.stderr)
-    );
-    assert!(all.contains("DW0323"), "expected DW0323:\n{all}");
-    assert!(
-        all.contains("prefab/not-in-library"),
-        "names the prefab:\n{all}"
     );
 }
 
@@ -1127,6 +1091,7 @@ fn edit_over_trap_hardware_is_dw0352() {
             ]
         }]),
     );
+    common::sync_map_in(&dir, Some(&prefabs));
     let out = tmp("edits-trap-out");
     let r = delvec(&[
         "build",
@@ -1203,17 +1168,17 @@ fn edit_over_trap_hardware_is_dw0352() {
 #[test]
 fn out_of_bbox_edit_chunks_converge_then_release() {
     let dir = edits_copy("edits-farchunk");
-    // A fragment stamped 58 blocks out spans chunks (3,3)..(4,4) — four chunks,
-    // none of them the room's chunk (0,0).
+    // A course of bars laid 58 blocks out spans chunks (3,3)..(4,4) — four
+    // chunks, none of them the room's chunk (0,0).
     set_batches(
         &dir,
         serde_json::json!([{
             "id": "batch/far-annex",
-            "edits": [ {
-                "verb": "fragment", "prefab": "prefab/hello-room",
-                "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
-                "at": [58, -7, 58]
-            } ]
+            "edits": [
+                piece_box("region/far", [58, -7, 58], [68, -7, 68]),
+                { "verb": "fill", "region": "region/far",
+                  "recipe": { "blocks": [ { "block": "minecraft:iron_bars", "weight": 1.0 } ] } }
+            ]
         }]),
     );
     let out = tmp("edits-farchunk-out");
@@ -1522,121 +1487,6 @@ fn carving_a_relight_fixtures_support_is_a_dw0354_error() {
     assert!(
         stdout.contains("batch/undermine") && stdout.contains("relight"),
         "names the batch that broke it and what broke:\n{stdout}"
-    );
-}
-
-/// **Finding 5b, root cause.** `fragment` stamps a library prefab's blocks as
-/// the actual runtime `setblock` writes, so it must keep their BLOCKSTATE. It
-/// used to read bare ids, turning `hello-room`'s `lantern[hanging=true]` into a
-/// floor lantern stamped into mid-air — a defect `DW0354` surfaced and nothing
-/// else could see.
-#[test]
-fn fragment_stamps_preserve_blockstate() {
-    let out = tmp("edits-fragment-state");
-    let r = delvec(&[
-        "build",
-        edits_fixture_dir().to_str().unwrap(),
-        "-o",
-        out.to_str().unwrap(),
-        "--prefabs",
-        &prefabs_arg(),
-    ]);
-    assert!(r.status.success(), "build failed:\n{}", combined(&r));
-    let body = world_build(&out).join("\n");
-    assert!(
-        body.contains("minecraft:lantern[hanging=true]"),
-        "the stamped lantern keeps `hanging=true`:\n{body}"
-    );
-    assert!(
-        !body.lines().any(|l| l.ends_with("minecraft:lantern")),
-        "no bare (floor) lantern is stamped:\n{body}"
-    );
-}
-
-/// **Rotated fragment stamps are REFUSED, not warned about** (planner ruling on
-/// the gap `fragment_stamps_preserve_blockstate` surfaced). `rotation` turns
-/// cell POSITIONS only — there is no rotate-aware blockstate rewriter — so a
-/// quarter-turned stamp of a prefab carrying `facing`/`axis`/`shape`/connection
-/// state would ship visibly deformed geometry. That is the silently-deformed-map
-/// class, so it is a build error (`DW0323`, the fragment verb's resolution code).
-///
-/// It is a **collision test, not a blanket ban**: a prefab whose every state is
-/// yaw-invariant rotates correctly and stays allowed. Rejecting that too would
-/// be a check asserting something false. That half is proved against
-/// [`prefabs_with_a_yaw_invariant_piece`], a piece built to have the property
-/// rather than a shipped one observed to — see its own note for why no shipped
-/// piece can serve.
-#[test]
-fn rotated_fragment_of_a_directional_prefab_is_dw0323() {
-    let dir = edits_copy("edits-rotation");
-    let prefabs = prefabs_with_a_yaw_invariant_piece();
-    let stamp = |prefab: &str, rotation: Option<&str>| {
-        let mut edit = serde_json::json!({
-            "verb": "fragment", "prefab": prefab,
-            "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
-            "at": [0, -9, 0]
-        });
-        if let Some(r) = rotation {
-            edit["rotation"] = serde_json::json!(r);
-        }
-        set_batches(
-            &dir,
-            serde_json::json!([{ "id": "batch/rot", "edits": [edit] }]),
-        );
-        delvec(&[
-            "build",
-            dir.to_str().unwrap(),
-            "-o",
-            tmp("edits-rotation-out").to_str().unwrap(),
-            "--prefabs",
-            prefabs.to_str().unwrap(),
-        ])
-    };
-
-    // `keep-stair` carries `facing`/`shape` stair state: a quarter-turn would
-    // leave every stair pointing the way it did before it moved.
-    let r = stamp("prefab/keep-stair", Some("clockwise90"));
-    assert_eq!(r.status.code(), Some(3), "build-tier refusal");
-    let stdout = combined(&r);
-    assert!(stdout.contains("DW0323"), "expected DW0323:\n{stdout}");
-    assert!(
-        stdout.contains("prefab/keep-stair") && stdout.contains("facing="),
-        "names the prefab and the offending property:\n{stdout}"
-    );
-    assert!(
-        stdout.contains("rotate-aware stamping is NOT implemented"),
-        "says the compiler refuses, and why:\n{stdout}"
-    );
-
-    // The same prefab stamped unrotated is fine — the refusal is about the
-    // rotation, not about the prefab.
-    let r = stamp("prefab/keep-stair", None);
-    assert!(r.status.success(), "unrotated is fine:\n{}", combined(&r));
-
-    // And a prefab with no yaw-dependent state rotates correctly, in every
-    // direction: the check must not reject provably correct output.
-    for rot in ["clockwise90", "counterclockwise90", "clockwise180"] {
-        let r = stamp("prefab/yaw-invariant-box", Some(rot));
-        assert!(
-            r.status.success(),
-            "yaw-invariant prefab rotates fine ({rot}):\n{}",
-            combined(&r)
-        );
-    }
-
-    // The shipped gate room is the other side of the same coin: its grille is
-    // an east–west run of bars, so a quarter-turn deforms it and the check says
-    // so. This is the case the fixture above used to stand in for.
-    let r = stamp("prefab/hello-room", Some("clockwise90"));
-    assert_eq!(
-        r.status.code(),
-        Some(3),
-        "a barred gate is not yaw-invariant"
-    );
-    assert!(
-        combined(&r).contains("minecraft:iron_bars"),
-        "names the grille:\n{}",
-        combined(&r)
     );
 }
 

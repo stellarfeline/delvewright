@@ -1720,6 +1720,19 @@ pub fn sync_map_in(dir: &Path, prefabs: Option<&Path>) {
             .into_iter()
             .filter_map(|s| Some((s["anchor"].as_str()?.to_string(), s)))
             .collect();
+    let answerable: std::collections::BTreeSet<String> = match &detail {
+        Some(d) => {
+            let piece = d["content"]["details"][0]["piece"].as_str().unwrap_or("");
+            let extra = declared_piece_anchors()
+                .lock()
+                .unwrap()
+                .get(piece)
+                .cloned()
+                .unwrap_or_default();
+            answerable.union(&extra).cloned().collect()
+        }
+        None => answerable,
+    };
     let mut added = Vec::new();
     for a in all {
         if stations.contains_key(&a)
@@ -1870,4 +1883,148 @@ pub fn station_in(c: &mut delvewright_dsl::Campaign, anchor: &str) {
     {
         row.anchors.insert(anchor.to_string(), anchor.to_string());
     }
+}
+
+/// **Rebind a one-place campaign at `dir` as several places**, each bound to a
+/// library piece in `prefabs`: `places` is `(node, piece id, stations)` in plan
+/// order. The places stand in a row along x, two cells apart, joined by no
+/// seam; each owns its ground (`{"owned": walk_y - 1}`) and is fitted to its
+/// piece as [`bind_region`] fits one. The first place is the entry and holds
+/// every beat. For a test whose subject is two placements, not a way between
+/// them.
+pub fn bind_places(dir: &Path, prefabs: &Path, places: &[(&str, &str, &[&str])]) {
+    bound_libraries()
+        .lock()
+        .unwrap()
+        .insert(dir.to_path_buf(), prefabs.to_path_buf());
+    let plan: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("site-plan.json")).unwrap())
+            .unwrap();
+    let y0 = plan["content"]["region"]["min"][1].as_i64().unwrap();
+    let mut x = 0i64;
+    let (mut depth, mut height) = (0i64, 0i64);
+    let mut boxes = Vec::new();
+    let mut nodes = Vec::new();
+    let mut rows = Vec::new();
+    for (i, (node, id, stations)) in places.iter().enumerate() {
+        let meta = declare_site_contract(prefabs, id);
+        let size: [i64; 3] = serde_json::from_value(
+            meta.get("structure_set")
+                .or_else(|| meta.get("structure"))
+                .and_then(|s| s.get("size"))
+                .cloned()
+                .unwrap(),
+        )
+        .unwrap();
+        let walk = meta
+            .get("walk_y")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(1)
+            .max(1);
+        boxes.push(serde_json::json!({
+            "node": node, "min": [x + 1, 1], "extent": [size[0] - 2, size[2] - 2],
+            "floor": {"y": y0 + walk}, "ceiling": {"open": size[1] - walk},
+            "base": {"owned": walk - 1}
+        }));
+        let anchors = meta["anchors"].as_object().cloned().unwrap_or_default();
+        let entry = anchors
+            .iter()
+            .find(|(_, a)| a["role"] == "entry")
+            .map(|(k, _)| k.clone())
+            .unwrap_or_else(|| "spawn".to_string());
+        let mut row = serde_json::Map::new();
+        let mut st = Vec::new();
+        for s in *stations {
+            let kind = if anchors.get(*s).is_some_and(|a| a.get("region").is_some()) {
+                "gate"
+            } else {
+                "point"
+            };
+            st.push(serde_json::json!({"anchor": s, "kind": kind}));
+            row.insert((*s).to_string(), serde_json::json!(s));
+        }
+        let stem = node.trim_start_matches("node/");
+        row.insert(format!("anchor/node-{stem}"), serde_json::json!(entry));
+        if i == 0 {
+            row.insert("spawn".to_string(), serde_json::json!(entry));
+        }
+        nodes.push(serde_json::json!({"id": node, "intent": "a place", "stations": st}));
+        rows.push(
+            serde_json::json!({"place": node, "piece": format!("prefab/{id}"), "anchors": row}),
+        );
+        depth = depth.max(size[2]);
+        height = height.max(size[1]);
+        x += size[0] + 2;
+    }
+    let extent = [x - 2, height, depth];
+    patch_file(&dir.join("site-plan.json"), |v| {
+        let c = &mut v["content"];
+        c["region"]["extent"] = serde_json::json!(extent);
+        c["boxes"] = serde_json::Value::Array(boxes);
+    });
+    patch_file(&dir.join("geometry-brief.json"), |v| {
+        for f in v["content"]["facts"].as_array_mut().unwrap() {
+            match f["id"].as_str() {
+                Some("fact/site-span") => f["value"] = serde_json::json!(extent[0] as f64),
+                Some("fact/site-depth") => f["value"] = serde_json::json!(extent[2] as f64),
+                _ => {}
+            }
+        }
+    });
+    patch_file(&dir.join("layout-graph.json"), |v| {
+        let c = &mut v["content"];
+        let first = places[0].0;
+        c["nodes"] = serde_json::Value::Array(nodes);
+        c["entry"] = serde_json::json!(first);
+        c["goal"] = serde_json::json!(first);
+        c["critical_path"] = serde_json::json!([first]);
+        c["edges"] = serde_json::json!([]);
+        for b in c["beats"].as_array_mut().unwrap() {
+            b["node"] = serde_json::json!(first);
+        }
+    });
+    let campaign_id = plan["campaign_id"].clone();
+    let doc = serde_json::json!({
+        "campaign_id": campaign_id,
+        "content": {"details": rows},
+        "dsl_version": delvewright_dsl::DSL_VERSION,
+        "stage": "detail-plan",
+    });
+    std::fs::write(
+        dir.join("detail-plan.json"),
+        delvewright_dsl::to_canonical_string(&doc).unwrap(),
+    )
+    .unwrap();
+}
+
+/// Anchor names tests have written onto a piece in a private library copy, by
+/// prefab id — names the map may station for that piece.
+fn declared_piece_anchors()
+-> &'static std::sync::Mutex<std::collections::BTreeMap<String, std::collections::BTreeSet<String>>>
+{
+    static NAMES: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::BTreeMap<String, std::collections::BTreeSet<String>>>,
+    > = std::sync::OnceLock::new();
+    NAMES.get_or_init(|| std::sync::Mutex::new(std::collections::BTreeMap::new()))
+}
+
+/// Record that a test's private copy of `prefab` declares the anchor `name`,
+/// so a campaign binding that piece can station it.
+pub fn declare_piece_anchor(prefab: &str, name: &str) {
+    declared_piece_anchors()
+        .lock()
+        .unwrap()
+        .entry(prefab.to_string())
+        .or_default()
+        .insert(name.to_string());
+}
+
+/// [`bind_region`], with the piece's origin at world `y` — an ocean seats a
+/// shore piece so its walk plane stands one course over the sea
+/// (`horizon::OCEAN_WALK_REF_Y - walk_y`).
+pub fn bind_region_at(dir: &Path, prefabs: &Path, id: &str, y: i64) {
+    patch_file(&dir.join("site-plan.json"), |v| {
+        v["content"]["region"]["min"][1] = serde_json::json!(y);
+    });
+    bind_region(dir, prefabs, id);
 }

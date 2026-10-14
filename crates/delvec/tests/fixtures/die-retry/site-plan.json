@@ -4,7 +4,7 @@
     "boxes": [
       {
         "ceiling": {
-          "clearance": 6
+          "clearance": 5
         },
         "extent": [
           16,
@@ -17,7 +17,20 @@
           1,
           1
         ],
-        "node": "node/keep"
+        "node": "node/hall"
+      },
+      {
+        "ceiling": {
+          "clearance": 5
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "y": 65
+        },
+        "node": "node/yard"
       }
     ],
     "fill": {
@@ -48,17 +61,26 @@
     },
     "region": {
       "extent": [
-        18,
-        9,
+        35,
+        8,
         18
       ],
       "min": [
         0,
-        63,
+        64,
         0
       ]
     },
-    "seams": []
+    "seams": [
+      {
+        "at": 7,
+        "edge": "edge/hall-yard",
+        "face": "east",
+        "form": "a stone arch",
+        "meets": 7,
+        "opening": "arch"
+      }
+    ]
   },
   "dsl_version": "0.44.0",
   "stage": "site-plan"

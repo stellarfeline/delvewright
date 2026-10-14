@@ -3,42 +3,77 @@
   "content": {
     "beats": [
       {
-        "node": "node/keep",
+        "node": "node/hall",
         "objective": "obj/talk",
         "quest": "quest/greet"
       },
       {
-        "node": "node/keep",
+        "node": "node/hall",
         "objective": "obj/slay",
         "quest": "quest/trial"
       },
       {
-        "node": "node/keep",
+        "node": "node/loft",
         "objective": "obj/key",
         "quest": "quest/trial"
       },
       {
-        "node": "node/keep",
+        "node": "node/loft",
         "objective": "obj/door",
         "quest": "quest/trial"
       },
       {
-        "node": "node/keep",
+        "node": "node/loft",
         "objective": "obj/shrine",
         "quest": "quest/trial"
       }
     ],
     "critical_path": [
-      "node/keep"
+      "node/hall",
+      "node/loft"
     ],
-    "edges": [],
-    "entry": "node/keep",
-    "goal": "node/keep",
+    "edges": [
+      {
+        "a": "node/hall",
+        "b": "node/loft",
+        "class": "stair",
+        "id": "edge/hall-loft"
+      },
+      {
+        "a": "node/loft",
+        "b": "node/hall",
+        "class": "drop",
+        "falls": "a-to-b",
+        "id": "edge/loft-drop",
+        "shortcut": true
+      }
+    ],
+    "entry": "node/hall",
+    "goal": "node/loft",
     "nodes": [
       {
-        "id": "node/keep",
-        "intent": "the whole site",
-        "note": "The campaign's one place.",
+        "id": "node/hall",
+        "intent": "hub",
+        "note": "The keeper's hall: the trial is fought here, and the stair climbs out of it.",
+        "stations": [
+          {
+            "anchor": "anchor/gate",
+            "kind": "gate"
+          },
+          {
+            "anchor": "anchor/keeper-stand",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/wave",
+            "kind": "point"
+          }
+        ]
+      },
+      {
+        "id": "node/loft",
+        "intent": "shrine",
+        "note": "The shrine, a storey over the hall: climbed by the stair, left by the fall.",
         "stations": [
           {
             "anchor": "anchor/chest",
@@ -49,19 +84,7 @@
             "kind": "point"
           },
           {
-            "anchor": "anchor/gate",
-            "kind": "gate"
-          },
-          {
-            "anchor": "anchor/keeper-stand",
-            "kind": "point"
-          },
-          {
             "anchor": "anchor/objective",
-            "kind": "point"
-          },
-          {
-            "anchor": "anchor/wave",
             "kind": "point"
           }
         ]

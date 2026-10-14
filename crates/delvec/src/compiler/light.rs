@@ -2023,11 +2023,11 @@ fn dark_diagnostic(
              {wcell:?}, measured at light {wl} (< {DARK_THRESHOLD}).\n"
         ));
         list_dark_places(&bound, nav, "bound place(s)", &mut m);
-        m.push_str(&format!(
+        m.push_str(
             "Light each of these places INSIDE THE PIECE BOUND TO IT. A bound place lights itself \
              (spec-0050 §3): the fixture pass writes into the derived interiors only and never \
-             inside a bound frame unasked, so declaring {} — or raising a `min_light` already \
-             declared there — moves nothing in the cells listed above. Put emitters in the piece \
+             inside a bound frame unasked, so declaring the site plan's `lighting` — or raising a \
+             `min_light` already declared there — moves nothing in the cells listed above. Put emitters in the piece \
              at the cells named (the piece-local coordinates are the ones its program and its \
              `.nbt` are written in), re-export it and build again; or declare the place's own \
              `boxes[].lighting` on the site plan, which asks the whole to hang fixtures inside \
@@ -2037,8 +2037,7 @@ fn dark_diagnostic(
              so brightening what stands OUTSIDE the frame is a real remedy too. Do NOT lower \
              `DARK_THRESHOLD` or trim the reachable set — the darkness is real (spec-0050 §3, \
              spec-0010 DW0210)",
-            delvewright_dsl::LIGHTING_FIELD
-        ));
+        );
     }
     Some(Failure {
         code: DW_DARK_UNMITIGATED,

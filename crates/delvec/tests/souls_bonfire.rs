@@ -285,8 +285,8 @@ fn save_only_is_the_checkpoint_and_nothing_else() {
     assert_eq!(
         save.lines().collect::<Vec<_>>(),
         vec![
-            "spawnpoint @a 44 65 2",
-            "data modify storage dw:cp pos set value [44, 65, 2]",
+            "spawnpoint @a 75 65 7",
+            "data modify storage dw:cp pos set value [75, 65, 7]",
             "scoreboard players set #cp dw.sys 0",
         ],
         "save-only is exactly the three checkpoint lines: {save}"
@@ -665,7 +665,7 @@ fn the_exported_critical_path_rests_at_each_bonfire() {
         .expect("the path rests at the bonfire");
     assert_eq!(rest["bonfire"], 0);
     assert_eq!(rest["anchor"], "anchor/objective");
-    assert_eq!(rest["pos"], serde_json::json!([44, 65, 2]));
+    assert_eq!(rest["pos"], serde_json::json!([75, 65, 7]));
     // The "rest and save" answer, verbatim — the same chat line the dialog button
     // runs. (The right-click that ENABLES the trigger is the harness's job.)
     assert_eq!(rest["command"], "/trigger dw.rest set 2");
@@ -853,7 +853,7 @@ fn the_two_options_are_packtested_apart() {
     );
     // … and still moves the checkpoint …
     assert!(
-        t.contains("assert score #bo_cp dw.sys matches 44"),
+        t.contains("assert score #bo_cp dw.sys matches 75"),
         "save-only still saves: {t}"
     );
     // … while the rest brings it back to the declared count.

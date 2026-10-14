@@ -167,11 +167,17 @@
           {
             "count": 1,
             "entity": "minecraft:zombie",
+            "equipment": {
+              "head": "minecraft:leather_helmet"
+            },
             "name": "Keep Guard"
           },
           {
             "count": 1,
-            "entity": "minecraft:zombie"
+            "entity": "minecraft:zombie",
+            "equipment": {
+              "head": "minecraft:leather_helmet"
+            }
           }
         ]
       }

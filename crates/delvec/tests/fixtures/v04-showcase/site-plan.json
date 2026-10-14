@@ -4,7 +4,7 @@
     "boxes": [
       {
         "ceiling": {
-          "clearance": 6
+          "clearance": 5
         },
         "extent": [
           16,
@@ -17,7 +17,59 @@
           1,
           1
         ],
-        "node": "node/keep"
+        "node": "node/hall"
+      },
+      {
+        "ceiling": {
+          "clearance": 5
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "y": 65
+        },
+        "node": "node/store"
+      },
+      {
+        "ceiling": {
+          "clearance": 5
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "y": 65
+        },
+        "node": "node/crypt"
+      },
+      {
+        "ceiling": {
+          "clearance": 5
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "y": 65
+        },
+        "node": "node/barrow"
+      },
+      {
+        "ceiling": {
+          "clearance": 5
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "y": 65
+        },
+        "node": "node/shrine"
       }
     ],
     "fill": {
@@ -48,17 +100,50 @@
     },
     "region": {
       "extent": [
-        18,
-        9,
+        86,
+        8,
         18
       ],
       "min": [
         0,
-        63,
+        64,
         0
       ]
     },
-    "seams": []
+    "seams": [
+      {
+        "at": 7,
+        "edge": "edge/hall-store",
+        "face": "east",
+        "form": "a stone arch",
+        "meets": 7,
+        "opening": "arch"
+      },
+      {
+        "at": 7,
+        "edge": "edge/store-crypt",
+        "face": "east",
+        "form": "a stone arch",
+        "meets": 7,
+        "opening": "arch"
+      },
+      {
+        "at": 7,
+        "edge": "edge/crypt-barrow",
+        "face": "east",
+        "form": "a stone arch",
+        "meets": 7,
+        "opening": "arch"
+      },
+      {
+        "at": 7,
+        "edge": "edge/barrow-shrine",
+        "face": "east",
+        "form": "a stone arch",
+        "meets": 7,
+        "opening": "arch"
+      }
+    ]
   },
   "dsl_version": "0.44.0",
   "stage": "site-plan"

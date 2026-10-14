@@ -140,7 +140,11 @@ fn a_tiled_zones_own_water_is_inside_the_built_volume() {
         "a tiled zone is ONE piece in the built volume"
     );
     let (_, (min, max)) = &built[0];
-    let piece = &plan.areas[0].pieces[0];
+    let piece = plan.areas[0]
+        .pieces
+        .iter()
+        .find(|p| p.prefab_id == "prefab/tiled-cistern")
+        .expect("the zone is placed");
     assert_eq!(piece.templates.len(), 2, "the fixture is genuinely tiled");
     for t in &piece.templates {
         for axis in 0..3 {
@@ -292,8 +296,8 @@ fn a_leaking_world_gets_no_boundary_verdict_through_the_entry_point() {
         &BTreeMap::new(),
     )
     .expect_err("a leaking world does not build");
-    let emit::BuildFailure::Diagnostic { code, .. } = err else {
+    let emit::BuildFailure::Diagnostic { code, message } = err else {
         panic!("expected a diagnostic");
     };
-    assert_eq!(code, "DW0318");
+    assert_eq!(code, "DW0318", "{message}");
 }

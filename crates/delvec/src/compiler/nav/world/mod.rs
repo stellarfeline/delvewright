@@ -104,10 +104,16 @@ impl Ambient {
 /// [`World`] rather than on [`Sea`]. It was a field of `Sea` first; a world
 /// under `horizon: void` therefore had no idea where its own content ended, and
 /// water that ran off the last piece met nothing that could judge it.
+///
+/// A place a `details[]` row binds is its piece: the blockout's own record of
+/// that box stands over the same cells and is left out, so a piece is counted
+/// once.
 pub fn built_volume(plan: &Plan) -> Vec<BuiltPiece> {
     plan.areas
         .iter()
-        .flat_map(|a| a.pieces.iter().map(|p| (p.prefab_id.clone(), p.bbox())))
+        .flat_map(|a| a.pieces.iter())
+        .filter(|p| !plan.is_bound_record(p))
+        .map(|p| (p.prefab_id.clone(), p.bbox()))
         .collect()
 }
 

@@ -359,11 +359,10 @@ fn a_pair_that_touches_and_declares_nothing_across_the_shared_plane_is_refused()
         "{}",
         err.failure.message
     );
-    // And both roads out, named: a piece says what its sides are in one of two
-    // documented places, and the message names both rather than only the newer.
+    // And the road out, named: a piece says what its sides are in its
+    // spatial contract.
     assert!(
-        err.failure.message.contains("spatial_contract")
-            && err.failure.message.contains("connectors"),
+        err.failure.message.contains("spatial_contract"),
         "{}",
         err.failure.message
     );
@@ -384,8 +383,8 @@ fn pieces_that_never_touch_report_zero_pairs_rather_than_zero_declarations() {
     assert_eq!(binding.pairs, 0);
     assert_eq!(binding.bound, 0);
     assert_eq!(
-        binding.declared, 4,
-        "the sockets are still read — the count is honest about what is there"
+        binding.declared, 0,
+        "a jigsaw socket declares no face: assembly is designed, never drawn (ADR-0035)"
     );
     let finding = binding.finding(2, false).expect("a zero binding is stated");
     assert_eq!(finding.code, "DW0781");

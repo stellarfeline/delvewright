@@ -305,11 +305,11 @@ fn crit6_dw0210_reports_the_place_and_not_only_a_coordinate() {
     };
     assert_eq!(code, "DW0210");
 
-    // The per-area line: "area `X`: N of M measured cell(s) dark, in R contiguous region(s):"
+    // The per-place line: "place `X` …: N of M measured cell(s) dark, in R contiguous region(s):"
     let area_line = message
         .lines()
-        .find(|l| l.trim_start().starts_with("area `"))
-        .unwrap_or_else(|| panic!("no per-area line in the report:\n{message}"));
+        .find(|l| l.trim_start().starts_with("place `"))
+        .unwrap_or_else(|| panic!("no per-place line in the report:\n{message}"));
     let n: usize = field_before(area_line, " of ");
     let regions_stated: usize = field_before(area_line, " contiguous region(s)");
     assert!(
@@ -336,7 +336,7 @@ fn crit6_dw0210_reports_the_place_and_not_only_a_coordinate() {
 
     // …and the single-cell exemplar the diagnostic always carried is still there.
     assert!(
-        message.contains("The darkest reachable walkable cell is at ["),
+        message.contains("The darkest reachable walkable cell in them is at ["),
         "the exemplar cell is gone:\n{message}"
     );
 }
@@ -820,14 +820,14 @@ fn dw0210_on_a_built_site_plan_names_the_rooms_and_a_reachable_remedy() {
     );
     assert!(
         !message.contains("world.areas"),
-        "`DW0839` refuses `areas[]` here, so nothing may send the author to it:\n{message}"
+        "`world.areas` does not exist, so nothing may send the author to it:\n{message}"
     );
     assert!(
-        !message.contains("mitigation: "),
-        "a derived map has no per-area `mitigation` surface to declare:\n{message}"
+        message.contains("`boxes[].mitigation"),
+        "a place declares its own mitigation:\n{message}"
     );
     assert!(
-        message.contains("one of two ways"),
+        message.contains("one of three ways"),
         "the count moves with the list of ways actually offered:\n{message}"
     );
 }

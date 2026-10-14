@@ -4,13 +4,13 @@
     "facts": [
       {
         "id": "fact/site-span",
-        "note": "The site's span east to west: the one place and its ring.",
+        "note": "The site's span east to west: a row of rooms, each one arch from the next.",
         "unit": "blocks",
-        "value": 18.0
+        "value": 35.0
       },
       {
         "id": "fact/site-depth",
-        "note": "The site's depth north to south: the one place and its ring.",
+        "note": "The site's depth north to south: one room and its walls.",
         "unit": "blocks",
         "value": 18.0
       }

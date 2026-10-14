@@ -47,14 +47,13 @@ fn scratch(case: &str) -> PathBuf {
     dir
 }
 
-/// The hello-world campaign with its one area rebound to `prefab/<id>`.
+/// The hello-world campaign with its one place bound to `prefab/<id>`.
 fn campaign_dir(root: &Path, id: &str) -> PathBuf {
     let dir = root.join("campaign");
     std::fs::create_dir_all(&dir).unwrap();
     common::copy_campaign_docs(&common::hello_world_dir(), &dir);
-    common::patch_file(&dir.join("world.json"), |v| {
-        v["content"]["areas"][0]["prefab"] = serde_json::json!(format!("prefab/{id}"));
-    });
+    common::bind_region(&dir, &root.join("prefabs"), id);
+    common::sync_map_in(&dir, Some(&root.join("prefabs")));
     dir
 }
 
@@ -107,7 +106,15 @@ fn a_tiled_zone_is_bound_like_any_prefab_and_placed_whole() {
     let (plan, out) = build(&root, "tiled-corridor");
 
     // ONE logical piece, at the whole zone's size — not two pieces of 48 and 12.
-    let pieces: Vec<_> = plan.areas.iter().flat_map(|a| &a.pieces).collect();
+    let pieces: Vec<_> = plan
+        .areas
+        .iter()
+        .flat_map(|a| &a.pieces)
+        .filter(|p| {
+            !p.prefab_id
+                .starts_with(delvec::compiler::blockout::STAND_IN_PREFIX)
+        })
+        .collect();
     assert_eq!(
         pieces.len(),
         1,

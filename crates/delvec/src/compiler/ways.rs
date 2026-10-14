@@ -712,9 +712,15 @@ fn piece_holding<'a>(
         if (0..3).any(|a| pos[a] < min[a] || pos[a] > max[a]) {
             continue;
         }
-        let contract = prefabs
+        // A placement with no metadata — the blockout's own record of a box,
+        // standing over the piece a detail row binds there — holds no contract
+        // and is passed over, never mistaken for the answer.
+        let Some(contract) = prefabs
             .get(&placement.prefab_id)
-            .and_then(|m| m.spatial_contract.as_ref())?;
+            .and_then(|m| m.spatial_contract.as_ref())
+        else {
+            continue;
+        };
         let local = local_cell(placement.rotation, placement.pos, pos);
         return Some((index, placement.prefab_id.clone(), contract, local));
     }
