@@ -298,9 +298,8 @@ fn a_keyword_world_seals_as_it_always_did() {
 
 fn dw0931(world_time: serde_json::Value, cuts: &[serde_json::Value]) -> Vec<String> {
     let camp = campaign("parse", world_time, cuts);
-    let loaded =
-        delvec::compiler::load::load_campaign_dir(&camp).unwrap_or_else(|e| panic!("load: {e:?}"));
-    let c = delvewright_dsl::parse_campaign(&loaded.raw).expect("the campaign parses");
+    let loaded = common::load_campaign_dir(&camp).unwrap_or_else(|e| panic!("load: {e:?}"));
+    let c = common::parse_campaign(&loaded.raw).expect("the campaign parses");
     common::quiet(validate_campaign(&c))
         .into_iter()
         .filter(|d| d.code == "DW0931")

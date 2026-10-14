@@ -86,11 +86,6 @@ const PIECE_DOORS: &[Door] = &[
         handed: Handed::Nbt,
     },
     Door {
-        path: &["socket"],
-        extra: &["--pos", "3,1,0", "--facing", "north"],
-        handed: Handed::Nbt,
-    },
-    Door {
         path: &["resolve-jigsaw"],
         extra: &[],
         handed: Handed::Nbt,
@@ -135,19 +130,6 @@ const NOT_PIECE_DOORS: &[(&[&str], &str)] = &[
     (
         &["curate-merge"],
         "takes a curation report and a catalog directory, and edits cards",
-    ),
-    (
-        &["seating"],
-        "names no piece at all: it takes a horizon base and reads the WHOLE library the global          `--prefabs` points at, so there is no author-named file for a lone tile to arrive as.          Its own denominators are what guard it — a run that opened fewer `.nbt` than it read          documents, or examined no pool, exits non-zero",
-    ),
-    (
-        &["anchors"],
-        "names no piece at all: it takes a pool id at most and reads the WHOLE library the \
-         global `--prefabs` points at, answering from prefab METADATA — the members, their \
-         roles, their `anchors` maps — and opening no `.nbt`, so there is no author-named file \
-         for a lone tile to arrive as. Its own denominators guard it: a run that reported no \
-         pool exits non-zero, and a `--pool` the library does not declare is refused with the \
-         set it does declare",
     ),
 ];
 

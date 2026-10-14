@@ -15,7 +15,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit;
 use delvec::compiler::plan::{Plan, Step};
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, validate_campaign_with};
 use std::sync::LazyLock;
 
 /// hello-world's quests stage with one `collect`, parameterised on the adoption
@@ -87,7 +87,7 @@ fn read_hw(name: &str) -> String {
 }
 
 fn parse_hw(quests: &str, edits: Option<&str>) -> Campaign {
-    parse_campaign(&RawCampaign {
+    common::parse_campaign(&RawCampaign {
         world: read_hw("world.json"),
         npcs: read_hw("npcs.json"),
         classes: read_hw("classes.json"),

@@ -5,11 +5,9 @@
 //! The finding this file is the general form of was found by hand: a library
 //! round pointed `cave-shore`'s `connectors[0].local_pos` back at a cell the
 //! regenerated structure fills with andesite, after which `delvec prefab audit`
-//! passed through **both** its file arm and its directory arm at exit 0 and
-//! `delvec prefab seating --horizon ocean` still answered four pools of four
-//! seatable. So the perturbation here is that one — a socket planted at a solid
-//! cell — and it is run at every door rather than at the one where the bug was
-//! found.
+//! passed through **both** its file arm and its directory arm at exit 0. So the
+//! perturbation here is that one — a socket planted at a solid cell — and it is
+//! run at every door rather than at the one where the bug was found.
 //!
 //! **The entry-point census is part of the deliverable.** Which commands read a
 //! prefab document and its bytes together is discovered from `PrefabCommand`'s
@@ -84,18 +82,6 @@ fn honest_library(dir: &Path) {
     meta.walk_y = Some(1);
     std::fs::write(dir.join("room.nbt"), s.write()).unwrap();
     std::fs::write(dir.join("room.json"), meta.to_json()).unwrap();
-    std::fs::write(
-        dir.join("pools.json"),
-        serde_json::json!({
-            "pools": {
-                "pool/room": {
-                    "members": [{ "prefab": "prefab/room", "weight": 1, "role": "entry" }]
-                }
-            }
-        })
-        .to_string(),
-    )
-    .unwrap();
 }
 
 /// The perturbation: fill the socket's own opening back in with andesite, so the
@@ -117,14 +103,6 @@ fn audit(target: &Path) -> Output {
     delvec_bin()
         .args(["prefab", "audit"])
         .arg(target)
-        .output()
-        .unwrap()
-}
-
-fn seating(dir: &Path, horizon: &str) -> Output {
-    delvec_bin()
-        .args(["prefab", "seating", "--horizon", horizon, "--prefabs"])
-        .arg(dir)
         .output()
         .unwrap()
 }
@@ -184,32 +162,6 @@ fn a_socket_planted_in_the_rock_reds_both_audit_arms() {
     let _ = std::fs::remove_dir_all(&under_test);
     common::copy_dir_all(&honest, &under_test);
     assert_eq!(audit(&under_test).status.code(), Some(0));
-}
-
-/// **The seating command**, which the finding was measured against: it answered
-/// seatable at exit 0 over a planted socket.
-#[test]
-fn the_seating_command_reds_on_a_planted_socket() {
-    let root = scratch("seating");
-    let honest = root.join("honest");
-    let under_test = root.join("library");
-    honest_library(&honest);
-    common::copy_dir_all(&honest, &under_test);
-
-    let out = seating(&under_test, "void");
-    assert_eq!(
-        out.status.code(),
-        Some(0),
-        "the honest library is seatable: {}",
-        text(&out)
-    );
-    assert!(text(&out).contains("byte-claim binding:"), "{}", text(&out));
-
-    plant_a_socket_in_the_rock(&under_test);
-    let out = seating(&under_test, "void");
-    let log = text(&out);
-    assert_ne!(out.status.code(), Some(0), "{log}");
-    assert!(log.contains(DW_CLAIM_DENIED.id()), "{log}");
 }
 
 /// **Every declaration of the class is bound, not only the one that was
@@ -278,37 +230,20 @@ fn every_key_of_the_class_is_held_to_the_bytes() {
 
 /// A `delvec prefab` command that reads a prefab document together with its
 /// bytes, and therefore owes `DW0888`.
-const READS_DOCUMENT_AND_BYTES: &[(&[&str], &str)] = &[
-    (
-        &["audit"],
-        "one template, one tile-set manifest or a whole library directory — the admission event, \
+const READS_DOCUMENT_AND_BYTES: &[(&[&str], &str)] = &[(
+    &["audit"],
+    "one template, one tile-set manifest or a whole library directory — the admission event, \
          where a library's integrity lives",
-    ),
-    (
-        &["seating"],
-        "the whole library the global `--prefabs` points at, read against a horizon base",
-    ),
-];
+)];
 
 /// A command that does not, each with the reason, printed on every run. The
 /// polarity is deliberate: a list of inclusions fails silently when it misses a
 /// site, a list of exclusions fails loudly.
 const DOES_NOT: &[(&[&str], &str)] = &[
     (
-        &["socket"],
-        "WRITES the pair — it carves the opening and appends the matching connector in one act, so \
-         the two cannot disagree at the moment they are made",
-    ),
-    (
         &["anchor"],
         "writes one named place into the document; the claim it makes is judged at `audit` and at \
          validation, where the bytes are read as a whole",
-    ),
-    (
-        &["anchors"],
-        "reads the pool declarations and each member's `anchors` map to answer which anchors a \
-         pool guarantees, and opens no `.nbt` at all: what it reports is a property of the \
-         LAYOUT over declarations, so there are no bytes for a claim of its to deny",
     ),
     (
         &["planes"],
@@ -397,7 +332,6 @@ fn every_prefab_entry_point_is_classified_and_the_census_is_stated() {
         "`prefab audit <asset.nbt>` — one template, at the admission event",
         "`prefab audit <manifest.json>` — a tiled zone, measured as one assembled building",
         "`prefab audit <library dir>` — the whole library at once",
-        "`prefab seating --horizon <base>` — the library the global `--prefabs` points at",
         "`cli::campaign::validate_loaded` -> `compiler::seating::check` — the one validation funnel every \
          subcommand goes through, `build` included",
     ];
@@ -472,20 +406,8 @@ fn a_campaign_that_seats_the_piece_is_refused_at_validation() {
     honest_library(&dir);
     plant_a_socket_in_the_rock(&dir);
 
-    // The shipped hello-world campaign, with its one area rebound to this piece.
-    let camp = root.join("campaign");
-    common::copy_dir_all(&common::hello_world_dir(), &camp);
-    let world_path = camp.join("world.json");
-    let mut world: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&world_path).unwrap()).unwrap();
-    for area in world["content"]["areas"].as_array_mut().unwrap() {
-        area["prefab"] = serde_json::json!("prefab/room");
-    }
-    std::fs::write(
-        &world_path,
-        serde_json::to_string_pretty(&world).unwrap() + "\n",
-    )
-    .unwrap();
+    // The shipped hello-world campaign, its one place bound to this piece.
+    let camp = common::campaign_bound_to(&root.join("campaign"), &dir, "room");
 
     let out = delvec_bin()
         .args(["validate"])

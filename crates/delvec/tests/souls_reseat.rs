@@ -26,10 +26,9 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, DSL_VERSION, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Campaign, DSL_VERSION, validate_campaign_with};
 
 const NS: &str = "souls-bonfire";
 
@@ -57,12 +56,13 @@ fn fixture_dir() -> std::path::PathBuf {
 /// `unleash` decides which actors take part, exactly as the floor-gate ledger
 /// decides which actors are fights (`combat::hostile_actors`).
 fn fixture_campaign(with_unleash: bool) -> Campaign {
-    let loaded = load_campaign_dir(&fixture_dir()).unwrap();
-    let mut c = parse_campaign(&loaded.raw).expect("souls-bonfire parses");
+    let loaded = common::load_campaign_dir(&fixture_dir()).unwrap();
+    let mut c = common::parse_campaign(&loaded.raw).expect("souls-bonfire parses");
     c.quests.dsl_version = DSL_VERSION.to_string();
     // A mark apiece. Both bodies are staged and neither is ever removed, so one
     // cell for the two of them is two live bodies on one mark (`DW0896`) and the
     // fixture would not build — which is the rule, not a fixture inconvenience.
+    common::station_in(&mut c, "anchor/npc-stand");
     for (a, anchor) in [(ELITE, "anchor/wave"), (SCENERY, "anchor/npc-stand")] {
         c.quests.content.actors.push(
             serde_json::from_value(serde_json::json!({
@@ -126,7 +126,7 @@ fn assert_only_boss_advisories(c: &Campaign, diags: &[delvewright_dsl::Diagnosti
 /// new re-seat lines are commands the server will accept.
 fn build(campaign: &Campaign) -> BuildOutput {
     let dir = fixture_dir();
-    let loaded = load_campaign_dir(&dir).unwrap();
+    let loaded = common::load_campaign_dir(&dir).unwrap();
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();

@@ -130,9 +130,8 @@ fn the_gym_has_one_placement_authority() {
     let g = gym::generate(&table, "metrics-gym");
     let world: serde_json::Value =
         serde_json::from_str(&g.documents["world.json"]).expect("the world document parses");
-    assert_eq!(
-        world["content"]["areas"].as_array().map(Vec::len),
-        Some(0),
+    assert!(
+        world["content"].get("areas").is_none(),
         "the gym places its geometry with a site plan and nothing else"
     );
     assert!(g.documents.contains_key("site-plan.json"));

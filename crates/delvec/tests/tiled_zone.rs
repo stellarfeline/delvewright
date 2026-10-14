@@ -20,10 +20,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use delvec::compiler::emit;
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Severity, parse_campaign};
+use delvewright_dsl::Severity;
 
 /// Where the corridor's anchors sit, in whole-zone coordinates. `exit` is past
 /// the cut on purpose: a campaign whose finish line is in the second tile
@@ -63,8 +62,8 @@ fn campaign_dir(root: &Path, id: &str) -> PathBuf {
 fn build(root: &Path, id: &str) -> (Plan<'static>, emit::BuildOutput) {
     let prefabs_dir = root.join("prefabs");
     let campaign = campaign_dir(root, id);
-    let loaded = Box::leak(Box::new(load_campaign_dir(&campaign).unwrap()));
-    let campaign = Box::leak(Box::new(parse_campaign(&loaded.raw).unwrap()));
+    let loaded = Box::leak(Box::new(common::load_campaign_dir(&campaign).unwrap()));
+    let campaign = Box::leak(Box::new(common::parse_campaign(&loaded.raw).unwrap()));
     let prefabs = PrefabRegistry::load_dir(&prefabs_dir).unwrap();
     assert!(
         prefabs
@@ -177,8 +176,8 @@ fn the_assembled_world_is_the_zone_the_cut_never_happened_to() {
     common::write_tiled_zone(&root.join("prefabs"), "tiled-corridor", anchors(), &[]);
     let prefabs_dir = root.join("prefabs");
     let campaign_path = campaign_dir(&root, "tiled-corridor");
-    let loaded = load_campaign_dir(&campaign_path).unwrap();
-    let campaign = parse_campaign(&loaded.raw).unwrap();
+    let loaded = common::load_campaign_dir(&campaign_path).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).unwrap();
     let prefabs = PrefabRegistry::load_dir(&prefabs_dir).unwrap();
     let plan = Plan::build(&campaign, &prefabs).unwrap();
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -281,8 +280,8 @@ fn a_tile_that_is_not_the_size_its_manifest_declares_is_dw0803() {
     .unwrap();
 
     let campaign_path = campaign_dir(&root, "tiled-corridor");
-    let loaded = load_campaign_dir(&campaign_path).unwrap();
-    let campaign = parse_campaign(&loaded.raw).unwrap();
+    let loaded = common::load_campaign_dir(&campaign_path).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).unwrap();
     let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
     let plan = Plan::build(&campaign, &prefabs).unwrap();
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();

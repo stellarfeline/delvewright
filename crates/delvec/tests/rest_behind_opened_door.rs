@@ -39,7 +39,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign};
 
 fn hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
@@ -125,7 +125,7 @@ fn parse_hw_planned(quests: &str, quest_plan: &str) -> Campaign {
         detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
-    let mut c = parse_campaign(&raw).expect("campaign parses");
+    let mut c = common::parse_campaign(&raw).expect("campaign parses");
     delvewright_dsl::tag_translatables(&mut c);
     c
 }

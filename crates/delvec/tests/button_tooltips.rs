@@ -12,10 +12,8 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::parse_campaign;
 use serde_json::{Value, json};
 
 const NS: &str = "souls-bonfire";
@@ -50,13 +48,13 @@ fn patch_bonfires(v: &mut Value, fields: &Value) -> usize {
 /// (all-languages) path that tags every player-visible string with its key, as
 /// `delvec build` does.
 fn build_with(fields: Value) -> BuildOutput {
-    let mut loaded = load_campaign_dir(&fixture_dir()).unwrap();
+    let mut loaded = common::load_campaign_dir(&fixture_dir()).unwrap();
     let mut patched = 0;
     loaded.raw.quests = common::patch_doc(&loaded.raw.quests, |q| {
         patched = patch_bonfires(q, &fields);
     });
     assert_eq!(patched, 1, "binding: the fixture holds exactly one bonfire");
-    let mut c = parse_campaign(&loaded.raw).expect("souls-bonfire parses");
+    let mut c = common::parse_campaign(&loaded.raw).expect("souls-bonfire parses");
     delvewright_dsl::tag_translatables(&mut c);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&c, &prefabs).expect("plan builds");

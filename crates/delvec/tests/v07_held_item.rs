@@ -22,7 +22,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign};
 
 const ITEM: &str = "minecraft:tripwire_hook";
 const HINT: &str = "The bar does not shift for bare hands.";
@@ -75,7 +75,7 @@ fn parse_hw(quests: &str) -> Campaign {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 fn build(campaign: &Campaign) -> BuildOutput {
@@ -158,7 +158,7 @@ fn collect_still_counts_the_whole_inventory() {
         design: None,
     };
     assert!(!quests.is_empty());
-    let c = parse_campaign(&raw).expect("showcase parses");
+    let c = common::parse_campaign(&raw).expect("showcase parses");
     let tick = file(&build(&c), "/function/tick.mcfunction");
     assert!(
         tick.contains("store result score @s dw.hold if items entity @s container.*"),

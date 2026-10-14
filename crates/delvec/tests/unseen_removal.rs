@@ -18,10 +18,9 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::{self, Plan};
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, DSL_VERSION, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Campaign, DSL_VERSION, validate_campaign_with};
 
 const NS: &str = "souls-bonfire";
 /// The unseen exit's vocabulary, spelled here rather than imported so the test
@@ -44,9 +43,10 @@ fn fixture_dir() -> std::path::PathBuf {
 /// `wave/guards` on rest — given an unleashed elite and a staged actor the
 /// quest's completion despawns with `scenery_style`.
 fn campaign(scenery_style: &str) -> Campaign {
-    let loaded = load_campaign_dir(&fixture_dir()).unwrap();
-    let mut c = parse_campaign(&loaded.raw).expect("souls-bonfire parses");
+    let loaded = common::load_campaign_dir(&fixture_dir()).unwrap();
+    let mut c = common::parse_campaign(&loaded.raw).expect("souls-bonfire parses");
     c.quests.dsl_version = DSL_VERSION.to_string();
+    common::station_in(&mut c, "anchor/npc-stand");
     for (a, anchor) in [(ELITE, "anchor/wave"), (SCENERY, "anchor/npc-stand")] {
         c.quests.content.actors.push(
             serde_json::from_value(serde_json::json!({
@@ -98,7 +98,7 @@ fn campaign(scenery_style: &str) -> Campaign {
 /// the pinned 1.21.11 command tree.
 fn build(campaign: &Campaign) -> (BuildOutput, Vec<String>) {
     let dir = fixture_dir();
-    let loaded = load_campaign_dir(&dir).unwrap();
+    let loaded = common::load_campaign_dir(&dir).unwrap();
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let diags = common::quiet(validate_campaign_with(
         campaign,

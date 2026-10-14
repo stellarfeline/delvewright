@@ -22,18 +22,16 @@ use std::path::{Path, PathBuf};
 use delvec::compiler::analyze::analyze_campaign;
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::parse_campaign;
 
 // ---------------------------------------------------------------------------
 // builders
 // ---------------------------------------------------------------------------
 
 fn build_dir(dir: &Path) -> BuildOutput {
-    let loaded = load_campaign_dir(dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
+    let loaded = common::load_campaign_dir(dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("valid campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -410,8 +408,8 @@ fn no_and_join_no_party_template() {
 fn party_division_is_proven_or_dw0358() {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
 
-    let loaded = load_campaign_dir(&and_join_dir()).unwrap();
-    let ok = parse_campaign(&loaded.raw).expect("fixture parses");
+    let loaded = common::load_campaign_dir(&and_join_dir()).unwrap();
+    let ok = common::parse_campaign(&loaded.raw).expect("fixture parses");
     let diags = analyze_campaign(&ok, &prefabs);
     assert!(
         diags.is_empty(),
@@ -420,14 +418,14 @@ fn party_division_is_proven_or_dw0358() {
 
     // hello-world is one serial chain; declaring a mandatory party of 2 over it
     // is a claim nothing in the content backs.
-    let hw = load_campaign_dir(&common::hello_world_dir()).unwrap();
+    let hw = common::load_campaign_dir(&common::hello_world_dir()).unwrap();
     let mut raw = hw.raw.clone();
     raw.world = raw.world.replacen("\"0.2.0\"", "\"0.6.0\"", 1).replacen(
         "\"target_minutes\": 5,",
         "\"target_minutes\": 5,\n    \"min_players\": 2,",
         1,
     );
-    let serial = parse_campaign(&raw).expect("patched hello-world parses");
+    let serial = common::parse_campaign(&raw).expect("patched hello-world parses");
     let diags = analyze_campaign(&serial, &prefabs);
     assert!(
         diags.iter().any(|d| d.code == "DW0358"),
@@ -436,7 +434,7 @@ fn party_division_is_proven_or_dw0358() {
 
     // …and the same campaign at the default party of one is clean: the
     // single-agent proof is exactly the pre-spec-0018 verdict.
-    let solo = parse_campaign(&hw.raw).expect("hello-world parses");
+    let solo = common::parse_campaign(&hw.raw).expect("hello-world parses");
     assert!(
         analyze_campaign(&solo, &prefabs).is_empty(),
         "min_players 1 keeps the unchanged single-agent proof"

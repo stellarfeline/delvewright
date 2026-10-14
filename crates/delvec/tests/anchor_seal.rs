@@ -16,7 +16,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign};
 
 /// A hello-world `quests` doc whose `obj/talk` completion fires `effects` (a raw
 /// JSON array body, no surrounding brackets).
@@ -59,7 +59,7 @@ fn read_hw(name: &str) -> String {
 }
 
 fn parse_hw(quests: &str, dialogue: Option<&str>) -> Campaign {
-    parse_campaign(&RawCampaign {
+    common::parse_campaign(&RawCampaign {
         world: read_hw("world.json"),
         npcs: read_hw("npcs.json"),
         classes: read_hw("classes.json"),
@@ -413,7 +413,7 @@ fn worldless_campaign(volley_anchor: &str) -> Campaign {
   }}
 }}"#
     );
-    parse_campaign(&RawCampaign {
+    common::parse_campaign(&RawCampaign {
         world: common::at_dsl_version(
             r#"{
   "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "world",

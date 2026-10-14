@@ -10,17 +10,16 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{parse_campaign, validate_campaign_with};
+use delvewright_dsl::validate_campaign_with;
 
 const NS: &str = "souls-timed-gate";
 
 fn build_fixture() -> BuildOutput {
     let dir = common::compiler_fixtures_dir().join(NS);
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("souls-timed-gate parses");
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("souls-timed-gate parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let diags = common::quiet(validate_campaign_with(
         &campaign,
@@ -64,8 +63,8 @@ fn build_fixture() -> BuildOutput {
 #[test]
 fn the_fixture_gate_can_be_watched_before_it_is_entered() {
     let dir = common::compiler_fixtures_dir().join(NS);
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("souls-timed-gate parses");
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("souls-timed-gate parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -263,8 +262,8 @@ fn waypoints_artifact_exports_the_gate_table_and_marks_the_crossing_leg() {
 /// emissions can be compared directly.
 fn build_with_crush(crush: bool) -> BuildOutput {
     let dir = common::compiler_fixtures_dir().join(NS);
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let mut campaign = parse_campaign(&loaded.raw).expect("souls-timed-gate parses");
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let mut campaign = common::parse_campaign(&loaded.raw).expect("souls-timed-gate parses");
     campaign.quests.content.timed_gates[0].crush = crush;
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");

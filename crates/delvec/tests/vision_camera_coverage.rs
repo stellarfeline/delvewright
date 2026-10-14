@@ -21,7 +21,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{DSL_VERSION, RawCampaign, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 
 /// Vanilla's night-vision wind-down, in seconds (`GameRenderer` ramps below
 /// 200 ticks remaining). Mirrored here so the test states the requirement in its
@@ -86,7 +86,7 @@ fn night_vision_clock(quests: String, world: String) -> String {
     };
     let mut raw = raw;
     common::sync_map_raw(&mut raw, "vision-camera");
-    let campaign = parse_campaign(&raw).expect("campaign parses");
+    let campaign = common::parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();

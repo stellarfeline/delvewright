@@ -64,7 +64,7 @@ use delvec::compiler::reach::{
     judge_reach_completion, reach_completion, sites,
 };
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign};
 
 // ============================================================ unit fixtures ==
 
@@ -98,7 +98,7 @@ fn quests(radius: u32) -> String {
 }
 
 fn campaign(radius: u32) -> Campaign {
-    parse_campaign(&RawCampaign {
+    common::parse_campaign(&RawCampaign {
         world: read_hw("world.json"),
         npcs: read_hw("npcs.json"),
         classes: read_hw("classes.json"),

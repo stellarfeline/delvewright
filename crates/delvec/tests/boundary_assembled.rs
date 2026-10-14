@@ -20,17 +20,16 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, parse_campaign};
+use delvewright_dsl::Campaign;
 
 /// The canonical hello-world campaign: one prefab area, and — the point of this
 /// file — **no stage-7 edit script**, so nothing here can reach the per-batch
 /// boundary proof.
 fn hello_world() -> Campaign {
-    let loaded = load_campaign_dir(&common::hello_world_dir()).unwrap();
-    parse_campaign(&loaded.raw).expect("hello-world parses")
+    let loaded = common::load_campaign_dir(&common::hello_world_dir()).unwrap();
+    common::parse_campaign(&loaded.raw).expect("hello-world parses")
 }
 
 /// Build hello-world through the real `emit::build` path against a synthetic
@@ -54,7 +53,7 @@ fn build_with_structure(campaign: &Campaign, nbt: Vec<u8>) -> Result<BuildOutput
     }
     emit::build(
         &plan,
-        &load_campaign_dir(&common::hello_world_dir())
+        &common::load_campaign_dir(&common::hello_world_dir())
             .unwrap()
             .inputs,
         &structures,

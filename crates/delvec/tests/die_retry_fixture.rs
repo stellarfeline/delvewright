@@ -56,7 +56,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, RawCampaign};
 
 fn fixture_dir() -> std::path::PathBuf {
     common::compiler_fixtures_dir().join("die-retry")
@@ -64,7 +64,7 @@ fn fixture_dir() -> std::path::PathBuf {
 
 fn parse_dir(dir: &std::path::Path) -> Campaign {
     let read = |n: &str| std::fs::read_to_string(dir.join(n)).unwrap();
-    parse_campaign(&RawCampaign {
+    common::parse_campaign(&RawCampaign {
         world: read("world.json"),
         npcs: read("npcs.json"),
         classes: read("classes.json"),
@@ -75,7 +75,7 @@ fn parse_dir(dir: &std::path::Path) -> Campaign {
         geometry_brief: Some(read("geometry-brief.json")),
         layout_graph: Some(read("layout-graph.json")),
         site_plan: Some(read("site-plan.json")),
-        detail_plan: Some(read("detail-plan.json")),
+        detail_plan: std::fs::read_to_string(dir.join("detail-plan.json")).ok(),
         design: None,
     })
     .expect("campaign parses")

@@ -32,11 +32,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use delvec::compiler::commands::CommandTree;
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 use delvec::compiler::{emit, nav};
-use delvewright_dsl::parse_campaign;
 
 /// A scratch dir of this test's own, named for the case.
 fn scratch(case: &str) -> PathBuf {
@@ -70,8 +68,8 @@ fn plan_and_structures(
     BTreeMap<String, Vec<u8>>,
     &'static delvec::compiler::load::LoadedCampaign,
 ) {
-    let loaded = Box::leak(Box::new(load_campaign_dir(campaign_dir).unwrap()));
-    let campaign = Box::leak(Box::new(parse_campaign(&loaded.raw).unwrap()));
+    let loaded = Box::leak(Box::new(common::load_campaign_dir(campaign_dir).unwrap()));
+    let campaign = Box::leak(Box::new(common::parse_campaign(&loaded.raw).unwrap()));
     let prefabs = PrefabRegistry::load_dir(prefabs_dir).unwrap();
     let plan = Plan::build(campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();

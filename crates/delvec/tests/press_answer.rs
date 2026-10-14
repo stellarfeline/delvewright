@@ -64,18 +64,17 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, DSL_VERSION, EnvTrigger, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, EnvTrigger};
 
 /// The `souls-shortcut` fixture: a doorway slab sealed from world-load, opened
 /// from the far side, with the author's own **left**-click answer already on it.
 /// Its right-click was the silence.
 fn fixture() -> Campaign {
     let dir = common::compiler_fixtures_dir().join("souls-shortcut");
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let mut campaign = parse_campaign(&loaded.raw).expect("souls-shortcut parses");
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let mut campaign = common::parse_campaign(&loaded.raw).expect("souls-shortcut parses");
     // The fixture ships its door's press answer; these tests are about the
     // door with nothing to say, so the answer is withdrawn here.
     campaign

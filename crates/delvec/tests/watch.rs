@@ -15,7 +15,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, RawCampaign};
 use serde_json::{Value, json};
 
 const FN_DIR: &str = "datapack/data/hello-world/function";
@@ -81,7 +81,7 @@ fn raw(keeper_watch: Option<Value>, actor_watch: Option<Value>) -> RawCampaign {
 /// Every code the two validation layers raise for `raw`: the stage parse
 /// (`DW0100` and its kin) and, when that passes, the campaign checks.
 fn validation_codes(raw: &RawCampaign) -> Vec<(String, String)> {
-    match parse_campaign(raw) {
+    match common::parse_campaign(raw) {
         Err(diags) => diags
             .iter()
             .map(|d| (d.code.to_string(), d.message.clone()))
@@ -126,7 +126,7 @@ fn build(campaign: &Campaign) -> Result<BuildOutput, BuildFailure> {
 }
 
 fn built(keeper_watch: Option<Value>, actor_watch: Option<Value>) -> BuildOutput {
-    let c = parse_campaign(&raw(keeper_watch, actor_watch)).expect("campaign parses");
+    let c = common::parse_campaign(&raw(keeper_watch, actor_watch)).expect("campaign parses");
     build(&c).unwrap_or_else(|e| panic!("build fails: {e:?}"))
 }
 
@@ -221,7 +221,7 @@ fn floating(within: u32) -> Campaign {
         // A body in the air walks nowhere: the puppet keeps its stand.
         common::objective_effects(d, 0, "obj/talk").retain(|e| e["type"] != "move-actor");
     });
-    parse_campaign(&r).expect("campaign parses")
+    common::parse_campaign(&r).expect("campaign parses")
 }
 
 #[test]

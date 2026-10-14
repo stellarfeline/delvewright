@@ -15,7 +15,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::{Plan, ResolvedAnchor};
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign};
 
 const NS: &str = "hello-world";
 
@@ -66,7 +66,7 @@ fn parse_hw(quests: &str) -> Campaign {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 /// Build hello-world with `cutscene` on its exit beat. Campaign and registry are
@@ -441,9 +441,9 @@ fn overlay_emission_is_deterministic() {
 #[test]
 fn the_tier3_fixture_seeds_the_proposal_the_flow_asserts() {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let loaded = delvec::compiler::load::load_campaign_dir(&common::cutscene_shots_dir())
+    let loaded = common::load_campaign_dir(&common::cutscene_shots_dir())
         .expect("the fixture campaign loads");
-    let campaign = parse_campaign(&loaded.raw).expect("the fixture campaign parses");
+    let campaign = common::parse_campaign(&loaded.raw).expect("the fixture campaign parses");
     let plan = Plan::build(&campaign, &prefabs).expect("the fixture plans");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {

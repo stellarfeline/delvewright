@@ -6,7 +6,7 @@ mod common;
 use std::collections::BTreeMap;
 
 use delvec::compiler::telling::{self, DW_NAME_UNTOLD, DW_QUESTION_UNANSWERED};
-use delvewright_dsl::{Campaign, DSL_VERSION, L10nDoc, RawCampaign, Severity, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, L10nDoc, RawCampaign, Severity};
 
 fn read_hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
@@ -35,7 +35,7 @@ fn parse(
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 /// hello-world with the dialogue edited by `f`.

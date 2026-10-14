@@ -24,17 +24,16 @@ use std::path::{Path, PathBuf};
 
 use delvec::compiler::analyze::analyze_campaign;
 use delvec::compiler::flow::{Flow, PathStep, Playthrough};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, parse_campaign};
+use delvewright_dsl::Campaign;
 
 fn branch_endings_dir() -> PathBuf {
     common::compiler_fixtures_dir().join("branch-endings")
 }
 
 fn parse(dir: &Path) -> Campaign {
-    let loaded = load_campaign_dir(dir).expect("fixture loads");
-    parse_campaign(&loaded.raw).expect("fixture parses")
+    let loaded = common::load_campaign_dir(dir).expect("fixture loads");
+    common::parse_campaign(&loaded.raw).expect("fixture parses")
 }
 
 /// Materialize `branch-endings` with `quests.json` replaced by `patch` (a raw

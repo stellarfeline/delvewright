@@ -1278,9 +1278,8 @@ fn a_detail_plan_cannot_state_a_coordinate() {
         patch_detail_plan(&d, |v| {
             v["content"]["details"][0][path] = value;
         });
-        let loaded =
-            delvec::compiler::load::load_campaign_dir(&d.campaign).expect("still readable");
-        let Err(diags) = delvewright_dsl::parse_campaign(&loaded.raw) else {
+        let loaded = common::load_campaign_dir(&d.campaign).expect("still readable");
+        let Err(diags) = common::parse_campaign(&loaded.raw) else {
             panic!("a detail row carrying `{path}` must not parse");
         };
         assert!(
@@ -1776,7 +1775,7 @@ fn check_and_expect(d: &Detailed, code: &str) -> String {
 }
 
 fn build_into(d: &Detailed, out: &Path) -> BTreeMap<String, Vec<u8>> {
-    let loaded = delvec::compiler::load::load_campaign_dir(&d.campaign).unwrap();
+    let loaded = common::load_campaign_dir(&d.campaign).unwrap();
     let c = delvec::compiler::load::parse_loaded(&loaded).unwrap();
     let reg = PrefabRegistry::load_dir(&d.prefabs).unwrap();
     let plan = Plan::build(&c, &reg).expect("the detailed campaign plans");

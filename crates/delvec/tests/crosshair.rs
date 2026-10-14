@@ -22,7 +22,7 @@ use delvec::compiler::crosshair::{DW_CROSSHAIR_CONTEST, threshold};
 use delvec::compiler::emit::{self, BuildFailure};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, Severity, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, Severity};
 use std::sync::LazyLock;
 
 fn hw(name: &str) -> String {
@@ -123,7 +123,7 @@ fn build(scout_to: &str, cast_two: &str) -> Result<Vec<Diagnostic>, BuildFailure
         detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
-    let campaign = parse_campaign(&raw).expect("campaign parses");
+    let campaign = common::parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -215,7 +215,7 @@ fn the_eclipse_proof_is_silent_on_the_same_fixture() {
         detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
-    let campaign = parse_campaign(&raw).expect("campaign parses");
+    let campaign = common::parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let eclipse = delvec::compiler::eclipse::check_body_eclipse(&plan)

@@ -13,10 +13,9 @@ use std::path::Path;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{DSL_VERSION, Diagnostic, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{DSL_VERSION, Diagnostic, validate_campaign_with};
 
 const NS: &str = "souls-bonfire";
 
@@ -74,8 +73,8 @@ fn campaign_with(dst: &Path, mutate: impl FnOnce(&mut serde_json::Value, &mut se
 /// Build a materialized campaign directory, returning the output plus the
 /// advisory diagnostics the build raised.
 fn build(dir: &Path) -> Result<(BuildOutput, Vec<Diagnostic>), BuildFailure> {
-    let loaded = load_campaign_dir(dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
+    let loaded = common::load_campaign_dir(dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("fixture parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
@@ -354,8 +353,8 @@ fn the_combat_plan_is_validation_only_and_names_the_tier() {
 fn a_combat_free_campaign_emits_no_combat_plan() {
     // hello-world has no `kill` step at all, so the whole pass is skipped and its
     // output is byte-identical to before spec-0023.
-    let loaded = load_campaign_dir(&common::hello_world_dir()).unwrap();
-    let campaign = parse_campaign(&loaded.raw).unwrap();
+    let loaded = common::load_campaign_dir(&common::hello_world_dir()).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).unwrap();
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).unwrap();
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();

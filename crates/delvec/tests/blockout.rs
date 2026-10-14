@@ -36,9 +36,9 @@ fn fixture_dir() -> std::path::PathBuf {
 }
 
 fn campaign() -> Campaign {
-    let loaded = delvec::compiler::load::load_campaign_dir(&fixture_dir())
-        .expect("the blockout fixture is readable");
-    delvewright_dsl::parse_campaign(&loaded.raw).expect("the blockout fixture parses")
+    let loaded =
+        common::load_campaign_dir(&fixture_dir()).expect("the blockout fixture is readable");
+    common::parse_campaign(&loaded.raw).expect("the blockout fixture parses")
 }
 
 fn prefabs() -> PrefabRegistry {
@@ -534,8 +534,8 @@ fn a_stair_down_through_a_punched_floor_is_a_whole_run() {
 /// tunnel moves with it, so the walk between them stays a walk.
 #[test]
 fn a_stair_down_through_a_punched_floor_can_be_climbed_back_out() {
-    let mut loaded = delvec::compiler::load::load_campaign_dir(&fixture_dir())
-        .expect("the blockout fixture is readable");
+    let mut loaded =
+        common::load_campaign_dir(&fixture_dir()).expect("the blockout fixture is readable");
     let mut plan_doc: serde_json::Value = serde_json::from_str(
         loaded
             .raw
@@ -557,7 +557,7 @@ fn a_stair_down_through_a_punched_floor_can_be_climbed_back_out() {
     }
     assert_eq!(moved, 2, "the cellar and its tunnel are both re-seated");
     loaded.raw.site_plan = Some(plan_doc.to_string());
-    let c = delvewright_dsl::parse_campaign(&loaded.raw).expect("the re-seated fixture parses");
+    let c = common::parse_campaign(&loaded.raw).expect("the re-seated fixture parses");
     let plan = Plan::build(&c, &prefabs()).expect("the re-seated fixture plans");
     let structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     let world = delvec::compiler::nav::World::from_plan(&plan, &structures);
@@ -1367,8 +1367,8 @@ fn a_barred_door_onto_a_wall_reddens_dw0986() {
 /// the sightline's far end). Only `edge/hall-cell`'s `at` differs between the
 /// two worlds the remedy test builds.
 fn door_along_the_stair(at: i64) -> Campaign {
-    let loaded = delvec::compiler::load::load_campaign_dir(&fixture_dir())
-        .expect("the blockout fixture is readable");
+    let loaded =
+        common::load_campaign_dir(&fixture_dir()).expect("the blockout fixture is readable");
     let mut raw = loaded.raw;
     let mut plan: serde_json::Value = serde_json::from_str(
         raw.site_plan
@@ -1401,7 +1401,7 @@ fn door_along_the_stair(at: i64) -> Campaign {
     *to = serde_json::json!(to.as_i64().expect("a sightline end") + 4);
     assert_eq!(edited, 5, "every edit this shape names found its object");
     raw.site_plan = Some(plan.to_string());
-    delvewright_dsl::parse_campaign(&raw).expect("the edited fixture parses")
+    common::parse_campaign(&raw).expect("the edited fixture parses")
 }
 
 fn battery_of(c: &Campaign) -> blockout::Battery {

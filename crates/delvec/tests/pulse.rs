@@ -16,10 +16,9 @@ use std::path::{Path, PathBuf};
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, DSL_VERSION, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION};
 
 const ROOM: &str = "pulse-room";
 const SIZE: [i32; 3] = [15, 8, 9];
@@ -113,8 +112,8 @@ fn write(tag: &str, pulses: &str, talk: &str) -> (PathBuf, PathBuf) {
 }
 
 fn campaign(dir: &Path) -> Campaign {
-    let loaded = load_campaign_dir(dir).unwrap();
-    let mut c = parse_campaign(&loaded.raw).expect("the case parses");
+    let loaded = common::load_campaign_dir(dir).unwrap();
+    let mut c = common::parse_campaign(&loaded.raw).expect("the case parses");
     delvewright_dsl::tag_translatables(&mut c);
     c
 }
@@ -158,7 +157,7 @@ fn try_build(dir: &Path, lib: &Path) -> Result<(BuildOutput, Vec<String>), Build
             }
         }
     }
-    let inputs = load_campaign_dir(dir).unwrap().inputs;
+    let inputs = common::load_campaign_dir(dir).unwrap().inputs;
     emit::build_with_warnings(
         &plan,
         &inputs,

@@ -10,13 +10,11 @@ use std::collections::BTreeMap;
 use delvec::compiler::atmos;
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 use delvec::compiler::textfit;
 use delvewright_dsl::{
     Campaign, DSL_VERSION, L10nDoc, RawCampaign, Severity, art_narrates, on_screen_narrates,
-    parse_campaign,
 };
 
 /// A v0.6 `quests` document whose single quest fires the given `on_complete`
@@ -69,7 +67,7 @@ fn parse_hw(quests: &str, world: Option<String>) -> Campaign {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 // --- DW0326: sound-event validation --------------------------------------
@@ -230,7 +228,7 @@ fn build_v06(quests: &str) -> BuildOutput {
     let tree = CommandTree::v1_21_11();
     emit::build(
         &plan,
-        &load_campaign_dir(&common::hello_world_dir())
+        &common::load_campaign_dir(&common::hello_world_dir())
             .unwrap()
             .inputs,
         &structures,
@@ -292,7 +290,7 @@ fn build_localized_v06(quests: &str, translations: &BTreeMap<String, String>) ->
     let tree = CommandTree::v1_21_11();
     emit::build(
         &plan,
-        &load_campaign_dir(&common::hello_world_dir())
+        &common::load_campaign_dir(&common::hello_world_dir())
             .unwrap()
             .inputs,
         &structures,

@@ -9,10 +9,9 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{parse_campaign, validate_campaign_with};
+use delvewright_dsl::validate_campaign_with;
 
 fn fixture_dir() -> std::path::PathBuf {
     common::compiler_fixtures_dir().join("v06-flags")
@@ -22,8 +21,8 @@ fn fixture_dir() -> std::path::PathBuf {
 /// registries, and return the emitted output.
 fn build_v06() -> BuildOutput {
     let dir = fixture_dir();
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("v06-flags parses");
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("v06-flags parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
 
     let items = FullItemRegistry::v1_21_11();

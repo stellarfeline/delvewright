@@ -15,7 +15,7 @@
 mod common;
 
 use delvec::compiler::promise;
-use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign};
 use std::sync::LazyLock;
 
 fn hw(name: &str) -> String {
@@ -95,7 +95,7 @@ fn campaign(second: &str, complete: &str) -> Campaign {
 }
 
 fn campaign_under(guidance: &str, second: &str, complete: &str) -> Campaign {
-    parse_campaign(&RawCampaign {
+    common::parse_campaign(&RawCampaign {
         world: hw("world.json"),
         npcs: NPCS.to_string(),
         classes: hw("classes.json"),

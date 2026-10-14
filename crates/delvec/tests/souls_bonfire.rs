@@ -11,10 +11,9 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{parse_campaign, validate_campaign_with};
+use delvewright_dsl::validate_campaign_with;
 
 const NS: &str = "souls-bonfire";
 
@@ -31,14 +30,14 @@ fn build_fixture() -> BuildOutput {
 
 /// The parsed fixture campaign, for tests that vary one declaration and rebuild.
 fn fixture_campaign() -> delvewright_dsl::Campaign {
-    let loaded = load_campaign_dir(&fixture_dir()).unwrap();
-    parse_campaign(&loaded.raw).expect("souls-bonfire parses")
+    let loaded = common::load_campaign_dir(&fixture_dir()).unwrap();
+    common::parse_campaign(&loaded.raw).expect("souls-bonfire parses")
 }
 
 /// Validate + plan + emit a (possibly modified) fixture campaign.
 fn build_campaign(campaign: &delvewright_dsl::Campaign) -> BuildOutput {
     let dir = fixture_dir();
-    let loaded = load_campaign_dir(&dir).unwrap();
+    let loaded = common::load_campaign_dir(&dir).unwrap();
     let campaign = campaign.clone();
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
 
@@ -978,7 +977,7 @@ fn a_named_potion_compiles_to_the_vanilla_brew() {
 #[test]
 fn an_equipped_actor_coexists_with_affordance_hardware() {
     let dir = fixture_dir();
-    let mut loaded = load_campaign_dir(&dir).unwrap();
+    let mut loaded = common::load_campaign_dir(&dir).unwrap();
 
     // Splice an equipped actor into the fixture's stage-5 doc, in memory.
     let mut q: serde_json::Value = serde_json::from_str(&loaded.raw.quests).unwrap();
@@ -997,7 +996,7 @@ fn an_equipped_actor_coexists_with_affordance_hardware() {
     }]);
     loaded.raw.quests = serde_json::to_string(&q).unwrap();
 
-    let campaign = parse_campaign(&loaded.raw).expect("parses with an equipped actor");
+    let campaign = common::parse_campaign(&loaded.raw).expect("parses with an equipped actor");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();

@@ -62,12 +62,10 @@ use std::path::PathBuf;
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
 use delvec::compiler::flow::gate_flags;
-use delvec::compiler::load::{LoadedCampaign, load_campaign_dir};
+use delvec::compiler::load::LoadedCampaign;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{
-    Campaign, DSL_VERSION, EffectRootKind, EffectSite, QuestEffect, parse_campaign,
-};
+use delvewright_dsl::{Campaign, DSL_VERSION, EffectRootKind, EffectSite, QuestEffect};
 
 /// The `souls-shortcut` fixture is the base for every row, because it is the only
 /// one in the tree that already carries a **shortcut** — root 6 needs real
@@ -247,7 +245,7 @@ fn prefabs_dir(k: EffectRootKind) -> PathBuf {
 }
 
 fn load(k: EffectRootKind) -> LoadedCampaign {
-    load_campaign_dir(&common::compiler_fixtures_dir().join(ns_for(k))).unwrap()
+    common::load_campaign_dir(&common::compiler_fixtures_dir().join(ns_for(k))).unwrap()
 }
 
 /// The fixture campaign with `bundle` bound at root `k` and nowhere else.
@@ -256,7 +254,9 @@ fn load(k: EffectRootKind) -> LoadedCampaign {
 /// added without deciding, here, how a campaign binds it — which is the question
 /// nobody was asked when `shortcuts[].on_unlock` was written.
 fn probe_at(loaded: &LoadedCampaign, k: EffectRootKind, bundle_json: &str) -> Campaign {
-    let mut c = parse_campaign(&loaded.raw).expect("fixture parses");
+    let mut c = common::parse_campaign(&loaded.raw).expect("fixture parses");
+    // The trap probe stands at the piece's `anchor/trap` ([`prefabs_with_trap`]).
+    common::station_in(&mut c, "anchor/trap");
     let bundle = json_effects(bundle_json);
     // Both stages are raised to the version the probe needs: `set-checkpoint`
     // (root 5) is v0.6 surface on the dialogue stage, `on_death` (root 7) is v0.10

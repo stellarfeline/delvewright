@@ -22,7 +22,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, DwCode, RawCampaign, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Campaign, DwCode, RawCampaign, validate_campaign_with};
 
 /// The hello-world `quests` doc with a datum, the exit gated on it, and the two
 /// valves; `second` and `first` are the two triggers' effect lists.
@@ -107,7 +107,7 @@ fn parse_hw(quests: &str) -> Campaign {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 fn prefabs() -> PrefabRegistry {

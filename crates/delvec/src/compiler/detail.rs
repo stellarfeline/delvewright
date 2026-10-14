@@ -1852,6 +1852,10 @@ pub struct Detailing {
     /// seam's gate region the place owns the plane of (spec-0098 §2). The block
     /// is the piece's own bar, the one `close-gate` writes back.
     pub gates: Vec<(String, [i32; 3], [i32; 3], String)>,
+    /// `(campaign anchor name, world cell)` for every bound anchor whose piece
+    /// metadata declares a trap `dispenser` socket (spec-0011): the cell a
+    /// `dispense` payload fills.
+    pub dispensers: Vec<(String, [i32; 3])>,
 }
 
 /// **The one path from a `details[]` row to placed bytes.**
@@ -1919,6 +1923,12 @@ pub fn place(c: &Campaign, prefabs: &PrefabRegistry) -> Detailing {
             let Some(p) = a.pos else {
                 continue; // `DW0845` refused it: an owed name is a place to stand.
             };
+            if let Some(dp) = a.dispenser {
+                out.dispensers.push((
+                    name.clone(),
+                    [pos[0] + dp[0], pos[1] + dp[1], pos[2] + dp[2]],
+                ));
+            }
             out.anchors.push((
                 name.clone(),
                 [pos[0] + p[0], pos[1] + p[1], pos[2] + p[2]],

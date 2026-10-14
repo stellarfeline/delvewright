@@ -34,10 +34,9 @@ use std::path::Path;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, RawCampaign};
 use std::sync::LazyLock;
 
 // ---------------------------------------------------------------------------
@@ -173,8 +172,8 @@ fn assert_no_unbound_s(suite: &str, out: &BuildOutput) -> usize {
 // ---------------------------------------------------------------------------
 
 fn build_dir(dir: &Path) -> BuildOutput {
-    let loaded = load_campaign_dir(dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
+    let loaded = common::load_campaign_dir(dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("valid campaign parses");
     build_campaign(&campaign, &loaded.inputs)
 }
 
@@ -279,7 +278,7 @@ fn build_scheduled_hello_world() -> BuildOutput {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    let campaign = parse_campaign(&raw).expect("campaign parses");
+    let campaign = common::parse_campaign(&raw).expect("campaign parses");
     build_campaign(&campaign, &BTreeMap::new())
 }
 

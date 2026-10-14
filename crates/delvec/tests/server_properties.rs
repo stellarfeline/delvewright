@@ -31,10 +31,8 @@ use std::path::Path;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput, DELVE_SIMULATION_DISTANCE};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::parse_campaign;
 use delvewright_dsl::viewdistance::FLOOR as VIEW_DISTANCE_FLOOR;
 
 /// Exactly the keys a delve pins. Everything else on the pinned server version
@@ -59,8 +57,8 @@ const PINNED_KEYS: [&str; 15] = [
 ];
 
 fn build_dir(dir: &Path) -> BuildOutput {
-    let loaded = load_campaign_dir(dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
+    let loaded = common::load_campaign_dir(dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("valid campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();

@@ -21,8 +21,8 @@
 
 use delvec::compiler::analyze::analyze_campaign;
 use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::RawCampaign;
 use delvewright_dsl::validate::validate_campaign;
-use delvewright_dsl::{RawCampaign, parse_campaign};
 use std::sync::LazyLock;
 
 mod common;
@@ -73,7 +73,7 @@ fn campaign_with_graph(graph: Option<&str>) -> delvewright_dsl::Campaign {
         detail_plan: None,
         design: None,
     };
-    parse_campaign(&raw).expect("the fixture parses")
+    common::parse_campaign(&raw).expect("the fixture parses")
 }
 
 /// The binding: the validation pass raises the graph's findings.

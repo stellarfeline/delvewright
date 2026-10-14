@@ -11,17 +11,15 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::parse_campaign;
 
 const NS: &str = "souls-shortcut";
 
 fn build_fixture() -> BuildOutput {
     let dir = common::compiler_fixtures_dir().join(NS);
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("souls-shortcut parses");
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("souls-shortcut parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
 
     let items = FullItemRegistry::v1_21_11();
@@ -228,8 +226,8 @@ fn fixture_variant(name: &str, patch: &[StagePatch]) -> std::path::PathBuf {
 
 /// Plan a campaign directory, returning the `DW03xx` plan error if there is one.
 fn plan_code(dir: &std::path::Path) -> Result<(), delvewright_dsl::DwCode> {
-    let loaded = load_campaign_dir(dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("variant parses");
+    let loaded = common::load_campaign_dir(dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("variant parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     Plan::build(&campaign, &prefabs)
         .map(|_| ())
@@ -293,8 +291,8 @@ fn a_shortcut_with_no_long_route_is_rejected_by_the_critical_path_proof() {
             doc["content"]["batches"] = serde_json::json!([]);
         })],
     );
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("variant parses");
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("variant parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("planning still succeeds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();

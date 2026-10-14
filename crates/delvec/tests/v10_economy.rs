@@ -18,7 +18,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign};
 use std::sync::LazyLock;
 
 fn hw(name: &str) -> String {
@@ -180,7 +180,7 @@ fn parse_hw_with_edits(quests: &str, world_edits: Option<&str>) -> Campaign {
         detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
-    let mut c = parse_campaign(&raw).expect("campaign parses");
+    let mut c = common::parse_campaign(&raw).expect("campaign parses");
     delvewright_dsl::tag_translatables(&mut c);
     c
 }
@@ -1469,12 +1469,11 @@ fn the_packtest_tier_covers_what_it_can_witness_and_claims_nothing_more() {
 /// The `economy` fixture validates clean and emits the whole chain.
 #[test]
 fn the_ci_fixture_validates_and_emits_the_chain() {
-    use delvec::compiler::load::load_campaign_dir;
     use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry};
 
     let dir = common::compiler_fixtures_dir().join("economy");
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let mut c = parse_campaign(&loaded.raw).expect("the economy fixture parses");
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let mut c = common::parse_campaign(&loaded.raw).expect("the economy fixture parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let diags = common::quiet(delvewright_dsl::validate_campaign_with(
         &c,

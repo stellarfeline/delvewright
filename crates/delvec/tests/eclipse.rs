@@ -20,7 +20,7 @@ use delvec::compiler::eclipse::{DW_AFFORDANCE_CONTEST, DW_BODY_ECLIPSE};
 use delvec::compiler::emit::{self, BuildFailure};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, Severity, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, Severity};
 
 /// The hello-room prefab's anchors: `anchor/keeper-stand` at local `[5, 1, 4]`,
 /// `spawn` at `[5, 1, 2]` (two cells north) and `anchor/exit` at `[5, 1, 8]`
@@ -109,7 +109,7 @@ fn build_quests_out(
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    let campaign = parse_campaign(&raw).expect("campaign parses");
+    let campaign = common::parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -318,7 +318,7 @@ fn one_cell_of_separation_clears_the_contest() {
 fn the_affordance_contest_states_what_it_examined() {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let binding_of = |quests: &str| {
-        let campaign = parse_campaign(&RawCampaign {
+        let campaign = common::parse_campaign(&RawCampaign {
             world: read_hw("world.json"),
             npcs: npcs_doc("minecraft:villager", "spawn"),
             classes: read_hw("classes.json"),
@@ -415,7 +415,7 @@ fn build_quests_plan(
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    let campaign = parse_campaign(&raw).expect("campaign parses");
+    let campaign = common::parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -458,7 +458,7 @@ fn contest_binding(quests: &str, quest_plan: &str) -> Vec<(&'static str, String,
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    let campaign = parse_campaign(&raw).expect("campaign parses");
+    let campaign = common::parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     delvec::compiler::eclipse::affordance_contest_binding(&plan)

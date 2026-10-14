@@ -16,7 +16,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, RawCampaign};
 use std::sync::LazyLock;
 
 fn read_hw(name: &str) -> String {
@@ -97,7 +97,7 @@ fn parse_hw() -> Campaign {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 fn build(campaign: &Campaign, prefabs: &PrefabRegistry) -> BuildOutput {
@@ -344,7 +344,7 @@ fn chained_moves_plan_from_last_staged_location() {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    let campaign = parse_campaign(&raw).expect("campaign parses");
+    let campaign = common::parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let out = build(&campaign, &prefabs);
 
@@ -389,7 +389,7 @@ fn chained_moves_plan_from_last_staged_location() {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    let campaign = parse_campaign(&raw).expect("campaign parses");
+    let campaign = common::parse_campaign(&raw).expect("campaign parses");
     let out = build(&campaign, &prefabs);
     let tick2 = file(
         &out,

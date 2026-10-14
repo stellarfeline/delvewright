@@ -197,7 +197,7 @@ pub fn region_library() -> PathBuf {
     DIR.get_or_init(|| {
         let src = pinned::prefabs();
         let dst = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-            .join(format!("region-library-{}", &pinned::sha()[..12]));
+            .join(format!("region-library-2-{}", &pinned::sha()[..12]));
         if dst.join(".complete").is_file() {
             return dst;
         }
@@ -216,7 +216,14 @@ pub fn region_library() -> PathBuf {
             let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&text) else {
                 continue;
             };
-            if v.get("spatial_contract").is_some() || v.get("prefab_id").is_none() {
+            // A document that is no piece's metadata (a declaration the
+            // library at the pin still carries and nothing reads) is not
+            // part of a library a site plan binds from.
+            if v.get("prefab_id").is_none() {
+                std::fs::remove_file(&path).unwrap();
+                continue;
+            }
+            if v.get("spatial_contract").is_some() {
                 continue;
             }
             let size = v
@@ -236,7 +243,11 @@ pub fn region_library() -> PathBuf {
                 "edges": [],
                 "faces": []
             });
-            std::fs::write(&path, serde_json::to_string_pretty(&v).unwrap() + "\n").unwrap();
+            // Written in the document's own canonical form, so the derived
+            // library round-trips exactly as the shipped one does.
+            let meta = delvewright_dsl::prefab::PrefabMeta::from_json(&v.to_string())
+                .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            std::fs::write(&path, meta.to_json()).unwrap();
         }
         std::fs::write(tmp.join(".complete"), "").unwrap();
         if std::fs::rename(&tmp, &dst).is_err() {
@@ -1212,9 +1223,6 @@ pub fn shown_prefabs_dir(tag: &str) -> PathBuf {
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             continue;
         }
-        if path.file_name().and_then(|f| f.to_str()) == Some("pools.json") {
-            continue;
-        }
         let text = std::fs::read_to_string(&path).unwrap();
         let mut doc: serde_json::Value = serde_json::from_str(&text).unwrap();
         let Some(obj) = doc.as_object_mut() else {
@@ -1635,18 +1643,26 @@ fn bound_libraries() -> &'static std::sync::Mutex<std::collections::BTreeMap<Pat
 /// [`sync_map_dir`], reading the bound piece's anchor names from `prefabs`
 /// (a library a test synthesised) rather than the pinned one.
 pub fn sync_map_in(dir: &Path, prefabs: Option<&Path>) {
+    // A committed fixture is the test's input, never its scratch space.
+    if dir.starts_with(repo_root()) && !dir.starts_with(repo_root().join("target")) {
+        return;
+    }
     let graph_path = dir.join("layout-graph.json");
     let Ok(text) = std::fs::read_to_string(&graph_path) else {
         return;
     };
-    let mut graph: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let Ok(mut graph) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return;
+    };
     if graph["content"]["nodes"].as_array().map(Vec::len) != Some(1) {
         return;
     }
-    let node = graph["content"]["nodes"][0]["id"]
+    let Some(node) = graph["content"]["nodes"][0]["id"]
         .as_str()
-        .unwrap()
-        .to_string();
+        .map(str::to_string)
+    else {
+        return;
+    };
     let read = |name: &str| -> Option<serde_json::Value> {
         std::fs::read_to_string(dir.join(name))
             .ok()
@@ -1702,7 +1718,7 @@ pub fn sync_map_in(dir: &Path, prefabs: Option<&Path>) {
             .cloned()
             .unwrap_or_default()
             .into_iter()
-            .map(|s| (s["anchor"].as_str().unwrap().to_string(), s))
+            .filter_map(|s| Some((s["anchor"].as_str()?.to_string(), s)))
             .collect();
     let mut added = Vec::new();
     for a in all {
@@ -1742,6 +1758,11 @@ pub fn sync_map_in(dir: &Path, prefabs: Option<&Path>) {
 /// [`sync_map_dir`] over a campaign held in memory, for a test that builds its
 /// `RawCampaign` by hand: written to a scratch directory and read back.
 pub fn sync_map_raw(raw: &mut delvewright_dsl::RawCampaign, tag: &str) {
+    sync_map_raw_in(raw, tag, None);
+}
+
+/// [`sync_map_raw`], reading the bound piece's names from `prefabs`.
+pub fn sync_map_raw_in(raw: &mut delvewright_dsl::RawCampaign, tag: &str, prefabs: Option<&Path>) {
     static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
@@ -1763,7 +1784,7 @@ pub fn sync_map_raw(raw: &mut delvewright_dsl::RawCampaign, tag: &str) {
     if let Some(d) = &raw.detail_plan {
         put("detail-plan.json", d);
     }
-    sync_map_dir(&dir);
+    sync_map_in(&dir, prefabs);
     if raw.layout_graph.is_some() {
         raw.layout_graph = Some(std::fs::read_to_string(dir.join("layout-graph.json")).unwrap());
     }
@@ -1810,4 +1831,43 @@ pub fn pad_region(dir: &Path, pad: i64) {
             }
         }
     });
+}
+
+/// [`delvewright_dsl::parse_campaign`] after [`sync_map_raw`].
+pub fn parse_campaign(
+    raw: &delvewright_dsl::RawCampaign,
+) -> Result<delvewright_dsl::Campaign, Vec<delvewright_dsl::Diagnostic>> {
+    let mut raw = raw.clone();
+    sync_map_raw(&mut raw, "parse");
+    delvewright_dsl::parse_campaign(&raw)
+}
+
+/// [`delvec::compiler::load::load_campaign_dir`] after [`sync_map_dir`].
+pub fn load_campaign_dir(dir: &Path) -> std::io::Result<delvec::compiler::load::LoadedCampaign> {
+    sync_map_dir(dir);
+    delvec::compiler::load::load_campaign_dir(dir)
+}
+
+/// Station `anchor` as a point on a parsed one-place campaign's place, and bind
+/// it in the detail plan's first row to the piece anchor of the same name — for
+/// a test that adds an object at a name its fixture's map does not yet place.
+/// A no-op where the name is already a station.
+pub fn station_in(c: &mut delvewright_dsl::Campaign, anchor: &str) {
+    let id = delvewright_dsl::AnchorId(anchor.to_string());
+    if let Some(g) = c.layout_graph.as_mut() {
+        let node = &mut g.content.nodes[0];
+        if node.stations.iter().any(|s| s.anchor == id) {
+            return;
+        }
+        node.stations.push(delvewright_dsl::layout::Station {
+            anchor: id,
+            kind: delvewright_dsl::layout::StationKind::Point,
+            note: None,
+        });
+    }
+    if let Some(d) = c.detail_plan.as_mut()
+        && let Some(row) = d.content.details.first_mut()
+    {
+        row.anchors.insert(anchor.to_string(), anchor.to_string());
+    }
 }

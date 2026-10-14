@@ -36,21 +36,28 @@ fn audit_missing_file_is_dw0732_exit2() {
     assert!(stderr.contains("DW0732"), "expected DW0732: {stderr}");
 }
 
-/// `DW0750`: admission tooling failure — `socket` carving a jigsaw opening
-/// outside the structure's bounds.
+/// `DW0750`: admission tooling — an editing step on a piece with no metadata
+/// beside it creates a skeleton and says so, without failing the step.
 #[test]
-fn socket_out_of_bounds_is_dw0750_exit1() {
-    let dir = tmp("socket-oob");
+fn an_edit_on_a_bare_piece_is_dw0750_advisory_exit0() {
+    let dir = tmp("bare-piece");
     let nbt = dir.join("piece.nbt");
     std::fs::write(&nbt, fixtures::clean_room().write()).unwrap();
 
     let out = prefab()
-        .args(["socket"])
+        .args(["anchor"])
         .arg(&nbt)
-        .args(["--pos", "999,999,999", "--facing", "north"])
+        .args([
+            "--name",
+            "anchor/stand",
+            "--pos",
+            "3,1,3",
+            "--facing",
+            "north",
+        ])
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("DW0750"), "expected DW0750: {stderr}");
 }
@@ -383,9 +390,16 @@ fn a_detached_tile_is_still_refused_at_every_door() {
     // ...and the editing commands, which would corrupt the set rather than
     // merely misreport it.
     let out = prefab()
-        .args(["socket"])
+        .args(["anchor"])
         .arg(&orphan)
-        .args(["--pos", "3,1,0", "--facing", "north"])
+        .args([
+            "--name",
+            "anchor/stand",
+            "--pos",
+            "3,1,0",
+            "--facing",
+            "north",
+        ])
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(2), "{out:?}");

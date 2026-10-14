@@ -8,19 +8,17 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::parse_campaign;
 
 /// The i18n key inventory is derived from the stage docs (player-visible strings
 /// only), and `localize` swaps exactly those strings — English-only campaigns have
 /// no inventory beyond their strings, and authoring-context fields are excluded.
 #[test]
 fn l10n_inventory_and_localize() {
-    let loaded = load_campaign_dir(&common::keep_trial_dir()).unwrap();
-    let mut campaign = parse_campaign(&loaded.raw).expect("valid keep-trial parses");
+    let loaded = common::load_campaign_dir(&common::keep_trial_dir()).unwrap();
+    let mut campaign = common::parse_campaign(&loaded.raw).expect("valid keep-trial parses");
 
     let inv = delvewright_dsl::l10n::inventory(&campaign);
     // Player-visible keys are present with their canonical English values.
@@ -57,8 +55,8 @@ fn loaded_theme() -> &'static str {
 }
 
 fn build_hello_world() -> BuildOutput {
-    let loaded = load_campaign_dir(&common::hello_world_dir()).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
+    let loaded = common::load_campaign_dir(&common::hello_world_dir()).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("valid campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
 
@@ -90,8 +88,8 @@ fn text<'a>(out: &'a BuildOutput, path: &str) -> &'a str {
 
 /// Build any campaign directory (generalizes `build_hello_world`).
 fn build_campaign_dir(dir: &std::path::Path) -> BuildOutput {
-    let loaded = load_campaign_dir(dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
+    let loaded = common::load_campaign_dir(dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("valid campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -1031,7 +1029,7 @@ fn creator_overlay_emitted() {
         "creator-datapack/data/hello-world/function/creator/stamp.mcfunction",
     );
     assert!(stamp.contains("run data get entity @s Pos[0]"));
-    assert!(stamp.contains("data modify storage hello-world:note area set value \"area/keep\""));
+    assert!(stamp.contains("data modify storage hello-world:note area set value \"area/site\""));
     assert!(stamp.contains("if entity @s[tag=dw_npc_keeper]"));
     assert!(stamp.contains("run scoreboard players get #party dw.o_talk"));
     assert!(stamp.contains("function hello-world:creator/emit with storage hello-world:note"));
@@ -1056,7 +1054,7 @@ fn creator_overlay_emitted() {
     let layout: serde_json::Value =
         serde_json::from_slice(out.get("creator-datapack/layout.json").unwrap()).unwrap();
     assert_eq!(layout["campaign_id"], "hello-world");
-    assert_eq!(layout["areas"][0]["id"], "area/keep");
+    assert_eq!(layout["areas"][0]["id"], "area/site");
     assert_eq!(layout["areas"][0]["prefab"], "prefab/hello-room");
     assert_eq!(layout["objectives"][0]["id"], "obj/talk");
     assert_eq!(layout["objectives"][0]["quest"], "quest/open-the-door");
@@ -1150,8 +1148,8 @@ mod gravity_despawn {
 
     #[test]
     fn unsupported_sand_floor_is_dw0313_and_substrate_passes() {
-        let loaded = load_campaign_dir(&common::hello_world_dir()).unwrap();
-        let campaign = parse_campaign(&loaded.raw).unwrap();
+        let loaded = common::load_campaign_dir(&common::hello_world_dir()).unwrap();
+        let campaign = common::parse_campaign(&loaded.raw).unwrap();
         let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
         let plan = Plan::build(&campaign, &prefabs).unwrap();
 
@@ -1277,10 +1275,9 @@ mod health_bar {
     use delvec::compiler::commands::CommandTree;
     use delvec::compiler::emit::{self, BuildOutput};
     use delvec::compiler::healthbar;
-    use delvec::compiler::load::load_campaign_dir;
     use delvec::compiler::plan::Plan;
     use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-    use delvewright_dsl::{Campaign, parse_campaign, validate_campaign_with};
+    use delvewright_dsl::{Campaign, validate_campaign_with};
     use serde_json::json;
 
     use super::common;
@@ -1300,8 +1297,8 @@ mod health_bar {
         unleash: bool,
         vulnerable: bool,
     ) -> Campaign {
-        let loaded = load_campaign_dir(&fixture_dir()).unwrap();
-        let mut c = parse_campaign(&loaded.raw).expect("souls-bonfire parses");
+        let loaded = common::load_campaign_dir(&fixture_dir()).unwrap();
+        let mut c = common::parse_campaign(&loaded.raw).expect("souls-bonfire parses");
         for w in &mut c.quests.content.waves {
             if w.id.as_str() == "wave/guards" {
                 // One body under the bar, and a name tag on it: a name marks a
@@ -1357,7 +1354,7 @@ mod health_bar {
     /// clean build is itself the proof that every bar line is a command the
     /// server parses.
     fn build(c: &Campaign) -> BuildOutput {
-        let loaded = load_campaign_dir(&fixture_dir()).unwrap();
+        let loaded = common::load_campaign_dir(&fixture_dir()).unwrap();
         let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
         let tree = CommandTree::v1_21_11();
         let mut diags = common::quiet(validate_campaign_with(
@@ -1755,8 +1752,8 @@ mod health_bar {
 /// guards' anchor, and `mutate` applied — then built in process.
 fn build_fight(mutate: impl FnOnce(&mut delvewright_dsl::Campaign)) -> BuildOutput {
     let dir = common::compiler_fixtures_dir().join("souls-bonfire");
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let mut campaign = parse_campaign(&loaded.raw).expect("fixture parses");
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let mut campaign = common::parse_campaign(&loaded.raw).expect("fixture parses");
     let content = &mut campaign.quests.content;
     content.state.push(
         serde_json::from_str(r#"{ "id": "state/purse", "scope": "party", "initial": 0 }"#).unwrap(),
@@ -1999,8 +1996,8 @@ fn removing_the_bundle_is_byte_identical_and_a_build_is_deterministic() {
 fn an_interior_overview_stands_over_a_place_stacked_over_its_eye() {
     use delvec::compiler::plan::PiecePlacement;
     use delvec::compiler::rotation::Rotation;
-    let loaded = load_campaign_dir(&common::hello_world_dir()).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
+    let loaded = common::load_campaign_dir(&common::hello_world_dir()).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("valid campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let mut plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();

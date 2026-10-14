@@ -23,7 +23,7 @@ use delvec::compiler::nav;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvec::compiler::timeline;
-use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign};
 
 /// A hello-world `quests` doc carrying a stage-5 actor plus a caller-supplied
 /// `on_complete` body (raw JSON array contents, no surrounding brackets).
@@ -84,7 +84,7 @@ fn parse_hw(quests: &str) -> Campaign {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 fn prefabs() -> PrefabRegistry {

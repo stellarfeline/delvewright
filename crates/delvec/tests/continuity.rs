@@ -19,7 +19,7 @@
 mod common;
 
 use delvec::compiler::continuity::check_npc_continuity;
-use delvewright_dsl::{Campaign, RawCampaign, Severity, parse_campaign};
+use delvewright_dsl::{Campaign, RawCampaign, Severity};
 
 fn read_hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
@@ -53,7 +53,7 @@ fn parse(deferred: bool, quests: &str) -> Campaign {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 /// A v0.6 quests doc skeleton; `{TALK_FX}` and `{COMPLETE_FX}` are the

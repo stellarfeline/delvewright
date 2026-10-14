@@ -16,10 +16,9 @@ use std::path::{Path, PathBuf};
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{DSL_VERSION, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{DSL_VERSION, validate_campaign_with};
 
 const NS: &str = "hello-world";
 
@@ -100,12 +99,13 @@ fn load(
     });
     common::materialize_from(&common::hello_world_dir(), &patch, &camp_dir);
     let prefabs_dir = plate_prefabs(&format!("{name}-prefabs"));
-    (load_campaign_dir(&camp_dir).unwrap(), prefabs_dir)
+    common::sync_map_in(&camp_dir, Some(&prefabs_dir));
+    (common::load_campaign_dir(&camp_dir).unwrap(), prefabs_dir)
 }
 
 fn diags_for(name: &str, trigger: serde_json::Value) -> Vec<delvewright_dsl::Diagnostic> {
     let (loaded, prefabs_dir) = load(name, trigger);
-    let campaign = parse_campaign(&loaded.raw).expect("campaign parses");
+    let campaign = common::parse_campaign(&loaded.raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&prefabs_dir).unwrap();
     common::quiet(validate_campaign_with(
         &campaign,
@@ -123,7 +123,7 @@ fn build(
 ) -> (Result<BuildOutput, BuildFailure>, [i32; 3]) {
     use delvec::admit::structure::{PaletteEntry, Structure};
     let (loaded, prefabs_dir) = load(name, trigger);
-    let campaign = parse_campaign(&loaded.raw).expect("campaign parses");
+    let campaign = common::parse_campaign(&loaded.raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&prefabs_dir).unwrap();
     let diags = common::quiet(validate_campaign_with(
         &campaign,
@@ -400,8 +400,9 @@ fn a_checkpoint_a_plate_sets_is_rooted_at_the_plates_firing_cells() {
         &camp_dir,
     );
     let prefabs_dir = plate_prefabs(&format!("{name}-prefabs"));
-    let loaded = load_campaign_dir(&camp_dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("campaign parses");
+    common::sync_map_in(&camp_dir, Some(&prefabs_dir));
+    let loaded = common::load_campaign_dir(&camp_dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&prefabs_dir).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let cell = plan.point_any("anchor/plate").unwrap();

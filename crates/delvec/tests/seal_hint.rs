@@ -20,7 +20,7 @@ use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
 use delvec::compiler::gates;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, DSL_VERSION, Diagnostic, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, Diagnostic, RawCampaign};
 use std::sync::LazyLock;
 
 /// A hello-world `quests` doc at `dsl_version`, opening `anchor/door` on the talk
@@ -147,7 +147,7 @@ fn parse_hw_with_dialogue(quests: &str, dialogue: &str) -> Campaign {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 fn parse_hw(quests: &str) -> Campaign {
@@ -165,7 +165,7 @@ fn parse_hw(quests: &str) -> Campaign {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 fn try_build(campaign: &Campaign, prefabs: &PrefabRegistry) -> Result<BuildOutput, BuildFailure> {

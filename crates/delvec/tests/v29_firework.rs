@@ -37,12 +37,11 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::firework::{FireworkGate, Launch, judge};
 use delvec::compiler::lethal::{ChosenBy, PostedPlace, posted_places};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::firework;
 use delvewright_dsl::metrics::Body;
-use delvewright_dsl::{parse_campaign, validate_campaign_with};
+use delvewright_dsl::validate_campaign_with;
 
 /// A private working directory per caller — the tests run in parallel threads of
 /// one binary, and a shared scratch directory is a race whose symptom is a
@@ -85,8 +84,8 @@ fn try_build(who: &str, quests: &str) -> Result<BuildOutput, (String, String)> {
     std::fs::write(dir.join("quests.json"), quests).unwrap();
 
     let prefab_dir = common::prefabs_dir();
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("the fixture parses");
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("the fixture parses");
     let prefabs = PrefabRegistry::load_dir(&prefab_dir).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
@@ -484,8 +483,8 @@ fn the_posts_are_dw0511s_own_enumeration() {
         let dir = tmp(&format!("v29-firework-posts-{who}"));
         common::copy_campaign_docs(&common::hello_world_dir(), &dir);
         std::fs::write(dir.join("quests.json"), quests).unwrap();
-        let loaded = load_campaign_dir(&dir).unwrap();
-        let campaign = parse_campaign(&loaded.raw).expect("parses");
+        let loaded = common::load_campaign_dir(&dir).unwrap();
+        let campaign = common::parse_campaign(&loaded.raw).expect("parses");
         let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
         let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
         for area in &plan.areas {

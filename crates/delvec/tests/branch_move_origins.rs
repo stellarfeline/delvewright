@@ -30,7 +30,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, RawCampaign};
 use std::sync::LazyLock;
 
 fn read_hw(name: &str) -> String {
@@ -168,7 +168,7 @@ fn parse_with(quests: &str) -> Campaign {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 fn build_with(quests: &str) -> BuildOutput {

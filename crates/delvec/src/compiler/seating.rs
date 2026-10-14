@@ -643,8 +643,8 @@ impl SeatingBinding {
 /// nothing can say a body stands on.
 pub fn check(
     campaign: &Campaign,
-    _prefabs: &PrefabRegistry,
-    _prefabs_dir: &Path,
+    prefabs: &PrefabRegistry,
+    prefabs_dir: &Path,
 ) -> (SeatingBinding, Vec<Diagnostic>) {
     let base = crate::compiler::horizon::base_of(campaign);
     let mut binding = SeatingBinding {
@@ -691,6 +691,37 @@ pub fn check(
         }
     }
 
+    // **And everything the bound pieces' documents claim about their bytes**
+    // (`DW0888`), reported once per PIECE: a piece two places bind is one
+    // library asset with one set of declarations, so the path names the piece.
+    let mut read: BTreeMap<String, PieceFacts> = BTreeMap::new();
+    for piece in prefabs.campaign_pieces(campaign) {
+        if read.contains_key(&piece) {
+            continue;
+        }
+        let Some(meta) = prefabs.get(&piece) else {
+            continue; // `DW0842` refuses a piece the library does not hold.
+        };
+        if let Ok(facts) = PieceFacts::read(meta, prefabs_dir) {
+            read.insert(piece, facts);
+        }
+    }
+    for facts in read.values() {
+        binding.claims.add(&facts.claims.binding);
+        for c in &facts.claims.denied {
+            diags.push(Diagnostic::error(
+                crate::compiler::claims::DW_CLAIM_DENIED,
+                "detail-plan",
+                format!("/prefabs/{}", facts.base),
+                format!(
+                    "this campaign binds `{member}`, and its prefab document says something its \
+                     own bytes deny: {full}.",
+                    member = c.member,
+                    full = c.full,
+                ),
+            ));
+        }
+    }
     (binding, diags)
 }
 

@@ -28,7 +28,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign};
 use std::sync::LazyLock;
 
 /// A hello-world `quests` doc carrying the stage-5 puppet plus a caller-supplied
@@ -158,7 +158,7 @@ fn parse_hw(quests: &str, dialogue: Option<&str>) -> Campaign {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 fn prefabs() -> PrefabRegistry {

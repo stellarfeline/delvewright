@@ -25,7 +25,7 @@ use delvec::compiler::blockstate::BlockMap;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 use delvec::compiler::view::{beat, camera, world};
-use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign};
 
 fn tmp(tag: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("post-beat-{tag}"));
@@ -102,7 +102,7 @@ fn quests() -> String {
 }
 
 fn campaign() -> Campaign {
-    parse_campaign(&RawCampaign {
+    common::parse_campaign(&RawCampaign {
         world: hw("world.json"),
         npcs: hw("npcs.json"),
         classes: hw("classes.json"),
@@ -338,7 +338,7 @@ fn plain_stands(
           "after": ["obj/talk"] }
     ]);
     q["content"]["traps"] = serde_json::json!([]);
-    let c = parse_campaign(&RawCampaign {
+    let c = common::parse_campaign(&RawCampaign {
         world: hw("world.json"),
         npcs: hw("npcs.json"),
         classes: hw("classes.json"),

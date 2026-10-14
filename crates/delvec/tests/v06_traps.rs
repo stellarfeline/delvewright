@@ -16,10 +16,9 @@ use std::path::{Path, PathBuf};
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{DSL_VERSION, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{DSL_VERSION, validate_campaign_with};
 
 const NS: &str = "hello-world";
 
@@ -134,9 +133,10 @@ fn build_trap_world(
     });
     common::materialize_from(&common::hello_world_dir(), &patch, &camp_dir);
     let prefabs_dir = patched_prefabs(&format!("{name}-prefabs"), trigger_block);
+    common::sync_map_in(&camp_dir, Some(&prefabs_dir));
 
-    let loaded = load_campaign_dir(&camp_dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("campaign parses");
+    let loaded = common::load_campaign_dir(&camp_dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&prefabs_dir).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
@@ -184,8 +184,9 @@ fn validate_trap(name: &str, trap: serde_json::Value) -> Vec<delvewright_dsl::Di
         &format!("{name}-prefabs"),
         Some("minecraft:oak_pressure_plate[powered=false]"),
     );
-    let loaded = load_campaign_dir(&camp_dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("campaign parses");
+    common::sync_map_in(&camp_dir, Some(&prefabs_dir));
+    let loaded = common::load_campaign_dir(&camp_dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&prefabs_dir).unwrap();
     common::quiet(validate_campaign_with(
         &campaign,

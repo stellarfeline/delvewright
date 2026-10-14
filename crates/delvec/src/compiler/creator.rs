@@ -1160,9 +1160,16 @@ fn emit_layout(plan: &Plan, inv: &Inventory) -> serde_json::Value {
         .iter()
         .map(|a| {
             let (min, max) = a.bounds();
-            // `prefab` names the area's entry piece (the whole prefab for a
-            // single-prefab area). `size` is the union AABB extent.
-            let prefab = a.pieces.first().map(|p| p.prefab_id.as_str()).unwrap_or("");
+            // `prefab` names the first piece a `details[]` row binds — the
+            // blockout's own records (`blockout/<node>`) are the derivation's
+            // bookkeeping, not a piece anyone authored. `size` is the union
+            // AABB extent.
+            let prefab = a
+                .pieces
+                .iter()
+                .map(|p| p.prefab_id.as_str())
+                .find(|id| !id.starts_with(crate::compiler::blockout::STAND_IN_PREFIX))
+                .unwrap_or("");
             json!({
                 "id": a.area_id,
                 "prefab": prefab,

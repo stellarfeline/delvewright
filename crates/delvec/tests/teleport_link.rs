@@ -880,8 +880,8 @@ fn the_put_at_roots_hold_every_destination_and_the_stands_at_roots_no_gather() {
     use delvec::compiler::plan::Plan;
     use delvec::compiler::registry::PrefabRegistry;
     let dir = populations_campaign();
-    let loaded = delvec::compiler::load::load_campaign_dir(&dir).unwrap();
-    let campaign = delvewright_dsl::parse_campaign(&loaded.raw).expect("parses");
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("parses");
     let prefabs = PrefabRegistry::load_dir(&ferry_prefabs()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).unwrap_or_else(|e| panic!("{}", e.failure.message));
     assert_eq!(plan.links.len(), 1, "the tiller");

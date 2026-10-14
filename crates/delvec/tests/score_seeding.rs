@@ -24,7 +24,7 @@ use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 use delvec::compiler::seeding;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, RawCampaign};
 
 fn parse_dir(dir: &std::path::Path) -> Campaign {
     let read = |n: &str| std::fs::read_to_string(dir.join(n)).unwrap();
@@ -40,7 +40,7 @@ fn parse_dir(dir: &std::path::Path) -> Campaign {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => panic!("{}: {e}", dir.join("world-edits.json").display()),
     };
-    parse_campaign(&RawCampaign {
+    common::parse_campaign(&RawCampaign {
         world: read("world.json"),
         npcs: read("npcs.json"),
         classes: read("classes.json"),
@@ -51,7 +51,7 @@ fn parse_dir(dir: &std::path::Path) -> Campaign {
         geometry_brief: Some(read("geometry-brief.json")),
         layout_graph: Some(read("layout-graph.json")),
         site_plan: Some(read("site-plan.json")),
-        detail_plan: Some(read("detail-plan.json")),
+        detail_plan: std::fs::read_to_string(dir.join("detail-plan.json")).ok(),
         design: None,
     })
     .expect("campaign parses")

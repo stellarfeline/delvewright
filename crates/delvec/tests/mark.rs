@@ -27,7 +27,7 @@ use delvec::compiler::mark::{DW_MARK_LEAVES_PIECE, check_marks_in_piece};
 use delvec::compiler::nav;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, ExitTier, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, ExitTier, RawCampaign};
 use serde_json::{Value, json};
 
 const FN_DIR: &str = "datapack/data/hello-world/function";
@@ -55,7 +55,7 @@ fn campaign_with(edit: impl FnOnce(&mut Value, &mut Value)) -> Campaign {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("the fixture campaign parses")
+    common::parse_campaign(&raw).expect("the fixture campaign parses")
 }
 
 fn prefabs() -> PrefabRegistry {

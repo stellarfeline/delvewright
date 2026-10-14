@@ -5,17 +5,16 @@
 
 mod common;
 
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, DSL_VERSION, EnvTrigger, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Campaign, DSL_VERSION, EnvTrigger, validate_campaign_with};
 
 /// The `souls-shortcut` fixture: a doorway slab sealed from world-load, opened
 /// from the far side, carrying the author's own **left**-click line. Its
 /// right-click — the press a shortcut loop invites — is the silence.
 fn fixture() -> Campaign {
     let dir = common::compiler_fixtures_dir().join("souls-shortcut");
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let mut campaign = parse_campaign(&loaded.raw).expect("souls-shortcut parses");
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let mut campaign = common::parse_campaign(&loaded.raw).expect("souls-shortcut parses");
     // The fixture ships its door's press answer; this file is about the door
     // with nothing to say, so the answer is withdrawn here.
     campaign
@@ -129,7 +128,7 @@ fn an_unauthored_seal_is_refused_by_the_same_rule() {
         detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
-    let c = parse_campaign(&raw).expect("campaign parses");
+    let c = common::parse_campaign(&raw).expect("campaign parses");
     let diags = diagnostics(&c);
     assert!(
         diags.iter().any(|d| d.code == "DW0429"),

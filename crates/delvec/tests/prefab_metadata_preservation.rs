@@ -70,7 +70,7 @@ const HARDWARE_ANCHOR: &str = "anchor/watcher-1";
 /// This list is checked against the binary's own `--help` below, so a new
 /// subcommand fails this test until someone classifies it — the classification
 /// cannot be forgotten, because there is nowhere to forget it.
-const WRITES_METADATA: &[&str] = &["socket", "anchor", "lighting", "planes"];
+const WRITES_METADATA: &[&str] = &["anchor", "lighting", "planes"];
 const DOES_NOT_WRITE_METADATA: &[&str] = &[
     "audit",          // reads the `.nbt`, writes only a report
     "resolve-jigsaw", // rewrites the `.nbt`, never the metadata
@@ -78,8 +78,6 @@ const DOES_NOT_WRITE_METADATA: &[&str] = &[
     "gallery",        // reads metadata, writes a world
     "curate",         // reads a server log, writes a report
     "curate-merge",   // writes catalog cards, a different document
-    "seating",        // reads every document and its bytes, writes only a verdict
-    "anchors",        // reads every document's anchors and roles, writes only a report
     "help",
 ];
 
@@ -262,19 +260,6 @@ fn every_metadata_writing_step_preserves_the_rest_of_the_document() {
             let nbt_s = nbt.to_str().unwrap();
             // Each step declares the paths it writes, as deep as it writes them.
             let owned: Vec<Vec<&str>> = match *case {
-                "socket" => {
-                    run(&[
-                        "socket",
-                        nbt_s,
-                        "--pos",
-                        "5,1,0",
-                        "--facing",
-                        "north",
-                        "--opening",
-                        "3,3",
-                    ]);
-                    vec![vec!["connectors"]]
-                }
                 "anchor:new" => {
                     run(&[
                         "anchor",

@@ -19,7 +19,7 @@
 
 mod common;
 
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, RawCampaign};
 use std::sync::LazyLock;
 
 fn hw(name: &str) -> String {
@@ -68,7 +68,7 @@ static MINIMAL_STAGE_FIVE: LazyLock<String> = LazyLock::new(|| {
 });
 
 fn campaign(quests: &str) -> Campaign {
-    parse_campaign(&RawCampaign {
+    common::parse_campaign(&RawCampaign {
         world: hw("world.json"),
         npcs: hw("npcs.json"),
         classes: hw("classes.json"),

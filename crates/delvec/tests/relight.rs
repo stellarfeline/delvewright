@@ -14,17 +14,14 @@ use std::collections::BTreeMap;
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
 use delvec::compiler::light;
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{
-    AreaLighting, Campaign, DSL_VERSION, Fixture, WorldTime, WorldWeather, parse_campaign,
-};
+use delvewright_dsl::{AreaLighting, Campaign, DSL_VERSION, Fixture, WorldTime, WorldWeather};
 
 /// Parse the real hello-world campaign (a single lit prefab area).
 fn hello_world() -> Campaign {
-    let loaded = load_campaign_dir(&common::hello_world_dir()).unwrap();
-    parse_campaign(&loaded.raw).expect("hello-world parses")
+    let loaded = common::load_campaign_dir(&common::hello_world_dir()).unwrap();
+    common::parse_campaign(&loaded.raw).expect("hello-world parses")
 }
 
 /// A synthetic gzipped structure `.nbt` for an `[sx,sy,sz]` hollow stone box: a
@@ -123,7 +120,7 @@ fn build_with_structure(campaign: &Campaign, nbt: Vec<u8>) -> Result<BuildOutput
     let tree = CommandTree::v1_21_11();
     emit::build(
         &plan,
-        &load_campaign_dir(&common::hello_world_dir())
+        &common::load_campaign_dir(&common::hello_world_dir())
             .unwrap()
             .inputs,
         &structures,
@@ -158,7 +155,7 @@ fn build_localized(
     let tree = CommandTree::v1_21_11();
     emit::build(
         &plan,
-        &load_campaign_dir(&common::hello_world_dir())
+        &common::load_campaign_dir(&common::hello_world_dir())
             .unwrap()
             .inputs,
         &structures,
@@ -191,7 +188,7 @@ fn build(campaign: &Campaign) -> Result<BuildOutput, BuildFailure> {
     let tree = CommandTree::v1_21_11();
     emit::build(
         &plan,
-        &load_campaign_dir(&common::hello_world_dir())
+        &common::load_campaign_dir(&common::hello_world_dir())
             .unwrap()
             .inputs,
         &structures,
@@ -769,8 +766,8 @@ fn the_vanilla_keywords_still_emit_keywords() {
 #[test]
 fn dw0210_on_a_built_site_plan_names_the_rooms_and_a_reachable_remedy() {
     let dir = common::repo_root().join("crates/delvec/tests/fixtures/blockout");
-    let loaded = load_campaign_dir(&dir).expect("the blockout fixture is readable");
-    let mut c = parse_campaign(&loaded.raw).expect("the blockout fixture parses");
+    let loaded = common::load_campaign_dir(&dir).expect("the blockout fixture is readable");
+    let mut c = common::parse_campaign(&loaded.raw).expect("the blockout fixture parses");
 
     let plan = c
         .site_plan

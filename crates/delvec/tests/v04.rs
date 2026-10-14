@@ -9,10 +9,9 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{parse_campaign, validate_campaign_with};
+use delvewright_dsl::validate_campaign_with;
 
 fn fixture_dir() -> std::path::PathBuf {
     common::compiler_fixtures_dir().join("v04-showcase")
@@ -26,8 +25,8 @@ fn build_showcase() -> BuildOutput {
 /// Build the campaign at `dir` (the showcase or a patched copy of it).
 fn build_dir(dir: &std::path::Path) -> BuildOutput {
     let dir = dir.to_path_buf();
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("v04-showcase parses");
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("v04-showcase parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
 
     // DSL validation with the full registries must be clean (no diagnostics).
@@ -593,8 +592,8 @@ fn completed_objectives_despawn_their_summoned_markers() {
 #[test]
 fn wave_mobs_land_on_distinct_standable_in_room_cells() {
     let dir = fixture_dir();
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).unwrap();
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).unwrap();
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).unwrap();
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -672,10 +671,16 @@ fn summon_cells(body: &str) -> Vec<[i32; 3]> {
 /// wave id resolves to `None` (which the DW0309 build guard would reject).
 #[test]
 fn wave_area_resolves_from_spawn_site_not_kill() {
-    let loaded = load_campaign_dir(&fixture_dir()).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("v04-showcase parses");
+    let loaded = common::load_campaign_dir(&fixture_dir()).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("v04-showcase parses");
     use delvec::compiler::plan::wave_area;
-    assert_eq!(wave_area(&campaign, "wave/ambush"), Some("area/keep"));
-    assert_eq!(wave_area(&campaign, "wave/guards"), Some("area/keep"));
+    assert_eq!(
+        wave_area(&campaign, "wave/ambush"),
+        Some(delvewright_dsl::SITE_AREA)
+    );
+    assert_eq!(
+        wave_area(&campaign, "wave/guards"),
+        Some(delvewright_dsl::SITE_AREA)
+    );
     assert_eq!(wave_area(&campaign, "wave/nope"), None);
 }

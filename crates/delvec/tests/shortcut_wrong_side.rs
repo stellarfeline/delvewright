@@ -31,17 +31,16 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{AnchorId, Campaign, EnvTrigger, parse_campaign};
+use delvewright_dsl::{AnchorId, Campaign, EnvTrigger};
 
 const NS: &str = "souls-shortcut";
 
 fn fixture() -> Campaign {
     let dir = common::compiler_fixtures_dir().join(NS);
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("souls-shortcut parses");
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("souls-shortcut parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let diags = common::validation_diagnostics(
         &campaign,

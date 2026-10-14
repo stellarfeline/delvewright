@@ -129,9 +129,9 @@ def decorate(doc_path: pathlib.Path) -> list[str]:
     if not isinstance(doc, dict):
         return []
     planted: list[str] = []
-    # `pools.json` is a pool declaration, not a prefab document: it has no
-    # anchors and no faces, so only the unmodelled key is planted there. The
-    # object decides, not a filename list.
+    # A document that is no piece's metadata has no anchors and no faces, so
+    # only the unmodelled key is planted there. The object decides, not a
+    # filename list.
     is_prefab = "prefab_id" in doc
     for key, value in TOP_LEVEL.items():
         if not is_prefab and key != "x_added_by_a_newer_producer":

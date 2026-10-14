@@ -26,7 +26,7 @@
 mod common;
 
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, DSL_VERSION, EffectRootKind, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, EffectRootKind, RawCampaign};
 use std::sync::LazyLock;
 
 // ---------------------------------------------------------------------------
@@ -58,7 +58,7 @@ fn parse_hw(quests: &str, dialogue: Option<&str>) -> Campaign {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 fn validate(c: &Campaign) -> Vec<String> {

@@ -32,22 +32,15 @@ delvewright_dsl::dw_code! {
     pub const DW_SEAL_HINT_CONFLICT: DwCode = DwCode::new("DW0423", ExitTier::Build);
 }
 
-/// Every area of `c` that provides `anchor` as a gate the compiler can fill —
-/// **and which of that area's pieces provides it** — paired with the refusals
-/// the authority raised while asking.
+/// Which of this campaign's bound pieces provide `anchor` as a gate the
+/// compiler can fill, keyed by the site area, paired with the refusals the
+/// authority raised while asking.
 ///
-/// The denominator is **this campaign's own pieces** — each area's bare `prefab`,
-/// or every member of its `prefab_pool` — and never the loaded library. A piece
-/// no area binds cannot be placed, so it has no standing to answer a question
-/// about what this campaign's gates are made of. Asking the library is what let
-/// two pieces belonging to no area of the campaign satisfy `DW0343` on a shortcut
-/// they had nothing to do with.
-///
-/// The **piece** is kept, not just the area, because it is the difference between
-/// a refusal an author can act on and one they cannot. The remedy for an
-/// ambiguous gate is to change which piece one of the areas binds, and an author
-/// cannot choose which area to change without knowing what each one is bound to.
-/// The walk already had the answer in hand and threw it away.
+/// The denominator is **this campaign's own pieces** — the `details[]` rows —
+/// and never the loaded library. A piece no place binds cannot be placed, so it
+/// has no standing to answer a question about what this campaign's gates are
+/// made of. Asking the library is what let two pieces the campaign did not
+/// place satisfy `DW0343` on a shortcut they had nothing to do with.
 fn gate_providers(
     c: &Campaign,
     prefabs: &PrefabRegistry,
@@ -82,11 +75,33 @@ fn gate_providers(
 /// `timed-gate` (spec-0016 §4), whose clock fills and clears the region with that
 /// block twice a cycle.
 ///
+/// A gate station a `details[]` row binds is the bound piece's gate, so its
+/// block is the piece's: a piece anchor that declares a region and no `block`
+/// is refused here, rather than filled with the derivation's bar.
 pub fn check_close_gates(c: &Campaign, prefabs: &PrefabRegistry) -> Vec<Diagnostic> {
     let mut d = Vec::new();
-    // `fills` distinguishes the three verbs that need a block to write from
-    // `open-gate`, which only needs to know whose wall it is.
     let diag = |anchor: &str, path: String| -> Vec<Diagnostic> {
+        if let Some((piece, bound)) = bound_piece_anchor(c, anchor) {
+            let declared = prefabs
+                .get(piece)
+                .and_then(|m| m.anchors.get(bound))
+                .is_some_and(|a| a.region.is_none() || a.block.is_some());
+            if declared {
+                return Vec::new();
+            }
+            return vec![Diagnostic::error(
+                DW_GATE_NO_BLOCK,
+                "quests",
+                path,
+                format!(
+                    "gate anchor `{anchor}` is bound to `{bound}` of `{piece}`, which declares a \
+                     gate region and no fill `block`. `close-gate` fills the region with the \
+                     anchor's declared block (the dual of `open-gate`), and a `shortcut` clears \
+                     exactly that block on unlock. Prescription: declare the `block` on \
+                     `{bound}` in `{piece}`'s metadata — or remove the verb."
+                ),
+            )];
+        }
         // A DERIVED seam gate declares its block in the derivation, not in prefab
         // metadata — a site-plan campaign has no prefab to ask. Asking only the
         // prefab registry made this check measure a smaller world than the
@@ -159,6 +174,21 @@ pub fn check_close_gates(c: &Campaign, prefabs: &PrefabRegistry) -> Vec<Diagnost
         ));
     }
     d
+}
+
+/// The `(piece, piece anchor)` a `details[]` row binds the campaign anchor
+/// `anchor` to, if any row does.
+fn bound_piece_anchor<'c>(c: &'c Campaign, anchor: &str) -> Option<(&'c str, &'c str)> {
+    c.detail_plan
+        .as_ref()?
+        .content
+        .details
+        .iter()
+        .find_map(|row| {
+            row.anchors
+                .get(anchor)
+                .map(|bound| (row.piece.as_str(), bound.as_str()))
+        })
 }
 
 /// Prove every gate anchor has ONE answer (`DW0423`, DSL v0.8).

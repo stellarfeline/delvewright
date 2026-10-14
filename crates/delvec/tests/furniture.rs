@@ -23,7 +23,7 @@ use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::prefab::{AnchorRole, PrefabMeta};
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, RawCampaign};
 
 /// Hall extent: 11 wide, 6 tall, 13 deep.
 const SIZE: [i32; 3] = [11, 6, 13];
@@ -212,7 +212,12 @@ fn campaign(
         detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
-    let mut c = parse_campaign(&raw).expect("campaign parses");
+    let mut raw = raw;
+    // Every library this file writes declares the same names.
+    static NAMES: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    let names = NAMES.get_or_init(|| library("names", Table::Gap, true));
+    common::sync_map_raw_in(&mut raw, "furniture", Some(names));
+    let mut c = common::parse_campaign(&raw).expect("campaign parses");
     delvewright_dsl::tag_translatables(&mut c);
     c
 }

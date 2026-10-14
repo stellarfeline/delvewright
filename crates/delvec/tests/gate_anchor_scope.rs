@@ -28,7 +28,7 @@ mod common;
 use delvec::compiler::gates;
 use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::prefab::PrefabMeta;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, RawCampaign};
 
 // --- the ONE authority: `PrefabMeta::gate_anchor` --------------------------
 
@@ -227,10 +227,10 @@ fn hello_world_closing(anchor: &str) -> Campaign {
         geometry_brief: Some(read("geometry-brief.json")),
         layout_graph: Some(read("layout-graph.json")),
         site_plan: Some(read("site-plan.json")),
-        detail_plan: Some(read("detail-plan.json")),
+        detail_plan: std::fs::read_to_string(dir.join("detail-plan.json")).ok(),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 /// Copy the prefab library somewhere writable and hand it to `f` as a mutable

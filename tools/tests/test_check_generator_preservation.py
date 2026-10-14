@@ -90,11 +90,12 @@ def test_decorate_leaves_a_key_the_generator_already_writes_alone(tmp_path):
     assert after["anchors"]["anchor/a"]["role"] == "entry"
 
 
-def test_a_pool_declaration_is_decorated_as_the_object_it_is(tmp_path):
-    """`pools.json` is not a prefab document: it has no anchors and no faces, and
-    the object decides that rather than a filename list."""
+def test_a_document_that_is_no_piece_is_decorated_as_the_object_it_is(tmp_path):
+    """A document with no `prefab_id` is not a piece's metadata: it has no
+    anchors and no faces, and the object decides that rather than a filename
+    list."""
     module = load()
-    doc = tmp_path / "pools.json"
+    doc = tmp_path / "declaration.json"
     doc.write_text(json.dumps({"pools": {"pool/x": []}}), encoding="utf-8")
     planted = module.decorate(doc)
     after = json.loads(doc.read_text(encoding="utf-8"))

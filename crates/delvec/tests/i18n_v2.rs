@@ -128,7 +128,7 @@ fn pack_namespace(dir: &Path) -> String {
 /// than against a copy of itself.
 fn fresh_inventory(dir: &Path) -> BTreeMap<String, String> {
     let read = |n: &str| std::fs::read_to_string(dir.join(n)).unwrap();
-    let campaign = delvewright_dsl::parse_campaign(&delvewright_dsl::RawCampaign {
+    let campaign = common::parse_campaign(&delvewright_dsl::RawCampaign {
         world: read("world.json"),
         npcs: read("npcs.json"),
         classes: read("classes.json"),
@@ -139,7 +139,7 @@ fn fresh_inventory(dir: &Path) -> BTreeMap<String, String> {
         geometry_brief: Some(read("geometry-brief.json")),
         layout_graph: Some(read("layout-graph.json")),
         site_plan: Some(read("site-plan.json")),
-        detail_plan: Some(read("detail-plan.json")),
+        detail_plan: std::fs::read_to_string(dir.join("detail-plan.json")).ok(),
         design: None,
     })
     .expect("fixture parses");

@@ -37,11 +37,9 @@ use std::process::{Command as Proc, Output};
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::DSL_VERSION;
-use delvewright_dsl::parse_campaign;
 
 mod common;
 
@@ -653,8 +651,8 @@ fn dw0344_raising_the_low_floor_takes_the_piece_out_of_the_sea() {
         });
         let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
         let camp_dir = campaign(&format!("arm2-{tag}"), Some(serde_json::json!("ocean")));
-        let loaded = load_campaign_dir(&camp_dir).unwrap();
-        let parsed = parse_campaign(&loaded.raw).expect("the campaign parses");
+        let loaded = common::load_campaign_dir(&camp_dir).unwrap();
+        let parsed = common::parse_campaign(&loaded.raw).expect("the campaign parses");
         let plan = Plan::build(&parsed, &prefabs).expect("the plan builds");
         let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
         for area in &plan.areas {
@@ -904,8 +902,8 @@ fn dw0885_declaring_the_sides_shown_reaches_the_next_proof() {
             }
         });
         let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
-        let loaded = load_campaign_dir(&common::hello_world_dir()).unwrap();
-        let parsed = parse_campaign(&loaded.raw).expect("the campaign parses");
+        let loaded = common::load_campaign_dir(&common::hello_world_dir()).unwrap();
+        let parsed = common::parse_campaign(&loaded.raw).expect("the campaign parses");
         let plan = Plan::build(&parsed, &prefabs).expect("the plan builds");
         let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
         for area in &plan.areas {
@@ -1610,7 +1608,7 @@ fn dw0881_moving_the_anchor_answers_where_no_radius_can() {
     // Where the two anchors land, read off a plan rather than assumed.
     let (exit, keeper) = {
         let camp = reach_campaign("probe", "anchor/exit", 2);
-        let c = parse_campaign(&load_campaign_dir(&camp).unwrap().raw).unwrap();
+        let c = common::parse_campaign(&common::load_campaign_dir(&camp).unwrap().raw).unwrap();
         let plan = Plan::build(&c, &prefabs).unwrap();
         (
             anchor_cell(&plan, "anchor/exit"),
@@ -1636,7 +1634,7 @@ fn dw0881_moving_the_anchor_answers_where_no_radius_can() {
 
     // Red: no radius from 1 to the authored one clears the shelf.
     let camp = reach_campaign("no-radius", "anchor/exit", 2);
-    let c = parse_campaign(&load_campaign_dir(&camp).unwrap().raw).unwrap();
+    let c = common::parse_campaign(&common::load_campaign_dir(&camp).unwrap().raw).unwrap();
     let plan = Plan::build(&c, &prefabs).unwrap();
     let (binding, verdict) =
         delvec::compiler::reach::check_reach_footprint(&plan, &world, Some(entry));
@@ -1661,7 +1659,7 @@ fn dw0881_moving_the_anchor_answers_where_no_radius_can() {
 
     // The move: one field of one document. The world does not change.
     let moved = reach_campaign("anchor-moved", "anchor/keeper-stand", 2);
-    let c = parse_campaign(&load_campaign_dir(&moved).unwrap().raw).unwrap();
+    let c = common::parse_campaign(&common::load_campaign_dir(&moved).unwrap().raw).unwrap();
     let plan = Plan::build(&c, &prefabs).unwrap();
     let (binding, verdict) =
         delvec::compiler::reach::check_reach_footprint(&plan, &world, Some(entry));
@@ -1869,10 +1867,10 @@ fn muster(offsets: &[[i32; 3]; 7]) -> delvewright_dsl::Campaign {
         geometry_brief: Some(read("geometry-brief.json")),
         layout_graph: Some(read("layout-graph.json")),
         site_plan: Some(read("site-plan.json")),
-        detail_plan: Some(read("detail-plan.json")),
+        detail_plan: std::fs::read_to_string(dir.join("detail-plan.json")).ok(),
         design: None,
     };
-    parse_campaign(&raw).expect("the muster campaign parses")
+    common::parse_campaign(&raw).expect("the muster campaign parses")
 }
 
 /// `DW0896`'s move: seven bodies on one anchor are refused; the same seven at an

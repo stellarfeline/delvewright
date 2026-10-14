@@ -25,11 +25,10 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::lethal::{ChosenBy, PostedPlace, posted_places};
 use delvec::compiler::lightning::{LightningGate, Strike, in_reach, judge};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::metrics::Body;
-use delvewright_dsl::{lightning, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{lightning, validate_campaign_with};
 
 fn tmp(name: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
@@ -76,8 +75,8 @@ fn structures_of(plan: &Plan, prefab_dir: &Path) -> BTreeMap<String, Vec<u8>> {
 fn try_build(who: &str, quests: &str) -> Result<BuildOutput, (String, String)> {
     let dir = materialise(who, quests);
     let prefab_dir = common::prefabs_dir();
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("the fixture parses");
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("the fixture parses");
     let prefabs = PrefabRegistry::load_dir(&prefab_dir).unwrap();
     let diags = common::quiet(validate_campaign_with(
         &campaign,
@@ -276,8 +275,8 @@ fn the_posts_are_dw0511s_own_enumeration() {
     let prefabs = PrefabRegistry::load_dir(&prefab_dir).unwrap();
     let read = |who: &str, quests: String| -> (usize, usize) {
         let dir = materialise(&format!("posts-{who}"), &quests);
-        let loaded = load_campaign_dir(&dir).unwrap();
-        let campaign = parse_campaign(&loaded.raw).expect("parses");
+        let loaded = common::load_campaign_dir(&dir).unwrap();
+        let campaign = common::parse_campaign(&loaded.raw).expect("parses");
         let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
         let structures = structures_of(&plan, &prefab_dir);
         let blocks = delvec::compiler::assembled::assembled_blocks(&plan, &structures);

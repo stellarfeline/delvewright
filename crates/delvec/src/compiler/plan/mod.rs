@@ -3,27 +3,11 @@
 //!
 //! ## Coordinate scheme (deterministic)
 //!
-//! Each stage-1 area is placed at origin `[index * AREA_SPACING, base_y, 0]`
-//! (M1 has one area → `[0, 64, 0]`). The origin Y comes from the **horizon**,
-//! and how it comes from it depends on what kind of datum the base has
-//! (spec-0060 §3):
-//!
-//! - `void` and `valley` state a datum for the ORIGIN, [`BASE_Y`] (64), and
-//!   every area of such a world stands on it.
-//! - `ocean` states a datum for the WALK PLANE
-//!   ([`crate::compiler::horizon::OCEAN_WALK_REF_Y`], 63 — one block above the
-//!   sea, the vanilla-normal beach relationship), and each area's origin is
-//!   DERIVED from the piece set it seats: `walk_ref_y - walk_y`. A keep
-//!   interior (`walk_y` 1) is seated at 62 and stands dry at 63; an island
-//!   piece (`walk_y` 3) is seated at 60.
-//!
-//! The retired global ocean constant was one tileset's authoring convention
-//! promoted to a world constant by being the only convention that existed when
-//! the ocean was built, and it is why every other piece in every library landed
-//! with its box bottom under the sea.
-//!
-//! A prefab's local anchor position resolves to `origin + local`. All coordinates
-//! are integers; no randomness is used in v0.
+//! The map is the site plan (ADR-0035): its `region` and every box are stated in
+//! world coordinates, the derivation lays the blockout there, and each
+//! `details[]` piece stands at its place's frame. A piece's local anchor
+//! position resolves to `frame origin + local`. All coordinates are integers; no
+//! seed draws a piece.
 //!
 //! ## Naming scheme (scoreboard/function-safe)
 //!
@@ -497,7 +481,7 @@ impl<'a> Plan<'a> {
         // v0.6 (spec-0011): the absolute dispenser socket cell for each `anchor/trap`
         // marker that declares one, keyed like `anchors`. Empty for a campaign with no
         // trap hardware.
-        let dispenser_cells: BTreeMap<(String, String), [i32; 3]> = BTreeMap::new();
+        let mut dispenser_cells: BTreeMap<(String, String), [i32; 3]> = BTreeMap::new();
         // ---- the derived blockout (spec-0049 §5) ----
         //
         // **This is the ordering tooth, and it is here because here is the only
@@ -552,6 +536,9 @@ impl<'a> Plan<'a> {
                         ResolvedAnchor::Point { pos, facing },
                         None,
                     )?;
+                }
+                for (name, cell) in detailing.dispensers {
+                    dispenser_cells.insert((placement.area_id.clone(), name), cell);
                 }
                 for (name, from, to, block) in detailing.gates {
                     anchors.place(

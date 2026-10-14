@@ -19,10 +19,9 @@ use std::path::Path;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Severity, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Severity, validate_campaign_with};
 
 fn fixture_dir() -> std::path::PathBuf {
     common::compiler_fixtures_dir().join("daylight-yard")
@@ -75,8 +74,8 @@ fn choir(dst: &Path, mutate: impl FnOnce(&mut serde_json::Value, &mut serde_json
 }
 
 fn build(dir: &Path) -> Result<(), BuildFailure> {
-    let loaded = load_campaign_dir(dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
+    let loaded = common::load_campaign_dir(dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("fixture parses");
     let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("engage")).unwrap();
     let diags = common::quiet(validate_campaign_with(
         &campaign,

@@ -76,17 +76,6 @@ use serde::{Deserialize, Serialize};
 use crate::registry::Lighting;
 use crate::split::TileSet;
 
-/// The one `.json` in a prefab library that is **not** a prefab document:
-/// the pool declaration (`{"pools": {...}}`), read by the compiler's registry.
-///
-/// Named once because more than one tool walks the library directory — the
-/// registry, `delvec view`'s page builder, `delvec render batch` — and each of
-/// them opens every `.json` it finds. A walker that does not know this name
-/// hands a pool file to [`PrefabMeta::from_json`] and reports it as a malformed
-/// prefab, which is a true statement about the bytes and a wrong one about the
-/// file.
-pub const POOLS_FILE: &str = "pools.json";
-
 /// What the exported prefab-metadata schema tells its reader the document IS —
 /// stated on the schema rather than only in a reference document, because the
 /// schema is what an author actually opens.

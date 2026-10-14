@@ -244,8 +244,8 @@ const CHUNK_CELLS: usize = (CHUNK * CHUNK * CHUNK) as usize;
 /// millions of cell probes, and a `BTreeMap` lookup per DDA step is roughly two
 /// orders of magnitude too slow for the sub-second budget. This flattens it into
 /// a palette plus 16³ chunk arrays: probes are O(1) array indexing, memory stays
-/// proportional to *occupied* chunks (a layout spanning `AREA_SPACING`-separated
-/// areas allocates nothing for the void between them), and the palette walk is a
+/// proportional to *occupied* chunks (a world with void between its places
+/// allocates nothing for it), and the palette walk is a
 /// `BTreeMap` iteration so palette indices are deterministic.
 pub struct VoxelGrid {
     /// Palette entry 0 is always "air"; block ids follow in `BTreeMap` order.

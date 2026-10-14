@@ -39,7 +39,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, RawCampaign};
 use std::sync::LazyLock;
 
 fn read_hw(name: &str) -> String {
@@ -156,7 +156,7 @@ fn build_with_npcs(npcs: String, quests: String) -> BuildOutput {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    let campaign: Campaign = parse_campaign(&raw).expect("campaign parses");
+    let campaign: Campaign = common::parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();

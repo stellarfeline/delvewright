@@ -10,18 +10,17 @@
 
 mod common;
 
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::onkill::{ComesBack, check_on_kill_fires, fight_comes_back};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, Fight, parse_campaign};
+use delvewright_dsl::{Campaign, Fight};
 
 /// `souls-bonfire`: `wave/guards` (`respawns_on_rest`, 2 bodies, spawned once),
 /// `wave/ambush` (2 bodies, spawned once, untiered) and a bonfire.
 fn fixture() -> Campaign {
     let dir = common::compiler_fixtures_dir().join("souls-bonfire");
-    let loaded = load_campaign_dir(&dir).unwrap();
-    parse_campaign(&loaded.raw).expect("fixture parses")
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    common::parse_campaign(&loaded.raw).expect("fixture parses")
 }
 
 fn bundle(fires: Option<&str>) -> Option<delvewright_dsl::OnKill> {

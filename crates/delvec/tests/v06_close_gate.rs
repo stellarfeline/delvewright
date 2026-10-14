@@ -11,7 +11,7 @@ use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::gates;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign};
 
 /// A hello-world `quests` doc that opens `anchor/door` on the talk objective and
 /// runs `on_complete` (a raw JSON array body, no surrounding brackets) after the
@@ -62,7 +62,7 @@ fn parse_hw(quests: &str) -> Campaign {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 /// Emit a hello-world campaign (with the given `quests` doc) and return the build

@@ -7,19 +7,18 @@
 
 mod common;
 
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, Diagnostic, EquipmentBinding, parse_campaign};
+use delvewright_dsl::{Campaign, Diagnostic, EquipmentBinding};
 
 /// hello-world with `actors` and `waves` replaced.
 fn campaign(actors: serde_json::Value, waves: serde_json::Value) -> Campaign {
-    let loaded = load_campaign_dir(&common::hello_world_dir()).unwrap();
+    let loaded = common::load_campaign_dir(&common::hello_world_dir()).unwrap();
     let mut raw = loaded.raw;
     let mut quests: serde_json::Value = serde_json::from_str(&raw.quests).unwrap();
     quests["content"]["actors"] = actors;
     quests["content"]["waves"] = waves;
     raw.quests = serde_json::to_string_pretty(&quests).unwrap();
-    parse_campaign(&raw).expect("the dressed campaign parses")
+    common::parse_campaign(&raw).expect("the dressed campaign parses")
 }
 
 fn actor(entity: &str, equipment: serde_json::Value) -> serde_json::Value {

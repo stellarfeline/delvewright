@@ -21,7 +21,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, Severity, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, Severity};
 
 fn read_hw(name: &str) -> String {
     std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
@@ -72,7 +72,7 @@ fn build(base_entity: &str, edits: Option<String>) -> Result<Vec<Diagnostic>, Bu
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    let campaign = parse_campaign(&raw).expect("campaign parses");
+    let campaign = common::parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();

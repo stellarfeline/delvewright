@@ -11,8 +11,8 @@ use delvewright_dsl::{DwCode, ExitTier};
 use serde::Deserialize;
 
 delvewright_dsl::dw_code! {
-    /// `DW0346`: a prefab metadata `*.json` (or `pools.json`) in the prefabs dir
-    /// failed to read or parse. Silently skipping it made a bad file surface only as
+    /// `DW0346`: a `*.json` in the prefabs dir failed to read or parse as prefab
+    /// metadata. Silently skipping it made a bad file surface only as
     /// a baffling downstream `DW0300` "prefab not found"; the parse failure itself is
     /// the information. Reported at **validation tier (exit 1)**; loading continues
     /// for the other files (report-all, not fail-fast).
@@ -335,10 +335,8 @@ pub const REPORT_SUFFIX: &str = ".report.json";
 /// walker of a library directory reads (the registry, `delvec viewer`'s page
 /// builder, `delvec render batch`).
 ///
-/// A document is a `*.json` that is neither the retired pool declaration
-/// ([`delvewright_dsl::prefab::POOLS_FILE`], which a content library may still
-/// carry and nothing reads — assembly is designed, never drawn, ADR-0035) nor a
-/// gate report (`<id>` [`REPORT_SUFFIX`]). Both are told apart by NAME. The grammar's expander and
+/// A document is a `*.json` that is not a gate report (`<id>`
+/// [`REPORT_SUFFIX`]), told apart by NAME. The grammar's expander and
 /// `delvec detail` write `<id>.report.json` beside the piece they froze (the
 /// gates it passed, the measurements it was taken at); a walker that reads one
 /// as metadata refuses a library the compiler builds. The suffix is the full
@@ -346,9 +344,10 @@ pub const REPORT_SUFFIX: &str = ".report.json";
 /// still a document.
 pub fn is_prefab_document(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()) == Some("json")
-        && path.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
-            n != delvewright_dsl::prefab::POOLS_FILE && !n.ends_with(REPORT_SUFFIX)
-        })
+        && path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| !n.ends_with(REPORT_SUFFIX))
 }
 
 /// Loads and caches prefab metadata from a `prefabs/` directory, and answers
@@ -675,7 +674,7 @@ mod tests {
     use super::*;
 
     /// The library's one naming rule, on every shape it decides: a piece's
-    /// metadata is a document; the pool declaration and a gate report are not;
+    /// metadata is a document; a gate report is not;
     /// a stem that merely contains `report` is; a template is not.
     #[test]
     fn which_files_are_prefab_documents() {
@@ -684,7 +683,6 @@ mod tests {
             ("doune-castle.json", true),
             ("report.json", true),
             ("reportage.json", true),
-            ("pools.json", false),
             ("vesperhold.report.json", false),
             ("keep-gate-room.nbt", false),
             ("seating-limits.toml", false),

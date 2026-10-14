@@ -9,7 +9,7 @@
 mod common;
 
 use delvec::compiler::cast;
-use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign};
 use std::sync::LazyLock;
 
 fn hw(name: &str) -> String {
@@ -87,7 +87,7 @@ fn quests(cast_one: &str, cast_two: &str) -> String {
 }
 
 fn campaign(cast_one: &str, cast_two: &str) -> Campaign {
-    parse_campaign(&RawCampaign {
+    common::parse_campaign(&RawCampaign {
         world: hw("world.json"),
         npcs: NPCS.to_string(),
         classes: hw("classes.json"),
@@ -305,7 +305,7 @@ fn branchy(cast_one: &str, cast_two: &str) -> Campaign {
         { "label": "Open the door.", "effects": [{ "type": "complete-objective", "objective": "obj/talk" }, { "type": "spawn-npc", "npc": "npc/scout" }] } ] }"#,
     );
     assert_ne!(dialogue, DIALOGUE.as_str(), "the branch patch must apply");
-    parse_campaign(&RawCampaign {
+    common::parse_campaign(&RawCampaign {
         world: hw("world.json"),
         npcs: NPCS.to_string(),
         classes: hw("classes.json"),

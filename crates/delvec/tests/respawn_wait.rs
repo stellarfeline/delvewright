@@ -11,11 +11,10 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::observer;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, RespawnWait, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Campaign, RespawnWait, validate_campaign_with};
 
 const NS: &str = "souls-bonfire";
 
@@ -24,8 +23,8 @@ fn fixture_dir() -> std::path::PathBuf {
 }
 
 fn fixture() -> Campaign {
-    let loaded = load_campaign_dir(&fixture_dir()).unwrap();
-    parse_campaign(&loaded.raw).expect("souls-bonfire parses")
+    let loaded = common::load_campaign_dir(&fixture_dir()).unwrap();
+    common::parse_campaign(&loaded.raw).expect("souls-bonfire parses")
 }
 
 fn with_wait(seconds: u16, alone: bool) -> Campaign {
@@ -48,7 +47,7 @@ fn codes(c: &Campaign) -> Vec<String> {
 }
 
 fn try_build(c: &Campaign) -> Result<BuildOutput, BuildFailure> {
-    let loaded = load_campaign_dir(&fixture_dir()).unwrap();
+    let loaded = common::load_campaign_dir(&fixture_dir()).unwrap();
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     assert!(codes(c).is_empty(), "{:?}", codes(c));
     let plan = Plan::build(c, &prefabs).expect("plan builds");
@@ -300,7 +299,7 @@ fn dw0925_refuses_seconds_out_of_range() {
 /// `DW0925`: a wait in a campaign with no checkpoint or bonfire to come back to.
 #[test]
 fn dw0925_refuses_a_wait_with_no_checkpoint() {
-    let loaded = load_campaign_dir(&fixture_dir()).unwrap();
+    let loaded = common::load_campaign_dir(&fixture_dir()).unwrap();
     let mut raw = loaded.raw.clone();
     let mut quests: serde_json::Value = serde_json::from_str(&raw.quests).unwrap();
     fn strip(v: &mut serde_json::Value) -> usize {
@@ -329,7 +328,7 @@ fn dw0925_refuses_a_wait_with_no_checkpoint() {
         "the fixture's one bonfire is removed"
     );
     raw.quests = serde_json::to_string(&quests).unwrap();
-    let mut c = parse_campaign(&raw).expect("parses without its bonfire");
+    let mut c = common::parse_campaign(&raw).expect("parses without its bonfire");
     assert!(!delvewright_dsl::validate::declares_checkpoint(&c));
     let without: Vec<String> = codes(&c);
     assert!(!without.iter().any(|c| c == "DW0925"), "{without:?}");

@@ -43,23 +43,10 @@ fn audit_exit_codes_and_report() {
 }
 
 #[test]
-fn socket_and_lighting_write_metadata() {
+fn anchor_and_lighting_write_metadata() {
     let dir = tmp("chain");
     let nbt = dir.join("piece.nbt");
     std::fs::write(&nbt, fixtures::clean_room().write()).unwrap();
-
-    // carve a north socket (auto-creates a skeleton metadata).
-    let out = prefab()
-        .args(["socket"])
-        .arg(&nbt)
-        .args(["--pos", "3,1,0", "--facing", "north"])
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
 
     // annotate an anchor.
     let out = prefab()
@@ -90,9 +77,8 @@ fn socket_and_lighting_write_metadata() {
         .unwrap();
     assert!(out.status.success());
 
-    // metadata now carries the socket, anchor, and lighting.
+    // metadata now carries the anchor and the lighting.
     let meta = PrefabMeta::beside_nbt(&nbt).unwrap().unwrap();
-    assert_eq!(meta.connectors.len(), 1);
     assert!(meta.anchors.contains_key("anchor/npc-stand"));
     let lighting = meta.lighting.expect("--write records the probe");
     assert_eq!(lighting.profile, delvec::admit::meta::LightingProfile::Lit);

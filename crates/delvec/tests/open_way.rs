@@ -29,7 +29,7 @@ use delvec::grammar::ir::{
     Split, Way,
 };
 use delvec::grammar::{Axis, BlockState, Box3, ExpandOptions, export_prefab};
-use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign};
 
 /// The vault is `9 x 8 x 11`: a low room, a raised room, a flight between them
 /// whose treads are missing, and a shaft through the roof.
@@ -549,7 +549,7 @@ fn campaign_with(world: String, quests: String, tower: bool) -> Campaign {
         detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 /// The refusal a campaign earns at plan time, or a panic naming what it built

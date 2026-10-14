@@ -30,7 +30,7 @@ use delvec::compiler::registry::PrefabRegistry;
 use delvec::compiler::traversal::{
     DW_BARRIER_SURMOUNTED, DW_TRAVERSAL_IMPOSSIBLE, Locomotion, Traversal,
 };
-use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, Severity, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, Severity};
 use std::sync::LazyLock;
 
 fn read_hw(name: &str) -> String {
@@ -229,7 +229,7 @@ fn build_all(
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    let campaign = parse_campaign(&raw).expect("campaign parses");
+    let campaign = common::parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();

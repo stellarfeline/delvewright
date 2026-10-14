@@ -17,17 +17,16 @@ mod common;
 use std::path::{Path, PathBuf};
 
 use delvec::compiler::flow::{DW_STATE_GATE_CLEARED, Flow};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::statepath;
-use delvewright_dsl::{Campaign, Diagnostic, parse_campaign};
+use delvewright_dsl::{Campaign, Diagnostic};
 
 fn fixture_dir() -> PathBuf {
     common::compiler_fixtures_dir().join("state-path-order")
 }
 
 fn parse(dir: &Path) -> Campaign {
-    let loaded = load_campaign_dir(dir).expect("fixture loads");
-    parse_campaign(&loaded.raw).expect("fixture parses")
+    let loaded = common::load_campaign_dir(dir).expect("fixture loads");
+    common::parse_campaign(&loaded.raw).expect("fixture parses")
 }
 
 /// The fixture's stage-5 document, as a mutable JSON value.

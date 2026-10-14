@@ -24,9 +24,8 @@ use std::path::{Path, PathBuf};
 use delvec::compiler::analyze::analyze_campaign;
 use delvec::compiler::branch::realize;
 use delvec::compiler::flow::{Flow, Playthrough};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, parse_campaign};
+use delvewright_dsl::Campaign;
 
 /// The gallery's primary point, materialised the way `tools/ci/gallery_domain.py`
 /// materialises it (the top-level documents and `l10n/`), with `quest_plan`
@@ -54,8 +53,8 @@ fn gallery_primary(name: &str, quest_plan: impl FnOnce(&mut serde_json::Value)) 
 }
 
 fn parse(dir: &Path) -> Campaign {
-    let loaded = load_campaign_dir(dir).expect("gallery loads");
-    parse_campaign(&loaded.raw).expect("gallery parses")
+    let loaded = common::load_campaign_dir(dir).expect("gallery loads");
+    common::parse_campaign(&loaded.raw).expect("gallery parses")
 }
 
 fn dw0204(c: &Campaign) -> Vec<String> {

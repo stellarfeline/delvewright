@@ -14,7 +14,7 @@ use delvec::compiler::textfit::{
     self, BUTTON_LABEL_BUDGET, DIALOG_BUTTON_WIDTH, DW_OPTION_LABEL_SCROLLS,
 };
 use delvewright_dsl::{
-    Campaign, DSL_VERSION, L10nDoc, RawCampaign, Severity, dialogue_option_labels, parse_campaign,
+    Campaign, DSL_VERSION, L10nDoc, RawCampaign, Severity, dialogue_option_labels,
 };
 
 fn read_hw(name: &str) -> String {
@@ -71,7 +71,7 @@ fn parse_hw(dialogue: &str, world: Option<String>) -> Campaign {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 /// The budget is arithmetic on the widget, not a tunable: 150 GUI px of button less
@@ -267,9 +267,9 @@ fn every_engine_fixture_fits_its_buttons() {
             .collect();
         dirs.sort();
         for dir in dirs {
-            let loaded = delvec::compiler::load::load_campaign_dir(&dir)
+            let loaded = common::load_campaign_dir(&dir)
                 .unwrap_or_else(|e| panic!("{} loads: {e:?}", dir.display()));
-            let Ok(c) = parse_campaign(&loaded.raw) else {
+            let Ok(c) = common::parse_campaign(&loaded.raw) else {
                 continue; // patch-style / deliberately-invalid fixtures are not ours
             };
             let mut sidecars = BTreeMap::new();

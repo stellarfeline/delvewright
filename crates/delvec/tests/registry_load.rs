@@ -145,8 +145,8 @@ fn every_shipped_prefab_document_round_trips_without_losing_a_key() {
     let dir = common::prefabs_dir();
     let mut checked = 0usize;
     let mut tile_sets = 0usize;
-    // Which files are documents is the library's one naming rule: not
-    // `pools.json`, not a gate report. A tile-set manifest IS a document — the
+    // Which files are documents is the library's one naming rule: not a gate
+    // report. A tile-set manifest IS a document — the
     // one definition with `structure_set` in place of `structure` — and is
     // round-tripped like every other.
     let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
@@ -213,20 +213,20 @@ fn every_shipped_prefab_document_round_trips_without_losing_a_key() {
     );
 }
 
-/// Outright JSON syntax garbage is reported the same way, and a broken
-/// `pools.json` is covered too (pools silently vanishing strands every
-/// `prefab_pool` area).
+/// Outright JSON syntax garbage is reported the same way, and so is a JSON
+/// document that is no piece's metadata: every `*.json` in a library is read
+/// as a prefab document.
 #[test]
-fn syntax_garbage_and_broken_pools_yield_dw0346() {
+fn syntax_garbage_and_a_stray_document_yield_dw0346() {
     let tmp = prefab_copy("garbage");
     std::fs::write(tmp.join("cave-den.json"), "{ not json").unwrap();
-    std::fs::write(tmp.join("pools.json"), "[]").unwrap();
+    std::fs::write(tmp.join("stray.json"), "[]").unwrap();
 
     let prefabs = PrefabRegistry::load_dir(&tmp).unwrap();
     let d = prefabs.load_diagnostics();
     let named: Vec<&str> = d.iter().map(|x| x.path.as_str()).collect();
     assert!(
-        named.contains(&"cave-den.json") && named.contains(&"pools.json"),
+        named.contains(&"cave-den.json") && named.contains(&"stray.json"),
         "both broken files must be reported: {d:#?}"
     );
     assert!(d.iter().all(|x| x.code == DW_PREFAB_META_INVALID));

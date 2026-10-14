@@ -24,16 +24,15 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, parse_campaign};
+use delvewright_dsl::Campaign;
 
 /// The canonical hello-world campaign: one area bound to `prefab/hello-room`,
 /// whose critical path is talk-to-the-keeper then reach-the-exit.
 fn hello_world() -> Campaign {
-    let loaded = load_campaign_dir(&common::hello_world_dir()).unwrap();
-    parse_campaign(&loaded.raw).expect("hello-world parses")
+    let loaded = common::load_campaign_dir(&common::hello_world_dir()).unwrap();
+    common::parse_campaign(&loaded.raw).expect("hello-world parses")
 }
 
 /// An 11×6×11 stone room, lit from inside, whose floor course at local `z == 7`
@@ -124,7 +123,7 @@ fn build_with(moat: &str) -> Result<BuildOutput, BuildFailure> {
     }
     emit::build(
         &plan,
-        &load_campaign_dir(&common::hello_world_dir())
+        &common::load_campaign_dir(&common::hello_world_dir())
             .unwrap()
             .inputs,
         &structures,

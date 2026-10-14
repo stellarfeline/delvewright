@@ -23,10 +23,8 @@
 mod common;
 
 use delvec::compiler::commands::CommandTree;
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::{Plan, ResolvedAnchor, Step};
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::parse_campaign;
 use serde_json::json;
 use std::collections::BTreeMap;
 
@@ -143,8 +141,8 @@ fn cell(r: &ResolvedAnchor) -> [i32; 3] {
 #[test]
 fn a_shared_name_that_moves_a_body_is_dw0461() {
     let dir = fixture_playable("shared", true);
-    let loaded = load_campaign_dir(&dir).expect("fixture loads");
-    let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
+    let loaded = common::load_campaign_dir(&dir).expect("fixture loads");
+    let campaign = common::parse_campaign(&loaded.raw).expect("fixture parses");
     let reg = PrefabRegistry::load_dir(&common::prefabs_dir()).expect("library loads");
     let err = Plan::build(&campaign, &reg)
         .err()
@@ -185,8 +183,8 @@ fn a_shared_name_that_moves_a_body_is_dw0461() {
 #[test]
 fn one_provider_still_crosses_and_the_two_authorities_agree() {
     let dir = fixture_playable("control", false);
-    let loaded = load_campaign_dir(&dir).expect("fixture loads");
-    let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
+    let loaded = common::load_campaign_dir(&dir).expect("fixture loads");
+    let campaign = common::parse_campaign(&loaded.raw).expect("fixture parses");
     let reg = PrefabRegistry::load_dir(&common::prefabs_dir()).expect("library loads");
     let plan = Plan::build(&campaign, &reg).expect("one provider is unambiguous — this compiles");
 

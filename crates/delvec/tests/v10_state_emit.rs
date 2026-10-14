@@ -28,11 +28,10 @@ use std::path::{Path, PathBuf};
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvewright_dsl::gate::{GateConsumer, for_each_gate};
-use delvewright_dsl::{parse_campaign, validate_campaign_with};
+use delvewright_dsl::validate_campaign_with;
 use std::sync::LazyLock;
 
 const NS: &str = "cast-ledger";
@@ -284,8 +283,8 @@ static CORRIDOR: LazyLock<(BuildOutput, BTreeMap<&'static str, usize>)> = LazyLo
     let dir = common::compiler_fixtures_dir().join("long-gallery");
     let prefab_dir =
         common::corridor::gallery_prefabs("v10-state", &common::corridor::Cuts::default());
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("long-gallery parses");
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("long-gallery parses");
     let prefabs = PrefabRegistry::load_dir(&prefab_dir).unwrap();
     let diags = common::quiet(validate_campaign_with(
         &campaign,
@@ -327,8 +326,9 @@ fn build_from(who: &str, quests: &str) -> (BuildOutput, delvewright_dsl::GateBin
     std::fs::write(dir.join("dialogue.json"), DIALOGUE.as_str()).unwrap();
 
     let prefab_dir = patched_prefabs();
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("v10-state parses");
+    common::sync_map_in(&dir, Some(&prefab_dir));
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("v10-state parses");
     let prefabs = PrefabRegistry::load_dir(&prefab_dir).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();

@@ -16,10 +16,9 @@ use std::process::Command;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit;
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{TextKind, each_string, key_kind, parse_campaign};
+use delvewright_dsl::{TextKind, each_string, key_kind};
 use serde_json::Value;
 
 const BIN: &str = env!("CARGO_BIN_EXE_delvec");
@@ -222,8 +221,8 @@ fn build_in_memory(mut campaign: delvewright_dsl::Campaign) -> BTreeMap<String, 
 /// same, so no width check is perturbed.
 #[test]
 fn every_emitted_player_facing_string_carries_its_style() {
-    let loaded = load_campaign_dir(&common::keep_trial_dir()).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("keep-trial parses");
+    let loaded = common::load_campaign_dir(&common::keep_trial_dir()).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("keep-trial parses");
     let ns = delvewright_dsl::pack_namespace(campaign.world.campaign_id.as_str());
 
     let plain_tree = functions_text(&build_in_memory(campaign.clone()));
@@ -270,8 +269,8 @@ fn every_emitted_player_facing_string_carries_its_style() {
 /// name is an SNBT compound whose span sets `obfuscated:true`.
 #[test]
 fn a_styled_name_in_nbt_is_an_snbt_compound() {
-    let loaded = load_campaign_dir(&common::keep_trial_dir()).unwrap();
-    let mut campaign = parse_campaign(&loaded.raw).expect("keep-trial parses");
+    let loaded = common::load_campaign_dir(&common::keep_trial_dir()).unwrap();
+    let mut campaign = common::parse_campaign(&loaded.raw).expect("keep-trial parses");
     campaign.npcs.content.npcs[0].name = "The [[obfuscated|Keeper]]".into();
     let text = functions_text(&build_in_memory(campaign));
     let line = text

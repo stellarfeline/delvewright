@@ -21,7 +21,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, RawCampaign};
 use serde_json::{Value, json};
 
 fn read_hw(name: &str) -> String {
@@ -76,7 +76,7 @@ fn campaign_with(edit: impl FnOnce(&mut Value, &mut Value)) -> Campaign {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("the fixture campaign parses")
+    common::parse_campaign(&raw).expect("the fixture campaign parses")
 }
 
 /// Ask `DW0896` about a campaign, through the plan alone — no world, no

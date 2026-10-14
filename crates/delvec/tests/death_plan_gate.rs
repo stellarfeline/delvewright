@@ -26,21 +26,21 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::{LoadedCampaign, load_campaign_dir};
+use delvec::compiler::load::LoadedCampaign;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, QuestEffect, parse_campaign};
+use delvewright_dsl::{Campaign, QuestEffect};
 
 /// The fixture that declares a stake, a currency and a lethal volume.
 const NS: &str = "economy";
 
 fn load() -> LoadedCampaign {
-    load_campaign_dir(&common::compiler_fixtures_dir().join(NS)).unwrap()
+    common::load_campaign_dir(&common::compiler_fixtures_dir().join(NS)).unwrap()
 }
 
 /// Parse the fixture and replace its `on_death` bundle with `effects`.
 fn campaign(loaded: &LoadedCampaign, effects: &str) -> Campaign {
-    let mut c = parse_campaign(&loaded.raw).expect("fixture parses");
+    let mut c = common::parse_campaign(&loaded.raw).expect("fixture parses");
     c.quests.content.on_death =
         serde_json::from_str::<Vec<QuestEffect>>(effects).expect("death beat parses");
     c

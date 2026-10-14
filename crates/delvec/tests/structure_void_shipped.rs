@@ -20,10 +20,8 @@ use std::collections::BTreeMap;
 use delvec::admit::structure::{PaletteEntry, STRUCTURE_VOID, Structure, as_placed};
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::parse_campaign;
 
 /// The cells written `structure_void`: a 3×3 patch of interior air one above
 /// the floor slab, and the room's lowest corner — the cell the placement
@@ -54,8 +52,8 @@ fn build(nbt: &[u8]) -> BuildOutput {
     std::fs::write(dir.join("hello-room.nbt"), nbt).unwrap();
     common::declare_shown_faces(&dir, "hello-room");
     let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
-    let loaded = load_campaign_dir(&common::hello_world_dir()).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("hello-world parses");
+    let loaded = common::load_campaign_dir(&common::hello_world_dir()).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("hello-world parses");
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {

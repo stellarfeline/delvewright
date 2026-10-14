@@ -12,7 +12,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign};
 
 const NS: &str = "hello-world";
 
@@ -62,8 +62,9 @@ fn build(cutscene: &str) -> BuildOutput {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    let campaign: &'static Campaign =
-        Box::leak(Box::new(parse_campaign(&raw).expect("campaign parses")));
+    let campaign: &'static Campaign = Box::leak(Box::new(
+        common::parse_campaign(&raw).expect("campaign parses"),
+    ));
     let prefabs: &'static PrefabRegistry = Box::leak(Box::new(
         PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap(),
     ));

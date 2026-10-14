@@ -70,6 +70,11 @@ use serde::Serialize;
 use crate::compiler::plan::{AnchorRole, AreaPlacement, PiecePlacement, ResolvedAnchor};
 use crate::compiler::rotation::{Rotation, SealFill};
 
+/// The id prefix of the blockout's own placement records — one per volume and
+/// per box (`blockout/<id>`) — which name the derivation's bookkeeping, never a
+/// piece anyone authored.
+pub const STAND_IN_PREFIX: &str = "blockout/";
+
 /// The blockout's legibility palette (spec-0049 §5.1).
 ///
 /// Distinct blocks for distinct jobs, so that a walker can see where one place
@@ -651,7 +656,7 @@ pub fn derive_with(
             }
         }
         pieces.push(piece(
-            format!("blockout/{}", v.id.0),
+            format!("{STAND_IN_PREFIX}{}", v.id.0),
             lo,
             [hi[0] - lo[0] + 1, hi[1] - lo[1] + 1, hi[2] - lo[2] + 1],
         ));
@@ -664,7 +669,7 @@ pub fn derive_with(
     for (i, b) in boxes.iter().enumerate() {
         let (slo, shi) = site.shell(i);
         pieces.push(piece(
-            format!("blockout/{}", b.node.0),
+            format!("{STAND_IN_PREFIX}{}", b.node.0),
             slo,
             [
                 shi[0] - slo[0] + 1,

@@ -21,7 +21,7 @@
 mod common;
 
 use delvec::compiler::branch;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, RawCampaign};
 use serde_json::Value;
 
 fn fixture_dir() -> std::path::PathBuf {
@@ -48,7 +48,7 @@ fn campaign_with_cast(patch: impl Fn(&mut Value, &mut Value, &mut Value, &mut Va
         doc("npcs.json"),
     );
     patch(&mut plan, &mut quests, &mut dialogue, &mut npcs);
-    parse_campaign(&RawCampaign {
+    common::parse_campaign(&RawCampaign {
         world: std::fs::read_to_string(fixture_dir().join("world.json")).unwrap(),
         npcs: npcs.to_string(),
         classes: std::fs::read_to_string(fixture_dir().join("classes.json")).unwrap(),

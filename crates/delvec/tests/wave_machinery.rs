@@ -24,7 +24,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign};
+use delvewright_dsl::{Campaign, RawCampaign};
 use std::sync::LazyLock;
 
 fn read_hw(name: &str) -> String {
@@ -40,7 +40,7 @@ fn parse_hw_with(overrides: &[(&str, String)]) -> Campaign {
             .map(|(_, v)| v.clone())
             .unwrap_or_else(|| read_hw(name))
     };
-    parse_campaign(&RawCampaign {
+    common::parse_campaign(&RawCampaign {
         world: get("world.json"),
         npcs: get("npcs.json"),
         classes: get("classes.json"),

@@ -11,7 +11,7 @@
 
 pub use delvewright_dsl::prefab::{
     Anchor, AnchorEdit, AnchorRole, Connector, ContractBar, ContractEdge, ContractFace,
-    ContractNoBody, ContractSpace, ContractVolume, ContractWay, GeneratedBy, License, POOLS_FILE,
+    ContractNoBody, ContractSpace, ContractVolume, ContractWay, GeneratedBy, License,
     PieceTemplate, PrefabMeta, Region, SpatialContract, StructureMeta, UNMEASURED,
 };
 

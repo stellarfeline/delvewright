@@ -22,7 +22,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Campaign, RawCampaign, validate_campaign_with};
 
 /// A hello-world `quests` doc: talk to the keeper (which sets `flag/told`), then
 /// reach `anchor/exit` beyond the barred door. `trigger` is the one environment
@@ -90,7 +90,7 @@ fn parse_hw(quests: &str) -> Campaign {
         detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 fn prefabs() -> PrefabRegistry {

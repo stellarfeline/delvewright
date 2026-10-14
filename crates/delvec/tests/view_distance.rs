@@ -13,16 +13,15 @@ use std::path::{Path, PathBuf};
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
 use delvec::compiler::served;
 use delvewright_dsl::viewdistance::{self, CEILING, FLOOR};
-use delvewright_dsl::{Campaign, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Campaign, validate_campaign_with};
 
 fn campaign(dir: &Path) -> Campaign {
-    let loaded = load_campaign_dir(dir).unwrap();
-    parse_campaign(&loaded.raw).expect("fixture parses")
+    let loaded = common::load_campaign_dir(dir).unwrap();
+    common::parse_campaign(&loaded.raw).expect("fixture parses")
 }
 
 fn codes(c: &Campaign) -> Vec<String> {
@@ -53,7 +52,7 @@ fn messages(c: &Campaign, code: &str) -> Vec<String> {
 }
 
 fn try_build(dir: &Path, c: &Campaign) -> Result<BuildOutput, BuildFailure> {
-    let loaded = load_campaign_dir(dir).unwrap();
+    let loaded = common::load_campaign_dir(dir).unwrap();
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(c, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();

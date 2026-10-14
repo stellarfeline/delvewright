@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 
 use delvec::compiler::load::{
     DETAIL_PLAN_FILE, GEOMETRY_BRIEF_FILE, LAYOUT_GRAPH_FILE, LoadedCampaign, SITE_PLAN_FILE,
-    STAGE_FILES, WORLD_EDITS_FILE, load_campaign_dir,
+    STAGE_FILES, WORLD_EDITS_FILE,
 };
 
 /// Every optional stage document, in load order — the siblings of
@@ -83,7 +83,10 @@ fn shadow_with_dir(path: &Path) {
 #[test]
 fn the_unperturbed_fixture_loads() {
     let dir = campaign("baseline");
-    assert!(load_campaign_dir(&dir).is_ok(), "fixture must load clean");
+    assert!(
+        common::load_campaign_dir(&dir).is_ok(),
+        "fixture must load clean"
+    );
 }
 
 #[test]
@@ -93,7 +96,7 @@ fn a_missing_required_document_names_itself_and_only_itself() {
         std::fs::remove_file(dir.join(missing)).unwrap();
 
         let err = err_of(
-            load_campaign_dir(&dir),
+            common::load_campaign_dir(&dir),
             "a missing stage document must fail",
         );
         let msg = err.to_string();
@@ -126,7 +129,7 @@ fn an_unreadable_required_document_names_itself_and_keeps_its_kind() {
         shadow_with_dir(&dir.join(broken));
 
         let err = err_of(
-            load_campaign_dir(&dir),
+            common::load_campaign_dir(&dir),
             "an unreadable stage document must fail",
         );
         let msg = err.to_string();
@@ -152,7 +155,7 @@ fn an_unreadable_optional_document_is_a_named_finding_not_an_absence() {
         shadow_with_dir(&dir.join(opt));
 
         let err = err_of(
-            load_campaign_dir(&dir),
+            common::load_campaign_dir(&dir),
             "an optional document that exists and cannot be read must fail",
         );
         let msg = err.to_string();
@@ -170,7 +173,8 @@ fn an_absent_optional_document_is_still_not_an_error() {
     for opt in OPTIONAL_FILES {
         assert!(!dir.join(opt).exists());
     }
-    let loaded = load_campaign_dir(&dir).expect("a campaign with no optional documents loads");
+    let loaded =
+        common::load_campaign_dir(&dir).expect("a campaign with no optional documents loads");
     assert!(loaded.raw.world_edits.is_none());
 }
 
@@ -181,7 +185,10 @@ fn an_unreadable_l10n_sidecar_names_itself() {
     std::fs::create_dir_all(&l10n).unwrap();
     shadow_with_dir(&l10n.join("zh.json"));
 
-    let err = err_of(load_campaign_dir(&dir), "an unreadable sidecar must fail");
+    let err = err_of(
+        common::load_campaign_dir(&dir),
+        "an unreadable sidecar must fail",
+    );
     let msg = err.to_string();
     assert!(
         msg.contains("l10n/zh.json"),
@@ -200,7 +207,7 @@ fn an_absent_campaign_directory_names_the_directory_not_a_document() {
     assert!(!dir.exists());
 
     let err = err_of(
-        load_campaign_dir(&dir),
+        common::load_campaign_dir(&dir),
         "an absent campaign directory must fail",
     );
     let msg = err.to_string();
@@ -227,7 +234,7 @@ fn a_campaign_path_that_is_not_a_directory_says_so() {
     std::fs::write(&path, b"not a campaign").unwrap();
 
     let err = err_of(
-        load_campaign_dir(&path),
+        common::load_campaign_dir(&path),
         "a non-directory campaign path must fail",
     );
     let msg = err.to_string();
@@ -250,7 +257,7 @@ fn the_binding_count_is_measured_and_is_not_zero() {
     for doc in STAGE_FILES.iter().chain(&OPTIONAL_FILES) {
         let dir = campaign(&format!("count-{doc}"));
         shadow_with_dir(&dir.join(doc));
-        if let Err(e) = load_campaign_dir(&dir)
+        if let Err(e) = common::load_campaign_dir(&dir)
             && e.to_string().contains(*doc)
         {
             named_itself.push(*doc);

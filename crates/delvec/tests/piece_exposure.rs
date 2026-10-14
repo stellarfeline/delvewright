@@ -24,14 +24,13 @@ use std::path::Path;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildFailure, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, parse_campaign};
+use delvewright_dsl::Campaign;
 
 fn hello_world() -> Campaign {
-    let loaded = load_campaign_dir(&common::hello_world_dir()).unwrap();
-    parse_campaign(&loaded.raw).expect("hello-world parses")
+    let loaded = common::load_campaign_dir(&common::hello_world_dir()).unwrap();
+    common::parse_campaign(&loaded.raw).expect("hello-world parses")
 }
 
 /// Build hello-world against `nbt`, with `hello-room.json` carrying exactly
@@ -58,7 +57,7 @@ fn build_declaring(
     }
     emit::build(
         &plan,
-        &load_campaign_dir(&common::hello_world_dir())
+        &common::load_campaign_dir(&common::hello_world_dir())
             .unwrap()
             .inputs,
         &structures,

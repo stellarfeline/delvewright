@@ -14,7 +14,7 @@ use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, validate_campaign_with};
 
 fn quests_doc(loot: &str) -> String {
     quests_doc_with(loot, "")
@@ -52,7 +52,7 @@ fn read_hw(name: &str) -> String {
 }
 
 fn parse_hw(quests: &str) -> Campaign {
-    parse_campaign(&RawCampaign {
+    common::parse_campaign(&RawCampaign {
         world: read_hw("world.json"),
         npcs: read_hw("npcs.json"),
         classes: read_hw("classes.json"),

@@ -23,10 +23,9 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, RawCampaign, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Campaign, RawCampaign, validate_campaign_with};
 use serde_json::{Value, json};
 
 // ---------------------------------------------------------------------------
@@ -58,7 +57,7 @@ fn campaign(quests: &str) -> Campaign {
         detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
-    let mut c = parse_campaign(&raw).expect("campaign parses");
+    let mut c = common::parse_campaign(&raw).expect("campaign parses");
     delvewright_dsl::tag_translatables(&mut c);
     c
 }
@@ -849,10 +848,10 @@ fn with_lethal_fixture<R>(
             geometry_brief: Some(read("geometry-brief.json")),
             layout_graph: Some(read("layout-graph.json")),
             site_plan: Some(read("site-plan.json")),
-            detail_plan: Some(read("detail-plan.json")),
+            detail_plan: std::fs::read_to_string(dir.join("detail-plan.json")).ok(),
             design: None,
         };
-        let mut c = parse_campaign(&raw).expect("the fixture parses");
+        let mut c = common::parse_campaign(&raw).expect("the fixture parses");
         delvewright_dsl::tag_translatables(&mut c);
         c
     };
@@ -1014,8 +1013,8 @@ fn the_binding_line_prints_zeroes() {
     );
     // …and a built campaign with a volume carries the per-grant fields.
     let dir = common::compiler_fixtures_dir().join("lethal-volume");
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let mut c = parse_campaign(&loaded.raw).unwrap();
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let mut c = common::parse_campaign(&loaded.raw).unwrap();
     delvewright_dsl::tag_translatables(&mut c);
     let out = build(&c);
     let gate: Value =

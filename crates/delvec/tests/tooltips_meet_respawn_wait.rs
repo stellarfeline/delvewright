@@ -22,11 +22,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::observer;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{RespawnWait, parse_campaign};
+use delvewright_dsl::RespawnWait;
 use serde_json::{Value, json};
 
 const BONFIRE_NS: &str = "souls-bonfire";
@@ -58,7 +57,7 @@ fn patch_bonfires(v: &mut Value, fields: &Value) -> usize {
 /// tags every player-visible string with its key, as `delvec build` does.
 fn build(ns: &str, tooltips: Option<Value>, wait: Option<RespawnWait>) -> BuildOutput {
     let dir = common::compiler_fixtures_dir().join(ns);
-    let mut loaded = load_campaign_dir(&dir).unwrap();
+    let mut loaded = common::load_campaign_dir(&dir).unwrap();
     if let Some(fields) = &tooltips {
         let mut patched = 0;
         loaded.raw.quests = common::patch_doc(&loaded.raw.quests, |q| {
@@ -66,7 +65,8 @@ fn build(ns: &str, tooltips: Option<Value>, wait: Option<RespawnWait>) -> BuildO
         });
         assert_eq!(patched, 1, "binding: `{ns}` holds exactly one bonfire");
     }
-    let mut c = parse_campaign(&loaded.raw).unwrap_or_else(|e| panic!("{ns} parses: {e:?}"));
+    let mut c =
+        common::parse_campaign(&loaded.raw).unwrap_or_else(|e| panic!("{ns} parses: {e:?}"));
     c.world.content.respawn_wait = wait;
     delvewright_dsl::tag_translatables(&mut c);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();

@@ -11,11 +11,8 @@
 mod common;
 
 use delvec::compiler::analyze::analyze_campaign;
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{
-    AnchorRegistry, Lighting, LightingProfile, PrefabId, RawCampaign, parse_campaign,
-};
+use delvewright_dsl::{AnchorRegistry, Lighting, LightingProfile, PrefabId, RawCampaign};
 use std::collections::BTreeSet;
 
 /// Wraps the real prefab registry but forces every prefab's lighting profile to
@@ -44,14 +41,16 @@ impl AnchorRegistry for ForceDark<'_> {
 }
 
 fn hello_world_raw() -> RawCampaign {
-    load_campaign_dir(&common::hello_world_dir()).unwrap().raw
+    common::load_campaign_dir(&common::hello_world_dir())
+        .unwrap()
+        .raw
 }
 
 /// spec-0010: `analyze_campaign` no longer emits `DW0210`, even when every bound
 /// prefab is profiled `dark` (the admission profile is no longer a gating input).
 #[test]
 fn analyze_no_longer_emits_dw0210_for_dark_profile() {
-    let campaign = parse_campaign(&hello_world_raw()).expect("valid campaign parses");
+    let campaign = common::parse_campaign(&hello_world_raw()).expect("valid campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let diags = analyze_campaign(&campaign, &ForceDark(&prefabs));
     assert!(
@@ -63,7 +62,7 @@ fn analyze_no_longer_emits_dw0210_for_dark_profile() {
 /// Control: the shipped hello-world campaign analyzes clean (reachability only).
 #[test]
 fn hello_world_analyzes_clean() {
-    let campaign = parse_campaign(&hello_world_raw()).expect("valid campaign parses");
+    let campaign = common::parse_campaign(&hello_world_raw()).expect("valid campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let diags = analyze_campaign(&campaign, &prefabs);
     assert!(

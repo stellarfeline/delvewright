@@ -36,10 +36,10 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::{LoadedCampaign, load_campaign_dir};
+use delvec::compiler::load::LoadedCampaign;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{Campaign, DSL_VERSION, QuestEffect, parse_campaign, validate_campaign_with};
+use delvewright_dsl::{Campaign, DSL_VERSION, QuestEffect, validate_campaign_with};
 
 /// A campaign **with** checkpoints (so both sides of the edge are live).
 const CP: &str = "v06-checkpoints";
@@ -57,12 +57,12 @@ fn on_death_bundle() -> Vec<QuestEffect> {
 }
 
 fn load(ns: &str) -> LoadedCampaign {
-    load_campaign_dir(&common::compiler_fixtures_dir().join(ns)).unwrap()
+    common::load_campaign_dir(&common::compiler_fixtures_dir().join(ns)).unwrap()
 }
 
 /// Parse the fixture, optionally binding a death beat on it.
 fn campaign(loaded: &LoadedCampaign, with_on_death: bool) -> Campaign {
-    let mut c = parse_campaign(&loaded.raw).expect("fixture parses");
+    let mut c = common::parse_campaign(&loaded.raw).expect("fixture parses");
     if with_on_death {
         c.quests.dsl_version = DSL_VERSION.to_string();
         c.quests.content.on_death = on_death_bundle();

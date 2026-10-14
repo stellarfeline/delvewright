@@ -14,11 +14,10 @@ use std::path::{Path, PathBuf};
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::promise;
 use delvec::compiler::registry::PrefabRegistry;
-use delvewright_dsl::{Campaign, parse_campaign};
+use delvewright_dsl::Campaign;
 use serde_json::{Value, json};
 
 const NS: &str = "hello-world";
@@ -115,8 +114,8 @@ fn try_build_dir(dir: &Path) -> Result<BuildOutput, String> {
 }
 
 fn load(dir: &Path) -> (delvec::compiler::load::LoadedCampaign, Campaign) {
-    let loaded = load_campaign_dir(dir).expect("variant loads");
-    let campaign = parse_campaign(&loaded.raw).expect("variant parses");
+    let loaded = common::load_campaign_dir(dir).expect("variant loads");
+    let campaign = common::parse_campaign(&loaded.raw).expect("variant parses");
     (loaded, campaign)
 }
 

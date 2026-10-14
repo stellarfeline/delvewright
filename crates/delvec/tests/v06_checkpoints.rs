@@ -11,12 +11,9 @@ use std::collections::BTreeMap;
 
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
-use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::{FullEntityRegistry, FullItemRegistry, PrefabRegistry};
-use delvewright_dsl::{
-    AnchorId, QuestEffect, SequenceStep, parse_campaign, validate_campaign_with,
-};
+use delvewright_dsl::{AnchorId, QuestEffect, SequenceStep, validate_campaign_with};
 
 const NS: &str = "v06-checkpoints";
 
@@ -29,8 +26,8 @@ fn fixture_dir() -> std::path::PathBuf {
 /// (stealth-zone) obligations pass on the fixture.
 fn build_fixture() -> BuildOutput {
     let dir = fixture_dir();
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("v06-checkpoints parses");
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("v06-checkpoints parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
 
     let items = FullItemRegistry::v1_21_11();
@@ -481,8 +478,8 @@ fn double_build_is_byte_identical() {
 #[test]
 fn set_checkpoint_nested_in_sequence_binds_its_own_index() {
     let dir = fixture_dir();
-    let loaded = load_campaign_dir(&dir).unwrap();
-    let mut campaign = parse_campaign(&loaded.raw).expect("parses");
+    let loaded = common::load_campaign_dir(&dir).unwrap();
+    let mut campaign = common::parse_campaign(&loaded.raw).expect("parses");
 
     // Locate the fixture's existing top-level checkpoint: its anchor is a proven
     // standable, reachable cell we can reuse for a second, distinct checkpoint.
