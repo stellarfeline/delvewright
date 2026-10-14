@@ -101,6 +101,7 @@ pub(super) fn emit_npc_talk_packtests(plan: &Plan, out: &mut BuildOutput) {
 pub(super) fn npc_talk_watch_claim(plan: &Plan) -> crate::compiler::watch::Claim {
     crate::compiler::watch::Claim {
         mechanic: "npc-talk",
+        kind: crate::compiler::watch::ClaimKind::Body,
         families: vec!["talk_".to_string()],
         declared: plan.npcs.iter().map(|n| n.safe.clone()).collect(),
     }

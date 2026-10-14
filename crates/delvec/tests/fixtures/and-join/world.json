@@ -12,6 +12,12 @@
         "prefab_pool": "pool/stone-keep"
       }
     ],
+    "horizon": {
+      "attributes": {
+        "audio/background_music": {}
+      },
+      "base": "void"
+    },
     "min_players": 2,
     "premise": "The shrine door is barred by two wards in two separate rooms. One traveler cannot reach both in time; a pair can.",
     "seed": 20260802,
@@ -21,6 +27,6 @@
     "title": "The Two Levers",
     "weather": "clear"
   },
-  "dsl_version": "0.41.0",
+  "dsl_version": "0.47.0",
   "stage": "world"
 }

@@ -477,14 +477,58 @@ pub fn check(c: &Campaign) -> Vec<Diagnostic> {
         attribute_checks(reg, a, &base, &mut d);
         climate_check(a, &base, &mut d);
     }
+    // spec-0109 §3.2: the ground's `audio/` attributes are held to the same
+    // reader. A non-`audio/` id is `DW1031` (`dsl::music`), and is not judged
+    // twice here.
+    if let Some(attrs) = c
+        .world
+        .content
+        .horizon
+        .as_ref()
+        .and_then(|h| h.attributes())
+    {
+        let audio: BTreeMap<String, Value> = attrs
+            .iter()
+            .filter(|(k, _)| canonical_id(k).starts_with("audio/"))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        attribute_map_checks(
+            reg,
+            "the ground (`horizon`)",
+            &audio,
+            "/content/horizon",
+            &mut d,
+        );
+    }
     paint_exclusivity(c, &mut d);
     unbound(c, &mut d);
     d
 }
 
 fn attribute_checks(reg: &Registry, a: &Atmosphere, base: &str, d: &mut Vec<Diagnostic>) {
+    attribute_map_checks(
+        reg,
+        &format!("atmosphere `{}`", a.id),
+        &a.attributes,
+        base,
+        d,
+    );
+    tint_checks(a, base, d);
+}
+
+/// `DW0928` over one attribute map: an atmosphere's, or the ground's
+/// (`horizon.attributes`, spec-0109 §3.2 — one type, one reader). `who` names
+/// the map's owner in the message; `base` is the JSON path of the object that
+/// holds `attributes`.
+fn attribute_map_checks(
+    reg: &Registry,
+    who: &str,
+    attributes: &BTreeMap<String, Value>,
+    base: &str,
+    d: &mut Vec<Diagnostic>,
+) {
     let mut keys: BTreeSet<&str> = BTreeSet::new();
-    for (key, value) in &a.attributes {
+    for (key, value) in attributes {
         let path = format!(
             "{base}/attributes/{}",
             key.replace('~', "~0").replace('/', "~1")
@@ -494,7 +538,7 @@ fn attribute_checks(reg: &Registry, a: &Atmosphere, base: &str, d: &mut Vec<Diag
                 DW_ATMOSPHERE_ATTRIBUTE,
                 "world",
                 path.clone(),
-                format!("atmosphere `{}` attribute `{key}`: {msg}", a.id),
+                format!("{who} attribute `{key}`: {msg}"),
             ));
         };
         if !keys.insert(canonical_id(key)) {
@@ -551,6 +595,9 @@ fn attribute_checks(reg: &Registry, a: &Atmosphere, base: &str, d: &mut Vec<Diag
             }
         }
     }
+}
+
+fn tint_checks(a: &Atmosphere, base: &str, d: &mut Vec<Diagnostic>) {
     if let Some(t) = &a.tint {
         for (field, v) in [
             ("grass", &t.grass),

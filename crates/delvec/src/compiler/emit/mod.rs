@@ -805,6 +805,25 @@ pub fn build_with_warnings(
             g
         }
     };
+    // spec-0109 §5.1: what every biome a camera can stand in plays, what each
+    // cutscene hears, what each `stop-sound` cuts — read over the forced
+    // route's legs (none for a campaign that walks no world). The line is
+    // printed on every build, zeroes and a refusal included, and the ledger is
+    // written on every build: every campaign states the ground's music.
+    {
+        let routes: &[crate::compiler::nav::LegRoute] = path_legs
+            .iter()
+            .find(|(slug, _, _)| slug == "critical-path")
+            .map(|(_, _, r)| r.as_slice())
+            .unwrap_or(&[]);
+        let (music, verdict) = crate::compiler::music::measure(plan, routes, &moves, &actor_moves);
+        eprintln!("{}", music.line());
+        verdict.map_err(|f| BuildFailure::Diagnostic {
+            code: f.code,
+            message: f.message,
+        })?;
+        put_json(&mut out, "validation/music.json", &music.to_json());
+    }
     let functions = emit_functions(
         plan,
         &chrome,

@@ -347,6 +347,8 @@ impl QuestEffect {
             | Verb::SetTime { .. }
             | Verb::SetWeather { .. }
             | Verb::PlaySound { .. }
+            // spec-0109's `stop-sound`.
+            | Verb::StopSound { .. }
             | Verb::DamagePlayers { .. }
             | Verb::SetCheckpoint { .. }
             | Verb::Bonfire { .. }
@@ -1200,6 +1202,7 @@ impl QuestEffect {
     pub fn sound_refs(&self) -> Vec<(&'static str, &str)> {
         match &self.verb {
             Verb::PlaySound { sound, .. } => vec![("sound", sound.as_str())],
+            Verb::StopSound { sound: Some(s), .. } => vec![("sound", s.as_str())],
             Verb::Narrate { sound: Some(s), .. } => vec![("sound", s.as_str())],
             _ => Vec::new(),
         }

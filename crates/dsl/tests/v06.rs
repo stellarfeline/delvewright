@@ -26,7 +26,7 @@ static WORLD_V06: LazyLock<String> = LazyLock::new(|| {
     "target_minutes": 5,
     "time": "noon",
     "weather": "clear",
-    "horizon": "ocean",
+    "horizon": { "base": "ocean", "attributes": { "audio/background_music": {} } },
     "boundary": { "margin": 24, "message": "The tide turns you back." },
     "areas": [
       { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
@@ -51,7 +51,7 @@ static WORLD_V06_OCEAN_NO_BOUNDARY: LazyLock<String> = LazyLock::new(|| {
     "target_minutes": 5,
     "time": "noon",
     "weather": "clear",
-    "horizon": "ocean",
+    "horizon": { "base": "ocean", "attributes": { "audio/background_music": {} } },
     "areas": [
       { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
     ]
@@ -75,7 +75,7 @@ static WORLD_V06_VOID: LazyLock<String> = LazyLock::new(|| {
     "target_minutes": 5,
     "time": "noon",
     "weather": "clear",
-    "horizon": "void",
+    "horizon": { "base": "void", "attributes": { "audio/background_music": {} } },
     "areas": [
       { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
     ]

@@ -62,6 +62,12 @@
       }
     ],
     "difficulty": "normal",
+    "horizon": {
+      "attributes": {
+        "audio/background_music": {}
+      },
+      "base": "void"
+    },
     "min_players": 1,
     "outro": "You came back through a door that opened onto the same wrong air on both sides.",
     "premise": "A long hall, cut in two by a door. The near half is an ordinary afternoon. Past the door the air is wrong, and a bell stands in the middle of it.",
@@ -72,6 +78,6 @@
     "title": "The Threshold",
     "weather": "clear"
   },
-  "dsl_version": "0.41.0",
+  "dsl_version": "0.47.0",
   "stage": "world"
 }

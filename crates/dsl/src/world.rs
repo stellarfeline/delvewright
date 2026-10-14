@@ -87,9 +87,14 @@ pub struct WorldContent {
     /// level y=62) and drops the area datum to y=60 so island pieces meet the
     /// sea at their authored waterline. `valley` rings the map in a generated
     /// mountain annulus — the one base that builds terrain rather than picking
-    /// a generator. Either a string shorthand or the object form
-    /// `{base, …params}`; see [`Horizon`].
+    /// a generator. **Required, in the object form** `{base, …params,
+    /// attributes}` (spec-0109 §3.2): the ground is a biome a camera can stand
+    /// in, so it states its music (`attributes.audio/background_music`). The
+    /// wire type still reads an absent field and the retired string shorthand,
+    /// so that both are refused by name (`DW1031`) rather than as a parse
+    /// error; the exported schema carries the object form alone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(required, with = "HorizonSpec")]
     pub horizon: Option<Horizon>,
     /// **How far a player must be able to see**, in chunks (spec-0091): the
     /// server's `view-distance`, declared by the campaign whose far views need
@@ -643,21 +648,23 @@ impl WorldDifficulty {
 
 /// A scenic horizon (spec-0026). A horizon is a **composition of orthogonal
 /// axes**, not an enum of monoliths: a **base** — what surrounds the map — and
-/// that base's params. The field accepts a plain string shorthand
-/// ([`HorizonName`]) or the object form [`HorizonSpec`] `{base, …params}`.
+/// that base's params, plus the ground biome's audio statement (spec-0109).
+///
+/// The one authorable form is [`HorizonSpec`]. The wire enum also reads a bare
+/// base name so that the retired shorthand is refused by name (`DW1031`: a
+/// base with a required statement to make has something to say) instead of
+/// failing to parse; nothing downstream builds on [`Horizon::Name`].
 ///
 /// Consumers never match this wire enum. [`Horizon::resolved`] desugars both
 /// forms into one [`ResolvedHorizon`] with the pinned defaults applied, and
 /// [`horizon_base`] answers the one question most callers have.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum Horizon {
-    /// A bare base name — `"ocean"` is exactly `{base: "ocean"}`. The two
-    /// bases that predate the horizon library were spelled this way and still
-    /// are, byte-identically; a base added since is spellable this way too,
-    /// because a base with every param at its default has nothing else to say.
+    /// A bare base name — the retired shorthand, read only to be refused
+    /// (`DW1031`).
     Name(HorizonBase),
-    /// The object form `{base, …params}`.
+    /// The object form `{base, …params, attributes}`.
     Spec(HorizonSpec),
 }
 
@@ -723,11 +730,22 @@ impl HorizonBase {
 /// per-base tagged, and a param foreign to the declared base is refused
 /// (`DW0853`) — so an `ocean` cannot quietly carry a `rim_height` that nothing
 /// reads.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HorizonSpec {
     /// The base — what surrounds the map.
     pub base: HorizonBase,
+    /// **What the ground sounds like** (spec-0109 §3.2): environment
+    /// attributes written into the ground biome, the one biome a camera can
+    /// stand in that no atmosphere declares — the same map an atmosphere
+    /// carries ([`Atmosphere::attributes`]), read by the same reader, and
+    /// admitting the `audio/` ids only (the ground's look is the horizon's).
+    /// `audio/background_music` is required within it: `{}` for silence, or
+    /// `{default: {sound, min_delay, max_delay, replace_current_music?},
+    /// underwater?: {…}}` for a track. Absent, a `creative` entry or a
+    /// non-`audio/` id is `DW1031`; a value outside its shape is `DW0928`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub attributes: BTreeMap<String, serde_json::Value>,
     /// `valley`: the surround's total footprint as a multiple of the map's, on
     /// each axis (`2.0..=3.0`, default 2.5).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -807,6 +825,15 @@ impl Horizon {
     /// The resolved base.
     pub fn base(&self) -> HorizonBase {
         self.resolved().base
+    }
+
+    /// The ground biome's declared attributes (spec-0109 §3.2): the object
+    /// form's `attributes`, empty for the refused shorthand.
+    pub fn attributes(&self) -> Option<&BTreeMap<String, serde_json::Value>> {
+        match self {
+            Horizon::Name(_) => None,
+            Horizon::Spec(s) => Some(&s.attributes),
+        }
     }
 
     /// True when this declaration needs the horizon-library surface: the object
@@ -1600,7 +1627,8 @@ pub(crate) fn place_ids(c: &Campaign) -> BTreeSet<&str> {
 }
 
 /// `DW0112` over every atmosphere reference (spec-0080): an atmosphere is named
-/// by a place for its first tick and by a `set-atmosphere` for a repaint, and a
+/// by a place for its first tick, by a `set-atmosphere` for a repaint and by a
+/// cutscene's `hears` (spec-0109), and a
 /// repaint's `place` names an area or a site-plan box. Each is the plain
 /// unresolved-reference shape.
 pub(crate) fn atmosphere_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
@@ -1644,16 +1672,30 @@ pub(crate) fn atmosphere_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
         }
     }
     crate::for_each_campaign_effect(c, &mut |path, site, e| {
+        let stage = match site {
+            crate::EffectSite::DialogueRespawn { .. } => "dialogue",
+            _ => "quests",
+        };
+        // spec-0109 §3.5: a cutscene's `hears` names a declared atmosphere.
+        if let crate::Verb::Cutscene {
+            hears: Some(Some(id)),
+            ..
+        } = &e.verb
+        {
+            dangling(
+                d,
+                atmosphere_ids.contains(id.as_str()),
+                stage,
+                format!("{path}/hears"),
+                atmosphere_remedy(id.as_str()),
+            );
+        }
         let crate::Verb::SetAtmosphere {
             atmosphere,
             at: crate::PlaceRef { place, .. },
         } = &e.verb
         else {
             return;
-        };
-        let stage = match site {
-            crate::EffectSite::DialogueRespawn { .. } => "dialogue",
-            _ => "quests",
         };
         if let Some(id) = atmosphere {
             dangling(

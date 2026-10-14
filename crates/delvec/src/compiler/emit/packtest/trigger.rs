@@ -171,6 +171,7 @@ pub(super) fn env_trigger_watch_claims(plan: &Plan) -> Vec<crate::compiler::watc
     vec![
         crate::compiler::watch::Claim {
             mechanic: "env-trigger",
+            kind: crate::compiler::watch::ClaimKind::Body,
             families: vec!["trig_".to_string()],
             declared: triggers
                 .iter()
@@ -179,6 +180,7 @@ pub(super) fn env_trigger_watch_claims(plan: &Plan) -> Vec<crate::compiler::watc
         },
         crate::compiler::watch::Claim {
             mechanic: "press-answer",
+            kind: crate::compiler::watch::ClaimKind::Body,
             families: vec!["press_".to_string()],
             declared: triggers
                 .iter()
@@ -188,6 +190,7 @@ pub(super) fn env_trigger_watch_claims(plan: &Plan) -> Vec<crate::compiler::watc
         },
         crate::compiler::watch::Claim {
             mechanic: "step-trigger",
+            kind: crate::compiler::watch::ClaimKind::Body,
             families: vec!["step_".to_string()],
             declared: triggers
                 .iter()

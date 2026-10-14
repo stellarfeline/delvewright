@@ -173,37 +173,106 @@ pub fn vanilla_precipitates(biome: &str) -> Option<bool> {
         .map(|&(_, p)| p)
 }
 
+/// The path, under the delve's own namespace, of the ground biome an `ocean`
+/// horizon lays (spec-0109 §3.2): `<ns>:ocean`, emitted at
+/// `data/<ns>/worldgen/biome/ocean.json` — vanilla's `minecraft:ocean` field
+/// for field under the delve's own id, so no vanilla registry entry is
+/// overridden.
+pub const OCEAN_BIOME_PATH: &str = "ocean";
+
 /// The biome every column a surround does not paint stands in: the one the
 /// `generator-settings` lays, and so the one the play area stands in.
 #[derive(Clone)]
 pub struct GroundBiome {
     /// The namespaced biome id `generator-settings` names.
     pub id: String,
+    /// The path under the delve's namespace its definition is written at.
+    pub path: &'static str,
     /// Whether declared rain falls in it.
     pub precipitates: bool,
-    /// The biome's datapack definition, when the delve ships its own.
-    pub definition: Option<serde_json::Value>,
+    /// The biome's datapack definition.
+    pub definition: serde_json::Value,
+    /// Whether it joins `minecraft:the_void`'s vanilla tags
+    /// ([`VOID_BIOME_TAGS`]) — the void biome's copy does; the ocean's does
+    /// not, because `minecraft:ocean` is in none of them.
+    pub void_tags: bool,
 }
 
 /// The ground biome of a campaign whose datapack namespace is `ns`.
 ///
-/// `ocean` keeps vanilla's `minecraft:ocean`, which rains. Every other base
-/// generates void, and lays the delve's own void biome ([`VOID_BIOME_PATH`]):
-/// `minecraft:the_void` with [`VOID_BIOME_PRECIPITATES`].
+/// `ocean` lays `<ns>:ocean` ([`OCEAN_BIOME_PATH`]), the pinned
+/// `minecraft:ocean`, which rains. Every other base generates void, and lays
+/// the delve's own void biome ([`VOID_BIOME_PATH`]): `minecraft:the_void` with
+/// [`VOID_BIOME_PRECIPITATES`]. Either carries the audio attributes the
+/// horizon declares (spec-0109 §3.2) over the pinned definition's own.
 fn ground_biome(campaign: &Campaign, ns: &str) -> GroundBiome {
+    let declared = campaign
+        .world
+        .content
+        .horizon
+        .as_ref()
+        .and_then(|h| h.attributes());
     if base_of(campaign) == HorizonBase::Ocean {
-        let id = "minecraft:ocean";
+        let mut definition = ocean_biome_definition();
+        if let Some(attrs) = declared {
+            with_declared_audio(&mut definition, attrs);
+        }
         return GroundBiome {
-            id: id.to_string(),
-            precipitates: vanilla_precipitates(id).expect("ocean is a named biome"),
-            definition: None,
+            id: format!("{ns}:{OCEAN_BIOME_PATH}"),
+            path: OCEAN_BIOME_PATH,
+            precipitates: vanilla_precipitates("minecraft:ocean").expect("ocean is a named biome"),
+            definition,
+            void_tags: false,
         };
+    }
+    let mut definition = void_biome_definition();
+    if let Some(attrs) = declared {
+        with_declared_audio(&mut definition, attrs);
     }
     GroundBiome {
         id: format!("{ns}:{VOID_BIOME_PATH}"),
+        path: VOID_BIOME_PATH,
         precipitates: VOID_BIOME_PRECIPITATES,
-        definition: Some(void_biome_definition()),
+        definition,
+        void_tags: true,
     }
+}
+
+/// Write the horizon's declared `audio/` attributes into a ground biome's
+/// definition, each under its `minecraft:` id in the canonical form the one
+/// attribute reader writes ([`crate::compiler::atmosphere::Registry::value`]),
+/// over the pinned definition's own value for that id. A non-`audio/` id
+/// (`DW1031`) or a value outside its shape (`DW0928`) has refused the document
+/// before any build reaches here, and is left out.
+fn with_declared_audio(
+    definition: &mut serde_json::Value,
+    declared: &BTreeMap<String, serde_json::Value>,
+) {
+    let reg = crate::compiler::atmosphere::Registry::v1_21_11();
+    let attributes = definition
+        .as_object_mut()
+        .expect("a biome definition is an object")
+        .entry("attributes")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .expect("a biome's attributes are an object");
+    for (key, v) in declared {
+        if let Some(row) = reg.row(key)
+            && row.scope == "admitted"
+            && row.id.starts_with("audio/")
+            && let Ok(canon) = reg.value(row, v)
+        {
+            attributes.insert(format!("minecraft:{}", row.id), canon);
+        }
+    }
+}
+
+/// `minecraft:ocean` as the pinned 1.21.11 server jar defines it
+/// (`data/minecraft/worldgen/biome/ocean.json`, vendored verbatim as
+/// `crates/delvec/data/biome-ocean-1.21.11.json`; `data/PROVENANCE.md`).
+pub(crate) fn ocean_biome_definition() -> serde_json::Value {
+    static OCEAN: &str = include_str!("../../data/biome-ocean-1.21.11.json");
+    serde_json::from_str(OCEAN).expect("the vendored ocean biome is JSON")
 }
 
 /// `minecraft:the_void` as the pinned jar defines it, with `has_precipitation`
@@ -887,8 +956,10 @@ mod tests {
             }],
             ground: GroundBiome {
                 id: "t:void".to_string(),
+                path: VOID_BIOME_PATH,
                 precipitates: true,
-                definition: None,
+                definition: void_biome_definition(),
+                void_tags: true,
             },
             atmospheres: BTreeMap::new(),
             namespace: "t".to_string(),

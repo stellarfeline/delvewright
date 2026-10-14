@@ -165,6 +165,7 @@ pub mod r#loop;
 pub mod loot;
 pub mod mark;
 pub mod massing;
+pub mod music;
 pub mod muster;
 pub mod nav;
 pub(crate) mod nbtread;

@@ -118,9 +118,10 @@ pub fn atmosphere_binding(
     }
 }
 
-/// The ground biome's datapack definition, when the delve ships its own
-/// ([`crate::compiler::horizon::ground_biome`]), and its vanilla tag
-/// memberships ([`crate::compiler::horizon::VOID_BIOME_TAGS`]).
+/// The ground biome's datapack definition
+/// ([`crate::compiler::horizon::ground_biome`]: the delve's own void or ocean
+/// biome, carrying the horizon's declared audio — spec-0109 §3.2), and the void
+/// biome's vanilla tag memberships ([`crate::compiler::horizon::VOID_BIOME_TAGS`]).
 ///
 /// Every declared atmosphere ships beside it (spec-0080 §4.3), whether a place
 /// carries it or only a beat paints it, because the biome registry closes when
@@ -130,13 +131,12 @@ pub(super) fn emit_ground_biome(plan: &Plan, out: &mut BuildOutput) {
     let ground = crate::compiler::horizon::biome_map(plan).ground;
     let ns = &plan.namespace;
     let mut tagged: Vec<String> = Vec::new();
-    if let Some(definition) = &ground.definition {
-        let path = crate::compiler::horizon::VOID_BIOME_PATH;
-        put_json(
-            out,
-            &format!("datapack/data/{ns}/worldgen/biome/{path}.json"),
-            definition,
-        );
+    put_json(
+        out,
+        &format!("datapack/data/{ns}/worldgen/biome/{}.json", ground.path),
+        &ground.definition,
+    );
+    if ground.void_tags {
         tagged.push(ground.id.clone());
     }
     for a in &plan.campaign.world.content.atmospheres {

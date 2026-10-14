@@ -49,6 +49,7 @@ pub(super) fn emit_timed_gate_packtest(plan: &Plan, out: &mut BuildOutput) {
 pub(super) fn timed_gate_watch_claim(plan: &Plan) -> crate::compiler::watch::Claim {
     crate::compiler::watch::Claim {
         mechanic: "timed-gate",
+        kind: crate::compiler::watch::ClaimKind::Body,
         families: vec![
             "tgate_open_".to_string(),
             "tgate_close_".to_string(),

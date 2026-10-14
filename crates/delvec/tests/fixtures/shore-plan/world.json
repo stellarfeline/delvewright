@@ -5,7 +5,12 @@
     "boundary": {
       "margin": 20
     },
-    "horizon": "ocean",
+    "horizon": {
+      "attributes": {
+        "audio/background_music": {}
+      },
+      "base": "ocean"
+    },
     "premise": "Five places on one plane, four documents and no authored geometry. The whole map stands one course over the sea, which is the relationship a horizon with water is for.",
     "seed": 20260821,
     "target_minutes": 5,
@@ -14,6 +19,6 @@
     "title": "The Standing Shore",
     "weather": "clear"
   },
-  "dsl_version": "0.41.0",
+  "dsl_version": "0.47.0",
   "stage": "world"
 }

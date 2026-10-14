@@ -12,6 +12,12 @@
         "prefab_pool": "pool/stone-keep"
       }
     ],
+    "horizon": {
+      "attributes": {
+        "audio/background_music": {}
+      },
+      "base": "void"
+    },
     "premise": "Hold the keep: the warband walks the long hall, and the spirits arrive at the edge of sight.",
     "seed": 20260731,
     "target_minutes": 8,
@@ -20,6 +26,6 @@
     "title": "The Warband in the Halls",
     "weather": "clear"
   },
-  "dsl_version": "0.41.0",
+  "dsl_version": "0.47.0",
   "stage": "world"
 }
