@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """A campaign storybook carries exactly one version literal, and it is TRUE.
 
-A campaign's storybook (`campaigns/<id>/README.md` in the content repo,
-spec-0007) is what a server host reads before running the delve. It must say
+A campaign's storybook (`campaigns/<id>/README.md` in the content repo, and a
+reference level's `references/<id>/README.md`; spec-0007) is what a server host reads before running the delve. It must say
 which engine the delve needs — and that statement must be a fact about the
 campaign, not a hand-typed number that drifted three DSL versions ago.
 
