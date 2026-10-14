@@ -2258,9 +2258,8 @@ fn lift_to_shore(s: &Structure, pool: &[(i32, i32)]) -> Structure {
     let mut idx = |name: &str| -> i32 {
         // A source block states its level: a state that omits a property is
         // whatever the server decides (`DW0737`).
-        let properties = (name == "minecraft:water").then(|| {
-            std::collections::BTreeMap::from([("level".to_string(), "0".to_string())])
-        });
+        let properties = (name == "minecraft:water")
+            .then(|| std::collections::BTreeMap::from([("level".to_string(), "0".to_string())]));
         let e = PaletteEntry {
             name: name.to_string(),
             properties,
@@ -2998,7 +2997,6 @@ fn write_annex(out: &Path) {
         ANNEX_TILES.len()
     );
 }
-
 
 // ---------------------------------------------------------------------------
 // The DETAIL piece (spec-0050): the yard the site-plan overlay's exit box holds

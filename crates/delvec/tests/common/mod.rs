@@ -1582,14 +1582,13 @@ fn named_anchors(
 /// the union over the whole library — the vocabulary a campaign's stand-in
 /// massing can be asked to station, since every name in it is one some piece
 /// once answered.
-fn library_anchor_names() -> &'static (
+type AnchorNames = (
     std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
     std::collections::BTreeSet<String>,
-) {
-    static NAMES: std::sync::OnceLock<(
-        std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
-        std::collections::BTreeSet<String>,
-    )> = std::sync::OnceLock::new();
+);
+
+fn library_anchor_names() -> &'static AnchorNames {
+    static NAMES: std::sync::OnceLock<AnchorNames> = std::sync::OnceLock::new();
     NAMES.get_or_init(|| {
         let mut by = std::collections::BTreeMap::new();
         let mut all = std::collections::BTreeSet::new();

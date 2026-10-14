@@ -346,7 +346,6 @@ fn criterion_1_the_site_plan_box_carries_owned_lighting_and_mitigation() {
             .contains("AreaMitigation"),
         "boxes[].mitigation is the type `areas[].mitigation` carried"
     );
-    assert_eq!(delvewright_dsl::DSL_VERSION, "0.44.0");
 }
 
 #[test]

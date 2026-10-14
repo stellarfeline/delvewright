@@ -65,7 +65,7 @@ pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), Failure> {
         .collect();
     // Where a respawned body can get to by walking and by the carries the map
     // declares — a place no seam joins is reached by its link (spec-0106 §3.4).
-    let carried = |w: &World, from: [i32; 3], step: usize| {
+    let reach = |w: &World, from: [i32; 3], step: usize| {
         crate::compiler::nav::reachable_carried(w, plan, &[from], step)
     };
     verify_checkpoints(
@@ -73,11 +73,25 @@ pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), Failure> {
         &cps,
         &fixed_checkpoint_fires(plan),
         &critical_positions(plan),
-        &link_stands,
-        &carried,
+        &Carried {
+            stands: &link_stands,
+            reach: &reach,
+        },
         &plan.region_events,
         &ancestor,
     )
+}
+
+/// Where a respawned body can get to from a cell at a path step, walking and
+/// carried.
+type CarriedReach<'a> = &'a dyn Fn(&World, [i32; 3], usize) -> BTreeSet<[i32; 3]>;
+
+/// **The carries the no-stranding proof reads** (spec-0083 §3.4): the stand
+/// cell a link-carried leg is walked to, by the leg's end step, and the
+/// carried reach a respawned body has.
+struct Carried<'a> {
+    stands: &'a BTreeMap<usize, [i32; 3]>,
+    reach: CarriedReach<'a>,
 }
 
 /// The critical-path steps at which a checkpoint is set **once, by a beat** — a
@@ -284,8 +298,7 @@ fn verify_checkpoints(
     checkpoints: &[(String, [i32; 3], usize)],
     fixed_fires: &[usize],
     positions: &[VisitedPos],
-    link_stands: &BTreeMap<usize, [i32; 3]>,
-    carried: &dyn Fn(&World, [i32; 3], usize) -> BTreeSet<[i32; 3]>,
+    carried: &Carried<'_>,
     region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Result<(), Failure> {
@@ -333,7 +346,7 @@ fn verify_checkpoints(
             &leg_world_owned
         };
         // A leg a link carries is walked to the link's stand cell.
-        let goal = match link_stands.get(&target.src_step) {
+        let goal = match carried.stands.get(&target.src_step) {
             Some(stand) => Some(*stand),
             None => leg_world.snap_endpoint(target.pos, target.talk_to),
         };
@@ -341,7 +354,7 @@ fn verify_checkpoints(
             continue; // the target itself is unsnappable → a DW0311 concern, not ours
         };
         if leg_world.find_path(cell, goal).is_none()
-            && !carried(leg_world, cell, target.src_step).contains(&goal)
+            && !(carried.reach)(leg_world, cell, target.src_step).contains(&goal)
         {
             return Err(Failure {
                 code: DW_CHECKPOINT_STRANDED,
@@ -483,6 +496,15 @@ fn verify_retry_cost(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    static NO_STANDS: BTreeMap<usize, [i32; 3]> = BTreeMap::new();
+    fn no_reach(_: &World, _: [i32; 3], _: usize) -> BTreeSet<[i32; 3]> {
+        BTreeSet::new()
+    }
+    const NO_CARRY: Carried<'static> = Carried {
+        stands: &NO_STANDS,
+        reach: &no_reach,
+    };
     use crate::compiler::nav::testkit::*;
     use std::collections::BTreeSet;
 
@@ -639,8 +661,7 @@ mod tests {
                 &cps,
                 &[],
                 &positions,
-                &BTreeMap::new(),
-                &|_, _, _| BTreeSet::new(),
+                &NO_CARRY,
                 &RegionEvents::default(),
                 &linear
             )
@@ -653,8 +674,7 @@ mod tests {
             &cps,
             &[],
             &positions,
-            &BTreeMap::new(),
-            &|_, _, _| BTreeSet::new(),
+            &NO_CARRY,
             &RegionEvents::from(vec![close.clone()]),
             &linear,
         )
@@ -674,8 +694,7 @@ mod tests {
             &cps,
             &[],
             &positions,
-            &BTreeMap::new(),
-            &|_, _, _| BTreeSet::new(),
+            &NO_CARRY,
             &RegionEvents::default(),
             &linear,
         )
@@ -701,8 +720,7 @@ mod tests {
             &cps,
             &[1],
             &positions,
-            &BTreeMap::new(),
-            &|_, _, _| BTreeSet::new(),
+            &NO_CARRY,
             &RegionEvents::default(),
             &linear,
         )
@@ -712,8 +730,7 @@ mod tests {
             &cps,
             &[2],
             &positions,
-            &BTreeMap::new(),
-            &|_, _, _| BTreeSet::new(),
+            &NO_CARRY,
             &RegionEvents::default(),
             &linear,
         )
@@ -751,8 +768,7 @@ mod tests {
             &early,
             &[],
             &positions,
-            &BTreeMap::new(),
-            &|_, _, _| BTreeSet::new(),
+            &NO_CARRY,
             &RegionEvents::default(),
             &linear,
         )
@@ -765,8 +781,7 @@ mod tests {
                 &rooted,
                 &[],
                 &positions,
-                &BTreeMap::new(),
-                &|_, _, _| BTreeSet::new(),
+                &NO_CARRY,
                 &RegionEvents::default(),
                 &linear
             )
@@ -786,8 +801,7 @@ mod tests {
                 &cps,
                 &[],
                 &positions,
-                &BTreeMap::new(),
-                &|_, _, _| BTreeSet::new(),
+                &NO_CARRY,
                 &RegionEvents::default(),
                 &linear
             )
@@ -807,8 +821,7 @@ mod tests {
                 &cps,
                 &[],
                 &positions,
-                &BTreeMap::new(),
-                &|_, _, _| BTreeSet::new(),
+                &NO_CARRY,
                 &RegionEvents::default(),
                 &linear
             )
@@ -826,8 +839,7 @@ mod tests {
             &cps,
             &[],
             &[],
-            &BTreeMap::new(),
-            &|_, _, _| BTreeSet::new(),
+            &NO_CARRY,
             &RegionEvents::default(),
             &linear,
         )

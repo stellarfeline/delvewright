@@ -315,13 +315,50 @@ def test_a_probe_may_not_ship_a_copy_of_a_primary_document(tmp_path):
 
 def test_a_document_the_primary_does_not_hold_is_left_alone(tmp_path):
     """The one shape that must still ship a file: there is nothing to drift from."""
-    assert not (GALLERY / "site-plan.json").is_file(), (
-        "the primary has gained a site plan, which is what this test assumes it cannot have "
-        "(DW0839 refuses `areas[]` beside one)"
-    )
+    name = "a-record-the-primary-has-not.json"
+    assert not (GALLERY / name).is_file(), f"the primary has gained `{name}`"
     dest = tmp_path / "camp"
-    gallery_domain.materialise(dest, _write_probe(tmp_path, [], {"site-plan.json": '{"stage": "site-plan"}'}))
-    assert json.loads((dest / "site-plan.json").read_text())["stage"] == "site-plan"
+    gallery_domain.materialise(dest, _write_probe(tmp_path, [], {name: '{"stage": "x"}'}))
+    assert json.loads((dest / name).read_text())["stage"] == "x"
+
+
+def test_a_probe_over_an_overlay_is_that_point_plus_its_edit(tmp_path):
+    """`over` lays the overlay first, programs replacing the primary's, then the edit."""
+    p = tmp_path / "over-site-plan"
+    p.mkdir()
+    (p / "probe.json").write_text(json.dumps({
+        "code": "DW0883",
+        "over": "site-plan",
+        "patch": [{"doc": "site-plan.json", "op": "remove", "path": "/content/boxes/0/min"}],
+    }))
+    dest = tmp_path / "out"
+    gallery_domain.materialise(dest, p)
+    overlay = GALLERY / "overlays" / "site-plan"
+    doc = json.loads((dest / "site-plan.json").read_text())
+    want = json.loads((overlay / "site-plan.json").read_text())
+    assert "min" not in doc["content"]["boxes"][0], "the edit applied to the overlay's plan"
+    assert len(doc["content"]["boxes"]) == len(want["content"]["boxes"])
+    assert sorted(f.name for f in (dest / "programs").iterdir()) == sorted(
+        f.name for f in (overlay / "programs").iterdir()
+    ), "the overlay's programs replace the primary's"
+    (p / "probe.json").write_text(json.dumps({"code": "DW0883", "over": "no-such", "patch": []}))
+    with pytest.raises(gallery_domain.PatchError, match="no overlay of that name"):
+        gallery_domain.materialise(dest, p)
+
+
+def test_a_whole_document_is_removed_by_the_empty_pointer(tmp_path):
+    """`remove` at `""` is the point without that document — and nothing else may edit it."""
+    p = _write_probe(tmp_path, [{"doc": "site-plan.json", "op": "remove", "path": ""}])
+    dest = tmp_path / "camp"
+    gallery_domain.materialise(dest, p)
+    assert not (dest / "site-plan.json").exists()
+    (tmp_path / "two").mkdir()
+    p = _write_probe(tmp_path / "two", [
+        {"doc": "site-plan.json", "op": "remove", "path": ""},
+        {"doc": "site-plan.json", "op": "remove", "path": "/content/seams"},
+    ])
+    with pytest.raises(gallery_domain.PatchError, match="removes the whole document"):
+        gallery_domain.materialise(tmp_path / "camp2", p)
 
 
 def test_json_pointer_escapes_are_honoured(tmp_path):
@@ -370,9 +407,13 @@ def test_every_committed_probe_is_the_primary_plus_its_declared_edit():
         own += sum(
             1 for f in pd.rglob("*") if f.is_file() and f.name not in gallery_domain.POINT_MANIFESTS
         )
+        base = gallery_domain.probe_base(pd)
         for op in ops:
-            assert (GALLERY / op["doc"]).is_file(), (
-                f"probe `{pd.name}` edits `{op['doc']}`, which is not a primary document"
+            held = (GALLERY / op["doc"]).is_file() or (
+                base is not None and (base / op["doc"]).is_file()
+            )
+            assert held, (
+                f"probe `{pd.name}` edits `{op['doc']}`, which is not a document of its point"
             )
     assert edits or own, (
         f"{len(probes)} probe(s) examined and not one perturbs anything — every probe would "
@@ -393,9 +434,9 @@ def test_a_probe_may_edit_an_overlay_document_named_by_its_path(tmp_path):
     doc = json.loads((dest / "site-plan.json").read_text())
     assert "min" not in doc["content"]["boxes"][0], "the edit applied to the overlay's document"
     assert not (dest / "overlays").exists(), "the overlay tree itself is not campaign"
-    # The copy shape is refused: naming the overlay document AND shipping one.
+    # The copy shape is refused: shipping a document the primary holds.
     (p / "site-plan.json").write_text("{}")
-    with pytest.raises(gallery_domain.PatchError, match="also ships"):
+    with pytest.raises(gallery_domain.PatchError, match="the primary also holds"):
         gallery_domain.materialise(dest, p)
     # And a path under `overlays/` that no overlay holds is a refusal, not a silent primary edit.
     (p / "site-plan.json").unlink()
