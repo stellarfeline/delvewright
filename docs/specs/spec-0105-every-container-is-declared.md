@@ -88,7 +88,7 @@ What was not found: a developer statement of the "every chest holds an item" con
 |---|---|---|
 | `loot` | a `loot[]` entry | its `anchor`'s cell |
 | `collect` | a `collect` adopting `container`; or a `collect` with neither `container` nor `dropped_by`, whose chest the compiler places at `anchor` and fills | the adopted anchor's cell; the `anchor` cell (counted from the declaration — the model holds air there until runtime) |
-| `device` | a `traps[]` entry with `trigger: trapped-chest`; a `triggers[]` `use` or `strike` whose `at` cell holds a container or whose `prop` is one; an `interact` objective whose `anchor` cell holds a container or whose `prop` is one | the `at` / `anchor` cell |
+| `device` | a `traps[]` entry with `trigger: trapped-chest`; any `traps[]` entry's dispenser (the `dispenser` cell its `at` anchor's metadata names — a dispenser is one of the twelve kinds, and it is the trap's own hardware); a `triggers[]` `use` or `strike` whose `at` cell holds a container or whose `prop` is one; an `interact` objective whose `anchor` cell holds a container or whose `prop` is one | the `at` / `anchor` / dispenser cell |
 | `decoration` | no claim | the remainder |
 
 A cell may carry `loot` and `device` together (the real chest among false trapped chests holds gear, the design `DW0917`'s row keeps); `loot` with `collect`, or two of either, stays `DW0435`. A double chest is two cells and two rows; a runtime-placed `collect` chest is one row from its declaration. Iteration is the block map's own order (ADR-0006 — **cited**); two builds are byte-identical.
