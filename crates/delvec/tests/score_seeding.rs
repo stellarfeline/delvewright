@@ -104,8 +104,10 @@ fn shipped_fixtures_emit_only_backed_score_reads() {
         (common::keep_trial_dir(), 60, 10),
         (common::cutscene_shots_dir(), 50, 15),
         (fixture("economy"), 60, 30),
-        (fixture("souls-bonfire"), 300, 25),
-        (fixture("v06-checkpoints"), 300, 25),
+        // Most of these two fixtures' comparisons are the keeper's walked
+        // `move-npc`, one per tick of route, so the floor follows the map.
+        (fixture("souls-bonfire"), 150, 25),
+        (fixture("v06-checkpoints"), 150, 25),
         (fixture("lethal-volume"), 30, 15),
         // The die-retry fixture. A shipped fixture outside this sweep is a
         // hole in DW0495's binding, and this one emits the death edge the rule exists for.

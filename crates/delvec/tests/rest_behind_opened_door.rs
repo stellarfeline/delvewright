@@ -242,11 +242,21 @@ fn a_rest_point_behind_a_story_opened_door_is_reachable() {
 #[test]
 fn a_rest_point_the_last_beat_seals_in_is_refused() {
     let prefabs_dir = open_gate_prefabs();
-    let campaign = parse_hw(&quests_doc(
+    let mut campaign = parse_hw(&quests_doc(
         r#"{ "type": "open-gate", "anchor": "anchor/door" }"#,
         r#"{ "type": "bonfire", "anchor": "anchor/hearth" },
                         { "type": "close-gate", "anchor": "anchor/inner-door" }"#,
     ));
+    // The keep's place declares the two cells the private piece adds.
+    common::station_in(&mut campaign, "anchor/hearth");
+    common::station_in(&mut campaign, "anchor/inner-door");
+    if let Some(g) = campaign.layout_graph.as_mut() {
+        for st in &mut g.content.nodes[0].stations {
+            if st.anchor.as_str() == "anchor/inner-door" {
+                st.kind = delvewright_dsl::layout::StationKind::Gate;
+            }
+        }
+    }
 
     // The binding: two gates resolved, and exactly one of them authored shut.
     let prefabs = PrefabRegistry::load_dir(&prefabs_dir).unwrap();

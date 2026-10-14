@@ -427,6 +427,8 @@ fn every_violating_pair_is_stated_in_one_build() {
     let tmp = TempCampaign::new("all-pairs");
     campaign_from("souls-bonfire", tmp.path(), |q| {
         reseat(q, "anchor/door", "obj/shrine", json!([]));
+        // Both forces stand in the crypt beside the seat.
+        move_wave(q, "wave/guards", "anchor/exit");
         hostile_actor(q, "actor/warden", "anchor/exit");
     });
     let (code, message) = diagnostic(
@@ -490,6 +492,12 @@ fn bearer_removed_by_aside(dst: &Path, on_path: bool) {
                 { "type": "despawn-npc", "npc": "npc/keeper" },
                 { "type": "despawn-actor", "actor": "actor/warden", "style": "vanish" }
             ]
+        }));
+    });
+    // The aside plays where the keeper stood: the hall.
+    common::patch_file(&dst.join("layout-graph.json"), |g| {
+        g["content"]["beats"].as_array_mut().unwrap().push(json!({
+            "node": "node/hall", "objective": "obj/aside", "quest": "quest/aside"
         }));
     });
     let p = dst.join("quest-plan.json");

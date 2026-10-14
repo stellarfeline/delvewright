@@ -13,8 +13,21 @@
         "floor": {
           "y": 65
         },
+        "node": "node/shrine"
+      },
+      {
+        "ceiling": {
+          "clearance": 5
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "y": 65
+        },
         "min": [
-          1,
+          18,
           1
         ],
         "node": "node/hall"
@@ -57,19 +70,6 @@
           "y": 65
         },
         "node": "node/barrow"
-      },
-      {
-        "ceiling": {
-          "clearance": 5
-        },
-        "extent": [
-          16,
-          16
-        ],
-        "floor": {
-          "y": 65
-        },
-        "node": "node/shrine"
       }
     ],
     "fill": {
@@ -113,6 +113,14 @@
     "seams": [
       {
         "at": 7,
+        "edge": "edge/shrine-hall",
+        "face": "east",
+        "form": "a stone arch",
+        "meets": 7,
+        "opening": "arch"
+      },
+      {
+        "at": 7,
         "edge": "edge/hall-store",
         "face": "east",
         "form": "a stone arch",
@@ -130,14 +138,6 @@
       {
         "at": 7,
         "edge": "edge/crypt-barrow",
-        "face": "east",
-        "form": "a stone arch",
-        "meets": 7,
-        "opening": "arch"
-      },
-      {
-        "at": 7,
-        "edge": "edge/barrow-shrine",
         "face": "east",
         "form": "a stone arch",
         "meets": 7,

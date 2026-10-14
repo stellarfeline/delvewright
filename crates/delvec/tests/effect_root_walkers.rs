@@ -245,7 +245,30 @@ fn prefabs_dir(k: EffectRootKind) -> PathBuf {
 }
 
 fn load(k: EffectRootKind) -> LoadedCampaign {
+    if k == EffectRootKind::LoopCross {
+        return common::load_campaign_dir(&corridor_campaign()).unwrap();
+    }
     common::load_campaign_dir(&common::compiler_fixtures_dir().join(ns_for(k))).unwrap()
+}
+
+/// The `long-gallery` fixture with its one place bound to the corridor piece it
+/// was written for, materialised once per process.
+fn corridor_campaign() -> PathBuf {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir =
+            std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("effect_root_walkers_corridor");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        common::copy_campaign_docs(
+            &common::compiler_fixtures_dir().join(ns_for(EffectRootKind::LoopCross)),
+            &dir,
+        );
+        common::bind_region(&dir, &corridor_prefabs(), "long-gallery");
+        common::sync_map_in(&dir, Some(&corridor_prefabs()));
+        dir
+    })
+    .clone()
 }
 
 /// The fixture campaign with `bundle` bound at root `k` and nowhere else.
@@ -256,7 +279,11 @@ fn load(k: EffectRootKind) -> LoadedCampaign {
 fn probe_at(loaded: &LoadedCampaign, k: EffectRootKind, bundle_json: &str) -> Campaign {
     let mut c = common::parse_campaign(&loaded.raw).expect("fixture parses");
     // The trap probe stands at the piece's `anchor/trap` ([`prefabs_with_trap`]).
-    common::station_in(&mut c, "anchor/trap");
+    if k != EffectRootKind::LoopCross {
+        common::station_in(&mut c, "anchor/trap");
+        // …and the free cell the shop, actor and assembly probes stand on.
+        common::station_in(&mut c, "anchor/shop");
+    }
     let bundle = json_effects(bundle_json);
     // Both stages are raised to the version the probe needs: `set-checkpoint`
     // (root 5) is v0.6 surface on the dialogue stage, `on_death` (root 7) is v0.10

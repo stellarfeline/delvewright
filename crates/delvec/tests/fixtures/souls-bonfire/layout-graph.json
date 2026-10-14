@@ -32,10 +32,17 @@
       "node/hall",
       "node/store",
       "node/crypt",
-      "node/barrow",
+      "node/store",
+      "node/hall",
       "node/shrine"
     ],
     "edges": [
+      {
+        "a": "node/shrine",
+        "b": "node/hall",
+        "class": "walk",
+        "id": "edge/shrine-hall"
+      },
       {
         "a": "node/hall",
         "b": "node/store",
@@ -53,17 +60,21 @@
         "b": "node/barrow",
         "class": "walk",
         "id": "edge/crypt-barrow"
-      },
-      {
-        "a": "node/barrow",
-        "b": "node/shrine",
-        "class": "walk",
-        "id": "edge/barrow-shrine"
       }
     ],
     "entry": "node/hall",
     "goal": "node/shrine",
     "nodes": [
+      {
+        "id": "node/shrine",
+        "intent": "a room",
+        "stations": [
+          {
+            "anchor": "anchor/objective",
+            "kind": "point"
+          }
+        ]
+      },
       {
         "id": "node/hall",
         "intent": "a room",
@@ -95,6 +106,10 @@
           {
             "anchor": "anchor/door",
             "kind": "point"
+          },
+          {
+            "anchor": "anchor/exit",
+            "kind": "point"
           }
         ]
       },
@@ -104,16 +119,6 @@
         "stations": [
           {
             "anchor": "anchor/wave",
-            "kind": "point"
-          }
-        ]
-      },
-      {
-        "id": "node/shrine",
-        "intent": "a room",
-        "stations": [
-          {
-            "anchor": "anchor/objective",
             "kind": "point"
           }
         ]
