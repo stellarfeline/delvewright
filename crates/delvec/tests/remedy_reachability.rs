@@ -3664,3 +3664,79 @@ fn dw0995_a_gate_the_route_opens_is_heard() {
     assert!(!after.contains("DW0995"), "{after}");
     assert!(after.contains("1 of 1 with a listening station"), "{after}");
 }
+
+/// One owned-ground place (spec-0106 §3.1) on the blockout fixture, its claim's
+/// bottom at 56 over an `open` fill whose surface stands at 55 except column
+/// `[7, 9]`, which stands at `low`; `fill` replaces the fill wholesale.
+fn owned_over_air(
+    tag: &str,
+    owned: u32,
+    low: u8,
+    fill: Option<serde_json::Value>,
+) -> delvewright_dsl::Campaign {
+    let dir = tmp(&format!("dw1021-{tag}"));
+    common::copy_dir_all(&common::compiler_fixtures_dir().join("blockout"), &dir);
+    let img = image::GrayImage::from_fn(18, 18, |x, z| {
+        image::Luma([if (x, z) == (7, 9) { low - 50 } else { 5 }])
+    });
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut bytes, image::ImageFormat::Png).unwrap();
+    std::fs::write(dir.join("terrain.png"), bytes.into_inner()).unwrap();
+    edit_doc(&dir, "site-plan.json", |v| {
+        v["content"] = serde_json::json!({
+            "region": {"min": [0, 40, 0], "extent": [18, 33, 18]},
+            "boxes": [{
+                "node": "node/landing", "min": [1, 1], "extent": [16, 16],
+                "floor": {"y": 64}, "ceiling": {"clearance": 8}, "base": {"owned": owned}
+            }],
+            "seams": [],
+            "fill": fill.unwrap_or_else(|| serde_json::json!({
+                "kind": "open", "surface": "minecraft:grass_block", "below": "minecraft:stone",
+                "terrain": {"kind": "heightmap", "heightmap": "terrain.png", "base_y": 50, "range": 255}
+            }))
+        });
+    });
+    common::campaign_at(&dir)
+}
+
+fn dw1021(c: &delvewright_dsl::Campaign) -> Vec<String> {
+    let (d, _) = delvec::compiler::detail::check_aloft(c);
+    d.into_iter()
+        .filter(|x| x.code == "DW1021")
+        .map(|x| x.message)
+        .collect()
+}
+
+/// **RAISE THE TERRAIN, DEEPEN `owned`, OR MAKE THE FILL SOLID.** The three
+/// moves `DW1021` names, each taken alone on the place that stands over air,
+/// and each reaching a different verdict.
+#[test]
+fn dw1021_raising_the_terrain_deepening_owned_or_a_solid_fill_each_clear_it() {
+    let before = dw1021(&owned_over_air("before", 7, 54, None));
+    assert_eq!(before.len(), 1, "{before:?}");
+    let m = &before[0];
+    assert!(
+        m.contains("Raise the terrain under the plot")
+            && m.contains("deepen `owned`")
+            && m.contains("make the fill `solid`"),
+        "the message names the three moves: {m}"
+    );
+    assert!(
+        dw1021(&owned_over_air("raised", 7, 55, None)).is_empty(),
+        "the raised column bears it"
+    );
+    assert!(
+        dw1021(&owned_over_air("deeper", 8, 54, None)).is_empty(),
+        "one course deeper, the bottom rests on the low surface"
+    );
+    let solid = owned_over_air(
+        "solid",
+        7,
+        54,
+        Some(serde_json::json!({"kind": "solid", "block": "minecraft:stone"})),
+    );
+    assert!(
+        dw1021(&solid).is_empty(),
+        "a solid fill has nothing to refuse"
+    );
+}

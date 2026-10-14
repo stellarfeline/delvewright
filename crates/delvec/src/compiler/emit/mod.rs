@@ -510,6 +510,7 @@ pub fn build_with_warnings(
     // campaign's world below is the same cells under the campaign's premises.
     let geometry = crate::compiler::light::geometry_world(assembled);
     let relight = crate::compiler::light::relight_with(plan, assembled, &geometry);
+    eprintln!("{}", relight.line());
     if let Some(diag) = relight.diagnostics.first() {
         return Err(BuildFailure::Diagnostic {
             code: diag.code,

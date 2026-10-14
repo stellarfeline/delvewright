@@ -73,6 +73,38 @@ pub struct Relight {
     /// Gate diagnostics (`DW0210`/`DW0211`); non-empty means the build fails
     /// (exit 2). Sorted by `(code, message)`.
     pub diagnostics: Vec<Failure>,
+    /// Fixtures placed inside bound pieces whose place declares its own
+    /// `lighting` (spec-0106 §3.2), by place, in the order they were relit.
+    pub inside: Vec<(String, usize)>,
+}
+
+impl Relight {
+    /// One line, zeroes included: every fixture placed, and how many of them
+    /// stand inside a bound piece, by place.
+    #[must_use]
+    pub fn line(&self) -> String {
+        let inside: usize = self.inside.iter().map(|(_, n)| n).sum();
+        format!(
+            "relight binding: {t} fixture(s) placed, {d} in derived interiors or areas, {i} \
+             inside {p} bound piece(s) declaring `boxes[].lighting`{list}.",
+            t = self.placements.len(),
+            d = self.placements.len() - inside,
+            i = inside,
+            p = self.inside.len(),
+            list = if self.inside.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " ({})",
+                    self.inside
+                        .iter()
+                        .map(|(p, n)| format!("{p}: {n}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            },
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1456,6 +1488,7 @@ pub fn relight_with(
             // relit inside its frame, after the derived interiors and over the
             // model they leave behind, then judged as every bound place is.
             if let Some(spec) = frame.lighting {
+                let before = out.placements.len();
                 relight_area(
                     &mut model,
                     nav,
@@ -1469,6 +1502,8 @@ pub fn relight_with(
                     frame.hi,
                     &mut out,
                 );
+                let placed = out.placements.len() - before;
+                out.inside.push((frame.place.clone(), placed));
                 continue;
             }
             let s = survey_undeclared(&model, cells, sky, frame.night_vision);
