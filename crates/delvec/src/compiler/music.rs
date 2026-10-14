@@ -11,18 +11,22 @@
 //!
 //! * per biome, the word for what a playing track does when the camera enters
 //!   it (`replaces`, `plays-out`, `fades`, `plays-out-at-gain` — spec-0109
-//!   §3.1's table), and the first route cell standing in it, the bot's
-//!   listening station;
+//!   §3.1's table);
 //! * per cutscene, the biome every 4-cell its camera passes through wears in
 //!   the configuration the forced route reaches it in — the biome map after
 //!   each `set-atmosphere` in route order, the reading the fog proof takes —
 //!   refused (`DW1032`) where it declared `hears` and a cell wears another;
 //! * per `stop-sound`, the biome the forced route stands in when it fires and
 //!   what the cut is there: the cut of a play-out, a stinger's cut, or a
-//!   hiccup in a scene whose track restarts.
+//!   hiccup in a scene whose track restarts;
+//! * per cutscene that declares its own `music` (§3.6), the 4-cells its camera
+//!   can be in, the derived variant biome of every base those cells can wear,
+//!   and the `replace` paint and restore lines its bracket runs.
 //!
 //! No instrument outside a client observes the music manager, so the fade, the
-//! loop seam and the toast are not claimed here (spec-0109 §5.3).
+//! loop seam and the toast are not claimed here (spec-0109 §5.3). What the
+//! compiler decides here is asserted by Rust tests; what the emitted functions
+//! do on a server is the `cutscene_music_<n>` PackTest's (§5.4).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -34,7 +38,6 @@ use crate::compiler::failure::Failure;
 use crate::compiler::horizon::{BiomeMap, PaintSource};
 use crate::compiler::nav::{ActorMovePlan, LegRoute, MovePlan};
 use crate::compiler::plan::{EffectRoot, Plan};
-use crate::compiler::pulse::Station;
 
 delvewright_dsl::dw_code! {
     /// `DW1032`: **a cutscene that hears what it did not declare** (spec-0109
@@ -186,7 +189,7 @@ fn band_music(biome: &str) -> (Option<Value>, Value) {
 pub struct BiomeRow {
     /// The namespaced biome id.
     pub id: String,
-    /// `atmosphere`, `ground` or `band`.
+    /// `atmosphere`, `ground`, `band` or `variant`.
     pub kind: &'static str,
     /// The atmosphere id, for an atmosphere.
     pub atmosphere: Option<String>,
@@ -195,9 +198,10 @@ pub struct BiomeRow {
     pub statement: Option<Statement>,
     /// For a band, the vanilla declaration and what it plays.
     pub vanilla: Option<(Option<Value>, Value)>,
-    /// The first route cell whose eye stands in it, in the configuration of
-    /// its leg.
-    pub station: Option<Station>,
+    /// For a variant, the base biome it is derived from.
+    pub base: Option<String>,
+    /// For a variant, the effect paths of the cutscenes that derive it.
+    pub derived_by: Vec<String>,
 }
 
 /// One cutscene, judged.
@@ -220,6 +224,32 @@ pub struct CutsceneRow {
     /// The first cell wearing a biome other than the declared one, with its
     /// shot.
     pub refusal: Option<(usize, [i32; 3], String, String)>,
+    /// The cutscene's own music, when it declares one (§3.6).
+    pub music: Option<ScoreRow>,
+}
+
+/// What the ledger says of a cutscene's own music (spec-0109 §5.1, §3.6).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ScoreRow {
+    /// The canonical declaration.
+    pub declaration: Value,
+    /// Its digest, the `<digest>` of every variant id.
+    pub digest: String,
+    /// The declaration's statement.
+    pub statement: Statement,
+    /// The painted 4-cells, in camera order.
+    pub cells: Vec<[i32; 3]>,
+    /// The paint boxes in 4-cell coordinates, each with its candidate bases.
+    pub boxes: Vec<PaintBox>,
+    /// The paint lines `cs_paint_<bare>` runs (the latch excluded).
+    pub lines: usize,
+    /// The variant ids, by base.
+    pub variants: Vec<(String, String)>,
+    /// The carried places whose cells the paint reaches.
+    pub reaches: Vec<String>,
+    /// Per base, the word for what the score does when the restore returns a
+    /// cell to it (§3.1's table, read at the base).
+    pub way_out: Vec<(String, &'static str)>,
 }
 
 impl CutsceneRow {
@@ -271,8 +301,6 @@ pub struct StopRow {
     pub sound: Option<String>,
     /// The effect's declared audience (`None`: its root's).
     pub audience: Option<Value>,
-    /// The completion-marker token of the bundle that fires it, or `None`.
-    pub after: Option<String>,
     /// The biome the forced route stands in when it fires, or `None` when the
     /// route does not perform it.
     pub biome: Option<String>,
@@ -315,7 +343,7 @@ impl MusicLedger {
         let declared: Vec<&BiomeRow> = self
             .biomes
             .iter()
-            .filter(|b| b.statement.is_some())
+            .filter(|b| b.kind != "variant" && b.statement.is_some())
             .collect();
         let a = declared.iter().filter(|b| b.kind == "atmosphere").count();
         let t = declared
@@ -346,6 +374,15 @@ impl MusicLedger {
             .iter()
             .filter(|r| r.verdict() == "confirmed")
             .count();
+        let scored: Vec<&ScoreRow> = self
+            .cutscenes
+            .iter()
+            .filter_map(|r| r.music.as_ref())
+            .collect();
+        let d = scored.len();
+        let e: usize = scored.iter().map(|m| m.cells.len()).sum();
+        let lines: usize = scored.iter().map(|m| m.lines).sum();
+        let v = self.biomes.iter().filter(|b| b.kind == "variant").count();
         let k = self.stops.len();
         let cut = |w: Cut| self.stops.iter().filter(|s| s.cut == Some(w)).count();
         let p = self
@@ -357,8 +394,9 @@ impl MusicLedger {
             "music binding: {} biome(s) a camera can stand in — {a} atmosphere(s) and the ground \
              declared ({t} with a track, {} silent: {f} fading, {o} playing out), {u} band \
              biome(s) undeclared; {c} cutscene(s), {h} declare what they hear, {g} of {h} \
-             confirmed; {k} stop-sound effect(s), {} of {k} cut a play-out, {} a stinger, {} a \
-             hiccup; {p} sound(s) in a category other than master",
+             confirmed, {d} declare their music over {e} painted 4-cell(s) in {lines} paint \
+             line(s) and {v} variant biome(s); {k} stop-sound effect(s), {} of {k} cut a \
+             play-out, {} a stinger, {} a hiccup; {p} sound(s) in a category other than master",
             self.biomes.len(),
             f + o,
             cut(Cut::Cut),
@@ -369,10 +407,6 @@ impl MusicLedger {
 
     /// `validation/music.json` (spec-0109 §5.1).
     pub fn to_json(&self) -> Value {
-        let station = |s: &Option<Station>| match s {
-            Some(s) => json!({ "cell": s.cell, "step": s.step, "before": s.before }),
-            None => Value::Null,
-        };
         json!({
             "measured_sha256": self.measured_sha256,
             "biomes": self.biomes.iter().map(|b| {
@@ -380,10 +414,12 @@ impl MusicLedger {
                     "id": b.id,
                     "kind": b.kind,
                     "atmosphere": b.atmosphere,
-                    "station": station(&b.station),
-                    "not_stood": if b.station.is_some() { Value::Null } else { json!("no station") },
                 });
                 let o = row.as_object_mut().expect("a row is an object");
+                if b.kind == "variant" {
+                    o.insert("base".into(), json!(b.base));
+                    o.insert("derived_by".into(), json!(b.derived_by));
+                }
                 match (&b.statement, &b.vanilla) {
                     (Some(s), _) => {
                         o.insert("music".into(), music_json(&s.music));
@@ -427,7 +463,26 @@ impl MusicLedger {
                     "refused_at": r.refusal.as_ref().map(|(shot, cell, wears, declared)| json!({
                         "shot": shot, "cell": cell, "wears": wears, "declared": declared,
                     })),
-                    "not_stood": "cutscene",
+                    "music": r.music.as_ref().map(|m| json!({
+                        "declaration": m.declaration,
+                        "digest": m.digest,
+                        "music": music_json(&m.statement.music),
+                        "music_volume": m.statement.music_volume,
+                        "entering": m.statement.entering.word(),
+                        "painted_cells": m.cells,
+                        "boxes": m.boxes.iter().map(|b| json!({
+                            "cells": [b.cells.0, b.cells.1],
+                            "bases": b.bases,
+                        })).collect::<Vec<_>>(),
+                        "paint_lines": m.lines,
+                        "variants": m.variants.iter().map(|(base, id)| json!({
+                            "base": base, "variant": id,
+                        })).collect::<Vec<_>>(),
+                        "reaches": m.reaches,
+                        "way_out": m.way_out.iter().map(|(base, word)| json!({
+                            "base": base, "entering": word,
+                        })).collect::<Vec<_>>(),
+                    })),
                 })
             }).collect::<Vec<_>>(),
             "stop_sounds": self.stops.iter().map(|s| json!({
@@ -436,10 +491,8 @@ impl MusicLedger {
                 "category": s.category.map(SoundCategory::token),
                 "sound": s.sound.as_ref().map(|x| namespaced(x)),
                 "audience": s.audience,
-                "after": s.after,
                 "biome": s.biome,
                 "cut": s.cut.map(Cut::word),
-                "performed": s.biome.is_some(),
             })).collect::<Vec<_>>(),
             "categories": self.categorised.iter().map(|r| json!({
                 "kind": r.kind,
@@ -510,10 +563,6 @@ struct Event<'a> {
     stage: &'static str,
     path: String,
     effect: &'a QuestEffect,
-    /// The completion-marker token the bundle that fires it broadcasts, or
-    /// `None` when nothing the bot sees marks the moment (the reading
-    /// `validation/atmosphere-repaints.json` takes).
-    after: Option<String>,
 }
 
 fn events<'a>(plan: &Plan<'a>) -> Vec<Event<'a>> {
@@ -522,34 +571,11 @@ fn events<'a>(plan: &Plan<'a>) -> Vec<Event<'a>> {
     crate::compiler::plan::for_each_gate_effect(plan.campaign, &mut |site, e| {
         let key = root_firing(plan, &site.root).map(|s| (s, n));
         n += 1;
-        // A nested list fires at a moment its root's marker does not mark: a
-        // `sequence` step at its offset, an arrival, a rest, a respawn, a catch.
-        let top_level = ![
-            "/steps/",
-            "/on_respawn/",
-            "/on_rest/",
-            "/on_caught/",
-            "/on_arrive/",
-        ]
-        .iter()
-        .any(|seg| site.path.contains(seg));
-        let after = if e.when.is_some() || !top_level {
-            None
-        } else {
-            match &site.root {
-                EffectRoot::ObjectiveComplete { objective, .. } => Some(objective.to_string()),
-                EffectRoot::Trigger(t) if crate::compiler::plan::trigger_may_be_performed(t) => {
-                    Some(t.id.as_str().to_string())
-                }
-                _ => None,
-            }
-        };
         out.push(Event {
             key,
             stage: site.stage,
             path: site.path.clone(),
             effect: e,
-            after,
         });
     });
     out
@@ -682,8 +708,7 @@ pub fn polyline_quarts(pts: &[[f64; 3]]) -> Vec<[i32; 3]> {
 }
 
 /// One cutscene's judgement: the configuration it is heard in and the 4-cells
-/// its camera passes through, read by the build (`DW1032`) and by its PackTest
-/// template (`music_hears_<n>`) alike.
+/// its camera passes through, read by the build (`DW1032`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Judged {
     /// The row the ledger carries.
@@ -755,6 +780,7 @@ pub fn judge_cutscenes(
                 repaints,
                 cells,
                 refusal,
+                music: None,
             },
             declared,
             repaint_volumes,
@@ -794,6 +820,584 @@ fn repaint_volumes(
         .collect()
 }
 
+// ---------------------------------------------------------------------------
+// A cutscene's own music (spec-0109 §3.6)
+// ---------------------------------------------------------------------------
+
+/// The canonical form of a cutscene's `music`: its two music ids under their
+/// `minecraft:` ids, each value in the form the one attribute reader writes
+/// ([`crate::compiler::atmosphere::Registry::value`]) — so `0` and `0.0` are
+/// one declaration. An id outside the two is `DW1031` and is not read.
+pub fn canonical_declaration(music: &BTreeMap<String, Value>) -> Value {
+    let reg = crate::compiler::atmosphere::Registry::v1_21_11();
+    let mut out = serde_json::Map::new();
+    for (k, v) in music {
+        let id = delvewright_dsl::music::canonical_attribute(k);
+        if id != delvewright_dsl::music::BACKGROUND_MUSIC
+            && id != delvewright_dsl::music::MUSIC_VOLUME
+        {
+            continue;
+        }
+        let canon = reg
+            .row(id)
+            .and_then(|row| reg.value(row, v).ok())
+            .unwrap_or_else(|| v.clone());
+        out.insert(format!("minecraft:{id}"), canon);
+    }
+    Value::Object(out)
+}
+
+/// The first eight hex digits of the sha256 of a declaration's canonical JSON:
+/// the `<digest>` of every variant id it derives. Derived, never typed.
+pub fn declaration_digest(declaration: &Value) -> String {
+    let text = delvewright_dsl::to_canonical_string(declaration).expect("a JSON value serialises");
+    sha256_hex(text.as_bytes())[..8].to_string()
+}
+
+/// A variant's biome id: `<ns>:music/<digest>/<base path>`.
+pub fn variant_id(ns: &str, digest: &str, base_path: &str) -> String {
+    format!("{ns}:music/{digest}/{base_path}")
+}
+
+/// The datapack file a variant's definition is written to.
+pub fn variant_file(ns: &str, digest: &str, base_path: &str) -> String {
+    format!("datapack/data/{ns}/worldgen/biome/music/{digest}/{base_path}.json")
+}
+
+/// A variant's definition: the base's emitted definition, field for field,
+/// with its two music attributes replaced by the declaration's — the music
+/// statement moves as one object, so a base's `audio/music_volume` the
+/// declaration does not write is removed to the pinned default (1.0), never
+/// carried over.
+pub fn variant_definition(base: &Value, declaration: &Value) -> Value {
+    let mut def = base.clone();
+    let attributes = def
+        .as_object_mut()
+        .expect("a biome definition is an object")
+        .entry("attributes")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .expect("a biome's attributes are an object");
+    attributes.remove("minecraft:audio/background_music");
+    attributes.remove("minecraft:audio/music_volume");
+    if let Some(d) = declaration.as_object() {
+        for (k, v) in d {
+            attributes.insert(k.clone(), v.clone());
+        }
+    }
+    def
+}
+
+/// One biome the engine emits that a cutscene's paint may find under a camera
+/// cell: its path under the namespace, its emitted definition, whether it joins
+/// the void biome's vanilla tags, and its music statement.
+struct Base {
+    path: String,
+    definition: Value,
+    void_tags: bool,
+    statement: Option<Statement>,
+}
+
+/// Every biome of the delve's own a camera cell can wear: the ground and each
+/// declared atmosphere, keyed by biome id.
+fn bases(plan: &Plan<'_>, first: &BiomeMap) -> BTreeMap<String, Base> {
+    let c = plan.campaign;
+    let mut out = BTreeMap::new();
+    let empty = BTreeMap::new();
+    out.insert(
+        first.ground.id.clone(),
+        Base {
+            path: first.ground.path.to_string(),
+            definition: first.ground.definition.clone(),
+            void_tags: first.ground.void_tags,
+            statement: statement(
+                c.world
+                    .content
+                    .horizon
+                    .as_ref()
+                    .and_then(|h| h.attributes())
+                    .unwrap_or(&empty),
+            ),
+        },
+    );
+    for a in &c.world.content.atmospheres {
+        out.insert(
+            crate::compiler::atmosphere::biome_id(&plan.namespace, a.id.as_str()),
+            Base {
+                path: a.id.as_str().to_string(),
+                definition: crate::compiler::atmosphere::biome_definition(a),
+                void_tags: true,
+                statement: statement(&a.attributes),
+            },
+        );
+    }
+    out
+}
+
+/// The squared distance from a point to a closed box.
+fn point_box_dist2(p: [f64; 3], lo: [f64; 3], hi: [f64; 3]) -> f64 {
+    (0..3)
+        .map(|i| {
+            let d = (lo[i] - p[i]).max(0.0).max(p[i] - hi[i]);
+            d * d
+        })
+        .sum()
+}
+
+/// The squared distance from the segment `a..b` to the closed block box of the
+/// 4-cell `q`: exact, by minimising the piecewise quadratic between the
+/// parameters at which the segment crosses the box's planes.
+fn segment_cell_dist2(a: [f64; 3], b: [f64; 3], q: [i32; 3]) -> f64 {
+    let lo: [f64; 3] = std::array::from_fn(|i| f64::from(q[i] * 4));
+    let hi: [f64; 3] = std::array::from_fn(|i| f64::from(q[i] * 4 + 4));
+    let d: [f64; 3] = std::array::from_fn(|i| b[i] - a[i]);
+    let at = |t: f64| -> [f64; 3] { std::array::from_fn(|i| a[i] + t * d[i]) };
+    let f = |t: f64| point_box_dist2(at(t), lo, hi);
+    let mut ts = vec![0.0, 1.0];
+    for i in 0..3 {
+        if d[i] != 0.0 {
+            for e in [lo[i], hi[i]] {
+                let t = (e - a[i]) / d[i];
+                if t > 0.0 && t < 1.0 {
+                    ts.push(t);
+                }
+            }
+        }
+    }
+    ts.sort_by(f64::total_cmp);
+    let mut best = f(0.0).min(f(1.0));
+    for w in ts.windows(2) {
+        let (t0, t1) = (w[0], w[1]);
+        if t1 <= t0 {
+            continue;
+        }
+        let m = at((t0 + t1) / 2.0);
+        let (mut qa, mut qb) = (0.0, 0.0);
+        for i in 0..3 {
+            let edge = if m[i] < lo[i] {
+                Some(lo[i])
+            } else if m[i] > hi[i] {
+                Some(hi[i])
+            } else {
+                None
+            };
+            if let Some(e) = edge {
+                qa += d[i] * d[i];
+                qb += 2.0 * d[i] * (a[i] - e);
+            }
+        }
+        if qa > 0.0 {
+            best = best.min(f((-qb / (2.0 * qa)).clamp(t0, t1)));
+        }
+    }
+    best
+}
+
+/// **The 4-cells a camera can be in** along a resolved polyline (spec-0109
+/// §3.6): every 4-cell within `tolerance` blocks of it — the waypoints, the
+/// cells the straight segments cross ([`polyline_quarts`]'s walk), and the
+/// neighbouring cell wherever the path runs within the tolerance of a cell
+/// face — in camera order, each once. The client tweens within the dolly's
+/// chord tolerance of the path ([`crate::compiler::camera::CHORD_POS_TOLERANCE`]),
+/// and the music reads exactly the cell the camera is in, so these are the
+/// cells the camera can be in and no other.
+pub fn polyline_quarts_within(pts: &[[f64; 3]], tolerance: f64) -> Vec<[i32; 3]> {
+    let segments: Vec<([f64; 3], [f64; 3])> = match pts {
+        [] => Vec::new(),
+        [p] => vec![(*p, *p)],
+        _ => pts.windows(2).map(|w| (w[0], w[1])).collect(),
+    };
+    let reach = tolerance * tolerance + 1e-9;
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    for (a, b) in segments {
+        let mut walk = Vec::new();
+        segment_quarts(a, b, &mut walk);
+        for c in walk {
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    for dz in -1..=1 {
+                        let q = [c[0] + dx, c[1] + dy, c[2] + dz];
+                        if !seen.contains(&q) && segment_cell_dist2(a, b, q) <= reach {
+                            seen.insert(q);
+                            out.push(q);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// One box of a cutscene's paint, in 4-cell coordinates, with every base a
+/// cell inside it can wear.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PaintBox {
+    /// The box's corner 4-cells, inclusive.
+    pub cells: ([i32; 3], [i32; 3]),
+    /// The candidate bases, in id order.
+    pub bases: Vec<String>,
+}
+
+/// The painted cells merged along the camera's order into 4-aligned boxes that
+/// cover exactly those cells: a box grows by the next cell only while every
+/// 4-cell of the grown box is painted and in no earlier box.
+pub fn merge_boxes(cells: &[[i32; 3]]) -> Vec<([i32; 3], [i32; 3])> {
+    let set: BTreeSet<[i32; 3]> = cells.iter().copied().collect();
+    let inside =
+        |b: &([i32; 3], [i32; 3]), q: [i32; 3]| (0..3).all(|i| b.0[i] <= q[i] && q[i] <= b.1[i]);
+    let mut covered: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut boxes = Vec::new();
+    let mut cur: Option<([i32; 3], [i32; 3])> = None;
+    let close = |b: ([i32; 3], [i32; 3]), covered: &mut BTreeSet<[i32; 3]>, boxes: &mut Vec<_>| {
+        for x in b.0[0]..=b.1[0] {
+            for y in b.0[1]..=b.1[1] {
+                for z in b.0[2]..=b.1[2] {
+                    covered.insert([x, y, z]);
+                }
+            }
+        }
+        boxes.push(b);
+    };
+    for &c in cells {
+        if covered.contains(&c) || cur.is_some_and(|b| inside(&b, c)) {
+            continue;
+        }
+        if let Some(b) = cur {
+            let near = (0..3).all(|i| b.0[i] - 1 <= c[i] && c[i] <= b.1[i] + 1);
+            let grown: ([i32; 3], [i32; 3]) = (
+                std::array::from_fn(|i| b.0[i].min(c[i])),
+                std::array::from_fn(|i| b.1[i].max(c[i])),
+            );
+            let fits = near
+                && (grown.0[0]..=grown.1[0]).all(|x| {
+                    (grown.0[1]..=grown.1[1]).all(|y| {
+                        (grown.0[2]..=grown.1[2]).all(|z| {
+                            let q = [x, y, z];
+                            set.contains(&q) && !covered.contains(&q)
+                        })
+                    })
+                });
+            if fits {
+                cur = Some(grown);
+                continue;
+            }
+            close(b, &mut covered, &mut boxes);
+        }
+        cur = Some((c, c));
+    }
+    if let Some(b) = cur {
+        close(b, &mut covered, &mut boxes);
+    }
+    boxes
+}
+
+/// A variant biome a declaring cutscene's paint puts on the cells wearing its
+/// base.
+#[derive(Clone, Debug)]
+pub struct Variant {
+    /// The base biome id.
+    pub base: String,
+    /// The variant biome id.
+    pub id: String,
+    /// The datapack file it is written to.
+    pub file: String,
+    /// Its definition.
+    pub definition: Value,
+    /// Whether it joins the void biome's vanilla tags, as its base does.
+    pub void_tags: bool,
+}
+
+/// One cutscene's own music, resolved (spec-0109 §3.6): what its bracket
+/// paints and restores, and the variants the build emits for it.
+#[derive(Clone)]
+pub struct Score<'a> {
+    /// The effect.
+    pub effect: &'a QuestEffect,
+    /// Its index among every cutscene [`judge_cutscenes`] judges.
+    pub index: usize,
+    /// The ledger's row.
+    pub row: ScoreRow,
+    /// The variants, by base id.
+    pub variants: Vec<Variant>,
+    /// The lines `cs_paint_<bare>` runs after its latch.
+    pub paint: Vec<String>,
+    /// The lines `cs_unpaint_<bare>` runs after its latch, each a restore.
+    pub unpaint: Vec<String>,
+    /// The configuration the forced route reaches it in (the biome map after
+    /// every repaint it fires before the cutscene).
+    pub configuration: BiomeMap,
+    /// The repaint volumes of that configuration, in route order.
+    pub repaint_volumes: Vec<([i32; 3], [i32; 3], String)>,
+}
+
+impl Score<'_> {
+    /// The stage and JSON path of the effect, as the ledger names it.
+    fn effect_path(&self, events: &[Event<'_>]) -> String {
+        events
+            .iter()
+            .find(|e| std::ptr::eq(e.effect, self.effect))
+            .map(|e| format!("{} {}", e.stage, e.path))
+            .unwrap_or_default()
+    }
+}
+
+/// A block box, corner to corner, inclusive.
+type BlockBox = ([i32; 3], [i32; 3]);
+
+fn quart_inside_extent(columns: &[[i32; 4]], q: [i32; 3]) -> bool {
+    let y_ok = q[1] * 4 >= crate::compiler::horizon::BUILD_MIN_Y
+        && q[1] * 4 + 3 <= crate::compiler::horizon::BUILD_MAX_Y;
+    y_ok && (q[0] * 4..q[0] * 4 + 4).all(|x| {
+        (q[2] * 4..q[2] * 4 + 4).all(|z| {
+            columns
+                .iter()
+                .any(|r| r[0] <= x && x <= r[2] && r[1] <= z && z <= r[3])
+        })
+    })
+}
+
+/// **Resolve every cutscene that declares its own music** (spec-0109 §3.6), in
+/// effect-walk order: the painted cells, the candidate bases per merged box,
+/// the variants, and the paint and restore lines. A painted cell outside the
+/// map's extent, or wearing a biome the delve does not own, is `DW0929` — the
+/// first such cell is the refusal returned beside the scores.
+pub fn scores<'a>(
+    plan: &Plan<'a>,
+    moves: &[MovePlan],
+    actor_moves: &[ActorMovePlan],
+) -> (Vec<Score<'a>>, Option<Failure>) {
+    let ns = &plan.namespace;
+    let first = crate::compiler::horizon::biome_map(plan);
+    let owned = bases(plan, &first);
+    let evs = events(plan);
+    let units = crate::compiler::camera::cutscene_units(plan.campaign);
+    let columns = crate::compiler::horizon::extent_columns(plan);
+    // Every repaint volume of the campaign, whatever fires it: a cell under
+    // one can wear its atmosphere in some configuration of the story.
+    let repaints: Vec<(BlockBox, String)> =
+        crate::compiler::atmosphere::set_atmospheres(plan.campaign)
+            .into_iter()
+            .filter_map(|(_, _, eff)| {
+                let Verb::SetAtmosphere { atmosphere, .. } = &eff.verb else {
+                    return None;
+                };
+                let (lo, hi) = crate::compiler::horizon::repaint_volume(plan, eff)?;
+                Some((
+                    crate::compiler::atmosphere::painted_box(lo, hi),
+                    first.biome_of(atmosphere.as_ref().map(|a| a.as_str())),
+                ))
+            })
+            .collect();
+    let mut out = Vec::new();
+    let mut refusal = None;
+    let mut index = 0usize;
+    for ev in &evs {
+        let Verb::Cutscene { music, .. } = &ev.effect.verb else {
+            continue;
+        };
+        let Some(shots) = ev.effect.cutscene_shots() else {
+            continue;
+        };
+        let n = index;
+        index += 1;
+        let Some(music) = music else {
+            continue;
+        };
+        let Some(stmt) = statement(music) else {
+            continue;
+        };
+        let declaration = canonical_declaration(music);
+        let digest = declaration_digest(&declaration);
+        let ctx = units
+            .iter()
+            .find(|(e, _)| std::ptr::eq(*e, ev.effect))
+            .map(|(_, c)| c.clone())
+            .unwrap_or_default();
+        let mut cells: Vec<[i32; 3]> = Vec::new();
+        let mut seen = BTreeSet::new();
+        let mut offset = 0i32;
+        for (si, shot) in shots.iter().enumerate() {
+            let ex =
+                crate::compiler::camera::expand_shot(plan, moves, actor_moves, shot, &ctx, offset);
+            offset += ex.ticks + 1;
+            for q in polyline_quarts_within(
+                ex.clip_polyline(),
+                crate::compiler::camera::CHORD_POS_TOLERANCE,
+            ) {
+                if !seen.insert(q) {
+                    continue;
+                }
+                if refusal.is_none() && !quart_inside_extent(&columns, q) {
+                    refusal = Some(Failure {
+                        code: crate::compiler::atmosphere::DW_ATMOSPHERE_PAINT,
+                        message: format!(
+                            "the cutscene at {} {} declares its own `music`, and shot {si}'s \
+                             camera can be in the 4-cell {q:?} (blocks {:?}..{:?}), which \
+                             reaches past the map's extent (columns {columns:?}; build height y \
+                             {}..{}). The cutscene's music is played by repainting every cell \
+                             its camera can be in, and `fillbiome` into a chunk nothing loads \
+                             fails the whole line, so the score would never start there and \
+                             never be restored. Keep the shot's path inside the map's extent.",
+                            ev.stage,
+                            ev.path,
+                            [q[0] * 4, q[1] * 4, q[2] * 4],
+                            [q[0] * 4 + 3, q[1] * 4 + 3, q[2] * 4 + 3],
+                            crate::compiler::horizon::BUILD_MIN_Y,
+                            crate::compiler::horizon::BUILD_MAX_Y,
+                        ),
+                    });
+                }
+                cells.push(q);
+            }
+        }
+        // The bases a cell can wear: its first-tick biome and the atmosphere of
+        // every repaint whose volume covers it, in any order.
+        let candidates = |q: [i32; 3]| -> BTreeSet<String> {
+            let at = sample(q);
+            let mut b = BTreeSet::new();
+            b.insert(first.at(at).0.to_string());
+            for ((lo, hi), biome) in &repaints {
+                if (0..3).all(|i| lo[i] <= at[i] && at[i] <= hi[i]) {
+                    b.insert(biome.clone());
+                }
+            }
+            b
+        };
+        let mut boxes = Vec::new();
+        let mut used: BTreeSet<String> = BTreeSet::new();
+        for (lo, hi) in merge_boxes(&cells) {
+            let mut bases: BTreeSet<String> = BTreeSet::new();
+            for x in lo[0]..=hi[0] {
+                for y in lo[1]..=hi[1] {
+                    for z in lo[2]..=hi[2] {
+                        bases.extend(candidates([x, y, z]));
+                    }
+                }
+            }
+            if refusal.is_none()
+                && let Some(foreign) = bases.iter().find(|b| !owned.contains_key(*b))
+            {
+                refusal = Some(Failure {
+                    code: crate::compiler::atmosphere::DW_ATMOSPHERE_PAINT,
+                    message: format!(
+                        "the cutscene at {} {} declares its own `music`, and its camera can be in \
+                         the 4-cells {lo:?}..{hi:?}, which wear `{foreign}` — a biome the delve \
+                         does not own (a valley band, outside the map). The score is a variant \
+                         of the biome a cell wears, and the engine derives variants only of its \
+                         own biomes. Keep the shot's path inside the map.",
+                        ev.stage, ev.path
+                    ),
+                });
+            }
+            used.extend(bases.iter().cloned());
+            boxes.push(PaintBox {
+                cells: (lo, hi),
+                bases: bases.into_iter().collect(),
+            });
+        }
+        let variants: Vec<Variant> = used
+            .iter()
+            .filter_map(|b| {
+                let base = owned.get(b)?;
+                Some(Variant {
+                    base: b.clone(),
+                    id: variant_id(ns, &digest, &base.path),
+                    file: variant_file(ns, &digest, &base.path),
+                    definition: variant_definition(&base.definition, &declaration),
+                    void_tags: base.void_tags,
+                })
+            })
+            .collect();
+        let vid = |b: &str| variants.iter().find(|v| v.base == b).map(|v| v.id.clone());
+        let (mut paint, mut unpaint) = (Vec::new(), Vec::new());
+        for pb in &boxes {
+            let blo = [pb.cells.0[0] * 4, pb.cells.0[1] * 4, pb.cells.0[2] * 4];
+            let bhi = [
+                pb.cells.1[0] * 4 + 3,
+                pb.cells.1[1] * 4 + 3,
+                pb.cells.1[2] * 4 + 3,
+            ];
+            for b in &pb.bases {
+                let Some(v) = vid(b) else {
+                    continue;
+                };
+                paint.extend(crate::compiler::atmosphere::fillbiome_replace_lines(
+                    blo, bhi, &v, b,
+                ));
+                unpaint.extend(crate::compiler::atmosphere::fillbiome_replace_lines(
+                    blo, bhi, b, &v,
+                ));
+            }
+        }
+        let reaches: Vec<String> = {
+            let mut r: Vec<String> = Vec::new();
+            for p in first.places() {
+                let PaintSource::Place { place, .. } = &p.source else {
+                    continue;
+                };
+                let hit = cells.iter().any(|q| {
+                    let at = sample(*q);
+                    (0..3).all(|i| p.cells.0[i] <= at[i] && at[i] <= p.cells.1[i])
+                });
+                if hit && !r.contains(place) {
+                    r.push(place.clone());
+                }
+            }
+            r
+        };
+        let way_out = used
+            .iter()
+            .filter_map(|b| {
+                let s = owned.get(b)?.statement.as_ref()?;
+                Some((b.clone(), s.entering.word()))
+            })
+            .collect();
+        let (configuration, _) = configuration(plan, &first, &evs, ev.key);
+        let repaint_volumes = repaint_volumes(plan, &first, &evs, ev.key);
+        out.push(Score {
+            effect: ev.effect,
+            index: n,
+            row: ScoreRow {
+                declaration,
+                digest,
+                statement: stmt,
+                cells,
+                boxes,
+                lines: paint.len(),
+                variants: variants
+                    .iter()
+                    .map(|v| (v.base.clone(), v.id.clone()))
+                    .collect(),
+                reaches,
+                way_out,
+            },
+            variants,
+            paint,
+            unpaint,
+            configuration,
+            repaint_volumes,
+        });
+    }
+    (out, refusal)
+}
+
+/// The cutscenes that declare their own `music`, as the PackTest claim's
+/// declared list (`DW0811`, `cutscene-music`): each one's index among every
+/// cutscene [`judge_cutscenes`] judges, read from the authored documents
+/// rather than from the scores, so an emitter that skips one cannot shrink it.
+pub fn scored_ids(plan: &Plan<'_>) -> BTreeSet<String> {
+    events(plan)
+        .iter()
+        .filter(|e| matches!(e.effect.verb, Verb::Cutscene { .. }))
+        .filter(|e| e.effect.cutscene_shots().is_some())
+        .enumerate()
+        .filter(|(_, e)| matches!(e.effect.verb, Verb::Cutscene { music: Some(_), .. }))
+        .map(|(n, _)| n.to_string())
+        .collect()
+}
+
 /// The longest delay, in ticks, after which a track the client re-arms is
 /// still heard as the same scene's music resuming rather than as silence: the
 /// `CONSTANT` frequency's own gap (`MusicManager$MusicFrequency`, 100 ticks).
@@ -829,7 +1433,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// The canonical sha256 of what a music reading measured: every declaration
 /// the ledger reads, and nothing it does not — each atmosphere and the
 /// horizon as declared, each place's carried atmosphere, and every
-/// `set-atmosphere`, `cutscene` (its normalized shots and `hears`),
+/// `set-atmosphere`, `cutscene` (its normalized shots, `hears` and `music`),
 /// `stop-sound` and `play-sound` with its JSON path, and each pulse's
 /// category. A change music does not read — a translated line, a field of
 /// another mechanic, the other spelling of one cutscene — moves no byte of
@@ -856,9 +1460,10 @@ fn measured_hash(plan: &Plan<'_>, events: &[Event<'_>]) -> String {
         .iter()
         .filter_map(|e| {
             let read = match &e.effect.verb {
-                Verb::Cutscene { hears, .. } => json!({
+                Verb::Cutscene { hears, music, .. } => json!({
                     "shots": e.effect.cutscene_shots(),
                     "hears": hears,
+                    "music": music,
                 }),
                 Verb::SetAtmosphere { .. } | Verb::StopSound { .. } | Verb::PlaySound { .. } => {
                     serde_json::to_value(&e.effect.verb).ok()?
@@ -909,7 +1514,8 @@ pub fn measure(
             atmosphere: Some(a.id.as_str().to_string()),
             statement: statement(&a.attributes),
             vanilla: None,
-            station: None,
+            base: None,
+            derived_by: Vec::new(),
         });
     }
     let empty = BTreeMap::new();
@@ -926,7 +1532,8 @@ pub fn measure(
         atmosphere: None,
         statement: statement(ground_attrs),
         vanilla: None,
-        station: None,
+        base: None,
+        derived_by: Vec::new(),
     });
     let bands: BTreeSet<&str> = first
         .paints
@@ -941,45 +1548,31 @@ pub fn measure(
             atmosphere: None,
             statement: None,
             vanilla: Some(band_music(b)),
-            station: None,
+            base: None,
+            derived_by: Vec::new(),
         });
     }
-    // The listening stations: the first route cell whose eye stands in each
-    // biome, the leg read in the configuration it is walked in (every repaint
-    // fired at an earlier step).
-    let token = |step: usize| {
-        plan.critical_path
-            .get(step)
-            .and_then(|s| s.objective().or(s.trigger()))
-            .map(str::to_string)
-    };
-    let mut leg_maps: BTreeMap<usize, BiomeMap> = BTreeMap::new();
-    for leg in routes {
-        let map = leg_maps
-            .entry(leg.to_step)
-            .or_insert_with(|| configuration(plan, &first, &evs, Some((leg.to_step, 0))).0)
-            .clone();
-        for &cell in &leg.cells {
-            let eye = [cell[0], cell[1] + 1, cell[2]];
-            let biome = map.at(eye).0;
-            if let Some(row) = ledger
-                .biomes
-                .iter_mut()
-                .find(|r| r.id == biome && r.station.is_none())
-                && let Some(before) = token(leg.to_step)
-            {
-                row.station = Some(Station {
-                    cell,
-                    step: leg.to_step,
-                    before,
-                });
+    // The variants every declaring cutscene derives (§3.6), each once.
+    let (scored, mut refusal) = scores(plan, moves, actor_moves);
+    for sc in &scored {
+        for v in &sc.variants {
+            match ledger.biomes.iter_mut().find(|r| r.id == v.id) {
+                Some(row) => row.derived_by.push(sc.effect_path(&evs)),
+                None => ledger.biomes.push(BiomeRow {
+                    id: v.id.clone(),
+                    kind: "variant",
+                    atmosphere: None,
+                    statement: Some(sc.row.statement.clone()),
+                    vanilla: None,
+                    base: Some(v.base.clone()),
+                    derived_by: vec![sc.effect_path(&evs)],
+                }),
             }
         }
     }
     // The cutscenes.
     let judged = judge_cutscenes(plan, moves, actor_moves);
-    let mut refusal: Option<Failure> = None;
-    for j in &judged {
+    for (n, j) in judged.iter().enumerate() {
         if refusal.is_none()
             && let Some((shot, cell, wears, declared)) = &j.row.refusal
         {
@@ -1011,7 +1604,9 @@ pub fn measure(
                 ),
             });
         }
-        ledger.cutscenes.push(j.row.clone());
+        let mut row = j.row.clone();
+        row.music = scored.iter().find(|s| s.index == n).map(|s| s.row.clone());
+        ledger.cutscenes.push(row);
     }
     // The stop-sounds: where the route stands when each fires, and what the
     // cut is there.
@@ -1057,7 +1652,6 @@ pub fn measure(
                         .audience
                         .as_ref()
                         .and_then(|a| serde_json::to_value(a).ok()),
-                    after: ev.after.clone(),
                     biome,
                     cut,
                 });
@@ -1088,21 +1682,6 @@ pub fn measure(
     )
 }
 
-/// The cutscenes that declare `hears`, as the PackTest claim's declared list
-/// (`DW0811`): each one's index among every cutscene [`judge_cutscenes`]
-/// judges, read from the authored documents rather than from the judgement, so
-/// an emitter that skips one cannot shrink it.
-pub fn hearing_ids(plan: &Plan<'_>) -> BTreeSet<String> {
-    events(plan)
-        .iter()
-        .filter(|e| matches!(e.effect.verb, Verb::Cutscene { .. }))
-        .filter(|e| e.effect.cutscene_shots().is_some())
-        .enumerate()
-        .filter(|(_, e)| matches!(e.effect.verb, Verb::Cutscene { hears: Some(_), .. }))
-        .map(|(n, _)| n.to_string())
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1122,6 +1701,157 @@ mod tests {
         }
         // A static shot is its one cell; negative coordinates floor.
         assert_eq!(polyline_quarts(&[[-0.5, 3.0, -4.0]]), vec![[-1, 0, -1]]);
+    }
+
+    /// Criterion 10: every 4-cell within 0.25 blocks of the polyline and no
+    /// other, against hand-computed sets — a path along a cell face paints
+    /// both sides, one 0.2 from a face paints both, one 0.3 from it one.
+    #[test]
+    fn the_painted_cells_are_those_within_the_tolerance() {
+        let t = crate::compiler::camera::CHORD_POS_TOLERANCE;
+        let set = |pts: &[[f64; 3]]| -> BTreeSet<[i32; 3]> {
+            polyline_quarts_within(pts, t).into_iter().collect()
+        };
+        let both: BTreeSet<[i32; 3]> = [0, 1]
+            .into_iter()
+            .flat_map(|x| (0..3).map(move |z| [x, 0, z]))
+            .collect();
+        // On the face x = 4, mid-height, z 2 → 10: cells z 0, 1, 2 on both sides.
+        assert_eq!(set(&[[4.0, 2.0, 2.0], [4.0, 2.0, 10.0]]), both);
+        assert_eq!(set(&[[4.2, 2.0, 2.0], [4.2, 2.0, 10.0]]), both);
+        assert_eq!(set(&[[3.75, 2.0, 2.0], [3.75, 2.0, 10.0]]), both);
+        let one: BTreeSet<[i32; 3]> = (0..3).map(|z| [1, 0, z]).collect();
+        assert_eq!(set(&[[4.3, 2.0, 2.0], [4.3, 2.0, 10.0]]), one);
+        // A static shot at a cell's centre is its one cell; at a corner, the
+        // eight cells that meet there.
+        assert_eq!(set(&[[2.0, 2.0, 2.0]]), BTreeSet::from([[0, 0, 0]]));
+        assert_eq!(set(&[[4.0, 4.0, 4.0]]).len(), 8);
+        // A diagonal 0.2 past a corner reaches the corner's cells only where
+        // the segment is within the tolerance of them.
+        let d = set(&[[2.0, 2.0, 2.0], [6.0, 2.0, 6.0]]);
+        assert!(d.contains(&[0, 0, 0]) && d.contains(&[1, 0, 1]));
+        assert!(
+            d.contains(&[1, 0, 0]) && d.contains(&[0, 0, 1]),
+            "it passes the corner"
+        );
+        // Order: the camera's — the first waypoint's cell first.
+        assert_eq!(
+            polyline_quarts_within(&[[2.0, 2.0, 2.0], [14.0, 2.0, 2.0]], t)[0],
+            [0, 0, 0]
+        );
+    }
+
+    /// Criterion 10: a camera that flies 600 blocks in one shot along a cell
+    /// edge paints a 2×2-cell tube, and no paint line's quantized volume
+    /// exceeds `FILLBIOME_CAP`; a 1400-block flight's one merged box exceeds it
+    /// and is split, its lines tiling the cells exactly.
+    #[test]
+    fn a_long_flight_is_painted_under_the_cap() {
+        for (length, split) in [(600.0, false), (1400.0, true)] {
+            let cells = polyline_quarts_within(
+                &[[0.5, 4.0, 4.0], [0.5 + length, 4.0, 4.0]],
+                crate::compiler::camera::CHORD_POS_TOLERANCE,
+            );
+            assert_eq!(
+                cells.len() as f64,
+                ((length + 0.5) / 4.0).floor() * 4.0 + 4.0
+            );
+            let boxes = merge_boxes(&cells);
+            assert_eq!(boxes.len(), 1, "one tube, one box");
+            let mut lines = Vec::new();
+            let mut covered = 0i64;
+            for (lo, hi) in &boxes {
+                for l in crate::compiler::atmosphere::fillbiome_replace_lines(
+                    [lo[0] * 4, lo[1] * 4, lo[2] * 4],
+                    [hi[0] * 4 + 3, hi[1] * 4 + 3, hi[2] * 4 + 3],
+                    "t:music/x/void",
+                    "t:void",
+                ) {
+                    let n: Vec<i32> = l
+                        .split(' ')
+                        .skip(1)
+                        .take(6)
+                        .map(|t| t.parse().unwrap())
+                        .collect();
+                    covered += (0..3)
+                        .map(|i| i64::from((n[i + 3] - n[i] + 1) / 4))
+                        .product::<i64>();
+                    lines.push(l);
+                }
+            }
+            assert_eq!(covered, cells.len() as i64, "the lines tile the cells");
+            assert_eq!(lines.len() > 1, split, "{lines:?}");
+            for l in &lines {
+                let v = crate::compiler::atmosphere::line_volume(l).unwrap();
+                assert!(v <= crate::compiler::atmosphere::FILLBIOME_CAP, "{l}: {v}");
+            }
+        }
+    }
+
+    /// The boxes cover exactly the painted cells, never an unpainted one.
+    #[test]
+    fn the_boxes_cover_only_painted_cells() {
+        let cells = vec![[0, 0, 0], [1, 0, 0], [1, 0, 1], [2, 0, 1]];
+        let boxes = merge_boxes(&cells);
+        let mut got = BTreeSet::new();
+        for (lo, hi) in &boxes {
+            for x in lo[0]..=hi[0] {
+                for y in lo[1]..=hi[1] {
+                    for z in lo[2]..=hi[2] {
+                        assert!(got.insert([x, y, z]), "no cell twice");
+                    }
+                }
+            }
+        }
+        assert_eq!(got, cells.into_iter().collect());
+    }
+
+    /// The variant is its base with the music statement moved as one object.
+    #[test]
+    fn a_variant_swaps_the_music_statement_alone() {
+        let base = json!({ "attributes": {
+            "minecraft:audio/background_music": {},
+            "minecraft:audio/music_volume": 0.0,
+            "minecraft:visual/sky_color": "#000000"
+        }, "temperature": 0.5 });
+        let mut m = BTreeMap::new();
+        m.insert(
+            "audio/background_music".to_string(),
+            json!({ "default": { "sound": "music_disc.pigstep", "min_delay": 0, "max_delay": 0 } }),
+        );
+        let decl = canonical_declaration(&m);
+        let v = variant_definition(&base, &decl);
+        assert_eq!(v["temperature"], json!(0.5));
+        assert_eq!(
+            v["attributes"]["minecraft:visual/sky_color"],
+            json!("#000000")
+        );
+        assert!(
+            v["attributes"]
+                .get("minecraft:audio/music_volume")
+                .is_none()
+        );
+        assert_eq!(
+            v["attributes"]["minecraft:audio/background_music"]["default"]["sound"],
+            json!("minecraft:music_disc.pigstep")
+        );
+        // `0` and `0.0` are one declaration; a changed sound moves the digest.
+        let mut a = m.clone();
+        a.insert("audio/music_volume".to_string(), json!(0));
+        let mut b = m.clone();
+        b.insert("audio/music_volume".to_string(), json!(0.0));
+        assert_eq!(
+            declaration_digest(&canonical_declaration(&a)),
+            declaration_digest(&canonical_declaration(&b))
+        );
+        assert_ne!(
+            declaration_digest(&canonical_declaration(&a)),
+            declaration_digest(&decl)
+        );
+        assert_eq!(
+            variant_id("ns", "0123abcd", "atmosphere/x"),
+            "ns:music/0123abcd/atmosphere/x"
+        );
     }
 
     #[test]

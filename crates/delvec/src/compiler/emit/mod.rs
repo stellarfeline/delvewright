@@ -968,7 +968,14 @@ pub fn build_with_warnings(
     crate::compiler::creator::emit_creator(plan, &mut out, &moves, &actor_moves);
 
     // ---- server ----
-    emit_ground_biome(plan, &mut out);
+    {
+        // spec-0109 §3.6: every variant a cutscene's own music derives ships
+        // beside the biomes it is derived from.
+        let (scores, _) = crate::compiler::music::scores(plan, &moves, &actor_moves);
+        let variants: Vec<crate::compiler::music::Variant> =
+            scores.into_iter().flat_map(|s| s.variants).collect();
+        emit_ground_biome(plan, &mut out, &variants);
+    }
     emit_server(plan, &mut out);
 
     // ---- critical path ----
@@ -1287,13 +1294,6 @@ pub fn build_with_warnings(
     // volume, no `on_death` and no stake emits no file at all.
     if let Some(dp) = &death_plan {
         put_json(&mut out, "validation/death-plan.json", dp);
-    }
-    // spec-0080 §5.2: what each repaint must tell a connected client — the
-    // chunks of its painted 4-cell box, and the completion marker of the bundle
-    // that fires it — so the bot tier asserts the `chunk_biomes` packets and
-    // the absent reload. A campaign with no `set-atmosphere` emits no file.
-    if let Some(rp) = atmosphere_repaint_plan(plan) {
-        put_json(&mut out, "validation/atmosphere-repaints.json", &rp);
     }
     // spec-0080 §5.3: which biome each carried place stands in at the first
     // tick, as the biome map states it, so a reader that draws a scene inside

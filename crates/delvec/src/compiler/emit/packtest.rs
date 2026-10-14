@@ -100,8 +100,8 @@ pub(super) fn emit_packtest(
     // spec-0080 §5.2: the server holds the biome each carried place declares,
     // and every repaint moves it — inside the volume and not outside.
     atmosphere::emit_atmosphere_packtests(plan, out);
-    // spec-0109 §5.2: the biome every camera cell of a cutscene that declares
-    // `hears` wears, in the configuration it was judged in.
+    // spec-0109 §5.3: a cutscene's own music — its paint, restore, interrupt
+    // and restart functions leave every painted cell at its base.
     music::emit_music_packtests(plan, out, moves, actor_moves);
 
     creator::emit_creator_packtests(plan, out);
@@ -267,7 +267,7 @@ pub(super) fn watch_claims(plan: &Plan) -> Vec<crate::compiler::watch::Claim> {
         npc::npc_talk_watch_claim(plan),
         cast::cast_ladder_watch_claim(plan),
         pulse::pulse_watch_claim(plan),
-        music::music_hears_watch_claim(plan),
+        music::cutscene_music_watch_claim(plan),
     ];
     watch_claims.extend(trigger::env_trigger_watch_claims(plan));
     watch_claims.extend(dialogue::dialogue_mask_watch_claims(plan));

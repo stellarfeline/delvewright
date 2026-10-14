@@ -31,10 +31,16 @@ pub(super) fn emit_functions(
     // --- load ---
     fns.push((
         "load".to_string(),
-        lines(&[
-            "scoreboard objectives add dw.sys dummy".to_string(),
-            format!("execute unless score #init dw.sys matches 1 run function {ns}:setup"),
-        ]),
+        lines(
+            &[
+                "scoreboard objectives add dw.sys dummy".to_string(),
+                format!("execute unless score #init dw.sys matches 1 run function {ns}:setup"),
+            ]
+            .into_iter()
+            // spec-0109 §3.6: a paint that may have outlived its cutscene.
+            .chain(cutscene_paint_load_marks(plan))
+            .collect::<Vec<_>>(),
+        ),
     ));
 
     // --- setup ---
@@ -757,6 +763,10 @@ pub(super) fn emit_functions(
     // which a relog also keeps. So the repair is its own tick clause, keyed on the
     // stuck state itself. Empty for a cutscene-less campaign → byte-identical.
     tick.extend(cutscene_repair_tick(plan));
+    // spec-0109 §3.6: a cutscene's paint restored when it outlived its
+    // cutscene (an interrupt, a restart, a chunk that was unloaded at the end).
+    // Empty without a cutscene that declares its own music → byte-identical.
+    tick.extend(cutscene_unpaint_tick(plan));
     // The class trigger is ONE-SHOT per player. `class_apply_<c>` ends in a
     // teleport to the campaign entry point, so re-firing `/trigger dw.class`
     // mid-run would warp whoever ran it back to the start of the delve — an

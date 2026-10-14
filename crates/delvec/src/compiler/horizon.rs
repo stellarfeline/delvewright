@@ -833,7 +833,7 @@ pub const BUILD_MAX_Y: i32 = 319;
 /// footprints, and the areas' claims ([`claimed_areas`]). A `fillbiome` outside
 /// it reaches a chunk nothing loads, which is the same silent no-op an unloaded
 /// `place template` is.
-fn extent_columns(plan: &crate::compiler::plan::Plan) -> Vec<[i32; 4]> {
+pub fn extent_columns(plan: &crate::compiler::plan::Plan) -> Vec<[i32; 4]> {
     let stated = crate::compiler::plan::surround_rect(plan.campaign, &plan.areas)
         .map(|(r, _)| [r.min_x, r.min_z, r.max_x, r.max_z]);
     if plan.campaign.site_plan.is_some() {
@@ -964,6 +964,50 @@ mod tests {
             atmospheres: BTreeMap::new(),
             namespace: "t".to_string(),
         }
+    }
+
+    /// **`BiomeMap::at`, the one model every music judgement reads** (spec-0109
+    /// §5.2): a cell inside a place's painted 4-aligned box wears the place's
+    /// biome to its last block and not one past it; a repaint's box laid over it
+    /// wins every cell it covers, as a later `fillbiome` does; every other cell
+    /// is the ground.
+    #[test]
+    fn biome_map_at_reads_a_place_a_repaint_and_the_ground() {
+        let map = one_paint(([0, 64, 0], [15, 71, 15]));
+        assert_eq!(map.at([0, 64, 0]).0, "t:atmosphere/a");
+        assert_eq!(map.at([15, 71, 15]).0, "t:atmosphere/a");
+        assert_eq!(map.at([16, 64, 0]).0, "t:void");
+        assert_eq!(map.at([0, 72, 0]).0, "t:void");
+        assert_eq!(map.at([-1, 64, 0]).0, "t:void");
+        let mut repainted = map.repainted(([4, 64, 4], [7, 67, 7]), "t:void", PaintSource::Band);
+        assert_eq!(
+            repainted.at([6, 66, 6]).0,
+            "t:void",
+            "the repaint wins its box"
+        );
+        assert_eq!(
+            repainted.at([8, 66, 6]).0,
+            "t:atmosphere/a",
+            "and nothing past it"
+        );
+        repainted
+            .atmospheres
+            .insert("t:atmosphere/b".to_string(), false);
+        let twice = repainted.repainted(
+            ([4, 64, 4], [7, 67, 7]),
+            "t:atmosphere/b",
+            PaintSource::Band,
+        );
+        assert_eq!(
+            twice.at([4, 64, 4]).0,
+            "t:atmosphere/b",
+            "the later repaint wins"
+        );
+        assert_eq!(
+            twice.at([100, 64, 100]).0,
+            "t:void",
+            "the ground everywhere else"
+        );
     }
 
     /// **The port reads what the pinned client reads.** Each row is the weight
