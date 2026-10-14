@@ -287,72 +287,8 @@ fn a_container_set_at_runtime_is_dw1019() {
 // ---------------------------------------------------------------------------
 
 use delvec::admit::Nbt;
-use std::collections::BTreeMap;
 
-/// One template entity: `id` at local `cell`, with `extra` keys in its `nbt`.
-fn holder_entity(id: &str, cell: [i32; 3], frame: bool, extra: &[(&str, Nbt)]) -> Nbt {
-    let mut nbt = BTreeMap::new();
-    nbt.insert("id".to_string(), Nbt::String(id.to_string()));
-    for (k, v) in extra {
-        nbt.insert((*k).to_string(), v.clone());
-    }
-    let mut c = BTreeMap::new();
-    let y = f64::from(cell[1]) + if frame { 0.5 } else { 0.0 };
-    c.insert(
-        "pos".to_string(),
-        Nbt::List(vec![
-            Nbt::Double(f64::from(cell[0]) + 0.5),
-            Nbt::Double(y),
-            Nbt::Double(f64::from(cell[2]) + 0.5),
-        ]),
-    );
-    c.insert(
-        "blockPos".to_string(),
-        Nbt::List(cell.iter().map(|v| Nbt::Int(*v)).collect()),
-    );
-    c.insert("nbt".to_string(), Nbt::Compound(nbt));
-    Nbt::Compound(c)
-}
-
-/// The west-wall frame (facing east, hung on the wall at x = 0) and the stand
-/// on the floor of hello-room, as local cells.
-const FRAME: [i32; 3] = [1, 2, 2];
-const STAND: [i32; 3] = [8, 1, 2];
-
-/// A private copy of the pinned library whose hello-room carries `entities`,
-/// with `anchor/frame` and `anchor/rack` declared at the frame's and the
-/// stand's cells.
-fn holder_prefabs(dst: &Path, entities: Vec<Nbt>) -> PathBuf {
-    let _ = std::fs::remove_dir_all(dst);
-    common::copy_dir_all(&common::prefabs_dir(), dst);
-    let nbt = dst.join("hello-room.nbt");
-    let mut s = delvec::admit::structure::Structure::read(&std::fs::read(&nbt).unwrap()).unwrap();
-    s.entities = entities;
-    std::fs::write(&nbt, s.write()).unwrap();
-    common::patch_file(&dst.join("hello-room.json"), |m| {
-        m["anchors"]["anchor/frame"] = serde_json::json!({"pos": FRAME, "facing": "east"});
-        m["anchors"]["anchor/rack"] = serde_json::json!({"pos": STAND, "facing": "south"});
-    });
-    dst.to_path_buf()
-}
-
-fn frame_entity() -> Nbt {
-    holder_entity(
-        "minecraft:glow_item_frame",
-        FRAME,
-        true,
-        &[("Facing", Nbt::Byte(5))],
-    )
-}
-
-fn stand_entity() -> Nbt {
-    holder_entity(
-        "minecraft:armor_stand",
-        STAND,
-        false,
-        &[("ShowArms", Nbt::Byte(0))],
-    )
-}
+use common::{FRAME, STAND, frame_entity, holder_entity, holder_prefabs, stand_entity};
 
 /// Build hello-world with `quests` patched over the library `prefabs`, an
 /// optional stage-7 `edits` list over `area/keep`.
