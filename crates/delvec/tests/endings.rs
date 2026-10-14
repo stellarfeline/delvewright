@@ -618,3 +618,47 @@ fn dw0480_reaches_a_fork_a_deed_makes_until_it_is_declared() {
     let realized = delvec::compiler::branch::realize(&declared);
     assert!(realized.iter().all(|r| r.world.is_some()), "{realized:#?}");
 }
+
+/// spec-0108 criterion 4, the reachability half: `tests/fixtures/elective-reach`
+/// is a campaign whose optional quest is reachable only at full participation —
+/// its one objective waits on a flag only an elective `use` trigger sets. Its
+/// `DW0202`/`DW0203`/`DW0879` findings are exactly the set `delvec analyze`
+/// raised on it at `d336a2b1d` (the fixture with its envelope at that tree's
+/// `dsl_version`): none. Today's worlds still decide those codes.
+#[test]
+fn reachability_codes_on_an_elective_only_quest_match_the_base_tree() {
+    let dir = common::compiler_fixtures_dir().join("elective-reach");
+    let read = |f: &str| std::fs::read_to_string(dir.join(f)).unwrap();
+    let c = parse_campaign(&RawCampaign {
+        world: read("world.json"),
+        npcs: read("npcs.json"),
+        classes: read("classes.json"),
+        quest_plan: read("quest-plan.json"),
+        quests: read("quests.json"),
+        dialogue: read("dialogue.json"),
+        world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
+        design: None,
+    })
+    .expect("fixture parses");
+    let prefabs =
+        delvec::compiler::registry::PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let mut found: Vec<String> = delvec::compiler::analyze::analyze_campaign(&c, &prefabs)
+        .into_iter()
+        .chain(delvec::compiler::statepath::check(&c).0)
+        .map(|d| d.code)
+        .filter(|code| matches!(code.as_str(), "DW0202" | "DW0203" | "DW0879"))
+        .collect();
+    found.sort();
+    // Measured at d336a2b1d: `delvec analyze` printed DW0482, DW0484 and
+    // DW0467 on this fixture and none of the three codes compared here.
+    let at_base: Vec<String> = Vec::new();
+    assert_eq!(found, at_base);
+    let flow = Flow::new(&c);
+    assert_eq!(flow.world_count(), 1);
+    // The optional quest completes in today's world.
+    assert!(flow.world_completed(0).contains("quest/tally"));
+}
