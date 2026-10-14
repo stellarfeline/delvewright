@@ -11,6 +11,8 @@
 // value and destination is read off the compiler's artifact. What the harness
 // owns is the reading.
 
+import { bodyInVolume } from "./death-loop.ts";
+
 /** What one aftermath effect left to look at, as the compiler exported it. */
 export type AftermathObservable =
   | { readonly kind: "block"; readonly first: Vec3; readonly last: Vec3; readonly block: string }
@@ -64,8 +66,6 @@ export interface AftermathResult {
   readonly detail: string;
 }
 
-const inBox = (p: Vec3, min: Vec3, max: Vec3): boolean =>
-  [0, 1, 2].every((i) => Math.floor(p[i]!) >= min[i]! && Math.floor(p[i]!) <= max[i]!);
 
 const fmt = (p: Vec3): string => `[${p.map((n) => Math.round(n * 100) / 100).join(", ")}]`;
 
@@ -104,7 +104,13 @@ export function observeAftermath(
       }
       case "position": {
         const p = o as Extract<AftermathObservable, { kind: "position" }>;
-        if (world.stoodAt === undefined || !inBox(world.stoodAt, p.from.min, p.from.max)) {
+        // The teleport moves what its volume selector matches — a body whose
+        // hitbox meets the box (`bodyInVolume`, the server's rule), not one whose
+        // feet cell is inside it.
+        if (
+          world.stoodAt === undefined ||
+          !bodyInVolume(world.stoodAt, { lo: p.from.min, hi: p.from.max })
+        ) {
           return row(
             "not_observable",
             `${e.verb}: the bot did not stand inside ${fmt(p.from.min)}..${fmt(p.from.max)} ` +

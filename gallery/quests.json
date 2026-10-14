@@ -1753,7 +1753,7 @@
             },
             "id": "obj/reach-the-end",
             "marker": "hidden",
-            "radius": 2,
+            "radius": 1,
             "requires_flags": [
               "flag/muster-cleared"
             ],

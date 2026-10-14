@@ -143,6 +143,22 @@ test("a carry the bot was never inside is not observable rather than a pass", ()
   assert.equal(results[0]!.status, "not_observable");
 });
 
+test("the carry is judged by the selector's rule: a hitbox meeting the box was inside it", () => {
+  // The box is [10, 66, 24]..[12, 68, 26]. A body at x 9.75 has its feet cell at
+  // 9, outside the box, and its 0.6-wide hitbox reaching 10.05, inside the span
+  // the teleport's `x=10,dx=2` selector matches; at 9.25 it reaches only 9.55.
+  const carried = observeAftermath(
+    [GALLERY_AFTERMATH[1] as AftermathEntry],
+    keptWorld({ stoodAt: [9.75, 67, 25.5], position: [5.5, 67, 9.5] }),
+  );
+  assert.equal(carried[0]!.status, "observed", carried[0]!.detail);
+  const rim = observeAftermath(
+    [GALLERY_AFTERMATH[1] as AftermathEntry],
+    keptWorld({ stoodAt: [9.25, 67, 25.5] }),
+  );
+  assert.equal(rim[0]!.status, "not_observable", rim[0]!.detail);
+});
+
 test("weather, health and effects are read off the bot's own state", () => {
   const rows: AftermathEntry[] = [
     { path: "/a", verb: "set-weather", observable: { kind: "weather", weather: "rain" } },
