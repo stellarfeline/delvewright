@@ -113,6 +113,9 @@ pub(super) struct GateUnderTest {
     pub unlock: Option<[i32; 3]>,
 }
 
+/// A gate by name and region, for an escape path to name the gates it passes.
+pub(super) type NamedGate = (String, ([i32; 3], [i32; 3]));
+
 /// One quest configuration the proof judges: its world, the configuration in
 /// words, its route cells, and the gates shut in it (indices into the gates).
 pub(super) type SeparationConfig<'w> = (&'w World, String, Vec<[i32; 3]>, Vec<usize>);
@@ -281,6 +284,10 @@ fn escape(
     None
 }
 
+/// One direction a gate is judged in: the near face, the far face, and whether
+/// the party reaches the near one.
+type Side<'a> = (&'a Vec<[i32; 3]>, &'a Vec<[i32; 3]>, bool);
+
 /// One gate got round in one configuration: its index, the way round in words,
 /// and what a second search for a way round by water needs.
 struct Bypass {
@@ -306,7 +313,7 @@ fn move_kind(words: &str) -> &'static str {
 
 /// An escape path in words: its length, the move kinds it uses, where it leaves
 /// walking and where it regains it, and a few cells along the way.
-fn path_words(w: &World, path: &[[i32; 3]], others: &[(String, ([i32; 3], [i32; 3]))]) -> String {
+fn path_words(w: &World, path: &[[i32; 3]], others: &[NamedGate]) -> String {
     let moves: Vec<([i32; 3], [i32; 3], String)> = path
         .windows(2)
         .map(|p| (p[0], p[1], movement_words(w, p[0], p[1])))
@@ -387,7 +394,7 @@ pub fn check_gates_separate(
     let mut bound_edges: BTreeSet<String> = BTreeSet::new();
     // Every gate by name, so an escape path through one — a clocked door, a
     // shortcut's — names it.
-    let others: Vec<(String, ([i32; 3], [i32; 3]))> = world
+    let others: Vec<NamedGate> = world
         .every_gate()
         .map(|(seal, clocked)| {
             let kind = if clocked {
@@ -527,7 +534,7 @@ pub fn check_gates_separate(
 /// so it is unit-testable over a synthetic [`World`] without a [`Plan`].
 pub(super) fn verify_gates_separate(
     gates: &[GateUnderTest],
-    others: &[(String, ([i32; 3], [i32; 3]))],
+    others: &[NamedGate],
     base: &World,
     configs: &[SeparationConfig<'_>],
 ) -> (SeparationBinding, Result<(), Failure>) {
@@ -582,7 +589,7 @@ pub(super) fn verify_gates_separate(
             // The near face: the one that opens it when a declaration says so,
             // else each face the party reaches. A body reaching the far face
             // only across the gate's own region is what the gate is for.
-            let sides: Vec<(&Vec<[i32; 3]>, &Vec<[i32; 3]>, bool)> = match opens_low[gi] {
+            let sides: Vec<Side<'_>> = match opens_low[gi] {
                 Some(true) => vec![(&low, &high, low_in)],
                 Some(false) => vec![(&high, &low, high_in)],
                 None => vec![(&low, &high, low_in), (&high, &low, high_in)],
