@@ -78,6 +78,7 @@ export const methods = {
       const p = this.bot?.entity?.position;
       this.repaintWatch.marker(marker.token, Date.now(), p ? [p.x, p.y, p.z] : undefined);
     }
+    this.musicWatch?.marker(marker.token, Date.now());
     if (marker.token === CAMPAIGN_TOKEN) {
       this.campaignCompleteAtStep ??= this.currentStep;
       return;

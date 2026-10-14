@@ -8,6 +8,7 @@
 
 import { loadRepaintPlanForCriticalPath, repaintBindingLine } from "./repaint.ts";
 import { loadPulsePlanForCriticalPath, pulseBindingLine } from "./pulse.ts";
+import { loadMusicPlanForCriticalPath, musicBindingLine } from "./music.ts";
 import { readFile } from "node:fs/promises";
 import nodePath from "node:path";
 import { parseCriticalPathJson } from "./critical-path.ts";
@@ -336,6 +337,21 @@ async function main(): Promise<number> {
   } else {
     process.stderr.write(`pulse plan: none in this build (no pulse)\n`);
   }
+  // spec-0109 §5.3: where each biome is stood in and what each cut must tell
+  // the client. Absent → a build from an engine that writes no music ledger,
+  // said out loud.
+  const musicPlan = await loadMusicPlanForCriticalPath(pathArg);
+  if (musicPlan) {
+    executor.useMusicPlan(musicPlan);
+    process.stderr.write(
+      `music plan: ${musicPlan.biomes.length} biome(s), ` +
+        `${musicPlan.biomes.filter((b) => b.station).length} with a listening station; ` +
+        `${musicPlan.stops.length} stop-sound(s); ${musicPlan.cutscenes.length} cutscene(s) ` +
+        `the bot does not stand in\n`,
+    );
+  } else {
+    process.stderr.write(`music plan: none in this build (no validation/music.json)\n`);
+  }
   const combatPlan = await loadCombatPlanForCriticalPath(pathArg);
   const dieRetry = combatPlan !== undefined && dieRetryFromEnv();
   const report = new RunReport(criticalPath.campaignId, combatPlan?.difficulty ?? "unknown");
@@ -579,6 +595,24 @@ async function main(): Promise<number> {
       ...v.failures,
       ...(pathFailure === undefined ? v.unreached : []),
     ]);
+    // spec-0109 §5.3: every cut the path performed reached the client, and
+    // every station read the biome the ledger names.
+    const musicStops = executor.musicStopVerdicts();
+    const musicStations = executor.musicWatch?.stations ?? [];
+    const musicFailures = [
+      ...musicStops.flatMap((v) => (v.failure ? [v.failure] : [])),
+      ...musicStations.flatMap((s) => (s.failure ? [s.failure] : [])),
+    ];
+    if (musicPlan) {
+      const line = musicBindingLine(musicPlan, musicStops, musicStations);
+      process.stderr.write(`${line}\n`);
+      report.recordMusic({
+        stations: musicStations,
+        stops: musicStops,
+        cutscenes: musicPlan.cutscenes.map((c) => c.effect),
+        line,
+      });
+    }
     report.stage({
       stage: "critical-path",
       ran: true,
@@ -587,7 +621,8 @@ async function main(): Promise<number> {
         musterFailures.length === 0 &&
         repaintFailures.length === 0 &&
         watchFailures.length === 0 &&
-        pulseFailures.length === 0,
+        pulseFailures.length === 0 &&
+        musicFailures.length === 0,
       findings: report.musterFindings(),
       failures: [
         ...(pathFailure === undefined ? [] : [describe(pathFailure)]),
@@ -595,6 +630,7 @@ async function main(): Promise<number> {
         ...repaintFailures,
         ...watchFailures,
         ...pulseFailures,
+        ...musicFailures,
       ],
     });
     // The death loop. Recorded whether it ran or not, and a stage that

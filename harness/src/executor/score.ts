@@ -81,6 +81,11 @@ export const methods = {
       if (this.repaintWatch && typeof meta?.name === "string") {
         this.repaintWatch.packet(meta.name, data, Date.now());
       }
+      // spec-0109 §5.3: every `stop_sound`, and the biome registry the server
+      // sends at login.
+      if (this.musicWatch && typeof meta?.name === "string") {
+        this.musicWatch.packet(meta.name, data, Date.now());
+      }
     });
     client.on("scoreboard_score", (packet: unknown) => {
       if (typeof packet !== "object" || packet === null) return;

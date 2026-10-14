@@ -271,6 +271,8 @@ pub struct StopRow {
     pub sound: Option<String>,
     /// The effect's declared audience (`None`: its root's).
     pub audience: Option<Value>,
+    /// The completion-marker token of the bundle that fires it, or `None`.
+    pub after: Option<String>,
     /// The biome the forced route stands in when it fires, or `None` when the
     /// route does not perform it.
     pub biome: Option<String>,
@@ -434,6 +436,7 @@ impl MusicLedger {
                 "category": s.category.map(SoundCategory::token),
                 "sound": s.sound.as_ref().map(|x| namespaced(x)),
                 "audience": s.audience,
+                "after": s.after,
                 "biome": s.biome,
                 "cut": s.cut.map(Cut::word),
                 "performed": s.biome.is_some(),
@@ -507,6 +510,10 @@ struct Event<'a> {
     stage: &'static str,
     path: String,
     effect: &'a QuestEffect,
+    /// The completion-marker token the bundle that fires it broadcasts, or
+    /// `None` when nothing the bot sees marks the moment (the reading
+    /// `validation/atmosphere-repaints.json` takes).
+    after: Option<String>,
 }
 
 fn events<'a>(plan: &Plan<'a>) -> Vec<Event<'a>> {
@@ -515,11 +522,34 @@ fn events<'a>(plan: &Plan<'a>) -> Vec<Event<'a>> {
     crate::compiler::plan::for_each_gate_effect(plan.campaign, &mut |site, e| {
         let key = root_firing(plan, &site.root).map(|s| (s, n));
         n += 1;
+        // A nested list fires at a moment its root's marker does not mark: a
+        // `sequence` step at its offset, an arrival, a rest, a respawn, a catch.
+        let top_level = ![
+            "/steps/",
+            "/on_respawn/",
+            "/on_rest/",
+            "/on_caught/",
+            "/on_arrive/",
+        ]
+        .iter()
+        .any(|seg| site.path.contains(seg));
+        let after = if e.when.is_some() || !top_level {
+            None
+        } else {
+            match &site.root {
+                EffectRoot::ObjectiveComplete { objective, .. } => Some(objective.to_string()),
+                EffectRoot::Trigger(t) if crate::compiler::plan::trigger_may_be_performed(t) => {
+                    Some(t.id.as_str().to_string())
+                }
+                _ => None,
+            }
+        };
         out.push(Event {
             key,
             stage: site.stage,
             path: site.path.clone(),
             effect: e,
+            after,
         });
     });
     out
@@ -1008,6 +1038,7 @@ pub fn measure(
                         .audience
                         .as_ref()
                         .and_then(|a| serde_json::to_value(a).ok()),
+                    after: ev.after.clone(),
                     biome,
                     cut,
                 });

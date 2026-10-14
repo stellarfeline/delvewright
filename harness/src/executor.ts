@@ -35,6 +35,7 @@ import { type CensusMob, type CensusSummary } from "./markers.ts";
 import { RepaintWatch } from "./repaint.ts";
 import { SculkEar, type LegStart } from "./sculk.ts";
 import type { PulsePlan } from "./pulse.ts";
+import type { MusicWatch } from "./music.ts";
 import { type Waypoints } from "./waypoints.ts";
 import type { BotConfig } from "./executor/connection.ts";
 import { LOOP_CROSS_TIMEOUT_MS } from "./executor/loop.ts";
@@ -58,6 +59,7 @@ import { methods as sustainMethods } from "./executor/sustain.ts";
 import { methods as deathMethods } from "./executor/death.ts";
 import { methods as repaintMethods } from "./executor/repaint.ts";
 import { methods as pulseMethods } from "./executor/pulse.ts";
+import { methods as musicMethods } from "./executor/music.ts";
 import { methods as scoreMethods } from "./executor/score.ts";
 import { methods as lethalMethods } from "./executor/lethal.ts";
 import { methods as stakeMethods } from "./executor/stake.ts";
@@ -122,6 +124,8 @@ export class MineflayerExecutor implements StepExecutor {
   readonly sculk = new SculkEar();
   /** The pulses and their stations (spec-0102 §5.3), when the build declares any. */
   pulsePlan: PulsePlan | undefined;
+  /** The music ledger's runtime half (spec-0109 §5.3), when the build writes one. */
+  musicWatch: MusicWatch | undefined;
   /** Station key → `undefined` when the station judged as owed, else the failure. */
   readonly pulseRecorded = new Map<string, string | undefined>();
   /** Every station stood at, with what it heard — the run report's `pulse_stations`. */
@@ -596,6 +600,7 @@ type Methods = typeof connectionMethods &
   typeof deathMethods &
   typeof repaintMethods &
   typeof pulseMethods &
+  typeof musicMethods &
   typeof scoreMethods &
   typeof lethalMethods &
   typeof stakeMethods &
@@ -612,4 +617,4 @@ type Methods = typeof connectionMethods &
   typeof placementMethods &
   typeof clockMethods;
 export interface MineflayerExecutor extends Methods {}
-for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, pulseMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods]) Object.assign(MineflayerExecutor.prototype, methods);
+for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, pulseMethods, musicMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods]) Object.assign(MineflayerExecutor.prototype, methods);
