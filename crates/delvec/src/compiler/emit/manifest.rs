@@ -10,47 +10,81 @@ use super::*;
 /// for the ending — the campaign PackTest, the harness completion window — must
 /// wait out the tail the emitter itself scheduled. `sequence` steps add their
 /// `at_ticks`; a `move-npc` / `move-actor` `on_arrive` adds the planned walk
-/// duration. Reaction bundles (`on_respawn` / `on_rest` / `on_caught`) are
-/// skipped: driving objective completions never fires them, and `DW0204` proves
-/// the path's ending does not live exclusively there. Flag gates are ignored —
-/// a gated ending yields an upper bound, and waiting longer can only wait,
-/// never wrongly pass.
+/// duration; a cutscene's `then` adds the cutscene's length plus one tick
+/// (spec-0108 §3.6). Reaction bundles (`on_respawn` / `on_rest` / `on_caught`)
+/// are skipped: driving objective completions never fires them, and `DW0204`
+/// proves the path's ending does not live exclusively there. Flag gates are
+/// ignored — a gated ending yields an upper bound, and waiting longer can only
+/// wait, never wrongly pass.
+///
+/// **The aftermath is waited out too** (spec-0108 §3.6, §6.3): where the bundle
+/// reaches an ending, the tail is the later of the ending and the last effect
+/// of the bundle that changes the world ([`Verb::changes_world`]), so a run
+/// that asserts the world the ending left reads it after the last change landed.
 pub(super) fn campaign_complete_tail(
     effs: &[QuestEffect],
     moves: &[crate::compiler::nav::MovePlan],
     actor_moves: &[crate::compiler::nav::ActorMovePlan],
 ) -> Option<u32> {
+    let ending = scheduled_tail(effs, moves, actor_moves, &|e| {
+        matches!(e.verb, Verb::CampaignComplete { .. })
+    })?;
+    let aftermath =
+        scheduled_tail(effs, moves, actor_moves, &|e| e.verb.changes_world()).unwrap_or(0);
+    Some(ending.max(aftermath))
+}
+
+/// The latest tick, counted from firing `effs`, at which an effect `pick`
+/// accepts runs — along the bundle's own schedule (`sequence` steps, `on_arrive`
+/// walks, a cutscene's `then`), reaction bundles skipped. `None` when nothing
+/// on the schedule is picked.
+pub(super) fn scheduled_tail(
+    effs: &[QuestEffect],
+    moves: &[crate::compiler::nav::MovePlan],
+    actor_moves: &[crate::compiler::nav::ActorMovePlan],
+    pick: &dyn Fn(&QuestEffect) -> bool,
+) -> Option<u32> {
     effs.iter()
-        .filter_map(|e| match &e.verb {
-            Verb::CampaignComplete { .. } => Some(0),
-            Verb::Sequence { steps } => steps
-                .iter()
-                .filter_map(|s| {
-                    campaign_complete_tail(&s.effects, moves, actor_moves).map(|t| s.at_ticks + t)
-                })
-                .max(),
-            Verb::MoveNpc {
-                npc, to, on_arrive, ..
-            } => campaign_complete_tail(on_arrive, moves, actor_moves).map(|t| {
-                t + moves
+        .filter_map(|e| {
+            let own = pick(e).then_some(0);
+            let nested = match &e.verb {
+                Verb::Sequence { steps } => steps
                     .iter()
-                    .find(|m| m.npc == npc.as_str() && m.to == *to)
-                    .map(|m| m.ticks() as u32)
-                    .unwrap_or(0)
-            }),
-            Verb::MoveActor {
-                actor,
-                to,
-                on_arrive,
-                ..
-            } => campaign_complete_tail(on_arrive, moves, actor_moves).map(|t| {
-                t + actor_moves
-                    .iter()
-                    .find(|m| m.actor == actor.as_str() && m.to == *to)
-                    .map(|m| m.ticks() as u32)
-                    .unwrap_or(0)
-            }),
-            _ => None,
+                    .filter_map(|s| {
+                        scheduled_tail(&s.effects, moves, actor_moves, pick).map(|t| s.at_ticks + t)
+                    })
+                    .max(),
+                Verb::MoveNpc {
+                    npc, to, on_arrive, ..
+                } => scheduled_tail(on_arrive, moves, actor_moves, pick).map(|t| {
+                    t + moves
+                        .iter()
+                        .find(|m| m.npc == npc.as_str() && m.to == *to)
+                        .map(|m| m.ticks() as u32)
+                        .unwrap_or(0)
+                }),
+                Verb::MoveActor {
+                    actor,
+                    to,
+                    on_arrive,
+                    ..
+                } => scheduled_tail(on_arrive, moves, actor_moves, pick).map(|t| {
+                    t + actor_moves
+                        .iter()
+                        .find(|m| m.actor == actor.as_str() && m.to == *to)
+                        .map(|m| m.ticks() as u32)
+                        .unwrap_or(0)
+                }),
+                Verb::Cutscene { then, .. } => {
+                    let end = crate::compiler::link::cutscene_end_offset(e).unwrap_or(0);
+                    scheduled_tail(then, moves, actor_moves, pick).map(|t| end + 1 + t)
+                }
+                _ => None,
+            };
+            match (own, nested) {
+                (Some(a), Some(b)) => Some(a.max(b)),
+                (a, b) => a.or(b),
+            }
         })
         .max()
 }

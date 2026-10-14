@@ -48,9 +48,10 @@ pub enum Verb {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sealed_hint: Option<String>,
     },
-    /// Marks the campaign complete (final advancement + credits). Terminal — not
-    /// flag-gatable (gating the campaign's own completion is a deadlock footgun),
-    /// so this variant carries no `requires_flags`.
+    /// Marks the campaign complete (final advancement + credits). Like every
+    /// verb it takes `when`: several `campaign-complete`s with exclusive gates in
+    /// one final scene are several endings, and which fires is what their gates
+    /// decide (spec-0108 §3.2).
     CampaignComplete {
         /// Which ENDING this is (DSL v0.8, spec-0025).
         /// A campaign with more than one `campaign-complete` has more than one
@@ -344,6 +345,18 @@ pub enum Verb {
         /// of the scene: a vision, a memory, a scene somewhere else.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         party: Option<CutsceneParty>,
+        /// The effects that run **when the camera returns** (spec-0108 §3.6),
+        /// from `cs_end_<bare>` after every restore line: the players are back in
+        /// adventure mode on their saved cells, the cameras, the marker and the
+        /// stand-ins are gone, the tag is dropped and `#cs_live` is decremented.
+        /// Dispatched from the server command source
+        /// ([`crate::NestedDispatch::Server`]): `cs_end_<bare>` runs from a
+        /// `schedule`d tick with no acting player. The moment after a cutscene is
+        /// the cutscene's, so the hook lives here and not on whatever verb first
+        /// needed it — a door sealing behind the party after a mid-delve scene is
+        /// the same mechanism as an ending's aftermath.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        then: Vec<QuestEffect>,
     },
     /// Cuts the dimension-global world time to a new state (DSL v0.5, spec-0010).
     /// Instantaneous (vanilla has no gradual transition); the state persists
@@ -1082,6 +1095,65 @@ impl Verb {
             | Verb::DespawnAssembly { .. }
             | Verb::PlayClip { .. }
             | Verb::ArmStrikes { .. } => false,
+        }
+    }
+
+    /// **Does this verb change the world?** (spec-0108 §3.7) — the aftermath
+    /// class. `true` for a verb that leaves something behind a proof can look
+    /// at after the scene (a block, a body, a position, the time, a score); `false`
+    /// for a verb that only *says* (a line, a sound, a burst, the camera itself,
+    /// the ending marker) and for `sequence`, a container whose steps are
+    /// classified on their own.
+    ///
+    /// Exhaustive with no wildcard, so a new verb does not compile until it says
+    /// which it is. A property of the verb, never of the ending that reads it.
+    pub fn changes_world(&self) -> bool {
+        match self {
+            Verb::SetBlock { .. }
+            | Verb::FillRegion { .. }
+            | Verb::ClearRegion { .. }
+            | Verb::Collapse { .. }
+            | Verb::OpenGate { .. }
+            | Verb::CloseGate { .. }
+            | Verb::OpenWay { .. }
+            | Verb::Teleport { .. }
+            | Verb::DamagePlayers { .. }
+            | Verb::GiveEffect { .. }
+            | Verb::ClearEffect { .. }
+            | Verb::GiveItem { .. }
+            | Verb::SetTime { .. }
+            | Verb::SetWeather { .. }
+            | Verb::SetAtmosphere { .. }
+            | Verb::SpawnNpc { .. }
+            | Verb::DespawnNpc { .. }
+            | Verb::MoveNpc { .. }
+            | Verb::SpawnActor { .. }
+            | Verb::DespawnActor { .. }
+            | Verb::MoveActor { .. }
+            | Verb::UnleashActor { .. }
+            | Verb::SpawnWave { .. }
+            | Verb::SpawnAssembly { .. }
+            | Verb::DespawnAssembly { .. }
+            | Verb::Volley { .. }
+            | Verb::Lightning { .. }
+            | Verb::SetFlag { .. }
+            | Verb::SetState { .. }
+            | Verb::AddState { .. }
+            | Verb::ClearState { .. }
+            | Verb::DropStake { .. }
+            | Verb::SetCheckpoint { .. }
+            | Verb::Bonfire { .. }
+            | Verb::BeginStealth { .. }
+            | Verb::EndStealth
+            | Verb::ArmStrikes { .. }
+            | Verb::PlayClip { .. } => true,
+            Verb::Narrate { .. }
+            | Verb::PlaySound { .. }
+            | Verb::Firework { .. }
+            | Verb::Particle { .. }
+            | Verb::Cutscene { .. }
+            | Verb::CampaignComplete { .. }
+            | Verb::Sequence { .. } => false,
         }
     }
 }

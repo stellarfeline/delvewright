@@ -386,6 +386,7 @@ EFFECT_BUNDLES = {
     "on_arrive": "NESTED (`move-npc` / `move-actor`), via `nested_effect_lists`.",
     "on_rest": "NESTED (`bonfire`), via `nested_effect_lists`.",
     "on_caught": "NESTED (`begin-stealth`), via `nested_effect_lists`.",
+    "then": "NESTED (`cutscene`, spec-0108), via `nested_effect_lists`.",
     "on_unlock": (
         "ROOT R6 (`EffectRootKind::ShortcutUnlock`) — CLOSED by spec-0031. It was "
         "the finding this check was written to surface: `shortcuts[].on_unlock` was "

@@ -186,8 +186,9 @@ pub enum NestedDispatch {
     /// (the spotted player).
     Player,
     /// From the server command source, whatever the parent was: a
-    /// `move-npc`/`move-actor` `on_arrive` (the driver's scheduled tick) and a
-    /// `bonfire`'s `on_rest` (the party-wide rest, dispatched from the tick).
+    /// `move-npc`/`move-actor` `on_arrive` (the driver's scheduled tick), a
+    /// `bonfire`'s `on_rest` (the party-wide rest, dispatched from the tick) and
+    /// a `cutscene`'s `then` (`cs_end_<bare>`, run from the scheduled driver).
     Server,
 }
 
@@ -216,6 +217,8 @@ impl QuestEffect {
                 vec![(on_respawn.as_slice(), NestedDispatch::Player)]
             }
             Verb::Bonfire { on_rest, .. } => vec![(on_rest.as_slice(), NestedDispatch::Server)],
+            // spec-0108 §3.6: `cs_end_<bare>` runs from the scheduled driver.
+            Verb::Cutscene { then, .. } => vec![(then.as_slice(), NestedDispatch::Server)],
             Verb::BeginStealth { on_caught, .. } => {
                 vec![(on_caught.as_slice(), NestedDispatch::Player)]
             }
@@ -714,6 +717,7 @@ impl QuestEffect {
             Verb::Sequence { steps } => steps.iter().map(|s| s.effects.as_slice()).collect(),
             Verb::SetCheckpoint { on_respawn, .. } => vec![on_respawn.as_slice()],
             Verb::Bonfire { on_rest, .. } => vec![on_rest.as_slice()],
+            Verb::Cutscene { then, .. } => vec![then.as_slice()],
             Verb::BeginStealth { on_caught, .. } => vec![on_caught.as_slice()],
             Verb::MoveActor { on_arrive, .. } | Verb::MoveNpc { on_arrive, .. } => {
                 vec![on_arrive.as_slice()]
@@ -755,6 +759,7 @@ impl QuestEffect {
             Verb::Bonfire { on_rest, .. } => {
                 vec![("rest".to_string(), on_rest.as_mut_slice())]
             }
+            Verb::Cutscene { then, .. } => vec![("then".to_string(), then.as_mut_slice())],
             Verb::BeginStealth { on_caught, .. } => {
                 vec![("caught".to_string(), on_caught.as_mut_slice())]
             }
@@ -798,6 +803,9 @@ impl QuestEffect {
                 "rest".to_string(),
                 on_rest.as_slice(),
             )],
+            Verb::Cutscene { then, .. } => {
+                vec![("then".to_string(), "then".to_string(), then.as_slice())]
+            }
             Verb::BeginStealth { on_caught, .. } => vec![(
                 "on_caught".to_string(),
                 "caught".to_string(),
@@ -1093,6 +1101,16 @@ impl QuestEffect {
     pub fn cutscene_look_at(&self) -> Option<&Mark> {
         match &self.verb {
             Verb::Cutscene { look_at, .. } => look_at.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// The `then` list of a `cutscene` (spec-0108 §3.6) — the effects that run
+    /// when the camera returns. `None` for any other effect; empty for a
+    /// cutscene that declares none.
+    pub fn cutscene_then(&self) -> Option<&[QuestEffect]> {
+        match &self.verb {
+            Verb::Cutscene { then, .. } => Some(then.as_slice()),
             _ => None,
         }
     }
