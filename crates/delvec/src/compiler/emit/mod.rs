@@ -1026,6 +1026,13 @@ pub fn build_with_warnings(
         .line()
     );
 
+    // ---- a template that takes every body runs alone ----
+    // Read off the finished tree, after every emitter, so it reaches templates
+    // not yet written (`crate::compiler::solo`).
+    let solo = crate::compiler::solo::isolate(&plan.namespace, &mut out);
+    eprintln!("{}", solo.line());
+    put_json(&mut out, "validation/packtest-solo.json", &solo.to_json());
+
     // ---- the checks read off the finished tree ----
     check_finished_tree(plan, tree, input_bytes, &mut out, &mut warnings)?;
 

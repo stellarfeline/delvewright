@@ -191,6 +191,7 @@ pub mod seeding;
 pub mod served;
 pub mod skinparts;
 pub mod snapshot;
+pub mod solo;
 pub mod solver;
 pub mod stairs;
 pub mod stake;

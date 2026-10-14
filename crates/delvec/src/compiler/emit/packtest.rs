@@ -310,8 +310,9 @@ fn packtest_header(title: &str) -> Vec<String> {
 /// Pin a PackTest template's own dummy player: the pin line (`tag @p add …`)
 /// plus the selector that addresses that dummy — and only it — thereafter.
 ///
-/// PackTest runs the whole generated suite as ONE batch on one shared server:
-/// each `# @dummy` test spawns its OWN dummy, all dummies coexist, and every
+/// PackTest runs the generated suite on one shared server, fifty tests a batch
+/// (a solo template, `crate::compiler::solo`, alone in its own): each
+/// `# @dummy` test spawns its OWN dummy, all dummies of a batch coexist, and every
 /// test function executes over the same server tick(s), in an order the
 /// compiler does not control. Consequences for template authorship — the hard
 /// rule is **every generated test is interleaving-independent: own dummy, own

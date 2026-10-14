@@ -1819,10 +1819,12 @@ shipping a shot framed somewhere the author never asked for.
 
 ### PackTest batch model (one dummy per test, one shared server)
 
-PackTest runs the whole generated suite as **one batch on one shared server**:
-every `# @dummy` test spawns its **own** dummy player, all dummies coexist, and
-all test functions execute over the same server tick(s), sequentially in an
-order the compiler does not control. The conversion is **total** and the rule is
+PackTest runs the generated suite on **one shared server**, in batches of up to
+fifty tests per test environment: every `# @dummy` test spawns its **own** dummy
+player, all dummies of a batch coexist, and all test functions execute over the
+same server tick(s), sequentially in an order the compiler does not control.
+Every template runs in `minecraft:default` except a solo one (below), which is
+the only test in its own environment and so its own batch. The conversion is **total** and the rule is
 hard: **every generated test is interleaving-independent — own dummy, own
 scores, own init** (`pin_dummy` in `compiler/emit/packtest.rs`;
 CI-enforced over every fixture family by `tests/packtest_batch.rs`):
@@ -1890,6 +1892,22 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
   belonging to the template when the emitter moves it. All of it is decided at
   build time over the shipped bytes, not by a convention a future template can be
   written without.
+- **Own server, for a template that takes every body (`compiler::solo`).** A
+  campaign function that teleports, re-modes or makes spectate a party-wide `@a`
+  — a cutscene's start (`gamemode spectator @a`) and its return (`tp @a <mark>`)
+  — acts on every dummy in the batch, and the return stacks them all on one cell
+  where vanilla entity cramming (`max_entity_cramming` 24) kills them. After
+  every emitter, the build reads each template's body and every function it
+  dispatches, transitively (`tick` and `schedule` included, through
+  `batchstate::dispatch_target`); a template that reaches such a line gains
+  `# @environment <ns>:solo/<template>` on its second line, and the build writes
+  `packtest-datapack/data/<ns>/test_environment/solo/<template>.json`, an empty
+  `all_of`. A selector narrowed by `limit=`, `distance=`, `dx=`/`dy=`/`dz=`,
+  `name=` or a positive `tag=` is not party-wide. The build prints
+  `packtest solo binding: S of T template(s) take every body and run in their own
+  test environment` and writes `validation/packtest-solo.json` (`templates`,
+  `solo_count`, and per solo template the function and line that took the
+  bodies). Gallery primary: 30 of 219.
 - **Own members (spec-0018).** A division-of-labour template needs more than one
   player, and `# @dummy` gives exactly one. It spawns the rest itself
   (`/dummy <name> spawn`, PackTest's own command), addresses them by
@@ -6311,7 +6329,10 @@ teleported to), `creator_camera_in_a_block` (a spectator whose eye is in a stone
 block the template places: the same eye, `in` = `block`), and
 `creator_free_returns` (spectator after the first fire; adventure, the same
 position to the milli-block, the same yaw, and no place marker left after the
-second). They stand at the corner of the campaign's first area at y 300 — a
+second). The two stamp templates first assert their dummy's `Health` is 1 or
+more: a dead body's pose is `dying`, whose eye sits a fraction of a block off
+the ground, so a dummy killed during the settle reds on that line by name and
+never as a wrong stamp. They stand at the corner of the campaign's first area at y 300 — a
 column its setup force-loads — because PackTest places a batch millions of
 blocks out, where a position in milli-blocks overflows a score. A sneaking eye
 and the log line itself are proven live by `validation/rehearsal-flow.sh`.

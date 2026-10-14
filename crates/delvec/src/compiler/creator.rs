@@ -518,6 +518,16 @@ pub fn packtests(ns: &str, title: &str, column: [i32; 2]) -> Vec<(String, String
             format!("assert score #{tag}_stamp {CAM_OBJ} matches 1"),
         ]
     };
+    // The dummy is alive when the stamp reads its eye. A dead body's pose is
+    // `dying`, whose eye sits a fraction of a block off the ground, so a dummy a
+    // sibling killed in the settle would read as a wrong stamp; the template
+    // states the precondition and reds on it by name.
+    let alive = |tag: &str| -> Vec<String> {
+        vec![
+            format!("execute store result score #{tag}_hp {CAM_OBJ} run data get entity @s Health"),
+            format!("assert score #{tag}_hp {CAM_OBJ} matches 1.."),
+        ]
+    };
     let fire = |slot: u32| -> Vec<String> {
         vec![
             format!("scoreboard players set @s {CAMERA_TRIGGER} {slot}"),
@@ -540,6 +550,7 @@ pub fn packtests(ns: &str, title: &str, column: [i32; 2]) -> Vec<(String, String
         "gamemode adventure @s".to_string(),
         format!("tp @s {} 30 15", at(0.0, y, 0.0)),
     ];
+    stand.extend(alive("cst"));
     stand.extend(fire(1));
     stand.extend(stamped("cst", "{slot:1,yaw:3000,pitch:1500,in:\"air\"}"));
     stand.extend(eye_within("cst", STANDING_EYE_MB));
@@ -561,6 +572,7 @@ pub fn packtests(ns: &str, title: &str, column: [i32; 2]) -> Vec<(String, String
         format!("setblock {cx} {eye_cell} {cz} minecraft:stone"),
         format!("tp @s {} -90 -30", at(0.0, y, 0.0)),
     ];
+    wall.extend(alive("cwl"));
     wall.extend(fire(7));
     wall.extend(stamped(
         "cwl",
