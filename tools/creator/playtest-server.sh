@@ -9,6 +9,10 @@
 #                                [--stage-anyway "REASON" --acknowledge-red N]
 #   tools/creator/playtest-server.sh down [--name NAME] [--prune]
 #   tools/creator/playtest-server.sh status [--name NAME]
+#   tools/creator/playtest-server.sh checkpoint "<name>" [--name NAME]
+#   tools/creator/playtest-server.sh restore <checkpoint> [--name NAME]
+#   tools/creator/playtest-server.sh rm-checkpoint <checkpoint> [--name NAME]
+#   tools/creator/playtest-server.sh watch [--name NAME]
 #
 # ## A campaign is served from a kept image, and reopening is `docker run`
 #
@@ -35,7 +39,37 @@
 # the build is made and gated afresh.
 #
 # A reopen is a FRESH delve: every run starts from the placed world in the
-# image, never from a previous session's progress.
+# image, never from a previous session's progress. A checkpoint is how a session
+# goes back to a point in the story.
+#
+# ## Checkpoints: going back to an earlier point in the story
+#
+# While a campaign is served, a watcher (started by `up` and `restore`, pid in
+# the session record, log in its `watch-dir`) reads every quest's completion
+# score, `#party dw.q_<quest>`, over rcon, and each time a quest completes saves
+# a checkpoint of the running world, numbered in order and named by the title
+# of the quest's last titled objective — text the player was shown on
+# completing it (`03 Open the sea gate`). `checkpoint "<name>"` saves
+# one now. A save is `save-off`, `save-all flush`, a copy of the world (without
+# `datapacks/`, which every boot copies in from the image, and `session.lock`)
+# held file by file to the world it came from, then `save-on`; the quest scores
+# read before the flush must equal those read after the copy.
+#
+# `restore <checkpoint>` (a number, `NN name`, or a name only one checkpoint
+# carries) stops the session's server and serves the kept image over a fresh
+# /data holding the checkpoint's world: world files, scoreboards, player data and
+# command storage exactly as saved, with nothing of the session it replaced. It
+# is a reopen with a different world, and prints how long it took to joinable.
+# The restored server is held to the checkpoint: every quest score must read
+# back as the checkpoint recorded it.
+#
+# A checkpoint belongs to the kept image it was taken from, and lives on the
+# creator's disk, one directory per image id, under
+# `${DW_PLAYTEST_CHECKPOINTS:-$XDG_CACHE_HOME/delvewright/playtest-checkpoints}`
+# (`~/.cache` when XDG_CACHE_HOME is unset). Restoring onto a session that serves another build,
+# or onto an image whose id moved, is refused with both identities. `status`
+# lists every checkpoint with its size; `down` keeps them; `down --prune`
+# removes those of every image it removes; `rm-checkpoint` removes one.
 #
 # ## One command, one path, two kinds of thing
 #
@@ -534,6 +568,8 @@ dw_playtest_runtime_seed() {
 # has nothing else to diagnose from.
 up_failed() {
   [ "${UP_OK:-0}" = 1 ] && return 0
+  # The checkpoint watcher, when one had started (defined below the test seam).
+  if declare -F dw_playtest_stop_watcher >/dev/null; then dw_playtest_stop_watcher >&2 || true; fi
   # The placement boot (a campaign's first `up`): its world is in the session's
   # place-dir, which `down` reclaims; its wrapper log is captured beside it.
   if dw_playtest_container_exists "$NAME-place"; then
@@ -576,6 +612,9 @@ up_failed() {
 # verification below through the same functions `up` calls.
 # shellcheck source=tools/lib/rcon.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/tools/lib/rcon.sh"
+# The checkpoints' live half (the flushed copy, the watcher, the restore check).
+# shellcheck source=tools/lib/playtest-checkpoint.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/tools/lib/playtest-checkpoint.sh"
 
 # The budget (seconds) from the server's `Done (` to the datapack's own
 # "placed", and the pause between readings. Stated, not derived: the world build
@@ -693,7 +732,10 @@ if [ "${DW_PLAYTEST_SERVER_TEST_HOOK:-}" = "1" ]; then
 fi
 
 cmd="${1:-}"; shift || true
-case "$cmd" in up|down|status) ;; *) die "usage: up|down|status (see header)";; esac
+case "$cmd" in
+  up|down|status|checkpoint|restore|rm-checkpoint|watch) ;;
+  *) die "usage: up|down|status|checkpoint|restore|rm-checkpoint|watch (see header)";;
+esac
 
 CAMPAIGN=""
 PRUNE=0
@@ -722,6 +764,24 @@ while [ $# -gt 0 ]; do
   esac
 done
 if [ "$PRUNE" = 1 ] && [ "$cmd" != "down" ]; then die "--prune belongs to down"; fi
+# The checkpoint verbs take one argument, a checkpoint's name or number; every
+# build flag belongs to `up`.
+CKPT_ARG=""
+case "$cmd" in
+  checkpoint|restore|rm-checkpoint)
+    CKPT_ARG="$CAMPAIGN"; CAMPAIGN=""
+    [ -n "$CKPT_ARG" ] || die "$cmd needs a checkpoint: a name for checkpoint, a number or name for $cmd"
+    ;;
+esac
+case "$cmd" in
+  up) ;;
+  *)
+    [ -z "$CAMPAIGN" ] || die "$cmd takes no path (got '$CAMPAIGN')"
+    [ -z "$LANG_ARG$PREFABS_ARG$DELVEC$OUT_DIR$STAGE_ANYWAY$ACK_RED$RUN_REPORT$WRITTEN_WORLD" ] \
+      || die "--lang/--prefabs/--delvec/--out/--stage-anyway/--acknowledge-red/--run-report/--written-world belong to up"
+    if [ -n "$MEMORY_ARG" ] && [ "$cmd" != "restore" ]; then die "--memory belongs to up and restore"; fi
+    ;;
+esac
 
 # Checked by default (tools/lib/rcon.sh, sourced above): a staging command the
 # server refused must not pass for one that worked. `rcon_raw` is the unjudged
@@ -792,7 +852,56 @@ human_kib() {
 #   place-dir  the placement boot's /data (a campaign's first `up` only)
 #   image-dir  files copied out of the playtest image: its manifest, token,
 #              and the resource pack the sidecar serves
-DW_PLAYTEST_SESSION_DIRS="stage-dir place-dir image-dir"
+#   watch-dir  the checkpoint watcher's log
+DW_PLAYTEST_SESSION_DIRS="stage-dir place-dir image-dir watch-dir"
+
+# The last value recorded under a key (a key recorded again, like the watcher's
+# pid after a `watch`, means its latest value).
+session_last() {
+  session_path "$1" | tail -n 1
+}
+
+# dw_playtest_watcher_pid — the session's watcher pid when that process is
+# alive and IS this script's watcher (a pid can be reused); empty otherwise.
+dw_playtest_watcher_pid() {
+  local pid cmdline
+  pid="$(session_last watch-pid)"
+  [ -n "$pid" ] || return 0
+  cmdline="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+  case "$cmdline" in
+    *playtest-server.sh*" watch"*) printf '%s
+' "$pid" ;;
+  esac
+}
+
+# dw_playtest_stop_watcher — stop the session's watcher, waiting until it is
+# gone, so no save is mid-copy when the server goes.
+dw_playtest_stop_watcher() {
+  local pid waited=0
+  pid="$(dw_playtest_watcher_pid)"
+  if [ -z "$pid" ]; then
+    if [ -n "$(session_last watch-pid)" ]; then echo "checkpoint watcher: not running"; fi
+    return 0
+  fi
+  kill "$pid" 2>/dev/null || true
+  while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 30 ]; do sleep 1; waited=$((waited + 1)); done
+  if kill -0 "$pid" 2>/dev/null; then
+    echo "checkpoint watcher: pid $pid did not stop within 30s — stop it by hand: kill $pid"
+  else
+    echo "checkpoint watcher stopped (pid $pid)"
+  fi
+}
+
+# dw_playtest_image_id <ref> — the image's content id, or nothing.
+dw_playtest_image_id() {
+  docker image inspect -f '{{.Id}}' "$1" 2>/dev/null || true
+}
+
+# The checkpoints, every image's, with their sizes — what `status` and `down`
+# show. Names only: each is a title the player was shown, or the name given.
+dw_playtest_list_checkpoints() {
+  python3 "$DW_CKPT_PY" list --root "$(dw_ckpt_root)" --image-id "${1:-}"
+}
 
 # Bytes to the same units `human_kib` prints.
 human_bytes() {
@@ -812,47 +921,12 @@ dw_playtest_kept_images() {
   done
 }
 
-if [ "$cmd" = "status" ]; then
-  # The container half must not abort the disk half. An unguarded `docker ps`
-  # exits 127 where docker is absent, and `set -e` then killed the script before
-  # it could say what the session is still holding on disk — which is the half
-  # that matters most on a machine that is not running the session. `-a`: a
-  # container that stopped is still a container this session holds.
-  docker ps -a --filter "name=$NAME" --format '{{.Names}}\t{{.Status}}\t{{.Ports}}' \
-    || echo "docker unavailable — container state unknown" >&2
-  # What the session is holding on disk, so a leak is visible without a teardown.
-  if [ -f "$SESSION_FILE" ]; then
-    echo "session record: $SESSION_FILE"
-    for key in $DW_PLAYTEST_SESSION_DIRS build-dir; do
-      path="$(session_path "$key")"
-      if [ -z "$path" ]; then
-        continue
-      elif [ -d "$path" ]; then
-        echo "  $key  $path  ($(human_kib "$(dir_kib "$path")"))"
-      else
-        echo "  $key  $path  (already gone)"
-      fi
-    done
-    image="$(session_path image)"
-    if [ -n "$image" ]; then echo "  image  $image"; fi
-  else
-    echo "session record: none at $SESSION_FILE"
-  fi
-  # The kept images are not this session's: any later `up` of the same inputs
-  # runs one. Listed so their disk is visible; `down --prune` removes them.
-  KEPT="$(dw_playtest_kept_images || true)"
-  if [ -z "$KEPT" ]; then
-    echo "kept playtest images: none"
-  else
-    echo "kept playtest images (sizes include the shared base layers; remove with: down --prune):"
-    while IFS=$'\t' read -r ref size manifest campaign; do
-      echo "  $ref  campaign ${campaign:-?}  manifest ${manifest:-?}  ($(human_bytes "$size"))"
-    done <<<"$KEPT"
-  fi
-  exit 0
-fi
-
-if [ "$cmd" = "down" ]; then
+# dw_playtest_session_teardown — everything the session named NAME holds,
+# except the 25565 mutex: its watcher, its containers, its directories, and its
+# record. `down` ends here and gives the port back; `restore` ends here and
+# serves again.
+dw_playtest_session_teardown() {
+  dw_playtest_stop_watcher
   # `docker rm -f` on a name that never existed still exits 0 on modern docker —
   # that is not "I removed something", so the old one-liner printed "removed" for
   # a container that was never running. Ask first: existence is a different
@@ -925,6 +999,59 @@ if [ "$cmd" = "down" ]; then
     fi
   fi
   rm -f "$SESSION_FILE"
+}
+
+if [ "$cmd" = "status" ]; then
+  # The container half must not abort the disk half. An unguarded `docker ps`
+  # exits 127 where docker is absent, and `set -e` then killed the script before
+  # it could say what the session is still holding on disk — which is the half
+  # that matters most on a machine that is not running the session. `-a`: a
+  # container that stopped is still a container this session holds.
+  docker ps -a --filter "name=$NAME" --format '{{.Names}}\t{{.Status}}\t{{.Ports}}' \
+    || echo "docker unavailable — container state unknown" >&2
+  # What the session is holding on disk, so a leak is visible without a teardown.
+  if [ -f "$SESSION_FILE" ]; then
+    echo "session record: $SESSION_FILE"
+    for key in $DW_PLAYTEST_SESSION_DIRS build-dir; do
+      path="$(session_path "$key")"
+      if [ -z "$path" ]; then
+        continue
+      elif [ -d "$path" ]; then
+        echo "  $key  $path  ($(human_kib "$(dir_kib "$path")"))"
+      else
+        echo "  $key  $path  (already gone)"
+      fi
+    done
+    image="$(session_path image)"
+    if [ -n "$image" ]; then echo "  image  $image"; fi
+    if [ -n "$(session_last watch-pid)" ]; then
+      WATCH_PID="$(dw_playtest_watcher_pid)"
+      if [ -n "$WATCH_PID" ]; then
+        echo "  checkpoint watcher  running (pid $WATCH_PID; log $(session_last watch-dir)/watch.log)"
+      else
+        echo "  checkpoint watcher  NOT running (pid $(session_last watch-pid) is gone; log $(session_last watch-dir)/watch.log; resume with: watch --name $NAME)"
+      fi
+    fi
+  else
+    echo "session record: none at $SESSION_FILE"
+  fi
+  # The kept images are not this session's: any later `up` of the same inputs
+  # runs one. Listed so their disk is visible; `down --prune` removes them.
+  KEPT="$(dw_playtest_kept_images || true)"
+  if [ -z "$KEPT" ]; then
+    echo "kept playtest images: none"
+  else
+    echo "kept playtest images (sizes include the shared base layers; remove with: down --prune):"
+    while IFS=$'\t' read -r ref size manifest campaign; do
+      echo "  $ref  campaign ${campaign:-?}  manifest ${manifest:-?}  ($(human_bytes "$size"))"
+    done <<<"$KEPT"
+  fi
+  dw_playtest_list_checkpoints "$(session_last image-id)"
+  exit 0
+fi
+
+if [ "$cmd" = "down" ]; then
+  dw_playtest_session_teardown
   # The images. Kept by default — they are what makes the next `up` of the same
   # inputs a `docker run` — and listed with their sizes, so keeping them is a
   # decision. `--prune` removes every one; an image a running container still
@@ -957,6 +1084,26 @@ if [ "$cmd" = "down" ]; then
       echo "  $ref  campaign ${campaign:-?}  manifest ${manifest:-?}  ($(human_bytes "$size"))"
     done <<<"$KEPT"
   fi
+  # The checkpoints belong to their images: kept while the image is, and
+  # removed by `--prune` once it is gone.
+  CKPT_ROOT="$(dw_ckpt_root)"
+  if [ "$PRUNE" = 1 ] && [ -d "$CKPT_ROOT" ]; then
+    for IMAGE_ROOT in "$CKPT_ROOT"/*/; do
+      [ -d "$IMAGE_ROOT" ] || continue
+      IMAGE_ROOT="${IMAGE_ROOT%/}"
+      ROOT_REF="$(python3 -c 'import json, sys; sys.stdout.reconfigure(newline="\n"); print(json.load(open(sys.argv[1])).get("image_ref", ""))' "$IMAGE_ROOT/image.json" 2>/dev/null || true)"
+      if [ -n "$(dw_playtest_image_id "sha256:${IMAGE_ROOT##*/}")" ]; then
+        echo "checkpoints KEPT (their image ${ROOT_REF:-sha256:${IMAGE_ROOT##*/}} is still here): $IMAGE_ROOT ($(human_kib "$(dir_kib "$IMAGE_ROOT")"))"
+      else
+        ROOT_KIB="$(dir_kib "$IMAGE_ROOT")"
+        rm -rf "$IMAGE_ROOT"
+        echo "checkpoints removed with their image ${ROOT_REF:-sha256:${IMAGE_ROOT##*/}}: $IMAGE_ROOT ($(human_kib "$ROOT_KIB"))"
+      fi
+    done
+  else
+    echo "checkpoints KEPT (remove one with: rm-checkpoint <checkpoint>; all, with their images: down --prune):"
+    dw_playtest_list_checkpoints "" | sed 's/^/  /'
+  fi
   # Give 25565 back. Cross-shell by construction (`up` ran in another shell), so
   # release BY NAME — which refuses if anything still publishes the port, and
   # refuses outright if the holder is somebody else.
@@ -965,6 +1112,141 @@ if [ "$cmd" = "down" ]; then
 fi
 
 # ---- up ---------------------------------------------------------------------
+# ---- checkpoints: the verbs that are not `up` ---------------------------------
+
+# dw_playtest_session_image — the session's image ref and id, from its record
+# (the id read from docker when an older record does not carry it).
+dw_playtest_session_image() {
+  SESSION_IMAGE="$(session_last image)"
+  SESSION_IMAGE_ID="$(session_last image-id)"
+  if [ -z "$SESSION_IMAGE_ID" ] && [ -n "$SESSION_IMAGE" ]; then
+    SESSION_IMAGE_ID="$(dw_playtest_image_id "$SESSION_IMAGE")"
+  fi
+}
+
+# dw_playtest_prepare_checkpoints <image ref> <image id> <image root>
+#
+# The image's checkpoint directory: `image.json` (its identity, from its
+# labels) and `quests.tsv` (the quest table, read from the datapack the image
+# carries). Both are facts of the image, so each is written once per image id.
+dw_playtest_prepare_checkpoints() {
+  local ref="$1" id="$2" iroot="$3" cid scratch label manifest admission inputs campaign
+  mkdir -p "$iroot" || return 1
+  if [ ! -f "$iroot/image.json" ]; then
+    label() { docker image inspect -f "{{index .Config.Labels \"$PLAYTEST_LABEL.$1\"}}" "$ref" 2>/dev/null || true; }
+    manifest="$(label manifest-sha256)"; admission="$(label admission-sha256)"
+    inputs="$(label inputs)"; campaign="$(label campaign)"
+    python3 -c 'import json, sys; sys.stdout.reconfigure(newline="\n"); k = ["image_id", "image_ref", "manifest_sha256", "admission_sha256", "inputs", "campaign"]; open(sys.argv[1], "w").write(json.dumps(dict(zip(k, sys.argv[2:])), indent=2, sort_keys=True) + "\n")' \
+      "$iroot/image.json" "$id" "$ref" "$manifest" "$admission" "$inputs" "$campaign" || return 1
+  fi
+  if [ ! -f "$iroot/quests.tsv" ]; then
+    scratch="$iroot/.datapack"
+    rm -rf "$scratch"
+    cid="$(docker create --entrypoint /bin/true "$ref")" || return 1
+    if ! docker cp "$cid:/delve/datapack" "$scratch" >/dev/null 2>&1; then
+      docker rm "$cid" >/dev/null 2>&1 || true
+      echo "checkpoints: cannot copy /delve/datapack out of $ref" >&2
+      return 1
+    fi
+    docker rm "$cid" >/dev/null 2>&1 || true
+    if ! python3 "$DW_CKPT_PY" quests --datapack "$scratch" >"$iroot/quests.tsv.incoming"; then
+      rm -rf "$scratch" "$iroot/quests.tsv.incoming"
+      return 1
+    fi
+    rm -rf "$scratch"
+    mv "$iroot/quests.tsv.incoming" "$iroot/quests.tsv"
+  fi
+}
+
+# dw_playtest_server_running — the session's server container is up.
+dw_playtest_server_running() {
+  [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || true)" = "true" ]
+}
+
+# dw_playtest_checkpoint_label <checkpoint dir> — `NN name`.
+dw_playtest_checkpoint_label() {
+  python3 -c 'import json, pathlib, sys; sys.stdout.reconfigure(newline="\n"); p = pathlib.Path(sys.argv[1]); print(p.name, json.load(open(p / "checkpoint.json"))["name"])' "$1"
+}
+
+if [ "$cmd" = "checkpoint" ]; then
+  case "$CKPT_ARG" in
+    *[[:cntrl:]]*|*/*) die "a checkpoint name is one line of text without '/': '$CKPT_ARG'";;
+    *[!0-9]*) ;;
+    *) die "a checkpoint name is not a bare number — a number names a checkpoint by its place: '$CKPT_ARG'";;
+  esac
+  [ "${#CKPT_ARG}" -le 80 ] || die "a checkpoint name is at most 80 characters (got ${#CKPT_ARG})"
+  [ -f "$SESSION_FILE" ] || die "no session '$NAME' to checkpoint (start one with: up)"
+  dw_playtest_server_running || die "$NAME is not running — there is no world to checkpoint"
+  dw_playtest_session_image
+  STAGE="$(session_last stage-dir)"
+  [ -n "$SESSION_IMAGE_ID" ] || die "the session record names no kept image (a prefab session has no checkpoints)"
+  [ -n "$STAGE" ] && [ -d "$STAGE/world" ] || die "the session record names no served world (stage-dir: ${STAGE:-none})"
+  IMAGE_ROOT="$(dw_ckpt_image_root "$(dw_ckpt_root)" "$SESSION_IMAGE_ID")"
+  dw_playtest_prepare_checkpoints "$SESSION_IMAGE" "$SESSION_IMAGE_ID" "$IMAGE_ROOT" \
+    || die "cannot prepare the checkpoints of $SESSION_IMAGE (above)"
+  LABEL="$(dw_ckpt_save "$NAME" "$STAGE/world" "$IMAGE_ROOT" "$SESSION_IMAGE_ID" "$CKPT_ARG" manual "$IMAGE_ROOT/quests.tsv")" \
+    || die "checkpoint NOT saved (the line above says why)"
+  echo "checkpoint saved: $LABEL ($(human_kib "$(dir_kib "$IMAGE_ROOT/${LABEL%% *}")")) — restore with: restore ${LABEL%% *} --name $NAME"
+  exit 0
+fi
+
+if [ "$cmd" = "rm-checkpoint" ]; then
+  CK_DIR="$(python3 "$DW_CKPT_PY" resolve --root "$(dw_ckpt_root)" --query "$CKPT_ARG")" || exit 1
+  CK_LABEL="$(dw_playtest_checkpoint_label "$CK_DIR")"
+  CK_KIB="$(dir_kib "$CK_DIR")"
+  rm -rf "$CK_DIR"
+  echo "checkpoint removed: $CK_LABEL ($(human_kib "$CK_KIB")) from $(dirname "$CK_DIR")"
+  exit 0
+fi
+
+if [ "$cmd" = "watch" ]; then
+  [ -f "$SESSION_FILE" ] || die "no session '$NAME' to watch"
+  OTHER="$(dw_playtest_watcher_pid)"
+  [ -z "$OTHER" ] || die "a checkpoint watcher already runs for $NAME (pid $OTHER)"
+  dw_playtest_server_running || die "$NAME is not running"
+  dw_playtest_session_image
+  STAGE="$(session_last stage-dir)"
+  [ -n "$SESSION_IMAGE_ID" ] && [ -n "$STAGE" ] || die "the session record names no kept image or no served world"
+  IMAGE_ROOT="$(dw_ckpt_image_root "$(dw_ckpt_root)" "$SESSION_IMAGE_ID")"
+  dw_playtest_prepare_checkpoints "$SESSION_IMAGE" "$SESSION_IMAGE_ID" "$IMAGE_ROOT" \
+    || die "cannot prepare the checkpoints of $SESSION_IMAGE (above)"
+  session_record watch-pid "$$"
+  DW_CKPT_STOP=0
+  trap 'DW_CKPT_STOP=1; [ -z "${DW_CKPT_SLEEP_PID:-}" ] || kill "$DW_CKPT_SLEEP_PID" 2>/dev/null || true' TERM INT
+  # Alive while this process is the session's watcher, the server runs, and
+  # nobody asked it to stop.
+  watch_alive() {
+    [ "$DW_CKPT_STOP" = 0 ] && [ "$(session_last watch-pid)" = "$$" ] && dw_playtest_server_running
+  }
+  dw_ckpt_watch "$NAME" "$STAGE/world" "$IMAGE_ROOT" "$SESSION_IMAGE_ID" "$IMAGE_ROOT/quests.tsv" watch_alive
+  exit 0
+fi
+
+RESTORE_DIR=""
+PLAYTEST_IMAGE=""
+if [ "$cmd" = "restore" ]; then
+  SESSION_IMAGE=""; SESSION_IMAGE_ID=""
+  if [ -f "$SESSION_FILE" ]; then dw_playtest_session_image; fi
+  RESTORE_DIR="$(python3 "$DW_CKPT_PY" resolve --root "$(dw_ckpt_root)" --query "$CKPT_ARG" --image-id "$SESSION_IMAGE_ID")" \
+    || exit 1
+  RESTORE_LABEL="$(dw_playtest_checkpoint_label "$RESTORE_DIR")"
+  RESTORE_ROOT="$(dirname "$RESTORE_DIR")"
+  RESTORE_IMAGE_ID="sha256:${RESTORE_ROOT##*/}"
+  PLAYTEST_IMAGE="$(python3 -c 'import json, sys; sys.stdout.reconfigure(newline="\n"); print(json.load(open(sys.argv[1]))["image_ref"])' "$RESTORE_ROOT/image.json")" \
+    || die "cannot read the image of $RESTORE_DIR from $RESTORE_ROOT/image.json"
+  NOW_ID="$(dw_playtest_image_id "$PLAYTEST_IMAGE")"
+  [ "$NOW_ID" = "$RESTORE_IMAGE_ID" ] || die "REFUSING to restore $RESTORE_LABEL onto another build:
+  the checkpoint was taken on $PLAYTEST_IMAGE, image id $RESTORE_IMAGE_ID
+  $PLAYTEST_IMAGE is now ${NOW_ID:-no image at all}"
+  echo "restore: $RESTORE_LABEL, taken on $PLAYTEST_IMAGE (image id $RESTORE_IMAGE_ID)"
+  if [ -f "$SESSION_FILE" ]; then
+    echo "restore: ending the session's current world"
+    dw_playtest_session_teardown
+    dw_mutex_release_named "owner-play-session" || die "cannot release the 25565 mutex to serve the restored world"
+  fi
+fi
+
+if [ "$cmd" = "up" ]; then
 [ -n "$CAMPAIGN" ] || die "up needs a path: a campaign directory, or a prefab (a .nbt, a .json tile-set manifest, or a directory of .nbt)"
 [ -e "$CAMPAIGN" ] || die "no such path: $CAMPAIGN"
 
@@ -1017,6 +1299,9 @@ if [ "$SUBJECT_KIND" = "prefab" ]; then
   [ -z "$RUN_REPORT$WRITTEN_WORLD" ] || die "--run-report and --written-world are the staging gate's proofs of a campaign; $CAMPAIGN is a prefab and the gate does not run on it"
 fi
 echo "subject: $CAMPAIGN  ->  $SUBJECT_KIND"
+else
+  SUBJECT_KIND="campaign"
+fi
 # Capture, then test — never `cmd | grep -q`. Under `set -o pipefail` grep exits at
 # the first match, `docker ps` dies of SIGPIPE (141), and pipefail promotes that to
 # the pipeline: the guard silently fails to fire *because* it matched. CI keeps this
@@ -1041,6 +1326,7 @@ trap up_failed EXIT
 # leak this file exists to close, one session further back.
 if [ -f "$SESSION_FILE" ]; then
   echo "a previous '$NAME' session left a record — reclaiming it first"
+  dw_playtest_stop_watcher
   for key in $DW_PLAYTEST_SESSION_DIRS; do
     OLD_DIR="$(session_path "$key")"
     if [ -n "$OLD_DIR" ] && [ -d "$OLD_DIR" ]; then
@@ -1056,6 +1342,7 @@ if [ -f "$SESSION_FILE" ]; then
 fi
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+if [ "$cmd" = "up" ]; then
 # Which delvec, and why — one line, every run. `--delvec` still names one
 # outright; without it, a `delvec` on PATH at the pinned engine version IS the
 # toolchain the creator's Init established and is used as it stands, and
@@ -1090,6 +1377,7 @@ $FOUND"
     echo "kept image: none for these inputs — building, gating and placing"
   fi
 fi
+fi  # up: the delvec and the inputs key; `restore` already named its image
 
 if [ -z "$PLAYTEST_IMAGE" ] && [ -z "$OUT_DIR" ]; then
   OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dw-playtest-out.XXXXXX")"
@@ -1291,6 +1579,19 @@ if [ "$SUBJECT_KIND" = "campaign" ]; then
   session_record manifest-sha256 "$L_MANIFEST"
   session_record admission-sha256 "$L_ADMIT"
   echo "identity: $PLAYTEST_IMAGE serves manifest $L_MANIFEST, admitted by token $L_ADMIT"
+  # The image's checkpoints: its id names them, and the quest table the watcher
+  # names them by is read from the datapack it carries.
+  IMAGE_ID="$(dw_playtest_image_id "$PLAYTEST_IMAGE")"
+  [ -n "$IMAGE_ID" ] || die "cannot read the image id of $PLAYTEST_IMAGE"
+  if [ -n "$RESTORE_DIR" ] && [ "$IMAGE_ID" != "$RESTORE_IMAGE_ID" ]; then
+    die "REFUSING to restore $RESTORE_LABEL: it was taken on image id $RESTORE_IMAGE_ID and $PLAYTEST_IMAGE is now $IMAGE_ID"
+  fi
+  session_record image-id "$IMAGE_ID"
+  IMAGE_ROOT="$(dw_ckpt_image_root "$(dw_ckpt_root)" "$IMAGE_ID")"
+  dw_playtest_prepare_checkpoints "$PLAYTEST_IMAGE" "$IMAGE_ID" "$IMAGE_ROOT" \
+    || die "cannot prepare the checkpoints of $PLAYTEST_IMAGE (above)"
+  QUEST_N="$(awk -F'\t' 'NF {n++} END {print n+0}' "$IMAGE_ROOT/quests.tsv")"
+  echo "checkpoints: $IMAGE_ROOT ($QUEST_N quest completion score(s) in the pack)"
 
   # ---- the delve's resource pack: served, never installed (spec-0084 §11) ----
   PACK_NOTE="no resource pack in this build"
@@ -1330,6 +1631,19 @@ if [ "$SUBJECT_KIND" = "campaign" ]; then
   session_record stage-dir "$STAGE"
   LOG_HINT="server log: $STAGE/logs/latest.log (docker-boot.log alongside it once cleanup runs)"
   dw_playtest_runtime_seed "$RUNTIME_CACHE" "$STAGE" "$MC_VERSION" "$JAR_SHA256"
+  if [ -n "$RESTORE_DIR" ]; then
+    # A /data that already holds a world is served as it stands: the image's
+    # placed world is copied in only where there is none
+    # (validation/Dockerfile.playtest). The copy is held to the digest the
+    # checkpoint recorded before the server can touch it.
+    cp -R "$RESTORE_DIR/world" "$STAGE/world" || die "cannot copy $RESTORE_DIR/world into $STAGE"
+    RESTORE_WANT="$(python3 -c 'import json, sys; sys.stdout.reconfigure(newline="\n"); print(json.load(open(sys.argv[1]))["world_digest"])' "$RESTORE_DIR/checkpoint.json")" \
+      || die "cannot read the world digest of $RESTORE_DIR"
+    RESTORE_GOT="$(python3 "$DW_CKPT_PY" digest --dir "$STAGE/world")" || die "cannot digest the restored world"
+    [ "$RESTORE_GOT" = "$RESTORE_WANT" ] || die "the restored world digests to $RESTORE_GOT and the checkpoint recorded $RESTORE_WANT — $RESTORE_DIR changed since it was saved"
+    echo "restore: world of $RESTORE_LABEL copied in, digest $RESTORE_GOT as recorded"
+    session_record restored-from "$RESTORE_DIR"
+  fi
   SERVE_ARGV=()
   while IFS= read -r dw_argv_line; do
     SERVE_ARGV+=("$dw_argv_line")
@@ -1342,18 +1656,47 @@ if [ "$SUBJECT_KIND" = "campaign" ]; then
   # The same readiness the first boot was judged by: the datapack reports the
   # world placed, its objectives exist, and every NPC standing at world init is
   # in the save. On a world the image already holds placed, the first reading
-  # answers `placed`.
-  dw_playtest_verify_campaign "$NAME" "$CAMPAIGN" "$STAGE/world" \
-    "$DW_PLAYTEST_PLACED_BUDGET_S" 1 \
-    || die_or_oom "$DW_VERIFY_FAILURE"
+  # answers `placed`. A restored world is held to its checkpoint instead: the
+  # NPCs standing at world init are a fresh delve's, not a played one's.
+  if [ -n "$RESTORE_DIR" ]; then
+    dw_ckpt_verify_restored "$NAME" "$RESTORE_DIR" "$IMAGE_ROOT/quests.tsv" \
+      "$DW_PLAYTEST_PLACED_BUDGET_S" 1 \
+      || die_or_oom "$DW_VERIFY_FAILURE"
+  else
+    dw_playtest_verify_campaign "$NAME" "$CAMPAIGN" "$STAGE/world" \
+      "$DW_PLAYTEST_PLACED_BUDGET_S" 1 \
+      || die_or_oom "$DW_VERIFY_FAILURE"
+  fi
   READY_S=$((SECONDS - RUN_T0))
+
+  # The automatic checkpoints. A pack that declares no quest owes none, and
+  # says so; `checkpoint "<name>"` still saves.
+  if [ "$QUEST_N" = 0 ]; then
+    CKPT_NOTE="automatic checkpoints: none — the pack declares 0 quests; save one with: checkpoint \"<name>\" --name $NAME"
+  else
+    WATCH_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dw-playtest-watch.XXXXXX")"
+    session_record watch-dir "$WATCH_DIR"
+    nohup bash "$REPO_ROOT/tools/creator/playtest-server.sh" watch --name "$NAME" \
+      >"$WATCH_DIR/watch.log" 2>&1 </dev/null &
+    WATCH_PID=$!
+    for _ in $(seq 1 50); do
+      [ "$(dw_playtest_watcher_pid)" = "$WATCH_PID" ] && break
+      kill -0 "$WATCH_PID" 2>/dev/null || break
+      sleep 0.2
+    done
+    [ "$(dw_playtest_watcher_pid)" = "$WATCH_PID" ] \
+      || die "the checkpoint watcher did not start: $(tail -n 5 "$WATCH_DIR/watch.log" 2>/dev/null | tr '\n' ' ')"
+    CKPT_NOTE="automatic checkpoints: on — one per completed quest (watcher pid $WATCH_PID, log $WATCH_DIR/watch.log); save one now with: checkpoint \"<name>\" --name $NAME"
+  fi
 
   UP_OK=1   # the session exists; the 25565 mutex stays held until `down`
   echo
+  if [ -n "$RESTORE_DIR" ]; then echo "RESTORED $RESTORE_LABEL"; fi
   echo "READY — Multiplayer -> Direct Connect: localhost:25565"
   echo "joinable ${SECONDS}s after the command: $((SERVE_T0)) s to the image, $((RUN_T0 - SERVE_T0)) s identity + pack, ${DONE_S}s boot to \`Done (\`, $((READY_S - DONE_S))s placed + probes"
   echo "$PACK_NOTE"
-  echo "teardown: tools/creator/playtest-server.sh down --name $NAME  (also removes $NAME-pack and frees the 25565 mutex; keeps $PLAYTEST_IMAGE)"
+  echo "$CKPT_NOTE"
+  echo "teardown: tools/creator/playtest-server.sh down --name $NAME  (also removes $NAME-pack and frees the 25565 mutex; keeps $PLAYTEST_IMAGE and its checkpoints)"
   exit 0
 fi
 

@@ -370,6 +370,8 @@ if args[:2] == ["image", "inspect"]:
     if img is None:
         done(code=1)
     fmt = args[args.index("-f") + 1] if "-f" in args else ""
+    if fmt == "{{.Id}}":
+        done(img.get("id", "sha256:" + "1" * 64))
     if fmt.startswith("{{if .RepoTags}}"):
         L = img["labels"]
         done("\t".join([ref, str(img["size"]), L.get("delvewright.playtest.manifest-sha256", ""),
@@ -388,6 +390,9 @@ if args[:1] == ["cp"]:
     src = args[1].split(":", 1)[1]
     files = pathlib.Path(st["image_files"])
     f = files / src.lstrip("/")
+    if f.is_dir():
+        shutil.copytree(f, args[2])
+        done()
     if not f.is_file():
         done(code=1)
     shutil.copy(f, args[2])
@@ -428,6 +433,9 @@ def served(tmp_path):
     (image_files / "delve" / "staging-admission.json").write_bytes(token_for(MANIFEST))
     (image_files / "delve" / "server" / "server.properties").write_text("level-name=world\n", encoding="utf-8")
     (image_files / "delve" / "server" / "resources.properties").write_text("heap-max=6G\n", encoding="utf-8")
+    # A pack that declares no quest: no watcher is started, and the run says so.
+    (image_files / "delve" / "datapack" / "data" / "demo" / "function").mkdir(parents=True)
+    (image_files / "delve" / "datapack" / "pack.mcmeta").write_text("{}\n", encoding="utf-8")
     m = sha256(MANIFEST)
     state = {"calls": [], "running": [], "removed": [], "image_files": str(image_files), "images": {}}
 
@@ -460,6 +468,7 @@ def served(tmp_path):
         "TMPDIR": str(tmpdir),
         "DW_MUTEX_DIR": str(tmp_path / "mutex.lock.d"),
         "DW_PLAYTEST_RUNTIME_CACHE": str(tmp_path / "runtime"),
+        "DW_PLAYTEST_CHECKPOINTS": str(tmp_path / "checkpoints"),
     }
 
     def run(*args):
@@ -493,6 +502,7 @@ def test_a_kept_image_is_served_by_docker_run_with_no_build_gate_or_placement(se
     assert not any(c[:1] == ["build"] for c in served.state["calls"]), "a reopen built an image"
     assert "MAX_MEMORY=6G" in runs[0], "the heap is the build's own statement, read from the image"
     assert "READY — Multiplayer -> Direct Connect: localhost:25565" in r.stdout, r.stdout
+    assert "automatic checkpoints: none — the pack declares 0 quests" in r.stdout, r.stdout
     assert re.search(r"^joinable \d+s after the command", r.stdout, re.MULTILINE), r.stdout
     assert f"identity: delvewright/playtest:{served.manifest} serves manifest {served.manifest}" in r.stdout
     assert (served.mutex / "HOLDER").read_text().startswith("owner-play-session")
