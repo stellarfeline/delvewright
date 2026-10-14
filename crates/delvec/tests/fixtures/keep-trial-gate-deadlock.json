@@ -1,5 +1,5 @@
 {
-  "description": "keep-trial with the gate opened only by obj/door (a late objective): the wave and key chest sit sealed behind the gate their own door opens, so the delve deadlocks. Materialized over keep-trial; passes validate + analyze (neither models sealed gates) and fails at build with DW0306.",
+  "description": "keep-trial with the barred way from the hall to the store opened only by obj/door (a late objective, in the crypt beyond it): the key chest sits behind the gate its own door opens, so the delve deadlocks. Materialized over keep-trial, with the hall-store edge barred by the test under a gating the graph believes is met at the greeting; passes validate + analyze (the graph's gating is a claim the world contradicts) and fails at build when the critical path meets the shut gate.",
   "documents": {
     "quests": {
       "campaign_id": "keep-trial",
@@ -85,7 +85,7 @@
             "on_objective_complete": {
               "obj/door": [
                 {
-                  "anchor": "anchor/gate",
+                  "anchor": "anchor/seam-hall-store",
                   "type": "open-gate"
                 },
                 {
@@ -108,7 +108,7 @@
         ],
         "waves": [
           {
-            "anchor": "anchor/wave",
+            "anchor": "anchor/keeper-stand",
             "id": "wave/guards",
             "mobs": [
               {

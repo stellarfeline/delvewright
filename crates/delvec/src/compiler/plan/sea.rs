@@ -48,6 +48,9 @@ pub(super) fn check_ocean_waterline(
     };
     for area in areas {
         for piece in &area.pieces {
+            if super::is_bound_record(campaign, piece) {
+                continue; // the piece bound to the place is counted, once
+            }
             binding.placed += 1;
             let Some(meta) = prefabs.get(&piece.prefab_id) else {
                 continue; // missing metadata is already DW0300 upstream

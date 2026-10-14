@@ -2022,6 +2022,18 @@ pub fn declare_piece_anchor(prefab: &str, name: &str) {
 /// [`bind_region`], with the piece's origin at world `y` — an ocean seats a
 /// shore piece so its walk plane stands one course over the sea
 /// (`horizon::OCEAN_WALK_REF_Y - walk_y`).
+/// Bind the campaign at `dir`'s one place to `lib`'s `hello-room` (an
+/// [`ocean_prefabs_dir`] room), its region seated on the ocean datum: the
+/// piece's walk plane on the sea's walk reference.
+pub fn seat_on_ocean(dir: &Path, lib: &Path) {
+    let meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(lib.join("hello-room.json")).unwrap())
+            .unwrap();
+    let walk = meta["walk_y"].as_i64().unwrap_or(1);
+    let y = i64::from(delvec::compiler::horizon::OCEAN_WALK_REF_Y) - walk;
+    bind_region_at(dir, lib, "hello-room", y);
+}
+
 pub fn bind_region_at(dir: &Path, prefabs: &Path, id: &str, y: i64) {
     patch_file(&dir.join("site-plan.json"), |v| {
         v["content"]["region"]["min"][1] = serde_json::json!(y);

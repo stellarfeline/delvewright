@@ -825,6 +825,35 @@ pub(crate) fn quest_anchor_checks(
             }
         });
     }
+    // A wave stands at an anchor its spawn reads a cell from, exactly as an
+    // objective does; an unresolved one reached the build as `DW0300`.
+    if let Some(set) = providers.known() {
+        for (wi, w) in c.quests.content.waves.iter().enumerate() {
+            let at = format!("/content/waves/{wi}/anchor");
+            if let Some(f) = station_kind_diag(
+                providers,
+                w.anchor.as_str(),
+                crate::layout::StationKind::Point,
+                "a wave's `anchor`",
+                "quests",
+                at.clone(),
+            ) {
+                d.push(f);
+            } else if !set.contains(w.anchor.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::ANCHOR_UNRESOLVED,
+                    "quests",
+                    at,
+                    format!(
+                        "wave `{}` stands at anchor `{}`, which the map does not place — {}",
+                        w.id,
+                        w.anchor,
+                        providers.anchor_remedy(),
+                    ),
+                ));
+            }
+        }
+    }
 }
 
 /// A quest's references (spec-0001 v0.3): `kill.wave` / `spawn-wave.wave` /

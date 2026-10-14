@@ -425,21 +425,27 @@ impl LinkTakes {
     }
 }
 
+/// [`Plan::is_bound_record`], for a reader holding the campaign before the plan
+/// exists.
+pub(crate) fn is_bound_record(campaign: &Campaign, p: &PiecePlacement) -> bool {
+    let Some(node) = p
+        .prefab_id
+        .strip_prefix(crate::compiler::blockout::STAND_IN_PREFIX)
+    else {
+        return false;
+    };
+    campaign
+        .detail_plan
+        .as_ref()
+        .is_some_and(|d| d.content.details.iter().any(|row| row.place.0 == node))
+}
+
 impl<'a> Plan<'a> {
     /// **Whether `p` is the blockout's record of a place a `details[]` row
     /// binds** — a record standing over the same cells as the piece that is
     /// the place, which a count of pieces counts once, as the piece.
     pub fn is_bound_record(&self, p: &PiecePlacement) -> bool {
-        let Some(node) = p
-            .prefab_id
-            .strip_prefix(crate::compiler::blockout::STAND_IN_PREFIX)
-        else {
-            return false;
-        };
-        self.campaign
-            .detail_plan
-            .as_ref()
-            .is_some_and(|d| d.content.details.iter().any(|row| row.place.0 == node))
+        is_bound_record(self.campaign, p)
     }
 
     /// Build the plan. Requires a validated campaign and loaded prefab metadata.

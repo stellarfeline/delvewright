@@ -605,6 +605,10 @@ pub struct SeatingBinding {
     /// refused it, and a place with no plane has no walk plane to judge — so the
     /// two numbers differing is itself the finding.
     pub boxes_examined: usize,
+    /// Bound places whose piece declares a `waterline_y`, on a base with a sea.
+    pub waterlines_declared: usize,
+    /// Of those, the ones whose frame stands that waterline on the sea plane.
+    pub waterlines_on_the_sea: usize,
     /// **The rest of what these same documents claim about these same bytes**
     /// (`DW0888`), examined at the same read.
     pub claims: crate::compiler::claims::ClaimBinding,
@@ -616,10 +620,13 @@ impl SeatingBinding {
     pub fn line(&self) -> String {
         format!(
             "seating binding: horizon base `{base}`; site plan: {bex} of {boxes} box(es) judged \
-             against this base.",
+             against this base; {wl} bound waterline declaration(s) examined, {ok} standing on \
+             the sea plane.",
             base = self.base,
             bex = self.boxes_examined,
             boxes = self.boxes,
+            wl = self.waterlines_declared,
+            ok = self.waterlines_on_the_sea,
         ) + " "
             + &self.claims.line()
     }
@@ -706,6 +713,12 @@ pub fn check(
             read.insert(piece, facts);
         }
     }
+    if base == HorizonBase::Ocean {
+        diags.extend(bound_shores(campaign, &read, &mut binding));
+    }
+    if base == HorizonBase::Void {
+        diags.extend(fluid_off_the_world(campaign, &read));
+    }
     for facts in read.values() {
         binding.claims.add(&facts.claims.binding);
         for c in &facts.claims.denied {
@@ -723,6 +736,128 @@ pub fn check(
         }
     }
     (binding, diags)
+}
+
+/// **Where a bound piece meets the sea** — asked of each place a piece is bound
+/// to, on a base with a sea, before anything is placed.
+///
+/// A bound piece is placed at its frame's lowest corner, so the world y of each
+/// of its local courses is known from the plan alone: a declared waterline
+/// stands at `frame.lo.y + waterline_y` and is held to the sea plane
+/// (`DW0344`); water authored at or below the sea plane with no waterline
+/// declared is an unstated shore (`DW0886`).
+fn bound_shores(
+    campaign: &Campaign,
+    read: &BTreeMap<String, PieceFacts>,
+    binding: &mut SeatingBinding,
+) -> Vec<Diagnostic> {
+    let sea = crate::compiler::horizon::SEA_LEVEL;
+    let mut out = Vec::new();
+    let Some(dp) = &campaign.detail_plan else {
+        return out;
+    };
+    let frames = crate::compiler::detail::frames(campaign);
+    for (i, row) in dp.content.details.iter().enumerate() {
+        let Some(f) = read.get(row.piece.as_str()) else {
+            continue;
+        };
+        let Some((frame, _)) = frames.iter().find(|(fr, _)| fr.node == row.place) else {
+            continue; // the binding gates refuse a place the plan does not have
+        };
+        let lo = i32::try_from(frame.lo[1]).unwrap_or(i32::MIN);
+        let at = format!("/content/details/{i}/piece");
+        if let Some(wl) = f.declared_waterline {
+            binding.waterlines_declared += 1;
+            let world = lo + wl;
+            if world == sea {
+                binding.waterlines_on_the_sea += 1;
+                continue;
+            }
+            let (n, way) = if world > sea {
+                (world - sea, "above")
+            } else {
+                (sea - world, "below")
+            };
+            out.push(Diagnostic::error(
+                crate::compiler::plan::DW_OCEAN_WATERLINE,
+                "detail-plan",
+                at,
+                format!(
+                    "`{place}` places `{piece}` with its frame's lowest course at y={lo}, so the \
+                     waterline the piece declares (local y={wl}) stands at y={world}, {n} \
+                     block(s) {way} this world's sea plane (y={sea}). The shore meets no sea. \
+                     The move: seat the place so its frame's lowest course is at y={want} — the \
+                     site plan's `region` and this box's `floor` together — or correct \
+                     `waterline_y` in `{base}.json` if the bytes hold the water elsewhere",
+                    place = row.place,
+                    piece = row.piece,
+                    want = sea - wl,
+                    base = f.base,
+                ),
+            ));
+        } else if f.water_cells > 0 && f.bottom_water_y.is_some_and(|b| lo + b <= sea) {
+            out.push(Diagnostic::error(
+                DW_UNSEATABLE,
+                "detail-plan",
+                at,
+                format!(
+                    "`{place}` places `{piece}` on an `ocean` horizon, and prefab `{piece}` \
+                     authors {n} `{WATER}` cell(s) at or below the sea plane, the topmost at \
+                     local y={top}, and declares no `waterline_y`. Nothing then states where \
+                     this piece's water meets the world's. The move: DECLARE `waterline_y: \
+                     {top}` in `{base}.json`, the local y its top water block stands at; \
+                     `DW0887` holds that number to the bytes",
+                    place = row.place,
+                    piece = row.piece,
+                    n = f.water_cells,
+                    top = f.top_water_y.unwrap_or(0),
+                    base = f.base,
+                ),
+            ));
+        }
+    }
+    out
+}
+
+/// **A bound piece whose water runs out of its own faces, on a base that puts
+/// nothing beyond them** (`DW0886`): `void` declares there is nothing outside
+/// the placed geometry, so that water runs off the world — what `DW0318`
+/// refuses once the world is assembled, said here from the piece's own bytes
+/// before a block is placed.
+fn fluid_off_the_world(
+    campaign: &Campaign,
+    read: &BTreeMap<String, PieceFacts>,
+) -> Vec<Diagnostic> {
+    let Some(dp) = &campaign.detail_plan else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (i, row) in dp.content.details.iter().enumerate() {
+        let Some(f) = read.get(row.piece.as_str()) else {
+            continue;
+        };
+        if f.fluid_at_edge == 0 {
+            continue;
+        }
+        out.push(Diagnostic::error(
+            DW_UNSEATABLE,
+            "detail-plan",
+            format!("/content/details/{i}/piece"),
+            format!(
+                "`{place}` places `{piece}` on a `void` horizon, and prefab `{piece}` authors a \
+                 body of fluid that reaches its own outer face in {n} run direction(s). `void` \
+                 puts nothing outside the placed geometry, so that water runs off the world \
+                 forever, which `DW0318` refuses of the assembled world. The moves: (1) CHOOSE the horizon the piece was built for — a shore \
+                 belongs to an `ocean`, which puts a sea against that face; (2) SEAL the body \
+                 inside the piece's own bytes, which `delvec prefab audit` reports as a run \
+                 direction that leaves it",
+                place = row.place,
+                piece = row.piece,
+                n = f.fluid_at_edge,
+            ),
+        ));
+    }
+    out
 }
 
 /// What a `DW0886` about a plan's own box ends with. The tail above names the

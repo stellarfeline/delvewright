@@ -254,11 +254,16 @@ fn keep_crawl_builds_and_double_build_is_byte_identical() {
     for (path, bytes) in &a {
         assert_eq!(bytes, &b[path], "keep-crawl byte mismatch in {path}");
     }
-    // The pool area shipped several distinct structures.
-    let structures = a.keys().filter(|p| p.contains("/structure/keep-")).count();
+    // The comparison read a built map, not an empty one: the site plan's massed
+    // places are laid by the world build.
+    let build =
+        String::from_utf8_lossy(&a["datapack/data/keep-crawl/function/world_build.mcfunction"])
+            .lines()
+            .filter(|l| l.starts_with("fill "))
+            .count();
     assert!(
-        structures >= 3,
-        "multiple keep pieces shipped, saw {structures}"
+        build > 0,
+        "the world build lays the massed places, saw {build} fill(s)"
     );
 }
 
@@ -344,13 +349,16 @@ fn the_working_directory_cannot_reach_the_build() {
     }
 }
 
-/// Gate-aware reachability (M2 fix 7, DW0306): a layout where an objective's
-/// anchor is sealed behind a gate that only a later objective opens passes
-/// validate + analyze (neither models sealed gates) but fails at build with exit 3
-/// and DW0306. The clean keep-trial fixture (gate opened when the keeper is
-/// greeted) builds fine — the same solver/seed, only the open-gate timing differs.
+/// A delve that deadlocks on its own gate fails the build with exit 3: the
+/// barred way from the hall to the store is opened only by an objective in the
+/// crypt beyond it, while the graph's gating claims the way opens at the
+/// greeting. validate + analyze pass (they judge the graph's claim), and the
+/// build's critical-path proof meets the gate the placed world authors shut
+/// (`DW0317`). The same campaign with the gate opened at the greeting builds.
+/// (`DW0306`, the same question asked inside one piece's gate plane, is
+/// `gate_world_load_seal`'s.)
 #[test]
-fn gate_deadlock_exits_3_with_dw0305() {
+fn gate_deadlock_exits_3_with_dw0317() {
     let pf = common::prefabs_dir();
     let patch: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(
@@ -359,14 +367,41 @@ fn gate_deadlock_exits_3_with_dw0305() {
         .unwrap(),
     )
     .unwrap();
-    let camp = tmp("gate-deadlock");
-    common::materialize_from(&common::keep_trial_dir(), &patch, &camp);
-    common::declare_story_dir(&camp);
-    // This build-error fixture alters keep-trial's strings; it is not an i18n test,
-    // so drop the language declaration + sidecar (would otherwise fail coverage).
-    common::make_english_only(&camp);
+    let materialize = |name: &str, early: bool| {
+        let camp = tmp(name);
+        common::materialize_from(&common::keep_trial_dir(), &patch, &camp);
+        common::patch_file(&camp.join("layout-graph.json"), |d| {
+            let c = &mut d["content"];
+            for e in c["edges"].as_array_mut().unwrap() {
+                if e["id"] == "edge/hall-store" {
+                    e["class"] = serde_json::json!("barred");
+                    e["gating"] = serde_json::json!({ "flags": ["flag/summoned"] });
+                    e["opens_from"] = serde_json::json!("a");
+                }
+            }
+            for n in c["nodes"].as_array_mut().unwrap() {
+                n["stations"]
+                    .as_array_mut()
+                    .unwrap()
+                    .retain(|s| s["anchor"] != "anchor/gate");
+            }
+        });
+        if early {
+            common::patch_file(&camp.join("quests.json"), |d| {
+                let door = common::objective_effects(d, 1, "obj/door");
+                let at = door.iter().position(|e| e["type"] == "open-gate").unwrap();
+                let gate = door.remove(at);
+                common::objective_effects(d, 0, "obj/talk").push(gate);
+            });
+        }
+        common::declare_story_dir(&camp);
+        // This build-error fixture alters keep-trial's strings; it is not an
+        // i18n test, so drop the language declaration + sidecar.
+        common::make_english_only(&camp);
+        camp
+    };
+    let camp = materialize("gate-deadlock", false);
 
-    // validate + analyze pass — sealed-gate reachability is invisible to them.
     let a = delvec(&[
         "analyze",
         camp.to_str().unwrap(),
@@ -380,7 +415,6 @@ fn gate_deadlock_exits_3_with_dw0305() {
         String::from_utf8_lossy(&a.stdout)
     );
 
-    // build fails at DW0306.
     let out = tmp("gate-deadlock-out");
     let b = delvec(&[
         "build",
@@ -393,13 +427,17 @@ fn gate_deadlock_exits_3_with_dw0305() {
     ]);
     assert_eq!(code(&b), 3, "gate deadlock should exit 3");
     let stdout = String::from_utf8_lossy(&b.stdout);
-    assert!(stdout.contains("DW0306"), "expected DW0306:\n{stdout}");
+    assert!(
+        stdout.contains("DW0317") && stdout.contains("anchor/seam-hall-store"),
+        "expected DW0317 at the barred way:\n{stdout}"
+    );
 
-    // The clean keep-trial (gate opened at the greeting) builds fine.
+    // The same campaign, the gate opened at the greeting, builds.
+    let clean_camp = materialize("gate-clean", true);
     let clean = tmp("gate-clean-out");
     let r = delvec(&[
         "build",
-        common::keep_trial_dir().to_str().unwrap(),
+        clean_camp.to_str().unwrap(),
         "-o",
         clean.to_str().unwrap(),
         "--prefabs",
@@ -408,8 +446,8 @@ fn gate_deadlock_exits_3_with_dw0305() {
     assert_eq!(
         code(&r),
         0,
-        "clean keep-trial builds: {}",
-        String::from_utf8_lossy(&r.stderr)
+        "the gate opened at the greeting builds: {}",
+        String::from_utf8_lossy(&r.stdout)
     );
 }
 
@@ -618,13 +656,16 @@ fn missing_structure_file_exits_3_with_dw0300() {
     assert!(stdout.contains("DW0300"), "expected DW0300:\n{stdout}");
 }
 
-/// `DW0310`: a *kill-less* `spawn-wave` (spec-0008 §4 "live threat" — no `kill`
-/// objective ever drains it, exactly like `v04-showcase`'s `wave/ambush`) whose
-/// `anchor` does not resolve in any assembled area is a dangling spawn — no
-/// static DSL rule sees it (wave anchors are a build-time-only concept), so it
-/// passes validate + analyze and fails only at build.
+/// A *kill-less* `spawn-wave` (spec-0008 §4 "live threat" — no `kill`
+/// objective ever drains it) whose wave stands at an anchor the map does not
+/// place is refused where it is written: the site plan's anchor vocabulary is
+/// known at validation, so `DW0142` names the wave before anything is built.
+///
+/// `DW0310` stays as the build's own seal over the emitted `spawn_<wave>` calls
+/// (a call with no function behind it); a campaign that skipped validation is
+/// the only way to reach it, so the seal is asked of the emitter directly.
 #[test]
-fn kill_less_dangling_spawn_wave_exits_3_with_dw0310() {
+fn kill_less_dangling_spawn_wave_is_refused_at_validation_and_sealed_at_build() {
     let patch: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(common::compiler_fixtures_dir().join("dangling-spawn-wave.json"))
             .unwrap(),
@@ -636,31 +677,48 @@ fn kill_less_dangling_spawn_wave_exits_3_with_dw0310() {
     common::declare_story_dir(&camp);
 
     let a = delvec(&[
-        "analyze",
+        "validate",
         camp.to_str().unwrap(),
         "--prefabs",
         pf.to_str().unwrap(),
     ]);
+    let log = format!(
+        "{}{}",
+        String::from_utf8_lossy(&a.stdout),
+        String::from_utf8_lossy(&a.stderr)
+    );
     assert_eq!(
         code(&a),
-        0,
-        "analyze should pass (wave anchors are invisible to the DSL/analysis layers): {}",
-        String::from_utf8_lossy(&a.stdout)
+        1,
+        "a dangling wave anchor is a validation refusal: {log}"
+    );
+    assert!(
+        log.contains("DW0142") && log.contains("/content/waves/"),
+        "named at the wave's own anchor:\n{log}"
     );
 
-    let out = tmp("dw0310-out");
-    let b = delvec(&[
-        "build",
-        camp.to_str().unwrap(),
-        "-o",
-        out.to_str().unwrap(),
-        "--prefabs",
-        pf.to_str().unwrap(),
-        "--json",
-    ]);
-    assert_eq!(code(&b), 3, "dangling kill-less spawn-wave should exit 3");
-    let stdout = String::from_utf8_lossy(&b.stdout);
-    assert!(stdout.contains("DW0310"), "expected DW0310:\n{stdout}");
+    // The seal, past validation.
+    let loaded = common::load_campaign_dir(&camp).unwrap();
+    let campaign = common::parse_campaign(&loaded.raw).expect("parses");
+    let prefabs = delvec::compiler::registry::PrefabRegistry::load_dir(&pf).unwrap();
+    let plan = delvec::compiler::plan::Plan::build(&campaign, &prefabs).expect("plan builds");
+    let structures = common::plan_structures_with_trap_triggers(&plan, &pf);
+    let r = delvec::compiler::emit::build(
+        &plan,
+        &loaded.inputs,
+        &structures,
+        &delvec::compiler::commands::CommandTree::v1_21_11(),
+        &prefabs,
+        None,
+        &BTreeMap::new(),
+    );
+    match r {
+        Err(delvec::compiler::emit::BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code.id(), "DW0310", "{message}");
+        }
+        Err(other) => panic!("expected DW0310, got another failure: {other:?}"),
+        Ok(_) => panic!("a dangling spawn-wave must not build"),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1147,25 +1205,27 @@ fn walked_move_npc_tps_carry_the_segment_bearing() {
     );
 }
 
-/// A `move-npc` whose destination cannot be reached over the solved geometry fails
-/// the build with exit 3 and `DW0307` (spec-0008 addendum). keep-crawl places the
-/// keeper in the gatehouse and `anchor/objective` in the keep — two areas across
-/// the inter-area void, with no floor between — so the keeper cannot walk there.
-/// (Only the quests stage is bumped to 0.4.0; the v0.4-effect gate keys off it.)
-#[test]
-fn move_unroutable_exits_3_with_dw0307() {
-    let pf = common::prefabs_dir();
-    let camp = tmp("mv-cross-void");
-    copy_dir(&common::keep_crawl_dir(), &camp);
+/// `tests/fixtures/ferry-site` — two places no seam joins, a ferry carrying
+/// the party between them — with `effect` added to the beat that lands on the
+/// far shore, and `patch` applied to its quests.
+fn ferry_with(
+    name: &str,
+    effect: serde_json::Value,
+    patch: impl FnOnce(&mut serde_json::Value),
+) -> std::path::PathBuf {
+    let camp = tmp(name);
+    copy_dir(&common::compiler_fixtures_dir().join("ferry-site"), &camp);
     common::patch_file(&camp.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!(DSL_VERSION);
-        common::objective_effects(d, 1, "obj/arrive").push(serde_json::json!({
-            "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/objective" }
-        }));
+        common::objective_effects(d, 0, "obj/far-shore").push(effect);
+        patch(d);
     });
-    common::declare_story_dir(&camp);
-    let out = tmp("mv-cross-void-out");
-    let b = delvec(&[
+    camp
+}
+
+fn build_json(camp: &Path, out: &str) -> std::process::Output {
+    let pf = common::prefabs_dir();
+    let out = tmp(out);
+    delvec(&[
         "build",
         camp.to_str().unwrap(),
         "-o",
@@ -1173,7 +1233,55 @@ fn move_unroutable_exits_3_with_dw0307() {
         "--prefabs",
         pf.to_str().unwrap(),
         "--json",
-    ]);
+    ])
+}
+
+/// A `move-npc` whose destination cannot be reached over the built geometry
+/// fails the build with exit 3 and `DW0307` (spec-0008 addendum). The ferryman
+/// stands on the near landing and is sent to the far one: no seam joins the two
+/// places, the party crosses by a link that carries players, and a walked body
+/// has no way across.
+#[test]
+fn move_unroutable_exits_3_with_dw0307() {
+    let camp = ferry_with(
+        "mv-cross-strait",
+        serde_json::json!({
+            "type": "move-npc", "npc": "npc/ferryman", "to": { "anchor": "anchor/far-tiller" },
+            "happening": { "text": "it sets out for the far landing", "verb": "departs" }
+        }),
+        |d| {
+            d["content"]["quests"][0]["cast"] = serde_json::json!({
+                "npc/ferryman": {
+                    "at": "anchor/home-landing",
+                    "dialogue": "dlg/ferry",
+                    "doing": "waiting on the near landing"
+                }
+            });
+        },
+    );
+    common::patch_file(&camp.join("dialogue.json"), |d| {
+        d["content"]["dialogues"] = serde_json::json!([{
+            "npc": "npc/ferryman",
+            "root": "dlg/ferry",
+            "nodes": [{ "id": "dlg/ferry", "text": "The tide is with us.",
+                        "options": [{ "label": "Good." }] }]
+        }]);
+    });
+    common::patch_file(&camp.join("npcs.json"), |d| {
+        d["content"]["npcs"] = serde_json::json!([{
+            "anchor": "anchor/home-landing",
+            "base_entity": "minecraft:villager",
+            "id": "npc/ferryman",
+            "name": "The Ferryman",
+            "persona": {
+                "archetype": "taciturn boatman",
+                "motivation": "Keep the crossing running.",
+                "speech_style": "Few words, all of them about the water."
+            },
+            "role": "flavor"
+        }]);
+    });
+    let b = build_json(&camp, "mv-cross-strait-out");
     assert_eq!(
         code(&b),
         3,
@@ -1184,35 +1292,25 @@ fn move_unroutable_exits_3_with_dw0307() {
     assert!(stdout.contains("DW0307"), "expected DW0307:\n{stdout}");
 }
 
-/// A `move-actor` whose destination cannot be reached over the assembled geometry
-/// for the actor's footprint fails the build with exit 3 and `DW0325` (spec-0014).
-/// Reuses keep-crawl's cross-void geometry: an actor spawned in the gatehouse is
-/// walked to `anchor/objective` in the keep — two areas across the inter-area void.
+/// A `move-actor` whose destination cannot be reached over the built geometry
+/// for the actor's footprint fails the build with exit 3 and `DW0325`
+/// (spec-0014): an actor spawned on the near landing is walked to the far one,
+/// across the strait only a link carries.
 #[test]
 fn move_actor_unroutable_exits_3_with_dw0325() {
-    let pf = common::prefabs_dir();
-    let camp = tmp("ma-cross-void");
-    copy_dir(&common::keep_crawl_dir(), &camp);
-    common::patch_file(&camp.join("quests.json"), |d| {
-        d["dsl_version"] = serde_json::json!(DSL_VERSION);
-        common::objective_effects(d, 1, "obj/arrive").push(serde_json::json!({
-            "type": "move-actor", "actor": "actor/beast", "to": { "anchor": "anchor/objective" }
-        }));
-        d["content"]["actors"] = serde_json::json!([
-            { "id": "actor/beast", "entity": "minecraft:zombie", "anchor": "anchor/keeper-stand" }
-        ]);
-    });
-    common::declare_story_dir(&camp);
-    let out = tmp("ma-cross-void-out");
-    let b = delvec(&[
-        "build",
-        camp.to_str().unwrap(),
-        "-o",
-        out.to_str().unwrap(),
-        "--prefabs",
-        pf.to_str().unwrap(),
-        "--json",
-    ]);
+    let camp = ferry_with(
+        "ma-cross-strait",
+        serde_json::json!({
+            "type": "move-actor", "actor": "actor/beast", "to": { "anchor": "anchor/far-tiller" },
+            "happening": { "text": "it sets out for the far landing", "verb": "departs" }
+        }),
+        |d| {
+            d["content"]["actors"] = serde_json::json!([
+                { "id": "actor/beast", "entity": "minecraft:zombie", "anchor": "anchor/tiller" }
+            ]);
+        },
+    );
+    let b = build_json(&camp, "ma-cross-strait-out");
     assert_eq!(
         code(&b),
         3,
@@ -1229,9 +1327,10 @@ fn move_actor_unroutable_exits_3_with_dw0325() {
 #[test]
 fn cutscene_clip_exits_3_with_dw0308() {
     let pf = common::prefabs_dir();
-    // Lift the FIRST camera waypoint one block, into the shrine ceiling.
+    // Lift the FIRST camera waypoint three blocks, into the shrine ceiling: the
+    // shrine's floor is at 65 under five courses of clearance, so y+5 is roof.
     let camp = showcase_with_quests_patch("cs-clip", |d| {
-        showcase_cutscene(d)["path"][0]["offset"] = serde_json::json!([0, 3, 2]);
+        showcase_cutscene(d)["path"][0]["offset"] = serde_json::json!([0, 5, 2]);
     });
     let out = tmp("cs-clip-out");
     let b = delvec(&[
@@ -1377,6 +1476,7 @@ fn v06_ocean_boundary_builds_byte_identical_and_wires_return() {
 }"#,
     );
     std::fs::write(camp.join("world.json"), world).unwrap();
+    common::seat_on_ocean(&camp, &pf);
 
     let out_a = tmp("v06-ocean-a");
     let out_b = tmp("v06-ocean-b");
@@ -1639,6 +1739,13 @@ fn ocean_areas_sit_on_the_sea_level_datum_void_unchanged() {
             serde_json::to_string_pretty(&world).unwrap(),
         )
         .unwrap();
+        // The plan states where its region stands: on the ocean datum for an
+        // ocean world, at the void's walk reference otherwise.
+        if horizon.is_some() {
+            common::seat_on_ocean(&camp, &pf);
+        } else {
+            common::bind_region(&camp, &pf, "hello-room");
+        }
         let out = tmp(&format!("{name}-out"));
         let r = delvec(&[
             "build",
@@ -1742,7 +1849,7 @@ fn shore_prefabs(tag: &str) -> std::path::PathBuf {
 /// campaign that never declares a horizon gets — the identical geometry pours
 /// water off the edge of the world, forever, and before this check existed the
 /// build was **green** and shipped it.
-fn beach_camp_campaign(name: &str, ocean: bool) -> std::path::PathBuf {
+fn beach_camp_campaign(name: &str, ocean: bool, pf: &Path) -> std::path::PathBuf {
     let camp = tmp(name);
     copy_dir(&common::hello_world_dir(), &camp);
     let edit = |file: &str, f: &dyn Fn(&mut serde_json::Value)| {
@@ -1756,7 +1863,6 @@ fn beach_camp_campaign(name: &str, ocean: bool) -> std::path::PathBuf {
         std::fs::write(&p, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
     };
     edit("world.json", &|d| {
-        d["content"]["areas"][0]["prefab"] = serde_json::json!("prefab/test-shore");
         if ocean {
             let c = d["content"].as_object_mut().unwrap();
             c.insert("horizon".into(), serde_json::json!("ocean"));
@@ -1782,6 +1888,25 @@ fn beach_camp_campaign(name: &str, ocean: bool) -> std::path::PathBuf {
             edit(f, &|_| {});
         }
     }
+    // The one place declares the shore's two standing cells, and is the shore:
+    // on an ocean its region stands the beach's walk plane on the sea's walk
+    // reference, on the void at the fixture's own height.
+    common::patch_file(&camp.join("layout-graph.json"), |d| {
+        d["content"]["nodes"][0]["stations"] = serde_json::json!([
+            { "anchor": "anchor/camp-fire", "kind": "point" },
+            { "anchor": "anchor/crew-a", "kind": "point" }
+        ]);
+    });
+    if ocean {
+        common::bind_region_at(
+            &camp,
+            pf,
+            "test-shore",
+            i64::from(delvec::compiler::horizon::OCEAN_WALK_REF_Y) - 3,
+        );
+    } else {
+        common::bind_region(&camp, pf, "test-shore");
+    }
     camp
 }
 
@@ -1792,7 +1917,7 @@ fn a_shoreline_piece_placed_against_the_void_leaks_dw0318_and_against_the_sea_do
     let pf = shore_prefabs("dw0318");
 
     // --- void: the water runs out of the world ------------------------------
-    let camp = beach_camp_campaign("dw0318-void", false);
+    let camp = beach_camp_campaign("dw0318-void", false, &pf);
     let out = tmp("dw0318-void-out");
     let r = delvec(&[
         "build",
@@ -1834,7 +1959,7 @@ fn a_shoreline_piece_placed_against_the_void_leaks_dw0318_and_against_the_sea_do
     // What it asserts is the green with the binding that makes it a
     // measurement: every walk cell judged against the sea, none at or below
     // it, over a non-zero count.
-    let camp = beach_camp_campaign("dw0318-ocean", true);
+    let camp = beach_camp_campaign("dw0318-ocean", true, &pf);
     let out = tmp("dw0318-ocean-out");
     let r = delvec(&[
         "build",
@@ -1883,23 +2008,12 @@ fn a_shoreline_piece_placed_against_the_void_leaks_dw0318_and_against_the_sea_do
 /// downstream can catch this: nav, boundary, POV and PackTest all derive from
 /// the very placement that is wrong.
 ///
-/// The perturbation is the piece's **walk plane**, and that is what makes this
-/// arm reachable at all. An ocean area's origin is derived as
-/// `walk_ref_y - walk_y` (spec-0060 §3.2), and a shore stands its walk plane one
-/// block above its own waterline; so a piece that declares a waterline of 2 and
-/// a walk plane of 3 lands its water exactly on the sea, and the same piece
-/// declaring a walk plane of 2 lands it one block over. The two declarations are
-/// claims about one building and this is the rule that holds them to each other.
+/// The perturbation is the place's **height**: a bound piece is placed at its
+/// frame's lowest corner, so the shore's water lands at `frame.lo.y +
+/// waterline_y`, and a region seated one course too high hangs it over the sea.
 #[test]
 fn ocean_waterline_off_sea_level_is_refused_at_validation_with_dw0344() {
     let prefabs_copy = common::ocean_prefabs_dir("dw0344-arm1-prefabs", common::OceanRoom::Shore);
-    let meta_path = prefabs_copy.join("hello-room.json");
-    let read_meta = || -> serde_json::Value {
-        serde_json::from_str(&std::fs::read_to_string(&meta_path).unwrap()).unwrap()
-    };
-    let write_meta = |m: &serde_json::Value| {
-        std::fs::write(&meta_path, serde_json::to_string_pretty(m).unwrap()).unwrap();
-    };
 
     let camp = tmp("dw0344-arm1-camp");
     copy_dir(&common::hello_world_dir(), &camp);
@@ -1914,6 +2028,7 @@ fn ocean_waterline_off_sea_level_is_refused_at_validation_with_dw0344() {
         serde_json::to_string_pretty(&world).unwrap(),
     )
     .unwrap();
+    common::seat_on_ocean(&camp, &prefabs_copy);
 
     let build = |tag: &str| -> (i32, String) {
         let out = tmp(tag);
@@ -1945,48 +2060,45 @@ fn ocean_waterline_off_sea_level_is_refused_at_validation_with_dw0344() {
          something when the run that found nothing prints it:\n{log}"
     );
 
-    // Red: the same bytes, one declaration moved. The piece now claims a walk
-    // plane one course lower, so the area is seated one block higher and the
-    // waterline the piece really authors hangs a block over the sea.
-    let mut meta = read_meta();
-    meta["walk_y"] = serde_json::json!(2);
-    write_meta(&meta);
+    // Red: the same bytes, the place seated one course higher (the region and
+    // the box's floor together, so the frame is still the piece's shape). The
+    // waterline the piece really authors now hangs a block over the sea.
+    common::patch_file(&camp.join("site-plan.json"), |d| {
+        let c = &mut d["content"];
+        let y = c["region"]["min"][1].as_i64().unwrap();
+        c["region"]["min"][1] = serde_json::json!(y + 1);
+        let f = c["boxes"][0]["floor"]["y"].as_i64().unwrap();
+        c["boxes"][0]["floor"]["y"] = serde_json::json!(f + 1);
+    });
     let (bad, log) = build("dw0344-arm1-bad");
-    // **Refused at VALIDATION, exit 1, before a block is placed.** The two
-    // numbers are both in the document and the area's origin is derived from one
-    // of them, so `pos.y + waterline_y == 62` is exactly `waterline_y ==
-    // walk_y - 1` — nothing has to be placed to know it. The code is the same
-    // (`DW0344`), which is the point: this is the placement question asked one
-    // stage earlier, not a second rule with a second number.
+    // **Refused at VALIDATION, exit 1, before a block is placed.** A bound
+    // piece is placed at its frame's lowest corner, so where its waterline
+    // lands is known from the plan alone. The code is the same (`DW0344`):
+    // this is the placement question asked one stage earlier.
     assert_eq!(
         bad, 1,
         "off-level waterline is refused at validation:\n{log}"
     );
     assert!(log.contains("DW0344"), "expected DW0344:\n{log}");
     assert!(
-        log.contains("block(s) above this world's sea plane"),
+        log.contains("1 block(s) above this world's sea plane"),
         "it says which way and by how much:\n{log}"
     );
     assert!(
         !log.contains("place template"),
         "and nothing was placed:\n{log}"
     );
-    // The remedy names the number that would make it right, so the move is one
-    // an author can take rather than one they have to derive.
+    // The remedy names the number that would make it right.
     assert!(
-        log.contains("`walk_y: 3`"),
-        "the refusal names the walk plane that seats this waterline on the sea:\n{log}"
+        log.contains("lowest course is at y=60"),
+        "the refusal names the frame height that seats this waterline on the sea:\n{log}"
     );
 
     // A `void` world has no sea for a waterline to miss, so the WATERLINE
-    // declaration is not checked there. The walk plane is put back first: it is
-    // a measurement of the blocks and `DW0888` holds it to them on every base,
-    // so leaving the perturbed number in place would refuse this arm for the
-    // half of the edit it is not about.
-    meta["walk_y"] = serde_json::json!(3);
-    write_meta(&meta);
+    // declaration is not checked there.
     let void_camp = tmp("dw0344-arm1-void-camp");
     copy_dir(&common::hello_world_dir(), &void_camp);
+    common::bind_region(&void_camp, &prefabs_copy, "hello-room");
     let out_void = tmp("dw0344-arm1-void-out");
     let v = delvec(&[
         "build",
@@ -2045,6 +2157,7 @@ fn an_ocean_world_whose_shore_declares_no_waterline_is_refused_dw0886() {
         serde_json::to_string_pretty(&world).unwrap(),
     )
     .unwrap();
+    common::seat_on_ocean(&ocean_camp, &prefabs_copy);
 
     let build = |tag: &str, camp: &std::path::Path| -> (i32, String) {
         let out = tmp(tag);
@@ -2075,7 +2188,8 @@ fn an_ocean_world_whose_shore_declares_no_waterline_is_refused_dw0886() {
     );
     assert!(
         bound.contains("seating binding: horizon base `ocean`")
-            && bound.contains("1 waterline declaration(s) examined, 1 borne out by the bytes"),
+            && bound
+                .contains("1 bound waterline declaration(s) examined, 1 standing on the sea plane"),
         "the seating line states its denominators on a green run too:\n{bound}"
     );
 
@@ -2112,6 +2226,7 @@ fn an_ocean_world_whose_shore_declares_no_waterline_is_refused_dw0886() {
     // "applies and examined nothing" are different states, and the line says which.
     let void_camp = tmp("dw0886-void-camp");
     copy_dir(&common::hello_world_dir(), &void_camp);
+    common::bind_region(&void_camp, &prefabs_copy, "hello-room");
     let (void_code, void) = build("dw0886-void-out", &void_camp);
     assert_eq!(
         void_code, 0,
@@ -2123,20 +2238,18 @@ fn an_ocean_world_whose_shore_declares_no_waterline_is_refused_dw0886() {
     );
 }
 
-/// `DW0345`, and **the name is not what carries it**. Every campaign must
-/// resolve an ENTRY POINT — the one cell that is `setworldspawn`, the
-/// class-apply teleport, the first-join placement and the `dw:cp` seed — and the
-/// only thing that says which cell that is, is the anchor's declared `role`.
-/// Resolving none used to compile clean and ship a delve with no start, which a
-/// dedicated server papers over (vanilla spawn search finds the surface) and the
-/// integrated singleplayer server does not (it drops the join at the build
-/// floor, inside stone).
+/// **The name is not what carries the entry point.** Every campaign resolves
+/// one cell that is `setworldspawn`, the class-apply teleport, the first-join
+/// placement and the `dw:cp` seed. On a bound place that cell is the piece
+/// anchor the place binds the derived `spawn` to (spec-0106 §3.1), and nothing
+/// about a piece anchor's spelling supplies it.
 ///
 /// The two halves are one perturbation applied to one document: **rename** the
-/// entry anchor to a word no resolver has ever heard of and the delve still
-/// starts, because the role travelled with it; take the **role** off and leave
-/// the name it historically had, and the build is refused. A test that only
-/// renamed would pass on an engine that still matched a spelling.
+/// entry anchor to a word no resolver has ever heard of (the binding follows)
+/// and the delve still starts there; take the **role** off, give the old cell
+/// back the spelling `spawn`, and bind the entry elsewhere, and the start moves
+/// to the bound cell. A test that only renamed would pass on an engine that
+/// still matched a spelling.
 #[test]
 fn the_entry_point_is_the_role_and_no_name_supplies_it() {
     let prefabs_copy = tmp("dw0345-prefabs");
@@ -2165,11 +2278,29 @@ fn the_entry_point_is_the_role_and_no_name_supplies_it() {
     let v = anchors.remove(&key).unwrap();
     anchors.insert("lobby".into(), v);
     write_meta(&meta);
+    // The campaign binds its piece's anchors by the piece's names (spec-0106
+    // §3.1); the binding follows the rename, as an author's would.
+    let camp = tmp("dw0345-camp");
+    copy_dir(&common::hello_world_dir(), &camp);
+    let rebind = |to: &str| {
+        common::patch_file(&camp.join("detail-plan.json"), |d| {
+            for v in d["content"]["details"][0]["anchors"]
+                .as_object_mut()
+                .unwrap()
+                .values_mut()
+            {
+                if v == "spawn" || v == "lobby" {
+                    *v = serde_json::Value::from(to);
+                }
+            }
+        });
+    };
+    rebind("lobby");
 
     let out_renamed = tmp("dw0345-out-renamed");
     let renamed = delvec(&[
         "build",
-        common::hello_world_dir().to_str().unwrap(),
+        camp.to_str().unwrap(),
         "-o",
         out_renamed.to_str().unwrap(),
         "--prefabs",
@@ -2190,29 +2321,54 @@ fn the_entry_point_is_the_role_and_no_name_supplies_it() {
         "a renamed entry must still drive setworldspawn:\n{setup_finish}"
     );
 
-    // Now put the historical spelling back and take the ROLE off. A name has
-    // never been able to supply an entry point, so this is a hard build error
-    // rather than a silently start-less delve.
+    // Now put the historical spelling back, take the ROLE off, and bind the
+    // campaign's entry to a different cell of the piece. The start follows the
+    // binding — the place's statement of which cell opens the delve — and never
+    // the piece anchor that happens to be spelled `spawn`.
     let mut meta = read_meta();
     let anchors = meta["anchors"].as_object_mut().unwrap();
     let mut v = anchors.remove("lobby").unwrap();
     v.as_object_mut().unwrap().remove("role");
     anchors.insert("spawn".into(), v);
     write_meta(&meta);
+    let exit = read_meta()["anchors"]["anchor/keeper-stand"]["pos"].clone();
+    assert_ne!(
+        exit,
+        read_meta()["anchors"]["spawn"]["pos"],
+        "two different cells"
+    );
+    common::patch_file(&camp.join("detail-plan.json"), |d| {
+        let a = &mut d["content"]["details"][0]["anchors"];
+        a["spawn"] = serde_json::Value::from("anchor/keeper-stand");
+        a["anchor/node-keep"] = serde_json::Value::from("spawn");
+    });
 
     let out = tmp("dw0345-out");
     let b = delvec(&[
         "build",
-        common::hello_world_dir().to_str().unwrap(),
+        camp.to_str().unwrap(),
         "-o",
         out.to_str().unwrap(),
         "--prefabs",
         prefabs_copy.to_str().unwrap(),
-        "--json",
     ]);
-    assert_eq!(code(&b), 3, "a campaign with no entry anchor must exit 3");
-    let stdout = String::from_utf8_lossy(&b.stdout);
-    assert!(stdout.contains("DW0345"), "expected DW0345:\n{stdout}");
+    assert_eq!(code(&b), 0, "{}", String::from_utf8_lossy(&b.stderr));
+    let setup_finish = std::fs::read_to_string(
+        out.join("datapack/data/hello-world/function/setup_finish.mcfunction"),
+    )
+    .unwrap();
+    // hello-room is seated at the box's own corner [1, 64, 1] (region min [0, 64, 0]).
+    let at = |p: &serde_json::Value, i: usize, o: i64| p[i].as_i64().unwrap() + o;
+    let want = format!(
+        "setworldspawn {} {} {}",
+        at(&exit, 0, 0),
+        at(&exit, 1, 64),
+        at(&exit, 2, 0)
+    );
+    assert!(
+        setup_finish.contains(&want),
+        "the start is the cell the binding names ({want}):\n{setup_finish}"
+    );
 }
 
 // ---------------------------------------------------------------------------

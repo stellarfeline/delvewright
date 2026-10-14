@@ -67,12 +67,7 @@ fn prefabs_arg() -> String {
 /// its shore piece, seated so its walk plane stands one course over the sea.
 fn ocean_prefabs_arg(dir: &Path, tag: &str, room: common::OceanRoom) -> String {
     let lib = common::ocean_prefabs_dir(tag, room);
-    let meta: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(lib.join("hello-room.json")).unwrap())
-            .unwrap();
-    let walk = meta["walk_y"].as_i64().unwrap_or(1);
-    let y = i64::from(delvec::compiler::horizon::OCEAN_WALK_REF_Y) - walk;
-    common::bind_region_at(dir, &lib, "hello-room", y);
+    common::seat_on_ocean(dir, &lib);
     lib.display().to_string()
 }
 
