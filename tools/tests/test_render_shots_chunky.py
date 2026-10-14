@@ -373,7 +373,9 @@ printf '%s\\n' "$@" > "$JAVA_ARGS_OUT"
 """
 
 
-def render(root: Path, home: Path, *args: str) -> tuple[subprocess.CompletedProcess, Path]:
+def render(
+    root: Path, home: Path, *args: str, extra_env: dict[str, str] | None = None
+) -> tuple[subprocess.CompletedProcess, Path]:
     bindir = root.parent / "javabin"
     bindir.mkdir(exist_ok=True)
     java = bindir / "java"
@@ -388,6 +390,7 @@ def render(root: Path, home: Path, *args: str) -> tuple[subprocess.CompletedProc
     env["PATH"] = os.pathsep.join([str(bindir), str(shim), "/usr/bin", "/bin"])
     env["DELVEWRIGHT_CHUNKY_HOME"] = str(home)
     env["JAVA_ARGS_OUT"] = str(out)
+    env.update(extra_env or {})
     r = subprocess.run(
         ["bash", str(root / "validation" / "chunky.sh"), *args],
         env=env,
@@ -404,13 +407,44 @@ def test_chunky_sh_renders_with_the_pinned_classpath(tmp_path: Path) -> None:
 
     assert r.returncode == 0, r.stderr
     argv = out.read_text().splitlines()
-    assert argv[0] == f"-Dchunky.home={home}"
+    assert f"-Dchunky.home={home}" in argv[: argv.index("-cp")]
     classpath = argv[argv.index("-cp") + 1].split(os.pathsep)
     assert classpath == [str(home / "lib" / f"{CORE_PIN}.jar"), str(home / "lib" / "gson-2.9.0.jar")]
     assert CORE_OTHER not in argv[argv.index("-cp") + 1]
     assert argv[argv.index("-cp") + 2] == "se.llbit.chunky.main.Chunky"
     assert argv[-4:] == ["-scene-dir", "s", "-render", "x"]
     assert f"rendering with {CORE_PIN}" in r.stderr
+
+
+QUIET_JVM = ("-Djava.awt.headless=true", "-Dapple.awt.UIElement=true")
+
+
+def test_every_chunky_launch_is_headless_and_stays_out_of_the_dock(tmp_path: Path) -> None:
+    """A render never opens a window, and the pinned core's texture loader still
+    asks AWT for the local graphics environment; on macOS a non-headless JVM
+    answers by starting the Cocoa application, which takes the creator's focus
+    and puts an icon in the Dock for every render. Each launch shape `chunky.sh`
+    has — a plain render, a snapshot, a render over a delve's pack — hands the
+    JVM both properties, before the main class so Java reads them as its own."""
+    root = tree(tmp_path)
+    home = chunky_home(tmp_path, [CORE_PIN])
+    pack = tmp_path / "resourcepack.zip"
+    pack.write_bytes(b"a pack")
+    client = tmp_path / "minecraft.jar"
+    client.write_bytes(b"a client jar")
+    shapes = {
+        "render": ("-scene-dir", "s", "-render", "x"),
+        "snapshot": ("-scene-dir", "s", "-snapshot", "x", "out.png"),
+        "pack": ("--pack", str(pack), "-scene-dir", "s", "-render", "x"),
+    }
+    for shape, args in shapes.items():
+        r, out = render(root, home, *args, extra_env={"DELVEWRIGHT_CLIENT_JAR": str(client)})
+        assert r.returncode == 0, (shape, r.stderr)
+        argv = out.read_text().splitlines()
+        jvm = argv[: argv.index("-cp")]
+        for prop in QUIET_JVM:
+            assert prop in jvm, (shape, argv)
+        out.unlink()
 
 
 def scene_with_budget(tmp_path: Path, target: int) -> Path:

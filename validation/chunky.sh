@@ -75,10 +75,20 @@ if [ "$status" -ne 0 ]; then
 fi
 main_class="$(python3 "$repo/tools/lib/chunky_core.py" main-class --home "$DW_CHUNKY_HOME")"
 echo "chunky: rendering with $(python3 "$repo/tools/lib/versions.py" render.chunky_core), content digest verified, from $DW_CHUNKY_HOME" >&2
+texture_args=()
 if [ -n "$pack" ]; then
   jar="${DELVEWRIGHT_CLIENT_JAR:-$DW_CHUNKY_HOME/resources/minecraft.jar}"
   [ -f "$jar" ] || { echo "chunky: --pack needs the client jar beneath it, and $jar is not a file" >&2; exit 2; }
   echo "chunky: textures $pack layered above $jar (-textures, first listed wins)" >&2
-  exec java "-Dchunky.home=$DW_CHUNKY_HOME" -cp "$classpath" "$main_class" -textures "$pack:$jar" "${budget_args[@]+"${budget_args[@]}"}" "$@"
+  texture_args=(-textures "$pack:$jar")
 fi
-exec java "-Dchunky.home=$DW_CHUNKY_HOME" -cp "$classpath" "$main_class" "${budget_args[@]+"${budget_args[@]}"}" "$@"
+# The render never opens a window, and the pinned core still reaches the platform
+# toolkit: its texture loader (`se.llbit.resources.ImageLoader`) copies each
+# image through `BufferedImage.getGraphics`, which asks for the local graphics
+# environment, and on macOS that starts the Cocoa application — a foreground app
+# that takes the creator's focus and puts an icon in the Dock (measured on a
+# `-render`: `sun.awt.CGraphicsDevice` loads, and Chunky becomes the frontmost
+# app until it exits). Headless hands it the headless environment; UIElement
+# keeps any toolkit that still starts out of the Dock and the app switcher.
+quiet_jvm=(-Djava.awt.headless=true -Dapple.awt.UIElement=true)
+exec java "${quiet_jvm[@]}" "-Dchunky.home=$DW_CHUNKY_HOME" -cp "$classpath" "$main_class" "${texture_args[@]+"${texture_args[@]}"}" "${budget_args[@]+"${budget_args[@]}"}" "$@"
