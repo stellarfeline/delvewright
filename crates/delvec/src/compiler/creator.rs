@@ -518,20 +518,20 @@ pub fn packtests(ns: &str, title: &str, column: [i32; 2]) -> Vec<(String, String
             format!("assert score #{tag}_stamp {CAM_OBJ} matches 1"),
         ]
     };
-    // The dummy stands where the template put it when the stamp reads its eye.
-    // A sibling that takes every body (a cutscene's return, `tp @a <mark>`) can
-    // leave this dummy where its own `tp @s` no longer moves it — measured: in
-    // adventure at another test's position, rotation 0 0, the template's
-    // teleport a no-op — and the stamp then reads that place. The template
-    // states the precondition and reds on it by name.
+    // The dummy stands where the template put it when the stamp reads its eye,
+    // read the way the stamp's own check reads it (`data get entity @s Pos`). A
+    // sibling that takes every body (a cutscene's return, `tp @a <mark>`) can
+    // leave this dummy where its own `tp @s` no longer moves it — measured: Pos
+    // at another test's position, y -58, rotation 0 0, after the template's
+    // teleport — and the stamp then reads that place. A selector
+    // (`@s[x=…,distance=…]`) matched in that state, so the height is read off
+    // `Pos`. The template states the precondition and reds on it by name.
     let placed = |tag: &str| -> Vec<String> {
         vec![
             format!(
-                "execute store success score #{tag}_at {CAM_OBJ} if entity @s[x={},y={y},z={},distance=..0.001]",
-                f64::from(cx) + 0.5,
-                f64::from(cz) + 0.5
+                "execute store result score #{tag}_py {CAM_OBJ} run data get entity @s Pos[1] 1000"
             ),
-            format!("assert score #{tag}_at {CAM_OBJ} matches 1"),
+            format!("assert score #{tag}_py {CAM_OBJ} matches {}", y * 1000),
         ]
     };
     let fire = |slot: u32| -> Vec<String> {
