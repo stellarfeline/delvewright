@@ -29,6 +29,20 @@ INTO its wall. The message names each rung and the face it lacks. Turn the
 ladder to face away from the wall (`facing` is the way a body climbing it has
 its back), or give it a sturdy block behind; never move the objective.
 
+**"shut gate(s) do not separate their two sides".** A body gets
+round a shut gate — a barred door, a gate station, a prefab gate — by walking,
+falling, jumping or swimming, and reaches the far side before the story opens
+it. The message names the gate, the quest step it is shut at, the cell the way
+round starts from and ends at, its moves by kind, where it leaves the walked
+ground and where it is back on it, and the gates it passes (a clocked door
+counts as open). Close the way round in blocks: wall the water off where the
+body goes in (down to the bed, not a course over the surface — a body does not
+dive, but it swims across the top), raise the edge it climbs, jumps or drops
+over, or close the second way the plan left open. Never fence walkable-looking
+ground with an invisible barrier or mark it unwalkable, and never move the
+gate's objective to dodge it. If the party is meant to get round the gate —
+the door closes a loop — declare the barred edge `shortcut`.
+
 **`DW0438`: a `collect` container "holds `minecraft:air`, not a container".**
 The anchor you pointed at is not standing on a chest or barrel — an anchor named
 `anchor/chest` is not evidence there is one, and two shipped pieces declare
