@@ -2670,8 +2670,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   {weather}`, `score {…}`) or what a player's own body shows (`health {amount}`
   after `damage-players`, `effect {effect}` / `no-effect {effect}`), or
   `"emission-only"`. After the campaign marker and the tail the bot reads a block
-  at each cell, its own position (inside `to` where it stood inside `from` when
-  the marker arrived), the clock, the weather, its health and effects, and
+  at each cell, its own position (inside `to` where its hitbox met `from` when
+  the marker arrived — the teleport selector's rule, `bodyInVolume`), the clock, the weather, its health and effects, and
   reports `not_observable` with the verb for the rest; a reading that disagrees
   fails the run, and every row goes to the run report's `aftermath`. Present only
   when non-empty.
