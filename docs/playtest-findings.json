@@ -2995,6 +2995,54 @@
       "note": "The same class as `vh-02` on land. The route proofs could not see it: they take the walk step only, so a hedge top reached by a jump off a garden boulder was in no proof's reach. `DW0921` floods the player's own movement (`nav::World::body_moves`: the walk step, falls to the deepest an unarmoured body survives, and cardinal gap jumps inside `dsl::metrics::JUMP_REACH`, measured by `tools/spike-jump-arc/simulate.mjs at 84f364997d24`, which reproduces the live jump spike's 14 verdicts) from the critical path's route cells, once per quest configuration, and refuses every reached cell from which no movement leads back; a cell the boundary clock returns and a shortcut lever the pocket reaches are ways out. A room the story shuts the party into holds the objective the story waits on and is not refused, with no declaration. Measured on this campaign at `dd4429c`: 6 configurations, 316580 cells reached, 827 a body cannot leave, in 78 pockets over 5 configurations -- on land in each, the four hedge beds (the one at `[140, 82, 110]` among them: 25 cells, entered `by a fall of 2 block(s)` off the hedge top), a ruin hole in the curtain top, a tower slit one step under the wall walk and nine hollows in the east ditch between the crag and the field wall; and the Undertide well (`vh-02`) in three. At the fixed content: 0. Limits, named in the diagnostic: diagonal jumps, climbing, standing on a fence or wall top and diving are not moves.",
       "round": 2,
       "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "npcs.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "npc/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1025",
+        "kind": "dw"
+      },
+      "finding": "characters stood with their backs to the player as the player walked up to talk",
+      "general_form": "a body the party talks to faces the direction the party arrives from, or watches the party (`watch`), at the moment the talk is owed",
+      "id": "str-15",
+      "note": "Carried by DW1025 (compiler::approach, build tier): at every talk-to step of every configuration, the bearing from the body's feet to the party's last walked cell before the talk (read off the leg the route proof walked) is compared with the yaw the body holds there, its home anchor's facing or the arrival turn of the walk that left it at the station; more than 90 degrees off without a `nearest` watch reaching the approach is refused, naming the watch that turns it. The skill's prose rule (`references/story.md`) is now a pointer at the check. Recurring across campaigns.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "npcs.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "npc/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1026",
+        "kind": "dw"
+      },
+      "finding": "two bodies of one named character were visible at the same time",
+      "general_form": "one named character is never present as more than one entity at the same time, anywhere in the world, in any story state",
+      "id": "str-16",
+      "note": "Carried by DW1026 (compiler::presence, validation funnel): NPC and actor declarations that carry one visible name are one character; every story state of every configuration (the replay's journal, one effect list per tick, from world init) that leaves two of them in the world is refused. On this campaign's records it refuses the three Ivo Marrack skiff bodies spawned in one list (`obj/the-pillars`) and the four Sleeper NPCs on stage from world init.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"

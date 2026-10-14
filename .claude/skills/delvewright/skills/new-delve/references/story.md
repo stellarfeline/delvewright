@@ -33,14 +33,9 @@ and looping against them is the one way to spend an afternoon here.
     the fiction is a villager; anybody else in a delve — a guide, a keeper, a
     duke — reads as a placeholder in one. Budget the skin with the cast, not
     after it.
-  - **An NPC faces the way the party arrives.** An anchor's `facing` is where a
-    body standing on it looks, and the party comes from the road, the door, the
-    stair head — not from whatever is prettiest in the room. A greeter with their
-    back turned is the commonest first-draft defect there is. The engine holds
-    the other half: a walked body arrives facing its destination anchor's
-    declared facing, or, where none is declared, back down the path it walked.
-    A figure that should turn to follow the party declares `watch` (*Reference:
-    what a quest can do*, Bodies).
+  - **An NPC faces the way the party arrives**: `DW1025` checks it at every
+    talk, and **one named character is one body**: `DW1026` checks it in every
+    story state (*Reference: when something goes red*).
 - **Classes**: pre-provided gear, no grind. If the campaign places a bonfire,
   **every class kit must declare a flask** (`DW0476`) — see *Reference:
   authoring pitfalls*.

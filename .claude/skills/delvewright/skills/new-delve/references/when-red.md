@@ -29,6 +29,21 @@ INTO its wall. The message names each rung and the face it lacks. Turn the
 ladder to face away from the wall (`facing` is the way a body climbing it has
 its back), or give it a sturdy block behind; never move the objective.
 
+**`DW1025`: "the party walks up to its back" (exit 3).** A body the party
+talks to faces away from the way the route delivers them: its home anchor's
+`facing`, or the turn a walk left it on, is more than 90° off the party's
+approach. Declare the `watch` the message prints on that npc, so it turns to
+the party as they arrive; or stand it where the party comes at it from the
+front. Never move the objective or reroll to change the approach.
+
+**`DW1026`: "the party can see one person twice" (exit 1).** Two declarations
+carry one name and some story state has both in the world — usually a character
+re-declared per scene and spawned without the previous body leaving. Despawn the
+leaving body in the same effect list that spawns the next one (one list is one
+tick, so the swap is never seen); a despawn in a later `sequence` step or
+`on_arrive` leaves both standing meanwhile. If they really are different people,
+give each its own `name`.
+
 **`DW0438`: a `collect` container "holds `minecraft:air`, not a container".**
 The anchor you pointed at is not standing on a chest or barrel — an anchor named
 `anchor/chest` is not evidence there is one, and two shipped pieces declare
