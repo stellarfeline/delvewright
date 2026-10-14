@@ -90,6 +90,9 @@ NOT_CAMPAIGN = ("baseline", "forms", "overlays", "probes")
 # demonstrates — is tooling metadata, never a stage document.
 POINT_MANIFESTS = ("overlay.json", "probe.json")
 
+# Directories a point ships whole: the primary's copy is replaced, not merged.
+REPLACED_DIRS = ("programs",)
+
 # The three edits a probe may declare. `add` and `replace` are kept apart rather
 # than folded into one forgiving verb precisely because the distinction is what
 # makes drift visible: an `add` onto a key the primary has gained since is a
@@ -356,7 +359,13 @@ def materialise(dest: Path, point: Path | None = None) -> int:
         for f in sorted(Path(point).iterdir()):
             if f.name in POINT_MANIFESTS:
                 continue
-            if f.is_dir():
+            if f.is_dir() and f.name in REPLACED_DIRS:
+                # A point's programs are its places' own: they replace the
+                # primary's rather than merge with them, or a program would
+                # name a place the point's plan does not allocate.
+                shutil.rmtree(dest / f.name, ignore_errors=True)
+                shutil.copytree(f, dest / f.name)
+            elif f.is_dir():
                 shutil.copytree(f, dest / f.name, dirs_exist_ok=True)
             else:
                 shutil.copy2(f, dest / f.name)

@@ -848,11 +848,21 @@ fn prepare(
         .collect();
     let zone = Zone::from_tiles(meta.size(), &tiles).on_ground(&ground);
     // The piece is entered through its seams: every cell of each seam's
-    // answering cells and the layer either side of it.
-    let doors: std::collections::BTreeSet<[i32; 3]> = a
-        .seams
-        .iter()
-        .flat_map(|s| {
+    // answering cells and the layer either side of it. A place the plan
+    // allocates no seam is entered at its entry anchor — the `spawn` or a
+    // carry's mark lands there (spec-0106 §3.4).
+    let entry_cells: Vec<[i32; 3]> = if a.seams.is_empty() {
+        meta.anchors
+            .values()
+            .filter(|an| an.role == Some(delvewright_dsl::prefab::AnchorRole::Entry))
+            .filter_map(|an| an.pos)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let doors: std::collections::BTreeSet<[i32; 3]> = entry_cells
+        .into_iter()
+        .chain(a.seams.iter().flat_map(|s| {
             let (lo, hi) = (s.cells[0], s.cells[1]);
             let mut out = Vec::new();
             for x in lo[0] - 1..=hi[0] + 1 {
@@ -863,7 +873,7 @@ fn prepare(
                 }
             }
             out
-        })
+        }))
         .collect();
     // Scenery is lit for nobody: a body never stands in it — the build proves
     // that both ways (`DW0816`, `DW0837`) — so there is no play light to
@@ -1126,15 +1136,29 @@ fn structures_of(
 }
 
 /// The row this run writes: the place, the piece, and every owed name bound to
-/// the piece anchor of the same stem (spec-0058 §2.6). An owed name the piece
-/// does not answer is left unbound here, and `DW0845` names it.
+/// the piece anchor of the same stem (spec-0058 §2.6) — and, where the program
+/// marks no anchor of the entry names' stems, `anchor/node-<place>` and `spawn`
+/// to the one anchor carrying `role: entry`, the rule `--piece` binds by (a
+/// program that places a library piece imports its entry anchor). An owed name
+/// the piece does not answer is left unbound here, and `DW0845` names it.
 fn row_for(campaign: &Campaign, node: &NodeId, id: &str, meta: &PrefabMeta) -> Detail {
     let mut anchors = BTreeMap::new();
+    let entry_name = format!("anchor/node-{}", stem_of(node));
+    let entries: Vec<&String> = meta
+        .anchors
+        .iter()
+        .filter(|(_, a)| a.role == Some(delvewright_dsl::prefab::AnchorRole::Entry))
+        .map(|(k, _)| k)
+        .collect();
     for owed in delvewright_dsl::owed_anchors(campaign, node) {
         let stem = owed.strip_prefix("anchor/").unwrap_or(&owed);
         let key = format!("anchor/{stem}");
         if meta.anchors.contains_key(&key) {
             anchors.insert(owed.clone(), key);
+        } else if (owed == "spawn" || owed == entry_name)
+            && let [only] = entries.as_slice()
+        {
+            anchors.insert(owed.clone(), (*only).clone());
         }
     }
     Detail {

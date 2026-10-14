@@ -560,7 +560,7 @@ pub fn export_prefab(
         // solid rock or open air has no walk plane, and inventing one for it
         // would be the default this field exists to refuse.
         walk_y: measured_walk_y(&expansion),
-        waterline_y: None,
+        waterline_y: imported_waterline(&expansion.prefabs),
         // **The sides the program declares finished exterior surface**
         // (`DW0885`), written through on every expansion — which is what makes
         // it a declaration instead of a value the next `expand` erases.
@@ -684,7 +684,7 @@ pub fn export_zone(
         // solid rock or open air has no walk plane, and inventing one for it
         // would be the default this field exists to refuse.
         walk_y: measured_walk_y(&expansion),
-        waterline_y: None,
+        waterline_y: imported_waterline(&expansion.prefabs),
         // **The sides the program declares finished exterior surface**
         // (`DW0885`), written through on every expansion — which is what makes
         // it a declaration instead of a value the next `expand` erases.
@@ -882,6 +882,17 @@ fn measured_lighting(expansion: &Expansion) -> LightingMetadata {
         return LightingMetadata::unmeasured();
     }
     crate::admit::meta::lighting_from_probe(&probe)
+}
+
+/// **The waterline the placed library pieces declare** (spec-0106 §3.8): a
+/// `prefab` operation imports the piece's claims with its anchors, so where the
+/// pieces a program places declare a shore, and they agree on where it meets
+/// the sea, the export declares it there. Pieces that disagree, or none that
+/// declares one, leave it unstated — `DW0886` then asks for it at seating.
+fn imported_waterline(placed: &[crate::grammar::expand::PlacedPiece]) -> Option<i32> {
+    let mut lines = placed.iter().filter_map(|p| p.waterline);
+    let first = lines.next()?;
+    lines.all(|w| w == first).then_some(first)
 }
 
 fn measured_walk_y(expansion: &Expansion) -> Option<i32> {

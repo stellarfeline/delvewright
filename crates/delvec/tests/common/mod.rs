@@ -323,6 +323,8 @@ pub fn gallery_site_plan_at(dir: &Path) {
             std::fs::remove_file(&path).unwrap();
         }
     }
+    // A point's programs replace the primary's (`gallery_domain.REPLACED_DIRS`).
+    let _ = std::fs::remove_dir_all(dir.join("programs"));
     copy_dir_all(&gallery.join("overlays/site-plan"), dir);
     let _ = std::fs::remove_file(dir.join("overlay.json"));
     let pieces = dir.with_extension("generator-out");

@@ -86,6 +86,13 @@ pub(super) fn check_gate_reachability(
         let Some(target) = anchor_node(pieces, registry, &tname, &gates) else {
             continue;
         };
+        // This proof reads one piece's gate planes. A target in another piece
+        // is reached over the map's seams and links, which the blockout
+        // battery and the route proof judge (`DW0837`, `DW0317`), never by
+        // an adjacency this proof does not have.
+        if target.0 != spawn.0 {
+            continue;
+        }
         // Gates already open when the player must stand at this objective's anchor:
         // those an earlier objective (index < i) has opened.
         let open: BTreeSet<usize> = gates

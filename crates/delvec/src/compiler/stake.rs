@@ -661,10 +661,12 @@ fn death_cells_per_seat(
     seats: &[Seat],
     from_entry: &BTreeSet<[i32; 3]>,
 ) -> Vec<BTreeSet<[i32; 3]>> {
+    // The places of the site plan partition the map: a cell stands in the
+    // place whose frame holds it.
+    let frames = crate::compiler::detail::frames(plan.campaign);
     let area_of = |c: [i32; 3]| {
-        plan.areas.iter().position(|a| {
-            let (lo, hi) = a.bounds();
-            lo[0] <= c[0] && c[0] <= hi[0] && lo[2] <= c[2] && c[2] <= hi[2]
+        frames.iter().position(|(f, _)| {
+            (0..3).all(|a| f.lo[a] <= i64::from(c[a]) && i64::from(c[a]) <= f.hi[a])
         })
     };
     let route = crate::compiler::nav::route_positions(plan);
@@ -814,7 +816,12 @@ pub fn build(
     // stake can strand.
     let from_entry = match seats.first() {
         Some(s) if s.cp == -1 => reach[0].clone(),
-        _ => world.reachable_walkable(&seats.iter().map(|s| s.cell).collect::<Vec<_>>()),
+        _ => crate::compiler::nav::reachable_carried(
+            world,
+            plan,
+            &seats.iter().map(|s| s.cell).collect::<Vec<_>>(),
+            plan.critical_path.len(),
+        ),
     };
     let deaths = death_cells_per_seat(plan, world, &seats, &from_entry);
     let mut stranded_cells = 0usize;

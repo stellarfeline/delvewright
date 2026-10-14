@@ -4,11 +4,12 @@
 ## What the gallery's pieces are
 
 The gallery commits no piece. Its hand-built pieces — the hall, the annex kit,
-the yard, the skins — are written by `prefabs/gallery-generator`; its
-program-detailed places — every place of the `site-plan` and `site-plan-solid`
-overlays (spec-0098: a stand-in never ships, so a stageable point binds every
-place) — are written by `delvec detail` from each overlay's `programs/`
-(spec-0058); its sculpted body, the carcass the `carcass` overlay walks, is
+the long hall, the yard, the skins — are written by `prefabs/gallery-generator`;
+its program-detailed places — the primary's annex, whose program sets the annex
+kit down by name (spec-0106 §3.8), and every place of the `site-plan` and
+`site-plan-solid` overlays (spec-0098: a stand-in never ships, so a stageable
+point binds every place) — are written by `delvec detail` from each point's
+`programs/` (spec-0058); its sculpted body, the carcass the `carcass` overlay walks, is
 written by `delvec sculpt` from `gallery/forms/` (spec-0087). Every tool that builds the gallery takes `--prefabs <dir>` and
 expects both to be there, and until this file existed the second half had no
 committed act producing it: a directory holding only the generator's output
@@ -20,7 +21,7 @@ validates the site-plan overlay as `DW0842` — a piece the library does not hol
    texture images to `gallery/textures` (spec-0084), which is where every
    materialised point carries them from (gitignored, generated), and the
    design records it reads stand at `gallery/design`.
-2. Materialises each program-detailed overlay into a scratch directory, exactly as the
+2. Materialises the primary and each program-detailed overlay into a scratch directory, exactly as the
    coverage gate, the baseline and `gallery-build.py` materialise it
    (`tools/ci/gallery_domain.py`), and runs `delvec detail <point> --all
    --prefabs <out>` over it.
@@ -63,7 +64,7 @@ GENERATOR = REPO / "prefabs" / "gallery-generator" / "Cargo.toml"
 # The overlay points whose places are detailed from programs, in order. Each
 # names its pieces by its own campaign id (`<campaign id>-<place stem>`), so
 # the two never write the same piece.
-POINTS = ("site-plan", "site-plan-solid")
+POINTS = (None, "site-plan", "site-plan-solid")
 
 
 def die(msg: str) -> None:
@@ -103,16 +104,18 @@ def generate(out: Path, skins: Path, design: Path, textures: Path, terrain: Path
     return sum(1 for p in out.iterdir() if p.suffix == ".nbt")
 
 
-def detail(delvec: Path, out: Path, name: str) -> tuple[int, int]:
-    """Detail every program-bound place of one overlay point into `out`.
+def detail(delvec: Path, out: Path, name: str | None) -> tuple[int, int]:
+    """Detail every program-bound place of one point into `out` — the primary
+    (`None`) or an overlay.
 
     Returns (places detailed, rows compared to the committed document).
     """
-    overlay = GALLERY / "overlays" / name
+    overlay = GALLERY if name is None else GALLERY / "overlays" / name
+    name = name or "primary"
     committed = json.loads((overlay / "detail-plan.json").read_text())
     with tempfile.TemporaryDirectory(prefix="gallery-detail-") as tmp:
         point = Path(tmp) / name
-        n = materialise(point, overlay)
+        n = materialise(point, None if overlay == GALLERY else overlay)
         if n == 0:
             die(f"materialising `{name}` wrote ZERO files")
         # The verb writes every program place's row; the committed rows it is

@@ -57,6 +57,10 @@ pub struct Form {
     /// The piece's extent in blocks, `[x, y, z]`. The ground fills its footprint.
     #[serde(rename = "box")]
     pub extent: [u32; 3],
+    /// The body's spatial contract, written through to the piece — what lets a
+    /// sculpted body be a whole place a site plan binds (spec-0106 §3.8).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract: Option<delvewright_dsl::prefab::SpatialContract>,
     /// The form surface's version (`1.0.0`).
     pub form_version: String,
     /// The ground the body lies on. Required: a form with none is refused

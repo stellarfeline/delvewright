@@ -36,6 +36,9 @@ pub struct Piece {
     /// piece's provenance names it by, so the inputs that regenerate the
     /// export include the piece's bytes, not only its name.
     pub hash: String,
+    /// The local y its document declares its top water block at, when it
+    /// authors a shore (`waterline_y`) — a claim the placement carries.
+    pub waterline_y: Option<i32>,
 }
 
 /// Every piece a program may place, by id.
@@ -105,6 +108,7 @@ impl Pieces {
                     .map(|l| l.provenance.clone())
                     .unwrap_or_default(),
                 hash,
+                waterline_y: meta.waterline_y,
             });
         }
         Ok(out)

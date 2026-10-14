@@ -100,6 +100,7 @@ pub fn kit_cell() -> Piece {
         provenance: "Written by crates/delvec/src/grammar/library/kit_row.rs as the corpus's \
                      own kit part."
             .to_string(),
+        waterline_y: None,
     }
 }
 

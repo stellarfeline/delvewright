@@ -377,8 +377,8 @@ impl FaceBinding {
         };
         Some(Diagnostic::warning(
             DW_FACE_UNBOUND,
-            "world",
-            "/areas",
+            "detail-plan",
+            "/content/details",
             format!(
                 "the piece-mating check examined ZERO abutting faces: of {pieces} placed \
                  piece(s), {} with a spatial contract, {} with a face, and {} face(s) declared \

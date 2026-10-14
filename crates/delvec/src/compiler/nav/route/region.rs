@@ -641,7 +641,7 @@ pub fn reachable_under_every_quest_state(
         } else {
             Some(world.with_region_state(&st))
         };
-        let r = w.as_ref().unwrap_or(world).reachable_walkable(&[seat]);
+        let r = reachable_carried(w.as_ref().unwrap_or(world), plan, &[seat], arrival);
         seen.push(st);
         acc = Some(match acc {
             None => r,
@@ -653,8 +653,73 @@ pub fn reachable_under_every_quest_state(
     // would silently make every proof over it vacuous.
     (
         seen.len().max(1),
-        acc.unwrap_or_else(|| world.reachable_walkable(&[seat])),
+        acc.unwrap_or_else(|| reachable_carried(world, plan, &[seat], plan.critical_path.len())),
     )
+}
+
+/// **Where a body can get to from `starts`, walking and carried** (spec-0083
+/// §3.4, spec-0086): the walk flood, then every link live at path step `step`
+/// whose volume a reached cell stands in carries the body to its `to` cell, and
+/// every loop whose slab a reached cell stands in carries it by its offset, and
+/// the flood continues from there, to a fixpoint. A place no seam joins —
+/// reached only by a `carry` — is reached the way the party reaches it.
+pub fn reachable_carried(
+    world: &World,
+    plan: &Plan,
+    starts: &[[i32; 3]],
+    step: usize,
+) -> BTreeSet<[i32; 3]> {
+    let live: &[usize] = plan
+        .critical_path_live_links
+        .get(step.min(plan.critical_path_live_links.len().saturating_sub(1)))
+        .map_or(&[], Vec::as_slice);
+    let mut reached = world.reachable_walkable(starts);
+    let mut taken: BTreeSet<usize> = BTreeSet::new();
+    loop {
+        let mut landed = Vec::new();
+        for &i in live {
+            let Some(link) = plan.links.get(i) else {
+                continue;
+            };
+            if taken.contains(&i) {
+                continue;
+            }
+            let (lo, hi) = link.from;
+            let stands = reached
+                .iter()
+                .any(|c| (0..3).all(|a| lo[a] <= c[a] && c[a] <= hi[a]));
+            if stands {
+                taken.insert(i);
+                if let Some(to) = world.snap_standable(link.to, 1) {
+                    landed.push(to);
+                }
+            }
+        }
+        for lp in &plan.loops {
+            let (lo, hi) = lp.slab;
+            for c in reached
+                .iter()
+                .filter(|c| (0..3).all(|a| lo[a] <= c[a] && c[a] <= hi[a]))
+            {
+                let to = [
+                    c[0] + lp.offset[0],
+                    c[1] + lp.offset[1],
+                    c[2] + lp.offset[2],
+                ];
+                if !reached.contains(&to)
+                    && let Some(t) = world.snap_standable(to, 1)
+                    && !reached.contains(&t)
+                {
+                    landed.push(t);
+                }
+            }
+        }
+        if landed.is_empty() {
+            return reached;
+        }
+        let more = world.reachable_walkable(&landed);
+        reached.extend(more);
+    }
 }
 
 #[cfg(test)]

@@ -469,8 +469,9 @@ impl LightProbe {
         } else if self.entry_cells == 0 {
             format!(
                 "{} standable cell(s), but no ground-level entrance on any of the four vertical \
-                 faces: nothing can be walked into. A piece whose way in is a jigsaw socket must \
-                 be socketed before it is probed",
+                 faces and no seam or entry anchor to walk in from: nothing can be walked into. \
+                 Give the piece the way in its place is entered by — a seam's opening, or an \
+                 anchor carrying `role: entry` where the `spawn` or a carry's mark lands",
                 self.standable_cells
             )
         } else {

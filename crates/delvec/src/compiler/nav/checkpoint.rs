@@ -6,7 +6,7 @@ use super::*;
 use crate::compiler::failure::Failure;
 use crate::compiler::plan::{Plan, RegionEvents};
 use delvewright_dsl::Diagnostic;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Prove no `set-checkpoint` strands the party (DSL v0.6, spec-0012). Two
 /// obligations, per checkpoint:
@@ -50,11 +50,31 @@ pub fn check_checkpoints(plan: &Plan, world: &World) -> Result<(), Failure> {
         }
         cps.push((c.anchor.clone(), c.pos, fire_step));
     }
+    // A leg a link carries is walked only as far as the link's stand cell
+    // (spec-0083 §3.4): on a path the links are not yet spliced into, the
+    // route proof's own takes say which legs, and where the walk ends.
+    let takes = if plan.link_takes.is_empty() && !plan.links.is_empty() {
+        crate::compiler::nav::take_links(plan, world).unwrap_or_default()
+    } else {
+        crate::compiler::plan::LinkTakes::default()
+    };
+    let link_stands: BTreeMap<usize, [i32; 3]> = takes
+        .spliced
+        .iter()
+        .filter_map(|(step, taken)| taken.first().map(|(_, stand)| (*step, *stand)))
+        .collect();
+    // Where a respawned body can get to by walking and by the carries the map
+    // declares — a place no seam joins is reached by its link (spec-0106 §3.4).
+    let carried = |w: &World, from: [i32; 3], step: usize| {
+        crate::compiler::nav::reachable_carried(w, plan, &[from], step)
+    };
     verify_checkpoints(
         world,
         &cps,
         &fixed_checkpoint_fires(plan),
         &critical_positions(plan),
+        &link_stands,
+        &carried,
         &plan.region_events,
         &ancestor,
     )
@@ -264,6 +284,8 @@ fn verify_checkpoints(
     checkpoints: &[(String, [i32; 3], usize)],
     fixed_fires: &[usize],
     positions: &[VisitedPos],
+    link_stands: &BTreeMap<usize, [i32; 3]>,
+    carried: &dyn Fn(&World, [i32; 3], usize) -> BTreeSet<[i32; 3]>,
     region_events: &RegionEvents,
     ancestor: &dyn Fn(usize, usize) -> bool,
 ) -> Result<(), Failure> {
@@ -310,10 +332,17 @@ fn verify_checkpoints(
             leg_world_owned = world.with_region_state(&st);
             &leg_world_owned
         };
-        let Some(goal) = leg_world.snap_endpoint(target.pos, target.talk_to) else {
+        // A leg a link carries is walked to the link's stand cell.
+        let goal = match link_stands.get(&target.src_step) {
+            Some(stand) => Some(*stand),
+            None => leg_world.snap_endpoint(target.pos, target.talk_to),
+        };
+        let Some(goal) = goal else {
             continue; // the target itself is unsnappable → a DW0311 concern, not ours
         };
-        if leg_world.find_path(cell, goal).is_none() {
+        if leg_world.find_path(cell, goal).is_none()
+            && !carried(leg_world, cell, target.src_step).contains(&goal)
+        {
             return Err(Failure {
                 code: DW_CHECKPOINT_STRANDED,
                 message: format!(
@@ -610,6 +639,8 @@ mod tests {
                 &cps,
                 &[],
                 &positions,
+                &BTreeMap::new(),
+                &|_, _, _| BTreeSet::new(),
                 &RegionEvents::default(),
                 &linear
             )
@@ -622,6 +653,8 @@ mod tests {
             &cps,
             &[],
             &positions,
+            &BTreeMap::new(),
+            &|_, _, _| BTreeSet::new(),
             &RegionEvents::from(vec![close.clone()]),
             &linear,
         )
@@ -641,6 +674,8 @@ mod tests {
             &cps,
             &[],
             &positions,
+            &BTreeMap::new(),
+            &|_, _, _| BTreeSet::new(),
             &RegionEvents::default(),
             &linear,
         )
@@ -666,6 +701,8 @@ mod tests {
             &cps,
             &[1],
             &positions,
+            &BTreeMap::new(),
+            &|_, _, _| BTreeSet::new(),
             &RegionEvents::default(),
             &linear,
         )
@@ -675,6 +712,8 @@ mod tests {
             &cps,
             &[2],
             &positions,
+            &BTreeMap::new(),
+            &|_, _, _| BTreeSet::new(),
             &RegionEvents::default(),
             &linear,
         )
@@ -712,6 +751,8 @@ mod tests {
             &early,
             &[],
             &positions,
+            &BTreeMap::new(),
+            &|_, _, _| BTreeSet::new(),
             &RegionEvents::default(),
             &linear,
         )
@@ -724,6 +765,8 @@ mod tests {
                 &rooted,
                 &[],
                 &positions,
+                &BTreeMap::new(),
+                &|_, _, _| BTreeSet::new(),
                 &RegionEvents::default(),
                 &linear
             )
@@ -743,6 +786,8 @@ mod tests {
                 &cps,
                 &[],
                 &positions,
+                &BTreeMap::new(),
+                &|_, _, _| BTreeSet::new(),
                 &RegionEvents::default(),
                 &linear
             )
@@ -762,6 +807,8 @@ mod tests {
                 &cps,
                 &[],
                 &positions,
+                &BTreeMap::new(),
+                &|_, _, _| BTreeSet::new(),
                 &RegionEvents::default(),
                 &linear
             )
@@ -774,8 +821,17 @@ mod tests {
         // The checkpoint cell has no standable floor within snap radius.
         let world = floored(5, 3, 65, &[]);
         let cps = vec![("cp/rest".to_string(), [20, 65, 20], 0usize)];
-        let err = verify_checkpoints(&world, &cps, &[], &[], &RegionEvents::default(), &linear)
-            .unwrap_err();
+        let err = verify_checkpoints(
+            &world,
+            &cps,
+            &[],
+            &[],
+            &BTreeMap::new(),
+            &|_, _, _| BTreeSet::new(),
+            &RegionEvents::default(),
+            &linear,
+        )
+        .unwrap_err();
         assert_eq!(err.code, DW_CHECKPOINT_UNSTANDABLE); // DW0316
     }
 }

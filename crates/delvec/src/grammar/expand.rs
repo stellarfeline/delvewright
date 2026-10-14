@@ -730,6 +730,9 @@ pub struct PlacedPiece {
     pub quarter_turns: u32,
     /// The rule that placed it.
     pub declared_by: String,
+    /// The piece's declared waterline, local to the expansion region (the
+    /// piece's `waterline_y` plus where it stands), when it declares one.
+    pub waterline: Option<i32>,
 }
 
 impl fmt::Display for ExpandError {
@@ -2010,6 +2013,7 @@ impl<'a> Expander<'a> {
             ),
             quarter_turns: turns,
             declared_by: symbol.to_string(),
+            waterline: piece.waterline_y.map(|w| o[1] - origin[1] + w),
         });
         Ok(())
     }

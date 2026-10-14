@@ -334,8 +334,8 @@ pub fn check(
                             binding,
                             vec![Diagnostic::error(
                                 DW_PIECE_EXPOSED,
-                                "world",
-                                "/areas",
+                                "detail-plan",
+                                "/content/details",
                                 format!(
                                     "prefab `{}` declares `shown_faces: [\"{side}\"]`, and `{side}` is \
                                  not a side of a piece. A side is one of `east`, `west`, `up`, \
@@ -454,8 +454,8 @@ pub fn check(
             let horizon = binding.horizon;
             findings.push(Diagnostic::error(
                 DW_PIECE_EXPOSED,
-                "world",
-                "/areas",
+                "detail-plan",
+                "/content/details",
                 format!(
                     "area `{area}` places `{prefab}` with its {side} side standing in open air \
                      the party can be in, and nothing answers for it. {cells} solid cell(s) of \
@@ -498,8 +498,8 @@ pub fn check(
             }
             findings.push(Diagnostic::error(
                 DW_PIECE_EXPOSED,
-                "world",
-                "/areas",
+                "detail-plan",
+                "/content/details",
                 format!(
                     "area `{area}` places `{prefab}`, whose prefab document declares \
                      `shown_faces: [\"{local}\"]`, and that side of the piece is empty: not one \
