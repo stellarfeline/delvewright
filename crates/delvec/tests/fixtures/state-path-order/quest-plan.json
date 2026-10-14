@@ -5,7 +5,6 @@
     "quests": [
       {
         "act": 1,
-        "area": "area/keep",
         "depends_on": [],
         "goal": "Read a label off the Keeper's ledger.",
         "id": "quest/ask",
@@ -16,7 +15,6 @@
       },
       {
         "act": 1,
-        "area": "area/keep",
         "depends_on": [
           "quest/ask"
         ],

@@ -5,7 +5,6 @@
     "quests": [
       {
         "act": 1,
-        "area": "area/keep",
         "depends_on": [],
         "goal": "Find the hoist and learn how it is called.",
         "id": "quest/board",
@@ -14,7 +13,6 @@
       },
       {
         "act": 1,
-        "area": "area/keep",
         "depends_on": [
           "quest/board"
         ],

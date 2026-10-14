@@ -13,7 +13,7 @@
 use delvec::compiler::faces;
 use delvec::compiler::plan::{AreaPlacement, PiecePlacement, PlacedTemplate};
 use delvec::compiler::registry::PrefabRegistry;
-use delvec::compiler::solver::Rotation;
+use delvec::compiler::rotation::Rotation;
 use delvec::grammar::library::spatial_contract::spatial_contract;
 use delvec::grammar::{Box3, ExpandOptions, export_prefab};
 
@@ -330,80 +330,6 @@ fn pieces_in_the_site_area_are_allocated_rather_than_mated() {
 // ---------------------------------------------------------------------------
 // The library the engine actually has to judge
 // ---------------------------------------------------------------------------
-
-/// **A world of socket-only pieces is examined, not excused.**
-///
-/// This is the drill campaign's shape and the gallery annex's shape: pieces that
-/// declare no `spatial_contract` and are mated end to end by the jigsaw. The
-/// check reported `0 with a spatial contract, 0 of those with a face, and 0
-/// face(s) declared in all` on exactly this and passed — while the sockets that
-/// placed the pieces sat unread in the same document.
-#[test]
-fn a_chain_of_socket_only_pieces_is_examined_by_its_sockets() {
-    let (_dir, registry) = socket_library("green");
-    let areas = vec![socket_area(vec![
-        socket_piece([0, 0, 0], [false, true]),
-        socket_piece([0, 0, 7], [true, false]),
-    ])];
-    let binding = faces::check(&areas, &registry).expect("a mated chain assembles");
-    assert_eq!(binding.contracted, 0, "not one of them declares a contract");
-    assert_eq!(binding.socketed, 2, "and both are judged by their sockets");
-    assert_eq!(binding.pairs, 1, "the two boxes touch");
-    assert_eq!(binding.judged, 1, "and a declared face crosses the plane");
-    assert_eq!(binding.bound, 2, "one socket from each side of the seam");
-    assert!(
-        binding.finding(2, false).is_none(),
-        "a bound check raises no zero-binding advisory"
-    );
-    let line = binding.line(2);
-    assert!(
-        line.contains("2 of 2 placed piece(s) touch in 1 pair(s), 1 of which"),
-        "the line states the placement's own fraction: {line}"
-    );
-}
-
-/// **The perturbation toward the vacuous shape: detach one piece by a block.**
-///
-/// Nothing about either piece changes and no author writes anything — the second
-/// piece simply stands one block further away. The pair stops touching, so a
-/// check quantified over pairs that touch has nothing left to say about it; what
-/// still speaks is the LAYOUT'S OWN claim that the socket is mated, which is the
-/// claim `seal_layout` cleared the doorway to air on. The world would ship an
-/// open hole with nothing behind it.
-#[test]
-fn detaching_a_mated_piece_by_one_block_is_named() {
-    let (_dir, registry) = socket_library("detached");
-    let areas = vec![socket_area(vec![
-        socket_piece([0, 0, 0], [false, true]),
-        socket_piece([0, 0, 8], [true, false]),
-    ])];
-    let err = faces::check(&areas, &registry)
-        .expect_err("a mated socket with nothing beyond it must be refused");
-    assert_eq!(err.failure.code.id(), "DW0780");
-    assert!(
-        err.failure.message.contains("MATED"),
-        "{}",
-        err.failure.message
-    );
-    assert!(
-        err.failure.message.contains("jigsaw socket `kit:socket`"),
-        "the socket is named where a reviewer would look it up: {}",
-        err.failure.message
-    );
-    assert!(
-        err.failure.message.contains("z 7"),
-        "and the plane it looks at: {}",
-        err.failure.message
-    );
-
-    // The suspicion is the DETACHMENT and nothing else: the same two pieces,
-    // seated where the solver mated them, assemble.
-    let areas = vec![socket_area(vec![
-        socket_piece([0, 0, 0], [false, true]),
-        socket_piece([0, 0, 7], [true, false]),
-    ])];
-    faces::check(&areas, &registry).expect("the undisturbed chain is fine");
-}
 
 /// **Two pieces that touch and say nothing about the side they share is a
 /// refusal, not a zero.**

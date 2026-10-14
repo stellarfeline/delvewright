@@ -1,0 +1,73 @@
+{
+  "campaign_id": "souls-bonfire",
+  "content": {
+    "beats": [
+      {
+        "node": "node/keep",
+        "objective": "obj/talk",
+        "quest": "quest/greet"
+      },
+      {
+        "node": "node/keep",
+        "objective": "obj/slay",
+        "quest": "quest/trial"
+      },
+      {
+        "node": "node/keep",
+        "objective": "obj/key",
+        "quest": "quest/trial"
+      },
+      {
+        "node": "node/keep",
+        "objective": "obj/door",
+        "quest": "quest/trial"
+      },
+      {
+        "node": "node/keep",
+        "objective": "obj/shrine",
+        "quest": "quest/trial"
+      }
+    ],
+    "critical_path": [
+      "node/keep"
+    ],
+    "edges": [],
+    "entry": "node/keep",
+    "goal": "node/keep",
+    "nodes": [
+      {
+        "id": "node/keep",
+        "intent": "the whole site",
+        "note": "The campaign's one place.",
+        "stations": [
+          {
+            "anchor": "anchor/chest",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/door",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/gate",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/keeper-stand",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/objective",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/wave",
+            "kind": "point"
+          }
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.44.0",
+  "stage": "layout-graph"
+}

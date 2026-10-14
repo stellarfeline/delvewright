@@ -31,7 +31,6 @@
     "quests": [
       {
         "act": 1,
-        "area": "area/keep",
         "depends_on": [],
         "goal": "Choose whether to hold the gate with the Keeper or bolt for the moor road.",
         "id": "quest/decide",
@@ -42,7 +41,6 @@
       },
       {
         "act": 2,
-        "area": "area/keep",
         "depends_on": [
           "quest/decide"
         ],

@@ -230,7 +230,12 @@ fn relight_and_timeweather_emit_byte_identically() {
     c.world.dsl_version = DSL_VERSION.to_string();
     c.world.content.time = WorldTime::Night;
     c.world.content.weather = WorldWeather::Thunder;
-    c.world.content.areas[0].lighting = Some(AreaLighting {
+    c.site_plan
+        .as_mut()
+        .expect("a one-place site plan")
+        .content
+        .boxes[0]
+        .lighting = Some(AreaLighting {
         fixture: Fixture::Lantern,
         min_light: 10,
     });
@@ -418,7 +423,12 @@ fn wall_candles() -> Vec<[i32; 3]> {
 fn crit5_dark_with_declared_night_vision_builds() {
     let mut c = hello_world();
     c.world.dsl_version = DSL_VERSION.to_string();
-    c.world.content.areas[0].mitigation = Some(delvewright_dsl::AreaMitigation::NightVision);
+    c.site_plan
+        .as_mut()
+        .expect("a one-place site plan")
+        .content
+        .boxes[0]
+        .mitigation = Some(delvewright_dsl::AreaMitigation::NightVision);
     // A dark box but the declared mitigation applies → no DW0210 (nav may still
     // object, but the lighting gate must pass).
     let r = build_with_structure(&c, dark_box_nbt([11, 6, 11], &[]));
@@ -492,7 +502,12 @@ fn renamed_potion_kit_item_no_longer_mitigates_dw0210() {
 fn crit7_unsatisfiable_build_fails_dw0211() {
     let mut c = hello_world();
     c.world.dsl_version = DSL_VERSION.to_string();
-    c.world.content.areas[0].lighting = Some(AreaLighting {
+    c.site_plan
+        .as_mut()
+        .expect("a one-place site plan")
+        .content
+        .boxes[0]
+        .lighting = Some(AreaLighting {
         fixture: Fixture::Torch,
         min_light: 14,
     });
@@ -512,7 +527,12 @@ fn dw0210_night_vision_verdict_is_language_independent() {
     let mut c = hello_world();
     c.world.dsl_version = DSL_VERSION.to_string();
     c.world.content.languages = vec!["zh-cn".to_string()];
-    c.world.content.areas[0].mitigation = Some(delvewright_dsl::AreaMitigation::NightVision);
+    c.site_plan
+        .as_mut()
+        .expect("a one-place site plan")
+        .content
+        .boxes[0]
+        .mitigation = Some(delvewright_dsl::AreaMitigation::NightVision);
     let dark = dark_box_nbt([11, 6, 11], &[]);
 
     assert!(
@@ -604,7 +624,12 @@ fn render_plan_lighting_stamp_follows_the_declarations() {
     let dark = dark_box_nbt([11, 6, 11], &[]);
     let mut c1 = hello_world();
     c1.world.dsl_version = DSL_VERSION.to_string();
-    c1.world.content.areas[0].mitigation = Some(delvewright_dsl::AreaMitigation::NightVision);
+    c1.site_plan
+        .as_mut()
+        .expect("a one-place site plan")
+        .content
+        .boxes[0]
+        .mitigation = Some(delvewright_dsl::AreaMitigation::NightVision);
     let out1 = build_with_structure(&c1, dark.clone()).expect("declared-mitigation build succeeds");
     let shots1 = stamped_shots(&out1);
     let mut saw = (false, false);
@@ -629,11 +654,21 @@ fn render_plan_lighting_stamp_follows_the_declarations() {
     // light the scene, so the render layer must not emulate).
     let mut c2 = hello_world();
     c2.world.dsl_version = DSL_VERSION.to_string();
-    c2.world.content.areas[0].lighting = Some(AreaLighting {
+    c2.site_plan
+        .as_mut()
+        .expect("a one-place site plan")
+        .content
+        .boxes[0]
+        .lighting = Some(AreaLighting {
         fixture: Fixture::Lantern,
         min_light: 7,
     });
-    c2.world.content.areas[0].mitigation = Some(delvewright_dsl::AreaMitigation::NightVision);
+    c2.site_plan
+        .as_mut()
+        .expect("a one-place site plan")
+        .content
+        .boxes[0]
+        .mitigation = Some(delvewright_dsl::AreaMitigation::NightVision);
     let out2 = build_with_structure(&c2, dark_box_nbt([11, 6, 11], &[]))
         .expect("relit+mitigated build succeeds");
     let pov2 = stamped_shots(&out2)
@@ -746,10 +781,6 @@ fn dw0210_on_a_built_site_plan_names_the_rooms_and_a_reachable_remedy() {
         "fixture: the plan must have declared lighting for its removal to make the map dark"
     );
     c.world.content.time = WorldTime::Midnight;
-    assert!(
-        c.world.content.areas.is_empty(),
-        "fixture: a site-plan campaign declares an empty `areas` list (DW0839)"
-    );
 
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).expect("the library loads");
     let plan = Plan::build(&c, &prefabs).expect("the blockout fixture plans");

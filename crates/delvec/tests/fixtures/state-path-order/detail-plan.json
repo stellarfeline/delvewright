@@ -1,0 +1,20 @@
+{
+  "campaign_id": "state-path-order",
+  "content": {
+    "details": [
+      {
+        "anchors": {
+          "anchor/door": "anchor/door",
+          "anchor/exit": "anchor/exit",
+          "anchor/keeper-stand": "anchor/keeper-stand",
+          "anchor/node-keep": "spawn",
+          "spawn": "spawn"
+        },
+        "piece": "prefab/hello-room",
+        "place": "node/keep"
+      }
+    ]
+  },
+  "dsl_version": "0.44.0",
+  "stage": "detail-plan"
+}

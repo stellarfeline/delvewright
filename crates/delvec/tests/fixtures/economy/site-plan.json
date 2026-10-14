@@ -1,0 +1,64 @@
+{
+  "campaign_id": "economy",
+  "content": {
+    "boxes": [
+      {
+        "base": {
+          "owned": 0
+        },
+        "ceiling": {
+          "open": 5
+        },
+        "extent": [
+          9,
+          9
+        ],
+        "floor": {
+          "y": 65
+        },
+        "min": [
+          1,
+          1
+        ],
+        "node": "node/keep"
+      }
+    ],
+    "fill": {
+      "block": "minecraft:stone",
+      "kind": "solid"
+    },
+    "identities": [
+      {
+        "cmp": "eq",
+        "fact": "fact/site-span",
+        "measure": {
+          "axis": "x",
+          "of": "region-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/site-depth",
+        "measure": {
+          "axis": "z",
+          "of": "region-extent"
+        }
+      }
+    ],
+    "region": {
+      "extent": [
+        11,
+        6,
+        11
+      ],
+      "min": [
+        0,
+        64,
+        0
+      ]
+    },
+    "seams": []
+  },
+  "dsl_version": "0.44.0",
+  "stage": "site-plan"
+}

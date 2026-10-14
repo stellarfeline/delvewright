@@ -1,0 +1,46 @@
+{
+  "campaign_id": "lift-stake",
+  "content": {
+    "beats": [
+      {
+        "node": "node/keep",
+        "objective": "obj/landing",
+        "quest": "quest/board"
+      },
+      {
+        "node": "node/keep",
+        "objective": "obj/return",
+        "quest": "quest/ride"
+      }
+    ],
+    "critical_path": [
+      "node/keep"
+    ],
+    "edges": [],
+    "entry": "node/keep",
+    "goal": "node/keep",
+    "nodes": [
+      {
+        "id": "node/keep",
+        "intent": "the whole site",
+        "note": "The campaign's one place.",
+        "stations": [
+          {
+            "anchor": "anchor/door",
+            "kind": "gate"
+          },
+          {
+            "anchor": "anchor/exit",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/keeper-stand",
+            "kind": "point"
+          }
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.44.0",
+  "stage": "layout-graph"
+}

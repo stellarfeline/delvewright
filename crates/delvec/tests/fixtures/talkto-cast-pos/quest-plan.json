@@ -5,7 +5,6 @@
     "quests": [
       {
         "act": 1,
-        "area": "area/keep",
         "depends_on": [],
         "goal": "Ask the Keeper to lift the gate.",
         "id": "quest/ask",
@@ -16,7 +15,6 @@
       },
       {
         "act": 2,
-        "area": "area/keep",
         "depends_on": [
           "quest/ask"
         ],

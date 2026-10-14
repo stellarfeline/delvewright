@@ -4,7 +4,6 @@
     "npcs": [
       {
         "anchor": "anchor/keeper-stand",
-        "area": "area/keep",
         "base_entity": "minecraft:villager",
         "id": "npc/keeper",
         "name": "The Keeper",

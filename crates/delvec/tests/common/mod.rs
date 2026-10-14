@@ -68,11 +68,7 @@ pub fn keep_vertical_dir() -> PathBuf {
 /// `l10n/` sidecar directory in `base` is copied verbatim (i18n coverage must hold
 /// for a materialized campaign that declares languages).
 pub fn materialize_from(base: &Path, patch: &serde_json::Value, dst: &Path) {
-    std::fs::create_dir_all(dst).unwrap();
-    for f in STAGE_FILES {
-        std::fs::copy(base.join(f), dst.join(f)).unwrap();
-    }
-    copy_l10n_dir(base, dst);
+    copy_dir_all(base, dst);
     if let Some(docs) = patch.get("documents").and_then(|d| d.as_object()) {
         for (stage, doc) in docs {
             let file = dst.join(format!("{stage}.json"));
@@ -144,7 +140,7 @@ pub fn copy_l10n_dir(base: &Path, dst: &Path) {
 /// call site already goes through.
 pub fn prefabs_dir() -> PathBuf {
     static CHECKED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-    let dir = pinned::prefabs();
+    let dir = region_library();
     CHECKED.get_or_init(|| {
         let Ok(reg) = delvec::compiler::registry::PrefabRegistry::load_dir(&dir) else {
             // An unreadable directory is the caller's own problem and every call
@@ -181,6 +177,73 @@ pub fn prefabs_dir() -> PathBuf {
         );
     });
     dir
+}
+
+/// **The pinned library, every piece able to stand as a whole place** — a
+/// derived copy of [`pinned::prefabs`] in which each document that declares no
+/// `spatial_contract` carries the whole-site contract a one-place region owes
+/// (spec-0106 §6: one `open` space over the whole piece, zero exterior edges;
+/// the piece is entered by the `spawn`). The fixtures are one-place site plans
+/// that bind library pieces by `details[]` rows, and a bound piece owes a
+/// contract (`DW0843`); the pinned library predates that, and the content
+/// repository's library is not this repository's to edit. Built once per
+/// content pin into `CARGO_TARGET_TMPDIR`, atomically, and never written to
+/// afterwards.
+pub fn region_library() -> PathBuf {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        let src = pinned::prefabs();
+        let dst = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("region-library-{}", &pinned::sha()[..12]));
+        if dst.join(".complete").is_file() {
+            return dst;
+        }
+        let tmp = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("region-library-tmp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        copy_dir_all(&src, &tmp);
+        for entry in std::fs::read_dir(&tmp).unwrap() {
+            let path = entry.unwrap().path();
+            if !delvec::compiler::registry::is_prefab_document(&path) {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&text) else {
+                continue;
+            };
+            if v.get("spatial_contract").is_some() || v.get("prefab_id").is_none() {
+                continue;
+            }
+            let size = v
+                .get("structure_set")
+                .or_else(|| v.get("structure"))
+                .and_then(|s| s.get("size"))
+                .cloned();
+            let Some(size) = size.and_then(|s| serde_json::from_value::<[i64; 3]>(s).ok()) else {
+                continue;
+            };
+            v["spatial_contract"] = serde_json::json!({
+                "entry": "site",
+                "spaces": {"site": {"envelope": "open", "boxes": [
+                    {"from": [0, 0, 0], "to": [size[0] - 1, size[1] - 1, size[2] - 1]}
+                ]}},
+                "no_body": {},
+                "edges": [],
+                "faces": []
+            });
+            std::fs::write(&path, serde_json::to_string_pretty(&v).unwrap() + "\n").unwrap();
+        }
+        std::fs::write(tmp.join(".complete"), "").unwrap();
+        if std::fs::rename(&tmp, &dst).is_err() {
+            // Another test process built it first; theirs is the same bytes.
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
+        assert!(dst.join(".complete").is_file(), "{}", dst.display());
+        dst
+    })
+    .clone()
 }
 
 /// The DSL invalid-fixture directory (patch files).
@@ -284,10 +347,7 @@ pub fn gallery_site_plan_at(dir: &Path) {
 /// envelope. Returns nothing; panics on IO error (tests).
 pub fn materialize(patch: &serde_json::Value, dst: &Path) {
     std::fs::create_dir_all(dst).unwrap();
-    let base = hello_world_dir();
-    for f in STAGE_FILES {
-        std::fs::copy(base.join(f), dst.join(f)).unwrap();
-    }
+    copy_dir_all(&hello_world_dir(), dst);
     if let Some(docs) = patch.get("documents").and_then(|d| d.as_object()) {
         for (stage, doc) in docs {
             let file = dst.join(format!("{stage}.json"));
@@ -963,18 +1023,117 @@ pub fn write_single_prefab(
     declare_walk_y_at(&dir.join(format!("{id}.json")));
 }
 
-/// The hello-world campaign materialised at `dst`, with its one area rebound to
-/// `prefab/<id>`. Shared by every test that needs a real campaign around a
-/// synthetic piece.
-pub fn campaign_bound_to(dst: &Path, id: &str) -> PathBuf {
-    std::fs::create_dir_all(dst).unwrap();
-    for f in STAGE_FILES {
-        std::fs::copy(hello_world_dir().join(f), dst.join(f)).unwrap();
-    }
-    patch_file(&dst.join("world.json"), |v| {
-        v["content"]["areas"][0]["prefab"] = serde_json::json!(format!("prefab/{id}"));
-    });
+/// The hello-world campaign materialised at `dst`, its one place rebound to
+/// `prefab/<id>` from the library at `prefabs` ([`bind_region`]). Shared by
+/// every test that needs a real campaign around a synthetic piece.
+pub fn campaign_bound_to(dst: &Path, prefabs: &Path, id: &str) -> PathBuf {
+    copy_dir_all(&hello_world_dir(), dst);
+    bind_region(dst, prefabs, id);
     dst.to_path_buf()
+}
+
+/// **Rebind the one place of the one-place campaign at `dir` to the library
+/// piece `prefab/<id>`** (spec-0106 §6's shape): the region and the box are
+/// fitted to the piece — the box its footprint less the ring, its floor the
+/// piece's walk plane over the same origin, its ceiling open to the piece's
+/// top, its base `{"owned": walk_y - 1}` — and the `details[]` row binds the
+/// piece, every station to the anchor of the same name and the entry names to
+/// the piece's `role: entry` anchor (else `spawn`). A piece in `prefabs`
+/// declaring no `spatial_contract` is given the whole-site one (one `open`
+/// space over the whole, zero exterior edges), as [`region_library`] gives the
+/// pinned library's.
+pub fn bind_region(dir: &Path, prefabs: &Path, id: &str) {
+    let meta_path = prefabs.join(format!("{id}.json"));
+    let mut meta: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&meta_path)
+            .unwrap_or_else(|e| panic!("{}: {e}", meta_path.display())),
+    )
+    .unwrap();
+    let size: [i64; 3] = serde_json::from_value(
+        meta.get("structure_set")
+            .or_else(|| meta.get("structure"))
+            .and_then(|s| s.get("size"))
+            .cloned()
+            .expect("the piece declares its size"),
+    )
+    .unwrap();
+    if meta.get("spatial_contract").is_none() {
+        meta["spatial_contract"] = serde_json::json!({
+            "entry": "site",
+            "spaces": {"site": {"envelope": "open", "boxes": [
+                {"from": [0, 0, 0], "to": [size[0] - 1, size[1] - 1, size[2] - 1]}
+            ]}},
+            "no_body": {}, "edges": [], "faces": []
+        });
+        std::fs::write(
+            &meta_path,
+            serde_json::to_string_pretty(&meta).unwrap() + "\n",
+        )
+        .unwrap();
+    }
+    let walk = meta
+        .get("walk_y")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(1)
+        .max(1);
+    let plan: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("site-plan.json")).unwrap())
+            .unwrap();
+    let y0 = plan["content"]["region"]["min"][1].as_i64().unwrap();
+    let node = plan["content"]["boxes"][0]["node"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    patch_file(&dir.join("site-plan.json"), |v| {
+        let c = &mut v["content"];
+        c["region"]["extent"] = serde_json::json!(size);
+        c["boxes"][0]["extent"] = serde_json::json!([size[0] - 2, size[2] - 2]);
+        c["boxes"][0]["floor"] = serde_json::json!({"y": y0 + walk});
+        c["boxes"][0]["ceiling"] = serde_json::json!({"open": size[1] - walk});
+        c["boxes"][0]["base"] = serde_json::json!({"owned": walk - 1});
+    });
+    for (fact, axis) in [("fact/site-span", 0), ("fact/site-depth", 2)] {
+        patch_file(&dir.join("geometry-brief.json"), |v| {
+            for f in v["content"]["facts"].as_array_mut().unwrap() {
+                if f["id"] == fact {
+                    f["value"] = serde_json::json!(size[axis] as f64);
+                }
+            }
+        });
+    }
+    let graph: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("layout-graph.json")).unwrap())
+            .unwrap();
+    let anchors = meta["anchors"].as_object().cloned().unwrap_or_default();
+    let entry = anchors
+        .iter()
+        .find(|(_, a)| a["role"] == "entry")
+        .map(|(k, _)| k.clone())
+        .unwrap_or_else(|| "spawn".to_string());
+    let mut row = serde_json::Map::new();
+    for st in graph["content"]["nodes"][0]["stations"].as_array().unwrap() {
+        let name = st["anchor"].as_str().unwrap();
+        let key = if anchors.contains_key(name) {
+            name.to_string()
+        } else {
+            name.trim_start_matches("anchor/").to_string()
+        };
+        row.insert(name.to_string(), serde_json::json!(key));
+    }
+    let stem = node.trim_start_matches("node/");
+    row.insert(format!("anchor/node-{stem}"), serde_json::json!(entry));
+    row.insert("spawn".to_string(), serde_json::json!(entry));
+    let doc = serde_json::json!({
+        "campaign_id": plan["campaign_id"],
+        "content": {"details": [{"place": node, "piece": format!("prefab/{id}"), "anchors": row}]},
+        "dsl_version": delvewright_dsl::DSL_VERSION,
+        "stage": "detail-plan",
+    });
+    std::fs::write(
+        dir.join("detail-plan.json"),
+        delvewright_dsl::to_canonical_string(&doc).unwrap(),
+    )
+    .unwrap();
 }
 
 /// The parsed campaign at `dir`.
@@ -1289,7 +1448,7 @@ pub fn plan_structures_with_trap_triggers(
         for piece in &area.pieces {
             for t in &piece.templates {
                 let mut bytes = std::fs::read(dir.join(&t.structure_file)).unwrap();
-                if piece.rotation == delvec::compiler::solver::Rotation::None {
+                if piece.rotation == delvec::compiler::rotation::Rotation::None {
                     let mut s = Structure::read(&bytes).unwrap();
                     let mut placed = false;
                     for trap in &plan.traps {

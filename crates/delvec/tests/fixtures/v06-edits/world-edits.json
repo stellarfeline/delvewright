@@ -3,7 +3,6 @@
   "content": {
     "batches": [
       {
-        "area": "area/keep",
         "edits": [
           {
             "name": "region/interior",
@@ -67,7 +66,6 @@
         "note": "Break the uniform stone floor into weathered variation (fixture: piece-local box + palette-match + replace)."
       },
       {
-        "area": "area/keep",
         "edits": [
           {
             "name": "region/nook",
@@ -148,7 +146,6 @@
         "note": "Carve a second doorway through the inner wall and dress a pad by the exit (fixture: carve + anchor-relative frame + surface-band + fill)."
       },
       {
-        "area": "area/keep",
         "edits": [
           {
             "name": "region/outer-corner",
@@ -230,7 +227,6 @@
         "note": "Raise low corner terraces in both chambers (fixture: union + morph raise)."
       },
       {
-        "area": "area/keep",
         "edits": [
           {
             "name": "region/garden-floor",
@@ -339,7 +335,6 @@
         "note": "Green the outer chamber and scatter wildflowers off the walk lane (fixture: scatter + avoid envelope)."
       },
       {
-        "area": "area/keep",
         "edits": [
           {
             "name": "region/inner-floor",
@@ -408,7 +403,6 @@
         "note": "One lean-or-grow oak in the inner chamber, clear of the exit lane (fixture: plant, lean-or-grow canopy rules)."
       },
       {
-        "area": "area/keep",
         "edits": [
           {
             "at": [
@@ -429,7 +423,6 @@
         "note": "Stamp a detached basement annex below the room (fixture: fragment, library provenance)."
       },
       {
-        "area": "area/keep",
         "edits": [
           {
             "name": "region/nook-r",

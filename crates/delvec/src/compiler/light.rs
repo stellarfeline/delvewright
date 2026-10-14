@@ -2904,52 +2904,13 @@ mod tests {
         assert_eq!(diag.unwrap().code, DW_DARK_UNMITIGATED);
     }
 
-    /// **A prefab campaign is still offered all three ways**, byte-for-byte.
-    ///
-    /// The refusal's remedy is a function of the campaign's placement authority;
-    /// the arm a prefab campaign takes offers the same three surfaces, names the
-    /// same field, and prints the same "no `lighting` and no `mitigation`"
-    /// subject it always did.
-    ///
-    /// The prescription is asserted whole rather than by clause, because the
-    /// defect this guards against is a surface silently dropped from the list
-    /// while the count beside it stays at three.
+    /// **A dark derived interior is offered every way it has**, whole: the
+    /// plan's `lighting`, the scene, and a place's own `mitigation` (spec-0106
+    /// §3.2). The prescription is asserted whole rather than by clause, because
+    /// the defect this guards against is a surface silently dropped from the
+    /// list while the count beside it stays.
     #[test]
-    fn dw0210_offers_a_prefab_campaign_every_way_it_always_had() {
-        let map = room(7, 5, 7, false);
-        let model = LightModel::from_blocks(map.clone());
-        let reachable = reachable_of(&map);
-        let msg = undeclared_diag(&model, &nav_of(&map), &reachable, 0, false, "area/crypt")
-            .expect("an enclosed unlit room is dark")
-            .message;
-        assert!(
-            msg.contains("with no `lighting` and no `mitigation` declaration."),
-            "a prefab campaign has both surfaces, so the subject names both: {msg}"
-        );
-        let expected = "Mitigate each area one of three ways: declare `world.areas[].lighting` \
-                        (a relight `fixture` + `min_light`) for it, brighten the scene \
-                        (`world.time`/`weather`), or declare `world.areas[].mitigation: \
-                        \"night-vision\"` on it (the compiler then emits a clocked `effect give \
-                        … night_vision` over its bounds) — or re-arrange the room, or raise the \
-                        density of what is already lit in it, and measure again. A renamed \
-                        potion in a class kit is NOT a mitigation — it grants nothing. Do NOT \
-                        lower `DARK_THRESHOLD` or trim the reachable set — the darkness is real \
-                        (spec-0010 DW0210)";
-        let tail = &msg[msg.find("Mitigate each area").expect("the tail is there")..];
-        assert_eq!(tail, expected);
-    }
-
-    /// **A derived map is offered only the surfaces it has.**
-    ///
-    /// Reproduced before this was written: a site-plan campaign with no
-    /// `lighting` on its plan and `world.time: night` refused with *"declare
-    /// `world.areas[].lighting` … or declare `world.areas[].mitigation`"* — two
-    /// prescriptions `DW0839` and `DW0160` refuse — and never named the one
-    /// document that would have worked. `mitigation` lives on an `areas[]`
-    /// entry, which such a campaign is required to leave empty, so it is a
-    /// capability a derived map does not have rather than a wording question.
-    #[test]
-    fn dw0210_on_a_derived_map_names_the_plan_and_drops_the_mitigation_it_cannot_declare() {
+    fn dw0210_offers_every_way_a_site_plan_has() {
         let map = room(7, 5, 7, false);
         let model = LightModel::from_blocks(map.clone());
         let reachable = reachable_of(&map);
@@ -2964,34 +2925,22 @@ mod tests {
         .expect("an enclosed unlit room is dark")
         .message;
         assert!(
-            msg.contains("declare the site plan's `lighting`"),
-            "the one reachable declaration must be named: {msg}"
+            msg.contains("with no `lighting` and no `mitigation` declaration."),
+            "{msg}"
         );
-        assert!(
-            !msg.contains("world.areas"),
-            "`DW0839` refuses `areas[]` here, so nothing may send the author to it: {msg}"
-        );
-        assert!(
-            !msg.contains("mitigation: "),
-            "a derived map has no per-area `mitigation` surface to declare: {msg}"
-        );
-        assert!(
-            msg.contains("one of two ways"),
-            "the count moves with the list of ways actually offered: {msg}"
-        );
-    }
-
-    /// The `DW0211` half of the same pair: only the FIELD moves.
-    #[test]
-    fn dw0211_names_the_document_this_campaign_declares_lighting_in() {
-        assert_eq!(
-            delvewright_dsl::Placement::Prefabs.lighting_field(),
-            "`world.areas[].lighting`"
-        );
-        assert_eq!(
-            delvewright_dsl::Placement::SitePlan.lighting_field(),
-            "the site plan's `lighting`"
-        );
+        let expected = "Mitigate each area one of three ways: declare the site plan's \
+                        `lighting` (or, for a bound piece, its place's `boxes[].lighting`) (a \
+                        relight `fixture` + `min_light`) for it, brighten the scene \
+                        (`world.time`/`weather`), or declare the place's `boxes[].mitigation: \
+                        \"night-vision\"` (the compiler then emits a clocked `effect give … \
+                        night_vision` over its claim) — or re-arrange the room, or raise the \
+                        density of what is already lit in it, and measure again. A renamed \
+                        potion in a class kit is NOT a mitigation — it grants nothing. Do NOT \
+                        lower `DARK_THRESHOLD` or trim the reachable set — the darkness is real \
+                        (spec-0010 DW0210)";
+        let tail = &msg[msg.find("Mitigate each area").expect("the tail is there")..];
+        assert_eq!(tail, expected);
+        assert!(!msg.contains("world.areas"), "{msg}");
     }
 
     // --- Criterion 5: night-vision kit suppresses DW0210 ---
@@ -3002,16 +2951,7 @@ mod tests {
         let model = LightModel::from_blocks(map.clone());
         let reachable = reachable_of(&map);
         assert!(
-            undeclared_diag(
-                &model,
-                &nav_of(&map),
-                &reachable,
-                0,
-                true,
-                "area/crypt",
-                delvewright_dsl::Placement::Prefabs
-            )
-            .is_none(),
+            undeclared_diag(&model, &nav_of(&map), &reachable, 0, true, "area/crypt").is_none(),
             "night vision must mitigate an undeclared dark area"
         );
     }
@@ -3040,16 +2980,7 @@ mod tests {
         assert!(!reachable.contains(&[21, 1, 21]));
         // The lit room measures clean despite the dark sealed pocket.
         assert!(
-            undeclared_diag(
-                &model,
-                &nav_of(&map),
-                &reachable,
-                0,
-                false,
-                "area/room",
-                delvewright_dsl::Placement::Prefabs
-            )
-            .is_none(),
+            undeclared_diag(&model, &nav_of(&map), &reachable, 0, false, "area/room").is_none(),
             "a sealed dark cavity must not trip DW0210"
         );
     }
@@ -3435,16 +3366,7 @@ mod tests {
             m
         });
         assert!(
-            undeclared_diag(
-                &model,
-                &nav,
-                &reachable,
-                0,
-                false,
-                "area/keep",
-                delvewright_dsl::Placement::Prefabs
-            )
-            .is_none(),
+            undeclared_diag(&model, &nav, &reachable, 0, false, "area/keep").is_none(),
             "a lit roofed room with a trap trigger must not trip DW0210"
         );
     }
@@ -3767,13 +3689,7 @@ mod tests {
         assert!(!reachable.is_empty(), "fixture: the room is walkable");
         assert!(s.dark.is_empty(), "fixture: the room is lit");
         assert!(
-            dark_diagnostic(
-                &BTreeMap::from([(whole("area/hall"), s)]),
-                &nav,
-                0,
-                delvewright_dsl::Placement::Prefabs
-            )
-            .is_none(),
+            dark_diagnostic(&BTreeMap::from([(whole("area/hall"), s)]), &nav, 0).is_none(),
             "a lit area must produce no diagnostic"
         );
     }

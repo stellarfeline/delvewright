@@ -5,7 +5,6 @@
     "quests": [
       {
         "act": 1,
-        "area": "area/gallery",
         "depends_on": [],
         "goal": "Walk the gallery to its far end.",
         "id": "quest/walk-the-gallery",

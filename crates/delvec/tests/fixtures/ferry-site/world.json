@@ -1,7 +1,6 @@
 {
   "campaign_id": "ferry-site",
   "content": {
-    "areas": [],
     "boundary": {
       "margin": 16,
       "message": "The strait ends here."

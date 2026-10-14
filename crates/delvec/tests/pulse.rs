@@ -74,7 +74,7 @@ fn write(tag: &str, pulses: &str, talk: &str) -> (PathBuf, PathBuf) {
     let root = scratch(tag);
     let lib = root.join("prefabs");
     common::write_single_prefab(&lib, ROOM, SIZE, &cells(), anchors());
-    let dir = common::campaign_bound_to(&root.join("campaign"), ROOM);
+    let dir = common::campaign_bound_to(&root.join("campaign"), &lib, ROOM);
     common::patch_file(&dir.join("world.json"), |v| {
         v["content"]["areas"][0]["mitigation"] = serde_json::json!("night-vision");
     });

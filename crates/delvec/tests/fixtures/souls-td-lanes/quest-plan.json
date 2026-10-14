@@ -5,7 +5,6 @@
     "quests": [
       {
         "act": 1,
-        "area": "area/keep",
         "depends_on": [],
         "goal": "Break the warband walking the hall, and the husks they summon.",
         "id": "quest/hold-the-keep",

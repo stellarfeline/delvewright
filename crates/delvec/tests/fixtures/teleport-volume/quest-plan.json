@@ -5,7 +5,6 @@
     "quests": [
       {
         "act": 1,
-        "area": "area/keep",
         "depends_on": [],
         "goal": "Get the Keeper to open the door.",
         "id": "quest/ask",
@@ -16,7 +15,6 @@
       },
       {
         "act": 1,
-        "area": "area/keep",
         "depends_on": [
           "quest/ask"
         ],

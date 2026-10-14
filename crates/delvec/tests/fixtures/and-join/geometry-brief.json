@@ -1,0 +1,21 @@
+{
+  "campaign_id": "and-join",
+  "content": {
+    "facts": [
+      {
+        "id": "fact/site-span",
+        "note": "The site's span east to west: the one place and its ring.",
+        "unit": "blocks",
+        "value": 18.0
+      },
+      {
+        "id": "fact/site-depth",
+        "note": "The site's depth north to south: the one place and its ring.",
+        "unit": "blocks",
+        "value": 18.0
+      }
+    ]
+  },
+  "dsl_version": "0.44.0",
+  "stage": "geometry-brief"
+}

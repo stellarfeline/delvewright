@@ -1,0 +1,42 @@
+{
+  "campaign_id": "first-leg",
+  "content": {
+    "beats": [
+      {
+        "node": "node/hall",
+        "objective": "obj/bell",
+        "quest": "quest/hall"
+      },
+      {
+        "node": "node/hall",
+        "objective": "obj/take",
+        "quest": "quest/vault"
+      }
+    ],
+    "critical_path": [
+      "node/hall"
+    ],
+    "edges": [],
+    "entry": "node/hall",
+    "goal": "node/hall",
+    "nodes": [
+      {
+        "id": "node/hall",
+        "intent": "the whole site",
+        "note": "The campaign's one place.",
+        "stations": [
+          {
+            "anchor": "anchor/keeper-stand",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/npc-stand",
+            "kind": "point"
+          }
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.44.0",
+  "stage": "layout-graph"
+}

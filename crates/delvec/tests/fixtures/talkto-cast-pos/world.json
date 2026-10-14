@@ -1,13 +1,6 @@
 {
   "campaign_id": "talkto-cast-pos",
   "content": {
-    "areas": [
-      {
-        "id": "area/keep",
-        "name": "The Keep",
-        "prefab": "prefab/hello-room"
-      }
-    ],
     "difficulty": "normal",
     "premise": "The Keeper bars the inner door. Ask him well and he lifts the gate — then walks through it himself, and the last word is said on the far side.",
     "seed": 20260805,

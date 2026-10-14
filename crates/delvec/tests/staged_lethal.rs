@@ -258,7 +258,7 @@ impl Case {
         let root = scratch(tag);
         let lib = root.join("prefabs");
         write_room(&lib, self.room);
-        let dir = common::campaign_bound_to(&root.join("campaign"), ROOM);
+        let dir = common::campaign_bound_to(&root.join("campaign"), &lib, ROOM);
         // The cell over the lid measures dark under the ceiling's light; the
         // lighting gate is not what this file is about.
         common::patch_file(&dir.join("world.json"), |v| {

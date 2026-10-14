@@ -129,7 +129,8 @@ fn a_tiled_zones_own_water_is_inside_the_built_volume() {
     }
     common::write_tiled_zone(&prefabs_dir, "tiled-cistern", corridor_anchors(), &extra);
 
-    let campaign_path = common::campaign_bound_to(&root.join("campaign"), "tiled-cistern");
+    let campaign_path =
+        common::campaign_bound_to(&root.join("campaign"), &prefabs_dir, "tiled-cistern");
     let (_c, plan, prefabs, structures, loaded) = plan_and_structures(&campaign_path, &prefabs_dir);
 
     // The agreement, stated directly: one piece, and its built extent is the
@@ -258,7 +259,8 @@ fn a_leaking_world_gets_no_boundary_verdict_through_the_entry_point() {
         }),
     );
 
-    let campaign_path = common::campaign_bound_to(&root.join("campaign"), "leaky-plate");
+    let campaign_path =
+        common::campaign_bound_to(&root.join("campaign"), &prefabs_dir, "leaky-plate");
     let (_c, plan, prefabs, structures, loaded) = plan_and_structures(&campaign_path, &prefabs_dir);
     let world = nav::World::from_plan(&plan, &structures);
 

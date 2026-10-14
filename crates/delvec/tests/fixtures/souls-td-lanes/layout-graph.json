@@ -1,0 +1,51 @@
+{
+  "campaign_id": "souls-td-lanes",
+  "content": {
+    "beats": [
+      {
+        "node": "node/keep",
+        "objective": "obj/take-post",
+        "quest": "quest/hold-the-keep"
+      },
+      {
+        "node": "node/keep",
+        "objective": "obj/break-warband",
+        "quest": "quest/hold-the-keep"
+      },
+      {
+        "node": "node/keep",
+        "objective": "obj/break-husks",
+        "quest": "quest/hold-the-keep"
+      }
+    ],
+    "critical_path": [
+      "node/keep"
+    ],
+    "edges": [],
+    "entry": "node/keep",
+    "goal": "node/keep",
+    "nodes": [
+      {
+        "id": "node/keep",
+        "intent": "the whole site",
+        "note": "The campaign's one place.",
+        "stations": [
+          {
+            "anchor": "anchor/chest",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/exit",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/keeper-stand",
+            "kind": "point"
+          }
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.44.0",
+  "stage": "layout-graph"
+}

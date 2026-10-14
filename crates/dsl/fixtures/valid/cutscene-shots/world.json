@@ -1,13 +1,6 @@
 {
   "campaign_id": "cutscene-shots",
   "content": {
-    "areas": [
-      {
-        "id": "area/keep",
-        "name": "The Keep",
-        "prefab": "prefab/hello-room"
-      }
-    ],
     "premise": "One locked door stands between you and the road home. The Keeper holds the key, and only conversation will move him.",
     "seed": 20260729,
     "target_minutes": 5,

@@ -1,0 +1,64 @@
+{
+  "campaign_id": "and-join",
+  "content": {
+    "beats": [
+      {
+        "node": "node/keep",
+        "objective": "obj/talk",
+        "quest": "quest/greet"
+      },
+      {
+        "node": "node/keep",
+        "objective": "obj/ward-north",
+        "quest": "quest/wards"
+      },
+      {
+        "node": "node/keep",
+        "objective": "obj/ward-south",
+        "quest": "quest/wards"
+      },
+      {
+        "node": "node/keep",
+        "objective": "obj/shrine",
+        "quest": "quest/wards"
+      }
+    ],
+    "critical_path": [
+      "node/keep"
+    ],
+    "edges": [],
+    "entry": "node/keep",
+    "goal": "node/keep",
+    "nodes": [
+      {
+        "id": "node/keep",
+        "intent": "the whole site",
+        "note": "The campaign's one place.",
+        "stations": [
+          {
+            "anchor": "anchor/chest",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/door",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/gate",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/keeper-stand",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/objective",
+            "kind": "point"
+          }
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.44.0",
+  "stage": "layout-graph"
+}

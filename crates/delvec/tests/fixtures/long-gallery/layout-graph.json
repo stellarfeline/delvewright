@@ -1,0 +1,41 @@
+{
+  "campaign_id": "long-gallery",
+  "content": {
+    "beats": [
+      {
+        "node": "node/gallery",
+        "objective": "obj/end",
+        "quest": "quest/walk-the-gallery"
+      }
+    ],
+    "critical_path": [
+      "node/gallery"
+    ],
+    "edges": [],
+    "entry": "node/gallery",
+    "goal": "node/gallery",
+    "nodes": [
+      {
+        "id": "node/gallery",
+        "intent": "the whole site",
+        "note": "The campaign's one place.",
+        "stations": [
+          {
+            "anchor": "anchor/end",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/landing",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/slab",
+            "kind": "point"
+          }
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.44.0",
+  "stage": "layout-graph"
+}

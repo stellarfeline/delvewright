@@ -1,0 +1,50 @@
+{
+  "campaign_id": "ferry",
+  "content": {
+    "beats": [
+      {
+        "node": "node/strait",
+        "objective": "obj/board",
+        "quest": "quest/cross"
+      },
+      {
+        "node": "node/strait",
+        "objective": "obj/far-shore",
+        "quest": "quest/cross"
+      }
+    ],
+    "critical_path": [
+      "node/strait"
+    ],
+    "edges": [],
+    "entry": "node/strait",
+    "goal": "node/strait",
+    "nodes": [
+      {
+        "id": "node/strait",
+        "intent": "the whole site",
+        "note": "The campaign's one place.",
+        "stations": [
+          {
+            "anchor": "anchor/boat",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/far-landing",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/far-shore",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/tiller",
+            "kind": "point"
+          }
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.44.0",
+  "stage": "layout-graph"
+}

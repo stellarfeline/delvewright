@@ -5,7 +5,6 @@
     "quests": [
       {
         "act": 1,
-        "area": "area/keep",
         "depends_on": [],
         "goal": "Get the Keeper to name the trial, and mark the stone he stands on.",
         "id": "quest/greet",
@@ -16,7 +15,6 @@
       },
       {
         "act": 1,
-        "area": "area/keep",
         "depends_on": [
           "quest/greet"
         ],

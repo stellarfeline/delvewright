@@ -1041,7 +1041,12 @@ fn a_granted_sight_effect_outlasts_every_camera_it_overlaps() {
         );
     });
     let mut c = campaign(&q);
-    c.world.content.areas[0].mitigation = Some(delvewright_dsl::AreaMitigation::NightVision);
+    c.site_plan
+        .as_mut()
+        .expect("a one-place site plan")
+        .content
+        .boxes[0]
+        .mitigation = Some(delvewright_dsl::AreaMitigation::NightVision);
     let prefabs = prefabs();
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
     let out = emit::build(

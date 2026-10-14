@@ -2,7 +2,7 @@
 //!
 //! IDs deserialize permissively from any JSON string so that *syntax* violations
 //! surface as validation diagnostics (`DW0110`) rather than opaque parse errors.
-//! Call [`is_valid_syntax`](AreaId::is_valid_syntax) during validation.
+//! Call [`is_valid_syntax`](NpcId::is_valid_syntax) during validation.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -74,9 +74,6 @@ macro_rules! prefixed_id {
 }
 
 prefixed_id!(
-    /// Area id: `area/<kebab>` (stage 1).
-    AreaId, "area");
-prefixed_id!(
     /// NPC id: `npc/<kebab>` (stage 2).
     NpcId, "npc");
 prefixed_id!(
@@ -88,10 +85,6 @@ prefixed_id!(
 prefixed_id!(
     /// Prefab id: `prefab/<kebab>` (resolved against `prefabs/` at compile time).
     PrefabId, "prefab");
-prefixed_id!(
-    /// Prefab-pool id: `pool/<kebab>` (jigsaw multi-piece assembly, stage 1;
-    /// resolved against `prefabs/` metadata at compile time).
-    PoolId, "pool");
 prefixed_id!(
     /// Dialogue node id: `dlg/<kebab>` (stage-local to an NPC's dialogue graph).
     DialogueId, "dlg");
@@ -365,10 +358,10 @@ mod tests {
 
     #[test]
     fn prefixed_rules() {
-        assert!(AreaId("area/keep".into()).is_valid_syntax());
-        assert!(!AreaId("area/Keep".into()).is_valid_syntax());
-        assert!(!AreaId("keep".into()).is_valid_syntax());
-        assert!(!AreaId("npc/keeper".into()).is_valid_syntax());
+        assert!(NpcId("npc/keeper".into()).is_valid_syntax());
+        assert!(!NpcId("npc/Keeper".into()).is_valid_syntax());
+        assert!(!NpcId("keeper".into()).is_valid_syntax());
+        assert!(!NpcId("quest/keeper".into()).is_valid_syntax());
         assert!(NpcId("npc/keeper".into()).is_valid_syntax());
     }
 }

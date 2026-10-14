@@ -1,0 +1,46 @@
+{
+  "campaign_id": "cutscene-shots",
+  "content": {
+    "beats": [
+      {
+        "node": "node/keep",
+        "objective": "obj/talk",
+        "quest": "quest/open-the-door"
+      },
+      {
+        "node": "node/keep",
+        "objective": "obj/exit",
+        "quest": "quest/open-the-door"
+      }
+    ],
+    "critical_path": [
+      "node/keep"
+    ],
+    "edges": [],
+    "entry": "node/keep",
+    "goal": "node/keep",
+    "nodes": [
+      {
+        "id": "node/keep",
+        "intent": "the whole site",
+        "note": "The campaign's one place.",
+        "stations": [
+          {
+            "anchor": "anchor/door",
+            "kind": "gate"
+          },
+          {
+            "anchor": "anchor/exit",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/keeper-stand",
+            "kind": "point"
+          }
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.44.0",
+  "stage": "layout-graph"
+}

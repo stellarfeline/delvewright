@@ -456,7 +456,12 @@ fn each_declaration_moves_the_byte_it_owns() {
     assert_ne!(file(&base, path), file(&moved, path));
     // The carried id moves the bootstrap line.
     let mut c = carried_and_repainted();
-    c.world.content.areas[0].atmosphere = Some(delvewright_dsl::AtmosphereId(
+    c.site_plan
+        .as_mut()
+        .expect("a one-place site plan")
+        .content
+        .boxes[0]
+        .atmosphere = Some(delvewright_dsl::AtmosphereId(
         "atmosphere/still".to_string(),
     ));
     let moved = try_build(&c).expect("builds");

@@ -1998,7 +1998,7 @@ fn removing_the_bundle_is_byte_identical_and_a_build_is_deterministic() {
 #[test]
 fn an_interior_overview_stands_over_a_place_stacked_over_its_eye() {
     use delvec::compiler::plan::PiecePlacement;
-    use delvec::compiler::solver::Rotation;
+    use delvec::compiler::rotation::Rotation;
     let loaded = load_campaign_dir(&common::hello_world_dir()).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();

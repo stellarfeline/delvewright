@@ -3,7 +3,6 @@
   "content": {
     "batches": [
       {
-        "area": "area/keep",
         "edits": [
           {
             "name": "region/yard-roof",

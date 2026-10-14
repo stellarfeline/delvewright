@@ -1,0 +1,61 @@
+{
+  "campaign_id": "and-join",
+  "content": {
+    "boxes": [
+      {
+        "ceiling": {
+          "clearance": 6
+        },
+        "extent": [
+          16,
+          16
+        ],
+        "floor": {
+          "y": 65
+        },
+        "min": [
+          1,
+          1
+        ],
+        "node": "node/keep"
+      }
+    ],
+    "fill": {
+      "block": "minecraft:stone",
+      "kind": "solid"
+    },
+    "identities": [
+      {
+        "cmp": "eq",
+        "fact": "fact/site-span",
+        "measure": {
+          "axis": "x",
+          "of": "region-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/site-depth",
+        "measure": {
+          "axis": "z",
+          "of": "region-extent"
+        }
+      }
+    ],
+    "region": {
+      "extent": [
+        18,
+        9,
+        18
+      ],
+      "min": [
+        0,
+        63,
+        0
+      ]
+    },
+    "seams": []
+  },
+  "dsl_version": "0.44.0",
+  "stage": "site-plan"
+}

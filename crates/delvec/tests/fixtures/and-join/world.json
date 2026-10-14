@@ -1,17 +1,6 @@
 {
   "campaign_id": "and-join",
   "content": {
-    "areas": [
-      {
-        "id": "area/keep",
-        "name": "The Stone Keep",
-        "pieces": {
-          "max": 9,
-          "min": 7
-        },
-        "prefab_pool": "pool/stone-keep"
-      }
-    ],
     "min_players": 2,
     "premise": "The shrine door is barred by two wards in two separate rooms. One traveler cannot reach both in time; a pair can.",
     "seed": 20260802,

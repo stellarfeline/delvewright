@@ -1,13 +1,6 @@
 {
   "campaign_id": "state-path-order",
   "content": {
-    "areas": [
-      {
-        "id": "area/keep",
-        "name": "The Keep",
-        "prefab": "prefab/hello-room"
-      }
-    ],
     "difficulty": "normal",
     "premise": "The room's labels are read one at a time, and the door out only opens for a party that has read at least one of them.",
     "seed": 20260729,

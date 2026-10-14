@@ -14,7 +14,7 @@ use delvec::compiler::analyze::analyze_campaign;
 use delvec::compiler::load::load_campaign_dir;
 use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::{
-    AnchorRegistry, Lighting, LightingProfile, PoolId, PrefabId, RawCampaign, parse_campaign,
+    AnchorRegistry, Lighting, LightingProfile, PrefabId, RawCampaign, parse_campaign,
 };
 use std::collections::BTreeSet;
 
@@ -25,9 +25,6 @@ struct ForceDark<'a>(&'a PrefabRegistry);
 impl AnchorRegistry for ForceDark<'_> {
     fn anchors_for(&self, prefab: &PrefabId) -> Option<&BTreeSet<String>> {
         self.0.anchors_for(prefab)
-    }
-    fn has_pool(&self, pool: &PoolId) -> bool {
-        self.0.has_pool(pool)
     }
     /// Delegated like the rest: this wrapper changes lighting and nothing else,
     /// and an undelegated existence answer would quietly make the wrapped run

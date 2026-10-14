@@ -86,7 +86,7 @@ fn the_output_is_the_same_at_every_thread_count() {
         }),
         &[],
     );
-    let campaign = common::campaign_bound_to(&root.join("campaign"), "tiled-corridor");
+    let campaign = common::campaign_bound_to(&root.join("campaign"), &prefabs, "tiled-corridor");
     common::patch_file(&campaign.join("world.json"), |v| {
         let c = v["content"].as_object_mut().unwrap();
         c.insert("horizon".into(), serde_json::json!("valley"));

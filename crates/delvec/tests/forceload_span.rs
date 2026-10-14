@@ -199,7 +199,7 @@ fn a_span_past_the_ceiling_forceloads_every_chunk_of_itself() {
     // outside and `DW0885` never asks. A declaration here would be six claims
     // binding zero, which is the shape this repository calls a finding.
 
-    let campaign = common::campaign_bound_to(&root.join("campaign"), "wide-room");
+    let campaign = common::campaign_bound_to(&root.join("campaign"), &prefabs, "wide-room");
     common::patch_file(&campaign.join("world.json"), |v| {
         let c = v["content"].as_object_mut().unwrap();
         c.insert("horizon".into(), serde_json::json!("valley"));
