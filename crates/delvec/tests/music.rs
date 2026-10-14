@@ -754,3 +754,36 @@ fn each_stop_sound_says_what_it_cuts_where_it_fires() {
         ]
     );
 }
+
+// --- criterion 9: the PackTest claim ---------------------------------------------------
+
+/// One `music_hears_<n>` per cutscene that declares `hears`, claimed per
+/// object (`DW0811`): the suite as built discharges it, and the suite with the
+/// template removed is a breach.
+#[test]
+fn every_declaring_cutscene_owns_its_template() {
+    let c = heard(vec![], inside(), Some(json!("atmosphere/hush")));
+    let out = try_build(&c).expect("builds");
+    let dir = common::prefabs_dir();
+    let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let claim = delvec::compiler::watch::Claim {
+        mechanic: "music-hears",
+        kind: delvec::compiler::watch::ClaimKind::Template,
+        families: vec!["music_hears_".to_string()],
+        declared: delvec::compiler::music::hearing_ids(&plan),
+    };
+    assert_eq!(claim.declared.len(), 1);
+    let (binding, breaches) =
+        delvec::compiler::watch::check_claims("hello-world", &out, std::slice::from_ref(&claim));
+    assert_eq!((binding.bodies_judged, breaches.len()), (1, 0));
+    let mut without = out.clone();
+    without.remove("packtest-datapack/data/hello-world/test/music_hears_0.mcfunction");
+    let (binding, breaches) =
+        delvec::compiler::watch::check_claims("hello-world", &without, &[claim]);
+    assert_eq!((binding.bodies_judged, breaches.len()), (1, 1));
+    assert!(
+        delvec::compiler::watch::claim_finding(&binding, &breaches)
+            .is_some_and(|d| d.code == "DW0811")
+    );
+}
