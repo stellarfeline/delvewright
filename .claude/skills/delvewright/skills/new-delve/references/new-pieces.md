@@ -280,12 +280,10 @@ this needs are subcommands of the one binary Init I3 installed.
 ## 6. Admit it
 
 6. **Admit it**: the `delvec prefab` chain, which for a generated piece is
-   `audit` → `socket` → `lighting --write` → `audit` again.
+   `audit` → `lighting --write` → `audit` again.
 
    ```sh
    delvec --prefabs "$DELVEWRIGHT_PREFABS" prefab audit out/<id>.nbt
-   delvec --prefabs "$DELVEWRIGHT_PREFABS" prefab socket out/<id>.nbt --pos X,Y,Z --facing <dir> \
-       --opening 3,3 --name <ns>:<name> --target <ns>:<name> --pool pool/<name>
    delvec --prefabs "$DELVEWRIGHT_PREFABS" prefab lighting out/<id>.nbt --write
    delvec --prefabs "$DELVEWRIGHT_PREFABS" prefab audit out/<id>.nbt
    ```
@@ -304,26 +302,8 @@ this needs are subcommands of the one binary Init I3 installed.
    is a different document from prefab metadata — run on a prefab's `.json` it
    correctly reports that file is not a catalog card.
 
-   **`socket --pos` is the jigsaw cell: bottom-centre of the opening, in the wall
-   plane.** The opening is built from it — width centred on it, height climbing
-   from it — so read it off the piece: with a spatial contract, the metadata
-   written beside it carries each exterior face's opening as a `from`/`to` cell
-   pair (`spatial_contract.faces[]`), where step 4's report and `audit` name only
-   the face's direction and cell count; with none, a `mark` whose scope is the
-   mouth itself records that cell. `--facing` points **out** of the piece;
-   `--name`/`--target` are what mate one piece to another; `--pool` is the
-   `prefab_pool` the far side comes from. The carved socket leaves a
-   `minecraft:jigsaw` block in the doorway carrying `final_state: minecraft:air`,
-   so the world replaces it with air at placement — a re-run `audit` reporting one
-   fewer cell on that face, and `minecraft:jigsaw` in the palette, is the marker
-   being counted and not a blocked door.
-
-   `socket` is also the **only** step that edits the blocks, so a piece that
-   carries one no longer matches what its `license.generated_by` row regenerates;
-   that row reproduces the `.nbt` as step 4 expanded it.
-
-   A grammar prefab has **no connectors and no lighting** until this step, so it
-   cannot enter a `prefab_pool` and will be dark, until you do it. `lighting`
+   A grammar prefab has **no lighting** until this step, so it reads as dark
+   until you do it. `lighting`
    measures the darkest standable floor cell a body can walk to from a
    ground-level entrance, and reports the count it bound to.
 
@@ -346,8 +326,8 @@ this needs are subcommands of the one binary Init I3 installed.
    (`DW0843`).
 
    Two refusals to expect and not work around: `DW0752` means the
-   probe bound to **zero** cells — usually a piece whose only way in is a socket
-   that has not been carved yet, so run `socket` first; `DW0753` means there is no
+   probe bound to **zero** cells — a piece with no ground-level entrance, no seam
+   and no `role: entry` anchor to walk in from, so give it its way in; `DW0753` means there is no
    metadata to write into, and the fix is to create it, never to let the tool
    invent a `spdx: UNKNOWN` one.
 
@@ -457,7 +437,7 @@ a tile is wrong.
 
 A piece that comes from **outside** — a community schematic — instead enters via
 `delvec schem convert` and then the same admission chain with `resolve-jigsaw`
-before `socket`. Never place an un-audited piece: `audit` is the licence and
+first. Never place an un-audited piece: `audit` is the licence and
 code-injection gate, and the `DW0733` check that the blocks in it exist at all.
 Flags in `$DELVEWRIGHT_ENGINE/docs/reference/tools.md` §2a and §3.
 

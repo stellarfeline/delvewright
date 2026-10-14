@@ -9,7 +9,7 @@ its program-detailed places — the primary's annex, whose program sets the anne
 kit down by name (spec-0106 §3.8), and every place of the `site-plan` and
 `site-plan-solid` overlays (spec-0098: a stand-in never ships, so a stageable
 point binds every place) — are written by `delvec detail` from each point's
-`programs/` (spec-0058); its sculpted body, the carcass the `carcass` overlay walks, is
+`programs/` (spec-0058); its sculpted body, the carcass, is
 written by `delvec sculpt` from `gallery/forms/` (spec-0087). Every tool that builds the gallery takes `--prefabs <dir>` and
 expects both to be there, and until this file existed the second half had no
 committed act producing it: a directory holding only the generator's output

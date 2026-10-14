@@ -2,9 +2,7 @@
 
 ## What it is
 
-A published set of `.nbt` prefabs with metadata beside each one, plus
-`pools.json` naming the pools the engine's `areas[]` assembly surface draws
-from — a surface this page does not use. It lives in the
+A published set of `.nbt` prefabs with metadata beside each one. It lives in the
 content repository, `stellarfeline/delvewright-campaigns`, under `prefabs/`, and
 it is **an optional input**: a campaign that takes none of it is an ordinary
 campaign, and every original-content path reaches a prefab without it —
@@ -37,7 +35,7 @@ delve, whatever the documents say.
 
 ## The postconditions — what must be true before you use one
 
-The means are yours. These four are not, and each one is checkable in a line:
+The means are yours. These three are not, and each one is checkable in a line:
 
 1. **It is at the revision above.** `git -C <clone> rev-parse HEAD` equals
    `$CONTENT_SHA`. A clone standing anywhere else is *named* in `GENERATION.md`,
@@ -47,19 +45,15 @@ The means are yours. These four are not, and each one is checkable in a line:
    every one of them a 130-byte text stub, and every tool that reads a piece
    fails on a file that looks present. `file <clone>/prefabs/hello-room.nbt`
    must say `gzip compressed data`, never `ASCII text`.
-3. **`pools.json` parses and names at least one pool.** An empty library is
-   indistinguishable from a clone whose LFS never ran, and the first is a real
-   answer while the second is a broken one.
-4. **`DELVEWRIGHT_PREFABS` names its `prefabs/` directory**, in
+3. **`DELVEWRIGHT_PREFABS` names its `prefabs/` directory**, in
    `~/.delvewright/env.sh`, so every later command reads the same library.
 
 ```sh
 git -C "$LIB_CLONE" rev-parse HEAD          # == $CONTENT_SHA
 file "$LIB_CLONE/prefabs/hello-room.nbt"    # gzip compressed data
-"$DELVEWRIGHT_PYTHON" -c 'import json,sys;print(len(json.load(open(sys.argv[1]))["pools"]), "pool(s)")' "$LIB_CLONE/prefabs/pools.json"
 ```
 
-All four answering is the whole of the postcondition. How the clone got there —
+All three answering is the whole of the postcondition. How the clone got there —
 a fresh `git clone`, a clone somebody already had, a worktree — is not this
 page's business, and a means that ends at a verified postcondition cannot move a
 byte.

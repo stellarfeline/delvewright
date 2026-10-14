@@ -384,16 +384,6 @@ Not a proposal — an inventory.
    Required everywhere, defaulted nowhere — deliberately, since a shared default
    is a collision between ladders.
 
-4a. **The inter-area crossing rule lives in prose and in nothing a document can
-   state.** A crossing is emitted on the earlier objective of a consecutive pair
-   whose areas differ, and only when the later area's piece resolves an entry
-   point. The live schema export contains **zero** occurrences of `transport` or
-   `inter-area` across every stage, so an author told to generate against the
-   schema has no spelling for the concept and no way to be refused by one. A
-   campaign this page builds has one area, `area/site`, so the page no longer
-   states the rule; it stands in `compiler.md`, where the `areas[]` surface
-   lives.
-
 4b. **`collect` + `container` is satisfiable by very few pieces in the shipped
    library.** Few prefabs stand an anchor on a chest or barrel, fewer than
    contain one anywhere, and some declare an anchor named `anchor/chest` over

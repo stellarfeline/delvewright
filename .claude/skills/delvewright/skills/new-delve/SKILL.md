@@ -258,7 +258,10 @@ optional fields commit you to, and what a stub owes.
 
 **Needs**: step 1. **Produces**: `geometry-brief.json` + `layout-graph.json` +
 `site-plan.json`. **Read**: `references/placement.md`. The map's own reference
-is drawn first: `references/map-reference.md`.
+is drawn first: `references/map-reference.md`. How many places the map has is
+`references/partitioning.md`'s question: build as one region until the brief
+passes the verified ceiling of one (Vesperhold: 172 × 104 × 292, 42 places, 144
+named spots, about an hour), then divide where the design already has an edge.
 Every destination is built to read as what it is: `docs/reference/game-writing.md` L1.
 
 ## 3. The story documents — `npcs`, `classes`, `quest-plan`
@@ -395,6 +398,7 @@ reference means the file listed here.
 | `references/init.md` | every Init command, and what each failure means | Init |
 | `references/the-shipped-library.md` | the optional prefab library: its revision, its postconditions, what a campaign records | I6, step 9 |
 | `references/placement.md` | the three site-plan documents, in the order they compile | step 2 |
+| `references/partitioning.md` | how many places a map has: one region until a signal says divide, and where | step 2 |
 | `references/workspace.md` | the campaign directory and every document in it | step 1 |
 | `references/map-reference.md` | drawing the map's own reference views | step 2 |
 | `references/story.md` | npcs, classes, the quest plan, and where step 3 ends | step 3 |

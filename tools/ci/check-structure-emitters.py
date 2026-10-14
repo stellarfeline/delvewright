@@ -117,11 +117,6 @@ NOT_CONNECTION_EMITTERS = {
         "multiface block, and the room is written into the test target's scratch directory and "
         "never admitted into the library."
     ),
-    "crates/delvec/tests/edit.rs": (
-        "test fixture for the edit-stage determinism gate. Its palette is four states — air, "
-        "stone, a lantern and an oak log — none of them a fence, wall, pane or multiface block, "
-        "and the box it frames is never admitted into the library."
-    ),
 }
 
 # Sites that serialise NBT and are NOT prefab emitters. Each is named

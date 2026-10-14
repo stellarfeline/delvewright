@@ -37,14 +37,11 @@ scene that matches no row is **escalated, not improvised**.
 And the composition rules — how the routes combine into an area:
 
 - **The one assembly chain**: piece (any route above) → `delvec prefab` admission
-  → pool declaration → **compiler-as-jigsaw layout** (the compiler is the
-  jigsaw; sockets are a connectivity vocabulary, not runtime mechanics) →
-  edit scripts for L2/L3 fixes → relight → validation renders. There is no
-  second chain.
-- **Grammar pieces enter areas by direct placement only**: the export
-  emits no jigsaw connectors, so a grammar prefab cannot join a
-  `prefab_pool` until a socket is carved (§7) — and connector *emission* is an
-  open design, not improvised.
+  → a place of the site plan binds it (`detail-plan.details[]`, written by
+  `delvec detail --piece`), or a place's program sets it down by name (the
+  grammar's `prefab` operation) → edit scripts for L3 fixes → relight →
+  validation renders. Which piece stands where is stated by the author, never
+  drawn by a seed (ADR-0035). There is no second chain.
 - **Intent flows one way**: a reference image (`tools/creator/refimg.py`) conditions
   the human and the program; a similarity score (`tools/creator/refscore.py`) RANKS
   candidate expansions on the contact sheet and can never gate or veto —
@@ -605,9 +602,8 @@ Each of these was established by running it, except the two marked otherwise:
   banner. Anything with a payload is bound by the *campaign* against an anchor
   (spec-0021), never by the piece. So the piece must **declare an anchor** for
   every such thing.
-- **No jigsaw connectors.** The export emits none. A grammar prefab is usable as
-  a single-`prefab` area as it stands; for a `prefab_pool` a socket is carved
-  afterwards (§7).
+- **No connectors.** The export emits none: a piece's openings are its
+  contract's faces, answered against the plan's seams (`DW0844`).
 - **Light, measured.** The export runs the engine's own block+sky flood over the
   bytes it just froze and writes the profile with the binding it was taken over.
   A piece with nowhere in it to stand keeps `unmeasured`, which is the true
@@ -657,8 +653,6 @@ Each of these was established by running it, except the two marked otherwise:
 
 ```sh
 delvec prefab audit    out/<id>.nbt          # a TILE SET passes out/<id>.json instead
-delvec prefab socket   out/<id>.nbt --pos X,Y,Z --facing <dir> --opening 3,3 \
-                     --name <ns>:<name> --target <ns>:<name> --pool pool/<name>
 delvec prefab lighting out/<id>.nbt --write
 delvec prefab planes   out/<id>.nbt --write  # walk_y, and waterline_y if it authors water
 delvec prefab audit    out/<id>.nbt          # again, after the edits
@@ -668,13 +662,11 @@ delvec prefab audit    out/<id>.nbt          # again, after the edits
 generated piece's `walk_y` and `waterline_y` are read back off the blocks by the
 generator that laid them; a piece admitted here was laid by somebody else, and a
 number typed into its document is a census of an object that can be read. Run it
-after `socket`, which changes what a body can stand on, and before the second
+before the second
 `audit`, which holds the `waterline_y` it wrote to the piece's own bytes
 (`DW0887`) and everything else the document claims about them to the same bytes
 (`DW0888`): the walk plane a body stands on, every anchor's cell and range, a
-trap anchor's dispenser socket and trigger block, and every connector's opening —
-a socket declared over a cell the piece never opened is refused here rather than
-mating a corridor into a wall. What it prints is a measurement with its denominator: a walk plane
+trap anchor's dispenser and trigger block. What it prints is a measurement with its denominator: a walk plane
 dragged one course down by a single stray standable cell reads as `1 cell(s)
 stand on that plane, of 223 standable`, and that is the sentence to look at
 before the number is believed.
@@ -709,8 +701,7 @@ not a statement that the piece stopped being the way in.
 A tiled zone has no `out/<id>.nbt` at all — its blocks are the
 `out/<id>.x<i>y<j>z<k>.nbt` files and `out/<id>.json` is the manifest — so on such
 a zone every line above names `out/<id>.json`, for the reason spelled out three
-paragraphs down. `socket` is the exception: a socket is carved into one tile's
-bytes, so it is the one step a tiled zone does not have.
+paragraphs down.
 
 `audit` is the gate that runs on the bytes rather than on the expansion:
 hard-forbidden blocks (`DW0731`), blocks the pinned version does not have
@@ -744,33 +735,6 @@ zone-relative, so a composed zone is judged as one building. Handing either one
 tile is `DW0739`, and so is handing it a tile that has been copied away from its
 manifest.
 
-**Where a socket goes.** `--pos` is the **jigsaw cell: the bottom-centre of the
-opening, standing in the wall plane.** The `--opening w,h` is built from it —
-the width is centred on that cell, the height climbs from it — so on a doorway
-whose lowest walkable course is `y` and whose opening spans cells `c1..c2` across
-the wall, `--pos` is `y` at the middle of that span, on the face's own plane
-(`x=0` for a west face, `z=0` for a north face). `--facing` is the direction
-**out** of the piece. A `--pos` outside the structure is refused; one that is
-merely in the wrong place is not, so read it off the piece rather than recall it.
-Where the piece declares a spatial contract, the metadata written beside it
-carries every exterior face's opening as a `from`/`to` cell pair
-(`spatial_contract.faces[]`) — the expand report and `audit` name that face's
-direction and its cell **count**, never its span. Where it declares none, a
-`mark` whose scope is the mouth itself (§3) records that cell in `anchors`.
-
-`--name` and `--target` are the jigsaw's own name and the name it seeks; a pair
-of pieces mate when one's `--name` is the other's `--target`. `--pool` is the
-`prefab_pool` the far side is drawn from. They are strings the campaign also
-uses, so pick them with the campaign in hand.
-
-**The socket leaves a `minecraft:jigsaw` block in the doorway, and that is
-correct.** It carries `final_state: minecraft:air`, so the world replaces it with
-air the moment the piece is placed — the doorway a body walks through is clear.
-What changes is the *bytes*, and tools that read them say so: `audit` re-run
-after carving reports one fewer cell on that exterior face (a 9-cell face reads
-as 8) and `minecraft:jigsaw` joins the audited palette. Both are the marker being
-counted, not a blocked door, and the verdict stays `pass`.
-
 `lighting --write` is a **static** estimate, not a live probe; it says so in the
 metadata it writes. A piece it calls `dark` is dark because the program placed
 no light — the grammar cannot warn you, so this step is where you find out.
@@ -799,13 +763,13 @@ piece with no emitter in it reads `dark` here, which is the number to act on:
 put light in the program. The report names the sky it used and why, in
 `assumed_sky`, and the written `method` says it again.
 
-A binding of zero is `DW0752` and fails the step — carve the
-sockets before probing a piece whose only way in is one. `--write` without metadata beside the
+A binding of zero is `DW0752` and fails the step — a piece with no ground-level
+entrance, no seam and no `role: entry` anchor has nowhere to walk in from. `--write` without metadata beside the
 piece is `DW0753`: the measurement still prints, but nothing is written, because
 a manufactured `spdx: UNKNOWN` skeleton is worse than an error.
 
-Each of these steps owns one block of the metadata — `socket` the connectors,
-`anchor` the anchors, `lighting` the lighting — and leaves the rest of the
+Each of these steps owns one block of the metadata — `anchor` the anchors,
+`lighting` the lighting — and leaves the rest of the
 document exactly as it found it, provenance row included. Run them in any order,
 as many times as the piece needs.
 
@@ -816,13 +780,9 @@ Generated `.nbt` + metadata live in the **content repo**
 is the artifact of record and lives beside the campaign that uses it; the
 `.nbt` is a snapshot of one expansion of it, and its metadata carries the
 program hash and seed that regenerate **the bytes as expanded** — the `.nbt` §4
-wrote, before §7 (ADR-0006 — verified: same inputs twice gives byte-identical
-`.nbt` and metadata).
-
-**§7's `socket` is the one step that edits the blocks**, so on a piece that
-carries a socket — every piece that enters a `prefab_pool` — re-expanding from
-the recorded row reproduces the pre-socket `.nbt` and not the shipped one.
-`lighting --write` and `anchor` write metadata only and leave the bytes alone.
+wrote (ADR-0006 — verified: same inputs twice gives byte-identical
+`.nbt` and metadata). `lighting --write` and `anchor` write metadata only and
+leave the bytes alone.
 The row is a claim about the expansion, which is what makes it worth recording:
 it says the *geometry* came from that program at that seed, and the admission
 edits on top of it are the ones the procedure prescribes.
@@ -962,8 +922,7 @@ has probed does not have to invent a measurement. Field order on write is the
 order of the table above, which is the order the checked-in prefab library already uses.
 
 A key the reading version does not model is **kept** and written back out. That
-matters because these files are read-modify-written: `delvec prefab socket` edits
-`connectors`, `lighting` edits `lighting`, `anchor` edits the place fields
+matters because these files are read-modify-written: `lighting` edits `lighting`, `anchor` edits the place fields
 (`pos`, `facing`, `region`, `block`) and the `role` of the one anchor it names,
 and `planes` edits `walk_y` and `waterline_y`; each leaves
 the rest of the document as it found it. A type that models fewer fields than the

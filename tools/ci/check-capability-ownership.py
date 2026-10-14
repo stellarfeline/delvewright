@@ -338,10 +338,6 @@ MODIFIER_HOLES = {
         "`insert-piece` for a region would be meaningless. No capability is "
         "stranded."
     ),
-    ("WorldEdit", "prefab"): (
-        "ACCEPTED — the dual of the above. The six with a `prefab` are the piece "
-        "ops; the cell ops operate on a region and have no piece to name."
-    ),
     ("RegionShape", "of"): (
         "ACCEPTED — operand. `of` is the sub-shape a COMPOSITE shape wraps; a "
         "primitive shape (`box`, `surface-band`) has nothing to wrap."

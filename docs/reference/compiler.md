@@ -168,12 +168,12 @@ delvec fmt      <path>… [--check]          # canonical form for authored JSON 
 delvec schema   --stage <1..7|name|all>    # export JSON Schema (named documents: §2)
 delvec metrics  [--gym <dir>]              # export the metrics standard as JSON (§10)
 delvec codes                               # every DW code this binary declares, one JSON line each (§5)
-delvec prefab anchors [--pool <id>]        # which anchors does a pool guarantee (library only)
 delvec l10n-inventory <dir> [--lang <c>]   # l10n key inventory as JSON (transcreation input)
 delvec l10n-apply <dir> --lang <c> --table <f>
                                            # write the sidecar from an English → translation table
 delvec allocation <dir> [<place>|--all]    # the handed allocation for a site-plan place
 delvec detail   <dir> [<place>|--all]      # detail a place inside its allocation (spec-0058)
+delvec detail   <dir> <place> --piece <id> # bind a library piece to a place (spec-0106 §3.5)
 delvec snapshot <dir> [framing] [-o f.png] # draft frame + scene manifest (§7)
 delvec blocking-chart <dir> [-o dir]       # per-elevation cutaway floor plans (§7)
 delvec edit apply   <dir> [--batch f] [-o dir]  # replay edit script (+ candidate), persist on green (§7)
@@ -2126,8 +2126,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   byte-identically.
 - **The biome map** (`horizon::biome_map`, spec-0080 §4) — the one answer to
   which biome a cell stands in: the valley's bands (spec-0026, outside the map
-  by construction), then every carried place in declaration order (areas, or
-  site-plan boxes), over the ground biome; a later paint wins a cell, as a later
+  by construction), then every site-plan box that carries an atmosphere, in
+  declaration order, over the ground biome; a later paint wins a cell, as a later
   `fillbiome` does. It is the only reader of the ground biome and the bands: the
   bootstrap pass, the generator settings, the biome files and `DW0496` all read
   it, and it answers precipitation for a vanilla biome, a declared atmosphere or
@@ -2223,42 +2223,28 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   water×8]}`: from the −64 build floor the top water block lands at **y=62** (sea
   level). Still no structures/mobs (`generate-structures=false` + gamerule
   `spawn_mobs false`).
-- **The ocean datum is a WALK-PLANE datum, and an area's origin is derived from
-  it** (spec-0060 §3). An ocean world's walk plane is
-  `SEA_LEVEL + 1` = **y=63** (`horizon::OCEAN_WALK_REF_Y`) — one block above the
-  water, the vanilla-normal beach relationship a swimming body can climb out
-  onto. An area's origin is then `walk_ref_y − walk_y`, where `walk_y` is the
-  piece set's own declared walk plane: a keep interior declaring `1` is seated at
-  62 and stands dry at 63; an island piece declaring `3` is seated at 60. The
-  derivation is per AREA (`plan::area_base_y`), never per world.
-- **No world constant seats a piece.** A tileset's walk-plane convention is a
-  fact about that tileset, so it lives in its pieces (`walk_y`, below).
-  `SEA_LEVEL` is a world constant because the sea plane is a property of the
-  horizon.
-- **`valley`'s gap floor is a WALK-PLANE datum too**, `VALLEY_WALK_REF_Y` =
-  `VALLEY_GAP_FLOOR_TOP_Y + 1` = **y=64** — the y a body's feet occupy standing
-  on the valley's own ground — so an area's origin there is `64 − walk_y` on the
-  same rule the ocean uses. A base has a walk-plane datum exactly when it has
-  ground of its own outside the piece. Seated at `BASE_Y` instead, a piece would
-  stand `walk_y` courses proud of the gap floor, and the library declares
-  `walk_y` ≥ 1, never 0. For a SITE that difference is the whole thing:
-  seated by its walk plane the bank runs into the gap floor and the party walks
-  from one onto the other, and seated on `BASE_Y` it is a cliff they drop off and
-  cannot climb back.
-- **`void` keeps its ORIGIN datum**, `BASE_Y` = 64 (`horizon::walk_ref_y`
-  returns `None` for it alone). It declares nothing outside the placed geometry,
-  so there is no outside relationship to hold a walk plane against.
+- **A place stands where its plan seats it.** A site-plan box states its
+  `floor` in world coordinates, and a piece a place binds is placed at its
+  frame's lowest corner, so no world constant and no piece declaration seats
+  anything. What a horizon contributes is the walk plane the plan seats to: an
+  ocean world's is `SEA_LEVEL + 1` = **y=63** (`horizon::OCEAN_WALK_REF_Y`) — one
+  block above the water, the beach a swimming body climbs out onto — and a
+  `valley`'s is its gap floor, `VALLEY_WALK_REF_Y` = **y=64**. A bound shore's
+  declared waterline is held to the sea plane from its frame (`DW0344`), and a
+  box whose floor puts a body's feet at or below the sea is `DW0886`. `void`
+  declares nothing outside the placed geometry, so nothing is held against it.
 - **What a piece owes** (spec-0060 §4), all three in prefab metadata, all three
   different claims about the same object rather than one claim written three
   ways:
   - **`walk_y`** — the local y of the cell a body's feet occupy on the piece's
-    principal floor. Owed on **every** base. It has **no default**, because a
+    principal floor. It has **no default**, because a
     default is the retired global datum wearing a different name. It is a
     MEASUREMENT of the piece, written by the generator that built it
     (`prefab_invariants::walkplane::measure_walk_y`, and
     `grammar::export::measured_walk_y` for the grammar back end — one rule, the
     lowest local y holding a standable cell, read through the engine's own
-    standable predicate). A piece a campaign seats without one is `DW0886`.
+    standable predicate). A bound piece is seated by its frame, and a declared
+    `walk_y` is held to the bytes (`DW0888`).
   - **`waterline_y`** — the local y of the piece's top authored `minecraft:water`
     block. Owed only where the piece really writes water that meets a sea. It is
     a claim about the bytes and is checked against them (`DW0887`); its
@@ -2270,8 +2256,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     grammar expand` rewrites the metadata on every run, so a hand-written value
     survives until the next expansion and no longer, and the program is where a
     building is said (`grammar.md` §2f, program version 1.9.0).
-  A piece declares **nothing** about which horizon it is for: which bases its
-  declarations admit is derived (`DW0886`), never typed. A `horizon:` field in
+  A piece declares **nothing** about which horizon it is for: whether it can
+  stand on a base is judged where a place binds it (`DW0886`), never typed. A `horizon:` field in
   prefab metadata would be a design decision about what the piece is for,
   encoded in a mechanism.
 - The world ocean is **not** backdrop: `/place template` carries the fluid
@@ -2285,25 +2271,12 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   gate enumerates its units from that export, and a library-asset document
   folded into it would demand a stage-document binding for every field of a file
   no stage document contains.
-- **`delvec prefab seating --horizon <base>`** answers the pairing over a whole
-  library before a campaign is authored, per pool, with a numerator and a
-  denominator at pool, member and declaration level, and under `--json` as one
-  object carrying the per-pool verdicts, every reason with its `code` and its
-  `shape`, and every binding count. It asks the SET's own question as well as
-  each member's — one origin per area, derived from one walk plane — because a
-  pool every member of which is individually seatable is still unseatable when
-  they disagree. `delvec prefab audit` runs `DW0887` and `DW0888` over a whole library when
+- **`delvec prefab audit`** runs `DW0887` and `DW0888` over a whole library when
   handed a directory, and over one asset when handed a `.nbt` or a tile-set
   manifest, which is the form every gate and the admission procedure actually
-  use. All of them run `compiler::seating`, the implementation the compiler's own
-  validation and its origin derivation run, so a library can never be seatable
-  according to the tool and refused by the build.
-  That includes the exposure question `DW0885` asks at build (`DW0886`'s
-  *outside unanswered* shape, below). `tools/ci/check-seating-agrees.py` is where
-  that sentence is a check: it enumerates every pool of a library against every
-  base the schema declares, compares the command's verdict with `analyze` and,
-  for a seatable pool, with the build's exposure check, and perturbs toward the
-  disagreement shapes.
+  use. It runs `compiler::seating`'s waterline rule, the one the compiler's own
+  validation runs over the pieces a campaign binds, so a library can never be
+  admitted by the tool and refused by the build for the same claim.
 - **`delvec prefab planes <asset> [--write]`** measures a piece's own `walk_y`
   and, where it authors water, its own `waterline_y`, and declares them. Both are
   measurements of the bytes and every generator writes them by reading them back
@@ -2577,8 +2550,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   quests this playthrough activates, **later declarations win** (`dw.qa_<quest>`
   is never cleared), and within a quest the last placement whose
   `requires_flags`/`forbids_flags` gate holds under the flag state the party
-  carries into that step. Consequences: a ledger that moves a body across areas
-  moves the step's area too, so the inter-area `transport` map follows; a row
+  carries into that step. Consequences: a row
   resolving to `"offstage"`/`"dead"` is an internal-invariant error (`DW0195` /
   `DW0461` own the refusal upstream). A campaign with no ledger anywhere
   keeps the stage-2 anchor.
@@ -3792,7 +3764,7 @@ for a single-file prefab, one per tile at its manifest offset for a zone — and
 `plan::PiecePlacement` carries them as `templates: Vec<PlacedTemplate>`, already
 resolved to world positions. Above that line a piece is one piece: one entry in
 `AreaPlacement::pieces`, at the whole zone's `size`, with one rotation, one set of
-seals, one pool draw, one row in the face-mating check. Below it, everything that
+seals, one row in the face-mating check. Below it, everything that
 touches blocks loops over templates and never asks how many there were:
 
 - `place_all` emits **one `place template` per template**, at
@@ -5642,11 +5614,10 @@ the same path with its extension replaced: `shot.png` → `shot.manifest.json`.
 
 - **`pieces`** is the **layout** half of the scene, beside the point/region
   targets: every placed structure piece of the whole plan (not just the ones in
-  frame), in plan order — areas as the plan holds them, pieces entry-first
-  within each area. It carries exactly the inputs a `piece-local` edit frame
-  resolves against (`edit::resolve_frame_point`: `origin + rotation(local)`
-  against `area.pieces[index]`): the per-area `index` (the frame's `piece`
-  field), the `prefab` guard value, the `/place template` `origin` + `rotation`
+  frame), in placement order, a bound place's blockout record not counted
+  (`Plan::frame_pieces`). It carries exactly the inputs a `piece-local` edit
+  frame resolves against (`origin + rotation(local)` against the `index`-th of
+  `Plan::frame_pieces`): the `index` (the frame's `piece` field), the `prefab` guard value, the `/place template` `origin` + `rotation`
   token, the unrotated `size`, and the resulting inclusive `box`. Without it an
   editor authoring a piece-local frame would back-solve the index and the
   transform from the rendered geometry by hand.

@@ -413,7 +413,7 @@ pub fn sculpt(form: &Form, seed: u64, id: Option<&str>) -> Result<Sculpture, Scu
         walk_y: readings.walk_y,
         waterline_y: None,
         shown_faces: readings.shown_faces.clone(),
-        spatial_contract: Some(body_contract(size)),
+        spatial_contract: None,
         extra: BTreeMap::new(),
     };
     // Written in the repository's canonical form (`delvec fmt`), so the file a
@@ -430,24 +430,6 @@ pub fn sculpt(form: &Form, seed: u64, id: Option<&str>) -> Result<Sculpture, Scu
         gates: gate_list,
         readings,
     })
-}
-
-/// **A sculpted body's spatial contract, derived** (spec-0106 §3.8): the body
-/// is one open space over its whole box, entered where the campaign puts the
-/// party (its `role: entry` anchor) and joined to nothing by a declared edge —
-/// so a sculpted body can be a whole place a site plan binds, and nothing about
-/// it is typed beside the form.
-fn body_contract(size: [i32; 3]) -> delvewright_dsl::prefab::SpatialContract {
-    let doc = serde_json::json!({
-        "entry": "body",
-        "spaces": { "body": { "envelope": "open", "boxes": [
-            { "from": [0, 0, 0], "to": [size[0] - 1, size[1] - 1, size[2] - 1] }
-        ] } },
-        "no_body": {},
-        "edges": [],
-        "faces": []
-    });
-    serde_json::from_value(doc).expect("the derived contract is a contract")
 }
 
 /// The anchors as prefab metadata writes them.
