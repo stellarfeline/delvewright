@@ -59,6 +59,10 @@ pub struct Structure {
     pub size: [i32; 3],
     pub palette: Vec<PaletteEntry>,
     pub blocks: Vec<Block>,
+    /// The template's `entities` list, each compound carried verbatim
+    /// (`pos`, `blockPos`, `nbt`) — what the entity judge reads
+    /// (`crate::admit::entities`, spec-0111 §3.1) and what a rewrite keeps.
+    pub entities: Vec<Nbt>,
     /// `pos -> index into blocks`, for O(1) cell lookup/mutation.
     index: BTreeMap<[i32; 3], usize>,
 }
@@ -119,12 +123,18 @@ impl Structure {
             index.insert(pos, i);
             blocks.push(Block { pos, state, nbt });
         }
+        let entities = root
+            .get("entities")
+            .and_then(Nbt::as_list)
+            .map(<[Nbt]>::to_vec)
+            .unwrap_or_default();
 
         Ok(Structure {
             data_version,
             size,
             palette,
             blocks,
+            entities,
             index,
         })
     }
@@ -166,11 +176,17 @@ impl Structure {
             index.insert(pos, i);
             blocks.push(Block { pos, state, nbt });
         }
+        let entities = match root.entities.map(Nbt::from) {
+            None => Vec::new(),
+            Some(Nbt::List(l)) => l,
+            Some(_) => return None,
+        };
         Some(Structure {
             data_version,
             size,
             palette,
             blocks,
+            entities,
             index,
         })
     }
@@ -268,7 +284,7 @@ impl Structure {
             size: self.size,
             palette,
             blocks,
-            entities: Vec::new(),
+            entities: self.entities.clone(),
         };
         let nbt = fastnbt::to_bytes(&out).expect("structure serializes to NBT");
         let mut gz = GzBuilder::new()
@@ -341,6 +357,7 @@ pub fn synth(size: [i32; 3], cells: &[([i32; 3], PaletteEntry, Option<Nbt>)]) ->
         size,
         palette: Vec::new(),
         blocks: Vec::new(),
+        entities: Vec::new(),
         index: BTreeMap::new(),
     };
     // Fill every cell with air first (dense structure, matching real templates).
