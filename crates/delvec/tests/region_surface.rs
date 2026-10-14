@@ -702,7 +702,8 @@ fn criterion_4_piece_over_a_seamed_place_requires_the_exterior_edge() {
     let (code, err) = detail_piece(&dir, &prefabs);
     assert_ne!(code, Some(0));
     assert!(
-        err.contains("[contract-well-formed]") && err.contains("claims no way in"),
+        err.contains("does not answer how the place is entered")
+            && err.contains("claims no way in"),
         "a seamed place's piece owes the exterior edge its seam meets: {err}"
     );
 }

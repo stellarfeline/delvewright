@@ -295,39 +295,36 @@ fn run_piece(
         );
         return Err(1);
     }
-    // The piece's contract, judged with the place's kind — scenery from the
-    // graph, the seam count from the plan — by the checker the audit runs.
+    // The piece's way in, judged with the place's kind — scenery from the
+    // graph, the seam count from the plan — by the one rule the contract gate
+    // reads it through. The rest of the contract is `delvec prefab audit`'s.
     if let Some(contract) = meta.spatial_contract.as_ref() {
-        let model = match delvec::admit::spatial::library_grid(prefabs_dir, &meta) {
-            Ok(m) => m,
-            Err(e) => {
-                eprintln!("error: `{place}`: `{piece}`: {e}");
-                return Err(1);
-            }
-        };
         let scenery = campaign
             .layout_graph
             .as_ref()
             .is_some_and(|g| delvec::admit::scenery::is_scenery(&g.content, &node));
-        let report = delvec::grammar::contract::check_kind(
-            &model,
-            contract,
-            &delvec::admit::spatial::anchor_points(&meta),
-            scenery,
-            seamless(&campaign, &node),
-        );
-        for e in &report.enumeration {
-            eprintln!("  {e}");
-        }
-        if !report.is_pass() {
-            for g in report.gates.iter().filter(|g| !g.passed()) {
-                eprintln!("  [{}] {}", g.id, g.detail);
+        let seamless = seamless(&campaign, &node);
+        match delvec::grammar::contract::way_in_refusal(contract, scenery, seamless) {
+            Some(why) => {
+                eprintln!(
+                    "error: `{place}`: `{piece}`'s contract does not answer how the place is \
+                     entered: {why}. A place its plan joins by a seam is entered through it, so \
+                     the entry space owes an `exterior` edge; nothing was written. {line}"
+                );
+                return Err(1);
             }
-            eprintln!(
-                "error: `{place}`: `{piece}`'s spatial contract fails against its own blocks; \
-                 nothing was written. {line}"
-            );
-            return Err(1);
+            None => eprintln!(
+                "  way in: `{place}` is allocated {} seam(s); the contract's entry `{}` {}",
+                if seamless { "0" } else { "1 or more" },
+                contract.entry,
+                if scenery {
+                    "claims none, as scenery owes"
+                } else if seamless {
+                    "owes no `exterior` edge (spec-0106 §3.4)"
+                } else {
+                    "carries its `exterior` edge"
+                }
+            ),
         }
     }
     write_row(campaign_dir, &campaign, &row)?;

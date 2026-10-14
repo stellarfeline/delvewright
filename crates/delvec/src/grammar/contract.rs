@@ -671,41 +671,58 @@ pub fn check_kind(
 
 // --- §2.1 well-formed ------------------------------------------------------
 
+/// **The way in, alone** — the first obligation of `contract-well-formed`: the
+/// entry is a declared space, and the piece is enterable where it says. A
+/// place entered through a seam owes an `exterior` edge of a traversal class
+/// on its entry space; a scenery place (`sealed`) owes none and may claim
+/// none; a place its plan allocates no seam (`seamless`, spec-0106 §3.4)
+/// owes none. `None` when the obligation holds.
+///
+/// Shared by the gate and by `delvec detail --piece`, which binds an admitted
+/// piece by the codes the plan's gates read (spec-0106 §3.5) and asks of its
+/// contract this one question — the one the place's seam count decides.
+pub fn way_in_refusal(contract: &SpatialContract, sealed: bool, seamless: bool) -> Option<String> {
+    if !contract.spaces.contains_key(&contract.entry) {
+        return Some(format!(
+            "`entry` names {:?}, which is not a declared space",
+            contract.entry
+        ));
+    }
+    if sealed {
+        return contract
+            .edges
+            .iter()
+            .find(|e| is_traversal(&e.class) && (e.a == EXTERIOR || e.b == EXTERIOR))
+            .map(|e| {
+                format!(
+                    "the piece's place is scenery — built to be seen and never entered — and \
+                     edge {}--{}--{} claims a way in from outside",
+                    e.a, e.class, e.b
+                )
+            });
+    }
+    let entered = contract.edges.iter().any(|e| {
+        is_traversal(&e.class)
+            && ((e.a == contract.entry && e.b == EXTERIOR)
+                || (e.b == contract.entry && e.a == EXTERIOR))
+    });
+    (!seamless && !entered).then(|| {
+        format!(
+            "the entry space {:?} carries no `exterior` edge of a traversal class — the piece \
+             claims no way in",
+            contract.entry
+        )
+    })
+}
+
 fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
     let contract = ix.contract;
     let mut bad: Vec<String> = Vec::new();
     let bound = contract.spaces.len() + contract.no_body.len() + contract.edges.len();
 
     // The entry is a declared space, and the piece is enterable where it says.
-    if !contract.spaces.contains_key(&contract.entry) {
-        bad.push(format!(
-            "`entry` names {:?}, which is not a declared space",
-            contract.entry
-        ));
-    } else if ix.sealed {
-        if let Some(e) = contract
-            .edges
-            .iter()
-            .find(|e| is_traversal(&e.class) && (e.a == EXTERIOR || e.b == EXTERIOR))
-        {
-            bad.push(format!(
-                "the piece's place is scenery — built to be seen and never entered — and edge \
-                 {}--{}--{} claims a way in from outside",
-                e.a, e.class, e.b
-            ));
-        }
-    } else if !ix.seamless
-        && !contract.edges.iter().any(|e| {
-            is_traversal(&e.class)
-                && ((e.a == contract.entry && e.b == EXTERIOR)
-                    || (e.b == contract.entry && e.a == EXTERIOR))
-        })
-    {
-        bad.push(format!(
-            "the entry space {:?} carries no `exterior` edge of a traversal class — the piece \
-             claims no way in",
-            contract.entry
-        ));
+    if let Some(why) = way_in_refusal(contract, ix.sealed, ix.seamless) {
+        bad.push(why);
     }
 
     // Two different spaces may abut; they may never overlap.
