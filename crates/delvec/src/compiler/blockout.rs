@@ -1802,6 +1802,10 @@ pub struct BatteryBinding {
     /// Aloft places, which stand on no ground and have none to stitch —
     /// counted, never judged, by `DW0990`'s crack shape.
     pub aloft: usize,
+    /// Owned-ground places (spec-0106 §3.1), whose ring is their own, ground
+    /// and all: nothing of the whole's stands beside the plot to stitch to, so
+    /// they are counted and never judged by `DW0990`'s crack shape.
+    pub owned: usize,
     /// Standable cells inside the region and outside every claim. On an
     /// `open` site they are the **commons** (spec-0098 §14, a ruling):
     /// ordinary walkable ground every place may open onto. On a `solid` site
@@ -1829,7 +1833,8 @@ impl BatteryBinding {
              {sl} sightline(s) walked, {i} identity(ies) re-measured ({d} declaration-only), \
              {l} critical-path leg(s) measured; {fx} fixed ring ground cell(s) handed, {bc} \
              plot-edge column(s) examined, {ck} crack(s), {al} aloft place(s) with no ground \
-             to stitch (DW0990); {uc} standable cell(s) \
+             to stitch, {ow} owned-ground place(s) whose ring is their own (DW0990); {uc} \
+             standable cell(s) \
              outside every claim ({kind}), {cp} place pair(s) joined through the commons \
              (DW0838).",
             kind = if self.commons {
@@ -1842,6 +1847,7 @@ impl BatteryBinding {
             bc = self.boundary_columns,
             ck = self.cracks,
             al = self.aloft,
+            ow = self.owned,
             uc = self.unclaimed_standable,
             s = self.seams,
             ct = self.contacts,
@@ -3212,7 +3218,10 @@ fn crossings(
 /// with no standable cell in range offers no surface to compare and is counted
 /// but not judged. A stand-in shell and a piece are judged alike: nothing here
 /// asks who wrote the bytes. An aloft place stands on no ground and has none
-/// to stitch: it is counted in the binding and not judged.
+/// to stitch: it is counted in the binding and not judged. Nor is an
+/// owned-ground place (spec-0106 §3.1): its ring is its own, ground and all,
+/// so the column beside its plot is the same author's and there is no seam
+/// between two grounds to crack.
 fn stitches(
     b: &Blockout,
     world: &crate::compiler::nav::World,
@@ -3223,6 +3232,10 @@ fn stitches(
     for (i, p) in b.boxes.iter().enumerate() {
         if site.is_aloft(i) {
             binding.aloft += 1;
+            continue;
+        }
+        if site.is_owned(i) {
+            binding.owned += 1;
             continue;
         }
         binding.fixed_cells += site.fixed_cells(i).len();
