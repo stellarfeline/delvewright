@@ -148,7 +148,12 @@ fn styled_rows(
             }
             Ok(Some(l)) => {
                 out.insert(k.clone(), l.format);
-                for (i, (_, t)) in l.spans.into_iter().enumerate() {
+                for (i, (st, t)) in l.spans.into_iter().enumerate() {
+                    // A key span's component is a `keybind`, read by no
+                    // language file (spec-0104 §5.1).
+                    if st.key.is_some() {
+                        continue;
+                    }
                     let sk = delvewright_dsl::textstyle::span_key(k, i);
                     // No inventory key has a `span` segment followed by an index
                     // (the key scheme of `dsl::l10n`), so a span key cannot

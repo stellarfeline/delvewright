@@ -40,7 +40,7 @@
             },
             "id": "obj/read-the-label",
             "radius": 2,
-            "title": "Read the label at the desk",
+            "title": "Go to the label at the desk",
             "type": "reach-anchor"
           },
           {
@@ -52,7 +52,7 @@
             "hint": "The Factor minds the counter in the side gallery.",
             "id": "obj/reach-the-counter",
             "npc": "npc/factor",
-            "title": "Reach the counter",
+            "title": "Talk to the Factor at the counter",
             "type": "talk-to"
           },
           {
@@ -64,7 +64,7 @@
             "hint": "The Curator stands in the middle of the near hall.",
             "id": "obj/hear-the-curator",
             "npc": "npc/curator",
-            "title": "Hear the Curator",
+            "title": "Talk to the Curator",
             "type": "talk-to"
           }
         ],
@@ -157,7 +157,7 @@
             "hint": "The Marshal is up in the loft.",
             "id": "obj/climb-the-loft",
             "npc": "npc/marshal",
-            "title": "Climb the loft",
+            "title": "Speak to the Marshal in the loft",
             "type": "talk-to"
           },
           {

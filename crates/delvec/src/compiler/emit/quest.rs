@@ -169,7 +169,7 @@ pub(super) fn quest_completion_fns(
             // v0.3 activation function (gap 13): run once when the objective
             // activates (driven from `tick`) — set the global once-flag, then place
             // the objective's prop(s). Emitted only for objectives with a prop.
-            let cmds = activation_commands(plan, q_area, o);
+            let cmds = activation_body(plan, q_area, o);
             if !cmds.is_empty() {
                 let mut act = vec![format!(
                     "scoreboard players set {} dw.sys 1",

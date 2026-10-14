@@ -389,6 +389,13 @@
         }
       }
     ],
+    "guidance": {
+      "teaching": {
+        "attack-body": "When something comes at you, [[key|attack]] to strike it.",
+        "use-block": "Things in this hall answer to a hand: [[key|use]] on them.",
+        "use-body": "Stand close to someone and [[key|use]] to speak with them."
+      }
+    },
     "lethal_volumes": [
       {
         "damage_type": "fall",
@@ -781,7 +788,7 @@
               }
             ],
             "stealth": false,
-            "title": "Hear the Curator",
+            "title": "Talk to the Curator",
             "type": "talk-to"
           },
           {
@@ -862,7 +869,7 @@
               "text": "They reach the counter.",
               "verb": "arrives"
             },
-            "hint": "The Factor keeps the counter on the east side of the near hall.",
+            "hint": "The Factor, the hall's trader, keeps the counter on the east side of the near hall.",
             "id": "obj/reach-the-counter",
             "radius": 3,
             "requires_flags": [
@@ -1653,7 +1660,7 @@
             "npc": "npc/marshal",
             "requires_flags": [],
             "stealth": false,
-            "title": "Answer the Marshal",
+            "title": "Report to the Marshal",
             "type": "talk-to"
           },
           {
@@ -1785,7 +1792,7 @@
             "requires_flags": [
               "flag/muster-cleared"
             ],
-            "title": "Board the ferry",
+            "title": "Step onto the ferry",
             "type": "reach-anchor"
           },
           {
@@ -1798,6 +1805,7 @@
               "text": "They step off the ferry into the sealed cabin.",
               "verb": "arrives"
             },
+            "hint": "Cross on the ferry to the cabin on the far shore.",
             "id": "obj/cross-the-strait",
             "radius": 1,
             "requires_flags": [
@@ -1854,8 +1862,10 @@
               "text": "the party is set back down in the gallery hall",
               "verb": "arrives"
             },
+            "hint": "Back through the arch you came in by.",
             "id": "obj/back-in-the-hall",
             "radius": 2,
+            "title": "Return to the hall",
             "type": "reach-anchor"
           }
         ],
@@ -3066,9 +3076,10 @@
               "text": "The east bay keeps what the hall has stopped showing.",
               "verb": "arrives"
             },
+            "hint": "Through the arch on the east side of the reliquary.",
             "id": "obj/look-in-the-east-bay",
             "radius": 3,
-            "title": "Look into the east bay",
+            "title": "Step into the east bay",
             "type": "reach-anchor"
           },
           {
@@ -3083,7 +3094,7 @@
             },
             "id": "obj/look-in-the-west-bay",
             "radius": 3,
-            "title": "Look into the west bay",
+            "title": "Step into the west bay",
             "type": "reach-anchor"
           },
           {
@@ -3091,15 +3102,16 @@
               "obj/look-in-the-west-bay"
             ],
             "anchor": "anchor/west-pit",
-            "announcement": "hidden",
+            "announcement": "shown",
             "happening": {
               "subject": "anchor/west-pit",
               "text": "They come to the rim of the well and look down it.",
               "verb": "arrives"
             },
+            "hint": "The well is in the reliquary's north-west corner.",
             "id": "obj/look-into-the-well",
             "radius": 3,
-            "title": "Look into the well",
+            "title": "Go to the mouth of the well",
             "type": "reach-anchor"
           }
         ],
@@ -3215,6 +3227,7 @@
               "text": "the party reaches the lit end of the long hall",
               "verb": "arrives"
             },
+            "hint": "Run the long hall to its far end.",
             "id": "obj/reach-the-hall-end",
             "radius": 2,
             "title": "Reach the light",
@@ -4145,7 +4158,7 @@
         },
         "once": false,
         "prop": {
-          "block": "minecraft:lever[face=floor,facing=south]"
+          "block": "minecraft:oak_button[face=floor,facing=south]"
         }
       },
       {
@@ -4200,7 +4213,7 @@
         },
         "once": false,
         "prop": {
-          "block": "minecraft:lever[face=floor,facing=south]"
+          "block": "minecraft:stone_button[face=floor,facing=south]"
         }
       },
       {

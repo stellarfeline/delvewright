@@ -471,6 +471,11 @@ pub(super) fn validate_loaded(
                 let (pd, pbind) = delvec::compiler::promise::check(&campaign);
                 examined.push(pbind.line());
                 diags.extend(pd);
+                // DW1015 (spec-0104 §4): a title names the act its type
+                // completes on, in the English and every sidecar with a table.
+                let (vd, vbind) = delvec::compiler::promise::check_act_verbs(&campaign, &sidecars);
+                examined.push(vbind.line());
+                diags.extend(vd);
             }
             // spec-0050 (DSL v0.15): the detail plan. `DW0842`-`DW0845` (the
             // binding binds, the piece is the shape of its allocation, its

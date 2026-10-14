@@ -108,6 +108,7 @@
 //! - [`ways`]: what a campaign does with a piece's contingent ways.
 //! - [`wrongside`]: which side of a sealed shortcut door a player is standing on.
 
+pub mod acts;
 pub mod affordance;
 pub mod analyze;
 pub mod assembled;

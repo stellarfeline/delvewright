@@ -297,7 +297,7 @@ pub fn art_font_width(text: &str) -> u32 {
 /// `text` is a line as authored, so a styled span (spec-0096) is measured as
 /// what it draws: its own text, never its markup, plus [`bold_widening`].
 pub fn width_for(style: NarrateStyle, text: &str) -> u32 {
-    let shown = delvewright_dsl::textstyle::visible(text);
+    let shown = delvewright_dsl::textstyle::measured(text);
     let base = match style {
         NarrateStyle::Art => art_font_width(&shown),
         _ => default_font_width(&shown),
@@ -452,7 +452,7 @@ pub fn check_option_labels(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -
 /// The `DW0331` diagnostic for an option `label`, or `None` if it fits its button.
 fn label_over_budget(stage: &str, path: String, text: &str) -> Option<Diagnostic> {
     let width =
-        default_font_width(&delvewright_dsl::textstyle::visible(text)) + bold_widening(text);
+        default_font_width(&delvewright_dsl::textstyle::measured(text)) + bold_widening(text);
     if width <= BUTTON_LABEL_BUDGET {
         return None;
     }

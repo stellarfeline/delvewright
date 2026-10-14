@@ -683,6 +683,9 @@ pub(super) fn emit_functions(
     // v0.4: summon the interaction entities strike/use environment triggers watch
     // (empty for a campaign with no triggers → byte-identical).
     setup.extend(env_trigger_setup(plan, chrome));
+    // spec-0104 §5.4: one `dw.taught_<class>` score per class taught (empty for
+    // a campaign with no `teaching` line → byte-identical).
+    setup.extend(teaching::teaching_setup(plan));
     // v0.6: fill each trap dispenser payload and summon disarm affordances
     // (spec-0011). Empty for a campaign with no traps → byte-identical.
     setup.extend(trap_setup(plan, trap_gates));
@@ -875,7 +878,7 @@ pub(super) fn emit_functions(
         let area = plan.quest_area(q.id.as_str()).unwrap_or("");
         let qa = quest_active_score(q.id.as_str());
         for o in &q.objectives {
-            if activation_commands(plan, area, o).is_empty() {
+            if activation_body(plan, area, o).is_empty() {
                 continue;
             }
             tick.push(format!(
@@ -1099,6 +1102,9 @@ pub(super) fn emit_functions(
     // v0.4: environment-trigger per-tick checks (empty for a campaign with no
     // triggers → byte-identical).
     tick.extend(env_trigger_tick(plan, chrome));
+    // spec-0104 §5.4: a teaching trigger's armed firing-cell poll (empty for a
+    // campaign with no `teaching` line → byte-identical).
+    tick.extend(teaching::teaching_tick(plan, chrome));
     // v0.6: trap disarm-affordance detection (spec-0011). Empty for a campaign with
     // no disarmable traps → byte-identical.
     tick.extend(trap_tick(plan));
@@ -1323,6 +1329,9 @@ pub(super) fn emit_functions(
     fns.extend(teleport_fns(plan));
     fns.extend(cutscene_fns(plan, moves, actor_moves));
     fns.extend(env_trigger_fns(plan, chrome));
+    // spec-0104 §5.4: the teaching lines. Empty for a campaign with no
+    // `teaching` line → byte-identical.
+    fns.extend(teaching::teaching_fns(plan));
     fns.extend(trap_fns(plan, trap_gates));
     // spec-0022: the proven per-cell volley geometry and the settled collapse
     // debris. Empty for a campaign using neither verb (byte-identical).

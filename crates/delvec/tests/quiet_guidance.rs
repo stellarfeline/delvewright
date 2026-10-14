@@ -769,16 +769,23 @@ fn the_button_guard_and_a_gated_press_answer_each_read_their_one_authority() {
 }
 
 // ---------------------------------------------------------------------------
-// DW0863 — a fight the party cannot find (spec-0093 §5)
+// DW0863 — a fight the party cannot find (spec-0093 §5, widened by spec-0104 §3)
 // ---------------------------------------------------------------------------
 
-fn signposts(name: &str, quests: Value) -> (promise::FightBinding, Result<(), String>) {
+/// The plan of a beach variant, judged by `DW0863` over an empty world — every
+/// line clear, so what these tests move is the reach and the lines.
+fn signposts(name: &str, quests: Value) -> (promise::ActBinding, Result<(), String>) {
     let dir = variant(name, quests, beach_dialogue());
     let (_, campaign) = load(&dir);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
-    let (b, v) = promise::check_fight_signposts(&plan);
-    (b, v.map_err(|f| format!("{}: {}", f.code, f.message)))
+    let world = delvec::compiler::nav::World::from_solid_cells(Default::default());
+    let (b, v) = promise::check_acts_found(&plan, &world);
+    let v = match v.first() {
+        None => Ok(()),
+        Some(f) => Err(format!("{}: {}", f.code, f.message)),
+    };
+    (b, v)
 }
 
 /// An untitled kill whose wave arrives where the act is — the keeper's post is
@@ -789,21 +796,15 @@ fn signposts(name: &str, quests: Value) -> (promise::FightBinding, Result<(), St
 fn a_fight_is_found_by_the_party_when_it_arrives_within_reach_of_the_act() {
     let (b, v) = signposts("found", beach_quests(surf(None), json!({})));
     assert!(v.is_ok(), "{v:?}");
-    assert_eq!(
-        (b.kills, b.announced, b.found, b.sites, b.unplaced),
-        (1, 0, 1, 1, 0)
-    );
+    assert_eq!((b.announced, b.kills_in_reach, b.refused), (0, 1, 0));
 
     let (b, v) = signposts("out-of-reach", beach_quests(surf(Some(2.0)), json!({})));
     let msg = v.expect_err("a wave out of reach of its act is DW0863");
     assert!(msg.starts_with("DW0863"), "{msg}");
-    assert!(
-        msg.contains("4.0 blocks from the anchor"),
-        "the distance: {msg}"
-    );
-    assert!(msg.contains("2 blocks here"), "the reach: {msg}");
+    assert!(msg.contains("4.0 blocks away"), "the distance: {msg}");
+    assert!(msg.contains("reach of 2 blocks"), "the reach: {msg}");
     assert!(msg.contains("obj/muster"), "the firing site: {msg}");
-    assert_eq!((b.kills, b.announced, b.found), (1, 0, 0));
+    assert_eq!((b.announced, b.kills_in_reach, b.refused), (0, 0, 1));
 }
 
 /// The announced arm: a title and a hint make the same out-of-reach fight
@@ -826,7 +827,7 @@ fn an_announced_fight_is_found_by_its_lines_unless_its_announcement_is_hidden() 
     };
     let (b, v) = signposts("announced", announced(json!({}), None));
     assert!(v.is_ok(), "{v:?}");
-    assert_eq!((b.kills, b.announced, b.found), (1, 1, 0));
+    assert_eq!((b.announced, b.kills_in_reach), (1, 0));
 
     let (_, v) = signposts(
         "announced-hidden",
@@ -856,7 +857,7 @@ fn a_wave_fired_from_a_placeless_root_is_not_found_by_the_party() {
     let msg = v.expect_err("a death-fired wave places the party nowhere");
     assert!(msg.contains("places the party nowhere"), "{msg}");
     assert!(msg.contains("/content/on_death"), "{msg}");
-    assert_eq!((b.sites, b.unplaced), (2, 1));
+    assert_eq!(b.refused, 1);
 }
 
 /// spec-0093 meets the plate's `step` trigger: a wave a stepped plate fires is
@@ -884,8 +885,8 @@ fn a_wave_a_stepped_plate_fires_is_found_where_the_plate_is() {
     let (b, v) = signposts("stepped", q);
     assert!(v.is_ok(), "{v:?}");
     assert_eq!(
-        (b.kills, b.announced, b.found, b.sites, b.unplaced),
-        (1, 0, 1, 1, 0),
+        (b.kills_in_reach, b.refused),
+        (1, 0),
         "one site, the plate, placed and within reach"
     );
 }

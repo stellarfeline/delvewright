@@ -351,6 +351,16 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
         let key = format!("quest.{}.goal", local(q.id.as_str()));
         f(&key, &mut q.goal);
     }
+    // Stage 5 — the teaching lines (spec-0104 §5.3): narration the party reads
+    // in chat the first time an act of the class is next. A `null` entry is a
+    // declaration with no line, and is not a string.
+    for class in crate::InputClass::ALL {
+        if let Some(crate::TeachLine::Line(line)) =
+            c.quests.content.guidance.teaching.get_mut(class).as_mut()
+        {
+            f(&format!("guidance.teaching.{}", class.as_str()), line);
+        }
+    }
     // Stage 5 — objective titles/hints (when set).
     for q in &mut c.quests.content.quests {
         let ql = local(q.id.as_str()).to_string();
@@ -687,6 +697,7 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
         },
         "loot" if n == 5 && last == "name" => ItemName,
         "lethal" if n == 3 && last == "message" => Narration,
+        "guidance" if n == 3 && segs[1] == "teaching" => Narration,
         "stake" if n == 3 && last == "collected" => Narration,
         "shop" => match (n, last) {
             (3, "title") => Title,

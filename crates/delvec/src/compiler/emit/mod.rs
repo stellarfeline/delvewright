@@ -79,6 +79,7 @@ mod shortcut;
 mod stake;
 mod state;
 mod stealth;
+mod teaching;
 mod teleport;
 #[cfg(test)]
 mod tests;
@@ -645,18 +646,21 @@ pub fn build_with_warnings(
     // the wave would silently never spawn (DW0310). Guards against the class of bug
     // where the spawn position was resolvable only via a `kill` objective.
     check_wave_spawns(plan)?;
-    // DW0863 (spec-0093 §5): a `kill` objective is announced with a hint, or its
-    // wave arrives within reach of the act that spawns it. Judged here, where
-    // the acts have places; the binding is printed whichever way it goes.
+    // DW0863 (spec-0104 §3): every act on a walked path is announced with a
+    // hint, or in sight from where the party stands (and a kill's wave within
+    // reach). Judged here, where the acts have places and the world has
+    // blocks; the binding is printed whichever way it goes.
     {
-        let (fights, verdict) = crate::compiler::promise::check_fight_signposts(plan);
-        eprintln!("{}", fights.line());
-        if let Err(f) = verdict {
-            return Err(BuildFailure::Diagnostic {
-                code: f.code,
-                message: f.message,
-            });
-        }
+        let (acts, refusals) = crate::compiler::promise::check_acts_found(plan, &world);
+        eprintln!("{}", acts.line());
+        refuse_first(refusals)?;
+    }
+    // DW1016 (spec-0104 §5.5): the opening teaches each input a walked path
+    // needs, and teaches nothing no path needs, in a line that says the key.
+    {
+        let (teaching, refusals) = crate::compiler::promise::check_teaching(plan);
+        eprintln!("{}", teaching.line());
+        refuse_first(refusals)?;
     }
     // DW0963 (spec-0093 §7): an unmarked `interact` with no `prop` stands on a
     // block the piece authored, or the party is asked to press empty space.
@@ -671,6 +675,12 @@ pub fn build_with_warnings(
                 message: f.message,
             });
         }
+        // DW1017 (spec-0104 §6): a pressable stands alone among its kind
+        // within the click's reach, unless it is marked.
+        let (twins, refusals) =
+            crate::compiler::promise::check_pressables_alone(plan, &assembled.blocks);
+        eprintln!("{}", twins.line());
+        refuse_first(refusals)?;
     }
 
     // DW1002: every block the build writes is one the pinned server keeps —
@@ -1516,4 +1526,19 @@ delvewright_dsl::dw_code! {
     /// `DW0447`: a trap-payload verb centres its volume on an anchor no placed
     /// prefab piece provides, so the kill zone / collapse region cannot be resolved.
     pub const DW_PAYLOAD_ANCHOR_UNRESOLVED: DwCode = DwCode::new("DW0447", ExitTier::Build);
+}
+
+/// Report every refusal of a rule that returns them all: the first is the
+/// build's verdict, the rest are printed as further errors before it.
+fn refuse_first(refusals: Vec<crate::compiler::failure::Failure>) -> Result<(), BuildFailure> {
+    if let Some((first, rest)) = refusals.split_first() {
+        for extra in rest {
+            eprintln!("{} [error] build: {}", extra.code, extra.message);
+        }
+        return Err(BuildFailure::Diagnostic {
+            code: first.code,
+            message: first.message.clone(),
+        });
+    }
+    Ok(())
 }
