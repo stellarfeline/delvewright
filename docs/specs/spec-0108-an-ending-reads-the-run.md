@@ -1,0 +1,231 @@
+# spec-0108: An ending reads the run — its inputs are the gates its final scene reads, a deed writes one as a dialogue does, every story world the readings distinguish is enumerated and walked, and a cutscene's `then` changes the world after the camera returns
+
+- **Status**: Proposed
+- **Ground**: written against engine `d336a2b1d` (`origin/main`), read only — `Verb::CampaignComplete`, `Verb::Cutscene`, `Verb::SetFlag`/`SetState`/`AddState`/`ClearState` and `Verb::Teleport` in `crates/dsl/src/quest/verb.rs`; `Guard`, `QuestEffect::when`, `NestedDispatch` and `QuestEffect::nested_effect_dispatch` in `crates/dsl/src/quest/effect.rs`; `Objective` (five kinds) in `crates/dsl/src/quest/objective.rs`; `DialogueEffect` in `crates/dsl/src/dialogue.rs`; `EffectRootKind` (eleven roots) in `crates/dsl/src/effects.rs`; `EndingId` in `crates/dsl/src/ids.rs` and `quest_id_syntax` in `crates/dsl/src/quest/check.rs`; `BranchPoint`, `QuestPlanContent` and `declared_endings` in `crates/dsl/src/quest_plan.rs`; `StateCompare`/`CompareOp` in `crates/dsl/src/state.rs`; `compiler::flow` (`ChoiceGroup`, `MAX_WORLDS`, `enumerate_worlds`, `Flow::playthrough`, `Flow::playthrough_in`, `gate_flags`, the producer table in the module header), `compiler::branch` (`realize`, `realize_one`, `entry_choices`, `artifacts`, `DW0480`–`DW0485`, `DW0927`), `compiler::link` (`cutscene_end_offset`, `check_teleport_under_cutscene`/`DW0933`), `compiler::emit::quest::campaign_complete_fns`, `compiler::emit::cutscene` (the `cs_<bare>`/`cs_tick_<bare>`/`cs_end_<bare>` bracket), `compiler::emit::manifest::campaign_complete_tail`; `validation/branch-runs.sh`, `harness/src/branch-plan.ts`, `harness/src/branch-select.ts`, the `assert-complete` step in `harness/src/critical-path.ts`; the `campaign-complete`, `when`, `happening`, `branch_points[]`, `cutscene`, `teleport` and `ending_tail_ticks` rows of `docs/reference/compiler.md`; `docs/reference/delvec/compiler/branch.md` and `flow.md`; `docs/reference/web-narrative.md` and `docs/reference/game-writing.md`; `gallery/quest-plan.json`, `gallery/quests.json`, `gallery/probes/`; the `/new-delve` pages `references/story.md` and `references/quest-capabilities.md`.
+- **What it is for**: a delve whose ending is decided by the whole run and whose world, when the ending has played, is the world the ending said it left. Two playtest findings are the instance: an ending that depended on the last dialogue choice and on nothing the party had done before it, and an ending whose text said the place was destroyed while the party stood afterwards unharmed in an intact world. The capability is general — any campaign whose finale is a reckoning (a tally of kills, which threads were finished, a thing the party did or did not do) and whose last scene leaves a mark on the world (a hall sealed, a bridge down, the party carried out to sea, the night come).
+- **Research**: `docs/reference/web-narrative.md` §3 and §6 are this spec's research record and are not restated; §2 below reads the tree against them. Every rule below is marked **cited** (a reading of the tree, a constitution rule, or a rule the research page carries with its own sources) or **authored** (this spec chooses, with its reason).
+- **Numbers**: no ADR. **Two DW codes**: **`DW1029`** (an ending reads fewer inputs than the campaign declares every ending reads, §7.1) and **`DW1030`** (an ending no story world reaches, §7.2). An ending id that is not an id takes the existing `DW0110` (§3.1); a `then` list nested where the seam forbids it takes the existing `DW0329`/`DW0357`/`DW0503` rules (§3.6). `dsl_version` moves to **0.46.0**; it numbers a surface and promises nothing.
+- **Non-goals**: interpreting an ending's prose (what an ending *says* is text the compiler never reads; §7 judges only what the author declared); objective-level participation inside one quest (spec-0051 non-goal; a tally fed by three of five kills inside one optional quest is a target this spec reports unrealizable, §4.2); a world per *order* of participation (spec-0051 §7); an ending that reads a per-player datum differently per player (an ending is the party's, spec-0018; a `player`-scoped datum read by a `campaign-complete` gate is already `DW0503`'s question); a new ending verb (the ending stays `campaign-complete`, and the world changes stay the verbs that change the world); an ending slide show or credits surface; a runtime language model (spec-0001).
+
+## 1. The defects, and the objects they belong to
+
+**The ending read one input, set in its own scene.** A `campaign-complete` may carry a `when` over flags and data (the `when` row, DSL 0.20), so an ending that reads accumulated state is expressible today. Nothing counts what an ending reads, nothing says where its inputs were written, and the skill's step-3 page says only to declare forks and name endings. The playtested campaign's ending read one flag, set by the dialogue option two lines before it. **Cited**: `compiler::branch` records endings (`record_effect`) and counts nothing of their gates; `references/story.md` *Declare every story fork here* is the whole guidance on endings.
+
+**A deed-made fork is invisible to the proofs.** A world is one selection per *dialogue choice group* (`flow.rs` `ChoiceGroup`), and every enumerated world completes everything completable in it, while the exported critical path completes the mainline only. A flag a kill, a strike or a visit sets is therefore set in every enumerated world, so it never separates two worlds: `DW0480` never sees it as a fork, `DW0482` proves a tally-chosen ending only where an extreme happens to land on it, and the bot is never scripted to take the other side of a deed. **Cited**: `flow.rs` module header *The model*, `web-narrative.md` §6 rows *Endings that read the whole run* and *A fork made by an action*.
+
+**The world after the ending is the world before it.** `campaign_complete` writes `dw.campaign`, grants the advancement, prints the banner and the bot marker, and changes nothing else (`campaign_complete_fns`). An ending's sibling effects can change the world, but the one place a finale puts its scene — a `cutscene` — ends with `cs_end_<bare>`, which teleports every player back to the marker it saved at the start, so a same-tick `teleport` is undone (`DW0933`), and the only hook after the camera returns is a `sequence` step whose `at_ticks` the author computes from the cutscene's length — a procedural derivation typed by hand, the shape CLAUDE.md forbids on an authoring surface. **Cited**: `emit::cutscene` `end` lines, `link::check_teleport_under_cutscene`'s remedy text.
+
+**An ending's id is not held to being one.** `EndingId` is documented `ending/<kebab>`; `quest_id_syntax` walks quest and objective ids only, and the gallery's one ending is the sentence `The hall is read end to end.`, built green on every pull request. **Cited**: `ids.rs` line for `EndingId`, `check.rs` `quest_id_syntax`, `gallery/quests.json`.
+
+Each belongs to an object that exists: the ending is the `campaign-complete` effect; what it reads is its gate; a deed is an objective, a trigger, a trap, a kill; the moment after a cutscene is the cutscene's. No new object is introduced.
+
+## 2. Research record
+
+- **R1 — how many inputs, and of what kind.** The research page's rule for a delve: the ending reads at least three inputs written in different threads, by deeds as well as by dialogue; a final choice, if any, has its options decided by those inputs; every seed is acknowledged where it is made; the epilogue states the outcome per thread. **Cited**: `web-narrative.md` §3 *For a delve* (authored there from Witcher 3's five scenes, Dishonored's chaos fed chiefly by kills, New Vegas's per-thread slides, and Fabulich's seed-early-read-late). The number three is that page's; this spec makes it a campaign's declaration, not the engine's (§3.5), per CLAUDE.md *A check confirms intent; it never restricts*.
+- **R2 — the failure the number guards.** An ending that comes down to a final choice ignoring the run is the dominant complaint against Mass Effect 3's original ending; the remedy in the literature is the delayed branch, the ending reading state the whole run wrote. **Cited**: `web-narrative.md` §3 *The failure "only the last choice matters"*.
+- **R3 — what a gate is, and who evaluates it.** `requires_flags`/`forbids_flags`/`requires_state` are one object (`dsl::gate::Gate`), carried by every effect under `when`; a comparison is evaluated where the bundle runs, by vanilla, against the party holder; the path replay (`DW0204`, `DW0879`) is the only proof that knows an order. **Cited**: `docs/reference/dsl/state.md` *One gate, three fields* and *Where a comparison IS evaluated*.
+- **R4 — which acts write.** The producer table: `set-flag` in an objective's or quest's bundle, on a dialogue option, in a trigger's effects, in a trap payload, a trap's or timed gate's `disarm.sets_flag`; reaction bundles never. `set-state`/`add-state`/`clear-state` are the datum writers, on the same roots, and a datum is replayed where the writes can be chained into one order and undatable otherwise. **Cited**: `flow.rs` module header table; `flow.md` *Two refusals to over-claim*.
+- **R5 — what the bot can do.** The harness drives `talk-to` (a `/trigger` chat line stands for the dialog button), `reach`, `kill`, `collect`, `interact`, `rest`, `trigger` (`strike-npc`, `strike-assembly`, `approach`), `witness-strike`, `loop`, and ends on `assert-complete`, which waits out `ending_tail_ticks`. A trap disarm and a shop purchase have no step kind. **Cited**: `critical-path.ts` step cases; `compiler.md` `ending_tail_ticks`.
+- **R6 — what `cs_end` does, in order.** `gamemode adventure @a`; `tp @a` to the saved marker; kill the cameras; kill the marker; remove the stand-ins (party present); drop the cutscene tag; reset the run flag; decrement `#cs_live`. It runs from `cs_tick_<bare>`, a `schedule`d function, so with the server source and no `@s`. **Cited**: `emit::cutscene` lines 441–466.
+- **R7 — a cutscene's end tick is a compiler fact.** `link::cutscene_end_offset` is the sum emission lays the shots end to end by, and `campaign_complete_tail` already folds scheduled offsets into `ending_tail_ticks`. **Cited**: `link.rs`, `manifest.rs`.
+
+## 3. The surface
+
+### 3.1 An ending is an id
+
+`campaign-complete.ending` is an `EndingId`, `ending/<kebab>`, and `quest_id_syntax` walks every `campaign-complete` at any nesting depth so a value of another shape is `DW0110` at the effect's path. The set of endings stays exactly the set named by some `campaign-complete` (`declared_endings`); a `campaign-complete` naming none is one ending, reported under the id `ending/<unnamed>` in every artifact of this spec and counted as one. **Authored**: the branch plan, the ledger of §6.1 and the bot's report name endings by id, and a sentence in that column is a name a stranger cannot resolve.
+
+### 3.2 What an ending reads
+
+An ending's **final scene** is the effect list its `campaign-complete` stands in, with every list nested under any effect of that list (a `sequence` step, a cutscene's `then`, a `move-npc` `on_arrive`), to any depth. An ending's **inputs** are every flag named by a `requires_flags` or `forbids_flags`, and every datum named by a `requires_state` term, on any `when` in its final scene — the `campaign-complete`'s own gate and its siblings' alike. **Authored**: the gate is the one place vanilla evaluates a reading, so it is the one declaration; a separate `reads: […]` list would be a second authority for one fact, and a sibling gated on an input is the epilogue line that states that thread's outcome (R1), so counting siblings is what makes "the epilogue states the outcome per thread" and "the ending reads the input" one fact. An ending whose final scene carries no gate reads zero inputs, and the report says so.
+
+Two endings in one final scene (the usual shape: one list, several `campaign-complete`s with exclusive gates) share the scene and each reads the whole scene's inputs; which fires is what their gates decide, and §4 enumerates both.
+
+### 3.3 Writers, and the three kinds of act
+
+A **writer** of an input is a producer of it in the sense of R4: a `set-flag`, `set-state`, `add-state` or `clear-state` effect on any of the eleven roots, a dialogue option's `set-flag`, a trap's or timed gate's `disarm.sets_flag`. Each writer is dated by the act that fires it, and the act has one of three kinds:
+
+| Kind | The act | Where the writer stands |
+|---|---|---|
+| **said** | a dialogue option was chosen | a `DialogueEffect::SetFlag`; a bundle under `on_objective_complete` of a `talk-to` objective, at any nesting |
+| **did** | a thing was done in the world | a bundle under `on_objective_complete` of a `reach-anchor`, `kill`, `collect` or `interact` objective; a trigger's `effects` (`strike`, `use`, `approach`); a trap `payload` or `disarm`; a timed gate `disarm`; `on_kill`; `on_unlock`; a shop offer; an assembly `on_land`; a loop `on_cross`; `on_death` |
+| **finished** | a quest was completed | a bundle under a quest's `on_complete` |
+
+A **deed** is an act of kind *did* or *finished*. **Authored**: the kind is a property of the root and, for `on_objective_complete`, of the objective's own kind — both decidable from the document with no reading of prose; *finished* is its own kind because New Vegas's per-thread slide reads whether a thread was done, which is a quest's completion and neither a line said nor a single act. A writer in a reaction bundle (`on_respawn`, `on_caught`) is no producer (R4) and has no kind.
+
+### 3.4 Seeded
+
+An ending's **host quest** is the quest whose `on_complete` or `on_objective_complete` holds its `campaign-complete`; an ending hosted on a non-quest root (a trigger, a trap, a shortcut) has none. An input is **seeded** when some writer of it is dated, in some story world (§4), at a step of a quest other than the host quest, or is undated (an ambient writer flow refuses to date); an input every writer of which is dated inside the host quest is **final-scene**. **Authored**: the research page's *seed early, read late* is a statement about distance between the writing and the reading, and the quest is the DSL's unit of story distance — the stage-4 plan is a DAG of quests, the chronicle is dated by quest, and the last dialogue choice of the finale is the exact shape the finding names.
+
+### 3.5 The campaign declares what every ending reads
+
+Stage 4 (`quest-plan.json`) gains one optional object:
+
+```json
+"endings_read": { "at_least": 3, "deeds_at_least": 1 }
+```
+
+- `at_least` (optional, ≥ 0): every ending's count of **seeded** inputs is at least this.
+- `deeds_at_least` (optional, ≥ 0): every ending's count of seeded inputs **some writer of which is a deed** is at least this.
+
+Absent, the engine counts and reports (§6.1) and refuses nothing. Present, an ending below either term is `DW1029` (§7.1). **Cited**: CLAUDE.md *A check confirms intent; it never restricts* — the number is the campaign's, the engine judges the declaration, and a campaign declaring `endings_read` with zero endings passes with `0 ending(s)` stated. **Authored**: the object lives in stage 4 because the reading is a property of the quest plan's shape (which threads feed the finale), decided when the plan is laid, before any effect exists; it is one object with two terms rather than two fields because both are terms of one claim about every ending.
+
+### 3.6 A cutscene has a `then`
+
+`cutscene` gains `then: Vec<QuestEffect>` (optional, default empty): the effects that run **when the camera returns**, from `cs_end_<bare>`, after every restore line of R6 (the players are back in adventure mode on their saved cells, the cameras and the marker are gone, the stand-ins are removed, the tag is dropped, `#cs_live` is decremented). Its dispatch is `NestedDispatch::Server` — `cs_end_<bare>` runs from a `schedule`d tick with no acting player — so `DW0503` refuses a `player`-scoped datum read or written in it and `DW0357` reads the seam from `nested_effect_dispatch`, by the one statement spec-0085 made for `on_arrive` and `on_rest`. `then` is a nested effect list in every walk (`nested_effect_lists`, `for_each_effect_root`, the l10n inventory, the timeline model), and a `sequence` inside it is legal as it is under `on_arrive`; a `cutscene` inside it is legal and plays as a second bracket. **Authored**: the moment after a cutscene is a property of the cutscene, the object whose end defines it, and not of the ending that first needed it — a mid-delve cutscene that ends with the door behind the party sealing is the same mechanism. **Cited**: CLAUDE.md *A capability belongs to the object class it acts on*.
+
+In the timeline model (`link::timelines`), a `then` effect is dated at the cutscene's end tick plus one, so `DW0933` cannot fire on a `teleport` inside `then` — by construction, not by exemption — and `DW0933`'s remedy names `then` first and the computed `sequence` step second. `ending_tail_ticks` and the PackTest await (`campaign_complete_tail`) count a `then`'s offset where a `campaign-complete` or an aftermath effect stands in one.
+
+### 3.7 The aftermath
+
+An ending's **aftermath** is every effect in its final scene whose verb **changes the world**: `set-block`, `fill-region`, `clear-region`, `collapse`, `open-gate`, `close-gate`, `open-way`, `teleport`, `damage-players`, `give-effect`, `clear-effect`, `give-item`, `set-time`, `set-weather`, `set-atmosphere`, `spawn-npc`, `despawn-npc`, `move-npc`, `spawn-actor`, `despawn-actor`, `move-actor`, `unleash-actor`, `spawn-wave`, `spawn-assembly`, `despawn-assembly`, `lightning`, `set-flag`, `set-state`, `add-state`, `clear-state`, `drop-stake`, `set-checkpoint`, `bonfire`, `begin-stealth`, `end-stealth`, `arm-strikes`, `play-clip`. The verbs that **say** and leave nothing behind: `narrate`, `play-sound`, `firework`, `particle`, `cutscene` (the camera itself), `campaign-complete`, `sequence` (a container; its steps are classified). The class is one function on `Verb`, with a test that names every variant exactly once in one of the two classes, so a new verb does not compile until it says which it is. **Authored**: the class is what the proof of §6 can observe after the scene, and it is a property of the verb, never of the ending.
+
+The engine does not infer from an ending's prose that it owes an aftermath (CLAUDE.md: a check never infers an undeclared intent in order to refuse). It reports, per ending, how many aftermath effects there are and of which verbs, and proves that each one took (§6.2, §6.3). An ending with zero aftermath effects is reported as `aftermath: 0 effect(s)`, and that line, beside the ending's `happening` text, is what a reviewer reads against the ending's words.
+
+## 4. Story worlds
+
+### 4.1 Participation is part of a world
+
+A **story world** is a dialogue selection (one alternative per flag-reading choice group, as today) **and a participation**: the set of **elective acts** performed. An elective act is an optional quest (spec-0051, `mandatory: false` — performed whole: every objective of it completes, and its `on_complete` fires), or an ambient root fired by a player (a trigger, a trap, a timed gate's `disarm`, a shortcut's `on_unlock`, a shop offer, an `on_kill`, a loop's `on_cross`) — performed once or not at all. A mandatory quest's acts are performed in every world. **Authored**: the quest is spec-0051's unit of optionality and the root is R4's unit of ambient production; nothing finer exists in the document.
+
+Flow solves a world with the producer table of R4 restricted to its participation: an elective act not performed produces nothing. Every world today exists at the two extremes — **none** (the exported critical path) and **all** (what `playthrough_in` walks) — and both extremes are now worlds of the enumeration, so a flag only electives write is set in one and not the other.
+
+### 4.2 Targets and witnesses
+
+For every ending (§3.2) and every input it reads, the gates of the final scene **distinguish values**: a flag's two values; a datum's intervals, cut by every `requires_state` term reading it in any final scene (`dsl::gate::DatumSet`, the arithmetic `DW0847` and the cast ladder already share). A **target** is one value class per input of one ending. For each dialogue selection and each target, the engine seeks a **witness participation**: a set of elective acts whose writers, with every mandatory writer, leave each flag at its class and each datum inside its interval — one elective writer suffices to set a flag, none to leave it unset; for a datum, a subset of elective writers whose signed sum lands in the interval, found by subset-sum over the amounts, searched in canonical order and bounded. A target with a witness is a story world; a target with none is **unrealizable**, listed in the ledger with its reason (a mandatory writer forces the flag; no subset of elective amounts reaches the interval; the interval needs part of a quest; the bound was reached). The worlds of a campaign are the extremes of §4.1 plus one witness world per realizable target, deduplicated on (selection, participation), in canonical order, capped at `MAX_WORLDS` with the count reported. **Authored**: enumerating targets, not writers, keeps the world set the size of what the endings distinguish rather than two to the number of deeds; a repeatable writer (`once: false`, a shop offer) is modelled as performed once because one firing is a path a player can walk and the bot can drive, and the ledger says so beside the writer.
+
+### 4.3 The plan artifact names worlds
+
+`validation/branch-plan.json` keeps its name and its readers (`branch-plan.ts`, `branch-runs.sh`); its `branches` list becomes the list of story worlds. A row is one world: `id` (`world/<k>`, `k` its canonical index), `branches` (the declared branch ids its flags realize, as `realize_one` decides today), `selection`, `flags{set,unset}`, `participation{performs[],skips[]}` (elective acts by id: `quest/…`, `trigger/…`, `trap/…`, `shortcut/…`, `shop/…`, `wave/…`, `loop/…`), `inputs` (per ending input: the class this world leaves it in), `endings`, `entry_choices` (as today), `entry_deeds` (the path steps that perform an elective writer of a read flag or datum), `path` (`world-path-<k>.json`, the `critical-path.json` contract), `chronicle` (`world-chronicle-<k>.md`), `reachable`. A declared branch no world realizes is still `DW0482`, and the plan carries a `branches_unrealized` list naming each so the harness's report keeps naming it.
+
+### 4.4 What the existing proofs see
+
+- `DW0480` now reaches a deed-made fork: a flag only electives write that gates casts, staging or structure is set in the *all* world and not in the *none* world, so it belongs to a declared branch point or is refused. Direction: it can only turn a proof red. A branch whose `flags` is empty is the *did not* side, legal today.
+- `DW0482`, `DW0483`, `DW0484`, `DW0485`, `DW0927` quantify over every story world a branch realizes, as they quantify over worlds today; `DW0484`'s "ambient producers fire on every branch by construction" becomes "an ambient producer is a participation the world states", and an ambient flag a branch pins unset is realized by the world that does not perform it.
+- `DW0204` and `DW0879` replay every world's path, so a numeric gate is read against each witness's writes.
+- `DW0868` is unchanged: the mainline is still the *none* world.
+
+## 5. Emission
+
+- `cs_end_<bare>` gains, after its last restore line (`scoreboard players remove #cs_live dw.sys 1`), the lowered `then` bundle through the ordinary scheduled-bundle emitter (`emit_effect_bundle` with `Audience::Scheduled`), the same seam `on_arrive` uses. A cutscene with an empty `then` emits byte-identical functions.
+- `campaign_complete` is unchanged: the aftermath is the author's effects, lowered where they stand.
+- `quest_id_syntax` walks `campaign-complete.ending` at every nesting depth.
+- Validation metadata: `validation/endings.json` (§6.1), the world rows of §4.3, `world-path-<k>.json` and `world-chronicle-<k>.md` per world. Nothing of this spec reaches the shipped datapack except the `then` lines and whatever aftermath the author declares.
+
+## 6. Proving it
+
+### 6.1 The binding line and the ledger
+
+On every `delvec validate`, `analyze` and `build`, one line:
+
+```
+ending binding: E ending(s); I input(s) read, S seeded (D with a deed among their writers), F final-scene only; W story world(s) enumerated (X unrealizable target(s), B at the bound); A aftermath effect(s), O of them observable after the scene.
+```
+
+and per ending one line: `ending/<slug>: reads N input(s) — <input>: <said|did|finished>, <seeded|final-scene>, written at <quest or ambient> …; aftermath: A effect(s) [<verb> …]; reached by world/<k>, …`. Zeroes are printed. `validation/endings.json` carries the same per ending: `id`, `host_quest`, `inputs[]` (`key`, `kind` of each writer, `seeded`, `writers[]` with path and dated quest), `aftermath[]` (`path`, `verb`, `observable` of §6.2 with its cell or selector, or `emission-only`), `worlds[]`, and the campaign's `endings_read` with each ending's verdict. **Cited**: CLAUDE.md *Vacuity* — every validation artifact states its binding count with its denominator.
+
+### 6.2 PackTest: the world after the scene holds the change
+
+One generated template per (ending, witness world) — `ending_<slug>_<k>` — pins the world's solved flags and data (the distinguishing drive the cast ladder already computes), runs the final scene's function, awaits the ending's tail plus every cutscene's end offset plus one tick, and asserts each aftermath effect's **observable**:
+
+| Verb | Observable |
+|---|---|
+| `set-block`, `fill-region`, `clear-region`, `collapse`, `open-gate`, `close-gate`, `open-way` | the block at the write's first and last cell equals the written block (`assert block`) |
+| `teleport` | a body summoned in `from` before the scene is absent from `from` and present within one block of `to` |
+| `spawn-npc`, `spawn-actor`, `spawn-wave`, `spawn-assembly`, `lightning` (its strike mark) | an entity carrying the object's tag is present |
+| `despawn-npc`, `despawn-actor`, `despawn-assembly` | no entity carrying the object's tag is present |
+| `move-npc`, `move-actor`, `unleash-actor` | the body is within one block of its destination after the walk's duration |
+| `set-time`, `set-weather` | `time query daytime` stored to a score equals the state's value; the weather predicate holds |
+| `set-flag`, `set-state`, `add-state`, `clear-state`, `set-checkpoint`, `bonfire`, `begin-stealth`, `end-stealth`, `arm-strikes` | the score, the checkpoint mirror or the stealth state holds the written value |
+| `give-item`, `give-effect`, `clear-effect`, `damage-players`, `drop-stake`, `set-atmosphere`, `play-clip` | **emission-only**: a PackTest fake player holds no inventory the template can read, is undamageable, and an atmosphere and a clip are client state; the row says `emission-only` and the bot (§6.3) proves what it can |
+
+Every template ends by clearing its schedules. The set is bound by `DW0811`'s claims as every generated template is. **Cited**: the teleport template's three-assertion shape in `emit::packtest::teleport` (a body that left, so a scene that did nothing cannot pass).
+
+### 6.3 The bot: the party stands in the world the ending left
+
+The `assert-complete` step gains `aftermath[]`, read off `validation/endings.json` for the ending the world fires: after the campaign marker and the tail, the bot asserts each observable it can read — a block at a cell (`blockAt`), its own position inside `to` where it stood inside `from`, its health after a `damage-players`, the world time and weather, an effect on itself — and reports `not_observable` with the verb for the rest. A world whose ending the bot never reaches fails as today.
+
+### 6.4 The runner walks every world
+
+`validation/branch-runs.sh` and `branch-select.ts` iterate the world rows of §4.3 unchanged in shape: tier `all` runs every world with a path; a world whose witness needs an act the harness has no step kind for (a trap disarm, a shop purchase) is exported with `path: null` and a reason naming the act, and the merged report names it skipped. `DELVEWRIGHT_BRANCH=world/<k>` drives one world; the run asserts the path performs every `entry_deed` and takes every `entry_choice`, so a run cannot claim a deed world while walking the extreme.
+
+## 7. Refusals
+
+### 7.1 `DW1029` — an ending reads fewer inputs than the campaign declares (analysis tier, `compiler::ending`)
+
+Fires per ending when `endings_read` is present and the ending's seeded count is below `at_least`, or its seeded-with-a-deed count is below `deeds_at_least`. Path `/content/quests/<i>/…/<campaign-complete>`; the message names the ending, the term, the declared number, the count, and every input with its kind and where it is written, then the remedy: gate a line of the final scene on a flag or datum a deed in another quest writes, or lower the declaration. Silent when `endings_read` is absent. Analysis tier because seeding is a fact of the replay's dating, not of the document alone.
+
+### 7.2 `DW1030` — an ending no story world reaches (analysis tier, `compiler::ending`)
+
+Fires per declared ending (§3.1's set, `ending/<unnamed>` included) that no enumerated world's path fires, and per ending whose witness search reached `MAX_WORLDS` before a world fired it — refused as **unproven**, never called clean. The message names the ending, its gate, each unrealizable target with its reason (§4.2), and the remedy: give the input an elective writer the proof can perform, loosen the interval, or delete the ending. Distinct from `DW0482`, which quantifies over declared branches; this quantifies over endings, so a tally-chosen third ending between two extremes is reached or refused.
+
+### 7.3 `DW0110` reaches the ending id
+
+No new code: `campaign-complete.ending` that is not `ending/<kebab>` is refused where it is written.
+
+## 8. The gallery, and the demo level
+
+### 8.1 Bound
+
+- `quest-plan.json`: `endings_read: {at_least: 3, deeds_at_least: 1}`.
+- `quests.json`: the far hall's `on_complete` carries two `campaign-complete`s with exclusive gates, each reading three seeded inputs — `flag/read-the-label` (said, in the near hall), `flag/saw-the-reliquary` (finished, the optional reliquary), `state/sentinel-hits` (did, the strike trigger) — one firing at `sentinel-hits at-least 1`, the other at `at-most 0`; both ids `ending/<kebab>`. The final scene's cutscene gains a `then` with a `fill-region` (the hall's lamps go dark) and a `teleport` of the party from the hall's end to the yard, and a `set-time` to night: three aftermath effects of three observables (block, position, time).
+- The world enumeration yields at least the two extremes per label selection and a witness per `sentinel-hits` class; every ending is reached (`DW1030` silent) and every row of §4.3 is written.
+
+### 8.2 Refusal-proven (one declared edit each)
+
+| Probe | Edit | Code |
+|---|---|---|
+| an-ending-that-is-a-sentence | `ending` set to `The hall is read end to end.` | `DW0110` |
+| an-ending-that-reads-less-than-it-promised | `endings_read.at_least` set to 4 | `DW1029` |
+| an-ending-nobody-can-reach | the `at-least` ending's term set to `at-least 99` | `DW1030` |
+| a-then-that-asks-who-is-watching | a `then` `add-state` on a `player`-scoped datum | `DW0503` |
+
+### 8.3 Demo level
+
+`docs/demo-levels.md` gains the row **The Reckoning** — a three-room shrine with three threads (a bell to strike, a prisoner to free or leave, a ledger to burn or keep), a finale whose keeper speaks the outcome of each thread, three endings chosen by the tally and the deeds, and an aftermath per ending (the shrine floods, the shrine stands, the shrine burns) that the party stands in when the camera returns.
+
+## 9. Docs and skill, same change
+
+- `docs/reference/compiler.md`: the stage-4 `endings_read` row; the `cutscene` row's `then`; the `campaign-complete` row (the id is held by `DW0110`, the reading, the aftermath); the `teleport` row's `DW0933` remedy naming `then` first; the ledger `validation/endings.json` and the world files under *World / build output*; the binding line; the `critical-path.json` `assert-complete.aftermath[]` contract.
+- `docs/reference/delvec/compiler/ending.md` (new page, `compiler::ending`): `DW1029`, `DW1030`; `branch.md` and `flow.md`: story worlds, participation, the `DW0480` reach.
+- `docs/reference/web-narrative.md` §6: the rows *Endings that read the whole run* and *A fork made by an action* state what now exists, and the page says it reads the engine at the implementing revision.
+- The `/new-delve` skill: `references/story.md` step 3 gains *Every ending reads the run* — plan three inputs in three threads with a deed among them, declare `endings_read`, and write the epilogue per thread; `references/quest-capabilities.md` *The story layer* gains the ending's inputs and aftermath, and *Things that change the world* gains `then` on a cutscene.
+- `docs/demo-levels.md` §8.3's row; `docs/specs/README.md` this spec's row.
+- `dsl::quest::verb`'s `CampaignComplete` doc comment says the effect takes `when` like every verb (the stale *not flag-gatable* line goes).
+
+## Acceptance criteria
+
+Each criterion is checked against the tree at `d336a2b1d`; none is satisfied there. `delvec` is this tree's binary, built from its manifests.
+
+1. **Ending id.** A `campaign-complete` whose `ending` is not `ending/<kebab>` is `DW0110` at its path, at any nesting depth, with a fixture under `crates/dsl/tests/`; the gallery's ending is an id and the sentence is the probe of §8.2.
+2. **The reading.** `validation/endings.json` lists, per ending, every flag and datum named by a `when` in its final scene and nothing else, with each writer's kind (`said`/`did`/`finished`) and dated quest, and `seeded` per §3.4; a test fixture with one ending reading a final-scene flag, a seeded said flag, a seeded did flag and a seeded finished datum asserts the four rows exactly, and a fixture with an ungated ending asserts `0 input(s)`.
+3. **The declaration.** `delvec schema --stage quest-plan` exports `endings_read` with `at_least` and `deeds_at_least` and nothing else; `DW1029` fires on each term separately with the counts in the message (two fixtures), is silent when the object is absent (asserted), and a campaign declaring it over zero endings prints `0 ending(s)` and no refusal.
+4. **Story worlds.** `Flow` enumerates the *none* and *all* participation of every dialogue selection plus one witness per realizable target; a fixture with one optional tally quest and three endings at `at-most 0`, `equals 1`, `at-least 2` over two elective `add-state 1` writers reaches all three (`DW1030` silent) and lists the `at-least 3` target of a fourth ending as unrealizable with the subset-sum reason; a fixture whose only writer of a read flag is an optional quest gating a cast placement is `DW0480` until the branch point is declared, and green with a two-branch point whose second branch's `flags` is empty.
+5. **`DW1030`.** Fires for an ending no world fires and for one unproven at the bound, each with its target reasons (two fixtures, one with `MAX_WORLDS` driven to its cap by a test-only override that the message names); `remedy_reachability.rs` rows for `DW1029` and `DW1030`.
+6. **`then`.** `cutscene.then` is exported in the schema; its effects are lowered into `cs_end_<bare>` after the `#cs_live` line through the scheduled-bundle emitter (a test reads the function and asserts order and audience); a cutscene with an empty `then` emits the same `cs_end_<bare>` as one that omits the field; a `teleport` in `then` raises no `DW0933` and the same teleport as a sibling of the cutscene does (one fixture, two edits); a `player`-scoped read in `then` is `DW0503`; `check-effect-roots.py` and `check-capability-ownership.py` are green with the new nested list enumerated once.
+7. **The aftermath class.** A test names every `Verb` variant in exactly one of the two classes of §3.7 and fails on an unlisted variant; `validation/endings.json` lists each aftermath effect with its observable or `emission-only`.
+8. **PackTest.** One `ending_<slug>_<k>` template per (ending, witness world) with the assertions of §6.2's table for every observable aftermath effect, awaiting the tail plus every cutscene's end offset plus one tick; the gallery's two endings each produce their templates and the templates pass on the toolserver; perturbing the gallery's `fill-region` block in a scratch copy turns the template red.
+9. **The bot.** `assert-complete.aftermath[]` is parsed, asserted and reported (`observed`/`not_observable` per effect) by `harness/`; the gallery's critical-path run observes the block, the position and the time of §8.1.
+10. **The runner.** `branch-plan.json` carries the world rows of §4.3; `branch-runs.sh` with `DELVEWRIGHT_BRANCHES=all` over a two-world fixture runs both worlds in fresh volumes and the merged report names each with its ending; a world whose witness needs an undrivable act is exported with `path: null` and its reason and reported skipped by name.
+11. **Binding line.** Printed on every `validate`, `analyze` and `build` with every count of §6.1, zeroes included (CLI test on a campaign with no ending gate).
+12. **Determinism.** Two builds of the gallery are byte-identical, `validation/endings.json` and every world file included; the world order is canonical (a test permutes the declaration order of two optional quests and asserts the same world ids and paths).
+13. **Gallery** (spec-0039). §8.1's elements are bound and §8.2's four probes refused with the codes named, with the coverage gate's counts on its own line; `gallery/baseline/` is regenerated after the merge commit exists with every moved row attributed.
+14. **Docs and skill, same change.** Every item of §9; `tools/ci/check-dw-codes.py` green with `DW1029`/`DW1030` on `ending.md`; `check-numbered-doc-index.py` green with this spec's row; `check-demo-levels.py` green with §8.3's row.
+
+### Recorded debts
+
+Checked against the tree at `d336a2b1d`; each is a debt, never a pass.
+
+- **Criterion 14, the skill.** `tools/ci/check-skill-page.py` refuses a page naming `DW1029`/`DW1030` while the page pins an engine release that lacks them; the `references/story.md` and `references/quest-capabilities.md` text is held back until the release that carries this surface is pinned.
+- **Criterion 13, the baseline.** Regenerated on the feature branch against its merge base; the regeneration after the merge commit belongs to the integration that lands it.
+- **§4.2, a partial quest.** A target reachable only by completing some objectives of one optional quest is reported unrealizable; the participation unit is spec-0051's quest, and objective-level participation is a spec of its own.
+- **§6.2, emission-only verbs.** `give-item`, `give-effect`, `clear-effect`, `damage-players`, `drop-stake`, `set-atmosphere` and `play-clip` are asserted on the bot where the bot can read them (§6.3) and nowhere on PackTest; the ledger row says so per effect.
+- **§6.4, undrivable acts.** A trap disarm and a shop purchase have no harness step kind; a world whose only witness needs one is proven statically (`DW1030`) and skipped by name at runtime.
+
+## What stays out, and why
+
+- **A `reads` list on the ending.** The gate is the declaration vanilla evaluates; a second list is a second authority (§3.2).
+- **An engine-fixed minimum of three.** The number is the research page's rule for a delve and a campaign's declaration (§3.5); an engine that refused an ending reading two inputs would restrict, not confirm.
+- **A per-ending `then`, or an `aftermath` verb.** The moment after a scene belongs to the cutscene, and a world change is already a verb; a hook keyed to `campaign-complete` would be a general mechanism re-implemented inside one verb.
+- **Reading an ending's `happening.text` or any player-facing line** to decide that it owes an aftermath (spec-0001; CLAUDE.md on inferring intent).
+- **A full product over elective acts.** Targets, not writers (§4.2); the extremes plus a witness per target is what the proofs need.
