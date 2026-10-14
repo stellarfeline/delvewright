@@ -222,36 +222,39 @@ fn closure(w: &World, roots: &[[i32; 3]]) -> BTreeSet<[i32; 3]> {
 /// must close the way round: a path that jumps where it could walk would name
 /// jumps that are not the defect.
 ///
-/// With `leaps` false, a move that is neither a walk nor into, across or out
-/// of water is not taken: the search for a way round by swimming alone.
+/// With `must_swim`, only a path that goes into the water somewhere counts as
+/// arriving: the best way round by water, named in its own right beside a dry
+/// one, because walling the dry way leaves it open.
 fn escape(
     w: &World,
     from: &[[i32; 3]],
     to: &BTreeSet<[i32; 3]>,
     region: ([i32; 3], [i32; 3]),
-    leaps: bool,
+    must_swim: bool,
 ) -> Option<Vec<[i32; 3]>> {
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
+    type State = ([i32; 3], bool);
     let (lo, hi) = region;
     let inside =
         |c: &[i32; 3]| (0..3).all(|i| lo[i].min(hi[i]) <= c[i] && c[i] <= lo[i].max(hi[i]));
-    let mut best: BTreeMap<[i32; 3], (u32, u32)> = BTreeMap::new();
-    let mut pred: BTreeMap<[i32; 3], [i32; 3]> = BTreeMap::new();
-    let mut heap: BinaryHeap<Reverse<(u32, u32, [i32; 3])>> = BinaryHeap::new();
+    let mut best: BTreeMap<State, (u32, u32)> = BTreeMap::new();
+    let mut pred: BTreeMap<State, State> = BTreeMap::new();
+    let mut heap: BinaryHeap<Reverse<(u32, u32, State)>> = BinaryHeap::new();
     for c in from {
-        best.insert(*c, (0, 0));
-        heap.push(Reverse((0, 0, *c)));
+        best.insert((*c, false), (0, 0));
+        heap.push(Reverse((0, 0, (*c, false))));
     }
-    while let Some(Reverse((spent, steps, cur))) = heap.pop() {
-        if best.get(&cur).is_some_and(|b| *b < (spent, steps)) {
+    while let Some(Reverse((spent, steps, state))) = heap.pop() {
+        if best.get(&state).is_some_and(|b| *b < (spent, steps)) {
             continue;
         }
-        if to.contains(&cur) {
+        let (cur, wet) = state;
+        if to.contains(&cur) && (wet || !must_swim) {
             let mut path = vec![cur];
-            let mut at = cur;
+            let mut at = state;
             while let Some(p) = pred.get(&at) {
-                path.push(*p);
+                path.push(p.0);
                 at = *p;
             }
             path.reverse();
@@ -261,20 +264,31 @@ fn escape(
         let mut next: BTreeSet<[i32; 3]> = w.body_moves(cur).into_iter().collect();
         next.extend(walks.iter().copied());
         for n in next {
-            let walk = walks.contains(&n);
-            let wet = w.is_water_surface(cur) || w.is_water_surface(n);
-            if inside(&n) || (!leaps && !walk && !wet) {
+            if inside(&n) {
                 continue;
             }
+            let walk = walks.contains(&n);
+            let touched = must_swim && (wet || w.is_water_surface(cur) || w.is_water_surface(n));
+            let to_state = (n, touched);
             let cost = (spent + u32::from(!walk), steps + 1);
-            if best.get(&n).is_none_or(|b| cost < *b) {
-                best.insert(n, cost);
-                pred.insert(n, cur);
-                heap.push(Reverse((cost.0, cost.1, n)));
+            if best.get(&to_state).is_none_or(|b| cost < *b) {
+                best.insert(to_state, cost);
+                pred.insert(to_state, state);
+                heap.push(Reverse((cost.0, cost.1, to_state)));
             }
         }
     }
     None
+}
+
+/// One gate got round in one configuration: its index, the way round in words,
+/// and what a second search for a way round by water needs.
+struct Bypass {
+    gate: usize,
+    words: String,
+    near: Vec<[i32; 3]>,
+    far: BTreeSet<[i32; 3]>,
+    swims: bool,
 }
 
 /// The kind of one movement, in the four words the obligation is stated in.
@@ -543,12 +557,12 @@ pub(super) fn verify_gates_separate(
             })
         })
         .collect();
-    type Judged = (usize, usize, usize, Vec<(usize, String)>);
+    type Judged = (usize, usize, usize, Vec<Bypass>);
     let judged: Vec<Judged> = crate::par::map(configs, |(w, when, seeds, shut)| {
         let seeds: Vec<[i32; 3]> = seeds.iter().copied().filter(|c| can_be(w, *c)).collect();
         let reach = closure(w, &seeds);
         let (mut unstood, mut reached) = (0usize, 0usize);
-        let mut found: Vec<(usize, String)> = Vec::new();
+        let mut found: Vec<Bypass> = Vec::new();
         for &gi in shut {
             let Some(f) = faces[gi].as_ref() else {
                 continue;
@@ -580,34 +594,25 @@ pub(super) fn verify_gates_separate(
                     continue;
                 }
                 let far_set: BTreeSet<[i32; 3]> = far.iter().copied().collect();
-                if let Some(path) = escape(w, near, &far_set, gates[gi].region, true) {
+                if let Some(path) = escape(w, near, &far_set, gates[gi].region, false) {
                     let start = path[0];
                     let end = *path.last().unwrap_or(&start);
-                    let mut words = format!(
+                    let words = format!(
                         "{} is shut {when}, and a body at its near face {start:?} gets to its far \
                          face {end:?} without passing it: {}",
                         gates[gi].label,
                         path_words(w, &path, others)
                     );
-                    // A way round that swims is named in its own right: a
-                    // body that never jumps or drops still gets round by water.
                     let swims = path
                         .windows(2)
                         .any(|p| w.is_water_surface(p[0]) || w.is_water_surface(p[1]));
-                    if !swims
-                        && let Some(wet) = escape(w, near, &far_set, gates[gi].region, false)
-                        && wet
-                            .windows(2)
-                            .any(|p| w.is_water_surface(p[0]) || w.is_water_surface(p[1]))
-                    {
-                        words.push_str(&format!(
-                            "; and by water, from {:?} to {:?}: {}",
-                            wet[0],
-                            wet.last().unwrap_or(&wet[0]),
-                            path_words(w, &wet, others)
-                        ));
-                    }
-                    found.push((gi, words));
+                    found.push(Bypass {
+                        gate: gi,
+                        words,
+                        near: near.clone(),
+                        far: far_set,
+                        swims,
+                    });
                     break;
                 }
             }
@@ -616,19 +621,19 @@ pub(super) fn verify_gates_separate(
     });
     // Each bypassed gate is named once, at the first configuration that finds
     // it, with the number of configurations it is got round in.
-    let mut first: BTreeMap<usize, (String, usize)> = BTreeMap::new();
+    let mut first: BTreeMap<usize, (usize, Bypass, usize)> = BTreeMap::new();
     let mut order: Vec<usize> = Vec::new();
-    for (shut, unstood, reached, found) in judged {
+    for (ci, (shut, unstood, reached, found)) in judged.into_iter().enumerate() {
         binding.shut += shut;
         binding.unstood += unstood;
         binding.reached += reached;
         binding.bypassed += found.len();
-        for (gi, words) in found {
-            match first.get_mut(&gi) {
-                Some((_, n)) => *n += 1,
+        for b in found {
+            match first.get_mut(&b.gate) {
+                Some((_, _, n)) => *n += 1,
                 None => {
-                    first.insert(gi, (words, 1));
-                    order.push(gi);
+                    order.push(b.gate);
+                    first.insert(b.gate, (ci, b, 1));
                 }
             }
         }
@@ -636,18 +641,33 @@ pub(super) fn verify_gates_separate(
     if order.is_empty() {
         return (binding, Ok(()));
     }
-    let named: Vec<String> = order
+    let listed: Vec<&(usize, Bypass, usize)> = order
         .iter()
         .take(BYPASS_LIST_LIMIT)
-        .map(|gi| {
-            let (words, n) = &first[gi];
-            if *n > 1 {
-                format!("{words} (got round in {n} configuration(s))")
-            } else {
-                words.clone()
-            }
-        })
+        .map(|gi| &first[gi])
         .collect();
+    // A way round by water is named in its own right beside a dry one, because
+    // walling the dry way leaves it open. Searched once per named gate, in the
+    // first configuration that gets round it.
+    let named: Vec<String> = crate::par::map(&listed, |(ci, b, n)| {
+        let w = configs[*ci].0;
+        let mut words = b.words.clone();
+        if !b.swims
+            && let Some(wet) = escape(w, &b.near, &b.far, gates[b.gate].region, true)
+        {
+            words.push_str(&format!(
+                "; and by water, from {:?} to {:?}: {}",
+                wet[0],
+                wet.last().unwrap_or(&wet[0]),
+                path_words(w, &wet, others)
+            ));
+        }
+        if *n > 1 {
+            format!("{words} (got round in {n} configuration(s))")
+        } else {
+            words
+        }
+    });
     let more = order.len().saturating_sub(named.len());
     let tail = if more > 0 {
         format!("; and {more} more gate(s)")
