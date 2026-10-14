@@ -62,7 +62,7 @@ impl LeaveBinding {
 
 /// How a body got from `from` to `to` in one [`World::body_moves`] movement, in
 /// words for a report.
-fn movement_words(world: &World, from: [i32; 3], to: [i32; 3]) -> String {
+pub(super) fn movement_words(world: &World, from: [i32; 3], to: [i32; 3]) -> String {
     let run = (to[0] - from[0]).abs() + (to[2] - from[2]).abs();
     let rise = to[1] - from[1];
     if world.is_water_surface(from) {

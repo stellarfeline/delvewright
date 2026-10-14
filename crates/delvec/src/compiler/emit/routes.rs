@@ -649,6 +649,19 @@ pub(super) fn prove_world(
                 eprintln!("{}", leave_binding.line());
                 leave_verdict?;
                 put_json(out, "validation/leave-proof.json", &leave_binding.to_json());
+                // DW1011: a shut gate separates its two sides — no walk, fall,
+                // jump or swim gets a body from its near face to its far one.
+                // Over the same configurations DW0921 judges; the binding is
+                // printed before the verdict is taken.
+                let (separation, separation_verdict) =
+                    crate::compiler::nav::check_gates_separate(plan, world);
+                eprintln!("{}", separation.line());
+                separation_verdict?;
+                put_json(
+                    out,
+                    "validation/separation-proof.json",
+                    &separation.to_json(),
+                );
                 // DW0924: a body a `kill` objective waits on cannot get to a
                 // place it survives and the party cannot strike it from. After
                 // DW0921 because it reads the same playable region and a party
