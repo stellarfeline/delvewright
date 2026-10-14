@@ -520,13 +520,22 @@ impl<'a> Flow<'a> {
                         e.writes_state()
                             .is_some_and(|(d, _)| gated_data.contains(d.as_str()))
                     });
+                    // A repeatable trigger that carries a body is a link the
+                    // route proof may take (spec-0083, `link::collect`): the
+                    // mainline presses it to cross, so it is never skipped.
+                    let link = !t.once
+                        && list.iter().any(|e| {
+                            let mut any = false;
+                            e.visit_deep(&mut |x| any |= x.teleport().is_some());
+                            any
+                        });
                     (
                         "trigger",
                         None,
                         names(&t.requires_flags),
                         names(&t.forbids_flags),
                         t.requires_state.clone(),
-                        debts.contains(t.id.as_str()) || opens || presses,
+                        debts.contains(t.id.as_str()) || opens || presses || link,
                     )
                 }
                 delvewright_dsl::EffectRootOwner::TrapPayload(t) => (

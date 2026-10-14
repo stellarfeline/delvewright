@@ -1,7 +1,7 @@
 //! Every exported branch path ends where the delve ends (`DW0204` over branch
 //! paths).
 //!
-//! A branch path (`validation/branch-path-<slug>.json`) is walked by the branch
+//! A branch's world path (`validation/world-path-<k>.json`) is walked by the world
 //! runs exactly as the critical path is walked by the bot ladder, and the
 //! harness fails a walk whose `campaign-complete` arrives while objective steps
 //! remain. The gallery is the case: its optional `quest/the-reliquary` and its
@@ -152,10 +152,12 @@ fn dw0204_refuses_a_branch_path_with_steps_past_the_ending() {
         .expect("the critical path carries no optional quest and still replays");
     let msgs = dw0204(&c);
     assert_eq!(msgs.len(), 2, "one refusal per branch: {msgs:?}");
-    for (msg, slug) in msgs.iter().zip(["read", "skipped"]) {
+    for (msg, id) in msgs.iter().zip(["branch/read", "branch/skipped"]) {
         assert!(
-            msg.contains(&format!("`validation/branch-path-{slug}.json`")),
-            "the refusal names the file the harness walks: {msg}"
+            msg.contains(&format!(
+                "branch `{id}`'s exported path (`validation/world-path-"
+            )),
+            "the refusal names the branch and the world file the harness walks: {msg}"
         );
         assert!(
             msg.contains("before the end of the path"),

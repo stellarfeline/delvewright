@@ -49,6 +49,7 @@ import { unreportedWindows } from "./load-window.ts";
 import { judgeResourcePack } from "./resource-pack.ts";
 import {
   assertEntryChoicesOnPath,
+  assertEntryDeedsOnPath,
   branchTierFromEnv,
   drivenBranchFromEnv,
   loadBranchPlanForCriticalPath,
@@ -207,6 +208,18 @@ async function main(): Promise<number> {
   const entryCommands = driven ? assertEntryChoicesOnPath(driven, criticalPath.steps) : [];
   if (driven && entryCommands.length > 0) {
     process.stderr.write(`scripted branch choice(s): ${entryCommands.join(" ; ")}\n`);
+  }
+  // spec-0108 §6.4: a world is its participation too — the path must perform
+  // every entry deed, so a run cannot claim a deed world while walking the
+  // extreme.
+  const entryDeeds = driven
+    ? assertEntryDeedsOnPath(
+        driven,
+        criticalPath.steps as readonly { action: string; trigger?: string; objective?: string }[],
+      )
+    : [];
+  if (driven && entryDeeds.length > 0) {
+    process.stderr.write(`entry deed(s) on the path: ${entryDeeds.join(" ; ")}\n`);
   }
 
   // If the compiler's proven waypoint artifact accompanies the

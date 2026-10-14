@@ -1123,14 +1123,14 @@ fn branch_link_campaign(who: &str, gate: &str) -> PathBuf {
     dir
 }
 
-/// Every `branch-path-<slug>.json` a build wrote, by slug.
+/// Every `world-path-<k>.json` a build wrote, by `k`.
 fn branch_paths(run: &Run) -> Vec<(String, Value)> {
     let mut out = Vec::new();
     for e in std::fs::read_dir(run.out.join("validation")).unwrap() {
         let p = e.unwrap().path();
         let name = p.file_name().unwrap().to_string_lossy().to_string();
         if let Some(slug) = name
-            .strip_prefix("branch-path-")
+            .strip_prefix("world-path-")
             .and_then(|s| s.strip_suffix(".json"))
         {
             let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
@@ -1162,7 +1162,12 @@ fn a_link_live_on_one_branch_is_taken_on_that_branch_alone() {
         1,
         "exactly one branch takes the link: {carried:?}"
     );
-    assert!(carried[0].contains("bolt"), "{carried:?}");
+    let plan = run.json("validation/branch-plan.json");
+    assert_eq!(
+        carried[0],
+        common::world_of_branch(&plan, "branch/bolt").to_string(),
+        "{carried:?}"
+    );
     let step = paths
         .iter()
         .find(|(s, _)| s == carried[0])

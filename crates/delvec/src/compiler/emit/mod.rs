@@ -1121,7 +1121,7 @@ pub fn build_with_warnings(
     for (slug, path) in branch_paths(plan, &moves, &actor_moves, &branch_takes, &path_legs)? {
         put_json(
             &mut out,
-            &format!("validation/branch-path-{slug}.json"),
+            &format!("validation/{}.json", world_file(&slug, "path")),
             &path,
         );
     }
@@ -1132,7 +1132,7 @@ pub fn build_with_warnings(
     for (slug, wp) in &branch_waypoints {
         put_json(
             &mut out,
-            &format!("validation/branch-waypoints-{slug}.json"),
+            &format!("validation/{}.json", world_file(slug, "waypoints")),
             wp,
         );
     }

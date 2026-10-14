@@ -1314,3 +1314,37 @@ pub fn plan_structures_with_trap_triggers(
     }
     out
 }
+
+/// The story world whose plan row realizes declared branch `id` (spec-0108
+/// §4.3: `validation/branch-plan.json`'s rows are worlds, each naming the
+/// branches its flags realize) — its index `k`, for `world-path-<k>.json`,
+/// `world-waypoints-<k>.json` and `world-chronicle-<k>.md`.
+pub fn world_of_branch(plan: &serde_json::Value, id: &str) -> usize {
+    plan["branches"]
+        .as_array()
+        .expect("the plan has rows")
+        .iter()
+        .find(|w| {
+            w["branches"]
+                .as_array()
+                .is_some_and(|bs| bs.iter().any(|b| b == id))
+        })
+        .and_then(|w| w["id"].as_str())
+        .and_then(|s| s.strip_prefix("world/"))
+        .and_then(|k| k.parse().ok())
+        .unwrap_or_else(|| panic!("no world realizes {id}: {plan:#}"))
+}
+
+/// [`world_of_branch`] over a build's output map: the `validation/` file of the
+/// world realizing `id`, `what` being `path` or `waypoints`.
+pub fn world_file_of(out: &delvec::compiler::emit::BuildOutput, id: &str, what: &str) -> String {
+    let plan: serde_json::Value = serde_json::from_slice(
+        out.get("validation/branch-plan.json")
+            .expect("the build exports a branch plan"),
+    )
+    .expect("the plan is JSON");
+    format!(
+        "validation/world-{what}-{}.json",
+        world_of_branch(&plan, id)
+    )
+}

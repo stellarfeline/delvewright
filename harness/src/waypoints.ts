@@ -408,25 +408,25 @@ export async function loadWaypointsForCriticalPath(
 }
 
 /**
- * The per-branch waypoint artifact that accompanies a branch's executable path:
- * `branch-path-<slug>.json` → `branch-waypoints-<slug>.json`, same
+ * The per-world waypoint artifact that accompanies a story world's executable
+ * path (spec-0108 §4.3): `world-path-<k>.json` → `world-waypoints-<k>.json`, same
  * directory. A derivation, not a search — the compiler emits both names from one
- * slug, so the two files are one contract. Throws on a path file that is not in
- * the `branch-path-<slug>.json` shape (that would be a branch-plan contract
- * break, not a missing artifact).
+ * index, so the two files are one contract. Throws on a path file that is not in
+ * the `world-path-<k>.json` shape (that would be a branch-plan contract break,
+ * not a missing artifact).
  */
 export function branchWaypointsFileFor(branchPathFile: string): string {
   const base = path.basename(branchPathFile);
-  if (!base.startsWith("branch-path-") || !base.endsWith(".json")) {
+  if (!base.startsWith("world-path-") || !base.endsWith(".json")) {
     throw new WaypointsParseError(
       "",
-      `cannot derive a per-branch waypoints file from ${JSON.stringify(branchPathFile)} — ` +
-        `expected a branch-path-<slug>.json (the branch-plan contract)`,
+      `cannot derive a per-world waypoints file from ${JSON.stringify(branchPathFile)} — ` +
+        `expected a world-path-<k>.json (the branch-plan contract)`,
     );
   }
   return path.join(
     path.dirname(branchPathFile),
-    `branch-waypoints-${base.slice("branch-path-".length)}`,
+    `world-waypoints-${base.slice("world-path-".length)}`,
   );
 }
 

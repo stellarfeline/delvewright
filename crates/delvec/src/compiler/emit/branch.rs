@@ -103,14 +103,15 @@ pub(super) fn branch_paths(
     takes: &BTreeMap<String, plan::LinkTakes>,
     legs: &[(String, Vec<plan::Step>, Vec<crate::compiler::nav::LegRoute>)],
 ) -> Result<Vec<(String, Value)>, BuildFailure> {
-    let branches = crate::compiler::branch::realize(plan.campaign);
-    if branches.is_empty() {
+    if !crate::compiler::branch::plans_worlds(plan.campaign) {
         return Ok(Vec::new());
     }
+    let rows = crate::compiler::branch::world_rows(plan.campaign);
     let flow = crate::compiler::flow::Flow::new(plan.campaign);
     let mut out = Vec::new();
-    for r in &branches {
-        let Some(w) = r.world else { continue };
+    for row in rows.iter().filter(|w| w.no_path.is_none()) {
+        let r = &row.realized;
+        let w = row.k;
         let none = plan::LinkTakes::default();
         let cp = plan
             .branch_critical_path_linked(
@@ -120,7 +121,7 @@ pub(super) fn branch_paths(
             )
             .map_err(|e| BuildFailure::Diagnostic {
                 code: e.failure.code,
-                message: format!("branch `{}`: {}", r.branch.id, e.failure.message),
+                message: format!("{}: {}", row.label(), e.failure.message),
             })?;
         let routes = legs
             .iter()
@@ -145,4 +146,13 @@ pub(super) fn branch_paths(
         ));
     }
     Ok(out)
+}
+
+/// A story world's validation file stem: `world-<k>` and `path` →
+/// `world-path-<k>`, the name the branch plan's row and the harness agree on.
+pub(super) fn world_file(slug: &str, what: &str) -> String {
+    match slug.strip_prefix("world-") {
+        Some(k) => format!("world-{what}-{k}"),
+        None => format!("{what}-{slug}"),
+    }
 }

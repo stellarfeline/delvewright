@@ -2775,8 +2775,8 @@ fn branch_artifacts_are_emitted_hashed_and_byte_identical() {
     }
     for f in [
         "validation/branch-plan.json",
-        "validation/branch-chronicle-hold.md",
-        "validation/branch-chronicle-bolt.md",
+        "validation/world-chronicle-0.md",
+        "validation/world-chronicle-1.md",
     ] {
         assert!(a.contains_key(f), "missing {f}: {:?}", a.keys());
     }
@@ -2788,7 +2788,7 @@ fn branch_artifacts_are_emitted_hashed_and_byte_identical() {
     let outputs = manifest["outputs"].as_object().expect("outputs map");
     for f in [
         "validation/branch-plan.json",
-        "validation/branch-chronicle-hold.md",
+        "validation/world-chronicle-0.md",
     ] {
         assert!(outputs.contains_key(f), "manifest does not hash {f}");
     }
@@ -2818,15 +2818,24 @@ fn each_branch_gets_an_executable_path_in_the_critical_path_contract() {
     ]);
     assert_eq!(code(&r), 0, "build: {}", String::from_utf8_lossy(&r.stderr));
     let tree = read_tree(&out);
+    let plan: serde_json::Value =
+        serde_json::from_slice(&tree["validation/branch-plan.json"]).unwrap();
+    let file = |id: &str, what: &str| {
+        format!(
+            "validation/world-{what}-{}.json",
+            common::world_of_branch(&plan, id)
+        )
+    };
 
     // The exported branch's path IS the exported path.
     assert_eq!(
-        tree["validation/branch-path-hold.json"], tree["critical-path.json"],
+        tree[&file("branch/hold", "path")],
+        tree["critical-path.json"],
         "the branch the critical path already walks must get the same bytes"
     );
 
     let bolt: serde_json::Value =
-        serde_json::from_slice(&tree["validation/branch-path-bolt.json"]).unwrap();
+        serde_json::from_slice(&tree[&file("branch/bolt", "path")]).unwrap();
     // Same contract the harness parses — the version fields the bot checks first.
     assert_eq!(
         bolt["format_version"],
@@ -2857,12 +2866,9 @@ fn each_branch_gets_an_executable_path_in_the_critical_path_contract() {
 
     // Validation metadata, hashed like the rest — never shipped gameplay.
     let manifest: serde_json::Value = serde_json::from_slice(&tree["manifest.json"]).unwrap();
-    for f in [
-        "validation/branch-path-hold.json",
-        "validation/branch-path-bolt.json",
-    ] {
+    for f in [file("branch/hold", "path"), file("branch/bolt", "path")] {
         assert!(
-            manifest["outputs"].as_object().unwrap().contains_key(f),
+            manifest["outputs"].as_object().unwrap().contains_key(&f),
             "manifest does not hash {f}"
         );
     }
@@ -2895,17 +2901,25 @@ fn each_reachable_branch_gets_its_own_waypoint_artifact() {
     ]);
     assert_eq!(code(&r), 0, "build: {}", String::from_utf8_lossy(&r.stderr));
     let tree = read_tree(&out);
+    let plan: serde_json::Value =
+        serde_json::from_slice(&tree["validation/branch-plan.json"]).unwrap();
+    let file = |id: &str, what: &str| {
+        format!(
+            "validation/world-{what}-{}.json",
+            common::world_of_branch(&plan, id)
+        )
+    };
 
     // The branch the exported path walks: same routes, same bytes.
     assert_eq!(
-        tree["validation/branch-waypoints-hold.json"],
+        tree[&file("branch/hold", "waypoints")],
         tree["validation/critical-path-waypoints.json"],
         "the branch the critical path already walks must get identical waypoints"
     );
 
     // The fork-divergent sibling: its legs follow ITS path, not the exported one.
     assert_ne!(
-        tree["validation/branch-waypoints-bolt.json"],
+        tree[&file("branch/bolt", "waypoints")],
         tree["validation/critical-path-waypoints.json"],
         "a fork-divergent branch must not inherit the exported path's legs"
     );
@@ -2939,12 +2953,10 @@ fn each_reachable_branch_gets_its_own_waypoint_artifact() {
             })
             .collect()
     };
-    for slug in ["hold", "bolt"] {
+    for slug in ["branch/hold", "branch/bolt"] {
         let wp: serde_json::Value =
-            serde_json::from_slice(&tree[&format!("validation/branch-waypoints-{slug}.json")])
-                .unwrap();
-        let cp: serde_json::Value =
-            serde_json::from_slice(&tree[&format!("validation/branch-path-{slug}.json")]).unwrap();
+            serde_json::from_slice(&tree[&file(slug, "waypoints")]).unwrap();
+        let cp: serde_json::Value = serde_json::from_slice(&tree[&file(slug, "path")]).unwrap();
         assert_eq!(wp["campaign_id"], "hello-world");
         let legs = leg_destinations(&wp);
         assert!(
@@ -2968,11 +2980,11 @@ fn each_reachable_branch_gets_its_own_waypoint_artifact() {
     // Validation metadata, hashed like the rest — never shipped gameplay.
     let manifest: serde_json::Value = serde_json::from_slice(&tree["manifest.json"]).unwrap();
     for f in [
-        "validation/branch-waypoints-hold.json",
-        "validation/branch-waypoints-bolt.json",
+        file("branch/hold", "waypoints"),
+        file("branch/bolt", "waypoints"),
     ] {
         assert!(
-            manifest["outputs"].as_object().unwrap().contains_key(f),
+            manifest["outputs"].as_object().unwrap().contains_key(&f),
             "manifest does not hash {f}"
         );
     }

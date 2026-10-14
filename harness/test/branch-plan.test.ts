@@ -4,6 +4,7 @@ import {
   BranchPlanParseError,
   BranchTierError,
   assertEntryChoicesOnPath,
+  assertEntryDeedsOnPath,
   branchTierFromEnv,
   drivenBranchFromEnv,
   parseBranchPlan,
@@ -11,16 +12,25 @@ import {
   selectBranches,
 } from "../src/branch-plan.ts";
 
-/** The `branch-two-endings` fixture's plan, as `delvec build` emits it. */
+/**
+ * The `branch-two-endings` fixture's plan, as `delvec build` emits it: one row
+ * per story world, each naming the declared branch its flags realize
+ * (spec-0108 §4.3). The ids stay branch-shaped here so the tier tests read as
+ * before; the compiler names a row `world/<k>`.
+ */
 function planJson(): Record<string, unknown> {
   return {
     version: "0.8.0",
     campaign_id: "hello-world",
+    branches_unrealized: [],
     branches: [
       {
         id: "branch/hold",
-        chronicle: "branch-chronicle-hold.md",
-        path: "branch-path-hold.json",
+        branches: ["branch/hold"],
+        chronicle: "world-chronicle-0.md",
+        path: "world-path-0.json",
+        path_reason: null,
+        entry_deeds: [],
         selection: { "branch-point/gate": "branch/hold" },
         flags: { set: ["flag/wait"], unset: ["flag/flee"] },
         opens_at: ["quest/decide"],
@@ -34,8 +44,11 @@ function planJson(): Record<string, unknown> {
       },
       {
         id: "branch/bolt",
-        chronicle: "branch-chronicle-bolt.md",
-        path: "branch-path-bolt.json",
+        branches: ["branch/bolt"],
+        chronicle: "world-chronicle-1.md",
+        path: "world-path-1.json",
+        path_reason: null,
+        entry_deeds: [],
         selection: { "branch-point/gate": "branch/bolt" },
         flags: { set: ["flag/flee"], unset: ["flag/wait"] },
         opens_at: ["quest/decide"],
@@ -57,7 +70,8 @@ test("the plan parses every branch with its flags, entry choices and path file",
   assert.equal(plan.branches.length, 2);
   const bolt = plan.branches[1]!;
   assert.equal(bolt.id, "branch/bolt");
-  assert.equal(bolt.pathFile, "branch-path-bolt.json");
+  assert.equal(bolt.pathFile, "world-path-1.json");
+  assert.deepEqual([...bolt.branches], ["branch/bolt"]);
   assert.deepEqual([...bolt.flagsSet], ["flag/flee"]);
   assert.deepEqual([...bolt.flagsUnset], ["flag/wait"]);
   assert.deepEqual([...bolt.endings], ["ending/abandoned"]);
@@ -182,4 +196,57 @@ test("a branch path that never takes the branching choice cannot pass as a branc
   assert.deepEqual(assertEntryChoicesOnPath(bolt, rightPath), [
     "/trigger dw.dlg_keeper set 3",
   ]);
+});
+
+// ---------------------------------------------------------------------------
+// spec-0108 §4.3 / §6.4 — story worlds
+// ---------------------------------------------------------------------------
+
+test("a world the harness cannot walk is skipped by NAME, with the compiler's reason", () => {
+  const json = planJson();
+  const bolt = (json["branches"] as Record<string, unknown>[])[1]!;
+  bolt["path"] = null;
+  bolt["path_reason"] =
+    "its witness needs an act the harness has no step kind for — `shop/counter/offer-0`: " +
+    "a shop purchase has no harness step kind";
+  const plan = parseBranchPlan(json, "/x");
+  const selection = selectBranches(plan, { mode: "all" });
+  assert.deepEqual([...selection.selected], ["branch/hold"]);
+  assert.match(selection.skipped[0]!.reason, /shop purchase has no harness step kind/);
+});
+
+test("a declared branch no world realizes is named in the selection", () => {
+  const json = planJson();
+  json["branches_unrealized"] = ["branch/vanish"];
+  const plan = parseBranchPlan(json, "/x");
+  const selection = selectBranches(plan, { mode: "all" });
+  const named = selection.skipped.find((s) => s.branch === "branch/vanish");
+  assert.ok(named, JSON.stringify(selection.skipped));
+  assert.match(named!.reason, /DW0482/);
+});
+
+test("a world run must perform every entry deed its row names", () => {
+  const json = planJson();
+  const hold = (json["branches"] as Record<string, unknown>[])[0]!;
+  hold["entry_deeds"] = [
+    { act: "trigger/bell", before_step: 1 },
+    { act: "quest/tally", before_step: 2 },
+  ];
+  hold["critical_path"] = [
+    { quest: "quest/decide", objective: "obj/decide" },
+    { quest: "quest/tally", objective: "obj/count" },
+  ];
+  const plan = parseBranchPlan(json, "/x");
+  const world = plan.branches[0]!;
+  const performs = [
+    { action: "talk-to", objective: "obj/decide" },
+    { action: "trigger", trigger: "trigger/bell" },
+    { action: "reach", objective: "obj/count" },
+  ];
+  assert.deepEqual(assertEntryDeedsOnPath(world, performs), ["trigger/bell", "quest/tally"]);
+  // A path that walks the extreme — no bell — cannot pass as the deed world.
+  assert.throws(
+    () => assertEntryDeedsOnPath(world, performs.filter((s) => s.action !== "trigger")),
+    (err: unknown) => err instanceof BranchTierError && /trigger\/bell/.test(err.message),
+  );
 });
