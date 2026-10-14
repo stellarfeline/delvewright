@@ -33,9 +33,10 @@ and looping against them is the one way to spend an afternoon here.
     the fiction is a villager; anybody else in a delve — a guide, a keeper, a
     duke — reads as a placeholder in one. Budget the skin with the cast, not
     after it.
-  - **An NPC faces the way the party arrives**: `DW1025` checks it at every
-    talk, and **one named character is one body**: `DW1026` checks it in every
-    story state (*Reference: when something goes red*).
+  - **An NPC faces the way the party arrives, and one named character is one
+    body.** The engine checks the first at every talk and the second in every
+    story state, and each refusal names its move (*Reference: when something
+    goes red*, "walks up to its back" and "one person twice").
 - **Classes**: pre-provided gear, no grind. If the campaign places a bonfire,
   **every class kit must declare a flask** (`DW0476`) — see *Reference:
   authoring pitfalls*.
