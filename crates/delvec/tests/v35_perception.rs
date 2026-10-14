@@ -412,6 +412,11 @@ fn samples() -> Vec<(&'static str, Value)> {
             "play-sound",
             json!({"type":"play-sound","sound":"minecraft:block.bell.use"}),
         ),
+        // spec-0109: a cut is heard by the audience it addresses.
+        (
+            "stop-sound",
+            json!({"type":"stop-sound","category":"music"}),
+        ),
         (
             "damage-players",
             json!({"type":"damage-players","amount":2}),

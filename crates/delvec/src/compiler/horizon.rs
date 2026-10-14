@@ -205,7 +205,7 @@ pub struct GroundBiome {
 /// the delve's own void biome ([`VOID_BIOME_PATH`]): `minecraft:the_void` with
 /// [`VOID_BIOME_PRECIPITATES`]. Either carries the audio attributes the
 /// horizon declares (spec-0109 §3.2) over the pinned definition's own.
-fn ground_biome(campaign: &Campaign, ns: &str) -> GroundBiome {
+pub fn ground_biome(campaign: &Campaign, ns: &str) -> GroundBiome {
     let declared = campaign
         .world
         .content

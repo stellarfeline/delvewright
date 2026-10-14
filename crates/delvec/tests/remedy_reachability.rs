@@ -98,7 +98,7 @@ fn campaign(tag: &str, horizon: Option<serde_json::Value>) -> PathBuf {
     world["dsl_version"] = serde_json::json!(DSL_VERSION);
     if let Some(h) = horizon {
         let content = world["content"].as_object_mut().unwrap();
-        content.insert("horizon".into(), h);
+        content.insert("horizon".into(), stated(h));
         content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
     }
     std::fs::write(
@@ -107,6 +107,23 @@ fn campaign(tag: &str, horizon: Option<serde_json::Value>) -> PathBuf {
     )
     .unwrap();
     camp
+}
+
+/// A horizon in the object form with the ground's music stated (spec-0109):
+/// a base name becomes `{base, attributes: {audio/background_music: {}}}`,
+/// and an object without `attributes` gains them.
+fn stated(h: serde_json::Value) -> serde_json::Value {
+    let silence = serde_json::json!({ "audio/background_music": {} });
+    match h {
+        serde_json::Value::String(base) => {
+            serde_json::json!({ "base": base, "attributes": silence })
+        }
+        serde_json::Value::Object(mut o) => {
+            o.entry("attributes").or_insert(silence);
+            serde_json::Value::Object(o)
+        }
+        other => other,
+    }
 }
 
 /// `delvec build`, as an exit code and everything it said.
@@ -2705,7 +2722,21 @@ fn validate_atm(camp: &Path) -> (i32, String) {
     (r.status.code().unwrap_or(-1), log(&r))
 }
 
-fn declare(world: &mut serde_json::Value, atmospheres: serde_json::Value, carried: bool) {
+fn declare(world: &mut serde_json::Value, mut atmospheres: serde_json::Value, carried: bool) {
+    // Every atmosphere states its music (spec-0109), or it is `DW1031` beside
+    // the code each row is about.
+    for a in atmospheres.as_array_mut().into_iter().flatten() {
+        let attrs = a
+            .as_object_mut()
+            .unwrap()
+            .entry("attributes")
+            .or_insert_with(|| serde_json::json!({}));
+        attrs
+            .as_object_mut()
+            .unwrap()
+            .entry("audio/background_music")
+            .or_insert_with(|| serde_json::json!({}));
+    }
     world["content"]["atmospheres"] = atmospheres;
     if carried {
         world["content"]["areas"][0]["atmosphere"] = serde_json::json!("atmosphere/wrong-place");
@@ -2820,6 +2851,129 @@ fn dw0930_carrying_it_dropping_the_climate_and_renaming_the_duplicate_all_valida
             "type": "set-atmosphere", "atmosphere": "atmosphere/other-place", "place": "area/keep"
         }));
     }));
+    assert_eq!(code, 0, "{log}");
+}
+
+/// `DW1031` names its moves: write `audio/background_music` — `{}` for
+/// silence or a `default` track — on the atmosphere and on the ground, the
+/// ground in its object form; remove a `creative` entry; remove a non-`audio/`
+/// line from `horizon.attributes`.
+#[test]
+fn dw1031_stating_the_music_in_either_spelling_validates() {
+    let unstated = serde_json::json!([{ "id": "atmosphere/wrong-place", "precipitation": "none",
+        "attributes": { "visual/sky_color": "#3b4a1e" } }]);
+    let (code, log) = validate_atm(&atmosphere_campaign("music-unstated", |w, _| {
+        w["content"]["atmospheres"] = unstated.clone();
+        w["content"]["areas"][0]["atmosphere"] = serde_json::json!("atmosphere/wrong-place");
+    }));
+    assert!(code != 0 && log.contains("DW1031"), "{log}");
+    for (tag, music) in [
+        ("music-silence", serde_json::json!({})),
+        (
+            "music-track",
+            serde_json::json!({ "default": { "sound": "minecraft:music.game", "min_delay": 12000,
+                "max_delay": 24000, "replace_current_music": false } }),
+        ),
+    ] {
+        let (code, log) = validate_atm(&atmosphere_campaign(tag, |w, _| {
+            let mut a = unstated.clone();
+            a[0]["attributes"]["audio/background_music"] = music.clone();
+            w["content"]["atmospheres"] = a;
+            w["content"]["areas"][0]["atmosphere"] = serde_json::json!("atmosphere/wrong-place");
+        }));
+        assert_eq!(code, 0, "{tag}: {log}");
+        assert!(!log.contains("DW1031"), "{tag}: {log}");
+    }
+    // The ground: the string form, and the object form without the statement.
+    for (tag, horizon) in [
+        ("ground-string", serde_json::json!("void")),
+        ("ground-bare", serde_json::json!({ "base": "void" })),
+    ] {
+        let (code, log) = validate_atm(&atmosphere_campaign(tag, |w, _| {
+            w["content"]["horizon"] = horizon.clone();
+        }));
+        assert!(code != 0 && log.contains("DW1031"), "{tag}: {log}");
+    }
+    let (code, log) = validate_atm(&atmosphere_campaign("ground-absent", |w, _| {
+        w["content"].as_object_mut().unwrap().remove("horizon");
+    }));
+    assert!(code != 0 && log.contains("DW1031"), "{log}");
+    let (code, log) = validate_atm(&atmosphere_campaign("ground-stated", |w, _| {
+        w["content"]["horizon"] = serde_json::json!({ "base": "void",
+            "attributes": { "audio/background_music": {} } });
+    }));
+    assert_eq!(code, 0, "{log}");
+    // A `creative` entry, then removed.
+    let (code, log) = validate_atm(&atmosphere_campaign("ground-creative", |w, _| {
+        w["content"]["horizon"]["attributes"]["audio/background_music"] = serde_json::json!({
+            "creative": { "sound": "minecraft:music.creative", "min_delay": 0, "max_delay": 0 } });
+    }));
+    assert!(code != 0 && log.contains("DW1031"), "{log}");
+    // A non-`audio/` line under the ground's attributes, then removed (the
+    // stated ground above is the same document without it).
+    let (code, log) = validate_atm(&atmosphere_campaign("ground-sky", |w, _| {
+        w["content"]["horizon"]["attributes"]["visual/sky_color"] = serde_json::json!("#7ba4ff");
+    }));
+    assert!(code != 0 && log.contains("DW1031"), "{log}");
+}
+
+/// `DW1032` names its moves: the shot's path, the place's atmosphere, or a
+/// repaint before the beat — each reaches a green build.
+#[test]
+fn dw1032_the_path_the_place_or_a_repaint_each_build() {
+    let two = |music: serde_json::Value| {
+        serde_json::json!([
+            { "id": "atmosphere/wrong-place", "precipitation": "none",
+              "attributes": { "audio/background_music": {}, "audio/music_volume": 0.0 } },
+            { "id": "atmosphere/dread", "precipitation": "none",
+              "attributes": { "audio/background_music": music } }
+        ])
+    };
+    let track = serde_json::json!({ "default": { "sound": "minecraft:music_disc.otherside",
+        "min_delay": 0, "max_delay": 0, "replace_current_music": true } });
+    let mark =
+        |dx: i32| serde_json::json!({ "anchor": "anchor/keeper-stand", "offset": [dx, 1, 0] });
+    let shot = |path: serde_json::Value| {
+        serde_json::json!({ "type": "cutscene", "seconds": 2,
+        "path": path, "hears": "atmosphere/dread" })
+    };
+    let dread_at_keeper = serde_json::json!({ "type": "set-atmosphere",
+        "atmosphere": "atmosphere/dread",
+        "region": { "anchor": "anchor/keeper-stand", "extent": [1, 1, 1] } });
+    // Refused: the second waypoint leaves the dread for the keep's silence.
+    let refused = atmosphere_campaign("hears-refused", |w, q| {
+        declare(w, two(track.clone()), true);
+        talk_bundle(q).push(dread_at_keeper.clone());
+        talk_bundle(q).push(shot(serde_json::json!([mark(0), mark(3)])));
+    });
+    let (code, log) = build("hears-refused", &refused, &common::prefabs_dir());
+    assert!(code != 0 && log.contains("DW1032"), "{log}");
+    // The path: keep both waypoints in the repainted 4-cell.
+    let path = atmosphere_campaign("hears-path", |w, q| {
+        declare(w, two(track.clone()), true);
+        talk_bundle(q).push(dread_at_keeper.clone());
+        talk_bundle(q).push(shot(serde_json::json!([mark(0), mark(1)])));
+    });
+    let (code, log) = build("hears-path", &path, &common::prefabs_dir());
+    assert_eq!(code, 0, "{log}");
+    // The place's atmosphere: the keep itself carries the dread.
+    let place = atmosphere_campaign("hears-place", |w, q| {
+        let mut a = two(track.clone());
+        a.as_array_mut().unwrap().remove(0);
+        w["content"]["atmospheres"] = a;
+        w["content"]["areas"][0]["atmosphere"] = serde_json::json!("atmosphere/dread");
+        talk_bundle(q).push(shot(serde_json::json!([mark(0), mark(3)])));
+    });
+    let (code, log) = build("hears-place", &place, &common::prefabs_dir());
+    assert_eq!(code, 0, "{log}");
+    // A repaint before the beat: the whole keep painted with the dread.
+    let repaint = atmosphere_campaign("hears-repaint", |w, q| {
+        declare(w, two(track.clone()), true);
+        talk_bundle(q).push(serde_json::json!({ "type": "set-atmosphere",
+            "atmosphere": "atmosphere/dread", "place": "area/keep" }));
+        talk_bundle(q).push(shot(serde_json::json!([mark(0), mark(3)])));
+    });
+    let (code, log) = build("hears-repaint", &repaint, &common::prefabs_dir());
     assert_eq!(code, 0, "{log}");
 }
 

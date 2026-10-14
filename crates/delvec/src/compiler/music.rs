@@ -118,10 +118,16 @@ pub fn statement(attributes: &BTreeMap<String, Value>) -> Option<Statement> {
         .row(delvewright_dsl::music::BACKGROUND_MUSIC)
         .and_then(|row| reg.value(row, raw).ok())
         .unwrap_or_else(|| raw.clone());
+    // The declared gain in its canonical form (the biome file's), so `0` and
+    // `0.0` are one value here too.
     let music_volume = attributes
         .iter()
         .find(|(k, _)| delvewright_dsl::music::canonical_attribute(k) == "audio/music_volume")
-        .map(|(_, v)| v.clone());
+        .map(|(_, v)| {
+            reg.row("audio/music_volume")
+                .and_then(|row| reg.value(row, v).ok())
+                .unwrap_or_else(|| v.clone())
+        });
     let entering = match music.get("default") {
         Some(track) => {
             if track
@@ -794,22 +800,40 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// from: the world (atmospheres, horizon), the quests (every effect, pulse
 /// and cutscene), the dialogue (respawn bundles) and the site plan (a box's
 /// atmosphere) when present.
+///
+/// A number is hashed as the value it is, so a float written `0` or `0.0` —
+/// one value to every reader — is one document to the hash as well.
 fn documents(plan: &Plan<'_>) -> BTreeMap<String, String> {
+    fn integral(v: Value) -> Value {
+        match v {
+            Value::Number(n) => match n.as_f64() {
+                Some(f) if n.is_f64() && f.fract() == 0.0 && f.abs() < 9.0e15 => json!(f as i64),
+                _ => Value::Number(n),
+            },
+            Value::Array(a) => Value::Array(a.into_iter().map(integral).collect()),
+            Value::Object(o) => {
+                Value::Object(o.into_iter().map(|(k, v)| (k, integral(v))).collect())
+            }
+            other => other,
+        }
+    }
+    fn hash<T: serde::Serialize>(doc: &T) -> Option<String> {
+        let v = integral(serde_json::to_value(doc).ok()?);
+        let text = delvewright_dsl::to_canonical_string(&v).ok()?;
+        Some(sha256_hex(text.as_bytes()))
+    }
     let c = plan.campaign;
     let mut out = BTreeMap::new();
-    let mut put = |name: &str, text: Result<String, serde_json::Error>| {
-        if let Ok(t) = text {
-            out.insert(name.to_string(), sha256_hex(t.as_bytes()));
+    let mut put = |name: &str, h: Option<String>| {
+        if let Some(h) = h {
+            out.insert(name.to_string(), h);
         }
     };
-    put("world", delvewright_dsl::to_canonical_string(&c.world));
-    put("quests", delvewright_dsl::to_canonical_string(&c.quests));
-    put(
-        "dialogue",
-        delvewright_dsl::to_canonical_string(&c.dialogue),
-    );
+    put("world", hash(&c.world));
+    put("quests", hash(&c.quests));
+    put("dialogue", hash(&c.dialogue));
     if let Some(sp) = &c.site_plan {
-        put("site-plan", delvewright_dsl::to_canonical_string(sp));
+        put("site-plan", hash(sp));
     }
     out
 }
@@ -949,8 +973,7 @@ pub fn measure(
     let firing_cell = |step: usize| -> Option<[i32; 3]> {
         routes
             .iter()
-            .filter(|l| l.to_step == step)
-            .last()
+            .rfind(|l| l.to_step == step)
             .and_then(|l| l.cells.last().copied())
     };
     for ev in &evs {
