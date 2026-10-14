@@ -295,7 +295,7 @@ impl Case {
             volumes = self.volumes,
             extra = self.extra,
         );
-        std::fs::write(dir.join("quests.json"), quests).unwrap();
+        std::fs::write(dir.join("quests.json"), common::with_teaching(quests)).unwrap();
         if self.edits {
             std::fs::write(dir.join("world-edits.json"), one_batch()).unwrap();
         }

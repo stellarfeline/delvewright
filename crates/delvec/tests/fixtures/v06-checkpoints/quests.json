@@ -139,7 +139,7 @@
               "block": "minecraft:lever"
             },
             "requires_item": "minecraft:tripwire_hook",
-            "title": "Unbar the Inner Door",
+            "title": "Open the Inner Door",
             "type": "interact"
           },
           {

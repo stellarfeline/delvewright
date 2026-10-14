@@ -651,6 +651,7 @@ pub fn build_with_warnings(
     // reach). Judged here, where the acts have places and the world has
     // blocks; the binding is printed whichever way it goes.
     {
+        crate::compiler::acts::fix_walks(plan, &branch_takes);
         let (acts, refusals) = crate::compiler::promise::check_acts_found(plan, &world);
         eprintln!("{}", acts.line());
         refuse_first(refusals)?;

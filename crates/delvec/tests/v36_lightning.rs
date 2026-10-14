@@ -58,7 +58,7 @@ fn materialise(who: &str, quests: &str) -> PathBuf {
     for f in common::STAGE_FILES {
         std::fs::copy(common::hello_world_dir().join(f), dir.join(f)).unwrap();
     }
-    std::fs::write(dir.join("quests.json"), quests).unwrap();
+    std::fs::write(dir.join("quests.json"), common::with_teaching(quests)).unwrap();
     dir
 }
 

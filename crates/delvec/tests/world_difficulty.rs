@@ -96,7 +96,7 @@ fn build_hw(difficulty: Option<&str>, quests: Option<&str>) -> BuildOutput {
         std::fs::write(&wp, w).unwrap();
     }
     if let Some(q) = quests {
-        std::fs::write(dst.join("quests.json"), q).unwrap();
+        std::fs::write(dst.join("quests.json"), common::with_teaching(q)).unwrap();
     }
     let out = build_dir(&dst);
     let _ = std::fs::remove_dir_all(&dst);

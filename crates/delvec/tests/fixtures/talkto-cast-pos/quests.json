@@ -29,7 +29,7 @@
               "text": "the party completes obj/ask",
               "verb": "learns"
             },
-            "hint": "Whoever keeps this place will know.",
+            "hint": "The keeper of this hall has the answer.",
             "id": "obj/ask",
             "npc": "npc/keeper",
             "title": "Ask about the way on",

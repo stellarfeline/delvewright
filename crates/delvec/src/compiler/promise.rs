@@ -782,21 +782,17 @@ pub fn judge_acts(
     let objective = |qi: usize, oi: usize| &c.quests.content.quests[qi].objectives[oi];
     for w in &walks.walks {
         // Each act is judged in the world its walk stands in when the act is
-        // next: the doors the walk's earlier steps open are open, the ones a
-        // later beat opens are shut.
+        // next: on this walk every earlier step has happened, so the doors its
+        // earlier steps opened are open and the ones a later beat opens are
+        // shut — the walk's own order, not only the order every play is forced
+        // into, because sight is a question about this walk.
         let steps: Vec<usize> = w.acts.iter().map(|a| a.step).collect();
-        let (worlds, at) = match &w.gates {
-            None => {
-                let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
-                crate::compiler::nav::worlds_at(world, &plan.region_events, &ancestor, &steps)
-            }
-            Some(gates) => {
-                let (events, anc) = &**gates;
-                let ancestor =
-                    |g: usize, s: usize| g == 0 || anc.get(&s).is_some_and(|x| x.contains(&g));
-                crate::compiler::nav::worlds_at(world, events, &ancestor, &steps)
-            }
+        let walked = |g: usize, s: usize| g == 0 || g < s;
+        let events = match &w.gates {
+            None => &plan.region_events,
+            Some(gates) => &gates.0,
         };
+        let (worlds, at) = crate::compiler::nav::worlds_at(world, events, &walked, &steps);
         for (ai, a) in w.acts.iter().enumerate() {
             let world: &crate::compiler::nav::World = worlds[at[ai]].as_ref().unwrap_or(world);
             b.acts += 1;

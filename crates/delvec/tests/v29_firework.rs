@@ -84,7 +84,7 @@ fn try_build(who: &str, quests: &str) -> Result<BuildOutput, (String, String)> {
     for f in common::STAGE_FILES {
         std::fs::copy(common::hello_world_dir().join(f), dir.join(f)).unwrap();
     }
-    std::fs::write(dir.join("quests.json"), quests).unwrap();
+    std::fs::write(dir.join("quests.json"), common::with_teaching(quests)).unwrap();
 
     let prefab_dir = common::prefabs_dir();
     let loaded = load_campaign_dir(&dir).unwrap();
@@ -485,7 +485,7 @@ fn the_posts_are_dw0511s_own_enumeration() {
         for f in common::STAGE_FILES {
             std::fs::copy(common::hello_world_dir().join(f), dir.join(f)).unwrap();
         }
-        std::fs::write(dir.join("quests.json"), quests).unwrap();
+        std::fs::write(dir.join("quests.json"), common::with_teaching(quests)).unwrap();
         let loaded = load_campaign_dir(&dir).unwrap();
         let campaign = parse_campaign(&loaded.raw).expect("parses");
         let plan = Plan::build(&campaign, &prefabs).expect("plan builds");

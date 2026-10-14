@@ -180,7 +180,7 @@ fn try_build(who: &str, teleport_extent: &str) -> Result<BuildOutput, (String, S
         .unwrap();
     }
     std::fs::write(dir.join("world.json"), WORLD.as_str()).unwrap();
-    std::fs::write(dir.join("quests.json"), quests(teleport_extent)).unwrap();
+    std::fs::write(dir.join("quests.json"), common::with_teaching(quests(teleport_extent))).unwrap();
     std::fs::write(dir.join("dialogue.json"), DIALOGUE.as_str()).unwrap();
 
     let prefab_dir = common::prefabs_dir();

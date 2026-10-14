@@ -394,9 +394,9 @@ fn obj(kind: &str, title: Option<&str>, hint: Option<&str>) -> Value {
 }
 
 fn verb_refusals(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<String> {
-    promise::check_act_verbs(c, sidecars)
-        .0
-        .into_iter()
+    let d = promise::check_act_verbs(c, sidecars).0;
+    assert!(d.iter().all(|d| d.code == promise::DW_ACT_MISNAMED), "{d:?}");
+    d.into_iter()
         .filter(|d| d.path.contains("objectives/0") || d.path.contains("obj.open-the-door.talk."))
         .map(|d| d.message)
         .collect()
@@ -594,6 +594,7 @@ fn teaching_refusals(name: &str, q: Value) -> (promise::TeachingBinding, Vec<Str
     let (_, c) = load(&dir);
     let plan = Plan::build(&c, &prefabs()).expect("plan");
     let (b, r) = promise::check_teaching(&plan);
+    assert!(r.iter().all(|f| f.code == promise::DW_INPUT_UNTAUGHT), "{r:?}");
     (b, r.into_iter().map(|f| f.message).collect())
 }
 
@@ -647,11 +648,9 @@ fn twins(name: &str, q: Value, extra: &[([i32; 3], &str)], at: &str) -> Vec<Stri
             BlockState::from(*b),
         );
     }
-    promise::check_pressables_alone(&plan, &blocks)
-        .1
-        .into_iter()
-        .map(|f| f.message)
-        .collect()
+    let r = promise::check_pressables_alone(&plan, &blocks).1;
+    assert!(r.iter().all(|f| f.code == promise::DW_PRESSABLE_AMONG_TWINS), "{r:?}");
+    r.into_iter().map(|f| f.message).collect()
 }
 
 /// spec-0104 criterion 7.

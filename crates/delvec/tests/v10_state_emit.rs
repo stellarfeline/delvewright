@@ -330,7 +330,7 @@ fn build_from(who: &str, quests: &str) -> (BuildOutput, delvewright_dsl::GateBin
         .unwrap();
     }
     std::fs::write(dir.join("world.json"), WORLD.as_str()).unwrap();
-    std::fs::write(dir.join("quests.json"), quests).unwrap();
+    std::fs::write(dir.join("quests.json"), common::with_teaching(quests)).unwrap();
     std::fs::write(dir.join("dialogue.json"), DIALOGUE.as_str()).unwrap();
 
     let prefab_dir = patched_prefabs();

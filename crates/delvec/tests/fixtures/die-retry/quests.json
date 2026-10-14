@@ -33,8 +33,10 @@
               "text": "The Keeper names the trial and marks the stone he stands on.",
               "verb": "learns"
             },
+            "hint": "He keeps the gate room.",
             "id": "obj/talk",
             "npc": "npc/keeper",
+            "title": "Talk to the keeper",
             "type": "talk-to"
           }
         ],

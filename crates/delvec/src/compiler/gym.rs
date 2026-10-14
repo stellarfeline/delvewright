@@ -587,7 +587,11 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
             "campaign_id": campaign_id,
             "dsl_version": GYM_DSL_VERSION,
             "stage": "quests",
-            "content": { "quests": [{
+            "content": {
+                // spec-0104 §5.5: the walk's one input, talking, is taught by
+                // the level — the Invigilator stands in the first bay.
+                "guidance": { "teaching": { "use-body": null } },
+                "quests": [{
                 "id": "quest/walk-the-ladder",
                 "trigger": { "type": "campaign-start" },
                 "happening": {
@@ -605,7 +609,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
                         "id": "obj/hear-the-brief",
                         "type": "talk-to",
                         "npc": "npc/invigilator",
-                        "title": "Hear the brief",
+                        "title": "Talk to the Invigilator",
                         "hint": "The Invigilator stands in the first bay.",
                         "happening": {
                             "subject": "npc/invigilator",
@@ -620,6 +624,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
                         "anchor": format!("anchor/node-{}", slug(&goal_node)),
                         "radius": 3,
                         "title": "Walk to the far end",
+                        "hint": "Down the bays to the last one.",
                         "happening": {
                             "verb": "arrives",
                             "text": "The party reaches the last bay.",

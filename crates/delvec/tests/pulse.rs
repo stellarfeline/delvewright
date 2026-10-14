@@ -107,7 +107,7 @@ fn write(tag: &str, pulses: &str, talk: &str) -> (PathBuf, PathBuf) {
   }}
 }}"#
     );
-    std::fs::write(dir.join("quests.json"), quests).unwrap();
+    std::fs::write(dir.join("quests.json"), common::with_teaching(quests)).unwrap();
     common::declare_story_dir(&dir);
     (dir, lib)
 }

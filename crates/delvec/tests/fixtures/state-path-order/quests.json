@@ -40,6 +40,7 @@
               "text": "The Keeper reads the first label out.",
               "verb": "learns"
             },
+            "hint": "He keeps the gate room.",
             "id": "obj/talk",
             "npc": "npc/keeper",
             "title": "Hear the Keeper read",
@@ -112,6 +113,7 @@
               "text": "The party reaches the doorway out.",
               "verb": "arrives"
             },
+            "hint": "Past the keeper, through the door he opens.",
             "id": "obj/exit",
             "radius": 2,
             "requires_state": [

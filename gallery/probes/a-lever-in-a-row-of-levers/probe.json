@@ -7,34 +7,30 @@
       "path": "/content/batches/-",
       "value": {
         "area": "area/hall",
-        "id": "batch/a-second-lever",
-        "note": "A second floor lever two cells west of the first valve.",
         "edits": [
           {
-            "verb": "select",
             "name": "region/second-lever",
             "shape": {
-              "kind": "box",
               "frame": {
                 "kind": "piece-local",
                 "piece": 0,
                 "prefab": "prefab/gallery-hall"
               },
-              "min": [
-                17,
-                3,
-                1
-              ],
+              "kind": "box",
               "max": [
                 17,
                 3,
                 1
+              ],
+              "min": [
+                17,
+                3,
+                1
               ]
-            }
+            },
+            "verb": "select"
           },
           {
-            "verb": "fill",
-            "region": "region/second-lever",
             "recipe": {
               "blocks": [
                 {
@@ -42,9 +38,13 @@
                   "weight": 1.0
                 }
               ]
-            }
+            },
+            "region": "region/second-lever",
+            "verb": "fill"
           }
-        ]
+        ],
+        "id": "batch/a-second-lever",
+        "note": "A second floor lever two cells west of the first valve."
       }
     }
   ],

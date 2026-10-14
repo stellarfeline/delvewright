@@ -427,7 +427,7 @@ fn keep_trial_m2_presentation_fixes() {
     assert!(
         act_door.contains("summon minecraft:item_display")
             && act_door.contains("Glowing:1b")
-            && act_door.contains("CustomName:\"Unbar the Inner Door\""),
+            && act_door.contains("CustomName:\"Open the Inner Door\""),
         "interact anchor gets a glowing named item_display marker at activation"
     );
     // Fix 3 (round 2): the reach anchor gets the same glowing marker treatment —

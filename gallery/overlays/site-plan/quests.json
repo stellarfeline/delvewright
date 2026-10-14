@@ -1,6 +1,12 @@
 {
   "campaign_id": "gallery",
   "content": {
+    "guidance": {
+      "teaching": {
+        "attack-body": "When something comes at you, [[key|attack]] to strike it.",
+        "use-body": "Stand close to someone and [[key|use]] to speak with them."
+      }
+    },
     "quests": [
       {
         "cast": {
@@ -184,6 +190,7 @@
               "text": "The party walks out the far side and the hall is behind them.",
               "verb": "departs"
             },
+            "hint": "Back down off the causeway; the door is past the far hall.",
             "id": "obj/reach-the-end",
             "radius": 3,
             "title": "Leave by the far door",

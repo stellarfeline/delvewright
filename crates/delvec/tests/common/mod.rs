@@ -76,7 +76,10 @@ pub fn materialize_from(base: &Path, patch: &serde_json::Value, dst: &Path) {
     if let Some(docs) = patch.get("documents").and_then(|d| d.as_object()) {
         for (stage, doc) in docs {
             let file = dst.join(format!("{stage}.json"));
-            let text = serde_json::to_string_pretty(&stamped(doc)).unwrap();
+            let mut text = serde_json::to_string_pretty(&stamped(doc)).unwrap();
+            if stage == "quests" {
+                text = with_teaching(&text);
+            }
             std::fs::write(file, text).unwrap();
         }
     }
@@ -291,7 +294,10 @@ pub fn materialize(patch: &serde_json::Value, dst: &Path) {
     if let Some(docs) = patch.get("documents").and_then(|d| d.as_object()) {
         for (stage, doc) in docs {
             let file = dst.join(format!("{stage}.json"));
-            let text = serde_json::to_string_pretty(&stamped(doc)).unwrap();
+            let mut text = serde_json::to_string_pretty(&stamped(doc)).unwrap();
+            if stage == "quests" {
+                text = with_teaching(&text);
+            }
             std::fs::write(file, text).unwrap();
         }
     }
@@ -371,7 +377,13 @@ pub fn patch_doc(text: &str, f: impl FnOnce(&mut serde_json::Value)) -> String {
 /// [`patch_doc`] against a file, in place.
 pub fn patch_file(path: &Path, f: impl FnOnce(&mut serde_json::Value)) {
     let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
-    std::fs::write(path, patch_doc(&text, f)).unwrap();
+    let mut out = patch_doc(&text, f);
+    // A patch that rewrites a quests document's whole `content` keeps the
+    // fixture's teaching declaration ([`with_teaching`]).
+    if path.file_name().is_some_and(|n| n == "quests.json") {
+        out = with_teaching(&out);
+    }
+    std::fs::write(path, out).unwrap();
 }
 
 /// The effect list a quest runs when one of its objectives completes —

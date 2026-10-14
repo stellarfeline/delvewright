@@ -3,7 +3,10 @@
   "content": {
     "guidance": {
       "announcements": "hidden",
-      "markers": "hidden"
+      "markers": "hidden",
+      "teaching": {
+        "use-body": "Stand close to someone and [[key|use]] to speak with them."
+      }
     },
     "quests": [
       {

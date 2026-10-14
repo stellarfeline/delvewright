@@ -684,7 +684,8 @@ fn carcass_campaign(tag: &str, form: &serde_json::Value) -> (i32, String) {
     let reach = |id: &str, anchor: &str, after: Option<&str>| {
         let mut o = serde_json::json!({
             "anchor": anchor, "happening": {"text": format!("they reach {anchor}"), "verb": "arrives"},
-            "id": id, "radius": 2, "type": "reach-anchor"
+            "id": id, "radius": 2, "type": "reach-anchor",
+            "title": format!("Go to {anchor}"), "hint": "Where the carcass leads."
         });
         if let Some(a) = after {
             o["after"] = serde_json::json!([a]);

@@ -29,8 +29,10 @@
               "text": "the party completes obj/talk",
               "verb": "learns"
             },
+            "hint": "He keeps the gate room.",
             "id": "obj/talk",
             "npc": "npc/keeper",
+            "title": "Talk to the keeper",
             "type": "talk-to"
           }
         ],
@@ -137,7 +139,7 @@
               "block": "minecraft:lever"
             },
             "requires_item": "minecraft:tripwire_hook",
-            "title": "Unbar the Inner Door",
+            "title": "Open the Inner Door",
             "type": "interact"
           },
           {

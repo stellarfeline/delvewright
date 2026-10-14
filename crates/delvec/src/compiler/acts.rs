@@ -63,8 +63,8 @@ pub struct Act {
     pub body: bool,
 }
 
-/// A branch path's own region writes and step ancestry
-/// ([`Plan::branch_gate_model`]).
+/// A branch path's own region writes, in its own step space, with its step
+/// ancestry ([`Plan::branch_gate_model`]).
 pub type WalkGates = std::sync::Arc<(
     crate::compiler::plan::RegionEvents,
     BTreeMap<usize, std::collections::BTreeSet<usize>>,
@@ -233,36 +233,56 @@ pub fn acts_of_from(
 
 /// Every walk's acts: the exported critical path, then each realised branch
 /// (a branch whose path cannot be built is skipped — the branch proofs refuse
-/// it by name).
+/// it by name). Derived once per plan; the build fixes it first, with the
+/// links its route proof took on each branch ([`fix_walks`]), so every reader
+/// after it reads the walks the bot is handed.
 pub fn walks<'p>(plan: &'p Plan<'_>) -> &'p ActWalks {
-    plan.acts.get_or_init(|| {
-        let mut out = ActWalks::default();
-        out.walks.push(acts_of(
-            plan,
-            "the critical path",
-            &plan.critical_path,
-            &plan.critical_path_transport,
-        ));
-        let realized = crate::compiler::branch::realize(plan.campaign);
-        if !realized.is_empty() {
-            let flow = crate::compiler::flow::Flow::new(plan.campaign);
-            for r in &realized {
-                let Some(w) = r.world else { continue };
-                let Ok(cp) = plan.branch_critical_path(&flow, &flow.playthrough_in(w)) else {
-                    continue;
-                };
-                let mut w = acts_of(
-                    plan,
-                    &format!("branch `{}`", r.branch.id),
-                    &cp.steps,
-                    &cp.transport_by_step,
-                );
-                w.gates = Some(std::sync::Arc::new(plan.branch_gate_model(&cp)));
-                out.walks.push(w);
-            }
+    plan.acts
+        .get_or_init(|| derive_walks(plan, &BTreeMap::new()))
+}
+
+/// Fix the plan's walks with each branch's taken links (`slug` → takes), as
+/// `emit::build` knows them once the world exists. A no-op when the walks
+/// were already derived.
+pub fn fix_walks(plan: &Plan, takes: &BTreeMap<String, crate::compiler::plan::LinkTakes>) {
+    let _ = plan.acts.set(derive_walks(plan, takes));
+}
+
+fn derive_walks(
+    plan: &Plan,
+    takes: &BTreeMap<String, crate::compiler::plan::LinkTakes>,
+) -> ActWalks {
+    let mut out = ActWalks::default();
+    out.walks.push(acts_of(
+        plan,
+        "the critical path",
+        &plan.critical_path,
+        &plan.critical_path_transport,
+    ));
+    let realized = crate::compiler::branch::realize(plan.campaign);
+    if !realized.is_empty() {
+        let flow = crate::compiler::flow::Flow::new(plan.campaign);
+        let none = crate::compiler::plan::LinkTakes::default();
+        for r in &realized {
+            let Some(w) = r.world else { continue };
+            let Ok(cp) = plan.branch_critical_path_linked(
+                &flow,
+                &flow.playthrough_in(w),
+                takes.get(&r.branch.slug).unwrap_or(&none),
+            ) else {
+                continue;
+            };
+            let mut walk = acts_of(
+                plan,
+                &format!("branch `{}`", r.branch.id),
+                &cp.steps,
+                &cp.transport_by_step,
+            );
+            walk.gates = Some(std::sync::Arc::new(plan.branch_gate_model(&cp)));
+            out.walks.push(walk);
         }
-        out
-    })
+    }
+    out
 }
 
 /// **Where each input class is taught** (spec-0104 §5.4): per class, the first
