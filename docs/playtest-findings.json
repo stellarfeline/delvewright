@@ -3347,7 +3347,7 @@
       "campaign": "the-stranding",
       "carrier": null,
       "finding": "two bodies of one named character were visible at the same time",
-      "general_form": "one named character is never present as two bodies in any scene the party can see",
+      "general_form": "one named character is never present as more than one entity at the same time, anywhere in the world, in any story state",
       "id": "str-16",
       "note": "No check carries this class today; the check is to be built (work plan obligation F). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Verified by reading main: nothing compares NPC display names; the cast ledger is keyed by id; `DW0983` groups names for wave members and actors only.",
       "round": 1,
