@@ -4162,3 +4162,77 @@ fn dw0995_a_gate_the_route_opens_is_heard() {
     assert!(!after.contains("DW0995"), "{after}");
     assert!(after.contains("1 of 1 with a listening station"), "{after}");
 }
+
+// ---------------------------------------------------------------------------
+// DW0318 — a sea the author meant
+// ---------------------------------------------------------------------------
+
+/// A stage-7 batch that pours one water cell under `hello-room`'s floor,
+/// outside every placed piece. The piece's own bytes hold no fluid, so
+/// `DW0886` (the piece-level fluid rule at validation) has nothing to say,
+/// and the escape is the assembled world's: `DW0318`'s question.
+fn pour_under_the_floor(camp: &Path) {
+    let doc = serde_json::json!({
+        "dsl_version": DSL_VERSION,
+        "campaign_id": "hello-world",
+        "stage": "world-edits",
+        "content": { "batches": [{
+            "id": "batch/a-spring-under-the-floor",
+            "area": "area/keep",
+            "note": "One water cell beneath the room, where nothing was built.",
+            "edits": [
+                {
+                    "verb": "select",
+                    "name": "region/spring",
+                    "shape": {
+                        "kind": "box",
+                        "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+                        "min": [5, -1, 5],
+                        "max": [5, -1, 5]
+                    }
+                },
+                {
+                    "verb": "fill",
+                    "region": "region/spring",
+                    "recipe": { "blocks": [{ "block": "minecraft:water", "weight": 1.0 }], "scale": 0.5 }
+                }
+            ]
+        }]}
+    });
+    std::fs::write(
+        camp.join("world-edits.json"),
+        serde_json::to_string_pretty(&doc).unwrap(),
+    )
+    .unwrap();
+}
+
+/// **Set `horizon.base` to `ocean`.** The move `DW0318` names for water that runs
+/// off a `void` world when that water is meant to be a sea: the same edit, the
+/// object form spec-0109 requires with the ground's music stated, and the
+/// `boundary` an ocean obliges. The sea stands under the columns the water ran
+/// down, so the escape is gone.
+#[test]
+fn dw0318_setting_the_horizon_base_to_ocean_gives_the_water_a_sea() {
+    let prefabs = common::prefabs_dir();
+    let void = campaign("dw0318-void", Some(serde_json::json!("void")));
+    pour_under_the_floor(&void);
+    let (code, before) = build("dw0318-void", &void, &prefabs);
+    assert_ne!(code, 0, "{before}");
+    assert!(
+        before.contains("DW0318"),
+        "the water leaves the world:\n{before}"
+    );
+    assert!(
+        before.contains("set `horizon.base` to `ocean`"),
+        "the message names the move:\n{before}"
+    );
+
+    let ocean = campaign("dw0318-ocean", Some(serde_json::json!("ocean")));
+    pour_under_the_floor(&ocean);
+    let (code, after) = build("dw0318-ocean", &ocean, &prefabs);
+    assert!(
+        !after.contains("DW0318"),
+        "the sea holds the water:\n{after}"
+    );
+    assert_eq!(code, 0, "{after}");
+}

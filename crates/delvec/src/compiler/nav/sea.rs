@@ -114,7 +114,7 @@ impl FluidEscape {
             code: DW_FLUID_LEAVES_WORLD,
             message: format!(
                 "fluid leaves the built world: {n} fluid cell(s) in {cols} column(s) lie outside \
-                 every placed piece, {blame}. Under `horizon: void` a column the content did not \
+                 every placed piece, {blame}. Under a `void` horizon base a column the content did not \
                  build is bottomless, so this water is not a pond that overhangs an edge — it is \
                  a waterfall that runs down forever on the server's own clock, before any player \
                  arrives, and nothing that draws the delve draws it. Cells: {sample}{extra}; the \
@@ -124,8 +124,10 @@ impl FluidEscape {
                  placement that put an open face against nothing — the piece-level rule counts a \
                  run leaving a face and deliberately does not judge it, because only the \
                  placement knows what is on the other side. HOW: wall the face the water runs \
-                 out of, pull the body back a cell, place a piece against that face, or declare \
-                 `horizon: ocean` if this water is meant to be a sea. Do NOT delete the water to \
+                 out of, pull the body back a cell, place a piece against that face, or, if this \
+                 water is meant to be a sea, set `horizon.base` to `ocean` \
+                 (`\"horizon\": {{\"base\": \"ocean\", \"attributes\": {{\"audio/background_music\": {{}}}}}}` \
+                 with a `boundary`, which an ocean obliges). Do NOT delete the water to \
                  silence this: an authored pond is first-class content.",
                 n = self.outside.len(),
                 cols = columns.len(),
@@ -173,7 +175,7 @@ impl FluidEscape {
 /// `pieces` is how much built volume there is; `contact_cells` is how much of it
 /// the sea touches through an open face; `sea_waterlogged` is how many of its
 /// blocks the sea waterlogs at placement; `wet_cells` is how far the water then
-/// got. A run under `horizon: void` reports zeroes and says so in `horizon`:
+/// got. A run on a `void` base reports zeroes and says so in `horizon`:
 /// there is no ambient sea to come in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SeaSeepage {
