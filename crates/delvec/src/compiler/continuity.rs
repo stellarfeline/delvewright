@@ -161,11 +161,11 @@ pub fn replay(c: &Campaign) -> Timeline {
             NpcState {
                 declared_anchor: n.anchor.as_str().to_string(),
                 declared_offset: n.offset,
-                home_area: n.area.as_str().to_string(),
+                home_area: delvewright_dsl::SITE_AREA.to_string(),
                 on_stage: (!n.deferred).then(|| Staged {
                     anchor: n.anchor.as_str().to_string(),
                     offset: n.offset,
-                    area: n.area.as_str().to_string(),
+                    area: delvewright_dsl::SITE_AREA.to_string(),
                 }),
                 last_staged: None,
                 ever_staged: !n.deferred,
@@ -182,7 +182,7 @@ pub fn replay(c: &Campaign) -> Timeline {
         .content
         .quests
         .iter()
-        .map(|q| (q.id.as_str(), q.area.as_str()))
+        .map(|q| (q.id.as_str(), delvewright_dsl::SITE_AREA))
         .collect();
 
     // Replay the quest-DAG linearization.

@@ -269,10 +269,7 @@ pub(crate) fn timed_gate_checks(
                         "timed-gate `disarm.via` anchor `{}` is not provided by any area's \
                          prefab — {}",
                         dis.via,
-                        providers.anchor_remedy(
-                            "use an anchor some area's prefab exposes for the jam affordance \
-                             (anchor names come from prefab metadata; do NOT invent one)"
-                        ),
+                        providers.anchor_remedy(),
                     ),
                     d,
                 );

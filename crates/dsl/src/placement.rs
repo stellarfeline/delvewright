@@ -1,233 +1,74 @@
 //! **Where a campaign's places and anchor names come from — asked once.**
 //!
-//! A campaign has exactly one placement authority. The usual one is stage-1
-//! `areas[]`, which seats prefab pieces on the compiler's fixed stride; a
-//! campaign planned as a whole map hands the space to its `site-plan.json`
-//! instead and the blockout is derived. `DW0839` refuses a campaign holding
-//! both.
+//! A campaign's map is its `site-plan.json` (ADR-0032, ADR-0035): there is no
+//! second placement. Before the plan exists the campaign has no map yet, and
+//! `DW0824` is the finding. What every rule that refuses an anchor name needs
+//! from that one fact is the sentence the author reads afterwards — the names
+//! the derivation places, or the documents that would place them — and that
+//! sentence is chosen here, once, rather than beside each refusal.
 //!
-//! Every rule that resolves an area id or an anchor name already asks which of
-//! the two it is — [`crate::validate::AnchorProviders`] does it to build the
-//! resolvable set, and three area sets in `crate::validate` do it to admit
-//! [`crate::siteplan::SITE_AREA`]. What none of them asked is the second half of
-//! the same question: **when the reference does not resolve, what is this author
-//! allowed to write instead?**
-//!
-//! That half was hand-written beside each refusal at twenty sites, in the
-//! vocabulary of the only kind of campaign that existed when the rules were
-//! written. So a site-plan campaign was refused by `DW0112` with *"declare it in
-//! stage-1 `world.areas`"* — which is precisely what `DW0839` refuses in a
-//! campaign carrying a site plan, and which `DW0160` refuses again for having no
-//! prefab to bind — and by `DW0142` with *"anchor names come from prefab
-//! metadata; do NOT invent one"* against names that are synthesized by design and
-//! have no metadata anywhere.
-//!
-//! CLAUDE.md names the shape: **when one gate's prescription is another gate's
-//! refusal, the defect belongs to the PAIR**, and a gate that names a remedy owes
-//! a check that the remedy is reachable. The repair is the constitution's own —
-//! a capability belongs to the object class it acts on, so *"what may this author
-//! write"* is a property of the campaign's placement authority and is answered in
-//! one place, not re-decided at each verb.
-//!
-//! Nothing here decides whether a reference is wrong. Every predicate is exactly
-//! what it was; only the sentence the author reads afterwards is chosen by the
-//! campaign rather than by the site.
+//! Nothing here decides whether a reference is wrong; only what the author is
+//! told to write instead.
 
 use crate::envelope::Campaign;
 
-/// The one thing a campaign hands its space to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Placement {
-    /// Stage-1 `areas[]` seats prefab pieces. Anchor names come from prefab
-    /// metadata; area ids are the ones the world document declares.
-    Prefabs,
-    /// A `site-plan.json` owns the space. There is exactly one area
-    /// ([`crate::siteplan::SITE_AREA`]) and the anchor names are the ones the
-    /// derivation places ([`crate::siteplan::synthesized_anchors`]) — the
-    /// `spawn`/`node-`/`seam-`/`unlock-` set the graph's own shape dictates,
-    /// plus every `stations[]` name its nodes declare (spec-0052). The station
-    /// half is why the remedy tells the author they may *declare* the name as
-    /// well as correct it: it is the only anchor name in this engine an author
-    /// writes by hand, so an unresolved one is as likely a missing declaration
-    /// as a typo.
-    SitePlan,
-    /// **Neither.** `areas[]` is empty and there is no site plan, so the campaign
-    /// declares no place and nothing places an anchor: every area reference and
-    /// every anchor reference in it is unresolvable, whatever it says.
-    ///
-    /// This is a real authoring state and it is the one the old messages served
-    /// worst — a story layer written before its map. Refusing it is correct; the
-    /// only question is what the author is told to do about it, and the answer
-    /// is not "declare it in `world.areas`", because that names one of the two
-    /// halves of a choice the author has not made yet and hides the other.
-    NoMap,
-}
-
-impl Placement {
-    /// Ask the campaign, once.
-    ///
-    /// A site plan wins when both are present, because that is what the
-    /// resolution does: [`crate::validate::AnchorProviders`] and all three area
-    /// sets admit the derived vocabulary whenever a plan is on disk, whatever
-    /// `areas[]` says. Such a campaign is refused by `DW0839`, whose message is
-    /// the one that matters there — this one is describing the set the resolver
-    /// actually used.
-    #[must_use]
-    pub fn of(c: &Campaign) -> Self {
-        if c.site_plan.is_some() {
-            Self::SitePlan
-        } else if c.world.content.areas.is_empty() {
-            Self::NoMap
-        } else {
-            Self::Prefabs
-        }
-    }
-
-    /// **What to write instead of an area id that does not resolve.**
-    ///
-    /// The `Prefabs` arm is the sentence every area refusal has always carried,
-    /// unchanged, so a prefab campaign reads exactly what it read before.
-    #[must_use]
-    pub fn area_remedy(self) -> &'static str {
-        match self {
-            Self::Prefabs => "declare it in stage-1 `world.areas` or correct the reference",
-            Self::SitePlan => {
-                "this campaign's map is its site plan, so it has exactly one area, \
-                 `area/site`. Point the reference at that, and do NOT declare the id in \
-                 `world.areas`: a campaign carrying a site plan declares an empty `areas` list \
-                 (`DW0839`), and an entry with no prefab bound to it is refused again \
-                 (`DW0160`)"
-            }
-            Self::NoMap => {
-                "this campaign declares no area at all: `world.areas` is empty and there is \
-                 no `site-plan.json`, so it has no map for a reference to land in. Give it one \
-                 placement authority, and only one (`DW0839`): either declare the area in \
-                 stage-1 `world.areas` with a `prefab` or `prefab_pool` bound to it, or write \
-                 the map pipeline (`geometry-brief.json`, then `layout-graph.json`, then \
-                 `site-plan.json`) and name the campaign's one area `area/site`"
-            }
-        }
-    }
-
-    /// **What to write instead of an anchor name that does not resolve.**
-    ///
-    /// `prefab` is the sentence this call site has always printed for a prefab
-    /// campaign, passed in rather than centralised because it is genuinely
-    /// per-verb — a trap is told about `anchor/trap` markers, a trigger about
-    /// its `at`. It is returned verbatim, so a prefab campaign's refusal is
-    /// byte-identical to the one it printed before this module existed.
-    ///
-    /// It is *dropped* on the other two arms rather than appended, and that is
-    /// the whole point: every one of those sentences prescribes a prefab
-    /// operation, and a derived map has no prefab for the author to reach.
-    #[must_use]
-    pub fn anchor_remedy(self, prefab: &str) -> &str {
-        match self {
-            Self::Prefabs => prefab,
-            Self::SitePlan => {
-                "this campaign's map is its site plan, so there is no prefab metadata to \
-                 read. Its anchor names are the ones the derivation places: `anchor/node-<place>` \
-                 for each place the layout graph declares, `anchor/seam-<edge>` over each barred \
-                 connection, `anchor/unlock-<edge>` on the far side of a one-sided one, and \
-                 `spawn` for the entry — plus every `stations[]` name its nodes declare. Write \
-                 one of those, or declare this name as a station on the node it belongs to, and \
-                 do NOT add an `areas[]` entry to get a prefab: a campaign carrying a site plan \
-                 declares an empty `areas` list (`DW0839`)"
-            }
-            Self::NoMap => {
-                "this campaign has no map yet: `world.areas` is empty and there is no \
-                 `site-plan.json`, so nothing places an anchor and no name can resolve. Give it \
-                 one placement authority, and only one (`DW0839`): either declare an area in \
-                 stage-1 `world.areas` with a `prefab` bound to it and write an anchor that \
-                 prefab's metadata exposes, or write the map pipeline (`geometry-brief.json`, \
-                 then `layout-graph.json`, then `site-plan.json`) and write one of the names its \
-                 derivation places (`anchor/node-<place>`, `anchor/seam-<edge>`, \
-                 `anchor/unlock-<edge>`, `spawn`, or a `stations[]` name a node declares)"
-            }
-        }
-    }
-
-    /// **Where this campaign writes a lighting declaration.**
-    ///
-    /// Not a sentence but a field name, because that is the whole of what moves
-    /// between the two kinds: a site plan carries ONE `lighting`, applied to
-    /// every enclosed box, and a prefab campaign carries one per `areas[]`
-    /// entry. The prose around it — which fixture, what `min_light` is for, what
-    /// not to do about it — is the same either way and stays where it is
-    /// written, which is also where `tools/ci/check-diagnostic-messages.py` reads
-    /// it.
-    ///
-    /// `NoMap` answers with the `areas[]` field: such a campaign has no area for
-    /// the light pass to walk, so this arm is reached only by a caller asking in
-    /// the abstract, and `areas[]` is the surface it would be writing.
-    ///
-    /// Returned BARE, with no stage qualifier, because two callers need two
-    /// different qualifiers of one name — `DW0210` says "declare …" and `DW0211`
-    /// says "Fix in …" — and a second accessor for the second phrasing would be
-    /// the duplication this module exists to remove.
-    #[must_use]
-    pub fn lighting_field(self) -> &'static str {
-        match self {
-            Self::Prefabs | Self::NoMap => "`world.areas[].lighting`",
-            Self::SitePlan => "the site plan's `lighting`",
-        }
-    }
-
-    /// Whether this campaign has the per-area **`mitigation`** surface at all.
-    ///
-    /// It lives on an `areas[]` entry, and a site-plan campaign is required to
-    /// declare an empty `areas` list (`DW0839`), so it has none. That is a
-    /// capability a derived map does not have rather than a wording question: a
-    /// darkness refusal offers the option only where it exists, because offering
-    /// it anywhere else is a prescription the campaign is refused for carrying
-    /// out.
-    #[must_use]
-    pub fn has_area_mitigation(self) -> bool {
-        !matches!(self, Self::SitePlan)
+/// **What to write instead of an anchor name that does not resolve.**
+///
+/// On a campaign with a site plan: the names its derivation places and the
+/// stations its nodes declare. On one with none yet: the documents that would
+/// give it a map.
+#[must_use]
+pub fn anchor_remedy(c: &Campaign) -> &'static str {
+    if c.site_plan.is_some() {
+        SITE_PLAN_ANCHORS
+    } else {
+        NO_MAP_ANCHORS
     }
 }
+
+const SITE_PLAN_ANCHORS: &str = "this campaign's map is its site plan, so its anchor names are \
+     the ones the derivation places: `anchor/node-<place>` for each place the layout graph \
+     declares, `anchor/seam-<edge>` over each barred connection, `anchor/unlock-<edge>` on the \
+     far side of a one-sided one, and `spawn` for the entry — plus every `stations[]` name its \
+     nodes declare, each answered by the piece bound to its place. Write one of those, or \
+     declare this name as a station on the node it belongs to";
+
+const NO_MAP_ANCHORS: &str = "this campaign has no map yet: there is no `site-plan.json`, so \
+     nothing places an anchor and no name can resolve. Write the map pipeline \
+     (`geometry-brief.json`, then `layout-graph.json`, then `site-plan.json`) and write one of \
+     the names its derivation places (`anchor/node-<place>`, `anchor/seam-<edge>`, \
+     `anchor/unlock-<edge>`, `spawn`, or a `stations[]` name a node declares)";
+
+/// **Where this campaign writes a lighting declaration**, as a field name: the
+/// plan's own `lighting` for the derived interiors, or a place's
+/// `boxes[].lighting` for the piece bound to it (spec-0106 §3.2). Bare, with no
+/// stage qualifier, because `DW0210` says "declare …" and `DW0211` says "Fix
+/// in …".
+pub const LIGHTING_FIELD: &str = "the site plan's `lighting` (or, for a bound piece, its place's \
+     `boxes[].lighting`)";
 
 /// **What declares how big this campaign's map is** — asked once, by both tiers
 /// that need the answer.
 ///
-/// A horizon that BUILDS terrain has to ring a stated extent, and whether one is
-/// stated is a fact about the documents: validation refuses `DW0855` on it
-/// before a block is placed, and the compiler derives the rectangle from the
-/// same answer. Two implementations of one predicate is two verdicts waiting to
-/// disagree — the tiers already disagreed once about which arm of `DW0855`'s own
-/// message applied — so the predicate lives here and the rectangle is derived
-/// from the authority this names.
+/// A horizon that BUILDS terrain has to ring a stated extent: validation
+/// refuses `DW0855` on a campaign that states none, before a block is placed,
+/// and the compiler derives the rectangle from the same answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Extent {
     /// **The site plan's `region`**: the whole map's design of record, the
     /// brief's number flowing down. A box outside it is `DW0826`, so nothing a
     /// part does can grow it.
     Region,
-    /// **The one piece's own declared region**: the campaign is one area bound
-    /// to one `prefab`, so its whole map is that piece and the piece's declared
-    /// structure size is the map's extent. This is what a *site* is — a building
-    /// with its island, its moat and its banks inside one box — and the
-    /// declaration is the prefab document's, held to the `.nbt` by `DW0888`.
-    OnePiece,
-    /// **Nothing states one.** Two or more areas, or one area drawing from a
-    /// pool, or no area at all: the only candidate left is the union of what
-    /// happens to get placed, which `DW0855` refuses because areas sit on the
-    /// compiler's fixed stride and a pool's footprint is the solver's answer.
+    /// **Nothing states one**: the campaign has no site plan.
     Unstated,
 }
 
 impl Extent {
     /// Ask the campaign, once.
-    ///
-    /// The site plan wins where both could apply, for [`Placement::of`]'s
-    /// reason: a campaign carrying both is `DW0839`, and this describes the
-    /// authority the rest of the compiler actually uses.
     #[must_use]
     pub fn of(c: &Campaign) -> Self {
         if c.site_plan.is_some() {
             Self::Region
-        } else if c.world.content.areas.len() == 1 && c.world.content.areas[0].prefab.is_some() {
-            Self::OnePiece
         } else {
             Self::Unstated
         }
@@ -237,40 +78,18 @@ impl Extent {
     /// refuses on.
     #[must_use]
     pub fn is_stated(self) -> bool {
-        !matches!(self, Self::Unstated)
+        matches!(self, Self::Region)
     }
 }
 
 /// **Whether this campaign's anchor vocabulary can be known at all** — asked
 /// before any rule refuses a name for not being in it.
 ///
-/// A [`Placement::SitePlan`] campaign's anchor names are DERIVED: a `node-` per
-/// place, a `seam-` per barred way, an `unlock-` on the openable side of a
-/// one-sided one, `spawn` for the entry, and every `stations[]` name its nodes
-/// declare — all of them read off `layout-graph.json`. With that document absent
-/// the derived set is not EMPTY, it is **unknown**, and `DW0824` is the finding:
-/// the plan embeds a graph, and there is no graph to embed.
-///
-/// Refusing an anchor reference in that state is this module's own defect,
-/// committed against itself. [`Placement::anchor_remedy`]'s `SitePlan` sentence
-/// tells the author to write one of the derived names or to declare a station on
-/// the node it belongs to; with no graph there are no places, no ways and no
-/// nodes, so **neither half of the remedy can be taken** — the pair rule this
-/// module opens with, applied to the prescription it hands out. Measured on the
-/// gallery's site-plan point with `layout-graph.json` removed: `DW0824` (the
-/// finding, one line) followed by thirteen refusals of names that are all
-/// correct — ten `DW0142`, two `DW0371`, one `DW0343` — each printing that
-/// unreachable sentence, ahead of the one line the author was there to act on.
-///
-/// So every anchor rule asks here first and stays silent, exactly as it stays
-/// silent for a `prefab_pool` whose draw the compiler has not made yet: the
-/// answer is not known at this tier. Nothing is lost by the silence — the run
-/// stops at `DW0824` either way, and every one of those names is re-judged, with
-/// the same rules, the moment the graph exists.
-///
-/// False for a prefab campaign at every state of its documents: its vocabulary
-/// is prefab metadata, which does not come from the map pipeline.
+/// A site plan's anchor names are DERIVED from `layout-graph.json`. With that
+/// document absent the derived set is not empty, it is **unknown**, and
+/// `DW0824` is the finding; refusing names against it would print a remedy no
+/// author can take.
 #[must_use]
 pub fn anchor_vocabulary_unknowable(c: &Campaign) -> bool {
-    matches!(Placement::of(c), Placement::SitePlan) && c.layout_graph.is_none()
+    c.site_plan.is_some() && c.layout_graph.is_none()
 }

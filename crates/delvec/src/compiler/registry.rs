@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use delvewright_dsl::{
-    AnchorRegistry, Diagnostic, EntityRegistry, ItemRegistry, Lighting, PoolId, PrefabId,
+    AnchorRegistry, Diagnostic, EntityRegistry, ItemRegistry, Lighting, PrefabId,
 };
 use delvewright_dsl::{DwCode, ExitTier};
 use serde::Deserialize;
@@ -327,40 +327,6 @@ pub use delvewright_dsl::prefab::{
 /// ordinary [`Region`]; assembly reads it as one.
 pub use delvewright_dsl::prefab::{ContractFace as ContractFaceMeta, Region as FaceOpening};
 
-/// One member of a prefab pool: a prefab id, a weight, and a layout role. Roles
-/// (`entry`, `connector`, `room`, `terminal`) steer the solver — `entry` seeds
-/// the layout, `connector` fills the spine, `room`/`terminal` carry anchors and
-/// are placed only when a campaign-referenced anchor requires them.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PoolMember {
-    /// The member prefab id (`prefab/<name>`).
-    pub prefab: String,
-    /// Selection weight (higher = more likely). Defaults to 1.
-    #[serde(default = "one")]
-    pub weight: u32,
-    /// Layout role: `entry` | `connector` | `room` | `terminal`.
-    pub role: String,
-}
-
-fn one() -> u32 {
-    1
-}
-
-/// The on-disk `prefabs/pools.json` shape: pool id → members.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PoolsFile {
-    pools: BTreeMap<String, PoolDef>,
-}
-
-/// One pool definition (its member list).
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PoolDef {
-    members: Vec<PoolMember>,
-}
-
 /// The suffix that marks a gate report beside a piece: `<id>.report.json`.
 /// Written by `delvec grammar expand` and `delvec detail`; never prefab metadata.
 pub const REPORT_SUFFIX: &str = ".report.json";
@@ -369,9 +335,10 @@ pub const REPORT_SUFFIX: &str = ".report.json";
 /// walker of a library directory reads (the registry, `delvec viewer`'s page
 /// builder, `delvec render batch`).
 ///
-/// A document is a `*.json` that is neither the pool declaration
-/// ([`delvewright_dsl::prefab::POOLS_FILE`]) nor a gate report (`<id>`
-/// [`REPORT_SUFFIX`]). Both are told apart by NAME. The grammar's expander and
+/// A document is a `*.json` that is neither the retired pool declaration
+/// ([`delvewright_dsl::prefab::POOLS_FILE`], which a content library may still
+/// carry and nothing reads — assembly is designed, never drawn, ADR-0035) nor a
+/// gate report (`<id>` [`REPORT_SUFFIX`]). Both are told apart by NAME. The grammar's expander and
 /// `delvec detail` write `<id>.report.json` beside the piece they froze (the
 /// gates it passed, the measurements it was taken at); a walker that reads one
 /// as metadata refuses a library the compiler builds. The suffix is the full
@@ -390,11 +357,6 @@ pub fn is_prefab_document(path: &Path) -> bool {
 pub struct PrefabRegistry {
     by_id: BTreeMap<String, PrefabMeta>,
     anchor_names: BTreeMap<String, BTreeSet<String>>,
-    /// Declared prefab-pool ids (the keys of `pools.json`). A `prefab_pool` ref
-    /// to a pool absent here is reported unknown (`DW0161`).
-    pools: BTreeSet<String>,
-    /// Pool id → its member pieces (weights + roles), consumed by the solver.
-    pool_members: BTreeMap<String, Vec<PoolMember>>,
     /// Per-file load failures (`DW0346`) collected by [`Self::load_dir`] —
     /// surfaced by the CLI at validation tier, never silently dropped.
     load_diagnostics: Vec<Diagnostic>,
@@ -406,9 +368,7 @@ pub struct PrefabRegistry {
 }
 
 impl PrefabRegistry {
-    /// Load every `*.json` prefab metadata file in `dir`. An optional
-    /// `pools.json` (`{ "pools": { "pool/<name>": { "members": [...] } } }`)
-    /// declares prefab pools and their member pieces. Returns the loaded
+    /// Load every `*.json` prefab metadata file in `dir`. Returns the loaded
     /// registry; errors only on an unreadable directory.
     ///
     /// A file that fails to read or parse is **not** silently skipped: it
@@ -421,18 +381,14 @@ impl PrefabRegistry {
     pub fn load_dir(dir: &Path) -> std::io::Result<Self> {
         let mut by_id: BTreeMap<String, PrefabMeta> = BTreeMap::new();
         let mut anchor_names: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        let mut pools: BTreeSet<String> = BTreeSet::new();
-        let mut pool_members: BTreeMap<String, Vec<PoolMember>> = BTreeMap::new();
         let mut load_diagnostics: Vec<Diagnostic> = Vec::new();
         // Sort entries for deterministic load order (and diagnostic order).
         let mut paths: Vec<PathBuf> = Vec::new();
         for entry in std::fs::read_dir(dir)? {
             let path = entry?.path();
-            // Every prefab document, and the pool declaration read below by
-            // name; a gate report is neither (`is_prefab_document`).
-            let pools_file = path.file_name().and_then(|n| n.to_str())
-                == Some(delvewright_dsl::prefab::POOLS_FILE);
-            if !(is_prefab_document(&path) || pools_file) {
+            // Every prefab document; a gate report is not one
+            // (`is_prefab_document`).
+            if !is_prefab_document(&path) {
                 continue;
             }
             paths.push(path);
@@ -467,18 +423,6 @@ impl PrefabRegistry {
                     continue;
                 }
             };
-            if file == delvewright_dsl::prefab::POOLS_FILE {
-                match serde_json::from_str::<PoolsFile>(&raw) {
-                    Ok(pf) => {
-                        for (id, def) in pf.pools {
-                            pools.insert(id.clone());
-                            pool_members.insert(id, def.members);
-                        }
-                    }
-                    Err(e) => fail(format!("does not parse as a pools file: {e}")),
-                }
-                continue;
-            }
             // Both packagings — one template, or a tile set past the vanilla
             // 48-per-axis cap — are the same document and are read by the one
             // reader that defines it (`PrefabMeta::from_json`, which also
@@ -534,8 +478,6 @@ impl PrefabRegistry {
         Ok(Self {
             by_id,
             anchor_names,
-            pools,
-            pool_members,
             load_diagnostics,
             rigs,
         })
@@ -591,17 +533,6 @@ impl PrefabRegistry {
         self.by_id.iter()
     }
 
-    /// **Every pool this library declares**, in id order — the population a
-    /// library-wide verdict states its denominator over.
-    pub fn pool_ids(&self) -> Vec<String> {
-        self.pool_members.keys().cloned().collect()
-    }
-
-    /// The member pieces of a prefab pool (`pool/<name>`), if declared.
-    pub fn pool(&self, pool_id: &str) -> Option<&[PoolMember]> {
-        self.pool_members.get(pool_id).map(|v| v.as_slice())
-    }
-
     /// **What one piece says about a gate anchor**, asked of the ONE authority
     /// ([`PrefabMeta::gate_anchor`]) so that this crate never reads
     /// `region`/`block` off an anchor itself.
@@ -620,8 +551,8 @@ impl PrefabRegistry {
         }
     }
 
-    /// The prefab ids `area` can place: its bare `prefab`, or every member of
-    /// its `prefab_pool`.
+    /// The prefab ids this campaign places: the piece of every `details[]`
+    /// row of its detail plan.
     ///
     /// **The denominator every campaign-scoped question about pieces owes.** The
     /// gate-anchor check used to scan `by_id` — the whole library, every `*.json`
@@ -632,18 +563,17 @@ impl PrefabRegistry {
     /// old doc comment stated — *whichever member the solver places can be
     /// sealed* — was right, and the code asked it of a larger world than the
     /// solver draws from.
-    pub fn area_pieces(&self, area: &delvewright_dsl::Area) -> Vec<String> {
-        if let Some(prefab) = &area.prefab {
-            return vec![prefab.as_str().to_string()];
-        }
-        match area
-            .prefab_pool
+    pub fn campaign_pieces(&self, c: &delvewright_dsl::Campaign) -> Vec<String> {
+        c.detail_plan
             .as_ref()
-            .and_then(|p| self.pool(p.as_str()))
-        {
-            Some(members) => members.iter().map(|m| m.prefab.clone()).collect(),
-            None => Vec::new(),
-        }
+            .map(|d| {
+                d.content
+                    .details
+                    .iter()
+                    .map(|row| row.piece.as_str().to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// The trigger block declared by the `anchor/trap` marker `anchor_name`, if any
@@ -669,31 +599,11 @@ impl PrefabRegistry {
             .get(prefab_id)
             .is_some_and(|meta| meta.anchors.contains_key(anchor_name))
     }
-
-    /// The prefab ids in `pool_id` that declare `anchor_name` in their metadata.
-    pub fn pool_prefabs_with_anchor(&self, pool_id: &str, anchor_name: &str) -> Vec<String> {
-        let Some(members) = self.pool_members.get(pool_id) else {
-            return Vec::new();
-        };
-        members
-            .iter()
-            .filter(|m| {
-                self.by_id
-                    .get(&m.prefab)
-                    .is_some_and(|meta| meta.anchors.contains_key(anchor_name))
-            })
-            .map(|m| m.prefab.clone())
-            .collect()
-    }
 }
 
 impl AnchorRegistry for PrefabRegistry {
     fn anchors_for(&self, prefab: &PrefabId) -> Option<&BTreeSet<String>> {
         self.anchor_names.get(prefab.as_str())
-    }
-
-    fn has_pool(&self, pool: &PoolId) -> bool {
-        self.pools.contains(pool.as_str())
     }
 
     /// This registry IS the library — every `*.json` in the prefabs dir the run

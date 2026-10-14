@@ -215,27 +215,15 @@ pub(super) fn check_wave_spawns(plan: &Plan) -> Result<(), BuildFailure> {
         if let Some(wave) = e.spawn_wave() {
             let id = wave.as_str();
             if seen.insert(id) && wave_spawn_pos(plan, id).is_none() {
-                let multi_area = delvewright_dsl::Placement::of(plan.campaign)
-                    == delvewright_dsl::Placement::Prefabs
-                    && plan.campaign.world.content.areas.len() > 1;
-                let fired_globally = plan::wave_area(plan.campaign, id).is_none()
-                    && fired_only_by_global_roots(plan.campaign, id);
-                let remedy = if multi_area && fired_globally {
-                    "This wave is fired only from a global root (a trigger, a trap payload, an \
-                     actor's kill) in a campaign of several areas, and a global root carries no \
-                     area, so the compiler cannot say which area's assembly must provide the \
-                     anchor. Fire it from a quest booked in the wave's area (its \
-                     `on_objective_complete` or `on_complete`), or make the campaign \
-                     single-area."
-                } else {
-                    "Ensure a quest in the wave's area fires the `spawn-wave`, or that the wave \
-                     `anchor` exists in that area's prefab pool."
-                };
+                let remedy = format!(
+                    "Name a wave `anchor` the site plan places — {}",
+                    delvewright_dsl::anchor_remedy(plan.campaign)
+                );
                 return Err(BuildFailure::Diagnostic {
                     code: DW_WAVE_SPAWN_UNRESOLVED,
                     message: format!(
                         "`spawn-wave` references wave `{id}`, but its spawn anchor is \
-                         not placed in any assembled area — the emitted \
+                         not placed on the map — the emitted \
                          `spawn_{safe}` call would dangle and the wave never spawn. {remedy}",
                         safe = plan::safe_local(id),
                     ),

@@ -266,9 +266,7 @@ pub(crate) fn actor_checks(
                 format!(
                     "actor anchor `{}` is not provided by any area's prefab — {}",
                     a.anchor,
-                    providers.anchor_remedy(
-                        "use an anchor a prefab exposes, or bind a prefab/pool that carries it"
-                    ),
+                    providers.anchor_remedy(),
                 ),
             ));
         }
@@ -333,7 +331,7 @@ pub(crate) fn actor_checks(
                         "move-actor destination anchor `{}` is not provided by any \
                          area's prefab — {}",
                         to.anchor,
-                        providers.anchor_remedy("use an anchor a prefab exposes"),
+                        providers.anchor_remedy(),
                     ),
                 ));
             }

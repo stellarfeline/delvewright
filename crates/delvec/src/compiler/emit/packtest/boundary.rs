@@ -9,27 +9,21 @@ use super::*;
 /// puts the effect on a player in the world. Emits nothing for a campaign that
 /// declares no mitigation.
 pub(super) fn emit_night_vision_packtest(plan: &Plan, out: &mut BuildOutput) {
-    let Some(area) = plan.areas.iter().find(|a| {
-        plan.campaign
-            .world
-            .content
-            .areas
-            .iter()
-            .find(|d| d.id.as_str() == a.area_id)
-            .is_some_and(crate::compiler::light::area_night_vision)
-    }) else {
+    let frames = crate::compiler::emit::boundary::mitigated_frames(plan);
+    let Some((frame, _)) = frames.first() else {
         return;
     };
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
-    let (min, max) = area.bounds();
+    let narrow = |v: [i64; 3]| v.map(|x| i32::try_from(x).unwrap_or(i32::MAX));
+    let (min, max) = (narrow(frame.lo), narrow(frame.hi));
     let mid = [
         (min[0] + max[0]) / 2,
         (min[1] + max[1]) / 2,
         (min[2] + max[2]) / 2,
     ];
     let mut b = packtest_header(&format!(
-        "{title}: the declared night-vision mitigation really reaches a player in the area"
+        "{title}: the declared night-vision mitigation really reaches a player in the place"
     ));
     b.push("effect clear @s minecraft:night_vision".to_string());
     // Inside the declared bounds: one tick of the real clock must grant the effect.

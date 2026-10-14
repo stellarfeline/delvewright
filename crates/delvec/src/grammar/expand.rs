@@ -1083,7 +1083,7 @@ fn turn_box(lo: [i32; 3], hi: [i32; 3], size: [i32; 3], turns: u32) -> ([i32; 3]
 /// `rotation`, the connection sides, rail shapes): the one table
 /// [`crate::compiler::assembled::rotate_state`] holds.
 fn turn_state(b: &BlockState, turns: u32) -> BlockState {
-    use crate::compiler::solver::Rotation;
+    use crate::compiler::rotation::Rotation;
     let r = match turns % 4 {
         0 => return b.clone(),
         1 => Rotation::Cw90,

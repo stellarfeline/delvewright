@@ -173,7 +173,7 @@ pub fn feet_distance(a: [f64; 3], b: [f64; 3]) -> f64 {
 /// all read: the NPC's declared area and anchor (`BodyScope::Declared`), plus
 /// its offset, facing the anchor's own facing.
 pub fn npc_home(plan: &Plan, npc: &delvewright_dsl::Npc) -> ([i32; 3], i32) {
-    let area = npc.area.as_str();
+    let area = delvewright_dsl::SITE_AREA;
     let station = plan::body_station(
         &plan.anchors,
         plan::BodyScope::Declared { area },

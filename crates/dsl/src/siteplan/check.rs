@@ -193,7 +193,6 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
 
     // Plan-internal wellformedness first: the ids every rule below quotes.
     ids(plan, d);
-    one_authority(c, d);
 
     // ------------------------------------------------------------- the tooth
     // A site plan validates ONLY against a layout graph and a geometry brief.
@@ -245,35 +244,6 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
     volumes_outside_boxes(plan, &placed, d);
     identities(c, plan, &placed, d);
     lighting(plan, d);
-}
-
-/// `DW0839`: a campaign has ONE placement authority.
-///
-/// `areas[]` places pieces on the fixed stride; the site plan places the whole
-/// map in its own region. A world carrying both has two owners for one question
-/// and no rule to pick between them, so the answer is not to arbitrate but to
-/// refuse. Both surfaces stay legal at 0.14.0 — one per campaign.
-fn one_authority(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    let n = c.world.content.areas.len();
-    if n == 0 {
-        return;
-    }
-    d.push(Diagnostic::error(
-        DW_TWO_AUTHORITIES,
-        "world",
-        "/content/areas",
-        format!(
-            "this campaign declares {n} `areas[]` entry(ies) AND a site plan. Those are two \
-             placement authorities for one world: `areas[]` seats prefab pieces on the compiler's \
-             fixed stride, and the site plan seats the derived blockout inside its own declared \
-             `region` — so every question about where something is has two answers and nothing \
-             says which. Keep one. A campaign that places pieces keeps `areas[]` and drops \
-             `site-plan.json`; a campaign whose map is the site plan declares an empty `areas` \
-             list and lets the plan own the space. Both surfaces are legal — what is not legal \
-             is one \
-             campaign holding both."
-        ),
-    ));
 }
 
 /// `DW0818`'s **byte-side half** of the opener obligation, which round 3 could

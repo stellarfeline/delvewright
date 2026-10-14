@@ -440,10 +440,7 @@ pub(crate) fn shop_anchor_checks(
             format!(
                 "shop anchor `{}` is not provided by any prefab bound in this campaign — {}",
                 sh.anchor,
-                providers.anchor_remedy(
-                    "use an anchor the prefab exposes (anchor names come from prefab metadata; do \
-                     NOT invent one)"
-                ),
+                providers.anchor_remedy(),
             ),
         ));
     }

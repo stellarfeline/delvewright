@@ -260,10 +260,7 @@ pub(crate) fn lethal_volume_checks(
                     "lethal-volume anchor `{}` is not provided by any prefab bound in this \
                      campaign — {}",
                     v.region.anchor,
-                    providers.anchor_remedy(
-                        "use an anchor the prefab exposes (anchor names come from prefab \
-                         metadata; do NOT invent one)"
-                    ),
+                    providers.anchor_remedy(),
                 ),
             ));
         }

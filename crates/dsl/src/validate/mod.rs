@@ -46,7 +46,6 @@ pub fn validate_campaign_with(
     crate::assembly::assembly_id_syntax(c, &mut d);
     crate::dialogue::dialogue_id_syntax(c, &mut d);
     // Id uniqueness (`DW0111`), each namespace in turn.
-    crate::world::world_id_uniqueness(c, &mut d);
     crate::npc::npc_id_uniqueness(c, &mut d);
     crate::class::class_id_uniqueness(c, &mut d);
     crate::quest_plan::plan_id_uniqueness(c, &mut d);
@@ -66,7 +65,6 @@ pub fn validate_campaign_with(
     crate::trigger::press_obligation_checks(c, &mut d);
     crate::world::horizon_param_checks(c, &mut d);
     crate::world::world_checks(c, &mut d);
-    crate::world::lighting_range_checks(c, &mut d);
     // spec-0031: the runtime-state surface. Every loop inside is empty for a
     // campaign that declares no datum and no comparison.
     crate::state::state_checks(c, &mut d);
@@ -96,7 +94,6 @@ pub fn validate_campaign_with(
     // spec-0097: which overlay layers a skinned body hides. Empty for a campaign
     // that hides none.
     crate::npc::skin_layer_checks(c, &mut d);
-    crate::world::prefab_binding(c, anchors, &mut d);
     // Anchors and items: an NPC's station, a quest's objective and effect
     // anchors (resolved against its planned area), a trigger's effect anchors
     // (against every area: a trigger is global), and the class kits. A site-plan
@@ -290,8 +287,6 @@ pub fn validate_campaign_with(
 ///   cutscene camera that legitimately flies between areas) need this rather than
 ///   leniency.
 pub(crate) struct AnchorProviders {
-    /// area id → the anchor names that area provides.
-    per_area: BTreeMap<String, BTreeSet<String>>,
     /// **What SHAPE each derived name is**, for a site-plan campaign
     /// (spec-0052 §4) — taken from
     /// [`crate::siteplan::synthesized_anchor_kinds`], the same authority the
@@ -315,22 +310,23 @@ pub(crate) struct AnchorProviders {
     deferred: bool,
     /// Every area contributed a set — the union is the whole truth.
     all_areas_known: bool,
-    /// What this campaign hands its space to. It decides which names an author
-    /// may write, and therefore what a refusal is allowed to prescribe.
-    placement: crate::placement::Placement,
+    /// What a refusal prescribes: the names the site plan's derivation places,
+    /// or the documents that would give the campaign a map.
+    remedy: &'static str,
 }
 
 impl AnchorProviders {
     /// Ask the campaign, once.
-    pub(crate) fn build(c: &Campaign, anchors: &dyn AnchorRegistry) -> Self {
-        let mut per_area: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    pub(crate) fn build(c: &Campaign, _anchors: &dyn AnchorRegistry) -> Self {
+        let mut union: BTreeSet<String> = BTreeSet::new();
+        let mut known_sets = 0;
         let mut deferred = false;
         // A site-plan campaign has no prefab to ask, and it does not need one:
         // its anchors are DERIVED from the graph and the plan, so the set is
         // knowable here exactly as a prefab's is — and it is the same function
         // the derivation itself places them by, so a name that resolves here
         // cannot fail to exist in the built world.
-        let mut declared_areas = c.world.content.areas.len();
+        let mut declared_areas = 0;
         let mut kinds: BTreeMap<String, crate::layout::StationKind> = BTreeMap::new();
         if c.site_plan.is_some() {
             declared_areas += 1;
@@ -344,30 +340,17 @@ impl AnchorProviders {
                 deferred = true;
             } else {
                 kinds = crate::siteplan::synthesized_anchor_kinds(c);
-                per_area.insert(
-                    crate::siteplan::SITE_AREA.to_string(),
-                    kinds.keys().cloned().collect(),
-                );
+                union = kinds.keys().cloned().collect();
+                known_sets += 1;
             }
         }
-        for a in &c.world.content.areas {
-            if let Some(prefab) = &a.prefab {
-                if let Some(set) = anchors.anchors_for(prefab) {
-                    per_area.insert(a.id.as_str().to_string(), set.clone());
-                }
-            } else if a.prefab_pool.is_some() {
-                deferred = true;
-            }
-        }
-        let union: BTreeSet<String> = per_area.values().flatten().cloned().collect();
-        let all_areas_known = declared_areas == per_area.len();
+        let all_areas_known = declared_areas == known_sets;
         Self {
-            per_area,
             kinds,
             union,
             deferred,
             all_areas_known,
-            placement: crate::placement::Placement::of(c),
+            remedy: crate::placement::anchor_remedy(c),
         }
     }
 
@@ -390,10 +373,10 @@ impl AnchorProviders {
         (declared != demands).then_some(declared)
     }
 
-    /// The anchor set `area` provides, or `None` when that area's provider is not
-    /// known here (a pool the compiler resolves later, or an unknown prefab).
-    pub(crate) fn for_area(&self, area: &str) -> Option<&BTreeSet<String>> {
-        self.per_area.get(area)
+    /// The whole anchor vocabulary this campaign's map places, when it is
+    /// knowable here; `None` while it is not (a site plan with no graph yet).
+    pub(crate) fn known(&self) -> Option<&BTreeSet<String>> {
+        (!self.deferred && self.all_areas_known).then_some(&self.union)
     }
 
     /// Whether `name` may be referenced. Lenient by design: a pool area defers the
@@ -420,8 +403,8 @@ impl AnchorProviders {
     /// prefab metadata for an author to go and read, so a refusal sending them
     /// to read some was prescribing an act the campaign cannot perform. See
     /// [`crate::placement`].
-    pub(crate) fn anchor_remedy<'a>(&self, prefab: &'a str) -> &'a str {
-        self.placement.anchor_remedy(prefab)
+    pub(crate) fn anchor_remedy(&self) -> &'static str {
+        self.remedy
     }
 }
 

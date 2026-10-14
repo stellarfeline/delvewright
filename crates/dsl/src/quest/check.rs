@@ -577,10 +577,7 @@ fn anchor_resolves(
             format!(
                 "objective `{field}` anchor `{anchor}` is not provided by the prefab bound to \
                  this quest's area — {remedy}",
-                remedy = providers.anchor_remedy(
-                    "use an anchor the prefab exposes (anchor names come from prefab metadata; \
-                     do NOT invent one)"
-                ),
+                remedy = providers.anchor_remedy(),
             ),
         ));
     }
@@ -741,21 +738,11 @@ pub(crate) fn quest_anchor_checks(
     providers: &AnchorProviders,
     d: &mut Vec<Diagnostic>,
 ) {
-    // planned quest id -> its area.
-    let quest_area: BTreeMap<&str, &str> = c
-        .quest_plan
-        .content
-        .quests
-        .iter()
-        .map(|q| (q.id.as_str(), q.area.as_str()))
-        .collect();
-
-    // Objective / effect anchors, resolved against the quest's planned area.
+    // Objective / effect anchors, resolved against the names the map places.
     for (i, q) in c.quests.content.quests.iter().enumerate() {
-        let set = quest_area
-            .get(q.id.as_str())
-            .and_then(|area| providers.for_area(area));
-        let Some(set) = set else { continue };
+        let Some(set) = providers.known() else {
+            continue;
+        };
 
         for (j, obj) in q.objectives.iter().enumerate() {
             if let crate::Objective::ReachAnchor { anchor, .. } = obj
@@ -779,10 +766,7 @@ pub(crate) fn quest_anchor_checks(
                     format!(
                         "objective anchor `{anchor}` is not provided by the prefab bound to \
                          this quest's area — {}",
-                        providers.anchor_remedy(
-                            "use an anchor the prefab exposes (anchor names come from prefab \
-                             metadata; do NOT invent one)"
-                        ),
+                        providers.anchor_remedy(),
                     ),
                 ));
             }
@@ -834,10 +818,7 @@ pub(crate) fn quest_anchor_checks(
                     format!("/content/quests/{i}/{path}/{suffix}"),
                     format!(
                         "`{verb}` anchor `{anchor}` is not provided by {scope} — {}",
-                        providers.anchor_remedy(
-                            "use an anchor a prefab exposes (anchor names come from prefab \
-                             metadata; do NOT invent one)"
-                        ),
+                        providers.anchor_remedy(),
                         verb = eff.verb.tag(),
                     ),
                 ));
@@ -874,19 +855,9 @@ pub(crate) fn quest_reference_checks(
 
     // area id -> its single-prefab anchor set (pool areas deferred to compiler).
     let providers = AnchorProviders::build(c, anchors);
-    let quest_area: BTreeMap<&str, &str> = c
-        .quest_plan
-        .content
-        .quests
-        .iter()
-        .map(|q| (q.id.as_str(), q.area.as_str()))
-        .collect();
-
     // Reference checks.
     for (i, q) in quests.quests.iter().enumerate() {
-        let set = quest_area
-            .get(q.id.as_str())
-            .and_then(|area| providers.for_area(area));
+        let set = providers.known();
 
         for (j, obj) in q.objectives.iter().enumerate() {
             match obj {

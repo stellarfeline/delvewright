@@ -144,10 +144,7 @@ pub(crate) fn shortcut_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mu
                     format!(
                         "shortcut `{field}` anchor `{anchor}` is not provided by any area's \
                          prefab — {}",
-                        providers.anchor_remedy(
-                            "use an anchor a prefab exposes (anchor names come from prefab \
-                             metadata; do NOT invent one)"
-                        ),
+                        providers.anchor_remedy(),
                     ),
                 ));
             }

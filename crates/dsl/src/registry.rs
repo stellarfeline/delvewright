@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{PoolId, PrefabId};
+use crate::ids::PrefabId;
 
 /// Membership test for vanilla item ids (`minecraft:iron_sword`, …).
 pub trait ItemRegistry {
@@ -282,11 +282,6 @@ pub trait AnchorRegistry {
     /// The DSL anchor ids (`anchor/exit`, …) the prefab provides, or `None` if
     /// the prefab is unknown to this registry (defer to the compiler).
     fn anchors_for(&self, prefab: &PrefabId) -> Option<&BTreeSet<String>>;
-
-    /// True if a prefab pool with this id exists in the metadata surface.
-    fn has_pool(&self, _pool: &PoolId) -> bool {
-        false
-    }
 
     /// Whether a prefab with this id exists in the metadata surface, when this
     /// registry is in a position to answer: `Some(true)`/`Some(false)` from a
@@ -683,7 +678,6 @@ impl EffectRegistry for VendoredEffectRegistry {
 #[derive(Debug, Clone)]
 pub struct VendoredAnchorRegistry {
     by_prefab: BTreeMap<String, BTreeSet<String>>,
-    pools: BTreeSet<String>,
 }
 
 impl VendoredAnchorRegistry {
@@ -693,10 +687,7 @@ impl VendoredAnchorRegistry {
         let raw = include_str!("../data/anchors.json");
         let by_prefab: BTreeMap<String, BTreeSet<String>> =
             serde_json::from_str(raw).expect("embedded anchor metadata is valid JSON");
-        let pools_raw = include_str!("../data/pools.json");
-        let pools: BTreeSet<String> =
-            serde_json::from_str(pools_raw).expect("embedded pool metadata is valid JSON");
-        Self { by_prefab, pools }
+        Self { by_prefab }
     }
 }
 
@@ -705,11 +696,7 @@ impl AnchorRegistry for VendoredAnchorRegistry {
         self.by_prefab.get(prefab.as_str())
     }
 
-    fn has_pool(&self, pool: &PoolId) -> bool {
-        self.pools.contains(pool.as_str())
-    }
-
-    /// Closed, exactly as [`Self::has_pool`] already is: the embedded metadata
+    /// Closed: the embedded metadata
     /// is the whole library this registry stands for, so a piece it does not
     /// hold does not exist as far as anything validating against it is
     /// concerned. Answering `None` here would leave the crate's own validation

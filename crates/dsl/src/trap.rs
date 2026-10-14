@@ -396,15 +396,7 @@ pub(crate) fn trap_checks(
                 format!(
                     "trap `at` anchor `{}` is not provided by any area's prefab — {}",
                     t.at,
-                    providers.anchor_remedy(
-                        "bind the trap to a point anchor some area's prefab exposes, whatever \
-                         that anchor is called (names come from prefab metadata; do NOT invent \
-                         one). A `payload` trap needs nothing of the piece but that one cell and \
-                         the trigger block standing in it (`DW0917`) — the compiler emits the \
-                         detection; only a legacy `dispense` effect \
-                         needs the anchor's `dispenser` socket, and only a flag-gated trap \
-                         needs its `trigger_block`"
-                    ),
+                    providers.anchor_remedy(),
                 ),
             ));
         }
@@ -428,9 +420,7 @@ pub(crate) fn trap_checks(
                         "trap `disarm.via` anchor `{}` is not provided by any area's prefab — \
                          {}",
                         dis.via,
-                        providers.anchor_remedy(
-                            "use an anchor some area's prefab exposes for the disarm affordance"
-                        ),
+                        providers.anchor_remedy(),
                     ),
                 ));
             }

@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{AreaId, BranchId, BranchPointId, EndingId, FlagId, NpcId, QuestId};
+use crate::{BranchId, BranchPointId, EndingId, FlagId, NpcId, QuestId};
 
 #[cfg(doc)]
 use crate::QuestEffect;
@@ -252,8 +252,6 @@ pub struct PlannedQuest {
     pub id: QuestId,
     /// Human-readable goal.
     pub goal: String,
-    /// Area this quest takes place in (stage-1 ref).
-    pub area: AreaId,
     /// NPCs involved (stage-2 refs).
     pub npcs: Vec<NpcId>,
     /// Prerequisite quests; edges must form a DAG.
@@ -928,11 +926,10 @@ pub(crate) fn plan_id_uniqueness(c: &Campaign, d: &mut Vec<Diagnostic>) {
     );
 }
 
-/// `DW0112` over what a planned quest names: its area, its NPCs, and the
+/// `DW0112` over what a planned quest names: its NPCs, and the
 /// quests it `depends_on`.
 pub(crate) fn plan_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
     use crate::ids::dangling;
-    let area_ids = crate::world::declared_area_ids(c);
     let npc_ids: BTreeSet<&str> = c.npcs.content.npcs.iter().map(|n| n.id.as_str()).collect();
     let planned_ids: BTreeSet<&str> = c
         .quest_plan
@@ -942,17 +939,6 @@ pub(crate) fn plan_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
         .map(|q| q.id.as_str())
         .collect();
     for (i, q) in c.quest_plan.content.quests.iter().enumerate() {
-        dangling(
-            d,
-            area_ids.contains(q.area.as_str()),
-            "quest-plan",
-            format!("/content/quests/{i}/area"),
-            format!(
-                "quest references unknown area `{}` — {}",
-                q.area,
-                crate::placement::Placement::of(c).area_remedy(),
-            ),
-        );
         for (k, npc) in q.npcs.iter().enumerate() {
             dangling(
                 d,

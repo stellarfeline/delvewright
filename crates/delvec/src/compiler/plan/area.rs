@@ -3,8 +3,6 @@
 
 use super::*;
 
-/// World-space distance between successive area origins.
-pub const AREA_SPACING: i32 = 256;
 /// The Y of every area origin under `horizon: void` (structures carry their own
 /// floor at local y=0). Also the fallback Y for an unresolvable position.
 pub const BASE_Y: i32 = 64;
@@ -50,74 +48,6 @@ pub fn ocean_layer_at(y: i32) -> Option<&'static str> {
         floor += height;
     }
     None
-}
-/// **The origin Y of one area** (spec-0060 §3.2).
-///
-/// A base whose datum is stated for the ORIGIN — `void` and `valley`, both
-/// [`BASE_Y`] — answers the same number for every area, and this function never
-/// looks at the pieces. A base whose datum is stated for the WALK PLANE —
-/// `ocean` — derives the origin from the piece set the area seats:
-/// `walk_ref_y - walk_y`, so the piece stands its own walk plane exactly one
-/// block above the sea whatever its internal convention is.
-///
-/// # Why the derivation is per AREA and not per world
-///
-/// The retired global ocean constant was one tileset's convention promoted to a
-/// world constant: correct for pieces whose walk plane is at local y=3 and
-/// wrong for every other piece in every other library, which is why they all
-/// landed with their box bottoms under the sea and met a refusal whose second
-/// remedy could not be performed. A datum stated once for the whole world can
-/// only be right for one convention, and a general engine has no convention to
-/// appeal to.
-///
-/// # Why it refuses rather than defaulting
-///
-/// There is no fallback for a piece set that states no walk plane, because
-/// every fallback IS the retired constant. The refusal is `DW0886`, and it has
-/// normally already been raised at validation — this is the build-tier backstop
-/// for a campaign that reached a build anyway.
-///
-/// # The rule is not written here
-///
-/// It was, and this function was the site of the defect that fact caused.
-/// `delvec prefab seating` computes its verdict from exactly these documents and
-/// never asked this question, so the shipped island and cave pools passed the
-/// command that exists to answer *can this library stand on this base* and were
-/// then refused by the build — a pairing failure inside the mechanism built to
-/// end pairing failures. [`crate::compiler::seating::set_walk_plane`] is the one
-/// implementation; this is one of its three callers, and the other two run
-/// before anything is placed.
-pub fn area_base_y(
-    campaign: &Campaign,
-    area: &delvewright_dsl::Area,
-    prefabs: &PrefabRegistry,
-) -> Result<i32, PlanError> {
-    use crate::compiler::seating::SetPlane;
-
-    let base = crate::compiler::horizon::base_of(campaign);
-    let Some(walk_ref) = crate::compiler::horizon::walk_ref_y(base) else {
-        return Ok(BASE_Y);
-    };
-    // A member with no metadata at all is `DW0300`'s finding, raised where the
-    // piece is bound; it is not this rule's to restate, so it is not offered.
-    let declared: Vec<(String, Option<i32>)> =
-        crate::compiler::seating::area_members(area, prefabs)
-            .into_iter()
-            .filter_map(|id| prefabs.get(&id).map(|m| (id, m.walk_y)))
-            .collect();
-    match crate::compiler::seating::set_walk_plane(base, area.id.as_str(), &declared) {
-        SetPlane::Agreed(w) => Ok(walk_ref - w),
-        SetPlane::NotDerived => Ok(BASE_Y),
-        SetPlane::Refused(reasons) => Err(PlanError::new(
-            reasons[0].code,
-            format!(
-                "area `{area}` cannot be seated on a `{base}` horizon: {full}",
-                area = area.id.as_str(),
-                base = base.token(),
-                full = reasons[0].full,
-            ),
-        )),
-    }
 }
 
 /// A placed area: one or more pieces plus their socket seals.

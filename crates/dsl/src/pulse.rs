@@ -218,10 +218,7 @@ pub(crate) fn pulse_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut V
                         "pulse `{}` names anchor `{anchor}` ({what}), which no prefab bound in \
                          this campaign provides — {}",
                         p.id,
-                        providers.anchor_remedy(
-                            "use an anchor the prefab exposes (anchor names come from prefab \
-                             metadata; do NOT invent one)"
-                        ),
+                        providers.anchor_remedy(),
                     ),
                 ));
             }

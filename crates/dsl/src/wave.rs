@@ -860,10 +860,7 @@ pub(crate) fn lane_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Ve
                     format!("/content/waves/{i}/lane/waypoints/{k}"),
                     format!(
                         "lane waypoint anchor `{wp}` is not provided by any area's prefab — {}",
-                        providers.anchor_remedy(
-                            "use an anchor a prefab exposes (anchor names come from prefab \
-                             metadata; do NOT invent one)"
-                        ),
+                        providers.anchor_remedy(),
                     ),
                 ));
             }

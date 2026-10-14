@@ -256,7 +256,7 @@ fn scene<'a>(plan: &Plan<'a>, quest: &'a delvewright_dsl::Quest) -> Vec<Target<'
                 continue; // `offstage` / `dead`: no body to click.
             };
             let Some(cell) = plan
-                .point(npc.area.as_str(), mark.anchor.as_str())
+                .point(delvewright_dsl::SITE_AREA, mark.anchor.as_str())
                 .or_else(|| plan.point_any(mark.anchor.as_str()))
                 .map(|p| mark.cell(p))
             else {

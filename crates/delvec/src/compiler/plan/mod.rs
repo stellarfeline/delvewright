@@ -51,8 +51,7 @@ use crate::compiler::reach::{ReachCompletion, reach_completion};
 /// the term is declared in the prefab-metadata document type.
 pub use crate::compiler::registry::AnchorRole;
 use crate::compiler::registry::{AnchorMeta, PrefabRegistry};
-use crate::compiler::solver::{self, Facing, Rotation, SealFill, Splitmix64};
-use delvewright_dsl::prefab::{GateAnchor, PrefabMeta};
+use crate::compiler::rotation::{self, Rotation, SealFill};
 use delvewright_dsl::{DwCode, ExitTier};
 
 mod actor;
@@ -269,10 +268,6 @@ pub struct Plan<'a> {
     /// rebuilt with the route proof's link decisions ([`Plan::relinked`]) is
     /// the same plan with those steps added and nothing else changed.
     pub perturb: Perturb,
-    /// Per-batch affected world AABBs from the stage-7 L2 massing verbs
-    /// (spec-0017), keyed by batch id — the editor's per-batch snapshot
-    /// framing for massing batches. Empty for a campaign without massing.
-    pub massing_bounds: BTreeMap<String, ([i32; 3], [i32; 3])>,
     /// For each `critical_path` **arrival** step, the set of steps of its **strict
     /// DAG ancestors** — objectives guaranteed to complete before it in *every* valid
     /// play order (transitive `after` within its quest ∪ every objective of a
@@ -427,45 +422,6 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
-    /// `DW0872`: **a crossing into an area with nowhere to arrive.** A leg of the
-    /// party's forced route changes area, and the destination declares no entry
-    /// point — so there is no cell to put the party down on and the crossing cannot
-    /// be made.
-    ///
-    /// Areas stand [`AREA_SPACING`] blocks apart across the void, so a leg that
-    /// changes area is never a walk. Before this code the crossing was simply not
-    /// emitted and nothing was said: the leg then fell through to the walkability
-    /// proof, which reported `DW0311` — *the player cannot walk from … to …, a
-    /// wedged doorway seam, a void gap, a fence ring* — a true sentence about a
-    /// route nobody was ever going to walk, and an author who does what it says
-    /// goes and widens a doorway.
-    ///
-    /// [`DW_NO_ENTRY_ANCHOR`] is the same rule over the whole world (*no area at
-    /// all declares one*); this is the same rule over the one area a body must be
-    /// put down in. The quantifiers differ and so do the remedies, which is why
-    /// they are two codes.
-    pub const DW_CROSSING_NO_ENTRY: DwCode = DwCode::new("DW0872", ExitTier::Build);
-}
-
-delvewright_dsl::dw_code! {
-    /// `DW0873`: **the party's first leg is a crossing, and nothing can carry it.**
-    /// The campaign spawn and the first critical objective stand in different
-    /// areas.
-    ///
-    /// A crossing rides on the completion of the objective the party leaves from
-    /// (see [`Plan::transport`]), and at the spawn the party has completed nothing.
-    /// So the first leg can be neither ridden nor walked, and the delve cannot be
-    /// started.
-    ///
-    /// This is the member the old leg enumeration missed. It paired *consecutive
-    /// objectives*, so the spawn — a leg's origin that is not an objective — was in
-    /// no pair: such a campaign built clean, passed every game test, and stranded
-    /// the party at the spawn with the harness reporting `No path to the goal!` and
-    /// no diagnostic code at all.
-    pub const DW_SPAWN_LEG_CROSSES: DwCode = DwCode::new("DW0873", ExitTier::Build);
-}
-
-delvewright_dsl::dw_code! {
     /// `DW0932` (spec-0083 §3.2, §3.6): a **link** whose geometry does not hold —
     /// four faults under one code, because they are one claim, *a body in this
     /// volume is carried onto a route cell*: no standable cell inside the volume
@@ -573,249 +529,7 @@ impl<'a> Plan<'a> {
         // v0.6 (spec-0011): the absolute dispenser socket cell for each `anchor/trap`
         // marker that declares one, keyed like `anchors`. Empty for a campaign with no
         // trap hardware.
-        let mut dispenser_cells: BTreeMap<(String, String), [i32; 3]> = BTreeMap::new();
-        // Per-batch affected AABBs from L2 massing (spec-0017), for the
-        // editor's per-batch snapshots. Empty without massing verbs.
-        let mut massing_bounds: BTreeMap<String, ([i32; 3], [i32; 3])> = BTreeMap::new();
-        // Socket doorways severed by `rewire-socket sealed`, per area — the
-        // DW0306 connectivity graph must not count those edges.
-        let mut severed: BTreeMap<String, BTreeSet<[i32; 3]>> = BTreeMap::new();
-        for (i, area) in campaign.world.content.areas.iter().enumerate() {
-            let area_id = area.id.as_str().to_string();
-            // Origin Y is the horizon's datum, and on a base whose datum is a
-            // walk plane it is DERIVED from this area's own piece set
-            // (spec-0060 §3.2) — so it is computed per area rather than once
-            // per world.
-            let origin = [
-                i as i32 * AREA_SPACING,
-                area_base_y(campaign, area, prefabs)?,
-                0,
-            ];
-
-            let placement = if let Some(prefab) = &area.prefab {
-                // Single-prefab area (the M1 degenerate assembly): one piece at
-                // the origin, rotation none — and every connector it declares is
-                // unmated by construction, because there is no second piece for
-                // one to mate with.
-                let prefab_id = prefab.as_str().to_string();
-                let meta = prefabs.get(&prefab_id).ok_or_else(|| {
-                    PlanError::new(
-                        DW_BUILD,
-                        format!(
-                            "area `{area_id}` binds prefab `{prefab_id}` but no matching prefab \
-                             metadata was found in the prefabs dir — bind a prefab that exists in \
-                             the prefab library, or add `{prefab_id}` (`.nbt` + metadata) to it. \
-                             This is a prefab-library/naming issue, not a quest-logic one"
-                        ),
-                    )
-                })?;
-                if crate::compiler::massing::targets_area(campaign, &area_id) {
-                    return Err(PlanError::new(
-                        crate::compiler::massing::DW_MASSING,
-                        format!(
-                            "world-edits massing verbs target area `{area_id}`, which binds a \
-                             single `prefab` — there is no jigsaw layout to mass. Massing \
-                             applies only to `prefab_pool` areas; use the L3 detailing verbs \
-                             (carve/fill/fragment/…) on a single-prefab area instead"
-                        ),
-                    ));
-                }
-                for (name, am) in &meta.anchors {
-                    anchors.declare(&area_id, name, am, || {
-                        resolve_anchor(origin, meta, name, am)
-                    })?;
-                    if let Some(dp) = am.dispenser {
-                        dispenser_cells.insert(
-                            (area_id.clone(), name.clone()),
-                            [origin[0] + dp[0], origin[1] + dp[1], origin[2] + dp[2]],
-                        );
-                    }
-                }
-                // Seal this piece's sockets through the SAME mechanism the pool
-                // path uses (`solver::seal_layout`), rather than skipping it.
-                //
-                // A connector is a hole the prefab deliberately leaves in its own
-                // wall — a 3×3 doorway plus the `minecraft:jigsaw` marker at its
-                // sill — and the solver's invariant is "every unmated socket is
-                // sealed with wall material; every mated socket's jigsaw block is
-                // cleared to air". That invariant is a property of a PLACED PIECE,
-                // not of having run the layout solver, and binding it to the
-                // solver left the one-piece case with no surface: a single-prefab
-                // area shipped the doorway wide open onto whatever the horizon
-                // says lies outside the piece, with the authoring marker still
-                // standing in it as a real block a player can stand on.
-                //
-                // Nothing caught it, because both symptoms hide behind content.
-                // `DW0322` reads the exposed doorway as a walkable cell one step
-                // from a void drop — but only once the doorway is REACHABLE, and
-                // a flooded cell is impassable, so any standing water between the
-                // piece's anchors and its own sill deletes the finding while
-                // leaving the hole. Correcting such a flood is what exposes it,
-                // which is the worst possible time to first meet it. And the
-                // stray jigsaw never surfaces in the datapack at all: `snapshot`
-                // colours it the magenta fallback precisely as an alarm, on the
-                // stated premise that "the solver strips them" — true of every
-                // piece a solver had placed, and of no other.
-                //
-                // Byte impact is confined to what was broken: a prefab with no
-                // connectors yields no seals, so every campaign and fixture that
-                // binds one is byte-identical.
-                let (bbox_min, bbox_max) = Rotation::None.bbox(origin, meta.size());
-                let seals = solver::seal_layout(
-                    prefabs,
-                    &[solver::PlacedPiece {
-                        prefab_id: prefab_id.clone(),
-                        pos: origin,
-                        rotation: Rotation::None,
-                        bbox_min,
-                        bbox_max,
-                        mated: vec![false; meta.connectors.len()],
-                    }],
-                );
-                AreaPlacement {
-                    area_id: area_id.clone(),
-                    pieces: vec![PiecePlacement {
-                        prefab_id,
-                        templates: placed_templates(meta, origin, Rotation::None),
-                        pos: origin,
-                        size: meta.size(),
-                        rotation: Rotation::None,
-                        // A lone piece mates with nothing: every socket it has is
-                        // sealed, which is what `seals` above was just built from.
-                        mated: vec![false; meta.connectors.len()],
-                    }],
-                    seals,
-                    mass: Vec::new(),
-                }
-            } else if let Some(pool) = &area.prefab_pool {
-                // Pool area (ADR-0004 jigsaw assembly): the solver grows a layout
-                // from the campaign seed and we transform each piece's anchors to
-                // world space. `pieces` bounds are guaranteed present by validation
-                // (a pool binds `pieces`); default defensively.
-                let pool_id = pool.as_str().to_string();
-                let (pmin, pmax) = area.pieces.map(|p| (p.min, p.max)).unwrap_or((1, 1));
-                let required = required_anchors_for_area(campaign, &area_id);
-                let mut stream = Splitmix64::new(solver::stream_seed(seed, &area_id));
-                let mut layout = solver::solve_area(
-                    prefabs,
-                    &pool_id,
-                    &required,
-                    pmin,
-                    pmax,
-                    origin,
-                    &mut stream,
-                )
-                .map_err(|e| {
-                    // A solver failure raised after growth (`DW0305`) carries the
-                    // draw that produced it: attach the pool-level `DW0498` so the
-                    // author reads the cause at the declaration, not just the
-                    // symptom at the use site.
-                    let mut w = warnings.clone();
-                    w.extend(crate::compiler::pool::check(
-                        prefabs,
-                        &crate::compiler::pool::PoolArea {
-                            area_id: &area_id,
-                            area_index: i,
-                            pool_id: &pool_id,
-                            pieces_min: pmin,
-                            pieces_max: pmax,
-                        },
-                        e.placed.iter().map(String::as_str),
-                    ));
-                    PlanError::new(e.failure.code, e.failure.message).with_warnings(w)
-                })?;
-                // Stage-7 L2 massing (spec-0017): apply the edit script's
-                // massing batches for this area over the solved layout, so
-                // everything downstream — anchor resolution just below, the
-                // gate/waterline checks, assembly, relight, nav, the L3
-                // detailing replay — sees the massaged layout. No-op (layout
-                // and seals byte-identical) for a campaign without massing
-                // verbs targeting this area.
-                let massing_out =
-                    crate::compiler::massing::apply(campaign, &area_id, &mut layout, prefabs, seed)
-                        .map_err(|e| PlanError::new(e.code, e.message))?;
-                massing_bounds.extend(massing_out.bounds);
-                if !massing_out.severed.is_empty() {
-                    severed.insert(area_id.clone(), massing_out.severed);
-                }
-
-                // `DW0498`: the draw is settled — read it back and say
-                // so ONCE, here at the declaration, if it seats the same
-                // anchor-bearing prefab more than once. Every anchor that prefab
-                // declares now has more than one carrier; the `or_insert_with`
-                // resolution just below silently keeps the first, and the solver's
-                // `DW0305` will fail the build at whichever campaign-referenced
-                // anchor happens to be the first use site. Advisory: a repeat with
-                // no such use is legal, and shipping campaigns rely on it. Read
-                // AFTER massing so the reported draw is the one the player gets.
-                warnings.extend(crate::compiler::pool::check(
-                    prefabs,
-                    &crate::compiler::pool::PoolArea {
-                        area_id: &area_id,
-                        area_index: i,
-                        pool_id: &pool_id,
-                        pieces_min: pmin,
-                        pieces_max: pmax,
-                    },
-                    layout.pieces.iter().map(|p| p.prefab_id.as_str()),
-                ));
-
-                let mut pieces = Vec::new();
-                for placed in &layout.pieces {
-                    let meta = prefabs.get(&placed.prefab_id).ok_or_else(|| {
-                        PlanError::new(
-                            DW_BUILD,
-                            format!(
-                                "internal invariant violation: the solver placed prefab `{}`, \
-                                 which has no metadata entry — the solver and metadata registry \
-                                 disagree. This is a compiler bug, not a campaign error; stop and \
-                                 escalate",
-                                placed.prefab_id
-                            ),
-                        )
-                    })?;
-                    // Transform this piece's anchors to world space. Each required
-                    // anchor is carried by exactly one placed piece (fillers are
-                    // anchorless connectors), so names do not collide.
-                    for (name, am) in &meta.anchors {
-                        anchors.declare(&area_id, name, am, || {
-                            resolve_piece_anchor(placed, meta, name, am)
-                        })?;
-                        if let Some(dp) = am.dispenser {
-                            dispenser_cells
-                                .entry((area_id.clone(), name.clone()))
-                                .or_insert_with(|| solver::transform_point(placed, dp));
-                        }
-                    }
-                    pieces.push(PiecePlacement {
-                        prefab_id: placed.prefab_id.clone(),
-                        templates: placed_templates(meta, placed.pos, placed.rotation),
-                        pos: placed.pos,
-                        size: meta.size(),
-                        rotation: placed.rotation,
-                        mated: placed.mated.clone(),
-                    });
-                }
-                AreaPlacement {
-                    area_id: area_id.clone(),
-                    pieces,
-                    seals: layout.seals,
-                    mass: Vec::new(),
-                }
-            } else {
-                // Validation (DW0160) guarantees exactly one binding.
-                return Err(PlanError::new(
-                    DW_BUILD,
-                    format!(
-                        "internal invariant violation: area `{area_id}` binds neither `prefab` \
-                         nor `prefab_pool` at build time — `DW0160` should have rejected this \
-                         during validation. This is a compiler bug; stop and escalate"
-                    ),
-                ));
-            };
-            areas.push(placement);
-        }
-
+        let dispenser_cells: BTreeMap<(String, String), [i32; 3]> = BTreeMap::new();
         // ---- the derived blockout (spec-0049 §5) ----
         //
         // **This is the ordering tooth, and it is here because here is the only
@@ -895,7 +609,6 @@ impl<'a> Plan<'a> {
                 anchors.entry_anchor_name(&area.area_id).as_deref(),
                 &area.pieces,
                 prefabs,
-                severed.get(&area.area_id),
             )?;
         }
 
@@ -1252,7 +965,6 @@ impl<'a> Plan<'a> {
             ways,
             way_gate,
             strict_ancestor_steps,
-            massing_bounds,
             blockout,
             surround,
             design_files: crate::compiler::design::DesignFiles::default(),

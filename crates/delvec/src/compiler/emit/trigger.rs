@@ -232,10 +232,7 @@ pub(super) fn check_trigger_bodies(
                 t.id,
                 t.on.kind(),
                 at,
-                delvewright_dsl::Placement::of(plan.campaign).anchor_remedy(
-                    "anchor it on a place a prefab provides (anchor names come from prefab \
-                     metadata; do NOT invent one)"
-                ),
+                delvewright_dsl::anchor_remedy(plan.campaign),
             ),
         });
     }

@@ -92,38 +92,11 @@ impl<'a> IntoIterator for &'a AnchorTable {
 }
 
 impl AnchorTable {
-    /// Resolve one anchor a placed piece declared, and record any role it
-    /// declared with it.
-    ///
-    /// First-wins on the position, matching the pool path's own
-    /// `or_insert_with`: a pool that seats the same anchor-bearing prefab twice
-    /// keeps the first carrier (and raises `DW0498` about it). The role index
-    /// follows the same rule for the same name, and refuses a **different**
-    /// name claiming a role this area has already given away.
-    pub(super) fn declare(
-        &mut self,
-        area: &str,
-        name: &str,
-        meta: &AnchorMeta,
-        resolve: impl FnOnce() -> ResolvedAnchor,
-    ) -> Result<(), PlanError> {
-        self.at
-            .entry((area.to_string(), name.to_string()))
-            .or_insert_with(resolve);
-        if let Some(role) = meta.role {
-            self.record_role(area, name, role)?;
-        }
-        Ok(())
-    }
-
     /// Seat one anchor the **derivation** produced — a site plan's synthesized
     /// vocabulary (`crate::compiler::blockout`) and the pieces a detail plan stands in it
     /// (`crate::compiler::detail`).
     ///
-    /// **Last-wins, and that is the difference from [`AnchorTable::declare`].**
-    /// A prefab-placed area resolves first-wins because a pool can seat the same
-    /// anchor-bearing piece twice and the first carrier is the one `DW0498`
-    /// reports. A derived area is the other way round on purpose: the derivation
+    /// **Last-wins**, on purpose: the derivation
     /// names `anchor/node-…` at the massing's own footing, and a detail piece
     /// standing there is then the truth about where that place is, so it
     /// overwrites. Collapsing the two rules into one would silently move a
@@ -478,8 +451,8 @@ pub(super) fn collect_required_elements(
         }
     }
     let mut out = Vec::new();
-    for area in &campaign.world.content.areas {
-        let area_id = area.id.as_str();
+    if campaign.site_plan.is_some() {
+        let area_id = delvewright_dsl::SITE_AREA;
         for name in required_anchors_for_area(campaign, area_id) {
             let Some(resolved) = anchors.get(&(area_id.to_string(), name.clone())) else {
                 continue;
@@ -520,7 +493,7 @@ pub(super) fn collect_required_elements(
 pub(crate) fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> Vec<String> {
     let mut set: BTreeSet<String> = BTreeSet::new();
     for npc in &campaign.npcs.content.npcs {
-        if npc.area.as_str() == area_id {
+        if delvewright_dsl::SITE_AREA == area_id {
             set.insert(npc.anchor.as_str().to_string());
         }
     }
@@ -530,7 +503,7 @@ pub(crate) fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> V
         .content
         .quests
         .iter()
-        .map(|q| (q.id.as_str(), q.area.as_str()))
+        .map(|q| (q.id.as_str(), delvewright_dsl::SITE_AREA))
         .collect();
     for q in &campaign.quests.content.quests {
         if quest_area.get(q.id.as_str()).copied() != Some(area_id) {
@@ -585,12 +558,9 @@ pub(crate) fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> V
             }
         }
     }
-    // Environment triggers (v0.4) are global. When the campaign has a single area,
-    // their `at` and effect anchors must be provided by that area's assembly. For
-    // a multi-area campaign, a trigger anchor is expected to coincide with an
-    // objective anchor (already required above); over-provisioning every area is
-    // avoided so the solver is not asked for an anchor an area's pool cannot fit.
-    if campaign.world.content.areas.len() == 1 {
+    // Environment triggers (v0.4) are global: their `at` and effect anchors must
+    // be provided by the one map the site plan lays out.
+    if campaign.site_plan.is_some() {
         for t in &campaign.quests.content.triggers {
             if let Some(at) = t.at_anchor() {
                 set.insert(at.to_string());
@@ -629,79 +599,6 @@ fn collect_effect_anchors(e: &QuestEffect, set: &mut BTreeSet<String>) {
             if let Some(t) = &shot.look_at {
                 set.insert(t.anchor.as_str().to_string());
             }
-        }
-    }
-}
-
-/// Resolve a placed-piece anchor to absolute world coords (transforming through
-/// the piece's pos + rotation).
-pub(super) fn resolve_piece_anchor(
-    placed: &solver::PlacedPiece,
-    meta: &PrefabMeta,
-    name: &str,
-    am: &AnchorMeta,
-) -> ResolvedAnchor {
-    if let Some(gate) = local_gate(meta, name, am) {
-        ResolvedAnchor::Gate {
-            from: solver::transform_point(placed, gate.from),
-            to: solver::transform_point(placed, gate.to),
-            block: gate.block,
-        }
-    } else {
-        ResolvedAnchor::Point {
-            pos: solver::transform_point(placed, anchor_point(am)),
-            facing: solver::transform_facing(placed, am.facing.as_deref()),
-        }
-    }
-}
-
-/// The piece-local gate box an anchor names, asked of the ONE authority
-/// ([`PrefabMeta::gate_anchor`]) rather than read off `region`/`block` here.
-///
-/// Both resolvers go through this and through nothing else, so the piece-local
-/// answer is computed once and the two differ only in how they carry it into
-/// world space — which is the entire difference between a placed piece and a
-/// single-prefab area, and the only difference there should ever have been.
-///
-/// A gate the authority REFUSES keeps the reading it has always had. The refusal
-/// is a validation finding (`DW0343`) that names the anchor and says why, and a
-/// campaign carrying one does not build; making the planner re-read it as a point
-/// as well would move the emission of a campaign that is being refused anyway,
-/// for no reader's benefit.
-fn local_gate(meta: &PrefabMeta, name: &str, am: &AnchorMeta) -> Option<GateAnchor> {
-    match meta.gate_anchor(name) {
-        Ok(gate) => gate,
-        // Furniture is never refused as a gate (the authority answers `None`), so
-        // this arm cannot reach one; the guard says so where a region is read.
-        Err(_) if am.role == Some(AnchorRole::Furniture) => None,
-        Err(_) => am.region.as_ref().map(|r| GateAnchor {
-            from: r.from,
-            to: r.to,
-            block: am
-                .block
-                .clone()
-                .unwrap_or_else(|| "minecraft:air".to_string()),
-        }),
-    }
-}
-
-pub(super) fn resolve_anchor(
-    origin: [i32; 3],
-    meta: &PrefabMeta,
-    name: &str,
-    am: &AnchorMeta,
-) -> ResolvedAnchor {
-    let add = |p: [i32; 3]| [origin[0] + p[0], origin[1] + p[1], origin[2] + p[2]];
-    if let Some(gate) = local_gate(meta, name, am) {
-        ResolvedAnchor::Gate {
-            from: add(gate.from),
-            to: add(gate.to),
-            block: gate.block,
-        }
-    } else {
-        ResolvedAnchor::Point {
-            pos: add(anchor_point(am)),
-            facing: am.facing.clone(),
         }
     }
 }

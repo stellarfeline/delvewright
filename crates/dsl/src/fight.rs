@@ -171,7 +171,7 @@ pub fn quest_area<'a>(c: &'a Campaign, quest_id: &str) -> Option<&'a str> {
         .quests
         .iter()
         .find(|q| q.id.as_str() == quest_id)
-        .map(|q| q.area.as_str())
+        .and_then(|_| c.site_plan.as_ref().map(|_| crate::siteplan::SITE_AREA))
 }
 
 /// Does any effect in `effs`, or anywhere in the trees nested under them, fire a
@@ -260,18 +260,13 @@ fn wave_area_seen<'a>(
             return quest_area(campaign, q.id.as_str());
         }
     }
-    // Which campaigns are single-area is the placement authority's to say
-    // (spec-0093 §6.1): a site plan has exactly one area, `SITE_AREA`, and an
-    // empty `areas[]`; a prefab campaign is single-area when it declares one.
-    let (single_area, sole_area): (bool, Option<&str>) =
-        match crate::placement::Placement::of(campaign) {
-            crate::placement::Placement::SitePlan => (true, Some(crate::siteplan::SITE_AREA)),
-            crate::placement::Placement::Prefabs => (
-                campaign.world.content.areas.len() == 1,
-                campaign.world.content.areas.first().map(|a| a.id.as_str()),
-            ),
-            crate::placement::Placement::NoMap => (false, None),
-        };
+    // A campaign's one area is its site plan's (ADR-0035): with a plan, the sole
+    // area is `SITE_AREA`; with none, there is no area for a wave to spawn in.
+    let (single_area, sole_area): (bool, Option<&str>) = if campaign.site_plan.is_some() {
+        (true, Some(crate::siteplan::SITE_AREA))
+    } else {
+        (false, None)
+    };
     let sole_area = || sole_area;
     // 2. An environment trigger or trap payload that fires it. Both are global
     //    effect roots carrying no area of their own; in a single-area campaign the

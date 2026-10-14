@@ -62,7 +62,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::compiler::assembled::{base_id, state_value};
 use crate::compiler::failure::Failure;
 use crate::compiler::plan::Plan;
-use crate::compiler::solver::Facing;
+use crate::compiler::rotation::Facing;
 use delvewright_dsl::{DwCode, ExitTier};
 
 /// A stair whose `facing` contradicts the climb a proven route makes across it.

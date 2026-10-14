@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::serde_fields::{is_false, is_zero3};
-use crate::{AnchorId, AreaId, BodyTraversal, BodyWatch, NpcId};
+use crate::{AnchorId, BodyTraversal, BodyWatch, NpcId};
 
 #[cfg(doc)]
 use crate::{EncounterTier, Mark, Verb};
@@ -30,8 +30,6 @@ pub struct Npc {
     pub name: String,
     /// NPC role.
     pub role: Role,
-    /// The area this NPC stands in (stage-1 ref).
-    pub area: AreaId,
     /// The prefab anchor this NPC stands on.
     pub anchor: AnchorId,
     /// Integer `[x, y, z]` block offset from `anchor` (spec-0066, default
@@ -566,7 +564,7 @@ pub(crate) fn skin_layer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
 }
 
-/// An NPC's station resolves in its area and is a `point` (`DW0142`, `DW0871`),
+/// An NPC's station resolves on the map and is a `point` (`DW0142`, `DW0871`),
 /// answered by the one anchor authority, [`crate::validate::AnchorProviders`].
 pub(crate) fn npc_anchor_checks(
     c: &Campaign,
@@ -584,25 +582,17 @@ pub(crate) fn npc_anchor_checks(
             format!("/content/npcs/{i}/anchor"),
         ) {
             d.push(f);
-        } else if let Some(set) = providers.for_area(npc.area.as_str())
+        } else if let Some(set) = providers.known()
             && !set.contains(npc.anchor.as_str())
         {
-            // The one prefab remedy in this file that names the anchor back, so
-            // it is built before the call rather than passed as a literal.
-            let prefab_remedy = format!(
-                "use an anchor the prefab exposes, or bind a prefab/pool that carries `{}`. \
-                 Anchor names come from prefab metadata; do NOT invent one",
-                npc.anchor
-            );
             d.push(Diagnostic::error(
                 codes::ANCHOR_UNRESOLVED,
                 "npcs",
                 format!("/content/npcs/{i}/anchor"),
                 format!(
-                    "npc anchor `{}` is not provided by the prefab bound to area `{}` — {}",
+                    "npc anchor `{}` is not a name this campaign's map places — {}",
                     npc.anchor,
-                    npc.area,
-                    providers.anchor_remedy(&prefab_remedy),
+                    providers.anchor_remedy(),
                 ),
             ));
         }
@@ -631,24 +621,12 @@ pub(crate) fn npc_id_uniqueness(c: &Campaign, d: &mut Vec<Diagnostic>) {
     );
 }
 
-/// `DW0112` over what an NPC names: its area, and the NPC each persona
+/// `DW0112` over what an NPC names: the NPC each persona
 /// relationship is with (a same-stage reference, validated within stage 2).
 pub(crate) fn npc_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
     use crate::ids::dangling;
-    let area_ids = crate::world::declared_area_ids(c);
     let npc_ids: BTreeSet<&str> = c.npcs.content.npcs.iter().map(|n| n.id.as_str()).collect();
     for (i, npc) in c.npcs.content.npcs.iter().enumerate() {
-        dangling(
-            d,
-            area_ids.contains(npc.area.as_str()),
-            "npcs",
-            format!("/content/npcs/{i}/area"),
-            format!(
-                "npc references unknown area `{}` — {}",
-                npc.area,
-                crate::placement::Placement::of(c).area_remedy(),
-            ),
-        );
         // Persona relationships are same-stage NPC refs (validated within stage 2).
         for (k, rel) in npc.persona.relationships.iter().enumerate() {
             dangling(

@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{Actor, AreaId, ClassId, Mark, Npc, NpcSkin};
+use crate::{Actor, ClassId, Mark, Npc, NpcSkin};
 
 #[cfg(doc)]
 use crate::WaveMob;
@@ -260,13 +260,14 @@ impl<'a> BodyRef<'a> {
     /// The area whose anchor table resolves [`Self::mark`]'s anchor first, when this
     /// class declares one.
     ///
-    /// A stage-2 npc names its area and is resolved inside it; a stage-5 actor
-    /// names none and is resolved across every placed piece, exactly as an
-    /// `open-gate` / `move-actor` destination is. Stated here so the resolution
-    /// rule is one rule over both classes and not a per-call-site habit.
-    pub fn area(self) -> Option<&'a AreaId> {
+    /// A stage-2 npc stands on the site (the one area a site plan lays out); a
+    /// stage-5 actor names none and is resolved across every placed piece,
+    /// exactly as an `open-gate` / `move-actor` destination is. Stated here so
+    /// the resolution rule is one rule over both classes and not a per-call-site
+    /// habit.
+    pub fn area(self) -> Option<&'static str> {
         match self {
-            BodyRef::Npc(n) => Some(&n.area),
+            BodyRef::Npc(_) => Some(crate::siteplan::SITE_AREA),
             BodyRef::Actor(_) => None,
         }
     }

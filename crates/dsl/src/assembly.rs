@@ -428,9 +428,7 @@ pub(crate) fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mu
                     "assembly `{}` stands at anchor `{}`, which no area's prefab provides — {}",
                     a.id,
                     a.at.anchor,
-                    providers.anchor_remedy(
-                        "use an anchor a prefab exposes, or bind a prefab/pool that carries it"
-                    ),
+                    providers.anchor_remedy(),
                 ),
             ));
         }
@@ -450,9 +448,7 @@ pub(crate) fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mu
                          on anchor `{}`, which no area's prefab provides — {}",
                         a.id,
                         lock.within.anchor,
-                        providers.anchor_remedy(
-                            "use an anchor a prefab exposes, or bind a prefab/pool that carries it"
-                        ),
+                        providers.anchor_remedy(),
                     ),
                 ));
             }
@@ -469,9 +465,7 @@ pub(crate) fn assembly_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mu
                      prefab provides — {}",
                     a.id,
                     s.while_in.anchor,
-                    providers.anchor_remedy(
-                        "use an anchor a prefab exposes, or bind a prefab/pool that carries it"
-                    ),
+                    providers.anchor_remedy(),
                 ),
             ));
         }

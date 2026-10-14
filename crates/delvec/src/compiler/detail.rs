@@ -48,7 +48,7 @@ use delvewright_dsl::{Campaign, Diagnostic, DwCode, ExitTier, NodeId};
 
 use crate::compiler::plan::PiecePlacement;
 use crate::compiler::registry::PrefabRegistry;
-use crate::compiler::solver::Rotation;
+use crate::compiler::rotation::Rotation;
 
 /// The stage name every diagnostic here carries — the document being judged.
 const STAGE: &str = "detail-plan";

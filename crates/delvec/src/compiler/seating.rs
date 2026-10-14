@@ -1196,31 +1196,6 @@ impl SeatingBinding {
     }
 }
 
-/// **The area's own piece set**: every prefab it could seat, in a deterministic
-/// order.
-///
-/// One place, because the origin derivation, the seating verdict and the
-/// seating tool must all mean the same set — an area that draws from a pool
-/// cannot know which member the solver will pick, so the whole pool is the
-/// answer to "what could stand here".
-pub fn area_members(area: &delvewright_dsl::Area, prefabs: &PrefabRegistry) -> Vec<String> {
-    if let Some(p) = &area.prefab {
-        return vec![p.as_str().to_string()];
-    }
-    let Some(pool) = &area.prefab_pool else {
-        return Vec::new();
-    };
-    prefabs
-        .pool(pool.as_str())
-        .map(|members| {
-            let mut ids: Vec<String> = members.iter().map(|m| m.prefab.clone()).collect();
-            ids.sort();
-            ids.dedup();
-            ids
-        })
-        .unwrap_or_default()
-}
-
 /// **The campaign-tier refusal** — `DW0886` and `DW0887` over the pieces this
 /// campaign actually seats, before anything is placed.
 ///
@@ -1239,105 +1214,17 @@ pub fn area_members(area: &delvewright_dsl::Area, prefabs: &PrefabRegistry) -> V
 /// nothing can say a body stands on.
 pub fn check(
     campaign: &Campaign,
-    prefabs: &PrefabRegistry,
-    prefabs_dir: &Path,
+    _prefabs: &PrefabRegistry,
+    _prefabs_dir: &Path,
 ) -> (SeatingBinding, Vec<Diagnostic>) {
     let base = crate::compiler::horizon::base_of(campaign);
     let mut binding = SeatingBinding {
         base: base.token().to_string(),
-        areas: campaign.world.content.areas.len(),
         ..SeatingBinding::default()
     };
     let mut diags = Vec::new();
-    let mut read: BTreeMap<String, Option<PieceFacts>> = BTreeMap::new();
 
-    for area in &campaign.world.content.areas {
-        let members = area_members(area, prefabs);
-        if members.is_empty() {
-            continue;
-        }
-        binding.areas_examined += 1;
-        for id in &members {
-            binding.members += 1;
-            let facts = read.entry(id.clone()).or_insert_with(|| {
-                let meta = prefabs.get(id)?;
-                PieceFacts::read(meta, prefabs_dir).ok()
-            });
-            // A piece with no metadata is `DW0300`'s finding and a piece whose
-            // bytes will not open is `DW0346`'s; both are already reported, and
-            // restating them here would be a second authority for one fact.
-            let Some(f) = facts.as_ref() else { continue };
-            binding.nbt_opened += f.nbt_opened;
-            if f.declared_waterline.is_some() {
-                binding.waterlines_declared += 1;
-            }
-            let mut reasons = seating_reasons(base, f);
-            if let Some(w) = waterline_reason(f) {
-                reasons.push(w);
-            } else if f.declared_waterline.is_some() {
-                binding.waterlines_borne_out += 1;
-            }
-            for r in reasons {
-                diags.push(Diagnostic::error(
-                    r.code,
-                    "world",
-                    format!("/content/areas/{}", area.id.as_str()),
-                    format!(
-                        "area `{area}` seats `{member}` on a `{base}` horizon, and it cannot \
-                         stand there: {full}. {tail}",
-                        area = area.id.as_str(),
-                        member = r.member,
-                        base = base.token(),
-                        full = r.full,
-                        tail = TAIL,
-                    ),
-                ));
-            }
-        }
-        // **And the question about the SET**, which no member can answer.
-        //
-        // Asked here rather than only where the origin is derived, because the
-        // derivation happens at build tier: this is the same rule, computed from
-        // the same documents, at the stage `DW0855`'s precedent puts it — before
-        // anything is placed. Until it was, `delvec prefab seating` called the
-        // shipped island and cave pools seatable and the build refused them.
-        let declared: Vec<(String, Option<i32>)> = members
-            .iter()
-            .filter_map(|id| prefabs.get(id).map(|m| (id.clone(), m.walk_y)))
-            .collect();
-        let mut set_reasons = match set_walk_plane(base, area.id.as_str(), &declared) {
-            SetPlane::Refused(reasons) => reasons,
-            _ => Vec::new(),
-        };
-        // **And whether the set's outside can stand where a party sees it**
-        // (`DW0885`'s question, asked of the same facts `delvec prefab seating`
-        // reads for the same pool).
-        let facts: Vec<&PieceFacts> = members
-            .iter()
-            .filter_map(|id| read.get(id).and_then(Option::as_ref))
-            .collect();
-        binding.members_open_outward += facts
-            .iter()
-            .filter(|f| f.opening_to_outside.is_some())
-            .count();
-        set_reasons.extend(set_exposure(base, area.id.as_str(), &facts));
-        for r in set_reasons {
-            diags.push(Diagnostic::error(
-                r.code,
-                "world",
-                format!("/content/areas/{}", area.id.as_str()),
-                format!(
-                    "area `{area}` cannot be seated on a `{base}` horizon: {full}. {tail}",
-                    area = area.id.as_str(),
-                    base = base.token(),
-                    full = r.full,
-                    tail = TAIL,
-                ),
-            ));
-        }
-    }
-
-    // **The other source of placed pieces.**
+    // **The source of placed pieces.**
     //
     // A site plan embeds boxes rather than seating library prefabs, and until
     // this ran the pairing rule had nothing to say about a campaign that placed
@@ -1375,48 +1262,8 @@ pub fn check(
         }
     }
 
-    // **And everything else these documents claim about these same bytes**
-    // (`DW0888`), reported once per PIECE rather than once per seating.
-    //
-    // A piece two areas draw from is one library asset with one set of
-    // declarations: the fiction is in the library, not in the area that happened
-    // to name it, so reporting it per area would print the same defect as many
-    // times as the campaign used the piece. The path names the piece for the
-    // same reason.
-    for facts in read.values().filter_map(Option::as_ref) {
-        binding.claims.add(&facts.claims.binding);
-        for c in &facts.claims.denied {
-            diags.push(Diagnostic::error(
-                crate::compiler::claims::DW_CLAIM_DENIED,
-                "world",
-                format!("/prefabs/{}", facts.base),
-                format!(
-                    "this campaign seats `{member}`, and its prefab document says something its \
-                     own bytes deny: {full}.",
-                    member = c.member,
-                    full = c.full,
-                ),
-            ));
-        }
-    }
     (binding, diags)
 }
-
-/// What every `DW0886` message ends with: what it takes to reach the base that
-/// buries a piece, so that this refusal and `DW0855` read as one answer rather
-/// than two.
-///
-/// It used to end *a piece authored to be buried is seated in a site-plan
-/// campaign, never in this one*, which was true when a plan's `region` was the
-/// only statement of a map's extent and is not any more.
-const TAIL: &str = "The base that builds terrain, `valley`, is reachable from here on one \
-                    condition: it rings a DECLARED extent (`DW0855`), and an `areas[]` campaign \
-                    states one when it is ONE area bound to ONE `prefab` — the map is then that \
-                    piece and the piece's own declared region is the extent, which is how a site \
-                    (a building with its island, its moat and its banks in one box) is placed. A \
-                    campaign with two areas, or with one drawing from a pool, states none, and \
-                    its other road is a site plan — which an `areas[]` campaign cannot also have \
-                    (`DW0839`)";
 
 /// What a `DW0886` about a plan's own box ends with. The tail above names the
 /// road out of an `areas[]` campaign, which a site-plan campaign has already

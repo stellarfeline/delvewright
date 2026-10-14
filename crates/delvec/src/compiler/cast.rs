@@ -1124,14 +1124,14 @@ pub fn check_shared_cast_anchor(
         .content
         .npcs
         .iter()
-        .map(|n| (n.id.as_str(), n.area.as_str()))
+        .map(|n| (n.id.as_str(), delvewright_dsl::SITE_AREA))
         .collect();
     let quest_area: BTreeMap<&str, &str> = c
         .quest_plan
         .content
         .quests
         .iter()
-        .map(|q| (q.id.as_str(), q.area.as_str()))
+        .map(|q| (q.id.as_str(), delvewright_dsl::SITE_AREA))
         .collect();
 
     for (qi, q) in c.quests.content.quests.iter().enumerate() {

@@ -132,45 +132,11 @@ pub(super) fn check_effect_anchors(plan: &Plan) -> Result<(), BuildFailure> {
                  position in the assembled world — the effect would emit nothing at \
                  all (a gate that never opens, a block never placed, a camera stuck \
                  at the world origin) — {}",
-                delvewright_dsl::Placement::of(c).anchor_remedy(
-                    "anchor names come from prefab metadata: use one the area's prefab/pool \
-                     actually exposes, and do NOT invent one"
-                ),
+                delvewright_dsl::anchor_remedy(c),
             ),
         });
     }
     Ok(())
-}
-
-/// Whether every site that fires `spawn-wave` for `wave_id` is a root with no
-/// area of its own — a trigger, a trap payload, an actor's `on_kill`, a shop
-/// offer, a shortcut's unlock, `on_death`, an assembly's landing or a loop's
-/// crossing — so that in a campaign of several areas nothing says where the wave
-/// forms up. Read for `DW0310`'s message, so the refusal names the shape.
-pub(super) fn fired_only_by_global_roots(c: &delvewright_dsl::Campaign, wave_id: &str) -> bool {
-    let mut any = false;
-    let mut all_global = true;
-    delvewright_dsl::for_each_effect_root(c, &mut |site, list| {
-        let mut fires = false;
-        for e in list {
-            e.visit_deep(&mut |x| {
-                if matches!(x.spawn_wave(), Some(w) if w.as_str() == wave_id) {
-                    fires = true;
-                }
-            });
-        }
-        if fires {
-            any = true;
-            if matches!(
-                site.owner,
-                delvewright_dsl::EffectRootOwner::ObjectiveComplete { .. }
-                    | delvewright_dsl::EffectRootOwner::QuestComplete { .. }
-            ) {
-                all_global = false;
-            }
-        }
-    });
-    any && all_global
 }
 
 /// Who an emitted effect bundle speaks to, and whether it has an acting player.

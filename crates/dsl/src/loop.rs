@@ -167,10 +167,7 @@ pub(crate) fn loop_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Ve
                         "loop `{}` names anchor `{anchor}` ({what}), which no prefab bound in \
                          this campaign provides — {}",
                         l.id,
-                        providers.anchor_remedy(
-                            "use an anchor the prefab exposes (anchor names come from prefab \
-                             metadata; do NOT invent one)"
-                        ),
+                        providers.anchor_remedy(),
                     ),
                 ));
             }

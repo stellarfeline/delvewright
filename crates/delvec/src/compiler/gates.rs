@@ -130,12 +130,13 @@ fn gate_providers(
 ) -> (BTreeMap<String, BTreeSet<String>>, Vec<String>) {
     let mut areas: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut refusals = Vec::new();
-    for area in &c.world.content.areas {
-        for piece in prefabs.area_pieces(area) {
+    if c.site_plan.is_some() {
+        let area = delvewright_dsl::SITE_AREA;
+        for piece in prefabs.campaign_pieces(c) {
             match prefabs.gate_anchor_in(&piece, anchor) {
                 Ok(Some(_)) => {
                     areas
-                        .entry(area.id.as_str().to_string())
+                        .entry(area.to_string())
                         .or_default()
                         .insert(piece.clone());
                 }
@@ -165,12 +166,16 @@ pub(crate) fn certain_anchor_providers(
     anchor: &str,
 ) -> BTreeMap<String, BTreeSet<String>> {
     let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for area in &c.world.content.areas {
-        let pieces = prefabs.area_pieces(area);
-        if pieces.is_empty() || !pieces.iter().all(|p| prefabs.declares_anchor(p, anchor)) {
-            continue;
+    if c.site_plan.is_some() {
+        let area = delvewright_dsl::SITE_AREA;
+        let pieces: Vec<String> = prefabs
+            .campaign_pieces(c)
+            .into_iter()
+            .filter(|p| prefabs.declares_anchor(p, anchor))
+            .collect();
+        if !pieces.is_empty() {
+            out.insert(area.to_string(), pieces.into_iter().collect());
         }
-        out.insert(area.id.as_str().to_string(), pieces.into_iter().collect());
     }
     out
 }
@@ -339,11 +344,7 @@ pub fn check_close_gates(c: &Campaign, prefabs: &PrefabRegistry) -> Vec<Diagnost
                  `close-gate` fills the region with the anchor's declared block (the dual of \
                  `open-gate`), and a `shortcut` clears exactly that block on unlock. \
                  Prescription: {} — or remove the verb.",
-                delvewright_dsl::Placement::of(c).anchor_remedy(
-                    "declare the gate on an anchor of a piece an area binds — either as a \
-                     `region` plus a `block`, or as a `resolves_to` of `bar:<region>` whose bar \
-                     the piece's spatial contract carries"
-                )
+                delvewright_dsl::anchor_remedy(c)
             ),
         )]
     };

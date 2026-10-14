@@ -51,7 +51,7 @@ use delvewright_dsl::blocks::BlockRegistry;
 use delvewright_dsl::{DwCode, ExitTier};
 
 use crate::compiler::edit::{hash01, value_noise};
-use crate::compiler::solver::Splitmix64;
+use crate::compiler::rotation::Splitmix64;
 
 // ---------------------------------------------------------------------------
 // Public surface

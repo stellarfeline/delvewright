@@ -63,7 +63,7 @@ impl<'a> Plan<'a> {
             .npcs
             .iter()
             .find(|n| n.id.as_str() == npc_id)
-            .map(|n| n.area.as_str())
+            .map(|_| delvewright_dsl::SITE_AREA)
     }
 }
 

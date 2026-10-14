@@ -444,7 +444,7 @@ pub(super) fn drive_presses(
             .quests
             .iter()
             .find(|q| q.id.as_str() == st.quest)
-            .map(|q| q.area.as_str())
+            .map(|_| delvewright_dsl::SITE_AREA)
             .unwrap_or("");
         let placed: Vec<(&EnvTrigger, [i32; 3])> = candidates
             .iter()

@@ -581,7 +581,7 @@ fn main() -> ExitCode {
         ),
         Command::View(cmd) => cmd.run(cli.json),
         Command::Grammar(args) => delvec::grammar::cli::run(args.clone(), &cli.prefabs),
-        Command::Prefab(args) => delvec::admit::cli::run(args.clone(), &cli.prefabs, cli.json),
+        Command::Prefab(args) => delvec::admit::cli::run(args.clone(), cli.json),
         Command::Sculpt(args) => delvec::sculpt::cli::run(args.clone()),
         Command::Schem(args) => delvec::schem::cli::run(args.clone(), cli.json),
         Command::Harvest(args) => delvec::orchestrator::cli::run(args.clone()),

@@ -63,7 +63,7 @@ pub use delvewright_dsl::blockshape::{
 /// rotation `r`, the way vanilla's `/place template … <rotation>` does.
 ///
 /// Model fidelity. [`placed_blocks`] rotates a prefab cell's
-/// *position* via [`crate::compiler::solver::Rotation::transform`] but used to insert the
+/// *position* via [`crate::compiler::rotation::Rotation::transform`] but used to insert the
 /// palette name verbatim, so for any piece with `rotation != None` the assembled
 /// map disagreed with the world the server actually builds: vanilla rotates
 /// blockstates during structure placement, the model did not. Nothing consumed
@@ -90,8 +90,8 @@ pub use delvewright_dsl::blockshape::{
 ///   relative to its own `facing`, so it is already correct once `facing` moves;
 ///   rotating it too would corrupt the corner. The value, not the block id,
 ///   decides — which is what keeps this table-free.
-pub fn rotate_state(name: &str, r: crate::compiler::solver::Rotation) -> String {
-    use crate::compiler::solver::Rotation;
+pub fn rotate_state(name: &str, r: crate::compiler::rotation::Rotation) -> String {
+    use crate::compiler::rotation::Rotation;
     if r == Rotation::None {
         return name.to_string();
     }
@@ -114,10 +114,10 @@ pub fn rotate_state(name: &str, r: crate::compiler::solver::Rotation) -> String 
         name: &str,
         k: &str,
         v: &str,
-        r: crate::compiler::solver::Rotation,
+        r: crate::compiler::rotation::Rotation,
         quarter_turns: u32,
     ) -> Option<String> {
-        use crate::compiler::solver::{Facing, Rotation};
+        use crate::compiler::rotation::{Facing, Rotation};
         let rot_dir = |s: &str| Facing::parse(s).map(|f| f.rotate(r).token());
         match k {
             "facing" => rot_dir(v).map(str::to_string),
@@ -2969,7 +2969,7 @@ mod tests {
 #[cfg(test)]
 mod rotate_state_tests {
     use super::rotate_state;
-    use crate::compiler::solver::Rotation;
+    use crate::compiler::rotation::Rotation;
 
     #[test]
     fn identity_rotation_is_untouched() {

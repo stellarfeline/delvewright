@@ -1,5 +1,5 @@
 //! Stage 1 — the world: the setting's time, weather, difficulty, horizon,
-//! boundary, areas, pieces, skies and texture overrides (spec-0001).
+//! boundary, skies and texture overrides (spec-0001).
 
 use std::collections::BTreeMap;
 
@@ -7,12 +7,13 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::serde_fields::default_true;
-use crate::{AreaId, AtmosphereId, CelestialTime, Clock, MoonPhase, PoolId, PrefabId};
+use crate::{AtmosphereId, CelestialTime, Clock, MoonPhase};
 
 #[cfg(doc)]
 use crate::Verb;
 
-/// Stage 1 payload: setting, seed and the areas that make up the delve.
+/// Stage 1 payload: setting, seed, horizon and the world's skies. The map
+/// itself is the site plan (`site-plan.json`; ADR-0035).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct WorldContent {
@@ -26,17 +27,6 @@ pub struct WorldContent {
     pub seed: u64,
     /// Informational pacing target in minutes (v0: not enforced).
     pub target_minutes: u32,
-    /// The areas the delve is made of; each binds exactly one of `prefab` /
-    /// `prefab_pool`.
-    ///
-    /// **A campaign declares its placement in exactly one document, so this
-    /// list is empty on a site-plan campaign** (`DW0839`): where a
-    /// `site-plan.json` is present the plan is the placement authority, its one
-    /// place is `area/site`, and declaring `areas[]` as well gives every
-    /// question about where something is two answers. Empty is therefore a
-    /// legitimate and common value, not a campaign that forgot to place
-    /// anything.
-    pub areas: Vec<Area>,
     /// Additional author-declared translation languages (BCP-47-style codes, e.g.
     /// `["zh-cn"]`). English (`en`) is implicit, always canonical, and is **never**
     /// listed here (spec-0001 i18n addendum). Absent or empty = English-only. Every
@@ -955,63 +945,6 @@ pub enum AreaMitigation {
     NightVision,
 }
 
-/// One area of the world, bound to a single prefab or a jigsaw prefab pool.
-///
-/// An area binds **exactly one of** `prefab` (single piece) or `prefab_pool`
-/// (+ `pieces`, jigsaw multi-piece assembly, ADR-0004). The exclusivity and
-/// pool-existence rules are enforced by validation (`DW0160` / `DW0161`); the
-/// full jigsaw layout semantics are spec-0002's.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Area {
-    /// Unique area id.
-    pub id: AreaId,
-    /// Player-facing area name.
-    pub name: String,
-    /// The single prefab bound to this area (mutually exclusive with
-    /// `prefab_pool`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prefab: Option<PrefabId>,
-    /// The jigsaw prefab pool bound to this area (mutually exclusive with
-    /// `prefab`); requires `pieces`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prefab_pool: Option<PoolId>,
-    /// Jigsaw piece-count bounds (only with `prefab_pool`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pieces: Option<Pieces>,
-    /// Optional supplemental-lighting declaration (DSL v0.5, spec-0010). When
-    /// present, the compiler's relight pass guarantees `min_light` on every
-    /// reachable walkable cell of this area by placing the declared fixture, or
-    /// fails with `DW0211`. Absent = no relight (the area is judged as-assembled,
-    /// with `DW0210` if a reachable walkable cell is dark and unmitigated).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lighting: Option<AreaLighting>,
-    /// Optional darkness-mitigation declaration (DSL v0.6). `night-vision` makes
-    /// the compiler emit a clocked `effect give` over this area's placed bounds and
-    /// is the (only) declaration that satisfies `DW0210` without `lighting`.
-    /// Independent of `lighting`: an area may declare both (fixtures *and* the
-    /// effect), either, or neither.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mitigation: Option<AreaMitigation>,
-    /// **The sky this place stands under from the first tick** (spec-0080
-    /// §3.2): one of `world.atmospheres[]`, painted at world setup over the
-    /// area's placed bounds grown up and down as far as the client's biome
-    /// blend reads. The volume is the placement's, never typed.
-    /// Absent: the horizon's biome.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub atmosphere: Option<AtmosphereId>,
-}
-
-/// Inclusive piece-count bounds for a jigsaw `prefab_pool` area.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Pieces {
-    /// Minimum number of pieces to assemble.
-    pub min: u32,
-    /// Maximum number of pieces to assemble.
-    pub max: u32,
-}
-
 // ---------------------------------------------------------------------------
 // Validation — the checks `dsl::validate` runs over this object (ADR-0031)
 // ---------------------------------------------------------------------------
@@ -1021,28 +954,6 @@ use std::collections::BTreeSet;
 use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
 use crate::ids::is_kebab;
-use crate::registry::AnchorRegistry;
-
-crate::dw_code! {
-    /// Area binds neither or both of `prefab` / `prefab_pool` (exactly one
-    /// required).
-    pub const PREFAB_BINDING: DwCode = DwCode::new("DW0160", ExitTier::Build);
-}
-
-crate::dw_code! {
-    /// Area `prefab_pool` references a pool absent from `prefabs/` metadata.
-    pub const POOL_UNKNOWN: DwCode = DwCode::new("DW0161", ExitTier::Build);
-}
-
-crate::dw_code! {
-    /// Area `prefab` names a piece absent from `prefabs/` metadata — the same
-    /// obligation [`POOL_UNKNOWN`] carries on the other arm of the binding. It
-    /// is an error rather than a deferral because an area whose piece is absent
-    /// contributes no anchor set at all, so every per-area anchor proof over it
-    /// is SKIPPED rather than failed: a misspelling here is strictly less
-    /// checked than a correct name.
-    pub const PREFAB_UNKNOWN: DwCode = DwCode::new("DW0856", ExitTier::Build);
-}
 
 crate::dw_code! {
     /// (v0.6) `horizon: "ocean"` declared without a `boundary` (spec-0013):
@@ -1070,11 +981,8 @@ crate::dw_code! {
     /// extent for that terrain to stand around (spec-0026): validation-tier
     /// (exit 1).
     ///
-    /// A surround rings a declared extent — a site plan's `region`. A campaign
-    /// that seats its pieces with `areas[]` declares none, and the union of
-    /// whatever gets placed is not a substitute: it is an artifact of the
-    /// compiler's fixed area stride, mostly the void between areas, so ringing
-    /// it builds a mountain range around empty space.
+    /// A surround rings a declared extent — a site plan's `region` — and a
+    /// campaign with no site plan states none.
     pub const SURROUND_NO_REGION: DwCode = DwCode::new("DW0855", ExitTier::Build);
 }
 
@@ -1115,23 +1023,6 @@ crate::dw_code! {
     /// pinned client jar (`delvec::compiler::textures`); the duplicate half is
     /// judged in validation, where no census is needed.
     pub const TEXTURE_PATH: DwCode = DwCode::new("DW0939", ExitTier::Build);
-}
-
-/// **How far this campaign is from being one piece**, in a clause — the half of
-/// `DW0855` that tells a creator which of the three moves is one step away.
-///
-/// It names the count it read, so a reader can see what the refusal counted
-/// rather than being told a category.
-fn one_piece_gap(c: &Campaign) -> String {
-    let areas = &c.world.content.areas;
-    match areas.len() {
-        0 => ", and no area is declared at all".to_string(),
-        1 => format!(
-            ", and its one area `{id}` draws from a pool rather than binding a single `prefab`",
-            id = areas[0].id.as_str(),
-        ),
-        n => format!(", which is {n} areas rather than one"),
-    }
 }
 
 /// The spec-0026 **horizon library**: a declared horizon's params are
@@ -1189,20 +1080,11 @@ pub(crate) fn horizon_param_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             "/content/horizon/base",
             format!(
                 "`horizon` base `{base}` builds terrain around the map, and this campaign never \
-                 says how big the map is. A surround rings a DECLARED extent, and this campaign \
-                 declares none: it places {n} area(s) with `areas[]`{how}. The union of whatever \
-                 those place is not a substitute — areas sit on the compiler's fixed stride with \
-                 void between them, and a pool's footprint is whatever the solver drew — so that \
-                 union is mostly nothing and the horizon would be a mountain range built around \
-                 empty space. There are three moves and all three are reachable from here: make \
-                 the map ONE PIECE — a single area bound to a single `prefab`, whose own declared \
-                 region is then the map's extent, which is how a site (a building with its \
-                 island, its moat and its banks in one box) is placed; or give the campaign a \
-                 site plan and declare `areas` empty, which is the same choice `DW0839` asks for; \
-                 or set `horizon` to `void` or `ocean`, which need no map to be a horizon of.",
+                 says how big the map is: it has no site plan, and a surround rings the plan's \
+                 declared `region`. Give the campaign its map (`geometry-brief.json`, then \
+                 `layout-graph.json`, then `site-plan.json`), or set `horizon` to `void` or \
+                 `ocean`, which need no map to be a horizon of.",
                 base = r.base.token(),
-                n = c.world.content.areas.len(),
-                how = one_piece_gap(c),
             ),
         ));
     }
@@ -1432,171 +1314,18 @@ pub(crate) fn world_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
 }
 
-/// Per-area `lighting` (spec-0010): `min_light` is range-checked (1..=14,
-/// `DW0196`).
-pub(crate) fn lighting_range_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    // Range-check min_light (1..=14) where a lighting block is declared.
-    for (i, area) in c.world.content.areas.iter().enumerate() {
-        if let Some(lighting) = &area.lighting
-            && !(1..=14).contains(&lighting.min_light)
-        {
-            d.push(Diagnostic::error(
-                codes::LIGHTING_RANGE,
-                "world",
-                format!("/content/areas/{i}/lighting/min_light"),
-                format!(
-                    "area `{}` `lighting.min_light` = {} is out of range — set it to a value \
-                     in 1..=14 (7 is the default)",
-                    area.id, lighting.min_light
-                ),
-            ));
-        }
-    }
-}
-
-pub(crate) fn prefab_binding(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Vec<Diagnostic>) {
-    for (i, a) in c.world.content.areas.iter().enumerate() {
-        // Exactly one of `prefab` / `prefab_pool`.
-        match (&a.prefab, &a.prefab_pool) {
-            (Some(_), Some(_)) => d.push(Diagnostic::error(
-                PREFAB_BINDING,
-                "world",
-                format!("/content/areas/{i}"),
-                format!(
-                    "area `{}` binds both `prefab` and `prefab_pool`; bind exactly one",
-                    a.id
-                ),
-            )),
-            (None, None) => d.push(Diagnostic::error(
-                PREFAB_BINDING,
-                "world",
-                format!("/content/areas/{i}"),
-                format!(
-                    "area `{}` binds neither `prefab` nor `prefab_pool`; bind exactly one",
-                    a.id
-                ),
-            )),
-            _ => {}
-        }
-        // A bound PIECE must resolve against the prefab-metadata surface, on
-        // exactly the terms the pool arm below already demands. The asymmetry
-        // this replaces was not a missing message — it was a missing message
-        // that TOOK A PROOF WITH IT. An area whose prefab the registry does not
-        // hold contributes no set to [`AnchorProviders`], and every per-area
-        // anchor check reads a missing set as *defer to the compiler* and
-        // skips. So one mistyped character in `world.json` turned seven
-        // `DW0142` refusals into silence on the gallery, and left the campaign
-        // green in a way that is strictly less checked than a correct name —
-        // the unbound vacuity mode, one keystroke away.
-        //
-        // `has_prefab` is asked rather than `anchors_for` because only the
-        // first distinguishes *the library does not hold this* from *this
-        // registry cannot say*: a subset registry answers `None` and nothing is
-        // refused on its word.
-        if let Some(prefab) = &a.prefab
-            && prefab.is_valid_syntax()
-            && anchors.has_prefab(prefab) == Some(false)
-        {
-            d.push(Diagnostic::error(
-                PREFAB_UNKNOWN,
-                "world",
-                format!("/content/areas/{i}/prefab"),
-                format!(
-                    "area `{}` binds `prefab` `{prefab}`, which is not declared in the prefab \
-                     metadata — bind a piece that exists in the prefabs dir, or add `{prefab}` \
-                     to the prefab library. This is a prefab-library/naming issue, not a \
-                     quest-logic one. It is refused rather than deferred because an area whose \
-                     piece is absent declares NO anchors, so every anchor a quest in this area \
-                     names would be accepted without being examined — a misspelling here \
-                     switches the anchor proof (`DW0142`) off for the whole area instead of \
-                     failing it",
-                    a.id
-                ),
-            ));
-        }
-        // A bound pool must resolve against the prefab-metadata surface.
-        if let Some(pool) = &a.prefab_pool
-            && pool.is_valid_syntax()
-            && !anchors.has_pool(pool)
-        {
-            d.push(Diagnostic::error(
-                POOL_UNKNOWN,
-                "world",
-                format!("/content/areas/{i}/prefab_pool"),
-                format!(
-                    "area `prefab_pool` `{pool}` is not declared in the prefab metadata — bind a \
-                     pool that exists in the prefabs dir, or add `{pool}` to the prefab library. \
-                     This is a prefab-library/naming issue, not a quest-logic one"
-                ),
-            ));
-        }
-    }
-}
-
-/// **Every area id this campaign declares** — `world.areas[]`, plus the one
-/// place a site plan lays out ([`crate::siteplan::SITE_AREA`]).
-///
-/// A site-plan campaign has no `areas[]` — `DW0839` refuses one that does —
-/// and exactly one place instead: the site the plan lays out. NPCs and
-/// planned quests name it like any other area, so it is a declared area id
-/// here for the same reason `areas[]` entries are.
-pub(crate) fn declared_area_ids(c: &Campaign) -> BTreeSet<&str> {
-    let mut area_ids: BTreeSet<&str> = c
-        .world
-        .content
-        .areas
-        .iter()
-        .map(|a| a.id.as_str())
-        .collect();
-    if c.site_plan.is_some() {
-        area_ids.insert(crate::siteplan::SITE_AREA);
-    }
-    area_ids
-}
-
-/// `DW0110` over the world's ids: each area's id and the prefab or pool it
-/// binds, and each atmosphere's id.
+/// `DW0110` over the world's ids: each atmosphere's id.
 pub(crate) fn world_id_syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    for (i, a) in c.world.content.areas.iter().enumerate() {
-        crate::ids::id_syntax!(d, a.id, "world", format!("/content/areas/{i}/id"));
-        if let Some(prefab) = &a.prefab {
-            crate::ids::id_syntax!(d, prefab, "world", format!("/content/areas/{i}/prefab"));
-        }
-        if let Some(pool) = &a.prefab_pool {
-            crate::ids::id_syntax!(d, pool, "world", format!("/content/areas/{i}/prefab_pool"));
-        }
-    }
     for (i, a) in c.world.content.atmospheres.iter().enumerate() {
         crate::ids::id_syntax!(d, a.id, "world", format!("/content/atmospheres/{i}/id"));
     }
 }
 
-/// `DW0111` over the area ids.
-pub(crate) fn world_id_uniqueness(c: &Campaign, d: &mut Vec<Diagnostic>) {
-    crate::ids::dup_check(
-        c.world
-            .content
-            .areas
-            .iter()
-            .enumerate()
-            .map(|(i, a)| (a.id.as_str(), format!("/content/areas/{i}/id"))),
-        "world",
-        "area",
-        d,
-    );
-}
-
-/// Every id a `place` reference may name (spec-0080, spec-0102): each area of
-/// `world.areas[]` and each site-plan box's `node/…`. The one set a
-/// [`crate::PlaceRef`]'s `place` resolves against.
+/// Every id a `place` reference may name (spec-0080, spec-0102): each
+/// site-plan box's `node/…`. The one set a [`crate::PlaceRef`]'s `place`
+/// resolves against.
 pub(crate) fn place_ids(c: &Campaign) -> BTreeSet<&str> {
-    let mut out: BTreeSet<&str> = c
-        .world
-        .content
-        .areas
-        .iter()
-        .map(|a| a.id.as_str())
-        .collect();
+    let mut out: BTreeSet<&str> = BTreeSet::new();
     if let Some(sp) = &c.site_plan {
         out.extend(sp.content.boxes.iter().map(|b| b.node.as_str()));
     }
@@ -1622,17 +1351,6 @@ pub(crate) fn atmosphere_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
              reference"
         )
     };
-    for (i, a) in c.world.content.areas.iter().enumerate() {
-        if let Some(id) = &a.atmosphere {
-            dangling(
-                d,
-                atmosphere_ids.contains(id.as_str()),
-                "world",
-                format!("/content/areas/{i}/atmosphere"),
-                atmosphere_remedy(id.as_str()),
-            );
-        }
-    }
     let place_ids = place_ids(c);
     if let Some(sp) = &c.site_plan {
         for (i, b) in sp.content.boxes.iter().enumerate() {
@@ -1675,8 +1393,8 @@ pub(crate) fn atmosphere_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 stage,
                 format!("{path}/place"),
                 format!(
-                    "`set-atmosphere` repaints unknown place `{place}` — name an `area/…` from \
-                     `world.areas[]` or a site-plan box's `node/…`"
+                    "`set-atmosphere` repaints unknown place `{place}` — name a site-plan \
+                     box's `node/…`"
                 ),
             );
         }

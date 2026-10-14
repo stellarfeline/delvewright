@@ -304,12 +304,8 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
     // several ways. Filled in traversal order, so the NPC identity always owns the
     // key and the puppets follow it.
     let mut entity_names: BTreeMap<String, String> = BTreeMap::new();
-    // Stage 1 — world title + area names.
+    // Stage 1 — world title.
     f("world.title", &mut c.world.content.title);
-    for area in &mut c.world.content.areas {
-        let key = format!("area.{}.name", local(area.id.as_str()));
-        f(&key, &mut area.name);
-    }
     // Stage 1 — boundary return message (v0.6, only when authored). The compiler's
     // default English is baked at emit time, so it is not inventoried; an authored
     // message is translated like every other player-facing string.

@@ -685,18 +685,7 @@ pub fn carried_places(campaign: &Campaign) -> Vec<(String, Option<String>)> {
             })
             .collect();
     }
-    campaign
-        .world
-        .content
-        .areas
-        .iter()
-        .map(|a| {
-            (
-                a.id.as_str().to_string(),
-                a.atmosphere.as_ref().map(|a| a.as_str().to_string()),
-            )
-        })
-        .collect()
+    Vec::new()
 }
 
 /// The biome map of a planned campaign (spec-0080 §4.1).
@@ -765,7 +754,7 @@ pub const BUILD_MAX_Y: i32 = 319;
 /// it reaches a chunk nothing loads, which is the same silent no-op an unloaded
 /// `place template` is.
 fn extent_columns(plan: &crate::compiler::plan::Plan) -> Vec<[i32; 4]> {
-    let stated = crate::compiler::plan::surround_rect(plan.campaign, &plan.areas)
+    let stated = crate::compiler::plan::surround_rect(plan.campaign)
         .map(|(r, _)| [r.min_x, r.min_z, r.max_x, r.max_z]);
     if plan.campaign.site_plan.is_some() {
         return stated.into_iter().collect();

@@ -63,7 +63,7 @@ pub(super) fn path_triggers(
             .quests
             .iter()
             .find(|q| q.id.as_str() == qid)
-            .map(|q| q.area.as_str())
+            .map(|_| delvewright_dsl::SITE_AREA)
             .unwrap_or("")
     };
     for t in &campaign.quests.content.triggers {
@@ -322,7 +322,7 @@ fn npc_beat_cell(
         .npcs
         .iter()
         .find(|n| n.id.as_str() == npc)?;
-    let home = decl.area.as_str();
+    let home = delvewright_dsl::SITE_AREA;
     match crate::compiler::cast::station(campaign, npc, qid, begun, flags) {
         Some(crate::compiler::cast::Station::At(anchor, offset)) => {
             body_station(anchors, BodyScope::Beat { beat: area, home }, anchor)

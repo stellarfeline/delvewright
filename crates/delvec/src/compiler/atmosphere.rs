@@ -662,11 +662,6 @@ fn paint_exclusivity(c: &Campaign, d: &mut Vec<Diagnostic>) {
 /// site-plan box, or named by a `set-atmosphere`.
 pub fn used_ids(c: &Campaign) -> BTreeSet<String> {
     let mut used: BTreeSet<String> = BTreeSet::new();
-    for a in &c.world.content.areas {
-        if let Some(id) = &a.atmosphere {
-            used.insert(id.as_str().to_string());
-        }
-    }
     if let Some(sp) = &c.site_plan {
         for b in &sp.content.boxes {
             if let Some(id) = &b.atmosphere {

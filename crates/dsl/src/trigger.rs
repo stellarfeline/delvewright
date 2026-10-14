@@ -538,10 +538,7 @@ pub(crate) fn trigger_anchor_checks(
                         format!(
                             "`{verb}` anchor `{anchor}` in an environment trigger is not \
                              provided by any area's prefab — {}",
-                            providers.anchor_remedy(
-                                "use an anchor a prefab exposes (anchor names come from prefab \
-                                 metadata; do NOT invent one)"
-                            ),
+                            providers.anchor_remedy(),
                             verb = eff.verb.tag(),
                         ),
                     ));
@@ -678,8 +675,7 @@ pub(crate) fn trigger_decl_checks(
                      body",
                     t.id,
                     t.on.kind(),
-                    providers
-                        .anchor_remedy("anchor names come from prefab metadata; do NOT invent one"),
+                    providers.anchor_remedy(),
                 ),
             )),
             (false, Some(at)) => d.push(Diagnostic::error(
@@ -705,10 +701,7 @@ pub(crate) fn trigger_decl_checks(
                 format!("/content/triggers/{i}/at"),
                 format!(
                     "trigger `at` anchor `{at}` is not provided by any area's prefab — {}",
-                    providers.anchor_remedy(
-                        "set `at` to an anchor some area's prefab exposes (anchor names come from \
-                         prefab metadata; do NOT invent one)"
-                    ),
+                    providers.anchor_remedy(),
                 ),
             )),
             _ => {}

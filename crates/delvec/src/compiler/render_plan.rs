@@ -604,13 +604,11 @@ fn find_objective<'a>(c: &'a Campaign, obj_id: &str) -> Option<&'a Objective> {
 /// The display name of an area, or empty. Reviewer artifact — English source, per
 /// [`npc_name`].
 fn area_name_of(c: &Campaign, area_id: &str) -> String {
-    c.world
-        .content
-        .areas
-        .iter()
-        .find(|a| a.id.as_str() == area_id)
-        .map(|a| delvewright_dsl::l10n::plain(&a.name).to_string())
-        .unwrap_or_default()
+    if area_id == delvewright_dsl::SITE_AREA {
+        delvewright_dsl::l10n::plain(&c.world.content.title).to_string()
+    } else {
+        String::new()
+    }
 }
 
 /// The first clause of a hint (up to the first sentence end), trimmed — keeps the
@@ -1316,22 +1314,24 @@ fn short(id: &str) -> String {
 /// - neither → `None`: **no stamp key is emitted**, keeping campaigns without
 ///   lighting declarations byte-identical.
 fn area_lighting_stamp(c: &Campaign, area_id: &str) -> Option<Value> {
-    let area = c
-        .world
-        .content
-        .areas
-        .iter()
-        .find(|a| a.id.as_str() == area_id)?;
-    let profile = if area.lighting.is_some() {
+    if area_id != delvewright_dsl::SITE_AREA {
+        return None;
+    }
+    let plan = &c.site_plan.as_ref()?.content;
+    // The site's lighting is declared once on the plan or per place (spec-0106
+    // §3.2); its mitigation per place.
+    let lit = plan.lighting.is_some() || plan.boxes.iter().any(|b| b.lighting.is_some());
+    let mitigation = plan.boxes.iter().find_map(|b| b.mitigation);
+    let profile = if lit {
         "lit"
-    } else if area.mitigation.is_some() {
+    } else if mitigation.is_some() {
         "dark"
     } else {
         return None;
     };
     let mut stamp = serde_json::Map::new();
     stamp.insert("profile".to_string(), json!(profile));
-    if let Some(m) = area.mitigation {
+    if let Some(m) = mitigation {
         // Exhaustive on purpose: a new mitigation variant must decide its
         // stamp spelling here (kept in lockstep with the DSL's kebab-case
         // serde name).
@@ -1368,7 +1368,7 @@ fn interact_anchors(c: &Campaign) -> Vec<(String, String, String, Option<String>
         .content
         .quests
         .iter()
-        .map(|q| (q.id.as_str(), q.area.as_str()))
+        .map(|q| (q.id.as_str(), delvewright_dsl::SITE_AREA))
         .collect();
     let mut out = Vec::new();
     for q in &c.quests.content.quests {

@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{AnchorId, AreaId, EditBatchId, Fixture, PrefabId, RegionId};
+use crate::{AnchorId, EditBatchId, Fixture, PrefabId, RegionId};
 
 /// Stage 7 payload (optional; DSL v0.6, spec-0017): the map-editor edit script.
 ///
@@ -30,9 +30,6 @@ pub struct EditBatch {
     /// snapshot name and seed-stream label — renaming a batch deliberately
     /// reseeds its noise.
     pub id: EditBatchId,
-    /// The stage-1 area this batch edits. Frames and regions resolve against
-    /// this area's placed pieces and anchors.
-    pub area: AreaId,
     /// Authoring context (why this batch exists). Machine-ignored; **excluded**
     /// from l10n like `theme`/`premise`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -139,23 +136,6 @@ pub enum WorldEdit {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         spacing: Option<u32>,
     },
-    /// Stamp a prefab fragment (spec-0017): copy a library prefab's
-    /// non-air cells into the world at a frame-resolved position. The fragment
-    /// is a first-class library prefab — its provenance/license metadata is
-    /// recorded and validated exactly like any placed prefab (ADR-0013);
-    /// nothing outside the library can be stamped.
-    Fragment {
-        /// The library prefab to stamp.
-        prefab: PrefabId,
-        /// The frame `at` resolves in.
-        frame: EditFrame,
-        /// Where the fragment's local `(0, 0, 0)` lands (frame coordinates).
-        at: [i32; 3],
-        /// Placement rotation (default `none`), the same quarter-turn set as
-        /// `/place template`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        rotation: Option<FragmentRotation>,
-    },
     /// Explicit region relight (spec-0017, spec-0010 machinery): run the
     /// deterministic fixture-placement pass over ONE region and bake the
     /// resulting fixtures into the edit script's writes — authorial control of
@@ -174,82 +154,6 @@ pub enum WorldEdit {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         min_light: Option<u8>,
     },
-    /// L2 massing (spec-0017): replace a placed piece with another
-    /// library prefab that re-mates every currently-mated socket at its exact
-    /// world pose (any rotation; overlap-checked). Applied at **plan** time —
-    /// the whole downstream ladder (anchors, gate reachability, assembly,
-    /// relight, nav, L3 detailing) re-runs over the massaged layout. Massing
-    /// verbs live in massing-only batches, ordered before every detailing
-    /// batch.
-    SwapPiece {
-        /// The piece's placement index in its area's solved layout (0-based,
-        /// entry first).
-        piece: u32,
-        /// The prefab the indexed piece must currently be (drift guard).
-        prefab: PrefabId,
-        /// The library prefab to swap in.
-        with: PrefabId,
-    },
-    /// L2 massing (spec-0017): attach a new piece at a specific **open**
-    /// (unmated) socket of an existing piece — the targeted form of the
-    /// solver's frontier attach. The socket opens (its seal becomes a
-    /// passage); the new piece's other sockets seal.
-    InsertPiece {
-        /// The host piece's placement index.
-        at_piece: u32,
-        /// The prefab the host piece must currently be (drift guard).
-        prefab: PrefabId,
-        /// The host's connector index (prefab metadata `connectors` order).
-        socket: u32,
-        /// The library prefab to attach.
-        insert: PrefabId,
-    },
-    /// L2 massing (spec-0017): remove a **leaf** piece (exactly one
-    /// mated socket; never the entry piece). The neighbour's socket unmates
-    /// and re-seals. Removal shifts later placement indices — order removals
-    /// before other index-referencing massing verbs.
-    RemovePiece {
-        /// The piece's placement index.
-        piece: u32,
-        /// The prefab the indexed piece must currently be (drift guard).
-        prefab: PrefabId,
-    },
-    /// L2 massing (spec-0017): override one socket's seal — `open`
-    /// clears the opening to a passage, `sealed` walls it up — independent of
-    /// its mated state (sealing a mated doorway makes a wall between joined
-    /// pieces; opening an unmated exterior socket exposes the outside, which
-    /// the boundary-safety proof then judges).
-    RewireSocket {
-        /// The piece's placement index.
-        piece: u32,
-        /// The prefab the indexed piece must currently be (drift guard).
-        prefab: PrefabId,
-        /// The connector index (prefab metadata `connectors` order).
-        socket: u32,
-        /// The socket's new state.
-        state: SocketState,
-    },
-    /// L2 massing (spec-0017): re-pick this piece from its area pool's
-    /// compatible members (weighted, seeded from the campaign seed + this
-    /// verb's script position — moving the verb deliberately re-rolls). The
-    /// current prefab is excluded, so a reseed always changes the piece or
-    /// errors loudly.
-    ReseedPiece {
-        /// The piece's placement index.
-        piece: u32,
-        /// The prefab the indexed piece must currently be (drift guard).
-        prefab: PrefabId,
-    },
-}
-
-/// A socket seal state for `rewire-socket` (spec-0017).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
-pub enum SocketState {
-    /// The opening is cleared to a passage.
-    Open,
-    /// The opening is walled up.
-    Sealed,
 }
 
 /// A tree species for the `plant` verb (spec-0017). One species per
@@ -260,21 +164,6 @@ pub enum TreeKind {
     /// Small hand-shaped oak (3–4 logs, 5-wide leaf ball) with the
     /// lean-or-grow corridor rules.
     Oak,
-}
-
-/// A `fragment` stamp rotation (spec-0017) — the `/place template`
-/// quarter-turn set.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
-pub enum FragmentRotation {
-    /// No rotation.
-    None,
-    /// 90° clockwise.
-    Clockwise90,
-    /// 180°.
-    Clockwise180,
-    /// 90° counterclockwise.
-    Counterclockwise90,
 }
 
 /// A `select` verb's shape (spec-0017): primitive shapes resolve in a declared
@@ -452,32 +341,6 @@ pub(crate) fn world_edits_checks(
     };
     let stage = Stage::WorldEdits.name();
 
-    let mut areas: BTreeSet<&str> = c
-        .world
-        .content
-        .areas
-        .iter()
-        .map(|a| a.id.as_str())
-        .collect();
-    // A site-plan campaign has no `areas[]` — `DW0839` refuses one that does —
-    // and exactly one place instead: the site the plan lays out. A batch names
-    // it like any other area, so it is a declared area id here for the same
-    // reason `areas[]` entries are.
-    //
-    // One of two area-id sets (the other is [`crate::world::declared_area_ids`]),
-    // and the only one that used to omit this. The pair it made was unsatisfiable: `DW0839` REQUIRES a
-    // site-plan campaign to declare no `areas[]`, and every batch of a stage-7
-    // edit script was then checked against a set that could only be empty. So no
-    // site-plan campaign could carry an edit script at all, and the repair the
-    // message prescribes — use one of the world stage's area ids — names a set
-    // the other rule guarantees is empty. Each gate was right on its own terms;
-    // the union had no green state. What it cost is every build-tier check a
-    // stage-7 script is the only route to: content could not reach them from a
-    // site-plan campaign at all.
-    if c.site_plan.is_some() {
-        areas.insert(crate::siteplan::SITE_AREA);
-    }
-
     // Small helpers, each pushing at most one diagnostic.
     fn bad_syntax(d: &mut Vec<Diagnostic>, stage: &str, path: String, what: &str, id: &str) {
         d.push(Diagnostic::error(
@@ -597,57 +460,9 @@ pub(crate) fn world_edits_checks(
         }
     }
 
-    // A verb's phase: L2 massing (applied at plan time, over the jigsaw
-    // layout) vs L3 detailing (applied at replay time, over the assembled
-    // blocks). A batch never mixes phases, and every massing batch precedes
-    // every detailing batch — the replay applies all massing first by
-    // construction, so an interleaved script would misrepresent its own order.
-    fn is_massing(edit: &WorldEdit) -> bool {
-        matches!(
-            edit,
-            WorldEdit::SwapPiece { .. }
-                | WorldEdit::InsertPiece { .. }
-                | WorldEdit::RemovePiece { .. }
-                | WorldEdit::RewireSocket { .. }
-                | WorldEdit::ReseedPiece { .. }
-        )
-    }
-
     let mut batch_ids: BTreeSet<&str> = BTreeSet::new();
-    let mut seen_detailing = false;
     for (bi, batch) in env.content.batches.iter().enumerate() {
         let bpath = format!("/batches/{bi}");
-        let massing_count = batch.edits.iter().filter(|e| is_massing(e)).count();
-        if massing_count > 0 && massing_count < batch.edits.len() {
-            d.push(Diagnostic::error(
-                EDIT_INVALID,
-                stage,
-                format!("{bpath}/edits"),
-                format!(
-                    "batch `{}` mixes L2 massing and L3 detailing verbs — massing applies at \
-                     plan time (before assembly), detailing at replay time, so a mixed batch \
-                     cannot execute in its written order. Split it into a massing batch and a \
-                     detailing batch",
-                    batch.id
-                ),
-            ));
-        }
-        if massing_count > 0 && seen_detailing {
-            d.push(Diagnostic::error(
-                EDIT_INVALID,
-                stage,
-                bpath.to_string(),
-                format!(
-                    "massing batch `{}` follows a detailing batch — every massing batch must \
-                     precede every detailing batch (massing reshapes the layout the detailing \
-                     verbs' frames resolve against). Move it up the script",
-                    batch.id
-                ),
-            ));
-        }
-        if massing_count == 0 && !batch.edits.is_empty() {
-            seen_detailing = true;
-        }
         if !batch.id.is_valid_syntax() {
             bad_syntax(d, stage, format!("{bpath}/id"), "batch", batch.id.as_str());
         } else if !batch_ids.insert(batch.id.as_str()) {
@@ -662,20 +477,6 @@ pub(crate) fn world_edits_checks(
                 ),
             ));
         }
-        if !areas.contains(batch.area.as_str()) {
-            d.push(Diagnostic::error(
-                codes::DANGLING_REF,
-                stage,
-                format!("{bpath}/area"),
-                format!(
-                    "batch `{}` targets area `{}` which this campaign does not declare — {}",
-                    batch.id,
-                    batch.area,
-                    crate::placement::Placement::of(c).area_remedy(),
-                ),
-            ));
-        }
-
         // Regions defined so far in THIS batch (strictly backward references).
         let mut regions: BTreeSet<&str> = BTreeSet::new();
         for (ei, edit) in batch.edits.iter().enumerate() {
@@ -1005,46 +806,6 @@ pub(crate) fn world_edits_checks(
                         ));
                     }
                 }
-                WorldEdit::Fragment {
-                    prefab,
-                    frame,
-                    at: _,
-                    rotation: _,
-                } => {
-                    if !prefab.is_valid_syntax() {
-                        bad_syntax(
-                            d,
-                            stage,
-                            format!("{epath}/prefab"),
-                            "prefab",
-                            prefab.as_str(),
-                        );
-                    }
-                    match frame {
-                        EditFrame::PieceLocal { prefab, .. } => {
-                            if !prefab.is_valid_syntax() {
-                                bad_syntax(
-                                    d,
-                                    stage,
-                                    format!("{epath}/frame/prefab"),
-                                    "prefab",
-                                    prefab.as_str(),
-                                );
-                            }
-                        }
-                        EditFrame::AnchorRelative { anchor } => {
-                            if !anchor.is_valid_syntax() {
-                                bad_syntax(
-                                    d,
-                                    stage,
-                                    format!("{epath}/frame/anchor"),
-                                    "anchor",
-                                    anchor.as_str(),
-                                );
-                            }
-                        }
-                    }
-                }
                 WorldEdit::Relight {
                     region,
                     fixture,
@@ -1064,64 +825,22 @@ pub(crate) fn world_edits_checks(
                             ),
                         ));
                     }
-                    // Without an area `lighting` declaration the verb has no
+                    // Without the plan's `lighting` declaration the verb has no
                     // fixture/target to fall back on — both overrides required.
-                    let area_lighting = c
-                        .world
-                        .content
-                        .areas
-                        .iter()
-                        .find(|a| a.id.as_str() == batch.area.as_str())
-                        .and_then(|a| a.lighting);
+                    let area_lighting = c.site_plan.as_ref().and_then(|p| p.content.lighting);
                     if area_lighting.is_none() && (fixture.is_none() || min_light.is_none()) {
                         d.push(Diagnostic::error(
                             EDIT_INVALID,
                             stage,
                             epath.to_string(),
                             format!(
-                                "relight in batch `{}`: area `{}` declares no `lighting`, so \
-                                 the verb must carry BOTH `fixture` and `min_light` (there is \
-                                 nothing to default to). Declare area lighting or add the \
-                                 overrides",
-                                batch.id, batch.area
+                                "relight in batch `{}`: the site plan declares no `lighting`, \
+                                 so the verb must carry BOTH `fixture` and `min_light` (there is \
+                                 nothing to default to). Declare the plan's `lighting` or add \
+                                 the overrides",
+                                batch.id
                             ),
                         ));
-                    }
-                }
-                WorldEdit::SwapPiece {
-                    piece: _,
-                    prefab,
-                    with,
-                } => {
-                    for (what, id) in [("prefab", prefab.as_str()), ("prefab", with.as_str())] {
-                        if !crate::ids::is_prefixed(id, "prefab") {
-                            bad_syntax(d, stage, epath.to_string(), what, id);
-                        }
-                    }
-                }
-                WorldEdit::InsertPiece {
-                    at_piece: _,
-                    prefab,
-                    socket: _,
-                    insert,
-                } => {
-                    for id in [prefab.as_str(), insert.as_str()] {
-                        if !crate::ids::is_prefixed(id, "prefab") {
-                            bad_syntax(d, stage, epath.to_string(), "prefab", id);
-                        }
-                    }
-                }
-                WorldEdit::RemovePiece { piece: _, prefab }
-                | WorldEdit::ReseedPiece { piece: _, prefab }
-                | WorldEdit::RewireSocket { prefab, .. } => {
-                    if !prefab.is_valid_syntax() {
-                        bad_syntax(
-                            d,
-                            stage,
-                            format!("{epath}/prefab"),
-                            "prefab",
-                            prefab.as_str(),
-                        );
                     }
                 }
             }

@@ -209,41 +209,6 @@ pub(super) fn night_vision_fns(plan: &Plan) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let seconds = night_vision_seconds(plan);
     let mut gives: Vec<String> = Vec::new();
-    for area in &plan.areas {
-        let declared = plan
-            .campaign
-            .world
-            .content
-            .areas
-            .iter()
-            .find(|a| a.id.as_str() == area.area_id)
-            .is_some_and(crate::compiler::light::area_night_vision);
-        if !declared {
-            continue;
-        }
-        let (min, max) = area.bounds();
-        // An area's `bounds()` are inclusive corners, so the selector span is
-        // `max - min + 1` — a placed area is a count of cells, where a declared
-        // volume (`box_selector_args`) is a span between two corners. The two are
-        // one block apart on purpose and this is the only place the difference
-        // lives.
-        let span = [
-            max[0] - min[0] + 1,
-            max[1] - min[1] + 1,
-            max[2] - min[2] + 1,
-        ];
-        let sel = format!(
-            "@a[{}]",
-            box_selector_args(min, [min[0] + span[0], min[1] + span[1], min[2] + span[2]])
-        );
-        gives.push(effect_give_command(
-            &sel,
-            "minecraft:night_vision",
-            seconds,
-            0,
-            true,
-        ));
-    }
     // A site-plan place's own `mitigation` (spec-0106 §3.2): the same clock over
     // the box's claim — its frame, every cell it may own — in plan order.
     for (f, _) in mitigated_frames(plan) {
@@ -272,18 +237,12 @@ pub(super) fn night_vision_fns(plan: &Plan) -> Vec<(String, String)> {
 
 /// Whether the campaign declares the night-vision mitigation on any area.
 pub(super) fn has_night_vision_areas(plan: &Plan) -> bool {
-    plan.campaign
-        .world
-        .content
-        .areas
-        .iter()
-        .any(crate::compiler::light::area_night_vision)
-        || !mitigated_frames(plan).is_empty()
+    !mitigated_frames(plan).is_empty()
 }
 
 /// Every site-plan place declaring `mitigation: "night-vision"` (spec-0106
 /// §3.2), with its frame, in plan document order.
-fn mitigated_frames(
+pub(crate) fn mitigated_frames(
     plan: &Plan,
 ) -> Vec<(delvewright_dsl::Frame, delvewright_dsl::siteplan::PlacedBox)> {
     let c = plan.campaign;

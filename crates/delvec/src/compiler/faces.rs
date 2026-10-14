@@ -26,39 +26,14 @@
 //! A face that opens onto no placed piece at all is not a finding. A delve is a
 //! box garden with an outside, and a piece's front door is meant to face it.
 //!
-//! # The two declarations a piece makes about its own sides
+//! # The one declaration a piece makes about its own sides
 //!
-//! A prefab says what its sides are in **two** places, and both are declarations
-//! in the prefab document — neither is inferred from a block pattern:
-//!
-//! 1. `spatial_contract.faces` (spec-0036 §2.8) — an `exterior` edge resolved to
-//!    the side it is on, the opening it leaves there, and the **class** of way it
-//!    is (`walk` / `stair` / `drop` / `barred` / `vision`).
-//! 2. `connectors` (ADR-0004) — the jigsaw socket: a wall cell, an outward
-//!    facing, and a `[w, h]` opening. It says *there is a way through here, this
-//!    size, on this side*, and says nothing about what kind of way it is.
-//!
-//! Reading only the first is what this check used to do, and it is why it bound
-//! to nothing on every world the jigsaw assembles. The contract block is written
-//! by the grammar exporter and by `delvec prefab` admission; every hand-built
-//! piece in the library predates it. The **socket**, meanwhile, is carried by
-//! every piece a pool can seat — a piece with no socket can never be drawn — and
-//! it is the declaration that *placed* these pieces in the first place. So the
-//! check judged an assembly using a declaration it never read, reported
-//! `0 with a spatial contract`, and passed. That is the constitution's *general
-//! mechanism whose binding is too narrow to reach the objects it should*.
-//!
-//! **One authority per piece**: a piece that declares a spatial contract is
-//! judged by its contract, and a piece that does not is judged by its sockets.
-//! The contract is the stronger, byte-checked statement, so where a piece makes
-//! both it is the one that speaks; nothing here merges them into a third thing
-//! that neither document says.
-//!
-//! A socket declares no class, so where a seam has a socket on either side the
-//! **class comparison is skipped and the geometry comparison is not**: two
-//! openings must still be in the same place, the same size, at the same plane.
-//! Claiming a socket is a `walk` in order to have something to compare would be
-//! this module inventing a declaration, which is the same defect one level down.
+//! A prefab says what its sides are in its `spatial_contract.faces` (spec-0036
+//! §2.8) — an `exterior` edge resolved to the side it is on, the opening it
+//! leaves there, and the **class** of way it is (`walk` / `stair` / `drop` /
+//! `barred` / `vision`). It is the one source this check reads: assembly is
+//! designed, never drawn (ADR-0035), so there is no jigsaw socket to fall back
+//! on, and a piece that declares no contract has no sides to compare.
 //!
 //! # A pair that touches and says nothing is refused
 //!
@@ -71,23 +46,11 @@
 //! `DW0781` is then what it says on the tin: a world in which nothing touches
 //! anything, so there was no pair to examine.
 //!
-//! # The layout's own claim, made falsifiable
-//!
-//! The solver records, per socket, whether it **mated** it — and `seal_layout`
-//! clears exactly those doorways to air and walls the rest. That flag is a claim
-//! about the placement the placement can contradict: a mated socket with no
-//! placed piece beyond it is an open hole in a wall, shipped, with nothing
-//! behind it. It is also the one contradiction a world can reach without any
-//! author writing anything, because it is what *moving a mated piece* looks like
-//! — the pair simply stops touching, and a check quantified over pairs that
-//! touch has nothing to say about two pieces that no longer do. So the flag is
-//! carried out of the solver and checked here.
-
 use delvewright_dsl::{Diagnostic, DwCode, ExitTier};
 
 use crate::compiler::plan::{AreaPlacement, PlanError};
 use crate::compiler::registry::PrefabRegistry;
-use crate::compiler::solver::{Rotation, opening_region, socket_world};
+use crate::compiler::rotation::Rotation;
 
 delvewright_dsl::dw_code! {
     /// `DW0780`: two placed pieces whose declared exterior faces do not mate — a way
@@ -105,21 +68,17 @@ delvewright_dsl::dw_code! {
 /// Which of the piece's two declarations a [`PlacedFace`] was read from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FaceSource {
-    /// `spatial_contract.faces` — carries a class.
+    /// `spatial_contract.faces` — carries a class. The one source: assembly
+    /// is designed (ADR-0035), so a piece's sides are its contract's alone.
     Contract,
-    /// `connectors` — a jigsaw socket, which declares an opening and a side and
-    /// no class.
-    Socket,
 }
 
 /// One declared way in or out, resolved to where it actually is in the world.
 #[derive(Debug, Clone)]
 struct PlacedFace {
-    /// The space the way belongs to, for a contract face; the socket's jigsaw
-    /// `name`, for a socket.
+    /// The space the way belongs to.
     space: String,
-    /// The class of way, for a contract face. `None` for a socket, which does
-    /// not declare one.
+    /// The class of way.
     class: Option<String>,
     source: FaceSource,
     /// Outward direction, world space.
@@ -127,14 +86,6 @@ struct PlacedFace {
     /// The opening's world AABB, inclusive.
     min: [i32; 3],
     max: [i32; 3],
-    /// **The layout's own claim that this way joins another piece.** True only
-    /// for a jigsaw socket the solver mated, which is also the socket whose
-    /// doorway it clears to air rather than sealing with wall material.
-    ///
-    /// A face contract makes no such claim — it says a body may leave this way,
-    /// not that anything is out there — so it is never `mated`, and a front door
-    /// onto the outside stays what it has always been: not a finding.
-    mated: bool,
 }
 
 impl PlacedFace {
@@ -162,7 +113,6 @@ impl PlacedFace {
                 self.class.as_deref().unwrap_or("way"),
                 self.space
             ),
-            FaceSource::Socket => format!("jigsaw socket `{}`", self.space),
         };
         format!(
             "{} {}, at x {}..{} y {}..{} z {}..{}",
@@ -346,9 +296,6 @@ pub struct FaceBinding {
     /// side to offer a neighbour. Collapsing them told the reader of a
     /// contracted piece that nothing declares a contract.
     pub contracted: usize,
-    /// Placed pieces judged by their jigsaw sockets, because they declare no
-    /// spatial contract.
-    pub socketed: usize,
     /// **The denominator**: pairs of placed pieces whose boxes abut, computed
     /// from the placement alone. A world that places pieces which never touch
     /// asks this check nothing, and that is the one honest zero.
@@ -385,7 +332,6 @@ impl FaceBinding {
             "faces_declared": self.declared,
             "faces_bound": self.bound,
             "by_contract": self.contracted,
-            "by_socket": self.socketed,
             // Why a zero is a zero, for a reader who has only this file: a
             // site-plan world's ways are allocated at stage 4 and proved by
             // `DW0836`, so nothing in it was ever asked to mate.
@@ -405,14 +351,8 @@ impl FaceBinding {
         format!(
             "piece-mating binding: {} of {pieces} placed piece(s) touch in {} pair(s), {} of \
              which a declared face crosses; {} face(s) declared ({} piece(s) by spatial \
-             contract, {} by jigsaw socket), {} of them abutting another piece.",
-            self.touching,
-            self.pairs,
-            self.judged,
-            self.declared,
-            self.contracted,
-            self.socketed,
-            self.bound,
+             contract, the one source of a piece's sides), {} of them abutting another piece.",
+            self.touching, self.pairs, self.judged, self.declared, self.contracted, self.bound,
         )
     }
 
@@ -441,11 +381,10 @@ impl FaceBinding {
             "/areas",
             format!(
                 "the piece-mating check examined ZERO abutting faces: of {pieces} placed \
-                 piece(s), {} with a spatial contract, {} judged by jigsaw socket, {} with a \
-                 face on either, and {} face(s) declared in all — none of which touches another \
-                 placed piece, because no two of these pieces touch at all ({} abutting pair(s)). \
-                 {tail}",
-                self.contracted, self.socketed, self.faced, self.declared, self.pairs,
+                 piece(s), {} with a spatial contract, {} with a face, and {} face(s) declared \
+                 in all — none of which touches another placed piece, because no two of these \
+                 pieces touch at all ({} abutting pair(s)). {tail}",
+                self.contracted, self.faced, self.declared, self.pairs,
             ),
         ))
     }
@@ -455,16 +394,12 @@ impl FaceBinding {
 /// the piece on the other side of it.
 pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBinding, PlanError> {
     let mut pieces: Vec<Piece> = Vec::new();
-    let mut socketed = 0usize;
     for area in areas {
         for placement in &area.pieces {
             let (min, max) = placement.bbox();
             let meta = prefabs.get(&placement.prefab_id);
             let mut faces = Vec::new();
-            // One authority per piece. The contract is the resolved,
-            // byte-checked statement, so where a piece makes both it speaks;
-            // where it makes only the older one, the socket speaks. Merging them
-            // would produce a set of sides neither document declares.
+            // The contract is the one authority over a piece's sides.
             let contracted = meta.is_some_and(|m| m.spatial_contract.is_some());
             if let Some(meta) = meta
                 && let Some(contract) = &meta.spatial_contract
@@ -486,33 +421,7 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
                         dir,
                         min: [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])],
                         max: [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])],
-                        mated: false,
                     });
-                }
-            } else if let Some(meta) = meta {
-                // The jigsaw socket, resolved through the very functions the
-                // solver mated and sealed it with — one derivation, so a face
-                // this check compares cannot be in a different place from the
-                // opening the world actually gets.
-                for (ci, conn) in meta.connectors.iter().enumerate() {
-                    let Ok((wp, facing)) = socket_world(placement.pos, placement.rotation, conn)
-                    else {
-                        continue;
-                    };
-                    let (from, to) = opening_region(wp, facing, conn.opening);
-                    let u = facing.unit();
-                    faces.push(PlacedFace {
-                        space: conn.name.clone(),
-                        class: None,
-                        source: FaceSource::Socket,
-                        dir: [u[0], u[1], u[2]],
-                        min: from,
-                        max: to,
-                        mated: placement.mated.get(ci).copied().unwrap_or(false),
-                    });
-                }
-                if !faces.is_empty() {
-                    socketed += 1;
                 }
             }
             pieces.push(Piece {
@@ -546,40 +455,8 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
                         a == axis || (face.max[a] >= other.min[a] && face.min[a] <= other.max[a])
                     })
             }) else {
-                // Nothing is out there. For a face contract that is a front door,
-                // and a box garden has an outside — not a finding.
-                //
-                // For a socket the LAYOUT MATED it is a contradiction, and the
-                // only one in this module that a placement can produce all by
-                // itself: the solver said this socket joins another piece, and
-                // `seal_layout` cleared its doorway to air on the strength of
-                // that, so the world ships an open hole looking at whatever
-                // happens to be at that plane. Detaching a mated piece by one
-                // block is exactly this shape, and until the flag reached here
-                // nothing could see it — the pair simply stopped touching, and a
-                // check quantified over pairs that touch has nothing to say
-                // about two pieces that no longer do.
-                if face.mated {
-                    return Err(PlanError::new(
-                        DW_FACE_MISMATCH,
-                        format!(
-                            "area `{}` places `{}` with a jigsaw socket the layout says is \
-                             MATED, and there is no placed piece on the other side of it. `{}` \
-                             declares {}; the cell(s) just beyond it at {} {} belong to no piece \
-                             in this world. A mated socket is not a claim about intent — it is \
-                             what `seal_layout` clears the doorway to air for, so this world \
-                             ships an open hole in a wall with nothing behind it. The layout and \
-                             the placement disagree about where this piece stands; do not seal \
-                             the socket to hide it",
-                            piece.area,
-                            piece.prefab,
-                            piece.prefab,
-                            face.describe(),
-                            ["x", "y", "z"][axis],
-                            plane,
-                        ),
-                    ));
-                }
+                // Nothing is out there: a front door, and a box garden has an
+                // outside — not a finding.
                 continue;
             };
             let _ = j;
@@ -594,9 +471,6 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
                 g.transverse() == face.transverse() && g.beyond() == plane_of(face, axis)
             });
             match mated {
-                // A socket declares an opening and a side and no class, so a
-                // seam with a socket on either end is compared on its geometry
-                // and not on a claim neither document makes.
                 Some(g) if classes_agree(face, g) => {}
                 Some(g) => {
                     return Err(PlanError::new(
@@ -615,8 +489,8 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
                             face.describe(),
                             neighbour.prefab,
                             g.describe(),
-                            face.class.as_deref().unwrap_or("socket"),
-                            g.class.as_deref().unwrap_or("socket"),
+                            face.class.as_deref().unwrap_or("way"),
+                            g.class.as_deref().unwrap_or("way"),
                         ),
                     ));
                 }
@@ -698,10 +572,9 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
                      {}..{} y {}..{} z {}..{}, and nothing in either prefab document says \
                      whether that is a wall or a way — so this pair is the one thing the \
                      piece-mating check exists for and the one thing it cannot judge. A piece \
-                     says what its sides are in one of two places: a `spatial_contract` face \
-                     (spec-0036) or a jigsaw `connectors` socket (ADR-0004). `{}` declares {} \
-                     face(s) in all and none there; `{}` declares {} and none there. Give the \
-                     shared side a face or a socket in one of the two prefab documents, or \
+                     says what its sides are in its `spatial_contract` faces (spec-0036). `{}` \
+                     declares {} face(s) in all and none there; `{}` declares {} and none \
+                     there. Give the shared side a face in one of the two prefab documents, or \
                      place the pieces apart",
                     a.area,
                     a.prefab,
@@ -727,7 +600,6 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
         declared,
         faced,
         contracted,
-        socketed,
         pairs,
         touching: touching.iter().filter(|t| **t).count(),
         judged,
@@ -736,11 +608,8 @@ pub fn check(areas: &[AreaPlacement], prefabs: &PrefabRegistry) -> Result<FaceBi
 
 /// Do two mating faces agree about the KIND of way they are?
 ///
-/// A jigsaw socket declares an opening and a side and no class. Where either end
-/// of a seam is one, there is no class claim to contradict, and demanding one
-/// would mean this module inventing a declaration the prefab document does not
-/// make — the same defect as inferring a contract from the blocks, one level up.
-/// The geometry comparison is not relaxed by this and is what still binds.
+/// Every contract face carries a class, so two faces agree when the classes
+/// are the same.
 fn classes_agree(a: &PlacedFace, b: &PlacedFace) -> bool {
     match (&a.class, &b.class) {
         (Some(x), Some(y)) => x == y,

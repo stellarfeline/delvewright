@@ -735,7 +735,7 @@ pub(super) fn build_critical_path(
             .quests
             .iter()
             .find(|q| q.id.as_str() == qid)
-            .map(|q| q.area.as_str())
+            .map(|_| delvewright_dsl::SITE_AREA)
             .unwrap_or("");
         let entry = match anchors.entry_anchor(area) {
             Some(ResolvedAnchor::Point { pos, .. }) => Some(*pos),
@@ -822,7 +822,7 @@ pub(super) fn build_critical_path(
                         .npcs
                         .iter()
                         .find(|nn| nn.id.as_str() == npc.as_str());
-                    let home_area = decl.map(|nn| nn.area.as_str()).unwrap_or(area);
+                    let home_area = decl.map(|_| delvewright_dsl::SITE_AREA).unwrap_or(area);
                     let (npc_area, pos) = match crate::compiler::cast::station(
                         campaign,
                         npc.as_str(),
@@ -1159,108 +1159,13 @@ pub(super) fn build_critical_path(
     // ---- the legs the party must cross ----
     //
     // A **leg** is a move from where the party stands to where the next critical
-    // objective stands, and the FIRST one begins at the campaign spawn. This is
-    // the population; everything about a leg is decided here, once.
-    //
-    // It used to be `obj_areas.windows(2)` — every adjacent pair of objectives —
-    // which is a strictly smaller set: the spawn is a leg's ORIGIN and is not an
-    // objective, so the party's very first move was in no pair. It got no
-    // transport, and the walkability proof (which walks the same population)
-    // never examined it either. A campaign whose first objective stood in
-    // another area therefore compiled clean, passed every game test, and
-    // stranded the party at the spawn.
-    //
-    // A leg that changes area is a CROSSING, never a walk — areas sit
-    // `AREA_SPACING` blocks apart across void. A crossing needs two things, and
-    // a leg missing either is refused here rather than handed on to the walk
-    // proof, which would report a true sentence about a route nobody was going
-    // to walk:
-    //   * somewhere to arrive — the destination area's entry point (`DW0872`);
-    //   * something to ride — the completion of the objective the party leaves
-    //     from, which the spawn cannot supply (`DW0873`).
-    // Every other leg is a walk, and `DW0311` proves it over the geometry.
-    let mut transport: BTreeMap<String, [i32; 3]> = BTreeMap::new();
-    // Per-step transport marker, aligned with `steps`. Filled from `transport` via
-    // each objective's recorded step index (gap 8).
+    // objective stands, and the first one begins at the campaign spawn. Every
+    // leg stands on the one map a site plan lays out, so every leg is a walk,
+    // proved over the geometry by `DW0311`; nothing carries a party between two
+    // places (ADR-0035). The per-step transport channel carries only an
+    // exercise step's landing (below).
+    let transport: BTreeMap<String, [i32; 3]> = BTreeMap::new();
     let mut transport_by_step: Vec<Option<[i32; 3]>> = vec![None; steps.len()];
-    // Where the party stands as it sets off for the next objective: the area,
-    // and the objective whose completion can carry it out of there — `None` at
-    // the campaign spawn, which is the whole of `DW0873`. `None` overall when
-    // the world resolves no entry anchor at all: that campaign has no start to
-    // measure a first leg from and `DW0345` is its refusal, not this one.
-    let mut from: Option<(&str, Option<(&str, usize)>)> =
-        start.as_ref().map(|(area, _)| (area.as_str(), None));
-    for (id, area, idx) in &obj_areas {
-        if let Some((prev_area, carrier)) = from
-            && prev_area != area.as_str()
-        {
-            let Some((prev_id, prev_idx)) = carrier else {
-                let (start_area, start_pos) = start.as_ref().expect("a leg has an origin");
-                return Err(PlanError::new(
-                    DW_SPAWN_LEG_CROSSES,
-                    format!(
-                        "the party begins this delve in area `{start_area}`, at \
-                         [{sx}, {sy}, {sz}], and the first thing the critical path asks of \
-                         them — objective `{id}` — stands in area `{area}`. Areas sit \
-                         {sp} blocks apart across the void with no walkable link, so that \
-                         is a crossing rather than a walk, and a crossing is carried by \
-                         the completion of the objective the party leaves from. At the \
-                         spawn they have completed nothing, so this one can be neither \
-                         ridden nor walked and the delve cannot be started. Put the \
-                         campaign's first beat where the party starts — set that quest's \
-                         `area` to `{start_area}` in the quest plan — or start the delve \
-                         where the beat already is, by listing `{area}` before \
-                         `{start_area}` in `world.areas`; the delve starts in the first \
-                         area that declares an entry point of its own, so `{area}` needs \
-                         an anchor carrying `\"role\": \"{role}\"` to be that area",
-                        sx = start_pos[0],
-                        sy = start_pos[1],
-                        sz = start_pos[2],
-                        sp = AREA_SPACING,
-                        role = AnchorRole::Entry,
-                    ),
-                ));
-            };
-            let Some(ResolvedAnchor::Point { pos, .. }) = anchors.entry_anchor(area) else {
-                return Err(PlanError::new(
-                    DW_CROSSING_NO_ENTRY,
-                    format!(
-                        "completing objective `{prev_id}` in area `{prev_area}` carries the \
-                         party across to objective `{id}` in area `{area}` — areas sit \
-                         {sp} blocks apart across the void with no walkable link, so the \
-                         party has to be put down inside `{area}`, and {said}. Fix it \
-                         where the anchors are declared: give the piece the party arrives \
-                         in an anchor at that cell and put `\"role\": \"{role}\"` on it (in \
-                         a pool, that is the prefab the layout is seeded from), or bind \
-                         `{area}` to a prefab that already has one",
-                        sp = AREA_SPACING,
-                        role = AnchorRole::Entry,
-                        said = match anchors.entry_anchor_name(area) {
-                            // A named entry that is not a cell: a gate anchor
-                            // declares a plane, and a body cannot be put down on
-                            // a plane. Saying "declares no entry point" here
-                            // would be false, and the author would go looking
-                            // for the declaration they can see.
-                            Some(name) => format!(
-                                "`{area}` declares its entry as `{name}`, which resolves to a \
-                                 region rather than to a cell — a body cannot be put down on a \
-                                 plane"
-                            ),
-                            None => format!(
-                                "nothing says where: no anchor in `{area}`'s prefab carries \
-                                 `\"role\": \"{role}\"`, and an anchor's name is never \
-                                 consulted for this",
-                                role = AnchorRole::Entry,
-                            ),
-                        },
-                    ),
-                ));
-            };
-            transport.insert(prev_id.to_string(), *pos);
-            transport_by_step[prev_idx] = Some(*pos);
-        }
-        from = Some((area.as_str(), Some((id.as_str(), *idx))));
-    }
 
     // DSL v0.4 per-step harness hint `sneak` (a stealth objective). The
     // cutscene hold is read off the finished step list ([`hold::after_holds`]).

@@ -17,7 +17,7 @@ impl<'a> Plan<'a> {
             .quests
             .iter()
             .find(|q| q.id.as_str() == quest_id)
-            .map(|q| q.area.as_str())
+            .map(|_| delvewright_dsl::SITE_AREA)
     }
 }
 

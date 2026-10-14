@@ -185,12 +185,6 @@ crate::dw_code! {
 }
 
 crate::dw_code! {
-    /// `DW0839`: two placement authorities in one campaign — a `site-plan.json` and
-    /// a non-empty `areas[]` both present.
-    pub const DW_TWO_AUTHORITIES: DwCode = DwCode::new("DW0839", ExitTier::Build);
-}
-
-crate::dw_code! {
     /// `DW0988`: a roof the plan has no room for (spec-0098 §7) — declared on
     /// a sky-open box, or rising into another place.
     pub const DW_ROOF_NO_ROOM: DwCode = DwCode::new("DW0988", ExitTier::Build);

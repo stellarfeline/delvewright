@@ -736,7 +736,7 @@ pub fn check_carry_realised(campaign: &Campaign) -> Vec<Diagnostic> {
         .content
         .quests
         .iter()
-        .map(|q| (q.id.as_str(), q.area.as_str()))
+        .map(|q| (q.id.as_str(), delvewright_dsl::SITE_AREA))
         .collect();
     let mut node_areas: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for b in &graph.beats {

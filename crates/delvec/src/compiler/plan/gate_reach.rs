@@ -17,14 +17,6 @@ struct GateInfo {
     plane: i32,
 }
 
-/// A placed connector socket in world space, for reconstructing which pieces mate.
-struct WorldSocket {
-    piece: usize,
-    connector: usize,
-    world: [i32; 3],
-    facing: Facing,
-}
-
 /// A piece-connectivity graph node: `(piece index, gate side)`. Non-gate pieces
 /// are always side 0.
 type Node = (usize, u8);
@@ -44,7 +36,6 @@ pub(super) fn check_gate_reachability(
     entry: Option<&str>,
     pieces: &[PiecePlacement],
     registry: &PrefabRegistry,
-    severed: Option<&BTreeSet<[i32; 3]>>,
 ) -> Result<(), PlanError> {
     // Gates carried by a piece in this area.
     let mut gates: BTreeMap<String, GateInfo> = BTreeMap::new();
@@ -72,9 +63,11 @@ pub(super) fn check_gate_reachability(
     // When each gate opens: the earliest order index whose objective/quest opens it.
     let gate_open_at = gate_open_indices(campaign, &order, &gates);
 
-    // Static (gate-independent) adjacency: mated sockets between pieces.
-    let sockets = world_sockets(pieces, registry);
-    let adj = build_adjacency(&sockets, pieces, registry, &gates, severed);
+    // Static (gate-independent) adjacency between pieces: none is drawn by a
+    // solver (ADR-0035), so the graph's only edges are the gates' own cut-edges
+    // and a piece is one node per gate side. How pieces join is the site plan's
+    // seams, proved over the built bytes by the blockout battery.
+    let adj: BTreeMap<Node, BTreeSet<Node>> = BTreeMap::new();
 
     // The entry piece: the anchor the ONE resolver picked for this area. The
     // proof must start where the player actually starts, and what an entry is
@@ -108,16 +101,6 @@ pub(super) fn check_gate_reachability(
                 .map(|(name, _)| name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            // A `rewire-socket sealed` (spec-0017) cuts doorway edges out
-            // of this graph, so the blockage may be a massed-away passage, not
-            // a quest-order mistake — say so.
-            let severed_note = if severed.is_some_and(|s| !s.is_empty()) {
-                " NOTE: this area's world-edits script seals doorway socket(s) via \
-                 `rewire-socket` — those passages are cut from this proof; if the blockage \
-                 is one of them, reopen it or leave another route"
-            } else {
-                ""
-            };
             return Err(PlanError::new(
                 DW_GATE_DEADLOCK,
                 format!(
@@ -126,7 +109,7 @@ pub(super) fn check_gate_reachability(
                      so the delve deadlocks. Fix the quest order: add an earlier objective whose \
                      `open-gate` effect opens {culprit} before this objective, or move `{tname}` \
                      to the near side of the gate. Do NOT delete the gate to dodge the check — \
-                     that removes intended progression.{severed_note}",
+                     that removes intended progression.",
                     step.obj.id()
                 ),
             ));
@@ -160,7 +143,7 @@ fn critical_objective_order(campaign: &Campaign) -> Vec<OrderedObj<'_>> {
         .content
         .quests
         .iter()
-        .map(|q| (q.id.as_str(), q.area.as_str()))
+        .map(|q| (q.id.as_str(), delvewright_dsl::SITE_AREA))
         .collect();
     let mut out = Vec::new();
     for st in &path.steps {
@@ -197,7 +180,10 @@ fn objective_target(
                 .npcs
                 .iter()
                 .find(|n| n.id.as_str() == npc.as_str())?;
-            Some((n.area.as_str().to_string(), n.anchor.as_str().to_string()))
+            Some((
+                delvewright_dsl::SITE_AREA.to_string(),
+                n.anchor.as_str().to_string(),
+            ))
         }
         Objective::ReachAnchor { anchor, .. }
         | Objective::Collect { anchor, .. }
@@ -360,73 +346,6 @@ fn anchor_node(
 ) -> Option<Node> {
     let (pi, am) = anchor_piece(pieces, registry, anchor_name)?;
     Some((pi, side_of(pi, anchor_point(am), gates)))
-}
-
-/// Every connector socket of every placed piece, in world space.
-fn world_sockets(pieces: &[PiecePlacement], registry: &PrefabRegistry) -> Vec<WorldSocket> {
-    let mut out = Vec::new();
-    for (pi, p) in pieces.iter().enumerate() {
-        let Some(meta) = registry.get(&p.prefab_id) else {
-            continue;
-        };
-        for (ci, conn) in meta.connectors.iter().enumerate() {
-            let Some(f) = Facing::parse(&conn.facing) else {
-                continue;
-            };
-            let t = p.rotation.transform(conn.local_pos);
-            out.push(WorldSocket {
-                piece: pi,
-                connector: ci,
-                world: [p.pos[0] + t[0], p.pos[1] + t[1], p.pos[2] + t[2]],
-                facing: f.rotate(p.rotation),
-            });
-        }
-    }
-    out
-}
-
-/// Static adjacency over `(piece, side)` nodes: two mated sockets (child socket one
-/// block beyond the parent, facing opposite) link their pieces' sub-nodes.
-fn build_adjacency(
-    sockets: &[WorldSocket],
-    pieces: &[PiecePlacement],
-    registry: &PrefabRegistry,
-    gates: &BTreeMap<String, GateInfo>,
-    severed: Option<&BTreeSet<[i32; 3]>>,
-) -> BTreeMap<Node, BTreeSet<Node>> {
-    // Local pos of a socket (for gate-side classification).
-    let local_pos = |s: &WorldSocket| -> [i32; 3] {
-        registry
-            .get(&pieces[s.piece].prefab_id)
-            .and_then(|m| m.connectors.get(s.connector))
-            .map(|c| c.local_pos)
-            .unwrap_or([0, 0, 0])
-    };
-    let mut adj: BTreeMap<Node, BTreeSet<Node>> = BTreeMap::new();
-    for a in sockets {
-        let a_next = [
-            a.world[0] + a.facing.unit()[0],
-            a.world[1] + a.facing.unit()[1],
-            a.world[2] + a.facing.unit()[2],
-        ];
-        for b in sockets {
-            if a.piece == b.piece {
-                continue;
-            }
-            if b.world == a_next && b.facing == a.facing.opposite() {
-                // A doorway severed by `rewire-socket sealed` (spec-0017)
-                // is walled on both planes — no edge.
-                if severed.is_some_and(|s| s.contains(&a.world) || s.contains(&b.world)) {
-                    continue;
-                }
-                let na = (a.piece, side_of(a.piece, local_pos(a), gates));
-                let nb = (b.piece, side_of(b.piece, local_pos(b), gates));
-                adj.entry(na).or_default().insert(nb);
-                adj.entry(nb).or_default().insert(na);
-            }
-        }
-    }
-    adj
 }
 
 /// BFS reachability from `spawn` to `target` over static edges plus the cut-edge of

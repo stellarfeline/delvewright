@@ -1130,23 +1130,6 @@ pub fn reachable_clocks(
 // Night-vision mitigation (DSL v0.6 declaration)
 // ---------------------------------------------------------------------------
 
-/// Whether an area declares the `night-vision` darkness mitigation (DSL v0.6).
-///
-/// This is the **whole** night-vision signal. The pre-0.6 heuristic read a class
-/// kit item's id or display *name* for `night_vision` / `night vision`, which
-/// accepted a bare `minecraft:potion` renamed "Potion of Night Vision" — a water
-/// bottle. `DW0210` passed while nothing in the shipped world granted night vision
-/// (owner, island QA). The declaration is now both the gate's input and the thing
-/// the compiler emits (`emit::night_vision_fns`), so the check cannot pass without
-/// the feature existing.
-///
-/// It is also language-independent by construction: a declaration is not a
-/// player-facing string, so `--lang` can never move the `DW0210` verdict (ADR-0006)
-/// and no verdict has to be threaded around the localization pass any more.
-pub fn area_night_vision(area: &delvewright_dsl::Area) -> bool {
-    matches!(area.mitigation, Some(AreaMitigation::NightVision))
-}
-
 // ---------------------------------------------------------------------------
 // Relight pass
 // ---------------------------------------------------------------------------
@@ -1279,7 +1262,6 @@ pub fn relight_with(
     let sky = darkest_effective_sky(c);
     // Which surfaces this campaign HAS to declare lighting on, asked once. A
     // refusal below prescribes only those; see `delvewright_dsl::placement`.
-    let placement = delvewright_dsl::Placement::of(c);
 
     // The base assembled geometry (nav) and required-path cells fixtures must avoid.
     //
@@ -1336,25 +1318,9 @@ pub fn relight_with(
             continue; // nothing a player can stand on / reach in this area
         }
 
-        let dsl_area = c
-            .world
-            .content
-            .areas
-            .iter()
-            .find(|a| a.id.as_str() == area.area_id);
-        // A site-plan campaign has no `areas[]` to carry a lighting declaration
-        // — `DW0839` refuses one that does — and states its one setting on the
-        // plan instead, so a blockout interior is walkable at night without
-        // per-box surface. Read here rather than copied into a synthetic `Area`,
-        // because `AreaLighting` is already the engine's "which fixture, to what
-        // level" object and this pass is already the one that consumes it.
-        let lighting = match dsl_area {
-            Some(a) => a.lighting,
-            None if area.area_id == delvewright_dsl::SITE_AREA => {
-                c.site_plan.as_ref().and_then(|p| p.content.lighting)
-            }
-            None => None,
-        };
+        // The plan states its one setting for the derived interiors, so a
+        // blockout interior is walkable at night without per-box surface.
+        let lighting = c.site_plan.as_ref().and_then(|p| p.content.lighting);
 
         // **The fixture pass applies to DERIVED interiors only** (spec-0050 §3).
         //
@@ -1446,7 +1412,6 @@ pub fn relight_with(
                         &reachable,
                         &required,
                         &area.area_id,
-                        placement,
                         spec,
                         sky,
                         amin,
@@ -1456,7 +1421,7 @@ pub fn relight_with(
                 }
                 None => {
                     // Measured-darkness gate over the assembled reachable walkable cells.
-                    let night_vision = dsl_area.is_some_and(area_night_vision);
+                    let night_vision = false;
                     let (under_nv, bare): (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) =
                         reachable.iter().partition(|cell| in_mitigated(cell));
                     let mut s = survey_undeclared(&model, &bare, sky, night_vision);
@@ -1495,7 +1460,6 @@ pub fn relight_with(
                     cells,
                     &required,
                     &area.area_id,
-                    placement,
                     spec,
                     sky,
                     frame.lo,
@@ -1520,7 +1484,7 @@ pub fn relight_with(
         }
     }
 
-    if let Some(diag) = dark_diagnostic(&dark, nav, sky, placement) {
+    if let Some(diag) = dark_diagnostic(&dark, nav, sky) {
         out.diagnostics.push(diag);
     }
 
@@ -1540,7 +1504,6 @@ pub(crate) fn relight_area(
     reachable: &BTreeSet<[i32; 3]>,
     required: &BTreeSet<[i32; 3]>,
     area_id: &str,
-    placement: delvewright_dsl::Placement,
     spec: AreaLighting,
     sky: u8,
     amin: [i32; 3],
@@ -1614,7 +1577,7 @@ pub(crate) fn relight_area(
                          relax this by widening the reachable set — the cell is genuinely lit \
                          below target (spec-0010 DW0211)",
                         spec.fixture.token(),
-                        placement.lighting_field()
+                        delvewright_dsl::LIGHTING_FIELD
                     ),
                 });
                 return;
@@ -1971,7 +1934,6 @@ fn dark_diagnostic(
     sites: &BTreeMap<DarkSite, DarkSurvey>,
     nav: &World,
     sky: u8,
-    placement: delvewright_dsl::Placement,
 ) -> Option<Failure> {
     // Worst first: the place with the most dark cells is the one whose remedy is
     // a different act. Ties by the label, which is unique, so the order is total.
@@ -2019,23 +1981,14 @@ fn dark_diagnostic(
     let mut m = String::new();
 
     if !whole.is_empty() {
-        // **A refusal offers only the surfaces this campaign HAS.** `mitigation`
-        // lives on an `areas[]` entry, which a site-plan campaign is required to
-        // leave empty (`DW0839`), so on a derived map the third way does not exist
-        // and naming it sends the author at a document another gate refuses. The
-        // count moves with the list rather than being written down beside it, so a
-        // surface added or removed later cannot leave the sentence claiming a way
-        // that is not offered.
-        let (declared, ways, mitigation) = if placement.has_area_mitigation() {
-            (
-                " and no `mitigation`",
-                "three ways",
-                ", or declare `world.areas[].mitigation: \"night-vision\"` on it (the compiler \
-                 then emits a clocked `effect give … night_vision` over its bounds)",
-            )
-        } else {
-            ("", "two ways", "")
-        };
+        // **A refusal offers only the surfaces this campaign HAS**: the plan's
+        // `lighting`, the scene, and a place's own `mitigation` (spec-0106 §3.2).
+        let (declared, ways, mitigation) = (
+            " and no `mitigation`",
+            "three ways",
+            ", or declare the place's `boxes[].mitigation: \"night-vision\"` (the compiler \
+             then emits a clocked `effect give … night_vision` over its claim)",
+        );
         let n = whole.len();
         let (total, examined, wcell, wl) = dark_totals(&whole);
         m.push_str(&format!(
@@ -2053,7 +2006,7 @@ fn dark_diagnostic(
              density of what is already lit in it, and measure again. A renamed potion in a class \
              kit is NOT a mitigation — it grants nothing. Do NOT lower `DARK_THRESHOLD` or trim \
              the reachable set — the darkness is real (spec-0010 DW0210)",
-            placement.lighting_field()
+            delvewright_dsl::LIGHTING_FIELD
         ));
     }
 
@@ -2084,7 +2037,7 @@ fn dark_diagnostic(
              so brightening what stands OUTSIDE the frame is a real remedy too. Do NOT lower \
              `DARK_THRESHOLD` or trim the reachable set — the darkness is real (spec-0050 §3, \
              spec-0010 DW0210)",
-            placement.lighting_field()
+            delvewright_dsl::LIGHTING_FIELD
         ));
     }
     Some(Failure {
@@ -2383,10 +2336,9 @@ mod tests {
         sky: u8,
         night_vision: bool,
         area_id: &str,
-        placement: delvewright_dsl::Placement,
     ) -> Option<Failure> {
         let s = survey_undeclared(model, reachable, sky, night_vision);
-        dark_diagnostic(&BTreeMap::from([(whole(area_id), s)]), nav, sky, placement)
+        dark_diagnostic(&BTreeMap::from([(whole(area_id), s)]), nav, sky)
     }
 
     /// A **whole-owned** dark site. Every fixture in this module is a plain
@@ -2876,7 +2828,6 @@ mod tests {
             &reachable,
             &BTreeSet::new(),
             "area/hall",
-            delvewright_dsl::Placement::Prefabs,
             spec,
             0,
             amin,
@@ -2923,7 +2874,6 @@ mod tests {
             &reachable,
             &BTreeSet::new(),
             "area/corridor",
-            delvewright_dsl::Placement::Prefabs,
             AreaLighting {
                 fixture: Fixture::Torch,
                 min_light: 7,
@@ -2949,15 +2899,7 @@ mod tests {
         let map = room(7, 5, 7, false); // enclosed, unlit
         let model = LightModel::from_blocks(map.clone());
         let reachable = reachable_of(&map);
-        let diag = undeclared_diag(
-            &model,
-            &nav_of(&map),
-            &reachable,
-            0,
-            false,
-            "area/crypt",
-            delvewright_dsl::Placement::Prefabs,
-        );
+        let diag = undeclared_diag(&model, &nav_of(&map), &reachable, 0, false, "area/crypt");
         assert!(diag.is_some());
         assert_eq!(diag.unwrap().code, DW_DARK_UNMITIGATED);
     }
@@ -2977,17 +2919,9 @@ mod tests {
         let map = room(7, 5, 7, false);
         let model = LightModel::from_blocks(map.clone());
         let reachable = reachable_of(&map);
-        let msg = undeclared_diag(
-            &model,
-            &nav_of(&map),
-            &reachable,
-            0,
-            false,
-            "area/crypt",
-            delvewright_dsl::Placement::Prefabs,
-        )
-        .expect("an enclosed unlit room is dark")
-        .message;
+        let msg = undeclared_diag(&model, &nav_of(&map), &reachable, 0, false, "area/crypt")
+            .expect("an enclosed unlit room is dark")
+            .message;
         assert!(
             msg.contains("with no `lighting` and no `mitigation` declaration."),
             "a prefab campaign has both surfaces, so the subject names both: {msg}"
@@ -3026,7 +2960,6 @@ mod tests {
             0,
             false,
             delvewright_dsl::SITE_AREA,
-            delvewright_dsl::Placement::SitePlan,
         )
         .expect("an enclosed unlit room is dark")
         .message;
@@ -3151,7 +3084,6 @@ mod tests {
             &reachable,
             &required,
             "area/ledge",
-            delvewright_dsl::Placement::Prefabs,
             AreaLighting {
                 fixture: Fixture::Torch,
                 min_light: 7,
@@ -3188,7 +3120,6 @@ mod tests {
             &reachable,
             &BTreeSet::new(),
             "area/shore",
-            delvewright_dsl::Placement::Prefabs,
             AreaLighting {
                 fixture: Fixture::Torch,
                 min_light: 7,
@@ -3226,7 +3157,6 @@ mod tests {
             &reachable,
             &BTreeSet::new(),
             "area/shore",
-            delvewright_dsl::Placement::Prefabs,
             AreaLighting {
                 fixture: Fixture::Torch,
                 min_light: 7,
@@ -3260,7 +3190,6 @@ mod tests {
                 &reachable,
                 &BTreeSet::new(),
                 "area/hall",
-                delvewright_dsl::Placement::Prefabs,
                 AreaLighting {
                     fixture: Fixture::Lantern,
                     min_light: 9,
@@ -3535,16 +3464,8 @@ mod tests {
         assert!(reachable.contains(&plate));
         let nav = nav_occ_of(&map);
         let model = LightModel::from_blocks(map);
-        let diag = undeclared_diag(
-            &model,
-            &nav,
-            &reachable,
-            0,
-            false,
-            "area/crypt",
-            delvewright_dsl::Placement::Prefabs,
-        )
-        .expect("a genuinely dark roofed room must still fail");
+        let diag = undeclared_diag(&model, &nav, &reachable, 0, false, "area/crypt")
+            .expect("a genuinely dark roofed room must still fail");
         assert_eq!(diag.code, DW_DARK_UNMITIGATED);
     }
 
@@ -3604,15 +3525,7 @@ mod tests {
             );
             let nav = nav_occ_of(&map);
             let model = LightModel::from_blocks(map);
-            let diag = undeclared_diag(
-                &model,
-                &nav,
-                &reachable,
-                0,
-                false,
-                "area/hall",
-                delvewright_dsl::Placement::Prefabs,
-            );
+            let diag = undeclared_diag(&model, &nav, &reachable, 0, false, "area/hall");
             assert!(
                 diag.is_none(),
                 "{block}: a lit room with this fixture on its floor reported \
@@ -3707,8 +3620,7 @@ mod tests {
         );
 
         let areas = BTreeMap::from([(whole("area/annex"), small), (whole("area/hall"), big)]);
-        let diag = dark_diagnostic(&areas, &nav, 0, delvewright_dsl::Placement::Prefabs)
-            .expect("two dark rooms must fail the gate");
+        let diag = dark_diagnostic(&areas, &nav, 0).expect("two dark rooms must fail the gate");
         assert_eq!(diag.code, DW_DARK_UNMITIGATED);
         let m = &diag.message;
 
@@ -3778,7 +3690,6 @@ mod tests {
             &BTreeMap::from([(whole("area/gallery"), s.clone())]),
             &nav,
             0,
-            delvewright_dsl::Placement::Prefabs,
         )
         .expect("a dark-ended corridor must fail the gate");
         let m = &diag.message;
@@ -3818,13 +3729,8 @@ mod tests {
         );
         let (cell, level) = s.darkest().expect("one dark cell has a darkest");
 
-        let diag = dark_diagnostic(
-            &BTreeMap::from([(whole("area/hall"), s)]),
-            &nav,
-            0,
-            delvewright_dsl::Placement::Prefabs,
-        )
-        .expect("one dark cell is still a failed build");
+        let diag = dark_diagnostic(&BTreeMap::from([(whole("area/hall"), s)]), &nav, 0)
+            .expect("one dark cell is still a failed build");
         let m = &diag.message;
         assert!(
             m.contains(&format!(
@@ -3892,13 +3798,8 @@ mod tests {
             regions.len()
         );
 
-        let diag = dark_diagnostic(
-            &BTreeMap::from([(whole("area/undercroft"), s)]),
-            &nav,
-            0,
-            delvewright_dsl::Placement::Prefabs,
-        )
-        .expect("a corridor with dark runs must fail the gate");
+        let diag = dark_diagnostic(&BTreeMap::from([(whole("area/undercroft"), s)]), &nav, 0)
+            .expect("a corridor with dark runs must fail the gate");
         let m = &diag.message;
         let dropped: usize = regions
             .iter()
@@ -3939,8 +3840,7 @@ mod tests {
             );
         }
         let dark_total: usize = areas.values().map(|s| s.dark.len()).sum();
-        let diag = dark_diagnostic(&areas, &nav, 0, delvewright_dsl::Placement::Prefabs)
-            .expect("nine unlit rooms must fail the gate");
+        let diag = dark_diagnostic(&areas, &nav, 0).expect("nine unlit rooms must fail the gate");
         let m = &diag.message;
         assert!(
             m.contains(&format!("{n} area(s) measure dark: {dark_total} of the")),
@@ -3979,13 +3879,8 @@ mod tests {
             let s = survey_undeclared(&model, &reachable, 0, false);
             (
                 s.regions(&nav),
-                dark_diagnostic(
-                    &BTreeMap::from([(whole("area/gallery"), s)]),
-                    &nav,
-                    0,
-                    delvewright_dsl::Placement::Prefabs,
-                )
-                .map(|d| d.message),
+                dark_diagnostic(&BTreeMap::from([(whole("area/gallery"), s)]), &nav, 0)
+                    .map(|d| d.message),
             )
         };
         assert_eq!(build(), build());

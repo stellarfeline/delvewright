@@ -402,7 +402,6 @@ pub(super) fn plan_payload_verbs(
     blocks: &crate::compiler::blockstate::BlockMap,
 ) -> Result<PayloadPlans, BuildFailure> {
     let mut out = PayloadPlans::default();
-    let placement = delvewright_dsl::Placement::of(plan.campaign);
     let mut seen: BTreeSet<String> = BTreeSet::new();
     for eff in all_campaign_effects(plan.campaign) {
         let key = payload_verb_key(eff);
@@ -411,11 +410,11 @@ pub(super) fn plan_payload_verbs(
                 continue;
             }
             let label = format!("volley from `{from_anchor}` into `{}`", kill_zone.anchor);
-            let from = plan
-                .point_any(from_anchor.as_str())
-                .ok_or_else(|| payload_anchor_failure(placement, &label, from_anchor.as_str()))?;
+            let from = plan.point_any(from_anchor.as_str()).ok_or_else(|| {
+                payload_anchor_failure(plan.campaign, &label, from_anchor.as_str())
+            })?;
             let region = plan.zone_box(kill_zone).ok_or_else(|| {
-                payload_anchor_failure(placement, &label, kill_zone.anchor.as_str())
+                payload_anchor_failure(plan.campaign, &label, kill_zone.anchor.as_str())
             })?;
             let geom = crate::compiler::nav::plan_volley(world, from, region, &label)?;
             // The cadence is a timing read (DW0918): a body a salvo lands on can
@@ -434,7 +433,7 @@ pub(super) fn plan_payload_verbs(
             }
             let label = format!("collapse of `{}`", region_anchor.anchor);
             let region = plan.zone_box(region_anchor).ok_or_else(|| {
-                payload_anchor_failure(placement, &label, region_anchor.anchor.as_str())
+                payload_anchor_failure(plan.campaign, &label, region_anchor.anchor.as_str())
             })?;
             let geom = crate::compiler::nav::plan_collapse(world, blocks, region, &label)?;
             out.collapses.push(CollapseEmit {
@@ -457,19 +456,16 @@ pub(super) fn plan_payload_verbs(
 
 /// The `DW0441` failure for a payload-verb anchor that no placed piece provides.
 pub(super) fn payload_anchor_failure(
-    placement: delvewright_dsl::Placement,
+    campaign: &delvewright_dsl::Campaign,
     label: &str,
     anchor: &str,
 ) -> BuildFailure {
     BuildFailure::Diagnostic {
         code: DW_PAYLOAD_ANCHOR_UNRESOLVED,
         message: format!(
-            "{label}: anchor `{anchor}` is not provided by any placed prefab piece, so the \
+            "{label}: anchor `{anchor}` is not a name the map places, so the \
              volume it centres cannot be resolved — {}",
-            placement.anchor_remedy(
-                "use an anchor name the prefab metadata actually exposes (anchor names come \
-                 from prefab metadata; do NOT invent one)"
-            ),
+            delvewright_dsl::anchor_remedy(campaign),
         ),
     }
 }

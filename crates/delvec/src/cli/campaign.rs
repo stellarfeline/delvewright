@@ -441,25 +441,6 @@ pub(super) fn validate_loaded(
                 examined.push(bind.line());
                 diags.extend(sd);
             }
-            // **`DW0889`: which anchors does this area guarantee** — asked here
-            // because this is the last step that can still answer it in time. An
-            // area binding a pool seats a SUBSET of that pool's members (the
-            // `entry` piece, one carrier per anchor the campaign requires, and
-            // `connector` fillers drawn from the seed), so an anchor declared on
-            // a member nothing forces may simply not be in the built world.
-            // Every diagnostic that said so needed a build, and the anchors are
-            // chosen three authoring steps earlier. The whole verdict is a fact
-            // about declarations — the pool's members, their roles, their
-            // `anchors` maps — so nothing has to be placed to know it, on
-            // `compiler::seating`'s own precedent. Advisory: the filler draw may
-            // well seat the piece, and `DW0302`/`DW0360` still refuse at the
-            // build if it did not. The binding line states the guarantee with
-            // its denominator, zeroes included.
-            {
-                let (gbind, gd) = delvec::compiler::guarantee::check(&campaign, &prefabs);
-                examined.push(gbind.line());
-                diags.extend(gd);
-            }
             // An objective keeps the promise its prompt makes (DW0860-DW0863):
             // a failure clock armed before its own prompt could be read, an
             // adopted container nothing distinguishes from the scenery beside
@@ -618,7 +599,7 @@ pub(crate) fn run_analyze(campaign_dir: &Path, prefabs_dir: &Path, json: bool) -
 /// and the spec-0015 view commands so all three see the same world.
 pub(crate) fn read_structures(
     plan: &Plan,
-    prefabs: &PrefabRegistry,
+    _prefabs: &PrefabRegistry,
     prefabs_dir: &Path,
     json: bool,
 ) -> Result<BTreeMap<String, Vec<u8>>, u8> {
@@ -633,18 +614,13 @@ pub(crate) fn read_structures(
             structures.insert(file.clone(), bytes.clone());
         }
     }
-    // Placed pieces, plus any structure a stage-7 `fragment` verb stamps that
-    // no piece placed (spec-0017) — the replay needs those bytes too.
+    // Every placed piece's structure files.
     let mut files: Vec<String> = Vec::new();
     for area in &plan.areas {
         for template in area.pieces.iter().flat_map(|p| &p.templates) {
             files.push(template.structure_file.clone());
         }
     }
-    files.extend(delvec::compiler::edit::fragment_structure_files(
-        plan.campaign,
-        prefabs,
-    ));
     for file in files {
         {
             if structures.contains_key(&file) {

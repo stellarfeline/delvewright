@@ -7,43 +7,19 @@ use super::*;
 /// # The decision this function is
 ///
 /// A surround has to know how big the map is, and **an extent is DECLARED or it
-/// does not exist**. There are two documents that declare one, and they are the
-/// only two.
-///
-/// **A site plan's `region`**, which a campaign planned as a whole map states
-/// outright and which nothing may grow — a box outside it is `DW0826`. Where a
-/// plan exists this is the answer, and that is not a convenience: spec-0049
-/// exists to stop extent flowing upward from the parts, so the region is the
-/// brief's number flowing DOWN. A surround keyed to a plan's placed footprints
-/// would reintroduce that flow one layer out — the mountains would creep inward
-/// wherever a plan reserved space and had not yet filled it, so detailing a
-/// place later would move a mountain a walk had already been judged against.
-///
-/// **A single prefab's own region**, for a campaign whose whole map is one
-/// piece: one area, binding one `prefab`, whose declared structure size is the
-/// map. That is a declaration too — it is written in the prefab document, held
-/// to the `.nbt`'s own bytes by the byte-claim check (`DW0888`), and the piece
-/// is what a `site` is: a building together with its island, its moat and its
-/// banks inside one box. Nothing flows upward here, because there is exactly
-/// one part and it is the whole; detailing its interior cannot move its box,
-/// and enlarging its region is a re-export of the asset, not a side effect of
-/// authoring.
-///
-/// **Everything else has stated no extent, and `DW0855` refuses it** — which is
-/// that refusal's own argument, held to its own words. It reads: *areas sit on
-/// the compiler's fixed stride with void between them, so that union is mostly
-/// nothing*. [`AREA_SPACING`] is what makes a union meaningless, and a campaign
-/// with one area never uses it: its single area sits at `0 * AREA_SPACING` and
-/// the union is the piece. Two areas, or one drawing from a pool, and the
-/// argument bites again — a pool's footprint is the solver's answer, so it
-/// would move with the seed.
+/// does not exist**: a site plan's `region`, which states the whole map and
+/// which nothing may grow — a box outside it is `DW0826`. The region is the
+/// brief's number flowing DOWN; a surround keyed to placed footprints would
+/// let extent flow upward from the parts, and the mountains would creep inward
+/// wherever a plan reserved space it had not yet filled. A campaign with no
+/// site plan has stated no extent, and `DW0855` refuses a terrain-building
+/// horizon on it.
 ///
 /// The vertical extent is deliberately absent. A surround stands on its own
 /// datum ([`crate::compiler::horizon::VALLEY_GAP_FLOOR_TOP_Y`]) and rises by its own
 /// param; what the map does above that floor is the map's business.
 pub fn surround_rect(
     campaign: &Campaign,
-    areas: &[AreaPlacement],
 ) -> Option<(crate::compiler::surround::SceneRect, &'static str)> {
     if let Some(plan) = campaign.site_plan.as_ref() {
         let r = &plan.content.region;
@@ -58,62 +34,15 @@ pub fn surround_rect(
             "site-plan region",
         ));
     }
-    // *Is this campaign one piece* is asked of `Extent`, which is the same
-    // predicate the validation tier refuses on — one rule, one answer. *How big
-    // is that piece* is a different question and is asked of the placement the
-    // prefab's own declared size produced.
-    let single = delvewright_dsl::placement::Extent::of(campaign)
-        == delvewright_dsl::placement::Extent::OnePiece;
-    if single
-        && let [area] = areas
-        && let [piece] = area.pieces.as_slice()
-    {
-        let (min, max) = piece.bbox();
-        return Some((
-            crate::compiler::surround::SceneRect {
-                min_x: min[0],
-                min_z: min[2],
-                max_x: max[0],
-                max_z: max[2],
-            },
-            "one placed piece's own region",
-        ));
-    }
     None
 }
 
 /// `DW0855` (build, exit 3): a horizon whose base builds terrain, on a campaign
 /// with no map for that terrain to stand around.
 ///
-/// A surround has to ring something, and the only thing it can ring is a
-/// statement of the whole map's extent. The substitute that is not one is the
-/// union of what got placed, which is an artifact of [`AREA_SPACING`]: two
-/// small areas sit 256 blocks apart with void between them, so their union is a
-/// rectangle that is mostly nothing, and ringing it generates a mountain range
-/// around empty space.
-///
-/// That is not a performance note; it is the reason the refusal is right. It
-/// was measured: the same surround around a site plan's declared 64x64 region
-/// is 14 templates and builds in about ninety seconds, and around the union of
-/// two hand-placed areas it had not finished in ten minutes. The fast answer
-/// and the correct answer are the same answer here, which is usually the sign
-/// that the substitute was never the thing.
-///
-/// **The refusal is bound to the argument above and to nothing wider.** It read
-/// *this campaign places `areas[]`, therefore it has stated no extent*, and
-/// that is a step further than the argument goes: what makes a union
-/// meaningless is the stride, and a campaign with one area bound to one
-/// `prefab` never uses it — its whole map is that piece, its extent is the
-/// piece's own declared region, and [`surround_rect`] takes it from there.
-/// Nothing about the refusal is softened by that: a campaign that has stated no
-/// extent is refused exactly as it was, and the remedy list gains one entry a
-/// campaign in that state can actually reach.
-///
-/// The old list could not. Its remedy was *give the campaign a site plan*, and
-/// `DW0839` refuses a site plan beside a non-empty `areas[]` — so a creator who
-/// wanted terrain around a hand-placed piece was sent from `DW0855` to `DW0839`
-/// and back. CLAUDE.md names that shape: a gate that names a remedy owes a check
-/// that the remedy is reachable, and nothing held that check.
+/// A surround has to ring something, and the only thing it can ring is the
+/// site plan's statement of the whole map's extent. The refusal keeps one arm:
+/// a terrain-building horizon on a campaign with no site plan.
 pub const DW_SURROUND_NO_REGION: delvewright_dsl::DwCode =
     delvewright_dsl::world::SURROUND_NO_REGION;
 
@@ -189,22 +118,16 @@ pub(super) fn build_surround(
     if !h.base.has_surround() {
         return Ok(None);
     }
-    let Some((scene, authority)) = surround_rect(campaign, areas) else {
+    let Some((scene, authority)) = surround_rect(campaign) else {
         return Err(PlanError::new(
             DW_SURROUND_NO_REGION,
             format!(
                 "`horizon` base `{base}` builds terrain around the map, and this campaign never \
-                 says how big the map is. A surround rings a declared extent — a site plan's \
-                 `region`, or the declared region of the ONE prefab a one-area campaign binds — \
-                 and this campaign places {n} area(s) with `areas[]` and states neither. The \
-                 union of what happens to get placed is not a substitute: areas sit {sp} blocks \
-                 apart, so that union is mostly the void between them, and the horizon would be \
-                 a mountain range built around empty space. Make the map one area bound to one \
-                 `prefab`, or give the campaign a site plan, or set `horizon` to `void` or \
+                 says how big the map is: it has no site plan, and a surround rings the plan's \
+                 declared `region`. Give the campaign its map (`geometry-brief.json`, then \
+                 `layout-graph.json`, then `site-plan.json`), or set `horizon` to `void` or \
                  `ocean`, which need no map to be a horizon of.",
                 base = h.base.token(),
-                n = areas.len(),
-                sp = AREA_SPACING,
             ),
         ));
     };
@@ -220,7 +143,7 @@ pub(super) fn build_surround(
         palette: SurroundPalette::StoneGrass,
     };
     let valley = surround::generate_valley(
-        solver::stream_seed(seed, crate::compiler::horizon::VALLEY_STREAM),
+        rotation::stream_seed(seed, crate::compiler::horizon::VALLEY_STREAM),
         scene,
         crate::compiler::horizon::VALLEY_GAP_FLOOR_TOP_Y,
         &params,

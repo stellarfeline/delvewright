@@ -25,36 +25,6 @@ pub struct PrefabArgs {
 
 #[derive(Clone, Subcommand)]
 pub enum PrefabCommand {
-    /// **Can this library stand on this horizon** (spec-0060 §6): per pool, the
-    /// verdict and the reason, with a numerator and a denominator at pool,
-    /// member and declaration level.
-    ///
-    /// It reads a library and a base and answers the pairing question BEFORE a
-    /// campaign is authored against either. Same implementation as the
-    /// compiler's own validation check, so a library can never be seatable
-    /// according to the tool and refused by the build.
-    Seating {
-        /// The horizon base to seat against — a base `delvec schema --stage
-        /// world` declares (`void`, `ocean`, `valley`).
-        #[arg(long)]
-        horizon: String,
-    },
-    /// **Which anchors does a pool guarantee**: per pool, the member count, the
-    /// `entry` member every draw seats, the anchor names that member declares —
-    /// the whole unconditional guarantee — and every other name in the pool's
-    /// vocabulary with the carrier it would have to arrive on.
-    ///
-    /// It reads a LIBRARY and nothing else, which is the point: the anchors a
-    /// campaign hangs its design on are chosen at the third authoring step,
-    /// where `quests.json` and `dialogue.json` do not exist yet and every
-    /// campaign verb refuses a directory that is not all six documents
-    /// (`DW0874`). Same implementation as the compiler's own `DW0889`, so the
-    /// tool and the build cannot disagree about what a pool guarantees.
-    Anchors {
-        /// One pool id (`pool/<name>`). Omitted, every pool the library declares.
-        #[arg(long)]
-        pool: Option<String>,
-    },
     /// Mechanical NBT palette audit (CI gate): allowlist + code-injection forbid.
     Audit {
         /// Input structure `.nbt`; the `.json` manifest of a zone that ships as
@@ -69,30 +39,8 @@ pub enum PrefabCommand {
         #[arg(short = 'o', long)]
         report: Option<PathBuf>,
     },
-    /// Carve a jigsaw socket into a piece (updates the `.nbt` + metadata).
-    Socket {
-        nbt: PathBuf,
-        /// Jigsaw cell (bottom-centre of the opening): `x,y,z`.
-        #[arg(long)]
-        pos: String,
-        /// Outward facing: north|south|east|west.
-        #[arg(long)]
-        facing: String,
-        /// Opening `w,h` (default 3,3).
-        #[arg(long, default_value = "3,3")]
-        opening: String,
-        /// Jigsaw name (default keep:socket).
-        #[arg(long, default_value = "keep:socket")]
-        name: String,
-        /// Jigsaw target (default keep:socket).
-        #[arg(long, default_value = "keep:socket")]
-        target: String,
-        /// Jigsaw pool (default keep:pool).
-        #[arg(long, default_value = "keep:pool")]
-        pool: String,
-    },
     /// Resolve foreign worldgen jigsaw markers to their `final_state` (import-time
-    /// neutralization; run BEFORE `socket`).
+    /// neutralization).
     ResolveJigsaw { nbt: PathBuf },
     /// Annotate a named anchor into a piece's metadata.
     Anchor {

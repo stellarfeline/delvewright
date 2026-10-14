@@ -60,7 +60,7 @@ use delvewright_dsl::{Diagnostic, EditFrame, MorphOp, PaletteRecipe, RegionShape
 
 use crate::compiler::assembled::{self, Assembled};
 use crate::compiler::plan::{Plan, ResolvedAnchor};
-use crate::compiler::solver::stream_seed;
+use crate::compiler::rotation::stream_seed;
 use delvewright_dsl::{DwCode, ExitTier};
 
 delvewright_dsl::dw_code! {
@@ -388,7 +388,7 @@ pub fn replay_view(
 
 fn replay_with(
     plan: &Plan,
-    prefabs: &crate::compiler::registry::PrefabRegistry,
+    _prefabs: &crate::compiler::registry::PrefabRegistry,
     structures: &BTreeMap<String, Vec<u8>>,
     enforce: bool,
     pristine: &mut Option<Assembled>,
@@ -417,18 +417,14 @@ fn replay_with(
 
     for batch in &env.content.batches {
         let bid = batch.id.as_str();
-        let area = plan
-            .areas
-            .iter()
-            .find(|a| a.area_id == batch.area.as_str())
-            .ok_or_else(|| Failure {
-                code: DW_EDIT_UNRESOLVED,
-                message: format!(
-                    "world-edits batch `{bid}` targets area `{}` which the plan did not place — \
-                     use a stage-1 area id",
-                    batch.area
-                ),
-            })?;
+        // The one area a site plan lays out: every batch edits the site.
+        let area = plan.areas.first().ok_or_else(|| Failure {
+            code: DW_EDIT_UNRESOLVED,
+            message: format!(
+                "world-edits batch `{bid}` edits a map this campaign does not have: there is no \
+                 site plan, so nothing is placed for an edit to land in"
+            ),
+        })?;
 
         // Named regions of this batch (strictly backward references, validated).
         let mut regions: BTreeMap<String, BTreeSet<[i32; 3]>> = BTreeMap::new();
@@ -539,26 +535,6 @@ fn replay_with(
                         warnings.extend(placement_finding(bid, ei, "plant", d)?);
                     }
                 }
-                WorldEdit::Fragment {
-                    prefab,
-                    frame,
-                    at,
-                    rotation,
-                } => {
-                    fragment(
-                        &mut assembled,
-                        &mut batch_writes,
-                        plan,
-                        area,
-                        bid,
-                        prefabs,
-                        structures,
-                        prefab,
-                        frame,
-                        *at,
-                        rotation.unwrap_or(delvewright_dsl::FragmentRotation::None),
-                    )?;
-                }
                 WorldEdit::Relight {
                     region,
                     fixture,
@@ -570,22 +546,12 @@ fn replay_with(
                         &mut batch_writes,
                         &mut fixture_cells,
                         plan,
-                        batch,
                         bid,
                         &cells,
                         *fixture,
                         *min_light,
                     )?;
                 }
-                // L2 massing verbs (spec-0017) were applied at PLAN time
-                // (`crate::compiler::massing`, inside `Plan::build`) — the assembly this
-                // replay started from already reflects them. Their batch
-                // bounds come from `plan.massing_bounds` below.
-                WorldEdit::SwapPiece { .. }
-                | WorldEdit::InsertPiece { .. }
-                | WorldEdit::RemovePiece { .. }
-                | WorldEdit::RewireSocket { .. }
-                | WorldEdit::ReseedPiece { .. } => {}
             }
         }
 
@@ -637,8 +603,7 @@ fn replay_with(
         commands.extend(coalesce_commands(&batch_writes));
         batches.push(BatchOutcome {
             id: bid.to_string(),
-            bounds: bounds_of(batch_writes.keys())
-                .or_else(|| plan.massing_bounds.get(bid).copied()),
+            bounds: bounds_of(batch_writes.keys()),
         });
     }
 
@@ -1149,10 +1114,7 @@ fn resolve_shape(
                                 "world-edits batch `{bid}`: area `{}` resolves no anchor \
                                  `{anchor}` — {}",
                                 area.area_id,
-                                delvewright_dsl::Placement::of(plan.campaign).anchor_remedy(
-                                    "use an anchor the area's placed prefab metadata declares \
-                                     (see the `delvec snapshot` manifest's target list)"
-                                ),
+                                delvewright_dsl::anchor_remedy(plan.campaign),
                             ));
                         }
                     };
@@ -1627,178 +1589,6 @@ fn plant(
     }
 }
 
-/// The `fragment` verb (spec-0017): stamp a library prefab's non-air
-/// cells at a frame-resolved position, optionally quarter-turned. The fragment
-/// is a first-class library prefab — provenance/license live in its metadata
-/// exactly like every placed prefab (ADR-0013), so nothing outside the
-/// admitted library can be stamped. Semantically a `/place template` whose
-/// bytes the compiler already models: non-air cells overwrite, authored air
-/// does not erase (`structure_cells` yields non-air only).
-#[allow(clippy::too_many_arguments)]
-fn fragment(
-    assembled: &mut Assembled,
-    batch_writes: &mut BTreeMap<[i32; 3], String>,
-    plan: &Plan,
-    area: &crate::compiler::plan::AreaPlacement,
-    bid: &str,
-    prefabs: &crate::compiler::registry::PrefabRegistry,
-    structures: &BTreeMap<String, Vec<u8>>,
-    prefab: &delvewright_dsl::PrefabId,
-    frame: &delvewright_dsl::EditFrame,
-    at: [i32; 3],
-    rotation: delvewright_dsl::FragmentRotation,
-) -> Result<(), Failure> {
-    let meta = prefabs.get(prefab.as_str()).ok_or_else(|| Failure {
-        code: DW_EDIT_UNRESOLVED,
-        message: format!(
-            "world-edits batch `{bid}`: fragment prefab `{prefab}` is not in the prefab \
-             library — only admitted library prefabs (with provenance/license metadata, \
-             ADR-0013) can be stamped. Admit the fragment via `delvec prefab` first, or fix \
-             the id"
-        ),
-    })?;
-    let origin = resolve_frame_point(plan, area, bid, frame, at).map_err(|message| Failure {
-        code: DW_EDIT_UNRESOLVED,
-        message,
-    })?;
-    let rot = match rotation {
-        delvewright_dsl::FragmentRotation::None => crate::compiler::solver::Rotation::None,
-        delvewright_dsl::FragmentRotation::Clockwise90 => crate::compiler::solver::Rotation::Cw90,
-        delvewright_dsl::FragmentRotation::Clockwise180 => crate::compiler::solver::Rotation::Cw180,
-        delvewright_dsl::FragmentRotation::Counterclockwise90 => {
-            crate::compiler::solver::Rotation::Ccw90
-        }
-    };
-    // Blockstate-preserving read (map-editor audit, surfaced by DW0354): the
-    // occupancy model stores bare ids, but a `fragment` stamp's writes ARE the
-    // runtime `setblock` lines. Reading bare ids turned the hello-room prefab's
-    // `lantern[hanging=true]` into a floor lantern stamped into mid-air, which
-    // vanilla drops on the next chunk tick.
-    //
-    // Every template of the piece, at its piece-local offset: a stamped
-    // fragment is the whole piece, and a piece past the vanilla cap ships as
-    // several templates. Reading only the first would stamp part of a building
-    // and report success — the failure a tile set has no other detector for.
-    let mut cells: Vec<([i32; 3], String, Option<bool>)> = Vec::new();
-    for template in meta.templates() {
-        let bytes = structures.get(template.file).ok_or_else(|| Failure {
-            code: DW_EDIT_UNRESOLVED,
-            message: format!(
-                "world-edits batch `{bid}`: fragment prefab `{prefab}`'s structure file \
-                     `{}` was not loaded — the prefab library entry points at a missing `.nbt`",
-                template.file
-            ),
-        })?;
-        for (local, name, open) in assembled::structure_cells_stateful(bytes) {
-            cells.push((
-                [
-                    local[0] + template.offset[0],
-                    local[1] + template.offset[1],
-                    local[2] + template.offset[2],
-                ],
-                name,
-                open,
-            ));
-        }
-    }
-    if cells.is_empty() {
-        return Err(Failure {
-            code: DW_EDIT_UNRESOLVED,
-            message: format!(
-                "world-edits batch `{bid}`: fragment prefab `{prefab}` decodes to zero \
-                 non-air cells — an empty stamp is a silent no-op; fix the `.nbt` or drop \
-                 the edit"
-            ),
-        });
-    }
-    // `rotation` turns POSITIONS only — the compiler has no rotate-aware
-    // blockstate rewriter, so a stamped `facing`/`axis`/`shape` would keep its
-    // unrotated value and ship visibly deformed geometry (stairs facing into
-    // walls, logs lying across the grain). That is the silently-deformed-map
-    // class, so the compiler REFUSES rather than warns: a rotated stamp of a
-    // prefab carrying any yaw-dependent property is a build error. Prefabs whose
-    // states are provably yaw-INVARIANT (`hanging`, `half`, `waterlogged`,
-    // `axis=y`, `facing=up|down`, …) rotate correctly and stay allowed — this is
-    // a collision test, not a blanket ban on `rotation`.
-    if rotation != delvewright_dsl::FragmentRotation::None
-        && let Some((local, name, prop)) = first_yaw_dependent(&cells)
-    {
-        return Err(Failure {
-            code: DW_EDIT_UNRESOLVED,
-            message: format!(
-                "world-edits batch `{bid}`: fragment prefab `{prefab}` is stamped with \
-                 `rotation: {rotation:?}`, but it contains direction-bearing blockstates \
-                 (`{name}` at prefab-local [{}, {}, {}] carries `{prop}`) and rotate-aware \
-                 stamping is NOT implemented — the stamp turns cell POSITIONS only, so every \
-                 `facing`/`axis`/`shape`/connection property would keep its unrotated value \
-                 and the stamped geometry would ship visibly deformed. Stamp it unrotated, or \
-                 admit a pre-rotated prefab variant to the library; do NOT stamp it rotated \
-                 and hand-fix the facings downstream with extra edits",
-                local[0], local[1], local[2],
-            ),
-        });
-    }
-    for (local, name, _open) in cells {
-        let t = rot.transform(local);
-        let cell = [origin[0] + t[0], origin[1] + t[1], origin[2] + t[2]];
-        write_cell(assembled, batch_writes, cell, &name);
-    }
-    Ok(())
-}
-
-/// Blockstate properties whose value encodes a **horizontal** direction, and is
-/// therefore wrong after a quarter-turn unless it is rewritten with the stamp:
-///
-/// * `facing` — stairs, doors, furnaces, wall torches, chests, … (values `up`
-///   and `down` are yaw-invariant and excluded below)
-/// * `axis` — logs/pillars/chains, where `x` and `z` swap (`y` is invariant)
-/// * `shape` — stair corners (`inner_left`/`outer_right`/…) and rail bends
-/// * `rotation` — the 16-step yaw of signs, banners and skulls
-/// * `orientation` — jigsaw markers and crafters (`north_up`, …)
-/// * `hinge` — a door's `left`/`right`, meaningful only against its `facing`
-/// * `north`/`south`/`east`/`west` — the connection flags of fences, walls,
-///   panes, redstone and mushroom blocks
-///
-/// Everything else a prefab can carry (`hanging`, `half`, `waterlogged`, `open`,
-/// `lit`, `type`, `level`, `persistent`, `thickness`, `vertical_direction`, …)
-/// is yaw-invariant, so a prefab built only from those rotates correctly.
-const YAW_DEPENDENT_PROPS: &[&str] = &[
-    "facing",
-    "axis",
-    "shape",
-    "rotation",
-    "orientation",
-    "hinge",
-    "north",
-    "south",
-    "east",
-    "west",
-];
-
-/// The first `(local pos, block, "key=value")` in a decoded stamp whose state
-/// depends on yaw, scanning in the decoder's deterministic cell order. `None`
-/// when every state in the stamp is rotation-invariant.
-fn first_yaw_dependent(
-    cells: &[([i32; 3], String, Option<bool>)],
-) -> Option<([i32; 3], &str, String)> {
-    for (local, name, _) in cells {
-        let Some(open) = name.find('[') else { continue };
-        for pair in name[open + 1..name.len().saturating_sub(1)].split(',') {
-            let Some((k, v)) = pair.split_once('=') else {
-                continue;
-            };
-            // `axis=y` and `facing=up|down` name the vertical axis, which a
-            // quarter-turn about y leaves untouched — never reject those.
-            let invariant =
-                (k == "axis" && v == "y") || (k == "facing" && (v == "up" || v == "down"));
-            if YAW_DEPENDENT_PROPS.contains(&k) && !invariant {
-                return Some((*local, base_id(name), pair.to_string()));
-            }
-        }
-    }
-    None
-}
-
 /// The `relight` verb (spec-0017): run the spec-0010 fixture-placement
 /// pass over ONE region and bake the resulting fixtures into the edit script's
 /// writes — authorial control of where fixtures land. Uses the exact
@@ -1812,20 +1602,13 @@ fn relight_region(
     batch_writes: &mut BTreeMap<[i32; 3], String>,
     fixture_cells: &mut BTreeSet<[i32; 3]>,
     plan: &Plan,
-    batch: &delvewright_dsl::EditBatch,
     bid: &str,
     cells: &BTreeSet<[i32; 3]>,
     fixture: Option<delvewright_dsl::Fixture>,
     min_light: Option<u8>,
 ) -> Result<(), Failure> {
     let c = plan.campaign;
-    let declared = c
-        .world
-        .content
-        .areas
-        .iter()
-        .find(|a| a.id.as_str() == batch.area.as_str())
-        .and_then(|a| a.lighting);
+    let declared = c.site_plan.as_ref().and_then(|p| p.content.lighting);
     // Defense in depth (map-editor audit): `dsl::validate` requires a
     // `fixture`/`min_light` override when the area declares no `lighting`
     // (DW0162), but `emit::build` is callable without validation — a library
@@ -1833,11 +1616,10 @@ fn relight_region(
     let missing = |field: &str| Failure {
         code: DW_EDIT_UNRESOLVED,
         message: format!(
-            "world-edits batch `{bid}`: a `relight` verb resolves no `{field}` — area `{}` \
+            "world-edits batch `{bid}`: a `relight` verb resolves no `{field}` — the site plan \
              declares no `lighting` and the verb overrides none (validation should have caught \
-             this — this build path skipped `dsl::validate`). Declare the area's `lighting`, or \
-             give the verb an explicit `fixture` + `min_light`",
-            batch.area
+             this — this build path skipped `dsl::validate`). Declare the plan's `lighting`, or \
+             give the verb an explicit `fixture` + `min_light`"
         ),
     };
     let spec = delvewright_dsl::AreaLighting {
@@ -1888,8 +1670,7 @@ fn relight_region(
         &nav,
         &reachable,
         &required,
-        &area_label(bid, batch),
-        delvewright_dsl::Placement::of(plan.campaign),
+        &area_label(bid),
         spec,
         sky,
         amin,
@@ -1911,92 +1692,9 @@ fn relight_region(
     Ok(())
 }
 
-/// The area label a `relight` verb's diagnostics carry (`<area> (batch ...)`).
-fn area_label(bid: &str, batch: &delvewright_dsl::EditBatch) -> String {
-    format!("{} (batch `{bid}`)", batch.area)
-}
-
-/// Resolve a frame + offset to a world position (shared by box selects and
-/// fragment stamps).
-fn resolve_frame_point(
-    plan: &Plan,
-    area: &crate::compiler::plan::AreaPlacement,
-    bid: &str,
-    frame: &EditFrame,
-    p: [i32; 3],
-) -> Result<[i32; 3], String> {
-    match frame {
-        EditFrame::PieceLocal { piece, prefab } => {
-            let idx = *piece as usize;
-            let placed = area.pieces.get(idx).ok_or_else(|| {
-                format!(
-                    "world-edits batch `{bid}`: piece index {idx} is out of range — area `{}` \
-                     placed {} piece(s) (0..={}). The layout this frame was authored against \
-                     has drifted; re-inspect it with `delvec snapshot` and update the frame, \
-                     do NOT guess an index",
-                    area.area_id,
-                    area.pieces.len(),
-                    area.pieces.len().saturating_sub(1),
-                )
-            })?;
-            if placed.prefab_id != prefab.as_str() {
-                return Err(format!(
-                    "world-edits batch `{bid}`: piece {idx} of area `{}` is `{}`, not the \
-                     frame's declared `{prefab}` — the solved layout has drifted since this \
-                     edit was authored. Re-inspect the layout (`delvec snapshot`) and \
-                     re-target the frame; do NOT just delete the prefab guard",
-                    area.area_id, placed.prefab_id,
-                ));
-            }
-            let t = placed.rotation.transform(p);
-            Ok([
-                placed.pos[0] + t[0],
-                placed.pos[1] + t[1],
-                placed.pos[2] + t[2],
-            ])
-        }
-        EditFrame::AnchorRelative { anchor } => {
-            let key = (area.area_id.clone(), anchor.as_str().to_string());
-            let pos = match plan.anchors.get(&key) {
-                Some(ResolvedAnchor::Point { pos, .. }) => *pos,
-                Some(ResolvedAnchor::Gate { from, .. }) => *from,
-                None => {
-                    return Err(format!(
-                        "world-edits batch `{bid}`: area `{}` resolves no anchor `{anchor}` — {}",
-                        area.area_id,
-                        delvewright_dsl::Placement::of(plan.campaign).anchor_remedy(
-                            "use an anchor the area's placed prefab metadata declares (see the \
-                             `delvec snapshot` manifest's target list)"
-                        ),
-                    ));
-                }
-            };
-            Ok([pos[0] + p[0], pos[1] + p[1], pos[2] + p[2]])
-        }
-    }
-}
-
-/// Structure files referenced by `fragment` verbs but placed by no piece — the
-/// extra `.nbt`s the CLI must load into the `structures` map before replay.
-/// Unresolvable prefab ids are skipped here (the replay reports them as
-/// `DW0323` with a remediation message).
-pub fn fragment_structure_files(
-    campaign: &delvewright_dsl::Campaign,
-    prefabs: &crate::compiler::registry::PrefabRegistry,
-) -> BTreeSet<String> {
-    let mut files = BTreeSet::new();
-    if let Some(env) = &campaign.world_edits {
-        for batch in &env.content.batches {
-            for edit in &batch.edits {
-                if let WorldEdit::Fragment { prefab, .. } = edit
-                    && let Some(meta) = prefabs.get(prefab.as_str())
-                {
-                    files.extend(meta.templates().iter().map(|t| t.file.to_string()));
-                }
-            }
-        }
-    }
-    files
+/// The label a `relight` verb's diagnostics carry (`the site (batch ...)`).
+fn area_label(bid: &str) -> String {
+    format!("the site (batch `{bid}`)")
 }
 
 /// Group region cells into columns: `(x, z)` → ascending `y`s.

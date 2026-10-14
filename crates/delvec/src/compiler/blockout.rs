@@ -68,7 +68,7 @@ use delvewright_dsl::{Campaign, Diagnostic, DwCode, ExitTier, NodeId};
 use serde::Serialize;
 
 use crate::compiler::plan::{AnchorRole, AreaPlacement, PiecePlacement, ResolvedAnchor};
-use crate::compiler::solver::{Rotation, SealFill};
+use crate::compiler::rotation::{Rotation, SealFill};
 
 /// The blockout's legibility palette (spec-0049 §5.1).
 ///

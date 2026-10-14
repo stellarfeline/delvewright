@@ -56,7 +56,7 @@ use serde_json::json;
 
 use crate::compiler::plan::{AreaPlacement, PlanError};
 use crate::compiler::registry::PrefabRegistry;
-use crate::compiler::solver::Rotation;
+use crate::compiler::rotation::Rotation;
 
 delvewright_dsl::dw_code! {
     /// `DW0547`: an `open-way` reference does not name exactly one placed way.

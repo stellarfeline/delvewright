@@ -36,9 +36,9 @@ impl<'a> Plan<'a> {
         let mark = body.mark();
         let anchor = mark.anchor.as_str();
         if let Some(area) = body.area()
-            && let Some(p) = self.point(area.as_str(), anchor)
+            && let Some(p) = self.point(area, anchor)
         {
-            return Some((area.as_str().to_string(), p));
+            return Some((area.to_string(), p));
         }
         self.point_any_site(anchor)
     }
