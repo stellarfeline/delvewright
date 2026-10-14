@@ -139,6 +139,7 @@ pub(super) fn endings_ledger(plan: &Plan) -> Vec<u8> {
     let a: Analysis = crate::compiler::ending::analyse(c, story);
     let by_path = effects_by_path(c);
     let decl = c.quest_plan.content.endings_read;
+    let templates = super::packtest::ending::ending_templates(plan);
     let endings: Vec<Value> = a
         .endings
         .iter()
@@ -186,9 +187,19 @@ pub(super) fn endings_ledger(plan: &Plan) -> Vec<u8> {
                         && d.deeds_at_least.is_none_or(|n| v.seeded_deeds() >= n as usize),
                 })
             });
+            let mine: Vec<Value> = templates
+                .iter()
+                .filter(|t| t.ending == v.ending.id)
+                .map(|t| json!({
+                    "template": t.name,
+                    "world": format!("world/{}", t.world),
+                    "observables_asserted": t.asserted,
+                }))
+                .collect();
             json!({
                 "id": v.ending.id,
                 "path": v.ending.path,
+                "packtests": mine,
                 "scene": scene.path,
                 "host_quest": v.host_quest,
                 "inputs": inputs,

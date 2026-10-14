@@ -16,6 +16,7 @@ mod class;
 mod creator;
 mod dialogue;
 mod economy;
+pub(super) mod ending;
 mod healthbar;
 mod lane;
 mod lethal;
@@ -142,6 +143,11 @@ pub(super) fn emit_packtest(
     // a campaign that declares no pulse.
     pulse::emit_pulse_packtests(plan, out);
     economy::emit_economy_packtests(plan, out);
+
+    // spec-0108 §6.2: per (ending, witness world), the world after the final
+    // scene holds every change its aftermath declares. Emits nothing for an
+    // ending no world reaches or whose scene changes nothing.
+    ending::emit_ending_packtests(plan, out);
 
     // spec-0031 teleport: the runtime half of TOTALITY, one template per teleport.
     teleport::emit_teleport_packtests(plan, out);
