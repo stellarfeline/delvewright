@@ -2995,6 +2995,28 @@
       "note": "The same class as `vh-02` on land. The route proofs could not see it: they take the walk step only, so a hedge top reached by a jump off a garden boulder was in no proof's reach. `DW0921` floods the player's own movement (`nav::World::body_moves`: the walk step, falls to the deepest an unarmoured body survives, and cardinal gap jumps inside `dsl::metrics::JUMP_REACH`, measured by `tools/spike-jump-arc/simulate.mjs at 84f364997d24`, which reproduces the live jump spike's 14 verdicts) from the critical path's route cells, once per quest configuration, and refuses every reached cell from which no movement leads back; a cell the boundary clock returns and a shortcut lever the pocket reaches are ways out. A room the story shuts the party into holds the objective the story waits on and is not refused, with no declaration. Measured on this campaign at `dd4429c`: 6 configurations, 316580 cells reached, 827 a body cannot leave, in 78 pockets over 5 configurations -- on land in each, the four hedge beds (the one at `[140, 82, 110]` among them: 25 cells, entered `by a fall of 2 block(s)` off the hedge top), a ruin hole in the curtain top, a tower slit one step under the wall walk and nine hollows in the east ditch between the crag and the field wall; and the Undertide well (`vh-02`) in three. At the fixed content: 0. Limits, named in the diagnostic: diagonal jumps, climbing, standing on a fence or wall top and diving are not moves.",
       "round": 2,
       "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "glob": "programs/*.json",
+        "kind": "campaign"
+      },
+      "binding": {
+        "kind": "artifact",
+        "file": "containers.json",
+        "path": "cells"
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "kind": "dw",
+        "code": "DW1018"
+      },
+      "finding": "empty decorative containers stood in reach and cost the player time searching them",
+      "general_form": "every placed container is declared loot or decoration; a loot container is never empty; when any decoration container exists, the opening tells the player in the campaign's words",
+      "id": "str-14",
+      "note": "Carried by `DW1018` (spec-0105): every build takes a census of the container cells of the edited assembled world and attributes each to a `loot`, `collect` or `device` claim; a container nothing claims is scenery, and scenery with no `containers.decoration_notice` refuses the build. `DW1019` refuses an empty `loot` fill, and `DW1024` refuses a place mixing scenery with containers that matter or holding more than two scenery cells. The binding is the census's `cells` in `validation/containers.json`. Measured on this campaign at content `0d1f897` (its documents moved to the engine's dsl_version and the camera `exposure` fields DW1010 refuses removed, in a scratch copy): 19 container cells (16 barrels, 3 chests) in 8 places, 0 loot, 0 collect, 0 device, 19 decoration, no notice, so the build refuses with DW1018; two places (fish-market 5, net-lofts 4) are over the cap DW1024 holds next.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"
