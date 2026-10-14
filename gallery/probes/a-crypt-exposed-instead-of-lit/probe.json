@@ -1,0 +1,13 @@
+{
+  "code": "DW1010",
+  "patch": [
+    {
+      "doc": "design/cameras.json",
+      "op": "add",
+      "path": "/cameras/5/exposure",
+      "value": 8.0
+    }
+  ],
+  "units": [],
+  "why": "The record's sixth camera, `crypt-stair`, looks down the crypt stair at midnight, and the probe gives it `exposure` 8 — the number an author types to see into a room the path tracer shows dark. Nothing else moves: the lens, the frame, the sky and every other camera stand where they stood, every camera answers a row that exists and every row is answered, so `DW0721` and `DW0900` are green. What the edit writes is a derivation typed where only a judgement belongs: the engine exposes every frame at the one value its sky, tone curve and lantern scale are calibrated at, and a room too dark to read at that value is short of light, which no picture setting repairs. `DW1010` refuses it through the record's one reader, naming the camera, its row and the remedy — remove the field, and light the room where it is designed. It declares no unit: the camera record has no `exposure` field to bind, so this is a refusal demonstration."
+}

@@ -31,7 +31,20 @@
 # deleted after a verified install and kept, and named, after a failure. Nothing
 # is written under `~/.gradle`.
 #
-# A home that already holds the pin is left alone, exit 0.
+# A home that already holds the pin is left alone.
+#
+# ## The denoise kit
+#
+# Then, at the step that needs them, the two tools the render route's denoise
+# step runs (`tools/lib/chunky_denoise.py`): the chunky-denoiser plugin and Open
+# Image Denoise, each downloaded from `versions.toml [render]` and installed under
+# `<home>/denoise/` only when its bytes answer the pinned sha256. Open Image
+# Denoise is the project's own archive where it ships one, and is built from
+# its pinned source release (with pinned CMake, Ninja, ISPC and oneTBB) where it
+# does not (aarch64 Linux); the build needs a C and C++ compiler, and without one
+# — or on a platform with neither an archive nor a pinned source build — this
+# step refuses by name, exit 2, and `validation/chunky.sh` will not render there.
+# A home that already holds both is left alone.
 #
 # Usage: validation/chunky-install.sh [--java-home DIR] [--work DIR]
 #   --java-home  a JDK whose `java -version` answers `[render] chunky_build_java`
@@ -39,8 +52,9 @@
 #   --work       where the clone and the Gradle cache are built
 #
 # Needs `git`, `python3` and the network (the Chunky repository, the Gradle
-# distribution, Maven Central). Exit 0 = the pin is installed; 1 = the build or
-# the install failed; 2 = a precondition is missing, named.
+# distribution, Maven Central, the two GitHub releases). Exit 0 = the pin and the
+# denoise kit are installed; 1 = the build or an install failed; 2 = a
+# precondition is missing, named.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
@@ -51,7 +65,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --java-home) java_home_arg="$2"; shift 2;;
     --work) work="$2"; shift 2;;
-    -h|--help) sed -n '2,43p' "$0"; exit 0;;
+    -h|--help) sed -n '2,55p' "$0"; exit 0;;
     *) echo "chunky-install: unknown argument \`$1\`" >&2; exit 2;;
   esac
 done
@@ -68,8 +82,20 @@ dw_resolve_chunky_home
 home="$DW_CHUNKY_HOME"
 echo "chunky home: $home (from $DW_CHUNKY_HOME_SOURCE)"
 
+install_denoise_kit() {
+  local status=0
+  python3 "$repo/tools/lib/chunky_denoise.py" install --home "$home" || status=$?
+  case "$status" in
+    0) ;;
+    4) exit 2;;
+    *) echo "chunky-install: the denoise kit was not installed (exit $status)." >&2; exit 1;;
+  esac
+}
+
 if python3 "$repo/tools/lib/chunky_core.py" verify --home "$home" 2>/dev/null; then
-  echo "chunky-install: nothing to do — the pin is already installed."
+  echo "chunky-install: the pinned core is already installed."
+  install_denoise_kit
+  echo "chunky-install: installed; render with validation/chunky.sh."
   exit 0
 fi
 echo "chunky-install: $core is not installed at $home; building it."
@@ -126,4 +152,5 @@ python3 "$repo/tools/lib/chunky_core.py" record --home "$home" \
 python3 "$repo/tools/lib/chunky_core.py" verify --home "$home" \
   || fail "the install did not verify"
 rm -rf "$work"
+install_denoise_kit
 echo "chunky-install: installed; render with validation/chunky.sh."

@@ -2,7 +2,6 @@
   "cameras": [
     {
       "answers": "concept/keep",
-      "exposure": 1.0,
       "fov": 70.0,
       "height": 90,
       "name": "hero",
