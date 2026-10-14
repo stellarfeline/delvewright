@@ -5140,7 +5140,9 @@ world. Invariants:
   it by construction rather than by three call sites remembering. It never feeds
   the walkability sets, so routing and standability are untouched by it.
   - **Anchor seating (`nav::AnchorRoot`).** The walk region this proof examines
-    is flooded from every resolved anchor, and an anchor is a declared *point*,
+    is flooded from every resolved anchor but a station of a scenery place no
+    body is put in (`edit::body_starts`; the stage-10 call prints the count it
+    left out), and an anchor is a declared *point*,
     not a floor cell — seating it is a nearest-standable-cell snap. That snap
     chooses by squared distance and **nothing else**: it does not care that solid
     geometry stands between the anchor and the cell it lands on. So each root

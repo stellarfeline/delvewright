@@ -357,14 +357,28 @@ pub(super) fn prove_world(
                 }
             }
 
-            crate::compiler::nav::verify_boundary_safety(
-                world,
-                &crate::compiler::edit::anchor_starts(plan),
-            )
-            .map_err(|e| BuildFailure::Diagnostic {
-                code: e.code,
-                message: e.message,
-            })?;
+            // `DW0322` floods from where a body can start a walk: every anchor
+            // but a station of a scenery place nobody is put in
+            // (`edit::body_starts`). The line states what it left out.
+            let body_starts = crate::compiler::edit::body_starts(plan);
+            eprintln!(
+                "boundary-safety binding (DW0322): {} of {} anchor(s) root the walk region, {} \
+                 excluded as a station of a scenery place (`reached: false`) no body is put in{}",
+                body_starts.roots.len(),
+                body_starts.anchors,
+                body_starts.excluded.len(),
+                if body_starts.excluded.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", body_starts.excluded.join(", "))
+                },
+            );
+            crate::compiler::nav::verify_boundary_safety(world, &body_starts.roots).map_err(
+                |e| BuildFailure::Diagnostic {
+                    code: e.code,
+                    message: e.message,
+                },
+            )?;
 
             // spec-0092 §10: the boundary and the world agree (`DW0960`) — every
             // place a body is put stands inside a region that returns, and a
