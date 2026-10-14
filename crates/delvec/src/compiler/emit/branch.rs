@@ -108,6 +108,7 @@ pub(super) fn branch_paths(
     }
     let rows = crate::compiler::branch::world_rows(plan.campaign);
     let flow = crate::compiler::flow::Flow::new(plan.campaign);
+    let story = flow.story();
     let mut out = Vec::new();
     for row in rows.iter().filter(|w| w.no_path.is_none()) {
         let r = &row.realized;
@@ -142,6 +143,7 @@ pub(super) fn branch_paths(
                 },
                 moves,
                 actor_moves,
+                &story.runs[w].fired,
             ),
         ));
     }

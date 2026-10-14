@@ -257,6 +257,14 @@ pub(super) fn emit_critical_path(
     routes: &[crate::compiler::nav::LegRoute],
 ) -> Value {
     let en_route = crate::compiler::hold::en_route_holds(plan, &plan.critical_path, routes);
+    // What the exported path's own replay fires — the ending it reaches and
+    // the aftermath lines that play (spec-0108 §6.3).
+    let flow = crate::compiler::flow::Flow::new(plan.campaign);
+    let fired: BTreeSet<String> = flow
+        .journal(&flow.playthrough())
+        .into_iter()
+        .flat_map(|j| j.fired)
+        .collect();
     critical_path_json(
         plan,
         &plan.critical_path,
@@ -268,6 +276,7 @@ pub(super) fn emit_critical_path(
         },
         moves,
         actor_moves,
+        &fired,
     )
 }
 
@@ -293,7 +302,12 @@ pub(super) fn critical_path_json(
     holds: CutsceneHolds<'_>,
     moves: &[crate::compiler::nav::MovePlan],
     actor_moves: &[crate::compiler::nav::ActorMovePlan],
+    fired: &BTreeSet<String>,
 ) -> Value {
+    // spec-0108 §6.3: what the world the ending left looks like, for the bot to
+    // read after the campaign marker and the tail — each aftermath line of the
+    // scene of every ending this path's replay fires, that fires itself.
+    let aftermath = path_aftermath(plan, fired);
     // Scheduled-ending tail for THIS path's quests: exported on the
     // terminal `assert-complete` step as `ending_tail_ticks`, so the harness
     // completion window covers a `sequence`-scheduled finale (the-wake: 250t)
@@ -404,6 +418,11 @@ pub(super) fn critical_path_json(
                         && let Some(obj) = v.as_object_mut()
                     {
                         obj.insert("ending_tail_ticks".to_string(), json!(ending_tail));
+                    }
+                    if !aftermath.is_empty()
+                        && let Some(obj) = v.as_object_mut()
+                    {
+                        obj.insert("aftermath".to_string(), Value::Array(aftermath.clone()));
                     }
                     v
                 }
@@ -542,4 +561,42 @@ pub(super) fn emit_manifest(
         );
     }
     manifest
+}
+
+/// The aftermath a path's bot reads after the ending (spec-0108 §6.3): for each
+/// ending whose `campaign-complete` the path's replay fires, every aftermath
+/// effect of its scene that fires too, with what the bot can observe of it —
+/// the §6.2 observable, or what a player's own body shows (`health` after
+/// `damage-players`, an `effect` given or cleared) — or `emission-only`.
+pub(super) fn path_aftermath(plan: &Plan, fired: &BTreeSet<String>) -> Vec<Value> {
+    let scenes = crate::compiler::ending::Scenes::of(plan.campaign);
+    let mut by_path: BTreeMap<String, &QuestEffect> = BTreeMap::new();
+    delvewright_dsl::for_each_campaign_effect(plan.campaign, &mut |p, _, e| {
+        by_path.insert(p.to_string(), e);
+    });
+    let mut seen: BTreeSet<usize> = BTreeSet::new();
+    let mut out = Vec::new();
+    for e in &scenes.endings {
+        if !fired.contains(&e.path) || !seen.insert(e.scene) {
+            continue;
+        }
+        for x in &scenes.scenes[e.scene].aftermath {
+            if !fired.contains(&x.path) {
+                continue;
+            }
+            let Some(eff) = by_path.get(&x.path) else {
+                continue;
+            };
+            let observable = match &eff.verb {
+                Verb::DamagePlayers { amount, .. } => json!({"kind": "health", "amount": amount}),
+                Verb::GiveEffect { effect, .. } => json!({"kind": "effect", "effect": effect}),
+                Verb::ClearEffect { effect, .. } => {
+                    json!({"kind": "no-effect", "effect": effect})
+                }
+                _ => observation(plan, eff).unwrap_or(Value::String("emission-only".into())),
+            };
+            out.push(json!({"path": x.path, "verb": x.verb, "observable": observable}));
+        }
+    }
+    out
 }
