@@ -362,7 +362,7 @@ pub(super) fn prove_world(
             // (`edit::body_starts`). The line states what it left out.
             let body_starts = crate::compiler::edit::body_starts(plan);
             eprintln!(
-                "boundary-safety binding (DW0322): {} of {} anchor(s) root the walk region, {} \
+                "boundary-safety binding: {} of {} anchor(s) root the walk region, {} \
                  excluded as a station of a scenery place (`reached: false`) no body is put in{}",
                 body_starts.roots.len(),
                 body_starts.anchors,
