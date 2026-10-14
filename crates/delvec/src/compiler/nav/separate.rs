@@ -33,6 +33,10 @@ pub struct SeparationBinding {
     pub shortcuts: usize,
     /// Gates not judged because a clock owns the region (spec-0016 §4).
     pub clocked: usize,
+    /// Gates not judged because the story never operates them: no `open-gate`
+    /// or `close-gate` names the anchor and no barred edge bars it, so no beat
+    /// of the story is kept behind it — a barred window, a door nothing opens.
+    pub unoperated: usize,
     /// Gates whose shape names no two faces (no unique thin axis the faces
     /// decide), counted once each and not judged.
     pub faceless: usize,
@@ -53,7 +57,8 @@ impl SeparationBinding {
     pub fn line(&self) -> String {
         format!(
             "DW1011 binding: {} gate(s) resolved ({} of {} barred edge(s) among them); {} declared \
-             a way round (shortcut), {} clocked, {} with no two faces; over {} quest \
+             a way round (shortcut), {} clocked, {} operated by no beat, {} with no two faces; over \
+             {} quest \
              configuration(s), {} (gate, configuration) pair(s) shut, {} with a face no body can \
              stand at, {} with the party at a face, {} got round by walking, falling, jumping or \
              swimming",
@@ -62,6 +67,7 @@ impl SeparationBinding {
             self.barred_edges,
             self.shortcuts,
             self.clocked,
+            self.unoperated,
             self.faceless,
             self.configurations,
             self.shut,
@@ -80,6 +86,7 @@ impl SeparationBinding {
             "barred_bound": self.barred_bound,
             "shortcuts": self.shortcuts,
             "clocked": self.clocked,
+            "unoperated": self.unoperated,
             "faceless": self.faceless,
             "configurations": self.configurations,
             "shut": self.shut,
@@ -379,6 +386,18 @@ pub fn check_gates_separate(
             (format!("{kind} `{}`", seal.anchor), seal.region)
         })
         .collect();
+    // The gates the story operates: an `open-gate` or `close-gate` anywhere in
+    // the campaign names them (an unforced beat's included — the route model
+    // drops an unforced opening, and a gate a side beat opens still keeps what
+    // is behind it until then).
+    let mut operated: BTreeSet<&str> = BTreeSet::new();
+    crate::compiler::plan::for_each_gate_effect(plan.campaign, &mut |_, eff| match &eff.verb {
+        delvewright_dsl::Verb::OpenGate { anchor, .. }
+        | delvewright_dsl::Verb::CloseGate { anchor, .. } => {
+            operated.insert(anchor.as_str());
+        }
+        _ => {}
+    });
     for (seal, clocked) in world.every_gate() {
         binding.gates += 1;
         let edge = barred.get(&seal.anchor).copied();
@@ -395,6 +414,10 @@ pub fn check_gates_separate(
         }
         if clocked {
             binding.clocked += 1;
+            continue;
+        }
+        if edge.is_none() && !operated.contains(seal.anchor.as_str()) {
+            binding.unoperated += 1;
             continue;
         }
         let (label, unlock) = match edge {
@@ -846,7 +869,11 @@ mod separate_tests {
         let err = verdict.expect_err("two ways round");
         assert_eq!(err.code.id(), "DW1011");
         assert!(err.message.contains("jumping x1"), "{}", err.message);
-        assert!(err.message.contains("; and by water, from"), "{}", err.message);
+        assert!(
+            err.message.contains("; and by water, from"),
+            "{}",
+            err.message
+        );
     }
 
     /// A one-sided gate is judged from its openable face only. The way over the

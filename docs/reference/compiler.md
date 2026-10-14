@@ -3176,7 +3176,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   world resolves), `barred_edges` and `barred_bound` (the layout graph's barred
   edges, and how many resolve to a seam gate), the gates not judged — `shortcuts`
   (a `shortcut`'s door, or a barred edge declared `shortcut`), `clocked`,
-  `faceless` (no two faces) — then `configurations`, `shut` ((gate,
+  `unoperated` (no `open-gate` or `close-gate` names it and no barred edge bars
+  it), `faceless` (no two faces) — then `configurations`, `shut` ((gate,
   configuration) pairs where the gate is shut), `unstood` (a face no body can
   stand or float at), `reached` (the party can get to a face) and `bypassed`
   (zero on a build that ships). Written only when the proof holds.
