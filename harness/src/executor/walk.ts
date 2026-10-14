@@ -42,6 +42,9 @@ import { ControlTakenError } from "./cutscene.ts";
 import { type GateAssist, crossTimedGate } from "./timed-gate.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
+/** A walk ended because a cutscene gave the body back to a step already settled. */
+export class SceneSettledError extends Error {}
+
 export const { pathfinder, Movements, goals } = pathfinderPkg;
 
 /** Bounded number of physics-unstick bursts before a wedged hop fails loudly. */
@@ -950,6 +953,24 @@ export const methods = {
     return bot.entity.position.distanceTo(before);
   },
 
+  /**
+   * After a cutscene gives the body back mid-walk: a step already settled is not
+   * walked again. A scene the step's OWN completion fired (a scene on the reach
+   * that just completed) may have moved the body on purpose — a carry in its
+   * `then` — and walking back to the goal would undo it. The leg ends where the
+   * scene left the bot: this throws, and the leg's failure path ends it on the
+   * same oracle (`legSettledReason`).
+   */
+  endIfSettledByScene(this: MineflayerExecutor, label: string): void {
+    const settledBy = this.walkSettled?.();
+    if (settledBy === undefined) return;
+    process.stderr.write(
+      `[cutscene] ${label}: the step is settled (${settledBy}); the walk ends where the ` +
+        `scene put the bot, at ${fmt(this.requireBot().entity.position)}\n`,
+    );
+    throw new SceneSettledError(`${label}: settled during a cutscene (${settledBy})`);
+  },
+
   async runGoto(this: MineflayerExecutor, spec: GoalSpec, label: string): Promise<void> {
     const bot = this.requireBot();
     const { x, y, z, range } = spec;
@@ -972,7 +993,10 @@ export const methods = {
         // the bot stood still — a gate stager's wait, the sequencer's) is waited
         // out against the step's declaration before the walk is made; the walk
         // is then watched only if it starts with the body in hand.
-        if (this.controlTaken()) await this.awaitHeldAtStart(label);
+        if (this.controlTaken()) {
+          await this.awaitHeldAtStart(label);
+          this.endIfSettledByScene(label);
+        }
         const watch = !this.controlTaken();
         // Through the navigation owner, never `bot.pathfinder.goto` directly: this
         // wait is abandoned on a death and on the timeout, and an abandoned trip's
@@ -996,6 +1020,8 @@ export const methods = {
       } catch (err) {
         // A death is terminal for this run — never retry a path across the void.
         if (err instanceof BotDeathError) throw err;
+        // A step a cutscene settled ends the walk; never retried.
+        if (err instanceof SceneSettledError) throw err;
         // A cutscene took the body: wait it out against the step's declared
         // allowance, then walk again from wherever it put the bot back. Not an
         // attempt — the walk did not fail, it was interrupted.
@@ -1009,19 +1035,7 @@ export const methods = {
             );
           }
           await this.awaitControlEnRoute(label);
-          // A cutscene the step's OWN completion fired (a scene on the reach
-          // that just completed) may have moved the body on purpose — a carry
-          // in its `then`. Walking back to the goal would undo it; the step is
-          // proven, so the leg ends where the scene left the bot. The walk's
-          // failure path ends the leg on the same oracle (`legSettledReason`).
-          const settledBy = this.walkSettled?.();
-          if (settledBy !== undefined) {
-            process.stderr.write(
-              `[cutscene] ${label}: the step is settled (${settledBy}); the walk ends where ` +
-                `the scene put the bot, at ${fmt(bot.entity.position)}\n`,
-            );
-            throw new Error(`${label}: settled during a cutscene (${settledBy})`);
-          }
+          this.endIfSettledByScene(label);
           attempt -= 1;
           continue;
         }

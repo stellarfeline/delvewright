@@ -1940,6 +1940,38 @@ test("reach: a cutscene its own completion plays ends the walk where the scene p
   assert.deepEqual([p.x, p.y, p.z], [5.5, 67, 9.5], "the bot stands where the scene put it");
 });
 
+test("reach: a walk that starts with the body held by its step's own scene does not walk once it is back", async () => {
+  // The same gallery reach on the next run: the objective completed as the walk
+  // began, so the scene already held the body; control came back at the hearth
+  // and the walk went on to the exit.
+  const bot = new SceneCarryBot();
+  bot.entity.position = new FakeVec3(10.75, 67, 25.5);
+  const executor = attach(bot, { DELVEWRIGHT_CUTSCENE_GRACE_MS: "300" });
+  executor.useCampaign("gallery");
+  const step: ReachStep = {
+    action: "reach",
+    objective: "obj/reach-the-end",
+    anchor: "anchor/exit",
+    pos: [11, 67, 25],
+    radius: 1,
+    completion: { kind: "cube" as const, lo: [10, 66, 24], hi: [12, 68, 26] },
+    cutsceneSeconds: 1,
+  };
+  executor.beginStep(30);
+  await executor.beforeStep(step);
+  bot.emit("messagestr", "[dw:complete gallery obj/reach-the-end]");
+  bot.game.gameMode = "spectator";
+  bot.entity.position = new FakeVec3(4.5, 90, 4.5); // the scene's camera
+  setTimeout(() => {
+    bot.entity.position = new FakeVec3(5.5, 67, 9.5);
+    bot.game.gameMode = "adventure";
+  }, 3 * CUTSCENE_POLL_MS);
+  await within("executor.reach(step)", executor.reach(step));
+  assert.equal(bot.gotoCalls, 0, "no walk after the scene");
+  const p = bot.entity.position;
+  assert.deepEqual([p.x, p.y, p.z], [5.5, 67, 9.5], "the bot stands where the scene put it");
+});
+
 /**
  * A pathfinder that searches only what the client holds: a goal farther than
  * `heldRadius` blocks from the bot answers "No path to the goal!", as
