@@ -171,11 +171,20 @@ def test_the_staging_gate_is_never_skipped_on_the_campaign_path():
     container this file deliberately does not start — and the property is about
     which branch the call sits in.
     """
-    text = SCRIPT.read_text()
-    calls = [l for l in text.splitlines() if "staging-gate.py" in l and "python3" in l]
+    # The invocation lives in `dw_playtest_build_and_gate` (tools/lib/playtest-image.sh,
+    # the file the inputs key hashes), and the script calls that function once.
+    lib = (SCRIPT.parents[2] / "tools" / "lib" / "playtest-image.sh").read_text()
+    calls = [l for l in lib.splitlines() if "staging-gate.py" in l and "python3" in l]
     assert len(calls) == 1, f"the gate is invoked {len(calls)} time(s): {calls}"
-    campaign_branch = text.index('if [ "$SUBJECT_KIND" = "campaign" ]; then')
-    prefab_branch = text.index("# ---- a prefab: the browse world")
-    assert campaign_branch < text.index(calls[0]) < prefab_branch, (
+    func = lib.index("dw_playtest_build_and_gate() {")
+    assert func < lib.index(calls[0]) < lib.index("\n}\n", func), "the gate call is outside dw_playtest_build_and_gate"
+    text = SCRIPT.read_text()
+    assert "staging-gate.py" not in "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#") and "python3" in l)
+    uses = [i for i, l in enumerate(text.splitlines()) if l.strip() == "dw_playtest_build_and_gate"]
+    assert len(uses) == 1, f"dw_playtest_build_and_gate is called {len(uses)} time(s)"
+    lines = text.splitlines()
+    campaign_branch = next(i for i, l in enumerate(lines) if l.startswith('elif [ "$SUBJECT_KIND" = "campaign" ]; then'))
+    prefab_branch = next(i for i, l in enumerate(lines) if "# ---- a prefab: the browse world" in l)
+    assert campaign_branch < uses[0] < prefab_branch, (
         "the staging gate must be invoked inside the campaign branch and nowhere else"
     )

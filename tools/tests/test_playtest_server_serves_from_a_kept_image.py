@@ -200,6 +200,55 @@ def test_every_input_moves_the_key(inputs):
         seen.add(k)
 
 
+def test_the_key_covers_exactly_what_makes_the_image_and_not_the_serving_script():
+    files = run_hook('printf "%s\\n" $DW_PLAYTEST_INPUT_FILES').stdout.split()
+    assert files == [
+        "docs/playtest-findings.json",
+        "tools/creator/staging-gate.py",
+        "validation/Dockerfile.delve",
+        "validation/Dockerfile.playtest",
+        "validation/staging-admission.sh",
+        "tools/lib/playtest-image.sh",
+    ], files
+
+
+SERVE_ONLY = (
+    "tools/creator/playtest-server.sh",
+    "tools/lib/playtest-checkpoint.sh",
+    "tools/lib/playtest_checkpoint.py",
+    "tools/lib/rcon.sh",
+    "tools/lib/server-heap.sh",
+)
+
+
+def test_an_edit_to_serve_only_code_leaves_the_key_where_it_was(inputs):
+    for rel in SERVE_ONLY:
+        (inputs.root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (inputs.root / rel).write_text(f"{rel}\n", encoding="utf-8")
+    base, _ = inputs()
+    for rel in SERVE_ONLY:
+        (inputs.root / rel).write_text(f"{rel} edited: a new serving flag, a probe, a verb\n", encoding="utf-8")
+        k, shown = inputs()
+        assert k == base, f"editing {rel} moved the key"
+        assert rel not in shown, shown
+
+
+def test_the_code_that_makes_the_image_lives_in_the_file_the_key_hashes():
+    """The seam is only as good as what sits on each side of it: an image-making
+    line moved back into the serving script would change the image without
+    moving the key."""
+    lib = (ROOT / "tools" / "lib" / "playtest-image.sh").read_text(encoding="utf-8")
+    script = SCRIPT.read_text(encoding="utf-8")
+    code = "\n".join(l for l in script.splitlines() if not l.lstrip().startswith("#"))
+    for fn in ("dw_playtest_inputs_list", "dw_playtest_place_argv", "dw_playtest_bake_context",
+               "dw_playtest_build_and_gate", "dw_playtest_make_image", "dw_playtest_image_tag"):
+        assert f"\n{fn}() {{" in lib, f"{fn} is not defined in tools/lib/playtest-image.sh"
+        assert f"\n{fn}() {{" not in script, f"{fn} is defined in the serving script, outside the key"
+    for maker in ("docker build", "DW_PLAYTEST_INPUT_FILES=", "staging-gate.py", "--label", "docker stop"):
+        assert maker not in code, f"`{maker}` in playtest-server.sh: image-making code outside the key"
+    assert lib.count("docker build -q") == 2, "both images are built in the hashed file"
+
+
 def test_an_unreadable_input_fails_the_key_rather_than_dropping_out(inputs):
     (inputs.root / inputs.files[0]).unlink()
     r = run_hook(f'dw_playtest_inputs_key "{inputs.delvec}" "{inputs.camp}" "{inputs.pre}" en "{inputs.root}"',
