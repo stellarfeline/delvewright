@@ -6329,10 +6329,9 @@ teleported to), `creator_camera_in_a_block` (a spectator whose eye is in a stone
 block the template places: the same eye, `in` = `block`), and
 `creator_free_returns` (spectator after the first fire; adventure, the same
 position to the milli-block, the same yaw, and no place marker left after the
-second). The two stamp templates first assert their dummy's `Pos[1]` is the
-height their `tp @s` put it at, read off `Pos` as the eye checks read it: a
-dummy a sibling's party-wide take moved is one that teleport no longer moves,
-so it reds on that line by name and never as a wrong stamp. They stand at the corner of the campaign's first area at y 300 — a
+second). A sibling that takes every body would read into their stamp the
+place it left the dummy, which no `gamemode` or `tp` of theirs undoes; no such
+sibling shares their batch (solo templates, §PackTest batch model). They stand at the corner of the campaign's first area at y 300 — a
 column its setup force-loads — because PackTest places a batch millions of
 blocks out, where a position in milli-blocks overflows a score. A sneaking eye
 and the log line itself are proven live by `validation/rehearsal-flow.sh`.

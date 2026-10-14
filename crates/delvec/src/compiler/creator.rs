@@ -472,6 +472,14 @@ const CAMERA_TEST_Y: i32 = 300;
 /// recomputed on its tick, and the eye height follows the pose — and then does
 /// everything it asserts inside one tick, so no sibling in the batch can move
 /// the dummy between the stamp and the reading it is held to.
+///
+/// What it cannot fix from inside is a sibling that takes every body — a
+/// cutscene's start and return (`gamemode spectator @a`, `tp @a <mark>`).
+/// Measured with every template in one batch: the stamp read the dummy at
+/// another test's position (eye `2147483647,-56380,…`, yaw 0 pitch 0, `in`
+/// air) after the template's own `gamemode` and `tp`, red in 9 of 11 such
+/// runs. Such a sibling never shares its batch: it runs alone
+/// (`crate::compiler::solo`).
 pub fn packtests(ns: &str, title: &str, column: [i32; 2]) -> Vec<(String, String)> {
     let [cx, cz] = column;
     let at = |dx: f64, y: i32, dz: f64| {
@@ -518,22 +526,6 @@ pub fn packtests(ns: &str, title: &str, column: [i32; 2]) -> Vec<(String, String
             format!("assert score #{tag}_stamp {CAM_OBJ} matches 1"),
         ]
     };
-    // The dummy stands where the template put it when the stamp reads its eye,
-    // read the way the stamp's own check reads it (`data get entity @s Pos`). A
-    // sibling that takes every body (a cutscene's return, `tp @a <mark>`) can
-    // leave this dummy where its own `tp @s` no longer moves it — measured: Pos
-    // at another test's position, y -58, rotation 0 0, after the template's
-    // teleport — and the stamp then reads that place. A selector
-    // (`@s[x=…,distance=…]`) matched in that state, so the height is read off
-    // `Pos`. The template states the precondition and reds on it by name.
-    let placed = |tag: &str| -> Vec<String> {
-        vec![
-            format!(
-                "execute store result score #{tag}_py {CAM_OBJ} run data get entity @s Pos[1] 1000"
-            ),
-            format!("assert score #{tag}_py {CAM_OBJ} matches {}", y * 1000),
-        ]
-    };
     let fire = |slot: u32| -> Vec<String> {
         vec![
             format!("scoreboard players set @s {CAMERA_TRIGGER} {slot}"),
@@ -556,7 +548,6 @@ pub fn packtests(ns: &str, title: &str, column: [i32; 2]) -> Vec<(String, String
         "gamemode adventure @s".to_string(),
         format!("tp @s {} 30 15", at(0.0, y, 0.0)),
     ];
-    stand.extend(placed("cst"));
     stand.extend(fire(1));
     stand.extend(stamped("cst", "{slot:1,yaw:3000,pitch:1500,in:\"air\"}"));
     stand.extend(eye_within("cst", STANDING_EYE_MB));
@@ -578,7 +569,6 @@ pub fn packtests(ns: &str, title: &str, column: [i32; 2]) -> Vec<(String, String
         format!("setblock {cx} {eye_cell} {cz} minecraft:stone"),
         format!("tp @s {} -90 -30", at(0.0, y, 0.0)),
     ];
-    wall.extend(placed("cwl"));
     wall.extend(fire(7));
     wall.extend(stamped(
         "cwl",
