@@ -416,12 +416,7 @@ fn world_doc() -> String {
     "seed": 20260729,
     "target_minutes": 5,
     "time": "noon",
-    "weather": "clear",
-    "areas": [
-      { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" },
-      { "id": "area/tower", "name": "The Tower", "prefab": "prefab/broken-threshold",
-        "mitigation": "night-vision" }
-    ]
+    "weather": "clear"
   }
 }"#)
     .to_string()
@@ -440,7 +435,7 @@ fn quest_plan_doc(tower: bool) -> String {
   "content": {
     "finale": "quest/open-the-door",
     "quests": [
-      { "id": "quest/open-the-door", "act": 1, "area": "area/keep", "depends_on": [],
+      { "id": "quest/open-the-door", "act": 1, "depends_on": [],
         "goal": "Get the Keeper to open the door and leave the keep.",
         "mandatory": true, "npcs": ["npc/keeper"] }
     ]
@@ -457,11 +452,10 @@ fn quest_plan_doc(tower: bool) -> String {
   "content": {
     "finale": "quest/cross",
     "quests": [
-      { "id": "quest/open-the-door", "act": 1, "area": "area/keep", "depends_on": [],
+      { "id": "quest/open-the-door", "act": 1, "depends_on": [],
         "goal": "Get the Keeper to open the door and leave the keep.",
         "mandatory": true, "npcs": ["npc/keeper"] },
-      { "id": "quest/cross", "act": 1, "area": "area/tower",
-        "depends_on": ["quest/open-the-door"],
+      { "id": "quest/cross", "act": 1, "depends_on": ["quest/open-the-door"],
         "goal": "Cross the mended threshold.", "mandatory": true, "npcs": [] }
     ]
   }
@@ -549,10 +543,10 @@ fn campaign_with(world: String, quests: String, tower: bool) -> Campaign {
         quests,
         dialogue: hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
@@ -1025,8 +1019,7 @@ fn an_open_way_in_a_world_that_stages_no_way_is_still_dw0547() {
     "seed": 20260729,
     "target_minutes": 5,
     "time": "noon",
-    "weather": "clear",
-    "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
+    "weather": "clear"
   }
 }"#,
     );

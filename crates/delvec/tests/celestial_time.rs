@@ -301,7 +301,7 @@ fn dw0931(world_time: serde_json::Value, cuts: &[serde_json::Value]) -> Vec<Stri
     let loaded =
         delvec::compiler::load::load_campaign_dir(&camp).unwrap_or_else(|e| panic!("load: {e:?}"));
     let c = delvewright_dsl::parse_campaign(&loaded.raw).expect("the campaign parses");
-    validate_campaign(&c)
+    common::quiet(validate_campaign(&c))
         .into_iter()
         .filter(|d| d.code == "DW0931")
         .map(|d| d.message)

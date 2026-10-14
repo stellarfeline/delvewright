@@ -180,9 +180,8 @@ pub(crate) fn run_edit(
     {
         Ok(p) => p,
         Err(e) => {
-            // Advisories raised before the failure and explaining it (`DW0498`:
-            // the pool draw behind an ambiguous-anchor `DW0305`) print first —
-            // the cause above the symptom.
+            // Advisories raised before the failure print first — the cause
+            // above the symptom.
             print_diags(&e.warnings, json);
             print_build_error(e.failure.code, &e.failure.message, json);
             return ExitCode::from(3);

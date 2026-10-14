@@ -71,10 +71,10 @@ fn night_vision_clock(quests: String, world: String) -> String {
         quests,
         dialogue: read(&hw, "dialogue.json").replacen("\"0.2.0\"", "\"0.6.0\"", 1),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read(&hw, "geometry-brief.json")),
+        layout_graph: Some(read(&hw, "layout-graph.json")),
+        site_plan: Some(read(&hw, "site-plan.json")),
+        detail_plan: Some(read(&hw, "detail-plan.json")),
         design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");

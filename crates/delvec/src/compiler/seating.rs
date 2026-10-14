@@ -2,26 +2,14 @@
 //! decides whether a library can stand on a base, and the one implementation
 //! two entry points share.
 //!
-//! # The defect this exists to close
-//!
-//! Every gate around a horizon was right on its own and the three of them
-//! together formed a cycle: `ocean` refused a piece and told the author to
-//! choose another horizon, `void` refused the same piece and told them to bury
-//! it under `valley`, `valley` refused the campaign and told them to write a
-//! site plan, and adding one to an `areas[]` campaign is two placement
-//! authorities. Each remedy was the next gate's refusal. `CLAUDE.md` names what
-//! the three of them are together: *a gate that names a remedy owes a check
-//! that the remedy is reachable*, and nothing held that check.
-//!
 //! The pairing is a fact about **documents and a library** — the declared base,
-//! the pools the world names, the members those pools hold, and each member's
-//! metadata and its bytes. Nothing has to be placed to know it, which is why
-//! this refuses at validation on `DW0855`'s own precedent, before a build has
-//! moved a block.
+//! the pieces placed on it, and each piece's metadata and its bytes. Nothing has
+//! to be placed to know it, which is why this refuses at validation on
+//! `DW0855`'s own precedent, before a build has moved a block.
 //!
 //! # Two codes, and what each one asks
 //!
-//! - [`DW_UNSEATABLE`] (`DW0886`) — *this pool cannot stand on this horizon*.
+//! - [`DW_UNSEATABLE`] (`DW0886`) — *this piece set cannot stand on this horizon*.
 //!   One question with several answers, so one code: the missing walk plane,
 //!   the piece that would be seated wading, the shore that says nothing about
 //!   where it meets the sea, the water that would run off the edge of a void
@@ -47,17 +35,13 @@
 //! declare either again. So every reader here goes to the `.nbt`, and every
 //! count it prints carries the denominator it was drawn from.
 //!
-//! # Both placement models, one rule
+//! # What a site plan answers
 //!
-//! A campaign places its pieces one of two ways and never both (`DW0839`):
-//! `areas[]` seats library prefabs, and a site plan embeds boxes a derivation
-//! turns into mass (spec-0049 §5). The pairing rule belongs to *whatever places
-//! pieces*, so [`check`] reads both, and [`SeatingBinding::line`] states a
-//! numerator and a denominator for **each** — a model this check cannot reach is
-//! then a zero a reader can see rather than a silence.
+//! A campaign's map is its site plan (ADR-0035). The pairing rule belongs to
+//! *whatever places pieces*, so [`check`] reads the plan's boxes, and
+//! [`SeatingBinding::line`] states the numerator and the denominator.
 //!
-//! What the two models share is one number and one question: **the world y a
-//! body's feet will occupy**, asked of [`feet_under_the_sea`]. A prefab derives
+//! The question is one number: **the world y a body's feet will occupy**, asked of [`feet_under_the_sea`]. A prefab derives
 //! that y (the base's walk-plane datum, minus the piece's own `walk_y`, plus the
 //! cell); a plan box states it, because [`PlacedBox::floor`] IS a walk plane in
 //! world coordinates. Nothing else about the pairing survives the crossing, and
@@ -70,7 +54,7 @@
 //! | [`Shape::WadingUnderTheSea`] | **applies** | a box's floor at or below the sea plane stands a party in the water, which is the same delve defect and is known from the plan alone |
 //! | [`Shape::UnstatedShore`] | cannot arise | a derived box has no authored bytes: [`crate::compiler::blockout::palette`] is a fixed set of opaque cubes and holds no water for a waterline to be about |
 //! | [`Shape::FluidOffTheWorld`] | cannot arise | same palette, same reason — there is no fluid to run off a face |
-//! | [`Shape::WalkPlanesDisagree`] | cannot arise | it is a property of a POOL the solver draws from; a plan states every box's plane individually, so there is no draw and no one origin two members could disagree about |
+//! | [`Shape::WalkPlanesDisagree`] | cannot arise | it is a property of a piece SET read together; a plan states every box's plane individually, so there is no one origin two members could disagree about |
 //! | [`Shape::ShownSideEmpty`] | cannot arise | a derived box has no document to declare a side in |
 //! | [`Shape::OutsideUnanswered`] | cannot arise for a box | a derived box is undocumented, and `DW0885` passes over it for that reason (`burial::Piece::documented`). A library piece a detail plan places INTO a box is documented and is judged by `DW0885` at build; this check reads the plan's boxes, not the detail plan's pieces, and that is its stated residual on this model |
 //!
@@ -468,332 +452,6 @@ pub fn waterline_reason(f: &PieceFacts) -> Option<Reason> {
     })
 }
 
-/// **A shore stands its walk plane one course above its own waterline**
-/// (`DW0344`, first arm, asked of the documents).
-///
-/// An ocean area's origin is `walk_ref - walk_y`, so a piece's declared
-/// waterline lands at `walk_ref - walk_y + waterline_y`, and that equals the sea
-/// plane exactly when `waterline_y == walk_y - 1`. Both numbers are in the
-/// document: nothing has to be placed to know it, and a creator who learns it at
-/// the build has already paid for an assembly.
-///
-/// It carries **`DW0344`**, not `DW0886`, and that is the point of asking it
-/// here at all. This is the same rule the placement check states, moved one
-/// stage earlier; giving the earlier statement a different number would leave a
-/// creator with two codes for one fact and no way to tell they were the same
-/// answer.
-///
-/// Measured on the shipped content library before the generators were repaired:
-/// two pieces, `island-beach-camp` (`walk_y: 2`, `waterline_y: 2`) and
-/// `cave-shore` (`walk_y: 1`, `waterline_y: 1`), each standing its floor level
-/// with its own sea rather than one course over it.
-fn walk_plane_over_waterline(base: HorizonBase, f: &PieceFacts) -> Option<Reason> {
-    if base != HorizonBase::Ocean {
-        return None;
-    }
-    let (w, wl) = (f.walk_y?, f.declared_waterline?);
-    if wl == w - 1 {
-        return None;
-    }
-    let sea = crate::compiler::horizon::SEA_LEVEL;
-    let origin = crate::compiler::horizon::OCEAN_WALK_REF_Y - w;
-    let lands = origin + wl;
-    let delta = lands - sea;
-    Some(Reason {
-        shape: Shape::WalkPlaneOffItsWaterline,
-        code: crate::compiler::plan::DW_OCEAN_WATERLINE,
-        member: f.id.clone(),
-        sides: Vec::new(),
-        short: format!(
-            "declares `walk_y: {w}` and `waterline_y: {wl}`; a shore stands its walk plane one \
-             course above its own waterline, so this piece's water would land {n} block(s) \
-             {dir} the sea",
-            n = delta.abs(),
-            dir = if delta > 0 { "above" } else { "below" },
-        ),
-        full: format!(
-            "prefab `{id}` declares `walk_y: {w}` and `waterline_y: {wl}`. An ocean area's \
-             origin is DERIVED from the walk plane — `{walk_ref} - {w}` = y={origin} — so this \
-             piece's own top water block would stand at world y={lands}, {n} block(s) {dir} \
-             this world's sea plane (y={sea}). A shore stands its walk plane exactly ONE course \
-             above the water it can be climbed out of, which is `waterline_y == walk_y - 1`; \
-             these two declarations are {wl} and {w}. Both numbers are measurements of the \
-             piece, so the move is to the piece, not to the campaign: (1) DECLARE the walk plane \
-             that seats this waterline, `walk_y: {want}`, if the piece's floor really does stand \
-             a course above its own water and it was the walk plane that was typed rather than \
-             measured; (2) DECLARE the waterline the bytes really hold, `waterline_y: {holds}`, \
-             if it was that one — `DW0887` holds that number to the blocks, so it cannot be \
-             guessed either; (3) REBUILD the piece so its floor stands a course over its own \
-             water, which is what the count above moves. Changing the horizon does not answer \
-             it: the two declarations disagree with each other on every base, and it is only an \
-             ocean that has a sea to notice",
-            id = f.id,
-            walk_ref = crate::compiler::horizon::OCEAN_WALK_REF_Y,
-            n = delta.abs(),
-            dir = if delta > 0 { "above" } else { "below" },
-            want = wl + 1,
-            holds = w - 1,
-        ),
-    })
-}
-
-/// **One area's piece set cannot be seated against two walk planes** (`DW0886`).
-///
-/// A property of the SET rather than of any member, and the reason it needs its
-/// own function: every piece in the pool may be individually perfect and the
-/// pool still unseatable, because a base whose datum is a walk plane derives ONE
-/// origin per area and the solver's draw decides which member stands there.
-///
-/// This is the shape that made the whole round necessary. It lived in
-/// [`crate::compiler::plan::area_base_y`] alone, at build tier, computed from
-/// exactly the documents `delvec prefab seating` had already read and called
-/// seatable — so the shipped island and cave pools passed the command and were
-/// refused by the build, which is the pairing defect stated inside the one
-/// mechanism built to end it. Both callers read this function now.
-///
-/// `members` is `(prefab id, declared walk_y)` because that is all the rule
-/// needs: no bytes, no placement. `label` names what the reason is about — an
-/// area at validation, a pool at the command line.
-/// **What the base's walk-plane datum IS, in one clause** — the half of a
-/// refusal that says why the number is that number.
-///
-/// One phrase per base rather than one per message: a base gained a walk plane
-/// (`valley`) while every sentence about one still said *one block above the
-/// sea*, and a message that names the wrong world is worse than one that names
-/// none.
-fn walk_ref_note(base: HorizonBase) -> &'static str {
-    match base {
-        HorizonBase::Ocean => "one block above the sea",
-        HorizonBase::Valley => "the valley's own gap floor, the ground outside the map's edge",
-        // `void` has no walk-plane datum at all, so no caller reaches this arm;
-        // it answers rather than panicking, because a phrase is not worth an
-        // abort and the arm is here so the enum is answered for whole.
-        HorizonBase::Void => "this base has no walk-plane datum",
-    }
-}
-
-pub fn set_walk_plane(
-    base: HorizonBase,
-    label: &str,
-    members: &[(String, Option<i32>)],
-) -> SetPlane {
-    let Some(walk_ref) = crate::compiler::horizon::walk_ref_y(base) else {
-        return SetPlane::NotDerived;
-    };
-    let mut planes: std::collections::BTreeSet<i32> = std::collections::BTreeSet::new();
-    let mut silent: Vec<&str> = Vec::new();
-    for (id, walk) in members {
-        match walk {
-            Some(w) => {
-                planes.insert(*w);
-            }
-            None => silent.push(id.as_str()),
-        }
-    }
-    if !silent.is_empty() {
-        return SetPlane::Refused(vec![Reason {
-            shape: Shape::NoWalkPlane,
-            code: DW_UNSEATABLE,
-            member: label.to_string(),
-            sides: Vec::new(),
-            short: format!(
-                "{n} of {total} member(s) declare no `walk_y`, so no origin can be derived: {list}",
-                n = silent.len(),
-                total = members.len(),
-                list = silent.join(", "),
-            ),
-            full: format!(
-                "`{label}` is seated on a `{base}` horizon, whose datum is a WALK PLANE at \
-                 y={walk_ref} — {what} — so the origin is derived from the \
-                 piece set's own `walk_y`. {n} of its {total} member(s) declare none: {list}. \
-                 There is no default to fall back on and there deliberately is not one: a \
-                 default is one tileset's authoring convention promoted to a world constant, and \
-                 it is why every piece of every other library used to land with its floor under \
-                 the sea. DECLARE `walk_y` on each piece named above — it is a measurement of \
-                 the piece, written by the generator that built it",
-                what = walk_ref_note(base),
-                base = base.token(),
-                n = silent.len(),
-                total = members.len(),
-                list = silent.join(", "),
-            ),
-        }]);
-    }
-    match planes.len() {
-        0 => SetPlane::NotDerived,
-        1 => SetPlane::Agreed(planes.iter().next().copied().expect("one plane")),
-        _ => SetPlane::Refused(vec![Reason {
-            shape: Shape::WalkPlanesDisagree,
-            code: DW_UNSEATABLE,
-            member: label.to_string(),
-            sides: Vec::new(),
-            short: format!(
-                "its members do not agree about their own walk plane — `walk_y` values {values:?} \
-                 across {total} member(s) — and one origin cannot be derived from two",
-                values = planes.iter().copied().collect::<Vec<_>>(),
-                total = members.len(),
-            ),
-            full: format!(
-                "`{label}` draws from a piece set whose members do not agree about their own \
-                 walk plane — `walk_y` values {values:?} across {total} member(s) — and a \
-                 `{base}` horizon derives ONE origin per area from that number. Whichever the \
-                 solver drew, the others would stand their walk planes at the wrong height \
-                 above the sea. This is a fact about the DOCUMENTS: every member may be \
-                 individually correct and the set still unseatable. The moves: (1) SPLIT the \
-                 pool so each one seats pieces built to one walk plane; (2) REBUILD the odd \
-                 members against the plane the rest share — a walk plane is measured off the \
-                 blocks, so what moves it is the piece's own floor",
-                base = base.token(),
-                values = planes.iter().copied().collect::<Vec<_>>(),
-                total = members.len(),
-            ),
-        }]),
-    }
-}
-
-/// What [`set_walk_plane`] found: the number an origin derives from, a base that
-/// derives none, or the reasons it cannot be derived at all.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SetPlane {
-    /// Every member agrees, and this is the plane the origin derives from.
-    Agreed(i32),
-    /// This base states its datum for the ORIGIN, so no piece is consulted.
-    NotDerived,
-    /// One origin cannot be derived from this set, and why.
-    Refused(Vec<Reason>),
-}
-
-/// **Can this set's outside be left where a party can see it** — `DW0885`'s
-/// question, asked before anything is placed (`DW0886`).
-///
-/// The build refuses a placed piece's side when the party's air reaches it and
-/// neither a neighbour, the horizon nor the piece's `shown_faces` answers for
-/// it. Two of those facts are in the documents and the bytes, and this asks
-/// them with the build's own predicates ([`crate::compiler::burial::solid_sides`],
-/// [`crate::compiler::burial::ambient_buries`]); the other two depend on a
-/// layout nobody has drawn yet, and each is taken in the direction that cannot
-/// call a set seatable that the build then refuses:
-///
-/// - **whether the party's air gets outside** is read off every member's own
-///   air ([`PieceFacts::opening_to_outside`]). One member that opens outward
-///   lets the air wrap every piece the layout puts near it, so the whole set is
-///   judged; a set of sealed members is not asked, which is what seats a keep
-///   on `void`.
-/// - **whether a neighbour buries a side** is never assumed: which neighbour a
-///   draw puts against which face is the solver's, and a member may be drawn
-///   alone at the end of a branch.
-///
-/// The horizon's burial is asked at the height the member stands at, and that
-/// height is known when every socket in the set joins its neighbour at one
-/// rise above the walk plane ([`PieceFacts::socket_rises`]) — every member then
-/// stands on the plane the origin was derived from. A set whose rises differ
-/// can stand a member anywhere, so the horizon is credited with nothing.
-///
-/// `valley` is not asked here: its ground is terrain the surround derives
-/// around a declared extent, not a plane, and the only `areas[]` campaign that
-/// reaches it is one area bound to one prefab (`DW0855`), whose outside the
-/// build judges against the landform it actually builds.
-pub fn set_exposure(base: HorizonBase, label: &str, members: &[&PieceFacts]) -> Vec<Reason> {
-    if base == HorizonBase::Valley {
-        return Vec::new();
-    }
-    let Some((open_member, open_cell)) = members
-        .iter()
-        .find_map(|f| f.opening_to_outside.map(|c| (f.id.as_str(), c)))
-    else {
-        return Vec::new();
-    };
-    let ambient = crate::compiler::nav::Ambient::of_base(base);
-    let rises: std::collections::BTreeSet<i32> = members
-        .iter()
-        .flat_map(|f| f.socket_rises.iter().copied())
-        .collect();
-    let one_plane = rises.len() <= 1 && members.iter().all(|f| f.walk_y.is_some());
-    let origin_of = |f: &PieceFacts| -> Option<i32> {
-        let walk_ref = crate::compiler::horizon::walk_ref_y(base)?;
-        one_plane.then_some(walk_ref - f.walk_y?)
-    };
-    let mut out = Vec::new();
-    for f in members {
-        let origin = origin_of(f);
-        let unanswered: Vec<&'static str> = f
-            .solid_sides
-            .iter()
-            .filter(|(dir, top_out_y)| {
-                let side = crate::compiler::faces::dir_name(**dir);
-                if f.shown_faces.iter().any(|s| s == side) {
-                    return false;
-                }
-                !origin.is_some_and(|o| {
-                    crate::compiler::burial::ambient_buries(&ambient, [0, o + **top_out_y, 0])
-                })
-            })
-            .map(|(dir, _)| crate::compiler::faces::dir_name(*dir))
-            .collect();
-        if unanswered.is_empty() {
-            continue;
-        }
-        let list = unanswered
-            .iter()
-            .map(|s| format!("`{s}`"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let burial = if origin.is_some() {
-            format!(
-                "`{}` does not bury at the height it seats this piece",
-                base.token()
-            )
-        } else if base == HorizonBase::Void {
-            "`void` buries nothing".to_string()
-        } else {
-            format!(
-                "`{}` buries nothing at a height nothing fixes — the set joins its neighbours \
-                 at {} different rise(s) above the walk plane ({:?}), so a member can stand \
-                 anywhere",
-                base.token(),
-                rises.len(),
-                rises.iter().copied().collect::<Vec<_>>(),
-            )
-        };
-        out.push(Reason {
-            shape: Shape::OutsideUnanswered,
-            code: DW_UNSEATABLE,
-            member: f.id.clone(),
-            sides: unanswered.iter().map(|s| (*s).to_string()).collect(),
-            short: format!(
-                "puts blocks on its {list} side(s); {burial}, `shown_faces` does not declare \
-                 them, and a party can get outside this set (through `{open_member}` at local \
-                 {open_cell:?})",
-            ),
-            full: format!(
-                "prefab `{id}` puts blocks on its {list} side(s), and nothing answers for them \
-                 on a `{token}` horizon: {burial}, the document declares {declared}, and a \
-                 neighbour is not something a draw promises. This \
-                 is `DW0885`'s refusal known before the build — `{label}` lets a party \
-                 outside, through `{open_member}`, whose own air reaches its box boundary at \
-                 local {open_cell:?} with no socket there, and air that gets outside runs \
-                 along every side of every piece the layout puts near it. The moves: (1) \
-                 DECLARE the sides shown — add them to `shown_faces` in `{base_file}.json` — \
-                 only if they are finished exterior surface the player is meant to look at; \
-                 a side built to be covered stays a slab in the sky and the declaration only \
-                 stops anything saying so; (2) SEAL the way out, so the party's air never \
-                 leaves the pieces — the cell named above is where it does; (3) CHOOSE the \
-                 base the set was built for — a piece authored to stand inside a hill wants \
-                 `valley`, whose terrain buries it",
-                id = f.id,
-                token = base.token(),
-                declared = if f.shown_faces.is_empty() {
-                    "no `shown_faces` at all".to_string()
-                } else {
-                    format!("`shown_faces: {:?}`", f.shown_faces)
-                },
-                base_file = f.base,
-            ),
-        });
-    }
-    out
-}
-
 /// **The one question a horizon asks of anything that will stand a body**: at
 /// the world y this thing puts a party's feet, is there sea?
 ///
@@ -859,203 +517,6 @@ pub fn box_reasons(base: HorizonBase, b: &PlacedBox) -> Vec<Reason> {
             base = base.token(),
         ),
     }]
-}
-
-/// **Can this member be seated on this base** — every reason it cannot, in the
-/// order a creator meets them (`DW0886`).
-///
-/// The missing walk plane comes first because it is the one that is true on
-/// every base and the one everything else is derived through.
-///
-/// Every shape here is about ONE piece. What the set is judged on — one origin
-/// per area, derived from one walk plane — is [`set_walk_plane`], and a caller
-/// that judges a pool owes both.
-pub fn seating_reasons(base: HorizonBase, f: &PieceFacts) -> Vec<Reason> {
-    let mut out = Vec::new();
-    let token = base.token();
-    if f.walk_y.is_none() {
-        out.push(Reason {
-            shape: Shape::NoWalkPlane,
-            code: DW_UNSEATABLE,
-            member: f.id.clone(),
-            sides: Vec::new(),
-            short: "declares no `walk_y`; the piece's own walk plane is unstated".to_string(),
-            full: format!(
-                "prefab `{id}` declares no `walk_y`, so nothing states the piece's own walk \
-                 plane. It has no default and cannot be given one: a default is one tileset's \
-                 authoring convention promoted to a world constant, right for the pieces it was \
-                 copied from and silently wrong for every other — the piece that lands under a \
-                 sea because of it floods on boot and nothing looks. The move: DECLARE `walk_y` \
-                 in `{base_file}.json`, the local y of the cell a body's feet occupy on this \
-                 piece's principal floor. It is a MEASUREMENT of the piece, so it is written by \
-                 the generator that built it rather than typed — this piece's own bytes stand a \
-                 body at local y={measured}",
-                id = f.id,
-                base_file = f.base,
-                measured = f
-                    .lowest_standable
-                    .map_or_else(|| "no cell at all".to_string(), |y| y.to_string()),
-            ),
-        });
-    }
-    // **A side declared shown is a side the piece has** (`DW0885`'s second arm,
-    // asked of the bytes before anything is placed): a finished face is surface,
-    // and a declaration over a side with no block on it is about nothing. On
-    // every base, because the build refuses it wherever the piece stands.
-    let empty: Vec<String> = f
-        .shown_faces
-        .iter()
-        .filter(|side| {
-            crate::compiler::faces::dir_vector(side).is_none_or(|d| !f.solid_sides.contains_key(&d))
-        })
-        .cloned()
-        .collect();
-    if !empty.is_empty() {
-        let list = empty
-            .iter()
-            .map(|s| format!("`{s}`"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        out.push(Reason {
-            shape: Shape::ShownSideEmpty,
-            code: DW_UNSEATABLE,
-            member: f.id.clone(),
-            sides: empty.clone(),
-            short: format!(
-                "declares {list} shown, and not one cell of that side holds a block (or it is not \
-                 a side)"
-            ),
-            full: format!(
-                "prefab `{id}` declares `shown_faces` {list}, and its own bytes put no block on \
-                 that side — or the word is not one of `east`, `west`, `up`, `down`, `north`, \
-                 `south`. A side is finished exterior surface or it is nothing, and the build \
-                 refuses the declaration wherever the piece is placed (`DW0885`). The move: drop \
-                 it from `shown_faces` in `{base_file}.json`, or build the side it claims",
-                id = f.id,
-                base_file = f.base,
-            ),
-        });
-    }
-    if base == HorizonBase::Ocean {
-        // The derivation, then the SAME question a site plan's box is asked:
-        // where this piece's lowest standable cell lands in the world, and
-        // whether the base puts sea there.
-        if let Some(w) = f.walk_y
-            && f.standable_below_walk > 0
-            && feet_under_the_sea(
-                base,
-                crate::compiler::horizon::OCEAN_WALK_REF_Y - w + f.lowest_standable.unwrap_or(w),
-            )
-        {
-            let lowest = f.lowest_standable.unwrap_or(w);
-            let sea = crate::compiler::horizon::SEA_LEVEL;
-            let origin = crate::compiler::horizon::OCEAN_WALK_REF_Y - w;
-            out.push(Reason {
-                shape: Shape::WadingUnderTheSea,
-                code: DW_UNSEATABLE,
-                member: f.id.clone(),
-                sides: Vec::new(),
-                short: format!(
-                    "declares `walk_y: {w}` but stands a body {n} cell(s) below it, the \
-                         lowest at local y={lowest} — the sea plane cuts through the piece",
-                    n = f.standable_below_walk,
-                ),
-                full: format!(
-                    "prefab `{id}` declares `walk_y: {w}`, so an ocean area seating it is \
-                         placed at y={origin} and its walk plane stands dry at \
-                         y={walk_ref}. But the piece's own bytes stand a body in \
-                         {n} cell(s) BELOW that plane, the lowest at local y={lowest}, which \
-                         lands at world y={world} — at or below this world's sea plane \
-                         (y={sea}). A party would wade there. The moves: (1) RAISE the piece's \
-                         low floor to its own walk plane, so no cell of it stands a body under \
-                         the sea — this is a change to the piece, and it is observable: the \
-                         count above is what moves; (2) DECLARE the walk plane the piece really \
-                         has, `walk_y: {lowest}`, if that lower floor is the floor the party \
-                         walks on — the area is then seated lower and the whole piece rises \
-                         clear; (3) CHOOSE another horizon — a piece with cellars under its \
-                         hall wants `void`, which puts no water anywhere, or `valley`, which \
-                         buries it in terrain",
-                    id = f.id,
-                    walk_ref = crate::compiler::horizon::OCEAN_WALK_REF_Y,
-                    n = f.standable_below_walk,
-                    world = origin + lowest,
-                ),
-            });
-        }
-        // **Water in the sea's own plane**, and not merely water. A piece may
-        // hold a sealed well or a cistern well above the waterline, and that
-        // water never meets the sea however the piece is seated: nothing is
-        // unstated about it. The plane is derivable because the origin is —
-        // `origin = walk_ref - walk_y`, so a local cell lands at or below the
-        // sea exactly when it is at or below `walk_y - 1`.
-        let in_the_seas_plane = match (f.walk_y, f.bottom_water_y) {
-            (Some(w), Some(b)) => b < w,
-            _ => false,
-        };
-        if f.water_cells > 0 && in_the_seas_plane && f.declared_waterline.is_none() {
-            out.push(Reason {
-                shape: Shape::UnstatedShore,
-                code: DW_UNSEATABLE,
-                member: f.id.clone(),
-                sides: Vec::new(),
-                short: format!(
-                    "authors {n} water cell(s) and declares no `waterline_y`; nothing states \
-                     where it meets the sea",
-                    n = f.water_cells,
-                ),
-                full: format!(
-                    "prefab `{id}` authors {n} `{WATER}` cell(s), the topmost at local \
-                     y={top}, and declares no `waterline_y`. On a horizon that has a sea, \
-                     nothing then states where this piece's water meets the world's — and every \
-                     downstream proof (nav, boundary, POV, PackTest) derives from the placement \
-                     none of them checked. The move: DECLARE `waterline_y: {top}` in \
-                     `{base_file}.json`, the local y this piece's top water block actually \
-                     stands at. That number is read out of the bytes, and `DW0887` holds it to \
-                     them, so a declaration copied from a tileset convention rather than \
-                     measured is refused rather than believed",
-                    id = f.id,
-                    n = f.water_cells,
-                    top = f.top_water_y.unwrap_or(0),
-                    base_file = f.base,
-                ),
-            });
-        }
-        // And the converse of the shape above: a piece that states BOTH numbers
-        // has stated where it meets the sea, and the two have to hold the
-        // relationship a shore has. `DW0344`, asked of the documents.
-        if let Some(r) = walk_plane_over_waterline(base, f) {
-            out.push(r);
-        }
-    }
-    if base == HorizonBase::Void && f.fluid_at_edge > 0 {
-        out.push(Reason {
-            shape: Shape::FluidOffTheWorld,
-            code: DW_UNSEATABLE,
-            member: f.id.clone(),
-            sides: Vec::new(),
-            short: format!(
-                "authors fluid that runs out of {n} of its own face(s), and `{token}` puts \
-                 nothing beyond them",
-                n = f.fluid_at_edge,
-            ),
-            full: format!(
-                "prefab `{id}` authors a body of fluid that reaches its own outer face in {n} \
-                 run direction(s). `void` is the horizon that declares there is nothing outside \
-                 the placed geometry, so a column this piece did not build is bottomless and \
-                 that water runs off the world forever — which is what `DW0318` refuses once the \
-                 world is assembled. The moves: (1) CHOOSE the horizon the piece was built for — \
-                 a piece that authors a shore belongs to an `ocean`, which puts a sea against \
-                 that face, and one authored to be buried belongs to a `valley`, which builds \
-                 terrain against it; (2) PLACE something against the face, so the water meets \
-                 another piece rather than the edge of the world; (3) SEAL the body inside the \
-                 piece's own bytes, which is a change to the piece and is what \
-                 `delvec prefab audit` reports as a run direction that leaves it",
-                id = f.id,
-                n = f.fluid_at_edge,
-            ),
-        });
-    }
-    out
 }
 
 // ---------------------------------------------------------------------------
@@ -1135,32 +596,15 @@ impl Library {
 pub struct SeatingBinding {
     /// The base the campaign declares.
     pub base: String,
-    /// Areas the campaign states.
-    pub areas: usize,
-    /// Areas whose piece set this examined — every one that names a prefab or a
-    /// pool.
-    pub areas_examined: usize,
-    /// **Boxes the campaign's site plan states** — the other placement model's
-    /// denominator, printed on every run so a campaign that places no boxes
-    /// reads as a measured zero rather than as a check that was never asked.
+    /// **Boxes the campaign's site plan states**, printed on every run so a
+    /// campaign that places no boxes reads as a measured zero rather than as a
+    /// check that was never asked.
     pub boxes: usize,
     /// Boxes this examined: the ones the plan's own resolver placed. A box whose
     /// floor names an undeclared datum is not among them — `DW0112` has already
     /// refused it, and a place with no plane has no walk plane to judge — so the
     /// two numbers differing is itself the finding.
     pub boxes_examined: usize,
-    /// Members examined across those areas.
-    pub members: usize,
-    /// `.nbt` files opened.
-    pub nbt_opened: usize,
-    /// Members whose own air reaches their box boundary with no socket there —
-    /// the ones that let a party outside, which is what puts a set's sides
-    /// under `DW0886`'s exposure question.
-    pub members_open_outward: usize,
-    /// Waterline declarations examined among those members.
-    pub waterlines_declared: usize,
-    /// Of those, the ones the bytes bear out.
-    pub waterlines_borne_out: usize,
     /// **The rest of what these same documents claim about these same bytes**
     /// (`DW0888`), examined at the same read.
     pub claims: crate::compiler::claims::ClaimBinding,
@@ -1168,27 +612,12 @@ pub struct SeatingBinding {
 
 impl SeatingBinding {
     /// **The one line this check owes its reader**, printed whether it found
-    /// anything or not — **per placement model**.
-    ///
-    /// Both models are named on every run, including the one where a campaign
-    /// uses neither. A campaign has exactly one placement authority (`DW0839`),
-    /// so one of these two counts is always zero, and printing only the model
-    /// that happened to be in use is what made an unreachable arm read as an
-    /// absence instead of as a zero.
+    /// anything or not.
     pub fn line(&self) -> String {
         format!(
-            "seating binding: horizon base `{base}`; areas[]: {ex} of {areas} area(s) name a \
-             piece set, examined over {members} member(s), {open} opening outward, {opened} \
-             `.nbt` opened, {wl} waterline declaration(s) examined, {ok} borne out by the bytes; site plan: \
-             {bex} of {boxes} box(es) judged against this base.",
+            "seating binding: horizon base `{base}`; site plan: {bex} of {boxes} box(es) judged \
+             against this base.",
             base = self.base,
-            ex = self.areas_examined,
-            areas = self.areas,
-            members = self.members,
-            open = self.members_open_outward,
-            opened = self.nbt_opened,
-            wl = self.waterlines_declared,
-            ok = self.waterlines_borne_out,
             bex = self.boxes_examined,
             boxes = self.boxes,
         ) + " "
@@ -1298,113 +727,6 @@ mod tests {
         }
     }
 
-    /// A 5-tall room with blocks on every side; `down`'s outward cells are one
-    /// under the floor, `up`'s one over the roof.
-    fn room(open: bool, shown: &[&str], rises: &[i32]) -> PieceFacts {
-        let mut f = facts();
-        for (dir, top) in [
-            ([0, -1, 0], -1),
-            ([0, 1, 0], 5),
-            ([1, 0, 0], 4),
-            ([-1, 0, 0], 4),
-            ([0, 0, 1], 4),
-            ([0, 0, -1], 4),
-        ] {
-            f.solid_sides.insert(dir, top);
-        }
-        f.shown_faces = shown.iter().map(|s| (*s).to_string()).collect();
-        f.opening_to_outside = open.then_some([0, 2, 3]);
-        f.socket_rises = rises.to_vec();
-        f
-    }
-
-    fn named(reasons: &[Reason]) -> Vec<Vec<String>> {
-        reasons.iter().map(|r| r.sides.clone()).collect()
-    }
-
-    /// A set nobody can get outside of is not asked, on any base: its sides are
-    /// in front of nothing a party can stand in, which is what seats a keep.
-    #[test]
-    fn a_sealed_set_owes_no_side() {
-        let a = room(false, &[], &[0]);
-        let b = room(false, &[], &[0]);
-        for base in [HorizonBase::Void, HorizonBase::Ocean, HorizonBase::Valley] {
-            assert!(
-                set_exposure(base, "pool/p", &[&a, &b]).is_empty(),
-                "{base:?}"
-            );
-        }
-    }
-
-    /// One open member opens the whole set: its air runs along every side the
-    /// layout puts near it, sealed members included.
-    #[test]
-    fn one_open_member_puts_every_members_sides_in_question_on_void() {
-        let open = room(true, &["north"], &[0]);
-        let sealed = room(false, &[], &[0]);
-        let r = set_exposure(HorizonBase::Void, "pool/p", &[&open, &sealed]);
-        assert_eq!(r.len(), 2, "{r:?}");
-        assert!(
-            r.iter()
-                .all(|r| r.shape == Shape::OutsideUnanswered && r.code == DW_UNSEATABLE)
-        );
-        assert_eq!(
-            named(&r)[0].len(),
-            5,
-            "the declared side is answered: {r:?}"
-        );
-        assert!(!named(&r)[0].contains(&"north".to_string()));
-        assert_eq!(named(&r)[1].len(), 6, "{r:?}");
-        let all = room(
-            true,
-            &["down", "up", "east", "west", "south", "north"],
-            &[0],
-        );
-        assert!(set_exposure(HorizonBase::Void, "pool/p", &[&all]).is_empty());
-    }
-
-    /// The sea buries what stands under it, at the height the base seats the
-    /// piece — and only where that height is known.
-    #[test]
-    fn the_sea_is_credited_only_at_a_known_height() {
-        // walk_y 1 on an ocean: origin 62, so `down`'s outward cells at local -1
-        // stand at y=61, under the sea; the walls reach y=66, over it.
-        let one_plane = room(true, &[], &[0, 0]);
-        let r = set_exposure(HorizonBase::Ocean, "pool/p", &[&one_plane]);
-        assert_eq!(r.len(), 1);
-        assert!(!r[0].sides.contains(&"down".to_string()), "{r:?}");
-        assert_eq!(r[0].sides.len(), 5, "{r:?}");
-
-        let stair = room(true, &[], &[0, 3]);
-        let r = set_exposure(HorizonBase::Ocean, "pool/p", &[&stair]);
-        assert!(r[0].sides.contains(&"down".to_string()), "{r:?}");
-        assert!(r[0].short.contains("nothing fixes"), "{}", r[0].short);
-    }
-
-    /// `valley`'s ground is terrain around an extent, not a plane; the build
-    /// judges it against the landform it builds.
-    #[test]
-    fn valley_is_not_asked() {
-        let open = room(true, &[], &[0]);
-        assert!(set_exposure(HorizonBase::Valley, "pool/p", &[&open]).is_empty());
-    }
-
-    /// A side declared shown must be a side the bytes put a block on, on every
-    /// base — the build refuses it wherever the piece stands.
-    #[test]
-    fn a_declared_side_with_no_block_is_refused_on_every_base() {
-        let mut f = room(false, &["up", "top"], &[0]);
-        f.solid_sides.remove(&[0, 1, 0]);
-        for base in [HorizonBase::Void, HorizonBase::Ocean, HorizonBase::Valley] {
-            let r: Vec<Reason> = seating_reasons(base, &f)
-                .into_iter()
-                .filter(|r| r.shape == Shape::ShownSideEmpty)
-                .collect();
-            assert_eq!(r.len(), 1, "{base:?}");
-            assert_eq!(r[0].sides, vec!["up".to_string(), "top".to_string()]);
-        }
-    }
-
     /// A waterline over no water is a fiction whatever the base, because the
     /// fiction is in the library rather than in the campaign.
     #[test]
@@ -1441,137 +763,15 @@ mod tests {
         assert!(waterline_reason(&f).is_none());
     }
 
-    /// The missing walk plane is a reason on every base — the rule is written
-    /// once, whatever the campaign-tier filter does with it.
+    /// The binding line states its denominator on a run that found nothing.
     #[test]
-    fn a_missing_walk_plane_is_a_reason_on_every_base() {
-        let mut f = facts();
-        f.walk_y = None;
-        for base in [HorizonBase::Void, HorizonBase::Ocean, HorizonBase::Valley] {
-            let r = seating_reasons(base, &f);
-            assert!(
-                r.iter().any(|r| r.shape == Shape::NoWalkPlane),
-                "{base:?} reported {r:?}"
-            );
-        }
-    }
-
-    /// A body standing under its own declared walk plane is refused on an
-    /// ocean, and the message states where that cell lands in the world.
-    #[test]
-    fn a_cellar_under_the_walk_plane_is_refused_on_an_ocean() {
-        let mut f = facts();
-        f.walk_y = Some(3);
-        f.lowest_standable = Some(1);
-        f.standable_below_walk = 12;
-        let r = seating_reasons(HorizonBase::Ocean, &f);
-        let hit = r
-            .iter()
-            .find(|r| r.shape == Shape::WadingUnderTheSea)
-            .expect("refused");
-        assert_eq!(hit.code.id(), "DW0886");
-        // origin = 63 - 3 = 60; the lowest standable cell lands at 60 + 1 = 61.
-        assert!(hit.full.contains("world y=61"), "{}", hit.full);
-        // The same piece on a horizon with no sea is not this finding.
-        assert!(
-            !seating_reasons(HorizonBase::Void, &f)
-                .iter()
-                .any(|r| r.shape == Shape::WadingUnderTheSea)
-        );
-    }
-
-    /// Water with no declaration is refused on an ocean and the move names the
-    /// number the bytes hold, so the remedy is one an author can take.
-    #[test]
-    fn authored_water_with_no_declaration_is_refused_on_an_ocean() {
-        let mut f = facts();
-        f.walk_y = Some(2);
-        f.water_cells = 16;
-        f.top_water_y = Some(1);
-        f.bottom_water_y = Some(1);
-        let r = seating_reasons(HorizonBase::Ocean, &f);
-        let hit = r
-            .iter()
-            .find(|r| r.shape == Shape::UnstatedShore)
-            .expect("refused");
-        assert!(
-            hit.full.contains("DECLARE `waterline_y: 1`"),
-            "{}",
-            hit.full
-        );
-    }
-
-    /// **Water is not a shore.** A sealed well standing above the sea's own
-    /// plane meets no sea however the piece is seated, so there is nothing
-    /// unstated about it and nothing to declare — and a rule that refused it
-    /// would be demanding a waterline that could only ever be a fiction.
-    #[test]
-    fn water_above_the_seas_plane_is_not_an_unstated_shore() {
-        let mut f = facts();
-        f.walk_y = Some(1);
-        f.water_cells = 4;
-        f.top_water_y = Some(5);
-        f.bottom_water_y = Some(4);
-        assert!(
-            !seating_reasons(HorizonBase::Ocean, &f)
-                .iter()
-                .any(|r| r.shape == Shape::UnstatedShore),
-            "a well four blocks over the waterline is not a shore"
-        );
-        // The same piece with its water down in the sea's plane is.
-        f.bottom_water_y = Some(0);
-        assert!(
-            seating_reasons(HorizonBase::Ocean, &f)
-                .iter()
-                .any(|r| r.shape == Shape::UnstatedShore)
-        );
-    }
-
-    /// Fluid that leaves the piece's own face is refused on `void` alone: it is
-    /// what is beyond the face that decides, and only `void` puts nothing there.
-    #[test]
-    fn fluid_at_the_edge_is_refused_on_void_alone() {
-        let mut f = facts();
-        f.fluid_at_edge = 7;
-        assert!(
-            seating_reasons(HorizonBase::Void, &f)
-                .iter()
-                .any(|r| r.code == DW_UNSEATABLE)
-        );
-        assert!(seating_reasons(HorizonBase::Ocean, &f).is_empty());
-    }
-
-    /// The binding line states every denominator, on a run that found nothing —
-    /// **for both placement models**, so a model this check cannot reach is a
-    /// zero a reader can see rather than a line that never mentions it.
-    #[test]
-    fn the_binding_line_prints_its_denominators_when_it_found_nothing() {
+    fn the_binding_line_prints_its_denominator_when_it_found_nothing() {
         let line = SeatingBinding {
             base: "void".into(),
             ..SeatingBinding::default()
         }
         .line();
-        assert!(line.contains("0 of 0 area(s)"), "{line}");
-        assert!(line.contains("0 `.nbt` opened"), "{line}");
-        assert!(line.contains("0 borne out"), "{line}");
         assert!(line.contains("site plan: 0 of 0 box(es)"), "{line}");
-    }
-
-    /// Each placement model's numbers are stated separately, so the model a
-    /// campaign did NOT use reads as a zero beside the one it did.
-    #[test]
-    fn the_binding_line_names_each_placement_model_with_its_own_count() {
-        let areas = SeatingBinding {
-            base: "ocean".into(),
-            areas: 3,
-            areas_examined: 3,
-            members: 6,
-            ..SeatingBinding::default()
-        }
-        .line();
-        assert!(areas.contains("areas[]: 3 of 3 area(s)"), "{areas}");
-        assert!(areas.contains("site plan: 0 of 0 box(es)"), "{areas}");
-
         let plan = SeatingBinding {
             base: "valley".into(),
             boxes: 7,
@@ -1579,7 +779,6 @@ mod tests {
             ..SeatingBinding::default()
         }
         .line();
-        assert!(plan.contains("areas[]: 0 of 0 area(s)"), "{plan}");
         assert!(plan.contains("site plan: 7 of 7 box(es)"), "{plan}");
     }
 
@@ -1650,154 +849,6 @@ mod tests {
             open: false,
             base: delvewright_dsl::siteplan::Base::Ground,
             roof: None,
-        }
-    }
-
-    /// **The question no member can answer.** Every piece of a set may be
-    /// individually perfect and the set still unseatable, because a base whose
-    /// datum is a walk plane derives ONE origin per area.
-    ///
-    /// The values are the ones measured in the shipped library before the
-    /// generators were repaired: `pool/island` held `[2, 3]` and
-    /// `pool/cave-shore` `[1, 2]`, and both printed `SEATABLE`.
-    #[test]
-    fn a_set_of_two_walk_planes_cannot_be_seated_on_an_ocean() {
-        let set = [
-            ("prefab/beach".to_string(), Some(2)),
-            ("prefab/greenfield".to_string(), Some(3)),
-        ];
-        let SetPlane::Refused(rs) = set_walk_plane(HorizonBase::Ocean, "pool/island", &set) else {
-            panic!("two walk planes cannot derive one origin");
-        };
-        assert_eq!(rs.len(), 1, "one question, one answer: {rs:?}");
-        assert_eq!(rs[0].shape, Shape::WalkPlanesDisagree);
-        assert_eq!(rs[0].code.id(), "DW0886");
-        assert!(rs[0].short.contains("[2, 3]"), "{}", rs[0].short);
-        assert!(
-            rs[0].short.contains("across 2 member(s)"),
-            "{}",
-            rs[0].short
-        );
-        // A `valley` derives an origin from the same number — its gap floor is
-        // a walk plane too — so the same set is refused there, and the message
-        // names that base's own datum rather than the sea's.
-        let SetPlane::Refused(vs) = set_walk_plane(HorizonBase::Valley, "pool/island", &set) else {
-            panic!("a valley derives one origin from a walk plane, so two refuse");
-        };
-        assert_eq!(vs[0].shape, Shape::WalkPlanesDisagree);
-        // `void` states its datum for the ORIGIN and consults no piece at all,
-        // so there is nothing there to disagree about.
-        assert_eq!(
-            set_walk_plane(HorizonBase::Void, "pool/island", &set),
-            SetPlane::NotDerived,
-            "void derives no origin from a walk plane"
-        );
-    }
-
-    /// **A refusal names the datum of the base it is about.** The clause was
-    /// written once, for the only base that had a walk plane, and said *one
-    /// block above the sea* — so a `valley` refusal described a world with no
-    /// sea in it. One phrase per base, and this is what holds them apart.
-    #[test]
-    fn a_walk_plane_refusal_names_its_own_base_s_datum() {
-        let silent = [("prefab/a".to_string(), None)];
-        for (base, want, forbid) in [
-            (HorizonBase::Ocean, "above the sea", "gap floor"),
-            (HorizonBase::Valley, "gap floor", "above the sea"),
-        ] {
-            let SetPlane::Refused(rs) = set_walk_plane(base, "pool/x", &silent) else {
-                panic!("{base:?} derives an origin from a walk plane, so a silent set refuses");
-            };
-            assert!(rs[0].full.contains(want), "{}", rs[0].full);
-            assert!(!rs[0].full.contains(forbid), "{}", rs[0].full);
-            let y = crate::compiler::horizon::walk_ref_y(base).expect("a walk-plane datum");
-            assert!(rs[0].full.contains(&format!("y={y}")), "{}", rs[0].full);
-        }
-    }
-
-    /// One plane is the number the origin derives from, and a set that states
-    /// none is the missing-`walk_y` shape at set level.
-    #[test]
-    fn one_plane_derives_and_a_silent_set_refuses() {
-        let agreed = [
-            ("prefab/a".to_string(), Some(3)),
-            ("prefab/b".to_string(), Some(3)),
-        ];
-        assert_eq!(
-            set_walk_plane(HorizonBase::Ocean, "pool/x", &agreed),
-            SetPlane::Agreed(3)
-        );
-        let silent = [
-            ("prefab/a".to_string(), Some(3)),
-            ("prefab/b".to_string(), None),
-        ];
-        let SetPlane::Refused(rs) = set_walk_plane(HorizonBase::Ocean, "pool/x", &silent) else {
-            panic!("a member with no walk plane is refused");
-        };
-        assert_eq!(rs[0].shape, Shape::NoWalkPlane);
-        assert_eq!(rs[0].code.id(), "DW0886");
-        assert!(rs[0].short.contains("prefab/b"), "{}", rs[0].short);
-        assert!(rs[0].short.contains("1 of 2"), "{}", rs[0].short);
-        // An empty set derives nothing rather than refusing: an area that names
-        // no piece set is not this rule's subject.
-        assert_eq!(
-            set_walk_plane(HorizonBase::Ocean, "pool/x", &[]),
-            SetPlane::NotDerived
-        );
-    }
-
-    /// **A shore stands its walk plane one course above its own waterline**, and
-    /// the two declarations that say otherwise are refused from the DOCUMENTS,
-    /// under `DW0344` — the same number the placement check uses, because it is
-    /// the same fact asked one stage earlier.
-    ///
-    /// The values are the two pieces measured in the shipped library:
-    /// `island-beach-camp` (`walk_y: 2`, `waterline_y: 2`) and `cave-shore`
-    /// (`walk_y: 1`, `waterline_y: 1`).
-    #[test]
-    fn a_walk_plane_level_with_its_own_waterline_is_refused_from_the_documents() {
-        for (walk, water) in [(2, 2), (1, 1)] {
-            let mut f = facts();
-            f.walk_y = Some(walk);
-            f.declared_waterline = Some(water);
-            f.water_cells = 9;
-            f.top_water_y = Some(water);
-            f.bottom_water_y = Some(water);
-            let hit = seating_reasons(HorizonBase::Ocean, &f)
-                .into_iter()
-                .find(|r| r.shape == Shape::WalkPlaneOffItsWaterline)
-                .unwrap_or_else(|| panic!("walk {walk} / waterline {water} is refused"));
-            assert_eq!(hit.code.id(), "DW0344");
-            assert!(hit.full.contains("1 block(s) above"), "{}", hit.full);
-        }
-        // The relationship a shore has is not refused, and neither is a piece
-        // that declares only one of the two numbers.
-        let mut ok = facts();
-        ok.walk_y = Some(3);
-        ok.declared_waterline = Some(2);
-        ok.water_cells = 9;
-        ok.top_water_y = Some(2);
-        ok.bottom_water_y = Some(2);
-        assert!(
-            !seating_reasons(HorizonBase::Ocean, &ok)
-                .iter()
-                .any(|r| r.shape == Shape::WalkPlaneOffItsWaterline)
-        );
-        // And it is an ocean's question: a base with no sea has nothing for a
-        // waterline to be off.
-        let mut off = facts();
-        off.walk_y = Some(2);
-        off.declared_waterline = Some(2);
-        off.water_cells = 9;
-        off.top_water_y = Some(2);
-        off.bottom_water_y = Some(2);
-        for base in [HorizonBase::Void, HorizonBase::Valley] {
-            assert!(
-                !seating_reasons(base, &off)
-                    .iter()
-                    .any(|r| r.shape == Shape::WalkPlaneOffItsWaterline),
-                "{base:?} has no sea plane for this to be measured against"
-            );
         }
     }
 }

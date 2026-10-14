@@ -118,7 +118,6 @@ fn barrier_line(line: &str, middle: &str, middle_dy: i32) -> String {
         "stage": "world-edits",
         "content": { "batches": [ {
             "id": "batch/traversal-fixture",
-            "area": "area/keep",
             "note": "A room-wide barrier line across the keeper's walk, pierced at one cell.",
             "edits": [
                 { "verb": "select", "name": "region/line", "shape": {
@@ -224,10 +223,10 @@ fn build_all(
         quests,
         dialogue: dialogue_v06(),
         world_edits: Some(edits),
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");

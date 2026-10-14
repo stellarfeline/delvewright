@@ -76,6 +76,7 @@ pub fn materialize_from(base: &Path, patch: &serde_json::Value, dst: &Path) {
             std::fs::write(file, text).unwrap();
         }
     }
+    sync_map_dir(dst);
 }
 
 /// Strip any i18n from a materialized campaign at `dir`: drop `world.languages`
@@ -355,6 +356,7 @@ pub fn materialize(patch: &serde_json::Value, dst: &Path) {
             std::fs::write(file, text).unwrap();
         }
     }
+    sync_map_dir(dst);
 }
 
 /// Give an override document the envelope key it deliberately does not carry.
@@ -455,7 +457,9 @@ pub fn validation_diagnostics(
     prefabs: &delvec::compiler::registry::PrefabRegistry,
     entities: &delvec::compiler::registry::FullEntityRegistry,
 ) -> Vec<delvewright_dsl::Diagnostic> {
-    delvewright_dsl::validate_campaign_with(c, items, prefabs, entities)
+    quiet(delvewright_dsl::validate_campaign_with(
+        c, items, prefabs, entities,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -657,6 +661,7 @@ pub fn declare_story_dir(dir: &Path) {
         declare_story(q, &npcs, &dialogue)
     });
     patch_file(&dir.join("dialogue.json"), declare_dialogue_story);
+    sync_map_dir(dir);
 }
 
 /// [`declare_story`] over a quests document written in a test, against the
@@ -1472,4 +1477,257 @@ pub fn plan_structures_with_trap_triggers(
         }
     }
     out
+}
+
+/// A stage document a fixture directory may or may not carry.
+pub fn read_opt(dir: &Path, name: &str) -> Option<String> {
+    std::fs::read_to_string(dir.join(name)).ok()
+}
+
+/// The map documents a campaign carries beside its six stage documents.
+pub const MAP_FILES: [&str; 4] = [
+    "geometry-brief.json",
+    "layout-graph.json",
+    "site-plan.json",
+    "detail-plan.json",
+];
+
+/// Copy a campaign's six stage documents and whichever of its map documents
+/// it carries — its map is its site plan, so a copy without them has none.
+pub fn copy_campaign_docs(src: &Path, dst: &Path) {
+    for f in STAGE_FILES {
+        std::fs::copy(src.join(f), dst.join(f))
+            .unwrap_or_else(|e| panic!("copy {}: {e}", src.join(f).display()));
+    }
+    for f in MAP_FILES {
+        if src.join(f).is_file() {
+            std::fs::copy(src.join(f), dst.join(f)).unwrap();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The map follows the story it was handed
+// ---------------------------------------------------------------------------
+
+/// Every `anchor/<kebab>` string a JSON value names, and the subset an
+/// `open-gate`/`close-gate` effect or a `gate` field names.
+fn named_anchors(
+    v: &serde_json::Value,
+    all: &mut std::collections::BTreeSet<String>,
+    gates: &mut std::collections::BTreeSet<String>,
+) {
+    match v {
+        serde_json::Value::Object(m) => {
+            if matches!(
+                m.get("type").and_then(|t| t.as_str()),
+                Some("open-gate" | "close-gate")
+            ) && let Some(a) = m.get("anchor").and_then(|a| a.as_str())
+            {
+                gates.insert(a.to_string());
+            }
+            if let Some(a) = m.get("gate").and_then(|a| a.as_str())
+                && a.starts_with("anchor/")
+            {
+                gates.insert(a.to_string());
+            }
+            m.values().for_each(|x| named_anchors(x, all, gates));
+        }
+        serde_json::Value::Array(a) => a.iter().for_each(|x| named_anchors(x, all, gates)),
+        serde_json::Value::String(s)
+            if s.starts_with("anchor/")
+                && s[7..]
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-') =>
+        {
+            all.insert(s.clone());
+        }
+        _ => {}
+    }
+}
+
+/// The anchor names a piece of the pinned library declares, by prefab id; and
+/// the union over the whole library — the vocabulary a campaign's stand-in
+/// massing can be asked to station, since every name in it is one some piece
+/// once answered.
+fn library_anchor_names() -> &'static (
+    std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+    std::collections::BTreeSet<String>,
+) {
+    static NAMES: std::sync::OnceLock<(
+        std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+        std::collections::BTreeSet<String>,
+    )> = std::sync::OnceLock::new();
+    NAMES.get_or_init(|| {
+        let mut by = std::collections::BTreeMap::new();
+        let mut all = std::collections::BTreeSet::new();
+        for entry in std::fs::read_dir(pinned::prefabs()).unwrap() {
+            let path = entry.unwrap().path();
+            if !delvec::compiler::registry::is_prefab_document(&path) {
+                continue;
+            }
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(
+                &std::fs::read_to_string(&path).unwrap_or_default(),
+            ) else {
+                continue;
+            };
+            let Some(id) = v.get("prefab_id").and_then(|i| i.as_str()) else {
+                continue;
+            };
+            let names: std::collections::BTreeSet<String> = v
+                .get("anchors")
+                .and_then(|a| a.as_object())
+                .map(|a| a.keys().cloned().collect())
+                .unwrap_or_default();
+            all.extend(names.iter().cloned());
+            by.insert(id.to_string(), names);
+        }
+        (by, all)
+    })
+}
+
+/// **Re-derive a one-place fixture's map from the story it now carries.** A
+/// test that edits a fixture's stage documents writes the story; the map's
+/// procedural half follows it: one beat per objective on the one place, and one
+/// station per anchor name the documents reference that the place can answer —
+/// a name the bound piece declares, or, on a place no piece fills, a name the
+/// library's pieces declare — kept as declared where it already was, a new one
+/// a `gate` where a gate verb names it and a `point` otherwise, and bound in the
+/// detail plan to the piece anchor of the same name. A name nothing could answer
+/// (a typo a test plants) stays unresolved. A fixture with more than one place
+/// is left exactly as written.
+pub fn sync_map_dir(dir: &Path) {
+    let graph_path = dir.join("layout-graph.json");
+    let Ok(text) = std::fs::read_to_string(&graph_path) else {
+        return;
+    };
+    let mut graph: serde_json::Value = serde_json::from_str(&text).unwrap();
+    if graph["content"]["nodes"].as_array().map(Vec::len) != Some(1) {
+        return;
+    }
+    let node = graph["content"]["nodes"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let read = |name: &str| -> Option<serde_json::Value> {
+        std::fs::read_to_string(dir.join(name))
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+    };
+    let Some(quests) = read("quests.json") else {
+        return;
+    };
+    let mut beats = Vec::new();
+    for q in quests["content"]["quests"].as_array().into_iter().flatten() {
+        for o in q["objectives"].as_array().into_iter().flatten() {
+            beats.push(serde_json::json!({"node": node, "objective": o["id"], "quest": q["id"]}));
+        }
+    }
+    graph["content"]["beats"] = serde_json::Value::Array(beats);
+    let mut all = std::collections::BTreeSet::new();
+    let mut gates = std::collections::BTreeSet::new();
+    for name in [
+        "world.json",
+        "npcs.json",
+        "quests.json",
+        "dialogue.json",
+        "quest-plan.json",
+        "world-edits.json",
+    ] {
+        if let Some(v) = read(name) {
+            named_anchors(&v, &mut all, &mut gates);
+        }
+    }
+    let mut detail = read("detail-plan.json");
+    let (by_piece, library) = library_anchor_names();
+    let answerable: std::collections::BTreeSet<String> = match &detail {
+        Some(d) => d["content"]["details"][0]["piece"]
+            .as_str()
+            .and_then(|p| by_piece.get(p))
+            .cloned()
+            .unwrap_or_default(),
+        None => library.clone(),
+    };
+    let mut stations: std::collections::BTreeMap<String, serde_json::Value> =
+        graph["content"]["nodes"][0]["stations"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|s| (s["anchor"].as_str().unwrap().to_string(), s))
+            .collect();
+    let mut added = Vec::new();
+    for a in all {
+        if stations.contains_key(&a)
+            || !answerable.contains(&a)
+            || a.starts_with("anchor/node-")
+            || a.starts_with("anchor/seam-")
+            || a.starts_with("anchor/unlock-")
+        {
+            continue;
+        }
+        let kind = if gates.contains(&a) { "gate" } else { "point" };
+        stations.insert(a.clone(), serde_json::json!({"anchor": a, "kind": kind}));
+        added.push(a);
+    }
+    graph["content"]["nodes"][0]["stations"] =
+        serde_json::Value::Array(stations.into_values().collect());
+    std::fs::write(
+        &graph_path,
+        serde_json::to_string_pretty(&graph).unwrap() + "\n",
+    )
+    .unwrap();
+    if let Some(d) = detail.as_mut()
+        && !added.is_empty()
+    {
+        for a in &added {
+            d["content"]["details"][0]["anchors"][a] = serde_json::json!(a);
+        }
+        std::fs::write(
+            dir.join("detail-plan.json"),
+            serde_json::to_string_pretty(d).unwrap() + "\n",
+        )
+        .unwrap();
+    }
+}
+
+/// [`sync_map_dir`] over a campaign held in memory, for a test that builds its
+/// `RawCampaign` by hand: written to a scratch directory and read back.
+pub fn sync_map_raw(raw: &mut delvewright_dsl::RawCampaign, tag: &str) {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("sync-map-{tag}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let put = |n: &str, s: &str| std::fs::write(dir.join(n), s).unwrap();
+    put("world.json", &raw.world);
+    put("npcs.json", &raw.npcs);
+    put("quests.json", &raw.quests);
+    put("dialogue.json", &raw.dialogue);
+    put("quest-plan.json", &raw.quest_plan);
+    if let Some(w) = &raw.world_edits {
+        put("world-edits.json", w);
+    }
+    if let Some(g) = &raw.layout_graph {
+        put("layout-graph.json", g);
+    }
+    if let Some(d) = &raw.detail_plan {
+        put("detail-plan.json", d);
+    }
+    sync_map_dir(&dir);
+    if raw.layout_graph.is_some() {
+        raw.layout_graph = Some(std::fs::read_to_string(dir.join("layout-graph.json")).unwrap());
+    }
+    if raw.detail_plan.is_some() {
+        raw.detail_plan = Some(std::fs::read_to_string(dir.join("detail-plan.json")).unwrap());
+    }
+}
+
+/// A diagnostic list less the two advisories every one-place plan carries,
+/// whatever it is about: `DW0822` (the critical path's projected minutes,
+/// which refuses nothing) and `DW0813` (a building metric the gym has not
+/// walked). Each has its own test; a fixture about something else would
+/// otherwise be "clean" of nothing.
+pub fn quiet(d: Vec<delvewright_dsl::Diagnostic>) -> Vec<delvewright_dsl::Diagnostic> {
+    d.into_iter()
+        .filter(|d| !(d.code == "DW0822" || d.code == "DW0813"))
+        .collect()
 }

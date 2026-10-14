@@ -274,11 +274,10 @@ fn edit_breaching_the_outer_wall_is_dw0322() {
         &dir,
         serde_json::json!([{
             "id": "batch/breach-wall",
-            "area": "area/keep",
             "edits": [
                 { "verb": "select", "name": "region/breach", "shape": {
                     "kind": "box",
-                    "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+                    "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
                     "min": [4, 1, 0], "max": [6, 2, 0]
                 }},
                 { "verb": "carve", "region": "region/breach" }
@@ -350,11 +349,10 @@ fn edit_select_only_batch_on_an_ocean_horizon_is_green() {
         &dir,
         serde_json::json!([{
             "id": "batch/probe",
-            "area": "area/keep",
             "edits": [
                 { "verb": "select", "name": "region/probe", "shape": {
                     "kind": "box",
-                    "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+                    "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
                     "min": [4, 1, 4], "max": [5, 2, 5]
                 }}
             ]
@@ -409,7 +407,6 @@ fn edit_ocean_a_carve_that_puts_a_walk_cell_under_the_sea_is_refused_dw0344() {
             &dir,
             serde_json::json!([{
                 "id": "batch/breach-wall",
-                "area": "area/keep",
                 "edits": [
                     // The plinth course the shore piece stands its floor on.
                     // Local y=2 is world y=62 once the area is seated at 60,
@@ -417,7 +414,7 @@ fn edit_ocean_a_carve_that_puts_a_walk_cell_under_the_sea_is_refused_dw0344() {
                     // body stands in at exactly the sea plane.
                     { "verb": "select", "name": "region/breach", "shape": {
                         "kind": "box",
-                        "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+                        "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
                         "min": [4, 2, 4], "max": [6, 2, 6]
                     }},
                     { "verb": "carve", "region": "region/breach" }
@@ -481,11 +478,10 @@ fn edit_ocean_unbreached_hull_is_green_and_says_what_it_examined() {
         &dir,
         serde_json::json!([{
             "id": "batch/probe",
-            "area": "area/keep",
             "edits": [
                 { "verb": "select", "name": "region/probe", "shape": {
                     "kind": "box",
-                    "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+                    "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
                     "min": [4, 1, 4], "max": [5, 2, 5]
                 }}
             ]
@@ -559,7 +555,6 @@ fn edit_frame_prefab_drift_is_dw0323() {
         &dir,
         serde_json::json!([{
             "id": "batch/drift",
-            "area": "area/keep",
             "edits": [
                 { "verb": "select", "name": "region/x", "shape": {
                     "kind": "box",
@@ -597,11 +592,10 @@ fn edit_with_empty_region_is_dw0323() {
         &dir,
         serde_json::json!([{
             "id": "batch/empty",
-            "area": "area/keep",
             "edits": [
                 { "verb": "select", "name": "region/box", "shape": {
                     "kind": "box",
-                    "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+                    "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
                     "min": [1, 2, 1], "max": [3, 3, 3]
                 }},
                 // The box is interior air — no diorite matches anywhere.
@@ -679,7 +673,6 @@ fn the_batch_manifest_pieces_listing_resolves_a_piece_local_frame() {
         &batch_file,
         serde_json::to_string_pretty(&serde_json::json!({
             "id": "batch/from-manifest",
-            "area": "area/keep",
             "edits": [
                 { "verb": "select", "name": "region/whole-piece", "shape": {
                     "kind": "box",
@@ -727,7 +720,6 @@ fn edit_preview_never_persists_and_apply_persists_canonically() {
         &batch_file,
         serde_json::to_string_pretty(&serde_json::json!({
             "id": "batch/keeper-pad",
-            "area": "area/keep",
             "edits": [
                 { "verb": "select", "name": "region/pad", "shape": {
                     "kind": "box",
@@ -827,11 +819,10 @@ fn edit_apply_rejects_a_red_candidate_without_persisting() {
         &batch_file,
         serde_json::to_string_pretty(&serde_json::json!({
             "id": "batch/breach-wall",
-            "area": "area/keep",
             "edits": [
                 { "verb": "select", "name": "region/breach", "shape": {
                     "kind": "box",
-                    "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+                    "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
                     "min": [4, 1, 0], "max": [6, 2, 0]
                 }},
                 { "verb": "carve", "region": "region/breach" }
@@ -964,10 +955,9 @@ fn fragment_outside_the_library_is_dw0323() {
         &dir,
         serde_json::json!([{
             "id": "batch/bad-stamp",
-            "area": "area/keep",
             "edits": [
                 { "verb": "fragment", "prefab": "prefab/not-in-library",
-                  "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+                  "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
                   "at": [0, -7, 0] }
             ]
         }]),
@@ -1004,7 +994,7 @@ fn piece_box(name: &str, min: [i32; 3], max: [i32; 3]) -> serde_json::Value {
     serde_json::json!({
         "verb": "select", "name": name, "shape": {
             "kind": "box",
-            "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+            "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
             "min": min, "max": max
         }
     })
@@ -1131,7 +1121,6 @@ fn edit_over_trap_hardware_is_dw0352() {
         &dir,
         serde_json::json!([{
             "id": "batch/hearth-nook",
-            "area": "area/keep",
             "edits": [
                 piece_box("region/nook", [7, 1, 6], [8, 2, 6]),
                 { "verb": "carve", "region": "region/nook" }
@@ -1161,7 +1150,6 @@ fn edit_over_trap_hardware_is_dw0352() {
         &dir,
         serde_json::json!([{
             "id": "batch/hearth-nook",
-            "area": "area/keep",
             "edits": [
                 piece_box("region/nook", [1, 1, 2], [1, 2, 2]),
                 { "verb": "carve", "region": "region/nook" }
@@ -1221,10 +1209,9 @@ fn out_of_bbox_edit_chunks_converge_then_release() {
         &dir,
         serde_json::json!([{
             "id": "batch/far-annex",
-            "area": "area/keep",
             "edits": [ {
                 "verb": "fragment", "prefab": "prefab/hello-room",
-                "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+                "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
                 "at": [58, -7, 58]
             } ]
         }]),
@@ -1331,7 +1318,6 @@ fn edit_apply_runs_the_full_build_tier_proof_set() {
         &batch_file,
         serde_json::to_string_pretty(&serde_json::json!({
             "id": "batch/clip",
-            "area": "area/keep",
             "edits": [
                 piece_box("region/c", [5, 3, 7], [5, 3, 7]),
                 { "verb": "fill", "region": "region/c", "recipe": {
@@ -1381,7 +1367,6 @@ fn edit_inside_a_close_gate_region_warns_dw0353() {
         &dir,
         serde_json::json!([{
             "id": "batch/gate-dressing",
-            "area": "area/keep",
             "edits": [
                 piece_box("region/g", [4, 1, 6], [5, 3, 6]),
                 { "verb": "fill", "region": "region/g", "recipe": {
@@ -1424,7 +1409,6 @@ fn scatter_on_non_soil_is_refused_dw1002() {
         &dir,
         serde_json::json!([{
             "id": "batch/flowers-on-stone",
-            "area": "area/keep",
             "edits": [
                 piece_box("region/f", [1, 0, 7], [3, 0, 9]),
                 { "verb": "select", "name": "region/air", "shape": {
@@ -1468,7 +1452,6 @@ fn a_block_with_no_item_form_is_placed_and_judged_by_dw1002() {
         &dir,
         serde_json::json!([{
             "id": "batch/torches-on-air",
-            "area": "area/keep",
             "edits": [
                 piece_box("region/f", [1, 0, 7], [3, 0, 9]),
                 { "verb": "select", "name": "region/air", "shape": {
@@ -1509,16 +1492,16 @@ fn carving_a_relight_fixtures_support_is_a_dw0354_error() {
     set_batches(
         &dir,
         serde_json::json!([
-            { "id": "batch/pillar", "area": "area/keep", "edits": [
+            { "id": "batch/pillar", "edits": [
                 piece_box("region/p", [2, 1, 8], [2, 1, 8]),
                 { "verb": "fill", "region": "region/p", "recipe": {
                     "blocks": [ { "block": "minecraft:stone", "weight": 1.0 } ] } }
             ]},
-            { "id": "batch/lamp", "area": "area/keep", "edits": [
+            { "id": "batch/lamp", "edits": [
                 piece_box("region/l", [2, 2, 8], [2, 2, 8]),
                 { "verb": "relight", "region": "region/l", "fixture": "torch", "min_light": 14 }
             ]},
-            { "id": "batch/undermine", "area": "area/keep", "edits": [
+            { "id": "batch/undermine", "edits": [
                 piece_box("region/u", [2, 1, 8], [2, 1, 8]),
                 { "verb": "carve", "region": "region/u" }
             ]}
@@ -1590,7 +1573,7 @@ fn rotated_fragment_of_a_directional_prefab_is_dw0323() {
     let stamp = |prefab: &str, rotation: Option<&str>| {
         let mut edit = serde_json::json!({
             "verb": "fragment", "prefab": prefab,
-            "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+            "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
             "at": [0, -9, 0]
         });
         if let Some(r) = rotation {
@@ -1598,7 +1581,7 @@ fn rotated_fragment_of_a_directional_prefab_is_dw0323() {
         }
         set_batches(
             &dir,
-            serde_json::json!([{ "id": "batch/rot", "area": "area/keep", "edits": [edit] }]),
+            serde_json::json!([{ "id": "batch/rot", "edits": [edit] }]),
         );
         delvec(&[
             "build",

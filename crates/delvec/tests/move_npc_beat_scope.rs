@@ -130,7 +130,7 @@ fn fixture(guard: bool) -> std::path::PathBuf {
             0,
             json!({
                 "id": "quest/arrive", "goal": "Take stock of the keep before asking.",
-                "area": "area/keep", "npcs": [], "depends_on": [],
+                "npcs": [], "depends_on": [],
                 "mandatory": true, "act": 1,
             }),
         );

@@ -48,10 +48,10 @@ fn parse_hw_with(overrides: &[(&str, String)]) -> Campaign {
         quests: get("quests.json"),
         dialogue: get("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(get("geometry-brief.json")),
+        layout_graph: Some(get("layout-graph.json")),
+        site_plan: Some(get("site-plan.json")),
+        detail_plan: Some(get("detail-plan.json")),
         design: None,
     })
     .expect("campaign parses")

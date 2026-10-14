@@ -52,9 +52,7 @@ fn scratch(case: &str) -> PathBuf {
 fn campaign_dir(root: &Path, id: &str) -> PathBuf {
     let dir = root.join("campaign");
     std::fs::create_dir_all(&dir).unwrap();
-    for f in common::STAGE_FILES {
-        std::fs::copy(common::hello_world_dir().join(f), dir.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&common::hello_world_dir(), &dir);
     common::patch_file(&dir.join("world.json"), |v| {
         v["content"]["areas"][0]["prefab"] = serde_json::json!(format!("prefab/{id}"));
     });

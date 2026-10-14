@@ -91,10 +91,10 @@ fn parse_hw() -> Campaign {
         quests: QUESTS_V06.to_string(),
         dialogue: dialogue_with_forbids(),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
@@ -338,10 +338,10 @@ fn chained_moves_plan_from_last_staged_location() {
         quests,
         dialogue: dialogue_with_forbids(),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
@@ -383,10 +383,10 @@ fn chained_moves_plan_from_last_staged_location() {
         quests: quests_npc,
         dialogue: dialogue_with_forbids(),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");

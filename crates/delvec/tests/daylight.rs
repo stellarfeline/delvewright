@@ -97,7 +97,9 @@ fn build(dir: &Path) -> Result<Vec<Diagnostic>, BuildFailure> {
     let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("daylight")).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(
+        &campaign, &items, &prefabs, &entities,
+    ));
     assert!(
         diags.iter().all(|d| d.severity != Severity::Error),
         "the fixture mutation must stay schema-valid: {diags:#?}"
@@ -455,12 +457,12 @@ fn a_phantom_is_prescribed_a_roof_and_refused_a_helmet() {
     let loaded = load_campaign_dir(helmeted.path()).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
     let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("daylight")).unwrap();
-    let refused: Vec<Diagnostic> = validate_campaign_with(
+    let refused: Vec<Diagnostic> = common::quiet(validate_campaign_with(
         &campaign,
         &FullItemRegistry::v1_21_11(),
         &prefabs,
         &FullEntityRegistry::v1_21_11(),
-    )
+    ))
     .into_iter()
     .filter(|d| d.code == "DW0898")
     .collect();

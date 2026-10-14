@@ -124,12 +124,12 @@ fn campaign(dir: &Path) -> Campaign {
 fn validate(dir: &Path, lib: &Path) -> Vec<delvewright_dsl::Diagnostic> {
     let c = campaign(dir);
     let prefabs = PrefabRegistry::load_dir(lib).unwrap();
-    let mut d = delvewright_dsl::validate_campaign_with(
+    let mut d = common::quiet(delvewright_dsl::validate_campaign_with(
         &c,
         &delvec::compiler::registry::FullItemRegistry::v1_21_11(),
         &prefabs,
         &delvec::compiler::registry::FullEntityRegistry::v1_21_11(),
-    );
+    ));
     d.extend(delvec::compiler::atmos::check_sounds(&c));
     d.extend(delvec::compiler::atmosphere::check(&c));
     d

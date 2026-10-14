@@ -114,7 +114,7 @@ fn fixture(tag: &str, annex_provides_the_name: bool, beat_in_annex: bool) -> std
             0,
             json!({
                 "id": "quest/arrive", "goal": "Cross the yard to the Keeper's door.",
-                "area": "area/keep", "npcs": [], "depends_on": [],
+                "npcs": [], "depends_on": [],
                 "mandatory": true, "act": 1,
             }),
         );

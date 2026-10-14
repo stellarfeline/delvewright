@@ -110,10 +110,10 @@ fn campaign() -> Campaign {
         quests: quests(),
         dialogue: hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     })
     .expect("campaign parses")
@@ -346,10 +346,10 @@ fn plain_stands(
         quests: q.to_string(),
         dialogue: hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     })
     .unwrap();

@@ -1360,12 +1360,12 @@ mod health_bar {
         let loaded = load_campaign_dir(&fixture_dir()).unwrap();
         let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
         let tree = CommandTree::v1_21_11();
-        let mut diags = validate_campaign_with(
+        let mut diags = common::quiet(validate_campaign_with(
             c,
             &FullItemRegistry::v1_21_11(),
             &prefabs,
             &FullEntityRegistry::v1_21_11(),
-        );
+        ));
         diags.extend(healthbar::check_vocabulary(c, &tree));
         assert!(
             diags

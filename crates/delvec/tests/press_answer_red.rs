@@ -28,12 +28,12 @@ fn fixture() -> Campaign {
 
 fn diagnostics(c: &Campaign) -> Vec<delvewright_dsl::Diagnostic> {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    validate_campaign_with(
+    common::quiet(validate_campaign_with(
         c,
         &FullItemRegistry::v1_21_11(),
         &prefabs,
         &FullEntityRegistry::v1_21_11(),
-    )
+    ))
 }
 
 /// The campaign's own wrong-side answer, on the general click verb.
@@ -123,10 +123,10 @@ fn an_unauthored_seal_is_refused_by_the_same_rule() {
         quests: quests.to_string(),
         dialogue: hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
     let c = parse_campaign(&raw).expect("campaign parses");

@@ -60,10 +60,10 @@ fn parse_hw(quests: &str) -> Campaign {
         quests: quests.to_string(),
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     })
     .expect("campaign parses")
@@ -79,7 +79,7 @@ fn try_build_doc(doc: &str) -> Result<emit::BuildOutput, emit::BuildFailure> {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&c, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(&c, &items, &prefabs, &entities));
     assert!(diags.is_empty(), "campaign must validate clean: {diags:#?}");
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -133,12 +133,12 @@ fn loot_on_a_non_container_anchor_is_dw0431() {
 fn validate_doc(doc: &str) -> Vec<delvewright_dsl::Diagnostic> {
     let c = parse_hw(doc);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    validate_campaign_with(
+    common::quiet(validate_campaign_with(
         &c,
         &FullItemRegistry::v1_21_11(),
         &prefabs,
         &FullEntityRegistry::v1_21_11(),
-    )
+    ))
 }
 
 /// `DW0436`: a `loot` count above the item's max stack size. `item replace …

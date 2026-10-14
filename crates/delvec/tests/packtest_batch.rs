@@ -124,9 +124,7 @@ fn build_actor_hello_world() -> BuildOutput {
     let dst = scratch_dir("actors");
     let _ = std::fs::remove_dir_all(&dst);
     std::fs::create_dir_all(&dst).unwrap();
-    for f in common::STAGE_FILES {
-        std::fs::copy(src.join(f), dst.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&src, &dst);
     common::patch_file(&dst.join("quests.json"), |d| {
         d["dsl_version"] = serde_json::json!(DSL_VERSION);
         common::objective_effects(d, 0, "obj/talk").extend([
@@ -159,9 +157,7 @@ fn build_handoff_hello_world() -> BuildOutput {
     let dst = scratch_dir("handoff");
     let _ = std::fs::remove_dir_all(&dst);
     std::fs::create_dir_all(&dst).unwrap();
-    for f in common::STAGE_FILES {
-        std::fs::copy(src.join(f), dst.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&src, &dst);
     common::patch_file(&dst.join("npcs.json"), |d| {
         d["dsl_version"] = serde_json::json!(DSL_VERSION);
         d["content"]["npcs"][0]["deferred"] = serde_json::json!(true);
@@ -395,9 +391,7 @@ fn build_scheduled_hello_world() -> BuildOutput {
     let dst = scratch_dir("sched-ending");
     let _ = std::fs::remove_dir_all(&dst);
     std::fs::create_dir_all(&dst).unwrap();
-    for f in common::STAGE_FILES {
-        std::fs::copy(src.join(f), dst.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&src, &dst);
     let search = r#"        "on_complete": [
           {
             "happening": {

@@ -94,7 +94,7 @@ use advancement::*;
 use affordance::*;
 pub use atmosphere::*;
 pub use boundary::*;
-pub use branch::*;
+use branch::*;
 use cast::*;
 use checkpoint::*;
 use class::*;
@@ -188,20 +188,6 @@ delvewright_dsl::dw_code! {
     /// countdown could never reach zero and the delve soft-locked with every other
     /// proof green.
     pub const DW_AGGRO_EDGE_NO_RING: DwCode = DwCode::new("DW0387", ExitTier::Build);
-}
-
-delvewright_dsl::dw_code! {
-    /// `DW0494`: completing ONE objective would cross into two different areas —
-    /// one destination on the exported path, another on a branch.
-    ///
-    /// The crossing is emitted into the objective's own completion bundle, so the
-    /// two destinations would be two teleports in one function body, and which one
-    /// the party lands on would depend on command order rather than on the branch
-    /// they are actually playing. There is no runtime distinction to gate on either:
-    /// the exported path's crossing is unconditional by construction. The content
-    /// fix is to split the objective — one crossing objective per branch, each
-    /// gated by that branch's own flags.
-    pub const DW_BRANCH_TRANSPORT_DIVERGES: DwCode = DwCode::new("DW0494", ExitTier::Build);
 }
 
 impl From<Failure> for BuildFailure {
@@ -393,9 +379,8 @@ pub fn build_with_warnings(
     };
     // Advisory findings the replay raised (`DW0353` gate-region collisions,
     // `DW0354` broken block support) — reported by the caller, never fatal.
-    // Advisory findings the PLACEMENT stage raised (`DW0498`: a pool draw that
-    // seats the same anchor-bearing prefab twice) lead, since they describe the
-    // world every later pass reasons over, then the replay's own.
+    // Advisory findings the PLACEMENT stage raised lead, since they describe
+    // the world every later pass reasons over, then the replay's own.
     let mut warnings: Vec<delvewright_dsl::Diagnostic> = plan.warnings.clone();
     warnings.append(&mut extent_findings);
     warnings.extend(
@@ -761,9 +746,6 @@ pub fn build_with_warnings(
     // Trap flag gating (DSL v0.6): resolve the authored trigger hardware for every
     // gated trap, rejecting a trigger the compiler cannot restore (DW0363).
     let trap_gates = trap_gate_hardware(plan, prefabs)?;
-    // The inter-area crossings that exist only on a branch. Computed
-    // here so `DW0494` fails the build before a single function is emitted.
-    let branch_transport = branch_transport_overlay(plan)?;
 
     // spec-0029 addendum: the compiler's own on-screen strings. The default
     // multi-language build leaves them tagged with their `delvewright.ui.…` key
@@ -821,7 +803,6 @@ pub fn build_with_warnings(
         }),
         &trap_gates,
         &payload_plans,
-        &branch_transport,
         stake_table.as_ref(),
         &asm_locks,
         &pulse_gate.rows,

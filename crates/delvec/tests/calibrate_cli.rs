@@ -25,8 +25,8 @@ fn tmp(name: &str) -> PathBuf {
 const LAYOUT: &str = r#"{
   "campaign_id": "island",
   "anchors": [
-    { "id": "anchor/fire-pit", "area": "area/island", "pos": [9, 69, -56] },
-    { "id": "anchor/exit", "area": "area/island", "pos": [5, 67, 8] }
+    { "id": "anchor/fire-pit", "pos": [9, 69, -56] },
+    { "id": "anchor/exit", "pos": [5, 67, 8] }
   ]
 }"#;
 

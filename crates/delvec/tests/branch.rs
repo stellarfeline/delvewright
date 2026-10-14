@@ -56,10 +56,10 @@ fn campaign_with_cast(patch: impl Fn(&mut Value, &mut Value, &mut Value, &mut Va
         quests: quests.to_string(),
         dialogue: dialogue.to_string(),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: common::read_opt(&fixture_dir(), "geometry-brief.json"),
+        layout_graph: common::read_opt(&fixture_dir(), "layout-graph.json"),
+        site_plan: common::read_opt(&fixture_dir(), "site-plan.json"),
+        detail_plan: common::read_opt(&fixture_dir(), "detail-plan.json"),
         design: None,
     })
     .expect("fixture must parse")
@@ -540,7 +540,6 @@ fn add_optional_strand(plan: &mut Value, quests: &mut Value) {
         .unwrap()
         .push(serde_json::json!({
             "act": 2,
-            "area": "area/keep",
             "depends_on": ["quest/decide"],
             "goal": "Go back for a last look at the gate on the way out.",
             "id": "quest/look-back",
@@ -684,7 +683,6 @@ fn lingering_strand_fixture(then: impl Fn(&mut Value)) -> Campaign {
             .unwrap()
             .push(serde_json::json!({
                 "act": 2,
-                "area": "area/keep",
                 "depends_on": ["quest/decide"],
                 "goal": "Linger in the yard a while.",
                 "id": "quest/linger",
@@ -1048,7 +1046,6 @@ fn a_clash_that_needs_every_step_between_its_beats_is_dw0485_campaign() -> Campa
         ] {
             pq.push(serde_json::json!({
                 "act": 2,
-                "area": "area/keep",
                 "depends_on": deps,
                 "goal": "A beat of the night.",
                 "id": id,
@@ -1239,7 +1236,6 @@ fn plan_quest(plan: &mut Value, id: &str, deps: &[&str]) {
         .unwrap()
         .push(serde_json::json!({
             "act": 2,
-            "area": "area/keep",
             "depends_on": deps,
             "goal": "A beat of the night.",
             "id": id,
@@ -1672,7 +1668,6 @@ fn a_branch_past_the_bound_is_dw0927() {
                 .unwrap()
                 .push(serde_json::json!({
                     "act": 2,
-                    "area": "area/keep",
                     "depends_on": ["quest/decide"],
                     "goal": "Answer a knock at the gate.",
                     "id": id,

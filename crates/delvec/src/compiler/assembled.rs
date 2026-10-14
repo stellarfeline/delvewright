@@ -790,24 +790,6 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                 Ok(())
             },
         );
-        // Seals land after placement: an air fill opens a mated socket; anything
-        // else seals an unused one. Either way the sealed cell is no longer an
-        // authored open gate.
-        for s in &area.seals {
-            reached.mark_box(s.from, s.to);
-            if is_air(&s.block) {
-                for cell in region_cells(s.from, s.to) {
-                    blocks.remove(&cell);
-                    open_gates.remove(&cell);
-                }
-            } else {
-                let state = BlockState::new(&s.block);
-                for cell in region_cells(s.from, s.to) {
-                    blocks.insert(cell, state);
-                    open_gates.remove(&cell);
-                }
-            }
-        }
     }
     // The horizon's surround, after every area (spec-0026): terrain the compiler
     // generated rather than a prefab an author bound, entering the voxel model

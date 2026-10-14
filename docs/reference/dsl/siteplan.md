@@ -74,4 +74,3 @@ This module's rows of a section whose prose is on the [`delvec::compiler::blocko
 
 | Code | Rule |
 |---|---|
-| `DW0839` | **Two placement authorities in one campaign.** A stage-1 world declaring `areas[]` in a campaign that also carries a site plan. `areas[]` seats prefab pieces on the compiler's fixed stride and the site plan seats the derived blockout in its own declared region, so a world with both has two answers to every question about where something is and nothing says which. One or the other, per campaign; both surfaces are legal. Validation tier (exit 1). |

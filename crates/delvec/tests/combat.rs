@@ -79,7 +79,9 @@ fn build(dir: &Path) -> Result<(BuildOutput, Vec<Diagnostic>), BuildFailure> {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(
+        &campaign, &items, &prefabs, &entities,
+    ));
     assert!(
         diags
             .iter()

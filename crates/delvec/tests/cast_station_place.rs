@@ -123,7 +123,7 @@ fn fixture_playable(tag: &str, annex_provides: bool) -> std::path::PathBuf {
             0,
             json!({
                 "id": "quest/arrive", "goal": "Cross the yard to the Keeper's door.",
-                "area": "area/keep", "npcs": [], "depends_on": [],
+                "npcs": [], "depends_on": [],
                 "mandatory": true, "act": 1,
             }),
         );

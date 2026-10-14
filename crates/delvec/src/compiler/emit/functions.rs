@@ -16,7 +16,6 @@ pub(super) fn emit_functions(
     edit_bounds: &[([i32; 3], [i32; 3])],
     trap_gates: &BTreeMap<String, String>,
     payloads: &PayloadPlans,
-    branch_transport: &BranchTransportOverlay,
     stake_table: Option<&crate::compiler::stake::StakeTable>,
     asm_locks: &crate::compiler::assembly::Locks,
     pulses: &[crate::compiler::pulse::PulseRow],
@@ -456,7 +455,7 @@ pub(super) fn emit_functions(
         // Each write is already inside vanilla's `/fill` cap: the derivation
         // splits at the point of writing, because a `fill` the server refuses
         // fails in a function nobody reads.
-        for m in area.mass.iter().chain(&area.seals) {
+        for m in &area.mass {
             build.push(format!(
                 "fill {} {} {} {} {} {} {}",
                 m.from[0], m.from[1], m.from[2], m.to[0], m.to[1], m.to[2], m.block
@@ -1311,7 +1310,7 @@ pub(super) fn emit_functions(
     fns.extend(dialog_handler_fns(plan, &casts));
 
     // --- objective completion + quest checks ---
-    fns.extend(quest_completion_fns(plan, chrome, branch_transport));
+    fns.extend(quest_completion_fns(plan, chrome));
 
     // --- campaign_complete (shared by campaign-complete effect) ---
     fns.extend(campaign_complete_fns(plan, chrome));

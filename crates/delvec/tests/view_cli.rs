@@ -655,8 +655,8 @@ fn panorama_frames_the_building_its_anchors_name() {
     std::fs::create_dir_all(build_dir.join("creator-datapack")).unwrap();
     std::fs::write(
         build_dir.join("creator-datapack/layout.json"),
-        br#"{"anchors":[{"id":"anchor/a","area":"area/entry","kind":"point","pos":[2,65,2]},
-                        {"id":"anchor/b","area":"area/entry","kind":"point","pos":[6,65,5]}]}"#,
+        br#"{"anchors":[{"id":"anchor/a","kind":"point","pos":[2,65,2]},
+                        {"id":"anchor/b","kind":"point","pos":[6,65,5]}]}"#,
     )
     .unwrap();
     let out = build_dir.join("scenes");

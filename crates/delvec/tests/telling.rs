@@ -29,10 +29,10 @@ fn parse(
         quests: quests.to_string(),
         dialogue: dialogue.to_string(),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
@@ -408,7 +408,7 @@ fn a_shared_skin_does_not_change_whose_name_tag_stands() {
           "name": "Footman", "skin": skin }
     ]);
     let c = parse(&hw("world.json"), &quests, &hw("dialogue.json"));
-    let v = delvewright_dsl::validate_campaign(&c);
+    let v = common::quiet(delvewright_dsl::validate_campaign(&c));
     assert!(
         !v.iter().any(|x| x.code == "DW0190"),
         "three actors wearing one skin file is legal: {v:#?}"

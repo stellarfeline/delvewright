@@ -11,9 +11,6 @@ This module's rows of a section whose prose is on the [`delvewright_dsl::diagnos
 
 | Code | Meaning |
 |------|---------|
-| `DW0160` | Area binds neither or both of `prefab`/`prefab_pool`. |
-| `DW0161` | `prefab_pool` references a pool absent from `prefabs/` metadata. |
-| `DW0856` | **A bare `prefab` names a piece the library does not hold** — the same obligation `DW0161` carries on the other arm of the binding. Asked of `AnchorRegistry::has_prefab`, which answers `Some(true)`/`Some(false)` from a registry that is the whole library and `None` from one that is not, so a subset registry or a test double refuses nothing on its word; `anchors_for` cannot answer it, because its `None` deliberately means *defer*. It is an error rather than a deferral because an area whose piece is absent contributes **no anchor set at all**, and every per-area anchor check reads a missing set as a deferral and skips: the anchor proof (`DW0142`) over every quest in that area then examines zero anchors and passes. A mistyped piece is therefore not merely accepted — it is **less checked than a correct one**, which is the unbound vacuity mode one keystroke away. Prescription: correct the id, or add the piece to the prefabs dir. (A piece whose metadata file failed to parse is absent from the registry too and so is reported here as well as by `DW0346`; both name the same missing piece from the two ends.) |
 | `DW0320` | `horizon:"ocean"` declared without a `boundary` (an infinite swimmable sea with no return rule). spec-0013. Numbered in the 032x world/region family but **validation-tier (exit 1)**, not a DW03x build code. |
 | `DW0321` | `boundary.margin` outside `0..=64`. spec-0013. Validation-tier (exit 1). |
 | `DW0356` | `world.min_players` outside `1..=4` (spec-0018). A delve is played by ONE party of 1–4 (the product definition), so a declared mandatory size can never sit outside it. Absent = 1. Validation-tier (exit 1), `dsl::world`. |

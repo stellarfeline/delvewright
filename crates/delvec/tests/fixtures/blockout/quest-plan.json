@@ -5,7 +5,6 @@
     "quests": [
       {
         "act": 1,
-        "area": "area/site",
         "depends_on": [],
         "goal": "Get the keeper to open the cell door and walk out the far side.",
         "id": "quest/walk-the-whole",

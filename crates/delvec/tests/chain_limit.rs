@@ -53,14 +53,13 @@ fn over_limit_stamp() -> PathBuf {
         "stage": "world-edits",
         "content": { "batches": [{
             "id": "batch/deep-stamp",
-            "area": "area/keep",
             "edits": [
                 {
                     "verb": "select",
                     "name": "region/under",
                     "shape": {
                         "kind": "box",
-                        "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+                        "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
                         "min": [-18, -48, -18],
                         "max": [29, -1, 29]
                     }

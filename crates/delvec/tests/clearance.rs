@@ -42,7 +42,6 @@ fn edits_doc(offset: [i32; 3], note: &str) -> String {
         "stage": "world-edits",
         "content": { "batches": [ {
             "id": "batch/clearance-fixture",
-            "area": "area/keep",
             "note": note,
             "edits": [
                 { "verb": "select", "name": "region/beside-keeper", "shape": {
@@ -67,10 +66,10 @@ fn build(base_entity: &str, edits: Option<String>) -> Result<Vec<Diagnostic>, Bu
         quests: read_hw("quests.json"),
         dialogue: read_hw("dialogue.json"),
         world_edits: edits,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");

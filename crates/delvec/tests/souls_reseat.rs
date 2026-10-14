@@ -130,7 +130,9 @@ fn build(campaign: &Campaign) -> BuildOutput {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(campaign, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(
+        campaign, &items, &prefabs, &entities,
+    ));
     assert_only_boss_advisories(campaign, &diags);
 
     let plan = Plan::build(campaign, &prefabs).expect("plan builds");

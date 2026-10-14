@@ -4,7 +4,6 @@
     "npcs": [
       {
         "anchor": "anchor/node-hall",
-        "area": "area/site",
         "base_entity": "minecraft:villager",
         "id": "npc/keeper",
         "name": "The Keeper",

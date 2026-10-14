@@ -348,11 +348,11 @@ fn the_control_the_same_beat_at_0_10_validates() {
     let loaded = load(CP);
     let c = campaign(&loaded, true);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let diags = validate_campaign_with(
+    let diags = common::quiet(validate_campaign_with(
         &c,
         &FullItemRegistry::v1_21_11(),
         &prefabs,
         &FullEntityRegistry::v1_21_11(),
-    );
+    ));
     assert!(diags.is_empty(), "{diags:#?}");
 }

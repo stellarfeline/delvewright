@@ -36,10 +36,12 @@ fn fit(c: &Campaign) -> Vec<Diagnostic> {
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    delvewright_dsl::validate_campaign_with(c, &items, &prefabs, &entities)
-        .into_iter()
-        .filter(|d| d.code == "DW0898")
-        .collect()
+    common::quiet(delvewright_dsl::validate_campaign_with(
+        c, &items, &prefabs, &entities,
+    ))
+    .into_iter()
+    .filter(|d| d.code == "DW0898")
+    .collect()
 }
 
 fn one(c: &Campaign) -> Diagnostic {
@@ -288,10 +290,12 @@ fn a_saddle_drop_needs_a_saddle() {
         a[0]["vulnerable"] = serde_json::json!(true);
         a[0]["drops"] = serde_json::json!([{"slot": "saddle"}]);
         let c = campaign(a, serde_json::json!([]));
-        delvewright_dsl::validate_campaign_with(&c, &items, &prefabs, &entities)
-            .into_iter()
-            .filter(|d| d.code == "DW0490")
-            .count()
+        common::quiet(delvewright_dsl::validate_campaign_with(
+            &c, &items, &prefabs, &entities,
+        ))
+        .into_iter()
+        .filter(|d| d.code == "DW0490")
+        .count()
     };
     assert_eq!(with(serde_json::json!({"saddle": "minecraft:saddle"})), 0);
     assert_eq!(

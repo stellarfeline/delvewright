@@ -28,7 +28,9 @@ fn build_v06() -> BuildOutput {
 
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(
+        &campaign, &items, &prefabs, &entities,
+    ));
     assert!(
         diags.is_empty(),
         "v06-flags must validate clean: {diags:#?}"

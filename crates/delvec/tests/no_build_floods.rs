@@ -261,13 +261,12 @@ fn a_carve_that_lowers_a_floor_to_the_sea_plane_reds() {
             "content": {
                 "batches": [{
                     "id": "batch/pit",
-                    "area": "area/keep",
                     "edits": [
                         { "verb": "select", "name": "region/pit", "shape": {
                             "kind": "box",
                             "frame": {
                                 "kind": "piece-local",
-                                "piece": 0,
+                                "piece": 1,
                                 "prefab": "prefab/hello-room"
                             },
                             "min": [4, 2, 4], "max": [6, 2, 6]

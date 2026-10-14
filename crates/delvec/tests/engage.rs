@@ -78,12 +78,12 @@ fn build(dir: &Path) -> Result<(), BuildFailure> {
     let loaded = load_campaign_dir(dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("fixture parses");
     let prefabs = PrefabRegistry::load_dir(&common::shown_prefabs_dir("engage")).unwrap();
-    let diags = validate_campaign_with(
+    let diags = common::quiet(validate_campaign_with(
         &campaign,
         &FullItemRegistry::v1_21_11(),
         &prefabs,
         &FullEntityRegistry::v1_21_11(),
-    );
+    ));
     assert!(
         diags.iter().all(|d| d.severity != Severity::Error),
         "the fixture mutation must stay schema-valid: {diags:#?}"
@@ -249,7 +249,6 @@ fn wet_floor(dir: &Path, waterlogged: bool) {
         .as_array_mut()
         .unwrap()
         .push(serde_json::json!({
-            "area": "area/keep",
             "id": "batch/flood-the-floor",
             "note": "The yard floor laid as bottom slabs.",
             "edits": [
@@ -258,7 +257,7 @@ fn wet_floor(dir: &Path, waterlogged: bool) {
                     "name": "region/under-floor",
                     "shape": {
                         "kind": "box",
-                        "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+                        "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
                         "min": [0, -1, 0],
                         "max": [10, -1, 10]
                     }
@@ -276,7 +275,7 @@ fn wet_floor(dir: &Path, waterlogged: bool) {
                     "name": "region/yard-floor",
                     "shape": {
                         "kind": "box",
-                        "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+                        "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
                         "min": [1, 0, 1],
                         "max": [9, 0, 9]
                     }

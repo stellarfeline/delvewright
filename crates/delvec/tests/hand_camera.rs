@@ -47,7 +47,7 @@ fn layout(dir: &Path) -> PathBuf {
         serde_json::to_vec_pretty(&serde_json::json!({
             "version": delvewright_dsl::DSL_VERSION,
             "campaign_id": "hello-world",
-            "areas": [{"id": "area/keep", "prefab": "keep", "origin": [0, 64, 0], "size": [11, 6, 11]}],
+
             "objectives": [{"id": "obj/talk", "quest": "quest/open-the-door"}],
             "npcs": [],
             "anchors": [],

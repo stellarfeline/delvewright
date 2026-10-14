@@ -71,8 +71,7 @@ fn exit_cell_filled() -> Value {
     json!({ "world-edits": {
         "campaign_id": NS, "stage": "world-edits",
         "content": { "batches": [{
-            "id": "batch/the-slate", "area": "area/keep",
-            "note": "a slate set on the exit cell for an unmarked interact to stand on",
+            "id": "batch/the-slate", "note": "a slate set on the exit cell for an unmarked interact to stand on",
             "edits": [
                 { "verb": "select", "name": "region/slate",
                   "shape": { "kind": "box", "min": [0, 0, 0], "max": [0, 0, 0],

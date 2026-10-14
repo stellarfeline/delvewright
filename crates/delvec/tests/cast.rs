@@ -28,10 +28,10 @@ static NPCS: LazyLock<String> = LazyLock::new(|| {
   "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "npcs",
   "content": { "npcs": [
     { "id": "npc/keeper", "name": "The Keeper", "role": "quest-giver",
-      "area": "area/keep", "anchor": "anchor/keeper-stand", "base_entity": "minecraft:villager",
+      "anchor": "anchor/keeper-stand", "base_entity": "minecraft:villager",
       "persona": { "archetype": "stoic gatekeeper", "speech_style": "Terse.", "motivation": "Guard the gate." } },
     { "id": "npc/scout", "name": "The Scout", "role": "flavor",
-      "area": "area/keep", "anchor": "anchor/exit", "base_entity": "minecraft:villager",
+      "anchor": "anchor/exit", "base_entity": "minecraft:villager",
       "persona": { "archetype": "restless scout", "speech_style": "Clipped.", "motivation": "Get out." } }
   ] }
 }"#,
@@ -43,10 +43,8 @@ static QUEST_PLAN: LazyLock<String> = LazyLock::new(|| {
         r#"{
   "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": { "quests": [
-    { "id": "quest/one", "goal": "Speak with the Keeper.", "area": "area/keep",
-      "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 },
-    { "id": "quest/two", "goal": "Leave the keep.", "area": "area/keep",
-      "npcs": ["npc/scout"], "depends_on": ["quest/one"], "mandatory": true, "act": 1 }
+    { "id": "quest/one", "goal": "Speak with the Keeper.", "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 },
+    { "id": "quest/two", "goal": "Leave the keep.", "npcs": ["npc/scout"], "depends_on": ["quest/one"], "mandatory": true, "act": 1 }
   ], "finale": "quest/two" }
 }"#,
     )
@@ -97,10 +95,10 @@ fn campaign(cast_one: &str, cast_two: &str) -> Campaign {
         quests: quests(cast_one, cast_two),
         dialogue: DIALOGUE.to_string(),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     })
     .expect("fixture must parse")
@@ -154,7 +152,7 @@ fn proof1_missing_live_npc_is_dw0460() {
 /// the point — the coverage check measures the tree, and only the ledger check
 /// measures what right-click opens during the beat.
 fn dsl_codes(cast_one: &str, cast_two: &str) -> Vec<String> {
-    delvewright_dsl::check_campaign(&RawCampaign {
+    common::quiet(delvewright_dsl::check_campaign(&RawCampaign {
         world: hw("world.json"),
         npcs: NPCS.to_string(),
         classes: hw("classes.json"),
@@ -162,12 +160,12 @@ fn dsl_codes(cast_one: &str, cast_two: &str) -> Vec<String> {
         quests: quests(cast_one, cast_two),
         dialogue: DIALOGUE.to_string(),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
-    })
+    }))
     .iter()
     .map(|d| d.code.clone())
     .collect()
@@ -315,10 +313,10 @@ fn branchy(cast_one: &str, cast_two: &str) -> Campaign {
         quests: quests(cast_one, cast_two),
         dialogue,
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     })
     .expect("fixture must parse")

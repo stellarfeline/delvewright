@@ -102,9 +102,7 @@ fn tmp(name: &str) -> PathBuf {
 
 fn build_with_boundary(who: &str, boundary: serde_json::Value) -> Result<BuildOutput, String> {
     let dir = tmp(&format!("v36-boundary-{who}"));
-    for f in common::STAGE_FILES {
-        std::fs::copy(common::hello_world_dir().join(f), dir.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&common::hello_world_dir(), &dir);
     let mut world: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(common::hello_world_dir().join("world.json")).unwrap(),
     )

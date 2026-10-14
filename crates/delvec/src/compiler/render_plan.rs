@@ -963,32 +963,6 @@ pub fn render_plan(
                 stamped: true,
             });
         }
-        // Seam (doorway) shots: air-clear seals are cut openings between mated
-        // pieces; wall-fill seals seal dead-end sockets (skipped — nothing to see).
-        for (si, seal) in area.seals.iter().enumerate() {
-            if seal.block != "minecraft:air" {
-                continue;
-            }
-            let ctr = region_centre(seal.from, seal.to);
-            let axis = thin_axis(seal.from, seal.to).unwrap_or(2);
-            let mut n = [0.0, 0.0, 0.0];
-            n[axis] = 1.0;
-            let eye = [ctr[0] + n[0] * 4.0, ctr[1] + 1.5, ctr[2] + n[2] * 4.0];
-            out.push(Shot {
-                id: format!("seam/{}/{si}", short(&area.area_id)),
-                kind: "seam",
-                area: area.area_id.clone(),
-                eye,
-                look_at: ctr,
-                fov: None,
-                extra: Vec::new(),
-                expect: vec![
-                    Value::String("seam between pieces shows no floating or clipped blocks".into()),
-                    Value::String("doorway opening is clear — passage traversable".into()),
-                ],
-                stamped: false,
-            });
-        }
     }
 
     // --- NPCs --------------------------------------------------------------

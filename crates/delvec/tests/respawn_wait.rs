@@ -36,12 +36,12 @@ fn with_wait(seconds: u16, alone: bool) -> Campaign {
 
 fn codes(c: &Campaign) -> Vec<String> {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    validate_campaign_with(
+    common::quiet(validate_campaign_with(
         c,
         &FullItemRegistry::v1_21_11(),
         &prefabs,
         &FullEntityRegistry::v1_21_11(),
-    )
+    ))
     .into_iter()
     .map(|d| d.code.to_string())
     .collect()

@@ -506,7 +506,6 @@ pub struct CriticalPath {
     /// Per step, the links live there (spec-0083 §3.3), indices into
     /// [`Plan::links`]. Aligned 1:1 with `steps`.
     pub live_links_by_step: Vec<Vec<usize>>,
-    pub(crate) transport: TransportMap,
     pub transport_by_step: Vec<Option<[i32; 3]>>,
     pub sneak_by_step: Vec<bool>,
     pub cutscene_by_step: Vec<Option<u32>>,
@@ -909,49 +908,17 @@ pub(super) fn build_critical_path(
                                     }
                                     (a, pos)
                                 }
-                                // Not a compiler bug: the campaign named a place
-                                // whose name more than one building answers to,
-                                // and neither the beat's area nor the NPC's home
-                                // is one of them. Picking would settle it by
-                                // whichever area id sorts first.
+                                // One site area holds every anchor, so no
+                                // name has two providers.
                                 BodyStation::Ambiguous(areas) => {
                                     return Err(PlanError::new(
-                                        crate::compiler::gates::DW_ANCHOR_AMBIGUOUS,
+                                        DW_BUILD,
                                         format!(
-                                            "quest `{qid}` casts npc `{npc}` at `{anchor}`, and \
-                                             {n} of this campaign's areas provide that name \
-                                             ({list}) — neither the area this beat plays in \
-                                             (`{area}`) nor the npc's own area (`{home_area}`) is \
-                                             among them, so nothing an author can see says which \
-                                             building the body is standing in. The move that \
-                                             costs least here is the one this campaign owns \
-                                             outright: cast the npc at a name the beat's own area \
-                                             (`{area}`) provides, and no binding has to change at \
-                                             all. {remedy}",
-                                            n = areas.len(),
-                                            list = areas
-                                                .iter()
-                                                .map(|a| format!("`{a}`"))
-                                                .collect::<Vec<_>>()
-                                                .join(", "),
-                                            // The same sentence `DW0857` prints, from the one
-                                            // writer: what an author may do about a name two of
-                                            // their buildings answer to is a fact about anchor
-                                            // names, not about the verb that said one. This site
-                                            // knows the areas but not which piece of each
-                                            // provides the name — `AnchorTable` records
-                                            // `(area, name) -> position` and no carrier — so it
-                                            // passes the areas with no pieces and the writer
-                                            // leaves that clause out.
-                                            remedy =
-                                                crate::compiler::gates::anchor_ambiguity_remedy(
-                                                    &areas
-                                                        .iter()
-                                                        .map(|a| {
-                                                            ((*a).to_string(), BTreeSet::new())
-                                                        })
-                                                        .collect(),
-                                                ),
+                                            "internal invariant violation: quest `{qid}` casts \
+                                             npc `{npc}` at `{anchor}`, which resolved in {} \
+                                             areas, and a campaign has one. This is a compiler \
+                                             bug; stop and escalate",
+                                            areas.len()
                                         ),
                                     ));
                                 }
@@ -1164,7 +1131,6 @@ pub(super) fn build_critical_path(
     // proved over the geometry by `DW0311`; nothing carries a party between two
     // places (ADR-0035). The per-step transport channel carries only an
     // exercise step's landing (below).
-    let transport: BTreeMap<String, [i32; 3]> = BTreeMap::new();
     let mut transport_by_step: Vec<Option<[i32; 3]>> = vec![None; steps.len()];
 
     // DSL v0.4 per-step harness hint `sneak` (a stealth objective). The
@@ -1306,7 +1272,6 @@ pub(super) fn build_critical_path(
     Ok(CriticalPath {
         steps,
         live_links_by_step,
-        transport,
         transport_by_step,
         sneak_by_step,
         cutscene_by_step,

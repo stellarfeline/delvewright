@@ -157,7 +157,6 @@ pub(super) fn pending_guard(plan: &Plan, o: &Objective, quest_active: &str) -> S
 pub(super) fn quest_completion_fns(
     plan: &Plan,
     chrome: &delvewright_dsl::Chrome,
-    branch_transport: &BranchTransportOverlay,
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -296,50 +295,6 @@ pub(super) fn quest_completion_fns(
                 objective_effects(c, oid),
                 root_audience(delvewright_dsl::EffectRootKind::ObjectiveComplete),
             ));
-            // Inter-area transport: if completing this objective moves the player
-            // into a different area on the critical path, teleport them to that
-            // area's entry spawn (areas are AREA_SPACING apart across void). Runs
-            // after gate effects so the destination area is already unlocked.
-            if let Some(pos) = plan.transport.get(oid) {
-                body.push(format!("teleport @s {} {} {}", pos[0], pos[1], pos[2]));
-            }
-            // A crossing that happens only on ONE branch. The exported
-            // path never walks it, so it cannot be unconditional — it is gated on
-            // exactly the flag assignment that selects its branch, the same
-            // `#party` predicate a branch-gated dialogue option uses. Prefix
-            // conditions do not rebind `@s`, so the acting player is still the
-            // one carried. Empty for every campaign whose branches cross only
-            // where the exported path already does (byte-identity).
-            let mut emitted: BTreeSet<String> = BTreeSet::new();
-            for row in branch_transport.get(oid).into_iter().flatten() {
-                let tp = format!("teleport @s {} {} {}", row.pos[0], row.pos[1], row.pos[2]);
-                let mut cmd = String::new();
-                for f in &row.set {
-                    cmd.push_str(&format!(
-                        " if score {} {} matches 1",
-                        plan::PARTY,
-                        plan::flag_score(f)
-                    ));
-                }
-                for f in &row.unset {
-                    cmd.push_str(&format!(
-                        " unless score {} {} matches 1",
-                        plan::PARTY,
-                        plan::flag_score(f)
-                    ));
-                }
-                // A branch that pins no flags at all is indistinguishable at
-                // runtime: there is nothing to condition on, so the crossing is
-                // simply unconditional.
-                let line = if cmd.is_empty() {
-                    tp
-                } else {
-                    format!("execute{cmd} run {tp}")
-                };
-                if emitted.insert(line.clone()) {
-                    body.push(line);
-                }
-            }
             body.push(format!(
                 "function {ns}:check_q_{}",
                 plan::safe_local(q.id.as_str())

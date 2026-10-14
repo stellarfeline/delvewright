@@ -108,8 +108,7 @@ static WORLD: LazyLock<String> = LazyLock::new(|| {
     "target_minutes": 5,
     "time": "noon",
     "weather": "clear",
-    "difficulty": "normal",
-    "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
+    "difficulty": "normal"
   }
 }"#,
     )
@@ -288,12 +287,12 @@ static CORRIDOR: LazyLock<(BuildOutput, BTreeMap<&'static str, usize>)> = LazyLo
     let loaded = load_campaign_dir(&dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("long-gallery parses");
     let prefabs = PrefabRegistry::load_dir(&prefab_dir).unwrap();
-    let diags = validate_campaign_with(
+    let diags = common::quiet(validate_campaign_with(
         &campaign,
         &FullItemRegistry::v1_21_11(),
         &prefabs,
         &FullEntityRegistry::v1_21_11(),
-    );
+    ));
     assert!(
         diags.is_empty(),
         "long-gallery must validate clean: {diags:#?}"
@@ -322,13 +321,7 @@ fn build(who: &str) -> (BuildOutput, delvewright_dsl::GateBinding) {
 /// [`build`] with the quests document given.
 fn build_from(who: &str, quests: &str) -> (BuildOutput, delvewright_dsl::GateBinding) {
     let dir = tmp(&format!("v10-state-campaign-{who}"));
-    for f in common::STAGE_FILES {
-        std::fs::copy(
-            common::compiler_fixtures_dir().join("cast-ledger").join(f),
-            dir.join(f),
-        )
-        .unwrap();
-    }
+    common::copy_campaign_docs(&common::compiler_fixtures_dir().join("cast-ledger"), &dir);
     std::fs::write(dir.join("world.json"), WORLD.as_str()).unwrap();
     std::fs::write(dir.join("quests.json"), quests).unwrap();
     std::fs::write(dir.join("dialogue.json"), DIALOGUE.as_str()).unwrap();
@@ -339,7 +332,9 @@ fn build_from(who: &str, quests: &str) -> (BuildOutput, delvewright_dsl::GateBin
     let prefabs = PrefabRegistry::load_dir(&prefab_dir).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(
+        &campaign, &items, &prefabs, &entities,
+    ));
     assert!(
         diags.is_empty(),
         "v10-state must validate clean: {diags:#?}"

@@ -820,9 +820,7 @@ fn the_binding_line_is_printed_on_every_build() {
     .unwrap();
     let dir = tmp.join("campaign");
     std::fs::create_dir_all(&dir).unwrap();
-    for f in common::STAGE_FILES {
-        std::fs::copy(common::hello_world_dir().join(f), dir.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&common::hello_world_dir(), &dir);
     std::fs::write(dir.join("quests.json"), quests().to_string()).unwrap();
     let with = run(&[
         "--prefabs",

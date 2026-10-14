@@ -415,17 +415,6 @@ pub(super) fn validate_loaded(
             // effect history. Error tier, except the staleness lint (DW0467),
             // which warns.
             diags.extend(delvec::compiler::cast::check_cast(&campaign));
-            // `DW0884`: a cast row whose anchor name BOTH the beat's area and
-            // the npc's own area answer to. The same finding `DW0461`'s place
-            // arm refuses at the build tier from the seated pieces, refused here
-            // — where the row is entered — before a cell is ever computed. Needs
-            // the prefab registry (which areas answer to a name is a fact about
-            // the pieces they bind), which is why it sits beside `check_cast`
-            // rather than inside it. No-op for a campaign whose beats and bodies
-            // share an area, which is every single-area campaign.
-            diags.extend(delvec::compiler::cast::check_shared_cast_anchor(
-                &campaign, &prefabs,
-            ));
             // **`DW0886` / `DW0887`: a horizon and a piece set are a pair**
             // (spec-0060). Refused here rather than at the build, on `DW0855`'s
             // own precedent: the verdict is a fact about the documents and the
@@ -827,9 +816,8 @@ pub(crate) fn run_build(
     let plan = match built.map(|p| p.with_design_files(loaded.design_files.clone())) {
         Ok(p) => p,
         Err(e) => {
-            // Advisories raised before the failure and explaining it (`DW0498`:
-            // the pool draw behind an ambiguous-anchor `DW0305`) print first —
-            // the cause above the symptom.
+            // Advisories raised before the failure print first — the cause
+            // above the symptom.
             print_diags(&e.warnings, json);
             print_build_error(e.failure.code, &e.failure.message, json);
             return ExitCode::from(3);

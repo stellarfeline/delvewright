@@ -118,10 +118,8 @@ pub struct Plan<'a> {
     pub seed: u64,
     /// Area placements, in stage-1 order.
     pub areas: Vec<AreaPlacement>,
-    /// Advisory findings the placement stage raised, in area order. Currently
-    /// `DW0498` ([`crate::compiler::pool`]): a pool draw that seats the same anchor-bearing
-    /// prefab twice, so every anchor that prefab declares has more than one
-    /// carrier. Reported by [`crate::compiler::emit::build_with_warnings`], which prepends
+    /// Advisory findings the placement stage raised (the placement binding's
+    /// finding, an unmet loop, an unbound way). Reported by [`crate::compiler::emit::build_with_warnings`], which prepends
     /// them to the build's own advisories; never fatal.
     pub warnings: Vec<Diagnostic>,
     /// Resolved absolute anchors, keyed by `(area_id, anchor_name)`, plus the
@@ -134,18 +132,11 @@ pub struct Plan<'a> {
     pub npcs: Vec<NpcPlan>,
     /// The bot critical path.
     pub critical_path: Vec<Step>,
-    /// Inter-area transport: objective id → absolute teleport target. When
-    /// completing an objective moves the player into a different area on the
-    /// critical path, the compiler teleports them to that area's entry spawn
-    /// (areas sit `AREA_SPACING` apart across void; the pathfinder-free bot cannot
-    /// walk between them). Emitted in that objective's completion function.
-    pub transport: BTreeMap<String, [i32; 3]>,
     /// Per-step transport marker, aligned 1:1 with `critical_path`: `Some(dest)` if
-    /// completing that step's objective teleports the player to `dest` (a different
-    /// area), else `None`. Emitted into `critical-path.json` as the step's
-    /// `transport` field so the harness can wait for the position discontinuity
-    /// before starting the next step (gap 8). `None` for `select-class` /
-    /// `assert-complete` and any step that does not change area.
+    /// completing that step puts the party down at `dest` — a link's `to`, or an
+    /// exercise step's landing — else `None`. Emitted into `critical-path.json` as
+    /// the step's `transport` field so the harness can wait for the position
+    /// discontinuity before starting the next step.
     pub critical_path_transport: Vec<Option<[i32; 3]>>,
     /// Resolved lethal volumes (DSL v0.10, spec-0031), declaration-ordered. Empty
     /// for every campaign that declares none — which is what keeps the navigation
@@ -336,10 +327,8 @@ pub struct PlanError {
     /// declared in one place and this type adds only what is its own.
     pub failure: Failure,
     /// Advisory findings that were raised before this error stopped planning,
-    /// and that explain it. Printed alongside the failure — a `DW0305` ambiguous
-    /// anchor is usually the use-site symptom of a pool `DW0498` already
-    /// describes at the declaration, and dropping the explanation because the
-    /// build failed is exactly the silence `DW0498` exists to remove.
+    /// and that explain it. Printed alongside the failure, so the cause is not
+    /// dropped because the build failed.
     pub warnings: Vec<Diagnostic>,
 }
 
@@ -405,23 +394,6 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
-    /// `DW0804`: two anchors in one area declare [`AnchorRole::Entry`].
-    ///
-    /// An area has **one** place the party arrives at. Two claims to it is a
-    /// question the compiler cannot answer and must not answer quietly: picking
-    /// first-wins (by piece order, or by the `BTreeMap` order of two anchor names
-    /// nobody chose for their sort) is how a spawn that moved becomes a mystery
-    /// nothing in the build output mentions.
-    ///
-    /// Only reachable through a declared role, which is the only way an area has an
-    /// entry point at all. The remedy is to take the role off one of the two, which
-    /// every producer can do where it wrote it: `delvec prefab anchor --no-role` on a
-    /// hand-built or ingested piece, and dropping `role` from the `mark` on a
-    /// grammar program.
-    pub const DW_TWO_ENTRY_ANCHORS: DwCode = DwCode::new("DW0804", ExitTier::Build);
-}
-
-delvewright_dsl::dw_code! {
     /// `DW0932` (spec-0083 §3.2, §3.6): a **link** whose geometry does not hold —
     /// four faults under one code, because they are one claim, *a body in this
     /// volume is carried onto a route cell*: no standable cell inside the volume
@@ -468,10 +440,6 @@ impl LinkTakes {
         self.spliced.is_empty() && self.performed.is_empty()
     }
 }
-
-/// Inter-area transport map: objective id → absolute teleport target (see
-/// [`Plan::transport`]).
-pub type TransportMap = BTreeMap<String, [i32; 3]>;
 
 impl<'a> Plan<'a> {
     /// Build the plan. Requires a validated campaign and loaded prefab metadata.
@@ -523,7 +491,7 @@ impl<'a> Plan<'a> {
 
         // ---- placements + anchors ----
         let mut areas = Vec::new();
-        // Advisory placement findings, in area order (`DW0498`, `crate::compiler::pool`).
+        // Advisory placement findings.
         let mut warnings: Vec<Diagnostic> = Vec::new();
         let mut anchors = AnchorTable::default();
         // v0.6 (spec-0011): the absolute dispenser socket cell for each `anchor/trap`
@@ -935,7 +903,6 @@ impl<'a> Plan<'a> {
             classes,
             npcs,
             critical_path: cp.steps,
-            transport: cp.transport,
             critical_path_transport: cp.transport_by_step,
             loops,
             loop_exercises: loop_spliced.exercises,

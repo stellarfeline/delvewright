@@ -55,9 +55,7 @@ fn quests_with_strike(anchor: &str, offset: [i32; 3]) -> String {
 
 fn materialise(who: &str, quests: &str) -> PathBuf {
     let dir = tmp(&format!("v36-lightning-{who}"));
-    for f in common::STAGE_FILES {
-        std::fs::copy(common::hello_world_dir().join(f), dir.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&common::hello_world_dir(), &dir);
     std::fs::write(dir.join("quests.json"), quests).unwrap();
     dir
 }
@@ -81,12 +79,12 @@ fn try_build(who: &str, quests: &str) -> Result<BuildOutput, (String, String)> {
     let loaded = load_campaign_dir(&dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("the fixture parses");
     let prefabs = PrefabRegistry::load_dir(&prefab_dir).unwrap();
-    let diags = validate_campaign_with(
+    let diags = common::quiet(validate_campaign_with(
         &campaign,
         &FullItemRegistry::v1_21_11(),
         &prefabs,
         &FullEntityRegistry::v1_21_11(),
-    );
+    ));
     assert!(diags.is_empty(), "the fixture validates clean: {diags:#?}");
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let structures = structures_of(&plan, &prefab_dir);

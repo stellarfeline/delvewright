@@ -83,9 +83,7 @@ fn build_two_trigger(entity: &str) -> BuildOutput {
     let dst = scratch_dir("two-trigger");
     let _ = std::fs::remove_dir_all(&dst);
     std::fs::create_dir_all(&dst).unwrap();
-    for f in common::STAGE_FILES {
-        std::fs::copy(src.join(f), dst.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&src, &dst);
     common::patch_file(&dst.join("quests.json"), |d| {
         d["dsl_version"] = serde_json::json!(DSL_VERSION);
         d["content"]["triggers"] = serde_json::json!([
@@ -141,9 +139,7 @@ fn build_concurrent_moves() -> BuildOutput {
     let dst = scratch_dir("concurrent-moves");
     let _ = std::fs::remove_dir_all(&dst);
     std::fs::create_dir_all(&dst).unwrap();
-    for f in common::STAGE_FILES {
-        std::fs::copy(src.join(f), dst.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&src, &dst);
     let steps: Vec<serde_json::Value> = (1..=MOVER_MARKS.len())
         .map(|i| {
             serde_json::json!({
@@ -450,9 +446,7 @@ fn build_four_moves_with_vanish() -> BuildOutput {
     let dst = scratch_dir("vanish");
     let _ = std::fs::remove_dir_all(&dst);
     std::fs::create_dir_all(&dst).unwrap();
-    for f in common::STAGE_FILES {
-        std::fs::copy(src.join(f), dst.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&src, &dst);
     common::patch_file(&dst.join("quests.json"), |d| {
         d["dsl_version"] = serde_json::json!(DSL_VERSION);
         common::objective_effects(d, 0, "obj/talk").extend([

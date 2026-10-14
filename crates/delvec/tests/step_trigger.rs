@@ -85,8 +85,7 @@ fn world() -> serde_json::Value {
             "seed": 20260729,
             "target_minutes": 5,
             "time": "noon",
-            "weather": "clear",
-            "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
+            "weather": "clear"
         }
     })
 }
@@ -108,12 +107,12 @@ fn diags_for(name: &str, trigger: serde_json::Value) -> Vec<delvewright_dsl::Dia
     let (loaded, prefabs_dir) = load(name, trigger);
     let campaign = parse_campaign(&loaded.raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&prefabs_dir).unwrap();
-    validate_campaign_with(
+    common::quiet(validate_campaign_with(
         &campaign,
         &FullItemRegistry::v1_21_11(),
         &prefabs,
         &FullEntityRegistry::v1_21_11(),
-    )
+    ))
 }
 
 /// Build, with `plate` (when given) written into the step trigger's cell.
@@ -126,12 +125,12 @@ fn build(
     let (loaded, prefabs_dir) = load(name, trigger);
     let campaign = parse_campaign(&loaded.raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&prefabs_dir).unwrap();
-    let diags = validate_campaign_with(
+    let diags = common::quiet(validate_campaign_with(
         &campaign,
         &FullItemRegistry::v1_21_11(),
         &prefabs,
         &FullEntityRegistry::v1_21_11(),
-    );
+    ));
     assert!(diags.is_empty(), "must validate clean: {diags:#?}");
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let cell = plan

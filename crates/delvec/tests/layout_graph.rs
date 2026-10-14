@@ -85,7 +85,10 @@ fn campaign_with_graph(graph: Option<&str>) -> delvewright_dsl::Campaign {
 #[test]
 fn the_validation_pass_runs_the_graph_proofs() {
     let c = campaign_with_graph(Some(STRANDED.as_str()));
-    let codes: Vec<String> = validate_campaign(&c).into_iter().map(|d| d.code).collect();
+    let codes: Vec<String> = common::quiet(validate_campaign(&c))
+        .into_iter()
+        .map(|d| d.code)
+        .collect();
     assert!(
         codes.contains(&"DW0819".to_string()),
         "the drop into `node/pit` strands and `validate_campaign` did not say so: {codes:?}"
@@ -131,7 +134,7 @@ fn the_analysis_pass_does_not_raise_them_a_second_time() {
 #[test]
 fn a_campaign_with_no_graph_is_untouched_by_the_graph_proofs() {
     let layout_codes = |c: &delvewright_dsl::Campaign| -> Vec<String> {
-        validate_campaign(c)
+        common::quiet(validate_campaign(c))
             .into_iter()
             .map(|d| d.code)
             .filter(|c| c.starts_with("DW081") || c.starts_with("DW082"))

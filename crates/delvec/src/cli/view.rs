@@ -56,18 +56,16 @@ pub(crate) fn run_snapshot(
     let plan = match Plan::build(&campaign, &prefabs) {
         Ok(p) => p,
         Err(e) => {
-            // Advisories raised before the failure and explaining it (`DW0498`:
-            // the pool draw behind an ambiguous-anchor `DW0305`) print first —
-            // the cause above the symptom.
+            // Advisories raised before the failure print first — the cause
+            // above the symptom.
             print_diags(&e.warnings, json);
             print_build_error(e.failure.code, &e.failure.message, json);
             return ExitCode::from(3);
         }
     };
-    // The placement stage's own advisories (`DW0498`). `build`/`edit` get these
-    // through `emit::build_with_warnings`; the view commands never emit, so they
-    // report them here — a draw that repeats an anchored piece is exactly what a
-    // reviewer is looking at in a snapshot.
+    // The placement stage's own advisories. `build`/`edit` get these through
+    // `emit::build_with_warnings`; the view commands never emit, so they report
+    // them here.
     print_diags(&plan.warnings.clone(), json);
     let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
         Ok(s) => s,
@@ -793,18 +791,16 @@ pub(crate) fn run_blocking_chart(
     let plan = match Plan::build(&campaign, &prefabs) {
         Ok(p) => p,
         Err(e) => {
-            // Advisories raised before the failure and explaining it (`DW0498`:
-            // the pool draw behind an ambiguous-anchor `DW0305`) print first —
-            // the cause above the symptom.
+            // Advisories raised before the failure print first — the cause
+            // above the symptom.
             print_diags(&e.warnings, json);
             print_build_error(e.failure.code, &e.failure.message, json);
             return ExitCode::from(3);
         }
     };
-    // The placement stage's own advisories (`DW0498`). `build`/`edit` get these
-    // through `emit::build_with_warnings`; the view commands never emit, so they
-    // report them here — a draw that repeats an anchored piece is exactly what a
-    // reviewer is looking at in a snapshot.
+    // The placement stage's own advisories. `build`/`edit` get these through
+    // `emit::build_with_warnings`; the view commands never emit, so they report
+    // them here.
     print_diags(&plan.warnings.clone(), json);
     let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
         Ok(s) => s,

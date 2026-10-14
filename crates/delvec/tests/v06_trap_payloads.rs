@@ -69,8 +69,7 @@ fn world_v06() -> serde_json::Value {
             "seed": 20260729,
             "target_minutes": 5,
             "time": "noon",
-            "weather": "clear",
-            "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
+            "weather": "clear"
         }
     })
 }
@@ -114,7 +113,9 @@ fn build_payload(
     let prefabs = PrefabRegistry::load_dir(&prefabs_dir).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(
+        &campaign, &items, &prefabs, &entities,
+    ));
     assert!(diags.is_empty(), "must validate clean: {diags:#?}");
 
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
@@ -198,12 +199,12 @@ fn diags_for(
     let loaded = load_campaign_dir(&camp_dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&prefabs_dir).unwrap();
-    validate_campaign_with(
+    common::quiet(validate_campaign_with(
         &campaign,
         &FullItemRegistry::v1_21_11(),
         &prefabs,
         &FullEntityRegistry::v1_21_11(),
-    )
+    ))
 }
 
 fn codes(d: &[delvewright_dsl::Diagnostic]) -> Vec<&str> {

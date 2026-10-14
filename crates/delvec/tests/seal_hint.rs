@@ -141,10 +141,10 @@ fn parse_hw_with_dialogue(quests: &str, dialogue: &str) -> Campaign {
         quests: common::declared_quests_doc(quests, &common::hello_world_dir()),
         dialogue: common::declared_dialogue_doc(dialogue),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
@@ -159,10 +159,10 @@ fn parse_hw(quests: &str) -> Campaign {
         quests: common::declared_quests_doc(quests, &common::hello_world_dir()),
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
     parse_campaign(&raw).expect("campaign parses")

@@ -44,7 +44,6 @@ or one whose branches cross only where the exported path already does
 
 | Code | Meaning |
 |------|---------|
-| `DW0494` | **One objective, two destinations.** Completing a single objective would cross into a different area on the exported path than on a branch. Build-tier (exit 3), `compiler::emit::branch_transport_overlay`, raised before any function is emitted. The crossing lives in that objective's own completion bundle, so the two teleports would sit in one function body and command order — not the branch the party is actually playing — would decide where they land; and there is nothing to gate on, because the exported path's crossing is unconditional by construction. The message names the objective, both destinations and the branch that disagrees. Prescription: split the crossing into one objective per branch, each gated by that branch's flags (which is what the two branches' beats already are, everywhere else). Do NOT move the branch's destination onto the exported path to silence it — that ships the branch to the wrong area. |
 
 ### DW0185 — untranslated player-visible literal (`compiler::emit`; error; exit 3)
 

@@ -27,7 +27,7 @@
         "stations": [
           {
             "anchor": "anchor/door",
-            "kind": "point"
+            "kind": "gate"
           },
           {
             "anchor": "anchor/exit",

@@ -209,7 +209,7 @@ inputs = [
   { glob = "Cargo.toml", why = "the workspace manifest `delvec-binary`'s build resolves" },
   { glob = "prefabs/**", why = "`prefabs/gallery-generator` generates the gallery's piece and skins this job takes from `gallery-pieces`" },
   { glob = "gallery/**", why = "the gallery campaign, its render plan, overlays and camera record" },
-  { glob = "tools/**", why = "`check-gallery-render.py`, `check-seating-agrees.py`, `check-whole-map-render.py`, `check-gallery-post-beat.py`, `gallery_domain.py` and `tools/lib/*`" },
+  { glob = "tools/**", why = "`check-gallery-render.py`, `check-whole-map-render.py`, `check-gallery-post-beat.py`, `gallery_domain.py` and `tools/lib/*`" },
 ]
 
 [[group]]

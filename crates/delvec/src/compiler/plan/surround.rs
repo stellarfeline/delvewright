@@ -81,7 +81,7 @@ fn ground_columns(
             let (pmin, pmax) = piece.bbox();
             claim(pmin, pmax);
         }
-        for fill in area.mass.iter().chain(&area.seals) {
+        for fill in &area.mass {
             if fill.block.starts_with("minecraft:air") {
                 continue; // a clear authors nothing; it removes
             }

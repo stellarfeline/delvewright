@@ -317,7 +317,6 @@ fn one_batch() -> String {
     "batches": [
       {{
         "id": "batch/dress-a-corner",
-        "area": "area/keep",
         "note": "a floor patch, so this campaign takes the edit-replay arm",
         "edits": [
           {{ "verb": "select", "name": "region/corner",
@@ -347,12 +346,12 @@ fn campaign(dir: &Path) -> Campaign {
 fn validate(dir: &Path, lib: &Path) -> Vec<delvewright_dsl::Diagnostic> {
     let c = campaign(dir);
     let prefabs = PrefabRegistry::load_dir(lib).unwrap();
-    delvewright_dsl::validate_campaign_with(
+    common::quiet(delvewright_dsl::validate_campaign_with(
         &c,
         &delvec::compiler::registry::FullItemRegistry::v1_21_11(),
         &prefabs,
         &delvec::compiler::registry::FullEntityRegistry::v1_21_11(),
-    )
+    ))
 }
 
 /// The structures a plan needs, read from the case's library.

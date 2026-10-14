@@ -33,10 +33,8 @@ static QUEST_PLAN: LazyLock<String> = LazyLock::new(|| {
         r#"{
   "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": { "quests": [
-    { "id": "quest/open-the-door", "goal": "Get the Keeper to open the door.", "area": "area/keep",
-      "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 },
-    { "id": "quest/side-trip", "goal": "A prerequisite nobody has written yet.", "area": "area/keep",
-      "npcs": [], "depends_on": [], "mandatory": true, "act": 1 }
+    { "id": "quest/open-the-door", "goal": "Get the Keeper to open the door.", "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 },
+    { "id": "quest/side-trip", "goal": "A prerequisite nobody has written yet.", "npcs": [], "depends_on": [], "mandatory": true, "act": 1 }
   ], "finale": "quest/open-the-door" }
 }"#,
     )
@@ -78,10 +76,10 @@ fn campaign(quests: &str) -> Campaign {
         quests: quests.to_string(),
         dialogue: hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     })
     .expect("fixture must parse")
@@ -92,7 +90,7 @@ fn campaign(quests: &str) -> Campaign {
 /// ledger (`DW0460`) and the story-node check (`DW0481`).
 fn codes(quests: &str) -> Vec<String> {
     let c = campaign(quests);
-    delvewright_dsl::validate_campaign(&c)
+    common::quiet(delvewright_dsl::validate_campaign(&c))
         .into_iter()
         .chain(delvec::compiler::cast::check_cast(&c))
         .chain(delvec::compiler::branch::check_branches(&c))

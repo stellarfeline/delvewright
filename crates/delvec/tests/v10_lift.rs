@@ -115,9 +115,7 @@ fn try_build(
 ) -> Result<BuildOutput, (String, String)> {
     let src = common::compiler_fixtures_dir().join("lift");
     let dir = tmp(&format!("v10-lift-{who}"));
-    for f in common::STAGE_FILES {
-        std::fs::copy(src.join(f), dir.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&src, &dir);
     let mut quests: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("quests.json")).unwrap()).unwrap();
     patch(&mut quests);
@@ -133,7 +131,9 @@ fn try_build(
     let prefabs = PrefabRegistry::load_dir(&prefab_dir).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(
+        &campaign, &items, &prefabs, &entities,
+    ));
     if let Some(d) = diags
         .iter()
         .find(|d| d.severity == delvewright_dsl::Severity::Error)

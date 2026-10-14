@@ -52,10 +52,10 @@ fn campaign(quests: &str) -> Campaign {
         quests: quests.to_string(),
         dialogue: hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
     let mut c = parse_campaign(&raw).expect("campaign parses");
@@ -68,12 +68,12 @@ fn prefabs() -> PrefabRegistry {
 }
 
 fn codes(c: &Campaign) -> Vec<(String, String)> {
-    validate_campaign_with(
+    common::quiet(validate_campaign_with(
         c,
         &FullItemRegistry::v1_21_11(),
         &prefabs(),
         &FullEntityRegistry::v1_21_11(),
-    )
+    ))
     .into_iter()
     .filter(|d| d.severity == delvewright_dsl::Severity::Error)
     .map(|d| (d.code.to_string(), d.message))
@@ -846,10 +846,10 @@ fn with_lethal_fixture<R>(
             quests,
             dialogue: read("dialogue.json"),
             world_edits: Some(read("world-edits.json")),
-            geometry_brief: None,
-            layout_graph: None,
-            site_plan: None,
-            detail_plan: None,
+            geometry_brief: Some(read("geometry-brief.json")),
+            layout_graph: Some(read("layout-graph.json")),
+            site_plan: Some(read("site-plan.json")),
+            detail_plan: Some(read("detail-plan.json")),
             design: None,
         };
         let mut c = parse_campaign(&raw).expect("the fixture parses");

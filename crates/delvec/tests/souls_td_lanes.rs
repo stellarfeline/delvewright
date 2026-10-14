@@ -37,7 +37,9 @@ fn build_dir(dir: &Path) -> Result<BuildOutput, BuildFailure> {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(
+        &campaign, &items, &prefabs, &entities,
+    ));
     assert!(diags.is_empty(), "fixture must validate clean: {diags:#?}");
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -70,9 +72,7 @@ fn build_patched(tag: &str, from: &str, to: &str) -> Result<BuildOutput, BuildFa
     let dst = std::env::temp_dir().join(format!("dw-td-lanes-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dst);
     std::fs::create_dir_all(&dst).unwrap();
-    for f in common::STAGE_FILES {
-        std::fs::copy(fixture_dir().join(f), dst.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&fixture_dir(), &dst);
     let qp = dst.join("quests.json");
     let q = std::fs::read_to_string(&qp).unwrap();
     assert!(

@@ -67,8 +67,10 @@ pub fn resolve_campaign_start(
 #[derive(Default)]
 pub struct AnchorTable {
     at: BTreeMap<(String, String), ResolvedAnchor>,
-    /// `(area, role)` → the name of the anchor that declared it. At most one
-    /// per pair, by [`DW_TWO_ENTRY_ANCHORS`].
+    /// `(area, role)` → the name of the anchor that declared it. Only the
+    /// derivation declares a role (a detail piece's anchors are placed by name),
+    /// and it is one producer holding one name-keyed map, so a pair is written
+    /// at most once.
     roles: BTreeMap<(String, AnchorRole), String>,
 }
 
@@ -102,12 +104,6 @@ impl AnchorTable {
     /// overwrites. Collapsing the two rules into one would silently move a
     /// detailed place's anchor back onto the massing.
     ///
-    /// The role index is the *same* rule in both, because what an anchor is for
-    /// is a property of the anchor rather than of the producer. A derived area
-    /// cannot reach [`DW_TWO_ENTRY_ANCHORS`]: the derivation is one producer
-    /// holding one name-keyed map, so it has nowhere to write a second claim.
-    /// The refusal exists for a prefab **library**, where two independently
-    /// authored pieces can each claim the same role in one area.
     pub(super) fn place(
         &mut self,
         area: &str,
@@ -132,30 +128,9 @@ impl AnchorTable {
         if !role.one_per_area() {
             return Ok(());
         }
-        let held = self
-            .roles
+        self.roles
             .entry((area.to_string(), role))
             .or_insert_with(|| name.to_string());
-        if held != name {
-            return Err(PlanError::new(
-                DW_TWO_ENTRY_ANCHORS,
-                format!(
-                    "area `{area}` declares the anchor role `{role}` twice: `{held}` and \
-                     `{name}` both carry `\"role\": \"{role}\"` in their prefab metadata. An \
-                     area has one place the party arrives at, and the compiler will not pick \
-                     between two — a silently-chosen spawn is a moved start nothing reports. \
-                     Fix it in the prefab metadata that declares the anchors: keep the role \
-                     on the one cell the party should arrive at and drop the `role` key from \
-                     the other (the anchor itself stays, and content can still bind it by \
-                     name). If the two anchors are in two pieces of one `prefab_pool`, only \
-                     the piece that seeds the layout should carry it. Take the role off where \
-                     it was written: `delvec prefab anchor <nbt> --name <anchor> --pos <x,y,z> \
-                     --no-role` for a hand-built or ingested piece, or drop `role` from the \
-                     `mark` for a grammar program. Renaming an anchor achieves nothing — the \
-                     role is the only thing the compiler reads here"
-                ),
-            ));
-        }
         Ok(())
     }
 

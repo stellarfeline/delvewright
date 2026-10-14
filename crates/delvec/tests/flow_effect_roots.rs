@@ -68,10 +68,10 @@ fn parse_hw(quests: &str, dialogue: Option<&str>) -> Campaign {
             .map(str::to_string)
             .unwrap_or_else(|| read_hw("dialogue.json")),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
@@ -82,7 +82,12 @@ fn parse_hw(quests: &str, dialogue: Option<&str>) -> Campaign {
 fn assert_validates(c: &Campaign) {
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let d = delvewright_dsl::validate_campaign_with(c, &items, &prefabs(), &entities);
+    let d = common::quiet(delvewright_dsl::validate_campaign_with(
+        c,
+        &items,
+        &prefabs(),
+        &entities,
+    ));
     assert!(d.is_empty(), "fixture must validate cleanly: {d:#?}");
 }
 
@@ -234,11 +239,15 @@ fn a_dialogue_respawn_bundle_is_seen_but_still_never_a_producer() {
     );
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let validation: Vec<String> =
-        delvewright_dsl::validate_campaign_with(&c, &items, &prefabs(), &entities)
-            .into_iter()
-            .map(|d| d.code)
-            .collect();
+    let validation: Vec<String> = common::quiet(delvewright_dsl::validate_campaign_with(
+        &c,
+        &items,
+        &prefabs(),
+        &entities,
+    ))
+    .into_iter()
+    .map(|d| d.code)
+    .collect();
     assert_eq!(
         validation,
         Vec::<String>::new(),

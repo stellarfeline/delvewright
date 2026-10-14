@@ -101,10 +101,10 @@ fn parse_hw(quests: &str) -> Campaign {
         quests: quests.to_string(),
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
@@ -118,7 +118,7 @@ fn validated(quests: &str, prefabs: &PrefabRegistry) -> Campaign {
     let c = parse_hw(quests);
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let d = validate_campaign_with(&c, &items, prefabs, &entities);
+    let d = common::quiet(validate_campaign_with(&c, &items, prefabs, &entities));
     let errors: Vec<_> = d
         .iter()
         .filter(|x| x.severity == delvewright_dsl::Severity::Error)

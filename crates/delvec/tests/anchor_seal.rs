@@ -69,10 +69,10 @@ fn parse_hw(quests: &str, dialogue: Option<&str>) -> Campaign {
             .map(str::to_string)
             .unwrap_or_else(|| read_hw("dialogue.json")),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     })
     .expect("campaign parses")
@@ -422,8 +422,7 @@ fn worldless_campaign(volley_anchor: &str) -> Campaign {
     "theme": "A lonely keep at the edge of the moor.",
     "premise": "One locked door stands between you and the road home.",
     "seed": 20260729, "target_minutes": 5,
-    "time": "noon", "weather": "clear",
-    "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
+    "time": "noon", "weather": "clear"
   }
 }"#,
         )
@@ -441,7 +440,7 @@ fn worldless_campaign(volley_anchor: &str) -> Campaign {
   "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": {
     "quests": [ { "id": "quest/open-the-door", "goal": "Leave the keep.",
-      "area": "area/keep", "npcs": [], "depends_on": [], "mandatory": true, "act": 1 } ],
+      "npcs": [], "depends_on": [], "mandatory": true, "act": 1 } ],
     "finale": "quest/open-the-door"
   }
 }"#,

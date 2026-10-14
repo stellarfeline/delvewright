@@ -70,8 +70,7 @@ static WORLD: LazyLock<String> = LazyLock::new(|| {
     "target_minutes": 5,
     "time": "noon",
     "weather": "clear",
-    "difficulty": "normal",
-    "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
+    "difficulty": "normal"
   }
 }"#,
     )
@@ -172,13 +171,7 @@ fn quests(teleport_extent: &str) -> String {
 /// is what the `DW0542` test reads.
 fn try_build(who: &str, teleport_extent: &str) -> Result<BuildOutput, (String, String)> {
     let dir = tmp(&format!("v10-teleport-{who}"));
-    for f in common::STAGE_FILES {
-        std::fs::copy(
-            common::compiler_fixtures_dir().join("cast-ledger").join(f),
-            dir.join(f),
-        )
-        .unwrap();
-    }
+    common::copy_campaign_docs(&common::compiler_fixtures_dir().join("cast-ledger"), &dir);
     std::fs::write(dir.join("world.json"), WORLD.as_str()).unwrap();
     std::fs::write(dir.join("quests.json"), quests(teleport_extent)).unwrap();
     std::fs::write(dir.join("dialogue.json"), DIALOGUE.as_str()).unwrap();
@@ -189,7 +182,9 @@ fn try_build(who: &str, teleport_extent: &str) -> Result<BuildOutput, (String, S
     let prefabs = PrefabRegistry::load_dir(&prefab_dir).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(
+        &campaign, &items, &prefabs, &entities,
+    ));
     assert!(
         diags.is_empty(),
         "the v10-teleport fixture must validate clean: {diags:#?}"
@@ -354,13 +349,7 @@ fn the_teleport_gate_ledger_states_its_binding() {
 #[test]
 fn a_campaign_without_a_teleport_emits_no_ledger() {
     let dir = tmp("v10-teleport-none");
-    for f in common::STAGE_FILES {
-        std::fs::copy(
-            common::compiler_fixtures_dir().join("cast-ledger").join(f),
-            dir.join(f),
-        )
-        .unwrap();
-    }
+    common::copy_campaign_docs(&common::compiler_fixtures_dir().join("cast-ledger"), &dir);
     let prefab_dir = common::prefabs_dir();
     let loaded = load_campaign_dir(&dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).unwrap();

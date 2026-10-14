@@ -81,9 +81,7 @@ const ONE_BALL: &str = r##"[{ "shape": "large_ball", "colors": ["#ffd700"] }]"##
 /// Materialize hello-world with the given quests document and build it.
 fn try_build(who: &str, quests: &str) -> Result<BuildOutput, (String, String)> {
     let dir = tmp(&format!("v29-firework-{who}"));
-    for f in common::STAGE_FILES {
-        std::fs::copy(common::hello_world_dir().join(f), dir.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&common::hello_world_dir(), &dir);
     std::fs::write(dir.join("quests.json"), quests).unwrap();
 
     let prefab_dir = common::prefabs_dir();
@@ -92,7 +90,9 @@ fn try_build(who: &str, quests: &str) -> Result<BuildOutput, (String, String)> {
     let prefabs = PrefabRegistry::load_dir(&prefab_dir).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(
+        &campaign, &items, &prefabs, &entities,
+    ));
     assert!(diags.is_empty(), "the fixture validates clean: {diags:#?}");
 
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
@@ -482,9 +482,7 @@ fn the_posts_are_dw0511s_own_enumeration() {
 
     let read = |who: &str, quests: String| -> (usize, usize) {
         let dir = tmp(&format!("v29-firework-posts-{who}"));
-        for f in common::STAGE_FILES {
-            std::fs::copy(common::hello_world_dir().join(f), dir.join(f)).unwrap();
-        }
+        common::copy_campaign_docs(&common::hello_world_dir(), &dir);
         std::fs::write(dir.join("quests.json"), quests).unwrap();
         let loaded = load_campaign_dir(&dir).unwrap();
         let campaign = parse_campaign(&loaded.raw).expect("parses");

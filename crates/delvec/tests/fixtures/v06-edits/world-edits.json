@@ -9,7 +9,7 @@
             "shape": {
               "frame": {
                 "kind": "piece-local",
-                "piece": 0,
+                "piece": 1,
                 "prefab": "prefab/hello-room"
               },
               "kind": "box",
@@ -72,7 +72,7 @@
             "shape": {
               "frame": {
                 "kind": "piece-local",
-                "piece": 0,
+                "piece": 1,
                 "prefab": "prefab/hello-room"
               },
               "kind": "box",
@@ -152,7 +152,7 @@
             "shape": {
               "frame": {
                 "kind": "piece-local",
-                "piece": 0,
+                "piece": 1,
                 "prefab": "prefab/hello-room"
               },
               "kind": "box",
@@ -174,7 +174,7 @@
             "shape": {
               "frame": {
                 "kind": "piece-local",
-                "piece": 0,
+                "piece": 1,
                 "prefab": "prefab/hello-room"
               },
               "kind": "box",
@@ -233,7 +233,7 @@
             "shape": {
               "frame": {
                 "kind": "piece-local",
-                "piece": 0,
+                "piece": 1,
                 "prefab": "prefab/hello-room"
               },
               "kind": "box",
@@ -255,7 +255,7 @@
             "shape": {
               "frame": {
                 "kind": "piece-local",
-                "piece": 0,
+                "piece": 1,
                 "prefab": "prefab/hello-room"
               },
               "kind": "box",
@@ -341,7 +341,7 @@
             "shape": {
               "frame": {
                 "kind": "piece-local",
-                "piece": 0,
+                "piece": 1,
                 "prefab": "prefab/hello-room"
               },
               "kind": "box",
@@ -405,31 +405,11 @@
       {
         "edits": [
           {
-            "at": [
-              0,
-              -7,
-              0
-            ],
-            "frame": {
-              "kind": "piece-local",
-              "piece": 0,
-              "prefab": "prefab/hello-room"
-            },
-            "prefab": "prefab/hello-room",
-            "verb": "fragment"
-          }
-        ],
-        "id": "batch/annex",
-        "note": "Stamp a detached basement annex below the room (fixture: fragment, library provenance)."
-      },
-      {
-        "edits": [
-          {
             "name": "region/nook-r",
             "shape": {
               "frame": {
                 "kind": "piece-local",
-                "piece": 0,
+                "piece": 1,
                 "prefab": "prefab/hello-room"
               },
               "kind": "box",

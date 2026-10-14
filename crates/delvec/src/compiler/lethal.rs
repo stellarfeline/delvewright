@@ -505,7 +505,6 @@ pub fn put_at_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
     let mut out: Vec<[i32; 3]> = Vec::new();
     out.extend(entry);
     out.extend(plan.checkpoints.iter().map(|cp| cp.pos));
-    out.extend(plan.transport.values().copied());
     out.extend(plan.links.iter().map(|l| l.to));
     out.extend(plan.gathers.iter().map(|g| g.to));
     // spec-0086 §5.3: a loop puts a body down on every cell of its landing
@@ -526,7 +525,6 @@ pub fn stands_at_roots(plan: &Plan, entry: Option<[i32; 3]>) -> Vec<[i32; 3]> {
     let mut out: Vec<[i32; 3]> = Vec::new();
     out.extend(entry);
     out.extend(plan.checkpoints.iter().map(|cp| cp.pos));
-    out.extend(plan.transport.values().copied());
     out.extend(plan.links.iter().map(|l| l.to));
     out.extend(loop_exercise_landings(plan));
     out

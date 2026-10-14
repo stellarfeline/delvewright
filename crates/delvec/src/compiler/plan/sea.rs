@@ -14,32 +14,13 @@ use super::*;
 /// PackTest) can see it, because every one of them derives from the very
 /// placement that is wrong.
 ///
-/// # Where the refusal went, and why it is not here any more
+/// # Why it counts and does not refuse
 ///
-/// **This is a loosening of this function and a tightening of the rule, and both
-/// halves are stated.** The refusal moved to
-/// [`crate::compiler::seating::walk_plane_over_waterline`], which asks the same
-/// question of the two DECLARATIONS, at validation, under the same code
-/// (`DW0344`), before a block is placed.
-///
-/// It is the same question because an ocean area's origin is DERIVED from the
-/// piece set's own walk plane (spec-0060 §3.2): `pos.y = walk_ref − walk_y`, so
-/// `pos.y + waterline_y == SEA_LEVEL` is exactly `waterline_y == walk_y − 1`.
-/// Every piece seated at its area origin — which is every piece of every area
-/// whose sockets share one local y — is judged identically and one stage
-/// earlier, and a piece that declares no `walk_y` at all is `DW0886` before
-/// either. So the document arm's coverage is a superset of what this one could
-/// refuse, for every piece it was ever right about.
-///
-/// What it is NOT a superset of is the one case left: a piece mated through a
-/// socket at a different local y than its parent's — a stair child, placed at
-/// `parent.y + parent_socket.y − own_socket.y`. Refusing that piece was an
-/// over-refusal by construction, of exactly the shape spec-0060 §1.2 diagnosed
-/// in this function's other half: a piece four courses up a stair CANNOT stand
-/// its water at sea level, no authoring makes it, and there is nothing wrong
-/// with it unless a body walks there — which is
-/// [`check_ocean_walk_plane`]'s question, asked of every placed piece whatever
-/// its y, and unchanged.
+/// A placed piece's origin is its place's frame, stated by the site plan, so
+/// a piece four courses up a stair CANNOT stand its water at sea level, no
+/// authoring makes it, and there is nothing wrong with it unless a body walks
+/// there — which is [`check_ocean_walk_plane`]'s question, asked of every
+/// placed piece whatever its y.
 ///
 /// # The binding count is what stays
 ///
@@ -91,10 +72,9 @@ pub(super) fn check_ocean_waterline(
 /// construction (see [`check_ocean_waterline`]).
 ///
 /// **Build tier, and deliberately so.** This is a fact about the assembled
-/// world, so it is the backstop for whatever `DW0886` could not know from the
-/// documents alone — a piece a stage-7 edit script carves after placement above
-/// all. `DW0886` is the same rule asked of the library before anything is
-/// placed, and a campaign that passes it should never reach this.
+/// world — a piece a stage-7 edit script carves after placement above all.
+/// `DW0886` is the same rule asked of a plan's boxes before anything is
+/// placed.
 ///
 /// It is not [`crate::compiler::nav::DW_SEA_ENTERS_WALK`]'s question. That one
 /// floods the world and asks where the water GOT TO; this one asks where the

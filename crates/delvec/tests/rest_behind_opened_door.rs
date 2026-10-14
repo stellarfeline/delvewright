@@ -119,10 +119,10 @@ fn parse_hw_planned(quests: &str, quest_plan: &str) -> Campaign {
         quests: quests.to_string(),
         dialogue: hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
     let mut c = parse_campaign(&raw).expect("campaign parses");
@@ -297,11 +297,10 @@ fn two_quest_plan(errand_is_mandatory: bool) -> String {
   "content": {{
     "finale": "quest/open-the-door",
     "quests": [
-      {{ "id": "quest/side-errand", "act": 1, "area": "area/keep", "npcs": [],
+      {{ "id": "quest/side-errand", "act": 1, "npcs": [],
          "goal": "Look in on the Keeper's stand.", "depends_on": [],
          "mandatory": {errand_is_mandatory} }},
-      {{ "id": "quest/open-the-door", "act": 1, "area": "area/keep",
-         "npcs": ["npc/keeper"], "goal": "Get the Keeper to let you rest.",
+      {{ "id": "quest/open-the-door", "act": 1, "npcs": ["npc/keeper"], "goal": "Get the Keeper to let you rest.",
          "depends_on": ["quest/side-errand"], "mandatory": true }}
     ]
   }}

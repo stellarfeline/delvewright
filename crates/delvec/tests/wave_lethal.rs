@@ -71,7 +71,7 @@ fn edits(middle: &str) -> String {
     let local = |min: [i32; 3], max: [i32; 3]| {
         serde_json::json!({
             "kind": "box",
-            "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+            "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
             "min": min, "max": max
         })
     };
@@ -92,7 +92,6 @@ fn edits(middle: &str) -> String {
         "stage": "world-edits",
         "content": { "batches": [ {
             "id": "batch/the-burn-and-the-line",
-            "area": "area/keep",
             "note": "The molten floor at the exit, the side door past it, and a fence line shutting the entry strip off.",
             "edits": [
                 { "verb": "select", "name": "region/the-burn", "shape": local([4, 0, 7], [6, 0, 9]) },
@@ -127,10 +126,10 @@ fn build_quests(
         quests,
         dialogue: read_hw("dialogue.json"),
         world_edits: Some(edits(middle)),
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
     let mut campaign = parse_campaign(&raw).expect("campaign parses");

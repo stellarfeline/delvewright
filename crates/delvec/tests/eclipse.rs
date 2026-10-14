@@ -103,10 +103,10 @@ fn build_quests_out(
         quests: quests.to_string(),
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
@@ -326,10 +326,10 @@ fn the_affordance_contest_states_what_it_examined() {
             quests: quests.to_string(),
             dialogue: read_hw("dialogue.json"),
             world_edits: None,
-            geometry_brief: None,
-            layout_graph: None,
-            site_plan: None,
-            detail_plan: None,
+            geometry_brief: Some(read_hw("geometry-brief.json")),
+            layout_graph: Some(read_hw("layout-graph.json")),
+            site_plan: Some(read_hw("site-plan.json")),
+            detail_plan: Some(read_hw("detail-plan.json")),
             design: None,
         })
         .expect("campaign parses");
@@ -385,7 +385,6 @@ fn plan_with_second_quest() -> String {
       },
       {
         "act": 1,
-        "area": "area/keep",
         "depends_on": ["quest/open-the-door"],
         "goal": "Board the ship.",
         "id": "quest/the-sail",
@@ -410,10 +409,10 @@ fn build_quests_plan(
         quests: quests.to_string(),
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
@@ -453,10 +452,10 @@ fn contest_binding(quests: &str, quest_plan: &str) -> Vec<(&'static str, String,
         quests: quests.to_string(),
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");

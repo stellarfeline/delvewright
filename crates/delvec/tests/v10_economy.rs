@@ -75,7 +75,6 @@ static SIDE_DOOR: LazyLock<String> = LazyLock::new(|| {
     "batches": [
       {
         "id": "batch/the-burn-and-the-side-door",
-        "area": "area/keep",
         "note": "the floor of molten stone at the road's end, and the second way through the dividing wall, in ONE batch: every proof re-runs after every batch, so the signal and the way past it have to arrive together",
         "edits": [
           {
@@ -83,7 +82,7 @@ static SIDE_DOOR: LazyLock<String> = LazyLock::new(|| {
             "name": "region/the-burn",
             "shape": {
               "kind": "box",
-              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+              "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
               "min": [4, 0, 7],
               "max": [6, 0, 9]
             }
@@ -99,7 +98,7 @@ static SIDE_DOOR: LazyLock<String> = LazyLock::new(|| {
             "name": "region/side-door",
             "shape": {
               "kind": "box",
-              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+              "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
               "min": [2, 1, 6],
               "max": [2, 2, 6]
             }
@@ -134,7 +133,6 @@ static BURNING_THRESHOLD: LazyLock<String> = LazyLock::new(|| {
     "batches": [
       {
         "id": "batch/burning-threshold",
-        "area": "area/keep",
         "note": "the floor the threshold volume catches, in the block that shows it",
         "edits": [
           {
@@ -142,7 +140,7 @@ static BURNING_THRESHOLD: LazyLock<String> = LazyLock::new(|| {
             "name": "region/threshold-floor",
             "shape": {
               "kind": "box",
-              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
+              "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
               "min": [0, 0, 5],
               "max": [8, 0, 7]
             }
@@ -176,10 +174,10 @@ fn parse_hw_with_edits(quests: &str, world_edits: Option<&str>) -> Campaign {
         quests: quests.to_string(),
         dialogue: hw("dialogue.json"),
         world_edits: world_edits.map(str::to_string),
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
     let mut c = parse_campaign(&raw).expect("campaign parses");
@@ -1478,12 +1476,12 @@ fn the_ci_fixture_validates_and_emits_the_chain() {
     let loaded = load_campaign_dir(&dir).unwrap();
     let mut c = parse_campaign(&loaded.raw).expect("the economy fixture parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let diags = delvewright_dsl::validate_campaign_with(
+    let diags = common::quiet(delvewright_dsl::validate_campaign_with(
         &c,
         &FullItemRegistry::v1_21_11(),
         &prefabs,
         &FullEntityRegistry::v1_21_11(),
-    );
+    ));
     assert!(diags.is_empty(), "the fixture validates clean: {diags:#?}");
 
     delvewright_dsl::tag_translatables(&mut c);

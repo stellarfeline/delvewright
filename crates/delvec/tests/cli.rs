@@ -344,53 +344,6 @@ fn the_working_directory_cannot_reach_the_build() {
     }
 }
 
-/// The two `DW03xx` build/solver diagnostics: an unsatisfiable required anchor
-/// (`DW0302`) and a `pieces` range too small for the required roles (`DW0303`).
-/// Both pass validate + analyze (the DSL cannot see pool-area anchors) and fail
-/// at build with exit 3 and their exact code in `--json`.
-#[test]
-fn pool_build_diagnostics_exit_3_with_dw03xx() {
-    let pf = common::prefabs_dir();
-    for (fixture, expect) in [
-        ("keep-unsatisfiable-anchor.json", "DW0302"),
-        ("keep-range-too-small.json", "DW0303"),
-    ] {
-        let patch: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(common::compiler_fixtures_dir().join(fixture)).unwrap(),
-        )
-        .unwrap();
-        let camp = tmp(&format!("pool-{expect}"));
-        common::materialize_from(&common::keep_crawl_dir(), &patch, &camp);
-        common::declare_story_dir(&camp);
-
-        // validate + analyze pass (pool anchors are invisible to the DSL layer).
-        let v = delvec(&[
-            "analyze",
-            camp.to_str().unwrap(),
-            "--prefabs",
-            pf.to_str().unwrap(),
-        ]);
-        assert_eq!(code(&v), 0, "{fixture}: analyze should pass");
-
-        let out = tmp(&format!("pool-{expect}-out"));
-        let b = delvec(&[
-            "build",
-            camp.to_str().unwrap(),
-            "-o",
-            out.to_str().unwrap(),
-            "--prefabs",
-            pf.to_str().unwrap(),
-            "--json",
-        ]);
-        assert_eq!(code(&b), 3, "{fixture}: build should exit 3");
-        let stdout = String::from_utf8_lossy(&b.stdout);
-        assert!(
-            stdout.contains(expect),
-            "{fixture}: expected {expect} in build diagnostics:\n{stdout}"
-        );
-    }
-}
-
 /// Gate-aware reachability (M2 fix 7, DW0306): a layout where an objective's
 /// anchor is sealed behind a gate that only a later objective opens passes
 /// validate + analyze (neither models sealed gates) but fails at build with exit 3
@@ -665,56 +618,11 @@ fn missing_structure_file_exits_3_with_dw0300() {
     assert!(stdout.contains("DW0300"), "expected DW0300:\n{stdout}");
 }
 
-/// `DW0301`: a `prefab_pool` area needs the solver to place an `entry`-role
-/// piece first, but the pool declares none — a prefab-library metadata defect.
-/// keep-crawl's `pool/stone-keep` normally has exactly one (`keep-spawn-hall`);
-/// this test relabels it away in a private copy of `pools.json`.
-#[test]
-fn pool_without_entry_piece_exits_3_with_dw0301() {
-    let prefabs_copy = tmp("dw0301-prefabs");
-    common::copy_dir_all(&common::prefabs_dir(), &prefabs_copy);
-    let pools_path = prefabs_copy.join("pools.json");
-    let mut pools: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&pools_path).unwrap()).unwrap();
-    let members = pools["pools"]["pool/stone-keep"]["members"]
-        .as_array_mut()
-        .unwrap();
-    let mut relabeled = false;
-    for m in members.iter_mut() {
-        if m["role"] == "entry" {
-            m["role"] = serde_json::json!("connector");
-            relabeled = true;
-        }
-    }
-    assert!(relabeled, "pool/stone-keep must have had an entry member");
-    std::fs::write(&pools_path, serde_json::to_string_pretty(&pools).unwrap()).unwrap();
-
-    let kc = common::keep_crawl_dir();
-    let out = tmp("dw0301-out");
-    let b = delvec(&[
-        "build",
-        kc.to_str().unwrap(),
-        "-o",
-        out.to_str().unwrap(),
-        "--prefabs",
-        prefabs_copy.to_str().unwrap(),
-        "--json",
-    ]);
-    assert_eq!(code(&b), 3, "entry-less pool should exit 3");
-    let stdout = String::from_utf8_lossy(&b.stdout);
-    assert!(stdout.contains("DW0301"), "expected DW0301:\n{stdout}");
-}
-
 /// `DW0310`: a *kill-less* `spawn-wave` (spec-0008 §4 "live threat" — no `kill`
 /// objective ever drains it, exactly like `v04-showcase`'s `wave/ambush`) whose
 /// `anchor` does not resolve in any assembled area is a dangling spawn — no
 /// static DSL rule sees it (wave anchors are a build-time-only concept), so it
-/// passes validate + analyze and fails only at build. Uses hello-world's single
-/// bound prefab (not a pool): a pool area's solver collects wave anchors into
-/// its own "required anchors" set and would instead reject this earlier with
-/// `DW0302` (no pool piece provides it) — the dangling-*spawn* case this test
-/// targets only surfaces on a single-prefab area, where nothing cross-checks a
-/// wave's anchor against the bound prefab's declared anchors before build time.
+/// passes validate + analyze and fails only at build.
 #[test]
 fn kill_less_dangling_spawn_wave_exits_3_with_dw0310() {
     let patch: serde_json::Value = serde_json::from_str(
@@ -1464,10 +1372,7 @@ fn v06_ocean_boundary_builds_byte_identical_and_wires_return() {
     "time": "noon",
     "weather": "clear",
     "horizon": "ocean",
-    "boundary": { "margin": 20 },
-    "areas": [
-      { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
-    ]
+    "boundary": { "margin": 20 }
   }
 }"#,
     );

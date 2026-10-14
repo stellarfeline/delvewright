@@ -113,22 +113,14 @@ fn move_target(
     };
     match body_station(&plan.anchors, scope, to_anchor) {
         station @ BodyStation::At { .. } => Ok(station.pos().expect("an `At` station has a place")),
+        // One site area holds every anchor, so no name has two providers.
         BodyStation::Ambiguous(areas) => Err(Failure::new(
-            crate::compiler::gates::DW_ANCHOR_AMBIGUOUS,
+            crate::compiler::plan::DW_BUILD,
             format!(
-                "move-npc: destination anchor `{to_anchor}` for NPC `{npc_id}` is a name {n} of \
-                 this campaign's areas provide ({list}) — neither the quest this move fires \
-                 from nor the npc's own area (`{home}`) is among them, so nothing an author can \
-                 see says which building the body is walking to. {remedy}",
-                n = areas.len(),
-                list = areas
-                    .iter()
-                    .map(|a| format!("`{a}`"))
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                remedy = crate::compiler::gates::anchor_ambiguity_remedy(
-                    &areas.iter().map(|a| (a.clone(), BTreeSet::new())).collect()
-                ),
+                "internal invariant violation: move-npc destination `{to_anchor}` for NPC \
+                 `{npc_id}` resolved in {} areas, and a campaign has one. This is a compiler \
+                 bug; stop and escalate",
+                areas.len()
             ),
         )),
         BodyStation::Missing => Err(Failure::new(

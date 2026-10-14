@@ -2666,7 +2666,6 @@ fn a_container_a_batch_stands_in_a_stand_in_is_judged_not_deferred() {
         "stage": "world-edits",
         "content": { "batches": [ {
             "id": "batch/heart-barrel",
-            "area": "area/site",
             "note": "Stand a barrel on the heart station.",
             "edits": [
                 { "verb": "select", "name": "region/barrel",

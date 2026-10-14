@@ -44,7 +44,9 @@ fn build_campaign(campaign: &delvewright_dsl::Campaign) -> BuildOutput {
 
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(
+        &campaign, &items, &prefabs, &entities,
+    ));
     assert!(
         diags.is_empty(),
         "souls-bonfire must validate clean: {diags:#?}"
@@ -999,7 +1001,9 @@ fn an_equipped_actor_coexists_with_affordance_hardware() {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(
+        &campaign, &items, &prefabs, &entities,
+    ));
     assert!(diags.is_empty(), "must validate clean: {diags:#?}");
 
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");

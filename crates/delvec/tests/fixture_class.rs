@@ -63,16 +63,16 @@ fn tmp(name: &str) -> PathBuf {
 fn build(who: &str) -> BuildOutput {
     let src = common::compiler_fixtures_dir().join("lift-stake");
     let dir = tmp(&format!("fixture-class-{who}"));
-    for f in common::STAGE_FILES {
-        std::fs::copy(src.join(f), dir.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&src, &dir);
     let prefab_dir = common::prefabs_dir();
     let loaded = load_campaign_dir(&dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("the lift-stake fixture parses");
     let prefabs = PrefabRegistry::load_dir(&prefab_dir).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(
+        &campaign, &items, &prefabs, &entities,
+    ));
     assert!(
         !diags
             .iter()

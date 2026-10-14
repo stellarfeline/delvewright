@@ -71,7 +71,6 @@ fn fence_the_doorway() -> String {
         "stage": "world-edits",
         "content": { "batches": [ {
             "id": "batch/fence-the-doorway",
-            "area": "area/keep",
             "note": "the built world has no floor in the doorway, only a rail",
             "edits": [
                 { "verb": "select", "name": "region/doorway-floor", "shape": {
@@ -133,10 +132,10 @@ fn parse_hw(quests: &str) -> Campaign {
         quests: quests.to_string(),
         dialogue: hw("dialogue.json"),
         world_edits: Some(fence_the_doorway()),
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
@@ -196,9 +195,9 @@ fn plan_with_second_quest(mandatory: bool) -> String {
     "finale": "quest/open-the-door",
     "quests": [
       {{ "id": "quest/open-the-door", "goal": "Get the Keeper to open the door and leave the keep.",
-         "area": "area/keep", "npcs": ["npc/keeper"], "depends_on": {finale_deps}, "mandatory": true, "act": 1 }},
+         "npcs": ["npc/keeper"], "depends_on": {finale_deps}, "mandatory": true, "act": 1 }},
       {{ "id": "quest/side", "goal": "Look at the doorway from the Keeper's stand.",
-         "area": "area/keep", "npcs": [], "depends_on": [], "mandatory": {mandatory}, "act": 1 }}
+         "npcs": [], "depends_on": [], "mandatory": {mandatory}, "act": 1 }}
     ]
   }}
 }}"#
@@ -250,10 +249,10 @@ fn parse_two_quest(mandatory: bool) -> Campaign {
         quests,
         dialogue: hw("dialogue.json"),
         world_edits: Some(fence_the_doorway()),
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
     parse_campaign(&raw).expect("campaign parses")

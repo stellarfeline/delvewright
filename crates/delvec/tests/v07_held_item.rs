@@ -69,10 +69,10 @@ fn parse_hw(quests: &str) -> Campaign {
         quests: quests.to_string(),
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     };
     parse_campaign(&raw).expect("campaign parses")
@@ -151,10 +151,10 @@ fn collect_still_counts_the_whole_inventory() {
         quests: std::fs::read_to_string(showcase.join("quests.json")).unwrap(),
         dialogue: std::fs::read_to_string(showcase.join("dialogue.json")).unwrap(),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: common::read_opt(&showcase, "geometry-brief.json"),
+        layout_graph: common::read_opt(&showcase, "layout-graph.json"),
+        site_plan: common::read_opt(&showcase, "site-plan.json"),
+        detail_plan: common::read_opt(&showcase, "detail-plan.json"),
         design: None,
     };
     assert!(!quests.is_empty());

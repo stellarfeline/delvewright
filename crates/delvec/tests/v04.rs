@@ -33,7 +33,9 @@ fn build_dir(dir: &std::path::Path) -> BuildOutput {
     // DSL validation with the full registries must be clean (no diagnostics).
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(
+        &campaign, &items, &prefabs, &entities,
+    ));
     assert!(
         diags.is_empty(),
         "v04-showcase must validate clean: {diags:#?}"

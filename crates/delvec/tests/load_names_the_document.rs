@@ -64,9 +64,7 @@ fn tmp(name: &str) -> PathBuf {
 /// A complete, loadable copy of hello-world at a fresh temp path.
 fn campaign(name: &str) -> PathBuf {
     let dir = tmp(name);
-    for f in STAGE_FILES {
-        std::fs::copy(common::hello_world_dir().join(f), dir.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&common::hello_world_dir(), &dir);
     common::copy_l10n_dir(&common::hello_world_dir(), &dir);
     dir
 }

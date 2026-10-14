@@ -66,7 +66,9 @@ fn build_with_skins(dir: &Path, skins_from: &Path) -> Result<BuildOutput, BuildF
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(
+        &campaign, &items, &prefabs, &entities,
+    ));
     assert!(
         diags
             .iter()
@@ -500,7 +502,6 @@ fn bearer_removed_by_aside(dst: &Path, on_path: bool) {
         .push(json!({
             "id": "quest/aside",
             "goal": "Stand where the keeper stood.",
-            "area": "area/keep",
             "npcs": [],
             "depends_on": ["quest/greet"],
             "mandatory": on_path,

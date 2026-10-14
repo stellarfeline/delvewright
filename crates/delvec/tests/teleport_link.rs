@@ -28,9 +28,7 @@ fn campaign(who: &str, patch: impl FnOnce(&mut Value)) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("teleport-link-{who}"));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    for f in common::STAGE_FILES {
-        std::fs::copy(src.join(f), dir.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&src, &dir);
     common::patch_file(&dir.join("quests.json"), patch);
     dir
 }
@@ -901,23 +899,10 @@ fn a_raised_reach_on_the_far_side_of_a_link_is_dw0881() {
     assert!(line.contains("obj/far-shore"), "{line}");
 }
 
-/// The ferry with a crossing after the far shore — a second area, the keep,
-/// whose entry point the compiler carries the party to — and a trap on the far
-/// landing whose payload is a gather onto the far deck.
+/// The ferry with a trap on the far landing whose payload is a gather onto the
+/// far deck.
 fn populations_campaign() -> PathBuf {
-    let dir = campaign("populations", |q| {
-        let quests = q["content"]["quests"].as_array_mut().unwrap();
-        quests[0]["on_complete"] = json!([]);
-        quests.push(json!({
-            "id": "quest/keep",
-            "happening": {"verb": "arrives", "subject": "spawn", "text": "Beyond the strait, the keep."},
-            "trigger": {"type": "quest-complete", "quest": "quest/cross"},
-            "objectives": [{"id": "obj/keep", "type": "reach-anchor", "anchor": "anchor/exit",
-                "radius": 1,
-                "happening": {"verb": "arrives", "subject": "anchor/exit", "text": "They reach the keep's door."}}],
-            "on_complete": [{"type": "campaign-complete",
-                "happening": {"verb": "arrives", "subject": "anchor/exit", "text": "The journey ends."}}]
-        }));
+    campaign("populations", |q| {
         q["content"]["traps"] = json!([{
             "id": "trap/drop", "at": "anchor/far-landing", "trigger": "pressure-plate",
             "lethality": "harmful", "reset": "rearm",
@@ -926,21 +911,7 @@ fn populations_campaign() -> PathBuf {
                          "from": {"anchor": "anchor/far-landing", "extent": [0, 0, 0]},
                          "to": {"anchor": "anchor/far-deck"}}]
         }]);
-    });
-    common::patch_file(&dir.join("world.json"), |w| {
-        w["content"]["areas"]
-            .as_array_mut()
-            .unwrap()
-            .push(json!({"id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room"}));
-    });
-    common::patch_file(&dir.join("quest-plan.json"), |p| {
-        p["content"]["finale"] = json!("quest/keep");
-        p["content"]["quests"].as_array_mut().unwrap().push(json!({
-            "act": 1, "area": "area/keep", "depends_on": ["quest/cross"],
-            "goal": "Walk to the keep's door.", "id": "quest/keep", "mandatory": true, "npcs": []
-        }));
-    });
-    dir
+    })
 }
 
 #[test]
@@ -954,8 +925,6 @@ fn the_put_at_roots_hold_every_destination_and_the_stands_at_roots_no_gather() {
     let plan = Plan::build(&campaign, &prefabs).unwrap_or_else(|e| panic!("{}", e.failure.message));
     assert_eq!(plan.links.len(), 1, "the tiller");
     assert_eq!(plan.gathers.len(), 1, "the trap payload");
-    let crossing: Vec<[i32; 3]> = plan.transport.values().copied().collect();
-    assert_eq!(crossing.len(), 1, "one crossing, into the keep");
     let entry = plan.campaign_start().map(|(_, p)| p);
     let put = delvec::compiler::lethal::put_at_roots(&plan, entry);
     let stands = delvec::compiler::lethal::stands_at_roots(&plan, entry);
@@ -964,11 +933,7 @@ fn the_put_at_roots_hold_every_destination_and_the_stands_at_roots_no_gather() {
         put.contains(&link_to) && put.contains(&gather_to),
         "{put:?}"
     );
-    assert!(put.contains(&crossing[0]), "{put:?}");
-    assert!(
-        stands.contains(&link_to) && stands.contains(&crossing[0]),
-        "{stands:?}"
-    );
+    assert!(stands.contains(&link_to), "{stands:?}");
     assert!(
         !stands.contains(&gather_to),
         "a trap's gather is no place the party certainly stands"
@@ -995,9 +960,7 @@ fn branch_link_campaign(who: &str, gate: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("teleport-link-{who}"));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    for f in common::STAGE_FILES {
-        std::fs::copy(src.join(f), dir.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&src, &dir);
     let gate = gate.to_string();
     common::patch_file(&dir.join("quests.json"), move |q| {
         let decide = &mut q["content"]["quests"][0]["on_objective_complete"]["obj/decide"];

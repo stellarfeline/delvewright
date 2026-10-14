@@ -467,7 +467,6 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
             "dsl_version": GYM_DSL_VERSION,
             "stage": "world",
             "content": {
-                "areas": [],
                 "premise": "Every number a level is built to, standing side by side at the size it \
                             names. Walk it once and the standard stops being a seed.",
                 "seed": 20260821,
@@ -507,7 +506,6 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
             "content": { "npcs": [{
                 "id": "npc/invigilator",
                 "name": "The Invigilator",
-                "area": delvewright_dsl::SITE_AREA,
                 "anchor": format!("anchor/node-{}", slug(&entry_node)),
                 "base_entity": "minecraft:villager",
                 "role": "quest-giver",
@@ -537,7 +535,6 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
                 "quests": [{
                     "id": "quest/walk-the-ladder",
                     "act": 1,
-                    "area": delvewright_dsl::SITE_AREA,
                     "depends_on": [],
                     "goal": "Walk the bays through every standard doorway, up both climbs and \
                              down the fall, and say which standards are wrong.",

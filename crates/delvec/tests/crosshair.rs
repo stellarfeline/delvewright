@@ -37,10 +37,10 @@ static NPCS: LazyLock<String> = LazyLock::new(|| {
   "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "npcs",
   "content": { "npcs": [
     { "id": "npc/keeper", "name": "The Keeper", "role": "quest-giver",
-      "area": "area/keep", "anchor": "anchor/keeper-stand", "base_entity": "minecraft:villager",
+      "anchor": "anchor/keeper-stand", "base_entity": "minecraft:villager",
       "persona": { "archetype": "stoic gatekeeper", "speech_style": "Terse.", "motivation": "Guard the gate." } },
     { "id": "npc/scout", "name": "The Scout", "role": "flavor",
-      "area": "area/keep", "anchor": "anchor/exit", "base_entity": "minecraft:villager",
+      "anchor": "anchor/exit", "base_entity": "minecraft:villager",
       "persona": { "archetype": "restless scout", "speech_style": "Clipped.", "motivation": "Get out." } }
   ] }
 }"#,
@@ -52,10 +52,8 @@ static QUEST_PLAN: LazyLock<String> = LazyLock::new(|| {
         r#"{
   "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": { "quests": [
-    { "id": "quest/one", "goal": "Speak with the Keeper.", "area": "area/keep",
-      "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 },
-    { "id": "quest/two", "goal": "Leave the keep.", "area": "area/keep",
-      "npcs": ["npc/scout"], "depends_on": ["quest/one"], "mandatory": true, "act": 1 }
+    { "id": "quest/one", "goal": "Speak with the Keeper.", "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 },
+    { "id": "quest/two", "goal": "Leave the keep.", "npcs": ["npc/scout"], "depends_on": ["quest/one"], "mandatory": true, "act": 1 }
   ], "finale": "quest/two" }
 }"#,
     )
@@ -119,10 +117,10 @@ fn build(scout_to: &str, cast_two: &str) -> Result<Vec<Diagnostic>, BuildFailure
         quests: quests(scout_to, cast_two),
         dialogue: DIALOGUE.to_string(),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");
@@ -211,10 +209,10 @@ fn the_eclipse_proof_is_silent_on_the_same_fixture() {
         quests: quests("anchor/keeper-stand", SHARED_CELL_WITH_ROOT),
         dialogue: DIALOGUE.to_string(),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
     let campaign = parse_campaign(&raw).expect("campaign parses");

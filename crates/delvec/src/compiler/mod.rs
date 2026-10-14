@@ -49,7 +49,6 @@
 //! - [`firework`]: `DW0899` — a rocket bursts in open air, clear of every posted body (spec-0068).
 //! - [`flow`]: the branch-coherent flag/quest flow model and the critical-path extraction (`DW0204`).
 //! - [`gates`]: `close-gate` gate-block validation — the physical dual of `open-gate`.
-//! - [`guarantee`]: which anchors an area's binding guarantees, answered before anything is placed (`DW0889`).
 //! - [`gym`]: the metrics gym — a site-plan campaign generated from the metrics table.
 //! - [`healthbar`]: a fight's health bar — its emission, and the colour/style vocabulary read from the pinned command tree (`DW0911`).
 //! - [`hold`]: how long a cutscene holds the party, per critical-path step — what a step's completion schedules and what its walk passes.
@@ -63,31 +62,29 @@
 //! - [`r#loop`]: an endless corridor (spec-0086) — the slab, the closed view, identical blocks and light, and the loop's seal and exercise (`DW0945`–`DW0950`).
 //! - [`loot`]: container-fill proofs over the assembled world (`DW0431`/`DW0438`).
 //! - [`mark`]: a mark stays in the room its anchor names — an offset that leaves its anchor's piece is refused (`DW0897`).
-//! - [`massing`]: the L2 massing verbs — declarative control of a pool area's solved jigsaw layout.
 //! - [`muster`]: what a wave declares, phrased as questions the live bodies are asked.
 //! - [`nav`]: compile-time navigation over the solved voxel grid.
 //! - [`observer`]: a watching player is out of play everywhere — the positional-selector census a respawn wait owes (`DW0926`).
 //! - [`onkill`]: whether a fight comes back, and the `on_kill.fires` judgement it owes (`DW0914`/`DW0915`).
 //! - [`plan`]: resolve a validated campaign into the placement + naming model emission reads.
 //! - [`png`]: the deterministic hand-rolled PNG writer.
-//! - [`pool`]: a pool draw that seats the same anchored prefab twice (`DW0498`).
 //! - [`pressable`]: what a player's click reaches at an anchor — the one authority every `strike`/`use` trigger dispatches from.
 //! - [`promise`]: an objective keeps the promise its prompt makes (`DW0860`–`DW0863`).
 //! - [`pulse`]: a sound that beats over a place — its derived range and listening stations (`DW0994`, `DW0995`).
 //! - [`raster`]: the shared RGBA canvas and bitmap-text primitives both renderers draw on.
 //! - [`reach`]: what completes a `reach` — the one authority for the volume a body has to be in.
 //! - [`registry`]: the full pinned-MC item registry and the prefab/anchor metadata.
+//! - [`rotation`]: the seeded stream and the quarter-turn a piece is placed at.
 //! - [`rehearsal`]: the compile-time inventory of every rehearsable cutscene beat and every shot inside it.
 //! - [`render_plan`]: `render-plan.json` emission.
 //! - [`resourcepack`]: the per-delve skin resource pack.
 //! - [`respawn`]: what separates a retry from a soft-lock — the evidence `DW0478` accepts.
 //! - [`sculk`]: the sculk family works — at rest (`DW0998`/`DW0999`), a sensor's power reaching nothing (`DW1000`), a catalyst hearing no death (`DW1001`), and the walk's vibrations — spec-0100.
-//! - [`seating`]: a horizon and a piece set are a pair — this base cannot seat this pool (`DW0886`), and a declared waterline is not in the bytes (`DW0887`).
+//! - [`seating`]: a horizon and a piece set are a pair — this base cannot seat this piece set (`DW0886`), and a declared waterline is not in the bytes (`DW0887`).
 //! - [`seeding`]: no emitted comparison reads a score entry the emitted pack never creates (`DW0495`).
 //! - [`served`]: what the declared view distance costs the host — the pinned server's chunk set, the fitted live heap, the ceiling stated in `server/resources.properties` (spec-0091).
 //! - [`skinparts`]: the model-part table every skin and entity texture is drawn to, and the one rule that refuses paint no box samples (`DW0978`) or nobody standing level sees (`DW0979`) — spec-0097.
 //! - [`snapshot`]: `delvec snapshot` — the voxel raycaster and scene manifest an authoring agent looks at its own build through.
-//! - [`solver`]: the jigsaw layout solver.
 //! - [`stairs`]: the stair-orientation proof over the assembled world (`DW0430`).
 //! - [`stake`]: the recovery stake's compile-time placement table and the proofs it owes.
 //! - [`standin`]: the party is seen in its own cutscenes — the stand-in a cutscene places for each player, and its lifetime proof (`DW0971`, spec-0095).

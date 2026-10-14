@@ -57,7 +57,6 @@ static BARREL_EDITS: LazyLock<String> = LazyLock::new(|| {
     "batches": [
       {
         "id": "batch/beach-camp",
-        "area": "area/keep",
         "note": "Stand a barrel at the exit anchor so a collect objective can adopt it.",
         "edits": [
           {
@@ -96,10 +95,10 @@ fn parse_hw(quests: &str, edits: Option<&str>) -> Campaign {
         quests: quests.to_string(),
         dialogue: read_hw("dialogue.json"),
         world_edits: edits.map(str::to_string),
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     })
     .expect("campaign parses")
@@ -110,7 +109,7 @@ fn try_build(fields: &str, edits: Option<&str>) -> Result<emit::BuildOutput, emi
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&c, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(&c, &items, &prefabs, &entities));
     assert!(diags.is_empty(), "campaign must validate clean: {diags:#?}");
     let plan = Plan::build(&c, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();

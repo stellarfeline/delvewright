@@ -1105,7 +1105,6 @@ pub fn derive_with(
         AreaPlacement {
             area_id: SITE_AREA.to_string(),
             pieces,
-            seals: Vec::new(),
             mass: mass.fills,
         },
         Blockout {

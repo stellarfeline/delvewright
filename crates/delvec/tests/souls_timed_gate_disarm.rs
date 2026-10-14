@@ -22,12 +22,12 @@ fn build_fixture() -> BuildOutput {
     let loaded = load_campaign_dir(&dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("souls-timed-gate-disarm parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let diags = validate_campaign_with(
+    let diags = common::quiet(validate_campaign_with(
         &campaign,
         &FullItemRegistry::v1_21_11(),
         &prefabs,
         &FullEntityRegistry::v1_21_11(),
-    );
+    ));
     assert!(
         diags.is_empty(),
         "souls-timed-gate-disarm must validate clean: {diags:#?}"

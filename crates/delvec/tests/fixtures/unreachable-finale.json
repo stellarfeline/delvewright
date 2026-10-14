@@ -8,7 +8,6 @@
         "quests": [
           {
             "act": 1,
-            "area": "area/keep",
             "depends_on": [],
             "goal": "Ask the Keeper to open the door.",
             "id": "quest/open-the-door",
@@ -19,7 +18,6 @@
           },
           {
             "act": 1,
-            "area": "area/keep",
             "depends_on": [
               "quest/open-the-door"
             ],

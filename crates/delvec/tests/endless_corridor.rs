@@ -28,9 +28,7 @@ fn campaign_with(who: &str, quests: impl FnOnce(&mut Value), other: impl FnOnce(
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("endless-corridor-{who}"));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    for f in common::STAGE_FILES {
-        std::fs::copy(src.join(f), dir.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&src, &dir);
     common::patch_file(&dir.join("quests.json"), quests);
     other(&dir);
     dir
@@ -686,7 +684,6 @@ fn a_refusal_after_a_world_edits_batch_prints_the_loop_binding() {
                 "dsl_version": delvewright_dsl::DSL_VERSION,
                 "stage": "world-edits",
                 "content": { "batches": [{
-                    "area": "area/gallery",
                     "id": "batch/a-lamp-in-the-landing-bay",
                     "note": "A lantern stood on the floor of the landing bay alone.",
                     "edits": [
@@ -975,7 +972,6 @@ fn dw0948_a_figure_posted_in_the_hall() {
             common::patch_file(&d.join("npcs.json"), |n| {
                 n["content"]["npcs"] = json!([{
                     "anchor": "anchor/in-the-hall",
-                    "area": "area/gallery",
                     "base_entity": "minecraft:villager",
                     "id": "npc/curator",
                     "name": "The Curator",
@@ -1662,7 +1658,6 @@ fn station4_with_a_figure(who: &str, anchor: &str) -> Run {
         common::patch_file(&d.join("npcs.json"), |n| {
             n["content"]["npcs"] = json!([{
                 "anchor": anchor,
-                "area": "area/gallery",
                 "base_entity": "minecraft:villager",
                 "id": "npc/watcher",
                 "name": "The Watcher",

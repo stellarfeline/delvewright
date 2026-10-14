@@ -1866,10 +1866,10 @@ fn muster(offsets: &[[i32; 3]; 7]) -> delvewright_dsl::Campaign {
         quests: quests.to_string(),
         dialogue: read("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(read("geometry-brief.json")),
+        layout_graph: Some(read("layout-graph.json")),
+        site_plan: Some(read("site-plan.json")),
+        detail_plan: Some(read("detail-plan.json")),
         design: None,
     };
     parse_campaign(&raw).expect("the muster campaign parses")
@@ -2705,7 +2705,7 @@ fn dw0932_using_a_crossing_for_another_area_builds() {
     common::patch_file(&camp.join("quest-plan.json"), |p| {
         p["content"]["finale"] = serde_json::json!("quest/keep");
         p["content"]["quests"].as_array_mut().unwrap().push(serde_json::json!({
-            "act": 1, "area": "area/keep", "depends_on": ["quest/cross"],
+            "act": 1, "depends_on": ["quest/cross"],
             "goal": "Walk to the keep's door.", "id": "quest/keep", "mandatory": true, "npcs": []
         }));
     });
@@ -3190,7 +3190,7 @@ fn dw0948_moving_the_body_out_of_the_span_builds() {
         });
         common::patch_file(&camp.join("npcs.json"), |n| {
             n["content"]["npcs"] = serde_json::json!([{
-                "anchor": at, "area": "area/gallery", "base_entity": "minecraft:villager",
+                "anchor": at, "base_entity": "minecraft:villager",
                 "id": "npc/curator", "name": "The Curator", "role": "flavor",
                 "persona": {
                     "archetype": "patient keeper", "backstory": "She keeps the gallery.",

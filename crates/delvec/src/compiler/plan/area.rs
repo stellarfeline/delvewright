@@ -54,24 +54,15 @@ pub fn ocean_layer_at(y: i32) -> Option<&'static str> {
 pub struct AreaPlacement {
     /// Area id (`area/…`).
     pub area_id: String,
-    /// The placed pieces (single-prefab areas have exactly one; pool areas have
-    /// the solver's assembly, entry first).
+    /// The placed pieces: the blockout's records of every volume and box, then
+    /// the detail plan's pieces in `details[]` order.
     pub pieces: Vec<PiecePlacement>,
-    /// Socket seal/clear fills for this area — one per connector of every placed
-    /// piece, whatever assembled them. Empty only when no placed piece declares a
-    /// connector; a single-prefab area's lone piece has all of its unmated, so
-    /// each one is walled.
-    pub seals: Vec<SealFill>,
-    /// **The region writes this area's own blocks arrive as**, in the order the
-    /// world applies them — before the templates, and therefore before the socket
-    /// seals (`crate::compiler::assembled::placed_blocks`).
-    ///
-    /// Empty for every prefab-placed area, which is what keeps such a campaign's
-    /// output byte-identical: a prefab's blocks arrive in a `.nbt` and this list
-    /// is the other way a piece can be made of something. The blockout
-    /// (`crate::compiler::blockout`) is the one producer — a shell of uniform boxes, whose
-    /// natural packaging is a fill and whose `.nbt` packaging would be tens of
-    /// thousands of mostly-air cells split across tiles.
+    /// **The region writes the site's own blocks arrive as**, in the order the
+    /// world applies them — before the templates
+    /// (`crate::compiler::assembled::placed_blocks`). The blockout
+    /// (`crate::compiler::blockout`) is the one producer — a shell of uniform
+    /// boxes, whose natural packaging is a fill and whose `.nbt` packaging would
+    /// be tens of thousands of mostly-air cells split across tiles.
     pub mass: Vec<SealFill>,
 }
 

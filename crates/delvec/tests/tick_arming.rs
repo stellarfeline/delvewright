@@ -226,7 +226,6 @@ fn out_of_order_campaign() -> PathBuf {
         .push(serde_json::json!({
             "id": "quest/after",
             "goal": "Ring the bell the shrine answers to.",
-            "area": "area/keep",
             "npcs": ["npc/keeper"],
             "depends_on": ["quest/trial"],
             "mandatory": true,

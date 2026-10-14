@@ -697,7 +697,7 @@ fn carcass_campaign(tag: &str, form: &serde_json::Value) -> (i32, String) {
             doc(
                 "world",
                 serde_json::json!({
-                    "areas": [{"id": "area/carcass", "name": "The Carcass", "prefab": "prefab/gallery-carcass"}],
+
                     "boundary": {"margin": 16, "message": "The valley ends here."},
                     "difficulty": "normal",
                     "horizon": {"base": "valley", "ratio": 2.5, "rim_height": 48},
@@ -722,7 +722,7 @@ fn carcass_campaign(tag: &str, form: &serde_json::Value) -> (i32, String) {
             doc(
                 "quest-plan",
                 serde_json::json!({"finale": "quest/walk", "quests": [{
-                    "act": 1, "area": "area/carcass", "depends_on": [], "goal": "Walk it.",
+                    "act": 1, "depends_on": [], "goal": "Walk it.",
                     "id": "quest/walk", "mandatory": true, "npcs": []
                 }]}),
             ),

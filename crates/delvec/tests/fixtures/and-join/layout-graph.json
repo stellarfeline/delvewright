@@ -45,7 +45,7 @@
           },
           {
             "anchor": "anchor/gate",
-            "kind": "point"
+            "kind": "gate"
           },
           {
             "anchor": "anchor/keeper-stand",

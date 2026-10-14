@@ -75,9 +75,7 @@ fn build_hw(difficulty: Option<&str>, quests: Option<&str>) -> BuildOutput {
     let dst = scratch_dir("hw");
     let _ = std::fs::remove_dir_all(&dst);
     std::fs::create_dir_all(&dst).unwrap();
-    for f in common::STAGE_FILES {
-        std::fs::copy(src.join(f), dst.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&src, &dst);
     if let Some(value) = difficulty {
         let wp = dst.join("world.json");
         let w = std::fs::read_to_string(&wp)

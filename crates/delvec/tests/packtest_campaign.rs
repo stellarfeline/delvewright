@@ -85,9 +85,7 @@ fn build_scheduled_hello_world() -> BuildOutput {
     let dst = scratch_dir("sched");
     let _ = std::fs::remove_dir_all(&dst);
     std::fs::create_dir_all(&dst).unwrap();
-    for f in common::STAGE_FILES {
-        std::fs::copy(src.join(f), dst.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&src, &dst);
     let search = r#"        "on_complete": [
           {
             "happening": {
@@ -125,9 +123,7 @@ fn build_scheduled_branch_fixture() -> BuildOutput {
     let dst = scratch_dir("branch-sched");
     let _ = std::fs::remove_dir_all(&dst);
     std::fs::create_dir_all(&dst).unwrap();
-    for f in common::STAGE_FILES {
-        std::fs::copy(src.join(f), dst.join(f)).unwrap();
-    }
+    common::copy_campaign_docs(&src, &dst);
     // Wrap the losing ending in a `sequence` so the ending fires 200 ticks
     // later — the AWAITED-ending shape the template below must handle.
     common::patch_file(&dst.join("quests.json"), |d| {

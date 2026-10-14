@@ -59,8 +59,9 @@ fn wrong_place_attributes() -> Value {
 fn campaign(atmospheres: Value, carried: Option<&str>, extra: Vec<Value>) -> Campaign {
     let mut world = hw("world.json");
     world["content"]["atmospheres"] = atmospheres;
+    let mut plan = hw("site-plan.json");
     if let Some(id) = carried {
-        world["content"]["areas"][0]["atmosphere"] = json!(id);
+        plan["content"]["boxes"][0]["atmosphere"] = json!(id);
     }
     let mut quests = hw("quests.json");
     let bundle = quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
@@ -76,10 +77,10 @@ fn campaign(atmospheres: Value, carried: Option<&str>, extra: Vec<Value>) -> Cam
         quests: s(&quests),
         dialogue: s(&hw("dialogue.json")),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(s(&hw("geometry-brief.json"))),
+        layout_graph: Some(s(&hw("layout-graph.json"))),
+        site_plan: Some(s(&plan)),
+        detail_plan: Some(s(&hw("detail-plan.json"))),
         design: None,
     };
     parse_campaign(&raw).expect("the campaign parses")
@@ -727,10 +728,16 @@ fn an_area_is_painted_over_its_claim_and_every_eye_in_it_is_measured() {
     common::copy_dir_all(&common::hello_world_dir(), &dir.join("src"));
     let mut world = hw("world.json");
     world["content"]["atmospheres"] = close_air();
-    world["content"]["areas"][0]["atmosphere"] = json!("atmosphere/close-air");
     std::fs::write(
         dir.join("src/world.json"),
         serde_json::to_string_pretty(&world).unwrap(),
+    )
+    .unwrap();
+    let mut plan = hw("site-plan.json");
+    plan["content"]["boxes"][0]["atmosphere"] = json!("atmosphere/close-air");
+    std::fs::write(
+        dir.join("src/site-plan.json"),
+        serde_json::to_string_pretty(&plan).unwrap(),
     )
     .unwrap();
     let run = std::process::Command::new(BIN)
@@ -746,7 +753,7 @@ fn an_area_is_painted_over_its_claim_and_every_eye_in_it_is_measured() {
     assert!(run.status.success(), "{stderr}");
     let line = stderr
         .lines()
-        .find(|l| l.starts_with("atmosphere reach: `area/keep`"))
+        .find(|l| l.starts_with("atmosphere reach: `node/keep`"))
         .unwrap_or_else(|| panic!("no reach line for the area: {stderr}"));
     let words: Vec<&str> = line.split_whitespace().collect();
     let (whole, eyes) = (words[4], words[6]);

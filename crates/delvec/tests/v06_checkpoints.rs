@@ -35,7 +35,9 @@ fn build_fixture() -> BuildOutput {
 
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(
+        &campaign, &items, &prefabs, &entities,
+    ));
     assert!(
         diags.is_empty(),
         "v06-checkpoints must validate clean: {diags:#?}"
@@ -529,7 +531,9 @@ fn set_checkpoint_nested_in_sequence_binds_its_own_index() {
     let items = FullItemRegistry::v1_21_11();
     let entities = FullEntityRegistry::v1_21_11();
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let diags = validate_campaign_with(&campaign, &items, &prefabs, &entities);
+    let diags = common::quiet(validate_campaign_with(
+        &campaign, &items, &prefabs, &entities,
+    ));
     assert!(
         diags.is_empty(),
         "nested-checkpoint campaign still validates clean: {diags:#?}"
