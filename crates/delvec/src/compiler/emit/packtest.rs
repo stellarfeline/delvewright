@@ -103,7 +103,7 @@ pub(super) fn emit_packtest(
     // plus a flag-gate test. Each drives the compiler-generated mechanic functions
     // on a dummy player (no real combat / advancement events needed) and asserts
     // the objective scoreboard. Emits nothing for a v0.2 campaign.
-    objective::emit_verb_packtests(plan, out);
+    objective::emit_verb_packtests(plan, out, holders);
     // spec-0080 §5.2: the server holds the biome each carried place declares,
     // and every repaint moves it — inside the volume and not outside.
     atmosphere::emit_atmosphere_packtests(plan, out);

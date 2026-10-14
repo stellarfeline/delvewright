@@ -428,9 +428,21 @@ pub(super) fn objective_activation_watch_claim(plan: &Plan) -> crate::compiler::
 /// `interact` objective, plus a flag-gate test for the first flag-gated
 /// collect/interact objective and a forbid-gate test for the first
 /// `forbids_flags`-gated one (v0.6 negative gate).
-pub(super) fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
+pub(super) fn emit_verb_packtests(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    holders: &[crate::compiler::holders::OwnedHolder],
+) {
     let ns = &plan.namespace;
     let c = plan.campaign;
+    // A `collect` that takes from a holder ENTITY (spec-0111) fills no block;
+    // its own `obj_activate_<obj>` and `holder_<id>` templates prove it, and
+    // the block-shaped verb templates below are not about it.
+    let on_entity = |o: &Objective| {
+        holders
+            .iter()
+            .any(|h| h.collect.as_deref() == Some(o.id().as_str()))
+    };
 
     let mut write = |name: &str, body: Vec<String>| {
         out.insert(
@@ -456,7 +468,7 @@ pub(super) fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     let mut first_flag_gated = None;
     let mut first_forbid_gated = None;
     for q in &c.quests.content.quests {
-        for o in &q.objectives {
+        for o in q.objectives.iter().filter(|o| !on_entity(o)) {
             let qid = q.id.as_str();
             match o {
                 Objective::Kill { wave, .. } => {
