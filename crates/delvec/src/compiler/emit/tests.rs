@@ -407,3 +407,25 @@ fn actor_lifecycle_verbs_are_no_ops_when_the_body_is_already_gone() {
         "re-cage is idempotent and works from nothing: {spawn}"
     );
 }
+
+/// A `narrate` sound is played `at` each listener, never at the command source:
+/// a positionless `playsound` from a tick- or setup-run function sounds at the
+/// world spawn, where a player elsewhere hears nothing.
+#[test]
+fn a_narrate_sound_plays_at_each_listener() {
+    for who in ["@a", "@s"] {
+        let mut body = Vec::new();
+        effect::emit_narrate(
+            "hi",
+            None,
+            Some("minecraft:block.barrel.close"),
+            who,
+            &mut body,
+        );
+        assert_eq!(
+            body[1],
+            format!("execute as {who} at @s run playsound minecraft:block.barrel.close player @s")
+        );
+        assert_eq!(body.len(), 2, "{body:?}");
+    }
+}

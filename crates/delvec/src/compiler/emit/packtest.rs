@@ -48,6 +48,9 @@ pub(super) struct Proved<'a> {
     pub(super) asm_locks: &'a crate::compiler::assembly::Locks,
     /// The watchers, as `watching::prove` judged them.
     pub(super) watch_binding: &'a crate::compiler::watching::WatchBinding,
+    /// Every container cell of the built world and its block, as the container
+    /// census read them.
+    pub(super) containers: &'a BTreeMap<[i32; 3], String>,
 }
 
 /// Emit the compiler-generated PackTest suite (spec-0003). PackTest (misode,
@@ -69,6 +72,7 @@ pub(super) fn emit_packtest(
     let Proved {
         asm_locks,
         watch_binding,
+        containers,
     } = *proved;
     let ns = &plan.namespace;
     put_json(
@@ -210,7 +214,7 @@ pub(super) fn emit_packtest(
     // the gallery the suite never executed at ANY depth — not driven, not even
     // reached transitively. Emits nothing for a campaign with no trigger.
     trigger::emit_env_trigger_packtests(plan, out);
-    loot::emit_loot_packtest(plan, out);
+    loot::emit_loot_packtests(plan, out, containers);
     actor::emit_actor_equipment_packtest(plan, out);
     // spec-0016 §6: the patrol NBT survives 1.21.11's strict codec, the lane
     // advances in march order, the squad is released to native AI at aggro range,

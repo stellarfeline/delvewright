@@ -810,7 +810,8 @@ const ANCHORS: &[Anchor] = &[
     },
 ];
 
-/// **Container anchors** — the cells that hold a chest or a barrel.
+/// **Container anchors** — the cells that hold a chest, a barrel or a brewing
+/// stand.
 ///
 /// A `loot[]` fill and a `collect` objective's `container` both need a cell that
 /// really is a fillable container, and a point anchor cannot be one: a body
@@ -821,10 +822,11 @@ const ANCHORS: &[Anchor] = &[
 ///
 /// Every container in the hall is named here, because every one of them pays
 /// off (spec-0105 §9): the hall holds a loot fill, a collect and a trap, and a
-/// container that matters never stands among scenery. The hall's two barrels —
-/// the ferryman's in the cabin and the one at the long gallery's far end — are
-/// filled by `loot`; the one container no declaration claims is the long hall's
-/// end chest, in a place of its own, which is the gallery's scenery.
+/// container that matters never stands among scenery. The ferryman's barrel in
+/// the cabin and the brewing stand at the long gallery's far end are filled by
+/// `loot` — the stand is the gallery's container that is not a box, five slots
+/// with its own rules for each; the one container no declaration claims is the
+/// long hall's end chest, in a place of its own, which is the gallery's scenery.
 const CONTAINERS: &[Anchor] = &[
     Anchor {
         name: "anchor/cabin-barrel",
@@ -835,11 +837,11 @@ const CONTAINERS: &[Anchor] = &[
         role: None,
     },
     Anchor {
-        name: "anchor/long-gallery-barrel",
+        name: "anchor/long-gallery-brewing-stand",
         pos: long_gallery_cell(2, 1, CORRIDOR_SIZE[2] - 2),
         facing: None,
         trigger_block: None,
-        note: "the barrel at the long gallery's far end, filled by a `loot` entry",
+        note: "the brewing stand at the long gallery's far end, filled by a `loot` entry",
         role: None,
     },
     Anchor {
@@ -1422,8 +1424,13 @@ fn assert_anchors_are_standable(s: &Structure) {
     for a in CONTAINERS {
         let found = at(a.pos);
         assert!(
-            found == "minecraft:chest" || found == "minecraft:barrel",
-            "{ID}: container anchor `{}` is not a chest or a barrel: `{found}`",
+            [
+                "minecraft:chest",
+                "minecraft:barrel",
+                "minecraft:brewing_stand"
+            ]
+            .contains(&found),
+            "{ID}: container anchor `{}` is not a chest, a barrel or a brewing stand: `{found}`",
             a.name
         );
     }
@@ -3997,6 +4004,13 @@ fn long_gallery_at(x: i32, y: i32, z: i32) -> Option<BlockWithState> {
     let [u, v, w] = long_gallery_frame(x, y, z)?;
     let [su, sv, sw] = CORRIDOR_SIZE;
     const LANTERN: Option<&[(&str, &str)]> = Some(&[("hanging", "true")]);
+    // An empty stand: the bottle properties its model is assembled from are
+    // written, never left to a default (DW0735).
+    const BREWING_STAND: Option<&[(&str, &str)]> = Some(&[
+        ("has_bottle_0", "false"),
+        ("has_bottle_1", "false"),
+        ("has_bottle_2", "false"),
+    ]);
     let shell = v == 0 || v == sv - 1 || w == 0 || w == sw - 1 || u == 0 || u == su - 1;
     if shell {
         return Some(("minecraft:stone", None));
@@ -4028,10 +4042,10 @@ fn long_gallery_at(x: i32, y: i32, z: i32) -> Option<BlockWithState> {
     if w == corridor_bay(CORRIDOR_BAYS) + 1 && u == 2 && v == sv - 2 {
         return Some(("minecraft:lantern", LANTERN));
     }
-    // The chest at the far end: what the end room holds, and what a body
-    // arriving there looks at.
+    // The brewing stand at the far end: what the end room holds, and what a
+    // body arriving there looks at.
     if w == sw - 2 && u == 2 && v == 1 {
-        return Some(("minecraft:barrel", None));
+        return Some(("minecraft:brewing_stand", BREWING_STAND));
     }
     Some(("minecraft:air", None))
 }

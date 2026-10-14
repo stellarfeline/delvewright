@@ -1,14 +1,16 @@
 // The container class's arrival line reaches the player (spec-0105 §5.3).
 //
 // When a campaign has scenery containers, `containers.decoration_notice` is told
-// to each player by their class apply function, after the party's quests are
-// armed and before the warp in. PackTest cannot see it: the line is a
-// client-bound chat or title packet. This reads it: the bot records what it is
-// told between its class command and the end of that step's settle, and asserts
-// the compiler's resolved English text arrived in that window.
+// to each player by their class apply function, in the function that warps them
+// in, after the warp. PackTest cannot see it: the line is a client-bound chat or
+// title packet, and its sound a sound packet. This reads both: the bot records
+// what it is told and what it hears between its class command and the end of
+// that step's settle, and asserts the compiler's resolved English text arrived
+// in that window and, when the notice names a sound, that the sound arrived at
+// the bot's own position after the warp — where a player hears the arrival.
 //
-// The compiler states the text (`validation/containers.json`, its `notice`); the
-// harness derives nothing.
+// The compiler states the text and the sound (`validation/containers.json`, its
+// `notice`); the harness derives nothing.
 //
 // Assertions and bookkeeping only — no game logic (CLAUDE.md).
 
@@ -24,6 +26,8 @@ export interface Notice {
   readonly text: string;
   /** Its channel: `chat`, `title`, `subtitle`, `art` or `actionbar`. */
   readonly style: string;
+  /** The sound event it plays, namespaced, or `null` when it plays none. */
+  readonly sound: string | null;
 }
 
 /** The parts of the census ledger the bot reads. */
@@ -70,11 +74,16 @@ export function parseContainerLedger(raw: unknown): ContainerLedger {
     const no = n as Record<string, unknown>;
     const text = no["text"];
     const style = no["style"];
+    if (!("sound" in no)) bad("`notice` has no `sound` (null when it plays none)");
+    const sound = no["sound"];
+    if (sound !== null && (typeof sound !== "string" || sound.length === 0)) {
+      bad(`\`notice.sound\` must be null or a non-empty string, got ${JSON.stringify(sound)}`);
+    }
     if (typeof text !== "string" || text.length === 0) bad("`notice.text` must be a non-empty string");
     if (typeof style !== "string" || !STYLES.has(style)) {
       bad(`\`notice.style\` must be one of ${[...STYLES].join(", ")}, got ${JSON.stringify(style)}`);
     }
-    notice = { text, style };
+    notice = { text, style, sound: sound as string | null };
   }
   return { cells, decoration, notice };
 }
@@ -93,12 +102,22 @@ export async function loadContainerLedgerForCriticalPath(
   return parseContainerLedger(JSON.parse(text) as unknown);
 }
 
-/** What the bot was told in the window: chat lines and title texts. */
+/** One sound packet the client was told about. */
+export interface HeardSound {
+  readonly name: string;
+  readonly pos: readonly [number, number, number];
+}
+
+/** What the bot was told in the window: chat lines, title texts and sounds. */
 export interface ToldWindow {
   readonly chat: readonly string[];
   readonly titles: readonly string[];
   /** Chat lines that fell out of the ring before the bot read them. */
   readonly lost: number;
+  /** Every sound packet the bot received in the window. */
+  readonly sounds: readonly HeardSound[];
+  /** The bot's own position at the end of the window — after the warp. */
+  readonly arrival: readonly [number, number, number];
 }
 
 /** The arrival line's verdict. */
@@ -106,7 +125,19 @@ export interface NoticeVerdict {
   readonly declared: boolean;
   readonly ok: boolean;
   readonly detail: string;
+  /** The notice's sound as it arrived, or `null` when none was owed or none arrived. */
+  readonly sound: HeardSound | null;
 }
+
+/**
+ * How far (blocks, per axis) the notice's sound may land from the bot's
+ * position after the warp. The packet carries its position in eighths of a
+ * block and the body may settle onto the floor after the teleport; a sound at
+ * the command source instead of the player misses by the distance between them.
+ */
+export const NOTICE_SOUND_TOLERANCE = 1.5;
+
+const bare = (s: string): string => s.replace(/^minecraft:/, "");
 
 /**
  * **Judge the window against the ledger.** A declared notice must arrive: a
@@ -124,8 +155,10 @@ export function judgeNotice(ledger: ContainerLedger, told: ToldWindow): NoticeVe
       detail:
         `no notice declared (${ledger.decoration} of ${ledger.cells} container cell(s) are ` +
         `scenery); ${lines} line(s) told in the window`,
+      sound: null,
     };
   }
+  const sound = judgeNoticeSound(n, told);
   const onScreen = n.style === "title" || n.style === "subtitle" || n.style === "art";
   const pool = onScreen ? told.titles : told.chat;
   const want = n.style === "art" ? n.text.toUpperCase() : n.text;
@@ -133,8 +166,9 @@ export function judgeNotice(ledger: ContainerLedger, told: ToldWindow): NoticeVe
   if (found) {
     return {
       declared: true,
-      ok: true,
-      detail: `the ${n.style} notice arrived between the class command and the warp in`,
+      ok: sound.ok,
+      detail: `the ${n.style} notice arrived in the class step's window; ${sound.detail}`,
+      sound: sound.heard,
     };
   }
   const unobserved =
@@ -143,7 +177,42 @@ export function judgeNotice(ledger: ContainerLedger, told: ToldWindow): NoticeVe
     declared: true,
     ok: false,
     detail:
-      `the ${n.style} notice \`${n.text}\` did NOT arrive between the class command and the ` +
-      `warp in: ${pool.length} ${onScreen ? "title" : "chat"} line(s) told, none carrying it${unobserved}`,
+      `the ${n.style} notice \`${n.text}\` did NOT arrive in the class step's window: ` +
+      `${pool.length} ${onScreen ? "title" : "chat"} line(s) told, none carrying it${unobserved}; ` +
+      sound.detail,
+    sound: sound.heard,
+  };
+}
+
+/** The notice's sound: owed, it arrived naming the sound at the bot after the warp. */
+function judgeNoticeSound(
+  n: Notice,
+  told: ToldWindow,
+): { ok: boolean; detail: string; heard: HeardSound | null } {
+  const at = JSON.stringify(told.arrival.map((v) => Math.round(v * 8) / 8));
+  if (n.sound === null) {
+    return { ok: true, detail: `no sound owed (${told.sounds.length} sound packet(s) heard)`, heard: null };
+  }
+  const want = n.sound;
+  const named = told.sounds.filter((h) => bare(h.name) === bare(want));
+  const here = named.find((h) =>
+    h.pos.every((v, i) => Math.abs(v - told.arrival[i]!) <= NOTICE_SOUND_TOLERANCE),
+  );
+  if (here) {
+    return {
+      ok: true,
+      detail: `its sound ${want} arrived at ${JSON.stringify(here.pos)}, the bot at ${at} after the warp`,
+      heard: here,
+    };
+  }
+  const elsewhere = named[0];
+  return {
+    ok: false,
+    detail: elsewhere
+      ? `its sound ${want} arrived at ${JSON.stringify(elsewhere.pos)}, NOT at the bot (${at} ` +
+        `after the warp, tolerance ${NOTICE_SOUND_TOLERANCE})`
+      : `its sound ${want} did NOT arrive: ${told.sounds.length} sound packet(s) heard in the ` +
+        `window, none naming it (the bot at ${at} after the warp)`,
+    heard: elsewhere ?? null,
   };
 }

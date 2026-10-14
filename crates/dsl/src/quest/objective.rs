@@ -169,7 +169,8 @@ pub enum Objective {
     ///
     /// The items are provided in a container: the compiler's own chest at
     /// `anchor` by default, or — since DSL v0.8 — the prefab's existing
-    /// chest/barrel at [`Objective::Collect::container`], optionally carrying an
+    /// container (any of the twelve container kinds, spec-0105) at
+    /// [`Objective::Collect::container`], optionally carrying an
     /// [`Objective::Collect::item_name`] and padded to read full with
     /// [`Objective::Collect::fill_count`].
     Collect {
@@ -552,7 +553,7 @@ impl Objective {
     }
 
     /// The container this objective ADOPTS (DSL v0.8), if it is a `collect` that
-    /// declares one: the anchor whose prefab-placed chest/barrel it fills instead
+    /// declares one: the anchor whose prefab-placed container it fills instead
     /// of conjuring its own chest. `None` on every other objective and on a
     /// `collect` that keeps the compiler-placed chest.
     pub fn collect_container(&self) -> Option<&AnchorId> {

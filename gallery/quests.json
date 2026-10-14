@@ -601,12 +601,12 @@
         ]
       },
       {
-        "anchor": "anchor/long-gallery-barrel",
+        "anchor": "anchor/long-gallery-brewing-stand",
         "id": "loot/gallery-end-stores",
         "items": [
           {
-            "count": 8,
-            "item": "minecraft:arrow"
+            "count": 1,
+            "item": "minecraft:glass_bottle"
           }
         ]
       }

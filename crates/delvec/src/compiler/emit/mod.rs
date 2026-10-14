@@ -511,7 +511,11 @@ pub fn build_with_warnings(
                 .containers
                 .as_ref()
                 .and_then(|k| k.decoration_notice.as_ref()),
-        );
+        )
+        // The census judges what this build can see, as the fills do: a
+        // place still standing in its stand-in owes its containers to its
+        // detail, so a notice over no scenery is judged there.
+        .deferring(plan.blockout.as_ref().map_or(&[][..], |b| &b.massed[..]));
         eprintln!("{}", census.line());
         census
             .check_declared(&crate::compiler::containers::anchors_by_cell(&plan.anchors))
@@ -974,6 +978,11 @@ pub fn build_with_warnings(
         &packtest::Proved {
             asm_locks: &asm_locks,
             watch_binding: &watch_binding,
+            containers: &container_census
+                .rows
+                .iter()
+                .map(|r| (r.cell, r.block.clone()))
+                .collect(),
         },
     );
 

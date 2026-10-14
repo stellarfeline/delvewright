@@ -1,7 +1,7 @@
 // MineflayerExecutor: class selection and the kit: select, equip, re-arm after a respawn.
 
 import type { SelectClassStep } from "../critical-path.ts";
-import { judgeNotice } from "../containers.ts";
+import { judgeNotice, type HeardSound } from "../containers.ts";
 import { delay } from "./connection.ts";
 import { SPAWN_POLL_MS } from "./death.ts";
 import type { MineflayerExecutor } from "../executor.ts";
@@ -38,15 +38,27 @@ export const methods = {
     const judge = this.containerLedger !== undefined && this.noticeVerdict === undefined;
     const chatFrom = this.chatMark();
     const titlesFrom = this.titlesTold.length;
-    bot.chat(step.command);
-    // Give the datapack a tick to reset the trigger, give the kit and teleport.
-    await delay(CLASS_SETTLE_MS);
+    const sounds: HeardSound[] = [];
+    const hear = (name: string, p: { x: number; y: number; z: number }): void => {
+      sounds.push({ name, pos: [p.x, p.y, p.z] });
+    };
+    if (judge) bot.on("soundEffectHeard", hear);
+    try {
+      bot.chat(step.command);
+      // Give the datapack a tick to reset the trigger, give the kit and teleport.
+      await delay(CLASS_SETTLE_MS);
+    } finally {
+      if (judge) bot.removeListener("soundEffectHeard", hear);
+    }
     if (judge && this.containerLedger !== undefined) {
       const window = this.chatSince(chatFrom);
+      const p = bot.entity.position;
       const verdict = judgeNotice(this.containerLedger, {
         chat: window.lines,
         titles: this.titlesTold.slice(titlesFrom),
         lost: window.lost,
+        sounds,
+        arrival: [p.x, p.y, p.z],
       });
       this.noticeVerdict = verdict;
       process.stderr.write(`[containers] ${verdict.detail}\n`);
