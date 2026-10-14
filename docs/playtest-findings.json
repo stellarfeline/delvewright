@@ -2995,6 +2995,44 @@
       "note": "The same class as `vh-02` on land. The route proofs could not see it: they take the walk step only, so a hedge top reached by a jump off a garden boulder was in no proof's reach. `DW0921` floods the player's own movement (`nav::World::body_moves`: the walk step, falls to the deepest an unarmoured body survives, and cardinal gap jumps inside `dsl::metrics::JUMP_REACH`, measured by `tools/spike-jump-arc/simulate.mjs at 84f364997d24`, which reproduces the live jump spike's 14 verdicts) from the critical path's route cells, once per quest configuration, and refuses every reached cell from which no movement leads back; a cell the boundary clock returns and a shortcut lever the pocket reaches are ways out. A room the story shuts the party into holds the objective the story waits on and is not refused, with no declaration. Measured on this campaign at `dd4429c`: 6 configurations, 316580 cells reached, 827 a body cannot leave, in 78 pockets over 5 configurations -- on land in each, the four hedge beds (the one at `[140, 82, 110]` among them: 25 cells, entered `by a fall of 2 block(s)` off the hedge top), a ruin hole in the curtain top, a tower slit one step under the wall walk and nine hollows in the east ditch between the crag and the field wall; and the Undertide well (`vh-02`) in three. At the fixed content: 0. Limits, named in the diagnostic: diagonal jumps, climbing, standing on a fence or wall top and diving are not moves.",
       "round": 2,
       "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "any_of": [
+            {
+              "eq": {
+                "type": "clear-region"
+              }
+            },
+            {
+              "eq": {
+                "type": "set-block"
+              }
+            },
+            {
+              "eq": {
+                "type": "fill-region"
+              }
+            }
+          ]
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1002",
+        "kind": "dw"
+      },
+      "finding": "blocks lay on the ground as dropped items near the start, and a lantern hung askew",
+      "general_form": "no block the build or any effect writes pops off as an item in any configuration, and the written-world record counts item entities as a defect",
+      "id": "str-20",
+      "note": "Carried by `DW1002` (`compiler::attached`), whose three arms judge every block write: the load world; the write sequence, the load as the server runs it read off the shipped functions, each write laid in turn and every block the pinned jar asks as it lands judged (a falling block by the jar's `FallingBlock.isFree` once its function has run); and the runtime writes, every block-writing line outside the load, conditional or not, laid at once over the loaded world, so every configuration a path, a branch or an unforced beat can reach. The Stranding's drops were 347 gravel item entities holding 610 gravel in the played image's placed world (`delvewright/playtest:25ad5b95…`): each street template's gravel surface stood on the blockout mass, which the datapack wrote in the world build after `place_all` while the model wrote it first, so the gravel was set over air on every placement retry and fell, and the mass written under the falling blocks turned them into items. The played build carried no `DW1002` (delvec 1.12.0). The ground now goes down before any template (`world_ground` steps gated by `ground_verify`); the sequence arm refused that build's order with 308 falling gravel blocks and holds all 308 after the fix. `tools/ci/check-written-world.py` counts the save's item entities against the load's `summon minecraft:item` lines and reds `DW0955` on the excess (347 against 0 on the played save). The lantern near the start is held in the state its piece wrote (`lantern[hanging=true]` under spruce planks beside the post at [267, 98, 9], kept in the played save): a hanging lantern beside a post, not a drop. The binding counts the effects that write blocks after load.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"

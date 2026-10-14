@@ -29,6 +29,28 @@ INTO its wall. The message names each rung and the face it lacks. Turn the
 ladder to face away from the wall (`facing` is the way a body climbing it has
 its back), or give it a sturdy block behind; never move the objective.
 
+**`DW1002`: a block "the server drops", "not kept where it is written", or
+"not kept in some configuration the story can reach".** The server will remove
+a block the build writes: it pops off as an item, or falls. The message names
+the block, its cell, the write (function and line of the shipped datapack, and
+the command) or the piece holding it, and what its neighbour must give. Repair
+it where the block is authored, never by moving the write later:
+
+- *falls* — gravel, sand or concrete powder over air when its write has run.
+  Give it a block under it **in the same piece or edit that writes it**; ground
+  written by a later step is not under it yet. The street surface of a piece
+  carries its own bed.
+- *needs the block … to give …* — a torch, lantern, lever, button, flower or
+  carpet with nothing to hang or stand on. Hang it on a block no write removes,
+  or state the face it is on (`stone_button[face=floor]` stands on the block
+  under it; the bare `stone_button` hangs on a wall north of nothing).
+- *may hold … left by …* — a runtime write (a gate, `clear-region`, a collapse,
+  a trap's or a branch's `set-block`) can leave its support missing. Move the
+  block off that cell's neighbour, or have the write itself lay what holds it.
+
+The build stops before a server boots; `check-written-world.py`'s item-entity
+count is the server's own answer if one is booted.
+
 **`DW0438`: a `collect` container "holds `minecraft:air`, not a container".**
 The anchor you pointed at is not standing on a chest or barrel — an anchor named
 `anchor/chest` is not evidence there is one, and two shipped pieces declare

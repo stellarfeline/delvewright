@@ -267,8 +267,8 @@ not third-party reconstructions.
   **Why it exists**: a block the build writes and the server drops — a wall
   torch on a glass pane, a lantern hung under air — was seen only by the
   staging-time written-world comparison (`DW0955`). Consumed by
-  `delvewright_dsl::support`, which `DW1002`, the relight pass's fixture rule
-  and `DW0354` judge by. Cross-checked against a sample of the Minecraft Wiki's
+  `delvewright_dsl::support`, which `DW1002` (its write arms read the falls-into
+  flag too), the relight pass's fixture rule and `DW0354` judge by. Cross-checked against a sample of the Minecraft Wiki's
   placement statements (`crates/dsl/tests/support_wiki.rs`, 57 assertions; one
   disagreement, settled for the jar and written there).
   **Reproduce it**: `python3 tools/maintenance/dump-support.py [--check]
