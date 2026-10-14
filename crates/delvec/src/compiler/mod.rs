@@ -88,6 +88,7 @@
 //! - [`served`]: what the declared view distance costs the host — the pinned server's chunk set, the fitted live heap, the ceiling stated in `server/resources.properties` (spec-0091).
 //! - [`skinparts`]: the model-part table every skin and entity texture is drawn to, and the one rule that refuses paint no box samples (`DW0978`) or nobody standing level sees (`DW0979`) — spec-0097.
 //! - [`snapshot`]: `delvec snapshot` — the voxel raycaster and scene manifest an authoring agent looks at its own build through.
+//! - [`solo`]: a generated PackTest whose drive takes every player's body runs alone, in its own test environment.
 //! - [`solver`]: the jigsaw layout solver.
 //! - [`stairs`]: the stair-orientation proof over the assembled world (`DW0430`).
 //! - [`stake`]: the recovery stake's compile-time placement table and the proofs it owes.
