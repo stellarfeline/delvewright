@@ -884,9 +884,15 @@ fn a_stated_exposure_is_refused_by_the_build_and_by_nothing_else() {
     let (code, b, dir) = build("exposure-red", &camp);
     assert_eq!(code, 3, "{b}");
     assert!(b.contains("DW1010"), "{b}");
-    assert!(b.contains("camera `shore`") && b.contains("Remove the field"), "{b}");
+    assert!(
+        b.contains("camera `shore`") && b.contains("Remove the field"),
+        "{b}"
+    );
     for other in ["DW0721 [error]", "DW0724 [error]", "DW0900 [error]"] {
-        assert!(!b.contains(other), "caught by DW1010 and not by {other}:\n{b}");
+        assert!(
+            !b.contains(other),
+            "caught by DW1010 and not by {other}:\n{b}"
+        );
     }
     assert!(!dir.join("manifest.json").exists(), "nothing was written");
 }

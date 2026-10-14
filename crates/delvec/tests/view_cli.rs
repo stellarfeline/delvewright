@@ -440,7 +440,6 @@ fn a_record_that_states_an_exposure_is_refused_by_the_cameras_command() {
     assert!(stderr.contains("camera `hall`"), "{stderr}");
     assert!(stderr.contains("light the room"), "{stderr}");
     assert!(!out.join("hello-world_camera_gate.json").exists());
-
 }
 
 /// `delvec cameras` emits one scene per stated camera, verbatim, names the

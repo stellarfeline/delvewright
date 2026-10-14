@@ -1875,18 +1875,32 @@ mod tests {
     #[test]
     fn a_stated_exposure_is_refused_with_its_remedy() {
         let ok = serde_json::to_value(sheet("c", vec![cam("a"), cam("b")])).unwrap();
-        for value in [serde_json::json!(1.0), serde_json::json!(16.0), serde_json::json!(0)] {
+        for value in [
+            serde_json::json!(1.0),
+            serde_json::json!(16.0),
+            serde_json::json!(0),
+        ] {
             let mut doc = ok.clone();
             doc["cameras"][1]["exposure"] = value.clone();
             let err = parse_sheet(doc.to_string().as_bytes()).unwrap_err();
             assert_eq!(err.code, "DW1010", "{value}");
             assert_eq!(err.code, DW_EXPOSURE_STATED.id());
-            for needle in ["camera `b`", "`concept/quay`", "Remove the field", "light the room"] {
+            for needle in [
+                "camera `b`",
+                "`concept/quay`",
+                "Remove the field",
+                "light the room",
+            ] {
                 assert!(err.message.contains(needle), "{needle}: {err:?}");
             }
         }
         // The engine writes the derived exposure into every scene.
-        let out = emit3(OCEAN, &sheet("isle", vec![cam("a")]), &EmitOptions::default()).unwrap();
+        let out = emit3(
+            OCEAN,
+            &sheet("isle", vec![cam("a")]),
+            &EmitOptions::default(),
+        )
+        .unwrap();
         let v: serde_json::Value = serde_json::from_slice(&out.scenes[0].1).unwrap();
         assert_eq!(v["exposure"], scene::EXPOSURE);
     }
@@ -2045,10 +2059,7 @@ mod tests {
             (row.pos, row.yaw, row.pitch, row.fov),
             ([1.5, 70.62, -3.0], -45.75, 12.1, 70.0)
         );
-        assert_eq!(
-            (row.width, row.height, row.spp),
-            (1600, 900, 300)
-        );
+        assert_eq!((row.width, row.height, row.spp), (1600, 900, 300));
 
         let estimate = Placement::Estimate(cam("hero.yaw+8"));
         let err = place5(Some(sheet.clone()), "isle", "hero", None, estimate.clone()).unwrap_err();
