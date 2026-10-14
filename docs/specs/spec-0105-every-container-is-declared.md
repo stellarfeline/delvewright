@@ -182,6 +182,42 @@ Both arms run after `DW1018` on the same census; a campaign whose census has no 
 
 Each arm is refusal-proven by a probe (`a-key-among-empty-chests` → `DW1024` mixed; `a-storeroom-of-nothing` → `DW1024` storeroom), the primary plus one declared patch; the primary itself passes both arms with its counts on the census line. A perturbation test for each arm lives in `compiler::containers`: moving a matter cell into a place with a decoration cell reds the mixed arm, and adding a third decoration cell to a place reds the storeroom arm, each from a model that passes.
 
+## 10. The item-holder class, and the split
+
+**Authored** (a product rule of this spec): quest items and loot are not confined to chests and barrels. An item sits where the scene would hold it — a sword on a stand, a map in a frame, a potion in a brewing stand, a book on a shelf — so `loot[]` and `collect` target an **item holder**, of which the container is one family. A delve runs in adventure mode, so **a holder qualifies only if a player in adventure mode can take its item** without a hack.
+
+### 10.1 The class, read from the pinned game
+
+**Cited — bytecode**, the same jar, mappings and `javap` reading as §2 (JDK 21 `javap -c -p`, names through `server.txt` sha1 `5621e925…`). The adventure gate for a block interaction is **not** on the use path: `ServerPlayerGameMode.useItemOn` checks only `GameType.SPECTATOR` before calling the block's `useItemOn` and then `useWithoutItem`; the adventure restriction lives in `Player.blockActionRestricted` (`GameType.isBlockPlacingRestricted`, then `ItemStack.canBreakBlockInAdventureMode` on the main hand), which guards breaking and placing, and in `Abilities.mayBuild`. Each candidate's take path was read for either.
+
+| Holder | Take act | Adventure | Read at | Verdict |
+|---|---|---|---|---|
+| the twelve containers of §2.1 (brewing stand among them) | open the menu, take from a slot | allowed: `useItemOn` → `useWithoutItem` → `openMenu`, no ability check | `ServerPlayerGameMode.useItemOn`, `BaseContainerBlockEntity.createMenu` | **kept — this round** |
+| `item_frame`, `glow_item_frame` (entities) | attack the frame: the item pops out, the frame stays | allowed: `ServerGamePacketListenerImpl$1.onAttack` refuses only item entities, experience orbs, the player and unattackable arrows; `BlockAttachedEntity.skipAttackInteraction` asks only `Level.mayInteract` (spawn protection, world border); `ItemFrame.hurtServer` → `shouldDamageDropItem` (any non-explosion damage, item present) → `dropItem` | those three methods | **kept — follow-up F1** |
+| `armor_stand` (entity, equipment slots) | right-click the slot with an empty hand | allowed: `ArmorStand.interactAt` → `swapItem` checks the marker flag and the `DisabledSlots` bits, no ability; breaking the stand is gated (`hurtServer` reads `Abilities.mayBuild` of an attacking player) | `ArmorStand.interactAt`, `swapItem`, `hurtServer` | **kept — follow-up F2** |
+| `chiseled_bookshelf` | right-click an occupied slot with an empty hand | allowed: `ChiseledBookShelfBlock.useWithoutItem` → `removeBook`, no ability check; holds `#minecraft:bookshelf_books` only | `ChiseledBookShelfBlock.useWithoutItem` | **kept — follow-up F3** |
+| `shelf` (1.21.11) | right-click a slot with the main hand | allowed: `ShelfBlock.useItemOn` → `swapSingleItem`, no ability check; refused for the off hand | `ShelfBlock.useItemOn` | **kept — follow-up F3**; not admitted by `admit/allowlist.rs` today |
+| `jukebox` | right-click: the disc is ejected as an item entity | allowed: `JukeboxBlock.useWithoutItem` → `popOutTheItem`, no ability check; holds `#minecraft:jukebox_playable`-carrying stacks only | `JukeboxBlock.useWithoutItem` | **kept — follow-up F3**; deliberately not admitted today |
+| `decorated_pot` | a hand click with an empty hand only wobbles it (`useWithoutItem`: `DECORATED_POT_INSERT_FAIL`, `WobbleStyle.NEGATIVE`); the stack comes back only when the pot breaks | breaking by hand is refused (`blockActionRestricted`) unless the main hand carries `can_break`; a projectile shatters it: `DecoratedPotBlock.onProjectileHit` asks `Projectile.mayInteract` (for a player owner, `ServerPlayer.mayInteract` → `Entity.mayInteract` = true ∧ `ServerLevel.mayInteract`, **no game-mode check**) and `Projectile.mayBreak` (`#minecraft:impact_projectiles` ∧ game rule `projectiles_can_break_blocks`) | `DecoratedPotBlock.useWithoutItem`, `onProjectileHit`; `Projectile.mayInteract`, `mayBreak` | **excluded this round**, by name: the take needs the party to hold an impact projectile or a `can_break` tool, a real primitive that this spec does not yet make structural; follow-up F4 owes the build-time proof that the party holds one before the pot matters |
+| `lectern` | the *Take Book* button | **refused**: `LecternMenu.clickMenuButton`, case 3, returns `Player.mayBuild()` — false in adventure — before `removeItemNoUpdate` | `LecternMenu.clickMenuButton` offset 91 | **excluded**, by name |
+| `campfire` | none: `CampfireBlock` has no `useWithoutItem`; a stack leaves only when it finishes cooking and is popped out transformed | — | `CampfireBlock` | **excluded**, by name: nothing to take |
+| `item_display` (entity) | none: `Display` overrides no interaction and is not pickable | — | `Display`, `Display$ItemDisplay` | **excluded**, by name |
+
+### 10.2 What exists today
+
+**Cited** (the tree): no DSL surface places an item frame, an armour stand or a display as a holder. An `actor` may puppet `minecraft:armor_stand` with `equipment`, but its gear carries drop chance zero and the puppet is a scripted body, not furniture (`actor.rs`). A prefab's `.nbt` carries an `entities` list the compiler never reads (`compiler/nbtread.rs`), so a frame a piece carried would stand outside every proof. The block-entity holders are blockstates in the block map like the containers.
+
+### 10.3 The split
+
+**Authored.** This round builds the holder class as the container family — the twelve kinds, their slot counts, `loot` / `collect` over all of them, the census, the notice and §9 — because the container is the only kept family whose take the engine already fills and proves (`item replace block … container.<n>`). Each other kept family is a named follow-up, each its own spec, each owing: the fill primitive (a frame's `Item`, a stand's equipment slot, a bookshelf's slot, a shelf's slot), the census rows for its instances (the entity families need the compiler to read and place template entities, which it does not today), a statement per kind of whether an empty instance counts as scenery for §9, and **a live check in adventure mode** (a PackTest or the harness bot) that the take act of §10.1 yields the item:
+
+- **F1** — item frames and glow item frames.
+- **F2** — armour stands (equipment slots).
+- **F3** — chiseled bookshelf, shelf and jukebox (the last two with their admission).
+- **F4** — the decorated pot, only if the party's impact projectile or `can_break` tool can be proven structurally.
+
+The `/new-delve` skill text says the rule now, at the scope the engine reaches: put an item where the scene would hold it, and use a chest only where a chest belongs — a potion in a brewing stand, a cooked fish in a smoker's result slot are containers and reachable today.
+
 ## Acceptance criteria
 
 Each criterion is checked against the tree at `5961145d8`; none is satisfied there. `delvec` is this tree's binary, built from its manifests.
@@ -201,6 +237,8 @@ Each criterion is checked against the tree at `5961145d8`; none is satisfied the
 12. **Arrangement** (§9). `compiler::containers` refuses with `DW1024` a place holding a matter cell and a decoration cell, and a place holding more than `MAX_SCENERY_PER_PLACE` (2) decoration cells; each arm has a fixture under `crates/delvec/tests/` and a `remedy_reachability.rs` row, a perturbation test from a passing model, and a gallery probe (§9.4); `DW1024` is documented on `docs/reference/delvec/compiler/containers.md` and `tools/ci/check-dw-codes.py` is green; the census line prints the mixed and over-cap place counts and the cap.
 13. **Skill, same rule** (§9). The `/new-delve` skill's `references/quest-capabilities.md` says, under *Furnish the containers*: put few empty containers; never build a storeroom of empty chests; never hide a needed item among decoration; traps among real loot are fine.
 
+14. **The holder class** (§10). `docs/reference/delvec/compiler/containers.md` carries §10.1's table (the kept families, the excluded kinds by name, each with its read site); the skill's *Items, containers and loot* says to put an item where the scene would hold it and to use a chest only where a chest belongs, naming the brewing stand and the smoker as containers a fill reaches today.
+
 ### Recorded debts
 
 Checked against the implementing tree; each is a debt, never a pass.
@@ -208,4 +246,5 @@ Checked against the implementing tree; each is a debt, never a pass.
 - **Criterion 10, the skill.** `tools/ci/check-skill-page.py` refuses a page naming `DW1018` / `DW1019` while the page pins an engine release that lacks them. The `references/quest-capabilities.md` text is held back until the release that carries this surface is pinned.
 - **Criterion 9, the baseline.** Regenerated on the feature branch against its merge base; the regeneration after the merge commit belongs to the integration that lands it.
 - **§7.2, the fifth probe.** A probe is the primary plus a declared `patch` over the campaign documents; the gallery's scenery containers stand at cells no anchor names, so `D = 0` may not be reachable by a patch. If it is not, the probe is recorded as unreachable on `docs/reference/delvec/compiler/containers.md` and the `D = 0` arm of `DW1018` is held by its fixture alone.
+- **§10.3, the holder families F1–F4.** Each kept non-container family, and its live adventure-mode check, is a follow-up spec; until it lands, `loot` and `collect` reach the container family only.
 - **§4.2, a container a stage-7 edit places with contents.** The edit verbs write blockstates; none writes block-entity items, so the census's assumption that every container is empty until filled holds at this revision. A verb that gains the power to stock a container re-opens this row.
