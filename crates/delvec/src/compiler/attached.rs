@@ -1532,4 +1532,40 @@ mod tests {
             w.runtime.line()
         );
     }
+
+    /// The ground phase is read as the load runs it: `ground_verify`'s target
+    /// and the steps it schedules, before `place_all`. Gravel the placement
+    /// writes over the ground is held.
+    #[test]
+    fn the_ground_steps_run_before_the_placement() {
+        let mut f = load_with(&["setblock 0 65 0 minecraft:gravel"], &[], &[]);
+        f.push((
+            "ground_verify".to_string(),
+            "execute if score #placeok dw.sys matches 0 run function t:world_ground\n".to_string(),
+        ));
+        f.push((
+            "world_ground".to_string(),
+            "fill 0 30 0 0 64 0 minecraft:packed_mud\nschedule function t:world_ground_2 1t\n"
+                .to_string(),
+        ));
+        f.push((
+            "world_ground_2".to_string(),
+            "fill 1 30 0 1 64 0 minecraft:packed_mud\nscoreboard players set #placed dw.sys 0\n"
+                .to_string(),
+        ));
+        let w = writes(&f);
+        assert_eq!(
+            w.sequence.functions,
+            [
+                "setup",
+                "world_ground",
+                "world_ground_2",
+                "place_all",
+                "world_build",
+                "setup_finish"
+            ]
+        );
+        assert!(w.sequence.refusal().is_none(), "{}", w.sequence.line());
+        assert_eq!(w.runtime.writes, 0, "the ground is the load's, not play's");
+    }
 }
