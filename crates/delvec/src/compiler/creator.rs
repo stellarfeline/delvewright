@@ -554,10 +554,6 @@ pub fn packtests(ns: &str, title: &str, column: [i32; 2]) -> Vec<(String, String
         "# @dummy".to_string(),
         "# @timeout 100".to_string(),
         String::new(),
-        // The cell's chunk is held by the test, not by where the dummy stands:
-        // a sibling may move every player during the await (a cutscene's
-        // `tp @a`), and a `setblock` into an unloaded chunk writes nothing.
-        format!("forceload add {cx} {cz}"),
         "gamemode spectator @s".to_string(),
         format!("tp @s {} -90 -30", at(0.0, y, 0.0)),
         "await delay 2t".to_string(),
@@ -572,7 +568,6 @@ pub fn packtests(ns: &str, title: &str, column: [i32; 2]) -> Vec<(String, String
     ));
     wall.extend(eye_within("cwl", STANDING_EYE_MB));
     wall.push(format!("setblock {cx} {eye_cell} {cz} minecraft:air"));
-    wall.push(format!("forceload remove {cx} {cz}"));
     wall.push("gamemode adventure @s".to_string());
     tests.push((path("creator_camera_in_a_block"), lines(&wall)));
 
