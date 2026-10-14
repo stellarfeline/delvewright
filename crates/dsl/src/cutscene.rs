@@ -602,7 +602,9 @@ pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 return;
             }
             CameraSubject::Npc(s) => (known.npcs, "npc", s.npc.as_str(), "stage-2 `npcs`"),
-            CameraSubject::Actor(s) => (known.actors, "actor", s.actor.as_str(), "stage-5 `actors`"),
+            CameraSubject::Actor(s) => {
+                (known.actors, "actor", s.actor.as_str(), "stage-5 `actors`")
+            }
             CameraSubject::Assembly(s) => (
                 known.assemblies,
                 "assembly",
@@ -636,10 +638,7 @@ pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         known: &Known<'_>,
         d: &mut Vec<Diagnostic>,
     ) {
-        let Verb::Cutscene {
-            shots, subject, ..
-        } = &eff.verb
-        else {
+        let Verb::Cutscene { shots, subject, .. } = &eff.verb else {
             return;
         };
         // The single-shot spelling's subject (spec-0110): it names a thing as
@@ -662,7 +661,11 @@ pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             if let Some(sub) = &shot.subject {
                 subject_check(sub, "subject", &spath, known, d);
             }
-            if shot.subject_b.as_ref().is_some_and(CameraSubject::is_landscape) {
+            if shot
+                .subject_b
+                .as_ref()
+                .is_some_and(CameraSubject::is_landscape)
+            {
                 err(
                     d,
                     "subject_b",
@@ -694,7 +697,11 @@ pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             let token = style.token();
             // A missing subject is the shape defect `DW0199` names; a
             // landscape gives a style no geometry to build its dolly from.
-            if shot.subject.as_ref().is_some_and(CameraSubject::is_landscape) {
+            if shot
+                .subject
+                .as_ref()
+                .is_some_and(CameraSubject::is_landscape)
+            {
                 err(
                     d,
                     "subject",

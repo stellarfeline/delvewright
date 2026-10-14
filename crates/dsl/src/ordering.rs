@@ -120,7 +120,9 @@ fn key(e: &QuestEffect) -> usize {
 }
 
 fn gated(e: &QuestEffect) -> bool {
-    !e.requires_flags().is_empty() || !e.forbids_flags().is_empty() || !e.requires_state().is_empty()
+    !e.requires_flags().is_empty()
+        || !e.forbids_flags().is_empty()
+        || !e.requires_state().is_empty()
 }
 
 impl<'a> Order<'a> {
@@ -241,7 +243,8 @@ impl<'a> Order<'a> {
             Root::Ambient => false,
             Root::QuestComplete { quest } => self.quest_before(quest, qb),
             Root::Objective { quest, objective } => {
-                self.quest_before(quest, qb) || (quest == qb && self.objective_before(qb, objective, ob))
+                self.quest_before(quest, qb)
+                    || (quest == qb && self.objective_before(qb, objective, ob))
             }
         }
     }
@@ -254,7 +257,8 @@ impl<'a> Order<'a> {
             Root::QuestComplete { quest } => quest == qa || self.quest_before(qa, quest),
             Root::Objective { quest, objective } => {
                 self.quest_before(qa, quest)
-                    || (quest == qa && (objective == oa || self.objective_before(qa, oa, objective)))
+                    || (quest == qa
+                        && (objective == oa || self.objective_before(qa, oa, objective)))
             }
         }
     }
@@ -281,7 +285,8 @@ impl<'a> Order<'a> {
                 self.activation_before_root(quest, objective, &lb.root)
             }
             (Beat::Effect(ea), Beat::Effect(eb)) => {
-                let (Some(la), Some(lb)) = (self.locs.get(&key(ea)), self.locs.get(&key(eb))) else {
+                let (Some(la), Some(lb)) = (self.locs.get(&key(ea)), self.locs.get(&key(eb)))
+                else {
                     return false;
                 };
                 if !la.certain {

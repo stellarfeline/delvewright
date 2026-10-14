@@ -211,8 +211,7 @@ pub fn sight(
     };
     let in_frame = ndc(&cam, aspect, reference)
         .is_some_and(|[x, y]| round6(x.abs()) <= ACTION_SAFE && round6(y.abs()) <= ACTION_SAFE);
-    let blocked =
-        |to: [f64; 3]| walk_cells(pose.pos, to, |c| blocks(c) && !sight_box.contains(c));
+    let blocked = |to: [f64; 3]| walk_cells(pose.pos, to, |c| blocks(c) && !sight_box.contains(c));
     let pts = sight_box.sight_points();
     let centre_block = blocked(pts[0]);
     let lines_clear = pts
@@ -371,10 +370,10 @@ pub fn assembly_envelope(plan: &Plan, id: &str) -> Option<CellBox> {
     let first = *it.next()?;
     let mut b = CellBox::cell(first);
     for c in it {
-        for a in 0..3 {
-            b.min[a] = b.min[a].min(c[a]);
-            b.max[a] = b.max[a].max(c[a]);
-        }
+        b = CellBox::spanning(
+            [b.min[0].min(c[0]), b.min[1].min(c[1]), b.min[2].min(c[2])],
+            [b.max[0].max(c[0]), b.max[1].max(c[1]), b.max[2].max(c[2])],
+        );
     }
     Some(b)
 }
@@ -607,8 +606,10 @@ pub struct AssemblyRange {
 
 impl ShotLedger {
     fn counts(&self) -> Counts {
-        let mut n = Counts::default();
-        n.cutscenes = self.cutscenes.len();
+        let mut n = Counts {
+            cutscenes: self.cutscenes.len(),
+            ..Counts::default()
+        };
         for c in &self.cutscenes {
             for s in &c.shots {
                 n.shots += 1;
@@ -913,7 +914,10 @@ fn judge_subject(
                         if found.is_empty() {
                             "nothing places it at all".to_string()
                         } else {
-                            format!("placings found at {}, none ordered before", found.join(", "))
+                            format!(
+                                "placings found at {}, none ordered before",
+                                found.join(", ")
+                            )
                         }
                     ),
                 );
@@ -946,11 +950,13 @@ fn judge_subject(
                 let (dh, d) = distances(*pos, b);
                 far_h = far_h.max(dh);
                 far = far.max(d);
-                if let Err(why) = sent_and_drawn(*pos, b, &entity, body, served, drawn_by_type) {
+                if let Err(why) =
+                    sent_and_drawn(t as i32, *pos, b, &entity, body, served, drawn_by_type)
+                {
                     fail(
                         DW_SUBJECT_ABSENT,
                         format!(
-                            "cutscene {path}: shot {si} frames `{body_id}`, and at tick {t} {why}. \
+                            "cutscene {path}: shot {si} frames `{body_id}`, and {why}. \
                              Bring the camera nearer the subject"
                         ),
                     );
@@ -961,9 +967,57 @@ fn judge_subject(
         }
     }
     // §5.4–§5.5: in frame and in sight, every tick.
+    let judged = frame_and_sight(
+        poses,
+        &track.reference,
+        &track.boxes,
+        &|c| world.is_flooded(c),
+        blocks,
+    );
+    rec.in_frame = judged.in_frame;
+    rec.lines_clear = judged.lines_clear;
+    if let Some(m) = judged.first_failure {
+        fail(
+            DW_SHOT_UNFRAMED,
+            format!("cutscene {path}: shot {si} does not show its {field} `{canon}` {m}"),
+        );
+    }
+    failures.extend(failure);
+    rec
+}
+
+/// What [`frame_and_sight`] measured over one shot's ticks.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FrameJudgement {
+    /// Per tick: the reference point is inside the action-safe frame.
+    pub in_frame: Vec<bool>,
+    /// Per tick: clear sight lines of nine.
+    pub lines_clear: Vec<u8>,
+    /// The first failing tick, worded: `at tick T — the lens stands at …,
+    /// and the subject is out of frame / occluded … Move the camera …`.
+    pub first_failure: Option<String>,
+}
+
+/// **In frame and in sight at every tick** (spec-0110 §5.4–§5.5): per client
+/// pose (`poses`, `(lens, yaw, pitch)`), the subject's reference point and
+/// sight box at that tick (a one-entry slice holds still), judged against the
+/// proof frame — [`PROOF_FOV_DEG`], or [`PROOF_FOV_FLUID_DEG`] at a tick the
+/// lens's cell is `fluid` — over the cells `blocks` holds for.
+pub fn frame_and_sight(
+    poses: &[([f64; 3], f64, f64)],
+    references: &[[f64; 3]],
+    boxes: &[CellBox],
+    fluid: &dyn Fn([i32; 3]) -> bool,
+    blocks: &dyn Fn([i32; 3]) -> bool,
+) -> FrameJudgement {
+    let mut out = FrameJudgement {
+        in_frame: Vec::new(),
+        lines_clear: Vec::new(),
+        first_failure: None,
+    };
     for (t, (pos, yaw, pitch)) in poses.iter().enumerate() {
         let t = t as i32;
-        let fov = if world.is_flooded(cell_of(*pos)) {
+        let fov = if fluid(cell_of(*pos)) {
             PROOF_FOV_FLUID_DEG
         } else {
             PROOF_FOV_DEG
@@ -973,12 +1027,12 @@ fn judge_subject(
             yaw: *yaw,
             pitch: *pitch,
         };
-        let reference = Track::at(&track.reference, t);
-        let sbox = Track::at(&track.boxes, t);
+        let reference = Track::at(references, t);
+        let sbox = Track::at(boxes, t);
         let s = sight(&pose, fov, PROOF_ASPECT, reference, &sbox, blocks);
-        rec.in_frame.push(s.in_frame);
-        rec.lines_clear.push(s.lines_clear);
-        if !s.in_frame || s.occluded() {
+        out.in_frame.push(s.in_frame);
+        out.lines_clear.push(s.lines_clear);
+        if (!s.in_frame || s.occluded()) && out.first_failure.is_none() {
             let what = if !s.in_frame {
                 format!(
                     "out of frame: its reference point {:?} projects outside the action-safe \
@@ -993,22 +1047,18 @@ fn judge_subject(
                     s.centre_block.unwrap_or_default()
                 )
             };
-            fail(
-                DW_SHOT_UNFRAMED,
-                format!(
-                    "cutscene {path}: shot {si} does not show its {field} `{canon}` at tick {t} — \
-                     the lens stands at {:?} aiming yaw {:.1}, pitch {:.1}, and the subject is \
-                     {what}. Move the camera `path`, aim it with `look_at`, adjust `bearing`/`dist` \
-                     on a styled shot, or cut the shot in two where the subject leaves it",
-                    round3v(*pos),
-                    yaw,
-                    pitch
-                ),
-            );
+            out.first_failure = Some(format!(
+                "at tick {t} — the lens stands at {:?} aiming yaw {:.1}, pitch {:.1}, and the \
+                 subject is {what}. Move the camera `path`, aim it with `look_at`, adjust \
+                 `bearing`/`dist` on a styled shot, or cut the shot in two where the subject \
+                 leaves it",
+                round3v(*pos),
+                yaw,
+                pitch
+            ));
         }
     }
-    failures.extend(failure);
-    rec
+    out
 }
 
 /// `(horizontal, straight)` distance from the lens to a body.
@@ -1023,6 +1073,7 @@ fn distances(lens: [f64; 3], body: [f64; 3]) -> (f64, f64) {
 /// is nearer the lens than its cull radius at the proof frame. `Err` says
 /// which failed, with the distance and the bound.
 pub fn sent_and_drawn(
+    tick: i32,
     lens: [f64; 3],
     body: [f64; 3],
     entity: &str,
@@ -1034,7 +1085,7 @@ pub fn sent_and_drawn(
     let tracking = kind.tracking_blocks().min(served);
     if round3(dh) > tracking {
         return Err(format!(
-            "the body stands {} blocks from the lens horizontally — beyond its tracking range \
+            "at tick {tick} the body stands {} blocks from the lens horizontally — beyond its tracking range \
              of {tracking} blocks (`{entity}` is tracked {} chunks, capped by the served {served} \
              blocks), so the server never sends it to the player watching",
             round3(dh),
@@ -1043,7 +1094,7 @@ pub fn sent_and_drawn(
     }
     if judged_drawn && round3(d) >= round3(kind.cull_radius()) {
         return Err(format!(
-            "the body stands {} blocks from the lens — at or beyond its cull radius of {} blocks \
+            "at tick {tick} the body stands {} blocks from the lens — at or beyond its cull radius of {} blocks \
              (`{entity}`, box size {} × 64 at the default entity distance), so the client does \
              not draw it",
             round3(d),
@@ -1079,8 +1130,10 @@ pub fn place_reach(plan: &Plan, population: &BTreeSet<[i32; 3]>) -> BTreeMap<Str
                     .filter(|c| b.contains(**c))
                     .map(|c| {
                         let e = [c[0] as f64 + 0.5, c[1] as f64 + eye, c[2] as f64 + 0.5];
-                        ((e[0] - root[0]).powi(2) + (e[1] - root[1]).powi(2) + (e[2] - root[2]).powi(2))
-                            .sqrt()
+                        ((e[0] - root[0]).powi(2)
+                            + (e[1] - root[1]).powi(2)
+                            + (e[2] - root[2]).powi(2))
+                        .sqrt()
                     })
                     .fold(0.0_f64, f64::max)
             })
@@ -1108,19 +1161,10 @@ pub fn view_ranges(
             let seen_from = p.decl.seen_from.map(|s| f64::from(s.blocks()) / div);
             let shots = shot_reach.get(&id).map(|d| d / div);
             let place = place.get(&id).copied().unwrap_or(0.0) / div;
-            let mut won = "floor";
-            let mut v = 1.0_f64;
-            for (name, term) in [("seen_from", seen_from), ("shots", shots), ("place", Some(place))] {
-                if let Some(x) = term
-                    && round6(x) > round6(v)
-                {
-                    v = x;
-                    won = name;
-                }
-            }
+            let (view_range, won) = derive_range(seen_from, shots, place);
             AssemblyRange {
                 id,
-                view_range: (round6(v * 100.0)).ceil() / 100.0,
+                view_range,
                 seen_from,
                 shots,
                 place,
@@ -1128,6 +1172,27 @@ pub fn view_ranges(
             }
         })
         .collect()
+}
+
+/// `max(1.0, seen_from, shots, place)` over terms already divided by 32,
+/// rounded up to two decimals, and the name of the term that won (`floor`
+/// on a tie with it).
+pub fn derive_range(seen_from: Option<f64>, shots: Option<f64>, place: f64) -> (f64, &'static str) {
+    let mut won = "floor";
+    let mut v = 1.0_f64;
+    for (name, term) in [
+        ("seen_from", seen_from),
+        ("shots", shots),
+        ("place", Some(place)),
+    ] {
+        if let Some(x) = term
+            && round6(x) > round6(v)
+        {
+            v = x;
+            won = name;
+        }
+    }
+    ((round6(v * 100.0)).ceil() / 100.0, won)
 }
 
 #[cfg(test)]

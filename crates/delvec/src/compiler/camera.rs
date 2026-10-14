@@ -790,11 +790,9 @@ pub(crate) fn resolve_subject(
 ) -> Option<SubjectGeom> {
     let (is_actor, id, offset) = match subject {
         CameraSubject::Anchor(s) => {
-            return Some(SubjectGeom::Static(crate::compiler::nav::anchor_offset_point(
-                plan,
-                s.anchor.as_str(),
-                s.offset,
-            )));
+            return Some(SubjectGeom::Static(
+                crate::compiler::nav::anchor_offset_point(plan, s.anchor.as_str(), s.offset),
+            ));
         }
         CameraSubject::Landscape(_) => return None,
         CameraSubject::Assembly(_) | CameraSubject::Place(_) | CameraSubject::Region(_) => {

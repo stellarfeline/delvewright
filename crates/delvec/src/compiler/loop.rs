@@ -1297,7 +1297,7 @@ enum Sight {
 /// centre or a corner, walked by [`crate::compiler::nav::walk_cells`], meets no
 /// cell [`crate::compiler::nav::World::blocks_camera`] holds for before `c`.
 /// Returns the best answer over every eye, and the eye that gave it.
-fn sight(
+fn seen_by_eyes(
     world: &crate::compiler::nav::World,
     eyes: &[[f64; 3]],
     fogs: &[f64],
@@ -1389,7 +1389,7 @@ fn see(
                 std::array::from_fn(|i| b.0[i].min(c[i])),
                 std::array::from_fn(|i| b.1[i].max(c[i])),
             );
-            let (s, eye) = sight(world, eyes, fogs, c);
+            let (s, eye) = seen_by_eyes(world, eyes, fogs, c);
             match s {
                 Sight::Hidden => {
                     geo += 1;
@@ -2565,7 +2565,7 @@ mod tests {
         let target = [0, 1, 6];
         let open = world(&[], &[], &[]);
         assert_eq!(
-            sight(&open, &eye, &[FOG_END_DEFAULT], target).0,
+            seen_by_eyes(&open, &eye, &[FOG_END_DEFAULT], target).0,
             Sight::Seen
         );
         // A fence on every cell of the plane between: the fence's own class is
@@ -2575,18 +2575,18 @@ mod tests {
             .collect();
         let fenced = world(&[], &fence, &[]);
         assert_eq!(
-            sight(&fenced, &eye, &[FOG_END_DEFAULT], target).0,
+            seen_by_eyes(&fenced, &eye, &[FOG_END_DEFAULT], target).0,
             Sight::Hidden
         );
         let flooded = world(&[], &[], &fence);
         assert_eq!(
-            sight(&flooded, &eye, &[FOG_END_DEFAULT], target).0,
+            seen_by_eyes(&flooded, &eye, &[FOG_END_DEFAULT], target).0,
             Sight::Seen
         );
         // The target cell itself may be a wall: it is what the eye sees.
         let wall = world(&[target], &[], &[]);
         assert_eq!(
-            sight(&wall, &eye, &[FOG_END_DEFAULT], target).0,
+            seen_by_eyes(&wall, &eye, &[FOG_END_DEFAULT], target).0,
             Sight::Seen
         );
     }

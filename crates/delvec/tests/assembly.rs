@@ -1156,3 +1156,27 @@ fn an_aimed_wind_up_chooses_its_target_from_the_mark() {
         "{begin}"
     );
 }
+
+/// spec-0110 §5.8: every display the summon stands — the root and each part —
+/// carries one `view_range`, the derived floor for an assembly no shot frames.
+#[test]
+fn every_display_of_an_assembly_carries_its_view_range() {
+    let out = common::assembly_fixture::build_fixture();
+    let key = out
+        .keys()
+        .find(|k| k.ends_with("/asm_summon_limb.mcfunction"))
+        .expect("the limb's summon");
+    let body = String::from_utf8(out[key].clone()).unwrap();
+    let displays: Vec<&str> = body
+        .lines()
+        .filter(|l| {
+            l.starts_with("summon minecraft:item_display")
+                || l.starts_with("summon minecraft:block_display")
+        })
+        .collect();
+    assert_eq!(displays.len(), 4, "root + 3 parts");
+    assert!(
+        displays.iter().all(|l| l.contains("view_range:1.00f")),
+        "{displays:#?}"
+    );
+}
