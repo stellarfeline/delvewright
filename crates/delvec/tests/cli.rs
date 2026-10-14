@@ -1838,11 +1838,10 @@ fn shore_prefabs(tag: &str) -> std::path::PathBuf {
 
 /// `DW0318`, both horizons, one placement of [`shore_cells`].
 ///
-/// Placed under `horizon: ocean` the water meets the sea the piece depicts and
-/// the build is green. Placed under `horizon: void` — the default, and what any
-/// campaign that never declares a horizon gets — the identical geometry pours
-/// water off the edge of the world, forever, and before this check existed the
-/// build was **green** and shipped it.
+/// Placed on an `ocean` horizon base the water meets the sea the piece depicts
+/// and the build is green. Placed on a `void` base — the base a delve that wants
+/// nothing around its map writes — the identical geometry pours water off the
+/// edge of the world, forever.
 fn beach_camp_campaign(name: &str, ocean: bool) -> std::path::PathBuf {
     let camp = tmp(name);
     copy_dir(&common::hello_world_dir(), &camp);

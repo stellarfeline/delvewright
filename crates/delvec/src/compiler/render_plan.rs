@@ -72,13 +72,13 @@
 //!
 //! ## `horizon` (the render layer is told, never guesses)
 //!
-//! A campaign with `horizon: ocean` (spec-0013) ships a world save holding only
+//! A campaign whose horizon's `base` is `ocean` (spec-0013) ships a world save holding only
 //! the chunks its layout occupies — the sea around the island is the level
 //! generator's, and a renderer loading that save sees void past the shoreline.
 //! The plan therefore states the generator fact ([`horizon_fact`]:
 //! `{"kind": "ocean", "sea_level": 62}`) so `delvec render` can raise Chunky's
-//! ambient water plane at exactly the compiler's datum. `horizon: void` (the
-//! default) emits no key, keeping every existing plan byte-identical.
+//! ambient water plane at exactly the compiler's datum. A `void` base emits no
+//! key: there is no ambient for a renderer to raise.
 //!
 //! ## `sky` (the declared hour reaches the renderer)
 //!

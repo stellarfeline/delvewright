@@ -29,7 +29,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// `Void`) at the call site.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum Ambient {
-    /// `horizon: void` (default/absent) — an empty superflat layer list. Every
+    /// A `void` horizon base — an empty superflat layer list. Every
     /// column the content did not build is bottomless.
     #[default]
     Void,
