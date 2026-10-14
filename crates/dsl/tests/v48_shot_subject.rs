@@ -73,7 +73,10 @@ fn assemblies_export_seen_from_on_the_surface_that_carries_it() {
     assert_eq!(d["SeenFrom"]["minimum"], 1);
     assert_eq!(d["SeenFrom"]["maximum"], 512);
     let minor: u32 = DSL_VERSION.split('.').nth(1).unwrap().parse().unwrap();
-    assert!(minor >= 48, "the subject surface is dsl_version 0.48: {DSL_VERSION}");
+    assert!(
+        minor >= 48,
+        "the subject surface is dsl_version 0.48: {DSL_VERSION}"
+    );
 }
 
 // --- criterion 2: the shapes ------------------------------------------------
