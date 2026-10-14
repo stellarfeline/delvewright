@@ -2149,10 +2149,18 @@ until the next rest.
 
 **Crosshair acquisition (`harness/src/crosshair.ts`).** Every interaction step —
 `talk-to`, `interact`, `rest`, and the click kinds of `trigger` — proves the click was *available to a player*
-before it acts. It casts the entity-pick ray vanilla casts (eye → box, nearest
+before it acts. It casts the pick ray vanilla casts (eye → box, nearest
 hit wins, reach 3.0, pick radius 0) at every aim point on the target's hitbox,
 from every standable cell the step's walk goal allows, and fails the step naming
-**both** bodies if the target is unreachable from all of them. The trigger it
+**both** sides if the target is unreachable from all of them. Blocks are in the
+ray as they are in the client: the entity is kept only when its box is strictly
+nearer than the first block the ray meets, so a box flush with a block's face
+loses to the block (the block is named). A block's shape is its collision boxes;
+a non-air, non-fluid block with none (a lever, a sign) is its whole cell, and an
+unloaded cell is a full block — the conservative direction both times. An
+`interaction`'s size is read off its entity data (vanilla's `1.0` default for a
+field the server did not send), never assumed; the compiler's own boxes are
+`1.02 x 2.02` (`compiler::clickbox`, `DW1013`). The trigger it
 guards is still a chat command — a 1.21.11 dialog button is client-drawn and
 mineflayer has no client, so actuation cannot change — but the bot does not
 *aim* by entity id: two NPCs on one cell are indistinguishable to a crosshair
