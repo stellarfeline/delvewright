@@ -269,6 +269,8 @@ fallback when no key is configured.
 
 ## 8. The level is what the player reads
 
+How a quest plan is shaped as a web rather than a chain, how an ending reads the whole run, and the spatial guidance practice behind L1 are in [web-narrative.md](web-narrative.md).
+
 - **L1 — The level carries the information; the text only restates it.** A
   closed door with a lever beside it needs no explanation. Story text comes
   from NPC dialogue and a few books kept in bookshelves. The objective journal

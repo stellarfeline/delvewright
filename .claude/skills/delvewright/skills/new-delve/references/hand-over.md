@@ -156,6 +156,25 @@ beside the build tree, and it prints that path. The user takes it down with
 `"$DELVEWRIGHT_ENGINE/tools/creator/playtest-server.sh" down --name <name>`,
 which also frees the mutex; `--name` defaults to `dw-playtest`.
 
+**Reopening is the same command, and it takes seconds.** The first `up` of a
+campaign leaves a local image of the admitted build with its world already
+placed (`delvewright/playtest:<manifest sha256>`); `down` keeps it. Run the
+same `up` again and, when nothing it was made from has moved — the campaign,
+the prefabs, `delvec`, `--lang`, the findings ledger — it prints
+`kept image: … no build, no staging gate, no placement`, checks the image's
+own admission token against its manifest, and serves it; it prints
+`joinable <N>s after the command`. Each reopen is a fresh delve: progress
+from the last session is not kept. Anything that moved builds, gates and
+places afresh. `status` lists the kept images and their sizes;
+`down --name <name> --prune` removes them.
+
+**Going back to an earlier point in the story is `restore`.** While a campaign
+is served, `up` saves a checkpoint of the running world each time a quest
+completes, named by the title the player was shown (`03 Open the sea gate`);
+`playtest-server.sh checkpoint "<name>" --name <name>` saves one now, `status`
+lists them, and `playtest-server.sh restore <number or name> --name <name>`
+serves that exact world again in about the time of a reopen.
+
 **A large campaign can need more than the heap the build states.** `up`
 gives the server the ceiling the build computed for its declared view distance
 (`server/resources.properties` `heap-max`, never below `versions.toml`

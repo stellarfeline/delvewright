@@ -753,3 +753,44 @@ fn the_templates_are_two_per_gated_pulse_and_one_per_ungated() {
         );
     }
 }
+
+/// Every pulse template empties its own pulse's schedule before the call it
+/// measures: the queue is server-global, and a chain the tick started while a
+/// sibling template left the gate open would otherwise be counted as this
+/// call's. Without the emptying, `_shut` reds whenever it runs after a template
+/// that leaves the gate open across a tick.
+#[test]
+fn each_template_counts_only_what_its_own_call_scheduled() {
+    let (out, _) = build("packtest-queue", &format!("{GATED}, {UNGATED}"), SET_FLAG);
+    let keys: Vec<&String> = out
+        .keys()
+        .filter(|k| k.starts_with("packtest-datapack/") && k.contains("/test/pulse_"))
+        .collect();
+    assert_eq!(keys.len(), 3, "templates: {keys:?}");
+    for k in keys {
+        let t = text(&out, k).unwrap();
+        let file = k
+            .rsplit('/')
+            .next()
+            .unwrap()
+            .trim_end_matches(".mcfunction");
+        let s = file.trim_start_matches("pulse_").trim_end_matches("_shut");
+        let lines: Vec<&str> = t.lines().collect();
+        let empty = format!("schedule clear hello-world:pulse_{s}");
+        let at = lines.iter().position(|l| *l == empty);
+        let call = lines
+            .iter()
+            .position(|l| l.ends_with(&format!("function hello-world:pulse_{s}")));
+        let count = lines
+            .iter()
+            .position(|l| l.contains(&format!("run {empty}")));
+        assert!(
+            at.is_some() && call.is_some() && count.is_some(),
+            "{k} empties, calls and counts:\n{t}"
+        );
+        assert!(
+            at < call && call < count,
+            "{k}: the queue is emptied before the call it counts:\n{t}"
+        );
+    }
+}

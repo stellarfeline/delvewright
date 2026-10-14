@@ -71,13 +71,18 @@ dw_rcon_truncated() {
 # it is empty (macOS ships bash 3.2, where `"${empty[@]}"` is an unbound error).
 DW_RCON_ARGS=()
 
+# `docker exec -i` forwards the caller's stdin to the command, and reads it to
+# the end whether or not the command wants any. Both calls below read
+# /dev/null instead: a caller looping `while read …; do dw_rcon …; done <file`
+# otherwise lost every line after the first to the first rcon call.
+
 # dw_rcon <container> <command> — run it, FAIL LOUDLY if the server refused, and
 # equally loudly if the answer was cut off at the packet ceiling.
 dw_rcon() {
   local container="$1" cmd="$2" reply
   # `2>&1 | tr` and not `| grep`: tr consumes all of its input, so the producer
   # never takes a SIGPIPE (CLAUDE.md's readiness-probe lesson).
-  reply="$(docker exec -i "$container" rcon-cli ${DW_RCON_ARGS[@]+"${DW_RCON_ARGS[@]}"} "$cmd" 2>&1 | tr '\n' ' ')"
+  reply="$(docker exec -i "$container" rcon-cli ${DW_RCON_ARGS[@]+"${DW_RCON_ARGS[@]}"} "$cmd" 2>&1 </dev/null | tr '\n' ' ')"
   if dw_rcon_rejected "$reply"; then
     echo "rcon: server rejected \`$cmd\`: $reply" >&2
     return 1
@@ -104,7 +109,7 @@ dw_rcon() {
 # fragment cannot be mistaken for the population.
 dw_rcon_probe() {
   local reply
-  reply="$(docker exec -i "$1" rcon-cli ${DW_RCON_ARGS[@]+"${DW_RCON_ARGS[@]}"} "$2" 2>&1 | tr '\n' ' ')"
+  reply="$(docker exec -i "$1" rcon-cli ${DW_RCON_ARGS[@]+"${DW_RCON_ARGS[@]}"} "$2" 2>&1 </dev/null | tr '\n' ' ')"
   printf '%s' "$reply"
   if dw_rcon_truncated "$reply"; then
     echo "rcon: the reply to \`$2\` is ${#reply} bytes and the ceiling is" \

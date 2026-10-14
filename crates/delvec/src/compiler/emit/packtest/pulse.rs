@@ -1,7 +1,9 @@
 use super::*;
 
-/// The pulse templates (spec-0102 §5.2), synchronous, each ending in
-/// `schedule clear` so no chain outlives the template.
+/// The pulse templates (spec-0102 §5.2), synchronous, each emptying the
+/// `pulse_<s>` schedule before its call, so the count it asserts is only what
+/// that call scheduled, and ending in `schedule clear` so no chain outlives
+/// the template.
 ///
 /// Per gated pulse: `pulse_<s>` drives the gate OPEN, runs the tick's open-edge
 /// line, and asserts the latch is set and the chain re-armed itself (one
@@ -24,11 +26,17 @@ pub(super) fn emit_pulse_packtests(plan: &Plan, out: &mut BuildOutput) {
         let cleared = format!("#pclr_{s} dw.sys");
         let clear =
             format!("execute store result score {cleared} run schedule clear {ns}:pulse_{s}");
+        // The schedule queue is server-global: the tick's edge line, a chain
+        // started at world load, or a sibling template that left the gate open
+        // across a tick may already hold `pulse_<s>`. The template empties it
+        // first, so the count it asserts is only what its own call scheduled.
+        let own_queue = format!("schedule clear {ns}:pulse_{s}");
         let Some(gate) = &p.staged else {
             let mut t = packtest_header(&format!(
                 "{title}: pulse `{}` beats and re-arms itself from world load (spec-0102)",
                 p.id
             ));
+            t.push(own_queue.clone());
             t.push(format!("scoreboard players set {cleared} 0"));
             t.push(format!("function {ns}:pulse_{s}"));
             t.push(clear.clone());
@@ -55,6 +63,7 @@ pub(super) fn emit_pulse_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         t.extend(lethal_gate_lines(gate, true));
         t.push(format!("scoreboard players set {holder} 0"));
+        t.push(own_queue.clone());
         t.push(format!("scoreboard players set {cleared} 0"));
         t.push(edge);
         t.push(format!("assert score {holder} matches 1"));
@@ -74,6 +83,7 @@ pub(super) fn emit_pulse_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         sh.extend(lethal_gate_lines(gate, false));
         sh.push(format!("scoreboard players set {holder} 1"));
+        sh.push(own_queue);
         sh.push(format!("scoreboard players set {cleared} 0"));
         sh.push(format!("function {ns}:pulse_{s}"));
         sh.push(format!("assert score {holder} matches 0"));

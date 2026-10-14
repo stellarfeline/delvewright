@@ -145,7 +145,7 @@ flowchart TD
     CK --> VR["12 · 视觉审查<br/>按路线顺序看玩家视角画面，<br/>每一帧对照 design/concept/ 和它的 expect 行"]
     VR -.->|"发现问题"| BACK(["回到文档"])
     VR --> SG["staging gate<br/>tools/creator/staging-gate.py 读取<br/>docs/playtest-findings.json 中的每一类问题，<br/>为这棵确切的树签发准入令牌"]
-    SG --> UP["tools/creator/playtest-server.sh up<br/>构建 · 关卡 · localhost:25565 上一个用完即弃的 itzg 容器<br/>通过 rcon 确认 datapack 已加载"]
+    SG --> UP["tools/creator/playtest-server.sh up<br/>构建 · 关卡 · 把通过关卡的构建连同已摆好的世界存成本地镜像，在 localhost:25565 上运行<br/>通过 rcon 确认 datapack 已加载"]
     UP --> HO["13 · storybook<br/>campaigns/‹id›/README.md，不剧透，附插图<br/>tools/creator/check-storybook-version.py"]
     HO --> OUT(["交付<br/>文档、storybook、关卡查不到的问题类别，<br/>一条构建、检查并运行服务器的命令"])
     OUT -.-> PLAY{{"🖐 第一次游玩——就是完成的第一版<br/>playtest profile，游戏内 /trigger dw.note<br/>→ delvec harvest → playtest-report.json"}}:::human
@@ -243,7 +243,7 @@ flowchart TD
 | `delvec harvest` · `calibrate` | 把游戏内笔记和手动放置的镜头转回报告和补丁 | 5 | 人玩过之后由智能体运行 |
 | `tools/creator/refimg.py` | 由配置的图像服务生成概念图 | 2 | 智能体；由人评判 |
 | `tools/creator/staging-gate.py` + `docs/playtest-findings.json` | 基于问题台账的关卡；游玩端口唯一的钥匙 | 5 | 智能体 |
-| `tools/creator/playtest-server.sh` | `localhost:25565` 上一个用完即弃的本地 itzg 服务器 | 5 | 智能体启动；人来玩 |
+| `tools/creator/playtest-server.sh` | `localhost:25565` 上的本地服务器，从保留的镜像启动；同一构建再开一次只需 `docker run` | 5 | 智能体启动；人来玩 |
 | `tools/creator/skin`、`i18n-translate.py`、`block-appearance.py`、`refscore.py` | NPC 面孔、翻译、按外观选方块、候选评分 | 3、5 | 智能体 |
 | `tools/creator/check-storybook-version.py` | storybook 的引擎版本标记 | 5、6 | 智能体和该战役的发布流程 |
 | `validation/` Docker Compose 装置 | 带 `play`、`playtest`、`validate`、`packtest` profile 的 `compose.yaml`；`owner-play.yaml` | 4–6 | 智能体和 CI |
