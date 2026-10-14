@@ -172,7 +172,7 @@ before itzg starts. `Dockerfile.delve` bakes that script into the shipped image;
 `packtest` service mounts the same file. No profile may hardcode those four —
 `validation/check-world-settings.sh` (CI tier 1) fails on drift or on a re-hardcoded
 value. This exists because hardcoding has twice made a server run a world the
-campaign never declared: the shipped image booting a `horizon: ocean` delve as a
+campaign never declared: the shipped image booting a delve on an `ocean` base as a
 void, and the PackTest runner testing a void superflat while the delve shipped an
 ocean one.
 

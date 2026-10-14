@@ -57,7 +57,7 @@ fn log(o: &Output) -> String {
     )
 }
 
-/// An ocean campaign: hello-world with `horizon: ocean`.
+/// An ocean campaign: hello-world with an `ocean` base.
 fn ocean_campaign(tag: &str) -> PathBuf {
     let camp = tmp(&format!("camp-{tag}"));
     common::copy_dir_all(&common::hello_world_dir(), &camp);

@@ -912,8 +912,8 @@ fn the_load_world_is_written_without_a_camera_record() {
     }
 }
 
-/// **A cell no write reached holds the generator's block** (`DW0955`). Under
-/// `horizon: ocean` the server is a superflat — bedrock at the build floor,
+/// **A cell no write reached holds the generator's block** (`DW0955`). On
+/// an `ocean` base the server is a superflat — bedrock at the build floor,
 /// stone to the sea floor (54), water to sea level (62) — and the datapack
 /// writes over it, so wherever no write reaches, the generator's block is what
 /// the server shows: under a piece standing over open sea, beside it, down to

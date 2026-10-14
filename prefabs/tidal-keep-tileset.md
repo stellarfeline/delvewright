@@ -25,7 +25,7 @@ datums, because the keep **rises**:
 
 The shore datum is the island convention (`island-tileset.md`): waterline local
 y=2, walk plane y=3. Only **`tk-barrow-field` declares `waterline_y`** — it is
-the one piece that authors sea, and under `horizon: ocean` it is the area's entry
+the one piece that authors sea, and on an `ocean` base it is the area's entry
 piece placed at the y=60 datum, so its waterline lands at sea level (`DW0344`).
 Every other piece omits `waterline_y` on purpose: they stand on the plinth, above
 the tide, and a declared waterline would demand they sit at sea level.

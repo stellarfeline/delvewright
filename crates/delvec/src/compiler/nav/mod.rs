@@ -518,10 +518,10 @@ delvewright_dsl::dw_code! {
     /// berm used to provide *physically*. What that means is a property of the
     /// world-generator [`Ambient`], so the code names one rule stated per horizon:
     ///
-    /// * `horizon: void` — a reachable walkable cell borders a **void drop**: a
+    /// * a `void` base — a reachable walkable cell borders a **void drop**: a
     ///   horizontally adjacent column the player can step (or open a gate) into
     ///   with no support of any kind below, so the step leaves the world.
-    /// * `horizon: ocean` — a reachable walkable cell borders **water the player
+    /// * an `ocean` base — a reachable walkable cell borders **water the player
     ///   cannot get out of**: the pinned superflat puts bedrock under every column,
     ///   so nothing can fall out of an ocean world and the void premise is vacuous;
     ///   the real hazard the ocean horizon introduced (`plan::OCEAN_BASE_Y`) is
@@ -550,7 +550,7 @@ delvewright_dsl::dw_code! {
     ///   `floor_top+1` to sea level and stone below it in every column the content
     ///   did not build, so a shore's water meets the sea it depicts. Not a finding:
     ///   the same premise that makes the void branch of `DW0322` vacuous under
-    ///   `horizon: ocean` makes this one vacuous too.
+    ///   an `ocean` base makes this one vacuous too.
     /// * **the void horizon's nothing** — and then the water falls out of the
     ///   world. Vanilla runs it down, forever, on the server's own clock before any
     ///   player arrives: an infinite waterfall off the edge of the map, in a delve

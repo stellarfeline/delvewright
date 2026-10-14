@@ -15,7 +15,7 @@
 //!
 //! ## Ocean horizons
 //!
-//! A campaign that declares `horizon: ocean` states the fact in
+//! A campaign that declares an `ocean` base states the fact in
 //! `render-plan.json`, and every scene of it gets Chunky's ambient water plane
 //! ([`water_world`]) — the shipped world save holds only the layout's chunks, so
 //! the sea is not in it.
@@ -362,7 +362,7 @@ pub(crate) struct WaterWorld {
 }
 
 /// The water plane for a plan's declared horizon: `Some` **iff** the campaign
-/// declares `horizon: ocean` (spec-0013), never inferred from blocks.
+/// declares an `ocean` base (spec-0013), never inferred from blocks.
 ///
 /// A delve's world save holds only the chunks its layout occupies — the sea
 /// around an island is the level generator's, so a scene loading that save

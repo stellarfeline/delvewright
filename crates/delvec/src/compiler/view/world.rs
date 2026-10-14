@@ -59,7 +59,7 @@ const SECTOR: usize = 4096;
 /// **What a cell no build write reached holds**: the level generator's own
 /// block, which the server keeps wherever the datapack writes nothing.
 ///
-/// Under `horizon: ocean` that is the pinned superflat stack
+/// On an `ocean` base that is the pinned superflat stack
 /// ([`crate::compiler::plan::ocean_layer_at`]: bedrock, stone to the sea floor,
 /// water to sea level); under `void` and `valley` the stack is empty and every
 /// such cell is air. Which cells a write reached is the assembled world's

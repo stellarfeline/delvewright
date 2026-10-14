@@ -957,7 +957,7 @@ mod tests {
         );
     }
 
-    /// Under `horizon: void` there is no ambient sea, so the proof reports zeroes
+    /// On a `void` base there is no ambient sea, so the proof reports zeroes
     /// **and names the horizon it reported them for** — a reader can tell "no sea"
     /// from "not run".
     #[test]

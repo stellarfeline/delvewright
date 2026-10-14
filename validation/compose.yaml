@@ -345,7 +345,7 @@ services:
       # generator-settings) are DERIVED from the build's server/server.properties by
       # the entrypoint below — the same script the shipped delve image bakes — so
       # PackTest always runs the world the delve ships (void superflat for a normal
-      # delve, ocean superflat for a `horizon: ocean` campaign). Hardcoding them here
+      # delve, ocean superflat for a campaign on an `ocean` base). Hardcoding them here
       # made ocean campaigns test a world that never ships. The non-varying ones
       # mirror Dockerfile.delve's ENV so the rest
       # of the world matches too — notably spawn-monsters=false, which matters now

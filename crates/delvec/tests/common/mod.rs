@@ -801,9 +801,9 @@ pub enum OceanRoom {
 }
 
 /// A copy of the prefab library in which `hello-room` is a piece that can stand
-/// on an ocean, for every fixture that declares `horizon: ocean`.
+/// on an ocean, for every fixture that declares an `ocean` base.
 ///
-/// The shipped `hello-room` cannot. `horizon: ocean` puts an area origin at
+/// The shipped `hello-room` cannot. An `ocean` base puts an area origin at
 /// y=60 under a sea at 62, and a piece with its floor at local y=0 then stands
 /// its walk plane at y=61 — a block under the surface — while declaring nothing
 /// about where it meets the sea. That is not a modelling nicety: the room

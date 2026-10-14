@@ -2,7 +2,7 @@
 //!
 //! A terrain-scale beach landing rising into an open barrow field, built on the
 //! shared shore datum (`prefabs/island-tileset.md`: waterline local y=2, walk
-//! plane local y=3) so the authored sea meets a `horizon: ocean` world at sea
+//! plane local y=3) so the authored sea meets a world on an `ocean` base at sea
 //! level (`DW0344`) and the strand is climb-out-able from the water (`DW0322`).
 //!
 //! The whole piece exists to stage one beat: the **optional elite** standing

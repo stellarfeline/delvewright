@@ -181,8 +181,8 @@ holding them at once.
 | `a-bar-over-a-body-nothing-can-hurt` | `DW0909` | `validate` | hanging a health bar over the usher, a body nothing unleashes and nothing can hurt |
 | `a-bar-with-nothing-to-draw` | `DW0910` | `validate` | removing the muster's bar `title`, when the wave fields two kinds of body and no one name is the fight's |
 | `a-body-two-areas-answer-for` | `DW0884` | `validate` | casting the curator at `anchor/lectern` when the annex is bound to the hall's piece and both areas answer to that name |
-| `a-face-nothing-stands-in-front-of` | `DW0886` | `validate` | placing the open-topped yard as its own area under `horizon: void`, with sides nothing buries and nothing declares shown |
-| `a-floor-carved-down-to-the-sea` | `DW0344` | `build` | a world edit cutting a three-by-three hole in the hall's plinth course down to the sea's own plane, under `horizon: ocean` |
+| `a-face-nothing-stands-in-front-of` | `DW0886` | `validate` | placing the open-topped yard as its own area on a `void` base, with sides nothing buries and nothing declares shown |
+| `a-floor-carved-down-to-the-sea` | `DW0344` | `build` | a world edit cutting a three-by-three hole in the hall's plinth course down to the sea's own plane, on an `ocean` base |
 | `a-gate-the-party-walks-back-through-after-it-is-sealed` | `DW0485` | `validate` | giving the last mainline beat the main gate as its subject, three beats after that gate is sealed |
 | `a-strand-walked-after-the-gate-it-crosses-is-sealed` | `DW0485` | `validate` | giving the optional reliquary's first beat the main gate as its subject: the exported path walks it before the seal, and a player may walk it after |
 | `a-key-that-charges-more-than-it-asks` | `DW0901` | `validate` | charging five tokens at the counter that gates on four |
@@ -191,7 +191,7 @@ holding them at once.
 | `a-picture-nobody-looks-at` | `DW0900` | `build` | re-aiming the only camera that answers `concept/morning-quay` at a picture two other cameras already answer |
 | `a-picture-nobody-recorded` | `DW0890` | `validate` | deleting the night row from `design.json` while its image stays under `design/concept/` |
 | `a-piece-with-no-walk-plane` | `DW0886` | `validate` | seating the shard, which declares no walk plane, on an `ocean` horizon |
-| `a-place-cut-below-the-sea` | `DW0886` | `validate` | standing a site-plan place two courses under the sea plane, under `horizon: ocean` |
+| `a-place-cut-below-the-sea` | `DW0886` | `validate` | standing a site-plan place two courses under the sea plane, on an `ocean` base |
 | `a-pool-of-two-walk-planes` | `DW0886` | `validate` | seating a pool whose members declare two different walk planes on the base that derives an origin from it |
 | `a-program-asking-for-a-seam-the-whole-does-not-hand` | `DW0882` | `detail` | declaring a `handed/` parameter for a seam the allocation does not hand |
 | `a-program-that-marks-no-place-to-stand` | `DW0845` | `detail` | removing the program's one `mark`, so nothing answers the anchor the quests bound to the place |

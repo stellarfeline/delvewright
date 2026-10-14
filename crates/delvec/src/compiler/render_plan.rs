@@ -1247,7 +1247,7 @@ fn sky_fact(c: &Campaign) -> Value {
 }
 
 /// The world-generator horizon (spec-0013) as the render layer needs it, or
-/// `None` for `horizon: void`.
+/// `None` for a `void` base.
 ///
 /// The renderer cannot see the level generator: the shipped world save only
 /// holds the chunks the layout occupies, so an ocean-horizon delve renders as an
