@@ -1130,7 +1130,7 @@ dw_playtest_session_image() {
 # labels) and `quests.tsv` (the quest table, read from the datapack the image
 # carries). Both are facts of the image, so each is written once per image id.
 dw_playtest_prepare_checkpoints() {
-  local ref="$1" id="$2" iroot="$3" cid scratch label manifest admission inputs campaign
+  local ref="$1" id="$2" iroot="$3" cid pack_dir label manifest admission inputs campaign
   mkdir -p "$iroot" || return 1
   if [ ! -f "$iroot/image.json" ]; then
     label() { docker image inspect -f "{{index .Config.Labels \"$PLAYTEST_LABEL.$1\"}}" "$ref" 2>/dev/null || true; }
@@ -1140,20 +1140,20 @@ dw_playtest_prepare_checkpoints() {
       "$iroot/image.json" "$id" "$ref" "$manifest" "$admission" "$inputs" "$campaign" || return 1
   fi
   if [ ! -f "$iroot/quests.tsv" ]; then
-    scratch="$iroot/.datapack"
-    rm -rf "$scratch"
+    pack_dir="$iroot/.datapack"
+    rm -rf "$pack_dir"
     cid="$(docker create --entrypoint /bin/true "$ref")" || return 1
-    if ! docker cp "$cid:/delve/datapack" "$scratch" >/dev/null 2>&1; then
+    if ! docker cp "$cid:/delve/datapack" "$pack_dir" >/dev/null 2>&1; then
       docker rm "$cid" >/dev/null 2>&1 || true
       echo "checkpoints: cannot copy /delve/datapack out of $ref" >&2
       return 1
     fi
     docker rm "$cid" >/dev/null 2>&1 || true
-    if ! python3 "$DW_CKPT_PY" quests --datapack "$scratch" >"$iroot/quests.tsv.incoming"; then
-      rm -rf "$scratch" "$iroot/quests.tsv.incoming"
+    if ! python3 "$DW_CKPT_PY" quests --datapack "$pack_dir" >"$iroot/quests.tsv.incoming"; then
+      rm -rf "$pack_dir" "$iroot/quests.tsv.incoming"
       return 1
     fi
-    rm -rf "$scratch"
+    rm -rf "$pack_dir"
     mv "$iroot/quests.tsv.incoming" "$iroot/quests.tsv"
   fi
 }
