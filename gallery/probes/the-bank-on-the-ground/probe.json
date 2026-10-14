@@ -1,6 +1,6 @@
 {
   "code": "DW0990",
-  "why": "The valley site's bank declared `base: ground` instead of owning its ground, over a surface one course higher (at the piece's own bottom course, so the frame still fits it): the whole then fixes the ring's ground the piece also draws, and the refusal names the place and the cells.",
+  "over": "valley-site",
   "patch": [
     {
       "doc": "overlays/valley-site/site-plan.json",
@@ -15,5 +15,5 @@
       "value": 61
     }
   ],
-  "over": "valley-site"
+  "why": "The valley site's bank declared `base: ground` instead of owning its ground, over a surface one course higher (at the piece's own bottom course, so the frame still fits it): the whole then fixes the ring's ground the piece also draws, and the refusal names the place and the cells."
 }

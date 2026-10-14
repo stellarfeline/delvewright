@@ -1,5 +1,6 @@
 {
   "code": "DW0988",
+  "over": "site-plan",
   "patch": [
     {
       "doc": "overlays/site-plan/site-plan.json",
@@ -21,6 +22,5 @@
     }
   ],
   "units": [],
-  "why": "A roof declared over the exit, whose ceiling is `open`. A sky-open place claims its ground and its headroom and nothing above that, so it has no lid to put a roof on, and `DW0988` refuses the declaration where it is written, before any geometry. It declares no unit: `roof` is bound on the site-plan overlay's annex, and what must not compile is a roof over the sky.",
-  "over": "site-plan"
+  "why": "A roof declared over the exit, whose ceiling is `open`. A sky-open place claims its ground and its headroom and nothing above that, so it has no lid to put a roof on, and `DW0988` refuses the declaration where it is written, before any geometry. It declares no unit: `roof` is bound on the site-plan overlay's annex, and what must not compile is a roof over the sky."
 }

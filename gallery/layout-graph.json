@@ -402,6 +402,10 @@
         "intent": "the long hall, a place no seam joins",
         "stations": [
           {
+            "anchor": "anchor/long-hall-chest",
+            "kind": "point"
+          },
+          {
             "anchor": "anchor/long-hall-end",
             "kind": "point"
           },

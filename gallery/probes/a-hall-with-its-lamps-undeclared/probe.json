@@ -1,6 +1,5 @@
 {
   "code": "DW0210",
-  "why": "The hall's `boxes[].lighting` removed: the bound hall is relit only when its place declares it, and without the declaration its dark cells are a finding naming the piece.",
   "patch": [
     {
       "doc": "site-plan.json",
@@ -12,5 +11,6 @@
       "op": "remove",
       "path": "/content/boxes/0/mitigation"
     }
-  ]
+  ],
+  "why": "The hall's `boxes[].lighting` removed: the bound hall is relit only when its place declares it, and without the declaration its dark cells are a finding naming the piece."
 }

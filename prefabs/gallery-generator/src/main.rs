@@ -3981,7 +3981,7 @@ const LONG_HALL_ANCHORS: &[Anchor] = &[
     Anchor {
         name: "anchor/long-hall-end",
         pos: [5, 1, LONG_HALL_END_Z + 5],
-        facing: None,
+        facing: Some("south"),
         trigger_block: None,
         note: "the middle of the lit end room: the objective the party reaches once the loop \
                lets it go",

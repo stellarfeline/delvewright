@@ -1,6 +1,6 @@
 {
   "code": "DW1021",
-  "why": "The valley site's ground lowered one course under the bank, a place that owns its ground: the piece's bottom course would rest on the air the `open` fill leaves above its surface. The refusal names the place, the first column, how many courses short and how many columns.",
+  "over": "valley-site",
   "patch": [
     {
       "doc": "overlays/valley-site/site-plan.json",
@@ -9,5 +9,5 @@
       "value": 59
     }
   ],
-  "over": "valley-site"
+  "why": "The valley site's ground lowered one course under the bank, a place that owns its ground: the piece's bottom course would rest on the air the `open` fill leaves above its surface. The refusal names the place, the first column, how many courses short and how many columns."
 }

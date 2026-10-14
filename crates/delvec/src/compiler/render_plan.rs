@@ -315,7 +315,7 @@ pub fn pov_shots(plan: &Plan, routes: &[LegRoute]) -> Vec<PovShot> {
                 // at, and [`arrival_aim`] is what decides where to point.
                 let t = route.to;
                 let anchor = [t[0] as f64 + 0.5, t[1] as f64 + 1.0, t[2] as f64 + 0.5];
-                arrival_aim(&wps, eye, anchor)
+                arrival_aim(&wps, eye, anchor, arrival_facing(plan, route.to_step))
             };
             let compass = compass_toward(eye, look_at);
             let expect_line = compose_pov_expect(&ctx, compass, arriving);
@@ -358,6 +358,11 @@ pub enum Arrival {
     /// puts it in frame, so the camera keeps the approach heading and the
     /// `expect` line stops claiming the objective is ahead.
     AtObjectiveUnderfoot,
+    /// [`Arrival::AtObjectiveUnderfoot`], where the objective's anchor declares a
+    /// facing: the camera faces the way the place says a body faces arriving
+    /// there — a carried arrival has no walked heading worth keeping (its last
+    /// "segment" is the carry), and the declaration is the designer's.
+    AtObjectiveUnderfootFacing,
 }
 
 /// How far ahead an arrival frame aims when the objective is closer than that:
@@ -395,7 +400,12 @@ const UNDERFOOT_RADIUS: f64 = 0.5;
 /// * inside the eye's own column ([`UNDERFOOT_RADIUS`]) — the player is standing
 ///   on it. There is no aim that shows it, so the camera keeps the walked
 ///   heading and the sentence changes.
-fn arrival_aim(wps: &[[i32; 3]], eye: [f64; 3], anchor: [f64; 3]) -> ([f64; 3], Arrival) {
+fn arrival_aim(
+    wps: &[[i32; 3]],
+    eye: [f64; 3],
+    anchor: [f64; 3],
+    facing: Option<[f64; 2]>,
+) -> ([f64; 3], Arrival) {
     let (dx, dz) = (anchor[0] - eye[0], anchor[2] - eye[2]);
     let horiz = (dx * dx + dz * dz).sqrt();
     if horiz >= ARRIVAL_LOOK_DISTANCE {
@@ -412,15 +422,48 @@ fn arrival_aim(wps: &[[i32; 3]], eye: [f64; 3], anchor: [f64; 3]) -> ([f64; 3], 
             Arrival::AtObjectiveAhead,
         );
     }
-    let dir = walked_heading(wps);
+    let (dir, arrival) = match facing {
+        Some(f) => (f, Arrival::AtObjectiveUnderfootFacing),
+        None => (walked_heading(wps), Arrival::AtObjectiveUnderfoot),
+    };
     (
         [
             eye[0] + dir[0] * ARRIVAL_LOOK_DISTANCE,
             anchor[1],
             eye[2] + dir[1] * ARRIVAL_LOOK_DISTANCE,
         ],
-        Arrival::AtObjectiveUnderfoot,
+        arrival,
     )
+}
+
+/// The horizontal unit heading a step's anchor declares (`facing`), when the
+/// step is a reach or an interact at an anchor that declares one.
+fn arrival_facing(plan: &Plan, step: usize) -> Option<[f64; 2]> {
+    let anchor_id = match plan.critical_path.get(step)? {
+        Step::Reach { anchor_id, .. } | Step::Interact { anchor_id, .. } => anchor_id,
+        Step::Trigger {
+            anchor_id: Some(anchor_id),
+            ..
+        } => anchor_id,
+        _ => return None,
+    };
+    plan.anchors.iter().find_map(|((_, name), resolved)| {
+        if name != anchor_id {
+            return None;
+        }
+        match resolved {
+            crate::compiler::plan::ResolvedAnchor::Point {
+                facing: Some(f), ..
+            } => match f.as_str() {
+                "north" => Some([0.0, -1.0]),
+                "south" => Some([0.0, 1.0]),
+                "east" => Some([1.0, 0.0]),
+                "west" => Some([-1.0, 0.0]),
+                _ => None,
+            },
+            _ => None,
+        }
+    })
 }
 
 /// The horizontal unit heading `(dx, dz)` of the last walked segment (previous →
@@ -526,6 +569,13 @@ fn compose_pov_expect(ctx: &LegContext, compass: &str, arriving: Arrival) -> Str
             "First-person view arriving at {}{place}{} — the objective is in the cell the player \
              stands in, so it is under the frame and not in it; the view looks {compass} along the \
              way the player walked in.",
+            ctx.target,
+            hint()
+        ),
+        Arrival::AtObjectiveUnderfootFacing => format!(
+            "First-person view arriving at {}{place}{} — the objective is in the cell the player \
+             stands in, so it is under the frame and not in it; the view looks {compass}, the way \
+             the place faces a body arriving there.",
             ctx.target,
             hint()
         ),
@@ -1520,7 +1570,7 @@ mod pov_tests {
         let wps = [[22, 64, 17], [18, 64, 17]];
         let eye = [18.5, 65.62, 17.5];
         let anchor = [19.5, 65.0, 17.5];
-        let (look_at, arrival) = arrival_aim(&wps, eye, anchor);
+        let (look_at, arrival) = arrival_aim(&wps, eye, anchor, None);
         assert_eq!(arrival, Arrival::AtObjectiveAhead);
         assert!(
             objective_is_ahead(eye, look_at, anchor),
@@ -1546,7 +1596,7 @@ mod pov_tests {
             [18.5, 65.0, 23.5], // +Z, six blocks: far branch
             [18.5, 65.0, 11.5], // −Z, six blocks: far branch
         ] {
-            let (look_at, arrival) = arrival_aim(&wps, eye, anchor);
+            let (look_at, arrival) = arrival_aim(&wps, eye, anchor, None);
             assert_eq!(arrival, Arrival::AtObjectiveAhead, "{anchor:?}");
             assert!(
                 objective_is_ahead(eye, look_at, anchor),
@@ -1564,7 +1614,7 @@ mod pov_tests {
         let wps = [[0, 65, 0], [3, 65, 0], [5, 65, 0]];
         let eye = [5.5, 66.62, 0.5];
         let anchor = [5.5, 66.0, 0.5];
-        let (look_at, arrival) = arrival_aim(&wps, eye, anchor);
+        let (look_at, arrival) = arrival_aim(&wps, eye, anchor, None);
         assert_eq!(arrival, Arrival::AtObjectiveUnderfoot);
         assert!((look_at[0] - (eye[0] + 4.0)).abs() < 1e-9, "{look_at:?}");
         assert!((look_at[2] - eye[2]).abs() < 1e-9, "{look_at:?}");
@@ -1596,7 +1646,7 @@ mod pov_tests {
     fn a_single_waypoint_arrival_still_faces_somewhere() {
         let one = [[5, 65, 0]];
         let eye = [5.5, 66.62, 0.5];
-        let (look_at, arrival) = arrival_aim(&one, eye, [5.5, 66.0, 0.5]);
+        let (look_at, arrival) = arrival_aim(&one, eye, [5.5, 66.0, 0.5], None);
         assert_eq!(arrival, Arrival::AtObjectiveUnderfoot);
         assert_ne!([look_at[0], look_at[2]], [eye[0], eye[2]]);
     }

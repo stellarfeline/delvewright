@@ -1,5 +1,6 @@
 {
   "code": "DW0843",
+  "over": "site-plan",
   "patch": [
     {
       "doc": "overlays/site-plan/site-plan.json",
@@ -18,6 +19,5 @@
     }
   ],
   "units": [],
-  "why": "The exit's yard as it stood when a frame was the play space and the one floor course under it — 8x4x8 — bound to the frame the yard is handed now that a place owns its outside (spec-0098): the one-cell ring its edge stands in on the three sides it does not share, and the ground under its plot. The frame is the claim and the piece must be exactly its shape, so the old piece is refused by `DW0843`, naming both extents. The terrain is made flat so the probe carries no image of its own; the frame is still wider and deeper than the old piece on every horizontal axis. It declares no unit: the frame is computed, and what must not compile is a piece that is not its claim.",
-  "over": "site-plan"
+  "why": "The exit's yard as it stood when a frame was the play space and the one floor course under it — 8x4x8 — bound to the frame the yard is handed now that a place owns its outside (spec-0098): the one-cell ring its edge stands in on the three sides it does not share, and the ground under its plot. The frame is the claim and the piece must be exactly its shape, so the old piece is refused by `DW0843`, naming both extents. The terrain is made flat so the probe carries no image of its own; the frame is still wider and deeper than the old piece on every horizontal axis. It declares no unit: the frame is computed, and what must not compile is a piece that is not its claim."
 }

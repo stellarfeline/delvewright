@@ -44,15 +44,15 @@ order a player would:
 | `quest-plan.json` | three quests and the branch point the fork opens |
 | `quests.json` | the bulk: objectives, effects, waves, actors (a barded and saddled horse among them), traps, triggers, a shop, a shortcut, a stake, a timed gate, three killing volumes — one of them the pit under the terrace annex, live from the beat that clears the lid over it (spec-0088) — and six named datums of which one — the tokens — stands on the sidebar (`display: sidebar`, spec-0076); the hearth's two buttons, like every shop offer and some dialogue options, hover a tooltip saying what pressing them does (spec-0078); and the guidance surface (spec-0093): every objective kind states its `announcement`, the two reach objectives at the end of the hall and over the well are quiet (`announcement: hidden`, the first unmarked too), the ferry deck states both `shown`, and the valley overlay's whole campaign is quiet by `guidance` with its far corner opting its marker back in; the ferry's tiller and the cabin's are levers (`triggers[].prop`), the block the party uses and vanilla reports, so no hitbox stands there; the label under the case is a sign, a visible thing vanilla reports no use of, so its hit area is fitted over the sign; the stone beside the hearth is a stone slab, the thing the `strike` hits; and the counter's third bark carries two styled spans, one obfuscated and one coloured, which its zh-cn row places in the Chinese order (spec-0096) |
 | `dialogue.json` | one tree per NPC; the Curator's carries the fork, and the Marshal's carries the two scenes it leads to — a pair of nodes no option leads to, reached only because the quest's `cast` ledger opens one of them per branch; the Curator says what the Long Hall is before the Marshal sends the party to it, the one told name a later line uses (`DW0982` binds to it) |
-| `world-edits.json` | the annex's piece-verb batches, the shards stamped by `fragment`, the barrier course, and the batches that dress the floor, lay the hearth, open the vault and rough the lane |
-| `geometry-brief.json` | four numbers out of the hall's own brief, the kind a site plan is later held to |
-| `layout-graph.json` | the same hall stated as six places and twelve connections, before any coordinate — three barred doors through the wall because the hall really has three, a stair and a drop that close a loop, a sightline to the loft, and one place deliberately off the mandatory spine |
-| `overlays/site-plan/` | the same places given geometry, and then a whole map DERIVED from it: a region, a box each stating only its extent and plane, ONE pinned corner, a seam per connection stating which face of its `a` box it sits on, where along it and what the crossing is (the compiler derives every other corner and every sill — spec-0059; `delvec validate` prints the corners), an `open` fill over a generated heightmap with the rock and the sky the whole owns, a declared roof over the annex, whose program draws its own walls and gable while the yard stands as a faced plinth over the falling terrain (spec-0098), a plank gantry hung over the yard (`base: {"aloft": 0}`) that owns no ground, climbed from the yard on a ladder through its deck and walked to a small lookout hung at its far end, and eight comparisons holding all of it to its own written brief. It carries its own world, cast, quest layer and translations, because a campaign has ONE placement authority and the primary's is `areas[]` — so at this point of the campaign nothing describes a block, and everything a body meets is derived: the floors it walks, the doors it is stopped by, the stair it climbs, the anchors the quests bind to. Inside one place, too: the causeway's program raises a lookout on a stone stand and a crow's nest over it, reached by two ladders stacked one on the other — the first tops out on the foot of the second — which its spatial contract declares as three spaces and two `climb` edges: two floors of one place are two spaces, each ladder is proved both ways on the body's climb moves, and the critical path climbs the stack to the crow's nest (`obj/climb-the-crow`), so the exported route carries two one-column climbs each way |
+| `world-edits.json` | the barrier course, and the batches that dress the floor, lay the hearth, open the vault and rough the lane |
+| `geometry-brief.json` | the hall's own numbers and the site's span and depth, which the site plan is held to |
+| `layout-graph.json` | three places — the hall, the annex wing and the long hall — and the three `carry` edges the levers realise; the hall's own rooms, doors, stair and drop are its piece's, stated by its spatial contract |
+| `site-plan.json`, `detail-plan.json`, `programs/` | the primary's map (spec-0106 §9): the hall bound by `--piece` to `prefab/gallery-hall` and owning its ground, lit by `boxes[].lighting` and mitigated by `boxes[].mitigation`; the annex wing detailed from its program; the long hall bound by `--piece` to a piece whose contract declares zero exterior edges; no seam |
+| `overlays/site-plan/` | the same places given geometry, and then a whole map DERIVED from it: a region, a box each stating only its extent and plane, ONE pinned corner, a seam per connection stating which face of its `a` box it sits on, where along it and what the crossing is (the compiler derives every other corner and every sill — spec-0059; `delvec validate` prints the corners), an `open` fill over a generated heightmap with the rock and the sky the whole owns, a declared roof over the annex, whose program draws its own walls and gable while the yard stands as a faced plinth over the falling terrain (spec-0098), a plank gantry hung over the yard (`base: {"aloft": 0}`) that owns no ground, climbed from the yard on a ladder through its deck and walked to a small lookout hung at its far end, and eight comparisons holding all of it to its own written brief. It carries its own world, cast, quest layer and translations, so at this point of the campaign nothing describes a block, and everything a body meets is derived: the floors it walks, the doors it is stopped by, the stair it climbs, the anchors the quests bind to. Inside one place, too: the causeway's program raises a lookout on a stone stand and a crow's nest over it, reached by two ladders stacked one on the other — the first tops out on the foot of the second — which its spatial contract declares as three spaces and two `climb` edges: two floors of one place are two spaces, each ladder is proved both ways on the body's climb moves, and the critical path climbs the stack to the crow's nest (`obj/climb-the-crow`), so the exported route carries two one-column climbs each way |
 | `overlays/site-plan-solid/` | the same seven places carved in rock: the plan states `fill: solid`, so every cell no place claims is deepslate and the exit's sky is a declared clearance well, and a one-cell clearance keeps the vista's air open through the rock between the near hall and the loft. It is its own campaign (`gallery-rock`), so its places — every one detailed from `programs/` by `delvec detail`, because a stand-in never ships — are frozen as `gallery-rock-<place>` and never share a name with the open point's pieces. Beside its open sibling it shows that the kind of site is the plan's declaration (spec-0098) |
-| `overlays/valley-site/` | a SITE placed: one area bound to one prefab on `horizon: valley`, which is the other way a campaign states how big its map is — the map IS that piece, so its declared region is the extent the surround rings. `gallery-bank` is what a site is: three courses of island mass, a bank of grass out to the box's own edge, a walled court on top. It is seated by its WALK PLANE, so the bank's top course is the valley's gap floor and a body walks off the piece onto ground the horizon built; and it carries both halves of `DW0885` at once, the courses under the bank buried by earth and the parapet above it answered by four `shown_faces`. It carries its own cast and quest layer, because its one area is not the primary's two |
+| `overlays/valley-site/` | a SITE placed: one place on `horizon: valley` whose piece owns its ground (`base: {"owned": 3}`, spec-0106 §3.1) — `gallery-bank`, three courses of island mass, a bank of grass out to the box's own edge, a walled court on top. The whole's flat terrain meets the piece's bottom course from below (`DW1021` is the refusal when it does not), and the allocation fixes no ring cell: the piece draws its own ground. It carries both halves of `DW0885` at once, the courses under the bank buried by earth and the parapet above it answered by four `shown_faces`, and its own cast and quest layer |
 | `l10n/zh-cn.json` | the second language, so the sidecar surface is real rather than declared |
 | `render-plan.json` | the view set the gallery declares, so a shot that vanishes is a red |
-| `area/annex` (in `world.json`) | a three-tile chain assembled from `pool/gallery-annex` — what binds the piece verbs |
 | `overlays/` | parameter points — settings that take one value per world |
 | `probes/` | documents the engine **refuses**, each naming the diagnostic |
 | `baseline/` | the expected-warnings ledger — the one baseline document committed; the emission baseline is computed in every CI run from the merge base and the head, both built from source (ADR-0034) |
@@ -60,10 +60,9 @@ order a player would:
 The hall itself is generated, not committed: one 31 × 8 × 31 stone room split by
 a barred wall, with three doors in it and a mezzanine in the far half whose
 stair is missing its treads. Beside it the generator emits a small
-**annex tileset** — four 7 × 6 × 7 boxes and a pool — plus a 3-cube **shard**
-that exists only to be stamped by `fragment`. The annex is deliberately plain:
-its job is the ASSEMBLY, and a tileset with interesting rooms would make the
-placement harder to read without binding one more unit. Each tile carries one
+**annex kit** — three 7 × 6 × 7 tiles the annex wing's program places by name.
+The kit is deliberately plain: its job is the placement, and a tileset with
+interesting rooms would make it harder to read without binding one more unit. Each tile carries one
 anchor at the middle of its floor, which is what gives a camera pointed into the
 annex something the campaign declares to frame. Its anchors are named for their
 purpose — `anchor/hearth` is where you come back to life, `anchor/muster` is
@@ -164,15 +163,19 @@ holding them at once.
 
 | Probe | Code | Refused by | What it tries |
 | --- | --- | --- | --- |
-| `two-placement-authorities` | `DW0839` | `validate` | carrying `areas[]` and a site plan at once |
 | `aquatic-locomotion` | `DW0455` | `validate` | declaring a body that swims |
 | `peaceful-difficulty` | `DW0468` | `validate` | setting the world to peaceful |
 | `sound-at-actor` | `DW0335` | `validate` | playing a sound from an actor's position |
-| `a-piece-the-library-does-not-hold` | `DW0856` | `validate` | binding the hall to a piece whose name is one letter wrong |
-| `a-gate-two-areas-provide` | `DW0857` | `validate` | binding the annex to the hall's own piece, so both areas provide one gate anchor |
+| `a-piece-the-library-does-not-hold` | `DW0842` | `validate` | binding the hall's place to a piece whose name is one letter wrong |
 | `a-question-nobody-answers` | `DW0858` | `validate` | asking the party to talk to somebody the same quest declares silent |
 | `a-piece-that-is-not-its-frame` | `DW0843` | `validate` | seating a piece that does not fill the box the map gave it |
-| `a-horizon-with-no-map` | `DW0855` | `validate` | declaring a horizon with nothing for it to ring |
+| `a-horizon-with-no-map` | `DW0855` | `validate` | declaring a horizon that builds terrain on a campaign with no site plan |
+| `a-world-still-carrying-areas` | `DW0100` | `validate` | carrying the removed `areas[]` beside the site plan |
+| `a-quest-still-booked-to-an-area` | `DW0100` | `validate` | booking a planned quest to an area with the removed `area` field |
+| `a-hall-with-its-lamps-undeclared` | `DW0210` | `build` | removing the hall place's `boxes[].lighting` and `mitigation`, so its dark cells are a finding naming the piece |
+| `a-station-the-hall-does-not-answer` | `DW0842` | `validate` | declaring a station on the hall that its bound piece has no anchor for |
+| `the-valley-lowered-under-the-bank` | `DW1021` | `validate` | lowering the valley site's ground a course under the bank, which owns its ground |
+| `the-bank-on-the-ground` | `DW0990` | `validate` | declaring the bank `base: ground` over ground at its own bottom course, so the whole fixes the ring the piece draws |
 | `a-clock-nobody-explained` | `DW0860` | `validate` | arming a stealth clock that bites before its own instruction can be read |
 | `a-barrel-in-a-row-of-barrels` | `DW0861` | `validate` | adopting a container the piece placed without naming what is in it |
 | `a-prompt-nobody-sees` | `DW0862` | `validate` | writing a hint on an objective with no title to carry it |
@@ -180,8 +183,6 @@ holding them at once.
 | `a-bar-in-a-colour-the-game-lacks` | `DW0911` | `validate` | drawing a boss bar in `crimson`, a colour the pinned game's `bossbar` command does not list |
 | `a-bar-over-a-body-nothing-can-hurt` | `DW0909` | `validate` | hanging a health bar over the usher, a body nothing unleashes and nothing can hurt |
 | `a-bar-with-nothing-to-draw` | `DW0910` | `validate` | removing the muster's bar `title`, when the wave fields two kinds of body and no one name is the fight's |
-| `a-body-two-areas-answer-for` | `DW0884` | `validate` | casting the curator at `anchor/lectern` when the annex is bound to the hall's piece and both areas answer to that name |
-| `a-face-nothing-stands-in-front-of` | `DW0886` | `validate` | placing the open-topped yard as its own area under `horizon: void`, with sides nothing buries and nothing declares shown |
 | `a-floor-carved-down-to-the-sea` | `DW0344` | `build` | a world edit cutting a three-by-three hole in the hall's plinth course down to the sea's own plane, under `horizon: ocean` |
 | `a-gate-the-party-walks-back-through-after-it-is-sealed` | `DW0485` | `validate` | giving the last mainline beat the main gate as its subject, three beats after that gate is sealed |
 | `a-strand-walked-after-the-gate-it-crosses-is-sealed` | `DW0485` | `validate` | giving the optional reliquary's first beat the main gate as its subject: the exported path walks it before the seal, and a player may walk it after |
@@ -190,9 +191,7 @@ holding them at once.
 | `a-number-this-engine-does-not-implement` | `DW0102` | `validate` | declaring a `dsl_version` other than the one this engine accepts |
 | `a-picture-nobody-looks-at` | `DW0900` | `build` | re-aiming the only camera that answers `concept/morning-quay` at a picture two other cameras already answer |
 | `a-picture-nobody-recorded` | `DW0890` | `validate` | deleting the night row from `design.json` while its image stays under `design/concept/` |
-| `a-piece-with-no-walk-plane` | `DW0886` | `validate` | seating the shard, which declares no walk plane, on an `ocean` horizon |
 | `a-place-cut-below-the-sea` | `DW0886` | `validate` | standing a site-plan place two courses under the sea plane, under `horizon: ocean` |
-| `a-pool-of-two-walk-planes` | `DW0886` | `validate` | seating a pool whose members declare two different walk planes on the base that derives an origin from it |
 | `a-program-asking-for-a-seam-the-whole-does-not-hand` | `DW0882` | `detail` | declaring a `handed/` parameter for a seam the allocation does not hand |
 | `a-program-that-marks-no-place-to-stand` | `DW0845` | `detail` | removing the program's one `mark`, so nothing answers the anchor the quests bound to the place |
 | `a-program-whose-arch-misses-its-seam` | `DW0844` | `detail` | carving the annex arch one cell along the wall from the seam the plan handed it |
@@ -211,7 +210,6 @@ holding them at once.
 | `a-sky-with-two-bodies` | `DW0931` | `validate` | naming both the moon just risen and the sun setting as the world's one time |
 | `a-phase-that-restates-the-world` | `DW0931` | `validate` | copying the world's `new-moon` onto the Curator's sunrise cut, which already keeps the world's moon |
 | `a-ninth-phase` | `DW0100` | `validate` | naming the world's moon `blood-moon`, a phase the pinned game does not have |
-| `a-walk-plane-the-void-still-owes` | `DW0886` | `validate` | seating the shard, which declares no walk plane, on a `void` horizon |
 | `nothing-places-the-whole` | `DW0883` | `validate` | deleting the entry box's pinned `min`, so nothing places the site plan |
 | `two-faces-at-one-place` | `DW0880` | `build` | giving two recovery stakes that share a place two different marker items |
 | `two-presses-on-one-cell` | `DW0878` | `build` | hanging an `interact` objective and a click trigger on one anchor |
@@ -281,11 +279,11 @@ no longer has is a red naming the probe and the pointer, rather than a probe
 quietly changing what it is about; `add` and `replace` are separate verbs so
 that a key the primary GAINS is that same red rather than a silent overwrite.
 
-A probe may ship a whole document, and several do: `site-plan.json`,
-`detail-plan.json` and a `programs/` directory are documents
-the primary cannot carry at all — `DW0839` refuses a campaign holding both `areas[]` and a site plan — so
-there is nothing for them to be a copy of. A file that shadows a primary
-document is refused. A probe may instead declare its edit against an
+A file that shadows a primary document is refused. A probe whose point is an
+overlay says so with `"over": "<overlay>"`: the overlay is laid over the primary
+first, exactly as its own point is, and the probe's edits apply to the result.
+A `remove` at the empty pointer removes a whole document — the point is then the
+primary without it (a campaign with no site plan). A probe may instead declare its edit against an
 **overlay's** document, naming it by its path (`overlays/site-plan/site-plan.json`):
 that document is brought into the point as the campaign's own and the edit is
 applied to it, so the probe is the primary plus that document plus one edit and
@@ -365,92 +363,36 @@ two authorities on one question, and is refused in review. A setting that cannot
 coexist with the primary becomes an overlay under `overlays/`, declaring exactly
 what it reaches.
 
-## The annex, and what a socket is worth looking at
+## The annex, and a library piece placed by name
 
-`area/annex` is a three-tile chain assembled from `pool/gallery-annex`. It is
-what binds the piece verbs — `insert-piece`, `swap-piece`, `remove-piece`,
-`reseed-piece`, `rewire-socket` and `fragment` — none of which any campaign or
-fixture in this repository had ever written.
+`node/annex-wing` is a place whose program, `programs/annex-wing.json`, sets
+four library tiles down by name with the grammar's `prefab` operation (spec-0106
+§3.8): the entry tile, the bay tile twice, the cap. Which piece stands where is
+the program's statement, never a seed's draw — a `prefab` reached through a
+weighted choice is refused by the `prefab-placed-by-design` expansion gate — so
+the annex is the gallery's one instance of a region holding library parts
+beside authored work, and `delvec detail --all` writes it as **one piece**,
+`prefab/gallery-annex-wing`, whose provenance row names every tile it holds.
 
-Three facts about it are worth stating, because each was a place a camera came
-back with nothing:
+Three facts about it are worth stating:
 
-**An unmated socket is a wall, not a hole.** `solver::seal_layout` fills every
-unmated connector's opening with `minecraft:stone_bricks` and clears it to air
-only when the socket mates, so the 3 × 3 opening a tile carves exists in the
-world exactly when something is on the other side of it. A tile can therefore
-carry both an anchor and a spare socket: reachable floor beside a sealed socket
-borders a wall. That is what lets every tile declare the anchor its views frame
-while the chain still keeps the spare socket `insert-piece` hangs a tile off.
+**A piece placed twice numbers its anchors.** The bay tile carries
+`anchor/annex-first-bay`; placed twice it arrives as `anchor/annex-first-bay-1`
+and `anchor/annex-first-bay-2`, and the drip and the second-bay trigger hang on
+the second. The entry tile's `anchor/annex-threshold` carries `role: entry`, so
+the place's `anchor/node-annex-wing` binds to it without the program marking
+one.
 
-**`rewire-socket open` is only writable where the far side is not the void.**
-The verb clears an *unmated* socket's seal — a mated one is already an open
-passage and is refused as a no-op — so the cell one step past the opening lies
-outside every placed tile. In a world with nothing outside, that is a bottomless
-column and `DW0322` refuses it, correctly: a way out onto nothing is a fall
-nobody survives. Nor can the campaign lay ground there, because every massing
-batch precedes every detailing batch (`DW0162`), so the opened socket already
-exists when the first batch's invariants are re-proved. The one unmated socket
-whose far side is *not* the void is the one a `rewire-socket sealed` just
-severed, because the partner's own plane stays walled — which is what
-`batch/annex-seal-a-way` and `batch/annex-open-a-way` do, in that order: a
-doorway bricked up on the far side and open on the near one.
+**No seam joins it.** The annex, like the long hall, is a place the party is
+carried into by a lever (`edge/to-the-annex`, a `carry`), so its contract
+declares zero exterior edges and the light probe walks in from its entry anchor
+(spec-0106 §3.4).
 
-**The chain is what binds the piece-mating check.** A socket is one of the two
-places a prefab document says what a side of it is — the other is
-`spatial_contract.faces`, which the hall carries and no annex tile does — and
-`DW0780` reads both, so the chain's three tiles, mated end to end with four
-socket faces meeting across two seams, are examined rather than passed over. The
-build's binding line states it on every run, and the count is a fraction of the
-placement rather than of the declarations, so a world whose pieces stop touching
-reads as a zero rather than as a silence. What no campaign document here can
-reach is a `DW0780` refusal itself: areas stand `AREA_SPACING` apart and the
-solver computes every seated position, so an authored document has no surface on
-which to move a piece off its seam. The refusal is a self-check over the solver's
-own layout, and its perturbations live in `crates/delvec/tests/face_contract.rs`
-— a mated piece detached by one block, and a pair that touches and declares
-nothing across the plane it touches on.
-
-**A tile carved from one material renders as one material.** Each tile wears a
-`stone_bricks` panel around its socket openings and a `stone_bricks` floor under
-its stone walls, because a seam camera aimed down a corridor of nothing but
-`minecraft:stone` came back a rectangle of ONE distinct colour — which the render
-arm reports, correctly, as a frame that shows no scene at all. The panel also
-means a sealed socket reads as a bricked-up doorway rather than as a patch of the
-wrong wall, the seal material being the same brick.
-
-**The pool repeats a variant, and says so.** With two connector variants and two
-filler slots the draw may seat one of them twice, which makes every anchor that
-prefab declares ambiguous — `DW0498`, advisory, in the expected-warnings ledger.
-The alternative it names is more distinct variants, and that is a choice about
-the pool rather than about the seed.
-
-**And the annex says what it does NOT guarantee.** `area/annex` seats three
-pieces of a four-member pool, and the layout is only ever obliged to seat one of
-them: the `entry` member, at the area origin. Everything else arrives because
-the campaign required an anchor that piece carries, or because the filler draw
-picked it. So the annex guarantees exactly `anchor/annex-threshold` — one of the
-four names its pieces declare between them — and `trigger/stand-in-the-second-bay`
-deliberately hangs on `anchor/annex-second-bay`, which is not one of them.
-`DW0889`, advisory, in the expected-warnings ledger, on every `validate`,
-`analyze` and `build`.
-
-Read the pair together, because they are about the same anchor and say different
-things. `DW0498` needs the settled draw: `gallery-annex-cell-b` is seated twice,
-so the name has two carriers and resolution takes the first. `DW0889` needs no
-draw at all: nothing obliges the layout to seat that connector, so the name might
-not have been in the world to begin with. The trigger is green on both counts —
-the draw does seat it — which is exactly why neither code refuses. What they buy
-is that a creator reading this campaign learns the constraint before spending a
-build, and `delvec prefab anchors --pool pool/gallery-annex` states the same set
-with no campaign at all.
-
-**The seam cameras stand in open air.** `DW0724` refuses any render-plan
-camera whose eye cell is occupied, over every shot kind the plan holds — seam and
-interior as well as player-POV. A seam eye stands four blocks along the seal's
-axis, one cell under the ceiling, on the tile's centre column, so a lantern hung
-there would be a camera inside a block; the generator also asserts those cells
-are clear on every run (`ANNEX_SEAM_EYE_CELLS`).
+**The tiles' doorways are their own bytes.** Each tile is open on the faces where
+the next one stands and declares no socket: how they join is the program's
+design. A tile carved from one material renders as one material, so each wears a
+`stone_bricks` panel around its doorway — a seam camera aimed down the annex sees
+the doorways rather than one flat colour.
 
 ## The broken flight, and what a way costs to declare
 
@@ -578,7 +520,7 @@ The probes are the two ways a watch is refused:
 
 Three sounds beat over places (spec-0102). Under the hearth, one cell below
 `anchor/hearth`, a warden's heartbeat sounds over the whole near hall
-(`place: area/hall`, `floor: 0.4`). `pulse/the-heart` beats every 30 ticks
+(`place: node/hall`, `floor: 0.4`). `pulse/the-heart` beats every 30 ticks
 from `obj/hear-the-curator`, which sets `flag/lid-fell`, until
 `obj/board-the-ferry` sets `flag/boarded`; `pulse/the-heart-racing`, the same
 sound from the same cell at `every: 14` and `pitch: 1.2`, beats from that flag
@@ -642,9 +584,9 @@ later. A cutscene's end puts every player on the cell the presser stood on, so
 a carry under the open bracket is undone (`a-crossing-the-cutscene-undoes`),
 and a carry after it takes everyone or no one — which is refused wherever the
 trigger can be pulled from outside the volume, as this tiller can from the open
-hall floor (`a-tiller-pulled-from-the-hall-floor`). The layout graph draws the crossing as a `carry` edge
-from `node/exit` (the deck is its station) to `node/ferry-cabin` (the landing
-is its station), gated on the same flag, and nothing else joins the two.
+hall floor (`a-tiller-pulled-from-the-hall-floor`). The deck and the landing
+are both stations of the hall, so the crossing is a move inside one place and
+owes the layout graph no edge.
 
 **The landing completes the beat.** The ferry sets the party down inside
 `obj/cross-the-strait`'s completion volume, so the server completes it on
@@ -656,8 +598,7 @@ marker already came.
 would end every walk there — the bot's death loop starts where the path ends,
 and no lethal volume is reachable from inside the cabin. So the ferryman's chest
 carries `trigger/cabin-tiller`, `once: false`, whose teleport moves whoever
-stands in the cabin onto the exit; `edge/ferry-back` draws it, one way, from the
-cabin to `node/exit` (the exit anchor is its station). `obj/reach-the-end` is the
+stands in the cabin onto the exit. `obj/reach-the-end` is the
 last beat and comes after the crossing, and the return lands inside its volume
 too, so the final step of the path is a reach a landing completes — the shape
 whose campaign marker is due at the carrying step. `validation/teleport-gate.json`
@@ -670,7 +611,8 @@ Five probes show what the engine refuses about it:
 `a-tiller-pulled-from-the-hall-floor` (the cutscene moved before the carry, so the
 carry takes everyone or no one and the tiller can be pulled from the open floor,
 `DW0932`), `a-crossing-the-cutscene-undoes` (the teleport inside the cutscene,
-`DW0933`) and `a-carry-the-graph-never-drew` (the edge removed, `DW0934`).
+`DW0933`), and `a-carry-the-graph-never-drew` refuses the hall's lever to the
+annex once its `carry` edge is removed (`DW0934`).
 
 **Who is in the shot** (spec-0095). The ferry's crossing and the first muster
 cutscene leave a stand-in for every player where they stood, wearing their own
@@ -704,7 +646,7 @@ the rule that edit breaks.
 
 ## The long hall
 
-In an area of its own, `area/long-hall` (`prefab/gallery-long-hall`), stands one
+In a place of its own, `node/long-hall` (bound by `--piece` to `prefab/gallery-long-hall`), stands one
 straight hall of identical 6-block bays with no fog. A soul lantern and a pillar
 pair mark every bay, and a glowstone lintel lights the exit into a room at the
 far end. `loop/the-hall-that-runs-on` stands across one bay's mouth and returns
@@ -716,18 +658,18 @@ and the build measures how far the jump moves each one on screen against the
 1.2852° threshold. The binding line states the count of far differences admitted
 and the largest shift (0.7574°).
 
-The route runs through it. `quest/long-hall` plays between the near hall and the
-far one: completing the counter in the annex carries the party across to the
-hall's porch (a crossing, one-way by construction), the porch sets the
-checkpoint on arrival (`obj/arrive-at-the-porch`), the party runs the hall
-until the loop has turned it back twice and reaches the lit room
-(`obj/reach-the-hall-end`), and completing that carries it back to the gallery
-hall's arrival, where `obj/back-in-the-hall` sets the hearth again. The layout graph draws both crossings as `carry` edges (`edge/long-hall-in`, `edge/long-hall-out`), which the crossing realises (`DW0934`). The loop is
-exercised on the route, so its binding counts an exercise step. Each seat is
-judged over the area the party can stand in while that seat holds: the stake
-proof (`DW0525`) judges the porch over the hall and the hearth over the gallery
-hall, and the no-stranding proof (`DW0315`) does not ask the hearth to reach the
-hall the porch has already replaced it in.
+The route runs through it. `quest/long-hall` plays between the annex and the
+hall's far half: the annex's cap lever carries the party to the long hall's
+porch (`edge/to-the-long-hall`, a `carry` the lever's link realises), the porch
+sets the checkpoint on arrival (`obj/arrive-at-the-porch`), the party runs the
+hall until the loop has turned it back twice and reaches the lit room
+(`obj/reach-the-hall-end`), the quest's completion moves the seat to the hall's
+landing, and the end room's lever carries the party back to that landing
+(`edge/out-of-the-long-hall`). No seam joins the long hall to anything, so its
+contract declares zero exterior edges (spec-0106 §3.4). The checkpoint and stake
+proofs walk a respawned body the way the party is carried — through the levers'
+links and the loop's slab (`nav::reachable_carried`) — and the stake proof
+partitions the map by the site plan's places.
 
 Two probes show what the far field refuses: `an-exit-too-near-to-hide` (a wall
 across the hall 36 blocks past the slab, so the hall ends in view too near for a

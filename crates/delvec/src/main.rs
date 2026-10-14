@@ -346,7 +346,7 @@ enum Command {
     /// Grammar programs: list the corpus, show or check one, expand it into a
     /// prefab, measure demonstration coverage, audit every program.
     Grammar(delvec::grammar::cli::GrammarArgs),
-    /// A prefab piece under admission: audit, socket, anchor, lighting, catalog
+    /// A prefab piece under admission: audit, anchor, planes, lighting, catalog
     /// card, gallery world, curation.
     Prefab(delvec::admit::cli::PrefabArgs),
     /// Sculpt a prefab from a form document: a body stated as implicit solids

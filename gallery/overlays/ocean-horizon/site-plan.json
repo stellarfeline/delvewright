@@ -72,8 +72,8 @@
     "datums": [
       {
         "id": "datum/ground",
-        "y": 62,
-        "note": "The ground under the sea: one course under the long hall's floor, so every place stands on it."
+        "note": "The ground under the sea: one course under the long hall's floor, so every place stands on it.",
+        "y": 62
       }
     ],
     "fill": {

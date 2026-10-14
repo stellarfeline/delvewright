@@ -69,6 +69,7 @@
       },
       {
         "anchors": {
+          "anchor/long-hall-chest": "anchor/long-hall-chest",
           "anchor/long-hall-end": "anchor/long-hall-end",
           "anchor/long-hall-landing": "anchor/long-hall-landing",
           "anchor/long-hall-porch": "anchor/long-hall-porch",
