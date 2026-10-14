@@ -6,21 +6,21 @@
   ],
   "languages": {
     "en": {
-      "match": "words",
       "kinds": {
-        "talk-to": [
-          "talk",
-          "speak",
-          "ask",
-          "tell",
-          "question",
-          "greet",
-          "meet",
-          "wake",
-          "warn",
-          "persuade",
-          "confess",
-          "report"
+        "collect": [
+          "take",
+          "collect",
+          "gather",
+          "pick up",
+          "bring",
+          "fetch",
+          "retrieve",
+          "recover",
+          "loot",
+          "grab",
+          "carry",
+          "search",
+          "steal"
         ],
         "interact": [
           "use",
@@ -48,6 +48,22 @@
           "hang",
           "knock"
         ],
+        "kill": [
+          "kill",
+          "slay",
+          "defeat",
+          "destroy",
+          "fight",
+          "clear",
+          "drive off",
+          "fend off",
+          "repel",
+          "hunt",
+          "beat",
+          "put down",
+          "cut down",
+          "break"
+        ],
         "reach-anchor": [
           "go",
           "reach",
@@ -69,52 +85,36 @@
           "pass",
           "arrive"
         ],
-        "kill": [
-          "kill",
-          "slay",
-          "defeat",
-          "destroy",
-          "fight",
-          "clear",
-          "drive off",
-          "fend off",
-          "repel",
-          "hunt",
-          "beat",
-          "put down",
-          "cut down",
-          "break"
-        ],
-        "collect": [
-          "take",
-          "collect",
-          "gather",
-          "pick up",
-          "bring",
-          "fetch",
-          "retrieve",
-          "recover",
-          "loot",
-          "grab",
-          "carry",
-          "search",
-          "steal"
+        "talk-to": [
+          "talk",
+          "speak",
+          "ask",
+          "tell",
+          "question",
+          "greet",
+          "meet",
+          "wake",
+          "warn",
+          "persuade",
+          "confess",
+          "report"
         ]
-      }
+      },
+      "match": "words"
     },
     "zh-cn": {
-      "match": "substring",
       "kinds": {
-        "talk-to": [
-          "谈",
-          "说",
-          "问",
-          "告诉",
-          "聊",
-          "商量",
-          "请教",
-          "禀报",
-          "找"
+        "collect": [
+          "拿",
+          "取",
+          "收集",
+          "捡",
+          "带回",
+          "取回",
+          "找回",
+          "搜",
+          "拾",
+          "夺"
         ],
         "interact": [
           "使用",
@@ -136,6 +136,18 @@
           "升起",
           "读"
         ],
+        "kill": [
+          "杀",
+          "击杀",
+          "消灭",
+          "击败",
+          "打败",
+          "清除",
+          "赶走",
+          "击退",
+          "斩",
+          "除掉"
+        ],
         "reach-anchor": [
           "去",
           "到",
@@ -153,31 +165,19 @@
           "找到",
           "抵达"
         ],
-        "kill": [
-          "杀",
-          "击杀",
-          "消灭",
-          "击败",
-          "打败",
-          "清除",
-          "赶走",
-          "击退",
-          "斩",
-          "除掉"
-        ],
-        "collect": [
-          "拿",
-          "取",
-          "收集",
-          "捡",
-          "带回",
-          "取回",
-          "找回",
-          "搜",
-          "拾",
-          "夺"
+        "talk-to": [
+          "谈",
+          "说",
+          "问",
+          "告诉",
+          "聊",
+          "商量",
+          "请教",
+          "禀报",
+          "找"
         ]
-      }
+      },
+      "match": "substring"
     }
   }
 }
