@@ -53,6 +53,7 @@ pub mod fluid;
 pub mod fmt;
 pub mod gate;
 pub mod healthbar;
+pub mod holders;
 pub mod ids;
 pub mod l10n;
 pub mod layout;

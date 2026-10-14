@@ -2492,7 +2492,7 @@ fn heart_dir(root: &Path) -> PathBuf {
                 "item": "minecraft:heart_of_the_sea",
                 "count": 1,
                 "anchor": "anchor/heart",
-                "container": "anchor/heart",
+                "holder": "anchor/heart",
                 "title": "Take the heart",
                 "item_name": "The Heart",
                 "after": ["obj/enter-the-cell"],

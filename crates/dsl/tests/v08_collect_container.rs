@@ -60,7 +60,7 @@ fn campaign_with(quests: String) -> RawCampaign {
 
 /// The whole surface at once: adopt the prefab's container, name the item, pad
 /// the container to read full.
-const ADOPTED: &str = r#", "container": "anchor/door", "item_name": "Cheese", "fill_count": 8"#;
+const ADOPTED: &str = r#", "holder": "anchor/door", "item_name": "Cheese", "fill_count": 8"#;
 
 #[test]
 fn the_adoption_surface_validates_clean_at_v08() {
@@ -75,7 +75,7 @@ fn the_adoption_surface_validates_clean_at_v08() {
 #[test]
 fn an_invented_container_anchor_is_dw0142() {
     let diags = check_campaign(&campaign_with(quests(
-        r#", "container": "anchor/no-such-barrel""#,
+        r#", "holder": "anchor/no-such-barrel""#,
     )));
     let d = diags
         .iter()
@@ -90,7 +90,7 @@ fn an_invented_container_anchor_is_dw0142() {
 #[test]
 fn padding_past_the_last_slot_is_dw0432() {
     let diags = check_campaign(&campaign_with(quests(
-        r#", "container": "anchor/door", "fill_count": 27"#,
+        r#", "holder": "anchor/door", "fill_count": 27"#,
     )));
     let d = diags
         .iter()
@@ -102,7 +102,7 @@ fn padding_past_the_last_slot_is_dw0432() {
     // The exact ceiling validates: 26 padding stacks + the objective's own = 27.
     assert!(
         !check_campaign(&campaign_with(quests(
-            r#", "container": "anchor/door", "fill_count": 26"#,
+            r#", "holder": "anchor/door", "fill_count": 26"#,
         )))
         .iter()
         .any(|d| d.code == "DW0432"),
@@ -169,9 +169,9 @@ fn two_adopted_collects_on_one_anchor_is_dw0435() {
         "objectives": [
           { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
           { "type": "collect", "id": "obj/cheese", "item": "minecraft:bread", "count": 1,
-            "anchor": "anchor/exit", "after": ["obj/talk"], "container": "anchor/door" },
+            "anchor": "anchor/exit", "after": ["obj/talk"], "holder": "anchor/door" },
           { "type": "collect", "id": "obj/wine", "item": "minecraft:potion", "count": 1,
-            "anchor": "anchor/exit", "after": ["obj/cheese"], "container": "anchor/door" }
+            "anchor": "anchor/exit", "after": ["obj/cheese"], "holder": "anchor/door" }
         ],
         "on_complete": [ { "type": "campaign-complete" } ]
       }

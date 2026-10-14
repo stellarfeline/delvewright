@@ -588,7 +588,7 @@ crate::dw_code! {
     /// A `collect` `dropped_by` is not backed by the wave it names:
     /// the wave declares no `{item}` drop of this objective's item, the count
     /// asks for more copies than the wave's mobs can yield, or the objective
-    /// also declares a `container` (the item cannot come out of a box *and* off
+    /// also declares a `holder` (the item cannot come out of a holder *and* off
     /// a body).
     pub const DROP_COLLECT_UNSOURCED: DwCode = DwCode::new("DW0492", ExitTier::Build);
 }
@@ -1096,7 +1096,7 @@ pub(crate) fn check_drops(
                 id,
                 item,
                 count,
-                container,
+                holder,
                 dropped_by: Some(wave),
                 ..
             } = o
@@ -1104,14 +1104,14 @@ pub(crate) fn check_drops(
                 continue;
             };
             let path = format!("/content/quests/{i}/objectives/{j}/dropped_by");
-            if container.is_some() {
+            if holder.is_some() {
                 d.push(Diagnostic::error(
                     DROP_COLLECT_UNSOURCED,
                     "quests",
                     path.clone(),
                     format!(
                         "`collect` `{id}` declares both `dropped_by` (wave `{wave}`) and a \
-                         `container` — the item comes off a body or out of a box, not both; drop \
+                         `holder` — the item comes off a body or out of a holder, not both; drop \
                          whichever provisioning this beat does not use"
                     ),
                 ));

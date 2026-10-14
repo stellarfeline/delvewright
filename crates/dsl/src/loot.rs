@@ -10,17 +10,19 @@ use crate::{AnchorId, LootId};
 #[cfg(doc)]
 use crate::enchantment_component;
 
-/// A stage-5 container fill (DSL v0.6, spec-0021): contents for a container
-/// the prefab already placed — any of the twelve container kinds of the pinned
-/// game (spec-0105): a chest, trapped
-/// chest, barrel or shulker box (27 slots), a hopper or brewing stand (5), a
-/// dispenser, dropper or crafter (9), a furnace, blast furnace or smoker (3:
-/// input, fuel, result).
+/// A stage-5 holder fill (DSL v0.6, spec-0021; holders spec-0111): contents
+/// for an item holder the prefab already placed — any of the twelve container
+/// kinds of the pinned game (spec-0105): a chest, trapped chest, barrel or
+/// shulker box (27 slots), a hopper or brewing stand (5), a dispenser, dropper
+/// or crafter (9), a furnace, blast furnace or smoker (3: input, fuel, result)
+/// — or an item frame (one slot, `contents`) or an armour stand (`armor.head`,
+/// `armor.chest`, `armor.legs`, `armor.feet`, `weapon.mainhand`,
+/// `weapon.offhand`, each named by the stack's `slot`).
 ///
-/// The container is **hardware the prefab authored**, exactly like a trap's
+/// The holder is **hardware the prefab authored**, exactly like a trap's
 /// dispenser: this declaration gives an already-placed, already-lit, already
 /// composed piece of furniture its contents. The compiler never places the
-/// container itself — if the anchor's cell does not already hold one, that is a
+/// holder itself — if the anchor's cell does not already hold one, that is a
 /// content defect and a build error (`DW0431`), not something to paper over by
 /// setblock-ing a chest into a wall.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -28,11 +30,12 @@ use crate::enchantment_component;
 pub struct Loot {
     /// Unique loot id (`loot/<kebab>`).
     pub id: LootId,
-    /// The anchor whose cell holds the container to fill.
+    /// The anchor whose cell holds the holder to fill.
     pub anchor: AnchorId,
-    /// Contents, in declaration order. Slot assignment is positional and
-    /// deterministic — the first entry lands in `container.0`, the second in
-    /// `container.1`, and so on (ADR-0006: no RNG, no loot tables).
+    /// Contents, in declaration order. A stack with no `slot` lands
+    /// positionally — the first entry in `container.0` (or a frame's
+    /// `contents`), the second in `container.1`, and so on (ADR-0006: no RNG,
+    /// no loot tables); a stack that names its `slot` lands there.
     pub items: Vec<LootItem>,
 }
 
@@ -56,6 +59,16 @@ pub struct LootItem {
     /// ([`enchantment_component`]).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub enchantments: BTreeMap<String, u32>,
+    /// **The slot this stack lands in** (DSL v0.49, spec-0111 §3.3), in the
+    /// holder family's vocabulary — which is also vanilla's `item replace`
+    /// spelling: `container.<n>` on a container, `contents` on an item frame,
+    /// `armor.head`, `armor.chest`, `armor.legs`, `armor.feet`,
+    /// `weapon.mainhand` or `weapon.offhand` on an armour stand. Omitted, the
+    /// stack lands positionally (a container, a frame); a stand's stacks each
+    /// name their slot, because which hand or head a thing sits in is the
+    /// author's judgement. A fill names every slot or none (`DW1035`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot: Option<String>,
 }
 
 /// **The container class's home in stage 5** (DSL v0.43, spec-0105).
@@ -112,6 +125,126 @@ crate::dw_code! {
     /// in the pinned 1.21.11 registry. `item replace … container.<n> with <item>
     /// <count>` fails **silently** above the cap, shipping an empty slot.
     pub const ITEM_COUNT_OVER_STACK: DwCode = DwCode::new("DW0436", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0111 §6.1) A fill names a slot the holder class does not have, or
+    /// a stack a slot cannot wear: a `slot` outside every family's vocabulary,
+    /// a slot named twice in one fill, a fill mixing named and unnamed stacks,
+    /// an armour slot given a stack whose `equippable` slot is another; at the
+    /// build tier, where the family is known, a stand fill with an unnamed
+    /// stack and a `collect` padding a frame or a stand.
+    pub const DW_HOLDER_SLOT: DwCode = DwCode::new("DW1035", ExitTier::Build);
+}
+
+/// The vocabulary of every holder family and which slots take any stack — the
+/// shared tail of every `DW1035` message (spec-0111 §6.1).
+pub fn holder_vocabulary_text() -> String {
+    use crate::holders::HolderFamily;
+    format!(
+        "The holder class's slot vocabulary, per family: a container — {}; an item frame — {};          an armour stand — {}. Any stack goes in `container.<n>`, `contents`, `armor.head`, \
+         `weapon.mainhand` and `weapon.offhand`; `armor.chest`, `armor.legs` and `armor.feet` \
+         take only a stack whose `equippable` slot is that slot (the game refuses anything \
+         else there).",
+        HolderFamily::Container.vocabulary(),
+        HolderFamily::Frame.vocabulary(),
+        HolderFamily::Stand.vocabulary(),
+    )
+}
+
+/// `DW1035`'s document arm over one fill's stacks (spec-0111 §3.3): every slot
+/// is in some family's vocabulary, none is named twice, the stacks name every
+/// slot or none, and an armour slot holds only a stack the game puts there.
+fn check_fill_slots(
+    what: &str,
+    path: &str,
+    stacks: &[LootItem],
+    items: &dyn ItemRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let named = stacks.iter().filter(|it| it.slot.is_some()).count();
+    if named > 0 && named < stacks.len() {
+        d.push(Diagnostic::error(
+            DW_HOLDER_SLOT,
+            "quests",
+            format!("{path}/items"),
+            format!(
+                "{what} names the slot of {named} of its {} stacks and leaves the rest \
+                 positional, so where an unnamed stack lands depends on which slots the named \
+                 ones took. Name the `slot` of every stack, or of none. {}",
+                stacks.len(),
+                holder_vocabulary_text()
+            ),
+        ));
+    }
+    let mut seen: BTreeMap<&str, usize> = BTreeMap::new();
+    for (k, it) in stacks.iter().enumerate() {
+        let Some(slot) = it.slot.as_deref() else {
+            continue;
+        };
+        let at = format!("{path}/items/{k}/slot");
+        if !crate::holders::in_some_vocabulary(slot) {
+            d.push(Diagnostic::error(
+                DW_HOLDER_SLOT,
+                "quests",
+                at,
+                format!(
+                    "{what} puts `{}` in slot `{slot}`, which no holder has. {}",
+                    it.item,
+                    holder_vocabulary_text()
+                ),
+            ));
+            continue;
+        }
+        if let Some(prev) = seen.insert(slot, k) {
+            d.push(Diagnostic::error(
+                DW_HOLDER_SLOT,
+                "quests",
+                at,
+                format!(
+                    "{what} names slot `{slot}` twice (stacks {prev} and {k}), so the second \
+                     stack overwrites the first and `{}` never reaches the holder. Give each \
+                     stack its own slot. {}",
+                    stacks[prev].item,
+                    holder_vocabulary_text()
+                ),
+            ));
+            continue;
+        }
+        if let Some(stand) = crate::holders::stand_slot(slot)
+            && let crate::holders::SlotAccepts::Equippable(want) = stand.accepts
+        {
+            let fits = match items.equippable(&it.item) {
+                crate::equipment::EquippableFact::Unknown => true,
+                crate::equipment::EquippableFact::Plain => false,
+                crate::equipment::EquippableFact::Equippable(e) => {
+                    e.slot == want
+                        && (e.allowed_entities.is_empty()
+                            || crate::equipment::admitted(
+                                "minecraft:armor_stand",
+                                &e.allowed_entities,
+                            ))
+                }
+            };
+            if !fits {
+                d.push(Diagnostic::error(
+                    DW_HOLDER_SLOT,
+                    "quests",
+                    at,
+                    format!(
+                        "{what} puts `{}` in `{slot}`, but the pinned game puts a stack in \
+                         `{slot}` only when its `equippable` slot is `{want}`, and `{}`'s is not \
+                         — `item replace entity … {slot}` would be refused and the stand would \
+                         stand empty there. Put it in a slot that takes any stack, or choose an \
+                         item made for that slot. {}",
+                        it.item,
+                        it.item,
+                        holder_vocabulary_text()
+                    ),
+                ));
+            }
+        }
+    }
 }
 
 crate::dw_code! {
@@ -224,7 +357,7 @@ pub(crate) fn collect_container_claim_checks(c: &Campaign, d: &mut Vec<Diagnosti
     }
     for (i, q) in c.quests.content.quests.iter().enumerate() {
         for (j, o) in q.objectives.iter().enumerate() {
-            let Some(cont) = o.collect_container() else {
+            let Some(cont) = o.collect_holder() else {
                 continue;
             };
             let mine = format!("collect objective `{}`", o.id());
@@ -232,7 +365,7 @@ pub(crate) fn collect_container_claim_checks(c: &Campaign, d: &mut Vec<Diagnosti
                 d.push(Diagnostic::error(
                     LOOT_DUPLICATE_ANCHOR,
                     "quests",
-                    format!("/content/quests/{i}/objectives/{j}/container"),
+                    format!("/content/quests/{i}/objectives/{j}/holder"),
                     format!(
                         "{prev} and {mine} both fill the container at anchor `{cont}`. Slots \
                          are assigned positionally from `container.0`, so one fill overwrites \
@@ -423,5 +556,12 @@ pub(crate) fn loot_checks(
                 d,
             );
         }
+        check_fill_slots(
+            &format!("loot `{}`", l.id),
+            &format!("/content/loot/{i}"),
+            &l.items,
+            items,
+            d,
+        );
     }
 }

@@ -520,7 +520,7 @@ pub fn declare_story(
                             o["hint"] = serde_json::json!("The wave comes to you here.");
                         }
                     }
-                    if kind == "collect" && o.get("container").is_some() {
+                    if kind == "collect" && o.get("holder").is_some() {
                         if o.get("title").is_none() {
                             o["title"] = serde_json::json!(format!("Collect: {oid}"));
                         }

@@ -167,10 +167,10 @@ pub enum Objective {
     },
     /// Completed when `count` of `item` have been collected (v0.3).
     ///
-    /// The items are provided in a container: the compiler's own chest at
-    /// `anchor` by default, or — since DSL v0.8 — the prefab's existing
-    /// container (any of the twelve container kinds, spec-0105) at
-    /// [`Objective::Collect::container`], optionally carrying an
+    /// The items are provided in a holder: the compiler's own chest at
+    /// `anchor` by default, or the prefab's existing holder — a container of
+    /// any of the twelve kinds (spec-0105), an item frame or an armour stand
+    /// (spec-0111) — at [`Objective::Collect::holder`], optionally carrying an
     /// [`Objective::Collect::item_name`] and padded to read full with
     /// [`Objective::Collect::fill_count`].
     Collect {
@@ -195,27 +195,31 @@ pub enum Objective {
         count: u32,
         /// The anchor items are provided at (chest / pickup).
         anchor: AnchorId,
-        /// **Adopt the container the prefab already placed**: the anchor whose
-        /// assembled-world cell holds
-        /// a `chest` / `trapped_chest` / `barrel` this collect fills instead of
-        /// conjuring its own chest at [`Objective::Collect::anchor`].
+        /// **Adopt the holder the prefab already placed** (DSL v0.49, spec-0111):
+        /// the anchor whose assembled-world cell holds a container (any of the
+        /// twelve kinds, spec-0105), an item frame or an armour stand — the
+        /// holder this collect fills instead of conjuring its own chest at
+        /// [`Objective::Collect::anchor`].
         ///
         /// Same division of labour a `loot` entry and a trap's dispenser already
-        /// keep with the prefab: furniture belongs in the piece. A beach camp's
-        /// barrel is scenery the player has been walking past since minute one —
-        /// having the compiler `setblock` a *second*, floating chest beside it to
-        /// hold the quest item is exactly the downstream workaround the no-hack
-        /// rule forbids. A `container` whose cell holds no container is a build
-        /// error (`DW0438`), never a silent fill into a wall.
+        /// keep with the prefab: furniture belongs in the piece. The holder's
+        /// kind, its flags and its tag are the engine's derivations from the
+        /// piece; nothing about them is typed here. The objective's item lands
+        /// in the holder's first slot — `container.0`, a frame's `contents`, a
+        /// stand's `armor.head` (the first of its vocabulary, and a slot that
+        /// takes any stack). A `holder` whose cell holds no holder
+        /// is a build error (`DW0438`), never a silent fill into a wall; padding
+        /// (`fill_count`) on a frame or a stand is `DW1035`, because neither has
+        /// a `container.<n>` slot to pad.
         ///
-        /// The critical-path step's position follows the container (the bot opens
-        /// *this* block), and no chest is placed at `anchor` when it is set.
+        /// The critical-path step's position follows the holder, and no chest
+        /// is placed at `anchor` when it is set.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        container: Option<AnchorId>,
+        holder: Option<AnchorId>,
         /// **The item comes off a body, not out of a box**: the wave whose
         /// declared `drops[]` yield
         /// this objective's item. No container is placed — not the compiler's own
-        /// chest at `anchor`, not a prefab one — and `container` is therefore
+        /// chest at `anchor`, not a prefab one — and `holder` is therefore
         /// mutually exclusive with it (`DW0100`-adjacent; `DW0492`).
         ///
         /// This is what makes "kill the boss → pick up its key → open the door"
@@ -552,13 +556,14 @@ impl Objective {
         }
     }
 
-    /// The container this objective ADOPTS (DSL v0.8), if it is a `collect` that
-    /// declares one: the anchor whose prefab-placed container it fills instead
-    /// of conjuring its own chest. `None` on every other objective and on a
-    /// `collect` that keeps the compiler-placed chest.
-    pub fn collect_container(&self) -> Option<&AnchorId> {
+    /// The holder this objective ADOPTS (DSL v0.49, spec-0111), if it is a
+    /// `collect` that declares one: the anchor whose prefab-placed holder — a
+    /// container, a frame or a stand — it fills instead of conjuring its own
+    /// chest. `None` on every other objective and on a `collect` that keeps the
+    /// compiler-placed chest.
+    pub fn collect_holder(&self) -> Option<&AnchorId> {
         match self {
-            Objective::Collect { container, .. } => container.as_ref(),
+            Objective::Collect { holder, .. } => holder.as_ref(),
             _ => None,
         }
     }

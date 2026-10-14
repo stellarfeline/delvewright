@@ -65,7 +65,7 @@ pub(super) fn collect_collect_fills(
     let mut out = Vec::new();
     for q in &campaign.quests.content.quests {
         for o in &q.objectives {
-            let Some(cont) = o.collect_container() else {
+            let Some(cont) = o.collect_holder() else {
                 continue;
             };
             let Some(cell) = point_any(anchors, cont.as_str()) else {

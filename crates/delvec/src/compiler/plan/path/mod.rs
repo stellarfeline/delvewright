@@ -1045,7 +1045,7 @@ pub(super) fn build_critical_path(
                     item,
                     count,
                     anchor,
-                    container,
+                    holder: container,
                     dropped_by,
                     ..
                 } => {

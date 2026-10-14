@@ -849,7 +849,7 @@
               "obj/press-the-case"
             ],
             "anchor": "anchor/pedestal",
-            "container": "anchor/case",
+            "holder": "anchor/case",
             "count": 4,
             "fill_count": 4,
             "forbids_flags": [
@@ -4402,6 +4402,6 @@
       }
     ]
   },
-  "dsl_version": "0.43.0",
+  "dsl_version": "0.49.0",
   "stage": "quests"
 }

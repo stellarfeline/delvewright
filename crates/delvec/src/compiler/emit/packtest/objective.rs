@@ -448,7 +448,7 @@ pub(super) fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             // v0.8: the first `collect` that ADOPTS a prefab container.
             // Distinct from `first_collect`, which may keep the compiler-placed
             // chest and would make the adoption assertions vacuous.
-            if first_collect_adopted.is_none() && o.collect_container().is_some() {
+            if first_collect_adopted.is_none() && o.collect_holder().is_some() {
                 first_collect_adopted = Some((qid, o));
             }
             if first_flag_gated.is_none()

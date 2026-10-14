@@ -1227,7 +1227,7 @@ def test_the_live_container_preconditions_do_not_count_a_body_drop(gate, tmp_pat
         "dropped": [{**base, "dropped_by": "wave/w"}],
         "plain": [dict(base)],
         "explicit-null": [{**base, "dropped_by": None}],
-        "adopted": [{**base, "container": "anchor/barrel"}],
+        "adopted": [{**base, "holder": "anchor/barrel"}],
         "none": [{"type": "interact"}],
     }
     build = make_build(tmp_path / "out")

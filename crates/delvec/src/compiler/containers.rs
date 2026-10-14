@@ -585,7 +585,7 @@ pub fn claims_of(plan: &Plan, blocks: &BlockMap) -> Vec<Claim> {
                 Objective::Collect {
                     id,
                     anchor,
-                    container: None,
+                    holder: None,
                     dropped_by: None,
                     ..
                 } => {
