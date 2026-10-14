@@ -588,6 +588,7 @@ async function main(): Promise<number> {
     report.recordPulseStations(executor.pulseStations);
     if (containerLedger) {
       const v = executor.noticeVerdict;
+      if (v) report.recordContainerNotice(v);
       process.stderr.write(
         `container notice: ${v ? `${v.ok ? "ok" : "FAILED"} — ${v.detail}` : "NOT JUDGED — no class was selected, so the window never opened"}\n`,
       );

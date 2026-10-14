@@ -21,7 +21,7 @@ A cell may carry `loot` and `device` together (the real chest among false trappe
 container census: N container cell(s) in the assembled world (<block>: n, …); L loot, C collect, V device, D decoration; notice <declared|none>; by place: <place>: n, …; arrangement: M mixed place(s), K over the cap of 2 decoration cell(s) per place.
 ```
 
-**The ledger** `validation/containers.json`, on every build: `census_input_sha256` (SHA-256 over every `(cell, state)` of the model the census read, in its order), `cells`, `loot`, `collect`, `device`, `decoration`, `by_block`, `by_place`, `max_scenery_per_place`, `mixed_places`, `over_cap_places`, `notice` (`{text, style}` with the line's plain English text, or `null`) and `rows[]` of `{cell, block, slots, place, claims[{kind, id}]}`.
+**The ledger** `validation/containers.json`, on every build: `census_input_sha256` (SHA-256 over every `(cell, state)` of the model the census read, in its order), `cells`, `loot`, `collect`, `device`, `decoration`, `by_block`, `by_place`, `max_scenery_per_place`, `mixed_places`, `over_cap_places`, `notice` (`{text, style, sound}` with the line's plain English text and its namespaced sound event or `null`; or `null`) and `rows[]` of `{cell, block, slots, place, claims[{kind, id}]}`.
 
 **The arrangement rule** (spec-0105 §9). A place is the neighbourhood a player searches. `MAX_SCENERY_PER_PLACE` is **2**, authored from the *Oblivion* Construction Set wiki's dungeon practice (one to three containers per ordinary room, one or two of them junk); a double chest is two cells and counts two.
 

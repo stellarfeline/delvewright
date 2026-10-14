@@ -104,7 +104,8 @@ fn a_campaign_with_no_container_prints_a_measured_zero() {
 
 /// `DW1018`, first arm: scenery with no notice. The notice is the remedy, and
 /// with it the build is green, the ledger carries the row and the notice, and
-/// every class apply tells it after `dw.classed` and before the teleport.
+/// every class apply tells it after `dw.classed` and after the teleport, its
+/// sound played `at` the player — at the arrival, never at the command source.
 #[test]
 fn scenery_with_no_notice_is_dw1018_and_the_notice_builds() {
     let (code, log, _) = build("bare", &[([-3, 0, -2], BARREL)], None, false);
@@ -134,6 +135,7 @@ fn scenery_with_no_notice_is_dw1018_and_the_notice_builds() {
         "The keep was stripped bare before you came."
     );
     assert_eq!(ledger["notice"]["style"], "chat");
+    assert_eq!(ledger["notice"]["sound"], "minecraft:block.barrel.close");
     let row = &ledger["rows"][0];
     assert_eq!(row["block"], BARREL);
     assert_eq!(row["slots"], 27);
@@ -154,7 +156,18 @@ fn scenery_with_no_notice_is_dw1018_and_the_notice_builds() {
             .iter()
             .position(|l| l.starts_with("teleport @s"))
             .expect("teleport line");
-        assert!(classed < told && told < warp, "{body}");
+        let sound = lines
+            .iter()
+            .position(|l| {
+                *l == "execute as @s at @s run playsound minecraft:block.barrel.close player @s"
+            })
+            .expect("the notice's sound, played at the player");
+        assert_eq!(
+            lines.iter().filter(|l| l.contains("playsound")).count(),
+            1,
+            "the sound is played once, at the player, and nowhere else: {body}"
+        );
+        assert!(classed < warp && warp < told && told < sound, "{body}");
     }
 }
 

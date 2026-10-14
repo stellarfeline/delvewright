@@ -1340,7 +1340,7 @@ pub fn container_campaign(
         }
         if notice {
             c["containers"] = serde_json::json!({
-                "decoration_notice": {"text": "The keep was stripped bare before you came."}
+                "decoration_notice": {"text": "The keep was stripped bare before you came.", "sound": "minecraft:block.barrel.close"}
             });
         }
     });

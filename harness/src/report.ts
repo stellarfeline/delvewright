@@ -132,6 +132,8 @@ export class RunReport {
   private readonly trials: DeathTrial[] = [];
   private readonly muster: string[] = [];
   private readonly pulseStations: import("./pulse.ts").StationRecord[] = [];
+  /** The arrival notice's verdict (spec-0105 §5.3), when the build wrote a ledger. */
+  private containerNotice: import("./containers.ts").NoticeVerdict | null = null;
   private readonly encounters: EncounterReport[] = [];
   private readonly rests: PerformedRest[] = [];
   private readonly namedEntityDeaths: ClassifiedDeath[] = [];
@@ -215,6 +217,11 @@ export class RunReport {
   /** What every pulse station heard (spec-0102 §5.3). */
   recordPulseStations(stations: readonly import("./pulse.ts").StationRecord[]): void {
     this.pulseStations.push(...stations);
+  }
+
+  /** The arrival notice's verdict, with the sound packet as it arrived. */
+  recordContainerNotice(verdict: import("./containers.ts").NoticeVerdict): void {
+    this.containerNotice = verdict;
   }
 
   /** Everything the musters found, for the stage that owns them. */
@@ -655,6 +662,20 @@ export class RunReport {
       // Every pulse station the walk stood at (spec-0102 §5.3), with the beats
       // it heard; empty for a build that declares no pulse or stations none.
       pulse_stations: this.pulseStations.map((s) => ({ ...s, cell: [...s.cell] })),
+      // The arrival notice (spec-0105 §5.3): its verdict and the sound packet
+      // as it arrived — name and position — or null when no ledger was read or
+      // no class was selected.
+      container_notice:
+        this.containerNotice === null
+          ? null
+          : {
+              declared: this.containerNotice.declared,
+              ok: this.containerNotice.ok,
+              detail: this.containerNotice.detail,
+              sound: this.containerNotice.sound
+                ? { name: this.containerNotice.sound.name, pos: [...this.containerNotice.sound.pos] }
+                : null,
+            },
     };
   }
 }

@@ -455,6 +455,11 @@ impl Census {
             "notice": self.notice.as_ref().map(|n| json!({
                 "text": delvewright_dsl::l10n::plain(&n.text),
                 "style": n.style.unwrap_or(delvewright_dsl::NarrateStyle::Chat).token(),
+                "sound": n.sound.as_deref().map(|s| if s.contains(':') {
+                    s.to_string()
+                } else {
+                    format!("minecraft:{s}")
+                }),
             })),
             "rows": self.rows.iter().map(|r| json!({
                 "cell": r.cell,

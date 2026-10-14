@@ -1122,9 +1122,13 @@ pub(super) fn emit_damage_players(
 
 /// Emit a `narrate` line in its channel (DSL v0.4). `chat` = `tellraw`; `title`
 /// / `subtitle` = the vanilla `title` command (a subtitle is paired with a blank
-/// title so it renders on its own). An optional sound plays alongside. `who` is
-/// the audience selector (spec-0018): the story is told to the whole party
-/// (`@a`), except inside a solo `on_respawn`/`on_caught` bundle (`@s`).
+/// title so it renders on its own). An optional sound plays alongside, at each
+/// listener: a `playsound` with no position plays at the command source, which
+/// for a tick- or setup-run function is the world spawn, so the line is played
+/// `at` every member of the audience to `@s` — heard where the player stands,
+/// by construction. `who` is the audience selector (spec-0018): the story is
+/// told to the whole party (`@a`), except inside a solo `on_respawn`/`on_caught`
+/// bundle (`@s`).
 pub(super) fn emit_narrate(
     text: &str,
     style: Option<delvewright_dsl::NarrateStyle>,
@@ -1156,7 +1160,9 @@ pub(super) fn emit_narrate(
         NarrateStyle::Actionbar => body.push(format!("title {who} actionbar {comp}")),
     }
     if let Some(s) = sound {
-        body.push(format!("playsound {s} player {who}"));
+        body.push(format!(
+            "execute as {who} at @s run playsound {s} player @s"
+        ));
     }
 }
 
