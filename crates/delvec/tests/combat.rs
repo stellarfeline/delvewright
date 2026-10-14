@@ -922,7 +922,7 @@ fn the_path_states_which_kinds_are_never_a_fight() {
     campaign_with(tmp.path(), |_, _| {});
     let (out, _) = build(tmp.path()).expect("the reference campaign builds");
     let (path, _) = path_and_plan(&out);
-    assert_eq!(path["format_version"], 4);
+    assert_eq!(path["format_version"], 5);
     let nc = &path["non_combatants"];
     assert_eq!(
         nc["kinds"],

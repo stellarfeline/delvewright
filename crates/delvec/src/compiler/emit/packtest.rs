@@ -17,6 +17,7 @@ mod creator;
 mod dialogue;
 mod economy;
 mod healthbar;
+mod holders;
 mod lane;
 mod lethal;
 mod lightning;
@@ -51,6 +52,8 @@ pub(super) struct Proved<'a> {
     /// Every container cell of the built world and its block, as the container
     /// census read them.
     pub(super) containers: &'a BTreeMap<[i32; 3], String>,
+    /// Every holder entity with what the engine owns about it (spec-0111).
+    pub(super) holders: &'a [crate::compiler::holders::OwnedHolder],
 }
 
 /// Emit the compiler-generated PackTest suite (spec-0003). PackTest (misode,
@@ -73,6 +76,7 @@ pub(super) fn emit_packtest(
         asm_locks,
         watch_binding,
         containers,
+        holders,
     } = *proved;
     let ns = &plan.namespace;
     put_json(
@@ -206,7 +210,7 @@ pub(super) fn emit_packtest(
     // an uncredited death and a compiler removal do not, and a rest tells the
     // two `fires` values apart. Emits nothing for a campaign with no bundle.
     onkill::emit_kill_pays_packtests(plan, out, waves.placements);
-    objective::emit_objective_activation_packtests(plan, out);
+    objective::emit_objective_activation_packtests(plan, out, proved.holders);
     class::emit_class_apply_packtests(plan, out);
     npc::emit_npc_talk_packtests(plan, out);
     // Every environment trigger's own bundle, plus a presser's dispatch and
@@ -215,6 +219,8 @@ pub(super) fn emit_packtest(
     // reached transitively. Emits nothing for a campaign with no trigger.
     trigger::emit_env_trigger_packtests(plan, out);
     loot::emit_loot_packtests(plan, out, containers);
+    // spec-0111 §5.3: every filled holder entity's own body, driven.
+    holders::emit_holder_packtests(plan, out, holders);
     actor::emit_actor_equipment_packtest(plan, out);
     // spec-0016 §6: the patrol NBT survives 1.21.11's strict codec, the lane
     // advances in march order, the squad is released to native AI at aggro range,
@@ -255,7 +261,10 @@ pub(super) fn emit_packtest(
 
 /// Every per-object watch claim the suite registers, in the order the build
 /// judges them.
-pub(super) fn watch_claims(plan: &Plan) -> Vec<crate::compiler::watch::Claim> {
+pub(super) fn watch_claims(
+    plan: &Plan,
+    holders: &[crate::compiler::holders::OwnedHolder],
+) -> Vec<crate::compiler::watch::Claim> {
     let mut watch_claims = vec![
         timed_gate::timed_gate_watch_claim(plan),
         actor::actor_watch_claim(plan),
@@ -267,6 +276,7 @@ pub(super) fn watch_claims(plan: &Plan) -> Vec<crate::compiler::watch::Claim> {
         npc::npc_talk_watch_claim(plan),
         cast::cast_ladder_watch_claim(plan),
         pulse::pulse_watch_claim(plan),
+        holders::holder_watch_claim(holders),
     ];
     watch_claims.extend(trigger::env_trigger_watch_claims(plan));
     watch_claims.extend(dialogue::dialogue_mask_watch_claims(plan));

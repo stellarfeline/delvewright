@@ -2,7 +2,7 @@
 
 import type { Bot } from "mineflayer";
 import type { Entity } from "prismarine-entity";
-import type { CollectStep, Vec3Tuple } from "../critical-path.ts";
+import type { CollectHolder, CollectStep, Vec3Tuple } from "../critical-path.ts";
 import { BotDeathError } from "../death.ts";
 import { WAVE_ENGAGE_NEAR } from "../wave.ts";
 import { delay, fmt } from "./connection.ts";
@@ -45,6 +45,28 @@ function nearestDrop(
   return best;
 }
 
+/**
+ * The holder entity standing at a `collect` step's cell (spec-0111): the
+ * nearest body of the step's kind within two blocks of the cell's centre. The
+ * client cannot read entity tags on 1.21.11, so the body is found by kind and
+ * place — the compiler put exactly one holder at that cell (DW0431 refuses two).
+ */
+export function holderAt(bot: Bot, holder: CollectHolder, pos: Vec3Tuple): Entity | undefined {
+  const name = holder.kind.replace(/-/g, "_");
+  let best: { e: Entity; d: number } | undefined;
+  for (const e of Object.values(bot.entities)) {
+    if (!e?.position || e.name !== name) continue;
+    const d = Math.hypot(
+      e.position.x - (pos[0] + 0.5),
+      e.position.y - (pos[1] + 0.5),
+      e.position.z - (pos[2] + 0.5),
+    );
+    if (d > 2) continue;
+    if (!best || d < best.d) best = { e, d };
+  }
+  return best?.e;
+}
+
 /** The executor's methods this file holds; `executor.ts` installs them on its prototype. */
 export const methods = {
   /**
@@ -62,6 +84,10 @@ export const methods = {
    */
   async collect(this: MineflayerExecutor, step: CollectStep): Promise<void> {
     const bot = this.requireBot();
+    if (step.holder !== undefined) {
+      await this.takeFromHolder(step, step.holder);
+      return;
+    }
     if (step.droppedBy !== undefined) {
       await this.walkTo(step.pos, 1, `drop of ${step.item}`, step.sneak, {
         objective: step.objective,
@@ -96,6 +122,65 @@ export const methods = {
     // Holding the items is not the objective; the inventory_changed advancement
     // completing it is. Wait for that objective's own marker.
     await this.requireObjective(step.objective, `collect ${step.item}`);
+  },
+
+  /**
+   * Take a `collect`'s item off the frame or stand standing at its cell
+   * (spec-0111 §5.4), the way a player does: walk to the cell the compiler
+   * proved in reach and in sight, then HIT a frame — its item pops out and is
+   * picked up as any drop — or CLICK a stand with an empty hand at the height
+   * whose band holds the slot (`activateEntityAt`, mineflayer's `use_entity`
+   * with `mouse: 2`, the packet the server reads as `interact_at`; the swap
+   * that puts the stack in the hand happens only on that packet, so the
+   * objective completing is the server having received it). After a frame
+   * take the bot asserts the frame still hangs there and no frame item came
+   * into its inventory — the §4.3 freeze, observed once from outside.
+   */
+  async takeFromHolder(
+    this: MineflayerExecutor,
+    step: CollectStep,
+    holder: CollectHolder,
+  ): Promise<void> {
+    const bot = this.requireBot();
+    await this.walkTo(holder.stance ?? step.pos, holder.stance ? 0 : 2, `${holder.kind} ${step.item}`, step.sneak, {
+      objective: step.objective,
+      transport: step.transport,
+    });
+    const body = holderAt(bot, holder, step.pos);
+    if (!body) {
+      throw new Error(
+        `no ${holder.kind} within 2 blocks of the collect cell [${step.pos.join(", ")}] for ${step.objective}`,
+      );
+    }
+    if (holder.kind === "armor-stand") {
+      if (bot.heldItem) {
+        await bot.unequip("hand");
+      }
+      const at = body.position.offset(0, holder.clickHeight ?? 1, 0);
+      await bot.activateEntityAt(body, at);
+      await this.requireObjective(step.objective, `collect ${step.item}`);
+      return;
+    }
+    await bot.lookAt(body.position, true);
+    bot.attack(body);
+    await this.pickUpDrop(step);
+    await this.requireObjective(step.objective, `collect ${step.item}`);
+    const still = bot.entities[body.id];
+    if (!still || !still.isValid) {
+      throw new Error(
+        `the ${holder.kind} at [${step.pos.join(", ")}] is gone after ${step.objective}'s take — ` +
+          "an emptied frame must freeze (spec-0111 §4.3), not break",
+      );
+    }
+    const frameItem = bot.inventory
+      .items()
+      .find((i) => i.name === "item_frame" || i.name === "glow_item_frame");
+    if (frameItem) {
+      throw new Error(
+        `a ${frameItem.name} came into the bot's inventory taking ${step.objective}: ` +
+          "the frame broke instead of freezing (spec-0111 §4.3)",
+      );
+    }
   },
 
   /**

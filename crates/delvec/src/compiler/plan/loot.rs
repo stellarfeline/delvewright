@@ -17,7 +17,8 @@ pub struct LootPlan {
     pub anchor: String,
     /// The world cell of the container to fill.
     pub cell: [i32; 3],
-    /// Contents in declaration order; index IS the container slot.
+    /// Contents in declaration order; a positional stack's index IS its
+    /// container slot (spec-0111 §3.3).
     pub items: Vec<LootItemPlan>,
 }
 
@@ -32,10 +33,13 @@ pub struct LootItemPlan {
     pub name: Option<String>,
     /// Enchantment id → level.
     pub enchantments: BTreeMap<String, u32>,
+    /// The slot the stack names (spec-0111 §3.3), or `None` for a positional
+    /// stack.
+    pub slot: Option<String>,
 }
 
-/// A `collect` objective that ADOPTS a prefab-placed container (DSL v0.8),
-/// resolved to the container's world cell.
+/// A `collect` objective that ADOPTS a prefab-placed holder (`holder`,
+/// spec-0111), resolved to the holder's world cell.
 ///
 /// One resolution, one cell: the build-tier container proof (`DW0438`), the
 /// activation-time fill and the critical-path step the bot opens all read THIS
@@ -46,16 +50,16 @@ pub struct LootItemPlan {
 pub struct CollectFillPlan {
     /// The `collect` objective's id.
     pub objective_id: String,
-    /// The anchor named by `container`.
+    /// The anchor named by `holder`.
     pub anchor: String,
-    /// The world cell of the container to fill.
+    /// The world cell of the holder to fill.
     pub cell: [i32; 3],
     /// How many slots the fill occupies: the objective's own stack plus
     /// `fill_count` padding stacks.
     pub slots: usize,
 }
 
-/// Resolve every `collect` objective's adopted `container` (DSL v0.8) to a world
+/// Resolve every `collect` objective's adopted `holder` (spec-0111) to a world
 /// cell, in campaign order. An unresolvable anchor is skipped here and reported
 /// by the DSL tier (`DW0142`) — the same policy [`collect_loot`] follows.
 pub(super) fn collect_collect_fills(
@@ -107,6 +111,7 @@ pub(super) fn collect_loot(
                         count: it.count,
                         name: it.name.clone(),
                         enchantments: it.enchantments.clone(),
+                        slot: it.slot.clone(),
                     })
                     .collect(),
             })

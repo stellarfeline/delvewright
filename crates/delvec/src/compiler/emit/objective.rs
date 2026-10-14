@@ -43,7 +43,12 @@ pub(super) fn has_collect_objective(c: &delvewright_dsl::Campaign) -> bool {
 /// `reach` glowing end-rod marker. Empty for objectives with no prop (talk-to,
 /// kill) or an unresolvable anchor — both the `tick` activation driver and the
 /// `activate_<obj>` function key off this being non-empty, so they never diverge.
-pub(super) fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
+pub(super) fn activation_commands(
+    plan: &Plan,
+    holders: &[crate::compiler::holders::OwnedHolder],
+    area: &str,
+    o: &Objective,
+) -> Vec<String> {
     let mut cmds = Vec::new();
     match o {
         Objective::Collect {
@@ -63,9 +68,20 @@ pub(super) fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec
             if dropped_by.is_some() {
                 return cmds;
             }
+            // spec-0111 §3.4: an adopted holder ENTITY — a frame or a stand
+            // the piece carries — is filled by `item replace entity` in its
+            // first slot, a frame unfrozen to give it up; the engine summoned
+            // the body at `setup_finish`.
+            let stack = format!(
+                "{item}{} {count}",
+                item_component_tail(item, item_name.as_deref())
+            );
+            if let Some(lines) = collect_holder_activation(holders, id.as_str(), &stack) {
+                return lines;
+            }
             // v0.8: an ADOPTED container is prefab furniture standing
             // in the room already — fill it where it stands, place nothing. Absent
-            // `container`, the compiler keeps conjuring its own chest at the
+            // `holder`, the compiler keeps conjuring its own chest at the
             // anchor exactly as it always has. The adopted cell comes from
             // `plan.collect_fills`, the same resolution `DW0438` proved.
             let adopted = plan
@@ -88,10 +104,6 @@ pub(super) fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec
             // total — no RNG, nothing to reseed (ADR-0006). A campaign with
             // neither a name nor padding emits the single pre-0.8 line, byte for
             // byte.
-            let stack = format!(
-                "{item}{} {count}",
-                item_component_tail(item, item_name.as_deref())
-            );
             for slot in 0..=*fill_count {
                 cmds.push(format!(
                     "item replace block {} {} {} container.{slot} with {stack}",

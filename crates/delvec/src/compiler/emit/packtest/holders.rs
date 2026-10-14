@@ -1,0 +1,118 @@
+use super::*;
+use crate::compiler::holders::OwnedHolder;
+use delvewright_dsl::holders::HolderFamily;
+
+/// **One PackTest per filled holder entity** (spec-0111 §5.3): `holder_<id>`
+/// drives the holder's own body and asserts what the engine owns about it —
+/// one body carries its tag, every slot a `loot` fill claims holds its item,
+/// and the flags are the ones §4.1 sets — and, on a frame, the §4.3 freeze:
+/// emptied, a `tick` later it is `Fixed` and `Invulnerable`. The test restores
+/// the frame's contents and flags as it found them, so it leaves the world as
+/// any sibling template expects it. A PackTest dummy performs no real attack
+/// or click; the take is the bot's.
+pub(super) fn emit_holder_packtests(plan: &Plan, out: &mut BuildOutput, holders: &[OwnedHolder]) {
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    for o in holders.iter().filter(|o| o.is_filled()) {
+        let id = &o.id;
+        let tag = o.tag();
+        let sel = o.selector();
+        let mut b = packtest_header(&format!(
+            "{title}: the `{}` `{id}` is summoned and filled as the engine owns it (spec-0111)",
+            o.holder.kind.id
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("function {ns}:{}", super::super::holder_fn(o)));
+        b.push(format!("scoreboard players set #hn_{id} dw.sys 0"));
+        b.push(format!(
+            "execute store result score #hn_{id} dw.sys if entity @e[tag={tag}]"
+        ));
+        b.push(format!("assert score #hn_{id} dw.sys matches 1"));
+        for (k, f) in o.fills.iter().enumerate() {
+            let Some(it) = &f.stack else { continue };
+            b.push(format!("scoreboard players set #hs{k}_{id} dw.sys 0"));
+            b.push(format!(
+                "execute store success score #hs{k}_{id} dw.sys if items entity {sel} {} {}",
+                f.slot, it.item
+            ));
+            b.push(format!("assert score #hs{k}_{id} dw.sys matches 1"));
+        }
+        let flags = match o.holder.kind.family {
+            HolderFamily::Stand => format!(
+                "Marker:0b,Invulnerable:1b,DisabledSlots:{}",
+                o.disabled_slots()
+            ),
+            _ => "ItemDropChance:1.0f".to_string(),
+        };
+        b.push(format!("scoreboard players set #hf_{id} dw.sys 0"));
+        b.push(format!(
+            "execute store success score #hf_{id} dw.sys if entity @e[tag={tag},nbt={{{flags}}}]"
+        ));
+        b.push(format!("assert score #hf_{id} dw.sys matches 1"));
+        if o.holder.kind.family == HolderFamily::Frame {
+            let item = o
+                .fills
+                .iter()
+                .find_map(|f| f.stack.as_ref().map(|s| s.item.clone()))
+                .or_else(|| {
+                    o.collect.as_ref().and_then(|obj| {
+                        plan.campaign
+                            .quests
+                            .content
+                            .quests
+                            .iter()
+                            .flat_map(|q| &q.objectives)
+                            .find(|x| x.id().as_str() == obj)
+                            .and_then(|x| match x {
+                                delvewright_dsl::Objective::Collect { item, .. } => {
+                                    Some(item.clone())
+                                }
+                                _ => None,
+                            })
+                    })
+                })
+                .unwrap_or_else(|| "minecraft:air".to_string());
+            // Held before: an open frame (a loot fill, or an activated collect).
+            b.push(format!("scoreboard players set #hb_{id} dw.sys 0"));
+            b.push(format!(
+                "execute store success score #hb_{id} dw.sys if items entity {sel} contents *"
+            ));
+            b.push(format!(
+                "item replace entity {sel} contents with minecraft:air"
+            ));
+            b.push(format!("function {ns}:tick"));
+            b.push(format!("scoreboard players set #hz_{id} dw.sys 0"));
+            b.push(format!(
+                "execute store success score #hz_{id} dw.sys if entity \
+                 @e[tag={tag},nbt={{Fixed:1b,Invulnerable:1b}}]"
+            ));
+            b.push(format!("assert score #hz_{id} dw.sys matches 1"));
+            b.push(format!(
+                "execute if score #hb_{id} dw.sys matches 1 run item replace entity {sel} \
+                 contents with {item}"
+            ));
+            b.push(format!(
+                "execute if score #hb_{id} dw.sys matches 1 run data merge entity {sel} \
+                 {{Fixed:0b,Invulnerable:0b}}"
+            ));
+        }
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/holder_{id}.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+}
+
+/// `DW0811`'s claim over the holders: every filled holder's own body
+/// `holder_<id>` is driven by its template.
+pub(super) fn holder_watch_claim(holders: &[OwnedHolder]) -> crate::compiler::watch::Claim {
+    crate::compiler::watch::Claim {
+        mechanic: "holder",
+        families: vec!["holder_".to_string()],
+        declared: holders
+            .iter()
+            .filter(|o| o.is_filled())
+            .map(|o| o.id.clone())
+            .collect(),
+    }
+}

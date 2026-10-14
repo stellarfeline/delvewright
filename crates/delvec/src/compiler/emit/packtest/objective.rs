@@ -210,6 +210,13 @@ enum ActivationFixture {
     /// The objective's prop block alone (spec-0093 §6.5): a block vanilla
     /// reports the use of summons nothing — the block is the whole affordance.
     Block { pos: [i32; 3], block: String },
+    /// The objective's stack in a holder entity's slot (spec-0111 §3.4): the
+    /// collect path fills the frame or stand the piece carries.
+    EntitySlot {
+        selector: String,
+        slot: String,
+        item: String,
+    },
 }
 
 fn activation_fixture(cmds: &[String]) -> Option<ActivationFixture> {
@@ -244,6 +251,21 @@ fn activation_fixture(cmds: &[String]) -> Option<ActivationFixture> {
                 block: crate::compiler::pressable::block_id(block).to_string(),
             });
         }
+    }
+    // `item replace entity <selector> <slot> with <item>[…] <count>` — a holder
+    // entity the piece carries (spec-0111 §3.4).
+    if let Some(fill) = cmds.iter().find(|c| c.starts_with("item replace entity ")) {
+        let f: Vec<&str> = fill.split_whitespace().collect();
+        let stack = f.iter().skip_while(|w| **w != "with").nth(1)?;
+        return Some(ActivationFixture::EntitySlot {
+            selector: (*f.get(3)?).to_string(),
+            slot: (*f.get(4)?).to_string(),
+            item: stack
+                .split_once('[')
+                .map(|(id, _)| id)
+                .unwrap_or(stack)
+                .to_string(),
+        });
     }
     // `item replace block <x> <y> <z> container.<n> with <item>[…] <count>`
     let fill = cmds.iter().find(|c| c.starts_with("item replace block "))?;
@@ -281,14 +303,18 @@ fn activation_fixture(cmds: &[String]) -> Option<ActivationFixture> {
 /// would tell the campaign tick an objective is live when it is not) and it
 /// takes a BEFORE count, so it neither assumes a fresh world nor destroys a
 /// sibling's fixtures — it removes exactly the entities it caused.
-pub(super) fn emit_objective_activation_packtests(plan: &Plan, out: &mut BuildOutput) {
+pub(super) fn emit_objective_activation_packtests(
+    plan: &Plan,
+    out: &mut BuildOutput,
+    holders: &[crate::compiler::holders::OwnedHolder],
+) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
     for q in &plan.campaign.quests.content.quests {
         let area = plan.quest_area(q.id.as_str()).unwrap_or("");
         for o in &q.objectives {
             let oid = o.id().as_str();
-            let cmds = activation_commands(plan, area, o);
+            let cmds = activation_commands(plan, holders, area, o);
             let Some(fixture) = activation_fixture(&cmds) else {
                 continue;
             };
@@ -331,6 +357,29 @@ pub(super) fn emit_objective_activation_packtests(plan: &Plan, out: &mut BuildOu
                     b.push(format!(
                         "execute store success score #fx1_{safe} dw.sys if items block {x} {y} {z} \
                          container.0 {item}"
+                    ));
+                    b.push(format!("assert score #fx1_{safe} dw.sys matches 1"));
+                }
+                ActivationFixture::EntitySlot {
+                    selector,
+                    slot,
+                    item,
+                } => {
+                    // Empty the holder's own slot first, so the after-read is a
+                    // fact about this activation; the activation refills it,
+                    // which is also the cleanup.
+                    b.push(format!(
+                        "item replace entity {selector} {slot} with minecraft:air"
+                    ));
+                    b.push(format!(
+                        "execute store success score #fx0_{safe} dw.sys if items entity \
+                         {selector} {slot} {item}"
+                    ));
+                    b.push(format!("assert score #fx0_{safe} dw.sys matches 0"));
+                    b.push(format!("function {ns}:activate_o_{safe}"));
+                    b.push(format!(
+                        "execute store success score #fx1_{safe} dw.sys if items entity \
+                         {selector} {slot} {item}"
                     ));
                     b.push(format!("assert score #fx1_{safe} dw.sys matches 1"));
                 }

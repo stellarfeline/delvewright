@@ -158,6 +158,7 @@ pub(super) fn quest_completion_fns(
     plan: &Plan,
     chrome: &delvewright_dsl::Chrome,
     branch_transport: &BranchTransportOverlay,
+    holders: &[crate::compiler::holders::OwnedHolder],
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -169,7 +170,7 @@ pub(super) fn quest_completion_fns(
             // v0.3 activation function (gap 13): run once when the objective
             // activates (driven from `tick`) — set the global once-flag, then place
             // the objective's prop(s). Emitted only for objectives with a prop.
-            let cmds = activation_commands(plan, q_area, o);
+            let cmds = activation_commands(plan, holders, q_area, o);
             if !cmds.is_empty() {
                 let mut act = vec![format!(
                     "scoreboard players set {} dw.sys 1",
@@ -286,7 +287,7 @@ pub(super) fn quest_completion_fns(
             // persist; only summoned entities are removed. Gated identically to the
             // summon (a non-empty activation) so objectives with no summon emit
             // nothing here.
-            if !activation_commands(plan, q_area, o).is_empty() {
+            if !activation_commands(plan, holders, q_area, o).is_empty() {
                 body.extend(completion_cleanup(o));
             }
             // `complete_<obj>` is dispatched `as @a` from `tick`, so this bundle

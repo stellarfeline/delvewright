@@ -1,5 +1,7 @@
-//! Container-fill proofs over the assembled world (`DW0431` for spec-0021 `loot`,
-//! `DW0438` for a DSL v0.8 `collect` that adopts a prefab container).
+//! Holder-fill proofs over the assembled world (`DW0431` for spec-0021 `loot`,
+//! `DW0438` for a `collect` that adopts a prefab holder): the holder at the
+//! anchor is really there — a container block, or one item frame or armour
+//! stand the piece carries (spec-0111) — and the fill fits its slots.
 //!
 //! A `loot` declaration fills a container the **prefab already placed** — the
 //! same division of labour a trap has with its dispenser. That makes the
@@ -17,7 +19,9 @@ use std::collections::BTreeMap;
 
 use crate::compiler::assembled::base_id;
 use crate::compiler::failure::Failure;
+use crate::compiler::holders::PlacedHolder;
 use crate::compiler::plan::{CollectFillPlan, LootPlan};
+use delvewright_dsl::holders::HolderFamily;
 use delvewright_dsl::{DwCode, ExitTier};
 
 delvewright_dsl::dw_code! {
@@ -86,6 +90,7 @@ pub struct ContainerAnchor {
 /// (ADR-0006) and reads in area order.
 pub fn container_anchors(
     blocks: &crate::compiler::blockstate::BlockMap,
+    entities: &[PlacedHolder],
     anchors: &BTreeMap<(String, String), crate::compiler::plan::ResolvedAnchor>,
     loot: &[LootPlan],
     fills: &[CollectFillPlan],
@@ -119,13 +124,20 @@ pub fn container_anchors(
             .get(&cell)
             .map(|s| s.as_str())
             .unwrap_or("minecraft:air");
-        let Some(slots) = container_slots(found) else {
-            continue;
+        let (block, slots) = match container_slots(found) {
+            Some(slots) => (base_id(found).to_string(), slots),
+            None => match crate::compiler::holders::entities_at(entities, cell).as_slice() {
+                [one] => (
+                    one.kind.id.to_string(),
+                    crate::compiler::holders::entity_vocabulary(one.kind).len(),
+                ),
+                _ => continue,
+            },
         };
         out.push(ContainerAnchor {
             area: area.clone(),
             name: name.clone(),
-            block: base_id(found).to_string(),
+            block,
             slots,
             claimed_by: claimed.get(name.as_str()).cloned(),
         });
@@ -218,43 +230,156 @@ fn container_remedy(available: &[ContainerAnchor], what: &str) -> String {
     )
 }
 
+/// What one fill found at its cell: the holder there, or why there is none.
+enum Found<'a> {
+    /// A container block of this many slots.
+    Container(&'a str, usize),
+    /// One entity holder.
+    Entity(&'a PlacedHolder),
+    /// Two entity holders at one cell: a fill names neither.
+    Ambiguous(Vec<&'a PlacedHolder>),
+    /// Nothing that holds items.
+    Nothing(&'a str),
+}
+
+fn found_at<'a>(
+    blocks: &'a crate::compiler::blockstate::BlockMap,
+    entities: &'a [PlacedHolder],
+    c: [i32; 3],
+) -> Found<'a> {
+    let block = blocks
+        .get(&c)
+        .map(|s| s.as_str())
+        .unwrap_or("minecraft:air");
+    if let Some(slots) = container_slots(block) {
+        return Found::Container(block, slots);
+    }
+    match crate::compiler::holders::entities_at(entities, c).as_slice() {
+        [] => Found::Nothing(block),
+        [one] => Found::Entity(one),
+        many => Found::Ambiguous(many.to_vec()),
+    }
+}
+
+/// The fault of one `loot` fill against what stands at its cell, or `None`.
+/// The second half says whether it is a slot-vocabulary fault the build tier
+/// raises under `DW1035` (a stand fill with an unnamed stack).
+fn loot_fault(l: &LootPlan, found: &Found<'_>) -> Option<(String, bool)> {
+    let c = l.cell;
+    let at = format!(
+        "loot `{}` -> anchor `{}` at [{}, {}, {}]",
+        l.id, l.anchor, c[0], c[1], c[2]
+    );
+    let named: Vec<&str> = l.items.iter().filter_map(|i| i.slot.as_deref()).collect();
+    match found {
+        Found::Nothing(block) => Some((
+            format!("  {at} holds `{}`, not a holder", base_id(block)),
+            false,
+        )),
+        Found::Ambiguous(many) => Some((
+            format!(
+                "  {at} holds {} holder entities ({}), so the fill names none of them; a cell a                  fill names holds one holder",
+                many.len(),
+                many.iter()
+                    .map(|h| h.kind.id)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            false,
+        )),
+        Found::Container(block, slots) => {
+            if let Some(bad) = named
+                .iter()
+                .find(|s| !HolderFamily::Container.has_slot(s, *slots))
+            {
+                return Some((
+                    format!(
+                        "  {at} names slot `{bad}`, but the holder there is a `{}` — a container,                          whose slots are {}, {slots} of them",
+                        base_id(block),
+                        HolderFamily::Container.vocabulary()
+                    ),
+                    false,
+                ));
+            }
+            (named.is_empty() && l.items.len() > *slots).then(|| {
+                (
+                    format!(
+                        "  {at} declares {} stacks but `{}` has {} slots",
+                        l.items.len(),
+                        base_id(block),
+                        slots
+                    ),
+                    false,
+                )
+            })
+        }
+        Found::Entity(h) => {
+            let fam = h.kind.family;
+            if let Some(bad) = named.iter().find(|s| !fam.has_slot(s, 0)) {
+                return Some((
+                    format!(
+                        "  {at} names slot `{bad}`, but the holder there is a `{}` — a {}, whose                          slots are {}",
+                        h.kind.id,
+                        fam.name(),
+                        fam.vocabulary()
+                    ),
+                    false,
+                ));
+            }
+            match fam {
+                HolderFamily::Stand if named.len() < l.items.len() => Some((
+                    format!(
+                        "  {at} fills the `{}` with a stack that names no `slot`; a stand's slots                          have no order, so every stack names one: {}",
+                        h.kind.id,
+                        fam.vocabulary()
+                    ),
+                    true,
+                )),
+                HolderFamily::Frame if l.items.len() > 1 => Some((
+                    format!(
+                        "  {at} declares {} stacks but the `{}` has 1 slot (`contents`)",
+                        l.items.len(),
+                        h.kind.id
+                    ),
+                    false,
+                )),
+                _ => None,
+            }
+        }
+    }
+}
+
 /// Build-tier proof: every `loot` anchor resolves to a cell that really holds a
-/// container in the assembled world, and no fill overflows that container.
+/// holder in the assembled world — a container block or one holder entity the
+/// piece carries — and the fill fits its slots.
 pub fn check_loot_containers(
     blocks: &crate::compiler::blockstate::BlockMap,
+    entities: &[PlacedHolder],
     loot: &[LootPlan],
     available: &[ContainerAnchor],
 ) -> Result<(), Failure> {
     let mut bad: Vec<String> = Vec::new();
+    let mut slot_faults: Vec<String> = Vec::new();
     for l in loot {
-        let c = l.cell;
-        let found = blocks
-            .get(&c)
-            .map(|s| s.as_str())
-            .unwrap_or("minecraft:air");
-        match container_slots(found) {
-            None => bad.push(format!(
-                "  loot `{}` -> anchor `{}` at [{}, {}, {}] holds `{}`, not a container",
-                l.id,
-                l.anchor,
-                c[0],
-                c[1],
-                c[2],
-                base_id(found)
-            )),
-            Some(slots) if l.items.len() > slots => bad.push(format!(
-                "  loot `{}` -> anchor `{}` at [{}, {}, {}] declares {} stacks but `{}` has {} slots",
-                l.id,
-                l.anchor,
-                c[0],
-                c[1],
-                c[2],
-                l.items.len(),
-                base_id(found),
-                slots
-            )),
-            Some(_) => {}
+        if let Some((fault, vocab)) = loot_fault(l, &found_at(blocks, entities, l.cell)) {
+            if vocab {
+                slot_faults.push(fault);
+            } else {
+                bad.push(fault);
+            }
         }
+    }
+    if bad.is_empty() && !slot_faults.is_empty() {
+        return Err(Failure {
+            code: delvewright_dsl::loot::DW_HOLDER_SLOT,
+            message: format!(
+                "{} `loot` fill(s) leave a stack's slot to be guessed on a holder that has no \
+                 order.\n{}\n{}",
+                slot_faults.len(),
+                slot_faults.join("\n"),
+                delvewright_dsl::loot::holder_vocabulary_text()
+            ),
+        });
     }
     if bad.is_empty() {
         return Ok(());
@@ -262,11 +387,11 @@ pub fn check_loot_containers(
     Err(Failure {
         code: DW_LOOT_NOT_A_CONTAINER,
         message: format!(
-            "{} `loot` declaration(s) do not resolve to a fillable container.\n{}\n\
-             A `loot` entry fills a container the PREFAB placed — it never places one, exactly \
-             as a trap never places its dispenser. `item replace block … container.<n>` against \
-             a non-container fails SILENTLY, so this would have shipped as an empty wall where \
-             the stores should be. {remedy}",
+            "{} `loot` declaration(s) do not resolve to a fillable holder.\n{}\n\
+             A `loot` entry fills a holder the PREFAB placed — a container, an item frame or an \
+             armour stand — and never places one, exactly as a trap never places its dispenser. \
+             `item replace … <slot>` against a non-holder fails SILENTLY, so this would have \
+             shipped as an empty wall where the stores should be. {remedy}",
             bad.len(),
             bad.join("\n"),
             remedy = container_remedy(available, "the `loot` entry's `anchor`"),
@@ -274,51 +399,68 @@ pub fn check_loot_containers(
     })
 }
 
-/// Build-tier proof: every `collect` objective that **adopts** a container (DSL
-/// v0.8) points at a cell that really holds one, with room for the
-/// objective's stack plus its padding.
+/// Build-tier proof: every `collect` objective that **adopts** a holder
+/// points at a cell that really holds one, with room for the objective's
+/// stack plus its padding — padding only a container has (`DW1035` on a frame
+/// or a stand, which have no `container.<n>` slots).
 ///
 /// The same silent failure `DW0431` exists for, reached through the other door.
 /// A `collect` that adopts nothing keeps conjuring its own chest and can never
-/// fail this — the whole point of adoption is that the container is FURNITURE the
+/// fail this — the whole point of adoption is that the holder is FURNITURE the
 /// prefab authored, so "is it actually there?" is a question about the assembled
 /// world, and the answer "no" must be a build error rather than a barrel-shaped
 /// hole the player discovers by finding an empty room where the quest item was.
 pub fn check_collect_containers(
     blocks: &crate::compiler::blockstate::BlockMap,
+    entities: &[PlacedHolder],
     fills: &[CollectFillPlan],
     available: &[ContainerAnchor],
 ) -> Result<(), Failure> {
     let mut bad: Vec<String> = Vec::new();
+    let mut padding: Vec<String> = Vec::new();
     for f in fills {
         let c = f.cell;
-        let found = blocks
-            .get(&c)
-            .map(|s| s.as_str())
-            .unwrap_or("minecraft:air");
-        match container_slots(found) {
-            None => bad.push(format!(
-                "  collect `{}` -> container anchor `{}` at [{}, {}, {}] holds `{}`, not a container",
-                f.objective_id,
-                f.anchor,
-                c[0],
-                c[1],
-                c[2],
-                base_id(found)
+        let at = format!(
+            "collect `{}` -> holder anchor `{}` at [{}, {}, {}]",
+            f.objective_id, f.anchor, c[0], c[1], c[2]
+        );
+        match found_at(blocks, entities, c) {
+            Found::Nothing(block) => {
+                bad.push(format!("  {at} holds `{}`, not a holder", base_id(block)));
+            }
+            Found::Ambiguous(many) => bad.push(format!(
+                "  {at} holds {} holder entities, so the collect names none of them",
+                many.len()
             )),
-            Some(slots) if f.slots > slots => bad.push(format!(
-                "  collect `{}` -> container anchor `{}` at [{}, {}, {}] fills {} slots but `{}` has {} slots",
-                f.objective_id,
-                f.anchor,
-                c[0],
-                c[1],
-                c[2],
+            Found::Container(block, slots) if f.slots > slots => bad.push(format!(
+                "  {at} fills {} slots but `{}` has {} slots",
                 f.slots,
-                base_id(found),
+                base_id(block),
                 slots
             )),
-            Some(_) => {}
+            Found::Container(..) => {}
+            Found::Entity(h) if f.slots > 1 => padding.push(format!(
+                "  {at} pads its stack with {} more (`fill_count`), but the holder there is a \
+                 `{}` — a {}, whose slots are {}: it has no `container.<n>` slot to pad",
+                f.slots - 1,
+                h.kind.id,
+                h.kind.family.name(),
+                h.kind.family.vocabulary()
+            )),
+            Found::Entity(_) => {}
         }
+    }
+    if bad.is_empty() && !padding.is_empty() {
+        return Err(Failure {
+            code: delvewright_dsl::loot::DW_HOLDER_SLOT,
+            message: format!(
+                "{} `collect` objective(s) pad a holder that has no padding slots.\n{}\n  Drop \
+                 `fill_count`: a frame or a stand shows the one thing it holds. {}",
+                padding.len(),
+                padding.join("\n"),
+                delvewright_dsl::loot::holder_vocabulary_text()
+            ),
+        });
     }
     if bad.is_empty() {
         return Ok(());
@@ -326,18 +468,18 @@ pub fn check_collect_containers(
     Err(Failure {
         code: DW_COLLECT_NOT_A_CONTAINER,
         message: format!(
-            "{} `collect` objective(s) adopt a container that is not there.\n{}\n\
-             A `collect` with a `container` fills furniture the PREFAB placed and never places \
+            "{} `collect` objective(s) adopt a holder that is not there.\n{}\n\
+             A `collect` with a `holder` fills furniture the PREFAB placed and never places \
              one itself — that is the whole reason the field exists, so a quest item can live in \
-             the barrel the player has been walking past instead of in a chest conjured out of \
-             the air beside it. `item replace block … container.<n>` against a non-container \
-             fails SILENTLY, so this would have shipped as an uncompletable objective with \
-             nothing anywhere to pick up. {remedy} Dropping the `container` field to make this \
+             the barrel the player has been walking past, or hang on the wall, instead of in a \
+             chest conjured out of the air beside it. `item replace … <slot>` against a \
+             non-holder fails SILENTLY, so this would have shipped as an uncompletable objective \
+             with nothing anywhere to pick up. {remedy} Dropping the `holder` field to make this \
              go away is NOT the fix — that silently returns the delve to a floating compiler \
              chest, which is the defect the field was added to remove.",
             bad.len(),
             bad.join("\n"),
-            remedy = container_remedy(available, "`container`"),
+            remedy = container_remedy(available, "`holder`"),
         ),
     })
 }
@@ -359,6 +501,7 @@ pub fn check_collect_containers(
 /// [`Blockout::stand_in_holding`]: crate::compiler::blockout::Blockout::stand_in_holding
 pub fn split_owed_by_detail(
     blocks: &crate::compiler::blockstate::BlockMap,
+    entities: &[PlacedHolder],
     blockout: Option<&crate::compiler::blockout::Blockout>,
     loot: &[LootPlan],
     fills: &[CollectFillPlan],
@@ -369,7 +512,9 @@ pub fn split_owed_by_detail(
         deferred: Vec::new(),
     };
     let place = |cell: [i32; 3]| {
-        if blocks.get(&cell).is_some_and(|b| is_container(b.as_str())) {
+        if blocks.get(&cell).is_some_and(|b| is_container(b.as_str()))
+            || entities.iter().any(|e| e.cell == cell)
+        {
             return None;
         }
         blockout.and_then(|b| b.stand_in_holding(cell))
@@ -465,6 +610,7 @@ mod tests {
                     count: 1,
                     name: None,
                     enchantments: BTreeMap::new(),
+                    slot: None,
                 })
                 .collect(),
         }
@@ -477,6 +623,7 @@ mod tests {
         assert!(
             check_loot_containers(
                 &crate::compiler::blockstate::interned(b.clone()),
+                &[],
                 &[mk("stores", [1, 2, 3], 5)],
                 &[]
             )
@@ -490,6 +637,7 @@ mod tests {
         b.insert([1, 2, 3], "minecraft:stone_bricks".to_string());
         let e = check_loot_containers(
             &crate::compiler::blockstate::interned(b.clone()),
+            &[],
             &[mk("stores", [1, 2, 3], 1)],
             &[],
         )
@@ -506,7 +654,7 @@ mod tests {
     /// An anchor over thin air is the same defect, and must not be silent.
     #[test]
     fn an_empty_cell_is_also_dw0431() {
-        let e = check_loot_containers(&BTreeMap::new(), &[mk("stores", [0, 0, 0], 1)], &[])
+        let e = check_loot_containers(&BTreeMap::new(), &[], &[mk("stores", [0, 0, 0], 1)], &[])
             .unwrap_err();
         assert_eq!(e.code, "DW0431");
     }
@@ -517,6 +665,7 @@ mod tests {
         b.insert([1, 2, 3], "minecraft:chest".to_string());
         let e = check_loot_containers(
             &crate::compiler::blockstate::interned(b.clone()),
+            &[],
             &[mk("stores", [1, 2, 3], 28)],
             &[],
         )
@@ -544,6 +693,7 @@ mod tests {
         assert!(
             check_collect_containers(
                 &crate::compiler::blockstate::interned(b.clone()),
+                &[],
                 &[fill([4, 5, 6], 9)],
                 &[]
             )
@@ -557,6 +707,7 @@ mod tests {
         b.insert([4, 5, 6], "minecraft:oak_planks".to_string());
         let e = check_collect_containers(
             &crate::compiler::blockstate::interned(b.clone()),
+            &[],
             &[fill([4, 5, 6], 1)],
             &[],
         )
@@ -571,7 +722,8 @@ mod tests {
     /// was never authored.
     #[test]
     fn adopting_an_empty_cell_is_also_dw0438() {
-        let e = check_collect_containers(&BTreeMap::new(), &[fill([0, 0, 0], 1)], &[]).unwrap_err();
+        let e = check_collect_containers(&BTreeMap::new(), &[], &[fill([0, 0, 0], 1)], &[])
+            .unwrap_err();
         assert_eq!(e.code, "DW0438");
     }
 
@@ -581,6 +733,7 @@ mod tests {
         b.insert([4, 5, 6], "minecraft:barrel".to_string());
         let e = check_collect_containers(
             &crate::compiler::blockstate::interned(b.clone()),
+            &[],
             &[fill([4, 5, 6], 28)],
             &[],
         )
@@ -594,7 +747,7 @@ mod tests {
     /// content.
     #[test]
     fn no_adoptions_is_vacuously_ok() {
-        assert!(check_collect_containers(&BTreeMap::new(), &[], &[]).is_ok());
+        assert!(check_collect_containers(&BTreeMap::new(), &[], &[], &[]).is_ok());
     }
 
     /// spec-0105 §2.1: the container class is the table's twelve kinds — a
@@ -636,12 +789,13 @@ mod tests {
             "minecraft:smoker[facing=north,lit=false]".to_string(),
         );
         let blocks = crate::compiler::blockstate::interned(b);
-        assert!(check_loot_containers(&blocks, &[mk("stores", [1, 2, 3], 3)], &[]).is_ok());
-        let e = check_loot_containers(&blocks, &[mk("stores", [1, 2, 3], 4)], &[]).unwrap_err();
+        assert!(check_loot_containers(&blocks, &[], &[mk("stores", [1, 2, 3], 3)], &[]).is_ok());
+        let e =
+            check_loot_containers(&blocks, &[], &[mk("stores", [1, 2, 3], 4)], &[]).unwrap_err();
         assert_eq!(e.code, "DW0431");
         assert!(e.message.contains("has 3 slots"), "{}", e.message);
-        assert!(check_collect_containers(&blocks, &[fill([1, 2, 3], 3)], &[]).is_ok());
-        let e = check_collect_containers(&blocks, &[fill([1, 2, 3], 4)], &[]).unwrap_err();
+        assert!(check_collect_containers(&blocks, &[], &[fill([1, 2, 3], 3)], &[]).is_ok());
+        let e = check_collect_containers(&blocks, &[], &[fill([1, 2, 3], 4)], &[]).unwrap_err();
         assert_eq!(e.code, "DW0438");
         assert!(e.message.contains("has 3 slots"), "{}", e.message);
     }
@@ -671,6 +825,7 @@ mod tests {
     fn a_free_container_is_named_in_the_refusal() {
         let e = check_collect_containers(
             &BTreeMap::new(),
+            &[],
             &[fill([0, 0, 0], 1)],
             &[anchor("anchor/case", None)],
         )
@@ -688,6 +843,7 @@ mod tests {
     fn a_claimed_container_is_never_offered_as_the_remedy() {
         let e = check_collect_containers(
             &BTreeMap::new(),
+            &[],
             &[fill([0, 0, 0], 1)],
             &[anchor("anchor/reliquary", Some("loot `loot/stores`"))],
         )
@@ -708,8 +864,9 @@ mod tests {
     #[test]
     fn with_no_container_anywhere_the_refusal_says_so_and_names_the_piece() {
         for e in [
-            check_collect_containers(&BTreeMap::new(), &[fill([0, 0, 0], 1)], &[]).unwrap_err(),
-            check_loot_containers(&BTreeMap::new(), &[mk("stores", [0, 0, 0], 1)], &[])
+            check_collect_containers(&BTreeMap::new(), &[], &[fill([0, 0, 0], 1)], &[])
+                .unwrap_err(),
+            check_loot_containers(&BTreeMap::new(), &[], &[mk("stores", [0, 0, 0], 1)], &[])
                 .unwrap_err(),
         ] {
             assert!(
@@ -754,6 +911,7 @@ mod tests {
         claimant.anchor = "anchor/reliquary".to_string();
         let got = container_anchors(
             &crate::compiler::blockstate::interned(blocks.clone()),
+            &[],
             &at,
             &[claimant],
             &[CollectFillPlan {

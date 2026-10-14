@@ -259,7 +259,9 @@ pub fn entity_holder_by_token(token: &str) -> Option<&'static EntityHolderKind> 
 #[must_use]
 pub fn owned_key_rule(family: HolderFamily, key: &str) -> Option<&'static str> {
     match (family, key) {
-        (_, "Tags") => Some("set by the engine: `dw_fixture`, `dw_holder` and the holder's own tag"),
+        (_, "Tags") => {
+            Some("set by the engine: `dw_fixture`, `dw_holder` and the holder's own tag")
+        }
         (_, "UUID") => Some("derived by the game when the engine summons the body"),
         (_, "Pos") | (_, "block_pos") | (_, "TileX") | (_, "TileY") | (_, "TileZ") => {
             Some("derived from the entity's place in the template, rotated with the piece")
@@ -360,7 +362,13 @@ mod tests {
 
     #[test]
     fn the_vocabulary_is_closed() {
-        for s in ["container.0", "container.26", "contents", "armor.head", "weapon.offhand"] {
+        for s in [
+            "container.0",
+            "container.26",
+            "contents",
+            "armor.head",
+            "weapon.offhand",
+        ] {
             assert!(in_some_vocabulary(s), "{s}");
         }
         for s in [
@@ -390,7 +398,11 @@ mod tests {
         assert!(hand < 1.6, "{hand}");
         // An off hand behind a filled main hand takes no click.
         assert_eq!(
-            click_height("weapon.offhand", &["weapon.mainhand", "weapon.offhand"], false),
+            click_height(
+                "weapon.offhand",
+                &["weapon.mainhand", "weapon.offhand"],
+                false
+            ),
             None
         );
         // A small stand halves the bands.
@@ -415,7 +427,10 @@ mod tests {
             assert_eq!(entity_holder(k.id), Some(k));
             assert_eq!(entity_holder_by_token(k.token), Some(k));
         }
-        assert_eq!(entity_holder("item_frame").map(|k| k.token), Some("item-frame"));
+        assert_eq!(
+            entity_holder("item_frame").map(|k| k.token),
+            Some("item-frame")
+        );
         assert!(entity_holder("minecraft:pig").is_none());
     }
 }

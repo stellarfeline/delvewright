@@ -118,15 +118,14 @@ pub fn judge(entities: &[Nbt], allow: &Allowlist) -> (EntityBinding, Vec<Diagnos
             .and_then(|c| c.get("nbt"))
             .and_then(Nbt::as_compound);
         for key in keys.into_iter().flat_map(|m| m.keys()) {
-            if key == delvewright_dsl::holders::ENTITY_ID_KEY || kind.scene_keys.contains(&key.as_str())
+            if key == delvewright_dsl::holders::ENTITY_ID_KEY
+                || kind.scene_keys.contains(&key.as_str())
             {
                 continue;
             }
             b.owned_keys += 1;
             let what = delvewright_dsl::holders::owned_key_rule(kind.family, key).map_or_else(
-                || {
-                    "not a scene property, and the engine neither reads nor keeps it".to_string()
-                },
+                || "not a scene property, and the engine neither reads nor keeps it".to_string(),
                 str::to_string,
             );
             diags.push(at(Diagnostic::error(

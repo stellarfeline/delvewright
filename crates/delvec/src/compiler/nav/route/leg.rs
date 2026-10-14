@@ -273,23 +273,67 @@ pub(in crate::compiler::nav) fn stand_cells(
     out
 }
 
+/// **A body's box**, in world coordinates: what an eye must see and reach to
+/// act on the body (spec-0111 §5.2).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BodyBox {
+    /// The box's low corner.
+    pub lo: [f64; 3],
+    /// The box's high corner.
+    pub hi: [f64; 3],
+}
+
+impl BodyBox {
+    /// The `1 x 2` interaction body standing on cell `m` — what a click
+    /// trigger's hitbox is.
+    #[must_use]
+    pub fn interaction(m: [i32; 3]) -> BodyBox {
+        let [x, y, z] = m.map(f64::from);
+        BodyBox {
+            lo: [x, y, z],
+            hi: [x + 1.0, y + 2.0, z + 1.0],
+        }
+    }
+
+    /// The cells the box overlaps — a ray may pass through them, since the
+    /// body stands in them.
+    fn cells(&self) -> Vec<[i32; 3]> {
+        let lo = self.lo.map(|v| v.floor() as i32);
+        let hi = self.hi.map(|v| (v - 1e-9).floor() as i32);
+        let mut out = Vec::new();
+        for x in lo[0]..=hi[0] {
+            for y in lo[1]..=hi[1] {
+                for z in lo[2]..=hi[2] {
+                    out.push([x, y, z]);
+                }
+            }
+        }
+        out
+    }
+}
+
 /// **The cells outside `l`'s volume a body can perform its trigger from**
 /// (spec-0092 §10): standable, in the walk region `reachable`, outside `from`,
 /// and reaching the trigger by the same rule [`stand_cells`] reads — an eye
-/// within a strike of the body's box for a click, and in sight of it
-/// ([`sees_body`]), the trigger's range for an `approach` — in cell order. Searched within five cells of each body cell,
-/// which holds every cell a strike or an approach of five reaches from.
+/// within `reach` of the body's box (`body` of each body cell) for a click, and
+/// in sight of it ([`sees_body`]), the trigger's range for an `approach` — in
+/// cell order. Searched within five cells of each body cell, which holds every
+/// cell a strike or an approach of five reaches from. The link's callers pass
+/// the `1 x 2` interaction body ([`BodyBox::interaction`]) and
+/// [`crate::compiler::crosshair::INTERACTION_REACH`].
 pub fn press_cells_outside(
     w: &World,
     l: &crate::compiler::link::LinkPlan,
     reachable: &BTreeSet<[i32; 3]>,
+    body: fn([i32; 3]) -> BodyBox,
+    reach: f64,
 ) -> Vec<[i32; 3]> {
-    let reach = 5 + l.range.map_or(0, |r| r as i32);
+    let span = 5 + l.range.map_or(0, |r| r as i32);
     let mut out: BTreeSet<[i32; 3]> = BTreeSet::new();
     for b in &l.body {
-        for x in b[0] - reach..=b[0] + reach {
-            for y in b[1] - reach..=b[1] + reach {
-                for z in b[2] - reach..=b[2] + reach {
+        for x in b[0] - span..=b[0] + span {
+            for y in b[1] - span..=b[1] + span {
+                for z in b[2] - span..=b[2] + span {
                     let c = [x, y, z];
                     if l.contains(c) || !reachable.contains(&c) || !w.is_standable(c) {
                         continue;
@@ -302,8 +346,8 @@ pub fn press_cells_outside(
                             (dx * dx + dy * dy + dz * dz).sqrt() <= f64::from(r)
                         }
                         None => {
-                            crate::compiler::strand::strikes(w, c, *b, 1.0, 1.0)
-                                && sees_body(w, c, *b)
+                            let bx = body(*b);
+                            eye_within(w, c, &bx, reach) && sees_body(w, c, &bx)
                         }
                     };
                     if presses {
@@ -316,24 +360,77 @@ pub fn press_cells_outside(
     out.into_iter().collect()
 }
 
-/// Whether an eye standing in `p` sees some point of a click body standing on
-/// `m` (its `1 x 2` box) past every solid cell — the box's centre or one of its
-/// eight corners pulled a tenth of a block inward, each sought along the line
-/// from the eye in tenth-of-a-block steps. A press through a wall is no press:
-/// the client's pick stops at the first block it meets.
-fn sees_body(w: &World, p: [i32; 3], m: [i32; 3]) -> bool {
+/// **Where a body can stand to act on `body`** (spec-0111 §5.2): standable,
+/// walk-reachable cells (`reachable`) whose eye is within `reach` of the box
+/// and sees it ([`sees_body`]), in cell order. Searched within `reach + 2`
+/// cells of the box, which holds every cell an eye of that reach can stand in.
+#[must_use]
+pub fn stance_cells(
+    w: &World,
+    body: &BodyBox,
+    reach: f64,
+    reachable: &BTreeSet<[i32; 3]>,
+) -> Vec<[i32; 3]> {
+    let span = reach.ceil() as i32 + 2;
+    let lo = body.lo.map(|v| v.floor() as i32);
+    let hi = body.hi.map(|v| v.floor() as i32);
+    let mut out = Vec::new();
+    for x in lo[0] - span..=hi[0] + span {
+        for y in lo[1] - span..=hi[1] + span {
+            for z in lo[2] - span..=hi[2] + span {
+                let c = [x, y, z];
+                if !reachable.contains(&c) || !w.is_standable(c) {
+                    continue;
+                }
+                if eye_within(w, c, body, reach) && sees_body(w, c, body) {
+                    out.push(c);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Whether an eye standing in `p` is within `reach` of the nearest point of
+/// `body` — [`crate::compiler::strand::eye_reaches_box`]'s measure with the
+/// reach a parameter.
+fn eye_within(w: &World, p: [i32; 3], body: &BodyBox, reach: f64) -> bool {
     use delvewright_dsl::metrics::PLAYER_EYE_HEIGHT;
     let eye = [
         f64::from(p[0]) + 0.5,
         w.feet_y(p) + PLAYER_EYE_HEIGHT,
         f64::from(p[2]) + 0.5,
     ];
-    let (x0, y0, z0) = (f64::from(m[0]), f64::from(m[1]), f64::from(m[2]));
-    let mut targets = vec![[x0 + 0.5, y0 + 1.0, z0 + 0.5]];
-    for dx in [0.1, 0.9] {
-        for dy in [0.1, 1.9] {
-            for dz in [0.1, 0.9] {
-                targets.push([x0 + dx, y0 + dy, z0 + dz]);
+    let gap = |e: f64, lo: f64, hi: f64| (lo - e).max(e - hi).max(0.0);
+    let d = [
+        gap(eye[0], body.lo[0], body.hi[0]),
+        gap(eye[1], body.lo[1], body.hi[1]),
+        gap(eye[2], body.lo[2], body.hi[2]),
+    ];
+    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt() <= reach
+}
+
+/// Whether an eye standing in `p` sees some point of `body` past every solid
+/// cell — the box's centre or one of its eight corners pulled inward (a tenth
+/// of a block, or a quarter of a side too thin for that), each sought along the
+/// line from the eye in tenth-of-a-block steps. A press through a wall is no
+/// press: the client's pick stops at the first block it meets. The eye's own
+/// cell and the cells the box stands in never block.
+fn sees_body(w: &World, p: [i32; 3], body: &BodyBox) -> bool {
+    use delvewright_dsl::metrics::PLAYER_EYE_HEIGHT;
+    let eye = [
+        f64::from(p[0]) + 0.5,
+        w.feet_y(p) + PLAYER_EYE_HEIGHT,
+        f64::from(p[2]) + 0.5,
+    ];
+    let own = body.cells();
+    let mid = |i: usize| (body.lo[i] + body.hi[i]) / 2.0;
+    let inset = |i: usize| (0.1f64).min((body.hi[i] - body.lo[i]) / 4.0);
+    let mut targets = vec![[mid(0), mid(1), mid(2)]];
+    for dx in [body.lo[0] + inset(0), body.hi[0] - inset(0)] {
+        for dy in [body.lo[1] + inset(1), body.hi[1] - inset(1)] {
+            for dz in [body.lo[2] + inset(2), body.hi[2] - inset(2)] {
+                targets.push([dx, dy, dz]);
             }
         }
     }
@@ -348,7 +445,7 @@ fn sees_body(w: &World, p: [i32; 3], m: [i32; 3]) -> bool {
                 (eye[1] + d[1] * f).floor() as i32,
                 (eye[2] + d[2] * f).floor() as i32,
             ];
-            c == p || c == m || c == [m[0], m[1] + 1, m[2]] || !w.solid.contains(&c)
+            c == p || own.contains(&c) || !w.solid.contains(&c)
         })
     })
 }

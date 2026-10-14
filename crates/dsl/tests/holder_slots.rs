@@ -86,11 +86,19 @@ fn a_slot_no_holder_has_is_dw1035_printing_every_vocabulary() {
     let m = dw1035(r#"{ "item": "minecraft:iron_sword", "slot": "weapon.main" }"#);
     assert_eq!(m.len(), 1, "{m:#?}");
     assert!(m[0].contains("`weapon.main`"), "{}", m[0]);
-    for word in ["`contents`", "`armor.head`", "`container.<n>`", "take only a stack"] {
+    for word in [
+        "`contents`",
+        "`armor.head`",
+        "`container.<n>`",
+        "take only a stack",
+    ] {
         assert!(m[0].contains(word), "{word}: {}", m[0]);
     }
     // Past the largest container's 27 slots is outside the vocabulary too.
-    assert_eq!(dw1035(r#"{ "item": "minecraft:bread", "slot": "container.27" }"#).len(), 1);
+    assert_eq!(
+        dw1035(r#"{ "item": "minecraft:bread", "slot": "container.27" }"#).len(),
+        1
+    );
 }
 
 #[test]
