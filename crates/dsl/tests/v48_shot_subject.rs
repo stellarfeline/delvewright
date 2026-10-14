@@ -2,7 +2,8 @@
 //!
 //! 1. The quests schema exports `subject` required on every shot in both
 //!    cutscene spellings, with its seven kinds, and `seen_from` on
-//!    `assemblies[]`; `DSL_VERSION` is 0.48.0.
+//!    `assemblies[]`; `DSL_VERSION` numbers the surface that carries them
+//!    (minor 48 or later; the number itself lives in `crates/dsl/Cargo.toml`).
 //! 2. One fixture per shape: no subject is `DW0199` naming the shot;
 //!    `"landscape"` under a style or as `subject_b` is `DW0348`; a subject on
 //!    an unstyled shot is accepted; an unknown assembly or place is `DW0112`;
@@ -66,12 +67,13 @@ fn the_subject_has_seven_kinds() {
 }
 
 #[test]
-fn assemblies_export_seen_from_and_the_version_is_0_48_0() {
+fn assemblies_export_seen_from_on_the_surface_that_carries_it() {
     let d = defs();
     assert!(d["Assembly"]["properties"]["seen_from"].is_object());
     assert_eq!(d["SeenFrom"]["minimum"], 1);
     assert_eq!(d["SeenFrom"]["maximum"], 512);
-    assert_eq!(DSL_VERSION, "0.48.0");
+    let minor: u32 = DSL_VERSION.split('.').nth(1).unwrap().parse().unwrap();
+    assert!(minor >= 48, "the subject surface is dsl_version 0.48: {DSL_VERSION}");
 }
 
 // --- criterion 2: the shapes ------------------------------------------------
