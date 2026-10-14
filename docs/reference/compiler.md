@@ -3863,16 +3863,15 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   control that would part them (an emittance map) is an open draft upstream,
   not in the pinned core.
 - **`horizon` fact** (`crate::render_plan::horizon_fact`): the world-generator
-  ambient the render layer cannot see. A `horizon: ocean` campaign (spec-0013)
+  ambient the render layer cannot see. A campaign whose horizon's `base` is `ocean` (spec-0013)
   ships a world save holding only the chunks its layout occupies — the sea around
   the island belongs to the level generator — so a renderer loading that save
   draws void past the shoreline unless it raises its own water plane, at exactly
   the compiler's sea-level datum (anywhere else leaves a two-tone seam against the
   authored block water). The plan therefore *states* it,
   `{"kind": "ocean", "sea_level": 62}`, rather than leaving `delvec render` to
-  infer a generator setting from blocks. `horizon: void` (default/absent) emits
-  **no key** (absent, not null), so every campaign that declares nothing keeps a
-  byte-identical `render-plan.json`. A `valley` states the `extent` of the
+  infer a generator setting from blocks. A `void` base emits
+  **no key** (absent, not null): there is no ambient for a renderer to raise. A `valley` states the `extent` of the
   landform it built: every scene loads it, and `delvec panorama` fits its frame
   to `layout_aabb` (or to the anchors `--subject` names) and never to the
   landform, so the ground is the built place's setting and never what the frame
@@ -4901,7 +4900,7 @@ leaving the built volume, this measures the ambient sea coming into it.
 the sea is directly touching — the seed set), `cells_the_sea_reaches`,
 `walk_cells_examined`, `walk_cells_submerged`, `walk_cells_wading`, `in_pieces`
 and `verdict`. Emitted by **every** campaign that assembles a world; a
-`horizon: void` one ships `"horizon": "void"` and zeroes rather than nothing at
+`void`-base one ships `"horizon": "void"` and zeroes rather than nothing at
 all, because "there is no sea here" and "nobody ran this" are different facts.
 `contact_face_cells: 0` is the only honest way this proof passes without looking
 at anything — a watertight hull — and it is a number rather than a silence.
@@ -5217,9 +5216,9 @@ world. Invariants:
     flood would shrink the region examined, which is a weaker check, not a more
     correct one. An anchor whose piece offers no footing within `SNAP_RADIUS`
     seats nowhere and contributes no root, as an unsnappable start does.
-  - **`Ambient::Void`** (`horizon: void`, the default): bottomless columns are the
+  - **`Ambient::Void`** (`base: void`): bottomless columns are the
     hazard.
-  - **`Ambient::Ocean`** (`horizon: ocean`) — the ambient is the pinned superflat
+  - **`Ambient::Ocean`** (`base: ocean`) — the ambient is the pinned superflat
     (`plan::SEA_LEVEL` = 62 water top, `plan::SEA_FLOOR_TOP_Y` = 54 sea floor,
     bedrock below), present in every column **except** inside a placed piece's
     AABB (`/place template` writes the whole box, air included; the water *under*
