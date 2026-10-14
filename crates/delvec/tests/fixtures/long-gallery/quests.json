@@ -1,6 +1,14 @@
 {
   "campaign_id": "long-gallery",
   "content": {
+    "guidance": {
+      "teaching": {
+        "attack-block": null,
+        "attack-body": null,
+        "use-block": null,
+        "use-body": null
+      }
+    },
     "loops": [
       {
         "counts": "state/crossings",
@@ -39,8 +47,10 @@
               "text": "the party reaches the far end",
               "verb": "arrives"
             },
+            "hint": "Down the gallery, under every arch.",
             "id": "obj/end",
             "radius": 1,
+            "title": "Walk to the end of the gallery",
             "type": "reach-anchor"
           }
         ],

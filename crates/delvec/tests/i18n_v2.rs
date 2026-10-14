@@ -133,7 +133,7 @@ fn fresh_inventory(dir: &Path) -> BTreeMap<String, String> {
         npcs: read("npcs.json"),
         classes: read("classes.json"),
         quest_plan: read("quest-plan.json"),
-        quests: read("quests.json"),
+        quests: common::with_teaching(read("quests.json")),
         dialogue: read("dialogue.json"),
         world_edits: None,
         geometry_brief: None,

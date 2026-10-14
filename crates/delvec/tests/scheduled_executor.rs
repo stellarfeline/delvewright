@@ -270,7 +270,7 @@ fn build_scheduled_hello_world() -> BuildOutput {
         npcs: read_hw("npcs.json"),
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
-        quests: SCHEDULED_QUESTS.to_string(),
+        quests: common::with_teaching(SCHEDULED_QUESTS.to_string()),
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
         geometry_brief: None,

@@ -120,7 +120,7 @@ fn an_unauthored_seal_is_refused_by_the_same_rule() {
         npcs: hw("npcs.json"),
         classes: hw("classes.json"),
         quest_plan: hw("quest-plan.json"),
-        quests: quests.to_string(),
+        quests: common::with_teaching(quests.to_string()),
         dialogue: hw("dialogue.json"),
         world_edits: None,
         geometry_brief: None,

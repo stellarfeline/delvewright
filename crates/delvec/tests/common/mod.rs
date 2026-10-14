@@ -492,6 +492,18 @@ pub fn declare_story(
         })
         .unwrap_or_default();
     let content = &mut quests["content"];
+    // spec-0104 §5.5: a campaign declares how its level teaches each input
+    // its paths need (`DW1016`). A fixture that states no `teaching` declares
+    // every class taught by the level — a declaration, never a wording; a test
+    // about teaching writes its own block and this leaves it alone.
+    if content.is_object() && content["guidance"].get("teaching").is_none() {
+        if !content["guidance"].is_object() {
+            content["guidance"] = serde_json::json!({});
+        }
+        content["guidance"]["teaching"] = serde_json::json!({
+            "use-block": null, "use-body": null, "attack-body": null, "attack-block": null
+        });
+    }
     if let Some(list) = content["quests"].as_array_mut() {
         for q in list {
             let id = q["id"].as_str().unwrap_or("").to_string();
@@ -1313,4 +1325,30 @@ pub fn plan_structures_with_trap_triggers(
         }
     }
     out
+}
+
+/// A quests document with the teaching declaration every fixture makes
+/// (spec-0104 §5.5, [`declare_story`]'s note): every input class declared taught
+/// by the level, unless the document states its own `teaching`. A document that
+/// is not a quests envelope is returned unchanged, so a test that hands a
+/// malformed one still meets its own refusal.
+pub fn with_teaching(doc: impl AsRef<str>) -> String {
+    let text = doc.as_ref();
+    let Ok(mut v) = serde_json::from_str::<serde_json::Value>(text) else {
+        return text.to_string();
+    };
+    let content = &mut v["content"];
+    if !content.is_object() || !content["quests"].is_array() {
+        return text.to_string();
+    }
+    if content["guidance"].get("teaching").is_some() {
+        return text.to_string();
+    }
+    if !content["guidance"].is_object() {
+        content["guidance"] = serde_json::json!({});
+    }
+    content["guidance"]["teaching"] = serde_json::json!({
+        "use-block": null, "use-body": null, "attack-body": null, "attack-block": null
+    });
+    serde_json::to_string_pretty(&v).unwrap()
 }

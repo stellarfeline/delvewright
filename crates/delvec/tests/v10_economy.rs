@@ -173,7 +173,7 @@ fn parse_hw_with_edits(quests: &str, world_edits: Option<&str>) -> Campaign {
         npcs: hw("npcs.json"),
         classes: hw("classes.json"),
         quest_plan: hw("quest-plan.json"),
-        quests: quests.to_string(),
+        quests: common::with_teaching(quests.to_string()),
         dialogue: hw("dialogue.json"),
         world_edits: world_edits.map(str::to_string),
         geometry_brief: None,

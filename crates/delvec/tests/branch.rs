@@ -53,7 +53,7 @@ fn campaign_with_cast(patch: impl Fn(&mut Value, &mut Value, &mut Value, &mut Va
         npcs: npcs.to_string(),
         classes: std::fs::read_to_string(fixture_dir().join("classes.json")).unwrap(),
         quest_plan: plan.to_string(),
-        quests: quests.to_string(),
+        quests: common::with_teaching(quests.to_string()),
         dialogue: dialogue.to_string(),
         world_edits: None,
         geometry_brief: None,

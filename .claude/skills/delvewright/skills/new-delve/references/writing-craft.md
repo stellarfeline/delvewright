@@ -215,7 +215,13 @@ pass afterwards. Which rules bind which line:
   tooltips, shop labels and tooltips, item names, class blurbs: F1–F6. It says
   the action, the object and the place, the place by a landmark the player can
   see and a position relative to it, never by a compass point; a refusal says what is wrong and what
-  fixes it; an item tooltip says what the item does first.
+  fixes it; an item tooltip says what the item does first. An objective's
+  title opens with the verb of the act its type completes on — a `talk-to`
+  talks, asks or tells; an `interact` pulls, rings, opens or reads; a
+  `reach-anchor` goes, climbs or enters; a `kill` clears or defeats; a
+  `collect` takes or brings — never another kind's verb (*Go to the mill* on a
+  `talk-to` sends the party to walk where they must speak). A hint may be a
+  place with no verb at all; when it names an act, it is this objective's.
 - **Story text** — dialogue, barks, narration: S1–S6. State the fact; end on
   information; a joke carries the function too.
 - **Where the player reads at all**: L1 (`game-writing.md` §8). Before a line

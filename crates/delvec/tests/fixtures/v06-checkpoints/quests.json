@@ -1,6 +1,14 @@
 {
   "campaign_id": "v06-checkpoints",
   "content": {
+    "guidance": {
+      "teaching": {
+        "attack-block": null,
+        "attack-body": null,
+        "use-block": null,
+        "use-body": null
+      }
+    },
     "quests": [
       {
         "cast": {
@@ -21,8 +29,10 @@
               "text": "the party completes obj/talk",
               "verb": "learns"
             },
+            "hint": "He waits in the hall.",
             "id": "obj/talk",
             "npc": "npc/keeper",
+            "title": "Talk to the keeper",
             "type": "talk-to"
           }
         ],

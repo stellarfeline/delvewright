@@ -781,7 +781,24 @@ pub fn judge_acts(
     let mut on_a_walk: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
     let objective = |qi: usize, oi: usize| &c.quests.content.quests[qi].objectives[oi];
     for w in &walks.walks {
-        for a in &w.acts {
+        // Each act is judged in the world its walk stands in when the act is
+        // next: the doors the walk's earlier steps open are open, the ones a
+        // later beat opens are shut.
+        let steps: Vec<usize> = w.acts.iter().map(|a| a.step).collect();
+        let (worlds, at) = match &w.gates {
+            None => {
+                let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+                crate::compiler::nav::worlds_at(world, &plan.region_events, &ancestor, &steps)
+            }
+            Some(gates) => {
+                let (events, anc) = &**gates;
+                let ancestor =
+                    |g: usize, s: usize| g == 0 || anc.get(&s).is_some_and(|x| x.contains(&g));
+                crate::compiler::nav::worlds_at(world, events, &ancestor, &steps)
+            }
+        };
+        for (ai, a) in w.acts.iter().enumerate() {
+            let world: &crate::compiler::nav::World = worlds[at[ai]].as_ref().unwrap_or(world);
             b.acts += 1;
             on_a_walk.insert(a.id.as_str());
             let obj = match a.what {
@@ -840,7 +857,19 @@ pub fn judge_acts(
                 }
             }
             for (v, what) in &vantages {
-                for r in act_unfound(world, *v, a.target, a.body, kill) {
+                let reasons = act_unfound(world, *v, a.target, a.body, kill);
+                // A fight's refusal says whether its muster is in sight, so the
+                // author knows which of the two halves failed.
+                if kill.is_some()
+                    && !reasons.is_empty()
+                    && unseen(world, *v, a.target, a.body).is_none()
+                {
+                    why.push(format!(
+                        "from {what} ({v:?}) the wave's anchor {:?} is in sight",
+                        a.target
+                    ));
+                }
+                for r in reasons {
                     why.push(format!("from {what} ({v:?}) {r}"));
                 }
             }

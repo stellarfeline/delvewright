@@ -1,0 +1,25 @@
+{
+  "code": "DW1015",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/objectives/1/title",
+      "value": "Go to the case"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "replace",
+      "path": "/content/obj.near-hall.press-the-case.title",
+      "value": "前往展柜"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "replace",
+      "path": "/source/obj.near-hall.press-the-case.title",
+      "value": "Go to the case"
+    }
+  ],
+  "units": [],
+  "why": "The case is an `interact`: the party right-clicks it. Its title is rewritten to `Go to the case`, and its zh-cn row to `前往展柜`, so both name walking to a place — a `reach-anchor` act — where the objective completes on a press. Nothing else changes; the objective still completes and the build would ship. What must not compile is a title whose verb tells the hands to do a different thing from the one the objective's type completes on; both languages are refused, each naming the verb it found and the `interact` verbs it may use instead."
+}

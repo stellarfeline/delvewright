@@ -1,0 +1,25 @@
+{
+  "code": "DW0982",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/objectives/0/hint",
+      "value": "The Curator stands at the lectern, by the way to the Long Hall."
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "replace",
+      "path": "/content/obj.near-hall.hear-the-curator.hint",
+      "value": "馆长站在讲台旁，就在去长厅的路边。"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "replace",
+      "path": "/source/obj.near-hall.hear-the-curator.hint",
+      "value": "The Curator stands at the lectern, by the way to the Long Hall."
+    }
+  ],
+  "units": [],
+  "why": "The first objective's hint rewritten to name the Long Hall, with the zh-cn row following. The party reads that hint before anything has said what the Long Hall is — the Curator says it later, in her catalogue line. A hint is the party's instruction, and it names only what the party has been told. Refused naming the objective."
+}

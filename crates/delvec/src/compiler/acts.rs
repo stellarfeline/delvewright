@@ -63,17 +63,27 @@ pub struct Act {
     pub body: bool,
 }
 
+/// A branch path's own region writes and step ancestry
+/// ([`Plan::branch_gate_model`]).
+pub type WalkGates = std::sync::Arc<(
+    crate::compiler::plan::RegionEvents,
+    BTreeMap<usize, std::collections::BTreeSet<usize>>,
+)>;
+
 /// One walked path's acts.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default)]
 pub struct ActWalk {
     /// The walk's name for a message: `the critical path`, `branch <id>`.
     pub label: String,
     /// Its acts in path order.
     pub acts: Vec<Act>,
+    /// The region writes the walk's steps make, which decide what blocks a
+    /// view at each act; `None` = the plan's own (the exported path's).
+    pub gates: Option<WalkGates>,
 }
 
 /// Every walk's acts, derived once per plan.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default)]
 pub struct ActWalks {
     /// The exported critical path first, then each realised branch in
     /// enumeration order.
@@ -217,6 +227,7 @@ pub fn acts_of_from(
     ActWalk {
         label: label.to_string(),
         acts,
+        gates: None,
     }
 }
 
@@ -240,12 +251,14 @@ pub fn walks<'p>(plan: &'p Plan<'_>) -> &'p ActWalks {
                 let Ok(cp) = plan.branch_critical_path(&flow, &flow.playthrough_in(w)) else {
                     continue;
                 };
-                out.walks.push(acts_of(
+                let mut w = acts_of(
                     plan,
                     &format!("branch `{}`", r.branch.id),
                     &cp.steps,
                     &cp.transport_by_step,
-                ));
+                );
+                w.gates = Some(std::sync::Arc::new(plan.branch_gate_model(&cp)));
+                out.walks.push(w);
             }
         }
         out

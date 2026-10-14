@@ -2995,6 +2995,135 @@
       "note": "The same class as `vh-02` on land. The route proofs could not see it: they take the walk step only, so a hedge top reached by a jump off a garden boulder was in no proof's reach. `DW0921` floods the player's own movement (`nav::World::body_moves`: the walk step, falls to the deepest an unarmoured body survives, and cardinal gap jumps inside `dsl::metrics::JUMP_REACH`, measured by `tools/spike-jump-arc/simulate.mjs at 84f364997d24`, which reproduces the live jump spike's 14 verdicts) from the critical path's route cells, once per quest configuration, and refuses every reached cell from which no movement leads back; a cell the boundary clock returns and a shortcut lever the pocket reaches are ways out. A room the story shuts the party into holds the objective the story waits on and is not refused, with no declaration. Measured on this campaign at `dd4429c`: 6 configurations, 316580 cells reached, 827 a body cannot leave, in 78 pockets over 5 configurations -- on land in each, the four hedge beds (the one at `[140, 82, 110]` among them: 25 cells, entered `by a fall of 2 block(s)` off the hedge top), a ruin hole in the curtain top, a tower slit one step under the wall walk and nine hollows in the east ditch between the crag and the field wall; and the Undertide well (`vh-02`) in three. At the fixed content: 0. Limits, named in the diagnostic: diagonal jumps, climbing, standing on a fence or wall top and diving are not moves.",
       "round": 2,
       "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "obj/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW0863",
+        "kind": "dw"
+      },
+      "finding": "objectives carried no hint, so the player did not know a step existed or where it was",
+      "general_form": "every objective owes a hint that names the action as the player performs it and a place or landmark the player can find",
+      "id": "str-04",
+      "note": "Carried by `DW0863` as spec-0104 §3 widens it to every act on every walked path: an objective is announced with a `hint`, or it is in sight (a clear line by `walk_cells` over `blocks_camera`, within 64 blocks) from the cell the party stands on before it, in the configuration that walk holds there. That is the machine half of the general form: the act can be found. Whether the hint names a place the player can find is prose, and stays QC (spec-0104 §2.4, §12).",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "obj/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1015",
+        "kind": "dw"
+      },
+      "finding": "an objective's text named a different act from the one that completes it: a hint said to walk past a thing that must be right-clicked, and a title said to go somewhere where talking to someone completes it",
+      "general_form": "an objective's title and hint name the act its type completes on (an interact objective says use or right-click, a talk-to objective names the person), never a different verb",
+      "id": "str-05",
+      "note": "Carried by `DW1015` (spec-0104 §4): an objective's title carries a verb of its own kind's set in the act lexicon (`crates/dsl/data/act-verbs.json`), and a hint never names another kind's act without naming its own — in the English and every sidecar whose language has a table. Membership in a closed set, never a reading of meaning; its recall is bounded by the lexicon's seed.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "any_of": [
+            {
+              "eq": {
+                "type": "interact"
+              }
+            },
+            {
+              "eq": {
+                "on": "use"
+              }
+            }
+          ]
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1016",
+        "kind": "dw"
+      },
+      "finding": "nothing taught the player that the world's blocks are right-clicked: a sign started a cutscene unannounced, and later props were not tried",
+      "general_form": "a campaign whose progress needs a click on a world block teaches that in its opening, before the first such click is owed",
+      "id": "str-07",
+      "note": "Carried by `DW1016` (spec-0104 §5): every input class a walked path requires (right-click a block, right-click a body, left-click a body, left-click a block — derived from each act's kind and body) is named by `guidance.teaching`, with a line carrying its key span (`[[key|use]]` / `[[key|attack]]`) or `null` declaring the level teaches it; a line no walk needs and a line without its key span are refused too. The line is shown once per player when an act of the class is first next.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "interact"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1017",
+        "kind": "dw"
+      },
+      "finding": "interact props did not read as the thing their text names, and one prop stood among many identical blocks with nothing to say which to press",
+      "general_form": "an interact prop is distinguishable at the distance the party first sees it: no block of the same kind stands within the click's reach around it unless the prop is marked",
+      "id": "str-08",
+      "note": "Carried by `DW1017` (spec-0104 §6): no block of the same id (blockstate ignored) stands within `INTERACTION_REACH` (3.0 blocks) of a pressable — an interact's prop or authored block, a use/strike trigger's, an adopted container — unless it is a prop-less interact whose marker is shown. Whether the block reads as the thing its text names stays QC.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "wave/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW0863",
+        "kind": "dw"
+      },
+      "finding": "a fight's bodies were seated far from the player and out of sight, so the player did not know where the fight was",
+      "general_form": "a wave's seated bodies are within sight of the party at the moment the wave is seated, or the objective's hint says where they are",
+      "id": "str-18",
+      "note": "Carried by `DW0863` (spec-0104 §3): a `kill` objective is announced with a `hint`, or its wave's anchor is in sight of every act that fires the wave AND within the wave's reach of it. A kill found by reach alone, the bodies coming unseen round a wall, is no longer found.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"

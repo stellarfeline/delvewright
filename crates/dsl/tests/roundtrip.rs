@@ -40,3 +40,36 @@ fn roundtrip_all_valid_fixtures() {
     roundtrip::<QuestsContent>("quests.json");
     roundtrip::<DialogueContent>("dialogue.json");
 }
+
+/// spec-0104 §5.3: a document declaring no `teaching` canonicalises byte for
+/// byte as it did (the valid fixture declares none, and is asserted above);
+/// one that declares it keeps a `null` as a declaration and a line as a line,
+/// and drops an undeclared class.
+#[test]
+fn a_teaching_block_keeps_its_nulls_and_drops_what_it_does_not_declare() {
+    let path = common::valid_dir().join("quests.json");
+    let original = fs::read_to_string(&path).unwrap();
+    assert!(!original.contains("teaching"), "the fixture declares none");
+    let mut doc: serde_json::Value = serde_json::from_str(&original).unwrap();
+    doc["content"]["guidance"] = serde_json::json!({
+        "teaching": { "use-block": "Things answer to [[key|use]].", "attack-body": null }
+    });
+    let env: Envelope<QuestsContent> = serde_json::from_value(doc).unwrap();
+    let t = &env.content.guidance.teaching;
+    assert_eq!(
+        t.use_block,
+        Some(delvewright_dsl::TeachLine::Line(
+            "Things answer to [[key|use]].".into()
+        ))
+    );
+    assert_eq!(t.attack_body, Some(delvewright_dsl::TeachLine::Level));
+    assert_eq!(t.use_body, None);
+    let out = to_canonical_string(&env).unwrap();
+    let back: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        back["content"]["guidance"]["teaching"],
+        serde_json::json!({ "use-block": "Things answer to [[key|use]].", "attack-body": null })
+    );
+    let again: Envelope<QuestsContent> = serde_json::from_str(&out).unwrap();
+    assert_eq!(to_canonical_string(&again).unwrap(), out);
+}
