@@ -6,7 +6,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 
 /// A stage-5 `quests` document whose single quest fires a `play-sound` and an
 /// `art`-styled `narrate` on completion, at the one `dsl_version` this engine
@@ -52,10 +52,10 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -63,7 +63,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// `play-sound` + `narrate style: art` validate clean under `dsl_version 0.6.0`.
 #[test]
 fn v06_surface_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(&quests_doc()));
+    let diags = common::check_campaign(&campaign_with_quests(&quests_doc()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for the v0.6 surface, got: {diags:#?}"

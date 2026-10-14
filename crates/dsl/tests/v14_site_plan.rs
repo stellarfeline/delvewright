@@ -24,7 +24,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 use serde_json::{Value, json};
 use std::sync::LazyLock;
 
@@ -458,14 +458,9 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
 /// The hello-world campaign, made into a **site-plan** campaign when a plan is
 /// handed over.
 ///
-/// Four substitutions, and every one of them is an obligation the round that
+/// Two substitutions, and every one of them is an obligation the round that
 /// derived the blockout added rather than a convenience:
 ///
-/// * **`areas[]` is emptied.** A campaign has one placement authority
-///   (`DW0839`), and this one's is the plan.
-/// * **the area references move to `area/site`.** That is the one place a
-///   site-plan campaign has, and it is where the NPC stands and the quest
-///   happens.
 /// * **the anchors move to the synthesized vocabulary.** A site-plan campaign
 ///   has no prefab to name an anchor, so `anchor/node-<place>` is what its
 ///   content binds to — the names `delvewright_dsl::synthesized_anchors`
@@ -495,18 +490,11 @@ fn campaign(plan: Option<String>, graph: Option<String>, brief: Option<String>) 
         }
         out
     };
-    let mut world: Value = serde_json::from_str(&base.world).expect("hello-world's world parses");
-    world["content"]["areas"] = json!([]);
     RawCampaign {
-        world: serde_json::to_string(&world).expect("re-serialize"),
         npcs: retarget(
             &base.npcs,
-            &[
-                ("\"area/keep\"", "\"area/site\""),
-                ("\"anchor/keeper-stand\"", "\"anchor/node-porch\""),
-            ],
+            &[("\"anchor/keeper-stand\"", "\"anchor/node-porch\"")],
         ),
-        quest_plan: retarget(&base.quest_plan, &[("\"area/keep\"", "\"area/site\"")]),
         quests: retarget(
             &base.quests,
             &[
@@ -524,7 +512,10 @@ fn campaign(plan: Option<String>, graph: Option<String>, brief: Option<String>) 
 }
 
 fn codes_of(raw: &RawCampaign) -> Vec<String> {
-    check_campaign(raw).into_iter().map(|d| d.code).collect()
+    delvewright_dsl::check_campaign(raw)
+        .into_iter()
+        .map(|d| d.code)
+        .collect()
 }
 
 /// Validate the green campaign with the plan perturbed by one edit.
@@ -545,7 +536,7 @@ fn plan_diags(patch: impl FnOnce(&mut Value)) -> Vec<delvewright_dsl::Diagnostic
     let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("the green plan parses");
     patch(&mut v);
     let text = serde_json::to_string(&v).expect("re-serialize");
-    check_campaign(&campaign(
+    delvewright_dsl::check_campaign(&campaign(
         Some(text),
         Some(GRAPH.to_string()),
         Some(BRIEF.to_string()),
@@ -617,7 +608,10 @@ fn the_hand_drawn_plan_is_accepted() {
 #[test]
 fn a_campaign_with_no_plan_binds_nothing() {
     let raw = campaign(None, None, None);
-    assert!(codes_of(&raw).is_empty());
+    // Nothing places the story's anchors, so each is `DW0142` (owned by
+    // `a_campaign_with_no_map_is_told_to_write_its_site_plan`); no plan rule runs.
+    let codes = codes_of(&raw);
+    assert!(codes.iter().all(|c| c == "DW0142"), "{codes:?}");
     let c = delvewright_dsl::parse_campaign(&raw).expect("parses");
     let b = delvewright_dsl::LayoutBinding::of(&c);
     assert_eq!(b.plan, delvewright_dsl::PlanBinding::default());
@@ -682,7 +676,7 @@ fn the_binding_ledger_counts_what_the_plan_holds() {
 /// embedding cannot reach green ahead of the thing it embeds.
 #[test]
 fn a_plan_without_its_graph_is_refused_naming_the_graph() {
-    let diags = check_campaign(&campaign(
+    let diags = delvewright_dsl::check_campaign(&campaign(
         Some(PLAN.to_string()),
         None,
         Some(BRIEF.to_string()),
@@ -706,7 +700,7 @@ fn a_plan_without_its_graph_is_refused_naming_the_graph() {
 /// The same for the brief. Both halves of `spec-0049 §7.1` are real.
 #[test]
 fn a_plan_without_its_brief_is_refused_naming_the_brief() {
-    let diags = check_campaign(&campaign(
+    let diags = delvewright_dsl::check_campaign(&campaign(
         Some(PLAN.to_string()),
         Some(GRAPH.to_string()),
         None,
@@ -1329,7 +1323,7 @@ fn an_empty_brief_is_named_as_the_empty_side() {
         r#"{"campaign_id":"hello-world","dsl_version":"%dsl_version%",
       "stage":"geometry-brief","content":{}}"#,
     );
-    let d = check_campaign(&campaign(
+    let d = delvewright_dsl::check_campaign(&campaign(
         Some(PLAN.to_string()),
         Some(GRAPH.to_string()),
         Some(empty_brief),
@@ -1377,41 +1371,6 @@ fn the_plans_lighting_answers_the_same_range_rule_an_areas_does() {
 }
 
 // ---------------------------------------------------------------------------
-// One campaign, one placement authority (spec-0049 §6)
-// ---------------------------------------------------------------------------
-
-/// `DW0839`: `areas[]` and a site plan in one campaign is two owners for one
-/// question.
-///
-/// The perturbation is the smallest one that exists — the campaign gets its
-/// `areas[]` back — so the green above and the red here differ in exactly the
-/// thing the rule is about.
-#[test]
-fn two_placement_authorities_in_one_campaign_are_refused() {
-    let mut raw = campaign(
-        Some(PLAN.to_string()),
-        Some(GRAPH.to_string()),
-        Some(BRIEF.to_string()),
-    );
-    raw.world = common::valid_raw().world; // the `areas[]` this campaign gave up
-    let got = codes_of(&raw);
-    assert!(
-        has(&got, "DW0839"),
-        "a world with both authorities must be refused: {got:?}"
-    );
-    let d = check_campaign(&raw)
-        .into_iter()
-        .find(|d| d.code == "DW0839")
-        .expect("the refusal is present");
-    assert_eq!(d.stage, "world");
-    assert!(
-        d.message.contains("fixed stride") && d.message.contains("region"),
-        "the refusal says what each authority owns: {}",
-        d.message
-    );
-}
-
-// ---------------------------------------------------------------------------
 // The opener obligation's byte-side half (spec-0049 §3.3 `DW0818`)
 // ---------------------------------------------------------------------------
 
@@ -1435,7 +1394,7 @@ fn a_barred_way_no_effect_opens_is_refused_by_name() {
     raw.quests = raw
         .quests
         .replace("\"anchor/seam-hall-vault\"", "\"anchor/node-porch\"");
-    let d = check_campaign(&raw);
+    let d = delvewright_dsl::check_campaign(&raw);
     let got: Vec<String> = d.iter().map(|x| x.code.clone()).collect();
     assert!(
         has(&got, "DW0818"),
@@ -1619,7 +1578,7 @@ fn no_stage_five_verb_calls_a_synthesized_anchor_an_invented_name() {
     }]);
     raw.quests = serde_json::to_string(&quests).expect("re-serialize");
 
-    let bad: Vec<String> = check_campaign(&raw)
+    let bad: Vec<String> = delvewright_dsl::check_campaign(&raw)
         .into_iter()
         .filter(|d| {
             d.message.contains("prefab") && SYNTHESIZED.iter().any(|a| d.message.contains(a))
@@ -1680,12 +1639,11 @@ fn a_shortcut_on_a_derived_world_resolves_its_gate_and_its_unlock() {
 const FORBIDDEN_ON_A_DERIVED_MAP: &[(&str, &str)] = &[
     (
         "declare it in stage-1 `world.areas`",
-        "`DW0839` refuses `areas[]` in a campaign carrying a site plan, and `DW0160` refuses an \
-         entry with no prefab bound to it",
+        "`world.areas` does not exist: the schema refuses it (`DW0100`)",
     ),
     (
         "use one of the world stage's area ids",
-        "that set is required to be EMPTY here (`DW0839`), so the instruction names nothing",
+        "the world stage declares no areas, so the instruction names nothing",
     ),
     (
         "anchor names come from prefab metadata",
@@ -1698,7 +1656,7 @@ const FORBIDDEN_ON_A_DERIVED_MAP: &[(&str, &str)] = &[
     ),
     (
         "bind a prefab/pool",
-        "binding a prefab means declaring an `areas[]` entry, which `DW0839` refuses",
+        "a piece is bound to a place by `detail-plan.json`, never by a prefab/pool field",
     ),
     (
         "an anchor the prefab exposes",
@@ -1724,7 +1682,6 @@ const FORBIDDEN_ON_A_DERIVED_MAP: &[(&str, &str)] = &[
 /// quietly shrinking the population.
 fn planted_bad_names() -> Vec<&'static str> {
     vec![
-        "area/nowhere",
         "anchor/nowhere-npc",
         "anchor/nowhere-objective",
         "anchor/nowhere-shortcut-gate",
@@ -1745,9 +1702,8 @@ fn planted_bad_names() -> Vec<&'static str> {
 /// proves that when a name genuinely does not resolve, the sentence the author
 /// reads afterwards prescribes something they are allowed to do.
 ///
-/// The pair it exists for: `DW0112` printed *"declare it in stage-1
-/// `world.areas`"*, which is exactly what `DW0839` refuses in a campaign
-/// carrying a site plan; `DW0142` printed *"anchor names come from prefab
+/// The pair it exists for: a refusal that prescribes a document the schema
+/// refuses (`world.areas`), or `DW0142` printing *"anchor names come from prefab
 /// metadata; do NOT invent one"* against names that are synthesized by design.
 /// CLAUDE.md: when one gate's prescription is another gate's refusal, the defect
 /// belongs to the PAIR, and a gate that names a remedy owes a check that the
@@ -1821,20 +1777,7 @@ fn no_refusal_on_a_derived_map_prescribes_a_prefab_document() {
         .npcs
         .replace("\"anchor/node-porch\"", "\"anchor/nowhere-npc\"");
 
-    let anchors_broken = check_campaign(&raw);
-
-    // A broken `area` makes `AnchorProviders::for_area` return `None`, which
-    // SKIPS the per-area anchor rules — so the area case is a SECOND campaign,
-    // or this test would silently measure fewer sites than exist.
-    let mut area_raw = raw.clone();
-    area_raw.npcs = area_raw.npcs.replace("\"area/site\"", "\"area/nowhere\"");
-    area_raw.quest_plan = area_raw
-        .quest_plan
-        .replace("\"area/site\"", "\"area/nowhere\"");
-    let areas_broken = check_campaign(&area_raw);
-
-    let all: Vec<delvewright_dsl::Diagnostic> =
-        anchors_broken.into_iter().chain(areas_broken).collect();
+    let all = delvewright_dsl::check_campaign(&raw);
 
     // Binding, computed from the fixture: every name planted above must reach a
     // refusal, or this test is examining a smaller population than it claims.
@@ -1869,35 +1812,23 @@ fn no_refusal_on_a_derived_map_prescribes_a_prefab_document() {
     );
 }
 
-/// **The same question asked of a campaign with NO map at all** — `areas[]`
-/// empty and no site plan.
-///
-/// This is a real authoring state (a story layer written before its map) and it
-/// is the one the old message served worst: *"declare it in stage-1
-/// `world.areas`"* names one half of a choice the author has not made, and
-/// silently commits them to the half that then refuses their site plan.
-///
-/// Refusing the campaign is correct — it has no map. What the refusal owes is
-/// BOTH branches, so the author can pick.
+/// **A campaign with no map at all** — no site plan — is refused for every
+/// anchor it names, and the refusal names the documents that would give it a
+/// map, since there is no other placement to send the author to.
 #[test]
-fn a_campaign_with_no_map_is_told_about_both_placement_authorities() {
-    let mut raw = campaign(None, None, None);
-    let mut world: Value = serde_json::from_str(&raw.world).expect("world parses");
-    world["content"]["areas"] = json!([]);
-    raw.world = serde_json::to_string(&world).expect("re-serialize");
-
-    let d = check_campaign(&raw);
-    let area_refusals: Vec<&delvewright_dsl::Diagnostic> =
-        d.iter().filter(|x| x.code == "DW0112").collect();
+fn a_campaign_with_no_map_is_told_to_write_its_site_plan() {
+    let raw = campaign(None, None, None);
+    let d = delvewright_dsl::check_campaign(&raw);
+    let refusals: Vec<&delvewright_dsl::Diagnostic> =
+        d.iter().filter(|x| x.code == "DW0142").collect();
     assert!(
-        !area_refusals.is_empty(),
-        "a campaign that declares no area must still be refused: {d:?}"
+        !refusals.is_empty(),
+        "a campaign with no map must be refused: {d:?}"
     );
-    for x in &area_refusals {
+    for x in &refusals {
         assert!(
-            x.message.contains("`world.areas`") && x.message.contains("`site-plan.json`"),
-            "a refusal here must name BOTH placement authorities, or it decides for the \
-             author: {}",
+            x.message.contains("`site-plan.json`") && !x.message.contains("world.areas"),
+            "{}",
             x.message
         );
     }

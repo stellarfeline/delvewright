@@ -5,7 +5,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign, l10n, parse_campaign};
+use delvewright_dsl::{RawCampaign, l10n};
 use std::sync::LazyLock;
 
 /// A v0.8 quests document that seals `anchor/door` with an authored answer.
@@ -52,10 +52,10 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -63,7 +63,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// An authored `sealed_hint` validates clean under `dsl_version 0.8.0`.
 #[test]
 fn sealed_hint_validates_clean_at_0_8() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V08.as_str()));
+    let diags = common::check_campaign(&campaign_with_quests(QUESTS_V08.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.8 sealed_hint, got: {diags:#?}"
@@ -75,7 +75,8 @@ fn sealed_hint_validates_clean_at_0_8() {
 /// `narrate` line.
 #[test]
 fn an_authored_hint_is_inventoried() {
-    let c = parse_campaign(&campaign_with_quests(QUESTS_V08.as_str())).expect("campaign parses");
+    let c = common::parse_campaign(&campaign_with_quests(QUESTS_V08.as_str()))
+        .expect("campaign parses");
     let inv = l10n::inventory(&c);
     assert_eq!(
         inv.get("fx.open-the-door.done.0.sealed_hint")
@@ -94,7 +95,7 @@ fn an_unauthored_hint_is_not_inventoried() {
         "\"sealed_hint\": \"The bars will not lift for you.\",\n            ",
         "",
     );
-    let c = parse_campaign(&campaign_with_quests(&plain)).expect("campaign parses");
+    let c = common::parse_campaign(&campaign_with_quests(&plain)).expect("campaign parses");
     assert!(
         !l10n::inventory(&c)
             .keys()

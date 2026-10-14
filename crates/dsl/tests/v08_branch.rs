@@ -8,7 +8,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, Diagnostic, RawCampaign};
 use std::sync::LazyLock;
 
 fn hw(name: &str) -> String {
@@ -26,7 +26,7 @@ static NPCS: LazyLock<String> = LazyLock::new(|| {
   "dsl_version": "%dsl_version%", "campaign_id": "hello-world", "stage": "npcs",
   "content": { "npcs": [
     { "id": "npc/keeper", "name": "The Keeper", "role": "quest-giver",
-      "area": "area/keep", "anchor": "anchor/keeper-stand", "base_entity": "minecraft:villager",
+      "anchor": "anchor/keeper-stand", "base_entity": "minecraft:villager",
       "persona": { "archetype": "stoic gatekeeper", "speech_style": "Terse.", "motivation": "Guard the gate." } }
   ] }
 }"#,
@@ -83,9 +83,9 @@ fn plan(branch_points: &str) -> String {
         r#"{{
   "dsl_version": "{DSL_VERSION}", "campaign_id": "hello-world", "stage": "quest-plan",
   "content": {{ "quests": [
-    {{ "id": "quest/one", "goal": "Speak.", "area": "area/keep", "npcs": ["npc/keeper"],
+    {{ "id": "quest/one", "goal": "Speak.", "npcs": ["npc/keeper"],
        "depends_on": [], "mandatory": true, "act": 1 }},
-    {{ "id": "quest/two", "goal": "Leave.", "area": "area/keep", "npcs": [],
+    {{ "id": "quest/two", "goal": "Leave.", "npcs": [],
        "depends_on": ["quest/one"], "mandatory": true, "act": 1 }}
   ], "finale": "quest/two", "branch_points": {branch_points} }}
 }}"#
@@ -101,7 +101,7 @@ const POINTS: &str = r#"[
 ]"#;
 
 fn diags(plan_doc: String, quests_doc: String, dialogue_doc: &str) -> Vec<Diagnostic> {
-    check_campaign(&RawCampaign {
+    common::check_campaign(&RawCampaign {
         world: hw("world.json"),
         npcs: NPCS.to_string(),
         classes: hw("classes.json"),
@@ -109,10 +109,10 @@ fn diags(plan_doc: String, quests_doc: String, dialogue_doc: &str) -> Vec<Diagno
         quests: quests_doc,
         dialogue: dialogue_doc.to_string(),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     })
 }

@@ -13,7 +13,7 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 use serde_json::{Value, json};
 
 const OLD: &str = DSL_VERSION;
@@ -82,7 +82,6 @@ impl Fixture {
             quests[0]["depends_on"] = json!(self.finale_deps);
             quests.push(json!({
                 "act": 1,
-                "area": "area/keep",
                 "depends_on": self.strand_deps,
                 "goal": "A side strand the mainline neither needs nor fears.",
                 "id": STRAND,
@@ -143,7 +142,7 @@ impl Fixture {
     }
 
     fn codes(&self) -> BTreeSet<String> {
-        check_campaign(&self.raw())
+        common::check_campaign(&self.raw())
             .iter()
             .map(|d| d.code.clone())
             .collect()
@@ -454,7 +453,10 @@ fn optional_does_not_launder_a_broken_strand() {
             .expect("the strand is in the fixture");
         strand["objectives"][0]["requires_flags"] = json!(["flag/nobody-sets-this"]);
     });
-    let codes: BTreeSet<String> = check_campaign(&c).iter().map(|d| d.code.clone()).collect();
+    let codes: BTreeSet<String> = common::check_campaign(&c)
+        .iter()
+        .map(|d| d.code.clone())
+        .collect();
     assert!(
         codes.contains("DW0172"),
         "an optional quest gated on an unproduced flag must still be refused, got {codes:?}"

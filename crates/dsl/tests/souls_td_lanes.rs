@@ -8,7 +8,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::RawCampaign;
 use std::sync::LazyLock;
 
 /// hello-world's quest stage at 0.6.0 with a raider lane and an aggro-edge wave.
@@ -47,7 +47,7 @@ static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
           { "entity": "minecraft:pillager", "count": 2 },
           { "entity": "minecraft:vindicator", "count": 1 }
         ],
-        "lane": { "waypoints": ["anchor/door", "anchor/exit"], "aggro_radius": 16 }
+        "lane": { "waypoints": ["anchor/keeper-stand", "anchor/exit"], "aggro_radius": 16 }
       },
       {
         "id": "wave/spirits",
@@ -72,16 +72,16 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
 
 fn diags_for(quests: &str) -> Vec<delvewright_dsl::Diagnostic> {
-    check_campaign(&campaign_with_quests(quests))
+    common::check_campaign(&campaign_with_quests(quests))
 }
 
 /// A well-formed lane and a well-formed aggro-edge wave validate clean.
@@ -99,7 +99,7 @@ fn lane_and_aggro_edge_validate_clean() {
 #[test]
 fn an_empty_waypoint_list_is_dw0381() {
     let bad = QUESTS_V06.replace(
-        "\"waypoints\": [\"anchor/door\", \"anchor/exit\"]",
+        "\"waypoints\": [\"anchor/keeper-stand\", \"anchor/exit\"]",
         "\"waypoints\": []",
     );
     assert!(
@@ -113,7 +113,7 @@ fn an_empty_waypoint_list_is_dw0381() {
 #[test]
 fn an_invented_waypoint_anchor_is_dw0381() {
     let bad = QUESTS_V06.replace(
-        "\"anchor/door\", \"anchor/exit\"",
+        "\"anchor/keeper-stand\", \"anchor/exit\"",
         "\"anchor/nowhere\", \"anchor/exit\"",
     );
     assert!(
@@ -125,7 +125,7 @@ fn an_invented_waypoint_anchor_is_dw0381() {
 #[test]
 fn a_repeated_consecutive_waypoint_is_dw0381() {
     let bad = QUESTS_V06.replace(
-        "\"anchor/door\", \"anchor/exit\"",
+        "\"anchor/keeper-stand\", \"anchor/exit\"",
         "\"anchor/exit\", \"anchor/exit\"",
     );
     assert!(

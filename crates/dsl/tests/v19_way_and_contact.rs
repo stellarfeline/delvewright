@@ -18,7 +18,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::RawCampaign;
 use serde_json::{Value, json};
 use std::sync::LazyLock;
 
@@ -135,18 +135,11 @@ fn campaign(graph: String, plan: String) -> RawCampaign {
         }
         out
     };
-    let mut world: Value = serde_json::from_str(&base.world).expect("hello-world's world parses");
-    world["content"]["areas"] = json!([]);
     RawCampaign {
-        world: serde_json::to_string(&world).expect("re-serialize"),
         npcs: retarget(
             &base.npcs,
-            &[
-                ("\"area/keep\"", "\"area/site\""),
-                ("\"anchor/keeper-stand\"", "\"anchor/node-porch\""),
-            ],
+            &[("\"anchor/keeper-stand\"", "\"anchor/node-porch\"")],
         ),
-        quest_plan: retarget(&base.quest_plan, &[("\"area/keep\"", "\"area/site\"")]),
         quests: retarget(
             &base.quests,
             &[
@@ -167,7 +160,7 @@ fn campaign(graph: String, plan: String) -> RawCampaign {
 fn graph_with(patch: impl FnOnce(&mut Value)) -> Vec<delvewright_dsl::Diagnostic> {
     let mut v: Value = serde_json::from_str(GRAPH.as_str()).expect("the green graph parses");
     patch(&mut v);
-    check_campaign(&campaign(
+    common::check_campaign(&campaign(
         serde_json::to_string(&v).expect("re-serialize"),
         PLAN.to_string(),
     ))
@@ -177,7 +170,7 @@ fn graph_with(patch: impl FnOnce(&mut Value)) -> Vec<delvewright_dsl::Diagnostic
 fn plan_with(patch: impl FnOnce(&mut Value)) -> Vec<delvewright_dsl::Diagnostic> {
     let mut v: Value = serde_json::from_str(PLAN.as_str()).expect("the green plan parses");
     patch(&mut v);
-    check_campaign(&campaign(
+    common::check_campaign(&campaign(
         GRAPH.to_string(),
         serde_json::to_string(&v).expect("re-serialize"),
     ))
@@ -332,7 +325,7 @@ fn dw0876_refuses_a_contact_on_a_class_a_front_cannot_be() {
             }
             _ => {}
         }
-        let d = check_campaign(&campaign(
+        let d = common::check_campaign(&campaign(
             serde_json::to_string(&g).expect("re-serialize"),
             PLAN.to_string(),
         ));
@@ -376,7 +369,7 @@ fn a_drop_contact_is_legal() {
     // it — two boxes share only the y span they have in common — and the sill
     // follows, being the higher floor: nothing on the seam is retyped.
     boxx(&mut p, 5)["floor"] = json!({ "y": 67 });
-    let d = check_campaign(&campaign(
+    let d = common::check_campaign(&campaign(
         serde_json::to_string(&g).expect("re-serialize"),
         serde_json::to_string(&p).expect("re-serialize"),
     ));

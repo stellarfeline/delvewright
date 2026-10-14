@@ -6,7 +6,6 @@
       "content": {
         "batches": [
           {
-            "area": "area/keep",
             "edits": [
               {
                 "region": "region/never-selected",

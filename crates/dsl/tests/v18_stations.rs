@@ -18,7 +18,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::RawCampaign;
 use serde_json::{Value, json};
 use std::sync::LazyLock;
 
@@ -146,18 +146,11 @@ fn campaign(graph: String) -> RawCampaign {
         }
         out
     };
-    let mut world: Value = serde_json::from_str(&base.world).expect("hello-world's world parses");
-    world["content"]["areas"] = json!([]);
     RawCampaign {
-        world: serde_json::to_string(&world).expect("re-serialize"),
         npcs: retarget(
             &base.npcs,
-            &[
-                ("\"area/keep\"", "\"area/site\""),
-                ("\"anchor/keeper-stand\"", "\"anchor/node-porch\""),
-            ],
+            &[("\"anchor/keeper-stand\"", "\"anchor/node-porch\"")],
         ),
-        quest_plan: retarget(&base.quest_plan, &[("\"area/keep\"", "\"area/site\"")]),
         quests: retarget(
             &base.quests,
             &[
@@ -178,7 +171,7 @@ fn campaign(graph: String) -> RawCampaign {
 fn graph_with(patch: impl FnOnce(&mut Value)) -> Vec<delvewright_dsl::Diagnostic> {
     let mut v: Value = serde_json::from_str(GRAPH.as_str()).expect("the green graph parses");
     patch(&mut v);
-    check_campaign(&campaign(serde_json::to_string(&v).expect("re-serialize")))
+    common::check_campaign(&campaign(serde_json::to_string(&v).expect("re-serialize")))
 }
 
 fn codes(d: &[delvewright_dsl::Diagnostic]) -> Vec<&str> {
@@ -372,7 +365,7 @@ fn dw0871_a_gate_verb_naming_a_point_station_is_refused() {
     base.quests = base
         .quests
         .replace("\"anchor/seam-hall-vault\"", "\"anchor/fire-pit\"");
-    let d = check_campaign(&base);
+    let d = common::check_campaign(&base);
     let hit = d.iter().find(|x| x.code == "DW0871");
     assert!(hit.is_some(), "expected DW0871: {:?}", codes(&d));
     let msg = &hit.unwrap().message;
@@ -391,7 +384,7 @@ fn dw0871_a_point_consumer_naming_a_gate_station_is_refused() {
     base.npcs = base
         .npcs
         .replace("\"anchor/node-porch\"", "\"anchor/vestry-door\"");
-    let d = check_campaign(&base);
+    let d = common::check_campaign(&base);
     assert!(codes(&d).contains(&"DW0871"), "{:?}", codes(&d));
 }
 
@@ -404,14 +397,14 @@ fn dw0871s_remedy_is_reachable() {
         .npcs
         .replace("\"anchor/node-porch\"", "\"anchor/vestry-door\"");
     assert!(
-        codes(&check_campaign(&base)).contains(&"DW0871"),
+        codes(&common::check_campaign(&base)).contains(&"DW0871"),
         "precondition: the wrong shape is refused"
     );
     // Now perform the remedy the message names.
     let mut v: Value = serde_json::from_str(GRAPH.as_str()).expect("parses");
     v["content"]["nodes"][1]["stations"][0]["kind"] = json!("point");
     base.layout_graph = Some(serde_json::to_string(&v).expect("re-serialize"));
-    let after = check_campaign(&base);
+    let after = common::check_campaign(&base);
     assert!(
         !codes(&after).contains(&"DW0871"),
         "performing the prescribed remedy must clear the refusal: {:?}",

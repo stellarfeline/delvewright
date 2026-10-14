@@ -5,10 +5,9 @@
 //! The pair that needs the rest points (`DW0914`/`DW0915`) is compiler-side and
 //! is exercised in `crates/delvec/tests/on_kill.rs`.
 
-use delvewright_dsl::{
-    Campaign, DSL_VERSION, Diagnostic, RawCampaign, Stage, parse_campaign, stage_schema,
-    validate_campaign,
-};
+mod common;
+
+use delvewright_dsl::{Campaign, DSL_VERSION, Diagnostic, RawCampaign, Stage, stage_schema};
 
 fn hw(name: &str) -> String {
     std::fs::read_to_string(
@@ -55,13 +54,13 @@ fn campaign(on_talk: &str, extra: &str) -> Campaign {
         quests,
         dialogue: hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 const BUNDLE: &str =
@@ -94,7 +93,7 @@ fn a_bundle_on_a_wave_nothing_spawns_is_dw0913() {
         "",
         &format!(r#", "waves": [ {} ]"#, wave("wave/idle", BUNDLE)),
     );
-    let d = with("DW0913", &validate_campaign(&c));
+    let d = with("DW0913", &common::validate_campaign(&c));
     assert_eq!(d.len(), 1, "{d:#?}");
     assert_eq!(d[0].path, "/content/waves/0/on_kill");
     assert!(d[0].message.contains("wave/idle"), "{}", d[0].message);
@@ -109,7 +108,7 @@ fn a_bundle_on_a_spawned_wave_stands() {
                "happening": { "verb": "arrives", "text": "They come." } }"#,
         &format!(r#", "waves": [ {} ]"#, wave("wave/idle", BUNDLE)),
     );
-    assert!(with("DW0913", &validate_campaign(&c)).is_empty());
+    assert!(with("DW0913", &common::validate_campaign(&c)).is_empty());
 }
 
 /// A wave spawned only from another wave's `on_kill` is seated where that wave
@@ -129,9 +128,9 @@ fn a_wave_spawned_by_a_kill_resolves_through_the_fight_that_spawns_it() {
         ),
     );
     assert!(
-        with("DW0913", &validate_campaign(&c)).is_empty(),
+        with("DW0913", &common::validate_campaign(&c)).is_empty(),
         "{:#?}",
-        validate_campaign(&c)
+        common::validate_campaign(&c)
     );
     let first = delvewright_dsl::wave_area(&c, "wave/first");
     assert!(first.is_some(), "the owner wave is seated by a quest");
@@ -147,7 +146,7 @@ fn a_bundle_on_an_actor_nobody_can_kill_is_dw0913_until_it_can_be() {
         "",
         &format!(r#", "actors": [ {} ]"#, actor("actor/usher", false, BUNDLE)),
     );
-    let d = with("DW0913", &validate_campaign(&caged));
+    let d = with("DW0913", &common::validate_campaign(&caged));
     assert_eq!(d.len(), 1, "{d:#?}");
     assert_eq!(d[0].path, "/content/actors/0/on_kill");
     assert!(d[0].message.contains("actor/usher"), "{}", d[0].message);
@@ -157,14 +156,14 @@ fn a_bundle_on_an_actor_nobody_can_kill_is_dw0913_until_it_can_be() {
         "",
         &format!(r#", "actors": [ {} ]"#, actor("actor/usher", true, BUNDLE)),
     );
-    assert!(with("DW0913", &validate_campaign(&vulnerable)).is_empty());
+    assert!(with("DW0913", &common::validate_campaign(&vulnerable)).is_empty());
 
     let unleashed = campaign(
         r#", { "type": "unleash-actor", "actor": "actor/usher",
                "happening": { "verb": "arrives", "text": "It stands." } }"#,
         &format!(r#", "actors": [ {} ]"#, actor("actor/usher", false, BUNDLE)),
     );
-    assert!(with("DW0913", &validate_campaign(&unleashed)).is_empty());
+    assert!(with("DW0913", &common::validate_campaign(&unleashed)).is_empty());
 }
 
 /// An empty bundle is the exported schema's `minItems: 1`, which serde does not
@@ -178,7 +177,7 @@ fn an_empty_bundle_is_dw0100() {
             actor("actor/usher", true, r#"{ "effects": [] }"#)
         ),
     );
-    let d = with("DW0100", &validate_campaign(&c));
+    let d = with("DW0100", &common::validate_campaign(&c));
     assert_eq!(d.len(), 1, "{d:#?}");
     assert_eq!(d[0].path, "/content/actors/0/on_kill/effects");
 }

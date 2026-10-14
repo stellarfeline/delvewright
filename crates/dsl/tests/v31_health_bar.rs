@@ -23,8 +23,7 @@ mod common;
 
 use delvewright_dsl::envelope::Stage;
 use delvewright_dsl::{
-    DSL_VERSION, Diagnostic, HealthBarBinding, RawCampaign, Severity, check_campaign, l10n,
-    parse_campaign, stage_schema,
+    DSL_VERSION, Diagnostic, HealthBarBinding, RawCampaign, Severity, l10n, stage_schema,
 };
 use serde_json::Value;
 
@@ -87,16 +86,16 @@ fn raw(quests: String) -> RawCampaign {
         quests,
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
 
 fn diags(q: String) -> Vec<Diagnostic> {
-    check_campaign(&raw(q))
+    common::check_campaign(&raw(q))
 }
 
 fn with_code<'a>(d: &'a [Diagnostic], code: &str) -> Vec<&'a Diagnostic> {
@@ -158,7 +157,7 @@ fn every_shape_the_spec_names_validates_clean() {
         &["actor/knight", "actor/creep"],
     ));
     assert!(d.is_empty(), "the bar surface must validate clean: {d:#?}");
-    let c = parse_campaign(&raw(quests(
+    let c = common::parse_campaign(&raw(quests(
         &format!("[{LANE}, {CHOIR}]"),
         &actors,
         &["actor/knight"],
@@ -410,7 +409,8 @@ fn dw0912_is_silent_on_a_boss_with_a_bar_and_an_elite_without() {
 /// adds nothing, so the character is translated once.
 #[test]
 fn a_stated_title_is_inventoried_and_a_derived_one_is_not() {
-    let c = parse_campaign(&raw(quests(&format!("[{LANE}, {CHOIR}]"), "[]", &[], &[]))).unwrap();
+    let c = common::parse_campaign(&raw(quests(&format!("[{LANE}, {CHOIR}]"), "[]", &[], &[])))
+        .unwrap();
     let inv = l10n::inventory(&c);
     assert_eq!(
         inv.get("wave.choir.health_bar.title").map(String::as_str),

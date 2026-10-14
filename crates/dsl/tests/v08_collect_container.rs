@@ -13,7 +13,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, l10n, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, l10n};
 
 /// hello-world's quests stage with one `collect` objective, parameterised on the
 /// stage version and on the objective's own adoption fields.
@@ -50,21 +50,22 @@ fn campaign_with(quests: String) -> RawCampaign {
         quests,
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
 
 /// The whole surface at once: adopt the prefab's container, name the item, pad
 /// the container to read full.
-const ADOPTED: &str = r#", "container": "anchor/door", "item_name": "Cheese", "fill_count": 8"#;
+const ADOPTED: &str =
+    r#", "container": "anchor/keeper-stand", "item_name": "Cheese", "fill_count": 8"#;
 
 #[test]
 fn the_adoption_surface_validates_clean_at_v08() {
-    let diags = check_campaign(&campaign_with(quests(ADOPTED)));
+    let diags = common::check_campaign(&campaign_with(quests(ADOPTED)));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.8 adopted-container collect, got: {diags:#?}"
@@ -74,7 +75,7 @@ fn the_adoption_surface_validates_clean_at_v08() {
 /// The container anchor is an anchor like any other: invented ones are `DW0142`.
 #[test]
 fn an_invented_container_anchor_is_dw0142() {
-    let diags = check_campaign(&campaign_with(quests(
+    let diags = common::check_campaign(&campaign_with(quests(
         r#", "container": "anchor/no-such-barrel""#,
     )));
     let d = diags
@@ -89,8 +90,8 @@ fn an_invented_container_anchor_is_dw0142() {
 /// dropped without a word.
 #[test]
 fn padding_past_the_last_slot_is_dw0432() {
-    let diags = check_campaign(&campaign_with(quests(
-        r#", "container": "anchor/door", "fill_count": 27"#,
+    let diags = common::check_campaign(&campaign_with(quests(
+        r#", "container": "anchor/keeper-stand", "fill_count": 27"#,
     )));
     let d = diags
         .iter()
@@ -101,8 +102,8 @@ fn padding_past_the_last_slot_is_dw0432() {
 
     // The exact ceiling validates: 26 padding stacks + the objective's own = 27.
     assert!(
-        !check_campaign(&campaign_with(quests(
-            r#", "container": "anchor/door", "fill_count": 26"#,
+        !common::check_campaign(&campaign_with(quests(
+            r#", "container": "anchor/keeper-stand", "fill_count": 26"#,
         )))
         .iter()
         .any(|d| d.code == "DW0432"),
@@ -133,13 +134,13 @@ fn a_loot_entry_and_an_adopted_collect_on_one_anchor_is_dw0435() {
       }}
     ],
     "loot": [
-      {{ "id": "loot/galley-stores", "anchor": "anchor/door",
+      {{ "id": "loot/galley-stores", "anchor": "anchor/keeper-stand",
          "items": [ {{ "item": "minecraft:cooked_cod", "count": 3 }} ] }}
     ]
   }}
 }}"#
     );
-    let diags = check_campaign(&campaign_with(quests));
+    let diags = common::check_campaign(&campaign_with(quests));
     let d = diags
         .iter()
         .find(|d| d.code == "DW0435")
@@ -169,9 +170,9 @@ fn two_adopted_collects_on_one_anchor_is_dw0435() {
         "objectives": [
           { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
           { "type": "collect", "id": "obj/cheese", "item": "minecraft:bread", "count": 1,
-            "anchor": "anchor/exit", "after": ["obj/talk"], "container": "anchor/door" },
+            "anchor": "anchor/exit", "after": ["obj/talk"], "container": "anchor/keeper-stand" },
           { "type": "collect", "id": "obj/wine", "item": "minecraft:potion", "count": 1,
-            "anchor": "anchor/exit", "after": ["obj/cheese"], "container": "anchor/door" }
+            "anchor": "anchor/exit", "after": ["obj/cheese"], "container": "anchor/keeper-stand" }
         ],
         "on_complete": [ { "type": "campaign-complete" } ]
       }
@@ -179,7 +180,7 @@ fn two_adopted_collects_on_one_anchor_is_dw0435() {
   }
 }"#,
     );
-    let diags = check_campaign(&campaign_with(quests.to_string()));
+    let diags = common::check_campaign(&campaign_with(quests.to_string()));
     assert!(
         diags.iter().any(|d| d.code == "DW0435"),
         "expected DW0435, got: {diags:#?}"
@@ -190,7 +191,7 @@ fn two_adopted_collects_on_one_anchor_is_dw0435() {
 /// translates like every other player-visible string.
 #[test]
 fn item_name_enters_the_l10n_inventory() {
-    let c = parse_campaign(&campaign_with(quests(ADOPTED))).expect("parses");
+    let c = common::parse_campaign(&campaign_with(quests(ADOPTED))).expect("parses");
     let inv = l10n::inventory(&c);
     assert_eq!(
         inv.get("obj.open-the-door.cheese.item_name")
@@ -217,7 +218,7 @@ fn stage5_schema_exports_the_adoption_fields() {
 /// from the DSL alone.
 #[test]
 fn an_unadopted_collect_serializes_without_the_new_fields() {
-    let c = parse_campaign(&campaign_with(quests(""))).expect("parses");
+    let c = common::parse_campaign(&campaign_with(quests(""))).expect("parses");
     let json = serde_json::to_string(&c.quests.content).expect("serializes");
     for field in ["container", "item_name", "fill_count"] {
         assert!(

@@ -9,7 +9,9 @@
 //! (`crates/delvec/tests/open_way.rs`) are where the reference is resolved
 //! against a placed world.
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, parse_campaign};
+mod common;
+
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 
 fn hw(name: &str) -> String {
     std::fs::read_to_string(
@@ -58,16 +60,16 @@ fn raw(quests: String) -> RawCampaign {
         quests,
         dialogue: hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     }
 }
 
 fn codes(quests: String) -> Vec<String> {
-    check_campaign(&raw(quests))
+    common::check_campaign(&raw(quests))
         .into_iter()
         .map(|d| d.code.to_string())
         .collect()
@@ -94,7 +96,7 @@ fn open_way_carries_the_whole_gate() {
          "forbids_flags": ["flag/keeper-spoke"],
          "requires_state": []
        } }"#;
-    let c = parse_campaign(&raw(quests_doc(gated))).expect("it parses");
+    let c = common::parse_campaign(&raw(quests_doc(gated))).expect("it parses");
     let effects = &c.quests.content.quests[0]
         .on_objective_complete
         .iter()

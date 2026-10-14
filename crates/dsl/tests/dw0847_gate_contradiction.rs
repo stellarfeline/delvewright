@@ -17,7 +17,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 
 fn campaign_with(quests: &str) -> RawCampaign {
     RawCampaign {
@@ -28,16 +28,16 @@ fn campaign_with(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
 
 fn codes(raw: &RawCampaign) -> Vec<String> {
-    check_campaign(raw)
+    common::check_campaign(raw)
         .into_iter()
         .map(|d| d.code)
         .collect::<Vec<_>>()

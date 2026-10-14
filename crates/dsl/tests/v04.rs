@@ -12,7 +12,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::RawCampaign;
 use std::sync::LazyLock;
 
 fn campaign_with(npcs: &str, quests: &str, dialogue: &str) -> RawCampaign {
@@ -24,10 +24,10 @@ fn campaign_with(npcs: &str, quests: &str, dialogue: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: dialogue.to_string(),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -70,7 +70,7 @@ static QUESTS_BASE: LazyLock<String> = LazyLock::new(|| {
 
 #[test]
 fn v04_base_campaign_validates_clean() {
-    let diags = check_campaign(&campaign_with(
+    let diags = common::check_campaign(&campaign_with(
         &valid_npcs_v04(),
         QUESTS_BASE.as_str(),
         &valid_dialogue_v04(),
@@ -93,7 +93,7 @@ fn malformed_skin_texture_id_is_dw0190() {
          \"model\": \"wide\" },",
         1,
     );
-    let diags = check_campaign(&campaign_with(
+    let diags = common::check_campaign(&campaign_with(
         &npcs,
         QUESTS_BASE.as_str(),
         &valid_dialogue_v04(),
@@ -118,7 +118,7 @@ fn two_mannequins_may_wear_one_texture() {
         });
         npcs.push(twin);
     });
-    let diags = check_campaign(&campaign_with(
+    let diags = common::check_campaign(&campaign_with(
         &npcs,
         QUESTS_BASE.as_str(),
         &valid_dialogue_v04(),
@@ -146,7 +146,7 @@ fn npcs_hiding(layers: &str) -> String {
 
 #[test]
 fn a_layer_hidden_twice_is_dw0980_and_each_layer_once_is_clean() {
-    let twice = check_campaign(&campaign_with(
+    let twice = common::check_campaign(&campaign_with(
         &npcs_hiding(r#"["hat", "jacket", "hat"]"#),
         QUESTS_BASE.as_str(),
         &valid_dialogue_v04(),
@@ -158,7 +158,7 @@ fn a_layer_hidden_twice_is_dw0980_and_each_layer_once_is_clean() {
         "{:?}",
         hit[0].path
     );
-    let once = check_campaign(&campaign_with(
+    let once = common::check_campaign(&campaign_with(
         &npcs_hiding(r#"["hat", "jacket", "cape"]"#),
         QUESTS_BASE.as_str(),
         &valid_dialogue_v04(),
@@ -167,7 +167,7 @@ fn a_layer_hidden_twice_is_dw0980_and_each_layer_once_is_clean() {
         !once.iter().any(|d| d.code == "DW0980"),
         "distinct layers are clean: {once:#?}"
     );
-    let unknown = check_campaign(&campaign_with(
+    let unknown = common::check_campaign(&campaign_with(
         &npcs_hiding(r#"["helmet"]"#),
         QUESTS_BASE.as_str(),
         &valid_dialogue_v04(),
@@ -196,7 +196,7 @@ fn all_completing_options_flag_gated_is_dw0191() {
             .expect("the greeting node still holds the only completing option");
         completing["requires_flags"] = serde_json::json!(["flag/never-set"]);
     });
-    let diags = check_campaign(&campaign_with(
+    let diags = common::check_campaign(&campaign_with(
         &valid_npcs_v04(),
         QUESTS_BASE.as_str(),
         &dialogue,
@@ -248,7 +248,7 @@ static QUESTS_BAD_WAVE_EFFECT: LazyLock<String> = LazyLock::new(|| {
 
 #[test]
 fn unknown_wave_mob_effect_is_dw0192() {
-    let diags = check_campaign(&campaign_with(
+    let diags = common::check_campaign(&campaign_with(
         &valid_npcs_v04(),
         QUESTS_BAD_WAVE_EFFECT.as_str(),
         &valid_dialogue_v04(),
@@ -271,7 +271,7 @@ fn unknown_set_block_id_is_dw0193() {
          { \"type\": \"set-block\", \"anchor\": \"anchor/exit\", \"block\": \"minecraft:not_a_real_block\" }",
         1,
     );
-    let diags = check_campaign(&campaign_with(
+    let diags = common::check_campaign(&campaign_with(
         &valid_npcs_v04(),
         &quests,
         &valid_dialogue_v04(),
@@ -322,7 +322,7 @@ static QUESTS_BAD_TRIGGER: LazyLock<String> = LazyLock::new(|| {
 
 #[test]
 fn malformed_trigger_id_is_dw0194() {
-    let diags = check_campaign(&campaign_with(
+    let diags = common::check_campaign(&campaign_with(
         &valid_npcs_v04(),
         QUESTS_BAD_TRIGGER.as_str(),
         &valid_dialogue_v04(),
@@ -362,7 +362,7 @@ fn use_trigger_on_an_npc_anchor_is_dw0350() {
         quests.contains("anchor/keeper-stand"),
         "fixture patch applied"
     );
-    let diags = check_campaign(&campaign_with(
+    let diags = common::check_campaign(&campaign_with(
         &valid_npcs_v04(),
         &quests,
         &valid_dialogue_v04(),
@@ -376,7 +376,7 @@ fn use_trigger_on_an_npc_anchor_is_dw0350() {
 #[test]
 fn strike_trigger_on_an_npc_anchor_is_not_dw0350() {
     let quests = quests_trigger_on_keeper_stand("strike");
-    let diags = check_campaign(&campaign_with(
+    let diags = common::check_campaign(&campaign_with(
         &valid_npcs_v04(),
         &quests,
         &valid_dialogue_v04(),
@@ -405,7 +405,6 @@ static QUEST_PLAN_TWO_QUESTS: LazyLock<String> = LazyLock::new(|| {
       {
         "id": "quest/open-the-door",
         "goal": "Get the Keeper to open the door and leave the keep.",
-        "area": "area/keep",
         "npcs": ["npc/keeper"],
         "depends_on": [],
         "mandatory": true,
@@ -414,7 +413,6 @@ static QUEST_PLAN_TWO_QUESTS: LazyLock<String> = LazyLock::new(|| {
       {
         "id": "quest/second",
         "goal": "Speak to the Keeper once more.",
-        "area": "area/keep",
         "npcs": ["npc/keeper"],
         "depends_on": ["quest/open-the-door"],
         "mandatory": true,
@@ -511,13 +509,13 @@ fn talk_to_targets_despawned_npc_is_dw0195() {
         quests: QUESTS_DESPAWNED_REF.to_string(),
         dialogue: DIALOGUE_TWO_OBJECTIVES.to_string(),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     };
-    let diags = check_campaign(&raw);
+    let diags = common::check_campaign(&raw);
     assert!(
         diags.iter().any(|d| d.code == "DW0195"),
         "a talk-to on an npc despawned by a prerequisite quest must be DW0195: {diags:#?}"

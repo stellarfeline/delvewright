@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 
 use delvewright_dsl::{
     Campaign, DSL_VERSION, L10nDoc, L10nKind, RawCampaign, l10n, localize, on_screen_narrates,
-    parse_campaign, validate_l10n,
+    validate_l10n,
 };
 
 /// The trap-payload narrate's inventory key (`fx.trap.<trap>.<i>`, keyed exactly
@@ -111,13 +111,13 @@ fn parse(quests: String, dialogue: String) -> Campaign {
         quests,
         dialogue,
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 /// The campaign whose two narrates live in the newly-reached roots.

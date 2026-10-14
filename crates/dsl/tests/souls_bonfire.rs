@@ -10,7 +10,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, l10n, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, l10n};
 use std::sync::LazyLock;
 
 /// A v0.6 quests document with a bonfire (with an `on_rest` narrate) and a wave
@@ -85,10 +85,10 @@ fn campaign_with(quests: &str, classes: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -96,7 +96,7 @@ fn campaign_with(quests: &str, classes: &str) -> RawCampaign {
 /// The whole spec-0016 §1 surface validates clean under 0.6.0.
 #[test]
 fn bonfire_and_rest_reseat_validate_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
+    let diags = common::check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 bonfire campaign, got: {diags:#?}"
@@ -112,7 +112,7 @@ fn bonfire_unknown_anchor_is_dw0142() {
         "\"anchor\": \"anchor/invented\",\n              \"on_rest\"",
     );
     assert_ne!(bad, QUESTS_V06.as_str(), "the substitution must apply");
-    let diags = check_campaign(&campaign_with_quests(&bad));
+    let diags = common::check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0142"),
         "an invented bonfire anchor must be DW0142: {diags:#?}"
@@ -132,7 +132,7 @@ fn respawns_on_rest_without_a_bonfire_is_dw0356() {
         QUESTS_V06.as_str(),
         "the substitution must apply"
     );
-    let diags = check_campaign(&campaign_with_quests(&no_bonfire));
+    let diags = common::check_campaign(&campaign_with_quests(&no_bonfire));
     assert!(
         diags.iter().any(|d| d.code == "DW0370"),
         "an unreachable respawns_on_rest must be DW0370: {diags:#?}"
@@ -144,7 +144,8 @@ fn respawns_on_rest_without_a_bonfire_is_dw0356() {
 /// key is deterministic (ADR-0006).
 #[test]
 fn on_rest_strings_enter_the_l10n_inventory() {
-    let campaign = parse_campaign(&campaign_with_quests(QUESTS_V06.as_str())).expect("parses");
+    let campaign =
+        common::parse_campaign(&campaign_with_quests(QUESTS_V06.as_str())).expect("parses");
     let inv = l10n::inventory(&campaign);
     let key = inv
         .iter()
@@ -172,7 +173,7 @@ fn on_rest_strings_enter_the_l10n_inventory() {
 #[test]
 fn a_bonfire_campaign_without_a_flask_is_dw0490() {
     let diags = campaign_with(QUESTS_V06.as_str(), &common::read_valid("classes.json"));
-    let diags = check_campaign(&diags);
+    let diags = common::check_campaign(&diags);
     let hit = diags
         .iter()
         .find(|d| d.code == "DW0476")
@@ -194,7 +195,7 @@ fn a_campaign_without_a_bonfire_needs_no_flask() {
         .replace("\"bonfire\"", "\"set-checkpoint\"")
         .replace("\"on_rest\"", "\"on_respawn\"")
         .replace("\"respawns_on_rest\": true,", "");
-    let diags = check_campaign(&campaign_with(
+    let diags = common::check_campaign(&campaign_with(
         &no_bonfire,
         &common::read_valid("classes.json"),
     ));
@@ -218,7 +219,7 @@ fn a_boss_wave_may_not_declare_respawns_on_rest_dw0489() {
         "\"respawns_on_rest\": true, \"tier\": \"boss\",",
     );
     assert_ne!(boss, QUESTS_V06.as_str(), "the substitution must apply");
-    let diags = check_campaign(&campaign_with_quests(&boss));
+    let diags = common::check_campaign(&campaign_with_quests(&boss));
     assert!(
         diags
             .iter()
@@ -228,7 +229,7 @@ fn a_boss_wave_may_not_declare_respawns_on_rest_dw0489() {
 
     // The same wave billed `elite` is legal: only the stage boss is exempt.
     let elite = boss.replace("\"tier\": \"boss\"", "\"tier\": \"elite\"");
-    let diags = check_campaign(&campaign_with_quests(&elite));
+    let diags = common::check_campaign(&campaign_with_quests(&elite));
     assert!(
         diags.is_empty(),
         "an elite wave may still respawn on rest: {diags:#?}"

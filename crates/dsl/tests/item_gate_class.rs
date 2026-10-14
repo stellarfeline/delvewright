@@ -28,7 +28,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 use std::sync::LazyLock;
 
 /// Two classes, only one of which carries `stripped_oak_log`.
@@ -130,10 +130,10 @@ fn campaign(classes: &str, quests: String) -> RawCampaign {
         quests,
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -146,7 +146,7 @@ fn dw0849(diags: &[delvewright_dsl::Diagnostic]) -> Vec<&delvewright_dsl::Diagno
 /// class-blind supplies it, so a `class/warder` party can never press the thing.
 #[test]
 fn an_item_only_one_class_carries_is_refused() {
-    let diags = check_campaign(&campaign(
+    let diags = common::check_campaign(&campaign(
         TWO_CLASSES_ONE_CARRIER.as_str(),
         quests("", "", ""),
     ));
@@ -183,7 +183,7 @@ fn an_item_only_one_class_carries_is_refused() {
 fn an_item_nothing_supplies_at_all_is_refused_and_says_so() {
     let no_carrier =
         TWO_CLASSES_ONE_CARRIER.replace("minecraft:stripped_oak_log", "minecraft:stick");
-    let diags = check_campaign(&campaign(&no_carrier, quests("", "", "")));
+    let diags = common::check_campaign(&campaign(&no_carrier, quests("", "", "")));
     let hits = dw0849(&diags);
     assert_eq!(
         hits.len(),
@@ -202,7 +202,7 @@ fn an_item_nothing_supplies_at_all_is_refused_and_says_so() {
 /// Green: every class carries it, so every party can finish.
 #[test]
 fn an_item_every_class_carries_is_clean() {
-    let diags = check_campaign(&campaign(
+    let diags = common::check_campaign(&campaign(
         TWO_CLASSES_BOTH_CARRY.as_str(),
         quests("", "", ""),
     ));
@@ -218,7 +218,7 @@ fn a_collect_objective_discharges_the_gate() {
     let collect = r#",
           { "type": "collect", "id": "obj/gather", "item": "minecraft:stripped_oak_log",
             "count": 1, "anchor": "anchor/exit", "after": ["obj/talk"] }"#;
-    let diags = check_campaign(&campaign(
+    let diags = common::check_campaign(&campaign(
         TWO_CLASSES_ONE_CARRIER.as_str(),
         quests(collect, "", ""),
     ));
@@ -233,7 +233,7 @@ fn a_collect_objective_discharges_the_gate() {
 fn a_give_item_effect_discharges_the_gate() {
     let give = r#",
           { "type": "give-item", "item": "minecraft:stripped_oak_log", "count": 1 }"#;
-    let diags = check_campaign(&campaign(
+    let diags = common::check_campaign(&campaign(
         TWO_CLASSES_ONE_CARRIER.as_str(),
         quests("", give, ""),
     ));
@@ -252,7 +252,7 @@ fn a_loot_container_discharges_the_gate() {
       { "id": "loot/woodpile", "anchor": "anchor/exit",
         "items": [ { "item": "minecraft:stripped_oak_log", "count": 1 } ] }
     ]"#;
-    let diags = check_campaign(&campaign(
+    let diags = common::check_campaign(&campaign(
         TWO_CLASSES_ONE_CARRIER.as_str(),
         quests("", "", loot),
     ));
@@ -274,7 +274,7 @@ fn a_campaign_with_no_item_gate_binds_zero_and_says_nothing() {
         "the perturbation must actually remove the gate — a replacement that matched \
          nothing is a silent no-op"
     );
-    let diags = check_campaign(&campaign(TWO_CLASSES_ONE_CARRIER.as_str(), ungated));
+    let diags = common::check_campaign(&campaign(TWO_CLASSES_ONE_CARRIER.as_str(), ungated));
     assert!(
         dw0849(&diags).is_empty(),
         "no item gate, nothing to say: {diags:#?}"

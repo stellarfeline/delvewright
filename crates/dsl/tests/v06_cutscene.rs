@@ -6,7 +6,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 
 /// A quests document whose exit beat plays `cutscene`, with the effect body
 /// spliced in — the one thing each case varies.
@@ -62,16 +62,16 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
 
 fn diags(cutscene: &str) -> Vec<delvewright_dsl::Diagnostic> {
-    check_campaign(&campaign_with_quests(&quests(cutscene)))
+    common::check_campaign(&campaign_with_quests(&quests(cutscene)))
 }
 
 /// The pre-0.6 single-shot spelling still validates clean under 0.4.0 — the

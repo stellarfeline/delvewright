@@ -25,14 +25,13 @@
 
 mod common;
 
-use delvewright_dsl::{Diagnostic, RawCampaign, check_campaign};
+use delvewright_dsl::{Diagnostic, RawCampaign};
 use serde_json::{Value, json};
 
 /// A second planned quest, unexpanded in every fixture below.
 fn second_planned_quest() -> Value {
     json!({
         "act": 1,
-        "area": "area/keep",
         "depends_on": [],
         "goal": "A prerequisite nobody has written yet.",
         "id": "quest/side-trip",
@@ -61,7 +60,7 @@ fn empty_stage_five() -> String {
 }
 
 fn diagnostics(quest_plan: String, quests: String) -> Vec<Diagnostic> {
-    check_campaign(&RawCampaign {
+    common::check_campaign(&RawCampaign {
         quest_plan,
         quests,
         ..common::valid_raw()

@@ -10,7 +10,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 use serde_json::{Value, json};
 
 /// The hello-world classes doc at `dsl_version` `version`, with `flask` spliced
@@ -40,17 +40,17 @@ fn campaign(classes: &str) -> RawCampaign {
         quests: common::read_valid("quests.json"),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
 
 /// Every code raised for a classes doc.
 fn codes_for(classes: &str) -> Vec<String> {
-    check_campaign(&campaign(classes))
+    common::check_campaign(&campaign(classes))
         .into_iter()
         .map(|d| d.code)
         .collect()
@@ -59,7 +59,7 @@ fn codes_for(classes: &str) -> Vec<String> {
 /// Assert `code` is among the findings — and, for the negative cases, that the
 /// document is otherwise clean.
 fn assert_code(classes: &str, code: &str) {
-    let diags = check_campaign(&campaign(classes));
+    let diags = common::check_campaign(&campaign(classes));
     assert!(
         diags.iter().any(|d| d.code == code),
         "expected {code} for this kit, got: {diags:#?}"
@@ -81,7 +81,7 @@ fn a_named_potion_validates_clean() {
     assert!(
         codes_for(&c).is_empty(),
         "a named-potion flask must validate clean: {:#?}",
-        check_campaign(&campaign(&c))
+        common::check_campaign(&campaign(&c))
     );
 }
 
@@ -102,7 +102,7 @@ fn custom_effects_validate_clean() {
     assert!(
         codes_for(&c).is_empty(),
         "a custom-effect flask must validate clean: {:#?}",
-        check_campaign(&campaign(&c))
+        common::check_campaign(&campaign(&c))
     );
 }
 
@@ -139,7 +139,7 @@ fn a_non_potion_kit_item_owes_no_contents() {
     assert!(
         codes_for(&c).is_empty(),
         "bread is not a potion: {:#?}",
-        check_campaign(&campaign(&c))
+        common::check_campaign(&campaign(&c))
     );
 }
 
@@ -264,6 +264,6 @@ fn the_effect_registry_covers_every_1_21_11_effect() {
     assert!(
         codes_for(&c).is_empty(),
         "a real 1.21.11 effect must not be rejected as unknown: {:#?}",
-        check_campaign(&campaign(&c))
+        common::check_campaign(&campaign(&c))
     );
 }

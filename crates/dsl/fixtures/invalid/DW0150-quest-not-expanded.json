@@ -8,7 +8,6 @@
         "quests": [
           {
             "act": 1,
-            "area": "area/keep",
             "depends_on": [
               "quest/side-trip"
             ],
@@ -21,7 +20,6 @@
           },
           {
             "act": 1,
-            "area": "area/keep",
             "depends_on": [],
             "goal": "A prerequisite that was never expanded.",
             "id": "quest/side-trip",

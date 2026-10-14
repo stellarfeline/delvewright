@@ -17,7 +17,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::RawCampaign;
 use std::sync::LazyLock;
 
 /// A v0.6 quests doc exercising `forbids_flags` on an objective, a quest
@@ -75,10 +75,10 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -87,7 +87,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// validates clean under 0.6.0.
 #[test]
 fn forbids_flags_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_FORBIDS.as_str()));
+    let diags = common::check_campaign(&campaign_with_quests(QUESTS_FORBIDS.as_str()));
     assert!(
         diags.is_empty(),
         "forbids_flags across all quests-stage sites must validate clean: {diags:#?}"
@@ -108,7 +108,7 @@ fn unknown_forbids_flag_is_dw0172_at_every_site() {
     ] {
         let broken =
             QUESTS_FORBIDS.replacen(needle, &needle.replace("flag/stood-down", "flag/typo"), 1);
-        let diags = check_campaign(&campaign_with_quests(&broken));
+        let diags = common::check_campaign(&campaign_with_quests(&broken));
         assert!(
             diags
                 .iter()
@@ -122,7 +122,7 @@ fn unknown_forbids_flag_is_dw0172_at_every_site() {
         r#""forbids_flags": ["flag/typo"],"#,
         1,
     );
-    let diags = check_campaign(&campaign_with_quests(&broken));
+    let diags = common::check_campaign(&campaign_with_quests(&broken));
     assert!(
         diags
             .iter()
@@ -147,7 +147,7 @@ fn forbids_only_completing_option_is_dw0191() {
         );
     let mut raw = campaign_with_quests(QUESTS_FORBIDS.as_str());
     raw.dialogue = dialogue;
-    let diags = check_campaign(&raw);
+    let diags = common::check_campaign(&raw);
     assert!(
         diags.iter().any(|d| d.code == "DW0191"),
         "a forbids-only-gated completing option must be DW0191: {diags:#?}"

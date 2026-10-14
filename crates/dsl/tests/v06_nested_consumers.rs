@@ -7,7 +7,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 
 /// A v0.6 quests doc whose `on_complete` is a single `sequence` wrapping the given
 /// effects (a raw JSON array body). The sequence nesting is the recursion probe.
@@ -50,16 +50,16 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
 
 fn diags_for(seq_effects: &str) -> Vec<delvewright_dsl::Diagnostic> {
-    check_campaign(&campaign_with_quests(&quests_with_sequence(seq_effects)))
+    common::check_campaign(&campaign_with_quests(&quests_with_sequence(seq_effects)))
 }
 
 /// A valid `narrate` nested in a sequence validates clean (baseline: the deep scan

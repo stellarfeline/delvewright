@@ -22,11 +22,11 @@
 
 mod common;
 
-use delvewright_dsl::{Diagnostic, RawCampaign, check_campaign};
+use delvewright_dsl::{Diagnostic, RawCampaign};
 use serde_json::{Value, json};
 
 fn dw0110(raw: RawCampaign) -> Vec<Diagnostic> {
-    check_campaign(&raw)
+    common::check_campaign(&raw)
         .into_iter()
         .filter(|d| d.code == "DW0110")
         .collect()
@@ -116,16 +116,6 @@ fn a_class_id_is_told_the_class_form() {
         v["content"]["classes"][0]["id"] = json!("class/Heavy_Guard");
     });
     assert_names_own_form(&only_message(raw), "class");
-}
-
-/// An area id, from stage 1 — one of the three types the old message happened
-/// to name, kept here so the change is not only tested where it was new.
-#[test]
-fn an_area_id_is_told_the_area_form() {
-    let raw = patched("world", |v| {
-        v["content"]["areas"][0]["id"] = json!("area/The Keep");
-    });
-    assert_names_own_form(&only_message(raw), "area");
 }
 
 /// The valid campaign raises no `DW0110`, so none of the above is green because

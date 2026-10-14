@@ -10,7 +10,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::RawCampaign;
 use std::sync::LazyLock;
 
 /// A v0.6 stage-5 quests document: one actor puppet, spawned then walked to the
@@ -80,10 +80,10 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -91,7 +91,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// The full v0.6 actor surface validates clean under `dsl_version 0.6.0`.
 #[test]
 fn v06_actor_surface_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
+    let diags = common::check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for the v0.6 actor surface, got: {diags:#?}"
@@ -107,7 +107,7 @@ fn v06_nested_sequence_is_dw0329() {
         r#"{ "type": "sequence", "steps": [ { "at_ticks": 0, "effects": [ { "type": "unleash-actor", "actor": "actor/giant" } ] } ] }"#,
         1,
     );
-    let diags = check_campaign(&campaign_with_quests(&nested));
+    let diags = common::check_campaign(&campaign_with_quests(&nested));
     assert!(
         diags.iter().any(|d| d.code == "DW0329"),
         "a sequence nested in a sequence must be DW0329: {diags:#?}"
@@ -123,7 +123,7 @@ fn v06_dangling_actor_ref_is_dw0112() {
         r#"{ "id": "actor/other", "entity": "minecraft:zombie""#,
         1,
     );
-    let diags = check_campaign(&campaign_with_quests(&dangling));
+    let diags = common::check_campaign(&campaign_with_quests(&dangling));
     assert!(
         diags.iter().any(|d| d.code == "DW0112"),
         "an effect referencing an undeclared actor must be DW0112: {diags:#?}"
@@ -134,7 +134,7 @@ fn v06_dangling_actor_ref_is_dw0112() {
 #[test]
 fn v06_unknown_actor_entity_is_dw0173() {
     let bad = QUESTS_V06.replacen("minecraft:zombie", "minecraft:not_a_real_entity", 1);
-    let diags = check_campaign(&campaign_with_quests(&bad));
+    let diags = common::check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0173"),
         "an unknown actor entity must be DW0173: {diags:#?}"
@@ -145,7 +145,7 @@ fn v06_unknown_actor_entity_is_dw0173() {
 #[test]
 fn v06_unresolved_actor_anchor_is_dw0142() {
     let bad = QUESTS_V06.replacen("anchor/keeper-stand", "anchor/nowhere", 1);
-    let diags = check_campaign(&campaign_with_quests(&bad));
+    let diags = common::check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0142"),
         "an actor anchor no prefab provides must be DW0142: {diags:#?}"
@@ -166,7 +166,7 @@ fn v06_duplicate_actor_id_is_dw0111() {
     ]"#,
         1,
     );
-    let diags = check_campaign(&campaign_with_quests(&dup));
+    let diags = common::check_campaign(&campaign_with_quests(&dup));
     assert!(
         diags.iter().any(|d| d.code == "DW0111"),
         "a duplicate actor id must be DW0111: {diags:#?}"

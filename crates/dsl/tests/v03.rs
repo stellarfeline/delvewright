@@ -9,7 +9,7 @@
 
 mod common;
 
-use delvewright_dsl::{Envelope, QuestsContent, RawCampaign, check_campaign, to_canonical_string};
+use delvewright_dsl::{Envelope, QuestsContent, RawCampaign, to_canonical_string};
 use std::sync::LazyLock;
 
 /// Stage 5 exercising all v0.3 verbs, waves and a flag causal chain.
@@ -28,7 +28,7 @@ static QUESTS_V03: LazyLock<String> = LazyLock::new(|| {
           { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
           { "type": "kill", "id": "obj/slay", "wave": "wave/guards", "after": ["obj/talk"] },
           { "type": "collect", "id": "obj/gather", "item": "minecraft:bread", "count": 1, "anchor": "anchor/exit", "after": ["obj/slay"] },
-          { "type": "interact", "id": "obj/unlock", "anchor": "anchor/door", "requires_item": "minecraft:iron_sword", "after": ["obj/gather"], "requires_flags": ["flag/armed"] },
+          { "type": "interact", "id": "obj/unlock", "anchor": "anchor/exit", "requires_item": "minecraft:iron_sword", "after": ["obj/gather"], "requires_flags": ["flag/armed"] },
           { "type": "reach-anchor", "id": "obj/reach", "anchor": "anchor/exit", "radius": 2, "after": ["obj/unlock"] }
         ],
         "on_objective_complete": {
@@ -72,17 +72,17 @@ fn v03_campaign() -> RawCampaign {
         quests: QUESTS_V03.to_string(),
         dialogue: to_v03(&common::read_valid("dialogue.json")),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
 
 #[test]
 fn v03_verbs_campaign_validates_clean() {
-    let diags = check_campaign(&v03_campaign());
+    let diags = common::check_campaign(&v03_campaign());
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for the v0.3 verbs campaign, got: {diags:#?}"

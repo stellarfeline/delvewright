@@ -7,7 +7,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::RawCampaign;
 use std::sync::LazyLock;
 
 /// A v0.6 quests document with a wave whose zombie wears boots and carries a
@@ -57,10 +57,10 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -68,7 +68,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// Wave-mob `equipment` with registry-known item ids validates clean under 0.6.0.
 #[test]
 fn wave_equipment_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
+    let diags = common::check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 wave-mob equipment, got: {diags:#?}"
@@ -80,7 +80,7 @@ fn wave_equipment_validates_clean() {
 #[test]
 fn unknown_equipment_item_is_dw0143() {
     let bad = QUESTS_V06.replace("minecraft:leather_boots", "minecraft:not_a_real_item");
-    let diags = check_campaign(&campaign_with_quests(&bad));
+    let diags = common::check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags
             .iter()
@@ -94,7 +94,7 @@ fn unknown_equipment_item_is_dw0143() {
 #[test]
 fn unknown_equipment_slot_is_dw0100() {
     let bad = QUESTS_V06.replace("\"feet\":", "\"tail\":");
-    let diags = check_campaign(&campaign_with_quests(&bad));
+    let diags = common::check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0100"),
         "an unknown equipment slot must be a schema rejection (DW0100): {diags:#?}"

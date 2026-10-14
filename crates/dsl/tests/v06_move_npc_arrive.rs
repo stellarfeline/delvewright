@@ -18,7 +18,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign, parse_campaign};
+use delvewright_dsl::RawCampaign;
 use std::sync::LazyLock;
 
 /// A v0.6 stage-5 quests doc: the keeper walks to the exit; arrival sets
@@ -66,10 +66,10 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -79,7 +79,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// consumer-validation walkers recurse into the new nesting site.
 #[test]
 fn move_npc_on_arrive_validates_clean_and_produces_flags() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_ARRIVE.as_str()));
+    let diags = common::check_campaign(&campaign_with_quests(QUESTS_ARRIVE.as_str()));
     assert!(
         diags.is_empty(),
         "move-npc.on_arrive must validate clean (nested set-flag is a producer): {diags:#?}"
@@ -106,7 +106,7 @@ fn sequence_via_move_npc_on_arrive_inside_sequence_is_dw0329() {
         r#"{ "type": "narrate", "text": "The keeper beckons from the doorway." }
               ] } ] } ] }"#,
     );
-    let diags = check_campaign(&campaign_with_quests(&quests));
+    let diags = common::check_campaign(&campaign_with_quests(&quests));
     assert!(
         diags.iter().any(|d| d.code == "DW0329"),
         "a sequence via move-npc.on_arrive inside a sequence must be DW0329: {diags:#?}"
@@ -118,8 +118,8 @@ fn sequence_via_move_npc_on_arrive_inside_sequence_is_dw0329() {
 /// shares the same traversal, so a translated build localizes it too.
 #[test]
 fn move_npc_on_arrive_narrate_enters_l10n_inventory() {
-    let campaign =
-        parse_campaign(&campaign_with_quests(QUESTS_ARRIVE.as_str())).expect("campaign parses");
+    let campaign = common::parse_campaign(&campaign_with_quests(QUESTS_ARRIVE.as_str()))
+        .expect("campaign parses");
     let inv = delvewright_dsl::l10n::inventory(&campaign);
     let key = "fx.open-the-door.oc.talk.1.arrive.1.narrate";
     assert_eq!(

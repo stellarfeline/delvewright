@@ -9,7 +9,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 
 fn quests(prop: &str) -> String {
     format!(
@@ -35,7 +35,7 @@ fn quests(prop: &str) -> String {
 }
 
 fn diags_for(prop: &str) -> Vec<delvewright_dsl::Diagnostic> {
-    check_campaign(&RawCampaign {
+    common::check_campaign(&RawCampaign {
         world: common::read_valid("world.json"),
         npcs: common::read_valid("npcs.json"),
         classes: common::read_valid("classes.json"),
@@ -43,10 +43,10 @@ fn diags_for(prop: &str) -> Vec<delvewright_dsl::Diagnostic> {
         quests: quests(prop),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     })
 }

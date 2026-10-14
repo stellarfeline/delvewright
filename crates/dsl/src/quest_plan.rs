@@ -980,7 +980,6 @@ mod spine_tests {
                 serde_json::json!({
                     "id": id,
                     "goal": "g",
-                    "area": "area/keep",
                     "npcs": [],
                     "depends_on": deps,
                     "mandatory": true,

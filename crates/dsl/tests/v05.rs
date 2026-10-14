@@ -1,16 +1,13 @@
-//! DSL v0.5 (spec-0010): declared world `time`/`weather` + per-area `lighting`
-//! and the `set-time`/`set-weather` effect verbs validate under `0.5.0` and are
-//! `lighting.min_light` is range-checked (`DW0196`).
-//!
-//! Built on the hello-world casting/quests/dialogue (unchanged, 0.2.0) with a
-//! v0.5 stage-1 `world` document — additive fields, so the rest is untouched.
+//! DSL v0.5 (spec-0010): declared world `time`/`weather` validate, and a
+//! place's `lighting` (its site-plan box's, spec-0106 §3.2) has its
+//! `min_light` range-checked (`DW0196`).
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::RawCampaign;
 use std::sync::LazyLock;
 
-/// A v0.5 stage-1 world document declaring time, weather and an area `lighting`.
+/// A v0.5 stage-1 world document declaring time and weather.
 static WORLD_V05: LazyLock<String> = LazyLock::new(|| {
     common::at_dsl_version(
         r#"{
@@ -24,21 +21,21 @@ static WORLD_V05: LazyLock<String> = LazyLock::new(|| {
     "seed": 20260729,
     "target_minutes": 5,
     "time": "midnight",
-    "weather": "thunder",
-    "areas": [
-      {
-        "id": "area/keep",
-        "name": "The Keep",
-        "prefab": "prefab/hello-room",
-        "lighting": { "fixture": "lantern", "min_light": 9 }
-      }
-    ]
+    "weather": "thunder"
   }
 }"#,
     )
 });
 
 fn campaign_with_world(world: &str) -> RawCampaign {
+    campaign_lit(world, 9)
+}
+
+fn campaign_lit(world: &str, min_light: u8) -> RawCampaign {
+    let plan = common::patch_doc(&common::read_valid("site-plan.json"), |v| {
+        v["content"]["boxes"][0]["lighting"] =
+            serde_json::json!({ "fixture": "torch", "min_light": min_light });
+    });
     RawCampaign {
         world: world.to_string(),
         npcs: common::read_valid("npcs.json"),
@@ -47,10 +44,10 @@ fn campaign_with_world(world: &str) -> RawCampaign {
         quests: common::read_valid("quests.json"),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(plan),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -58,7 +55,7 @@ fn campaign_with_world(world: &str) -> RawCampaign {
 /// v0.5 time/weather/lighting validate clean under `dsl_version 0.5.0`.
 #[test]
 fn v05_world_surface_validates_clean() {
-    let diags = check_campaign(&campaign_with_world(WORLD_V05.as_str()));
+    let diags = common::check_campaign(&campaign_with_world(WORLD_V05.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for the v0.5 world surface, got: {diags:#?}"
@@ -68,8 +65,7 @@ fn v05_world_surface_validates_clean() {
 /// `lighting.min_light` outside 1..=14 is `DW0196`.
 #[test]
 fn v05_min_light_out_of_range_is_dw0196() {
-    let bad = WORLD_V05.replacen("\"min_light\": 9", "\"min_light\": 15", 1);
-    let diags = check_campaign(&campaign_with_world(&bad));
+    let diags = common::check_campaign(&campaign_lit(WORLD_V05.as_str(), 15));
     assert!(
         diags.iter().any(|d| d.code == "DW0196"),
         "min_light 15 must be DW0196 (range 1..=14): {diags:#?}"

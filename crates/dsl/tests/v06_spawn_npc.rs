@@ -8,7 +8,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::RawCampaign;
 use std::sync::LazyLock;
 
 /// Stage 2 with a deferred second NPC.
@@ -24,7 +24,6 @@ static NPCS: LazyLock<String> = LazyLock::new(|| {
         "id": "npc/keeper",
         "name": "The Keeper",
         "role": "quest-giver",
-        "area": "area/keep",
         "anchor": "anchor/keeper-stand",
         "base_entity": "minecraft:villager",
         "persona": {
@@ -40,7 +39,6 @@ static NPCS: LazyLock<String> = LazyLock::new(|| {
         "id": "npc/latecomer",
         "name": "The Latecomer",
         "role": "flavor",
-        "area": "area/keep",
         "anchor": "anchor/exit",
         "base_entity": "minecraft:villager",
         "deferred": true,
@@ -71,7 +69,6 @@ static QUEST_PLAN: LazyLock<String> = LazyLock::new(|| {
       {
         "id": "quest/open-the-door",
         "goal": "Get the Keeper to open the door.",
-        "area": "area/keep",
         "npcs": ["npc/keeper"],
         "depends_on": [],
         "mandatory": true,
@@ -80,7 +77,6 @@ static QUEST_PLAN: LazyLock<String> = LazyLock::new(|| {
       {
         "id": "quest/second",
         "goal": "Meet whoever was waiting outside.",
-        "area": "area/keep",
         "npcs": ["npc/latecomer"],
         "depends_on": ["quest/open-the-door"],
         "mandatory": true,
@@ -180,10 +176,10 @@ fn campaign(npcs: &str, quests: &str, dialogue: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: dialogue.to_string(),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -195,7 +191,7 @@ fn base() -> RawCampaign {
 /// A deferred NPC with a `spawn-npc` in a prerequisite quest validates clean.
 #[test]
 fn deferred_npc_with_spawn_validates_clean() {
-    let diags = check_campaign(&base());
+    let diags = common::check_campaign(&base());
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 deferred npc + spawn-npc, got: {diags:#?}"
@@ -210,7 +206,7 @@ fn spawn_npc_unknown_npc_is_dw0112() {
         r#"{ "type": "spawn-npc", "npc": "npc/latecomer" }"#,
         r#"{ "type": "spawn-npc", "npc": "npc/nobody" }"#,
     );
-    let diags = check_campaign(&campaign(NPCS.as_str(), &bad, DIALOGUE.as_str()));
+    let diags = common::check_campaign(&campaign(NPCS.as_str(), &bad, DIALOGUE.as_str()));
     assert!(
         diags.iter().any(|d| d.code == "DW0112"),
         "an unknown spawn-npc target must be DW0112: {diags:#?}"
@@ -224,7 +220,7 @@ fn dialogue_spawn_npc_unknown_npc_is_dw0112() {
         r#"{ "label": "Who are you?", "effects": [ { "type": "complete-objective", "objective": "obj/meet" } ] }"#,
         r#"{ "label": "Who are you?", "effects": [ { "type": "complete-objective", "objective": "obj/meet" }, { "type": "spawn-npc", "npc": "npc/nobody" } ] }"#,
     );
-    let diags = check_campaign(&campaign(NPCS.as_str(), QUESTS.as_str(), &bad_dlg));
+    let diags = common::check_campaign(&campaign(NPCS.as_str(), QUESTS.as_str(), &bad_dlg));
     assert!(
         diags.iter().any(|d| d.code == "DW0112"),
         "an unknown dialogue spawn-npc target must be DW0112: {diags:#?}"
@@ -244,7 +240,7 @@ fn deferred_npc_never_spawned_is_dw0197() {
         !no_spawn.contains("spawn-npc"),
         "fixture edit must remove the spawn"
     );
-    let diags = check_campaign(&campaign(NPCS.as_str(), &no_spawn, DIALOGUE.as_str()));
+    let diags = common::check_campaign(&campaign(NPCS.as_str(), &no_spawn, DIALOGUE.as_str()));
     assert!(
         diags.iter().any(|d| d.code == "DW0197"),
         "a deferred npc nobody spawns must be DW0197: {diags:#?}"
@@ -293,7 +289,7 @@ fn talk_to_before_spawn_in_dag_is_dw0198() {
   }
 }"#,
     );
-    let diags = check_campaign(&campaign(NPCS.as_str(), &swapped, DIALOGUE.as_str()));
+    let diags = common::check_campaign(&campaign(NPCS.as_str(), &swapped, DIALOGUE.as_str()));
     assert!(
         diags.iter().any(|d| d.code == "DW0198"),
         "a talk-to that provably precedes every spawn-npc must be DW0198: {diags:#?}"

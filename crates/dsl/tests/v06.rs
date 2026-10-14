@@ -8,7 +8,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign, l10n, localize, parse_campaign};
+use delvewright_dsl::{RawCampaign, l10n, localize};
 use std::sync::LazyLock;
 
 /// A v0.6 stage-1 world document: ocean horizon + a boundary (the happy path).
@@ -27,10 +27,7 @@ static WORLD_V06: LazyLock<String> = LazyLock::new(|| {
     "time": "noon",
     "weather": "clear",
     "horizon": "ocean",
-    "boundary": { "margin": 24, "message": "The tide turns you back." },
-    "areas": [
-      { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
-    ]
+    "boundary": { "margin": 24, "message": "The tide turns you back." }
   }
 }"#,
     )
@@ -51,10 +48,7 @@ static WORLD_V06_OCEAN_NO_BOUNDARY: LazyLock<String> = LazyLock::new(|| {
     "target_minutes": 5,
     "time": "noon",
     "weather": "clear",
-    "horizon": "ocean",
-    "areas": [
-      { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
-    ]
+    "horizon": "ocean"
   }
 }"#,
     )
@@ -75,10 +69,7 @@ static WORLD_V06_VOID: LazyLock<String> = LazyLock::new(|| {
     "target_minutes": 5,
     "time": "noon",
     "weather": "clear",
-    "horizon": "void",
-    "areas": [
-      { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
-    ]
+    "horizon": "void"
   }
 }"#,
     )
@@ -93,10 +84,10 @@ fn campaign_with_world(world: &str) -> RawCampaign {
         quests: common::read_valid("quests.json"),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -104,7 +95,7 @@ fn campaign_with_world(world: &str) -> RawCampaign {
 /// v0.6 horizon + boundary validate clean under `dsl_version 0.6.0`.
 #[test]
 fn v06_world_surface_validates_clean() {
-    let diags = check_campaign(&campaign_with_world(WORLD_V06.as_str()));
+    let diags = common::check_campaign(&campaign_with_world(WORLD_V06.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for the v0.6 world surface, got: {diags:#?}"
@@ -114,7 +105,7 @@ fn v06_world_surface_validates_clean() {
 /// `horizon: "ocean"` without a `boundary` is `DW0320`.
 #[test]
 fn v06_ocean_without_boundary_is_dw0320() {
-    let diags = check_campaign(&campaign_with_world(WORLD_V06_OCEAN_NO_BOUNDARY.as_str()));
+    let diags = common::check_campaign(&campaign_with_world(WORLD_V06_OCEAN_NO_BOUNDARY.as_str()));
     assert!(
         diags.iter().any(|d| d.code == "DW0320"),
         "ocean without boundary must be DW0320: {diags:#?}"
@@ -125,7 +116,7 @@ fn v06_ocean_without_boundary_is_dw0320() {
 #[test]
 fn v06_margin_out_of_range_is_dw0321() {
     let bad = WORLD_V06.replacen("\"margin\": 24", "\"margin\": 65", 1);
-    let diags = check_campaign(&campaign_with_world(&bad));
+    let diags = common::check_campaign(&campaign_with_world(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0321"),
         "margin 65 must be DW0321 (range 0..=64): {diags:#?}"
@@ -136,7 +127,7 @@ fn v06_margin_out_of_range_is_dw0321() {
 #[test]
 fn v06_margin_zero_is_in_range() {
     let ok = WORLD_V06.replacen("\"margin\": 24", "\"margin\": 0", 1);
-    let diags = check_campaign(&campaign_with_world(&ok));
+    let diags = common::check_campaign(&campaign_with_world(&ok));
     assert!(
         !diags.iter().any(|d| d.code == "DW0321"),
         "margin 0 is in range and must not be DW0321: {diags:#?}"
@@ -146,7 +137,7 @@ fn v06_margin_zero_is_in_range() {
 /// An explicit `void` horizon with no boundary validates clean.
 #[test]
 fn v06_void_horizon_needs_no_boundary() {
-    let diags = check_campaign(&campaign_with_world(WORLD_V06_VOID.as_str()));
+    let diags = common::check_campaign(&campaign_with_world(WORLD_V06_VOID.as_str()));
     assert!(
         diags.is_empty(),
         "explicit void horizon needs no boundary: {diags:#?}"
@@ -168,10 +159,10 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -268,7 +259,7 @@ static QUESTS_V06_BLOCKSTATE: LazyLock<String> = LazyLock::new(|| {
 /// A per-effect flag gate that resolves validates clean under 0.6.0.
 #[test]
 fn v06_effect_requires_flags_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06_GATED_EFFECT.as_str()));
+    let diags = common::check_campaign(&campaign_with_quests(QUESTS_V06_GATED_EFFECT.as_str()));
     assert!(
         diags.is_empty(),
         "a resolved per-effect requires_flags must validate clean at 0.6.0: {diags:#?}"
@@ -278,7 +269,7 @@ fn v06_effect_requires_flags_validates_clean() {
 /// A per-effect `requires_flags` referencing an unproduced flag is `DW0172`.
 #[test]
 fn v06_effect_requires_flags_unknown_is_dw0172() {
-    let diags = check_campaign(&campaign_with_quests(
+    let diags = common::check_campaign(&campaign_with_quests(
         QUESTS_V06_GATED_EFFECT_UNKNOWN_FLAG.as_str(),
     ));
     assert!(
@@ -369,11 +360,11 @@ const NESTED_NARRATE_KEY: &str = "fx.open-the-door.oc.talk.0.seq.1.0.narrate";
 fn v06_sequence_narrate_is_inventoried_and_localized() {
     let raw = campaign_with_quests(QUESTS_V06_SEQUENCE_NARRATE.as_str());
     assert!(
-        check_campaign(&raw).is_empty(),
+        common::check_campaign(&raw).is_empty(),
         "the sequence-narrate campaign validates clean: {:#?}",
-        check_campaign(&raw)
+        common::check_campaign(&raw)
     );
-    let mut campaign = parse_campaign(&raw).expect("parses");
+    let mut campaign = common::parse_campaign(&raw).expect("parses");
 
     // The nested narrate is inventoried with its canonical English text.
     let inv = l10n::inventory(&campaign);
@@ -411,7 +402,7 @@ fn v06_sequence_narrate_is_inventoried_and_localized() {
 
 #[test]
 fn v06_set_flag_nested_in_sequence_is_a_producer_no_dw0172() {
-    let diags = check_campaign(&campaign_with_quests(
+    let diags = common::check_campaign(&campaign_with_quests(
         QUESTS_V06_SEQUENCE_SETS_FLAG.as_str(),
     ));
     assert!(
@@ -428,7 +419,7 @@ fn v06_set_flag_nested_in_sequence_is_a_producer_no_dw0172() {
 /// A block field carrying a well-formed vanilla blockstate validates clean.
 #[test]
 fn v06_blockstate_suffix_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06_BLOCKSTATE.as_str()));
+    let diags = common::check_campaign(&campaign_with_quests(QUESTS_V06_BLOCKSTATE.as_str()));
     assert!(
         diags.is_empty(),
         "a well-formed blockstate suffix must validate clean: {diags:#?}"
@@ -440,7 +431,7 @@ fn v06_blockstate_suffix_validates_clean() {
 fn v06_malformed_blockstate_is_dw0193() {
     let bad =
         QUESTS_V06_BLOCKSTATE.replacen("minecraft:water[level=0]", "minecraft:water[level=0", 1);
-    let diags = check_campaign(&campaign_with_quests(&bad));
+    let diags = common::check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0193"),
         "an unbalanced blockstate suffix must be DW0193: {diags:#?}"
@@ -455,7 +446,7 @@ fn v06_blockstate_base_id_still_registry_checked() {
         "minecraft:not_a_block[level=0]",
         1,
     );
-    let diags = check_campaign(&campaign_with_quests(&bad));
+    let diags = common::check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0193"),
         "an unknown base id must still be DW0193 even with a valid state: {diags:#?}"
@@ -471,7 +462,7 @@ fn v06_block_without_item_form_validates_clean() {
         "minecraft:wall_torch[facing=north]",
         1,
     );
-    let diags = check_campaign(&campaign_with_quests(&ok));
+    let diags = common::check_campaign(&campaign_with_quests(&ok));
     assert!(
         diags.is_empty(),
         "`minecraft:wall_torch` is a block with no item form and must validate: {diags:#?}"
@@ -482,7 +473,7 @@ fn v06_block_without_item_form_validates_clean() {
 #[test]
 fn v06_item_that_is_not_a_block_is_dw0193() {
     let bad = QUESTS_V06_BLOCKSTATE.replacen("minecraft:water[level=0]", "minecraft:iron_sword", 1);
-    let diags = check_campaign(&campaign_with_quests(&bad));
+    let diags = common::check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0193"),
         "`minecraft:iron_sword` is in the item registry and is not a block: {diags:#?}"

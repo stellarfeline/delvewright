@@ -11,7 +11,7 @@ mod common;
 
 use delvewright_dsl::{
     DSL_VERSION, ItemRegistry, QuestEffect, RawCampaign, VendoredAnchorRegistry,
-    VendoredEntityRegistry, VendoredItemRegistry, Verb, enchantment_component, parse_campaign,
+    VendoredEntityRegistry, VendoredItemRegistry, Verb, enchantment_component,
     validate_campaign_with,
 };
 
@@ -60,25 +60,25 @@ fn campaign(talk: &str, extra: &str) -> RawCampaign {
         quests,
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
 
 fn codes(c: &RawCampaign) -> Vec<(String, String)> {
-    let campaign = match parse_campaign(c) {
+    let campaign = match common::parse_campaign(c) {
         Ok(c) => c,
         Err(d) => return d.iter().map(|d| (d.code.clone(), d.path.clone())).collect(),
     };
-    validate_campaign_with(
+    common::quiet(validate_campaign_with(
         &campaign,
         &Items(VendoredItemRegistry::v1_21_11()),
         &VendoredAnchorRegistry::hello_world(),
         &VendoredEntityRegistry::v1_21_11(),
-    )
+    ))
     .iter()
     .map(|d| (d.code.clone(), d.path.clone()))
     .collect()

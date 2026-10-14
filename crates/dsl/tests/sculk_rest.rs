@@ -62,10 +62,10 @@ fn hello(quests: String) -> RawCampaign {
         quests,
         dialogue: hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     }
 }
@@ -148,7 +148,7 @@ fn a_world_edit_fill_recipe_of_a_summoning_shrieker_is_refused_where_it_is_typed
   "stage": "world-edits",
   "content": {{
     "batches": [
-      {{ "id": "batch/listen", "area": "area/site", "edits": [
+      {{ "id": "batch/listen", "edits": [
         {{ "verb": "select", "name": "region/patch",
            "shape": {{ "kind": "box", "min": [1, 0, 1], "max": [1, 0, 1],
                       "frame": {{ "kind": "anchor-relative",

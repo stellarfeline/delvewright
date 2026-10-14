@@ -17,7 +17,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 
 fn campaign_with_quests(quests: &str) -> RawCampaign {
     RawCampaign {
@@ -28,10 +28,10 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -83,7 +83,7 @@ fn sequence_open_gate(anchor: &str) -> String {
 #[test]
 fn nested_open_gate_on_a_real_anchor_validates_clean() {
     let doc = quests_doc(&sequence_open_gate("anchor/door"), "");
-    let diags = check_campaign(&campaign_with_quests(&doc));
+    let diags = common::check_campaign(&campaign_with_quests(&doc));
     assert!(
         diags.is_empty(),
         "a nested open-gate on a prefab-provided anchor must validate clean: {diags:#?}"
@@ -96,7 +96,7 @@ fn nested_open_gate_on_a_real_anchor_validates_clean() {
 #[test]
 fn typod_anchor_nested_in_a_sequence_is_dw0142() {
     let doc = quests_doc(&sequence_open_gate("anchor/dorr"), "");
-    let diags = check_campaign(&campaign_with_quests(&doc));
+    let diags = common::check_campaign(&campaign_with_quests(&doc));
     let hit = diags
         .iter()
         .find(|d| d.code == "DW0142")
@@ -118,7 +118,7 @@ fn typod_anchor_two_levels_down_is_dw0142() {
               "on_arrive": [
                 { "type": "set-block", "anchor": "anchor/nowhere",
                   "block": "minecraft:air" } ] } ] } ] }"#;
-    let diags = check_campaign(&campaign_with_quests(&quests_doc(effects, "")));
+    let diags = common::check_campaign(&campaign_with_quests(&quests_doc(effects, "")));
     assert!(
         diags.iter().any(|d| d.code == "DW0142"),
         "a typo'd anchor inside on_arrive inside a sequence must be DW0142: {diags:#?}"
@@ -140,7 +140,7 @@ fn typod_trigger_effect_anchor_is_dw0142() {
         r#"{ "type": "open-gate", "anchor": "anchor/door" }"#,
         triggers,
     );
-    let diags = check_campaign(&campaign_with_quests(&doc));
+    let diags = common::check_campaign(&campaign_with_quests(&doc));
     let hit = diags
         .iter()
         .find(|d| d.code == "DW0142")
@@ -165,7 +165,7 @@ fn trigger_effect_on_a_real_anchor_validates_clean() {
         r#"{ "type": "open-gate", "anchor": "anchor/door" }"#,
         triggers,
     );
-    let diags = check_campaign(&campaign_with_quests(&doc));
+    let diags = common::check_campaign(&campaign_with_quests(&doc));
     assert!(
         diags.is_empty(),
         "a trigger effect on a prefab-provided anchor must validate clean: {diags:#?}"
@@ -216,10 +216,8 @@ fn two_quest_doc(despawn: &str) -> (String, String) {
   "stage": "quest-plan",
   "content": {
     "quests": [
-      { "id": "quest/open-the-door", "goal": "Open the door", "area": "area/keep",
-        "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 },
-      { "id": "quest/second", "goal": "Speak again", "area": "area/keep",
-        "npcs": ["npc/keeper"], "depends_on": ["quest/open-the-door"], "mandatory": true, "act": 1 }
+      { "id": "quest/open-the-door", "goal": "Open the door", "npcs": ["npc/keeper"], "depends_on": [], "mandatory": true, "act": 1 },
+      { "id": "quest/second", "goal": "Speak again", "npcs": ["npc/keeper"], "depends_on": ["quest/open-the-door"], "mandatory": true, "act": 1 }
     ],
     "finale": "quest/second"
   }
@@ -230,7 +228,7 @@ fn two_quest_doc(despawn: &str) -> (String, String) {
 
 fn check_two_quest(despawn: &str) -> Vec<delvewright_dsl::Diagnostic> {
     let (quests, plan) = two_quest_doc(despawn);
-    check_campaign(&RawCampaign {
+    common::check_campaign(&RawCampaign {
         world: common::read_valid("world.json"),
         npcs: common::read_valid("npcs.json"),
         classes: common::read_valid("classes.json"),
@@ -238,10 +236,10 @@ fn check_two_quest(despawn: &str) -> Vec<delvewright_dsl::Diagnostic> {
         quests,
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     })
 }

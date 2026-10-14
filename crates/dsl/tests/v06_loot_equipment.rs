@@ -12,7 +12,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 
 /// A v0.6 `quests` document with pluggable `loot` and `actors` sections, over
 /// the unchanged hello-world expansion.
@@ -51,10 +51,10 @@ fn campaign(loot: &str, actors: &str) -> RawCampaign {
         quests,
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -90,20 +90,23 @@ const VALID_ACTOR: &str = r#"{
 }"#;
 
 fn codes(c: &RawCampaign) -> Vec<String> {
-    check_campaign(c).iter().map(|d| d.code.clone()).collect()
+    common::check_campaign(c)
+        .iter()
+        .map(|d| d.code.clone())
+        .collect()
 }
 
 // --- the happy paths ------------------------------------------------------
 
 #[test]
 fn valid_loot_validates_clean() {
-    let diags = check_campaign(&with_loot(VALID_LOOT));
+    let diags = common::check_campaign(&with_loot(VALID_LOOT));
     assert!(diags.is_empty(), "valid loot must be clean: {diags:#?}");
 }
 
 #[test]
 fn a_fully_enchanted_actor_validates_clean() {
-    let diags = check_campaign(&with_actor(VALID_ACTOR));
+    let diags = common::check_campaign(&with_actor(VALID_ACTOR));
     assert!(
         diags.is_empty(),
         "valid actor gear must be clean: {diags:#?}"
@@ -113,7 +116,7 @@ fn a_fully_enchanted_actor_validates_clean() {
 /// The plain-string form and the enchanted-object form coexist in one block.
 #[test]
 fn plain_and_enchanted_slots_coexist() {
-    assert!(check_campaign(&with_actor(VALID_ACTOR)).is_empty());
+    assert!(common::check_campaign(&with_actor(VALID_ACTOR)).is_empty());
 }
 
 // --- reservation ----------------------------------------------------------
@@ -166,7 +169,7 @@ fn the_curse_id_trap_is_dw0433_and_the_real_id_is_clean() {
     let bad = VALID_ACTOR.replacen("minecraft:protection", "minecraft:curse_of_binding", 1);
     assert!(codes(&with_actor(&bad)).contains(&"DW0433".to_string()));
     let good = VALID_ACTOR.replacen("minecraft:protection", "minecraft:binding_curse", 1);
-    assert!(check_campaign(&with_actor(&good)).is_empty());
+    assert!(common::check_campaign(&with_actor(&good)).is_empty());
 }
 
 #[test]
@@ -198,7 +201,7 @@ fn a_level_above_the_survival_max_is_allowed() {
         r#""minecraft:sharpness": 10"#,
         1,
     );
-    let diags = check_campaign(&with_actor(&a));
+    let diags = common::check_campaign(&with_actor(&a));
     assert!(diags.is_empty(), "sharpness 10 must be allowed: {diags:#?}");
 }
 

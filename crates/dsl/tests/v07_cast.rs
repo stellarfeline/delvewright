@@ -3,7 +3,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, l10n, parse_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, l10n};
 
 /// hello-world's single quest, plus a cast ledger. `dsl_version` is a parameter
 /// so the same document can be tested on both sides of the 0.7 boundary.
@@ -46,10 +46,10 @@ fn campaign_with(quests: String) -> RawCampaign {
         quests,
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -57,7 +57,7 @@ fn campaign_with(quests: String) -> RawCampaign {
 /// A `cast` ledger validates clean under `dsl_version 0.7.0`.
 #[test]
 fn cast_validates_clean_under_v07() {
-    let diags = check_campaign(&campaign_with(quests()));
+    let diags = common::check_campaign(&campaign_with(quests()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.7 cast ledger, got: {diags:#?}"
@@ -80,7 +80,7 @@ fn a_ledger_root_is_a_dialogue_entry_point() {
     );
     let mut raw = campaign_with(with_root);
     raw.dialogue = dialogue.clone();
-    let diags = check_campaign(&raw);
+    let diags = common::check_campaign(&raw);
     assert!(
         !diags.iter().any(|d| d.code == "DW0120"),
         "a cast-declared root must count as an entry point, got: {diags:#?}"
@@ -90,7 +90,9 @@ fn a_ledger_root_is_a_dialogue_entry_point() {
     let mut orphan = campaign_with(quests());
     orphan.dialogue = dialogue;
     assert!(
-        check_campaign(&orphan).iter().any(|d| d.code == "DW0120"),
+        common::check_campaign(&orphan)
+            .iter()
+            .any(|d| d.code == "DW0120"),
         "an genuinely unreferenced node must still be unreachable"
     );
 }
@@ -103,7 +105,7 @@ fn bark_lines_enter_the_l10n_inventory() {
         r#""dialogue": "dlg/greeting""#,
         r#""dialogue": { "barks": ["Mind the step.", "Cold tonight."] }"#,
     );
-    let c = parse_campaign(&campaign_with(barks)).expect("parses");
+    let c = common::parse_campaign(&campaign_with(barks)).expect("parses");
     let inv = l10n::inventory(&c);
     let keys: Vec<&String> = inv
         .keys()

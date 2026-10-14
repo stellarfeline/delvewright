@@ -15,7 +15,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 
 /// hello-world's npcs stage, at `version`, with the keeper optionally declaring
 /// a `traversal`.
@@ -56,16 +56,16 @@ fn raw(npcs_doc: String, quests_doc: String) -> RawCampaign {
         quests: quests_doc,
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
 
 fn codes(raw: &RawCampaign) -> Vec<String> {
-    check_campaign(raw)
+    common::check_campaign(raw)
         .iter()
         .map(|d| d.code.to_string())
         .collect()
@@ -84,13 +84,13 @@ fn both_body_classes_accept_a_declaration_at_v11() {
         assert!(
             !codes(&r).iter().any(|c| c == "DW0455"),
             "npc `{locomotion}`: {:#?}",
-            check_campaign(&r)
+            common::check_campaign(&r)
         );
         let r = raw(npcs(None), quests(Some(locomotion)));
         assert!(
             !codes(&r).iter().any(|c| c == "DW0455"),
             "actor `{locomotion}`: {:#?}",
-            check_campaign(&r)
+            common::check_campaign(&r)
         );
     }
 }
@@ -108,7 +108,7 @@ fn declaring_aquatic_is_dw0455_on_either_body_class() {
         ("npc", raw(npcs(Some("aquatic")), quests(None))),
         ("actor", raw(npcs(None), quests(Some("aquatic")))),
     ] {
-        let d = check_campaign(&r);
+        let d = common::check_campaign(&r);
         let hit = d
             .iter()
             .find(|d| d.code == "DW0455")
@@ -143,7 +143,7 @@ fn an_unknown_locomotion_or_field_does_not_parse() {
         assert!(
             codes(&r).iter().any(|c| c == "DW0100" || c == "DW0101"),
             "`{bad}` must be rejected by the schema, not accepted: {:#?}",
-            check_campaign(&r)
+            common::check_campaign(&r)
         );
     }
 }
@@ -153,7 +153,7 @@ fn an_unknown_locomotion_or_field_does_not_parse() {
 #[test]
 fn declaring_nothing_at_v11_raises_nothing() {
     let r = raw(npcs(None), quests(None));
-    let d = check_campaign(&r);
+    let d = common::check_campaign(&r);
     assert!(
         !d.iter().any(|d| d.code == "DW0454" || d.code == "DW0455"),
         "{d:#?}"

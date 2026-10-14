@@ -12,7 +12,7 @@
 mod common;
 
 use delvewright_dsl::envelope::Stage;
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, lightning, stage_schema};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, lightning, stage_schema};
 use serde_json::Value;
 
 fn campaign_with(quests: &str) -> RawCampaign {
@@ -24,10 +24,10 @@ fn campaign_with(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -57,7 +57,7 @@ fn quests_with(effects: &str) -> String {
 }
 
 fn codes(quests: &str) -> Vec<String> {
-    check_campaign(&campaign_with(quests))
+    common::check_campaign(&campaign_with(quests))
         .into_iter()
         .map(|d| d.code)
         .collect()

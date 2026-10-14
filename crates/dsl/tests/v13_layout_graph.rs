@@ -22,7 +22,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::RawCampaign;
 use serde_json::{Value, json};
 use std::sync::LazyLock;
 
@@ -120,8 +120,20 @@ fn campaign(graph: Option<String>, brief: Option<String>) -> RawCampaign {
     }
 }
 
+/// The graph tier's verdict. These campaigns carry a graph and no site plan,
+/// so nothing places the story's anchors and each is `DW0142` — a finding
+/// about the story layer, owned by `v14_site_plan.rs`
+/// (`a_campaign_with_no_map_is_told_to_write_its_site_plan`), and left out
+/// here so a graph test reads only the graph.
+fn graph_diags(raw: &RawCampaign) -> Vec<delvewright_dsl::Diagnostic> {
+    delvewright_dsl::check_campaign(raw)
+        .into_iter()
+        .filter(|d| !(raw.site_plan.is_none() && d.code == "DW0142"))
+        .collect()
+}
+
 fn codes_of(raw: &RawCampaign) -> Vec<String> {
-    check_campaign(raw).into_iter().map(|d| d.code).collect()
+    graph_diags(raw).into_iter().map(|d| d.code).collect()
 }
 
 fn validate(graph: Option<String>) -> Vec<String> {
@@ -325,7 +337,7 @@ fn dw0100_a_field_the_class_does_not_read() {
 #[test]
 fn dw0813_names_the_standards_this_graph_rested_on() {
     let raw = campaign(Some(GREEN.to_string()), Some(BRIEF.to_string()));
-    let notice = check_campaign(&raw)
+    let notice = graph_diags(&raw)
         .into_iter()
         .find(|d| d.code == "DW0813")
         .expect("the graph reads building metrics, so the notice is owed");
@@ -367,7 +379,7 @@ fn dw0818_an_unwritten_stage_five_points_at_dw0150_instead_of_blaming_the_graph(
         }),
         ..campaign(Some(GREEN.to_string()), Some(BRIEF.to_string()))
     };
-    let diags = check_campaign(&raw);
+    let diags = graph_diags(&raw);
     // Two beats and one gated way borrow a quest name from a stage 5 that is
     // not written: all three carry the clause, because they are the same
     // borrowing and a clause on only the one that was noticed would be the
@@ -391,7 +403,7 @@ fn dw0818_an_unwritten_stage_five_points_at_dw0150_instead_of_blaming_the_graph(
     }
 
     let g = graph_with(|v| v["content"]["beats"][0]["quest"] = json!("quest/nowhere"));
-    let d = check_campaign(&campaign(Some(g), Some(BRIEF.to_string())))
+    let d = graph_diags(&campaign(Some(g), Some(BRIEF.to_string())))
         .into_iter()
         .find(|d| d.code == "DW0818")
         .expect("a beat naming a quest stage 5 does not have is still DW0818");
@@ -509,7 +521,7 @@ fn dw0820_reads_the_loop_spatially() {
 #[test]
 fn dw0822_projects_the_route_and_refuses_nothing() {
     let raw = campaign(Some(GREEN.to_string()), Some(BRIEF.to_string()));
-    let d = check_campaign(&raw)
+    let d = graph_diags(&raw)
         .into_iter()
         .find(|d| d.code == "DW0822")
         .expect("the projection is printed on every graph");
@@ -529,7 +541,7 @@ fn dw0822_projects_the_route_and_refuses_nothing() {
     assert!(d.message.contains("`target_minutes`"), "{}", d.message);
     // It refuses nothing: the green document is green.
     assert!(
-        !check_campaign(&raw)
+        !graph_diags(&raw)
             .iter()
             .any(|d| d.severity == delvewright_dsl::Severity::Error)
     );

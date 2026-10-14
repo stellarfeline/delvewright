@@ -9,7 +9,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 
 fn raw_with(world: Option<&str>, classes: Option<&str>, quests: Option<&str>) -> RawCampaign {
     RawCampaign {
@@ -26,10 +26,10 @@ fn raw_with(world: Option<&str>, classes: Option<&str>, quests: Option<&str>) ->
             .unwrap_or_else(|| common::read_valid("quests.json")),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -104,7 +104,7 @@ fn quests_with_carrier(position: &str) -> String {
 #[test]
 fn min_players_in_range_validates_clean() {
     for n in ["1", "2", "3", "4"] {
-        let diags = check_campaign(&raw_with(Some(&world_with_min_players(n)), None, None));
+        let diags = common::check_campaign(&raw_with(Some(&world_with_min_players(n)), None, None));
         assert!(
             diags.is_empty(),
             "min_players {n} must validate clean: {diags:#?}"
@@ -116,7 +116,7 @@ fn min_players_in_range_validates_clean() {
 #[test]
 fn min_players_out_of_range_is_dw0356() {
     for n in ["0", "5", "40"] {
-        let diags = check_campaign(&raw_with(Some(&world_with_min_players(n)), None, None));
+        let diags = common::check_campaign(&raw_with(Some(&world_with_min_players(n)), None, None));
         assert!(
             diags.iter().any(|d| d.code == "DW0356"),
             "min_players {n} must be DW0356: {diags:#?}"
@@ -131,7 +131,7 @@ fn min_players_out_of_range_is_dw0356() {
 /// `carrier: "one"` on a quest beat (a bundle a player completes) is legal.
 #[test]
 fn carrier_one_on_a_quest_beat_validates_clean() {
-    let diags = check_campaign(&raw_with(None, None, Some(&quests_with_carrier("beat"))));
+    let diags = common::check_campaign(&raw_with(None, None, Some(&quests_with_carrier("beat"))));
     assert!(
         diags.is_empty(),
         "carrier: one on a completed beat must validate clean: {diags:#?}"
@@ -143,7 +143,8 @@ fn carrier_one_on_a_quest_beat_validates_clean() {
 #[test]
 fn carrier_one_in_a_scheduled_bundle_is_dw0357() {
     for position in ["arrive", "arrive-sequence"] {
-        let diags = check_campaign(&raw_with(None, None, Some(&quests_with_carrier(position))));
+        let diags =
+            common::check_campaign(&raw_with(None, None, Some(&quests_with_carrier(position))));
         assert!(
             diags.iter().any(|d| d.code == "DW0357"),
             "carrier: one inside a {position} bundle must be DW0357: {diags:#?}"
@@ -156,7 +157,7 @@ fn carrier_one_in_a_scheduled_bundle_is_dw0357() {
 /// recipient.
 #[test]
 fn carrier_one_in_a_timeline_a_player_started_validates_clean() {
-    let diags = check_campaign(&raw_with(
+    let diags = common::check_campaign(&raw_with(
         None,
         None,
         Some(&quests_with_carrier("sequence")),
@@ -171,7 +172,8 @@ fn carrier_one_in_a_timeline_a_player_started_validates_clean() {
 /// keeps its recipient — the walk must not latch through it.
 #[test]
 fn carrier_one_in_an_on_respawn_bundle_is_allowed() {
-    let diags = check_campaign(&raw_with(None, None, Some(&quests_with_carrier("respawn"))));
+    let diags =
+        common::check_campaign(&raw_with(None, None, Some(&quests_with_carrier("respawn"))));
     assert!(
         !diags.iter().any(|d| d.code == "DW0357"),
         "an on_respawn bundle has an acting player: {diags:#?}"

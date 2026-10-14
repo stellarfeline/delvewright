@@ -4,13 +4,7 @@
     "world": {
       "campaign_id": "hello-world",
       "content": {
-        "areas": [
-          {
-            "id": "area/keep",
-            "name": "The Keep",
-            "prefab": "prefab/hello-room"
-          }
-        ],
+        
         "boundary": {
           "margin": 100
         },

@@ -22,7 +22,7 @@
 mod common;
 
 use delvewright_dsl::envelope::Stage;
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, stage_schema};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, stage_schema};
 use serde_json::Value;
 
 fn campaign_with(quests: &str) -> RawCampaign {
@@ -34,10 +34,10 @@ fn campaign_with(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -67,7 +67,7 @@ fn quests_with(effects: &str) -> String {
 }
 
 fn codes(quests: &str) -> Vec<String> {
-    check_campaign(&campaign_with(quests))
+    common::check_campaign(&campaign_with(quests))
         .into_iter()
         .map(|d| d.code)
         .collect()
@@ -85,7 +85,7 @@ fn the_status_effect_pair_validates_clean() {
       { "type": "clear-effect", "effect": "minecraft:poison" }
     ]"#,
     );
-    let d = check_campaign(&campaign_with(&q));
+    let d = common::check_campaign(&campaign_with(&q));
     assert!(d.is_empty(), "expected clean, got: {d:#?}");
 }
 
@@ -112,7 +112,7 @@ fn an_unknown_effect_id_is_dw0192() {
 #[test]
 fn a_bare_effect_id_is_the_same_effect() {
     let bare = quests_with(r#"[{ "type": "give-effect", "effect": "blindness", "seconds": 5 }]"#);
-    let d = check_campaign(&campaign_with(&bare));
+    let d = common::check_campaign(&campaign_with(&bare));
     assert!(d.is_empty(), "a bare id is valid: {d:#?}");
 
     let mixed = quests_with(
@@ -141,7 +141,7 @@ fn out_of_range_duration_or_amplifier_is_dw0541() {
         assert!(
             codes(&q).contains(&"DW0541".to_string()),
             "expected DW0541 for {effect}, got {:#?}",
-            check_campaign(&campaign_with(&q))
+            common::check_campaign(&campaign_with(&q))
         );
     }
 }
@@ -161,7 +161,7 @@ fn a_grant_removed_by_a_later_effect_in_the_same_sequence_is_dw0540() {
       ] }
     ]"#,
     );
-    let d = check_campaign(&campaign_with(&q));
+    let d = common::check_campaign(&campaign_with(&q));
     let hit = d
         .iter()
         .find(|x| x.code == "DW0540")
@@ -202,7 +202,7 @@ fn a_self_limiting_grant_is_clean() {
       ] }
     ]"#,
     );
-    let d = check_campaign(&campaign_with(&q));
+    let d = common::check_campaign(&campaign_with(&q));
     assert!(
         !d.iter().any(|x| x.code == "DW0540"),
         "a grant with no clear is the prescribed shape: {d:#?}"
@@ -223,7 +223,7 @@ fn a_clear_after_the_duration_expires_is_not_dw0540() {
       ] }
     ]"#,
     );
-    let d = check_campaign(&campaign_with(&q));
+    let d = common::check_campaign(&campaign_with(&q));
     assert!(
         !d.iter().any(|x| x.code == "DW0540"),
         "20 ticks of grant, cleared at tick 40: the duration ended it. {d:#?}"
@@ -252,7 +252,7 @@ fn a_clear_of_another_effect_is_clean() {
       { "type": "clear-effect", "effect": "minecraft:poison" }
     ]"#,
     );
-    let d = check_campaign(&campaign_with(&q));
+    let d = common::check_campaign(&campaign_with(&q));
     assert!(!d.iter().any(|x| x.code == "DW0540"), "{d:#?}");
 }
 
@@ -275,7 +275,7 @@ fn the_removal_is_the_earliest_by_tick_not_by_declaration_order() {
       ] }
     ]"#,
     );
-    let d = check_campaign(&campaign_with(&q));
+    let d = common::check_campaign(&campaign_with(&q));
     let hit = d
         .iter()
         .find(|x| x.code == "DW0540")

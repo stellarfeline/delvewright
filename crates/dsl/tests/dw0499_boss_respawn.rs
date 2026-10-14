@@ -20,7 +20,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 use std::sync::LazyLock;
 
 /// A v0.7 quests document with a bonfire and a wave that re-seats on rest,
@@ -103,10 +103,10 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -117,7 +117,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 #[test]
 fn boss_tier_wave_with_rest_reseat_is_dw0499() {
     let quests = quests_with_tier(Some("boss"));
-    let diags = check_campaign(&campaign_with_quests(&quests));
+    let diags = common::check_campaign(&campaign_with_quests(&quests));
     assert!(
         diags.iter().any(|d| d.code == "DW0499"),
         "a boss-tier wave declaring respawns_on_rest must be DW0499: {diags:#?}"
@@ -157,7 +157,7 @@ fn boss_tier_wave_with_rest_reseat_is_dw0499() {
 #[test]
 fn elite_tier_wave_with_rest_reseat_stays_silent() {
     let quests = quests_with_tier(Some("elite"));
-    let diags = check_campaign(&campaign_with_quests(&quests));
+    let diags = common::check_campaign(&campaign_with_quests(&quests));
     assert!(
         !diags.iter().any(|d| d.code == "DW0499"),
         "an elite-tier wave must not trip the boss-only rule: {diags:#?}"
@@ -170,7 +170,7 @@ fn elite_tier_wave_with_rest_reseat_stays_silent() {
 #[test]
 fn untiered_wave_with_rest_reseat_stays_silent() {
     let quests = quests_with_tier(None);
-    let diags = check_campaign(&campaign_with_quests(&quests));
+    let diags = common::check_campaign(&campaign_with_quests(&quests));
     assert!(
         !diags.iter().any(|d| d.code == "DW0499"),
         "an untiered wave must not trip the boss-only rule: {diags:#?}"
@@ -183,7 +183,7 @@ fn untiered_wave_with_rest_reseat_stays_silent() {
 fn boss_tier_wave_without_rest_reseat_stays_silent() {
     let quests =
         quests_with_tier(Some("boss")).replace("\"respawns_on_rest\": true,\n        ", "");
-    let diags = check_campaign(&campaign_with_quests(&quests));
+    let diags = common::check_campaign(&campaign_with_quests(&quests));
     assert!(
         !diags.iter().any(|d| d.code == "DW0499"),
         "a boss-tier wave with no rest-reseat must not be DW0499: {diags:#?}"

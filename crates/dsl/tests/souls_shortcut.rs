@@ -9,7 +9,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::RawCampaign;
 use std::sync::LazyLock;
 
 static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
@@ -60,10 +60,10 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -71,7 +71,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// A well-formed shortcut validates clean under 0.6.0.
 #[test]
 fn shortcut_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
+    let diags = common::check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 shortcut, got: {diags:#?}"
@@ -82,7 +82,7 @@ fn shortcut_validates_clean() {
 #[test]
 fn malformed_shortcut_id_is_dw0371() {
     let bad = QUESTS_V06.replace("\"shortcut/inner-door\"", "\"Inner Door\"");
-    let diags = check_campaign(&campaign_with_quests(&bad));
+    let diags = common::check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0371"),
         "a malformed shortcut id must be DW0371: {diags:#?}"
@@ -98,7 +98,7 @@ fn invented_shortcut_anchor_is_dw0371() {
         "\"unlock\": \"anchor/invented\"",
     );
     assert_ne!(bad, QUESTS_V06.as_str());
-    let diags = check_campaign(&campaign_with_quests(&bad));
+    let diags = common::check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags
             .iter()
@@ -112,7 +112,7 @@ fn invented_shortcut_anchor_is_dw0371() {
 #[test]
 fn unlock_on_its_own_gate_is_dw0371() {
     let bad = QUESTS_V06.replace("\"unlock\": \"anchor/exit\"", "\"unlock\": \"anchor/door\"");
-    let diags = check_campaign(&campaign_with_quests(&bad));
+    let diags = common::check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0371"),
         "an unlock on its own gate anchor must be DW0371: {diags:#?}"
@@ -128,7 +128,7 @@ fn close_gate_on_a_shortcut_gate_is_dw0372() {
         "\"on_objective_complete\": { \"obj/talk\": [ { \"type\": \"sequence\", \"steps\": [ { \"at_ticks\": 10, \"effects\": [ { \"type\": \"close-gate\", \"anchor\": \"anchor/door\" } ] } ] } ] }",
     );
     assert_ne!(bad, QUESTS_V06.as_str());
-    let diags = check_campaign(&campaign_with_quests(&bad));
+    let diags = common::check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0372"),
         "re-sealing a shortcut gate must be DW0372: {diags:#?}"
@@ -148,7 +148,7 @@ fn close_gate_on_an_unowned_gate_is_still_legal() {
             "    \"shortcuts\": [\n      { \"id\": \"shortcut/inner-door\", \"gate\": \"anchor/door\", \"unlock\": \"anchor/exit\" }\n    ]\n",
             "    \"shortcuts\": []\n",
         );
-    let diags = check_campaign(&campaign_with_quests(&no_shortcut));
+    let diags = common::check_campaign(&campaign_with_quests(&no_shortcut));
     assert!(
         !diags.iter().any(|d| d.code == "DW0372"),
         "close-gate without a shortcut on that anchor must not trip DW0372: {diags:#?}"

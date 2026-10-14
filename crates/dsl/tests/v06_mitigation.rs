@@ -1,66 +1,32 @@
-//! DSL v0.6 stage-1 area `mitigation` — the first-class darkness declaration that
-//! replaced the `DW0210` display-name heuristic. Validates under `dsl_version
-//! 0.6.0`.
+//! A place's `mitigation` — the first-class darkness declaration that replaced
+//! the `DW0210` display-name heuristic — written on the place's site-plan box
+//! (`boxes[].mitigation`, spec-0106 §3.2).
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use delvewright_dsl::RawCampaign;
 
-fn world_doc(mitigation: bool) -> String {
-    let mit = if mitigation {
-        ",\n        \"mitigation\": \"night-vision\""
-    } else {
-        ""
-    };
-    format!(
-        r#"{{
-  "dsl_version": "{DSL_VERSION}",
-  "campaign_id": "hello-world",
-  "stage": "world",
-  "content": {{
-    "title": "The Keeper's Door",
-    "theme": "A lonely keep at the edge of the moor.",
-    "premise": "One locked door stands between you and the road home.",
-    "seed": 20260729,
-    "target_minutes": 5,
-    "time": "noon",
-    "weather": "clear",
-    "areas": [
-      {{
-        "id": "area/keep",
-        "name": "The Keep",
-        "prefab": "prefab/hello-room"{mit}
-      }}
-    ]
-  }}
-}}"#
-    )
-}
-
-fn campaign(world: &str) -> RawCampaign {
-    RawCampaign {
-        world: world.to_string(),
-        npcs: common::read_valid("npcs.json"),
-        classes: common::read_valid("classes.json"),
-        quest_plan: common::read_valid("quest-plan.json"),
-        quests: common::read_valid("quests.json"),
-        dialogue: common::read_valid("dialogue.json"),
-        world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
-        design: None,
+fn campaign(mitigation: Option<&str>) -> RawCampaign {
+    let mut raw = common::valid_raw();
+    if let Some(m) = mitigation {
+        let plan = raw
+            .site_plan
+            .take()
+            .expect("hello-world carries a site plan");
+        raw.site_plan = Some(common::patch_doc(&plan, |v| {
+            v["content"]["boxes"][0]["mitigation"] = serde_json::json!(m);
+        }));
     }
+    raw
 }
 
-/// `mitigation: "night-vision"` validates clean under `dsl_version 0.6.0`.
+/// `mitigation: "night-vision"` on a box validates clean.
 #[test]
-fn mitigation_validates_clean_at_0_6() {
-    let diags = check_campaign(&campaign(&world_doc(true)));
+fn mitigation_validates_clean() {
+    let diags = common::check_campaign(&campaign(Some("night-vision")));
     assert!(
         diags.is_empty(),
-        "expected zero diagnostics for a v0.6 area mitigation, got: {diags:#?}"
+        "expected zero diagnostics for a box mitigation, got: {diags:#?}"
     );
 }
 
@@ -68,18 +34,17 @@ fn mitigation_validates_clean_at_0_6() {
 /// pass — the enum is closed.
 #[test]
 fn unknown_mitigation_value_is_dw0100() {
-    let bad = world_doc(true).replace("night-vision", "renamed-potion");
-    let diags = check_campaign(&campaign(&bad));
+    let diags = common::check_campaign(&campaign(Some("renamed-potion")));
     assert!(
         diags.iter().any(|d| d.code == "DW0100"),
         "an unknown mitigation value must be a schema error: {diags:#?}"
     );
 }
 
-/// Absent `mitigation` (the pre-0.6 shape) still validates — the field is additive.
+/// Absent `mitigation` validates — the field is optional.
 #[test]
 fn absent_mitigation_is_unchanged() {
-    let diags = check_campaign(&campaign(&world_doc(false)));
+    let diags = common::check_campaign(&campaign(None));
     assert!(
         diags.is_empty(),
         "absent mitigation must validate: {diags:#?}"

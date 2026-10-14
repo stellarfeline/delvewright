@@ -13,7 +13,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, TriggerOn, check_campaign, l10n, parse_campaign};
+use delvewright_dsl::{RawCampaign, TriggerOn, l10n};
 use std::sync::LazyLock;
 
 static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
@@ -78,10 +78,10 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -90,7 +90,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// test: the engine never demands a tell.
 #[test]
 fn untelegraphed_ambush_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
+    let diags = common::check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
     assert!(
         diags.is_empty(),
         "an un-telegraphed ambush is legitimate souls vocabulary: {diags:#?}"
@@ -107,7 +107,7 @@ fn ambush_desugars_to_a_one_shot_trigger() {
         "\"trigger\": { \"on\": \"approach\", \"range\": 3 },\n        \"telegraph\": [ { \"type\": \"narrate\", \"text\": \"Gravel shifts behind you.\", \"style\": \"subtitle\" } ]",
     );
     assert_ne!(telegraphed, QUESTS_V06.as_str());
-    let campaign = parse_campaign(&campaign_with_quests(&telegraphed)).expect("parses");
+    let campaign = common::parse_campaign(&campaign_with_quests(&telegraphed)).expect("parses");
     let trig = campaign
         .quests
         .content
@@ -144,7 +144,7 @@ fn telegraph_strings_enter_the_l10n_inventory() {
         "\"trigger\": { \"on\": \"approach\", \"range\": 3 }",
         "\"trigger\": { \"on\": \"approach\", \"range\": 3 },\n        \"telegraph\": [ { \"type\": \"narrate\", \"text\": \"Gravel shifts behind you.\", \"style\": \"subtitle\" } ]",
     );
-    let campaign = parse_campaign(&campaign_with_quests(&telegraphed)).expect("parses");
+    let campaign = common::parse_campaign(&campaign_with_quests(&telegraphed)).expect("parses");
     let inv = l10n::inventory(&campaign);
     assert!(
         inv.values().any(|v| v == "Gravel shifts behind you."),
@@ -158,7 +158,7 @@ fn telegraph_strings_enter_the_l10n_inventory() {
 fn ambush_with_no_actors_is_dw0375() {
     let bad = QUESTS_V06.replace("\"actors\": [\"actor/lurker\"]", "\"actors\": []");
     assert_ne!(bad, QUESTS_V06.as_str());
-    let diags = check_campaign(&campaign_with_quests(&bad));
+    let diags = common::check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0375"),
         "an actor-less ambush must be DW0375: {diags:#?}"
@@ -173,7 +173,7 @@ fn ambush_listing_an_actor_twice_is_dw0375() {
         "\"actors\": [\"actor/lurker\"]",
         "\"actors\": [\"actor/lurker\", \"actor/lurker\"]",
     );
-    let diags = check_campaign(&campaign_with_quests(&bad));
+    let diags = common::check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0375"),
         "a doubled actor must be DW0375: {diags:#?}"
@@ -184,7 +184,7 @@ fn ambush_listing_an_actor_twice_is_dw0375() {
 #[test]
 fn malformed_ambush_id_is_dw0375() {
     let bad = QUESTS_V06.replace("\"ambush/door-turn\"", "\"Door Turn\"");
-    let diags = check_campaign(&campaign_with_quests(&bad));
+    let diags = common::check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0375"),
         "a malformed ambush id must be DW0375: {diags:#?}"

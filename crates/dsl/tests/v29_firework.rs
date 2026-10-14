@@ -18,7 +18,7 @@
 mod common;
 
 use delvewright_dsl::envelope::Stage;
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign, firework, stage_schema};
+use delvewright_dsl::{DSL_VERSION, RawCampaign, firework, stage_schema};
 use serde_json::Value;
 
 fn campaign_with(quests: &str) -> RawCampaign {
@@ -30,10 +30,10 @@ fn campaign_with(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -63,7 +63,7 @@ fn quests_with(effects: &str) -> String {
 }
 
 fn codes(quests: &str) -> Vec<String> {
-    check_campaign(&campaign_with(quests))
+    common::check_campaign(&campaign_with(quests))
         .into_iter()
         .map(|d| d.code)
         .collect()
@@ -88,7 +88,7 @@ fn the_firework_surface_validates_clean() {
         ] }
     ]"##,
     );
-    let d = check_campaign(&campaign_with(&q));
+    let d = common::check_campaign(&campaign_with(&q));
     assert!(d.is_empty(), "expected clean, got: {d:#?}");
 }
 
@@ -101,7 +101,7 @@ fn flight_is_optional() {
         "explosions": [ { "shape": "burst", "colors": ["#ffffff"] } ] }
     ]"##,
     );
-    let d = check_campaign(&campaign_with(&q));
+    let d = common::check_campaign(&campaign_with(&q));
     assert!(d.is_empty(), "expected clean, got: {d:#?}");
 }
 
@@ -120,7 +120,7 @@ fn a_malformed_colour_is_dw0100() {
             r##"[{{ "type": "firework", "at": {{ "anchor": "anchor/exit" }},
                   "explosions": [ {{ "shape": "burst", {colours} }} ] }}]"##
         ));
-        let d = check_campaign(&campaign_with(&q));
+        let d = common::check_campaign(&campaign_with(&q));
         assert!(
             d.iter().any(|x| x.code == "DW0100"),
             "malformed colour {colours} must be DW0100, got: {d:#?}"
@@ -194,7 +194,7 @@ fn a_dangling_mark_is_the_ordinary_dangling_reference() {
         r##"[{ "type": "firework", "at": { "anchor": "anchor/nowhere" },
               "explosions": [ { "shape": "burst", "colors": ["#ffffff"] } ] }]"##,
     );
-    let d = check_campaign(&campaign_with(&q));
+    let d = common::check_campaign(&campaign_with(&q));
     assert!(
         !d.is_empty() && d.iter().all(|x| x.code != "DW0899"),
         "a dangling mark is not the firework's own refusal: {d:#?}"

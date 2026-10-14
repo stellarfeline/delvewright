@@ -5,11 +5,9 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use delvewright_dsl::check_campaign;
-
 #[test]
 fn valid_campaign_has_no_diagnostics() {
-    let diags = check_campaign(&common::valid_raw());
+    let diags = common::check_campaign(&common::valid_raw());
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for the valid campaign, got: {diags:#?}"
@@ -30,7 +28,7 @@ fn invalid_fixtures_yield_exactly_their_code() {
         );
 
         let raw = common::apply(fixture);
-        let diags = check_campaign(&raw);
+        let diags = common::check_campaign(&raw);
         let codes: BTreeSet<&str> = diags.iter().map(|d| d.code.as_str()).collect();
         let expected: BTreeSet<&str> = std::iter::once(fixture.expect.as_str()).collect();
 
@@ -50,8 +48,7 @@ fn matrix_covers_every_code() {
     let expected = [
         "DW0100", "DW0101", "DW0102", "DW0103", "DW0110", "DW0111", "DW0112", "DW0120", "DW0121",
         "DW0122", "DW0123", "DW0130", "DW0131", "DW0132", "DW0140", "DW0142", "DW0143", "DW0150",
-        "DW0151", "DW0152", "DW0153", "DW0160", "DW0161", "DW0162", "DW0170", "DW0171", "DW0172",
-        "DW0173",
+        "DW0151", "DW0152", "DW0153", "DW0162", "DW0170", "DW0171", "DW0172", "DW0173",
     ];
     for code in expected {
         assert!(covered.contains(code), "no fixture covers {code}");

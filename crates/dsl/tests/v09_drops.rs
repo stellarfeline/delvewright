@@ -9,7 +9,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::RawCampaign;
 use std::sync::LazyLock;
 
 /// A v0.9 quests document shaped like the bell remake's gate boss: a boss wave
@@ -71,16 +71,16 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
 
 fn codes(quests: &str) -> Vec<String> {
-    check_campaign(&campaign_with_quests(quests))
+    common::check_campaign(&campaign_with_quests(quests))
         .into_iter()
         .map(|d| d.code)
         .collect()
@@ -90,7 +90,7 @@ fn codes(quests: &str) -> Vec<String> {
 /// and the collect that takes the token off it — validates clean under 0.9.0.
 #[test]
 fn declared_drops_validate_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V09.as_str()));
+    let diags = common::check_campaign(&campaign_with_quests(QUESTS_V09.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.9 declared drop, got: {diags:#?}"
@@ -108,7 +108,7 @@ fn slot_drop_must_be_worn() {
         "an unworn slot must be DW0490: {got:#?}"
     );
     // The message names BOTH sides: the slot asked for and what is actually worn.
-    let d = check_campaign(&campaign_with_quests(&bad));
+    let d = common::check_campaign(&campaign_with_quests(&bad));
     let hit = d.iter().find(|d| d.code == "DW0490").expect("DW0490");
     assert!(hit.message.contains("legs"), "{}", hit.message);
     assert!(hit.message.contains("feet"), "{}", hit.message);

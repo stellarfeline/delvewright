@@ -13,7 +13,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 
 /// hello-world with a `waves` section whose single wave carries `tier`, at the
 /// given quests-stage `dsl_version`.
@@ -61,10 +61,10 @@ fn raw_with_quests(quests: String) -> RawCampaign {
         quests,
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -75,7 +75,7 @@ fn every_tier_keyword_validates_at_v07() {
         let raw = raw_with_quests(quests_with_tier(&format!(
             ",\n         \"tier\": \"{tier}\""
         )));
-        let d = check_campaign(&raw);
+        let d = common::check_campaign(&raw);
         // spec-0073: a `boss`-billed fight with no `health_bar` is ADVISED —
         // one `DW0912` warning, and nothing else; no other tier is named.
         let advised = usize::from(tier == "boss");

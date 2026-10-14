@@ -6,7 +6,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::RawCampaign;
 use std::sync::LazyLock;
 
 /// A v0.6 quests document that damages the party (lethal, generic) on the exit
@@ -49,10 +49,10 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -60,7 +60,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// `damage-players` (with a curated `damage_type`) validates clean under 0.6.0.
 #[test]
 fn damage_players_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
+    let diags = common::check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 damage-players, got: {diags:#?}"
@@ -72,7 +72,7 @@ fn damage_players_validates_clean() {
 #[test]
 fn unknown_damage_type_is_dw0100() {
     let bad = QUESTS_V06.replace("\"wither\"", "\"void\"");
-    let diags = check_campaign(&campaign_with_quests(&bad));
+    let diags = common::check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0100"),
         "an unknown damage_type must be a schema rejection (DW0100): {diags:#?}"
@@ -87,7 +87,7 @@ fn damage_players_unresolved_in_anchor_is_dw0142() {
         r#"{ "type": "damage-players", "amount": 6,
              "in": { "anchor": "anchor/nope", "extent": [2, 2, 2] } }"#,
     );
-    let diags = check_campaign(&campaign_with_quests(&scoped));
+    let diags = common::check_campaign(&campaign_with_quests(&scoped));
     assert!(
         diags.iter().any(|d| d.code == "DW0142"),
         "an unresolved damage-players `in` anchor must be DW0142: {diags:#?}"
@@ -110,7 +110,7 @@ fn damage_players_requires_flags_resolves() {
         r#"{ "type": "damage-players",
              "when": { "requires_flags": ["flag/doomed"] }, "amount": 40, "damage_type": "wither" }"#,
     );
-    let diags = check_campaign(&campaign_with_quests(&gated));
+    let diags = common::check_campaign(&campaign_with_quests(&gated));
     assert!(
         diags.is_empty(),
         "damage-players with a resolvable requires_flags must validate clean: {diags:#?}"
@@ -118,7 +118,7 @@ fn damage_players_requires_flags_resolves() {
 
     // An unresolved flag is DW0172.
     let bad = gated.replace("\"flag/doomed\"]", "\"flag/nope\"]");
-    let diags = check_campaign(&campaign_with_quests(&bad));
+    let diags = common::check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0172"),
         "an unresolved damage-players requires_flags must be DW0172: {diags:#?}"

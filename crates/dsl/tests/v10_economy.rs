@@ -7,7 +7,9 @@
 //! have; they live in `crates/delvec/src/compiler/stake.rs` and are exercised by
 //! `crates/delvec/tests/v10_economy.rs`, exactly as a lethal volume's geometry is.
 
-use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign, validate_campaign};
+mod common;
+
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign};
 
 /// A stage document of this crate's own hello-world fixture.
 fn hw(name: &str) -> String {
@@ -53,17 +55,17 @@ fn campaign(extra: &str) -> Campaign {
         quests,
         dialogue: hw("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(hw("geometry-brief.json")),
+        layout_graph: Some(hw("layout-graph.json")),
+        site_plan: Some(hw("site-plan.json")),
+        detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
-    parse_campaign(&raw).expect("campaign parses")
+    common::parse_campaign(&raw).expect("campaign parses")
 }
 
 fn codes(c: &Campaign) -> Vec<String> {
-    validate_campaign(c)
+    common::validate_campaign(c)
         .into_iter()
         .map(|d| d.code.to_string())
         .collect()
@@ -98,7 +100,7 @@ fn a_well_formed_economy_validates_clean() {
     assert!(
         codes(&campaign(GOOD)).is_empty(),
         "{:#?}",
-        validate_campaign(&campaign(GOOD))
+        common::validate_campaign(&campaign(GOOD))
     );
 }
 
@@ -122,7 +124,7 @@ fn displayed() -> String {
 #[test]
 fn a_standing_purse_validates_clean() {
     let c = campaign(&displayed());
-    assert!(codes(&c).is_empty(), "{:#?}", validate_campaign(&c));
+    assert!(codes(&c).is_empty(), "{:#?}", common::validate_campaign(&c));
 }
 
 /// `DW0919`, first shape (spec-0076 §7.1) — the sidebar holds ONE objective, so a
@@ -138,7 +140,7 @@ fn dw0919_two_purses_cannot_share_the_sidebar() {
         two.contains("state/ash"),
         "the second purse is in the fixture"
     );
-    let diags = validate_campaign(&campaign(&two));
+    let diags = common::validate_campaign(&campaign(&two));
     let hit: Vec<_> = diags.iter().filter(|d| d.code == "DW0919").collect();
     assert_eq!(
         hit.len(),
@@ -163,7 +165,7 @@ fn dw0919_two_purses_cannot_share_the_sidebar() {
 fn dw0919_a_party_purse_cannot_stand() {
     let party = displayed().replace(r#""scope": "player""#, r#""scope": "party""#);
     assert!(party.contains(r#""scope": "party""#));
-    let diags = validate_campaign(&campaign(&party));
+    let diags = common::validate_campaign(&campaign(&party));
     let hit: Vec<_> = diags.iter().filter(|d| d.code == "DW0919").collect();
     assert_eq!(hit.len(), 1, "{diags:#?}");
     assert!(
@@ -181,7 +183,7 @@ fn dw0919_a_party_purse_cannot_stand() {
 fn dw0919_an_unnamed_datum_cannot_stand() {
     let unnamed = displayed().replace(r#""name": "Embers", "#, "");
     assert!(!unnamed.contains("Embers"), "the name really came off");
-    let diags = validate_campaign(&campaign(&unnamed));
+    let diags = common::validate_campaign(&campaign(&unnamed));
     let hit: Vec<_> = diags.iter().filter(|d| d.code == "DW0919").collect();
     assert_eq!(hit.len(), 1, "{diags:#?}");
     assert!(
@@ -416,10 +418,10 @@ fn gate(op: &str, value: i32) -> String {
 }
 
 fn dw0901(c: &Campaign) -> delvewright_dsl::Diagnostic {
-    validate_campaign(c)
+    common::validate_campaign(c)
         .into_iter()
         .find(|d| d.code == "DW0901")
-        .unwrap_or_else(|| panic!("DW0901 expected; got {:#?}", validate_campaign(c)))
+        .unwrap_or_else(|| panic!("DW0901 expected; got {:#?}", common::validate_campaign(c)))
 }
 
 /// The motivating shape: the offer gates on 15 and charges 16, so a player at 15
@@ -485,7 +487,7 @@ fn dw0901_reads_the_offer_s_own_gate() {
     assert!(
         !codes(&campaign(&priced(-15))).contains(&"DW0901".to_string()),
         "a button shown only at 15 that charges 15 adds up: {:#?}",
-        validate_campaign(&campaign(&priced(-15)))
+        common::validate_campaign(&campaign(&priced(-15)))
     );
     let d = dw0901(&campaign(&priced(-16)));
     assert!(d.message.contains("charges 16"), "{}", d.message);
@@ -539,7 +541,7 @@ fn dw0901_says_nothing_about_a_datum_the_list_does_not_price() {
     assert!(
         !codes(&campaign(drain)).contains(&"DW0901".to_string()),
         "{:#?}",
-        validate_campaign(&campaign(drain))
+        common::validate_campaign(&campaign(drain))
     );
 }
 

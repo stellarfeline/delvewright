@@ -17,7 +17,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 
 fn campaign_with(quests: &str, dialogue: Option<&str>) -> RawCampaign {
     RawCampaign {
@@ -30,16 +30,16 @@ fn campaign_with(quests: &str, dialogue: Option<&str>) -> RawCampaign {
             .map(str::to_string)
             .unwrap_or_else(|| common::read_valid("dialogue.json")),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
 
 fn codes(raw: &RawCampaign) -> Vec<String> {
-    check_campaign(raw)
+    common::check_campaign(raw)
         .into_iter()
         .map(|d| d.code)
         .collect::<Vec<_>>()
@@ -101,7 +101,7 @@ fn quests_doc() -> String {
 #[test]
 fn runtime_state_validates_clean() {
     let raw = campaign_with(&quests_doc(), None);
-    let d = check_campaign(&raw);
+    let d = common::check_campaign(&raw);
     assert!(d.is_empty(), "expected clean, got: {d:#?}");
 }
 
@@ -116,7 +116,7 @@ fn an_undeclared_datum_is_rejected() {
     assert!(
         codes(&raw).contains(&"DW0500".to_string()),
         "a write to an undeclared datum is DW0500: {:#?}",
-        check_campaign(&raw)
+        common::check_campaign(&raw)
     );
 
     let doc = quests_doc().replace(
@@ -127,7 +127,7 @@ fn an_undeclared_datum_is_rejected() {
     assert!(
         codes(&raw).contains(&"DW0500".to_string()),
         "a comparison against an undeclared datum is DW0500: {:#?}",
-        check_campaign(&raw)
+        common::check_campaign(&raw)
     );
 }
 
@@ -147,7 +147,7 @@ fn a_datum_read_but_never_written_is_rejected() {
             r#""effects": [ { "type": "add-state", "state": "state/toll", "amount": -1 } ]"#,
             r#""effects": [ { "type": "narrate", "text": "The box is empty." } ]"#,
         );
-    let d = check_campaign(&campaign_with(&doc, None));
+    let d = common::check_campaign(&campaign_with(&doc, None));
     let hit = d.iter().find(|x| x.code == "DW0501");
     assert!(hit.is_some(), "expected DW0501, got: {d:#?}");
     assert!(
@@ -171,7 +171,7 @@ fn a_datum_never_read_is_rejected() {
             r#""requires_state": [ { "state": "state/toll", "op": "at-least", "value": 1 } ],"#,
             "",
         );
-    let d = check_campaign(&campaign_with(&doc, None));
+    let d = common::check_campaign(&campaign_with(&doc, None));
     assert!(
         d.iter()
             .any(|x| x.code == "DW0502" && x.message.contains("nothing ever asks")),
@@ -184,7 +184,7 @@ fn a_datum_never_read_is_rejected() {
         r#"{ "id": "state/ride", "scope": "party" },
       { "id": "state/dust", "scope": "party" }"#,
     );
-    let d = check_campaign(&campaign_with(&doc, None));
+    let d = common::check_campaign(&campaign_with(&doc, None));
     assert!(
         d.iter()
             .any(|x| x.code == "DW0502" && x.message.contains("state/dust")),
@@ -201,7 +201,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
         r#"{ "id": "state/toll", "scope": "party", "initial": 3,"#,
         r#"{ "id": "state/toll", "scope": "player", "initial": 3,"#,
     );
-    let d = check_campaign(&campaign_with(&doc, None));
+    let d = common::check_campaign(&campaign_with(&doc, None));
     assert!(
         d.iter()
             .any(|x| x.code == "DW0503" && x.message.contains("objective")),
@@ -224,7 +224,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
                 .as_str(),
             r#""effects": [ { "type": "set-state", "state": "state/ride", "value": 1 } ]"#,
         );
-    let d = check_campaign(&campaign_with(&doc, None));
+    let d = common::check_campaign(&campaign_with(&doc, None));
     assert!(
         d.iter()
             .any(|x| x.code == "DW0503" && x.message.contains("no acting player")),
@@ -249,7 +249,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
     ],
     "quests": ["#,
         );
-    let d = check_campaign(&campaign_with(&doc, None));
+    let d = common::check_campaign(&campaign_with(&doc, None));
     assert!(
         d.iter().any(|x| x.code == "DW0503"
             && x.message.contains("requires_state")
@@ -269,7 +269,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
             r#"    "on_death": [ { "type": "set-state", "state": "state/ride", "value": 0 } ],
     "quests": ["#,
         );
-    let d = check_campaign(&campaign_with(&doc, None));
+    let d = common::check_campaign(&campaign_with(&doc, None));
     assert!(
         !d.iter().any(|x| x.code == "DW0503"),
         "`on_death` runs as the dying player, so a per-player write is legal: {d:#?}"
@@ -290,7 +290,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
               "on_arrive": [ { "type": "sequence", "steps": [ { "at_ticks": 0, "effects": [
               { "type": "set-state", "state": "state/ride", "value": 1 } ] } ] } ] },"#,
     );
-    let d = check_campaign(&campaign_with(&doc, None));
+    let d = common::check_campaign(&campaign_with(&doc, None));
     assert!(
         d.iter()
             .any(|x| x.code == "DW0503" && x.message.contains("`sequence` step")),
@@ -303,7 +303,7 @@ fn a_player_scoped_datum_needs_an_acting_player() {
         r#"{ "type": "sequence", "steps": [ { "at_ticks": 0, "effects": [
               { "type": "set-state", "state": "state/ride", "value": 1 } ] } ] },"#,
     );
-    let d = check_campaign(&campaign_with(&doc, None));
+    let d = common::check_campaign(&campaign_with(&doc, None));
     assert!(
         !d.iter().any(|x| x.code == "DW0503"),
         "the timeline carries its actor: {d:#?}"
@@ -391,7 +391,7 @@ fn a_gate_inside_the_newest_effect_roots_is_still_walked() {
     ],
     "quests": ["#,
     );
-    let d = check_campaign(&campaign_with(&doc, None));
+    let d = common::check_campaign(&campaign_with(&doc, None));
     assert!(
         d.iter()
             .any(|x| x.code == "DW0500" && x.message.contains("state/unwalked-r7")),
@@ -410,7 +410,7 @@ fn a_gate_inside_the_newest_effect_roots_is_still_walked() {
     ],
     "quests": ["#,
     );
-    let d = check_campaign(&campaign_with(&doc, None));
+    let d = common::check_campaign(&campaign_with(&doc, None));
     assert!(
         d.iter()
             .any(|x| x.code == "DW0500" && x.message.contains("state/unwalked-r6")),

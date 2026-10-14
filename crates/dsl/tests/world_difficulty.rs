@@ -21,9 +21,8 @@ mod common;
 
 use delvewright_dsl::{
     Campaign, DSL_VERSION, EntityRegistry, RawCampaign, Severity, VendoredAnchorRegistry,
-    VendoredItemRegistry, WorldDifficulty, bodies_removed_on_peaceful, check_campaign,
-    derived_difficulty, effective_difficulty, parse_campaign, peaceful_despawn,
-    removed_on_peaceful, validate_campaign_with,
+    VendoredItemRegistry, WorldDifficulty, bodies_removed_on_peaceful, derived_difficulty,
+    effective_difficulty, peaceful_despawn, removed_on_peaceful, validate_campaign_with,
 };
 
 fn raw_with(world: Option<&str>, quests: Option<&str>) -> RawCampaign {
@@ -39,10 +38,10 @@ fn raw_with(world: Option<&str>, quests: Option<&str>) -> RawCampaign {
             .unwrap_or_else(|| common::read_valid("quests.json")),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -96,7 +95,10 @@ fn quests_with_actor(attrs: &str) -> String {
 }
 
 fn codes(raw: &RawCampaign) -> Vec<String> {
-    check_campaign(raw).iter().map(|d| d.code.clone()).collect()
+    common::check_campaign(raw)
+        .iter()
+        .map(|d| d.code.clone())
+        .collect()
 }
 
 // --- the field itself ---------------------------------------------------------
@@ -106,7 +108,7 @@ fn codes(raw: &RawCampaign) -> Vec<String> {
 fn easy_normal_hard_all_validate() {
     for value in ["easy", "normal", "hard"] {
         let raw = raw_with(Some(&world_with_difficulty(value)), None);
-        let d = check_campaign(&raw);
+        let d = common::check_campaign(&raw);
         assert!(d.is_empty(), "`{value}` must validate clean: {d:#?}");
     }
 }
@@ -117,7 +119,7 @@ fn easy_normal_hard_all_validate() {
 #[test]
 fn peaceful_is_rejected_with_its_rationale() {
     let raw = raw_with(Some(&world_with_difficulty("peaceful")), None);
-    let d = check_campaign(&raw);
+    let d = common::check_campaign(&raw);
     let hit = d
         .iter()
         .find(|x| x.code == "DW0468")
@@ -142,7 +144,7 @@ fn peaceful_is_rejected_with_its_rationale() {
 /// A campaign that declares nothing is unchanged — no diagnostic, no field.
 #[test]
 fn absent_difficulty_is_clean() {
-    assert!(check_campaign(&raw_with(None, None)).is_empty());
+    assert!(common::check_campaign(&raw_with(None, None)).is_empty());
 }
 
 // --- the derivation keeps every staged body -------------------------------------
@@ -188,7 +190,7 @@ fn quests_with_one_actor(entity: &str, unleash: bool, extra: &str) -> String {
 }
 
 fn parsed(raw: &RawCampaign) -> Campaign {
-    parse_campaign(raw).unwrap_or_else(|d| panic!("fixture parses: {d:#?}"))
+    common::parse_campaign(raw).unwrap_or_else(|d| panic!("fixture parses: {d:#?}"))
 }
 
 /// The issue's shape: a still husk staged as a figure — never unleashed, never
@@ -368,12 +370,12 @@ impl EntityRegistry for AnyEntity {
 }
 
 fn diagnostics_any_entity(raw: &RawCampaign) -> Vec<delvewright_dsl::Diagnostic> {
-    validate_campaign_with(
+    common::quiet(validate_campaign_with(
         &parsed(raw),
         &VendoredItemRegistry::v1_21_11(),
         &VendoredAnchorRegistry::hello_world(),
         &AnyEntity,
-    )
+    ))
 }
 
 /// An unleashed fighter of a species peaceful keeps, no waves, no declaration:
@@ -445,7 +447,7 @@ fn actor_attributes_validate_under_v06() {
         Some(&world_with_difficulty("hard")),
         Some(&quests_with_actor(attrs)),
     );
-    let d = check_campaign(&raw);
+    let d = common::check_campaign(&raw);
     assert!(d.is_empty(), "actor attributes must validate clean: {d:#?}");
 }
 

@@ -12,7 +12,7 @@
 
 mod common;
 
-use delvewright_dsl::{DSL_VERSION, RawCampaign, check_campaign};
+use delvewright_dsl::{DSL_VERSION, RawCampaign};
 
 /// A v0.6 `quests` document carrying `traps`. `{VER}` / `{TRAPS}` are filled per
 /// test. The quest body is the unchanged hello-world expansion.
@@ -49,10 +49,10 @@ fn campaign_with_traps(traps: &str) -> RawCampaign {
         quests,
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -69,7 +69,7 @@ const VALID_TRAP: &str = r#"{
 /// A well-formed trap validates clean under `dsl_version 0.6.0`.
 #[test]
 fn v06_trap_validates_clean() {
-    let diags = check_campaign(&campaign_with_traps(VALID_TRAP));
+    let diags = common::check_campaign(&campaign_with_traps(VALID_TRAP));
     assert!(
         diags.is_empty(),
         "a valid v0.6 trap must validate clean, got: {diags:#?}"
@@ -80,7 +80,7 @@ fn v06_trap_validates_clean() {
 #[test]
 fn v06_trap_bad_anchor_is_dw0340() {
     let trap = VALID_TRAP.replacen("anchor/exit", "anchor/nowhere", 1);
-    let diags = check_campaign(&campaign_with_traps(&trap));
+    let diags = common::check_campaign(&campaign_with_traps(&trap));
     assert!(
         diags.iter().any(|d| d.code == "DW0340"),
         "an `at` anchor no prefab provides must be DW0340: {diags:#?}"
@@ -98,7 +98,7 @@ fn v06_trap_disarm_collides_with_trigger_is_dw0340() {
       "lethality": "lethal",
       "disarm": { "via": "anchor/exit", "sets_flag": "flag/darts-off" }
     }"#;
-    let diags = check_campaign(&campaign_with_traps(trap));
+    let diags = common::check_campaign(&campaign_with_traps(trap));
     assert!(
         diags.iter().any(|d| d.code == "DW0340"),
         "a disarm.via equal to the trap's own anchor must be DW0340: {diags:#?}"
@@ -109,7 +109,7 @@ fn v06_trap_disarm_collides_with_trigger_is_dw0340() {
 #[test]
 fn v06_trap_unknown_payload_is_dw0341() {
     let trap = VALID_TRAP.replacen("minecraft:torch", "minecraft:definitely-not-an-item", 1);
-    let diags = check_campaign(&campaign_with_traps(&trap));
+    let diags = common::check_campaign(&campaign_with_traps(&trap));
     assert!(
         diags.iter().any(|d| d.code == "DW0341"),
         "an unknown dispense payload item must be DW0341: {diags:#?}"
@@ -127,7 +127,7 @@ fn v06_trap_tnt_effect_is_rejected() {
       "effect": { "tnt": { "power": 4 } },
       "lethality": "lethal"
     }"#;
-    let diags = check_campaign(&campaign_with_traps(trap));
+    let diags = common::check_campaign(&campaign_with_traps(trap));
     assert!(
         diags.iter().any(|d| d.code == "DW0100"),
         "a non-dispense trap effect (tnt) must be rejected as an unknown variant (DW0100): {diags:#?}"
@@ -143,7 +143,7 @@ fn v06_trap_unknown_forbids_flag_is_dw0172() {
         "\"lethality\": \"harmful\",\n  \"forbids_flags\": [\"flag/never-produced\"]",
         1,
     );
-    let diags = check_campaign(&campaign_with_traps(&trap));
+    let diags = common::check_campaign(&campaign_with_traps(&trap));
     assert!(
         diags
             .iter()
@@ -179,7 +179,7 @@ fn a_disarm_flag_can_gate_the_rest_of_the_campaign() {
         r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"] }"#,
         r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"], "requires_flags": ["flag/darts-off"] }"#,
     );
-    let diags = check_campaign(&raw);
+    let diags = common::check_campaign(&raw);
     assert!(
         !diags.iter().any(|d| d.code == "DW0172"),
         "a flag the trap's disarm produces is produced: {diags:#?}"
@@ -192,7 +192,7 @@ fn a_disarm_flag_can_gate_the_rest_of_the_campaign() {
         r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2, "after": ["obj/talk"], "requires_flags": ["flag/never-set"] }"#,
     );
     assert!(
-        check_campaign(&unproduced)
+        common::check_campaign(&unproduced)
             .iter()
             .any(|d| d.code == "DW0172"),
         "a flag nothing produces is still DW0172"

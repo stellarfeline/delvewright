@@ -3,7 +3,7 @@
 
 mod common;
 
-use delvewright_dsl::{TextKind, key_kind, key_situations, parse_campaign};
+use delvewright_dsl::{TextKind, key_kind, key_situations};
 
 /// One key of every kind the scheme defines resolves to that kind; a key the
 /// scheme does not define resolves to none.
@@ -75,7 +75,7 @@ fn situations_carry_the_campaign_context_by_key() {
         "dialogue": { "barks": ["Mind the step."] }
     });
     raw.quests = quests.to_string();
-    let c = parse_campaign(&raw).expect("parses");
+    let c = common::parse_campaign(&raw).expect("parses");
     let s = key_situations(&c);
 
     let greeting = &s["dlg.keeper.greeting.text"];

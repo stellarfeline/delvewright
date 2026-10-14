@@ -5,7 +5,7 @@
 
 mod common;
 
-use delvewright_dsl::{RawCampaign, check_campaign};
+use delvewright_dsl::RawCampaign;
 use std::sync::LazyLock;
 
 /// A v0.6 quests document that opens `anchor/door` then re-seals it with a
@@ -57,10 +57,10 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
         quests: quests.to_string(),
         dialogue: common::read_valid("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        geometry_brief: Some(common::read_valid("geometry-brief.json")),
+        layout_graph: Some(common::read_valid("layout-graph.json")),
+        site_plan: Some(common::read_valid("site-plan.json")),
+        detail_plan: Some(common::read_valid("detail-plan.json")),
         design: None,
     }
 }
@@ -68,7 +68,7 @@ fn campaign_with_quests(quests: &str) -> RawCampaign {
 /// `close-gate` validates clean under `dsl_version 0.6.0`.
 #[test]
 fn close_gate_validates_clean() {
-    let diags = check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
+    let diags = common::check_campaign(&campaign_with_quests(QUESTS_V06.as_str()));
     assert!(
         diags.is_empty(),
         "expected zero diagnostics for a v0.6 close-gate, got: {diags:#?}"
@@ -83,7 +83,7 @@ fn close_gate_unresolved_anchor_is_dw0142() {
         r#"{ "type": "close-gate", "anchor": "anchor/door","#,
         r#"{ "type": "close-gate", "anchor": "anchor/nope","#,
     );
-    let diags = check_campaign(&campaign_with_quests(&bad));
+    let diags = common::check_campaign(&campaign_with_quests(&bad));
     assert!(
         diags.iter().any(|d| d.code == "DW0142"),
         "an unresolved close-gate anchor must be DW0142: {diags:#?}"

@@ -59,7 +59,6 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("<root>", "dsl_version", Machine),
     ("Actor", "entity", Reference),
     ("Actor", "name", Inventoried),
-    ("Area", "name", Inventoried),
     (
         "AtmosphereTint",
         "dry_foliage",
@@ -458,7 +457,6 @@ fn the_inventoried_fields_reach_the_inventory() {
     // the mapping between them.
     for (what, prefix, suffix) in [
         ("world title", "world.title", ""),
-        ("area name", "area.", ".name"),
         ("npc name", "npc.", ".name"),
         // The hole this file exists for. A regression removes this key kind and
         // nothing else in the suite notices.
@@ -579,9 +577,9 @@ fn fixture_with_actors() -> delvewright_dsl::Campaign {
         quests: serde_json::to_string(&quests).expect("quests re-serialize"),
         dialogue: read("dialogue.json"),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
+        geometry_brief: Some(read("geometry-brief.json")),
+        layout_graph: Some(read("layout-graph.json")),
+        site_plan: Some(read("site-plan.json")),
         detail_plan: None,
         design: None,
     })
