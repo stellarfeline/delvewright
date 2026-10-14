@@ -2,7 +2,6 @@
   "cameras": [
     {
       "answers": "concept/noon-hall",
-      "exposure": 1.0,
       "fov": 46.0,
       "height": 900,
       "name": "hall-exterior",
@@ -19,7 +18,6 @@
     },
     {
       "answers": "concept/noon-hall",
-      "exposure": 4.0,
       "fov": 70.0,
       "height": 900,
       "name": "hall-from-its-corner",
@@ -36,7 +34,6 @@
     },
     {
       "answers": "concept/morning-quay",
-      "exposure": 1.0,
       "fov": 46.0,
       "height": 900,
       "name": "quay-from-the-water",
@@ -53,7 +50,6 @@
     },
     {
       "answers": "concept/night-quay",
-      "exposure": 6.0,
       "fov": 58.0,
       "height": 900,
       "name": "quay-after-dark",
@@ -70,7 +66,6 @@
     },
     {
       "answers": "concept/dusk-rampart",
-      "exposure": 1.0,
       "fov": 42.0,
       "height": 900,
       "name": "rampart-against-the-sky",
@@ -87,7 +82,6 @@
     },
     {
       "answers": "concept/midnight-crypt",
-      "exposure": 8.0,
       "fov": 64.0,
       "height": 900,
       "name": "crypt-stair",
@@ -104,7 +98,6 @@
     },
     {
       "answers": "concept/dawn-approach",
-      "exposure": 1.0,
       "fov": 46.0,
       "height": 900,
       "name": "approach-at-first-light",
@@ -124,7 +117,6 @@
         "step": "obj/clear-the-muster"
       },
       "answers": "concept/bay-after-the-muster",
-      "exposure": 1.0,
       "fov": 46.0,
       "height": 900,
       "name": "east-bay-after-the-muster",

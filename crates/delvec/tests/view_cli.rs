@@ -413,9 +413,33 @@ fn cameras_cmd(built: &Path, campaign: &Path, out: &Path) -> Command {
 
 fn a_camera(name: &str, answers: &str) -> serde_json::Value {
     serde_json::json!({
-        "answers": answers, "exposure": 2.0, "fov": 55.0, "height": 450, "name": name,
+        "answers": answers, "fov": 55.0, "height": 450, "name": name,
         "pitch": 12.0, "pos": [9.5, 72.0, -6.0], "source": "estimated", "spp": 64, "width": 800, "yaw": 20.0
     })
+}
+
+/// **A stated exposure is refused where the record is read** (`DW1010`):
+/// `delvec cameras` exits 2, naming the camera and the remedy, and writes no
+/// scene. The build's half is `design_record.rs`.
+#[test]
+fn a_record_that_states_an_exposure_is_refused_by_the_cameras_command() {
+    let dir = tmp("cameras-exposure");
+    let built = hello_build(&dir);
+    let campaign = dir.join("campaign");
+    let mut hall = a_camera("hall", "concept/hall");
+    hall["exposure"] = 16.0.into();
+    camera_campaign(
+        &campaign,
+        serde_json::json!([a_camera("gate", "concept/gate"), hall]),
+    );
+    let out = dir.join("scenes");
+    let r = cameras_cmd(&built, &campaign, &out).output().unwrap();
+    let stderr = String::from_utf8_lossy(&r.stderr);
+    assert_eq!(r.status.code(), Some(2), "{stderr}");
+    assert!(stderr.contains("DW1010"), "{stderr}");
+    assert!(stderr.contains("camera `hall`"), "{stderr}");
+    assert!(stderr.contains("light the room"), "{stderr}");
+    assert!(!out.join("hello-world_camera_gate.json").exists());
 }
 
 /// `delvec cameras` emits one scene per stated camera, verbatim, names the
@@ -443,7 +467,8 @@ fn cameras_emits_the_stated_cameras_and_their_candidates() {
     assert_eq!(v["name"], "hello-world_camera_gate");
     assert_eq!(v["width"], 800);
     assert_eq!(v["sppTarget"], 64);
-    assert_eq!(v["exposure"], 2.0);
+    // The exposure is the engine's derivation, never the record's.
+    assert_eq!(v["exposure"], 1.0);
     assert_eq!(v["camera"]["fov"], 55.0);
     assert_eq!(v["camera"]["position"]["z"], -6.0);
     assert!(v["sun"]["altitude"].is_number(), "{v}");
@@ -581,10 +606,9 @@ fn cameras_prints_the_sky_binding_line() {
             a_camera("hall", "concept/hall"),
             0,
             vec![
-                "sky: gate dusk+clear derived from concept/gate class low — clear cell at daytime \
-                 12000: the game's sky as a map, its light 0.690126 (the lightmap's, peak \
-                 channel), sun 0",
-                "sky: hall dusk+clear derived from concept/hall class low",
+                "sky: gate dusk+clear derived from concept/gate — clear sky at daytime 12000: the \
+                 game's sky as a map, its light 0.690126 (the lightmap's, peak channel), sun 0",
+                "sky: hall dusk+clear derived from concept/hall —",
                 "skies: 2 derived, 0 stated, over 2 camera(s); weathers emitted: {}",
             ],
         ),
@@ -593,8 +617,8 @@ fn cameras_prints_the_sky_binding_line() {
             rain,
             0,
             vec![
-                "sky: hall dusk+rain stated class low — overcast cell low×rain: skyLight 1.6, \
-                 apparentSkyLight 0.6, sun 0.25, fog 0.002",
+                "sky: hall dusk+rain stated — rain sky at daytime 12000: the game's sky as a map, \
+                 its light 0.55433 (the lightmap's, peak channel), sun 0",
                 "skies: 1 derived, 1 stated, over 2 camera(s); weathers emitted: {rain}",
             ],
         ),

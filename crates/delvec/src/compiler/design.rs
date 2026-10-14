@@ -679,11 +679,31 @@ pub fn answered(c: &Campaign, files: &DesignFiles) -> Vec<Diagnostic> {
         .map(|e| e.content.references.as_slice())
         .unwrap_or(&[]);
     let names: Vec<String> = rows.iter().map(|r| r.name.clone()).collect();
-    let CameraRecord::Read(a) = camera_record(files, rows) else {
-        // Absent: nothing to hold. Unreadable: `DW0721` is raised by the record's
-        // own reader when the build proves the cameras against the world, and a
-        // second copy of that refusal here would name the same defect twice.
-        return Vec::new();
+    let a = match camera_record(files, rows) {
+        CameraRecord::Read(a) => a,
+        // Absent: nothing to hold.
+        CameraRecord::Absent => return Vec::new(),
+        // Unreadable: the record's own reader's refusal, at the build's tier
+        // and under the reader's code, before anything is placed.
+        CameraRecord::Unreadable(_) => {
+            let bytes = files.cameras.as_deref().unwrap_or_default();
+            let Err(refusal) = crate::compiler::view::camera::parse_sheet(bytes) else {
+                return Vec::new();
+            };
+            return vec![Diagnostic::error(
+                crate::compiler::view::camera::record_code_at_build(&refusal),
+                "design",
+                crate::compiler::view::camera::CAMERAS_FILE,
+                refusal
+                    .message
+                    .strip_prefix(&format!(
+                        "{}: ",
+                        crate::compiler::view::camera::CAMERAS_FILE
+                    ))
+                    .unwrap_or(&refusal.message)
+                    .to_string(),
+            )];
+        }
     };
     let mut d = Vec::new();
     if let Some((name, answers)) = a.stray.first() {

@@ -501,7 +501,6 @@ fn a_celestial_camera_renders_its_positions_sun_and_says_the_moon_is_not_drawn()
     let cam = Camera {
         after: None,
         answers: "concept/quay".into(),
-        exposure: 1.0,
         fov: 60.0,
         height: 90,
         name: "moonrise".into(),
