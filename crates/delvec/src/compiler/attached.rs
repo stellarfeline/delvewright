@@ -1093,7 +1093,18 @@ fn judge_runtime(
             }
             r.pairs += 1;
             let mut why: Option<String> = None;
-            if let Some(Needs::Support(rules)) = needs(name) {
+            // `canSurvive` is asked only when a write changes a cell the rule
+            // reads (a `fill` or `setblock` keeps the block it places): a block
+            // whose rule cells no other write touches is never asked again.
+            let asked = |rules: &[delvewright_dsl::support::Rule]| {
+                rules.iter().any(|r| {
+                    may.get(&step(cell, r.cell))
+                        .is_some_and(|e| e.iter().any(|(_, k, _)| Some(*k) != origin))
+                })
+            };
+            if let Some(Needs::Support(rules)) = needs(name)
+                && asked(rules)
+            {
                 let held = rules.iter().any(|rule| {
                     beside_states(step(cell, rule.cell), origin)
                         .iter()
@@ -1124,7 +1135,14 @@ fn judge_runtime(
                     );
                 }
             }
-            if crate::compiler::assembled::is_falling_block(name) {
+            // A falling block a runtime write places asks the cell below as it
+            // lands; one that stood at load, only once a write changes it.
+            let below_written = may
+                .get(&step(cell, Face::Down))
+                .is_some_and(|e| e.iter().any(|(_, k, _)| Some(*k) != origin));
+            if crate::compiler::assembled::is_falling_block(name)
+                && (origin.is_some() || below_written)
+            {
                 let below = step(cell, Face::Down);
                 let free: Vec<String> = beside_states(below, origin)
                     .into_iter()
@@ -1447,38 +1465,50 @@ mod tests {
     }
 
     /// The perturbation for the runtime arm, branch-only: a write behind the
-    /// branch's own condition, in a bundle only that branch plays, that hangs
-    /// a torch where no block holds it. A branch's configurations were never
-    /// walked; the runtime arm lays every write, conditional or not.
+    /// branch's own condition, in a bundle only that branch plays, that takes
+    /// the wall a torch hangs on. A branch's configurations were never walked;
+    /// the runtime arm lays every write, conditional or not.
     #[test]
-    fn a_branch_only_write_that_drops_its_block_is_dw1002() {
-        let f = load(
-            &["setblock 0 64 0 minecraft:stone"],
-            &[(
-                "complete_o_take_the_bone",
-                &[
-                    "execute if score #party dw.f_read_the_label matches 1 run setblock 3 66 3 minecraft:wall_torch[facing=north]",
-                ],
-            )],
-        );
-        let w = writes(&f);
+    fn a_branch_only_write_that_takes_a_support_is_dw1002() {
+        let wall = "setblock 3 66 4 minecraft:stone";
+        let torch = "setblock 3 66 3 minecraft:wall_torch[facing=north]";
+        let branch = |line: &'static str| -> Vec<(String, String)> {
+            load(&[wall, torch], &[("complete_o_take_the_bone", &[line])])
+        };
+        let w = writes(&branch(
+            "execute if score #party dw.f_read_the_label matches 1 run setblock 3 66 4 minecraft:air",
+        ));
         assert_eq!((w.runtime.writes, w.runtime.conditional), (1, 1));
         let why = w.runtime.refusal().expect("refused");
         assert!(
-            why.contains("`minecraft:wall_torch[facing=north]` at [3, 66, 3]"),
+            why.contains("`minecraft:wall_torch[facing=north]` at [3, 66, 3] (at load)"),
             "{why}"
         );
-        // The same torch on a wall the load stands holds.
-        let f = load(
-            &["setblock 3 66 4 minecraft:stone"],
-            &[(
-                "complete_o_take_the_bone",
-                &[
-                    "execute if score #party dw.f_read_the_label matches 1 run setblock 3 66 3 minecraft:wall_torch[facing=north]",
-                ],
-            )],
-        );
-        assert!(writes(&f).runtime.refusal().is_none());
+        assert!(why.contains("(complete_o_take_the_bone:1)"), "{why}");
+        // The same write beside the wall, not on it: held.
+        let w = writes(&branch(
+            "execute if score #party dw.f_read_the_label matches 1 run setblock 4 66 4 minecraft:air",
+        ));
+        assert!(w.runtime.refusal().is_none(), "{}", w.runtime.line());
+    }
+
+    /// A runtime `setblock` keeps the block it places where it cannot survive,
+    /// and nothing asks it again while no write touches the cell its rule
+    /// reads: a block hung on air by an effect is not dropped (it floats); the
+    /// same block once a write reaches its support is.
+    #[test]
+    fn a_runtime_block_is_asked_only_when_its_support_is_written() {
+        let hang = "setblock 5 66 5 minecraft:wall_torch[facing=north]";
+        let w = writes(&load(&[], &[("prop", &[hang])]));
+        assert!(w.runtime.refusal().is_none(), "{}", w.runtime.line());
+        let w = writes(&load(
+            &[],
+            &[
+                ("prop", &[hang]),
+                ("later", &["setblock 5 66 6 minecraft:glass_pane"]),
+            ],
+        ));
+        assert!(w.runtime.refusal().is_some(), "{}", w.runtime.line());
     }
 
     /// A gate the story opens and shuts: a block hung on the gate's own cell

@@ -143,11 +143,13 @@ hall's floor and the build is refused, naming the gravel and the air under it
 when the world build has run (`probes/gravel-left-over-air`). And it lays every
 write the load does not run — the props, the gates, the collapse, the beats
 nobody has to play — at once, and prints the `runtime writes` line: the case's
-button stands on the pedestal (`stone_button[face=floor]`), because the bare
-button hangs on a wall north of nothing. Have the plate trap's payload, or only
-`branch/skipped`, hang a wall torch on the pedestal and the build is refused,
-naming the torch and the air south of it (`probes/a-torch-a-trap-hangs-on-air`,
-`probes/a-torch-only-one-branch-hangs`).
+button stands on the pedestal (`stone_button[face=floor]`), where the bare
+button would hang on a wall north of nothing. Have the plate trap's payload, or
+only `branch/skipped`, clear the pedestal column and the build is refused,
+naming the button and the air it may stand on: a fill clears from the bottom
+up, so the server drops the button as an item
+(`probes/a-trap-that-takes-the-case-button-floor`,
+`probes/one-branch-takes-the-case-button-floor`).
 
 One place in the hall is found rather than named, and it is the only one: the
 cell a body arrives at. `anchor/arrival` is named like every other place and is
@@ -273,8 +275,8 @@ holding them at once.
 | `a-beat-the-game-never-heard` | `DW0326` | `validate` | misspelling the slow heartbeat's sound `entity.warden.heartbeats`, an id the pinned game does not hold |
 | `a-lever-hung-on-a-pane` | `DW1002` | `build` | hanging a lever on the north side of a glass pane under the near hall's roof: a pane's side is not the full face a wall-hung block asks for, so the server drops the lever |
 | `gravel-left-over-air` | `DW1002` | `build` | writing a block of gravel three blocks over the near hall's floor: the cell under it is air when the world build has run, so the server lets it fall, and a write landing under a falling block turns it into an item |
-| `a-torch-a-trap-hangs-on-air` | `DW1002` | `build` | having the plate trap's payload set a north-facing wall torch on the pedestal: a beat nobody has to play, and the cell south of the pedestal is air in every configuration |
-| `a-torch-only-one-branch-hangs` | `DW1002` | `build` | having `obj/take-the-bone` set the same torch only once `flag/skipped-the-label` holds: a write only one branch makes, judged as every write is |
+| `a-trap-that-takes-the-case-button-floor` | `DW1002` | `build` | having the plate trap's payload clear the pedestal column the case's button stands on: a beat nobody has to play, and the fill clears the pedestal before the button, so the server drops it |
+| `one-branch-takes-the-case-button-floor` | `DW1002` | `build` | having `obj/take-the-bone` clear the same column only once `flag/skipped-the-label` holds: a write only one branch makes, judged as every write is |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
 document the primary already holds; what it perturbs is written out in its own

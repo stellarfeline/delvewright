@@ -43,7 +43,7 @@ it where the block is authored, never by moving the write later:
 - *needs the block … to give …* — a torch, lantern, lever, button, flower or
   carpet with nothing to hang or stand on. Hang it on a block no write removes,
   or state the face it is on (`stone_button[face=floor]` stands on the block
-  under it; the bare `stone_button` hangs on a wall north of nothing).
+  under it; the bare `stone_button` hangs on the wall north of it).
 - *may hold … left by …* — a runtime write (a gate, `clear-region`, a collapse,
   a trap's or a branch's `set-block`) can leave its support missing. Move the
   block off that cell's neighbour, or have the write itself lay what holds it.
