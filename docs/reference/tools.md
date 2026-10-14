@@ -1335,6 +1335,8 @@ names to its md5 — and runs the core's own `Main-Class` on that classpath with
 A home that does not hold the pin is refused, exit 2, naming the pin, the home,
 any other core there, and the installer; nothing is rendered.
 
+**A render runs in the background.** `chunky.sh` starts the JVM with `-Djava.awt.headless=true -Dapple.awt.UIElement=true`, so a render or snapshot never takes the creator's focus or puts an icon in the macOS Dock (the core's texture loader asks AWT for a graphics environment, which on macOS otherwise starts a foreground Cocoa app); the pixels are unchanged — a snapshot of one dump is byte-identical either way.
+
 **A render reaches the scene's declared budget.** Chunky saves the `-target` it
 was run with into the scene, so a draft (`-target 64`) would leave 64 in the file
 and a later pass without `-target` would find its goal met and render nothing
