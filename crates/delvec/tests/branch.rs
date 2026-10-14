@@ -456,10 +456,29 @@ fn post_fork_cast_selecting_nothing_is_dw0483() {
 
 // --- DW0484: exclusive-content leakage -------------------------------------
 
-/// The mourning-scene shape: an ambient producer sets the OTHER branch's flag on
-/// every playthrough, so branch-A-gated content is reachable under branch B.
+/// The mourning-scene shape: a producer every playthrough performs — the
+/// mandatory opening quest's own completion — sets the OTHER branch's flag, so
+/// branch-A-gated content is reachable under branch B.
 #[test]
 fn sibling_flag_produced_on_every_branch_is_dw0484() {
+    let c = campaign_with(|_, quests, _| {
+        quest(quests, "quest/decide")["on_complete"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({ "type": "set-flag", "flag": "flag/wait" }));
+    });
+    let d = find(branch::check_branches(&c), "DW0484");
+    assert!(d.message.contains("LEAKS"), "{}", d.message);
+    assert!(d.message.contains("branch/bolt"), "{}", d.message);
+    assert!(d.message.contains("flag/wait"), "{}", d.message);
+}
+
+/// spec-0108 §4.4: an elective ambient producer is a participation a world
+/// states, not a firing on every branch. A `use` trigger nothing on the
+/// mainline presses sets `flag/wait`; the world that does not press it
+/// realizes `branch/bolt` (its `flag/wait` pinned unset), so nothing leaks.
+#[test]
+fn an_elective_producer_of_a_sibling_flag_is_a_world_that_skips_it() {
     let c = campaign_with(|_, quests, _| {
         quests["content"]["triggers"] = serde_json::json!([{
             "id": "trigger/bell",
@@ -468,10 +487,19 @@ fn sibling_flag_produced_on_every_branch_is_dw0484() {
             "effects": [{ "type": "set-flag", "flag": "flag/wait" }]
         }]);
     });
-    let d = find(branch::check_branches(&c), "DW0484");
-    assert!(d.message.contains("LEAKS"), "{}", d.message);
-    assert!(d.message.contains("branch/bolt"), "{}", d.message);
-    assert!(d.message.contains("flag/wait"), "{}", d.message);
+    let d = branch::check_branches(&c);
+    assert!(!d.iter().any(|x| x.code == "DW0484"), "{d:#?}");
+    let bolt = branch::realize(&c)
+        .into_iter()
+        .find(|r| r.branch.id == "branch/bolt")
+        .unwrap();
+    let flow = delvec::compiler::flow::Flow::new(&c);
+    let w = bolt.world.expect("branch/bolt is realized");
+    assert!(
+        !flow.story().worlds[w].performs.contains("trigger/bell"),
+        "the realizing world skips the bell: {:?}",
+        flow.story().worlds[w]
+    );
 }
 
 // --- DW0485: hard event contradictions -------------------------------------

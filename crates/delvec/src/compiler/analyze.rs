@@ -220,7 +220,7 @@ pub fn analyze_campaign(c: &Campaign, prefabs: &dyn AnchorRegistry) -> Vec<Diagn
         // deterministic `Flow`.
         for r in crate::compiler::branch::realize(c) {
             let Some(w) = r.world else { continue };
-            if let Err(f) = flow.replay(&flow.playthrough_in(w)) {
+            if let Err(f) = flow.replay(&flow.story_playthrough(w)) {
                 diags.push(Diagnostic::error(
                     codes::PATH_INCOHERENT,
                     "quests",

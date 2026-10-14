@@ -615,7 +615,7 @@ pub(super) fn build_critical_path(
     // spec-0086 §5.2: the loop half of this path — the flow walk's state step
     // by step, the exercise steps it splices and the slab seals it reads off
     // the gate. Inert (and never consulted) for a campaign with no loop.
-    let mut walk = flow.walk();
+    let mut walk = flow.walk_for(path);
     let data_of = |w: &crate::compiler::flow::Walk<'_, '_>| -> BTreeMap<String, Option<i64>> {
         w.data()
             .into_iter()
@@ -1295,7 +1295,7 @@ pub(super) fn build_critical_path(
     let mut live_links_by_step: Vec<Vec<usize>> = vec![Vec::new(); steps.len()];
     if !links.is_empty() {
         let mut data_at: Vec<BTreeMap<String, Option<i64>>> = Vec::new();
-        let mut walk = flow.walk();
+        let mut walk = flow.walk_for(path);
         for st in &path.steps {
             data_at.push(
                 walk.data()

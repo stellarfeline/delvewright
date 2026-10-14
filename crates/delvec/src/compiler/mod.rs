@@ -144,6 +144,7 @@ pub mod detail;
 pub mod eclipse;
 pub mod edit;
 pub mod emit;
+pub mod ending;
 pub mod engage;
 pub mod faces;
 pub mod failure;

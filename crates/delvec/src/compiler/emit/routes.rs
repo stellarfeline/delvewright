@@ -907,7 +907,7 @@ pub(super) fn prove_world(
                             message: format!("branch `{}`: {}", r.branch.id, e.failure.message),
                         };
                         let unlinked = plan
-                            .branch_critical_path(&flow, &flow.playthrough_in(widx))
+                            .branch_critical_path(&flow, &flow.story_playthrough(widx))
                             .map_err(branch_fail)?;
                         // The branch's own links (spec-0083 §6): taken over its
                         // own steps and gate model, then spliced into its path.
@@ -933,7 +933,7 @@ pub(super) fn prove_world(
                         } else {
                             plan.branch_critical_path_linked(
                                 &flow,
-                                &flow.playthrough_in(widx),
+                                &flow.story_playthrough(widx),
                                 &takes,
                             )
                             .map_err(branch_fail)?

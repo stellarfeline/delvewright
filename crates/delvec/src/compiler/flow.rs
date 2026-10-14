@@ -99,6 +99,9 @@
 use delvewright_dsl::Verb;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+mod story;
+pub use story::{Elective, StoryModel, StoryRun, StoryWorld, Target, WorldOrigin};
+
 use delvewright_dsl::{
     Campaign, CompareOp, DialogueEffect, Objective, QuestEffect, StateCompare, StateScope,
     StateWrite, Trigger,
@@ -137,6 +140,21 @@ struct GatedFlag {
     /// it: somebody still has to strike, use, approach or hit it, and
     /// [`Flow::trigger_debts`] is where the path is made to say who and when.
     trigger: Option<String>,
+    /// The ambient act that fires it, by id (spec-0108 §4.3) — a trigger, a
+    /// trap's payload or disarm, a timed gate's disarm, a shortcut's unlock, a
+    /// shop offer, an `on_kill`. `None` for a quest bundle's producer, which
+    /// a story world performs or skips with its quest.
+    act: Option<String>,
+    /// Credited only in a story world that performs its act (spec-0108 §4.1):
+    /// an `on_kill` producer, which today's model never credits (no kill is
+    /// forced) and a story world credits exactly when it performs the kill.
+    story_only: bool,
+}
+
+/// Whether today's model credits `g` at all: every producer but the ones only
+/// a story world can perform.
+fn default_credit(g: &GatedFlag) -> bool {
+    !g.story_only
 }
 
 /// One dialogue option, flattened.
@@ -240,6 +258,20 @@ pub struct Playthrough {
     /// `true` when no branch completes the finale (already `DW0201`) and this is
     /// the degenerate whole-closure fallback rather than a proven playthrough.
     pub degenerate: bool,
+    /// The story world this playthrough walks (spec-0108 §4), when it is one:
+    /// its participation and the elective ambient acts it performs in front of
+    /// which steps. `None` for today's playthroughs.
+    pub story: Option<std::sync::Arc<StoryCtx>>,
+}
+
+/// A story world's run, as a playthrough carries it (spec-0108 §4.1, §4.3).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StoryCtx {
+    /// The elective acts the world performs, by id.
+    pub performs: BTreeSet<String>,
+    /// Each elective ambient act the run performs, with the index of the step
+    /// it is performed in front of — the world's **entry deeds**.
+    pub deeds: Vec<(usize, String)>,
 }
 
 /// The evolving state of one playthrough replay: which flags are set, which
@@ -251,6 +283,13 @@ struct ReplayState {
     done_obj: BTreeSet<String>,
     done_quest: BTreeSet<String>,
     active: BTreeSet<String>,
+    /// Quests a story world does not perform (spec-0108 §4.1): never
+    /// activated, so nothing of them fires. Empty outside a story world.
+    barred: BTreeSet<String>,
+    /// What the party held the moment each final scene began to fire
+    /// (spec-0108 §4.2), keyed by the scene list's pointer — the flags and
+    /// every datum's value, read before the scene's own lines run.
+    scene_at: BTreeMap<String, SceneState>,
     /// Every declared datum's value at this point of the walk. A datum no
     /// ordered walk can date is [`Datum::Undatable`] from the start and stays
     /// that way — see [`Flow::undatable`].
@@ -271,6 +310,15 @@ struct ReplayState {
     /// producer is the unsound direction there), and a proof that asks whether
     /// the line is FORCED must not read it as such. Cleared at each step.
     undecided: Vec<String>,
+}
+
+/// What a final scene read when it began to fire (spec-0108 §4.2).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SceneState {
+    /// The flags held.
+    pub flags: BTreeSet<String>,
+    /// Every declared datum's value; `None` where no ordered walk names it.
+    pub data: BTreeMap<String, Option<i64>>,
 }
 
 /// One datum's value during a replay.
@@ -468,14 +516,27 @@ pub struct Walk<'f, 'a> {
     /// other ambient producer at all (a trap disarm, a timed gate's disarm, a
     /// purchase are acts nothing forces).
     performed: Option<BTreeSet<String>>,
+    /// The story world this walk plays (spec-0108 §4.1): what it credits, and
+    /// the entry deeds it performs in front of which steps. `None` outside one.
+    story: Option<std::sync::Arc<StoryCtx>>,
 }
 
 impl Walk<'_, '_> {
     /// Whether this walk credits ambient producer `g` now.
     fn credits(&self, g: &GatedFlag) -> bool {
-        match &self.performed {
-            None => true,
+        let stance = match &self.performed {
+            None => default_credit(g),
             Some(done) => g.trigger.as_ref().is_some_and(|t| done.contains(t)),
+        };
+        match &self.story {
+            None => stance,
+            // A story world credits what it performs (spec-0108 §4.1): an
+            // elective act's producer only when the act is in its participation,
+            // a forced one wherever its gate holds, as today.
+            Some(ctx) => match &self.performed {
+                None => self.flow.story_credit(g, &ctx.performs),
+                Some(_) => stance,
+            },
         }
     }
 
@@ -493,6 +554,25 @@ impl Walk<'_, '_> {
         self.st.flags = flags;
     }
 
+    /// Why `step` cannot be completed now, the entry deeds due in front of it
+    /// performed first (on a clone) — the replay's own per-step test.
+    fn blocked_after_deeds(&self, step: &PathStep) -> Option<String> {
+        match &self.story {
+            Some(ctx) if ctx.deeds.iter().any(|(i, _)| *i == self.taken) => {
+                let mut ahead = self.clone();
+                for (_, act) in ctx.deeds.iter().filter(|(i, _)| *i == self.taken) {
+                    self.flow.perform_act(&mut ahead.st, act, self.taken + 1);
+                }
+                let mut flags = std::mem::take(&mut ahead.st.flags);
+                self.flow
+                    .saturate_ambient_with(&mut flags, &|g: &GatedFlag| ahead.credits(g));
+                ahead.st.flags = flags;
+                self.flow.step_blocked(&ahead.st, step)
+            }
+            _ => self.flow.step_blocked(&self.st, step),
+        }
+    }
+
     /// Can `step` be completed now — the replay's own per-step test, and not
     /// already done.
     pub fn legal(&self, step: &PathStep) -> bool {
@@ -503,6 +583,19 @@ impl Walk<'_, '_> {
     /// Complete `step` (its guards are the caller's to have checked) and
     /// return the journal entry for the transition.
     pub fn take(&mut self, step: &PathStep) -> JournalStep {
+        // A story world's entry deeds due in front of this step (spec-0108
+        // §4.1): each elective ambient act it performs, fired once, here.
+        if let Some(ctx) = self.story.clone() {
+            for (_, act) in ctx.deeds.iter().filter(|(i, _)| *i == self.taken) {
+                self.flow.perform_act(&mut self.st, act, self.taken + 1);
+            }
+            if self.performed.is_none() {
+                let mut flags = std::mem::take(&mut self.st.flags);
+                self.flow
+                    .saturate_ambient_with(&mut flags, &|g: &GatedFlag| self.credits(g));
+                self.st.flags = flags;
+            }
+        }
         let before = self.st.clone();
         self.taken += 1;
         let mut st = std::mem::take(&mut self.st);
@@ -825,6 +918,14 @@ pub struct Flow<'a> {
     /// is ever refused against. See [`Datum::Undatable`] for the reasoning; the
     /// three sources are named where the set is built.
     undatable: BTreeSet<String>,
+    /// Every final scene's list pointer (spec-0108 §3.2): the replay notes what
+    /// the party held the moment each began to fire.
+    scene_roots: BTreeSet<String>,
+    /// The acts a story world may perform or skip, and the forced ones —
+    /// built on first use ([`Self::acts`]).
+    acts: std::sync::OnceLock<story::Acts<'a>>,
+    /// The story worlds (spec-0108 §4) — built on first use ([`Self::story`]).
+    story: std::sync::OnceLock<story::StoryModel>,
 }
 
 impl<'a> Flow<'a> {
@@ -844,6 +945,15 @@ impl<'a> Flow<'a> {
         let gate_of = |fs: &[delvewright_dsl::FlagId]| -> Vec<String> {
             fs.iter().map(|f| f.as_str().into()).collect()
         };
+        // Which ambient act each root list is (spec-0108 §4.3), by the list's
+        // pointer — the one spelling `compiler::ending` and the world rows use.
+        let mut root_act: BTreeMap<String, String> = BTreeMap::new();
+        delvewright_dsl::for_each_effect_root(c, &mut |site, _| {
+            if let Some(a) = crate::compiler::ending::act_of_owner(c, &site.owner, &site.path) {
+                root_act.insert(site.path.clone(), a);
+            }
+        });
+        let act_at = |path: &str| root_act.get(path).map(String::as_str);
         crate::compiler::plan::for_each_effect_root(c, &mut |site, effs| match site.root {
             // Dated by the DAG: credited when that objective / quest is proven
             // reachable, under the gates on its own effect chain.
@@ -873,11 +983,20 @@ impl<'a> Flow<'a> {
                     effs,
                     &gate_of(&t.requires_flags),
                     Some(t.id.as_str()),
+                    act_at(&site.path),
+                    false,
                     &mut ambient,
                 );
             }
             crate::compiler::plan::EffectRoot::TrapPayload(trap) => {
-                collect_flags(effs, &gate_of(&trap.requires_flags), &mut ambient);
+                collect_flags_from(
+                    effs,
+                    &gate_of(&trap.requires_flags),
+                    None,
+                    act_at(&site.path),
+                    false,
+                    &mut ambient,
+                );
             }
             // A shortcut's `on_unlock` is ambient for the same reason, and the
             // reachability of its firing is not an assumption here — `DW0373`
@@ -886,7 +1005,7 @@ impl<'a> Flow<'a> {
             // build has already discharged. It declares no flag gate, so the
             // producer is ungated.
             crate::compiler::plan::EffectRoot::ShortcutUnlock => {
-                collect_flags(effs, &[], &mut ambient);
+                collect_flags_from(effs, &[], None, act_at(&site.path), false, &mut ambient);
             }
             // A shop offer is ambient too, and its producer IS gated — by the
             // offer's own gate, which is the shared gate every other consumer
@@ -898,7 +1017,16 @@ impl<'a> Flow<'a> {
             // the shop, and reaching it is an ordinary route the completability
             // proof already owns).
             crate::compiler::plan::EffectRoot::ShopOffer => {
-                collect_flags(effs, &[], &mut ambient);
+                collect_flags_from(effs, &[], None, act_at(&site.path), false, &mut ambient);
+            }
+            // A fight's `on_kill` (spec-0074) fires only when a player is
+            // CREDITED with a body, and a body may fall, burn or be cut down by
+            // another mob with nobody credited, so no kill is forced and today's
+            // model credits nothing inside. A story world that performs the kill
+            // credits it (spec-0108 §4.1): the producers are recorded, marked
+            // story-only.
+            crate::compiler::plan::EffectRoot::OnKill(_) => {
+                collect_flags_from(effs, &[], None, act_at(&site.path), true, &mut ambient);
             }
             // Reaction bundles: they fire only when somebody dies, at a time no
             // static model can name, so nothing inside either is a producer.
@@ -908,17 +1036,11 @@ impl<'a> Flow<'a> {
             // would let the mainline be proven reachable via a flag the party only
             // obtains by dying.
             //
-            // A fight's `on_kill` (spec-0074) is the same shape: it fires only
-            // when a player is CREDITED with a body, and a body may fall, burn or
-            // be cut down by another mob with nobody credited, so no kill is
-            // forced and nothing inside is a producer.
-            //
             // An assembly's `on_land` (spec-0082) is the same shape again: a blow
             // lands only on a player who chose to stand where it reaches, so no
             // landing is forced and nothing inside is a producer.
             crate::compiler::plan::EffectRoot::DialogueRespawn
             | crate::compiler::plan::EffectRoot::OnDeath
-            | crate::compiler::plan::EffectRoot::OnKill(_)
             | crate::compiler::plan::EffectRoot::AssemblyLand(_)
             // A loop's `on_cross` (spec-0086) runs on a crossing, which a mob makes
             // as readily as a player: no ordered walk dates it, so nothing inside
@@ -933,6 +1055,8 @@ impl<'a> Flow<'a> {
                     flag: d.sets_flag.as_str().to_string(),
                     requires: gate_of(&trap.requires_flags),
                     trigger: None,
+                    act: Some(crate::compiler::ending::disarm_act(trap.id.as_str())),
+                    story_only: false,
                 });
             }
         }
@@ -944,6 +1068,8 @@ impl<'a> Flow<'a> {
                     flag: d.sets_flag.as_str().to_string(),
                     requires: Vec::new(),
                     trigger: None,
+                    act: Some(crate::compiler::ending::disarm_act(g.id.as_str())),
+                    story_only: false,
                 });
             }
         }
@@ -968,6 +1094,9 @@ impl<'a> Flow<'a> {
             worlds,
             initial,
             undatable: undatable_state(c),
+            scene_roots: crate::compiler::ending::Scenes::of(c).scene_paths(),
+            acts: std::sync::OnceLock::new(),
+            story: std::sync::OnceLock::new(),
         }
     }
 
@@ -1082,6 +1211,7 @@ impl<'a> Flow<'a> {
             steps,
             cyclic,
             degenerate,
+            story: None,
         }
     }
 
@@ -1094,7 +1224,7 @@ impl<'a> Flow<'a> {
     /// (one [`Self::advance`], one [`Self::fire`]), so the chronicle can never
     /// describe an order the replay does not admit.
     pub fn journal(&self, p: &Playthrough) -> Vec<JournalStep> {
-        let mut w = self.walk();
+        let mut w = self.walk_for(p);
         p.steps.iter().map(|step| w.take(step)).collect()
     }
 
@@ -1120,7 +1250,8 @@ impl<'a> Flow<'a> {
     pub fn trigger_debts(&self, p: &Playthrough) -> Vec<TriggerDebt> {
         let mut performed: BTreeSet<String> = BTreeSet::new();
         let mut complete_at: Option<(usize, String)> = None;
-        let mut st = self.initial_state_with(&|g: &GatedFlag| g.trigger.is_none());
+        let mut st =
+            self.initial_state_with(&|g: &GatedFlag| g.trigger.is_none() && default_credit(g));
         let mut out: Vec<TriggerDebt> = Vec::new();
         for (i, step) in p.steps.iter().enumerate() {
             let mut reads: Vec<String> = self
@@ -1159,12 +1290,12 @@ impl<'a> Flow<'a> {
                 });
                 let paid = &performed;
                 self.saturate_ambient_with(&mut st.flags, &|g: &GatedFlag| {
-                    g.trigger.as_ref().is_none_or(|t| paid.contains(t))
+                    default_credit(g) && g.trigger.as_ref().is_none_or(|t| paid.contains(t))
                 });
             }
             let paid = &performed;
             self.advance_with(&mut st, step, i + 1, &mut complete_at, &|g: &GatedFlag| {
-                g.trigger.as_ref().is_none_or(|t| paid.contains(t))
+                default_credit(g) && g.trigger.as_ref().is_none_or(|t| paid.contains(t))
             });
         }
         out
@@ -1174,20 +1305,21 @@ impl<'a> Flow<'a> {
     /// `Ok(())` means every step is activatable and completable at its position
     /// and `campaign-complete` fires exactly at the final step.
     pub fn replay(&self, p: &Playthrough) -> Result<(), ReplayFailure> {
-        let mut st8 = self.initial_state();
-        let mut complete_at: Option<(usize, String)> = None;
-
+        // A story world's playthrough replays under its own participation and
+        // entry deeds (spec-0108 §4.4); every other one under today's stance.
+        let mut w = self.walk_for(p);
         for (i, st) in p.steps.iter().enumerate() {
             let pos = i + 1;
-            if let Some(reason) = self.step_blocked(&st8, st) {
+            if let Some(reason) = w.blocked_after_deeds(st) {
                 return Err(ReplayFailure {
                     position: pos,
                     objective: st.objective.clone(),
                     reason,
                 });
             }
-            self.advance(&mut st8, st, pos, &mut complete_at);
+            w.take(st);
         }
+        let complete_at = w.complete_at.clone();
 
         let last = p.steps.len();
         match complete_at {
@@ -1289,6 +1421,7 @@ impl<'a> Flow<'a> {
     pub fn ambient_producers(&self) -> impl Iterator<Item = (&str, &[String])> {
         self.ambient
             .iter()
+            .filter(|g| default_credit(g))
             .map(|g| (g.flag.as_str(), g.requires.as_slice()))
     }
 
@@ -1303,6 +1436,7 @@ impl<'a> Flow<'a> {
             complete_at: None,
             taken: 0,
             performed: None,
+            story: None,
         }
     }
 
@@ -1321,6 +1455,7 @@ impl<'a> Flow<'a> {
             complete_at: None,
             taken: 0,
             performed: Some(BTreeSet::new()),
+            story: None,
         }
     }
 
@@ -1676,7 +1811,7 @@ impl<'a> Flow<'a> {
     /// The replay's starting state: campaign-start quests active, ambient
     /// (trigger / trap payload / trap-disarm) flags saturated.
     fn initial_state(&self) -> ReplayState {
-        self.initial_state_with(&|_| true)
+        self.initial_state_with(&default_credit)
     }
 
     /// [`Self::initial_state`], crediting only the ambient producers `allow`
@@ -1712,7 +1847,7 @@ impl<'a> Flow<'a> {
         pos: usize,
         complete_at: &mut Option<(usize, String)>,
     ) {
-        self.advance_with(st, step, pos, complete_at, &|_| true);
+        self.advance_with(st, step, pos, complete_at, &default_credit);
     }
 
     /// [`Self::advance`], crediting only the ambient producers `allow` admits.
@@ -1775,6 +1910,7 @@ impl<'a> Flow<'a> {
                 for other in &self.c.quests.content.quests {
                     if let Trigger::QuestComplete { quest } = &other.trigger
                         && quest.as_str() == qid
+                        && !st.barred.contains(other.id.as_str())
                     {
                         st.active.insert(other.id.as_str().to_string());
                     }
@@ -2125,6 +2261,26 @@ impl<'a> Flow<'a> {
         // cannot date is therefore known, inside this list only, from the line
         // that pins it. Never inherited by a nested list (a `sequence` step or an
         // `on_arrive` runs at a later tick) and never carried past the list.
+        if self.scene_roots.contains(base) && !st.scene_at.contains_key(base) {
+            let data = st
+                .state
+                .iter()
+                .map(|(k, d)| {
+                    let v = match d {
+                        Datum::Known(v) => Some(*v),
+                        Datum::Undatable => None,
+                    };
+                    (k.clone(), v)
+                })
+                .collect();
+            st.scene_at.insert(
+                base.to_string(),
+                SceneState {
+                    flags: st.flags.clone(),
+                    data,
+                },
+            );
+        }
         let mut pinned: BTreeMap<String, i64> = BTreeMap::new();
         let value = |st: &ReplayState, pinned: &BTreeMap<String, i64>, id: &str| match st
             .state
@@ -2224,10 +2380,22 @@ impl<'a> Flow<'a> {
 
     /// The monotone fixpoint, restricted to one branch world.
     fn solve(&self, world: &World) -> Solution {
+        self.solve_with(world, &default_credit, &BTreeSet::new())
+    }
+
+    /// [`Self::solve`] crediting only the ambient producers `credit` admits and
+    /// never activating a quest in `barred` — a story world's fixpoint
+    /// (spec-0108 §4.1): an elective act not performed produces nothing.
+    fn solve_with(
+        &self,
+        world: &World,
+        credit: &dyn Fn(&GatedFlag) -> bool,
+        barred: &BTreeSet<String>,
+    ) -> Solution {
         let mut s = Solution::default();
         loop {
             let mut changed = false;
-            self.saturate_ambient_tracked(&mut s.flags, &mut changed);
+            self.saturate_ambient_tracked(&mut s.flags, &mut changed, credit);
 
             // Dialogue: options reachable from any root this world can put a body
             // in front of — the tree's own and every live `cast` ledger scene —
@@ -2266,7 +2434,7 @@ impl<'a> Flow<'a> {
                     Trigger::CampaignStart => true,
                     Trigger::QuestComplete { quest } => s.completed.contains(quest.as_str()),
                 };
-                if now {
+                if now && !barred.contains(qid) {
                     s.active.insert(qid.to_string());
                     changed = true;
                 }
@@ -2331,9 +2499,17 @@ impl<'a> Flow<'a> {
         s
     }
 
-    fn saturate_ambient_tracked(&self, flags: &mut BTreeSet<String>, changed: &mut bool) {
+    fn saturate_ambient_tracked(
+        &self,
+        flags: &mut BTreeSet<String>,
+        changed: &mut bool,
+        credit: &dyn Fn(&GatedFlag) -> bool,
+    ) {
         for g in &self.ambient {
-            if g.requires.iter().all(|f| flags.contains(f)) && flags.insert(g.flag.clone()) {
+            if credit(g)
+                && g.requires.iter().all(|f| flags.contains(f))
+                && flags.insert(g.flag.clone())
+            {
                 *changed = true;
             }
         }
@@ -2366,7 +2542,7 @@ fn produce(src: Option<&Vec<GatedFlag>>, flags: &mut BTreeSet<String>, changed: 
 /// `on_caught`) are NOT descended: they fire at statically unknowable times, so
 /// nothing inside them is a producer.
 fn collect_flags(effs: &[QuestEffect], gate: &[String], out: &mut Vec<GatedFlag>) {
-    collect_flags_from(effs, gate, None, out);
+    collect_flags_from(effs, gate, None, None, false, out);
 }
 
 /// [`collect_flags`], each producer stamped with the trigger that fires it.
@@ -2374,6 +2550,8 @@ fn collect_flags_from(
     effs: &[QuestEffect],
     gate: &[String],
     trigger: Option<&str>,
+    act: Option<&str>,
+    story_only: bool,
     out: &mut Vec<GatedFlag>,
 ) {
     for e in effs {
@@ -2386,6 +2564,8 @@ fn collect_flags_from(
                 flag: flag.as_str().to_string(),
                 requires: here.clone(),
                 trigger: trigger.map(str::to_string),
+                act: act.map(str::to_string),
+                story_only,
             });
         }
         match &e.verb {
@@ -2394,7 +2574,7 @@ fn collect_flags_from(
             }
             _ => {
                 for list in e.nested_effect_lists() {
-                    collect_flags_from(list, &here, trigger, out);
+                    collect_flags_from(list, &here, trigger, act, story_only, out);
                 }
             }
         }

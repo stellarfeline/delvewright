@@ -59,7 +59,7 @@ pub fn branch_transport_overlay(plan: &Plan) -> Result<BranchTransportOverlay, B
         // failed the build for it (same skip as `branch_paths`).
         let Some(w) = r.world else { continue };
         let cp = plan
-            .branch_critical_path(&flow, &flow.playthrough_in(w))
+            .branch_critical_path(&flow, &flow.story_playthrough(w))
             .map_err(|e| BuildFailure::Diagnostic {
                 code: e.failure.code,
                 message: format!("branch `{}`: {}", r.branch.id, e.failure.message),
@@ -115,7 +115,7 @@ pub(super) fn branch_paths(
         let cp = plan
             .branch_critical_path_linked(
                 &flow,
-                &flow.playthrough_in(w),
+                &flow.story_playthrough(w),
                 takes.get(&r.branch.slug).unwrap_or(&none),
             )
             .map_err(|e| BuildFailure::Diagnostic {

@@ -74,7 +74,7 @@ fn branch_paths(c: &Campaign) -> Vec<(String, Playthrough)> {
         .into_iter()
         .filter_map(|r| {
             r.world
-                .map(|w| (r.branch.id.clone(), flow.playthrough_in(w)))
+                .map(|w| (r.branch.id.clone(), flow.story_playthrough(w)))
         })
         .collect()
 }

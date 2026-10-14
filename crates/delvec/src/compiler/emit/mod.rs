@@ -52,6 +52,7 @@ mod cutscene;
 mod dialogue;
 mod economy;
 mod effect;
+mod ending;
 mod equipment;
 mod firework;
 mod functions;
@@ -103,6 +104,7 @@ pub(crate) use cutscene::*;
 pub use dialogue::*;
 use economy::*;
 pub use effect::*;
+use ending::*;
 pub(crate) use equipment::*;
 use firework::*;
 use functions::*;
@@ -1105,6 +1107,10 @@ pub fn build_with_warnings(
     // has not opted in. Emitted before the manifest so its hashes cover them,
     // exactly like `critical-path-waypoints.json`.
     out.extend(crate::compiler::branch::artifacts(plan.campaign));
+    // spec-0108 §6.1: the endings ledger — per ending its inputs and their
+    // writers, its aftermath and how each change is observed, the story worlds
+    // that reach it — validation metadata, listed in the manifest like the rest.
+    out.insert("validation/endings.json".to_string(), endings_ledger(plan));
     // ...and, for the harness tier, one EXECUTABLE path per reachable branch:
     // `validation/branch-path-<branch>.json`, in the same `critical-path.json`
     // contract the bot has always consumed. The plan artifact above says WHICH

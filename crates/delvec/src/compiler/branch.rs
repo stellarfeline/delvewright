@@ -250,8 +250,11 @@ pub fn realize(c: &Campaign) -> Vec<RealizedBranch> {
 }
 
 fn realize_one(c: &Campaign, flow: &Flow<'_>, branch: EnumeratedBranch) -> RealizedBranch {
-    let world = (0..flow.world_count()).find(|&i| {
-        let f = flow.world_flags(i);
+    // Story worlds in canonical order (spec-0108 §4.2): per selection the
+    // *all* world first, so a branch every world of its selection realizes keeps
+    // today's world and path.
+    let world = (0..flow.story_count()).find(|&i| {
+        let f = flow.story_flags(i);
         branch.set.iter().all(|x| f.contains(x)) && !branch.unset.iter().any(|x| f.contains(x))
     });
     let Some(w) = world else {
@@ -265,7 +268,7 @@ fn realize_one(c: &Campaign, flow: &Flow<'_>, branch: EnumeratedBranch) -> Reali
             completed: BTreeSet::new(),
         };
     };
-    let pt = flow.playthrough_in(w);
+    let pt = flow.story_playthrough(w);
     let journal = flow.journal(&pt);
     let (chronicle, endings) = chronicle_of(c, &journal);
     let entry_choices = entry_choices(c, &pt, &branch.set);
@@ -276,7 +279,7 @@ fn realize_one(c: &Campaign, flow: &Flow<'_>, branch: EnumeratedBranch) -> Reali
         entry_choices,
         chronicle,
         endings,
-        completed: flow.world_completed(w),
+        completed: flow.story_completed(w),
     }
 }
 
@@ -898,8 +901,11 @@ fn check_undeclared_forks(c: &Campaign, flow: &Flow<'_>, d: &mut Vec<Diagnostic>
         }
     }
 
-    let worlds: Vec<BTreeSet<String>> = (0..flow.world_count())
-        .map(|i| flow.world_flags(i))
+    // Every story world (spec-0108 §4.4): a flag only elective acts write is
+    // set in the *all* world and not in the *none* world, so a deed-made fork is
+    // a fork here too.
+    let worlds: Vec<BTreeSet<String>> = (0..flow.story_count())
+        .map(|i| flow.story_flags(i))
         .collect();
     for (flag, sites) in readers {
         if declared.contains(&flag) {
@@ -945,9 +951,9 @@ fn check_leakage(c: &Campaign, flow: &Flow<'_>, r: &RealizedBranch, d: &mut Vec<
     if r.world.is_some() {
         return;
     }
-    let candidates: Vec<usize> = (0..flow.world_count())
+    let candidates: Vec<usize> = (0..flow.story_count())
         .filter(|&i| {
-            let f = flow.world_flags(i);
+            let f = flow.story_flags(i);
             r.branch.set.iter().all(|x| f.contains(x))
         })
         .collect();
@@ -957,7 +963,7 @@ fn check_leakage(c: &Campaign, flow: &Flow<'_>, r: &RealizedBranch, d: &mut Vec<
     }
     let mut leaked: BTreeSet<String> = BTreeSet::new();
     for i in candidates {
-        let f = flow.world_flags(i);
+        let f = flow.story_flags(i);
         for x in &r.branch.unset {
             if f.contains(x) {
                 leaked.insert(x.clone());
@@ -981,8 +987,8 @@ fn check_leakage(c: &Campaign, flow: &Flow<'_>, r: &RealizedBranch, d: &mut Vec<
             join(&r.branch.unset),
             join(&leaked),
             if producers.is_empty() {
-                "no `set-flag` found — the flag is ambient (an environment trigger or a trap \
-                 disarm), which fires on every branch by construction"
+                "no `set-flag` found — the flag is a disarm's `sets_flag`, an act a world \
+                 performs or skips"
                     .to_string()
             } else {
                 format!("set by {}", producers.join(", "))
@@ -1113,7 +1119,7 @@ fn check_cast_continuity(
     d: &mut Vec<Diagnostic>,
 ) {
     let Some(w) = r.world else { return };
-    let pt = flow.playthrough_in(w);
+    let pt = flow.story_playthrough(w);
     let journal = flow.journal(&pt);
     // Flag state when each quest's first objective is attempted.
     let mut at_open: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
@@ -1499,7 +1505,8 @@ fn search_orders(
     let Some(w) = r.world else {
         return (Vec::new(), stats);
     };
-    let steps = flow.playthrough_in(w).steps;
+    let pt = flow.story_playthrough(w);
+    let steps = pt.steps.clone();
     let beats: Vec<Vec<(HappeningVerb, String)>> =
         steps.iter().map(|s| possible_beats(c, s)).collect();
     let carried: BTreeSet<String> = beats
@@ -1527,7 +1534,7 @@ fn search_orders(
         hit: false,
     };
     search.explore(&OrderNode {
-        walk: flow.walk(),
+        walk: flow.walk_for(&pt),
         ch: Chronicler::new(c),
         tracker: ClashTracker::default(),
         order: Vec::new(),
@@ -1598,12 +1605,13 @@ pub fn clashes_by_search_and_by_enumeration(c: &Campaign) -> (BTreeSet<String>, 
         for (x, _) in search_orders(c, &flow, &r, MAX_ORDER_STATES).0 {
             searched.insert(named(&id, x.key()));
         }
-        let steps = flow.playthrough_in(w).steps;
+        let pt = flow.story_playthrough(w);
+        let steps = pt.steps.clone();
         let mut all = BTreeSet::new();
         every(
             &steps,
             &OrderNode {
-                walk: flow.walk(),
+                walk: flow.walk_for(&pt),
                 ch: Chronicler::new(c),
                 tracker: ClashTracker::default(),
                 order: Vec::new(),

@@ -66,11 +66,21 @@ pub(super) fn path_triggers(
             .map(|q| q.area.as_str())
             .unwrap_or("")
     };
+    // A story world's entry deeds (spec-0108 §4.3): each elective trigger the
+    // world performs, in front of the step its run performed it at.
+    let deed_at: BTreeMap<&str, usize> = path
+        .story
+        .iter()
+        .flat_map(|ctx| ctx.deeds.iter())
+        .map(|(i, act)| (act.as_str(), *i))
+        .collect();
     for t in &campaign.quests.content.triggers {
+        let deed = deed_at.get(t.id.as_str()).copied();
         let reader = debts
             .iter()
             .find(|d| d.trigger == t.id.as_str())
-            .map(|d| d.step);
+            .map(|d| d.step)
+            .or(deed);
         if reader.is_none() && !opens.contains(t.id.as_str()) {
             continue;
         }
@@ -194,8 +204,14 @@ pub(super) fn path_triggers(
         let Some((_, pos)) = target(si) else { continue };
         // A count is N performances (spec-0082 §10): a repeatable trigger whose
         // way-opening or flag-paying effect waits on a datum the trigger itself
-        // counts up is performed as often as the count needs.
-        for _ in 0..fires_needed(campaign, t) {
+        // counts up is performed as often as the count needs. An entry deed is
+        // performed once: one firing is the path a story world walks.
+        let times = if deed.is_some() {
+            1
+        } else {
+            fires_needed(campaign, t)
+        };
+        for _ in 0..times {
             out.entry(si).or_default().push(Step::Trigger {
                 trigger_id: t.id.as_str().to_string(),
                 on: t.on.kind(),
