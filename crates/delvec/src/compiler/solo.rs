@@ -10,8 +10,9 @@
 //! return stacks every live dummy on one cell, and vanilla's entity cramming
 //! (`max_entity_cramming`, 24) kills them: measured on the gallery, 26 and 28
 //! dummies stacked on the final cutscene's mark, 12–19 "was squished too much"
-//! deaths per run, and a sibling (`creator_camera_in_a_block`) whose dummy died
-//! under the pile and read a dying body's eye.
+//! deaths per run; and a sibling (`creator_camera_in_a_block`) whose dummy,
+//! taken into the scene and left at another test's position, no longer moved
+//! on its own `tp @s`, so its stamp read that place.
 //!
 //! The rule is read off the finished tree, so it reaches templates not yet
 //! written: a template is **solo** when its body, or any function it dispatches
