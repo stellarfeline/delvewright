@@ -325,7 +325,7 @@ mod tests {
             collect: None,
         };
         assert_eq!(
-            holder_setup("ns", &[o.clone()]),
+            holder_setup("ns", std::slice::from_ref(&o)),
             vec!["function ns:holder_map_frame".to_string()]
         );
         let lines = holder_body(&o);
