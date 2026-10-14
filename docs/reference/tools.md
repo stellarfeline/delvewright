@@ -2114,12 +2114,19 @@ Every test is bounded by `--test-timeout`; a test's wait on the code under test 
 
 **A harness bot answers the delve's resource pack (`harness/src/resource-pack.ts`).** A served pack (spec-0084 §11) is pushed in configuration, and the server keeps the player there until the client gives a final answer; mineflayer 4.37.1 answers nothing. So every bot `createHarnessBot` makes answers the way the vanilla client does — ACCEPTED, the download from the pushed URL, then DOWNLOADED and SUCCESSFULLY_LOADED when the bytes hash to the pushed SHA-1, else FAILED_DOWNLOAD. With `DELVEWRIGHT_PACK_VERIFY=1` (the compose bot sets it, with `DELVEWRIGHT_MANIFEST` pointing at the build's `manifest.json`), `run.ts` judges the pushes right after connecting: a build that ships a pack and was pushed none, a push whose SHA-1 is not the manifest's, or bytes that do not download to it, fails the run before the critical path. The run report's `resource_pack` carries the manifest's SHA-1 and every push (URL, pushed and downloaded SHA-1, result).
 
+**A harness bot's world takes every repaint (`harness/src/chunk-biomes.ts`).** A `fillbiome` reaches a client that holds the chunk as one `chunk_biomes` packet carrying every section's biome container; mineflayer 4.37.1 handles `map_chunk` and drops it, so its world would keep the biome a chunk loaded with. Every bot `createHarnessBot` makes decodes each entry (the 1.21.5+ paletted container: a bits byte, a single value, a local palette of up to 3 bits or the global registry, packed longs with no length prefix) into the held column, so `bot.world.getBiome` — what a music station reads (spec-0109 §5.3) — names the biome the server painted. A payload that does not read as that layout is refused, never half-applied; an entry for a chunk the bot does not hold is counted and skipped. `test/chunk-biomes.test.ts` encodes the packet with prismarine-chunk's own biome writer and drives the real pinned mineflayer.
+
 **Trigger steps (`MineflayerExecutor.fireTrigger`).** A `trigger` step in
 `critical-path.json` is an environment trigger the path depends on (see
 `docs/reference/compiler.md`, "`trigger` steps"). The bot does to the target what
 a player does: `strike` and `strike-npc` are a real attack (`bot.attack`) on the
 `interaction` hitbox at `pos`, `use` a real right-click (`bot.activateEntity`),
-`approach` a walk into the trigger's `range` — never a command. The hitbox is
+`approach` a walk into the trigger's `range` — never a command. The approach
+walk's goal is `approachGoalRange(range)`: the server measures from the middle
+of the anchor cell's floor (`positioned` centres an integer x and z), and the
+bot may stop anywhere in a cell the goal accepts, so the goal is the widest `k`
+with `k` plus half a cell's diagonal inside `range` — a block goal on the
+anchor cell at range 1. The hitbox is
 acquired by the crosshair rule below, and the step passes only on the trigger's
 own fired marker, `[dw:complete <campaign> trigger/<id>]`.
 
