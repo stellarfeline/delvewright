@@ -59,8 +59,11 @@ would be one more way.
   later** and on its first run found a second live instance the owner had by
   then hit herself.
 - `MISSING-CHECK` — a general form is declared in this ledger but does not exist
-  in the engine that built this tree: the code is gone from source, or has no
-  test asserting it, or its artifact was never emitted. A ledger that names a
+  in the engine that built this tree: the building engine's registry does not
+  hold the code (its `manifest.json` `dw_codes` — a tree compiled before the
+  code landed was never judged by it, however green the source is now), or the
+  code is gone from source, or has no test asserting it, or its artifact was
+  never emitted. A ledger that names a
   check nobody maintains is a promise, not a proof. A probe over a stage
   document is MISSING-CHECK when the COMPILER read that document and this gate
   holds no parsed copy of it — format rot. It is **not** MISSING-CHECK merely
@@ -357,11 +360,26 @@ class Engine:
             )
         return self._harness_text
 
-    def dw_exists(self, code: str) -> tuple[bool, str]:
-        """A DW carrier exists iff it is live in source, documented, AND
-        asserted by a test. Documented-but-absent is a stale promise; live but
-        untested is a rule nothing exercises — either way the row's proof is
+    def dw_exists(self, code: str, built: "BuildingEngine") -> tuple[bool, str]:
+        """A DW carrier exists iff the engine that BUILT the tree carries it,
+        and it is live in source, documented, AND asserted by a test.
+
+        The first condition is the one that speaks about this build: a code the
+        repository has gained since the tree was compiled is a rule this tree
+        was never judged by, so a row it carries is not covered here however
+        green the source is. The other three are the code's standing in the
+        tree this gate reads. Documented-but-absent is a stale promise; live
+        but untested is a rule nothing exercises — either way the row's proof is
         not one this build carries."""
+        if built.codes is None:
+            return False, built.why
+        if code not in built.codes:
+            return False, (
+                f"{code} is not carried by the engine that built this tree "
+                f"({built.label}): its manifest.json `dw_codes` lists "
+                f"{len(built.codes)} code(s) and not {code} — that engine predates "
+                f"{code}; rebuild with an engine that carries it"
+            )
         if code not in self.dw_in_source:
             return False, f"{code} is not declared anywhere in crates/**/*.rs"
         if code not in self.dw_documented:
@@ -372,6 +390,53 @@ class Engine:
         if code not in self.dw_tested and code not in self.dw_allowlisted:
             return False, f"{code} is asserted by no test (check-dw-codes coverage gate)"
         return True, ""
+
+
+class BuildingEngine:
+    """The engine that compiled a build tree, as the tree itself states it.
+
+    `manifest.json` `dw_codes` is written by `emit::emit_manifest` from the
+    building binary's own DW registry, beside its `delvec_version`. The version
+    alone cannot answer which codes the engine carried — every unreleased
+    revision states the same one — so the tree states the set. `codes` is
+    `None` when the tree cannot say (no manifest, unreadable, no list), and
+    `why` then names which; every caller fails closed on it.
+    """
+
+    def __init__(self, build: pathlib.Path) -> None:
+        self.codes: frozenset[str] | None = None
+        self.version: str | None = None
+        self.why = ""
+        m = build / "manifest.json"
+        if not m.is_file():
+            self.why = (
+                "the build tree has no manifest.json, so nothing says which engine "
+                "built it or which DW codes that engine carries"
+            )
+            return
+        try:
+            doc = json.loads(m.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            self.why = f"the build's manifest.json cannot be read ({e})"
+            return
+        if not isinstance(doc, dict):
+            self.why = "the build's manifest.json is not an object"
+            return
+        v = doc.get("delvec_version")
+        self.version = v if isinstance(v, str) else None
+        codes = doc.get("dw_codes")
+        if not (isinstance(codes, list) and codes and all(isinstance(c, str) for c in codes)):
+            self.why = (
+                f"the build's manifest.json does not state `dw_codes`, the DW codes "
+                f"the engine that built it carries ({self.label}) — that engine "
+                "predates the record; rebuild with an engine that writes it"
+            )
+            return
+        self.codes = frozenset(codes)
+
+    @property
+    def label(self) -> str:
+        return f"delvec {self.version}" if self.version else "an engine stating no delvec_version"
 
 
 # ---------------------------------------------------------------------------
@@ -411,6 +476,7 @@ class Subject:
         self.stage_versions: dict[str, str] = {}
         self.parse_errors: list[str] = []
         self._manifest_inputs: object = _UNREAD
+        self._building_engine: BuildingEngine | None = None
         for fname in self.STAGE_FILES:
             p = campaign / fname
             if not p.is_file():
@@ -427,6 +493,14 @@ class Subject:
     @property
     def has_source(self) -> bool:
         return bool(self.stages)
+
+    @property
+    def building_engine(self) -> BuildingEngine:
+        """The engine that built this tree — the one a `dw` carrier is judged
+        against (`Engine.dw_exists`)."""
+        if self._building_engine is None:
+            self._building_engine = BuildingEngine(self.build)
+        return self._building_engine
 
     @property
     def manifest_inputs(self) -> dict | None:
@@ -986,7 +1060,7 @@ def carrier_exists(carrier: dict, eng: Engine, subj: Subject) -> tuple[bool, str
         if not codes:
             return False, "a `dw` carrier names no code"
         for code in codes:
-            ok, why = eng.dw_exists(code)
+            ok, why = eng.dw_exists(code, subj.building_engine)
             if not ok:
                 return False, why
         return True, ""
