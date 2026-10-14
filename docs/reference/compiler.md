@@ -2546,7 +2546,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   shortcut's `on_unlock`. Gates are not read, so both numbers are upper bounds. The
   harness sleeps `cutscene_seconds` after the step; when a walk that began with the body in
   hand finds it out of adventure mode it abandons the path, waits for control up to the larger of the two plus its grace and
-  walks on from where the cutscene returned it, and it **refuses** control taken during
+  walks on from where the cutscene returned it — unless the step's objective is
+  already complete (its marker arrived, or its transport landed), when the walk ends
+  where the scene put the bot, so a carry in the scene's `then` is not walked back —
+  and it **refuses** control taken during
   a step that declares neither, naming the step — the plan missed a cutscene. Both keys
   ride every `world-path-<k>.json`.
 

@@ -564,6 +564,8 @@ export const methods = {
     // with "No path to the goal!" — give the search real headroom. With leg-by-leg
     // waypoints each solve is tiny, so this budget is only a safety margin.
     bot.pathfinder.thinkTimeout = 30_000;
+    const outerSettled = this.walkSettled;
+    this.walkSettled = completion ? () => this.stepSettled(completion) : undefined;
     try {
       // When the compiler proved a waypoint polyline for this leg, replay
       // it as short hops so each A* solve is trivial (avoids the single giant solve
@@ -780,6 +782,7 @@ export const methods = {
         await this.hearVibrations(label, legVibrations, heardFrom);
       }
     } finally {
+      this.walkSettled = outerSettled;
       restoreControls();
     }
   },
@@ -860,7 +863,8 @@ export const methods = {
    *     put it mid-step (areas sit ~256 blocks apart across void, and the
    *     transport is one-way).
    * Either ⇒ the walk's purpose is fulfilled regardless of where the leg's
-   * remaining hops point. Consulted on walk FAILURE paths only.
+   * remaining hops point. Consulted on walk FAILURE paths, and when a cutscene
+   * gives control back mid-walk (`runGoto`) — never to shortcut a healthy hop.
    */
   stepSettled(this: MineflayerExecutor, completion: StepCompletion): string | undefined {
     if (this.completedObjectives.has(completion.objective)) {
@@ -1005,6 +1009,19 @@ export const methods = {
             );
           }
           await this.awaitControlEnRoute(label);
+          // A cutscene the step's OWN completion fired (a scene on the reach
+          // that just completed) may have moved the body on purpose — a carry
+          // in its `then`. Walking back to the goal would undo it; the step is
+          // proven, so the leg ends where the scene left the bot. The walk's
+          // failure path ends the leg on the same oracle (`legSettledReason`).
+          const settledBy = this.walkSettled?.();
+          if (settledBy !== undefined) {
+            process.stderr.write(
+              `[cutscene] ${label}: the step is settled (${settledBy}); the walk ends where ` +
+                `the scene put the bot, at ${fmt(bot.entity.position)}\n`,
+            );
+            throw new Error(`${label}: settled during a cutscene (${settledBy})`);
+          }
           attempt -= 1;
           continue;
         }

@@ -1876,6 +1876,70 @@ test("reach: a completion transport landing mid-gate-leg is step success, not a 
   );
 });
 
+import { CUTSCENE_POLL_MS } from "../src/executor/cutscene.ts";
+
+/**
+ * A reach whose own completion plays a cutscene that carries the party: the
+ * first `goto` completes the objective and takes control (spectator), the scene
+ * gives the body back at the carry's destination, and every later `goto` would
+ * be a walk back to the goal.
+ */
+class SceneCarryBot extends TransportReachBot {
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    goto: async (goal?: { x: number; y: number; z: number }): Promise<void> => {
+      this.gotoCalls++;
+      if (this.gotoCalls > 1) {
+        // A walk back: arrive at the goal, as a pathfinder would.
+        if (goal) this.entity.position = new FakeVec3(goal.x + 0.5, goal.y, goal.z + 0.5);
+        return;
+      }
+      this.entity.position = new FakeVec3(10.75, 67, 25.5);
+      this.emit("messagestr", "[dw:complete gallery obj/reach-the-end]");
+      this.game.gameMode = "spectator";
+      setTimeout(() => {
+        this.entity.position = new FakeVec3(5.5, 67, 9.5);
+        this.game.gameMode = "adventure";
+      }, 3 * CUTSCENE_POLL_MS);
+      // The walk is interrupted, never finished; the scene's end settles it.
+      await new Promise<void>((resolve) => setTimeout(resolve, 20 * CUTSCENE_POLL_MS));
+    },
+  };
+}
+
+test("reach: a cutscene its own completion plays ends the walk where the scene put the bot", async () => {
+  // The gallery bot: the final reach completed, the scene's `then` carried the
+  // party to the hearth, and the walk resumed back to the exit — so the bot read
+  // the carry as failed ("stood at [11.5, 67.06, 24.5]").
+  const bot = new SceneCarryBot();
+  bot.entity.position = new FakeVec3(4.5, 67, 25.5);
+  const executor = attach(bot, { DELVEWRIGHT_CUTSCENE_GRACE_MS: "300" });
+  executor.useCampaign("gallery");
+  const step: ReachStep = {
+    action: "reach",
+    objective: "obj/reach-the-end",
+    anchor: "anchor/exit",
+    pos: [11, 67, 25],
+    radius: 1,
+    completion: { kind: "cube" as const, lo: [10, 66, 24], hi: [12, 68, 26] },
+    cutsceneSeconds: 1,
+  };
+  executor.beginStep(30);
+  await executor.beforeStep(step);
+  await within("executor.reach(step)", executor.reach(step));
+  assert.equal(bot.gotoCalls, 1, "no walk back after the scene");
+  const p = bot.entity.position;
+  assert.deepEqual([p.x, p.y, p.z], [5.5, 67, 9.5], "the bot stands where the scene put it");
+});
+
 /**
  * A pathfinder that searches only what the client holds: a goal farther than
  * `heldRadius` blocks from the bot answers "No path to the goal!", as

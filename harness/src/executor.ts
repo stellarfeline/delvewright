@@ -156,6 +156,13 @@ export class MineflayerExecutor implements StepExecutor {
    * control taken ({@link awaitControlEnRoute}).
    */
   stepCutsceneAllowanceS: number | undefined;
+  /**
+   * The completion oracle of the walk under way ({@link stepSettled} over the
+   * step it serves), or `undefined` outside a walk or for a walk that serves no
+   * objective. Read where a walk gets control back from a cutscene
+   * ({@link runGoto}): a step already settled is not walked again.
+   */
+  walkSettled: (() => string | undefined) | undefined;
   stepLabel = "";
   /**
    * gap 7 (death): set once when the bot dies; long waits race against it so a death
