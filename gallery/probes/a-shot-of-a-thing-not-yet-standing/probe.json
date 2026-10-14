@@ -1,0 +1,21 @@
+{
+  "code": "DW1034",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/0/on_objective_complete/obj~1hear-the-curator/4"
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/1/on_objective_complete/obj~1clear-the-muster/19",
+      "value": {
+        "assembly": "assembly/sentinel",
+        "type": "spawn-assembly"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The sentinel's shot plays in the far hall's muster beat; its `spawn-assembly` is moved from the near hall's first beat to the end of the muster beat, after both cutscenes. Nothing places the sentinel before its shot, so the shot frames an empty plinth; validation names the placing it found and that none is ordered before the cutscene. The remedy is the order: spawn it in a beat the quest graph runs first."
+}

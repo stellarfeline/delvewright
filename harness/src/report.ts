@@ -132,6 +132,7 @@ export class RunReport {
   private readonly trials: DeathTrial[] = [];
   private readonly muster: string[] = [];
   private readonly pulseStations: import("./pulse.ts").StationRecord[] = [];
+  private readonly shotSubjects: import("./shot-subjects.ts").BodyRecord[] = [];
   private readonly encounters: EncounterReport[] = [];
   private readonly rests: PerformedRest[] = [];
   private readonly namedEntityDeaths: ClassifiedDeath[] = [];
@@ -210,6 +211,11 @@ export class RunReport {
   /** A declared fact the live bodies did not carry. */
   recordMusterFinding(finding: string): void {
     this.muster.push(finding);
+  }
+
+  /** Every framed body watched through its cutscene (spec-0110 §7). */
+  recordShotSubjects(rows: readonly import("./shot-subjects.ts").BodyRecord[]): void {
+    this.shotSubjects.push(...rows);
   }
 
   /** What every pulse station heard (spec-0102 §5.3). */
@@ -655,6 +661,17 @@ export class RunReport {
       // Every pulse station the walk stood at (spec-0102 §5.3), with the beats
       // it heard; empty for a build that declares no pulse or stations none.
       pulse_stations: this.pulseStations.map((s) => ({ ...s, cell: [...s.cell] })),
+      // Every body a cutscene shot framed (spec-0110 §7): whether it was
+      // spawned to the bot by the shot's first tick and stayed through the
+      // shot. Empty for a build whose shots frame no body.
+      shot_subjects: this.shotSubjects.map((r) => ({
+        cutscene: r.cutscene,
+        shot: r.shot,
+        subject: r.subject,
+        entity: r.entity,
+        spawned_before: r.spawnedBefore,
+        spawned_through: r.spawnedThrough,
+      })),
     };
   }
 }

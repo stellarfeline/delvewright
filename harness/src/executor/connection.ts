@@ -325,6 +325,18 @@ export const methods = {
     bot.on("physicsTick", () => {
       const p = bot.entity?.position;
       if (p) this.tickPos = { x: p.x, y: p.y, z: p.z };
+      // spec-0110 §7: a framed body spawned to this client before its shot
+      // and kept through it, read from the entity table every tick.
+      if (p && this.shotSubjects) {
+        const seen = Object.values(bot.entities)
+          .filter((e) => e !== bot.entity && e.position !== undefined)
+          .map((e) => ({
+            id: e.id,
+            name: e.name ?? "",
+            pos: [e.position.x, e.position.y, e.position.z] as const,
+          }));
+        this.shotSubjects.tick(this.gameModeNow(), [p.x, p.y, p.z], seen);
+      }
     });
     // spec-0100 §4.7: the sculk family's ear, from connect — a sensor click is a
     // block update, a shriek a `world_event` 3007, and a darkness effect or a

@@ -86,3 +86,15 @@ fn a_landscape_keeps_the_travel_aim_byte_for_byte() {
         assert_eq!((*yaw, *pitch), (f.yaw, f.pitch), "tick {t}");
     }
 }
+
+/// The build refuses a shot whose aim leaves its subject out of the frame:
+/// `look_at` lifted twenty blocks over the exit stares at the ceiling.
+#[test]
+fn a_look_at_that_leaves_the_subject_out_of_frame_is_dw1033() {
+    let q = ff::quests_with_cutscene(ff::cutscene(vec![dolly(json!({
+        "subject": {"anchor": "anchor/exit"},
+        "look_at": {"anchor": "anchor/exit", "offset": [0, 20, 0]}
+    }))]));
+    let m = ff::refusal(&q, "DW1033");
+    assert!(m.contains("out of frame") && m.contains("at tick 0"), "{m}");
+}

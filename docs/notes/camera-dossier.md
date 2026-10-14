@@ -157,6 +157,8 @@ spec-0015's pillar 4 ("shot grammar = the assertion").
   decidable at emission.** Ray-march camera→subject over the voxel model at
   each sampled tick. That is strictly stronger than cut-on-occlusion: the
   reference systems *recover* from a bad shot, we *cannot ship* one.
+  *Closed by spec-0110: `compiler::framing` (`DW1033`, `DW1034`); see
+  `docs/reference/delvec/compiler/framing.md`.*
 - **Compile-time ClearShot.** Where a style has candidate placements, score
   each by (unoccluded fraction of the shot) → (distance vs. the style's
   optimal `dist`) → (subject inside the soft zone), ties broken by

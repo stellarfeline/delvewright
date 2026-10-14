@@ -8,6 +8,12 @@
 
 import { loadRepaintPlanForCriticalPath, repaintBindingLine } from "./repaint.ts";
 import { loadPulsePlanForCriticalPath, pulseBindingLine } from "./pulse.ts";
+import {
+  ShotSubjectObserver,
+  loadShotSubjectPlanForCriticalPath,
+  shotSubjectBindingLine,
+  shotSubjectFailures,
+} from "./shot-subjects.ts";
 import { readFile } from "node:fs/promises";
 import nodePath from "node:path";
 import { parseCriticalPathJson } from "./critical-path.ts";
@@ -336,6 +342,17 @@ async function main(): Promise<number> {
   } else {
     process.stderr.write(`pulse plan: none in this build (no pulse)\n`);
   }
+  // spec-0110 §7: every body a cutscene shot frames, watched from the camera.
+  // Absent → the build has no cutscene; empty → no shot frames a body.
+  const shotPlan = await loadShotSubjectPlanForCriticalPath(pathArg);
+  if (shotPlan && shotPlan.cutscenes.length > 0) {
+    executor.shotSubjects = new ShotSubjectObserver(shotPlan);
+    process.stderr.write(
+      `shot-subject plan: ${shotPlan.cutscenes.length} cutscene(s) framing a body\n`,
+    );
+  } else {
+    process.stderr.write(`shot-subject plan: no cutscene shot frames a body in this build\n`);
+  }
   const combatPlan = await loadCombatPlanForCriticalPath(pathArg);
   const dieRetry = combatPlan !== undefined && dieRetryFromEnv();
   const report = new RunReport(criticalPath.campaignId, combatPlan?.difficulty ?? "unknown");
@@ -575,6 +592,13 @@ async function main(): Promise<number> {
     if (pulsePlan) {
       process.stderr.write(`${pulseBindingLine(pulsePlan, pulseVerdicts)}\n`);
     }
+    // spec-0110 §7: every framed body read true, before and through its shot.
+    const shotRecords = executor.shotSubjects?.records ?? [];
+    report.recordShotSubjects(shotRecords);
+    if (shotPlan && shotPlan.cutscenes.length > 0) {
+      process.stderr.write(`${shotSubjectBindingLine(shotPlan, shotRecords)}\n`);
+    }
+    const shotFailures = shotSubjectFailures(shotRecords);
     const pulseFailures = pulseVerdicts.flatMap((v) => [
       ...v.failures,
       ...(pathFailure === undefined ? v.unreached : []),
@@ -587,7 +611,8 @@ async function main(): Promise<number> {
         musterFailures.length === 0 &&
         repaintFailures.length === 0 &&
         watchFailures.length === 0 &&
-        pulseFailures.length === 0,
+        pulseFailures.length === 0 &&
+        shotFailures.length === 0,
       findings: report.musterFindings(),
       failures: [
         ...(pathFailure === undefined ? [] : [describe(pathFailure)]),
@@ -595,6 +620,7 @@ async function main(): Promise<number> {
         ...repaintFailures,
         ...watchFailures,
         ...pulseFailures,
+        ...shotFailures,
       ],
     });
     // The death loop. Recorded whether it ran or not, and a stage that

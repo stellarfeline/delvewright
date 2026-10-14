@@ -1,0 +1,15 @@
+{
+  "code": "DW0112",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/on_objective_complete/obj~1take-the-emeralds/1/steps/1/effects/0/subject",
+      "value": {
+        "place": "node/nowhere"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The stall shot, aimed at a place no area or site-plan box declares. An unknown place is the ordinary dangling reference."
+}

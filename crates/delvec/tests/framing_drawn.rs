@@ -106,8 +106,10 @@ fn a_villager_70_blocks_off_is_not_drawn_and_60_off_is() {
         cutscenes: vec![delvec::compiler::framing::CutsceneRecord {
             path: "/content/x".into(),
             digest: "00000000".into(),
+            start_lens: [0.0, 70.0, 0.0],
             shots: vec![ShotRecord {
                 index: 0,
+                start_tick: 0,
                 ticks: 0,
                 kind: "actor",
                 subjects: vec![SubjectRecord {
@@ -122,6 +124,8 @@ fn a_villager_70_blocks_off_is_not_drawn_and_60_off_is() {
                     farthest: Some(60.0),
                     tracking_range: Some(160.0),
                     cull_radius: Some(v.cull_radius()),
+                    entity: Some("minecraft:villager".into()),
+                    body_at: Some([60.0, 70.0, 0.0]),
                 }],
             }],
         }],

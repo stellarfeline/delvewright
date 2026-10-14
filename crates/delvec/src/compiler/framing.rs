@@ -551,6 +551,11 @@ pub struct SubjectRecord {
     pub tracking_range: Option<f64>,
     /// For an NPC or actor: its cull radius at the proof frame.
     pub cull_radius: Option<f64>,
+    /// For a body: the entity type a client sees (an assembly's root is an
+    /// `item_display`).
+    pub entity: Option<String>,
+    /// For a body: where its entity stands at the shot's first tick.
+    pub body_at: Option<[f64; 3]>,
 }
 
 /// One judged shot.
@@ -558,6 +563,8 @@ pub struct SubjectRecord {
 pub struct ShotRecord {
     /// Shot index within its cutscene.
     pub index: usize,
+    /// Driver ticks into the cutscene at which the shot starts.
+    pub start_tick: i32,
     /// Driver ticks.
     pub ticks: i32,
     /// The subjects judged (empty for a `"landscape"`).
@@ -573,6 +580,9 @@ pub struct CutsceneRecord {
     pub path: String,
     /// The canonical hash of the shot list measured.
     pub digest: String,
+    /// Where the lens stands at the cutscene's first tick — where a watching
+    /// client is snapped to.
+    pub start_lens: [f64; 3],
     /// The shots.
     pub shots: Vec<ShotRecord>,
 }
@@ -708,8 +718,10 @@ impl ShotLedger {
             "cutscenes": self.cutscenes.iter().map(|c| json!({
                 "path": c.path,
                 "cutscene_digest": c.digest,
+                "start_lens": round3v(c.start_lens),
                 "shots": c.shots.iter().map(|s| json!({
                     "index": s.index,
+                    "start_tick": s.start_tick,
                     "ticks": s.ticks,
                     "kind": s.kind,
                     "subjects": s.subjects.iter().map(|r| json!({
@@ -724,6 +736,8 @@ impl ShotLedger {
                         "farthest": r.farthest.map(round3),
                         "tracking_range": r.tracking_range,
                         "cull_radius": r.cull_radius.map(round3),
+                        "entity": r.entity,
+                        "body_at": r.body_at.map(round3v),
                     })).collect::<Vec<_>>(),
                 })).collect::<Vec<_>>(),
             })).collect::<Vec<_>>(),
@@ -791,6 +805,7 @@ pub fn judge(
         let mut record = CutsceneRecord {
             path: path.clone(),
             digest: crate::compiler::emit::cutscene_digest(&shots),
+            start_lens: [0.0; 3],
             shots: Vec::new(),
         };
         let mut offset: i32 = 0;
@@ -799,8 +814,12 @@ pub fn judge(
             let shot_offset = offset;
             offset += ex.ticks + 1;
             let poses = ex.client_poses();
+            if si == 0 {
+                record.start_lens = poses.first().map_or([0.0; 3], |p| p.0);
+            }
             let mut sr = ShotRecord {
                 index: si,
+                start_tick: shot_offset,
                 ticks: ex.ticks,
                 subjects: Vec::new(),
                 kind: shot.subject.as_ref().map_or("none", CameraSubject::kind),
@@ -882,6 +901,8 @@ fn judge_subject(
         farthest: None,
         tracking_range: None,
         cull_radius: None,
+        entity: None,
+        body_at: None,
     };
     // The first refusal per judged subject: a subject that leaves the frame
     // for forty ticks is one finding, not forty.
@@ -937,6 +958,8 @@ fn judge_subject(
         }
         // §5.7 / §5.8: sent and drawn, every tick.
         let entity = body_entity(plan, subject).unwrap_or_default();
+        rec.entity = Some(entity.clone());
+        rec.body_at = Some(Track::at(&track.body, 0));
         if let Some(body) = body_of(&entity) {
             rec.tracking_range = Some(body.tracking_blocks().min(served));
             let drawn_by_type = !matches!(subject, CameraSubject::Assembly(_));
