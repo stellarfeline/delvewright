@@ -221,14 +221,16 @@ pub(crate) fn ending_templates(plan: &Plan) -> Vec<EndingTemplate> {
                         } else {
                             "minecraft:bedrock"
                         };
+                        let mut cells: Vec<Vec<i64>> = Vec::new();
                         for at in ["first", "last"] {
                             let p: Vec<i64> = obs[at]
                                 .as_array()
                                 .map(|a| a.iter().filter_map(Value::as_i64).collect())
                                 .unwrap_or_default();
-                            if p.len() != 3 {
+                            if p.len() != 3 || cells.contains(&p) {
                                 continue;
                             }
+                            cells.push(p.clone());
                             t.push(format!("setblock {} {} {} {sentinel}", p[0], p[1], p[2]));
                             asserts
                                 .push(format!("assert block {} {} {} {block}", p[0], p[1], p[2]));

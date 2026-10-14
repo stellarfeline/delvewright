@@ -64,6 +64,17 @@ pub(super) struct ActBundle<'a> {
     sets_flag: Option<String>,
 }
 
+/// What one ambient root is as an act: its kind, why the harness cannot
+/// perform it (if it cannot), its gate's three axes, and whether it is forced.
+type ActShape = (
+    &'static str,
+    Option<&'static str>,
+    Vec<String>,
+    Vec<String>,
+    Vec<StateCompare>,
+    bool,
+);
+
 /// The acts of a campaign: the elective ones, the forced ones, and how to
 /// perform each ambient one.
 pub(super) struct Acts<'a> {
@@ -499,87 +510,81 @@ impl<'a> Flow<'a> {
             let Some(id) = crate::compiler::ending::act_of_owner(c, &site.owner, &site.path) else {
                 return;
             };
-            let (kind, undrivable, requires, forbids, state, is_forced): (
-                &'static str,
-                Option<&'static str>,
-                Vec<String>,
-                Vec<String>,
-                Vec<StateCompare>,
-                bool,
-            ) = match &site.owner {
-                delvewright_dsl::EffectRootOwner::Trigger(t) => {
-                    let opens = list.iter().any(|e| {
-                        let mut any = false;
-                        e.visit_deep(&mut |x| {
-                            any |= matches!(x.gate_region_write(), Some((_, false)))
-                                || x.way_write().is_some();
-                        });
-                        any
-                    });
-                    let presses = list.iter().any(|e| {
-                        e.writes_state()
-                            .is_some_and(|(d, _)| gated_data.contains(d.as_str()))
-                    });
-                    // A repeatable trigger that carries a body is a link the
-                    // route proof may take (spec-0083, `link::collect`): the
-                    // mainline presses it to cross, so it is never skipped.
-                    let link = !t.once
-                        && list.iter().any(|e| {
+            let (kind, undrivable, requires, forbids, state, is_forced): ActShape =
+                match &site.owner {
+                    delvewright_dsl::EffectRootOwner::Trigger(t) => {
+                        let opens = list.iter().any(|e| {
                             let mut any = false;
-                            e.visit_deep(&mut |x| any |= x.teleport().is_some());
+                            e.visit_deep(&mut |x| {
+                                any |= matches!(x.gate_region_write(), Some((_, false)))
+                                    || x.way_write().is_some();
+                            });
                             any
                         });
-                    (
-                        "trigger",
-                        None,
+                        let presses = list.iter().any(|e| {
+                            e.writes_state()
+                                .is_some_and(|(d, _)| gated_data.contains(d.as_str()))
+                        });
+                        // A repeatable trigger that carries a body is a link the
+                        // route proof may take (spec-0083, `link::collect`): the
+                        // mainline presses it to cross, so it is never skipped.
+                        let link = !t.once
+                            && list.iter().any(|e| {
+                                let mut any = false;
+                                e.visit_deep(&mut |x| any |= x.teleport().is_some());
+                                any
+                            });
+                        (
+                            "trigger",
+                            None,
+                            names(&t.requires_flags),
+                            names(&t.forbids_flags),
+                            t.requires_state.clone(),
+                            debts.contains(t.id.as_str()) || opens || presses || link,
+                        )
+                    }
+                    delvewright_dsl::EffectRootOwner::TrapPayload(t) => (
+                        "trap",
+                        Some("springing a trap has no harness step kind"),
                         names(&t.requires_flags),
                         names(&t.forbids_flags),
-                        t.requires_state.clone(),
-                        debts.contains(t.id.as_str()) || opens || presses || link,
-                    )
-                }
-                delvewright_dsl::EffectRootOwner::TrapPayload(t) => (
-                    "trap",
-                    Some("springing a trap has no harness step kind"),
-                    names(&t.requires_flags),
-                    names(&t.forbids_flags),
-                    Vec::new(),
-                    false,
-                ),
-                delvewright_dsl::EffectRootOwner::ShortcutUnlock(_) => (
-                    "shortcut",
-                    Some("unlocking a shortcut has no harness step kind"),
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    false,
-                ),
-                delvewright_dsl::EffectRootOwner::ShopOffer(h) => {
-                    let offer = site
-                        .path
-                        .split('/')
-                        .nth(5)
-                        .and_then(|n| n.parse::<usize>().ok())
-                        .and_then(|n| h.offers.get(n));
-                    (
-                        "shop-offer",
-                        Some("a shop purchase has no harness step kind"),
-                        offer.map(|o| names(&o.requires_flags)).unwrap_or_default(),
-                        offer.map(|o| names(&o.forbids_flags)).unwrap_or_default(),
-                        offer.map(|o| o.requires_state.clone()).unwrap_or_default(),
+                        Vec::new(),
                         false,
-                    )
-                }
-                delvewright_dsl::EffectRootOwner::OnKill(f) => (
-                    "on-kill",
-                    Some("a credited kill has no harness step kind"),
-                    Vec::new(),
-                    Vec::new(),
-                    Vec::new(),
-                    slain.contains(f.id()),
-                ),
-                _ => return,
-            };
+                    ),
+                    delvewright_dsl::EffectRootOwner::ShortcutUnlock(_) => (
+                        "shortcut",
+                        Some("unlocking a shortcut has no harness step kind"),
+                        Vec::new(),
+                        Vec::new(),
+                        Vec::new(),
+                        false,
+                    ),
+                    delvewright_dsl::EffectRootOwner::ShopOffer(h) => {
+                        let offer = site
+                            .path
+                            .split('/')
+                            .nth(5)
+                            .and_then(|n| n.parse::<usize>().ok())
+                            .and_then(|n| h.offers.get(n));
+                        (
+                            "shop-offer",
+                            Some("a shop purchase has no harness step kind"),
+                            offer.map(|o| names(&o.requires_flags)).unwrap_or_default(),
+                            offer.map(|o| names(&o.forbids_flags)).unwrap_or_default(),
+                            offer.map(|o| o.requires_state.clone()).unwrap_or_default(),
+                            false,
+                        )
+                    }
+                    delvewright_dsl::EffectRootOwner::OnKill(f) => (
+                        "on-kill",
+                        Some("a credited kill has no harness step kind"),
+                        Vec::new(),
+                        Vec::new(),
+                        Vec::new(),
+                        slain.contains(f.id()),
+                    ),
+                    _ => return,
+                };
             bundles.insert(
                 id.clone(),
                 ActBundle {

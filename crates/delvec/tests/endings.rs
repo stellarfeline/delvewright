@@ -185,7 +185,9 @@ fn an_ending_reads_every_gate_of_its_final_scene_with_each_writers_kind() {
     let v = &a.endings[0];
     assert_eq!(v.ending.id, "ending/home");
     assert_eq!(v.host_quest.as_deref(), Some("quest/end"));
-    let rows: Vec<(String, Vec<&str>, bool, Vec<Option<String>>)> = v
+    /// One input as the reading reports it: key, writer kinds, seeded, dated quests.
+    type Row<'a> = (String, Vec<&'a str>, bool, Vec<Option<String>>);
+    let rows: Vec<Row<'_>> = v
         .inputs
         .iter()
         .map(|i| {
@@ -661,4 +663,221 @@ fn reachability_codes_on_an_elective_only_quest_match_the_base_tree() {
     assert_eq!(flow.world_count(), 1);
     // The optional quest completes in today's world.
     assert!(flow.world_completed(0).contains("quest/tally"));
+}
+
+// ---------------------------------------------------------------------------
+// Criteria 7 and 11 — the ledger, the binding line, through the binary.
+// ---------------------------------------------------------------------------
+
+/// A private copy of `tests/fixtures/elective-reach` with `patch` applied to
+/// its quests document.
+fn reach_copy(tag: &str, patch: impl FnOnce(&mut Value)) -> std::path::PathBuf {
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("endings-{tag}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    common::copy_dir_all(
+        &common::compiler_fixtures_dir().join("elective-reach"),
+        &dir,
+    );
+    common::patch_file(&dir.join("quests.json"), |q| {
+        // The hello room's door is shut at world load; the opening beat opens
+        // it, so the build's route proof has a way to the exit.
+        q["content"]["quests"][0]["on_complete"] = json!([{
+            "type": "open-gate", "anchor": "anchor/door",
+            "happening": {"subject": "anchor/door", "text": "The Keeper opens the door.",
+                          "verb": "opens"}
+        }]);
+        patch(q);
+    });
+    dir
+}
+
+fn delvec_run(args: &[&str]) -> (i32, String) {
+    let o = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
+        .args(args)
+        .output()
+        .expect("delvec runs");
+    (
+        o.status.code().unwrap_or(-1),
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&o.stdout),
+            String::from_utf8_lossy(&o.stderr)
+        ),
+    )
+}
+
+/// Criterion 7: every aftermath effect of the scene is listed with its
+/// observable — a block at its cell, the clock — or `emission-only`, and the
+/// path's terminal step and the ending's PackTest carry them.
+#[test]
+fn the_ledger_lists_each_aftermath_effect_with_its_observable() {
+    let dir = reach_copy("aftermath", |q| {
+        q["content"]["quests"][2]["on_complete"]
+            .as_array_mut()
+            .unwrap()
+            .extend([
+                json!({"type": "set-block", "anchor": "anchor/exit", "block": "minecraft:moss_block"}),
+                json!({"type": "give-item", "item": "minecraft:bread", "count": 1}),
+                json!({"type": "set-time", "time": "noon"}),
+            ]);
+    });
+    let out = dir.with_extension("out");
+    let prefabs = common::prefabs_dir();
+    let (code, log) = delvec_run(&[
+        "build",
+        dir.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "{log}");
+    let ledger: Value = serde_json::from_str(
+        &std::fs::read_to_string(out.join("validation/endings.json")).unwrap(),
+    )
+    .unwrap();
+    let home = &ledger["endings"][0];
+    assert_eq!(home["id"], "ending/home");
+    let after: Vec<(&str, Value)> = home["aftermath"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| (a["verb"].as_str().unwrap(), a["observable"].clone()))
+        .collect();
+    assert_eq!(after.len(), 3, "{after:?}");
+    assert_eq!(after[0].0, "set-block");
+    assert_eq!(after[0].1["kind"], "block");
+    assert_eq!(after[0].1["block"], "minecraft:moss_block");
+    assert_eq!(after[0].1["first"], after[0].1["last"]);
+    assert_eq!(after[1], ("give-item", json!("emission-only")));
+    assert_eq!(after[2].1, json!({"kind": "time", "daytime": 6000}));
+    // The bot's half: the exported path's terminal step carries them.
+    let path: Value =
+        serde_json::from_str(&std::fs::read_to_string(out.join("critical-path.json")).unwrap())
+            .unwrap();
+    let last = path["steps"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!(last["aftermath"].as_array().unwrap().len(), 3, "{last}");
+    // The PackTest half: one template per (ending, world that reaches it).
+    let worlds = home["worlds"].as_array().unwrap().len();
+    assert_eq!(
+        home["packtests"].as_array().unwrap().len(),
+        worlds,
+        "{home}"
+    );
+    for t in home["packtests"].as_array().unwrap() {
+        let name = t["template"].as_str().unwrap();
+        let body = std::fs::read_to_string(out.join(format!(
+            "packtest-datapack/data/hello-world/test/{name}.mcfunction"
+        )))
+        .unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert!(body.contains("assert block"), "{body}");
+        assert!(body.contains("time query daytime"), "{body}");
+        assert!(
+            body.contains("function hello-world:complete_q_end"),
+            "{body}"
+        );
+    }
+}
+
+/// Criterion 11: the binding line is printed on every validate, analyze and
+/// build, every count stated, zeroes included — here a campaign whose ending's
+/// scene carries no gate at all.
+#[test]
+fn the_binding_line_states_every_count_zeroes_included() {
+    let dir = reach_copy("binding", |q| {
+        q["content"]["quests"][2]["on_complete"] = json!([cc("ending/home", Value::Null)]);
+        // Nothing reads the tally now, so nothing writes it either (`DW0502`).
+        q["content"]["state"] = json!([]);
+        q["content"]["quests"][1]["on_complete"] = json!([]);
+    });
+    let out = dir.with_extension("out");
+    let prefabs = common::prefabs_dir();
+    let p = prefabs.to_str().unwrap();
+    let d = dir.to_str().unwrap();
+    let line = "ending binding: 1 ending(s); 0 input(s) read, 0 seeded (0 with a deed among their \
+                writers), 0 final-scene only; 2 story world(s) enumerated (0 unrealizable \
+                target(s), 0 at the bound); 0 aftermath effect(s), 0 of them observable after the \
+                scene.";
+    for args in [
+        vec!["validate", d, "--prefabs", p],
+        vec!["analyze", d, "--prefabs", p],
+        vec!["build", d, "--out", out.to_str().unwrap(), "--prefabs", p],
+    ] {
+        let (code, log) = delvec_run(&args);
+        assert_eq!(code, 0, "{args:?}: {log}");
+        assert!(
+            log.contains(line),
+            "{args:?} printed no binding line:\n{log}"
+        );
+        assert!(
+            log.contains("ending/home: reads 0 input(s) — none; aftermath: 0 effect(s) []"),
+            "{args:?}:\n{log}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Criterion 12 — the world order is canonical.
+// ---------------------------------------------------------------------------
+
+/// Two optional quests, each `add-state 1`, declared in `order`.
+fn two_tallies(order: [&str; 2]) -> Campaign {
+    let mut planned_rows = vec![planned("quest/decide", &[], true)];
+    let mut quests = vec![decide_quest()];
+    for id in order {
+        planned_rows.push(planned(id, &["quest/decide"], false));
+        quests.push(reach_quest(
+            id,
+            &format!("obj/{}", id.trim_start_matches("quest/")),
+            Some("quest/decide"),
+            json!([{"type": "add-state", "state": "state/tally", "amount": 1}]),
+        ));
+    }
+    planned_rows.push(planned("quest/end", &["quest/decide"], true));
+    let at = |op: &str, v: i32| json!({"requires_state": [{"state": "state/tally", "op": op, "value": v}]});
+    quests.push(reach_quest(
+        "quest/end",
+        "obj/walk-out",
+        Some("quest/decide"),
+        json!([
+            cc("ending/none", at("at-most", 0)),
+            cc("ending/one", at("equals", 1)),
+            cc("ending/two", at("at-least", 2)),
+        ]),
+    ));
+    campaign(
+        json!({"finale": "quest/end", "quests": planned_rows}),
+        json!({"state": [{"id": "state/tally", "scope": "party"}], "quests": quests}),
+    )
+}
+
+#[test]
+fn permuting_two_optional_quests_keeps_every_world_id_and_path() {
+    let a = two_tallies(["quest/alpha", "quest/beta"]);
+    let b = two_tallies(["quest/beta", "quest/alpha"]);
+    let (fa, fb) = (Flow::new(&a), Flow::new(&b));
+    let worlds = |f: &Flow<'_>| {
+        f.story()
+            .worlds
+            .iter()
+            .enumerate()
+            .map(|(k, w)| {
+                let pt = f.story_playthrough(k);
+                (
+                    k,
+                    w.performs.iter().cloned().collect::<Vec<_>>(),
+                    pt.steps
+                        .iter()
+                        .map(|s| s.objective.clone())
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let (wa, wb) = (worlds(&fa), worlds(&fb));
+    assert_eq!(wa, wb);
+    assert!(wa.len() >= 3, "{wa:?}");
+    // And every ending is reached either way.
+    let (d, _) = ending::check_bound(&a);
+    assert!(codes(&d, "DW1030").is_empty(), "{d:#?}");
 }

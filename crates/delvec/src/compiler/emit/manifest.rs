@@ -294,6 +294,7 @@ pub(super) struct CutsceneHolds<'a> {
     pub(super) en_route: &'a [Option<u32>],
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn critical_path_json(
     plan: &Plan,
     walked: &[plan::Step],
