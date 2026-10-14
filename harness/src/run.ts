@@ -594,11 +594,12 @@ async function main(): Promise<number> {
     }
     // spec-0110 §7: every framed body read true, before and through its shot.
     const shotRecords = executor.shotSubjects?.records ?? [];
+    const shotSpans = executor.shotSubjects?.spans ?? [];
     report.recordShotSubjects(shotRecords);
     if (shotPlan && shotPlan.cutscenes.length > 0) {
-      process.stderr.write(`${shotSubjectBindingLine(shotPlan, shotRecords)}\n`);
+      process.stderr.write(`${shotSubjectBindingLine(shotPlan, shotRecords, shotSpans)}\n`);
     }
-    const shotFailures = shotSubjectFailures(shotRecords);
+    const shotFailures = shotSubjectFailures(shotRecords, shotSpans);
     const pulseFailures = pulseVerdicts.flatMap((v) => [
       ...v.failures,
       ...(pathFailure === undefined ? v.unreached : []),

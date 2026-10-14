@@ -8,6 +8,18 @@
 // to it by the shot's first tick and stayed spawned through the shot, read
 // from its own entity table. What a client DRAWS cannot be read from a bot.
 //
+// The clock is the server's, never the client's physics ticks. Every driver
+// tick re-aims the client with `spectate`, alternating between the camera
+// pair, so the server sends one `camera` packet naming a lens entity per
+// driver tick (`ServerPlayer.setCamera`: the position packet, then the camera
+// packet). The cutscene's end function runs in the same server tick as the
+// last driver tick and returns the gamemode (`ServerPlayer.setGameMode`: the
+// game event, then a camera packet naming the player itself). So the lens
+// packets count the driver ticks the server played, the gamemode change is
+// the end, and both arrive in the server's order whatever the client's frame
+// timing. Tick `t` is read from the entity table as the server left it at
+// the end of tick `t`: at the next lens packet, or at the end.
+//
 // The compiler computes everything (`validation/shot-subjects.json`): where
 // the lens stands at each cutscene's first tick (the point a watching client
 // is snapped to), each shot's first driver tick and length, and each body's
@@ -52,6 +64,8 @@ export interface PlannedCutscene {
   readonly path: string;
   readonly digest: string;
   readonly startLens: Vec3;
+  /** Driver ticks the cutscene plays: its last shot's last tick, plus one. */
+  readonly driverTicks: number;
   readonly shots: readonly PlannedShot[];
 }
 
@@ -93,12 +107,14 @@ export function parseShotSubjectPlan(raw: unknown): ShotSubjectPlan {
   arr(root["cutscenes"], "/cutscenes").forEach((c, i) => {
     const cs = obj(c, `/cutscenes/${i}`);
     const shots: PlannedShot[] = [];
+    let driverTicks = 0;
     arr(cs["shots"], `/cutscenes/${i}/shots`).forEach((s, j) => {
       const at = `/cutscenes/${i}/shots/${j}`;
       const shot = obj(s, at);
       if (typeof shot["index"] !== "number") bad(`${at}/index is not a number`);
       if (typeof shot["start_tick"] !== "number") bad(`${at}/start_tick is not a number`);
       if (typeof shot["ticks"] !== "number") bad(`${at}/ticks is not a number`);
+      driverTicks = Math.max(driverTicks, (shot["start_tick"] as number) + (shot["ticks"] as number) + 1);
       const bodies: PlannedBody[] = [];
       arr(shot["subjects"], `${at}/subjects`).forEach((r, k) => {
         const sub = obj(r, `${at}/subjects/${k}`);
@@ -126,6 +142,7 @@ export function parseShotSubjectPlan(raw: unknown): ShotSubjectPlan {
         path: cs["path"] as string,
         digest: String(cs["cutscene_digest"]),
         startLens: vec3(cs["start_lens"], `/cutscenes/${i}/start_lens`),
+        driverTicks,
         shots,
       });
     }
@@ -190,13 +207,26 @@ export function cutsceneAt(plan: ShotSubjectPlan, pos: Vec3): PlannedCutscene | 
   return plan.cutscenes.find((c) => dist(c.startLens, pos) <= LENS_TOLERANCE);
 }
 
+/** How many driver ticks the server played in one watched cutscene. */
+export interface CutsceneSpan {
+  readonly cutscene: string;
+  /** Lens packets received before the end. */
+  readonly played: number;
+  /** Driver ticks the build plans. */
+  readonly planned: number;
+}
+
 /**
- * Watches the client during cutscenes: fed once per client tick with the
+ * Watches the client during cutscenes, on the server's clock: fed once per
+ * lens packet (a driver tick) and once per gamemode change, each with the
  * gamemode, the bot's position and the entities it tracks.
  */
 export class ShotSubjectObserver {
   readonly records: BodyRecord[] = [];
-  private active: { cs: PlannedCutscene; tick: number } | undefined;
+  readonly spans: CutsceneSpan[] = [];
+  /** The cutscene playing (`cs` undefined: one that frames no body), and the
+   * driver tick of the last lens packet. */
+  private active: { cs: PlannedCutscene | undefined; tick: number } | undefined;
   private seenIds = new Map<string, number | undefined>();
   private through = new Map<string, boolean>();
   private done = new Set<string>();
@@ -207,20 +237,32 @@ export class ShotSubjectObserver {
     this.plan = plan;
   }
 
-  /** One client tick. */
-  tick(gameMode: string | undefined, pos: Vec3, seen: readonly SeenEntity[]): void {
-    if (gameMode !== "spectator") {
-      if (this.active) this.finish();
+  /**
+   * The server aimed this client at a lens entity (not at itself): one driver
+   * tick. The first one names the cutscene by where the client now stands,
+   * and each later one closes the tick before it.
+   */
+  lensTick(gameMode: string | undefined, pos: Vec3, seen: readonly SeenEntity[]): void {
+    if (gameMode !== "spectator") return;
+    if (!this.active) {
+      this.active = { cs: cutsceneAt(this.plan, pos), tick: 0 };
       return;
     }
-    if (!this.active) {
-      const cs = cutsceneAt(this.plan, pos);
-      if (!cs) return;
-      this.active = { cs, tick: 0 };
-    } else {
-      this.active.tick += 1;
-    }
-    const { cs, tick } = this.active;
+    this.judge(this.active.cs, this.active.tick, seen);
+    this.active.tick += 1;
+  }
+
+  /** The gamemode changed: leaving spectator is the end function, which
+   * closes the last driver tick. */
+  gameModeChanged(gameMode: string | undefined, seen: readonly SeenEntity[]): void {
+    if (gameMode === "spectator" || !this.active) return;
+    this.judge(this.active.cs, this.active.tick, seen);
+    this.finish();
+  }
+
+  /** Driver tick `tick` of `cs`, read from the entity table it left. */
+  private judge(cs: PlannedCutscene | undefined, tick: number, seen: readonly SeenEntity[]): void {
+    if (!cs) return;
     for (const shot of cs.shots) {
       if (tick < shot.startTick || tick > shot.startTick + shot.ticks) continue;
       for (const body of shot.bodies) {
@@ -255,7 +297,8 @@ export class ShotSubjectObserver {
   private finish(): void {
     const a = this.active;
     this.active = undefined;
-    if (!a) return;
+    if (!a?.cs) return;
+    this.spans.push({ cutscene: a.cs.path, played: a.tick + 1, planned: a.cs.driverTicks });
     for (const shot of a.cs.shots) {
       for (const body of shot.bodies) {
         const key = `${a.cs.path}#${shot.index}#${body.field}`;
@@ -268,9 +311,16 @@ export class ShotSubjectObserver {
   }
 }
 
-/** The failures among the records: every row must read true. */
-export function shotSubjectFailures(records: readonly BodyRecord[]): string[] {
-  return records
+/**
+ * The failures among the records: every row must read true, and every
+ * watched cutscene must play exactly the driver ticks the build plans — a
+ * span that disagrees means the record's timing is not the server's.
+ */
+export function shotSubjectFailures(
+  records: readonly BodyRecord[],
+  spans: readonly CutsceneSpan[] = [],
+): string[] {
+  const rows = records
     .filter((r) => !r.spawnedBefore || !r.spawnedThrough)
     .map(
       (r) =>
@@ -279,17 +329,33 @@ export function shotSubjectFailures(records: readonly BodyRecord[]): string[] {
           ? "was spawned to the bot at the shot's first tick and left before the shot ended"
           : "was not spawned to the bot by the shot's first tick"),
     );
+  const timing = spans
+    .filter((s) => s.played !== s.planned)
+    .map(
+      (s) =>
+        `cutscene ${s.cutscene}: the server played ${s.played} driver tick(s) of the ` +
+        `${s.planned} the build plans`,
+    );
+  return [...rows, ...timing];
 }
 
 /** The one line the run prints, with its denominator. */
-export function shotSubjectBindingLine(plan: ShotSubjectPlan, records: readonly BodyRecord[]): string {
+export function shotSubjectBindingLine(
+  plan: ShotSubjectPlan,
+  records: readonly BodyRecord[],
+  spans: readonly CutsceneSpan[] = [],
+): string {
   const owed = plan.cutscenes.reduce(
     (n, c) => n + c.shots.reduce((m, s) => m + s.bodies.length, 0),
     0,
   );
   const good = records.filter((r) => r.spawnedBefore && r.spawnedThrough).length;
+  const played = spans.reduce((n, s) => n + s.played, 0);
+  const planned = spans.reduce((n, s) => n + s.planned, 0);
   return (
     `shot subjects (live): ${records.length} of ${owed} framed body row(s) observed in ` +
-    `${plan.cutscenes.length} cutscene(s), ${good} spawned before and through their shot`
+    `${plan.cutscenes.length} cutscene(s), ${good} spawned before and through their shot; ` +
+    `${spans.length} cutscene run(s) watched on the server's clock, ${played} of ${planned} ` +
+    `planned driver tick(s) played`
   );
 }

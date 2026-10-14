@@ -127,7 +127,8 @@ export class MineflayerExecutor implements StepExecutor {
   /** Every station stood at, with what it heard — the run report's `pulse_stations`. */
   readonly pulseStations: import("./pulse.ts").StationRecord[] = [];
   /** The framed bodies watched through every cutscene (spec-0110 §7), when the
-   * build has a cutscene that frames one. Fed every client tick from connect. */
+   * build has a cutscene that frames one. Fed on the server's clock from connect:
+   * each lens packet and each gamemode change. */
   shotSubjects: import("./shot-subjects.ts").ShotSubjectObserver | undefined;
   /**
    * How many times each marker token has been broadcast this run. A repeatable

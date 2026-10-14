@@ -325,18 +325,6 @@ export const methods = {
     bot.on("physicsTick", () => {
       const p = bot.entity?.position;
       if (p) this.tickPos = { x: p.x, y: p.y, z: p.z };
-      // spec-0110 §7: a framed body spawned to this client before its shot
-      // and kept through it, read from the entity table every tick.
-      if (p && this.shotSubjects) {
-        const seen = Object.values(bot.entities)
-          .filter((e) => e !== bot.entity && e.position !== undefined)
-          .map((e) => ({
-            id: e.id,
-            name: e.name ?? "",
-            pos: [e.position.x, e.position.y, e.position.z] as const,
-          }));
-        this.shotSubjects.tick(this.gameModeNow(), [p.x, p.y, p.z], seen);
-      }
     });
     // spec-0100 §4.7: the sculk family's ear, from connect — a sensor click is a
     // block update, a shriek a `world_event` 3007, and a darkness effect or a
@@ -350,6 +338,28 @@ export const methods = {
     });
     const client = (bot as unknown as { _client?: { on: (e: string, f: (p: unknown) => void) => void } })
       ._client;
+    // spec-0110 §7: a framed body spawned to this client before its shot and
+    // kept through it, on the server's clock — one `camera` packet naming a
+    // lens per driver tick, and the gamemode change the end function makes
+    // (`harness/src/shot-subjects.ts`). A camera packet naming the bot itself
+    // is the return from spectator, not a driver tick.
+    const tracked = () =>
+      Object.values(bot.entities)
+        .filter((e) => e !== bot.entity && e.position !== undefined)
+        .map((e) => ({
+          id: e.id,
+          name: e.name ?? "",
+          pos: [e.position.x, e.position.y, e.position.z] as const,
+        }));
+    client?.on("camera", (packet: unknown) => {
+      const id = (packet as { cameraId?: number }).cameraId;
+      const p = bot.entity?.position;
+      if (!this.shotSubjects || !p || id === undefined || id === bot.entity?.id) return;
+      this.shotSubjects.lensTick(this.gameModeNow(), [p.x, p.y, p.z], tracked());
+    });
+    bot.on("game", () => {
+      this.shotSubjects?.gameModeChanged(this.gameModeNow(), tracked());
+    });
     client?.on("world_event", (packet: unknown) => {
       const p = packet as { effectId?: number; location?: { x: number; y: number; z: number } };
       if (typeof p.effectId !== "number" || !p.location) return;
