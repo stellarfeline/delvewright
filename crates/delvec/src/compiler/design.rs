@@ -694,7 +694,11 @@ pub fn answered(c: &Campaign, files: &DesignFiles) -> Vec<Diagnostic> {
                 crate::compiler::view::camera::record_code_at_build(&refusal),
                 "design",
                 crate::compiler::view::camera::CAMERAS_FILE,
-                refusal.message,
+                refusal
+                    .message
+                    .strip_prefix(&format!("{}: ", crate::compiler::view::camera::CAMERAS_FILE))
+                    .unwrap_or(&refusal.message)
+                    .to_string(),
             )];
         }
     };

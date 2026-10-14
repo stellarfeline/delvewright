@@ -418,6 +418,31 @@ fn a_camera(name: &str, answers: &str) -> serde_json::Value {
     })
 }
 
+/// **A stated exposure is refused where the record is read** (`DW1010`):
+/// `delvec cameras` exits 2, naming the camera and the remedy, and writes no
+/// scene. The build's half is `design_record.rs`.
+#[test]
+fn a_record_that_states_an_exposure_is_refused_by_the_cameras_command() {
+    let dir = tmp("cameras-exposure");
+    let built = hello_build(&dir);
+    let campaign = dir.join("campaign");
+    let mut hall = a_camera("hall", "concept/hall");
+    hall["exposure"] = 16.0.into();
+    camera_campaign(
+        &campaign,
+        serde_json::json!([a_camera("gate", "concept/gate"), hall]),
+    );
+    let out = dir.join("scenes");
+    let r = cameras_cmd(&built, &campaign, &out).output().unwrap();
+    let stderr = String::from_utf8_lossy(&r.stderr);
+    assert_eq!(r.status.code(), Some(2), "{stderr}");
+    assert!(stderr.contains("DW1010"), "{stderr}");
+    assert!(stderr.contains("camera `hall`"), "{stderr}");
+    assert!(stderr.contains("light the room"), "{stderr}");
+    assert!(!out.join("hello-world_camera_gate.json").exists());
+
+}
+
 /// `delvec cameras` emits one scene per stated camera, verbatim, names the
 /// approved images no camera answers, and with `--bracket` writes every
 /// candidate back out in the record format.

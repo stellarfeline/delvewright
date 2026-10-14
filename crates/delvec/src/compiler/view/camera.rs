@@ -459,7 +459,7 @@ fn exposure_stated(bytes: &[u8]) -> Option<Diagnostic> {
         DW_EXPOSURE_STATED.id(),
         format!(
             "{CAMERAS_FILE}: camera `{}` (answers `{}`) states `exposure` {}. A frame's exposure \
-             is derived by the engine, not stated: every showcase frame is exposed at {}, where \
+             is derived by the engine, not stated: every showcase frame is exposed at {:.1}, where \
              a top face under the whole sky and a lantern-lit surface read as the game draws \
              them. Remove the field. A room that reads too dark at that exposure is short of \
              light: light the room where it is designed — add or re-arrange its lights until \
