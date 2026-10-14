@@ -54,7 +54,6 @@ fn placed(area: &str, pos: [i32; 3], rotation: Rotation) -> AreaPlacement {
             rotation,
             mated: Vec::new(),
         }],
-        seals: Vec::new(),
         mass: Vec::new(),
     }
 }
@@ -145,7 +144,6 @@ fn socket_area(pieces: Vec<PiecePlacement>) -> AreaPlacement {
     AreaPlacement {
         area_id: "area/annex".to_string(),
         pieces,
-        seals: Vec::new(),
         mass: Vec::new(),
     }
 }

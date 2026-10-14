@@ -142,6 +142,7 @@ pub fn gallery_prefabs(tag: &str, cuts: &Cuts) -> PathBuf {
     // outside would see, so the piece says so (`DW0885`), and a fixture that
     // cuts a hole in it is judged by the loop proofs, not the seating rule.
     super::declare_shown_faces(&dir, "long-gallery");
+    super::declare_site_contract(&dir, "long-gallery");
     dir
 }
 

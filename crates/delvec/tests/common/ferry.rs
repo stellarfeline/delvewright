@@ -109,6 +109,7 @@ pub fn ferry_prefabs() -> PathBuf {
     ] {
         super::write_single_prefab(&dir, id, SIZE, &strait_cells(pit, ledge), strait_anchors());
         super::declare_shown_faces(&dir, id);
+        super::declare_site_contract(&dir, id);
     }
     dir
 }

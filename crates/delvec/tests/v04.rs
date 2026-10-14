@@ -623,7 +623,7 @@ fn wave_mobs_land_on_distinct_standable_in_room_cells() {
     let area = plan
         .areas
         .iter()
-        .find(|a| a.area_id == "area/keep")
+        .find(|a| a.area_id == delvewright_dsl::SITE_AREA)
         .expect("area/keep placed");
     let (lo, hi) = area.bounds();
     for fn_name in ["spawn_guards", "spawn_ambush"] {

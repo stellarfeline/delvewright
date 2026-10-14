@@ -1,16 +1,13 @@
 //! **A teleport the route proof can take** (spec-0083).
 //!
-//! The route model has two ways the party moves: a walk, and the crossing the
-//! compiler itself authors when consecutive objectives stand in different areas
-//! ([`crate::compiler::plan::Plan::transport`]). An authored `teleport` is a third
-//! kind of carry, and this module decides which authored teleports the proof may
+//! The route model's one way the party moves is a walk. An authored `teleport`
+//! is a carry, and this module decides which authored teleports the proof may
 //! lean on and which it may not.
 //!
 //! ## Links and gathers
 //!
 //! A **link** is a `teleport` hosted in a `triggers[]` entry declared
-//! `once: false` — directly in its bundle or in one of its `sequence` steps —
-//! whose `from` and `to` anchors stand in one area. It is the one carry a
+//! `once: false` — directly in its bundle or in one of its `sequence` steps. It is the one carry a
 //! straggler can use: whoever is left on the jetty presses the tiller again and
 //! follows. Every other teleport is a **gather**: whoever is in the box travels,
 //! once, and the route proof never leans on it.
@@ -440,22 +437,11 @@ pub fn collect(campaign: &Campaign, anchors: &AnchorTable) -> (Vec<LinkPlan>, Ve
     (links, gathers)
 }
 
-/// The static half of `DW0932` (spec-0083 §3.6): the two faults the plan can
-/// judge before a block is read — `to` inside its own `from`, and `from` and
-/// `to` in two areas. The geometric half (no stand cell, `to` not standable at
+/// The static half of `DW0932` (spec-0083 §3.6): the fault the plan can judge
+/// before a block is read — `to` inside its own `from`. The geometric half (no stand cell, `to` not standable at
 /// the teleport's tick) needs the world and is judged where the proof takes the
 /// link.
 pub fn static_fault(l: &LinkPlan) -> Option<String> {
-    if l.from_area != l.to_area {
-        return Some(format!(
-            "link `{}` (the `teleport` at `{}`) carries a body from `{}` in area `{}` to `{}` in \
-             area `{}`. A link joins two places of ONE area; a move between areas is the \
-             compiler's own crossing, which has its own arrival and its own refusals. Fault: \
-             `from` and `to` in different areas. Remedy: use a crossing for another area — put \
-             the next objective in that area and let the compiler carry the party there.",
-            l.trigger_id, l.path, l.from_anchor, l.from_area, l.to_anchor, l.to_area
-        ));
-    }
     if l.contains(l.to) {
         return Some(format!(
             "link `{}` (the `teleport` at `{}`) puts a body on {:?}, which lies inside its own \
@@ -725,39 +711,6 @@ pub fn check_carry_realised(campaign: &Campaign) -> Vec<Diagnostic> {
             ));
         }
     }
-    // A crossing carries too. Two places whose beats belong to quests booked in
-    // different areas are joined by nothing a body can walk — areas stand
-    // `plan::AREA_SPACING` apart over void — so the only carry between them is
-    // the compiler's own crossing (`Plan::transport`), fired when the route's
-    // next objective is in the other area. That is the realisation a `carry`
-    // edge between them claims, and the route proofs judge it.
-    let area_of_quest: BTreeMap<&str, &str> = campaign
-        .quest_plan
-        .content
-        .quests
-        .iter()
-        .map(|q| (q.id.as_str(), delvewright_dsl::SITE_AREA))
-        .collect();
-    let mut node_areas: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
-    for b in &graph.beats {
-        if let Some(a) = area_of_quest.get(b.quest.as_str()) {
-            node_areas.entry(b.node.0.as_str()).or_default().insert(a);
-        }
-    }
-    // …in the direction the route crosses: the graph's critical path steps from
-    // the one place to the other, so the crossing fires that way and no other.
-    let stepped: BTreeSet<(&str, &str)> = graph
-        .critical_path
-        .windows(2)
-        .map(|w| (w[0].0.as_str(), w[1].0.as_str()))
-        .collect();
-    let crossed = |x: &str, y: &str| {
-        stepped.contains(&(x, y))
-            && match (node_areas.get(x), node_areas.get(y)) {
-                (Some(ax), Some(ay)) => ax.is_disjoint(ay),
-                _ => false,
-            }
-    };
     for (i, e) in carries {
         let (ea, eb) = (e.a().0.clone(), e.b().0.clone());
         let mut owed = Vec::new();
@@ -768,7 +721,7 @@ pub fn check_carry_realised(campaign: &Campaign) -> Vec<Diagnostic> {
             owed.push((eb.clone(), ea.clone()));
         }
         for (x, y) in owed {
-            if !realised.contains(&(x.clone(), y.clone())) && !crossed(&x, &y) {
+            if !realised.contains(&(x.clone(), y.clone())) {
                 d.push(Diagnostic::error(
                     DW_TELEPORT_CARRY_UNREALISED,
                     "layout-graph",
@@ -777,8 +730,7 @@ pub fn check_carry_realised(campaign: &Campaign) -> Vec<Diagnostic> {
                         "carry connection `{}` says a body is carried from `{x}` to `{y}`, and no \
                          link realises that direction — no `triggers[]` entry declared \
                          `once: false` hosts a `teleport` from a station of `{x}` to a mark in \
-                         `{y}`, and the two places' beats are not booked in two different \
-                         areas, where the compiler's crossing would carry the party. A carry \
+                         `{y}`. A carry \
                          nothing performs is a way the graph claims and the delve does not \
                          have. Remedy: host a teleport from a station of `{x}` to a mark in `{y}` \
                          on a repeatable trigger, or make the edge one-way (or remove it) if \

@@ -225,8 +225,8 @@ pub enum Verb {
         #[serde(default)]
         atmosphere: Option<AtmosphereId>,
         /// The volume: exactly one of `region` (an anchor-centred box, the
-        /// same object class [`Verb::FillRegion`] fills) or `place` (an
-        /// `area/…` or a site-plan box's `node/…`, whose volume is the cells
+        /// same object class [`Verb::FillRegion`] fills) or `place` (a site-plan
+        /// box's `node/…`, whose volume is the cells
         /// the place's own `atmosphere` paints at setup: its bounds, grown as
         /// far as the client's biome blend reads).
         #[serde(flatten)]

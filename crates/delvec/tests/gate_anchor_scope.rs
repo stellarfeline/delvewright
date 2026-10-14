@@ -11,19 +11,17 @@
 //! `region`/`block`, and nothing anywhere derived one from the other: not one of
 //! the campaign's five shortcuts could be wired.
 //!
-//! And one shortcut passed anyway. Two pieces belonging to neither of that
-//! campaign's areas declared an anchor of the same name in the old form, and
-//! `DW0343` was satisfied by their word — the registry scanned the whole loaded
-//! library rather than the pieces the campaign's areas can place. That is not the
+//! And one shortcut passed anyway. Two pieces that campaign did not place
+//! declared an anchor of the same name in the old form, and `DW0343` was
+//! satisfied by their word — the registry scanned the whole loaded library
+//! rather than the pieces the campaign can place. That is not the
 //! unbound vacuity mode: the check examined something and reported truthfully
 //! about it. The lookup asked the right question about the wrong object.
 //!
 //! What each half is proved against here: the first on
 //! `PrefabMeta::gate_anchor`, which is the ONE authority both readers ask, and
-//! the second on `gates::check_close_gates` over a genuinely multi-area campaign
-//! (`keep-crawl`: `area/gatehouse` binds a bare piece, `area/keep` binds a pool),
-//! because a same-area duplicate and a cross-area one must come out differently
-//! and only a two-area campaign can tell them apart.
+//! the second on `gates::check_close_gates` over `hello-world`, whose one place
+//! binds `prefab/hello-room`.
 
 mod common;
 
@@ -207,12 +205,12 @@ fn two_forms_that_agree_resolve() {
     assert_eq!((gate.from, gate.to), ([3, 1, 3], [5, 3, 3]));
 }
 
-// --- the scope of uniqueness: `DW0857` -------------------------------------
+// --- the denominator: this campaign's own pieces ---------------------------
 
-/// `keep-crawl` (two areas — a bare piece and a pool) with a `close-gate` on
+/// `hello-world` (one place, `prefab/hello-room` bound) with a `close-gate` on
 /// `anchor` appended to its first quest's `on_complete`.
-fn keep_crawl_closing(anchor: &str) -> Campaign {
-    let dir = common::keep_crawl_dir();
+fn hello_world_closing(anchor: &str) -> Campaign {
+    let dir = common::hello_world_dir();
     let read = |n: &str| std::fs::read_to_string(dir.join(n)).unwrap();
     let mut quests: serde_json::Value = serde_json::from_str(&read("quests.json")).unwrap();
     quests["content"]["quests"][0]["on_complete"] = serde_json::json!([
@@ -252,111 +250,14 @@ fn with_prefabs<T>(
     out
 }
 
-/// Give `file`'s `anchor/door` the same gate region + block `hello-room` has.
-fn add_door_gate(dir: &std::path::Path, file: &str) {
-    let p = dir.join(file);
-    let mut meta: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
-    meta["anchors"]["anchor/door"] = serde_json::json!({
-        "region": { "from": [1, 1, 1], "to": [2, 3, 1] },
-        "block": "minecraft:iron_bars"
-    });
-    std::fs::write(&p, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
-}
-
-/// **Defect 2.** `area/gatehouse` binds `prefab/hello-room`, which declares
-/// `anchor/door` as a gate; a member of `area/keep`'s pool is given the same
-/// name. Two placed areas now provide it, the compiler's by-name lookup returns
-/// whichever area id sorts first, and nothing an author can see says which.
-/// Refused.
-#[test]
-fn a_gate_two_areas_provide_is_dw0857() {
-    let c = keep_crawl_closing("anchor/door");
-    let d = with_prefabs(
-        "cross-area",
-        |dir| add_door_gate(dir, "keep-room-small-a.json"),
-        |reg| gates::check_close_gates(&c, reg),
-    );
-    let hit = d
-        .iter()
-        .find(|x| x.code == gates::DW_GATE_ANCHOR_AMBIGUOUS)
-        .unwrap_or_else(|| panic!("a gate two areas provide must be DW0857: {d:#?}"));
-    assert!(hit.message.contains("area/gatehouse"), "{}", hit.message);
-    assert!(hit.message.contains("area/keep"), "{}", hit.message);
-    assert!(hit.message.contains("anchor/door"), "{}", hit.message);
-    assert_eq!(hit.code, "DW0857");
-
-    // **The remedy is one a campaign author can perform, and the message says
-    // which is which.** This diagnostic used to end "Rename the gate in one of
-    // these areas" — the anchor name is a key in the piece's exported metadata,
-    // shared by every campaign that binds that piece, so a campaign author was
-    // being sent to edit a library the campaign does not contain.
-    assert!(
-        !hit.message
-            .contains("Rename the gate in one of these areas"),
-        "the old prescription told the author to edit a library they do not own: {}",
-        hit.message
-    );
-    // The campaign-side move, named where it lives.
-    assert!(hit.message.contains("`world.areas[]`"), "{}", hit.message);
-    // And which piece each area is bound THROUGH, without which an author
-    // cannot choose which of the two areas to change.
-    assert!(
-        hit.message.contains("prefab/hello-room")
-            && hit.message.contains("prefab/keep-room-small-a"),
-        "the message must name the piece each area provides the anchor through: {}",
-        hit.message
-    );
-    // Where the change genuinely is in the piece, that is said rather than
-    // prescribed: silence dressed as advice is not a remedy.
-    assert!(
-        hit.message.contains("you cannot reach it from here"),
-        "{}",
-        hit.message
-    );
-}
-
-/// The same campaign untouched: one area provides `anchor/door`, so the anchor
-/// resolves exactly as it always did and nothing is refused. What the diagnostic
-/// refuses is the AMBIGUITY, not the crossing — a campaign that was unambiguous
-/// must not move.
+/// The bound piece provides `anchor/door` as a gate, so nothing is refused.
 #[test]
 fn a_gate_one_area_provides_is_clean() {
-    let c = keep_crawl_closing("anchor/door");
+    let c = hello_world_closing("anchor/door");
     let d = with_prefabs("one-area", |_| {}, |reg| gates::check_close_gates(&c, reg));
     assert!(
         d.is_empty(),
         "an unambiguous gate anchor must stay clean: {d:#?}"
-    );
-}
-
-/// Two pieces of ONE area sharing a gate-anchor name is not this finding. That is
-/// what a `prefab_pool` is for — its members share anchor names so that whichever
-/// member the solver seats provides the anchor — and it has always resolved
-/// within the area.
-#[test]
-fn two_pool_members_of_one_area_are_not_ambiguous() {
-    let c = keep_crawl_closing("anchor/gate");
-    let d = with_prefabs(
-        "same-area",
-        |dir| {
-            add_door_gate(dir, "keep-room-small-a.json");
-            add_door_gate(dir, "keep-room-small-b.json");
-            for f in ["keep-room-small-a.json", "keep-room-small-b.json"] {
-                let p = dir.join(f);
-                let mut m: serde_json::Value =
-                    serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
-                let gate = m["anchors"]["anchor/door"].take();
-                m["anchors"].as_object_mut().unwrap().remove("anchor/door");
-                m["anchors"]["anchor/gate"] = gate;
-                std::fs::write(&p, serde_json::to_string_pretty(&m).unwrap()).unwrap();
-            }
-        },
-        |reg| gates::check_close_gates(&c, reg),
-    );
-    assert!(
-        !d.iter().any(|x| x.code == gates::DW_GATE_ANCHOR_AMBIGUOUS),
-        "two members of ONE area sharing a name is a pool working as designed: {d:#?}"
     );
 }
 
@@ -374,7 +275,7 @@ fn two_pool_members_of_one_area_are_not_ambiguous() {
 /// pieces, it refuses.
 #[test]
 fn a_gate_only_an_unbound_piece_declares_does_not_satisfy_dw0343() {
-    let c = keep_crawl_closing("anchor/boulder");
+    let c = hello_world_closing("anchor/boulder");
     let d = with_prefabs(
         "denominator",
         |dir| {

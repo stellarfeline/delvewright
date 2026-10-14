@@ -261,8 +261,8 @@ impl Case {
         let dir = common::campaign_bound_to(&root.join("campaign"), &lib, ROOM);
         // The cell over the lid measures dark under the ceiling's light; the
         // lighting gate is not what this file is about.
-        common::patch_file(&dir.join("world.json"), |v| {
-            v["content"]["areas"][0]["mitigation"] = serde_json::json!("night-vision");
+        common::patch_file(&dir.join("site-plan.json"), |v| {
+            v["content"]["boxes"][0]["mitigation"] = serde_json::json!("night-vision");
         });
         let quests = format!(
             r#"{{
@@ -321,7 +321,7 @@ fn one_batch() -> String {
         "edits": [
           {{ "verb": "select", "name": "region/corner",
              "shape": {{ "kind": "box",
-               "frame": {{ "kind": "piece-local", "piece": 0, "prefab": "prefab/{ROOM}" }},
+               "frame": {{ "kind": "piece-local", "piece": 1, "prefab": "prefab/{ROOM}" }},
                "min": [1, 3, 1], "max": [2, 3, 2] }} }},
           {{ "verb": "replace", "region": "region/corner",
              "matching": ["minecraft:stone"],
@@ -372,6 +372,7 @@ fn structures(plan: &Plan, lib: &Path) -> BTreeMap<String, Vec<u8>> {
 
 /// Build the case through the real `emit::build` path, with its warnings.
 fn try_build(dir: &Path, lib: &Path) -> Result<(BuildOutput, Vec<String>), BuildFailure> {
+    common::sync_map_in(dir, Some(lib));
     // Every case is a campaign `delvec validate` accepts, so a build verdict
     // here is the verdict a creator meets.
     let refused: Vec<_> = validate(dir, lib)
@@ -856,7 +857,7 @@ fn shown_is_read_in_the_configurations_own_bytes() {
     let s = structures(&plan, &lib);
     let assembled = delvec::compiler::assembled::assemble(&plan, &s);
     let world = delvec::compiler::nav::World::from_plan(&plan, &s);
-    let entry = plan.entry_point("area/keep");
+    let entry = plan.entry_point(delvewright_dsl::SITE_AREA);
     let (binding, verdict) =
         delvec::compiler::lethal::check_danger_is_visible(&plan, &world, &assembled.blocks, entry);
     let rows: Vec<(bool, usize, usize)> = binding
@@ -903,7 +904,8 @@ fn the_population_is_the_lethality_free_one_in_the_live_configuration() {
         .find(|c| c.live.first().is_some_and(|l| l.may))
         .expect("a live configuration");
     let applied = live.world(&world).expect("the live configuration writes");
-    let roots = delvec::compiler::lethal::put_at_roots(&plan, plan.entry_point("area/keep"));
+    let roots =
+        delvec::compiler::lethal::put_at_roots(&plan, plan.entry_point(delvewright_dsl::SITE_AREA));
     let (klo, khi) = delvewright_dsl::metrics::keep_out_box(
         delvewright_dsl::metrics::Body::PLAYER,
         plan.lethal_volumes[0].region.0,
@@ -1108,7 +1110,7 @@ fn the_binding_line_counts_volumes_configurations_and_pairs() {
         &plan,
         &world,
         &assembled.blocks,
-        plan.entry_point("area/keep"),
+        plan.entry_point(delvewright_dsl::SITE_AREA),
     );
     verdict.unwrap();
     let line = binding.line();
@@ -1162,9 +1164,9 @@ fn the_branch_that_arms_the_volume_is_refused_on_its_own_path() {
         &common::compiler_fixtures_dir().join("branch-two-endings"),
         &dir,
     );
-    common::patch_file(&dir.join("world.json"), |v| {
-        v["content"]["areas"][0]["prefab"] = serde_json::json!(format!("prefab/{ROOM}"));
-        v["content"]["areas"][0]["mitigation"] = serde_json::json!("night-vision");
+    common::bind_region(&dir, &lib, ROOM);
+    common::patch_file(&dir.join("site-plan.json"), |v| {
+        v["content"]["boxes"][0]["mitigation"] = serde_json::json!("night-vision");
     });
     let staged_on = |flag: &str| {
         let flag = flag.to_string();

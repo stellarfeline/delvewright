@@ -435,7 +435,7 @@ fn lane_waypoints_are_required_anchors_in_a_pool_area() {
     let area = plan
         .areas
         .iter()
-        .find(|a| a.area_id == "area/keep")
+        .find(|a| a.area_id == delvewright_dsl::SITE_AREA)
         .expect("the keep area");
     assert!(
         area.pieces.len() > 1,
@@ -447,7 +447,8 @@ fn lane_waypoints_are_required_anchors_in_a_pool_area() {
         .expect("the fixture's first wave has a lane");
     for wp in &lane.waypoints {
         assert!(
-            plan.point("area/keep", wp.as_str()).is_some(),
+            plan.point(delvewright_dsl::SITE_AREA, wp.as_str())
+                .is_some(),
             "the solver placed a piece providing lane waypoint `{wp}`"
         );
     }

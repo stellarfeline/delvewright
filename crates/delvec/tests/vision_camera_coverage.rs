@@ -32,13 +32,20 @@ fn read(dir: &std::path::Path, name: &str) -> String {
     std::fs::read_to_string(dir.join(name)).unwrap()
 }
 
-/// hello-world's world doc with the keep declaring the night-vision mitigation.
+/// hello-world's world doc; its keep declares the night-vision mitigation in
+/// [`plan_with_mitigation`].
 fn world_with_mitigation() -> String {
     let w = read(&common::hello_world_dir(), "world.json");
     let mut v: serde_json::Value = serde_json::from_str(&w).unwrap();
     v["dsl_version"] = serde_json::json!(DSL_VERSION);
-    v["content"]["areas"][0]["mitigation"] = serde_json::json!("night-vision");
     serde_json::to_string(&v).unwrap()
+}
+
+/// hello-world's site plan with the keep declaring the night-vision mitigation.
+fn plan_with_mitigation() -> String {
+    common::patch_doc(&read(&common::hello_world_dir(), "site-plan.json"), |v| {
+        v["content"]["boxes"][0]["mitigation"] = serde_json::json!("night-vision")
+    })
 }
 
 /// The `cutscene-shots` quests doc, with every shot's duration rewritten to
@@ -73,10 +80,12 @@ fn night_vision_clock(quests: String, world: String) -> String {
         world_edits: None,
         geometry_brief: Some(read(&hw, "geometry-brief.json")),
         layout_graph: Some(read(&hw, "layout-graph.json")),
-        site_plan: Some(read(&hw, "site-plan.json")),
+        site_plan: Some(plan_with_mitigation()),
         detail_plan: Some(read(&hw, "detail-plan.json")),
         design: None,
     };
+    let mut raw = raw;
+    common::sync_map_raw(&mut raw, "vision-camera");
     let campaign = parse_campaign(&raw).expect("campaign parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");

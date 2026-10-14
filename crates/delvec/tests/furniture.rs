@@ -487,7 +487,10 @@ fn a_body_is_posted_on_furniture_and_never_walked_onto_it() {
     let plan = Plan::build(&posted, &prefabs).unwrap();
     let delvec::compiler::plan::ResolvedAnchor::Point { pos, .. } = plan
         .anchors
-        .get(&("area/keep".to_string(), "anchor/table-top".to_string()))
+        .get(&(
+            delvewright_dsl::SITE_AREA.to_string(),
+            "anchor/table-top".to_string(),
+        ))
         .expect("the table-top anchor resolves")
     else {
         panic!("a point anchor");

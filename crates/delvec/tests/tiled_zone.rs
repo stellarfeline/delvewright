@@ -222,7 +222,10 @@ fn the_assembled_world_is_the_zone_the_cut_never_happened_to() {
     // not move them: the exit sits past the cut, where the manifest says.
     let exit = plan
         .anchors
-        .get(&("area/keep".to_string(), "anchor/exit".to_string()))
+        .get(&(
+            delvewright_dsl::SITE_AREA.to_string(),
+            "anchor/exit".to_string(),
+        ))
         .expect("anchor/exit resolves");
     let delvec::compiler::plan::ResolvedAnchor::Point { pos, .. } = exit else {
         panic!("anchor/exit is a point anchor");

@@ -2409,7 +2409,7 @@ fn dw0929_keeping_one_volume_and_shrinking_the_region_both_reach_a_different_ver
         declare(w, atm.clone(), false);
         talk_bundle(q).push(serde_json::json!({
             "type": "set-atmosphere", "atmosphere": "atmosphere/wrong-place",
-            "region": { "anchor": "anchor/exit", "extent": [1, 1, 1] }, "place": "area/keep"
+            "region": { "anchor": "anchor/exit", "extent": [1, 1, 1] }, "place": "node/keep"
         }));
     });
     let (code, log) = validate_atm(&both);
@@ -2417,7 +2417,7 @@ fn dw0929_keeping_one_volume_and_shrinking_the_region_both_reach_a_different_ver
     let one = atmosphere_campaign("one", |w, q| {
         declare(w, atm.clone(), false);
         talk_bundle(q).push(serde_json::json!({
-            "type": "set-atmosphere", "atmosphere": "atmosphere/wrong-place", "place": "area/keep"
+            "type": "set-atmosphere", "atmosphere": "atmosphere/wrong-place", "place": "node/keep"
         }));
     });
     let (code, log) = validate_atm(&one);
@@ -2473,7 +2473,7 @@ fn dw0930_carrying_it_dropping_the_climate_and_renaming_the_duplicate_all_valida
     let (code, log) = validate_atm(&atmosphere_campaign("renamed", |w, q| {
         declare(w, serde_json::json!([one.clone(), twin.clone()]), true);
         talk_bundle(q).push(serde_json::json!({
-            "type": "set-atmosphere", "atmosphere": "atmosphere/other-place", "place": "area/keep"
+            "type": "set-atmosphere", "atmosphere": "atmosphere/other-place", "place": "node/keep"
         }));
     }));
     assert_eq!(code, 0, "{log}");

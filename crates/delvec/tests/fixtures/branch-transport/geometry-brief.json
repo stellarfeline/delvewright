@@ -6,13 +6,13 @@
         "id": "fact/site-span",
         "note": "The site's span east to west: the one place and its ring.",
         "unit": "blocks",
-        "value": 18.0
+        "value": 11.0
       },
       {
         "id": "fact/site-depth",
         "note": "The site's depth north to south: the one place and its ring.",
         "unit": "blocks",
-        "value": 18.0
+        "value": 11.0
       }
     ]
   },

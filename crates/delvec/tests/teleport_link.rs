@@ -30,7 +30,15 @@ fn campaign(who: &str, patch: impl FnOnce(&mut Value)) -> PathBuf {
     std::fs::create_dir_all(&dir).unwrap();
     common::copy_campaign_docs(&src, &dir);
     common::patch_file(&dir.join("quests.json"), patch);
+    bind(&dir, "ferry-strait");
     dir
+}
+
+/// Bind the fixture's one place to the synthesised piece `id` and station the
+/// names its story reaches that the piece declares.
+fn bind(dir: &Path, id: &str) {
+    common::bind_region(dir, &ferry_prefabs(), id);
+    common::sync_map_in(dir, Some(&ferry_prefabs()));
 }
 
 /// What one `delvec build` run said.
@@ -315,22 +323,6 @@ fn a_to_over_a_floor_the_same_root_lays_earlier_is_green() {
     build(&campaign("to-deck", |q| over_air(q, Some(0)))).green();
 }
 
-#[test]
-fn a_link_between_two_areas_is_dw0932() {
-    let dir = campaign("two-areas", |q| {
-        trigger_mut(q)["effects"][0]["to"] = json!({"anchor": "anchor/keeper-stand"});
-    });
-    common::patch_file(&dir.join("world.json"), |w| {
-        w["content"]["areas"]
-            .as_array_mut()
-            .unwrap()
-            .push(json!({"id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room"}));
-    });
-    let run = build(&dir);
-    let line = run.refused("DW0932");
-    assert!(line.contains("different areas"), "{line}");
-}
-
 // ---------------------------------------------------------------------------
 // Criterion 4 — the cutscene order.
 // ---------------------------------------------------------------------------
@@ -561,90 +553,63 @@ fn the_binding_line_partitions_every_leg() {
 // Criterion 12 — the graph draws the carry.
 // ---------------------------------------------------------------------------
 
-/// The ferry's layout graph: the west shore and the east shore, the hull a
-/// station of the west and the far landing a station of the east, joined by
-/// one `carry` edge gated on the flag boarding sets — and by nothing else.
-fn ferry_graph(edges: Value) -> Value {
-    json!({
-        "campaign_id": "ferry", "dsl_version": delvewright_dsl::DSL_VERSION, "stage": "layout-graph",
-        "content": {
-            "nodes": [
-                {"id": "node/west-shore", "intent": "jetty",
-                 "stations": [{"anchor": "anchor/boat", "kind": "point"}]},
-                {"id": "node/east-shore", "intent": "landing",
-                 "stations": [{"anchor": "anchor/far-landing", "kind": "point"}]}
-            ],
-            "edges": edges,
-            "entry": "node/west-shore",
-            "goal": "node/east-shore",
-            "critical_path": ["node/west-shore", "node/east-shore"],
-            "beats": [
-                {"quest": "quest/cross", "objective": "obj/board", "node": "node/west-shore"},
-                {"quest": "quest/cross", "objective": "obj/far-shore", "node": "node/east-shore"}
-            ]
-        }
-    })
-}
-
-fn carry_edge() -> Value {
-    json!({"class": "carry", "id": "edge/strait", "a": "node/west-shore",
-           "b": "node/east-shore", "one_way": "a-to-b",
-           "gating": {"flags": ["flag/boarded"]}})
-}
-
-fn with_graph(who: &str, graph: Value, patch: impl FnOnce(&mut Value)) -> PathBuf {
-    let dir = campaign(who, patch);
-    std::fs::write(
-        dir.join("layout-graph.json"),
-        serde_json::to_string_pretty(&graph).unwrap(),
-    )
-    .unwrap();
+/// `tests/fixtures/ferry-site` — two places no seam joins, each with a ferry,
+/// the strait drawn as two one-way `carry` edges — with its graph's edges
+/// replaced by `edges` and its quests by `patch`.
+fn with_graph(who: &str, edges: Value, patch: impl FnOnce(&mut Value)) -> PathBuf {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("teleport-link-{who}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    common::copy_dir_all(&common::compiler_fixtures_dir().join("ferry-site"), &dir);
+    common::patch_file(&dir.join("layout-graph.json"), |g| {
+        g["content"]["edges"] = edges;
+    });
+    common::patch_file(&dir.join("quests.json"), patch);
     dir
+}
+
+/// The fixture's own two carries: the near ferry over, the far ferry back.
+fn carry_edges() -> Value {
+    json!([
+        {"class": "carry", "id": "edge/near-ferry", "a": "node/near", "b": "node/far",
+         "one_way": "a-to-b", "gating": {"flags": ["flag/boarded"]}},
+        {"class": "carry", "id": "edge/far-ferry", "a": "node/far", "b": "node/near",
+         "one_way": "a-to-b", "gating": {"flags": ["flag/far-shore"]}}
+    ])
 }
 
 #[test]
 fn a_carry_edge_the_link_realises_is_green() {
-    let run = build(&with_graph(
-        "graph-green",
-        ferry_graph(json!([carry_edge()])),
-        |_| {},
-    ));
+    let run = build(&with_graph("graph-green", carry_edges(), |_| {}));
     run.green();
-    assert!(run.stderr.contains("1 carry)"), "{}", run.stderr);
+    assert!(run.stderr.contains("2 carry)"), "{}", run.stderr);
 }
 
 #[test]
 fn a_link_no_carry_edge_joins_is_dw0934_naming_both_places() {
-    // The only edge left joins the shores by a walk the quests never take —
-    // the link's direction has no carry.
-    let run = build(&with_graph(
-        "graph-no-edge",
-        ferry_graph(json!([{"class": "vision", "id": "edge/across",
-                            "a": "node/west-shore", "b": "node/east-shore"}])),
-        |_| {},
-    ));
+    // The near ferry's direction is drawn only as a vista — a way the eye
+    // takes and the body does not.
+    let mut edges = carry_edges();
+    edges[0] = json!({"class": "vision", "id": "edge/across", "a": "node/near", "b": "node/far"});
+    let run = build(&with_graph("graph-no-edge", edges, |_| {}));
     let line = run.refused("DW0934");
     assert!(
-        line.contains("node/west-shore") && line.contains("node/east-shore"),
+        line.contains("node/near") && line.contains("node/far"),
         "{line}"
     );
 }
 
 #[test]
 fn a_carry_edge_no_link_realises_is_dw0934_naming_both_places() {
-    // Both directions owed; only west → east is a link.
-    let mut edge = carry_edge();
-    edge.as_object_mut().unwrap().remove("one_way");
-    let run = build(&with_graph(
-        "graph-no-link",
-        ferry_graph(json!([edge])),
-        |_| {},
-    ));
+    // The far ferry's tiller is gone: the graph still says the party is
+    // carried home, and nothing carries it.
+    let run = build(&with_graph("graph-no-link", carry_edges(), |q| {
+        q["content"]["triggers"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|t| t["id"] != "trigger/far-tiller");
+    }));
     let line = run.refused("DW0934");
-    assert!(
-        line.contains("from `node/east-shore` to `node/west-shore`"),
-        "{line}"
-    );
+    assert!(line.contains("from `node/far` to `node/near`"), "{line}");
 }
 
 #[test]
@@ -846,9 +811,7 @@ fn pit_campaign(who: &str, gate: &str) -> PathBuf {
                               "text": "The far shore is reached."}
             }]);
         });
-    common::patch_file(&dir.join("world.json"), |w| {
-        w["content"]["areas"][0]["prefab"] = json!("prefab/ferry-strait-pit");
-    });
+    bind(&dir, "ferry-strait-pit");
     dir
 }
 
@@ -891,9 +854,7 @@ fn a_raised_reach_on_the_far_side_of_a_link_is_dw0881() {
         far["anchor"] = json!("anchor/ledge");
         far["radius"] = json!(2);
     });
-    common::patch_file(&dir.join("world.json"), |w| {
-        w["content"]["areas"][0]["prefab"] = json!("prefab/ferry-strait-ledge");
-    });
+    bind(&dir, "ferry-strait-ledge");
     let run = build(&dir);
     let line = run.refused("DW0881");
     assert!(line.contains("obj/far-shore"), "{line}");

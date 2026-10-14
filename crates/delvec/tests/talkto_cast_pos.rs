@@ -124,7 +124,7 @@ fn anchor_cell(fixture: &str, anchor: &str) -> Vec<i64> {
     let campaign = parse_campaign(&loaded.raw).unwrap();
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).unwrap();
-    plan.point("area/keep", anchor)
+    plan.point(delvewright_dsl::SITE_AREA, anchor)
         .unwrap_or_else(|| panic!("anchor {anchor} does not resolve"))
         .iter()
         .map(|n| *n as i64)

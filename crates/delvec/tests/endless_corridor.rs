@@ -30,6 +30,9 @@ fn campaign_with(who: &str, quests: impl FnOnce(&mut Value), other: impl FnOnce(
     std::fs::create_dir_all(&dir).unwrap();
     common::copy_campaign_docs(&src, &dir);
     common::patch_file(&dir.join("quests.json"), quests);
+    let lib = corridor::gallery_prefabs(&format!("bind-{who}"), &Cuts::default());
+    common::bind_region(&dir, &lib, "long-gallery");
+    common::sync_map_in(&dir, Some(&lib));
     other(&dir);
     dir
 }
@@ -96,6 +99,7 @@ impl Run {
 }
 
 fn build_over(dir: &Path, prefabs: &Path) -> Run {
+    common::sync_map_in(dir, Some(prefabs));
     let out = dir.with_extension("out");
     let _ = std::fs::remove_dir_all(&out);
     let o = Command::new(env!("CARGO_BIN_EXE_delvec"))
@@ -478,7 +482,9 @@ fn fogged(dir: &Path) {
             "precipitation": "none",
             "attributes": { "visual/fog_end_distance": 3.0 }
         }]);
-        w["content"]["areas"][0]["atmosphere"] = json!("atmosphere/murk");
+    });
+    common::patch_file(&dir.join("site-plan.json"), |p| {
+        p["content"]["boxes"][0]["atmosphere"] = json!("atmosphere/murk");
     });
 }
 
@@ -507,7 +513,15 @@ fn padded_prefabs(tag: &str, cuts: &Cuts, pad: i32) -> PathBuf {
         anchors,
     );
     common::declare_shown_faces(&dir, "long-gallery");
+    common::declare_site_contract(&dir, "long-gallery");
     dir
+}
+
+/// [`build_over`] the padded piece, the campaign's place bound to its size.
+fn build_padded(dir: &Path, tag: &str, cuts: &Cuts, pad: i32) -> Run {
+    let lib = padded_prefabs(tag, cuts, pad);
+    common::bind_region(dir, &lib, "long-gallery");
+    build_over(dir, &lib)
 }
 
 /// spec-0086 criterion 4 × spec-0080: **a straight hall under a fogged
@@ -521,27 +535,7 @@ fn a_straight_hall_under_a_fogged_atmosphere_builds() {
         air: straight_hall_air(),
         ..Cuts::default()
     };
-    let run = build_over(&dir, &padded_prefabs("fogged", &cuts, 16));
-    run.green();
-    let binding = run.binding();
-    assert!(binding.contains("fog end 3..3"), "{binding}");
-}
-
-/// …and **so does the same hall on the unpadded piece**: an area's paint
-/// grows over its claim (`horizon::area_claim`, its own 4-cells grown by the
-/// blend on every side), so the piece needs no void margin for its eyes to
-/// read the declared fog whole. The loop's fog reader is a second instrument
-/// on the claim, sharing only the kernel port with the reach line.
-#[test]
-fn a_straight_hall_on_the_unpadded_piece_reads_its_fog_whole() {
-    let dir = campaign_with("straight-hall-fog-unpadded", |_| {}, fogged);
-    let run = build_cut(
-        &dir,
-        &Cuts {
-            air: straight_hall_air(),
-            ..Cuts::default()
-        },
-    );
+    let run = build_padded(&dir, "fogged", &cuts, 16);
     run.green();
     let binding = run.binding();
     assert!(binding.contains("fog end 3..3"), "{binding}");
@@ -572,13 +566,11 @@ fn dw0947_a_sky_painted_beside_the_hall_mixes_its_fog() {
         },
         fogged,
     );
-    let run = build_cut(
-        &dir,
-        &Cuts {
-            air: straight_hall_air(),
-            ..Cuts::default()
-        },
-    );
+    let cuts = Cuts {
+        air: straight_hall_air(),
+        ..Cuts::default()
+    };
+    let run = build_padded(&dir, "fog-mixed", &cuts, 16);
     let line = run.refused("DW0947");
     assert!(
         line.contains("/content/triggers/0/effects/0"),
@@ -692,7 +684,7 @@ fn a_refusal_after_a_world_edits_batch_prints_the_loop_binding() {
                             "verb": "select",
                             "shape": {
                                 "kind": "box",
-                                "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/long-gallery" },
+                                "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/long-gallery" },
                                 "min": [1, FLOOR_Y, bay(2) + 3],
                                 "max": [1, FLOOR_Y, bay(2) + 3]
                             }
@@ -1382,7 +1374,7 @@ fn dw0947_a_repaint_that_clears_the_fog_opens_the_view() {
                 "at": "anchor/porch",
                 "on": { "on": "approach", "range": 2 },
                 "effects": [
-                    { "type": "set-atmosphere", "atmosphere": null, "place": "area/gallery" }
+                    { "type": "set-atmosphere", "atmosphere": null, "place": "node/gallery" }
                 ]
             }]);
         },
@@ -1392,7 +1384,7 @@ fn dw0947_a_repaint_that_clears_the_fog_opens_the_view() {
         air: straight_hall_air(),
         ..Cuts::default()
     };
-    let run = build_over(&dir, &padded_prefabs("fog-cleared", &cuts, 16));
+    let run = build_padded(&dir, "fog-cleared", &cuts, 16);
     let line = run.refused("DW0947");
     assert!(
         line.contains(
@@ -1498,11 +1490,11 @@ fn station4_run(who: &str, hall: Station4, patch: impl FnOnce(&Path)) -> Run {
         &format!("station-4-{who}"),
         |_| {},
         |d| {
-            common::patch_file(&d.join("world.json"), |w| {
-                w["content"]["areas"][0]["prefab"] = json!("prefab/station-4");
-                // The spike's hall is dark between its last lamp and its
-                // doorway; the declaration admits it without a block moved.
-                w["content"]["areas"][0]["mitigation"] = json!("night-vision");
+            common::bind_region(d, &hall.prefabs(who), "station-4");
+            // The spike's hall is dark between its last lamp and its
+            // doorway; the declaration admits it without a block moved.
+            common::patch_file(&d.join("site-plan.json"), |p| {
+                p["content"]["boxes"][0]["mitigation"] = json!("night-vision");
             });
             patch(d);
         },

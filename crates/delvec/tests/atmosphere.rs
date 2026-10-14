@@ -268,7 +268,7 @@ fn a_repaint_naming_neither_or_both_volumes_is_dw0929() {
         None,
         vec![
             json!({ "type": "set-atmosphere", "atmosphere": "atmosphere/wrong-place",
-                     "region": { "anchor": "anchor/exit", "extent": [2, 2, 2] }, "place": "area/keep" }),
+                     "region": { "anchor": "anchor/exit", "extent": [2, 2, 2] }, "place": "node/keep" }),
         ],
     );
     assert_eq!(codes(&check(&both)), ["DW0929"]);
@@ -351,7 +351,7 @@ fn carried_and_repainted() -> Campaign {
         vec![
             json!({ "type": "set-atmosphere", "atmosphere": "atmosphere/still",
                     "region": { "anchor": "anchor/exit", "extent": [1, 1, 1] } }),
-            json!({ "type": "set-atmosphere", "atmosphere": null, "place": "area/keep" }),
+            json!({ "type": "set-atmosphere", "atmosphere": null, "place": "node/keep" }),
         ],
     )
 }
@@ -820,7 +820,7 @@ fn no_atmosphere_test_reads_a_cell_another_repaint_paints() {
                 json!({ "type": "set-atmosphere", "atmosphere": format!("atmosphere/{id}"),
                         "region": { "anchor": "anchor/exit", "extent": ext } })
             })
-            .chain([json!({ "type": "set-atmosphere", "atmosphere": "atmosphere/a", "place": "area/keep" })])
+            .chain([json!({ "type": "set-atmosphere", "atmosphere": "atmosphere/a", "place": "node/keep" })])
             .collect(),
     );
     assert!(check(&c).is_empty(), "{:#?}", check(&c));

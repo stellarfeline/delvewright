@@ -68,7 +68,9 @@ pub fn keep_vertical_dir() -> PathBuf {
 /// `l10n/` sidecar directory in `base` is copied verbatim (i18n coverage must hold
 /// for a materialized campaign that declares languages).
 pub fn materialize_from(base: &Path, patch: &serde_json::Value, dst: &Path) {
-    copy_dir_all(base, dst);
+    std::fs::create_dir_all(dst).unwrap();
+    copy_campaign_docs(base, dst);
+    copy_l10n_dir(base, dst);
     if let Some(docs) = patch.get("documents").and_then(|d| d.as_object()) {
         for (stage, doc) in docs {
             let file = dst.join(format!("{stage}.json"));
@@ -1048,12 +1050,11 @@ pub fn campaign_bound_to(dst: &Path, prefabs: &Path, id: &str) -> PathBuf {
 /// space over the whole, zero exterior edges), as [`region_library`] gives the
 /// pinned library's.
 pub fn bind_region(dir: &Path, prefabs: &Path, id: &str) {
-    let meta_path = prefabs.join(format!("{id}.json"));
-    let mut meta: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(&meta_path)
-            .unwrap_or_else(|e| panic!("{}: {e}", meta_path.display())),
-    )
-    .unwrap();
+    bound_libraries()
+        .lock()
+        .unwrap()
+        .insert(dir.to_path_buf(), prefabs.to_path_buf());
+    let meta = declare_site_contract(prefabs, id);
     let size: [i64; 3] = serde_json::from_value(
         meta.get("structure_set")
             .or_else(|| meta.get("structure"))
@@ -1062,20 +1063,6 @@ pub fn bind_region(dir: &Path, prefabs: &Path, id: &str) {
             .expect("the piece declares its size"),
     )
     .unwrap();
-    if meta.get("spatial_contract").is_none() {
-        meta["spatial_contract"] = serde_json::json!({
-            "entry": "site",
-            "spaces": {"site": {"envelope": "open", "boxes": [
-                {"from": [0, 0, 0], "to": [size[0] - 1, size[1] - 1, size[2] - 1]}
-            ]}},
-            "no_body": {}, "edges": [], "faces": []
-        });
-        std::fs::write(
-            &meta_path,
-            serde_json::to_string_pretty(&meta).unwrap() + "\n",
-        )
-        .unwrap();
-    }
     let walk = meta
         .get("walk_y")
         .and_then(serde_json::Value::as_i64)
@@ -1139,6 +1126,41 @@ pub fn bind_region(dir: &Path, prefabs: &Path, id: &str) {
         delvewright_dsl::to_canonical_string(&doc).unwrap(),
     )
     .unwrap();
+}
+
+/// Give the piece `id` in `prefabs` the whole-site contract a piece that owns
+/// its region declares — one open space over its whole box, no edge, no face —
+/// unless it already declares one; returns its metadata.
+pub fn declare_site_contract(prefabs: &Path, id: &str) -> serde_json::Value {
+    let meta_path = prefabs.join(format!("{id}.json"));
+    let mut meta: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&meta_path)
+            .unwrap_or_else(|e| panic!("{}: {e}", meta_path.display())),
+    )
+    .unwrap();
+    let size: [i64; 3] = serde_json::from_value(
+        meta.get("structure_set")
+            .or_else(|| meta.get("structure"))
+            .and_then(|s| s.get("size"))
+            .cloned()
+            .expect("the piece declares its size"),
+    )
+    .unwrap();
+    if meta.get("spatial_contract").is_none() {
+        meta["spatial_contract"] = serde_json::json!({
+            "entry": "site",
+            "spaces": {"site": {"envelope": "open", "boxes": [
+                {"from": [0, 0, 0], "to": [size[0] - 1, size[1] - 1, size[2] - 1]}
+            ]}},
+            "no_body": {}, "edges": [], "faces": []
+        });
+        std::fs::write(
+            &meta_path,
+            serde_json::to_string_pretty(&meta).unwrap() + "\n",
+        )
+        .unwrap();
+    }
+    meta
 }
 
 /// The parsed campaign at `dir`.
@@ -1597,6 +1619,22 @@ fn library_anchor_names() -> &'static (
 /// (a typo a test plants) stays unresolved. A fixture with more than one place
 /// is left exactly as written.
 pub fn sync_map_dir(dir: &Path) {
+    let lib = bound_libraries().lock().unwrap().get(dir).cloned();
+    sync_map_in(dir, lib.as_deref());
+}
+
+/// The library each campaign directory a test bound with [`bind_region`] was
+/// bound against, so the map that follows its story reads that piece's names.
+fn bound_libraries() -> &'static std::sync::Mutex<std::collections::BTreeMap<PathBuf, PathBuf>> {
+    static LIBS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::BTreeMap<PathBuf, PathBuf>>,
+    > = std::sync::OnceLock::new();
+    LIBS.get_or_init(|| std::sync::Mutex::new(std::collections::BTreeMap::new()))
+}
+
+/// [`sync_map_dir`], reading the bound piece's anchor names from `prefabs`
+/// (a library a test synthesised) rather than the pinned one.
+pub fn sync_map_in(dir: &Path, prefabs: Option<&Path>) {
     let graph_path = dir.join("layout-graph.json");
     let Ok(text) = std::fs::read_to_string(&graph_path) else {
         return;
@@ -1640,13 +1678,23 @@ pub fn sync_map_dir(dir: &Path) {
     }
     let mut detail = read("detail-plan.json");
     let (by_piece, library) = library_anchor_names();
-    let answerable: std::collections::BTreeSet<String> = match &detail {
-        Some(d) => d["content"]["details"][0]["piece"]
+    let answerable: std::collections::BTreeSet<String> = match (&detail, prefabs) {
+        (Some(d), Some(lib)) => d["content"]["details"][0]["piece"]
+            .as_str()
+            .and_then(|p| {
+                let file = lib.join(format!("{}.json", p.trim_start_matches("prefab/")));
+                std::fs::read_to_string(file).ok()
+            })
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .and_then(|m| m.get("anchors").and_then(|a| a.as_object()).cloned())
+            .map(|a| a.keys().cloned().collect())
+            .unwrap_or_default(),
+        (Some(d), None) => d["content"]["details"][0]["piece"]
             .as_str()
             .and_then(|p| by_piece.get(p))
             .cloned()
             .unwrap_or_default(),
-        None => library.clone(),
+        (None, _) => library.clone(),
     };
     let mut stations: std::collections::BTreeMap<String, serde_json::Value> =
         graph["content"]["nodes"][0]["stations"]
@@ -1694,7 +1742,10 @@ pub fn sync_map_dir(dir: &Path) {
 /// [`sync_map_dir`] over a campaign held in memory, for a test that builds its
 /// `RawCampaign` by hand: written to a scratch directory and read back.
 pub fn sync_map_raw(raw: &mut delvewright_dsl::RawCampaign, tag: &str) {
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("sync-map-{tag}"));
+    static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("sync-map-{tag}-{}-{n}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let put = |n: &str, s: &str| std::fs::write(dir.join(n), s).unwrap();
@@ -1730,4 +1781,33 @@ pub fn quiet(d: Vec<delvewright_dsl::Diagnostic>) -> Vec<delvewright_dsl::Diagno
     d.into_iter()
         .filter(|d| !(d.code == "DW0822" || d.code == "DW0813"))
         .collect()
+}
+
+/// Widen a one-place fixture's region by `pad` on every side in x and z,
+/// leaving the place where it stands — the open ground a fixture whose
+/// atmosphere must reach past its piece's walls paints into — and hold the
+/// brief's two site facts to the new extent.
+pub fn pad_region(dir: &Path, pad: i64) {
+    let mut extent = [0i64; 3];
+    patch_file(&dir.join("site-plan.json"), |v| {
+        let r = &mut v["content"]["region"];
+        for axis in [0usize, 2] {
+            let m = r["min"][axis].as_i64().unwrap();
+            let e = r["extent"][axis].as_i64().unwrap();
+            r["min"][axis] = serde_json::json!(m - pad);
+            r["extent"][axis] = serde_json::json!(e + 2 * pad);
+        }
+        for (axis, e) in extent.iter_mut().enumerate() {
+            *e = r["extent"][axis].as_i64().unwrap();
+        }
+    });
+    patch_file(&dir.join("geometry-brief.json"), |v| {
+        for f in v["content"]["facts"].as_array_mut().unwrap() {
+            match f["id"].as_str() {
+                Some("fact/site-span") => f["value"] = serde_json::json!(extent[0] as f64),
+                Some("fact/site-depth") => f["value"] = serde_json::json!(extent[2] as f64),
+                _ => {}
+            }
+        }
+    });
 }

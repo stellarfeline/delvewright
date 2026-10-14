@@ -89,6 +89,13 @@ fn campaign_with(
     std::fs::write(&quests_path, serde_json::to_string_pretty(&quests).unwrap()).unwrap();
 }
 
+/// The yard's place stands under `atmosphere/yard` from the first tick.
+fn yard_atmosphere(dir: &Path) {
+    common::patch_file(&dir.join("site-plan.json"), |p| {
+        p["content"]["boxes"][0]["atmosphere"] = serde_json::json!("atmosphere/yard");
+    });
+}
+
 /// Build a materialized campaign directory; `Ok` carries the advisory
 /// diagnostics.
 fn build(dir: &Path) -> Result<Vec<Diagnostic>, BuildFailure> {
@@ -506,8 +513,8 @@ fn a_dry_atmosphere_under_rain_at_dusk_is_dw0496() {
     let tmp = TempCampaign::new("atm-dry");
     campaign_with(tmp.path(), true, |world, _| {
         dry_yard(world, "none");
-        world["content"]["areas"][0]["atmosphere"] = serde_json::json!("atmosphere/yard");
     });
+    yard_atmosphere(tmp.path());
     let err = build(tmp.path()).expect_err("no rain falls in the yard's atmosphere");
     assert_eq!(code_of(&err), "DW0496", "{}", message_of(&err));
     assert!(
@@ -523,8 +530,8 @@ fn a_rainy_atmosphere_under_rain_at_dusk_is_silent() {
     let tmp = TempCampaign::new("atm-rain");
     campaign_with(tmp.path(), true, |world, _| {
         dry_yard(world, "rain");
-        world["content"]["areas"][0]["atmosphere"] = serde_json::json!("atmosphere/yard");
     });
+    yard_atmosphere(tmp.path());
     build(tmp.path()).expect("rain falls in the yard's atmosphere");
 }
 
@@ -540,7 +547,7 @@ fn a_repaint_to_dry_from_a_trigger_is_dw0496() {
             "at": "anchor/exit",
             "on": { "on": "approach", "range": 2 },
             "effects": [
-                { "type": "set-atmosphere", "atmosphere": "atmosphere/yard", "place": "area/keep" }
+                { "type": "set-atmosphere", "atmosphere": "atmosphere/yard", "place": "node/keep" }
             ]
         }]);
     });
@@ -566,8 +573,8 @@ fn a_celestial_night_under_a_dry_atmosphere_is_silent() {
     campaign_with(tmp.path(), true, |world, _| {
         dry_yard(world, "none");
         world["content"]["time"] = serde_json::json!({"moon": "high", "phase": "full-moon"});
-        world["content"]["areas"][0]["atmosphere"] = serde_json::json!("atmosphere/yard");
     });
+    yard_atmosphere(tmp.path());
     build(tmp.path()).expect("the moon is high: nothing burns, dry or wet");
 }
 
@@ -581,8 +588,8 @@ fn a_celestial_day_under_a_dry_atmosphere_is_dw0496() {
     campaign_with(tmp.path(), true, |world, _| {
         dry_yard(world, "none");
         world["content"]["time"] = serde_json::json!({"sun": "high"});
-        world["content"]["areas"][0]["atmosphere"] = serde_json::json!("atmosphere/yard");
     });
+    yard_atmosphere(tmp.path());
     let err = build(tmp.path()).expect_err("the sun is high and no rain falls in the yard");
     assert_eq!(code_of(&err), "DW0496", "{}", message_of(&err));
     assert!(

@@ -422,6 +422,7 @@ impl Station4 {
         .unwrap();
         super::declare_walk_y(&dir, id);
         super::declare_shown_faces(&dir, id);
+        super::declare_site_contract(&dir, id);
         dir
     }
 }

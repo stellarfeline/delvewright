@@ -198,7 +198,7 @@ fn one_provider_still_crosses_and_the_two_authorities_agree() {
     );
     let keep = cell(
         plan.anchors
-            .get(&("area/keep".to_string(), NAME.to_string()))
+            .get(&(delvewright_dsl::SITE_AREA.to_string(), NAME.to_string()))
             .expect("the keep provides the name"),
     );
     let talk = plan

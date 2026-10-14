@@ -395,10 +395,10 @@ delvewright_dsl::dw_code! {
 
 delvewright_dsl::dw_code! {
     /// `DW0932` (spec-0083 §3.2, §3.6): a **link** whose geometry does not hold —
-    /// four faults under one code, because they are one claim, *a body in this
+    /// three faults under one code, because they are one claim, *a body in this
     /// volume is carried onto a route cell*: no standable cell inside the volume
     /// performs the trigger; `to` inside `from`; `to` not standable at the
-    /// teleport's tick; `from` and `to` in different areas.
+    /// teleport's tick.
     pub const DW_TELEPORT_LINK: DwCode = DwCode::new("DW0932", ExitTier::Build);
 }
 

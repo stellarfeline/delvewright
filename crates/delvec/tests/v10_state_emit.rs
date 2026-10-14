@@ -147,7 +147,7 @@ static QUESTS: LazyLock<String> = LazyLock::new(|| {
     ],
     "pulses": [
       { "id": "pulse/the-hum", "sound": "block.bell.use", "at": { "anchor": "anchor/rafter" },
-        "place": "area/keep", "every": 40, "floor": 0.5,
+        "place": "node/keep", "every": 40, "floor": 0.5,
         "when": { "requires_state": [ { "state": "state/toll", "op": "at-least", "value": 2 } ] } }
     ],
     "lethal_volumes": [
