@@ -168,6 +168,13 @@ from the last session is not kept. Anything that moved builds, gates and
 places afresh. `status` lists the kept images and their sizes;
 `down --name <name> --prune` removes them.
 
+**Going back to an earlier point in the story is `restore`.** While a campaign
+is served, `up` saves a checkpoint of the running world each time a quest
+completes, named by the title the player was shown (`03 Open the sea gate`);
+`playtest-server.sh checkpoint "<name>" --name <name>` saves one now, `status`
+lists them, and `playtest-server.sh restore <number or name> --name <name>`
+serves that exact world again in about the time of a reopen.
+
 **A large campaign can need more than the heap the build states.** `up`
 gives the server the ceiling the build computed for its declared view distance
 (`server/resources.properties` `heap-max`, never below `versions.toml`

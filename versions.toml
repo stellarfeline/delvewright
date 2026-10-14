@@ -185,12 +185,12 @@ crates = [
 # Bound both ways by validation/check-versions.sh: to the crate manifest, and to
 # `DSL_VERSION` in crates/dsl/src/envelope.rs.
 dsl_crate = "delvewright-dsl"
-dsl_crate_version = "0.39.0"
+dsl_crate_version = "0.41.0"
 
 # The engine's `delvewright-dsl` requirement (`[workspace.dependencies]`)
 # is `=` and exactly this version, so one engine version on crates.io resolves
 # to exactly one `delvewright-dsl` build and no other.
-dsl_crate_req = "=0.39.0"
+dsl_crate_req = "=0.41.0"
 
 # `rust-version` in both published manifests, and the channel in
 # rust-toolchain.toml. They must be the same string: a `rust-version` looser than
@@ -341,6 +341,57 @@ chunky_revision = "156e2bba2526fe4cf218243704b6f3e6d0281d1a"
 chunky_build_java = "17"
 chunky_core_content_sha256 = "6710920a30882d3e8a32121c8d97ce940a9f35539137ef91fff0e70256a809fc"
 chunky_license = "GPL-3.0"
+
+# The denoise step after every Chunky `-render` (`compiler.md` §4): the
+# chunky-denoiser plugin renders a scene's albedo and normal passes, and Open
+# Image Denoise removes the grain the lantern-scaled emitters leave. Both are
+# external programs, acquired by `validation/chunky-install.sh` into the Chunky
+# home only when the downloaded bytes answer these sha256s, and run by
+# `validation/chunky.sh` (`tools/lib/chunky_denoise.py`). Open Image Denoise is
+# pinned per platform its project ships an archive for; on a platform it ships
+# none for (aarch64 Linux among the engine's targets) it is built from its pinned
+# source release with pinned CMake, Ninja and ISPC and a pinned oneTBB source,
+# which needs only a C and C++ compiler on the machine; a platform with neither
+# an archive nor a pinned source build, or a source build with no compiler, is
+# refused by name.
+# Digests: GitHub's release-asset sha256, cross-checked by hashing each
+# downloaded file. GPL-3.0 (plugin) and Apache-2.0 (Open Image Denoise).
+# Consumed by: tools/lib/chunky_denoise.py, validation/chunky-install.sh,
+# validation/chunky.sh + docs/reference/tools.md §4a.
+denoiser_plugin_version = "0.5.0-pre3"
+denoiser_plugin_url = "https://github.com/chunky-dev/chunky-denoiser/releases/download/v0.5.0-pre3/chunky-denoiser-v0.5.0-pre3.jar"
+denoiser_plugin_sha256 = "70157d9936b38b0a14efe6c8317b812e5c7c0429d7049d2e106e1b30093bc812"
+denoiser_plugin_license = "GPL-3.0"
+oidn_version = "2.5.1"
+oidn_license = "Apache-2.0"
+oidn_url_base = "https://github.com/RenderKit/oidn/releases/download/v2.5.1/"
+oidn_archive_aarch64_apple_darwin = "oidn-2.5.1.arm64.macos.tar.gz"
+oidn_sha256_aarch64_apple_darwin = "98e0aca8e7ab69e9f4f0191582a500fd8b0d9085d68662f18ab6469e934a6efd"
+oidn_archive_x86_64_apple_darwin = "oidn-2.5.1.x86_64.macos.tar.gz"
+oidn_sha256_x86_64_apple_darwin = "a4341639005a33ce0d944bd7c771ce34de1465be7eb3189b7c3b5b0064429832"
+oidn_archive_x86_64_unknown_linux_gnu = "oidn-2.5.1.x86_64.linux.tar.gz"
+oidn_sha256_x86_64_unknown_linux_gnu = "743c3e2aff8c220d5d70fe6cb970fb3d36f2702d2693c61d1d148e404cf37cd6"
+oidn_archive_x86_64_pc_windows_msvc = "oidn-2.5.1.x64.windows.zip"
+oidn_sha256_x86_64_pc_windows_msvc = "f11f91bc072a5e3a564515724cb72ab8fcfbc445c84a84c197ff9b16cc01396f"
+# The source build (oneTBB Apache-2.0, CMake BSD-3-Clause, Ninja Apache-2.0,
+# ISPC BSD-3-Clause; ISPC 1.30.0 is the oldest Open Image Denoise 2.5.1's build
+# accepts). oneTBB ships no source asset, so its tag archive is pinned; two
+# downloads answered the same digest. The tool archives are pinned for the
+# platforms that build from source.
+oidn_source_archive = "oidn-2.5.1.src.tar.gz"
+oidn_source_sha256 = "e71fd043a70f1cc80e301d1b90df6c1f536098c4dd94baa612742f6db3369c36"
+oidn_build_tbb_name = "oneTBB-v2022.3.0.tar.gz"
+oidn_build_tbb_url = "https://github.com/uxlfoundation/oneTBB/archive/refs/tags/v2022.3.0.tar.gz"
+oidn_build_tbb_sha256 = "01598a46c1162c27253a0de0236f520fd8ee8166e9ebb84a4243574f88e6e50a"
+oidn_build_cmake_url_base = "https://github.com/Kitware/CMake/releases/download/v4.3.5/"
+oidn_build_cmake_aarch64_unknown_linux_gnu = "cmake-4.3.5-linux-aarch64.tar.gz"
+oidn_build_cmake_sha256_aarch64_unknown_linux_gnu = "0ccecc2ba6b5ed4a97fbfd1f52136a9120262908185d8419c1ed2abb09199245"
+oidn_build_ninja_url_base = "https://github.com/ninja-build/ninja/releases/download/v1.13.2/"
+oidn_build_ninja_aarch64_unknown_linux_gnu = "ninja-linux-aarch64.zip"
+oidn_build_ninja_sha256_aarch64_unknown_linux_gnu = "fd2cacc8050a7f12a16a2e48f9e06fca5c14fc4c2bee2babb67b58be17a607fc"
+oidn_build_ispc_url_base = "https://github.com/ispc/ispc/releases/download/v1.30.0/"
+oidn_build_ispc_aarch64_unknown_linux_gnu = "ispc-v1.30.0-linux.aarch64.tar.gz"
+oidn_build_ispc_sha256_aarch64_unknown_linux_gnu = "509399c399ec162d746889458a10cc13797a1aed1c0164b2bd3faddf7d023f13"
 
 # deepslate (MIT) — the rendering core of the prefab review page
 # (`delvec viewer`, ADR-0021 §4). Unlike Chunky it IS bundled: the page is

@@ -1,6 +1,6 @@
-//! **The pinned game's clear sky as an image** (`compiler.md` §4, *The sky of a
-//! scene*): what the client draws in every direction at a tick, for one camera,
-//! written as the equirectangular sky map a clear scene's lens sees.
+//! **The pinned game's sky as an image** (`compiler.md` §4, *The sky of a
+//! scene*): what the client draws in every direction at a tick under a weather,
+//! for one camera, written as the equirectangular sky map a scene's lens sees.
 //!
 //! The pinned core's solid and gradient skies are the same in every compass
 //! direction (`Sky.getSkyDiffuseColorInner`: `SOLID_COLOR` returns one colour,
@@ -15,7 +15,7 @@
 //! `apparentSkyLight` or `skyLight` (`PathTracer.pathTrace`, the three sky
 //! branches). So the map is the game's sky **plus the least uniform veil** that
 //! makes the light it casts on an open top face the lightmap's
-//! ([`clear_sky`]).
+//! ([`sky_map`]).
 //!
 //! ## What the client draws, read off its bytecode
 //!
@@ -49,21 +49,26 @@
 //! 4. The client's defaults: render distance 12 chunks (`options.renderDistance`)
 //!    and `visual/sky_fog_end_distance` 512.
 //!
+//! 5. **The weather** (`WeatherAttributes`, `AtmosphericFogEnvironment.
+//!    applyWeatherDarken`): every colour above is the attribute's value under
+//!    the weather's layer ([`super::scene::sky_attributes`]), and the clear
+//!    colour is lerped toward the sky colour the weather darkens
+//!    ([`super::scene::weather_darken`]).
+//!
 //! **Not drawn:** the sun's disc (the core draws its own), the moon and the
-//! stars, the clouds, and the dark disc under the horizon (drawn only for a
-//! camera below the world's horizon height).
+//! stars, the clouds, the rain, and the dark disc under the horizon (drawn only
+//! for a camera below the world's horizon height).
 //!
 //! ## Determinism (ADR-0006)
 //!
-//! The map is a function of the tick and the camera's stored orientation alone.
+//! The map is a function of the tick, the weather and the camera's stored
+//! orientation alone.
 //! Every sine and cosine is [`det_sin`] — a Taylor series in IEEE arithmetic,
 //! never a platform `sin` — and the file is raw little-endian `f32`, so its
 //! bytes are a function of the inputs on every machine.
 
-use super::scene::{
-    DEFAULT_BRIGHTNESS, GROUND_SKY_RGB, OVERWORLD_FOG_RGB, day_argb, day_float, day_rgb,
-    lightmap_sky, multiply_rgb, to_linear,
-};
+use super::scene::{DEFAULT_BRIGHTNESS, lightmap_sky, sky_attributes, to_linear, weather_darken};
+use delvewright_dsl::WorldWeather;
 
 /// The map's width and height in pixels: one degree each way.
 pub const WIDTH: usize = 360;
@@ -145,16 +150,18 @@ pub struct GameSky {
     pub fan: Option<Fan>,
 }
 
-/// The [`GameSky`] of a tick, for a camera looking along `view` (unit).
-pub fn game_sky(daytime_ticks: i64, view: [f64; 3]) -> GameSky {
+/// The [`GameSky`] of a tick under a weather, for a camera looking along
+/// `view` (unit). The attributes are the weather's ([`sky_attributes`]); the
+/// clear colour is lerped toward the sky colour the weather darkens
+/// ([`weather_darken`]), the disc drawn in the sky colour itself.
+pub fn game_sky(daytime_ticks: i64, weather: WorldWeather, view: [f64; 3]) -> GameSky {
     let t = daytime_ticks;
+    let at = sky_attributes(t, weather);
     let to_i = |c: [u8; 3]| c.map(i32::from);
-    let mut fog = to_i(multiply_rgb(
-        day_rgb("visual/fog_color", t),
-        OVERWORLD_FOG_RGB,
-    ));
-    let sky = to_i(multiply_rgb(day_rgb("visual/sky_color", t), GROUND_SKY_RGB));
-    let [a, r, g, b] = day_argb("visual/sunrise_sunset_color", t);
+    let mut fog = to_i(at.fog_color);
+    let sky = to_i(at.sky_color);
+    let toward = to_i(weather_darken(at.sky_color, weather));
+    let [a, r, g, b] = at.sunrise;
     let alpha = f64::from(a) / 255.0;
     let west = delvewright_dsl::celestial::sun_is_west(t as f64);
     let side = if west { -1.0 } else { 1.0 };
@@ -164,7 +171,7 @@ pub fn game_sky(daytime_ticks: i64, view: [f64; 3]) -> GameSky {
     }
     let reach = ((SKY_FOG_END_DISTANCE / 16.0).min(RENDER_DISTANCE) / 32.0).clamp(0.25, 1.0);
     let w = 1.0 - reach.sqrt().sqrt();
-    fog = srgb_lerp(w, fog, sky);
+    fog = srgb_lerp(w, fog, toward);
     let d = |c: [i32; 3]| c.map(|v| f64::from(v) / 255.0);
     GameSky {
         fog: d(fog),
@@ -292,11 +299,11 @@ pub fn view_of(yaw: f64, pitch: f64) -> [f64; 3] {
     ]
 }
 
-/// A clear scene's sky map and the multiplier it casts light by.
+/// A scene's sky map and the multiplier it casts light by.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ClearSky {
+pub struct SkyMap {
     /// Linear radiance per pixel, row-major from the nadir row: the game's sky
-    /// plus [`ClearSky::veil`].
+    /// plus [`SkyMap::veil`].
     pub pixels: Vec<[f64; 3]>,
     /// `skyLight`: the map times this is the light the sky casts.
     pub sky_light: f64,
@@ -306,13 +313,13 @@ pub struct ClearSky {
     pub mean: [f64; 3],
 }
 
-/// **The clear sky of a tick for a camera looking along `view`.**
+/// **The sky of a tick under a weather, for a camera looking along `view`.**
 ///
 /// The lens sees the map at `apparentSkyLight` 1; the light a diffuse bounce
 /// takes from it is `skyLight` times the map. A Lambertian top face under it
 /// returns `albedo × skyLight × E`, `E` the map's cosine-weighted mean over the
 /// upper hemisphere. The target is the lightmap's full-sky colour decoded,
-/// `L` ([`lightmap_sky`], the clear cell's light). With `G` the game's sky and
+/// `L` ([`lightmap_sky`], the sky cell's light). With `G` the game's sky and
 /// `Ē` its mean, the map is `G + R` with `R` uniform and `skyLight · (Ē + R) =
 /// L`: **authored** — `skyLight` is the largest the bound allows that keeps
 /// every channel of `R` at or above 0, `min(min_c L_c / Ē_c, MAX_SKY_LIGHT)`,
@@ -320,9 +327,9 @@ pub struct ClearSky {
 /// exact. Where the game's sky is lit and blue (noon) the veil is the light's
 /// remainder and pales the lens's sky; at the setting sun it is small; at
 /// night, under a black sky, it is `L / 50`.
-pub fn clear_sky(daytime_ticks: i64, view: [f64; 3]) -> ClearSky {
+pub fn sky_map(daytime_ticks: i64, weather: WorldWeather, view: [f64; 3]) -> SkyMap {
     let t = daytime_ticks;
-    let gs = game_sky(t, view);
+    let gs = game_sky(t, weather, view);
     let mut game = Vec::with_capacity(WIDTH * HEIGHT);
     let mut acc = [0.0f64; 3];
     let mut weight = 0.0f64;
@@ -341,12 +348,9 @@ pub fn clear_sky(daytime_ticks: i64, view: [f64; 3]) -> ClearSky {
         }
     }
     let mean = acc.map(|a| a / weight);
-    let light = lightmap_sky(
-        day_float("visual/sky_light_factor", t),
-        day_rgb("visual/sky_light_color", t),
-        DEFAULT_BRIGHTNESS,
-    )
-    .map(to_linear);
+    let at = sky_attributes(t, weather);
+    let light =
+        lightmap_sky(at.sky_light_factor, at.sky_light_color, DEFAULT_BRIGHTNESS).map(to_linear);
     let mut s = MAX_SKY_LIGHT;
     for k in 0..3 {
         if mean[k] > 0.0 {
@@ -358,7 +362,7 @@ pub fn clear_sky(daytime_ticks: i64, view: [f64; 3]) -> ClearSky {
         .into_iter()
         .map(|c| std::array::from_fn(|k| c[k] + veil[k]))
         .collect();
-    ClearSky {
+    SkyMap {
         pixels,
         sky_light: s,
         veil,
@@ -369,7 +373,7 @@ pub fn clear_sky(daytime_ticks: i64, view: [f64; 3]) -> ClearSky {
 /// The map as a `.pfm` file: the `PF` header, then every pixel as three
 /// little-endian `f32`, rows from the nadir up — the order `PFMTexture` reads
 /// (`buf` row `y` at `v = y / H`).
-pub fn pfm_bytes(sky: &ClearSky) -> Vec<u8> {
+pub fn pfm_bytes(sky: &SkyMap) -> Vec<u8> {
     let mut out = format!("PF\n{WIDTH} {HEIGHT}\n-1.0\n").into_bytes();
     out.reserve(WIDTH * HEIGHT * 12);
     for p in &sky.pixels {
@@ -381,21 +385,26 @@ pub fn pfm_bytes(sky: &ClearSky) -> Vec<u8> {
 }
 
 /// The sky map a scene names, derived from the scene's own bytes: its
-/// `delvewrightSky.daytimeTicks`, its camera's stored orientation and its
-/// `sky.skymap` file name. `None` for a scene that names no map. The scene
+/// `delvewrightSky.daytimeTicks` and `delvewrightSky.weather` (absent: clear),
+/// its camera's stored orientation and its `sky.skymap` file name. `None` for a scene that names no map. The scene
 /// writer writes it beside the scene, so a map always answers the scene it
 /// was emitted with.
 pub fn companion(scene_json: &[u8]) -> Option<(String, Vec<u8>)> {
     let v: serde_json::Value = serde_json::from_slice(scene_json).ok()?;
     let name = v["sky"]["skymap"].as_str()?.to_string();
     let tick = v["delvewrightSky"]["daytimeTicks"].as_i64()?;
+    let weather = match v["delvewrightSky"].get("weather") {
+        None => WorldWeather::Clear,
+        Some(w) => serde_json::from_value::<WorldWeather>(w.clone()).ok()?,
+    };
     let o = &v["camera"]["orientation"];
     let view = view_of(o["yaw"].as_f64()?, o["pitch"].as_f64()?);
-    Some((name, pfm_bytes(&clear_sky(tick, view))))
+    Some((name, pfm_bytes(&sky_map(tick, weather, view))))
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::scene::{day_float, day_rgb};
     use super::*;
 
     #[test]
@@ -414,13 +423,13 @@ mod tests {
     /// the light the map casts is the lightmap's.
     #[test]
     fn the_fan_stands_on_the_suns_side() {
-        let gs = game_sky(12782, [0.0, 0.0, 1.0]);
+        let gs = game_sky(12782, WorldWeather::Clear, [0.0, 0.0, 1.0]);
         let fan = gs.fan.expect("the fan is drawn at the setting sun");
         assert_eq!(fan.side, -1.0);
         let west = sky_display(&gs, [-0.999, 0.04, 0.0]);
         let east = sky_display(&gs, [0.999, 0.04, 0.0]);
         assert!(west[0] > east[0] + 0.2, "{west:?} vs {east:?}");
-        let sky = clear_sky(12782, [0.0, 0.0, 1.0]);
+        let sky = sky_map(12782, WorldWeather::Clear, [0.0, 0.0, 1.0]);
         let light = lightmap_sky(
             day_float("visual/sky_light_factor", 12782),
             day_rgb("visual/sky_light_color", 12782),
@@ -437,8 +446,8 @@ mod tests {
     /// Looking toward the sun tints the clear colour; looking away does not.
     #[test]
     fn the_clear_colour_follows_the_look() {
-        let toward = game_sky(12782, [-1.0, 0.0, 0.0]);
-        let away = game_sky(12782, [1.0, 0.0, 0.0]);
+        let toward = game_sky(12782, WorldWeather::Clear, [-1.0, 0.0, 0.0]);
+        let away = game_sky(12782, WorldWeather::Clear, [1.0, 0.0, 0.0]);
         assert!(toward.fog[0] > away.fog[0], "{toward:?} {away:?}");
     }
 
@@ -447,9 +456,80 @@ mod tests {
     #[test]
     fn the_map_is_byte_stable_and_moves_with_the_tick() {
         let v = view_of(3.874631, -1.815142);
-        let a = pfm_bytes(&clear_sky(12782, v));
-        assert_eq!(a, pfm_bytes(&clear_sky(12782, v)));
-        assert_ne!(a, pfm_bytes(&clear_sky(13047, v)));
+        let a = pfm_bytes(&sky_map(12782, WorldWeather::Clear, v));
+        assert_eq!(a, pfm_bytes(&sky_map(12782, WorldWeather::Clear, v)));
+        assert_ne!(a, pfm_bytes(&sky_map(13047, WorldWeather::Clear, v)));
         assert_eq!(a.len(), "PF\n360 180\n-1.0\n".len() + WIDTH * HEIGHT * 12);
+    }
+
+    /// **The weather moves the map and its light as the client's layer does.**
+    /// Under rain and thunder the map is drawn from the weather's attributes and
+    /// casts the lightmap light of the weather's factor and colour; at noon
+    /// that light is below the clear light, thunder below rain, and on the
+    /// night plateau, where the layer blends toward the night's own values, it
+    /// is the clear light. The bytes move with the weather wherever the sky is
+    /// lit.
+    #[test]
+    fn the_weather_moves_the_map_and_its_light() {
+        use super::super::scene::sky_attributes;
+        let v = view_of(3.874631, -1.815142);
+        let light = |t: i64, w: WorldWeather| {
+            let at = sky_attributes(t, w);
+            lightmap_sky(at.sky_light_factor, at.sky_light_color, DEFAULT_BRIGHTNESS).map(to_linear)
+        };
+        for t in [6000, 12782, 18000] {
+            let mut prev: Option<[f64; 3]> = None;
+            for w in [
+                WorldWeather::Clear,
+                WorldWeather::Rain,
+                WorldWeather::Thunder,
+            ] {
+                let map = sky_map(t, w, v);
+                let want = light(t, w);
+                for (k, want) in want.iter().enumerate() {
+                    let cast = map.sky_light * (map.mean[k] + map.veil[k]);
+                    assert!(
+                        (cast - want).abs() < 1e-12,
+                        "{t} {w:?} {k}: {cast} vs {want}"
+                    );
+                }
+                if let Some(p) = prev {
+                    if t == 18000 {
+                        // The night's own light, to the float the client blends in.
+                        assert!(
+                            want.iter().zip(p).all(|(a, b)| (a - b).abs() < 1e-6),
+                            "{w:?}: the night's light is the night's"
+                        );
+                    } else {
+                        assert!(want.iter().zip(p).all(|(a, b)| *a < b), "{t} {w:?}");
+                    }
+                }
+                prev = Some(want);
+            }
+            let maps = [
+                WorldWeather::Clear,
+                WorldWeather::Rain,
+                WorldWeather::Thunder,
+            ]
+            .map(|w| pfm_bytes(&sky_map(t, w, v)));
+            assert_ne!(maps[0], maps[1], "{t}");
+            assert_ne!(maps[1], maps[2], "{t}");
+        }
+    }
+
+    /// Under rain the clear colour is lerped toward the sky colour the weather
+    /// darkens, and the disc keeps the weather's sky colour undarkened: looking
+    /// level away from the sun at noon, the horizon is darker than the disc's
+    /// colour would make it.
+    #[test]
+    fn the_clear_colour_takes_the_darkened_sky() {
+        let gs = game_sky(6000, WorldWeather::Rain, [1.0, 0.0, 0.0]);
+        let at = super::super::scene::sky_attributes(6000, WorldWeather::Rain);
+        assert_eq!(gs.sky, at.sky_color.map(|c| f64::from(c) / 255.0));
+        let dark = weather_darken(at.sky_color, WorldWeather::Rain);
+        assert!(
+            dark.iter().zip(at.sky_color).all(|(d, s)| *d < s),
+            "{dark:?}"
+        );
     }
 }

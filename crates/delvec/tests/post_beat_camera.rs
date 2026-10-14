@@ -123,7 +123,6 @@ fn cam(name: &str, after: Option<&str>) -> camera::Camera {
     camera::Camera {
         after: after.map(|s| camera::CameraAfter::parse(s).unwrap()),
         answers: "concept/keep".into(),
-        exposure: 1.0,
         fov: 70.0,
         height: 90,
         name: name.into(),
@@ -667,8 +666,9 @@ fn cameras_print_where_every_camera_stands() {
 /// record, but for `world.path` (`tests/fixtures/post-beat-camera/
 /// base-scene-hero.json`, emitted by the engine at the merge base, its path
 /// masked) and for the keys the clear cell and the post-process own — `sky`,
-/// `fog`, the sun's `intensity`, `color` and `drawTexture`, `postprocess` and
-/// the sky map's `delvewrightSky` marker
+/// `fog`, the sun's `intensity`, `color` and `drawTexture`, `postprocess`, its
+/// `postprocessSettings`, the `emitterIntensity` the lantern scale owns and the
+/// sky map's `delvewrightSky` marker
 /// (`compiler.md` §4), which the fixture predates. **A loosening of what this
 /// criterion asserts**: those keys are compared here to nothing; the clear
 /// cell's own tests and the view goldens hold them.
@@ -703,7 +703,14 @@ fn a_scene_is_the_scene_it_was_but_for_its_world() {
     base["world"]["path"] = serde_json::json!("<masked>");
     let unsky = |v: &mut serde_json::Value| {
         let o = v.as_object_mut().unwrap();
-        for k in ["sky", "fog", "postprocess", "delvewrightSky"] {
+        for k in [
+            "sky",
+            "fog",
+            "postprocess",
+            "postprocessSettings",
+            "emitterIntensity",
+            "delvewrightSky",
+        ] {
             o.remove(k);
         }
         let sun = o["sun"].as_object_mut().unwrap();

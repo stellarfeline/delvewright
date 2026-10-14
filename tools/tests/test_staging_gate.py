@@ -1903,7 +1903,15 @@ def test_the_owner_facing_paths_actually_invoke_the_gate(gate):
     admission, that is this test, not a review someone has to remember."""
     root = pathlib.Path(__file__).resolve().parents[2]
     server = (root / "tools" / "creator" / "playtest-server.sh").read_text()
-    assert "staging-gate.py" in server, "playtest-server.sh no longer runs the gate"
+    # The invocation lives in tools/lib/playtest-image.sh (the file the playtest
+    # image's inputs key hashes), inside the function the script calls.
+    image_lib = (root / "tools" / "lib" / "playtest-image.sh").read_text()
+    call = 'python3 "$REPO_ROOT/tools/creator/staging-gate.py"'
+    assert call in image_lib, "the build-and-gate step no longer runs the gate"
+    fn = image_lib.index("dw_playtest_build_and_gate() {")
+    assert fn < image_lib.index(call) < image_lib.index("\n}\n", fn)
+    gate_call = "\n  dw_playtest_build_and_gate\n"
+    assert gate_call in server, "playtest-server.sh no longer runs the gate"
     # and it must run BEFORE the container exists, or a refusal costs a session.
     # The literal text "docker run" is not a reliable marker for that point: it
     # is also spelled inside `dw_playtest_docker_run_argv`, a TEMPLATE the
@@ -1918,7 +1926,7 @@ def test_the_owner_facing_paths_actually_invoke_the_gate(gate):
         "the container-creation call site text moved; update this marker "
         "(tools/creator/playtest-server.sh, the line executing the built argv)"
     )
-    assert server.index("staging-gate.py") < server.index(create_marker), \
+    assert server.index(gate_call) < server.index(create_marker), \
         "the gate must run before the container is created"
 
     owner_play = (root / "validation" / "owner-play.yaml").read_text()
@@ -2567,7 +2575,7 @@ def test_the_staging_surface_writes_its_report_outside_the_tree(gate):
     """The invocation, not a doc line. `playtest-server.sh` is the caller that
     put the report inside the tree; if it goes back, this reds."""
     root = pathlib.Path(__file__).resolve().parents[2]
-    server = (root / "tools" / "creator" / "playtest-server.sh").read_text()
+    server = (root / "tools" / "lib" / "playtest-image.sh").read_text()
     assert '--report "$GATE_REPORT"' in server
     assert 'GATE_DIR="${OUT_DIR%/}.gate"' in server
     assert '"$OUT_DIR/staging-gate.md"' not in server, (
