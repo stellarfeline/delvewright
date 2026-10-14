@@ -9,9 +9,10 @@
 //! underneath it — **the trigger's body is a point at a cell, and an object in
 //! the scene is a shape.**
 //!
-//! A standalone trigger summons one `minecraft:interaction` of `width:1.0f,
-//! height:2.0f` at its anchor cell. That is right for a lever in open air and
-//! wrong for anything solid or larger than a block:
+//! A standalone trigger summons one `minecraft:interaction` on its anchor cell's
+//! column, two blocks tall (built by [`crate::compiler::clickbox::ClickBox`]).
+//! That is right for a thing that fits one cell and wrong for anything larger
+//! than a block:
 //!
 //! * on the `souls-shortcut` fixture, a `use` trigger at the shortcut's gate
 //!   anchor summons a body at AABB `[4,65,6]..[5,67,7]` inside a doorway slab
@@ -225,7 +226,7 @@ pub fn describe(body: &Body) -> String {
     match body {
         Body::Rides { owner, tag } => format!("rides the {owner}'s own hitboxes (`{tag}`)"),
         Body::Region(cells) => format!("arms {} clickable cell(s) of the region", cells.len()),
-        Body::Point(p) => format!("a 1.0x2.0 body in open air at {p:?}"),
+        Body::Point(p) => format!("a one-cell click column at {p:?}"),
         Body::Block { cell, block } => {
             format!("the block `{block}` at {cell:?}, whose own use vanilla reports")
         }
