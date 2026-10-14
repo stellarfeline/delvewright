@@ -230,7 +230,7 @@ async function main(): Promise<number> {
   // The artifact's legs are consumed in LOCKSTEP with the walked positions of
   // the path being walked, so each path gets ITS OWN artifact: the exported path
   // its `critical-path-waypoints.json`, a driven branch its
-  // `branch-waypoints-<slug>.json`, whose legs follow that branch's
+  // `world-waypoints-<k>.json`, whose legs follow that world's
   // own step sequence. The critical-path artifact is never replayed on a branch
   // — its legs are position-ordered for a different sequence, and the wrong legs
   // would strand the bot while looking like a content fault.

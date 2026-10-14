@@ -234,7 +234,7 @@ something it does not check is how a green run ships a broken delve.
 
 Step 11 exists because of the **decompilation principle** (spec-0025): the
 compiler renders the compiled DSL *back into natural language*
-(`out/validation/branch-chronicle-<branch>.md`), and the review compares like
+(`out/validation/world-chronicle-<k>.md`, one per story world), and the review compares like
 with like — NL against NL. Nobody mentally compiles DSL.
 
 ### The rule the three judgment gates share

@@ -7,7 +7,7 @@
 // "provably completable by machine" quantify over BRANCHES: the compiler proves
 // each branch structurally (`DW0480`–`DW0485`) and exports, per branch, its flag
 // assignment, the dialogue choices that enter it, and an executable path
-// (`validation/branch-path-<slug>.json`, the ordinary `critical-path.json`
+// (`validation/world-path-<k>.json` per story world — spec-0108 — the ordinary `critical-path.json`
 // contract). This module reads that plan and decides which branches THIS run is
 // answerable for.
 //
