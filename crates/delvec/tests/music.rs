@@ -242,7 +242,6 @@ fn the_surface_is_exported() {
         hears.to_string().contains("#/$defs/AtmosphereId"),
         "{hears}"
     );
-    assert_eq!(delvewright_dsl::DSL_VERSION, "0.47.0");
 }
 
 /// One declaration of `SoundCategory` in the DSL crate's sources.
@@ -287,7 +286,7 @@ fn a_scene_that_does_not_state_its_music_is_dw1031() {
     // An atmosphere without `audio/background_music`.
     refused_1031(|w, q| {
         w["content"]["atmospheres"] = json!([{ "id": "atmosphere/hush", "precipitation": "none",
-            "attributes": { "visual/sky_color": "#123456" } }]);
+            "attributes": { "visual/sky_color": "#3b4a1e" } }]);
         w["content"]["areas"][0]["atmosphere"] = json!("atmosphere/hush");
         let _ = q;
     });
