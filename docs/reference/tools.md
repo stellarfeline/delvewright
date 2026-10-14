@@ -598,7 +598,10 @@ conversion strip uses, so the two cannot drift. The **palette allowlist**
 (`DW0730`) is a broad default vanilla building-and-decoration set
 (`crates/delvec/src/admit/allowlist.rs`: stone, wood, glass and copper families, inert
 flora, furniture and job-site blocks — anvils in every damage stage included —,
-the trap trigger blocks (pressure plates, buttons, the trapped chest), decorative
+the trap trigger blocks (pressure plates, buttons, the trapped chest), the
+containers a delve furnishes (chest, barrel, furnace, smoker, brewing stand, the
+sixteen dyed shulker boxes; the undyed `shulker_box`, hoppers, blast furnaces and
+the redstone containers are shown), decorative
 minerals and ores, archaeology, and all six sculk blocks) that deliberately still
 flags surprising blocks — redstone contraption parts (dispensers, droppers,
 pistons, observers, repeaters), tnt, note blocks — for review, and is overridable

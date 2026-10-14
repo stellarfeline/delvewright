@@ -978,6 +978,11 @@ pub fn build_with_warnings(
         &packtest::Proved {
             asm_locks: &asm_locks,
             watch_binding: &watch_binding,
+            containers: &container_census
+                .rows
+                .iter()
+                .map(|r| (r.cell, r.block.clone()))
+                .collect(),
         },
     );
 
