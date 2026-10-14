@@ -731,7 +731,13 @@ pub fn judge(expansion: &Expansion, options: Options) -> Report {
             .iter()
             .map(|(name, a)| (name.clone(), a.pos))
             .collect();
-        let checked = contract::check_sealed(model, resolved, &anchor_positions, expansion.sealed);
+        let checked = contract::check_kind(
+            model,
+            resolved,
+            &anchor_positions,
+            expansion.sealed,
+            expansion.seamless,
+        );
         gates.extend(checked.gates);
         findings.extend(checked.findings);
         enumeration = checked.enumeration;
@@ -1948,6 +1954,7 @@ mod tests {
             stats: Default::default(),
             oriented: Default::default(),
             sealed: false,
+            seamless: false,
         }
     }
 
@@ -2110,6 +2117,7 @@ mod tests {
             stats: Default::default(),
             oriented: Default::default(),
             sealed: false,
+            seamless: false,
         };
         assert!(
             nav::standable_cells(&expansion.model).contains(&[5, 1, 2]),

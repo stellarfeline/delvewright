@@ -35,9 +35,10 @@ use std::path::Path;
 
 use delvewright_dsl::detailplan::DetailPlanContent;
 use delvewright_dsl::layout::LayoutGraphContent;
+use delvewright_dsl::siteplan::SitePlanContent;
 use delvewright_dsl::{Envelope, NodeId};
 
-use crate::compiler::load::{DETAIL_PLAN_FILE, LAYOUT_GRAPH_FILE};
+use crate::compiler::load::{DETAIL_PLAN_FILE, LAYOUT_GRAPH_FILE, SITE_PLAN_FILE};
 use crate::schem::prefab::PrefabMeta;
 
 /// **Whether `node` is scenery in `graph`** (spec-0098 §14): a place the graph
@@ -53,6 +54,24 @@ pub fn is_scenery(graph: &LayoutGraphContent, node: &NodeId) -> bool {
     graph.nodes.iter().any(|n| &n.id == node && !n.reached)
 }
 
+/// **Whether `node` is allocated no seam by `plan`** (spec-0106 §3.4): no seam
+/// of the site plan cuts a layout-graph edge with `node` at either end. Such a
+/// place — a one-place map, or a region entered only by a carry — has no
+/// exterior to be entered from, so its piece's entry owes no `exterior` edge.
+///
+/// The one rule every judge of a piece reads the seam count through:
+/// `delvec detail` (from a program or with `--piece`) hands it to the
+/// contract check, and [`place_kind`] derives the audit's kind through it.
+#[must_use]
+pub fn is_seamless(graph: &LayoutGraphContent, plan: &SitePlanContent, node: &NodeId) -> bool {
+    !plan.seams.iter().any(|s| {
+        graph
+            .edges
+            .iter()
+            .any(|e| e.id() == &s.edge && (e.a() == node || e.b() == node))
+    })
+}
+
 /// The directory beside a prefab library that holds the campaigns built
 /// against it.
 pub const CAMPAIGNS_DIR: &str = "campaigns";
@@ -66,6 +85,9 @@ pub struct Owner {
     pub place: String,
     /// Whether that node is scenery in the campaign's layout graph.
     pub scenery: bool,
+    /// Whether the campaign's site plan allocates that node no seam
+    /// ([`is_seamless`]).
+    pub seamless: bool,
 }
 
 /// The place kind derived for one piece, with the evidence it was derived from.
@@ -73,6 +95,9 @@ pub struct Owner {
 pub struct PlaceKind {
     /// Judge the contract sealed.
     pub sealed: bool,
+    /// Judge the entry as owing no way in: every row placing the piece places
+    /// it at a place its plan allocates no seam (spec-0106 §3.4).
+    pub seamless: bool,
     /// Every row, across every campaign read, that places this piece.
     pub owners: Vec<Owner>,
     /// Campaign directories examined.
@@ -99,14 +124,15 @@ impl PlaceKind {
                 .iter()
                 .map(|o| {
                     format!(
-                        "`{}` at `{}` ({})",
+                        "`{}` at `{}` ({}{})",
                         o.campaign,
                         o.place,
                         if o.scenery {
                             "`reached: false`"
                         } else {
                             "reached"
-                        }
+                        },
+                        if o.seamless { ", no seam" } else { "" }
                     )
                 })
                 .collect::<Vec<_>>()
@@ -131,6 +157,8 @@ impl PlaceKind {
              {rows}{unread}",
             if self.sealed {
                 "scenery (sealed: built to be seen and never entered)"
+            } else if self.seamless {
+                "reached, allocated no seam (its entry owes no `exterior` edge)"
             } else {
                 "reached (strict)"
             },
@@ -220,6 +248,9 @@ pub fn place_kind(meta_path: &Path, meta: &PrefabMeta) -> PlaceKind {
         let graph = std::fs::read_to_string(dir.join(LAYOUT_GRAPH_FILE))
             .ok()
             .and_then(|raw| serde_json::from_str::<Envelope<LayoutGraphContent>>(&raw).ok());
+        let site = std::fs::read_to_string(dir.join(SITE_PLAN_FILE))
+            .ok()
+            .and_then(|raw| serde_json::from_str::<Envelope<SitePlanContent>>(&raw).ok());
         for row in rows {
             kind.owners.push(Owner {
                 campaign: name.clone(),
@@ -227,9 +258,14 @@ pub fn place_kind(meta_path: &Path, meta: &PrefabMeta) -> PlaceKind {
                 scenery: graph
                     .as_ref()
                     .is_some_and(|g| is_scenery(&g.content, &row.place)),
+                seamless: match (&graph, &site) {
+                    (Some(g), Some(p)) => is_seamless(&g.content, &p.content, &row.place),
+                    _ => false,
+                },
             });
         }
     }
     kind.sealed = !kind.owners.is_empty() && kind.owners.iter().all(|o| o.scenery);
+    kind.seamless = !kind.owners.is_empty() && kind.owners.iter().all(|o| o.seamless);
     kind
 }

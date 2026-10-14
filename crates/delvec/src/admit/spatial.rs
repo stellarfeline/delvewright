@@ -23,7 +23,7 @@ use std::path::Path;
 
 use crate::admit::scenery;
 use crate::grammar::block::BlockState;
-use crate::grammar::contract::{ContractReport, check_sealed};
+use crate::grammar::contract::{ContractReport, check_kind};
 use crate::grammar::geom::Box3;
 use crate::grammar::model::VoxelModel;
 use crate::schem::prefab::PrefabMeta;
@@ -57,12 +57,40 @@ pub fn grid(s: &Structure) -> VoxelModel {
     model
 }
 
+/// **The block grid of a library piece**, read from the prefab directory its
+/// document names — one template, or every tile of a set placed at its offset
+/// (the tiling is packaging). What `delvec detail --piece` judges an admitted
+/// piece's contract over, by the same checker `delvec prefab audit` runs.
+pub fn library_grid(prefabs_dir: &Path, meta: &PrefabMeta) -> Result<VoxelModel, String> {
+    if let Some(set) = meta.structure_set.as_ref() {
+        let mut tiles = Vec::with_capacity(set.parts.len());
+        for part in &set.parts {
+            let path = prefabs_dir.join(&part.file);
+            let bytes =
+                std::fs::read(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+            let s = Structure::read(&bytes)
+                .map_err(|e| format!("cannot parse {}: {e}", path.display()))?;
+            tiles.push((part.clone(), s));
+        }
+        return Ok(crate::admit::settling::zone_grid(set.size, &tiles));
+    }
+    let file = meta
+        .structure
+        .as_ref()
+        .map(|s| s.file.clone())
+        .ok_or_else(|| format!("`{}` names no structure file", meta.prefab_id))?;
+    let path = prefabs_dir.join(&file);
+    let bytes = std::fs::read(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let s = Structure::read(&bytes).map_err(|e| format!("cannot parse {}: {e}", path.display()))?;
+    Ok(grid(&s))
+}
+
 /// The anchors a metadata document declares, as the point the checker needs.
 ///
 /// A gate anchor names a region rather than a cell; its low corner is the point
 /// used, because a `posted` region's demand is that something is placed *in* it
 /// and the low corner is inside it by construction.
-fn anchor_points(meta: &PrefabMeta) -> BTreeMap<String, [i32; 3]> {
+pub fn anchor_points(meta: &PrefabMeta) -> BTreeMap<String, [i32; 3]> {
     meta.anchors
         .iter()
         .filter_map(|(name, a)| {
@@ -271,7 +299,7 @@ impl Door {
         // never read from the piece itself; judged by the one checker the
         // writer judged it by, with the kind `delvec detail` sealed it on.
         let kind = scenery::place_kind(meta_path, &meta);
-        let mut report = check_sealed(model, contract, &anchors, kind.sealed);
+        let mut report = check_kind(model, contract, &anchors, kind.sealed, kind.seamless);
         report.enumeration.insert(0, kind.line());
         let binding = DoorBinding {
             spaces: contract.spaces.len(),

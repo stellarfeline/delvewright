@@ -281,6 +281,14 @@ enum Command {
         /// first refusal with the place named.
         #[arg(long)]
         all: bool,
+        /// Bind a piece already in the library (`prefab/<id>`) to the place
+        /// instead of expanding a program (spec-0106 §3.5): the frame is
+        /// computed, the piece judged against it (`DW0843`, `DW0844`,
+        /// `DW0845`, `DW0987`, `DW0990` and its spatial contract), every owed
+        /// name bound to the piece anchor of the same local name, and the
+        /// `details[]` row written.
+        #[arg(long, conflicts_with = "all")]
+        piece: Option<String>,
     },
     /// One comparison sheet per `world.textures[]` row (spec-0084 §5.2):
     /// vanilla's texture on the left and the campaign's on the right, scaled to
@@ -409,14 +417,25 @@ fn main() -> ExitCode {
             campaign_dir,
             place,
             all,
-        } => detail::run_detail(
-            campaign_dir,
-            place.as_deref(),
-            *all,
-            &cli.prefabs,
-            &cli.lang,
-            cli.json,
-        ),
+            piece,
+        } => match piece {
+            Some(piece) => detail::run_detail_piece(
+                campaign_dir,
+                place.as_deref(),
+                piece,
+                &cli.prefabs,
+                &cli.lang,
+                cli.json,
+            ),
+            None => detail::run_detail(
+                campaign_dir,
+                place.as_deref(),
+                *all,
+                &cli.prefabs,
+                &cli.lang,
+                cli.json,
+            ),
+        },
         Command::Metrics { gym } => run_metrics(cli.json, gym.as_deref()),
         Command::Codes => run_codes(),
         Command::Snapshot {

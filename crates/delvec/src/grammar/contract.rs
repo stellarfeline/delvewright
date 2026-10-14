@@ -382,6 +382,11 @@ struct Index<'a> {
     contract: &'a SpatialContract,
     /// The piece's place is scenery: it claims no way in (see [`check_sealed`]).
     sealed: bool,
+    /// The piece's place is allocated no seam (spec-0106 §3.4): it is entered
+    /// by the `spawn` or a carry's mark, never through an opening, so its
+    /// entry owes no `exterior` edge and its zero is stated (see
+    /// [`check_kind`]).
+    seamless: bool,
     /// Space name → cells.
     space_cells: BTreeMap<&'a str, BTreeSet<[i32; 3]>>,
     /// Out-of-walk region name → cells.
@@ -423,6 +428,7 @@ impl<'a> Index<'a> {
         Index {
             contract,
             sealed: false,
+            seamless: false,
             space_cells,
             no_body_cells,
             via_cells,
@@ -589,13 +595,47 @@ pub fn check_sealed(
     anchors: &BTreeMap<String, [i32; 3]>,
     sealed: bool,
 ) -> ContractReport {
+    check_kind(model, contract, anchors, sealed, false)
+}
+
+/// [`check_sealed`], with the place's seam count read as well: when
+/// `seamless`, the place the piece fills is allocated **no seam** by the site
+/// plan (spec-0106 §3.4) — a one-place map, or a region entered only by a
+/// carry — so it has no exterior to be entered from. Its entry is the `spawn`
+/// or the carry's mark; the contract's entry space owes no `exterior` edge,
+/// and a contract declaring zero exterior edges has its zero stated in the
+/// enumeration and the exterior-face gate instead of refused. Like `sealed`,
+/// the kind is the place's — the plan's seam count, read the way scenery is
+/// read from the graph — handed by `delvec detail` and derived by `delvec
+/// prefab audit`, never the piece's own word. A piece with a seam is judged
+/// as before.
+pub fn check_kind(
+    model: &VoxelModel,
+    contract: &SpatialContract,
+    anchors: &BTreeMap<String, [i32; 3]>,
+    sealed: bool,
+    seamless: bool,
+) -> ContractReport {
     let mut ix = Index::new(model, contract);
     ix.sealed = sealed;
+    ix.seamless = seamless;
     let mut gates = Vec::new();
     let mut findings = Vec::new();
     let mut enumeration = Vec::new();
 
     gates.push(well_formed(&ix, model));
+    if ix.seamless && !ix.sealed {
+        let declared = contract
+            .edges
+            .iter()
+            .filter(|e| e.a == EXTERIOR || e.b == EXTERIOR)
+            .count();
+        enumeration.push(format!(
+            "way in: the place is allocated 0 seam(s) by its site plan, so it is entered by the \
+             `spawn` or a carry's mark and its entry owes no `exterior` edge; the contract \
+             declares {declared} exterior edge(s)"
+        ));
+    }
     gates.push(coverage(&ix));
     gates.push(closure(&ix, model, &mut enumeration));
     gates.push(edge_proof(&ix, model, &mut enumeration));
@@ -654,11 +694,13 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
                 e.a, e.class, e.b
             ));
         }
-    } else if !contract.edges.iter().any(|e| {
-        is_traversal(&e.class)
-            && ((e.a == contract.entry && e.b == EXTERIOR)
-                || (e.b == contract.entry && e.a == EXTERIOR))
-    }) {
+    } else if !ix.seamless
+        && !contract.edges.iter().any(|e| {
+            is_traversal(&e.class)
+                && ((e.a == contract.entry && e.b == EXTERIOR)
+                    || (e.b == contract.entry && e.a == EXTERIOR))
+        })
+    {
         bad.push(format!(
             "the entry space {:?} carries no `exterior` edge of a traversal class — the piece \
              claims no way in",
@@ -2765,11 +2807,26 @@ fn exterior_faces_gate(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<Str
         id: "contract-exterior-faces",
         state: verdict(silent.is_empty()),
         undecided: 0,
-        empty_ok: (ix.sealed && declared == 0).then(|| {
-            "0 exterior edge(s): the place is scenery, built to be seen and never entered, so \
-             the piece claims no way in"
-                .to_string()
-        }),
+        empty_ok: (declared == 0)
+            .then(|| {
+                if ix.sealed {
+                    Some(
+                        "0 exterior edge(s): the place is scenery, built to be seen and never \
+                         entered, so the piece claims no way in"
+                            .to_string(),
+                    )
+                } else if ix.seamless {
+                    Some(
+                        "0 exterior edge(s): the place is allocated no seam, so it is entered by \
+                         the `spawn` or a carry's mark and has no exterior to face (spec-0106 \
+                         §3.4)"
+                            .to_string(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .flatten(),
         bound: declared,
         detail: if !silent.is_empty() {
             silent.join(" · ")

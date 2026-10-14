@@ -121,6 +121,10 @@ pub struct ExpandOptions {
     /// judged sealed — no way in is claimed. Set by `delvec detail` from the
     /// layout graph, the place's kind, never the piece's own word.
     pub sealed: bool,
+    /// The piece fills a place its site plan allocates no seam (spec-0106
+    /// §3.4): its entry owes no `exterior` edge. Set by `delvec detail` from
+    /// the plan, the place's kind, never the piece's own word.
+    pub seamless: bool,
 }
 
 impl ExpandOptions {
@@ -133,6 +137,7 @@ impl ExpandOptions {
             orientation: Orientation::IDENTITY,
             overrides: Overrides::none(),
             sealed: false,
+            seamless: false,
         }
     }
 
@@ -433,6 +438,8 @@ pub struct Expansion {
     pub oriented: OrientedFillAudit,
     /// Carried from [`ExpandOptions::sealed`]: the contract is judged sealed.
     pub sealed: bool,
+    /// Carried from [`ExpandOptions::seamless`].
+    pub seamless: bool,
 }
 
 /// The scope at a refusal site, in the terms guards read it.
@@ -942,6 +949,7 @@ pub fn expand(
             undecided: expander.oriented_undecided.into_iter().collect(),
         },
         sealed: options.sealed,
+        seamless: options.seamless,
     })
 }
 

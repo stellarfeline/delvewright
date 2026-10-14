@@ -163,6 +163,301 @@ fn run(
     battery(campaign_dir, prefabs_dir, lang, json)
 }
 
+/// `delvec detail <campaign-dir> <place> --piece <prefab>` — the verb's second
+/// door (spec-0106 §3.5), for a piece already in the library.
+pub(crate) fn run_detail_piece(
+    campaign_dir: &Path,
+    place: Option<&str>,
+    piece: &str,
+    prefabs_dir: &Path,
+    lang: &str,
+    json: bool,
+) -> ExitCode {
+    match run_piece(campaign_dir, place, piece, prefabs_dir, lang, json) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(code) => ExitCode::from(code),
+    }
+}
+
+fn run_piece(
+    campaign_dir: &Path,
+    place: Option<&str>,
+    piece: &str,
+    prefabs_dir: &Path,
+    lang: &str,
+    json: bool,
+) -> Result<(), u8> {
+    let loaded = load_or_refuse(campaign_dir, json)?;
+    let campaign = match delvec::compiler::load::parse_loaded(&loaded) {
+        Ok(c) => c,
+        Err(diags) => {
+            print_diags(&diags, json);
+            return Err(1);
+        }
+    };
+    if campaign.site_plan.is_none() {
+        eprintln!(
+            "error: `{}` carries no `site-plan.json`. A piece is bound to a place inside the box \
+             the WHOLE gave it, so there is nothing to bind until the whole exists.",
+            campaign_dir.display()
+        );
+        return Err(1);
+    }
+    let Some(place) = place else {
+        eprintln!("error: `--piece` binds one place: name it (`node/<kebab>`)");
+        return Err(EXIT_INTERNAL);
+    };
+    let node = targets(campaign_dir, &campaign, Some(place), false)?
+        .pop()
+        .expect("one target");
+    // One place, one door: a program at the place's address and a piece named
+    // here are two authors of one row.
+    let program_path = campaign_dir
+        .join(PROGRAMS_DIR)
+        .join(format!("{}.json", stem_of(&node)));
+    if program_path.is_file() {
+        eprintln!(
+            "error: `{place}` has a program at `{}` and `--piece {piece}` names a library piece: \
+             a place is detailed through exactly one door. Delete the program to bind the piece, \
+             or drop `--piece` to detail the place from its program.",
+            program_path.display()
+        );
+        return Err(1);
+    }
+    let library = match PrefabRegistry::load_dir(prefabs_dir) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!(
+                "internal error: cannot read prefabs dir {}: {e}",
+                prefabs_dir.display()
+            );
+            return Err(EXIT_INTERNAL);
+        }
+    };
+    let Some(meta) = library.get(piece).cloned() else {
+        eprintln!(
+            "error: the library at {} holds no `{piece}`. `--piece` binds a piece already \
+             admitted; name one the library holds (`prefab/<id>`).",
+            prefabs_dir.display()
+        );
+        return Err(1);
+    };
+    let a = engine::allocation(&campaign, &node).expect("a target is a place the plan allocates");
+
+    // ---- the row: every owed name bound to the anchor of the same local name ----
+    let (row, unbound) = piece_row(&campaign, &node, &meta);
+    let stations = campaign
+        .layout_graph
+        .as_ref()
+        .and_then(|g| g.content.nodes.iter().find(|n| n.id == node))
+        .map_or(0, |n| n.stations.len());
+    let bound_keys: std::collections::BTreeSet<&str> =
+        row.anchors.values().map(String::as_str).collect();
+    let unnamed = meta
+        .anchors
+        .keys()
+        .filter(|k| !bound_keys.contains(k.as_str()))
+        .count();
+    let line = format!(
+        "piece binding: {b} of {o} owed name(s) bound; {u} piece anchor(s) of {t} no station \
+         names; {s} station(s) declared",
+        b = row.anchors.len(),
+        o = a.owed_anchors.len(),
+        u = unnamed,
+        t = meta.anchors.len(),
+        s = stations,
+    );
+    if !unbound.is_empty() {
+        for d in &unbound {
+            print_one_diag(d, json);
+        }
+        eprintln!("error: `{place}`: `{piece}` would not bind; nothing was written. {line}");
+        return Err(1);
+    }
+
+    // ---- the judgement, before anything is written ----
+    let judged = with_row(&campaign, &row);
+    let (mut diags, binding) = engine::check(&judged, &library);
+    let (vd, vbind) = engine::check_voids(&judged, &library, prefabs_dir);
+    diags.extend(vd);
+    let errors: Vec<&Diagnostic> = diags
+        .iter()
+        .filter(|d| d.severity == delvewright_dsl::Severity::Error)
+        .collect();
+    if !errors.is_empty() {
+        for d in &errors {
+            print_one_diag(d, json);
+        }
+        eprintln!(
+            "error: `{place}`: `{piece}` would not bind; nothing was written. {} {} {line}",
+            binding.line(),
+            vbind.line()
+        );
+        return Err(1);
+    }
+    // The piece's contract, judged with the place's kind — scenery from the
+    // graph, the seam count from the plan — by the checker the audit runs.
+    if let Some(contract) = meta.spatial_contract.as_ref() {
+        let model = match delvec::admit::spatial::library_grid(prefabs_dir, &meta) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("error: `{place}`: `{piece}`: {e}");
+                return Err(1);
+            }
+        };
+        let scenery = campaign
+            .layout_graph
+            .as_ref()
+            .is_some_and(|g| delvec::admit::scenery::is_scenery(&g.content, &node));
+        let report = delvec::grammar::contract::check_kind(
+            &model,
+            contract,
+            &delvec::admit::spatial::anchor_points(&meta),
+            scenery,
+            seamless(&campaign, &node),
+        );
+        for e in &report.enumeration {
+            eprintln!("  {e}");
+        }
+        if !report.is_pass() {
+            for g in report.gates.iter().filter(|g| !g.passed()) {
+                eprintln!("  [{}] {}", g.id, g.detail);
+            }
+            eprintln!(
+                "error: `{place}`: `{piece}`'s spatial contract fails against its own blocks; \
+                 nothing was written. {line}"
+            );
+            return Err(1);
+        }
+    }
+    write_row(campaign_dir, &campaign, &row)?;
+    eprintln!(
+        "{place}: `{piece}` bound — frame {}x{}x{}; {} {} {line}",
+        a.extent[0],
+        a.extent[1],
+        a.extent[2],
+        binding.line(),
+        vbind.line()
+    );
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "place": place,
+                "piece": piece,
+                "frame": a.extent,
+                "owed": { "bound": row.anchors.len(), "owed": a.owed_anchors.len() },
+                "unnamed_anchors": unnamed,
+                "stations": stations,
+            })
+        );
+    }
+    battery(campaign_dir, prefabs_dir, lang, json)
+}
+
+/// The `details[]` row `--piece` writes (spec-0106 §3.5): each owed name bound
+/// to the piece anchor of the same local name (`anchor/great-hall` →
+/// `great-hall`, or an anchor keyed `anchor/great-hall`), and the entry names
+/// (`anchor/node-<place>`, `spawn`) to the anchor carrying `role: entry`. A
+/// name the piece does not answer is `DW0842`, naming the piece's nearest
+/// names.
+fn piece_row(campaign: &Campaign, node: &NodeId, meta: &PrefabMeta) -> (Detail, Vec<Diagnostic>) {
+    let mut anchors = BTreeMap::new();
+    let mut bad = Vec::new();
+    let entry_name = format!("anchor/node-{}", stem_of(node));
+    let entry: Option<&String> = meta
+        .anchors
+        .iter()
+        .find(|(_, a)| a.role == Some(delvewright_dsl::prefab::AnchorRole::Entry))
+        .map(|(k, _)| k);
+    for owed in delvewright_dsl::owed_anchors(campaign, node) {
+        if owed == "spawn" || owed == entry_name {
+            match entry {
+                Some(k) => {
+                    anchors.insert(owed.clone(), k.clone());
+                }
+                None => bad.push(Diagnostic::error(
+                    engine::DW_BINDING,
+                    STAGE,
+                    format!("/content/details/{}", node.0),
+                    format!(
+                        "`{owed}` is owed by `{}` and binds to the piece's entry, and \
+                         `{}` carries no anchor with `role: entry`; `spawn` and `{entry_name}` \
+                         both bind there. Give the piece's entry anchor `role: entry`, or bind \
+                         another piece.",
+                        node.0, meta.prefab_id
+                    ),
+                )),
+            }
+            continue;
+        }
+        let local = owed.strip_prefix("anchor/").unwrap_or(&owed);
+        let key = [local.to_string(), format!("anchor/{local}")]
+            .into_iter()
+            .find(|k| meta.anchors.contains_key(k));
+        match key {
+            Some(k) => {
+                anchors.insert(owed.clone(), k);
+            }
+            None => {
+                let mut near: Vec<(usize, &String)> = meta
+                    .anchors
+                    .keys()
+                    .map(|k| {
+                        (
+                            edit_distance(k.strip_prefix("anchor/").unwrap_or(k), local),
+                            k,
+                        )
+                    })
+                    .collect();
+                near.sort();
+                let shown: Vec<String> =
+                    near.iter().take(3).map(|(_, k)| format!("`{k}`")).collect();
+                bad.push(Diagnostic::error(
+                    engine::DW_BINDING,
+                    STAGE,
+                    format!("/content/details/{}", node.0),
+                    format!(
+                        "`{owed}` is owed by `{}` and `{}` has no anchor named `{local}`; its \
+                         nearest names are {}. Rename the station to the piece's anchor, or \
+                         the anchor in the piece, so both read one name.",
+                        node.0,
+                        meta.prefab_id,
+                        if shown.is_empty() {
+                            "none (the piece declares no anchor)".to_string()
+                        } else {
+                            shown.join(", ")
+                        }
+                    ),
+                ));
+            }
+        }
+    }
+    (
+        Detail {
+            place: node.clone(),
+            piece: PrefabId(meta.prefab_id.clone()),
+            anchors,
+        },
+        bad,
+    )
+}
+
+/// Levenshtein distance, for naming a piece's nearest anchor names.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut cur = vec![i + 1];
+        for (j, cb) in b.iter().enumerate() {
+            let sub = prev[j] + usize::from(ca != *cb);
+            cur.push(sub.min(prev[j + 1] + 1).min(cur[j] + 1));
+        }
+        prev = cur;
+    }
+    prev[b.len()]
+}
+
 /// Which places this run details, in site-plan box order.
 fn targets(
     campaign_dir: &Path,
@@ -252,6 +547,15 @@ fn targets(
         return Err(1);
     }
     Ok(vec![node])
+}
+
+/// Whether the campaign's site plan allocates `node` no seam — the one rule
+/// (`admit::scenery::is_seamless`) the audit reads the kind through.
+fn seamless(campaign: &Campaign, node: &NodeId) -> bool {
+    match (&campaign.layout_graph, &campaign.site_plan) {
+        (Some(g), Some(p)) => delvec::admit::scenery::is_seamless(&g.content, &p.content, node),
+        _ => false,
+    }
 }
 
 /// `node/<stem>` → `<stem>`.
@@ -465,6 +769,9 @@ fn prepare(
         .is_some_and(|g| delvec::admit::scenery::is_scenery(&g.content, node));
     let mut opts = ExpandOptions::seeded(seed).with_overrides(overrides);
     opts.sealed = scenery;
+    // A place the plan allocates no seam (spec-0106 §3.4): entered by the
+    // `spawn` or a carry's mark, so its entry owes no `exterior` edge.
+    opts.seamless = seamless(campaign, node);
     let size = [a.extent[0] as u32, a.extent[1] as u32, a.extent[2] as u32];
     let region = Box3::at_origin(size);
     let expansion = match expand(&program, region, &opts) {

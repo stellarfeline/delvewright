@@ -888,7 +888,7 @@ fn run_audit(nbt: &Path, allowlist: Option<&Path>, report: Option<&Path>, json: 
 /// One reader for every command that takes a zone: the tiling is packaging, and
 /// a second copy of "open the files the manifest names and check they are the
 /// export it describes" is a second place for the two to disagree.
-fn read_zone(manifest: &Path) -> Result<(TileSet, Vec<(TilePart, Structure)>), String> {
+pub fn read_zone(manifest: &Path) -> Result<(TileSet, Vec<(TilePart, Structure)>), String> {
     let Some(set) = crate::schem::split::read_tile_set(manifest)? else {
         return Err(format!(
             "{} is a single-template prefab's metadata, not a tile-set manifest — pass the \
