@@ -9,6 +9,7 @@
 //!
 //! - [`affordance`]: affordance hardware — the visible half of every right-click target the compiler owns (`DW0420`/`DW0421`).
 //! - [`analyze`]: deep quest/objective reachability (`DW02xx`, exit 2).
+//! - [`approach`]: a body the party talks to faces their approach, or watches it (`DW1025`).
 //! - [`assembled`]: the shared assembled-world block model every geometric proof reads.
 //! - [`assembly`]: an assembly's hitbox, reach and strike judgements, and its emission (spec-0082).
 //! - [`atmos`]: sound-event validation (`DW0326`), the refused `play-sound at: actor` (`DW0335`), and the `delve:art` banner font (`DW0328`).
@@ -71,6 +72,7 @@
 //! - [`plan`]: resolve a validated campaign into the placement + naming model emission reads.
 //! - [`png`]: the deterministic hand-rolled PNG writer.
 //! - [`pool`]: a pool draw that seats the same anchored prefab twice (`DW0498`).
+//! - [`presence`]: one named character is one body in every story state (`DW1026`).
 //! - [`pressable`]: what a player's click reaches at an anchor — the one authority every `strike`/`use` trigger dispatches from.
 //! - [`promise`]: an objective keeps the promise its prompt makes (`DW0860`–`DW0863`).
 //! - [`pulse`]: a sound that beats over a place — its derived range and listening stations (`DW0994`, `DW0995`).
