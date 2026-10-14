@@ -29,8 +29,14 @@ pub(super) fn emit_teaching_packtests(plan: &Plan, out: &mut BuildOutput) {
         b.push(format!("function {ns}:setup"));
         b.push(pin);
         for cl in classes {
-            b.push(format!("scoreboard players reset {sel} {}", taught_score(*cl)));
-            b.push(format!("scoreboard players set #taught_{} dw.sys 0", cl.as_str()));
+            b.push(format!(
+                "scoreboard players reset {sel} {}",
+                taught_score(*cl)
+            ));
+            b.push(format!(
+                "scoreboard players set #taught_{} dw.sys 0",
+                cl.as_str()
+            ));
         }
         b.push(format!("tp {sel} {}.5 {} {}.5", p[0], p[1], p[2]));
         b.push(format!("function {ns}:{}", teach_at_fn(tid)));
@@ -69,8 +75,14 @@ pub(super) fn emit_teaching_packtests(plan: &Plan, out: &mut BuildOutput) {
             b.push(format!("function {ns}:setup"));
             b.push(pin);
             for cl in classes {
-                b.push(format!("scoreboard players reset {sel} {}", taught_score(*cl)));
-                b.push(format!("scoreboard players set #taught_{} dw.sys 0", cl.as_str()));
+                b.push(format!(
+                    "scoreboard players reset {sel} {}",
+                    taught_score(*cl)
+                ));
+                b.push(format!(
+                    "scoreboard players set #taught_{} dw.sys 0",
+                    cl.as_str()
+                ));
             }
             b.push(format!("function {ns}:activate_{}", safe_obj_fn(oid)));
             for cl in classes {

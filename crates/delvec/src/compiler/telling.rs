@@ -899,7 +899,11 @@ pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
                 pointer,
             )
         } else if let Some((oid, pointer)) = obj_strings.get(&key) {
-            let field = if key.ends_with(".hint") { "hint" } else { "title" };
+            let field = if key.ends_with(".hint") {
+                "hint"
+            } else {
+                "title"
+            };
             (
                 format!("the {field} of objective `{oid}` (the party's instruction)"),
                 "quests",

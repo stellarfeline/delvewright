@@ -116,7 +116,7 @@ fn parse_hw_planned(quests: &str, quest_plan: &str) -> Campaign {
         npcs: hw("npcs.json"),
         classes: classes_with_a_flask(),
         quest_plan: quest_plan.to_string(),
-        quests: common::with_teaching(quests.to_string()),
+        quests: common::with_teaching(quests),
         dialogue: hw("dialogue.json"),
         world_edits: None,
         geometry_brief: None,

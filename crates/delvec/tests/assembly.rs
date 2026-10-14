@@ -823,7 +823,11 @@ fn the_binding_line_is_printed_on_every_build() {
     for f in common::STAGE_FILES {
         std::fs::copy(common::hello_world_dir().join(f), dir.join(f)).unwrap();
     }
-    std::fs::write(dir.join("quests.json"), common::with_teaching(quests().to_string())).unwrap();
+    std::fs::write(
+        dir.join("quests.json"),
+        common::with_teaching(quests().to_string()),
+    )
+    .unwrap();
     let with = run(&[
         "--prefabs",
         lib.to_str().unwrap(),
@@ -910,8 +914,7 @@ fn locked_quests() -> Value {
                     "happening": { "verb": "arrives", "text": "the party steps in" } }),
         );
         quest["objectives"][2]["after"] = json!(["obj/step-in"]);
-        quest["on_objective_complete"]["obj/step-in"] =
-            json!([{ "type": "set-flag", "flag": "flag/stepped-in",
+        quest["on_objective_complete"]["obj/step-in"] = json!([{ "type": "set-flag", "flag": "flag/stepped-in",
                      "happening": { "verb": "learns", "text": "the room is open" } }]);
         trigger(q)["requires_flags"] = json!(["flag/stepped-in"]);
         let a = assembly(q);

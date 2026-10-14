@@ -75,7 +75,7 @@ fn campaign(quests: &str) -> Campaign {
         npcs: hw("npcs.json"),
         classes: hw("classes.json"),
         quest_plan: QUEST_PLAN.to_string(),
-        quests: common::with_teaching(quests.to_string()),
+        quests: common::with_teaching(quests),
         dialogue: hw("dialogue.json"),
         world_edits: None,
         geometry_brief: None,

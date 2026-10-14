@@ -737,7 +737,13 @@ fn unseen(
             "{d:.1} blocks away, past the {SIGHT_BLOCKS} blocks sight reaches"
         ));
     }
-    let floor = |p: [f64; 3]| [p[0].floor() as i32, p[1].floor() as i32, p[2].floor() as i32];
+    let floor = |p: [f64; 3]| {
+        [
+            p[0].floor() as i32,
+            p[1].floor() as i32,
+            p[2].floor() as i32,
+        ]
+    };
     let skip = [from, floor(eye), target, floor(at)];
     crate::compiler::nav::walk_cells(eye, at, |cell| {
         !skip.contains(&cell) && world.blocks_camera(cell)
@@ -798,7 +804,10 @@ pub fn judge_acts(
             b.acts += 1;
             on_a_walk.insert(a.id.as_str());
             let obj = match a.what {
-                ActWhat::Objective { quest, objective: oi } => Some(objective(quest, oi)),
+                ActWhat::Objective {
+                    quest,
+                    objective: oi,
+                } => Some(objective(quest, oi)),
                 ActWhat::Trigger(_) => None,
             };
             if obj.is_none() {
@@ -829,7 +838,9 @@ pub fn judge_acts(
                 }
                 let sites = firing_sites(plan, wave.as_str());
                 if sites.is_empty() {
-                    why.push(format!("nothing in the campaign fires `spawn-wave` for `{wave}`"));
+                    why.push(format!(
+                        "nothing in the campaign fires `spawn-wave` for `{wave}`"
+                    ));
                 }
                 for s in &sites {
                     match &s.places {
@@ -953,7 +964,9 @@ pub fn judge_acts(
             let sites = firing_sites(plan, wave.as_str());
             let mut why: Vec<String> = Vec::new();
             if sites.is_empty() {
-                why.push(format!("nothing in the campaign fires `spawn-wave` for `{wave}`"));
+                why.push(format!(
+                    "nothing in the campaign fires `spawn-wave` for `{wave}`"
+                ));
             }
             match anchor {
                 None => why.push(format!(
@@ -1431,8 +1444,11 @@ pub fn check_act_verbs(
     let mut d = Vec::new();
     let mut b = ActVerbBinding::default();
     // (language, its table, a lookup of each objective string's text there)
-    let mut langs: Vec<(String, &actverbs::Table, Option<&delvewright_dsl::l10n::L10nDoc>)> =
-        Vec::new();
+    let mut langs: Vec<(
+        String,
+        &actverbs::Table,
+        Option<&delvewright_dsl::l10n::L10nDoc>,
+    )> = Vec::new();
     if let Some(t) = actverbs::table("en") {
         langs.push(("en".to_string(), t, None));
     }
@@ -1461,14 +1477,14 @@ pub fn check_act_verbs(
                 let text_of = |field: &str, english: Option<&str>| -> Option<String> {
                     match doc {
                         None => english.map(str::to_string),
-                        Some(doc) => doc
-                            .content
-                            .get(&format!("obj.{ql}.{ol}.{field}"))
-                            .cloned(),
+                        Some(doc) => doc.content.get(&format!("obj.{ql}.{ol}.{field}")).cloned(),
                     }
                 };
                 let at = |field: &str| match doc {
-                    None => ("quests", format!("/content/quests/{qi}/objectives/{oi}/{field}")),
+                    None => (
+                        "quests",
+                        format!("/content/quests/{qi}/objectives/{oi}/{field}"),
+                    ),
                     Some(_) => (
                         "l10n",
                         format!("l10n/{lang}.json#/content/obj.{ql}.{ol}.{field}"),
@@ -1482,10 +1498,9 @@ pub fn check_act_verbs(
                     if !found.iter().any(|f| f.kind == kind) {
                         b.refused += 1;
                         let what = match found.first() {
-                            Some(f) => format!(
-                                "names another act: `{}` is a `{}` verb",
-                                f.verb, f.kind
-                            ),
+                            Some(f) => {
+                                format!("names another act: `{}` is a `{}` verb", f.verb, f.kind)
+                            }
                             None => "names no act: it carries no verb of the lexicon".to_string(),
                         };
                         let (stage, path) = at("title");
@@ -1745,17 +1760,18 @@ pub fn check_pressables_alone(
     let guidance = &c.quests.content.guidance;
     let mut b = TwinBinding::default();
     // The block in a cell: a prop placed there, else the settled map.
-    let mut props: std::collections::BTreeMap<[i32; 3], String> =
-        std::collections::BTreeMap::new();
+    let mut props: std::collections::BTreeMap<[i32; 3], String> = std::collections::BTreeMap::new();
     // (what, the pressed cell, its block)
     let mut pressables: Vec<(String, [i32; 3], String)> = Vec::new();
     let authored = |pos: [i32; 3]| -> Option<([i32; 3], String)> {
-        [pos, [pos[0], pos[1] + 1, pos[2]]].into_iter().find_map(|cell| {
-            blocks
-                .get(&cell)
-                .filter(|name| !delvewright_dsl::blockshape::is_air(name.as_str()))
-                .map(|name| (cell, name.as_str().to_string()))
-        })
+        [pos, [pos[0], pos[1] + 1, pos[2]]]
+            .into_iter()
+            .find_map(|cell| {
+                blocks
+                    .get(&cell)
+                    .filter(|name| !delvewright_dsl::blockshape::is_air(name.as_str()))
+                    .map(|name| (cell, name.as_str().to_string()))
+            })
     };
     for q in &c.quests.content.quests {
         for o in &q.objectives {

@@ -231,18 +231,27 @@ fn an_untitled_interact_is_found_in_sight_and_refused_behind_a_wall_or_too_far()
     let (b, r) = promise::judge_acts(&plan, &walls(&[]), &a([10, 64, 0]));
     assert!(r.is_empty(), "{r:?}");
     assert_eq!((b.acts, b.in_sight, b.refused), (1, 1, 0), "{}", b.line());
-    assert!(b.line().starts_with("DW0863 binding: 1 act(s) over 1 walk(s)"));
+    assert!(
+        b.line()
+            .starts_with("DW0863 binding: 1 act(s) over 1 walk(s)")
+    );
 
     let (b, r) = promise::judge_acts(&plan, &walls(&wall_at_x5()), &a([10, 64, 0]));
     assert_eq!(b.refused, 1);
     let msg = &r[0].message;
     assert_eq!(r[0].code, promise::DW_FIGHT_UNSIGNED);
     assert!(msg.contains("stopped first at [5, 65, 0]"), "{msg}");
-    assert!(msg.contains("Give `obj/pull` a `title` and a `hint`"), "{msg}");
+    assert!(
+        msg.contains("Give `obj/pull` a `title` and a `hint`"),
+        "{msg}"
+    );
 
     let (_, r) = promise::judge_acts(&plan, &walls(&[]), &a([65, 64, 0]));
     let msg = &r[0].message;
-    assert!(msg.contains("65.0 blocks away, past the 64 blocks"), "{msg}");
+    assert!(
+        msg.contains("65.0 blocks away, past the 64 blocks"),
+        "{msg}"
+    );
 
     let dir = variant("sight-announced", quests(nulls()), dialogue(GREETING));
     let (_, c2) = load(&dir);
@@ -286,10 +295,12 @@ fn a_kill_is_found_only_in_sight_and_in_reach() {
     let open = walls(&[]);
     let why = promise::act_unfound(&open, [0, 64, 0], [20, 64, 0], true, Some((16.0, "test")));
     assert_eq!(why.len(), 1, "{why:?}");
-    assert!(why[0].contains("past the wave's reach of 16 blocks"), "{why:?}");
     assert!(
-        promise::act_unfound(&open, [0, 64, 0], [12, 64, 0], true, Some((16.0, "test")))
-            .is_empty()
+        why[0].contains("past the wave's reach of 16 blocks"),
+        "{why:?}"
+    );
+    assert!(
+        promise::act_unfound(&open, [0, 64, 0], [12, 64, 0], true, Some((16.0, "test"))).is_empty()
     );
     let why = promise::act_unfound(
         &walls(&wall_at_x5()),
@@ -395,7 +406,10 @@ fn obj(kind: &str, title: Option<&str>, hint: Option<&str>) -> Value {
 
 fn verb_refusals(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<String> {
     let d = promise::check_act_verbs(c, sidecars).0;
-    assert!(d.iter().all(|d| d.code == promise::DW_ACT_MISNAMED), "{d:?}");
+    assert!(
+        d.iter().all(|d| d.code == promise::DW_ACT_MISNAMED),
+        "{d:?}"
+    );
     d.into_iter()
         .filter(|d| d.path.contains("objectives/0") || d.path.contains("obj.open-the-door.talk."))
         .map(|d| d.message)
@@ -427,14 +441,26 @@ fn a_title_names_its_kinds_act() {
             "kill" => "Clear the yard",
             _ => "Take the stick",
         };
-        let c = titled(obj(kind, Some(own), Some("Past the bell, left of the arch.")));
+        let c = titled(obj(
+            kind,
+            Some(own),
+            Some("Past the bell, left of the arch."),
+        ));
         assert!(verb_refusals(&c, &none).is_empty(), "{kind}");
     }
-    let c = titled(obj("interact", Some("Ring the bell"), Some("Walk past the slate.")));
+    let c = titled(obj(
+        "interact",
+        Some("Ring the bell"),
+        Some("Walk past the slate."),
+    ));
     let r = verb_refusals(&c, &none);
     assert_eq!(r.len(), 1, "{r:?}");
     assert!(r[0].contains("hint"), "{}", r[0]);
-    let c = titled(obj("reach-anchor", Some("Go to the mill"), Some("Walk past the slate.")));
+    let c = titled(obj(
+        "reach-anchor",
+        Some("Go to the mill"),
+        Some("Walk past the slate."),
+    ));
     assert!(verb_refusals(&c, &none).is_empty());
 }
 
@@ -461,10 +487,16 @@ fn a_sidecar_title_is_judged_by_its_own_table_or_counted_unjudged() {
     assert!(r[0].contains("`去` is a `reach-anchor` verb"), "{}", r[0]);
     s.insert("zh-cn".to_string(), sidecar("zh-cn", &[(key, "找磨坊主")]));
     assert!(verb_refusals(&c, &s).is_empty());
-    s.insert("fr".to_string(), sidecar("fr", &[(key, "Parler au meunier")]));
+    s.insert(
+        "fr".to_string(),
+        sidecar("fr", &[(key, "Parler au meunier")]),
+    );
     let (_, b) = promise::check_act_verbs(&c, &s);
     assert_eq!((b.languages, b.unjudged), (2, 1), "{}", b.line());
-    assert!(b.line().contains("(1 string(s) in languages with no table)"));
+    assert!(
+        b.line()
+            .contains("(1 string(s) in languages with no table)")
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -482,7 +514,10 @@ fn a_key_span_lowers_measures_and_holds_its_translation() {
     let dir = variant("key-span", q, dialogue(GREETING));
     let out = try_build(&dir).expect("builds");
     let teach = fn_body(&out, "teach_use_block").expect("the teaching function");
-    assert!(teach.contains(r#""with":[{"keybind":"key.use"}]"#), "{teach}");
+    assert!(
+        teach.contains(r#""with":[{"keybind":"key.use"}]"#),
+        "{teach}"
+    );
     assert!(teach.contains("answer to a hand: %1$s on them."), "{teach}");
 
     use delvec::compiler::textfit::{default_font_width, width_for};
@@ -499,17 +534,31 @@ fn a_key_span_lowers_measures_and_holds_its_translation() {
     let (_, c) = load(&dir);
     let key = "guidance.teaching.use-block";
     let mut s = BTreeMap::new();
-    s.insert("zh-cn".to_string(), sidecar("zh-cn", &[(key, "这里的东西认得手：对它们按右键。")]));
+    s.insert(
+        "zh-cn".to_string(),
+        sidecar("zh-cn", &[(key, "这里的东西认得手：对它们按右键。")]),
+    );
     let d = delvewright_dsl::textstyle::validate_inline_styles(&c, &s);
-    assert!(d.iter().any(|d| d.code == delvewright_dsl::textstyle::INLINE_STYLE_UNMATCHED), "{d:?}");
-    s.insert("zh-cn".to_string(), sidecar("zh-cn", &[(key, "这里的东西认得手：对它们按[[key|use]]。")]));
+    assert!(
+        d.iter()
+            .any(|d| d.code == delvewright_dsl::textstyle::INLINE_STYLE_UNMATCHED),
+        "{d:?}"
+    );
+    s.insert(
+        "zh-cn".to_string(),
+        sidecar("zh-cn", &[(key, "这里的东西认得手：对它们按[[key|use]]。")]),
+    );
     assert!(delvewright_dsl::textstyle::validate_inline_styles(&c, &s).is_empty());
 
     let mut q = quests(nulls());
     q["content"]["guidance"]["teaching"]["use-block"] = json!("Press [[key|fly]].");
     let (_, c) = load(&variant("key-fly", q, dialogue(GREETING)));
     let d = delvewright_dsl::textstyle::validate_inline_styles(&c, &BTreeMap::new());
-    assert!(d.iter().any(|d| d.code == delvewright_dsl::textstyle::INLINE_STYLE_MALFORMED), "{d:?}");
+    assert!(
+        d.iter()
+            .any(|d| d.code == delvewright_dsl::textstyle::INLINE_STYLE_MALFORMED),
+        "{d:?}"
+    );
 }
 
 /// spec-0104 criterion 5: the first `use-block` act's activation shows the
@@ -533,7 +582,10 @@ fn the_first_act_of_a_class_teaches_it_once() {
     let teach = fn_body(&out, "teach_use_block").unwrap();
     assert!(teach.contains("scoreboard players set @s dw.taught_use-block 1"));
     assert!(teach.contains("scoreboard players add #taught_use-block dw.sys 1"));
-    assert!(fn_body(&out, "teach_use_body").is_none(), "a `null` class emits nothing");
+    assert!(
+        fn_body(&out, "teach_use_body").is_none(),
+        "a `null` class emits nothing"
+    );
     assert!(
         out.contains_key(&format!(
             "packtest-datapack/data/{NS}/test/teach_objective_talk.mcfunction"
@@ -586,7 +638,10 @@ fn a_use_trigger_that_teaches_polls_its_firing_cells() {
     )
     .unwrap();
     assert!(t.contains("function hello-world:teach_at_the_bell"), "{t}");
-    assert!(t.contains("assert score #taught_use-block dw.sys matches 1"), "{t}");
+    assert!(
+        t.contains("assert score #taught_use-block dw.sys matches 1"),
+        "{t}"
+    );
 }
 
 fn teaching_refusals(name: &str, q: Value) -> (promise::TeachingBinding, Vec<String>) {
@@ -594,7 +649,10 @@ fn teaching_refusals(name: &str, q: Value) -> (promise::TeachingBinding, Vec<Str
     let (_, c) = load(&dir);
     let plan = Plan::build(&c, &prefabs()).expect("plan");
     let (b, r) = promise::check_teaching(&plan);
-    assert!(r.iter().all(|f| f.code == promise::DW_INPUT_UNTAUGHT), "{r:?}");
+    assert!(
+        r.iter().all(|f| f.code == promise::DW_INPUT_UNTAUGHT),
+        "{r:?}"
+    );
     (b, r.into_iter().map(|f| f.message).collect())
 }
 
@@ -606,7 +664,11 @@ fn teaching_and_need_must_agree() {
     t.as_object_mut().unwrap().remove("use-block");
     let (_, r) = teaching_refusals("teach-a", quests(t));
     assert_eq!(r.len(), 1, "{r:?}");
-    assert!(r[0].contains("`use-block` is needed and never taught"), "{}", r[0]);
+    assert!(
+        r[0].contains("`use-block` is needed and never taught"),
+        "{}",
+        r[0]
+    );
     // Silent with the line; silent with `null`, counted as taught by the level.
     let mut t = nulls();
     t["use-block"] = json!(USE_LINE);
@@ -621,9 +683,16 @@ fn teaching_and_need_must_agree() {
     t["attack-block"] = json!("Some stones want a blow: [[key|attack]] on them.");
     let (_, r) = teaching_refusals("teach-b", quests(t));
     assert_eq!(r.len(), 1, "{r:?}");
-    assert!(r[0].contains("no walked path requires the class"), "{}", r[0]);
+    assert!(
+        r[0].contains("no walked path requires the class"),
+        "{}",
+        r[0]
+    );
     // C: a line with no span, and one with the other input's span.
-    for line in ["Things here answer to a hand.", "Things answer to [[key|attack]]."] {
+    for line in [
+        "Things here answer to a hand.",
+        "Things answer to [[key|attack]].",
+    ] {
         let mut t = nulls();
         t["use-block"] = json!(line);
         let (_, r) = teaching_refusals("teach-c", quests(t));
@@ -649,7 +718,11 @@ fn twins(name: &str, q: Value, extra: &[([i32; 3], &str)], at: &str) -> Vec<Stri
         );
     }
     let r = promise::check_pressables_alone(&plan, &blocks).1;
-    assert!(r.iter().all(|f| f.code == promise::DW_PRESSABLE_AMONG_TWINS), "{r:?}");
+    assert!(
+        r.iter()
+            .all(|f| f.code == promise::DW_PRESSABLE_AMONG_TWINS),
+        "{r:?}"
+    );
     r.into_iter().map(|f| f.message).collect()
 }
 
@@ -657,10 +730,27 @@ fn twins(name: &str, q: Value, extra: &[([i32; 3], &str)], at: &str) -> Vec<Stri
 #[test]
 fn a_pressable_stands_alone_among_its_kind() {
     let lever = "minecraft:lever[face=floor,facing=north]";
-    let r = twins("twin-2", quests(nulls()), &[([2, 0, 0], lever)], "anchor/exit");
+    let r = twins(
+        "twin-2",
+        quests(nulls()),
+        &[([2, 0, 0], lever)],
+        "anchor/exit",
+    );
     assert_eq!(r.len(), 1, "{r:?}");
-    assert!(r[0].contains("at 2.0 blocks") && r[0].contains("`obj/pull`"), "{}", r[0]);
-    assert!(twins("twin-4", quests(nulls()), &[([4, 0, 0], lever)], "anchor/exit").is_empty());
+    assert!(
+        r[0].contains("at 2.0 blocks") && r[0].contains("`obj/pull`"),
+        "{}",
+        r[0]
+    );
+    assert!(
+        twins(
+            "twin-4",
+            quests(nulls()),
+            &[([4, 0, 0], lever)],
+            "anchor/exit"
+        )
+        .is_empty()
+    );
     let r = twins(
         "twin-state",
         quests(nulls()),
@@ -683,7 +773,10 @@ fn a_pressable_stands_alone_among_its_kind() {
         }
         q
     };
-    let lamps = [([0, 0, 0], "minecraft:redstone_lamp"), ([0, 0, 2], "minecraft:redstone_lamp")];
+    let lamps = [
+        ([0, 0, 0], "minecraft:redstone_lamp"),
+        ([0, 0, 2], "minecraft:redstone_lamp"),
+    ];
     let r = twins("lamp", lamp_q(None), &lamps, "anchor/exit");
     assert_eq!(r.len(), 1, "{r:?}");
     assert!(twins("lamp-marked", lamp_q(Some("shown")), &lamps, "anchor/exit").is_empty());
@@ -697,11 +790,18 @@ fn a_pressable_stands_alone_among_its_kind() {
     let r = twins(
         "strike",
         q,
-        &[([0, 0, 0], "minecraft:smooth_stone_slab"), ([1, 0, 1], "minecraft:smooth_stone_slab")],
+        &[
+            ([0, 0, 0], "minecraft:smooth_stone_slab"),
+            ([1, 0, 1], "minecraft:smooth_stone_slab"),
+        ],
         "spawn",
     );
     assert_eq!(r.len(), 1, "{r:?}");
-    assert!(r[0].contains("`strike` trigger `trigger/the-stone`"), "{}", r[0]);
+    assert!(
+        r[0].contains("`strike` trigger `trigger/the-stone`"),
+        "{}",
+        r[0]
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -718,15 +818,23 @@ fn a_hint_names_only_what_the_party_has_been_told() {
     q["content"]["quests"][0]["objectives"][0]["hint"] = json!("He waits inside the Keep.");
     let (_, c) = load(&variant("told-early", q.clone(), dialogue(GREETING)));
     let (r, b) = telling::check_names_told_bound(&c);
-    let r: Vec<_> = r.iter().filter(|x| x.code == telling::DW_NAME_UNTOLD).collect();
+    let r: Vec<_> = r
+        .iter()
+        .filter(|x| x.code == telling::DW_NAME_UNTOLD)
+        .collect();
     assert_eq!(r.len(), 1, "{r:?}");
-    assert!(r[0].message.contains("objective `obj/talk`"), "{}", r[0].message);
+    assert!(
+        r[0].message.contains("objective `obj/talk`"),
+        "{}",
+        r[0].message
+    );
     assert!(b.objective_declared > 0 && b.line().contains("objective string(s)"));
 
     // The keeper says what the Keep is; the hint stands on the objective after
     // him.
     let mut q2 = quests(nulls());
-    q2["content"]["quests"][0]["objectives"][1]["hint"] = json!("It is set in the floor of the Keep.");
+    q2["content"]["quests"][0]["objectives"][1]["hint"] =
+        json!("It is set in the floor of the Keep.");
     let told = "This is the Keep, the last tower on the moor, and the door stays shut.";
     let (_, c) = load(&variant("told-late", q2, dialogue(told)));
     let r = telling::check_names_told_bound(&c).0;
@@ -754,11 +862,19 @@ fn every_binding_line_states_its_zeroes() {
          also in reach), 0 trigger(s) judged by sight alone; 0 refused; 0 kill(s) on no walk judged \
          from the acts that fire their wave"
     );
-    assert!(promise::ActVerbBinding::default().line().starts_with("DW1015 binding: 0 title(s)"));
+    assert!(
+        promise::ActVerbBinding::default()
+            .line()
+            .starts_with("DW1015 binding: 0 title(s)")
+    );
     assert!(
         promise::TeachingBinding::default()
             .line()
             .starts_with("DW1016 binding: 0 class(es) required over 0 walk(s)")
     );
-    assert!(promise::TwinBinding::default().line().starts_with("DW1017 binding: 0 pressable(s)"));
+    assert!(
+        promise::TwinBinding::default()
+            .line()
+            .starts_with("DW1017 binding: 0 pressable(s)")
+    );
 }
