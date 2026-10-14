@@ -364,6 +364,26 @@ fn criterion_1_dsl_version_0_41_0_is_refused() {
     assert!(err.contains("DW0102") && err.contains("0.41.0"), "{err}");
 }
 
+/// **No area and no pool can be declared** (spec-0106 §3.3): a world stating
+/// `areas[]`, with a piece drawn from a `prefab_pool`, is refused at the
+/// schema by name. The findings whose class a pool draw or an inter-area
+/// crossing carried (a member seated twice, an anchor on a member the draw did
+/// not seat, a branch landing in another area) have no object to stand on.
+#[test]
+fn a_world_declaring_areas_or_a_pool_is_refused_by_name() {
+    let (dir, prefabs) = fixture("no-areas", owned(), 56, true);
+    let path = dir.join("world.json");
+    let mut world: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    world["content"]["areas"] = serde_json::json!([{
+        "id": "area/keep", "prefab_pool": "pool/keep", "pieces": 3
+    }]);
+    std::fs::write(&path, delvewright_dsl::to_canonical_string(&world).unwrap()).unwrap();
+    let (code, err) = validate(&dir, &prefabs);
+    assert_ne!(code, Some(0));
+    assert!(err.contains("DW0100") && err.contains("areas"), "{err}");
+}
+
 // ---------------------------------------------------------------------------
 // Criterion 2: owned ground
 // ---------------------------------------------------------------------------
