@@ -86,10 +86,20 @@ impl Surround {
     /// template` writes the whole box) and under the void horizon; the ocean
     /// superflat's layers outside every box.
     fn unwritten(&self, c: [i32; 3]) -> &'static str {
+        if self.inside(c).is_some() {
+            "minecraft:air"
+        } else {
+            self.generated(c)
+        }
+    }
+
+    /// What the level generator put at `c` before any write: air under the
+    /// void horizon, the ocean superflat's layers under the ocean.
+    fn generated(&self, c: [i32; 3]) -> &'static str {
         match &self.ambient {
             Ambient::Void => "minecraft:air",
             Ambient::Ocean(sea) => {
-                if self.inside(c).is_some() || c[1] > sea.level {
+                if c[1] > sea.level {
                     "minecraft:air"
                 } else if c[1] > sea.floor_top {
                     "minecraft:water"
@@ -371,6 +381,479 @@ fn judge_load(load: &BlockMap, surround: &Surround) -> Binding {
 
 fn base_name(name: &str) -> String {
     delvewright_dsl::blockshape::base_id(name).to_string()
+}
+
+// ---------------------------------------------------------------------------
+// The write sequence: the load as the server runs it, one write at a time.
+// ---------------------------------------------------------------------------
+
+/// One block write of the load, as its command reads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SequenceWrite {
+    /// `<function>:<line>`, 1-based, of the command in the shipped datapack.
+    pub at: String,
+    /// The command.
+    pub command: String,
+}
+
+/// A block the load sequence writes and the server does not keep where it was
+/// written: an attached block whose rule no neighbour meets when the write
+/// lands, or a falling block written over a cell it falls into.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SequenceDrop {
+    /// Where.
+    pub cell: [i32; 3],
+    /// The block state written there.
+    pub block: String,
+    /// What it needed and did not have, in words.
+    pub why: String,
+    /// The write after which it was judged.
+    pub after: SequenceWrite,
+}
+
+/// What [`judge_sequence`] bound to, and what it found.
+#[derive(Debug, Default)]
+pub struct SequenceBinding {
+    /// The functions the load runs, in order.
+    pub functions: Vec<String>,
+    /// Writes laid, by kind.
+    pub templates: usize,
+    pub fills: usize,
+    pub setblocks: usize,
+    /// Cells a write changed, judged with their six neighbours.
+    pub changed: usize,
+    /// Of the cells judged, attached blocks and falling blocks.
+    pub attached: usize,
+    pub falling: usize,
+    /// Writes behind an `execute` condition the load does not decide, not laid.
+    pub conditional: usize,
+    /// Block-writing lines this reader does not read (a mode it does not
+    /// model, a template no piece places), not laid — each named.
+    pub unread: Vec<SequenceWrite>,
+    /// Every block the sequence does not keep, in write order.
+    pub dropped: Vec<SequenceDrop>,
+}
+
+impl SequenceBinding {
+    /// The binding line, printed on every build.
+    pub fn line(&self) -> String {
+        format!(
+            "write sequence (DW1002): {} write(s) the load runs in order over {} function(s) — \
+             {} template(s), {} fill(s), {} setblock(s); {} changed cell(s) judged with their \
+             neighbours as each write lands, {} attached and {} falling block(s) among them, {} \
+             not kept; {} conditional write(s) not laid; {} line(s) not read",
+            self.templates + self.fills + self.setblocks,
+            self.functions.len(),
+            self.templates,
+            self.fills,
+            self.setblocks,
+            self.changed,
+            self.attached,
+            self.falling,
+            self.dropped.len(),
+            self.conditional,
+            self.unread.len(),
+        )
+    }
+
+    /// The refusal, when the sequence drops anything or holds a line it cannot
+    /// read.
+    pub fn refusal(&self) -> Option<String> {
+        if self.dropped.is_empty() && self.unread.is_empty() {
+            return None;
+        }
+        let mut msg = String::new();
+        if !self.dropped.is_empty() {
+            msg.push_str(&format!(
+                "{} block(s) the load writes are not kept where they are written: the server \
+                 runs the load one write at a time (`{}`), and as each write lands every block \
+                 it changes and every neighbour is asked the pinned jar's rules — an attached \
+                 block's `canSurvive` (`crates/dsl/data/support-1.21.11.tsv`) and a falling \
+                 block's `FallingBlock.isFree` below it (`support-bases-1.21.11.tsv`). A block \
+                 that fails is removed, or falls; a later write landing on a falling block \
+                 turns it into an item on the ground.",
+                self.dropped.len(),
+                self.functions.join(" → "),
+            ));
+            for d in self.dropped.iter().take(LIST_LIMIT) {
+                let [x, y, z] = d.cell;
+                msg.push_str(&format!(
+                    "\n  - `{}` at [{x}, {y}, {z}], after `{}` ({}): {}",
+                    d.block, d.after.command, d.after.at, d.why
+                ));
+            }
+            if self.dropped.len() > LIST_LIMIT {
+                msg.push_str(&format!(
+                    "\n  … and {} more.",
+                    self.dropped.len() - LIST_LIMIT
+                ));
+            }
+            msg.push_str(
+                "\nRepair it where the block is authored: give it what it needs in the same \
+                 piece (or the same edit) that writes it — a block under a falling block, the \
+                 face an attached block hangs on — so it holds the moment it lands, whatever \
+                 is written after it; or choose a block that needs nothing there.",
+            );
+        }
+        if !self.unread.is_empty() {
+            if !msg.is_empty() {
+                msg.push('\n');
+            }
+            msg.push_str(&format!(
+                "{} block-writing line(s) of the load are ones this check cannot read, so the \
+                 world after them is not known and nothing after them is judged honestly. \
+                 The emitter that wrote them owes a form the sequence reads:",
+                self.unread.len()
+            ));
+            for u in self.unread.iter().take(LIST_LIMIT) {
+                msg.push_str(&format!("\n  - `{}` ({})", u.command, u.at));
+            }
+        }
+        Some(msg)
+    }
+}
+
+/// The functions the load runs, in order, read off the shipped datapack: `setup`,
+/// the ground steps (`ground_verify`'s target and every step it schedules), the
+/// placement (`place_all`), then the world build `place_verify` starts and every
+/// step it schedules, ending in `setup_finish`.
+fn load_order(ns: &str, bodies: &BTreeMap<&str, &str>) -> Vec<String> {
+    let call_target = |line: &str, verb: &str| -> Option<String> {
+        let rest = line.split(verb).nth(1)?;
+        let id = rest.split_whitespace().next()?;
+        id.strip_prefix(&format!("{ns}:")).map(str::to_string)
+    };
+    // The function the last line of `name` calls, if it ends in a call.
+    let last_call = |name: &str| -> Option<String> {
+        let body = bodies.get(name)?;
+        let last = body.lines().rev().find(|l| !l.trim().is_empty())?;
+        call_target(last, "run function ")
+    };
+    let chain = |start: Option<String>, out: &mut Vec<String>| {
+        let mut next = start;
+        while let Some(n) = next.take() {
+            if out.contains(&n) || !bodies.contains_key(n.as_str()) {
+                break;
+            }
+            next = bodies[n.as_str()]
+                .lines()
+                .find_map(|l| call_target(l, "schedule function "));
+            out.push(n);
+        }
+    };
+    let mut order = vec!["setup".to_string()];
+    chain(
+        last_call(crate::compiler::chain::GROUND_VERIFY_FN),
+        &mut order,
+    );
+    order.push("place_all".to_string());
+    chain(last_call("place_verify"), &mut order);
+    order.retain(|n| bodies.contains_key(n.as_str()));
+    order
+}
+
+/// The block a write lays, read off its token: the state, without block-entity
+/// data.
+fn state_of(token: &str) -> String {
+    let mut depth = 0i32;
+    for (i, ch) in token.char_indices() {
+        match ch {
+            '[' => depth += 1,
+            ']' => depth -= 1,
+            '{' if depth == 0 => return token[..i].to_string(),
+            _ => {}
+        }
+    }
+    token.to_string()
+}
+
+/// Where a `fill` lays its block: `replace <filter>` only over the filter's
+/// block (its id alone, or the exact state when it names properties); `keep`
+/// only over air; no mode, or `replace` alone, everywhere.
+enum Lays {
+    Everywhere,
+    Over(String),
+    OverAir,
+}
+
+impl Lays {
+    fn lays_over(&self, there: &str) -> bool {
+        use delvewright_dsl::blockshape::{base_id, is_air};
+        match self {
+            Lays::Everywhere => true,
+            Lays::OverAir => is_air(there),
+            Lays::Over(f) if f.contains('[') => there == f,
+            Lays::Over(f) => base_id(there) == base_id(f),
+        }
+    }
+}
+
+fn coords(t: &[String]) -> Option<[i32; 3]> {
+    Some([t[0].parse().ok()?, t[1].parse().ok()?, t[2].parse().ok()?])
+}
+
+/// The sequence's world: what each write left, over what the generator put.
+struct Sim<'a> {
+    cells: BlockMap,
+    surround: &'a Surround,
+}
+
+impl Sim<'_> {
+    fn at(&self, c: [i32; 3]) -> &'static str {
+        self.cells
+            .get(&c)
+            .map(|s| s.as_str())
+            .unwrap_or_else(|| self.surround.generated(c))
+    }
+
+    /// Write `state` at `c`; whether the cell changed.
+    fn put(&mut self, c: [i32; 3], state: crate::compiler::blockstate::BlockState) -> bool {
+        if self.at(c) == state.as_str() {
+            return false;
+        }
+        self.cells.insert(c, state);
+        true
+    }
+}
+
+/// **Judge the load one write at a time**, as the server runs it (module
+/// header): every function of the load in order, every block-writing line in
+/// each, and after each write every changed cell and its neighbours.
+pub fn judge_sequence(
+    plan: &Plan,
+    structures: &BTreeMap<String, Vec<u8>>,
+    functions: &[(String, String)],
+) -> SequenceBinding {
+    use crate::compiler::blockstate::BlockState;
+    let ns = plan.namespace.as_str();
+    let surround = Surround::of(plan);
+    let bodies: BTreeMap<&str, &str> = functions
+        .iter()
+        .map(|(n, b)| (n.as_str(), b.as_str()))
+        .collect();
+    // `place template <ns:id> x y z [rotation]` → the template's bytes and the
+    // piece's rotation, keyed as the command names them.
+    let mut templates: BTreeMap<(String, [i32; 3]), (&str, crate::compiler::solver::Rotation)> =
+        BTreeMap::new();
+    for piece in plan.placed_pieces() {
+        for t in &piece.templates {
+            templates.insert(
+                (format!("{ns}:{}", t.structure_id), t.pos),
+                (t.structure_file.as_str(), piece.rotation),
+            );
+        }
+    }
+    let mut b = SequenceBinding {
+        functions: load_order(ns, &bodies),
+        ..SequenceBinding::default()
+    };
+    let mut sim = Sim {
+        cells: BlockMap::new(),
+        surround: &surround,
+    };
+    let air = BlockState::new("minecraft:air");
+    // Each function, with the unconditional `function` calls in it inlined.
+    let mut queue: Vec<(String, usize, String)> = Vec::new();
+    fn expand(
+        ns: &str,
+        name: &str,
+        bodies: &BTreeMap<&str, &str>,
+        stack: &mut Vec<String>,
+        out: &mut Vec<(String, usize, String)>,
+    ) {
+        if stack.iter().any(|s| s == name) {
+            return;
+        }
+        let Some(body) = bodies.get(name) else {
+            return;
+        };
+        stack.push(name.to_string());
+        for (i, line) in body.lines().enumerate() {
+            let l = line.trim();
+            if let Some(callee) = l
+                .strip_prefix("function ")
+                .and_then(|r| r.split_whitespace().next())
+                .and_then(|id| id.strip_prefix(&format!("{ns}:")))
+            {
+                expand(ns, callee, bodies, stack, out);
+                continue;
+            }
+            out.push((name.to_string(), i + 1, l.to_string()));
+        }
+        stack.pop();
+    }
+    for f in b.functions.clone() {
+        expand(ns, &f, &bodies, &mut Vec::new(), &mut queue);
+    }
+    for (func, lineno, line) in queue {
+        let write = SequenceWrite {
+            at: format!("{func}:{lineno}"),
+            command: line.clone(),
+        };
+        let Ok((t, _)) = crate::compiler::commands::tokenize(&line) else {
+            continue;
+        };
+        let Some(head) = t.first().map(String::as_str) else {
+            continue;
+        };
+        if head == "execute" {
+            if t.iter()
+                .skip_while(|w| *w != "run")
+                .nth(1)
+                .is_some_and(|c| matches!(c.as_str(), "fill" | "setblock" | "place" | "clone"))
+            {
+                b.conditional += 1;
+            }
+            continue;
+        }
+        let mut changed: Vec<[i32; 3]> = Vec::new();
+        match head {
+            "place" if t.get(1).is_some_and(|w| w == "template") => {
+                let pos = t.get(3..6).and_then(coords);
+                let found = pos.and_then(|p| templates.get(&(t[2].clone(), p)));
+                match (
+                    pos,
+                    found.and_then(|(file, r)| Some((structures.get(*file)?, *r))),
+                ) {
+                    (Some(p), Some((bytes, rot))) => {
+                        b.templates += 1;
+                        for (c, state, _) in
+                            crate::compiler::assembled::template_writes(rot, p, bytes)
+                        {
+                            if sim.put(c, state) {
+                                changed.push(c);
+                            }
+                        }
+                    }
+                    _ => b.unread.push(write.clone()),
+                }
+            }
+            "fill" => {
+                let (Some(a), Some(z), Some(block)) = (
+                    t.get(1..4).and_then(coords),
+                    t.get(4..7).and_then(coords),
+                    t.get(7),
+                ) else {
+                    b.unread.push(write.clone());
+                    continue;
+                };
+                let state = BlockState::new(&state_of(block));
+                // `replace <filter>` lays only over the filter's block; `keep`
+                // only over air; no mode, or `replace` alone, over everything.
+                let filter = match t.get(8).map(String::as_str) {
+                    None => Lays::Everywhere,
+                    Some("replace") if t.get(9).is_some_and(|f| f.starts_with('#')) => {
+                        b.unread.push(write.clone());
+                        continue;
+                    }
+                    Some("replace") => t
+                        .get(9)
+                        .map_or(Lays::Everywhere, |f| Lays::Over(state_of(f))),
+                    Some("keep") => Lays::OverAir,
+                    Some(_) => {
+                        b.unread.push(write.clone());
+                        continue;
+                    }
+                };
+                b.fills += 1;
+                let lo = [0, 1, 2].map(|i| a[i].min(z[i]));
+                let hi = [0, 1, 2].map(|i| a[i].max(z[i]));
+                for c in crate::compiler::assembled::region_cells(lo, hi) {
+                    if !filter.lays_over(sim.at(c)) {
+                        continue;
+                    }
+                    if sim.put(c, state) {
+                        changed.push(c);
+                    }
+                }
+            }
+            "setblock" => {
+                let (Some(c), Some(block)) = (t.get(1..4).and_then(coords), t.get(4)) else {
+                    b.unread.push(write.clone());
+                    continue;
+                };
+                match t.get(5).map(String::as_str) {
+                    None | Some("replace") => {}
+                    Some("keep") if !delvewright_dsl::blockshape::is_air(sim.at(c)) => {
+                        b.setblocks += 1;
+                        continue;
+                    }
+                    Some("keep") => {}
+                    Some(_) => {
+                        b.unread.push(write.clone());
+                        continue;
+                    }
+                }
+                b.setblocks += 1;
+                if sim.put(c, BlockState::new(&state_of(block))) {
+                    changed.push(c);
+                }
+            }
+            "clone" => {
+                b.unread.push(write.clone());
+                continue;
+            }
+            _ => continue,
+        }
+        if changed.is_empty() {
+            continue;
+        }
+        b.changed += changed.len();
+        let mut around: BTreeSet<[i32; 3]> = BTreeSet::new();
+        for c in &changed {
+            around.insert(*c);
+            around.extend(FACES.iter().map(|f| step(*c, *f)));
+        }
+        for cell in around {
+            let name = sim.at(cell);
+            if delvewright_dsl::blockshape::is_air(name) {
+                continue;
+            }
+            let mut why: Option<String> = None;
+            if matches!(needs(name), Some(Needs::Support(_))) {
+                b.attached += 1;
+                let at = |c: [i32; 3]| sim.at(c);
+                if let Some(Err(wants)) = judge_cell(cell, name, &at) {
+                    why = Some(
+                        wants
+                            .iter()
+                            .map(|(rule, [nx, ny, nz], there)| {
+                                format!(
+                                    "it needs the block {} at [{nx}, {ny}, {nz}] to {}, and \
+                                     there is `{there}` when this write lands",
+                                    beside(rule.cell),
+                                    rule.describe()
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join("; or "),
+                    );
+                }
+            }
+            if crate::compiler::assembled::is_falling_block(name) {
+                b.falling += 1;
+                let below = step(cell, Face::Down);
+                let under = sim.at(below);
+                if delvewright_dsl::support::falls_into(under) != Some(false) {
+                    let [x, y, z] = below;
+                    why = Some(format!(
+                        "it falls: the cell below it, [{x}, {y}, {z}], holds `{under}` when this \
+                         write lands, which a falling block falls into"
+                    ));
+                }
+            }
+            if let Some(why) = why {
+                b.dropped.push(SequenceDrop {
+                    cell,
+                    block: name.to_string(),
+                    why,
+                    after: write.clone(),
+                });
+                sim.cells.insert(cell, air);
+            }
+        }
+    }
+    b
 }
 
 #[cfg(test)]

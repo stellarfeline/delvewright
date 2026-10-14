@@ -678,17 +678,14 @@ pub fn build_with_warnings(
     // configuration the critical path passes, around its laid writes), after
     // the route proofs, so a climbable a forced leg needs is named by
     // `DW0991` first. The binding is printed whichever way it goes.
+    // Its refusal waits for the write-sequence arm below, so one refusal names
+    // every block either arm finds.
     let picture = crate::compiler::view::beat::picture_base(plan, assembled, &relight.placements);
-    {
+    let attached_refusal = {
         let attached = crate::compiler::attached::judge(plan, &world, &picture);
         eprintln!("{}", attached.line());
-        if let Some(message) = attached.refusal() {
-            return Err(BuildFailure::Diagnostic {
-                code: crate::compiler::attached::DW_BLOCK_DROPPED,
-                message,
-            });
-        }
-    }
+        attached.refusal()
+    };
 
     // ---- datapack ----
     put_json(
@@ -834,6 +831,29 @@ pub fn build_with_warnings(
     // stealth beat is "nothing here can carry the defect". Those are different
     // facts and the gate can only tell them apart if the file exists and says
     // zero.
+    // DW1002's write-sequence arm over the FINAL function list: the load as the
+    // server runs it — `setup`, the ground, the templates, the world build,
+    // `setup_finish` — one write at a time, each changed cell and its
+    // neighbours judged as the write lands. Read off the shipped commands, so
+    // the order judged is the order emitted. The binding is printed whichever
+    // way it goes.
+    let sequence_refusal = if assembles_world(plan) {
+        let sequence = crate::compiler::attached::judge_sequence(plan, structures, &functions);
+        eprintln!("{}", sequence.line());
+        sequence.refusal()
+    } else {
+        None
+    };
+    let refusals: Vec<String> = attached_refusal
+        .into_iter()
+        .chain(sequence_refusal)
+        .collect();
+    if !refusals.is_empty() {
+        return Err(BuildFailure::Diagnostic {
+            code: crate::compiler::attached::DW_BLOCK_DROPPED,
+            message: refusals.join("\n"),
+        });
+    }
     let audit = audit_stealth_judges(&functions, plan.stealth_beats.len());
     if let Some((code, message)) = audit.finding() {
         return Err(BuildFailure::Diagnostic { code, message });
