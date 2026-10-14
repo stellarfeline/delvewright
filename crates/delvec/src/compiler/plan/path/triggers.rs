@@ -197,9 +197,16 @@ pub(super) fn path_triggers(
             }
         };
         let last = reader.unwrap_or(path.steps.len() - 1);
-        let at = (0..=last)
-            .find(|&si| enabled(si) && target(si).is_some_and(|(a, _)| a == area_of(si)))
-            .or_else(|| reader.filter(|&r| enabled(r)));
+        let in_area = |si: usize| enabled(si) && target(si).is_some_and(|(a, _)| a == area_of(si));
+        // An entry deed is performed as late as its run performed it (spec-0108
+        // §4.1): the latest step at or before it where the party shares the
+        // target's area — never earlier, where a door the mainline opens later
+        // may still stand between them.
+        let at = match deed {
+            Some(_) => (0..=last).rev().find(|&si| in_area(si)),
+            None => (0..=last).find(|&si| in_area(si)),
+        }
+        .or_else(|| reader.filter(|&r| enabled(r)));
         let Some(si) = at else { continue };
         let Some((_, pos)) = target(si) else { continue };
         // A count is N performances (spec-0082 §10): a repeatable trigger whose

@@ -394,9 +394,36 @@ impl<'a> Flow<'a> {
         // The ambient electives this world performs that write what an ending
         // reads — its entry deeds — in act-id order.
         let relevant = self.relevant_acts();
-        let mut pending: Vec<String> = relevant
+        let pending: Vec<String> = relevant
             .iter()
             .filter(|a| performs.contains(*a) && self.acts().bundles.contains_key(*a))
+            .cloned()
+            .collect();
+        // Where each deed is performed: in front of the LAST step, before the
+        // first final scene fires, at which the act's own gate holds — as late as
+        // the reading allows, so a deed beyond a door the mainline opens is
+        // performed after the door is open. Found by a dry pass over the same
+        // path with no deed performed.
+        let mut at: BTreeMap<String, usize> = BTreeMap::new();
+        {
+            let mut dry = self.story_initial(performs, &barred);
+            let mut dry_complete: Option<(usize, String)> = None;
+            for (i, step) in pt.steps.iter().enumerate() {
+                for act in &pending {
+                    if self.act_enabled(act, &dry) {
+                        at.insert(act.clone(), i);
+                    }
+                }
+                self.saturate_ambient_with(&mut dry.flags, &credit);
+                self.advance_with(&mut dry, step, i + 1, &mut dry_complete, &credit);
+                if !dry.scene_at.is_empty() {
+                    break;
+                }
+            }
+        }
+        let mut unperformed: Vec<String> = pending
+            .iter()
+            .filter(|a| !at.contains_key(*a))
             .cloned()
             .collect();
         let mut deeds: Vec<(usize, String)> = Vec::new();
@@ -405,19 +432,18 @@ impl<'a> Flow<'a> {
         let mut undecided: BTreeSet<String> = BTreeSet::new();
         let mut incoherent: Option<String> = None;
         for (i, step) in pt.steps.iter().enumerate() {
-            let mut k = 0;
-            while k < pending.len() {
-                if self.act_enabled(&pending[k], &st) {
-                    let act = pending.remove(k);
-                    st.fired.clear();
-                    st.undecided.clear();
-                    self.perform_act_ending(&mut st, &act, i + 1, &mut complete_at);
-                    fired.extend(st.fired.iter().cloned());
-                    undecided.extend(st.undecided.iter().cloned());
-                    deeds.push((i, act));
-                } else {
-                    k += 1;
+            for act in pending.iter().filter(|a| at.get(*a) == Some(&i)) {
+                if !self.act_enabled(act, &st) {
+                    // An earlier deed shut its gate: it is not performed.
+                    unperformed.push(act.clone());
+                    continue;
                 }
+                st.fired.clear();
+                st.undecided.clear();
+                self.perform_act_ending(&mut st, act, i + 1, &mut complete_at);
+                fired.extend(st.fired.iter().cloned());
+                undecided.extend(st.undecided.iter().cloned());
+                deeds.push((i, act.clone()));
             }
             self.saturate_ambient_with(&mut st.flags, &credit);
             if incoherent.is_none()
@@ -441,7 +467,7 @@ impl<'a> Flow<'a> {
             incoherent,
             flags,
             completed,
-            unperformed: pending,
+            unperformed,
         }
     }
 

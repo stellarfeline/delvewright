@@ -881,3 +881,87 @@ fn permuting_two_optional_quests_keeps_every_world_id_and_path() {
     let (d, _) = ending::check_bound(&a);
     assert!(codes(&d, "DW1030").is_empty(), "{d:#?}");
 }
+
+// ---------------------------------------------------------------------------
+// Criterion 10, the compiler's half — the runner's input.
+// ---------------------------------------------------------------------------
+
+/// `tests/fixtures/ending-runs`: two endings on how often the bell (an elective
+/// `use` trigger past the Keeper's door) was rung, an epilogue line on a candle
+/// a shop sells. Four story worlds: the two the harness can walk export a path —
+/// the one that rings the bell carries it as an entry deed, performed after the
+/// door is open — and the two whose witness buys the candle export `path: null`
+/// with the reason naming the purchase.
+#[test]
+fn the_runner_fixture_exports_two_walkable_worlds_and_names_the_rest() {
+    let out = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("endings-runs.out");
+    let _ = std::fs::remove_dir_all(&out);
+    let fixture = common::compiler_fixtures_dir().join("ending-runs");
+    let prefabs = common::prefabs_dir();
+    let (code, log) = delvec_run(&[
+        "build",
+        fixture.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "{log}");
+    let plan: Value = serde_json::from_str(
+        &std::fs::read_to_string(out.join("validation/branch-plan.json")).unwrap(),
+    )
+    .unwrap();
+    let rows = plan["branches"].as_array().unwrap();
+    assert_eq!(rows.len(), 4, "{plan:#}");
+    let walkable: Vec<&Value> = rows.iter().filter(|r| r["path"].is_string()).collect();
+    assert_eq!(walkable.len(), 2, "{plan:#}");
+    let mut endings: Vec<&str> = walkable
+        .iter()
+        .map(|r| r["endings"][0].as_str().unwrap())
+        .collect();
+    endings.sort_unstable();
+    assert_eq!(endings, ["ending/rung", "ending/silent"]);
+    for r in rows.iter().filter(|r| r["path"].is_null()) {
+        let why = r["path_reason"].as_str().unwrap();
+        assert!(
+            why.contains("a shop purchase has no harness step kind"),
+            "{why}"
+        );
+    }
+    // The deed world's path rings the bell after the talk that opens the door.
+    let rung = walkable
+        .iter()
+        .find(|r| r["endings"][0] == "ending/rung")
+        .unwrap();
+    assert_eq!(rung["entry_deeds"][0]["act"], "trigger/bell");
+    let path: Value = serde_json::from_str(
+        &std::fs::read_to_string(out.join("validation").join(rung["path"].as_str().unwrap()))
+            .unwrap(),
+    )
+    .unwrap();
+    let actions: Vec<String> = path["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            format!(
+                "{} {}",
+                s["action"].as_str().unwrap(),
+                s["objective"]
+                    .as_str()
+                    .or(s["trigger"].as_str())
+                    .unwrap_or("")
+            )
+        })
+        .collect();
+    assert_eq!(
+        actions,
+        [
+            "select-class ",
+            "talk-to obj/decide",
+            "trigger trigger/bell",
+            "reach obj/walk-out",
+            "assert-complete "
+        ]
+    );
+}
