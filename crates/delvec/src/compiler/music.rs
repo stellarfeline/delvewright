@@ -317,7 +317,7 @@ impl MusicLedger {
             .iter()
             .filter(|b| b.statement.is_some())
             .collect();
-        let a = declared.len();
+        let a = declared.iter().filter(|b| b.kind == "atmosphere").count();
         let t = declared
             .iter()
             .filter(|b| b.statement.as_ref().is_some_and(|s| !s.entering.silent()))

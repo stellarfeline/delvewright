@@ -698,7 +698,7 @@ fn every_build_prints_the_music_binding_line() {
         .unwrap_or_else(|| panic!("no binding line: {err}"));
     assert_eq!(
         line,
-        "music binding: 1 biome(s) a camera can stand in — 1 atmosphere(s) and the ground \
+        "music binding: 1 biome(s) a camera can stand in — 0 atmosphere(s) and the ground \
          declared (0 with a track, 1 silent: 0 fading, 1 playing out), 0 band biome(s) \
          undeclared; 0 cutscene(s), 0 declare what they hear, 0 of 0 confirmed; 0 \
          stop-sound effect(s), 0 of 0 cut a play-out, 0 a stinger, 0 a hiccup; 0 sound(s) in \
