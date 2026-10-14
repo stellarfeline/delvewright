@@ -17,9 +17,15 @@
 //! * **the approach**: the leg that delivers the party to the step (the last leg
 //!   whose `to_step` is at or before it and whose last cell completes the step,
 //!   [`Step::completes_from`]), read back from its last cell to the first cell
-//!   one block or more horizontally away from the body's feet. That cell is the
-//!   party's last walked place before the talk, and the bearing from the body's
-//!   feet to it is the direction the party arrives from;
+//!   at least the interaction reach
+//!   ([`crate::compiler::crosshair::INTERACTION_REACH`]) horizontally away from
+//!   the body's feet: the party's last walked cell before it comes into reach to
+//!   talk. The bearing from the body's feet to that cell is the direction the
+//!   party arrives from. The cells inside reach are not read: the route ends on
+//!   the snapped station, often the body's own cell, and the one step into it is
+//!   the search's tie-break, not a direction anybody walks. A leg that never
+//!   leaves reach is read at its cell farthest from the body, one block or more
+//!   away;
 //! * **the body's yaw at that moment**: the home summon's, when the step's
 //!   station is the body's home cell, or the arrival yaw of every `move-npc`
 //!   whose destination mark is the step's station
@@ -53,7 +59,8 @@ use crate::compiler::watching::{bearing, feet_distance, feet_point, wrap_degrees
 delvewright_dsl::dw_code! {
     /// `DW1025`: **a body the party talks to has its back to them.** At a
     /// `talk-to` step of some configuration, the bearing from the body's feet
-    /// to the party's last walked cell before the talk differs from the yaw the
+    /// to the party's last walked cell before it comes into reach to talk
+    /// differs from the yaw the
     /// body holds at that beat — its home anchor's facing, or the arrival turn
     /// of the walk that left it there — by more than [`FRONT_DEGREES`], and the
     /// body does not watch the party from there. Names the body, the
@@ -115,7 +122,9 @@ struct Stance {
 }
 
 /// The cell the party approaches from: the delivering leg's cells, read back
-/// from the end, to the first cell at least one block horizontally from `feet`.
+/// from the end, to the first cell at least the interaction reach horizontally
+/// from `feet`; a leg that never leaves reach, at its farthest cell one block or
+/// more away.
 fn approach_cell(step: &Step, i: usize, routes: &[LegRoute], feet: [f64; 3]) -> Option<[i32; 3]> {
     let leg = routes
         .iter()
@@ -125,10 +134,19 @@ fn approach_cell(step: &Step, i: usize, routes: &[LegRoute], feet: [f64; 3]) -> 
     if !step.completes_from(last) {
         return None;
     }
-    leg.cells.iter().rev().copied().find(|&c| {
+    let away = |c: [i32; 3]| {
         let p = feet_point(c);
-        ((p[0] - feet[0]).powi(2) + (p[2] - feet[2]).powi(2)).sqrt() >= 1.0
-    })
+        ((p[0] - feet[0]).powi(2) + (p[2] - feet[2]).powi(2)).sqrt()
+    };
+    let reach = crate::compiler::crosshair::INTERACTION_REACH;
+    if let Some(c) = leg.cells.iter().rev().copied().find(|&c| away(c) >= reach) {
+        return Some(c);
+    }
+    leg.cells
+        .iter()
+        .copied()
+        .filter(|&c| away(c) >= 1.0)
+        .max_by(|&a, &b| away(a).total_cmp(&away(b)))
 }
 
 /// Every yaw `npc` can hold standing at `station`.
@@ -256,7 +274,7 @@ pub fn check(
                     format!(
                         "`{npc_id}` is talked to at `{objective_id}` on {config}, standing at \
                          [{}, {}, {}] with yaw {:.0} ({}). The party's last walked cell before \
-                         the talk is [{}, {}, {}], at bearing {toward:.0} from the body's feet, \
+                         it comes into reach to talk is [{}, {}, {}], at bearing {toward:.0} from the body's feet, \
                          {off:.0} degrees off the way it faces — more than {FRONT_DEGREES:.0}, so \
                          the party walks up to its back. Declare `watch: {{ \"who\": \"nearest\", \
                          \"within\": {reach} }}` on `{npc_id}` in npcs.json, so the body turns to \

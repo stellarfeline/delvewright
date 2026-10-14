@@ -55,7 +55,7 @@
         "role": "flavor",
         "watch": {
           "who": "nearest",
-          "within": 3
+          "within": 4
         }
       },
       {

@@ -1,14 +1,15 @@
 //! **A body the party talks to faces the party as they walk up** (`DW1025`,
 //! `compiler::approach`).
 //!
-//! hello-world's keeper is talked to at `anchor/keeper-stand`, and the route
-//! proof delivers the party into that cell from the west (`[4, 65, 4]` into
-//! `[5, 65, 4]`). The pinned prefab declares the stand facing `north`, which is
-//! side-on to that approach — exactly on the front half-plane's edge, which is
-//! closed. Each case varies the one thing the rule reads, the anchor's declared
-//! facing, in a scratch copy of the prefab's metadata: `east` turns the keeper's
-//! back to the party, `west` faces them, and a `watch` drawn within reach of the
-//! approach answers a back-facing stand.
+//! hello-world's keeper is talked to at `anchor/keeper-stand` (`[5, 65, 4]`),
+//! and the route proof brings the party into talking reach from `[4, 65, 2]`,
+//! north and a little west of the body: bearing 153°. The pinned prefab
+//! declares the stand facing `north` (yaw 180), 27° off that approach. Each case
+//! varies the one thing the rule reads, the anchor's declared facing, in a
+//! scratch copy of the prefab's metadata: `west` (63° off) still faces the
+//! party, `east` (117° off) and `south` (153° off) turn the keeper's back to
+//! them, and a `watch` drawn within reach of the approach answers a back-turned
+//! stand.
 
 mod common;
 
@@ -105,7 +106,7 @@ fn watch(who: Value, within: u32) -> impl FnOnce(&mut Value) {
 }
 
 #[test]
-fn a_side_on_keeper_faces_the_party_and_builds() {
+fn the_pinned_keeper_faces_the_party_and_builds() {
     assert_eq!(build(&campaign(|_| {}), "north"), Ok(()));
 }
 
@@ -122,12 +123,19 @@ fn a_keeper_with_its_back_to_the_approach_is_refused() {
         "`npc/keeper`",
         "`obj/talk`",
         "the critical path",
-        "[4, 65, 4]",
-        "180 degrees",
+        "[4, 65, 2]",
+        "117 degrees",
         "\"within\": 3",
     ] {
         assert!(message.contains(needle), "missing {needle}: {message}");
     }
+}
+
+#[test]
+fn a_keeper_facing_away_from_the_approach_is_refused() {
+    let (code, message) = build(&campaign(|_| {}), "south").expect_err("refused");
+    assert_eq!(code, "DW1025", "{message}");
+    assert!(message.contains("153 degrees"), "{message}");
 }
 
 #[test]
