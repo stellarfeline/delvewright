@@ -577,6 +577,21 @@ not third-party reconstructions.
   a second method — a type registered by `register(String, boolean)` returns a
   `SimpleParticleType`; at 1.21.11, 115 types, 97 simple, 18 taking options —
   and refuses when that reading disagrees with the table in any id or answer.
+- **`entity-bodies-1.21.11.json`** — every registered entity type (157) with its
+  bounding box (`width`, `height`, from `EntityType#getWidth()`/`#getHeight()`) and
+  the distance the server tracks it at (`tracking_range`, chunks, from
+  `EntityType#clientTrackingRange()`). Read for spec-0110 by
+  `tools/maintenance/extract-entity-bodies.py` from the pinned server jar's bundled
+  `META-INF/versions/1.21.11/server-1.21.11.jar` through Mojang's official 1.21.11
+  server mappings (piston-meta `server_mappings`, sha1
+  `5621e9253f05fd57872bbe7f8ddf5f9a7d525955`). Two methods: (1) a dumper boots the
+  registries and asks every type; (2) `EntityType.<clinit>` is disassembled and each
+  registration's `sized(FF)` and `clientTrackingRange(I)` arguments are read. At
+  1.21.11 all 157 chains state a box and 156 a tracking range (the one that states
+  none, `minecraft:dolphin`, takes the builder's default — every unstated value must
+  be one value or the script refuses), and every stated value equals the runtime
+  answer. Feeds `DW1034` (a body subject sent and drawn) and the assembly
+  `view_range` derivation.
 
 ### What vanilla data does NOT provide (and what the compiler does about it)
 
@@ -646,6 +661,7 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `support-1.21.11.tsv` | `c70c0fab67a9c236b7df85f7107a667f4c56f9142f3c1300f7ead807ca45cd4b` |
 | `support-bases-1.21.11.tsv` | `30785b0ed7f96aab5159618a2a0f621255d8c6918d39db946a023bc1d5b7dfc2` |
 | `particles-1.21.11.json` | `a64121b11f5fe66ea4a03a16d655cd09dfe590e5434ea142688078b780b027c7` |
+| `entity-bodies-1.21.11.json` | `77fd204e55ec3212359dd2bbca5124c403c76c25953924a38d07dcfdb27b14a9` |
 
 ## Not committed
 
