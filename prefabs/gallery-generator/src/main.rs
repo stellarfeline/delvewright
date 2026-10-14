@@ -342,15 +342,9 @@ const ANCHORS: &[Anchor] = &[
     // the same strip of floor, and NOTHING in the campaign binds it.
     //
     // It is here so that "a name supplies no entry point" is a fact this campaign
-    // proves rather than a sentence in a doc comment. Delete the `role` above and
-    // the hall stops being a place a body can arrive in at all: measured, the
-    // build is REFUSED at exit 3 with `DW0873` — the campaign then starts in
-    // `area/annex`, whose piece still declares a role, and its first leg becomes
-    // a crossing into a hall nothing can put the party down in. It does not
-    // quietly move the start ten blocks west onto this cell, which is exactly
-    // what it did while a name could supply an entry. That is the perturbation
-    // this element answers: a gallery element that cannot fail when the surface
-    // it covers is removed is coverage in name only.
+    // proves rather than a sentence in a doc comment: the entry is the place the
+    // `role` above names, and nothing about this cell's spelling moves the start
+    // onto it.
     //
     // Where it stands is chosen so that the campaign BUILDS with it present, and
     // both halves of that were measured rather than guessed. Ten cells down the
@@ -365,6 +359,25 @@ const ANCHORS: &[Anchor] = &[
         trigger_block: None,
         note: "the old compatibility spelling, standing where the party must NOT arrive: \
                a name the compiler no longer reads, so this cell is never the entry",
+        role: None,
+    },
+    // The hall's ends of its two carries (spec-0083 links): the annex and the
+    // long hall are places of their own that no seam joins to the hall, so the
+    // party is carried between them — out by the lever, back onto the return.
+    Anchor {
+        name: "anchor/to-the-annex",
+        pos: [11, 1, 2],
+        facing: Some("south"),
+        trigger_block: None,
+        note: "the lever that carries whoever stands at it to the annex",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-hall-return",
+        pos: [19, 1, 2],
+        facing: Some("south"),
+        trigger_block: None,
+        note: "where the long hall's far lever sets the party down",
         role: None,
     },
     Anchor {
@@ -2243,9 +2256,14 @@ const ANNEX_POOL: [(i32, i32); 1] = [(1, 1)];
 fn lift_to_shore(s: &Structure, pool: &[(i32, i32)]) -> Structure {
     let mut palette = s.palette.clone();
     let mut idx = |name: &str| -> i32 {
+        // A source block states its level: a state that omits a property is
+        // whatever the server decides (`DW0737`).
+        let properties = (name == "minecraft:water").then(|| {
+            std::collections::BTreeMap::from([("level".to_string(), "0".to_string())])
+        });
         let e = PaletteEntry {
             name: name.to_string(),
-            properties: None,
+            properties,
         };
         match palette.iter().position(|x| *x == e) {
             Some(i) => i as i32,
@@ -2553,7 +2571,7 @@ fn write_design(out: &Path) {
 /// (spec-0084 §7), written into `--textures <dir>`.
 ///
 /// - `hall-stone` replaces `minecraft:block/stone_bricks` — the annex tiles'
-///   walls, the hall's tread courses and the seal an unmated socket gets: one
+///   walls, the hall's tread courses and the annex's doorway panels: one
 ///   flat colour, deliberately not art, so a render of the annex shows at a
 ///   glance which block the pack replaced.
 /// - `wrong-shape` is 24×24, which no 16×16 texture can be replaced by —
@@ -2689,30 +2707,25 @@ fn write_skins(out: &Path) {
 
 // ---------------------------------------------------------------- the annex --
 //
-// A second, TILED piece set, so the gallery can bind the surfaces that only
-// exist once a world is assembled from a pool: `prefab_pool`, the piece verbs
-// (`insert-piece`, `swap-piece`, `remove-piece`, `reseed-piece`), the socket
-// verbs (`rewire-socket`) and `fragment`. Nothing in this repository — no
-// campaign and no fixture — had ever written any of them, which is exactly the
-// class spec-0039 exists to reach.
+// A small kit of library parts the annex's program places by name with the
+// grammar's `prefab` operation (spec-0106 §3.8): an entry tile, a bay tile the
+// program places twice (so its anchor arrives under `index: auto`) and a cap.
+// Each tile's doorways are open in its bytes on the faces where the next tile
+// stands; how they join is the program's design, never a solver's draw.
 //
-// Deliberately plain: three 7 x 6 x 7 stone boxes with 3 x 3 openings on the
-// faces that carry a socket. The point is the ASSEMBLY, not the architecture,
-// and a tileset with interesting rooms would make the placement harder to read
-// without binding one more unit.
+// Deliberately plain: 7 x 6 x 7 stone boxes with 3 x 3 openings. The point is
+// the placement, not the architecture.
 
 /// The annex tile extent.
 const ANNEX_SIZE: [i32; 3] = [7, 6, 7];
 
-/// Which faces of an annex tile carry a `gallery:socket`.
+/// One annex tile, and which of its faces carry a doorway.
 struct AnnexTile {
     id: &'static str,
-    /// `true` for a socket on the north (z = 0) face.
+    /// `true` for a doorway on the north (z = 0) face.
     north: bool,
-    /// `true` for a socket on the south (z = size - 1) face.
+    /// `true` for a doorway on the south (z = size - 1) face.
     south: bool,
-    role: &'static str,
-    weight: u32,
     /// The one anchor this tile declares: the standing cell at the middle of
     /// its floor. A tile with no anchor names no place, so every view of it
     /// binds zero targets and the camera checks nothing by having been aimed —
@@ -2724,13 +2737,8 @@ struct AnnexTile {
     anchor_note: &'static str,
     /// The term of the ENGINE's anchor vocabulary that anchor declares, if any.
     ///
-    /// This is the tileset the compiler has to FIND its way into: an annex
-    /// tile's anchor key is `anchor/<stem>`, which can spell neither `spawn`
-    /// nor `entry`, so before the role existed `area/annex` resolved no entry
-    /// point at all — every consumer that wanted one asked an honest question
-    /// about the wrong key and got an honest `None`. Not to be confused with
-    /// [`AnnexTile::role`] one field up, which is this tile's place in the
-    /// template POOL and means nothing outside it.
+    /// An annex tile's anchor key is `anchor/<stem>`, which can spell neither
+    /// `spawn` nor `entry`; the role is what says which cell is the entry.
     anchor_role: Option<&'static str>,
 }
 
@@ -2744,8 +2752,6 @@ const ANNEX_TILES: &[AnnexTile] = &[
         id: "gallery-annex-entry",
         north: false,
         south: true,
-        role: "entry",
-        weight: 1,
         anchor: "anchor/annex-threshold",
         anchor_note: "where the annex is entered — the entry tile's floor centre",
         anchor_role: Some("entry"),
@@ -2754,56 +2760,29 @@ const ANNEX_TILES: &[AnnexTile] = &[
         id: "gallery-annex-cell",
         north: true,
         south: true,
-        role: "connector",
-        weight: 2,
         anchor: "anchor/annex-first-bay",
-        anchor_note: "the floor centre of the first bay the chain threads through",
-        anchor_role: None,
-    },
-    // A SECOND two-socket variant, and the reason is `reseed-piece`: it re-rolls
-    // a placed piece against the pool and refuses when no OTHER member can
-    // re-mate that piece\u0027s sockets. With one connector shape in the pool the
-    // verb is unwritable — a pool of one variant is a pool that cannot be
-    // reseeded.
-    AnnexTile {
-        id: "gallery-annex-cell-b",
-        north: true,
-        south: true,
-        role: "connector",
-        weight: 1,
-        anchor: "anchor/annex-second-bay",
-        anchor_note: "the floor centre of the second bay the chain threads through",
+        anchor_note: "the floor centre of a bay; the annex places this tile twice, so its \
+                      anchor arrives numbered",
         anchor_role: None,
     },
     AnnexTile {
         id: "gallery-annex-end",
         north: true,
         south: false,
-        role: "terminal",
-        weight: 1,
         anchor: "anchor/annex-cap",
-        anchor_note: "the floor centre of the tile that caps the chain",
+        anchor_note: "the floor centre of the tile that caps the annex",
         anchor_role: None,
     },
 ];
 
-/// The opening a socket sits in: 3 wide, 3 tall, centred on the face.
+/// A doorway: 3 wide, 3 tall, centred on the face.
 fn annex_opening(x: i32, y: i32) -> bool {
     (2..=4).contains(&x) && (1..=3).contains(&y)
 }
 
-/// The brick panel a socket face wears around its opening: the full width of the
-/// face between the corners, floor to lintel.
-///
-/// **It is not decoration.** A tile carved from one material renders as one
-/// material: `seam/annex/2` looked down a three-tile corridor of nothing but
-/// `minecraft:stone` and came back a rectangle of ONE distinct colour, which the
-/// render arm reports — correctly — as a frame that shows no scene at all. The
-/// panel is the second material, and it is put HERE, framing the doorway,
-/// because that is what a seam camera is aimed at. It also earns its keep twice:
-/// the seal an unmated socket gets is `minecraft:stone_bricks`, so a socket with
-/// nothing on the other side reads in the picture as a bricked-up doorway in a
-/// brick surround rather than as a patch of the wrong wall.
+/// The brick panel a doorway face wears around its opening: the full width of
+/// the face between the corners, floor to lintel — the second material, so a
+/// camera aimed down the annex sees the doorways rather than one flat colour.
 fn annex_panel(x: i32, y: i32) -> bool {
     (1..=ANNEX_SIZE[0] - 2).contains(&x) && (1..=ANNEX_SIZE[1] - 2).contains(&y)
 }
@@ -2816,11 +2795,11 @@ fn annex_block_at(t: &AnnexTile, x: i32, y: i32, z: i32) -> &'static str {
     if y == h - 1 {
         return "minecraft:stone";
     }
-    let socket_face = (z == 0 && t.north) || (z == d - 1 && t.south);
-    if socket_face && annex_opening(x, y) {
+    let door_face = (z == 0 && t.north) || (z == d - 1 && t.south);
+    if door_face && annex_opening(x, y) {
         return "minecraft:air";
     }
-    if socket_face && annex_panel(x, y) {
+    if door_face && annex_panel(x, y) {
         return "minecraft:stone_bricks";
     }
     if x == 0 || x == w - 1 || z == 0 || z == d - 1 {
@@ -2847,7 +2826,10 @@ fn build_annex(t: &AnnexTile) -> Structure {
         ("minecraft:air", None),
         ("minecraft:stone", None),
         ("minecraft:stone_bricks", None),
-        ("minecraft:lantern", Some(&[("hanging", "true")][..])),
+        (
+            "minecraft:lantern",
+            Some(&[("hanging", "true"), ("waterlogged", "false")][..]),
+        ),
     ] {
         palette.idx(name, props);
     }
@@ -2857,7 +2839,7 @@ fn build_annex(t: &AnnexTile) -> Structure {
             for z in 0..ANNEX_SIZE[2] {
                 let name = annex_block_at(t, x, y, z);
                 let props: Option<&[(&str, &str)]> = if name == "minecraft:lantern" {
-                    Some(&[("hanging", "true")])
+                    Some(&[("hanging", "true"), ("waterlogged", "false")])
                 } else {
                     None
                 };
@@ -2938,35 +2920,11 @@ fn assert_annex_anchor_stands(t: &AnnexTile, s: &Structure) {
     );
 }
 
-/// The metadata for one annex tile, including its connectors.
+/// The metadata for one annex tile: a library part the annex's program places
+/// by name (spec-0106 §3.8), its doorways open in the bytes and declared by no
+/// socket — assembly is designed, never drawn (ADR-0035).
 fn annex_metadata(t: &AnnexTile) -> serde_json::Value {
-    use serde_json::{json, Value};
-    let mut connectors: Vec<Value> = Vec::new();
-    if t.north {
-        connectors.push(json!({
-            "name": "gallery:socket",
-            "target": "gallery:socket",
-            "local_pos": [3, 1, 0],
-            "facing": "north",
-            "opening": [3, 3],
-            "joint": "aligned"
-        }));
-    }
-    if t.south {
-        connectors.push(json!({
-            "name": "gallery:socket",
-            "target": "gallery:socket",
-            "local_pos": [3, 1, ANNEX_SIZE[2] - 1],
-            "facing": "south",
-            "opening": [3, 3],
-            "joint": "aligned"
-        }));
-    }
-    assert!(
-        !connectors.is_empty(),
-        "{}: an annex tile with no socket can never be placed by a pool",
-        t.id
-    );
+    use serde_json::json;
     json!({
         "prefab_id": format!("prefab/{}", t.id),
         "structure": {
@@ -2982,14 +2940,7 @@ fn annex_metadata(t: &AnnexTile) -> serde_json::Value {
         // can address is ever inside it and every view of it binds zero targets
         // — a camera aimed at nothing, which the render arm reports.
         //
-        // An UNMATED socket is not a hole. `solver::seal_layout` fills every
-        // unmated connector's opening with `minecraft:stone_bricks` and clears
-        // it to air only when the socket mates, so the opening carved below
-        // exists in the world exactly when something is on the other side of it.
-        // That is why a tile can carry both an anchor and a spare socket:
-        // reachable floor beside a sealed socket borders a wall, not the void.
         "anchors": annex_anchors(t),
-        "connectors": connectors,
         "lighting": {
             "profile": "lit",
             "measured_min_light": 8,
@@ -3005,48 +2956,6 @@ fn annex_metadata(t: &AnnexTile) -> serde_json::Value {
                      prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
             "provenance": "Generated deterministically by prefabs/gallery-generator \
                            (ADR-0006); regenerating yields byte-identical NBT and metadata."
-        }
-    })
-}
-
-/// The pools this library declares: the one the annex area draws from, and the
-/// one that exists to be refused.
-///
-/// Written here rather than printed for a human to paste, unlike the tileset
-/// generators: the gallery's prefab directory is a BUILD directory this program
-/// owns end to end, so there is no shared library for a stray file to be
-/// mis-parsed in (`DW0346`).
-///
-/// # `pool/gallery-two-planes` is a refusal, and it is made of real pieces
-///
-/// `DW0886`'s set shape — *the members of this pool do not agree about their own
-/// walk plane, and one origin cannot be derived from two* — is the rule this
-/// whole library exists to demonstrate firing, and it is the one thing a
-/// campaign-level probe cannot reach on its own: a probe patches campaign
-/// documents, and a walk plane is prefab metadata. So the pool is declared here,
-/// out of two pieces this generator already writes whose planes genuinely
-/// differ: `gallery-quay` stands on a shore plinth at local y=3 and
-/// `gallery-yard` is a detail piece whose floor is local y=1. Nothing is faked —
-/// what makes the pool unseatable on an ocean is a true fact about two true
-/// pieces, which is exactly what a creator's own mixed pool would be.
-///
-/// The gallery's primary never seats it; `gallery/probes/a-pool-of-two-walk-planes`
-/// does, and the engine refuses it.
-fn pools() -> serde_json::Value {
-    use serde_json::{json, Value};
-    let members: Vec<Value> = ANNEX_TILES
-        .iter()
-        .map(
-            |t| json!({ "prefab": format!("prefab/{}", t.id), "weight": t.weight, "role": t.role }),
-        )
-        .collect();
-    json!({
-        "pools": {
-            "pool/gallery-annex": { "members": members },
-            "pool/gallery-two-planes": { "members": [
-                { "prefab": format!("prefab/{QUAY_ID}"), "weight": 1, "role": "entry" },
-                { "prefab": format!("prefab/{YARD_ID}"), "weight": 1, "role": "terminal" },
-            ]},
         }
     })
 }
@@ -3077,7 +2986,6 @@ fn write_annex(out: &Path) {
 
         document::write_preserving(&out.join(format!("{}.json", t.id)), &tile_meta);
     }
-    document::write_preserving(&out.join("pools.json"), &pools());
     assert_eq!(
         anchors_proven,
         ANNEX_TILES.len(),
@@ -3086,94 +2994,11 @@ fn write_annex(out: &Path) {
         ANNEX_TILES.len()
     );
     println!(
-        "{ID}: annex tileset written — {} tile(s) and one pool; {anchors_proven} anchor(s) proven \
-         standable",
+        "{ID}: annex tileset written — {} tile(s); {anchors_proven} anchor(s) proven standable",
         ANNEX_TILES.len()
     );
 }
 
-/// A 3 x 3 x 3 marker block, the gallery\u0027s fragment source.
-///
-/// `fragment` writes a prefab\u0027s blocks into an already-placed piece at a point,
-/// and `FragmentRotation` has four members — so binding them means four
-/// placements, and the hall has no four 7-cube holes left in it. A piece this
-/// size fits where the tiles cannot. It carries NO connector on purpose: it is
-/// never a pool member, only something to stamp.
-const SHARD_ID: &str = "gallery-shard";
-const SHARD_SIZE: [i32; 3] = [3, 3, 3];
-
-fn build_shard() -> Structure {
-    let mut palette = Palette::new();
-    for (name, props) in [
-        ("minecraft:polished_blackstone", None),
-        ("minecraft:lantern", Some(&[("hanging", "false")][..])),
-    ] {
-        palette.idx(name, props);
-    }
-    let mut blocks = Vec::new();
-    for x in 0..SHARD_SIZE[0] {
-        for y in 0..SHARD_SIZE[1] {
-            for z in 0..SHARD_SIZE[2] {
-                // A lantern standing on one top corner, so the stamp is
-                // visible and asymmetric — a rotation nobody can see is a
-                // rotation nobody can check. It STANDS (`hanging=false`) on the
-                // blackstone under it: a hanging one asks the block above it
-                // for a ceiling, and over the stamp there is none, so the
-                // server drops it (`DW1002`).
-                let lantern = [x, y, z] == [0, SHARD_SIZE[1] - 1, 0];
-                let (name, props): (&str, Option<&[(&str, &str)]>) = if lantern {
-                    ("minecraft:lantern", Some(&[("hanging", "false")]))
-                } else {
-                    ("minecraft:polished_blackstone", None)
-                };
-                blocks.push(BlockEntry {
-                    pos: [x, y, z],
-                    state: palette.idx(name, props),
-                });
-            }
-        }
-    }
-    Structure {
-        data_version: DATA_VERSION,
-        size: SHARD_SIZE,
-        palette: palette.entries,
-        blocks,
-        entities: Vec::new(),
-    }
-}
-
-fn write_shard(out: &Path) {
-    let mut s = build_shard();
-    resolve_connections(SHARD_ID, &mut s);
-    let cells = invariant_cells(&s);
-    invariants::assert_blocks_are_real(SHARD_ID, &cells);
-    connections::assert_shape_is_stated(SHARD_ID, &cells);
-    invariants::assert_fluid_is_contained(SHARD_ID, s.size, &cells);
-    let nbt = fastnbt::to_bytes(&s).expect("structure serializes to NBT");
-    let mut gz = GzBuilder::new()
-        .mtime(0)
-        .write(Vec::new(), Compression::new(6));
-    gz.write_all(&nbt).expect("gzip write");
-    let framed = gz.finish().expect("gzip finish");
-    std::fs::write(out.join(format!("{SHARD_ID}.nbt")), &framed).expect("write shard nbt");
-    let mut meta = serde_json::json!({
-        "prefab_id": format!("prefab/{SHARD_ID}"),
-        "structure": { "file": format!("{SHARD_ID}.nbt"), "id": SHARD_ID, "size": SHARD_SIZE, "data_version": DATA_VERSION, "generator": "prefabs/gallery-generator (gallery-prefab-gen)" },
-        "anchors": {},
-        "lighting": { "profile": "lit", "measured_min_light": 8, "measured": "2026-08-20", "method": "derived: a lantern on a solid 3-cube; never entered, only stamped" },
-        "license": { "source": "original", "spdx": "GPL-3.0-or-later", "note": "Original Delvewright project asset (pipeline-code license per prefabs/LICENSE-ASSETS.md). No third-party material ingested.", "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006)." }
-    });
-    // A fragment source is a block of material something later cuts from, not a
-    // place a party stands, so it may genuinely have no walk plane — and a
-    // piece with none writes no `walk_y`. That is the honest document: it
-    // cannot be seated on a horizon that derives an origin from one, and
-    // `DW0886` is where a campaign that tries to learns it.
-    if let Some(w) = walkplane::walk_y(s.size, &cells) {
-        meta["walk_y"] = serde_json::json!(w);
-    }
-    document::write_preserving(&out.join(format!("{SHARD_ID}.json")), &meta);
-    println!("{SHARD_ID}: fragment source written");
-}
 
 // ---------------------------------------------------------------------------
 // The DETAIL piece (spec-0050): the yard the site-plan overlay's exit box holds
@@ -3700,6 +3525,17 @@ fn bank_metadata() -> serde_json::Value {
                 "facing": "north",
                 "note": "the far corner of the bank, inside the parapet"
             }
+        },
+        // A whole place that owns its ground (spec-0106 §3.1), entered at the
+        // party's spawn: one open space over the box, no exterior edge (§3.4).
+        "spatial_contract": {
+            "entry": "bank",
+            "spaces": { "bank": { "envelope": "open", "boxes": [
+                { "from": [0, 0, 0], "to": [BANK_SIZE[0] - 1, BANK_SIZE[1] - 1, BANK_SIZE[2] - 1] }
+            ] } },
+            "no_body": {},
+            "edges": [],
+            "faces": []
         },
         "shown_faces": ["east", "north", "south", "west"],
         "lighting": {
@@ -4355,6 +4191,19 @@ fn write_long_hall(out: &Path) {
             "parts": parts,
         },
         "anchors": serde_json::Value::Object(anchors),
+        // A place of its own on the gallery's site plan, which no seam joins:
+        // the party is carried in and out (spec-0106 §3.4), so the contract is
+        // the whole box as one space with no exterior edge.
+        "spatial_contract": {
+            "entry": "hall",
+            "spaces": { "hall": { "envelope": "open", "boxes": [
+                { "from": [0, 0, 0],
+                  "to": [LONG_HALL_SIZE[0] - 1, LONG_HALL_SIZE[1] - 1, LONG_HALL_SIZE[2] - 1] }
+            ] } },
+            "no_body": {},
+            "edges": [],
+            "faces": []
+        },
         // Free-standing in a `void` world: every side of the box is something
         // a body that got outside would see.
         "shown_faces": ["down", "east", "north", "south", "up", "west"],
@@ -4426,7 +4275,6 @@ fn main() {
     }
     write_piece(out);
     write_annex(out);
-    write_shard(out);
     write_yard(out);
     write_refused_pieces(out);
     write_quay(out);

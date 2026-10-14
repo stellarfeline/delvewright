@@ -5,7 +5,6 @@
     "quests": [
       {
         "act": 1,
-        "area": "area/bank",
         "depends_on": [],
         "goal": "Ask the warden what stands outside the wall, then walk the bank to its far corner.",
         "id": "quest/walk-the-bank",

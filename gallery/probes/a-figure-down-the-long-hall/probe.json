@@ -6,6 +6,21 @@
       "op": "replace",
       "path": "/content/actors/0/anchor",
       "value": "anchor/long-hall-down-the-hall"
+    },
+    {
+      "doc": "layout-graph.json",
+      "op": "add",
+      "path": "/content/nodes/2/stations/-",
+      "value": {
+        "anchor": "anchor/long-hall-down-the-hall",
+        "kind": "point"
+      }
+    },
+    {
+      "doc": "detail-plan.json",
+      "op": "add",
+      "path": "/content/details/1/anchors/anchor~1long-hall-down-the-hall",
+      "value": "anchor/long-hall-down-the-hall"
     }
   ],
   "units": [],

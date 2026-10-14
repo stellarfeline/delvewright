@@ -6,14 +6,13 @@
       "op": "add",
       "path": "/content/batches/-",
       "value": {
-        "area": "area/long-hall",
         "edits": [
           {
             "name": "region/a-near-end",
             "shape": {
               "frame": {
                 "kind": "piece-local",
-                "piece": 0,
+                "piece": 2,
                 "prefab": "prefab/gallery-long-hall"
               },
               "kind": "box",

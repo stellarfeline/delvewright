@@ -4,7 +4,7 @@
     {
       "doc": "world-edits.json",
       "op": "add",
-      "path": "/content/batches/7/edits/-",
+      "path": "/content/batches/0/edits/-",
       "value": {
         "name": "region/copper-tile",
         "shape": {
@@ -30,7 +30,7 @@
     {
       "doc": "world-edits.json",
       "op": "add",
-      "path": "/content/batches/7/edits/-",
+      "path": "/content/batches/0/edits/-",
       "value": {
         "recipe": {
           "blocks": [

@@ -1,13 +1,6 @@
 {
   "campaign_id": "gallery",
   "content": {
-    "areas": [
-      {
-        "id": "area/carcass",
-        "name": "The Carcass",
-        "prefab": "prefab/gallery-carcass"
-      }
-    ],
     "boundary": {
       "margin": 16,
       "message": "The valley ends here."

@@ -5,7 +5,6 @@
     "quests": [
       {
         "act": 1,
-        "area": "area/carcass",
         "depends_on": [],
         "goal": "Ask the keeper what lies on the flat, go in through the wound in its flank, then climb the stair cut up its side onto its back.",
         "id": "quest/walk-the-carcass",

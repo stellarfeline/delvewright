@@ -3,153 +3,6 @@
   "content": {
     "batches": [
       {
-        "area": "area/annex",
-        "edits": [
-          {
-            "at_piece": 2,
-            "insert": "prefab/gallery-annex-cell",
-            "prefab": "prefab/gallery-annex-cell-b",
-            "socket": 1,
-            "verb": "insert-piece"
-          }
-        ],
-        "id": "batch/annex-hang-a-tile",
-        "note": "A fourth tile is hung off the tail's spare socket. The `prefab` on the verb is a DRIFT GUARD: it names what the solve must have put at that index, so a re-solve that moves a tile reds instead of editing the wrong one."
-      },
-      {
-        "area": "area/annex",
-        "edits": [
-          {
-            "piece": 3,
-            "prefab": "prefab/gallery-annex-cell",
-            "verb": "swap-piece",
-            "with": "prefab/gallery-annex-end"
-          }
-        ],
-        "id": "batch/annex-cap-the-tail",
-        "note": "The new tail becomes the terminal tile. A swap needs a replacement that can present a connector at every socket the old piece had mated, which is why it is the TAIL that can change and not a middle tile."
-      },
-      {
-        "area": "area/annex",
-        "edits": [
-          {
-            "piece": 3,
-            "prefab": "prefab/gallery-annex-end",
-            "verb": "remove-piece"
-          }
-        ],
-        "id": "batch/annex-take-it-off",
-        "note": "And it comes off again. Removals come BEFORE rewires in an area's script — removing shifts the indices every later rewire is written against."
-      },
-      {
-        "area": "area/annex",
-        "edits": [
-          {
-            "piece": 1,
-            "prefab": "prefab/gallery-annex-cell",
-            "verb": "reseed-piece"
-          }
-        ],
-        "id": "batch/annex-reroll-the-middle",
-        "note": "The middle tile is re-rolled against the pool. After the removal, so it cannot move a tile out from under an earlier verb's index, and before the two rewires, which act on the join it re-mates."
-      },
-      {
-        "area": "area/annex",
-        "edits": [
-          {
-            "piece": 0,
-            "prefab": "prefab/gallery-annex-entry",
-            "socket": 0,
-            "state": "sealed",
-            "verb": "rewire-socket"
-          }
-        ],
-        "id": "batch/annex-seal-a-way",
-        "note": "A mated socket is sealed shut — the other half of the socket vocabulary."
-      },
-      {
-        "area": "area/annex",
-        "edits": [
-          {
-            "piece": 0,
-            "prefab": "prefab/gallery-annex-entry",
-            "socket": 0,
-            "state": "open",
-            "verb": "rewire-socket"
-          }
-        ],
-        "id": "batch/annex-open-a-way",
-        "note": "And the entry's own side of that join is opened again. `rewire-socket open` clears an UNMATED socket's seal, so it can only ever be written on a socket with nothing mated to it — and the cell one step past such an opening lies outside every placed tile. In a world with nothing outside, that is a bottomless column, and `DW0322` refuses the doorway: a way out onto nothing is a fall nobody survives. The one unmated socket that does NOT face the void is the one the batch above just severed, because the partner's own plane is still walled. So this opens the near side of a bricked-up doorway and leaves the far side brick — which is what the verb draws, and it is laid last because the socket is mated until then."
-      },
-      {
-        "area": "area/hall",
-        "edits": [
-          {
-            "at": [
-              26,
-              3,
-              2
-            ],
-            "frame": {
-              "kind": "piece-local",
-              "piece": 0,
-              "prefab": "prefab/gallery-hall"
-            },
-            "prefab": "prefab/gallery-shard",
-            "rotation": "none",
-            "verb": "fragment"
-          },
-          {
-            "at": [
-              26,
-              3,
-              6
-            ],
-            "frame": {
-              "kind": "piece-local",
-              "piece": 0,
-              "prefab": "prefab/gallery-hall"
-            },
-            "prefab": "prefab/gallery-shard",
-            "rotation": "clockwise90",
-            "verb": "fragment"
-          },
-          {
-            "at": [
-              26,
-              3,
-              10
-            ],
-            "frame": {
-              "kind": "piece-local",
-              "piece": 0,
-              "prefab": "prefab/gallery-hall"
-            },
-            "prefab": "prefab/gallery-shard",
-            "rotation": "clockwise180",
-            "verb": "fragment"
-          },
-          {
-            "at": [
-              1,
-              3,
-              2
-            ],
-            "frame": {
-              "kind": "piece-local",
-              "piece": 0,
-              "prefab": "prefab/gallery-hall"
-            },
-            "prefab": "prefab/gallery-shard",
-            "rotation": "counterclockwise90",
-            "verb": "fragment"
-          }
-        ],
-        "id": "batch/stamp-the-shards",
-        "note": "One stamp of the same shard per rotation — four placements rather than one, because a rotation is a property of the PLACEMENT. Kept off the critical path on purpose: a shard is solid, and blocking the route makes the build's render plan longer than the one `snapshot` derives, which is a divergence this campaign is the first thing to have provoked (see README)."
-      },
-      {
-        "area": "area/hall",
         "edits": [
           {
             "name": "region/near-floor",
@@ -246,7 +99,6 @@
         "note": "Break the uniform stone floor into weathered variation. Exercises `select` over `box`, `union` and `palette-match`, and `replace` with a weighted recipe."
       },
       {
-        "area": "area/hall",
         "edits": [
           {
             "name": "region/hearth-bay",
@@ -346,7 +198,6 @@
         "note": "Give the respawn point a floor of its own. Exercises `anchor-relative` framing, `subtract` and `intersect`, `fill`, and `relight` with an explicit fixture."
       },
       {
-        "area": "area/hall",
         "edits": [
           {
             "name": "region/canopy-lip",
@@ -447,7 +298,6 @@
         "note": "The stone canopy over the east bay is thinned before it is brought down. Exercises `carve` and `morph`/`lower` — on the CANOPY rather than the floor, because carving walkable ground opens a void drop and `DW0322` refuses the world it leaves."
       },
       {
-        "area": "area/hall",
         "edits": [
           {
             "name": "region/far-floor",
@@ -728,7 +578,6 @@
         "note": "The patrol lane gets a surface worth marching over. Exercises `surface-band`, `morph`/`smooth`, and `scatter` with an avoid set, a spacing and a limit. The avoid set keeps the scatter off the reliquary chest: a surface band one block above the floor reaches the cells that furniture stands in, and a scattered cobble overwrites the container `loot` fills."
       },
       {
-        "area": "area/hall",
         "edits": [
           {
             "name": "region/pocket-west",

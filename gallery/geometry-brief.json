@@ -15,16 +15,28 @@
         "value": 8.0
       },
       {
-        "id": "fact/annex-tiles",
-        "note": "The side gallery is three tiles long, drawn from the annex pool.",
-        "unit": "pieces",
-        "value": 3.0
-      },
-      {
         "id": "fact/doors-in-the-wall",
         "note": "Three doors pierce the barred wall, which is why the graph carries three barred connections between the same two places rather than one.",
         "unit": "openings",
         "value": 3.0
+      },
+      {
+        "id": "fact/annex-tiles",
+        "note": "The annex is four tiles long, set down by its program by name: an entry, the bay twice, a cap.",
+        "unit": "pieces",
+        "value": 4.0
+      },
+      {
+        "id": "fact/site-span",
+        "note": "The site's span: the hall, the annex and the long hall side by side, four blocks of rock between each.",
+        "unit": "blocks",
+        "value": 57.0
+      },
+      {
+        "id": "fact/site-depth",
+        "note": "The site's depth: the long hall, the longest of the three, and a block of rock at either end.",
+        "unit": "blocks",
+        "value": 141.0
       }
     ]
   },

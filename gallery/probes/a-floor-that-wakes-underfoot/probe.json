@@ -6,6 +6,21 @@
       "op": "replace",
       "path": "/content/lethal_volumes/2/region/anchor",
       "value": "anchor/lid-rim"
+    },
+    {
+      "doc": "layout-graph.json",
+      "op": "add",
+      "path": "/content/nodes/0/stations/-",
+      "value": {
+        "anchor": "anchor/lid-rim",
+        "kind": "point"
+      }
+    },
+    {
+      "doc": "detail-plan.json",
+      "op": "add",
+      "path": "/content/details/0/anchors/anchor~1lid-rim",
+      "value": "anchor/lid-rim"
     }
   ],
   "units": [],

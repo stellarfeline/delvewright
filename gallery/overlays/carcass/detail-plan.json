@@ -1,0 +1,20 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "details": [
+      {
+        "anchors": {
+          "anchor/back": "anchor/back",
+          "anchor/flat": "anchor/flat",
+          "anchor/inside": "anchor/inside",
+          "anchor/node-carcass": "anchor/entry",
+          "spawn": "anchor/entry"
+        },
+        "piece": "prefab/gallery-carcass",
+        "place": "node/carcass"
+      }
+    ]
+  },
+  "dsl_version": "0.44.0",
+  "stage": "detail-plan"
+}

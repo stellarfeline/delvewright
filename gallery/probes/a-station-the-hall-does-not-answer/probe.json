@@ -1,0 +1,21 @@
+{
+  "code": "DW0842",
+  "why": "A station the hall declares that the bound piece has no anchor for: the place's row binds it to a name the piece does not carry, and the refusal names the piece and its nearest anchors.",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "add",
+      "path": "/content/nodes/0/stations/-",
+      "value": {
+        "anchor": "anchor/no-such-cell",
+        "kind": "point"
+      }
+    },
+    {
+      "doc": "detail-plan.json",
+      "op": "add",
+      "path": "/content/details/0/anchors/anchor~1no-such-cell",
+      "value": "anchor/no-such-cell"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "details": [
+      {
+        "anchors": {
+          "anchor/bank-corner": "anchor/bank-corner",
+          "anchor/bank-court": "anchor/bank-court",
+          "anchor/node-bank": "anchor/bank-arrival",
+          "spawn": "anchor/bank-arrival"
+        },
+        "piece": "prefab/gallery-bank",
+        "place": "node/bank"
+      }
+    ]
+  },
+  "dsl_version": "0.44.0",
+  "stage": "detail-plan"
+}

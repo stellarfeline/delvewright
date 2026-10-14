@@ -62,5 +62,6 @@
     }
   ],
   "units": [],
-  "why": "The yard's sky cut to three courses (`ceiling: {\"open\": 3}`): its top course is now y 66, two under the gantry's floor course at 68, so the climb's hole through the deck has no shared face to sit on — a ladder that stops one course short of the deck. `DW0828` names the gap and the headroom on the lower place that closes it. It declares no unit: `Ceiling.open` is bound on the site-plan overlay's yard, and what must not compile is a climb between two places that do not meet."
+  "why": "The yard's sky cut to three courses (`ceiling: {\"open\": 3}`): its top course is now y 66, two under the gantry's floor course at 68, so the climb's hole through the deck has no shared face to sit on — a ladder that stops one course short of the deck. `DW0828` names the gap and the headroom on the lower place that closes it. It declares no unit: `Ceiling.open` is bound on the site-plan overlay's yard, and what must not compile is a climb between two places that do not meet.",
+  "over": "site-plan"
 }

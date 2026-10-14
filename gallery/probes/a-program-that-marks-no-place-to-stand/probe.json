@@ -1,5 +1,99 @@
 {
   "code": "DW0845",
   "units": [],
-  "why": "The site-plan overlay's own `programs/annex.json` with its one `mark` removed, so no anchor of the expansion answers `anchor/node-annex`, the name the campaign's quest layer bound to this place before any detail existed. `delvec detail` binds an owed name to the piece anchor of the same stem and judges the row it would write before writing it, so the refusal is `DW0845` in validation's own words and no file moves. It declares no unit: what it perturbs is a program, and what must never force a quest edit is a place being detailed."
+  "why": "The site-plan overlay's own `programs/annex.json` with its one `mark` removed, so no anchor of the expansion answers `anchor/node-annex`, the name the campaign's quest layer bound to this place before any detail existed. `delvec detail` binds an owed name to the piece anchor of the same stem and judges the row it would write before writing it, so the refusal is `DW0845` in validation's own words and no file moves. It declares no unit: what it perturbs is a program, and what must never force a quest edit is a place being detailed.",
+  "over": "site-plan",
+  "patch": [
+    {
+      "doc": "programs/annex.json",
+      "op": "add",
+      "path": "/rules/room/0/body/body/axis",
+      "value": "x"
+    },
+    {
+      "doc": "programs/annex.json",
+      "op": "remove",
+      "path": "/rules/room/0/body/body/body"
+    },
+    {
+      "doc": "programs/annex.json",
+      "op": "add",
+      "path": "/rules/room/0/body/body/children",
+      "value": [
+        {
+          "op": "void"
+        },
+        {
+          "op": "call",
+          "symbol": "plinth_row"
+        },
+        {
+          "op": "void"
+        }
+      ]
+    },
+    {
+      "doc": "programs/annex.json",
+      "op": "remove",
+      "path": "/rules/room/0/body/body/mark"
+    },
+    {
+      "doc": "programs/annex.json",
+      "op": "replace",
+      "path": "/rules/room/0/body/body/op",
+      "value": "split"
+    },
+    {
+      "doc": "programs/annex.json",
+      "op": "add",
+      "path": "/rules/room/0/body/body/sizes",
+      "value": [
+        {
+          "size": "relative",
+          "weight": {
+            "expr": "int",
+            "value": 1
+          }
+        },
+        {
+          "blocks": {
+            "expr": "int",
+            "value": 2
+          },
+          "size": "absolute"
+        },
+        {
+          "size": "relative",
+          "weight": {
+            "expr": "int",
+            "value": 1
+          }
+        }
+      ]
+    },
+    {
+      "doc": "programs/annex.json",
+      "op": "replace",
+      "path": "/rules/room/0/body/mark/anchor",
+      "value": "annex-bench"
+    },
+    {
+      "doc": "programs/annex.json",
+      "op": "replace",
+      "path": "/rules/room/0/body/mark/facing",
+      "value": "west"
+    },
+    {
+      "doc": "programs/annex.json",
+      "op": "replace",
+      "path": "/rules/room/0/body/mark/x/value",
+      "value": 12
+    },
+    {
+      "doc": "programs/annex.json",
+      "op": "replace",
+      "path": "/rules/room/0/body/mark/z/value",
+      "value": 12
+    }
+  ]
 }

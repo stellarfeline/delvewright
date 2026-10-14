@@ -8,8 +8,18 @@
       "value": {
         "base": "valley"
       }
+    },
+    {
+      "doc": "site-plan.json",
+      "op": "remove",
+      "path": ""
+    },
+    {
+      "doc": "detail-plan.json",
+      "op": "remove",
+      "path": ""
     }
   ],
   "units": [],
-  "why": "A horizon whose base BUILDS terrain, on a campaign that never says how big its map is. The primary places TWO areas, and two is what this refusal is about: areas sit 256 blocks apart on the compiler's fixed stride, so the union of their footprints is a rectangle that is mostly the void between them, and ringing it would build a mountain range around empty space. It was measured doing exactly that — the same surround around the site plan's declared 64x64 region is fourteen templates and about ninety seconds, and around this union it had not finished in ten minutes. The refusal is not a budget: it is the engine declining to guess an extent nobody stated. What it is NOT is a rule that `areas[]` may never carry terrain — one area bound to one prefab states an extent, because the map is that piece and the piece declares its own region, and the `valley-site` overlay is that campaign built. Take the second area away here and this patch stops refusing. It declares no unit, because the surface it exercises is bound on two other points of this domain, where a map says how big it is."
+  "why": "A horizon whose base BUILDS terrain, on a campaign with no site plan. A surround rings the plan's declared `region`, and a campaign with no plan states no extent at all, so there is nothing for the valley to be built around; the refusal names the base and the two moves — give the campaign its map, or declare `void` or `ocean`."
 }

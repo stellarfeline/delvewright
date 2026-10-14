@@ -4,7 +4,6 @@
     "npcs": [
       {
         "anchor": "anchor/flat",
-        "area": "area/carcass",
         "base_entity": "minecraft:villager",
         "id": "npc/carcass-keeper",
         "name": "The Keeper of the Flat",

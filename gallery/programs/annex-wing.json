@@ -1,0 +1,144 @@
+{
+  "contract": {
+    "edges": [],
+    "entry": "bays",
+    "no_body": {},
+    "spaces": {
+      "bays": {
+        "envelope": "enclosed"
+      }
+    }
+  },
+  "name": "gallery-annex-row",
+  "palette": {
+    "roof": {
+      "local": "minecraft:stone_brick_stairs[facing=north,half=bottom,shape=straight,waterlogged=false]"
+    }
+  },
+  "rules": {
+    "annex": [
+      {
+        "body": {
+          "axis": "y",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "row"
+            },
+            {
+              "material": {
+                "role": "roof"
+              },
+              "op": "fill"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 8
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "row": [
+      {
+        "body": {
+          "body": {
+            "axis": "z",
+            "children": [
+              {
+                "body": {
+                  "op": "prefab",
+                  "piece": "prefab/gallery-annex-entry"
+                },
+                "op": "claim",
+                "region": "entry"
+              },
+              {
+                "body": {
+                  "op": "prefab",
+                  "piece": "prefab/gallery-annex-cell"
+                },
+                "op": "claim",
+                "region": "bay"
+              },
+              {
+                "body": {
+                  "op": "prefab",
+                  "piece": "prefab/gallery-annex-cell"
+                },
+                "op": "claim",
+                "region": "bay"
+              },
+              {
+                "body": {
+                  "op": "prefab",
+                  "piece": "prefab/gallery-annex-end"
+                },
+                "op": "claim",
+                "region": "cap"
+              }
+            ],
+            "op": "split",
+            "sizes": [
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 7
+                },
+                "size": "absolute"
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 7
+                },
+                "size": "absolute"
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 7
+                },
+                "size": "absolute"
+              },
+              {
+                "blocks": {
+                  "expr": "int",
+                  "value": 7
+                },
+                "size": "absolute"
+              }
+            ]
+          },
+          "op": "claim",
+          "region": "bays"
+        },
+        "weight": 1
+      }
+    ]
+  },
+  "shown_faces": [
+    "down",
+    "east",
+    "north",
+    "south",
+    "up",
+    "west"
+  ],
+  "start": "annex",
+  "version": "1.11.0"
+}

@@ -1,0 +1,12 @@
+{
+  "code": "DW0100",
+  "why": "A planned quest carrying the removed `area` field. A quest's place is the layout graph's beat, never an area; the schema refuses the field by name.",
+  "patch": [
+    {
+      "doc": "quest-plan.json",
+      "op": "add",
+      "path": "/content/quests/0/area",
+      "value": "area/hall"
+    }
+  ]
+}

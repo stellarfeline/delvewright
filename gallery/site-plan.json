@@ -1,0 +1,122 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "boxes": [
+      {
+        "atmosphere": "atmosphere/frost-hall",
+        "base": {
+          "owned": 2
+        },
+        "ceiling": {
+          "open": 11
+        },
+        "extent": [
+          29,
+          29
+        ],
+        "floor": {
+          "y": 67
+        },
+        "lighting": {
+          "fixture": "lantern",
+          "min_light": 7
+        },
+        "min": [
+          1,
+          1
+        ],
+        "mitigation": "night-vision",
+        "node": "node/hall"
+      },
+      {
+        "base": {
+          "owned": 2
+        },
+        "ceiling": {
+          "open": 6
+        },
+        "extent": [
+          5,
+          26
+        ],
+        "floor": {
+          "y": 67
+        },
+        "min": [
+          36,
+          1
+        ],
+        "node": "node/annex-wing"
+      },
+      {
+        "base": {
+          "owned": 0
+        },
+        "ceiling": {
+          "open": 6
+        },
+        "extent": [
+          9,
+          137
+        ],
+        "floor": {
+          "y": 65
+        },
+        "min": [
+          47,
+          1
+        ],
+        "node": "node/long-hall"
+      }
+    ],
+    "datums": [
+      {
+        "id": "datum/ground",
+        "note": "The course under the three places: the whole's ground meets each piece's own floor from below.",
+        "y": 64
+      }
+    ],
+    "fill": {
+      "below": "minecraft:stone",
+      "kind": "open",
+      "surface": "minecraft:smooth_stone",
+      "terrain": {
+        "datum": "datum/ground",
+        "kind": "flat"
+      }
+    },
+    "identities": [
+      {
+        "cmp": "eq",
+        "fact": "fact/site-span",
+        "measure": {
+          "axis": "x",
+          "of": "region-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/site-depth",
+        "measure": {
+          "axis": "z",
+          "of": "region-extent"
+        }
+      }
+    ],
+    "region": {
+      "extent": [
+        57,
+        14,
+        141
+      ],
+      "min": [
+        0,
+        64,
+        0
+      ]
+    },
+    "seams": []
+  },
+  "dsl_version": "0.44.0",
+  "stage": "site-plan"
+}

@@ -246,7 +246,9 @@ def _codes(r: subprocess.CompletedProcess) -> list[str]:
     return [c for c in codes if c]
 
 
-def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[str], str]:
+def run_probe(
+    delvec: Path, campaign: Path, prefabs: Path, ships_program: bool = True
+) -> tuple[int, list[str], str]:
     """Put a probe through the engine and report how it was refused.
 
     **`detail` first where the probe carries a program, then `validate`, then
@@ -270,10 +272,13 @@ def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[st
     # written, and its refusals — a handed name nothing hands, an opening off
     # its seam, an owed name no mark answers — fire on the program, ahead of
     # any verdict `validate` would give the campaign around it. So where the
-    # materialised point carries `programs/`, `detail --all` runs first, over a
+    # probe ships or edits a program, `detail --all` runs first, over a
     # scratch copy of the prefab directory so a probe that is NOT refused
     # cannot write into the directory every other point builds from.
-    if (campaign / "programs").is_dir():
+    # A program the probe neither ships nor edits is the base point's own,
+    # already detailed into `prefabs` by `gallery-prefabs.py`; its committed row
+    # is what validate and build read.
+    if ships_program and (campaign / "programs").is_dir():
         scratch = Path(tempfile.mkdtemp(prefix="gallery-probe-prefabs-")) / "prefabs"
         try:
             if gallery_domain.probe_prefabs(prefabs, scratch) == 0:
@@ -392,7 +397,8 @@ def probe_patch(name: str, manifest: dict) -> list[dict]:
                 f"probe `{name}` patch[{i}] names no `doc`. An edit belongs to one "
                 "document of the primary, and which one is not inferable from a pointer"
             )
-        if not isinstance(path, str) or not path.startswith("/"):
+        whole = verb == "remove" and path == ""
+        if not whole and (not isinstance(path, str) or not path.startswith("/")):
             die(
                 f"probe `{name}` patch[{i}] has `path` {path!r}, which is not a JSON "
                 "pointer (RFC 6901 pointers start with `/`)"
@@ -498,8 +504,12 @@ def prepare_probe(pd: Path, tmp: Path) -> dict:
         )
     dest = tmp / pd.name
     materialise_point("probe", pd, dest)
+    ships_program = (pd / "programs").is_dir() or any(
+        (op.get("doc") or "").split("/")[-2:-1] == ["programs"] for op in ops
+    )
     return {
         "name": pd.name,
+        "ships_program": ships_program,
         "kind": kind,
         "code": code,
         "claimed": claimed,
@@ -638,7 +648,7 @@ def main() -> int:
                 held = (said.getvalue(), e.code)
                 break
         runs = parallel.ordered(
-            lambda p: run_probe(delvec, p["dest"], prefabs), prepared
+            lambda p: run_probe(delvec, p["dest"], prefabs, p["ships_program"]), prepared
         )
         with contextlib.closing(runs):
             for p, outcome in zip(prepared, runs):

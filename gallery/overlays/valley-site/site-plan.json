@@ -1,0 +1,76 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "boxes": [
+      {
+        "base": {
+          "owned": 3
+        },
+        "ceiling": {
+          "open": 8
+        },
+        "extent": [
+          22,
+          22
+        ],
+        "floor": {
+          "y": 64
+        },
+        "min": [
+          1,
+          1
+        ],
+        "node": "node/bank"
+      }
+    ],
+    "datums": [
+      {
+        "id": "datum/subsoil",
+        "note": "The course under the piece: the valley's ground meets the site's own mass from below.",
+        "y": 60
+      }
+    ],
+    "fill": {
+      "below": "minecraft:dirt",
+      "kind": "open",
+      "surface": "minecraft:grass_block",
+      "terrain": {
+        "datum": "datum/subsoil",
+        "kind": "flat"
+      }
+    },
+    "identities": [
+      {
+        "cmp": "eq",
+        "fact": "fact/site-span",
+        "measure": {
+          "axis": "x",
+          "of": "region-extent"
+        }
+      },
+      {
+        "cmp": "eq",
+        "fact": "fact/site-depth",
+        "measure": {
+          "axis": "z",
+          "of": "region-extent"
+        }
+      }
+    ],
+    "region": {
+      "extent": [
+        24,
+        12,
+        24
+      ],
+      "min": [
+        0,
+        60,
+        0
+      ]
+    },
+    "seams": []
+  },
+  "dsl_version": "0.44.0",
+  "stage": "site-plan"
+}

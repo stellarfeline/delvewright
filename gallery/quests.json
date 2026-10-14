@@ -649,7 +649,7 @@
         "every": 30,
         "floor": 0.4,
         "id": "pulse/the-heart",
-        "place": "area/hall",
+        "place": "node/hall",
         "sound": "entity.warden.heartbeat",
         "when": {
           "forbids_flags": [
@@ -673,7 +673,7 @@
         "floor": 0.4,
         "id": "pulse/the-heart-racing",
         "pitch": 1.2,
-        "place": "area/hall",
+        "place": "node/hall",
         "sound": "minecraft:entity.warden.heartbeat",
         "when": {
           "requires_flags": [
@@ -683,13 +683,13 @@
       },
       {
         "at": {
-          "anchor": "anchor/annex-second-bay"
+          "anchor": "anchor/annex-first-bay-2"
         },
         "every": 40,
         "floor": 0.2,
         "id": "pulse/the-drip",
         "region": {
-          "anchor": "anchor/annex-second-bay",
+          "anchor": "anchor/annex-first-bay-2",
           "extent": [
             3,
             1,
@@ -1097,6 +1097,14 @@
                 ]
               },
               "type": "clear-region"
+            },
+            {
+              "flag": "flag/annex-open",
+              "happening": {
+                "text": "The curator's word opens the way to the annex.",
+                "verb": "opens"
+              },
+              "type": "set-flag"
             }
           ],
           "obj/press-the-case": [
@@ -1395,7 +1403,7 @@
             },
             {
               "atmosphere": "atmosphere/frost-hall",
-              "place": "area/hall",
+              "place": "node/hall",
               "type": "set-atmosphere"
             }
           ],
@@ -3221,7 +3229,16 @@
             "type": "reach-anchor"
           }
         ],
-        "on_complete": [],
+        "on_complete": [
+          {
+            "anchor": "anchor/long-hall-return",
+            "happening": {
+              "text": "the lever's landing in the hall is where the party comes back to now",
+              "verb": "arrives"
+            },
+            "type": "set-checkpoint"
+          }
+        ],
         "on_objective_complete": {
           "obj/arrive-at-the-porch": [
             {
@@ -3881,12 +3898,12 @@
         ]
       },
       {
-        "at": "anchor/annex-second-bay",
+        "at": "anchor/annex-first-bay-2",
         "audience": "party",
         "effects": [
           {
             "at": {
-              "anchor": "anchor/annex-second-bay",
+              "anchor": "anchor/annex-first-bay-2",
               "at": "anchor"
             },
             "sound": "minecraft:block.stone.step",
@@ -4229,6 +4246,96 @@
         "prop": {
           "block": "minecraft:lever[face=floor,facing=south]"
         }
+      },
+      {
+        "at": "anchor/to-the-annex",
+        "effects": [
+          {
+            "from": {
+              "anchor": "anchor/to-the-annex",
+              "extent": [
+                1,
+                1,
+                1
+              ]
+            },
+            "to": {
+              "anchor": "anchor/annex-threshold"
+            },
+            "type": "teleport"
+          }
+        ],
+        "id": "trigger/to-the-annex",
+        "on": {
+          "on": "use"
+        },
+        "once": false,
+        "prop": {
+          "block": "minecraft:lever[face=floor,facing=north]"
+        },
+        "requires_flags": [
+          "flag/annex-open"
+        ]
+      },
+      {
+        "at": "anchor/annex-cap",
+        "effects": [
+          {
+            "from": {
+              "anchor": "anchor/annex-cap",
+              "extent": [
+                1,
+                1,
+                1
+              ]
+            },
+            "to": {
+              "anchor": "anchor/long-hall-porch"
+            },
+            "type": "teleport"
+          }
+        ],
+        "id": "trigger/to-the-long-hall",
+        "on": {
+          "on": "use"
+        },
+        "once": false,
+        "prop": {
+          "block": "minecraft:lever[face=floor,facing=north]"
+        },
+        "requires_flags": [
+          "flag/annex-open"
+        ]
+      },
+      {
+        "at": "anchor/long-hall-end",
+        "effects": [
+          {
+            "from": {
+              "anchor": "anchor/long-hall-end",
+              "extent": [
+                1,
+                1,
+                1
+              ]
+            },
+            "to": {
+              "anchor": "anchor/long-hall-return"
+            },
+            "type": "teleport"
+          }
+        ],
+        "id": "trigger/out-of-the-long-hall",
+        "on": {
+          "on": "use"
+        },
+        "once": false,
+        "prop": {
+          "block": "minecraft:lever[face=floor,facing=north]"
+        },
+        "requires_flags": [
+          "flag/annex-open"
+        ]
       }
     ],
     "waves": [

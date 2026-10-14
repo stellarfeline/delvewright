@@ -6,7 +6,6 @@
       "op": "add",
       "path": "/content/batches/-",
       "value": {
-        "area": "area/hall",
         "edits": [
           {
             "name": "region/probe-cell",

@@ -348,6 +348,11 @@ def materialise(dest: Path, point: Path | None = None) -> int:
     shutil.copytree(GALLERY, dest)
     for junk in NOT_CAMPAIGN:
         shutil.rmtree(dest / junk, ignore_errors=True)
+    # A probe declares the point it perturbs: the primary, or with `over` an
+    # overlay laid over it exactly as that overlay's own point is.
+    over = probe_base(point)
+    if over is not None:
+        _lay(over, dest)
     if point is not None:
         shadowed = shadowed_documents(point)
         if shadowed:
@@ -356,19 +361,7 @@ def materialise(dest: Path, point: Path | None = None) -> int:
                 "the primary plus a declared edit: name the edit in `probe.json`'s "
                 "`patch`, so nothing can drift from a copy nobody compares"
             )
-        for f in sorted(Path(point).iterdir()):
-            if f.name in POINT_MANIFESTS:
-                continue
-            if f.is_dir() and f.name in REPLACED_DIRS:
-                # A point's programs are its places' own: they replace the
-                # primary's rather than merge with them, or a program would
-                # name a place the point's plan does not allocate.
-                shutil.rmtree(dest / f.name, ignore_errors=True)
-                shutil.copytree(f, dest / f.name)
-            elif f.is_dir():
-                shutil.copytree(f, dest / f.name, dirs_exist_ok=True)
-            else:
-                shutil.copy2(f, dest / f.name)
+        _lay(Path(point), dest)
         by_doc: dict[str, list[dict]] = {}
         for op in patch_ops(point):
             by_doc.setdefault(op.get("doc") or "", []).append(op)
@@ -398,6 +391,16 @@ def materialise(dest: Path, point: Path | None = None) -> int:
                 raise PatchError(
                     f"declares an edit to `{rel}`, which is not a document of the primary"
                 )
+            # `remove` at the empty pointer removes the whole document: the point
+            # is the primary WITHOUT it (a campaign that has no site plan, say).
+            if any(op.get("op") == "remove" and op.get("path") == "" for op in ops):
+                if len(ops) != 1:
+                    raise PatchError(
+                        f"`{rel}`: removes the whole document and also edits it — a "
+                        "document that is removed has nothing left to edit"
+                    )
+                target.unlink()
+                continue
             doc = json.loads(target.read_text())
             try:
                 apply_patch(doc, ops)
@@ -405,6 +408,44 @@ def materialise(dest: Path, point: Path | None = None) -> int:
                 raise PatchError(f"`{rel}`: {e}") from None
             target.write_text(json.dumps(doc, indent=2, ensure_ascii=False, sort_keys=True) + "\n")
     return sum(1 for p in dest.rglob("*") if p.is_file())
+
+
+def _lay(point: Path, dest: Path) -> None:
+    """Copy a point's own files over `dest`: its documents replace the
+    primary's, its directories merge, and its `programs/` replaces the
+    primary's — a point's programs are its places' own, or a program would name
+    a place the point's plan does not allocate."""
+    for f in sorted(point.iterdir()):
+        if f.name in POINT_MANIFESTS:
+            continue
+        if f.is_dir() and f.name in REPLACED_DIRS:
+            shutil.rmtree(dest / f.name, ignore_errors=True)
+            shutil.copytree(f, dest / f.name)
+        elif f.is_dir():
+            shutil.copytree(f, dest / f.name, dirs_exist_ok=True)
+        else:
+            shutil.copy2(f, dest / f.name)
+
+
+def probe_base(point: Path | None) -> Path | None:
+    """The overlay a probe declares it perturbs (`"over": "<overlay>"` in its
+    `probe.json`), or `None` for a probe of the primary and for any other point.
+
+    A probe is a point plus one declared edit; the point is the primary unless
+    the probe names an overlay, whose documents and programs are then laid over
+    the primary first — the same point the overlay itself builds."""
+    if point is None:
+        return None
+    manifest = Path(point) / "probe.json"
+    if not manifest.is_file():
+        return None
+    over = json.loads(manifest.read_text()).get("over")
+    if over is None:
+        return None
+    base = GALLERY / "overlays" / over
+    if not (base / "overlay.json").is_file():
+        raise PatchError(f"declares `over: {over}`, and no overlay of that name exists")
+    return base
 
 
 def _overlay_document(rel: str) -> str | None:

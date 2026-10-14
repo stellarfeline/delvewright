@@ -1,0 +1,95 @@
+{
+  "campaign_id": "gallery",
+  "content": {
+    "details": [
+      {
+        "anchors": {
+          "anchor/arrival": "anchor/arrival",
+          "anchor/cabin": "anchor/cabin",
+          "anchor/cabin-chest": "anchor/cabin-chest",
+          "anchor/cabin-roof": "anchor/cabin-roof",
+          "anchor/case": "anchor/case",
+          "anchor/clock-lever": "anchor/clock-lever",
+          "anchor/counter": "anchor/counter",
+          "anchor/east-bay": "anchor/east-bay",
+          "anchor/east-pit": "anchor/east-pit",
+          "anchor/east-vault": "anchor/east-vault",
+          "anchor/exit": "anchor/exit",
+          "anchor/ferry-deck": "anchor/ferry-deck",
+          "anchor/ferry-landing": "anchor/ferry-landing",
+          "anchor/ferry-tiller": "anchor/ferry-tiller",
+          "anchor/gate-main": "anchor/gate-main",
+          "anchor/hearth": "anchor/hearth",
+          "anchor/hearth-stone": "anchor/hearth-stone",
+          "anchor/label": "anchor/label",
+          "anchor/lane-east": "anchor/lane-east",
+          "anchor/lane-west": "anchor/lane-west",
+          "anchor/lectern": "anchor/lectern",
+          "anchor/lid": "anchor/lid",
+          "anchor/lid-pit": "anchor/lid-pit",
+          "anchor/loft": "anchor/loft",
+          "anchor/long-gallery-end": "anchor/long-gallery-end",
+          "anchor/long-gallery-lamp-0": "anchor/long-gallery-lamp-0",
+          "anchor/long-gallery-lamp-1": "anchor/long-gallery-lamp-1",
+          "anchor/long-gallery-lamp-2": "anchor/long-gallery-lamp-2",
+          "anchor/long-gallery-lamp-3": "anchor/long-gallery-lamp-3",
+          "anchor/long-gallery-landing": "anchor/long-gallery-landing",
+          "anchor/long-gallery-slab": "anchor/long-gallery-slab",
+          "anchor/long-hall-return": "anchor/long-hall-return",
+          "anchor/march": "anchor/march",
+          "anchor/muster": "anchor/muster",
+          "anchor/node-hall": "anchor/arrival",
+          "anchor/pedestal": "anchor/pedestal",
+          "anchor/plate-lever": "anchor/plate-lever",
+          "anchor/plinth": "anchor/plinth",
+          "anchor/pocket": "anchor/pocket",
+          "anchor/rafters": "anchor/rafters",
+          "anchor/reach": "anchor/reach",
+          "anchor/reliquary": "anchor/reliquary",
+          "anchor/shortcut-door": "anchor/shortcut-door",
+          "anchor/side-lever": "anchor/side-lever",
+          "anchor/stall": "anchor/stall",
+          "anchor/strongbox": "anchor/strongbox",
+          "anchor/timed-door": "anchor/timed-door",
+          "anchor/timed-door-inner": "anchor/timed-door-inner",
+          "anchor/timed-door-mid": "anchor/timed-door-mid",
+          "anchor/to-the-annex": "anchor/to-the-annex",
+          "anchor/usher": "anchor/usher",
+          "anchor/valve-first": "anchor/valve-first",
+          "anchor/valve-second": "anchor/valve-second",
+          "anchor/valve-third": "anchor/valve-third",
+          "anchor/vantage": "anchor/vantage",
+          "anchor/warden": "anchor/warden",
+          "anchor/west-bay": "anchor/west-bay",
+          "anchor/west-pit": "anchor/west-pit",
+          "spawn": "anchor/arrival"
+        },
+        "piece": "prefab/gallery-hall",
+        "place": "node/hall"
+      },
+      {
+        "anchors": {
+          "anchor/long-hall-end": "anchor/long-hall-end",
+          "anchor/long-hall-landing": "anchor/long-hall-landing",
+          "anchor/long-hall-porch": "anchor/long-hall-porch",
+          "anchor/long-hall-slab": "anchor/long-hall-slab",
+          "anchor/node-long-hall": "anchor/long-hall-porch"
+        },
+        "piece": "prefab/gallery-long-hall",
+        "place": "node/long-hall"
+      },
+      {
+        "anchors": {
+          "anchor/annex-cap": "anchor/annex-cap",
+          "anchor/annex-first-bay-2": "anchor/annex-first-bay-2",
+          "anchor/annex-threshold": "anchor/annex-threshold",
+          "anchor/node-annex-wing": "anchor/annex-threshold"
+        },
+        "piece": "prefab/gallery-annex-wing",
+        "place": "node/annex-wing"
+      }
+    ]
+  },
+  "dsl_version": "0.44.0",
+  "stage": "detail-plan"
+}

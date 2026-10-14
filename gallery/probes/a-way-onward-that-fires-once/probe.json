@@ -26,12 +26,6 @@
           "type": "teleport"
         }
       ]
-    },
-    {
-      "doc": "layout-graph.json",
-      "op": "replace",
-      "path": "/content/edges/12/class",
-      "value": "walk"
     }
   ],
   "units": [],

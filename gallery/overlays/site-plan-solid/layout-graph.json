@@ -117,7 +117,9 @@
         "a": "node/far-hall",
         "b": "node/undercroft",
         "class": "stair",
-        "id": "edge/undercroft-stair"
+        "id": "edge/undercroft-stair",
+        "one_way": "a-to-b",
+        "shortcut": true
       },
       {
         "a": "node/undercroft",

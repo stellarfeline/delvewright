@@ -6,6 +6,21 @@
       "op": "replace",
       "path": "/content/actors/0/anchor",
       "value": "anchor/long-gallery-hall"
+    },
+    {
+      "doc": "layout-graph.json",
+      "op": "add",
+      "path": "/content/nodes/0/stations/-",
+      "value": {
+        "anchor": "anchor/long-gallery-hall",
+        "kind": "point"
+      }
+    },
+    {
+      "doc": "detail-plan.json",
+      "op": "add",
+      "path": "/content/details/0/anchors/anchor~1long-gallery-hall",
+      "value": "anchor/long-gallery-hall"
     }
   ],
   "units": [],

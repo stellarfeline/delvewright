@@ -3,57 +3,41 @@
   "content": {
     "beats": [
       {
-        "node": "node/court",
+        "node": "node/bank",
         "objective": "obj/ask-the-warden",
         "quest": "quest/walk-the-bank"
       },
       {
-        "node": "node/far-corner",
+        "node": "node/bank",
         "objective": "obj/far-corner",
         "quest": "quest/walk-the-bank"
       },
       {
-        "node": "node/far-corner",
+        "node": "node/bank",
         "objective": "obj/the-corner-stone",
         "quest": "quest/walk-the-bank"
       }
     ],
     "critical_path": [
-      "node/arrival",
-      "node/court",
-      "node/far-corner"
+      "node/bank"
     ],
-    "edges": [
-      {
-        "a": "node/arrival",
-        "b": "node/court",
-        "class": "walk",
-        "id": "edge/into-the-court"
-      },
-      {
-        "a": "node/court",
-        "b": "node/far-corner",
-        "class": "walk",
-        "id": "edge/across-the-bank"
-      }
-    ],
-    "entry": "node/arrival",
-    "goal": "node/far-corner",
+    "edges": [],
+    "entry": "node/bank",
+    "goal": "node/bank",
     "nodes": [
       {
-        "id": "node/arrival",
-        "intent": "threshold",
-        "note": "the cell inside the way through the parapet, where the party arrives"
-      },
-      {
-        "id": "node/court",
-        "intent": "hub",
-        "note": "the middle of the walled ground, where the warden stands"
-      },
-      {
-        "id": "node/far-corner",
-        "intent": "side-gallery",
-        "note": "the far corner of the bank, where the wall turns"
+        "id": "node/bank",
+        "intent": "the whole site, one piece that owns its ground",
+        "stations": [
+          {
+            "anchor": "anchor/bank-court",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/bank-corner",
+            "kind": "point"
+          }
+        ]
       }
     ]
   },

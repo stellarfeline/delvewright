@@ -3,82 +3,82 @@
   "content": {
     "beats": [
       {
-        "node": "node/near-hall",
+        "node": "node/hall",
         "objective": "obj/hear-the-curator",
         "quest": "quest/near-hall"
       },
       {
-        "node": "node/near-hall",
+        "node": "node/hall",
         "objective": "obj/press-the-case",
         "quest": "quest/near-hall"
       },
       {
-        "node": "node/near-hall",
+        "node": "node/hall",
         "objective": "obj/take-the-emeralds",
         "quest": "quest/near-hall"
       },
       {
-        "node": "node/annex",
+        "node": "node/annex-wing",
         "objective": "obj/reach-the-counter",
         "quest": "quest/near-hall"
       },
       {
-        "node": "node/far-hall",
+        "node": "node/hall",
         "objective": "obj/answer-the-marshal",
         "quest": "quest/far-hall"
       },
       {
-        "node": "node/far-hall",
+        "node": "node/hall",
         "objective": "obj/clear-the-muster",
         "quest": "quest/far-hall"
       },
       {
-        "node": "node/far-hall",
+        "node": "node/hall",
         "objective": "obj/take-the-bone",
         "quest": "quest/far-hall"
       },
       {
-        "node": "node/loft",
+        "node": "node/hall",
         "objective": "obj/climb-the-loft",
         "quest": "quest/far-hall"
       },
       {
-        "node": "node/exit",
+        "node": "node/hall",
         "objective": "obj/reach-the-end",
         "quest": "quest/far-hall"
       },
       {
-        "node": "node/near-hall",
+        "node": "node/hall",
         "objective": "obj/look-in-the-east-bay",
         "quest": "quest/the-reliquary"
       },
       {
-        "node": "node/near-hall",
+        "node": "node/hall",
         "objective": "obj/look-in-the-west-bay",
         "quest": "quest/the-reliquary"
       },
       {
-        "node": "node/near-hall",
+        "node": "node/hall",
         "objective": "obj/look-into-the-well",
         "quest": "quest/the-reliquary"
       },
       {
-        "node": "node/exit",
+        "node": "node/hall",
         "objective": "obj/board-the-ferry",
         "quest": "quest/far-hall"
       },
       {
-        "node": "node/ferry-cabin",
+        "node": "node/hall",
         "objective": "obj/cross-the-strait",
         "quest": "quest/far-hall"
       },
       {
-        "node": "node/exit",
+        "node": "node/hall",
         "objective": "obj/climb-onto-the-cabin",
         "quest": "quest/far-hall"
       },
       {
-        "node": "node/long-gallery",
+        "node": "node/hall",
         "objective": "obj/walk-the-long-gallery",
         "quest": "quest/far-hall"
       },
@@ -93,249 +93,331 @@
         "quest": "quest/long-hall"
       },
       {
-        "node": "node/near-hall",
+        "node": "node/hall",
         "objective": "obj/back-in-the-hall",
         "quest": "quest/far-hall"
       }
     ],
     "critical_path": [
-      "node/near-hall",
-      "node/annex",
+      "node/hall",
+      "node/annex-wing",
       "node/long-hall",
-      "node/near-hall",
-      "node/far-hall",
-      "node/long-gallery",
-      "node/far-hall",
-      "node/loft",
-      "node/far-hall",
-      "node/exit",
-      "node/ferry-cabin",
-      "node/exit"
+      "node/hall"
     ],
     "edges": [
       {
-        "a": "node/near-hall",
-        "b": "node/annex",
-        "class": "walk",
-        "id": "edge/annex-arch"
-      },
-      {
-        "a": "node/annex",
-        "b": "node/far-hall",
-        "class": "walk",
-        "gating": {
-          "quest": "quest/near-hall"
-        },
-        "id": "edge/annex-chute",
-        "one_way": "a-to-b",
-        "shortcut": true
-      },
-      {
-        "a": "node/near-hall",
-        "b": "node/far-hall",
-        "class": "barred",
-        "gating": {
-          "quest": "quest/near-hall"
-        },
-        "id": "edge/west-door",
-        "opens_from": "a"
-      },
-      {
-        "a": "node/near-hall",
-        "b": "node/far-hall",
-        "class": "barred",
-        "gating": {
-          "quest": "quest/near-hall"
-        },
-        "id": "edge/centre-door",
-        "opens_from": "either"
-      },
-      {
-        "a": "node/near-hall",
-        "b": "node/far-hall",
-        "class": "barred",
-        "gating": {
-          "flags": [
-            "flag/muster-cleared"
-          ]
-        },
-        "id": "edge/east-door",
-        "one_way": "a-to-b",
-        "opens_from": "b",
-        "shortcut": true
-      },
-      {
-        "a": "node/far-hall",
-        "b": "node/loft",
-        "class": "stair",
-        "gating": {
-          "flags": [
-            "flag/muster-cleared"
-          ]
-        },
-        "id": "edge/loft-stair"
-      },
-      {
-        "a": "node/far-hall",
-        "b": "node/loft",
-        "class": "drop",
-        "falls": "b-to-a",
-        "id": "edge/loft-drop",
-        "shortcut": true
-      },
-      {
-        "a": "node/far-hall",
-        "b": "node/undercroft",
-        "class": "stair",
-        "id": "edge/undercroft-stair"
-      },
-      {
-        "a": "node/undercroft",
-        "b": "node/near-hall",
-        "class": "stair",
-        "id": "edge/undercroft-crawl",
-        "one_way": "a-to-b",
-        "shortcut": true
-      },
-      {
-        "a": "node/near-hall",
-        "b": "node/undercroft",
-        "class": "drop",
-        "falls": "a-to-b",
-        "gating": {
-          "flags": [
-            "flag/muster-cleared"
-          ]
-        },
-        "id": "edge/undercroft-shaft"
-      },
-      {
-        "a": "node/far-hall",
-        "b": "node/exit",
-        "class": "walk",
-        "id": "edge/exit-arch"
-      },
-      {
-        "a": "node/near-hall",
-        "b": "node/loft",
-        "class": "vision",
-        "id": "edge/loft-sightline"
-      },
-      {
-        "a": "node/exit",
-        "b": "node/ferry-cabin",
+        "a": "node/hall",
+        "b": "node/annex-wing",
         "class": "carry",
         "gating": {
           "flags": [
-            "flag/boarded"
+            "flag/annex-open"
           ]
         },
-        "id": "edge/ferry",
+        "id": "edge/to-the-annex",
         "one_way": "a-to-b"
       },
       {
-        "a": "node/far-hall",
-        "b": "node/long-gallery",
-        "class": "stair",
-        "id": "edge/long-gallery-stair"
-      },
-      {
-        "a": "node/ferry-cabin",
-        "b": "node/exit",
-        "class": "carry",
-        "gating": {
-          "flags": [
-            "flag/boarded"
-          ]
-        },
-        "id": "edge/ferry-back",
-        "one_way": "a-to-b"
-      },
-      {
-        "a": "node/annex",
+        "a": "node/annex-wing",
         "b": "node/long-hall",
         "class": "carry",
         "gating": {
-          "quest": "quest/near-hall"
+          "flags": [
+            "flag/annex-open"
+          ]
         },
-        "id": "edge/long-hall-in",
+        "id": "edge/to-the-long-hall",
         "one_way": "a-to-b"
       },
       {
         "a": "node/long-hall",
-        "b": "node/near-hall",
+        "b": "node/hall",
         "class": "carry",
         "gating": {
-          "quest": "quest/long-hall"
+          "flags": [
+            "flag/annex-open"
+          ]
         },
-        "id": "edge/long-hall-out",
+        "id": "edge/out-of-the-long-hall",
         "one_way": "a-to-b"
       }
     ],
-    "entry": "node/near-hall",
-    "goal": "node/exit",
+    "entry": "node/hall",
+    "goal": "node/hall",
     "nodes": [
       {
-        "id": "node/near-hall",
-        "intent": "hub",
-        "note": "Everything the delve opens with stands here: the Curator, the case, the stall counter. It is the one place a body returns to."
-      },
-      {
-        "id": "node/annex",
-        "intent": "side-gallery",
-        "note": "The three-tile chain drawn from `pool/gallery-annex`, off the near hall and back into the far one."
-      },
-      {
-        "id": "node/far-hall",
-        "intent": "arena",
-        "note": "Behind the barred wall: the muster forms up here and the loft looks down on it."
-      },
-      {
-        "id": "node/loft",
-        "intent": "vista"
-      },
-      {
-        "id": "node/undercroft",
-        "intent": "cache",
-        "note": "No beat happens here, which is deliberate: a place off the mandatory spine is what makes the critical path's spine obligation say something."
-      },
-      {
-        "id": "node/exit",
-        "intent": "goal-chamber",
+        "id": "node/hall",
+        "intent": "the gallery hall: both halls, the loft, the undercroft, the long gallery, the exit and the ferry, one piece",
         "stations": [
           {
-            "anchor": "anchor/ferry-deck",
-            "kind": "point",
-            "note": "the ferry's deck: the link's volume"
+            "anchor": "anchor/arrival",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/cabin",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/cabin-chest",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/cabin-roof",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/case",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/clock-lever",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/counter",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/east-bay",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/east-pit",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/east-vault",
+            "kind": "point"
           },
           {
             "anchor": "anchor/exit",
-            "kind": "point",
-            "note": "where the cabin's tiller puts the party back down"
-          }
-        ]
-      },
-      {
-        "id": "node/ferry-cabin",
-        "intent": "cabin",
-        "note": "sealed: only the ferry's link reaches it",
-        "stations": [
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/ferry-deck",
+            "kind": "point"
+          },
           {
             "anchor": "anchor/ferry-landing",
-            "kind": "point",
-            "note": "where the link puts the party down"
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/ferry-tiller",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/gate-main",
+            "kind": "gate"
+          },
+          {
+            "anchor": "anchor/hearth",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/hearth-stone",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/label",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/lane-east",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/lane-west",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/lectern",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/lid",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/lid-pit",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/loft",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/long-gallery-end",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/long-gallery-lamp-0",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/long-gallery-lamp-1",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/long-gallery-lamp-2",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/long-gallery-lamp-3",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/long-gallery-landing",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/long-gallery-slab",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/long-hall-return",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/march",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/muster",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/pedestal",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/plate-lever",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/plinth",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/pocket",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/rafters",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/reach",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/reliquary",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/shortcut-door",
+            "kind": "gate"
+          },
+          {
+            "anchor": "anchor/side-lever",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/stall",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/strongbox",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/timed-door",
+            "kind": "gate"
+          },
+          {
+            "anchor": "anchor/timed-door-inner",
+            "kind": "gate"
+          },
+          {
+            "anchor": "anchor/timed-door-mid",
+            "kind": "gate"
+          },
+          {
+            "anchor": "anchor/to-the-annex",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/usher",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/valve-first",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/valve-second",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/valve-third",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/vantage",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/warden",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/west-bay",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/west-pit",
+            "kind": "point"
           }
         ]
       },
       {
-        "id": "node/long-gallery",
-        "intent": "side-gallery",
-        "note": "The long gallery on the hall's roof, up a stair from the far hall: three identical bays a body is returned through until it has crossed enough (spec-0086)."
+        "id": "node/annex-wing",
+        "intent": "the annex: a row of four library tiles the place's program sets down by name",
+        "stations": [
+          {
+            "anchor": "anchor/annex-cap",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/annex-first-bay-2",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/annex-threshold",
+            "kind": "point"
+          }
+        ]
       },
       {
         "id": "node/long-hall",
-        "intent": "side-gallery",
-        "note": "Station 4's hall in its own area: the party is carried in at the porch and runs until the loop lets it go."
+        "intent": "the long hall, a place no seam joins",
+        "stations": [
+          {
+            "anchor": "anchor/long-hall-end",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/long-hall-landing",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/long-hall-porch",
+            "kind": "point"
+          },
+          {
+            "anchor": "anchor/long-hall-slab",
+            "kind": "point"
+          }
+        ]
       }
     ]
   },

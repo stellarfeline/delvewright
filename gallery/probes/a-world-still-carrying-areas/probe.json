@@ -1,0 +1,18 @@
+{
+  "code": "DW0100",
+  "why": "`world.json` carrying the removed `areas[]` beside the site plan. A map is placed by its site plan and nothing else; the schema refuses the field by name.",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/areas",
+      "value": [
+        {
+          "id": "area/hall",
+          "name": "The Gallery Hall",
+          "prefab": "prefab/gallery-hall"
+        }
+      ]
+    }
+  ]
+}

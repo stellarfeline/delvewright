@@ -39,14 +39,14 @@
       "name": "quay-from-the-water",
       "pitch": 8.8,
       "pos": [
-        501.5,
-        64.8,
+        -10.5,
+        63.8,
         9.5
       ],
       "source": "estimated",
       "spp": 300,
       "width": 1600,
-      "yaw": 246.0
+      "yaw": 270.0
     },
     {
       "answers": "concept/night-quay",
@@ -55,14 +55,14 @@
       "name": "quay-after-dark",
       "pitch": 4.4,
       "pos": [
-        504.5,
+        -8.5,
         63.5,
-        12.5
+        20.5
       ],
       "source": "estimated",
       "spp": 300,
       "width": 1600,
-      "yaw": 234.5
+      "yaw": 260.0
     },
     {
       "answers": "concept/dusk-rampart",
@@ -103,7 +103,7 @@
       "name": "approach-at-first-light",
       "pitch": 12.0,
       "pos": [
-        278.5,
+        57.5,
         70.0,
         28.5
       ],

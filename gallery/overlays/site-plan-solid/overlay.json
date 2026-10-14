@@ -1,6 +1,8 @@
 {
   "binds": [
     "Edge::climb",
+    "Edge::stair.one_way",
+    "Edge::stair.shortcut",
     "Fill::solid",
     "Fill::solid.block"
   ],

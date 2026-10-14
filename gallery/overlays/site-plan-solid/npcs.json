@@ -4,7 +4,6 @@
     "npcs": [
       {
         "anchor": "anchor/node-near-hall",
-        "area": "area/site",
         "base_entity": "minecraft:villager",
         "id": "npc/curator",
         "name": "The Curator",
@@ -30,7 +29,6 @@
       },
       {
         "anchor": "anchor/node-far-hall",
-        "area": "area/site",
         "base_entity": "minecraft:villager",
         "id": "npc/warden",
         "name": "The Warden",
@@ -43,7 +41,6 @@
       },
       {
         "anchor": "anchor/node-annex",
-        "area": "area/site",
         "base_entity": "minecraft:villager",
         "id": "npc/factor",
         "name": "The Factor",
@@ -56,7 +53,6 @@
       },
       {
         "anchor": "anchor/node-loft",
-        "area": "area/site",
         "base_entity": "minecraft:villager",
         "id": "npc/marshal",
         "name": "The Marshal",

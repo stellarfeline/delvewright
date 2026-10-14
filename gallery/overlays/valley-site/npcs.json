@@ -4,7 +4,6 @@
     "npcs": [
       {
         "anchor": "anchor/bank-court",
-        "area": "area/bank",
         "base_entity": "minecraft:villager",
         "id": "npc/bank-warden",
         "name": "The Warden of the Bank",

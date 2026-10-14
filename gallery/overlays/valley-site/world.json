@@ -1,13 +1,6 @@
 {
   "campaign_id": "gallery",
   "content": {
-    "areas": [
-      {
-        "id": "area/bank",
-        "name": "The Bank",
-        "prefab": "prefab/gallery-bank"
-      }
-    ],
     "boundary": {
       "margin": 16,
       "message": "The valley ends here."

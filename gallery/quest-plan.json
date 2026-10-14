@@ -31,7 +31,6 @@
     "quests": [
       {
         "act": 1,
-        "area": "area/hall",
         "depends_on": [],
         "goal": "Read the near hall: the speaking parts, the pressed thing, the counter.",
         "id": "quest/near-hall",
@@ -43,7 +42,6 @@
       },
       {
         "act": 2,
-        "area": "area/hall",
         "depends_on": [
           "quest/long-hall"
         ],
@@ -57,7 +55,6 @@
       },
       {
         "act": 2,
-        "area": "area/hall",
         "depends_on": [
           "quest/near-hall"
         ],
@@ -68,7 +65,6 @@
       },
       {
         "act": 2,
-        "area": "area/long-hall",
         "depends_on": [
           "quest/near-hall"
         ],
