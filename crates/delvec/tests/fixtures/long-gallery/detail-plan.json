@@ -1,0 +1,20 @@
+{
+  "campaign_id": "long-gallery",
+  "content": {
+    "details": [
+      {
+        "anchors": {
+          "anchor/end": "anchor/end",
+          "anchor/landing": "anchor/landing",
+          "anchor/node-gallery": "spawn",
+          "anchor/slab": "anchor/slab",
+          "spawn": "spawn"
+        },
+        "piece": "prefab/long-gallery",
+        "place": "node/gallery"
+      }
+    ]
+  },
+  "dsl_version": "0.44.0",
+  "stage": "detail-plan"
+}

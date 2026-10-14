@@ -282,11 +282,7 @@ fn numeric_classes(campaign: &delvewright_dsl::Campaign) -> BTreeMap<&'static st
 static CORRIDOR: LazyLock<(BuildOutput, BTreeMap<&'static str, usize>)> = LazyLock::new(|| {
     let prefab_dir =
         common::corridor::gallery_prefabs("v10-state", &common::corridor::Cuts::default());
-    // The fixture's one place, bound to the corridor piece it was written for.
-    let dir = tmp("v10-state-corridor");
-    common::copy_campaign_docs(&common::compiler_fixtures_dir().join("long-gallery"), &dir);
-    common::bind_region(&dir, &prefab_dir, "long-gallery");
-    common::sync_map_in(&dir, Some(&prefab_dir));
+    let dir = common::compiler_fixtures_dir().join("long-gallery");
     let loaded = common::load_campaign_dir(&dir).unwrap();
     let campaign = common::parse_campaign(&loaded.raw).expect("long-gallery parses");
     let prefabs = PrefabRegistry::load_dir(&prefab_dir).unwrap();

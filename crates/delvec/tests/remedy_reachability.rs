@@ -87,13 +87,16 @@ fn log(o: &Output) -> String {
     )
 }
 
-/// A hello-world campaign with `horizon` set to `value` (absent = `void`).
-fn campaign(tag: &str, horizon: Option<serde_json::Value>) -> PathBuf {
+/// A hello-world campaign with `horizon` set to `value` (absent = `void`), its
+/// one place bound to `prefabs`' `hello-room`: its region on the ocean datum
+/// when the world has a sea, at the fixture's own height otherwise.
+fn campaign(tag: &str, horizon: Option<serde_json::Value>, prefabs: &Path) -> PathBuf {
     let camp = tmp(&format!("camp-{tag}"));
     common::copy_dir_all(&common::hello_world_dir(), &camp);
     let mut world: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
     world["dsl_version"] = serde_json::json!(DSL_VERSION);
+    let ocean = horizon.as_ref().is_some_and(|h| h == "ocean");
     if let Some(h) = horizon {
         let content = world["content"].as_object_mut().unwrap();
         content.insert("horizon".into(), h);
@@ -104,6 +107,11 @@ fn campaign(tag: &str, horizon: Option<serde_json::Value>) -> PathBuf {
         serde_json::to_string_pretty(&world).unwrap(),
     )
     .unwrap();
+    if ocean {
+        common::seat_on_ocean(&camp, prefabs);
+    } else {
+        common::bind_region(&camp, prefabs, "hello-room");
+    }
     camp
 }
 
@@ -143,7 +151,7 @@ fn edit_meta(
 #[test]
 fn dw0886_declaring_the_walk_plane_seats_the_piece() {
     let dir = common::ocean_prefabs_dir("remedy-walk", common::OceanRoom::Shore);
-    let camp = campaign("walk", Some(serde_json::json!("ocean")));
+    let camp = campaign("walk", Some(serde_json::json!("ocean")), &dir);
 
     // The refusal: the field is gone, which is exactly what an admission step
     // that did not model it left behind.
@@ -185,7 +193,7 @@ fn dw0886_declaring_the_walk_plane_seats_the_piece() {
 #[test]
 fn dw0886_declaring_the_walk_plane_seats_the_piece_where_no_origin_needs_it() {
     let dir = common::ocean_prefabs_dir("remedy-walk-void", common::OceanRoom::Shore);
-    let camp = campaign("walk-void", Some(serde_json::json!("void")));
+    let camp = campaign("walk-void", Some(serde_json::json!("void")), &dir);
 
     let declared = {
         let path = dir.join("hello-room.json");
@@ -223,7 +231,7 @@ fn dw0886_declaring_the_walk_plane_seats_the_piece_where_no_origin_needs_it() {
 #[test]
 fn dw0886_declaring_the_waterline_the_bytes_hold_seats_the_shore() {
     let dir = common::ocean_prefabs_dir("remedy-shore", common::OceanRoom::Shore);
-    let camp = campaign("shore", Some(serde_json::json!("ocean")));
+    let camp = campaign("shore", Some(serde_json::json!("ocean")), &dir);
 
     edit_meta(&dir, "hello-room", |m| {
         m.remove("waterline_y");
@@ -240,35 +248,6 @@ fn dw0886_declaring_the_waterline_the_bytes_hold_seats_the_shore() {
         m.insert("waterline_y".into(), serde_json::json!(2));
     });
     let (code, after) = build("shore-green", &camp, &dir);
-    assert_eq!(code, 0, "the move reaches a different verdict:\n{after}");
-}
-
-/// **DECLARE the walk plane the piece really has.** The second move `DW0886`
-/// names for a piece that stands a body under its own declared plane — and the
-/// one an author can take without touching the bytes.
-#[test]
-fn dw0886_declaring_the_true_walk_plane_lifts_the_piece_clear_of_the_sea() {
-    let dir = common::ocean_prefabs_dir("remedy-wade", common::OceanRoom::Shore);
-    let camp = campaign("wade", Some(serde_json::json!("ocean")));
-
-    // A plane two courses above the floor the piece actually has: the body
-    // stands at local y=3, the declaration says 5, so an ocean seats the area
-    // two blocks lower and puts that floor under the sea.
-    edit_meta(&dir, "hello-room", |m| {
-        m.insert("walk_y".into(), serde_json::json!(5));
-    });
-    let (code, before) = build("wade-red", &camp, &dir);
-    assert_eq!(code, 1, "refused at validation:\n{before}");
-    assert!(before.contains("DW0886"), "{before}");
-    assert!(
-        before.contains("`walk_y: 3`"),
-        "the move names the plane the piece really has:\n{before}"
-    );
-
-    edit_meta(&dir, "hello-room", |m| {
-        m.insert("walk_y".into(), serde_json::json!(3));
-    });
-    let (code, after) = build("wade-green", &camp, &dir);
     assert_eq!(code, 0, "the move reaches a different verdict:\n{after}");
 }
 
@@ -339,7 +318,7 @@ fn dw0886_choosing_the_ocean_holds_the_water_a_void_world_would_lose() {
         );
     });
 
-    let void = campaign("runoff-void", None);
+    let void = campaign("runoff-void", None, &dir);
     let (code, before) = build("runoff-red", &void, &dir);
     assert_eq!(code, 1, "refused at validation under void:\n{before}");
     assert!(before.contains("DW0886"), "{before}");
@@ -352,7 +331,7 @@ fn dw0886_choosing_the_ocean_holds_the_water_a_void_world_would_lose() {
         "and which base it means:\n{before}"
     );
 
-    let ocean = campaign("runoff-ocean", Some(serde_json::json!("ocean")));
+    let ocean = campaign("runoff-ocean", Some(serde_json::json!("ocean")), &dir);
     let (code, after) = build("runoff-green", &ocean, &dir);
     assert_ne!(
         code, 1,
@@ -544,37 +523,41 @@ fn dw0886_choosing_a_horizon_with_no_sea_seats_a_place_cut_below_grade() {
 // DW0344 — both arms
 // ---------------------------------------------------------------------------
 
-/// **DW0344, first arm: DECLARE the walk plane that seats this waterline.**
+/// **DW0344, first arm: seat the place so the waterline lands on the sea.**
 ///
-/// The area's origin is derived from the walk plane, so the two declarations are
-/// claims about one building and the message names the number that reconciles
-/// them.
+/// A bound piece stands at its frame's lowest corner, so the place's height
+/// and the piece's declared waterline are claims about one shore, and the
+/// message names the frame height that reconciles them.
 #[test]
-fn dw0344_declaring_the_walk_plane_lands_the_waterline_on_the_sea() {
+fn dw0344_seating_the_place_lands_the_waterline_on_the_sea() {
     let dir = common::ocean_prefabs_dir("remedy-arm1", common::OceanRoom::Shore);
-    let camp = campaign("arm1", Some(serde_json::json!("ocean")));
+    let camp = campaign("arm1", Some(serde_json::json!("ocean")), &dir);
+    let lift = |by: i64| {
+        common::patch_file(&camp.join("site-plan.json"), |d| {
+            let c = &mut d["content"];
+            let y = c["region"]["min"][1].as_i64().unwrap();
+            c["region"]["min"][1] = serde_json::json!(y + by);
+            let f = c["boxes"][0]["floor"]["y"].as_i64().unwrap();
+            c["boxes"][0]["floor"]["y"] = serde_json::json!(f + by);
+        });
+    };
 
-    edit_meta(&dir, "hello-room", |m| {
-        m.insert("walk_y".into(), serde_json::json!(2));
-    });
+    lift(1);
     let (code, before) = build("arm1-red", &camp, &dir);
-    // Refused at VALIDATION, exit 1: both numbers are in the document and the
-    // origin is derived from one of them, so nothing has to be placed to know
-    // the two disagree. Same code, one stage earlier.
+    // Refused at VALIDATION, exit 1: the frame and the waterline are both in
+    // the documents, so nothing has to be placed to know they disagree.
     assert_eq!(code, 1, "refused at validation:\n{before}");
     assert!(before.contains("DW0344"), "{before}");
     assert!(
-        before.contains("`walk_y: 3`"),
-        "the move names the plane that seats this waterline:\n{before}"
+        before.contains("lowest course is at y=60"),
+        "the move names the frame height that seats this waterline:\n{before}"
     );
     assert!(
         !before.contains("place template"),
         "and nothing was placed:\n{before}"
     );
 
-    edit_meta(&dir, "hello-room", |m| {
-        m.insert("walk_y".into(), serde_json::json!(3));
-    });
+    lift(-1);
     let (code, after) = build("arm1-green", &camp, &dir);
     assert_eq!(code, 0, "the move reaches a different verdict:\n{after}");
 }
@@ -650,7 +633,11 @@ fn dw0344_raising_the_low_floor_takes_the_piece_out_of_the_sea() {
             m.insert("structure".into(), s);
         });
         let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
-        let camp_dir = campaign(&format!("arm2-{tag}"), Some(serde_json::json!("ocean")));
+        let camp_dir = campaign(
+            &format!("arm2-{tag}"),
+            Some(serde_json::json!("ocean")),
+            &dir,
+        );
         let loaded = common::load_campaign_dir(&camp_dir).unwrap();
         let parsed = common::parse_campaign(&loaded.raw).expect("the campaign parses");
         let plan = Plan::build(&parsed, &prefabs).expect("the plan builds");
@@ -696,128 +683,6 @@ fn dw0344_raising_the_low_floor_takes_the_piece_out_of_the_sea() {
 // ---------------------------------------------------------------------------
 // DW0855 — both moves
 // ---------------------------------------------------------------------------
-
-/// Give a campaign a SECOND area, so it is the shape `DW0855`'s argument is
-/// about: two footprints on the compiler's fixed stride with void between them,
-/// whose union states no extent.
-///
-/// The second area binds a COPY of the piece under its own id, with every
-/// anchor name prefixed. Binding the same prefab twice is `DW0857` — one gate
-/// anchor provided by two areas — which would refuse the campaign for a reason
-/// that has nothing to do with the extent, and a fixture refused for the wrong
-/// reason proves nothing about the right one.
-fn two_areas(tag: &str, horizon: serde_json::Value, prefabs: &Path) -> PathBuf {
-    let src: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(prefabs.join("hello-room.json")).unwrap())
-            .unwrap();
-    let mut far = src.clone();
-    far["prefab_id"] = serde_json::json!("prefab/far-room");
-    far["structure"]["id"] = serde_json::json!("far-room");
-    far["structure"]["file"] = serde_json::json!("far-room.nbt");
-    let anchors: serde_json::Map<String, serde_json::Value> = src["anchors"]
-        .as_object()
-        .unwrap()
-        .iter()
-        .map(|(k, v)| (format!("far-{k}"), v.clone()))
-        .collect();
-    far["anchors"] = serde_json::Value::Object(anchors);
-    std::fs::write(
-        prefabs.join("far-room.json"),
-        serde_json::to_string_pretty(&far).unwrap(),
-    )
-    .unwrap();
-    std::fs::copy(prefabs.join("hello-room.nbt"), prefabs.join("far-room.nbt")).unwrap();
-
-    let camp = campaign(tag, Some(horizon));
-    let mut world: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
-    let areas = world["content"]["areas"].as_array_mut().unwrap();
-    let mut second = areas[0].clone();
-    second["id"] = serde_json::json!("area/far");
-    second["name"] = serde_json::json!("The Far Room");
-    second["prefab"] = serde_json::json!("prefab/far-room");
-    areas.push(second);
-    std::fs::write(
-        camp.join("world.json"),
-        serde_json::to_string_pretty(&world).unwrap(),
-    )
-    .unwrap();
-    camp
-}
-
-/// **`set `horizon` to `void` or `ocean`.`** The move `DW0855` names for a
-/// campaign that places `areas[]` and states no extent.
-///
-/// The fixture is two areas rather than one, and that is the refusal's own
-/// argument rather than a convenience: what makes a union meaningless is
-/// `AREA_SPACING`, so a campaign with one area bound to one `prefab` has stated
-/// an extent and is not this refusal at all — see
-/// [`dw0855_one_area_bound_to_one_prefab_states_the_map`].
-#[test]
-fn dw0855_setting_a_base_that_needs_no_map_builds() {
-    let dir = common::ocean_prefabs_dir("remedy-valley", common::OceanRoom::Shore);
-    let valley = two_areas("valley", serde_json::json!({ "base": "valley" }), &dir);
-    let (code, before) = build("valley-red", &valley, &dir);
-    assert_eq!(code, 1, "refused at validation:\n{before}");
-    assert!(before.contains("DW0855"), "{before}");
-    assert!(
-        before.contains("set `horizon` to `void` or `ocean`"),
-        "the message names the move:\n{before}"
-    );
-
-    for base in ["void", "ocean"] {
-        let camp = two_areas(&format!("valley-to-{base}"), serde_json::json!(base), &dir);
-        let (code, after) = build(&format!("valley-to-{base}-out"), &camp, &dir);
-        assert_eq!(
-            code, 0,
-            "`{base}` needs no map to be a horizon of:\n{after}"
-        );
-        assert!(!after.contains("DW0855"), "{after}");
-    }
-}
-
-/// **`Make the map ONE PIECE.`** The third move, and the one that did not exist:
-/// a single area bound to a single `prefab` states the map's extent with the
-/// piece's own declared region, so a base that builds terrain has something to
-/// ring — which is how a SITE, a building with its own ground inside one box,
-/// is placed at all.
-///
-/// The same campaign is asserted in both shapes, so the only thing between the
-/// refusal and the build is the second area — which is exactly what `DW0855`'s
-/// argument is about, and nothing wider.
-#[test]
-fn dw0855_one_area_bound_to_one_prefab_states_the_map() {
-    let dir = common::ocean_prefabs_dir("remedy-one-piece", common::OceanRoom::Shore);
-    let two = two_areas(
-        "one-piece-two",
-        serde_json::json!({ "base": "valley" }),
-        &dir,
-    );
-    let (code, refused) = build("one-piece-two-out", &two, &dir);
-    assert_eq!(code, 1, "two areas state no extent:\n{refused}");
-    assert!(refused.contains("DW0855"), "{refused}");
-    assert!(
-        refused.contains("ONE PIECE"),
-        "the message names the move this test takes:\n{refused}"
-    );
-
-    let one = campaign(
-        "one-piece-one",
-        Some(serde_json::json!({ "base": "valley" })),
-    );
-    let (code, built) = build("one-piece-one-out", &one, &dir);
-    assert_eq!(
-        code, 0,
-        "one area bound to one prefab states the map:\n{built}"
-    );
-    assert!(!built.contains("DW0855"), "{built}");
-    // The binding line names the authority, so a reader can see WHICH statement
-    // of extent the mountains were built around.
-    assert!(
-        built.contains("stated by the one placed piece's own region"),
-        "the surround says what it ringed:\n{built}"
-    );
-}
 
 /// **`Give the campaign a site plan.`** The other move `DW0855` names — and the
 /// one the cycle in spec-0060 §1 turned on, because adding a site plan to an
@@ -992,7 +857,7 @@ fn dw0887_deleting_or_correcting_the_declaration_makes_the_claim_true() {
         m.insert("structure".into(), st);
     });
 
-    let camp = campaign("fiction", Some(serde_json::json!("ocean")));
+    let camp = campaign("fiction", Some(serde_json::json!("ocean")), &dir);
     let (code, before) = build("fiction-red", &camp, &dir);
     assert_eq!(code, 1, "a fiction is refused at validation:\n{before}");
     assert!(before.contains("DW0887"), "{before}");
@@ -1017,7 +882,7 @@ fn dw0887_deleting_or_correcting_the_declaration_makes_the_claim_true() {
     edit_meta(&dir, "hello-room", |m| {
         m.insert("waterline_y".into(), serde_json::json!(4));
     });
-    let camp = campaign("correct", Some(serde_json::json!("ocean")));
+    let camp = campaign("correct", Some(serde_json::json!("ocean")), &dir);
     let (code, before) = build("correct-red", &camp, &dir);
     assert_eq!(code, 1, "a wrong plane is refused at validation:\n{before}");
     assert!(before.contains("DW0887"), "{before}");
@@ -1064,6 +929,7 @@ fn dw0320_adding_a_boundary_or_choosing_void_both_reach_a_different_verdict() {
         .unwrap();
     };
     write(&camp, &world);
+    common::seat_on_ocean(&camp, &dir);
     let (code, before) = build("boundary-red", &camp, &dir);
     assert_eq!(code, 1, "refused at validation:\n{before}");
     assert!(before.contains("DW0320"), "{before}");
@@ -2199,34 +2065,40 @@ fn dw0721_an_after_that_names_nothing_moves_to_the_step_it_names() {
     let dir = common::prefabs_dir();
     let eye = proven_eye("after-eye");
     let rows = [("concept/shore-far", "noon", "clear")];
-    let with_after = |tag: &str, after: serde_json::Value, look: bool| {
-        let camp = design_campaign(tag, "noon", &["concept/shore-far.png"], &rows);
-        design_cameras(&camp, eye, &[("shore", "concept/shore-far")]);
-        common::patch_file(&camp.join("design/cameras.json"), |v| {
-            v["cameras"][0]["after"] = after.clone();
-        });
-        if look {
-            // A step between the keeper and the exit that opens the door, so
-            // the keeper's own step is one after which no beat has fired.
-            common::patch_file(&camp.join("quests.json"), |v| {
-                let q = &mut v["content"]["quests"][0];
-                let objs = q["objectives"].as_array_mut().unwrap();
-                objs.insert(
-                    1,
-                    serde_json::json!({
-                        "type": "reach-anchor", "id": "obj/look",
-                        "anchor": "anchor/keeper-stand", "radius": 2,
-                        "after": ["obj/talk"],
-                        "happening": {"text": "the party looks", "verb": "arrives"}
-                    }),
-                );
-                objs[2]["after"] = serde_json::json!(["obj/look"]);
-                let bundle = q["on_objective_complete"]["obj/talk"].take();
-                q["on_objective_complete"] = serde_json::json!({ "obj/look": bundle });
+    let with_after =
+        |tag: &str, after: serde_json::Value, look: bool| {
+            let camp = design_campaign(tag, "noon", &["concept/shore-far.png"], &rows);
+            design_cameras(&camp, eye, &[("shore", "concept/shore-far")]);
+            common::patch_file(&camp.join("design/cameras.json"), |v| {
+                v["cameras"][0]["after"] = after.clone();
             });
-        }
-        camp
-    };
+            if look {
+                // A step between the keeper and the exit that opens the door, so
+                // the keeper's own step is one after which no beat has fired.
+                common::patch_file(&camp.join("quests.json"), |v| {
+                    let q = &mut v["content"]["quests"][0];
+                    let objs = q["objectives"].as_array_mut().unwrap();
+                    objs.insert(
+                        1,
+                        serde_json::json!({
+                            "type": "reach-anchor", "id": "obj/look",
+                            "anchor": "anchor/keeper-stand", "radius": 2,
+                            "after": ["obj/talk"],
+                            "happening": {"text": "the party looks", "verb": "arrives"}
+                        }),
+                    );
+                    objs[2]["after"] = serde_json::json!(["obj/look"]);
+                    let bundle = q["on_objective_complete"]["obj/talk"].take();
+                    q["on_objective_complete"] = serde_json::json!({ "obj/look": bundle });
+                });
+                common::patch_file(&camp.join("layout-graph.json"), |g| {
+                    g["content"]["beats"].as_array_mut().unwrap().push(serde_json::json!({
+                    "node": "node/keep", "objective": "obj/look", "quest": "quest/open-the-door"
+                }));
+                });
+            }
+            camp
+        };
     for (tag, red, move_to, look, says) in [
         (
             "after-nowhere",
@@ -2333,16 +2205,24 @@ fn dw0721_an_after_that_names_nothing_moves_to_the_step_it_names() {
 /// hello-world with `edit` applied to its world and quests documents.
 fn atmosphere_campaign(
     tag: &str,
-    edit: impl FnOnce(&mut serde_json::Value, &mut serde_json::Value),
+    edit: impl FnOnce(&mut serde_json::Value, &mut serde_json::Value, &mut serde_json::Value),
 ) -> PathBuf {
-    let camp = campaign(&format!("atm-{tag}"), None);
+    let camp = campaign(&format!("atm-{tag}"), None, &common::prefabs_dir());
     let read = |f: &str| -> serde_json::Value {
         serde_json::from_str(&std::fs::read_to_string(camp.join(f)).unwrap()).unwrap()
     };
-    let (mut world, mut quests) = (read("world.json"), read("quests.json"));
+    let (mut world, mut quests, mut plan) = (
+        read("world.json"),
+        read("quests.json"),
+        read("site-plan.json"),
+    );
     quests["dsl_version"] = serde_json::json!(DSL_VERSION);
-    edit(&mut world, &mut quests);
-    for (f, v) in [("world.json", &world), ("quests.json", &quests)] {
+    edit(&mut world, &mut quests, &mut plan);
+    for (f, v) in [
+        ("world.json", &world),
+        ("quests.json", &quests),
+        ("site-plan.json", &plan),
+    ] {
         std::fs::write(camp.join(f), serde_json::to_string_pretty(v).unwrap()).unwrap();
     }
     camp
@@ -2359,10 +2239,17 @@ fn validate_atm(camp: &Path) -> (i32, String) {
     (r.status.code().unwrap_or(-1), log(&r))
 }
 
-fn declare(world: &mut serde_json::Value, atmospheres: serde_json::Value, carried: bool) {
+/// Declare `atmospheres` in the world, and when `carried`, put the first on the
+/// one place (`boxes[].atmosphere`).
+fn declare(
+    world: &mut serde_json::Value,
+    plan: &mut serde_json::Value,
+    atmospheres: serde_json::Value,
+    carried: bool,
+) {
     world["content"]["atmospheres"] = atmospheres;
     if carried {
-        world["content"]["areas"][0]["atmosphere"] = serde_json::json!("atmosphere/wrong-place");
+        plan["content"]["boxes"][0]["atmosphere"] = serde_json::json!("atmosphere/wrong-place");
     }
 }
 
@@ -2376,9 +2263,10 @@ fn talk_bundle(quests: &mut serde_json::Value) -> &mut Vec<serde_json::Value> {
 #[test]
 fn dw0928_removing_the_overridden_line_validates() {
     let wrong = |tag: &str, attrs: serde_json::Value| {
-        atmosphere_campaign(tag, |w, _| {
+        atmosphere_campaign(tag, |w, _, p| {
             declare(
                 w,
+                p,
                 serde_json::json!([{ "id": "atmosphere/wrong-place", "precipitation": "none", "attributes": attrs }]),
                 true,
             )
@@ -2403,8 +2291,8 @@ fn dw0928_removing_the_overridden_line_validates() {
 #[test]
 fn dw0929_keeping_one_volume_and_shrinking_the_region_both_reach_a_different_verdict() {
     let atm = serde_json::json!([{ "id": "atmosphere/wrong-place", "precipitation": "none" }]);
-    let both = atmosphere_campaign("both", |w, q| {
-        declare(w, atm.clone(), false);
+    let both = atmosphere_campaign("both", |w, q, p| {
+        declare(w, p, atm.clone(), false);
         talk_bundle(q).push(serde_json::json!({
             "type": "set-atmosphere", "atmosphere": "atmosphere/wrong-place",
             "region": { "anchor": "anchor/exit", "extent": [1, 1, 1] }, "place": "node/keep"
@@ -2412,8 +2300,8 @@ fn dw0929_keeping_one_volume_and_shrinking_the_region_both_reach_a_different_ver
     });
     let (code, log) = validate_atm(&both);
     assert!(code != 0 && log.contains("DW0929"), "{log}");
-    let one = atmosphere_campaign("one", |w, q| {
-        declare(w, atm.clone(), false);
+    let one = atmosphere_campaign("one", |w, q, p| {
+        declare(w, p, atm.clone(), false);
         talk_bundle(q).push(serde_json::json!({
             "type": "set-atmosphere", "atmosphere": "atmosphere/wrong-place", "place": "node/keep"
         }));
@@ -2421,8 +2309,8 @@ fn dw0929_keeping_one_volume_and_shrinking_the_region_both_reach_a_different_ver
     let (code, log) = validate_atm(&one);
     assert_eq!(code, 0, "{log}");
     let wide = |tag: &str, extent: [u32; 3]| {
-        atmosphere_campaign(tag, |w, q| {
-            declare(w, atm.clone(), false);
+        atmosphere_campaign(tag, |w, q, p| {
+            declare(w, p, atm.clone(), false);
             talk_bundle(q).push(serde_json::json!({
                 "type": "set-atmosphere", "atmosphere": "atmosphere/wrong-place",
                 "region": { "anchor": "anchor/exit", "extent": extent }
@@ -2448,28 +2336,28 @@ fn dw0929_keeping_one_volume_and_shrinking_the_region_both_reach_a_different_ver
 #[test]
 fn dw0930_carrying_it_dropping_the_climate_and_renaming_the_duplicate_all_validate() {
     let one = serde_json::json!({ "id": "atmosphere/wrong-place", "precipitation": "snow" });
-    let (code, log) = validate_atm(&atmosphere_campaign("unbound", |w, _| {
-        declare(w, serde_json::json!([one.clone()]), false)
+    let (code, log) = validate_atm(&atmosphere_campaign("unbound", |w, _, p| {
+        declare(w, p, serde_json::json!([one.clone()]), false)
     }));
     assert!(code != 0 && log.contains("DW0930"), "{log}");
-    let (code, log) = validate_atm(&atmosphere_campaign("carried", |w, _| {
-        declare(w, serde_json::json!([one.clone()]), true)
+    let (code, log) = validate_atm(&atmosphere_campaign("carried", |w, _, p| {
+        declare(w, p, serde_json::json!([one.clone()]), true)
     }));
     assert_eq!(code, 0, "{log}");
     let mut hot = one.clone();
     hot["climate"] = serde_json::json!({ "temperature": 0.8, "downfall": 0.4 });
-    let (code, log) = validate_atm(&atmosphere_campaign("hot", |w, _| {
-        declare(w, serde_json::json!([hot]), true)
+    let (code, log) = validate_atm(&atmosphere_campaign("hot", |w, _, p| {
+        declare(w, p, serde_json::json!([hot]), true)
     }));
     assert!(code != 0 && log.contains("DW0930"), "{log}");
     let mut twin = one.clone();
-    let (code, log) = validate_atm(&atmosphere_campaign("twin", |w, _| {
-        declare(w, serde_json::json!([one.clone(), twin.clone()]), true)
+    let (code, log) = validate_atm(&atmosphere_campaign("twin", |w, _, p| {
+        declare(w, p, serde_json::json!([one.clone(), twin.clone()]), true)
     }));
     assert!(code != 0 && log.contains("DW0930"), "{log}");
     twin["id"] = serde_json::json!("atmosphere/other-place");
-    let (code, log) = validate_atm(&atmosphere_campaign("renamed", |w, q| {
-        declare(w, serde_json::json!([one.clone(), twin.clone()]), true);
+    let (code, log) = validate_atm(&atmosphere_campaign("renamed", |w, q, p| {
+        declare(w, p, serde_json::json!([one.clone(), twin.clone()]), true);
         talk_bundle(q).push(serde_json::json!({
             "type": "set-atmosphere", "atmosphere": "atmosphere/other-place", "place": "node/keep"
         }));
@@ -2588,6 +2476,9 @@ fn ferry(tag: &str, quests: impl FnOnce(&mut serde_json::Value)) -> PathBuf {
     let camp = tmp(&format!("camp-{tag}"));
     common::copy_dir_all(&common::compiler_fixtures_dir().join("ferry"), &camp);
     common::patch_file(&camp.join("quests.json"), quests);
+    // The fixture's one place is the synthesised strait.
+    common::bind_region(&camp, &common::ferry::ferry_prefabs(), "ferry-strait");
+    common::sync_map_in(&camp, Some(&common::ferry::ferry_prefabs()));
     camp
 }
 
@@ -2664,51 +2555,9 @@ fn dw0932_laying_the_floor_at_an_earlier_tick_builds() {
     assert_eq!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
     assert!(t.contains("lay the floor at an earlier tick"), "{t}");
     common::patch_file(&camp.join("quests.json"), |q| onto_air(q, true));
+    common::sync_map_in(&camp, Some(&prefabs));
     let (s, t) = build("link-to-air-moved", &camp, &prefabs);
     assert_eq!(refused_with(s, &t), None, "{t}");
-}
-
-#[test]
-fn dw0932_using_a_crossing_for_another_area_builds() {
-    let prefabs = common::ferry::ferry_prefabs();
-    let camp = ferry("link-two-areas", |q| {
-        tiller(q)["effects"][0]["to"] = serde_json::json!({"anchor": "anchor/keeper-stand"});
-    });
-    common::patch_file(&camp.join("world.json"), |w| {
-        w["content"]["areas"].as_array_mut().unwrap().push(
-            serde_json::json!({"id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room"}),
-        );
-    });
-    let (s, t) = build("link-two-areas", &camp, &prefabs);
-    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
-    assert!(t.contains("use a crossing for another area"), "{t}");
-    // The move the message names: put the next objective in that area and let
-    // the compiler carry the party there — the tiller goes, and the beat after
-    // boarding stands in the keep.
-    common::patch_file(&camp.join("quests.json"), |q| {
-        q["content"]["triggers"] = serde_json::json!([]);
-        let quests = q["content"]["quests"].as_array_mut().unwrap();
-        quests[0]["objectives"].as_array_mut().unwrap().truncate(1);
-        quests[0]["on_complete"] = serde_json::json!([]);
-        quests.push(serde_json::json!({
-            "id": "quest/keep",
-            "happening": {"verb": "arrives", "subject": "anchor/exit", "text": "The keep, across the water."},
-            "trigger": {"type": "quest-complete", "quest": "quest/cross"},
-            "objectives": [{"id": "obj/keep", "type": "reach-anchor", "anchor": "anchor/exit", "radius": 1,
-                "happening": {"verb": "arrives", "subject": "anchor/exit", "text": "They reach the keep's door."}}],
-            "on_complete": [{"type": "campaign-complete",
-                "happening": {"verb": "arrives", "subject": "anchor/exit", "text": "The journey ends."}}]
-        }));
-    });
-    common::patch_file(&camp.join("quest-plan.json"), |p| {
-        p["content"]["finale"] = serde_json::json!("quest/keep");
-        p["content"]["quests"].as_array_mut().unwrap().push(serde_json::json!({
-            "act": 1, "depends_on": ["quest/cross"],
-            "goal": "Walk to the keep's door.", "id": "quest/keep", "mandatory": true, "npcs": []
-        }));
-    });
-    let (s, t) = build("link-two-areas-moved", &camp, &prefabs);
-    assert_ne!(refused_with(s, &t).as_deref(), Some("DW0932"), "{t}");
 }
 
 #[test]
@@ -2742,57 +2591,64 @@ fn dw0933_putting_the_teleport_at_the_named_tick_builds() {
     assert_eq!(refused_with(s, &t), None, "{t}");
 }
 
-/// The ferry's layout graph with `edges`.
-fn ferry_graph(camp: &Path, edges: serde_json::Value) {
-    let graph = serde_json::json!({
-        "campaign_id": "ferry", "dsl_version": DSL_VERSION, "stage": "layout-graph",
-        "content": {
-            "nodes": [
-                {"id": "node/west-shore", "intent": "jetty",
-                 "stations": [{"anchor": "anchor/boat", "kind": "point"}]},
-                {"id": "node/east-shore", "intent": "landing",
-                 "stations": [{"anchor": "anchor/far-landing", "kind": "point"}]}
-            ],
-            "edges": edges,
-            "entry": "node/west-shore", "goal": "node/east-shore",
-            "critical_path": ["node/west-shore", "node/east-shore"],
-            "beats": [
-                {"quest": "quest/cross", "objective": "obj/board", "node": "node/west-shore"},
-                {"quest": "quest/cross", "objective": "obj/far-shore", "node": "node/east-shore"}
-            ]
-        }
+/// `tests/fixtures/ferry-site` — two places no seam joins, each with a ferry —
+/// with its graph's edges replaced by `edges`.
+fn ferry_site(tag: &str, edges: serde_json::Value) -> PathBuf {
+    let camp = tmp(&format!("camp-{tag}"));
+    common::copy_dir_all(&common::compiler_fixtures_dir().join("ferry-site"), &camp);
+    common::patch_file(&camp.join("layout-graph.json"), |g| {
+        g["content"]["edges"] = edges;
     });
-    std::fs::write(
-        camp.join("layout-graph.json"),
-        serde_json::to_string_pretty(&graph).unwrap(),
-    )
-    .unwrap();
+    camp
 }
 
 #[test]
 fn dw0934_drawing_the_edge_or_making_it_one_way_builds() {
-    let prefabs = common::ferry::ferry_prefabs();
-    // A link no edge joins: draw the edge.
-    let camp = ferry("link-no-edge", |_| {});
-    ferry_graph(&camp, serde_json::json!([]));
+    let prefabs = common::prefabs_dir();
+    let near = serde_json::json!({"class": "carry", "id": "edge/near-ferry", "a": "node/near",
+        "b": "node/far", "one_way": "a-to-b", "gating": {"flags": ["flag/boarded"]}});
+    let far = serde_json::json!({"class": "carry", "id": "edge/far-ferry", "a": "node/far",
+        "b": "node/near", "one_way": "a-to-b", "gating": {"flags": ["flag/far-shore"]}});
+    // Links no edge joins: draw the edges.
+    let camp = ferry_site("link-no-edge", serde_json::json!([]));
     let (s, t) = build("link-no-edge", &camp, &prefabs);
     assert!(t.contains("DW0934"), "{t}");
     assert_ne!(s, 0);
     assert!(t.contains("draw the edge"), "{t}");
-    let edge = serde_json::json!({"class": "carry", "id": "edge/strait", "a": "node/west-shore",
-        "b": "node/east-shore", "one_way": "a-to-b", "gating": {"flags": ["flag/boarded"]}});
-    ferry_graph(&camp, serde_json::json!([edge.clone()]));
+    let camp = ferry_site("link-no-edge-moved", serde_json::json!([near.clone(), far]));
     let (s, t) = build("link-no-edge-moved", &camp, &prefabs);
     assert_eq!(refused_with(s, &t), None, "{t}");
-    // An edge direction no link realises: make the edge one-way.
-    let camp = ferry("link-no-link", |_| {});
-    let mut both = edge.clone();
+    // An edge direction no link realises: make the edge one-way. The crossing
+    // is one way only — the far ferry and the walk home are gone — so the
+    // near-far edge drawn both ways claims a carry back that nothing makes.
+    let one_way_trip = |tag: &str, edge: serde_json::Value| {
+        let camp = ferry_site(tag, serde_json::json!([edge]));
+        common::patch_file(&camp.join("quests.json"), |q| {
+            let c = &mut q["content"];
+            c["triggers"].as_array_mut().unwrap().truncate(1);
+            c["quests"][0]["objectives"]
+                .as_array_mut()
+                .unwrap()
+                .truncate(2);
+        });
+        common::patch_file(&camp.join("layout-graph.json"), |g| {
+            let c = &mut g["content"];
+            c["beats"].as_array_mut().unwrap().truncate(2);
+            c["critical_path"] = serde_json::json!(["node/near", "node/far"]);
+            c["goal"] = serde_json::json!("node/far");
+        });
+        camp
+    };
+    let mut both = near.clone();
     both.as_object_mut().unwrap().remove("one_way");
-    ferry_graph(&camp, serde_json::json!([both]));
+    let camp = one_way_trip("link-no-link", both);
     let (s, t) = build("link-no-link", &camp, &prefabs);
-    assert_eq!(refused_with(s, &t).as_deref(), Some("DW0934"), "{t}");
-    assert!(t.contains("make the edge one-way"), "{t}");
-    ferry_graph(&camp, serde_json::json!([edge]));
+    assert!(
+        t.contains("DW0934") && t.contains("make the edge one-way"),
+        "{t}"
+    );
+    assert_ne!(s, 0);
+    let camp = one_way_trip("link-no-link-moved", near);
     let (s, t) = build("link-no-link-moved", &camp, &prefabs);
     assert_eq!(refused_with(s, &t), None, "{t}");
 }
@@ -2803,7 +2659,7 @@ fn dw0934_drawing_the_edge_or_making_it_one_way_builds() {
 
 /// hello-world plus one `world.textures[]` row and the files beside it.
 fn texture_campaign(tag: &str, row: serde_json::Value, files: &[(&str, Vec<u8>)]) -> PathBuf {
-    let camp = campaign(&format!("tex-{tag}"), None);
+    let camp = campaign(&format!("tex-{tag}"), None, &common::prefabs_dir());
     let path = camp.join("world.json");
     let mut world: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
@@ -3203,6 +3059,7 @@ fn dw0948_moving_the_body_out_of_the_span_builds() {
                 "nodes": [ { "id": "dlg/hello", "text": "Mind the lamps.", "options": [] } ]
             }]);
         });
+        common::station_dir(&camp, at);
         camp
     };
     let inside = figure("dw0948-inside", "anchor/in-the-hall");

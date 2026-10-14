@@ -1865,6 +1865,22 @@ pub fn load_campaign_dir(dir: &Path) -> std::io::Result<delvec::compiler::load::
 /// it in the detail plan's first row to the piece anchor of the same name — for
 /// a test that adds an object at a name its fixture's map does not yet place.
 /// A no-op where the name is already a station.
+/// [`station_in`], on the documents at `dir`: the first place declares
+/// `anchor` as a point station and its row binds it to the piece's own name.
+pub fn station_dir(dir: &Path, anchor: &str) {
+    patch_file(&dir.join("layout-graph.json"), |g| {
+        let st = g["content"]["nodes"][0]["stations"].as_array_mut().unwrap();
+        if !st.iter().any(|s| s["anchor"] == anchor) {
+            st.push(serde_json::json!({"anchor": anchor, "kind": "point"}));
+        }
+    });
+    if dir.join("detail-plan.json").is_file() {
+        patch_file(&dir.join("detail-plan.json"), |d| {
+            d["content"]["details"][0]["anchors"][anchor] = serde_json::json!(anchor);
+        });
+    }
+}
+
 pub fn station_in(c: &mut delvewright_dsl::Campaign, anchor: &str) {
     let id = delvewright_dsl::AnchorId(anchor.to_string());
     if let Some(g) = c.layout_graph.as_mut() {

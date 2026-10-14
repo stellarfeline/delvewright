@@ -3,15 +3,18 @@
   "content": {
     "boxes": [
       {
+        "base": {
+          "owned": 2
+        },
         "ceiling": {
-          "clearance": 6
+          "open": 4
         },
         "extent": [
-          16,
-          16
+          5,
+          41
         ],
         "floor": {
-          "y": 65
+          "y": 66
         },
         "min": [
           1,
@@ -48,9 +51,9 @@
     },
     "region": {
       "extent": [
-        18,
-        9,
-        18
+        7,
+        7,
+        43
       ],
       "min": [
         0,

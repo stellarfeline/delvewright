@@ -245,30 +245,7 @@ fn prefabs_dir(k: EffectRootKind) -> PathBuf {
 }
 
 fn load(k: EffectRootKind) -> LoadedCampaign {
-    if k == EffectRootKind::LoopCross {
-        return common::load_campaign_dir(&corridor_campaign()).unwrap();
-    }
     common::load_campaign_dir(&common::compiler_fixtures_dir().join(ns_for(k))).unwrap()
-}
-
-/// The `long-gallery` fixture with its one place bound to the corridor piece it
-/// was written for, materialised once per process.
-fn corridor_campaign() -> PathBuf {
-    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
-    DIR.get_or_init(|| {
-        let dir =
-            std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("effect_root_walkers_corridor");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        common::copy_campaign_docs(
-            &common::compiler_fixtures_dir().join(ns_for(EffectRootKind::LoopCross)),
-            &dir,
-        );
-        common::bind_region(&dir, &corridor_prefabs(), "long-gallery");
-        common::sync_map_in(&dir, Some(&corridor_prefabs()));
-        dir
-    })
-    .clone()
 }
 
 /// The fixture campaign with `bundle` bound at root `k` and nowhere else.
