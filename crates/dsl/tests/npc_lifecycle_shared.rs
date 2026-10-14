@@ -198,3 +198,42 @@ fn the_ordering_function_has_one_definition_and_three_callers() {
         "presence is built on the rule"
     );
 }
+
+/// An actor spawned in a quest-graph ancestor is present at a cutscene in the
+/// quest that depends on it (keep-trial: `quest/trial` depends on
+/// `quest/greet`).
+#[test]
+fn an_actor_spawned_by_a_quest_graph_ancestor_is_present() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/valid/keep-trial");
+    let read = |f: &str| std::fs::read_to_string(dir.join(f)).unwrap();
+    let mut q: Value = serde_json::from_str(&read("quests.json")).unwrap();
+    q["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"type": "spawn-actor", "actor": "actor/x"}));
+    q["content"]["quests"][1]["on_complete"]
+        .as_array_mut()
+        .unwrap()
+        .insert(0, cutscene());
+    let raw = RawCampaign {
+        world: read("world.json"),
+        npcs: read("npcs.json"),
+        classes: read("classes.json"),
+        quest_plan: read("quest-plan.json"),
+        quests: q.to_string(),
+        dialogue: read("dialogue.json"),
+        world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
+        design: None,
+    };
+    let c = parse_campaign(&raw).expect("parses");
+    let order = Order::of(&c);
+    let p = order.presence("actor/x", Beat::Effect(the_cutscene(&c)));
+    assert!(
+        matches!(p, Presence::Present(ref at) if at.starts_with("/content/quests/0/")),
+        "{p:?}"
+    );
+}
