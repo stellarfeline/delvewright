@@ -8,12 +8,14 @@ use super::*;
 /// party's line count (`#taught_<class>`) moves by exactly one, so the line is
 /// shown once and not again.
 ///
-/// **A teaching objective whose activation places nothing** — a `talk-to`, a
-/// `kill` — has an activation function only because it teaches, so this is
-/// the template that drives it (an activation that also places is driven by
-/// the activation template, and teaches there through the same body). Its
-/// activation teaches every untaught player, so the count is read as at least
-/// one, and a second activation adds none.
+/// **A teaching objective** has its activation driven here twice, whether the
+/// activation places nothing (a `talk-to`, a `kill`: the function exists only
+/// because it teaches) or also places the objective's affordance (that
+/// placement is asserted by the activation template; the teaching line is
+/// asserted here and nowhere else). Its activation teaches every untaught
+/// player, so the count is read as at least one, and a second activation adds
+/// none. A placing activation is followed by the cleanup of what the two calls
+/// summoned, so the template leaves no residue for its siblings.
 pub(super) fn emit_teaching_packtests(plan: &Plan, out: &mut BuildOutput) {
     use super::super::teaching::{taught_score, teach_at_fn};
     let ns = &plan.namespace;
@@ -63,9 +65,11 @@ pub(super) fn emit_teaching_packtests(plan: &Plan, out: &mut BuildOutput) {
             let Some(classes) = sites.objectives.get(oid) else {
                 continue;
             };
-            if !activation_commands(plan, area, o).is_empty() {
-                continue;
-            }
+            let placed = activation_commands(plan, area, o);
+            // A placement no fixture reads still has its teaching asserted: a
+            // site with no assertion is the defect, residue is not.
+            let cleanup =
+                super::objective::activation_residue_cleanup(&placed, 2).unwrap_or_default();
             let safe = plan::safe_local(oid);
             let tag = format!("dw_t_tco_{safe}");
             let (pin, sel) = pin_dummy(&tag);
@@ -105,6 +109,7 @@ pub(super) fn emit_teaching_packtests(plan: &Plan, out: &mut BuildOutput) {
                 ));
                 b.push(format!("assert score #tc1_{safe} dw.sys matches 1"));
             }
+            b.extend(cleanup);
             b.push(format!("tag {sel} remove {tag}"));
             out.insert(
                 format!("packtest-datapack/data/{ns}/test/teach_objective_{safe}.mcfunction"),

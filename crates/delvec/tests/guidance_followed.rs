@@ -586,11 +586,21 @@ fn the_first_act_of_a_class_teaches_it_once() {
         fn_body(&out, "teach_use_body").is_none(),
         "a `null` class emits nothing"
     );
+    // The lever's activation places its prop AND teaches: the teaching line is
+    // asserted once-and-not-again by a template that drives that activation.
+    let t = packtest(&out, "teach_objective_pull").expect("the placing site's PackTest");
+    assert_eq!(
+        t.matches("function hello-world:activate_o_pull").count(),
+        2,
+        "{t}"
+    );
     assert!(
-        out.contains_key(&format!(
-            "packtest-datapack/data/{NS}/test/teach_objective_talk.mcfunction"
-        )) || !out.keys().any(|k| k.contains("teach_objective_talk")),
-        "only a teaching activation that places nothing has its own template"
+        t.contains("assert score #taught_use-block dw.sys matches 1.."),
+        "{t}"
+    );
+    assert!(
+        t.contains("if score #taught_use-block dw.sys = #tc0_pull dw.sys"),
+        "{t}"
     );
     let again = try_build(&dir).expect("builds again");
     assert_eq!(out, again, "two builds are byte-identical");
@@ -602,6 +612,114 @@ fn the_first_act_of_a_class_teaches_it_once() {
         !plain
             .values()
             .any(|v| std::str::from_utf8(v).is_ok_and(|s| s.contains("dw.taught_")))
+    );
+}
+
+fn packtest<'a>(out: &'a BuildOutput, name: &str) -> Option<&'a str> {
+    out.get(&format!(
+        "packtest-datapack/data/{NS}/test/{name}.mcfunction"
+    ))
+    .map(|b| std::str::from_utf8(b).unwrap())
+}
+
+/// The function names `body` calls, by `function <ns>:<name>` anywhere in a line.
+fn calls(body: &str) -> Vec<String> {
+    let pre = format!("function {NS}:");
+    body.lines()
+        .filter_map(|l| l.split_once(&pre).map(|(_, r)| r))
+        .map(|r| r.split_whitespace().next().unwrap_or("").to_string())
+        .collect()
+}
+
+/// Every teaching site whose class `class` is taught by `activation`: the
+/// PackTest templates that drive `activation`, reset `#taught_<class>` to 0 and
+/// assert it at least 1 afterwards, and whether that assertion can hold — the
+/// static call closure of `activation` reaches the one command that moves the
+/// count. Returns (templates asserting it, assertion satisfiable).
+fn teaching_assertion(out: &BuildOutput, class: &str, activation: &str) -> (usize, bool) {
+    let drive = format!("function {NS}:{activation}");
+    let reset = format!("scoreboard players set #taught_{class} dw.sys 0");
+    let assert = format!("assert score #taught_{class} dw.sys matches 1..");
+    let asserting = out
+        .iter()
+        .filter(|(k, _)| k.starts_with(&format!("packtest-datapack/data/{NS}/test/")))
+        .filter_map(|(_, v)| std::str::from_utf8(v).ok())
+        .filter(|t| t.contains(&drive) && t.contains(&reset) && t.contains(&assert))
+        .count();
+    let moves = format!("scoreboard players add #taught_{class} dw.sys 1");
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut todo = vec![activation.to_string()];
+    let mut reached = false;
+    while let Some(f) = todo.pop() {
+        if !seen.insert(f.clone()) {
+            continue;
+        }
+        let Some(body) = fn_body(out, &f) else {
+            continue;
+        };
+        reached |= body.lines().any(|l| l.trim() == moves);
+        todo.extend(calls(body));
+    }
+    (asserting, reached)
+}
+
+/// spec-0104 §5.4: a teaching line emitted inside an activation that also
+/// places something is asserted by a PackTest, and dropping the line from that
+/// activation turns the assertion unsatisfiable. A summoning activation's
+/// template removes exactly what its two calls summoned.
+#[test]
+fn a_placing_activation_that_teaches_is_asserted() {
+    let mut q = quests(nulls());
+    q["content"]["guidance"]["teaching"]["use-block"] = json!(USE_LINE);
+    let out = try_build(&variant("teach-placing", q, dialogue(GREETING))).expect("builds");
+    let body = fn_body(&out, "activate_o_pull").unwrap().to_string();
+    assert!(
+        body.lines().any(|l| l.starts_with("setblock ")),
+        "the activation places: {body}"
+    );
+    assert_eq!(
+        teaching_assertion(&out, "use-block", "activate_o_pull"),
+        (1, true)
+    );
+
+    // Perturbation: the teaching line dropped from the placing activation. The
+    // template still asserts the count, and nothing it drives can move it.
+    let mut cut = out.clone();
+    let stripped: String = body
+        .lines()
+        .filter(|l| !l.contains("teach_use_block"))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    assert_ne!(
+        stripped.len(),
+        body.len(),
+        "the perturbation removed a line"
+    );
+    cut.insert(
+        format!("datapack/data/{NS}/function/activate_o_pull.mcfunction"),
+        stripped.into_bytes(),
+    );
+    assert_eq!(
+        teaching_assertion(&cut, "use-block", "activate_o_pull"),
+        (1, false),
+        "the template's assertion would fail"
+    );
+
+    // A summoning placement: the lever replaced by a lantern, a prop vanilla
+    // reports no use of, so the activation places it and summons a hitbox over
+    // it (still a `use-block` act); the template kills the two its two calls
+    // made.
+    let mut q = quests(nulls());
+    q["content"]["guidance"]["teaching"]["use-block"] = json!(USE_LINE);
+    q["content"]["quests"][0]["objectives"][1]["prop"] = json!({ "block": "minecraft:lantern" });
+    let out = try_build(&variant("teach-summoning", q, dialogue(GREETING))).expect("builds");
+    let body = fn_body(&out, "activate_o_pull").unwrap();
+    assert_eq!(body.matches("summon ").count(), 1, "{body}");
+    let t = packtest(&out, "teach_objective_pull").expect("the summoning site's PackTest");
+    assert!(t.contains("kill @e[tag=dw_i_pull,limit=2]"), "{t}");
+    assert_eq!(
+        teaching_assertion(&out, "use-block", "activate_o_pull"),
+        (1, true)
     );
 }
 
