@@ -17,7 +17,6 @@
 //!   "cameras": [
 //!     {
 //!       "answers": "concept/kitchen-near",
-//!       "exposure": 8.0,
 //!       "fov": 62.0,
 //!       "height": 900,
 //!       "name": "kitchen",
@@ -45,11 +44,10 @@
 //! - `fov` is the **vertical** field of view in degrees — Minecraft's FOV setting
 //!   and Chunky's `fov` are both vertical — so a narrower frame from further back
 //!   is a smaller number.
-//! - `exposure` is the camera's, as a photograph's is: it scales what reaches the
-//!   lens and puts no light into the world. A room lit by its torches and a few
-//!   slit windows reaches a path tracer's lens far dimmer than the game draws the
-//!   same light levels, so an interior is exposed for the interior — stated, per
-//!   camera, and judged at the value stated. `1.0` is the review frames' value.
+//! - There is no `exposure`: every frame is exposed at [`scene::EXPOSURE`], the
+//!   one value the sky, the tone curve and the lantern scale are calibrated at.
+//!   A record that states one is refused ([`DW_EXPOSURE_STATED`]); a room that
+//!   reads too dark is lit, never exposed.
 //! - `width`, `height` and `spp` are the frame and the path tracer's sample target:
 //!   everything else Chunky needs to reproduce the frame comes from the build (the
 //!   loaded chunks, the ocean plane) or from the record (the sky).
@@ -70,7 +68,7 @@
 
 use std::collections::BTreeSet;
 
-use delvewright_dsl::{WorldTime, WorldWeather};
+use delvewright_dsl::{DwCode, ExitTier, WorldTime, WorldWeather};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -90,6 +88,29 @@ pub const CAMERAS_FILE: &str = "design/cameras.json";
 /// give one answer (spec-0070 §5).
 pub const DW_RECORD_AT_BUILD: delvewright_dsl::DwCode =
     delvewright_dsl::DwCode::new(DW_INPUT, delvewright_dsl::ExitTier::Build);
+
+delvewright_dsl::dw_code! {
+    /// `DW1010`: **a camera record states an `exposure`.** A frame's exposure is
+    /// derived by the engine ([`scene::EXPOSURE`]), so a typed one is a
+    /// derivation entered where only judgements belong, and the usual reason
+    /// for typing one — a room too dark to read — is repaired by the room's
+    /// lights. Refused by the record's one reader ([`parse_sheet`]), so every
+    /// command that reads the record and `delvec build` refuse it alike. Build
+    /// tier; `delvec cameras` and `delvec place-camera` exit 2 on it, as on
+    /// `DW0721`.
+    pub const DW_EXPOSURE_STATED: DwCode = DwCode::new("DW1010", ExitTier::Build);
+}
+
+/// The code a refusal of the record's reader carries at the build's tier:
+/// [`DW_EXPOSURE_STATED`] keeps its own name, every other rule of the record
+/// is [`DW_RECORD_AT_BUILD`].
+pub fn record_code_at_build(d: &Diagnostic) -> DwCode {
+    if d.code == DW_EXPOSURE_STATED.id() {
+        DW_EXPOSURE_STATED
+    } else {
+        DW_RECORD_AT_BUILD
+    }
+}
 
 /// The key under which [`record_schema`] names the file the record lives at, so
 /// a tool reading the export (the gallery's coverage gate) finds the document
@@ -152,9 +173,6 @@ pub struct Camera {
     pub after: Option<CameraAfter>,
     /// The `design.json` row whose approved image this camera answers.
     pub answers: String,
-    /// The camera's exposure: `1.0` renders the light as the path tracer
-    /// measures it.
-    pub exposure: f64,
     /// Vertical field of view, degrees.
     pub fov: f64,
     /// Frame height, pixels.
@@ -351,12 +369,6 @@ impl Camera {
                     .to_string(),
             );
         }
-        if !(self.exposure.is_finite() && self.exposure > 0.0) {
-            return Err(format!(
-                "`exposure` {} is not an exposure: a positive number, 1.0 for the light as measured",
-                self.exposure
-            ));
-        }
         if !self.pos.iter().all(|v| v.is_finite()) {
             return Err(format!("`pos` {:?} is not three finite numbers", self.pos));
         }
@@ -397,6 +409,9 @@ impl Camera {
 /// Parse and check a record. A document that is not the record, a camera that
 /// breaks a rule, and two cameras of one name are each refused ([`DW_INPUT`]).
 pub fn parse_sheet(bytes: &[u8]) -> Result<CameraSheet, Diagnostic> {
+    if let Some(refusal) = exposure_stated(bytes) {
+        return Err(refusal);
+    }
     let sheet: CameraSheet = serde_json::from_slice(bytes).map_err(|e| {
         Diagnostic::error(
             DW_INPUT,
@@ -431,6 +446,31 @@ pub fn parse_sheet(bytes: &[u8]) -> Result<CameraSheet, Diagnostic> {
         ));
     }
     Ok(sheet)
+}
+
+/// `DW1010` for the first camera of a record that states `exposure`, `None`
+/// otherwise (and for a document that is not JSON, which serde refuses next).
+/// Asked before serde, whose unknown-field sentence names no remedy.
+fn exposure_stated(bytes: &[u8]) -> Option<Diagnostic> {
+    let doc: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let cams = doc.get("cameras")?.as_array()?;
+    let c = cams.iter().find(|c| c.get("exposure").is_some())?;
+    Some(Diagnostic::error(
+        DW_EXPOSURE_STATED.id(),
+        format!(
+            "{CAMERAS_FILE}: camera `{}` (answers `{}`) states `exposure` {}. A frame's exposure \
+             is derived by the engine, not stated: every showcase frame is exposed at {}, where \
+             a top face under the whole sky and a lantern-lit surface read as the game draws \
+             them. Remove the field. A room that reads too dark at that exposure is short of \
+             light: light the room where it is designed — add or re-arrange its lights until \
+             `delvec prefab lighting` calls it lit (the skill's `new-pieces.md`, *Light inside a \
+             cave or a body*) — never the picture",
+            c.get("name").and_then(|n| n.as_str()).unwrap_or("?"),
+            c.get("answers").and_then(|a| a.as_str()).unwrap_or("?"),
+            c["exposure"],
+            scene::EXPOSURE,
+        ),
+    ))
 }
 
 /// The first camera of a record that does not parse as a camera, named with the
@@ -893,7 +933,6 @@ pub struct Frame {
     pub pitch_deg: f64,
     /// Vertical field of view.
     pub fov_deg: f64,
-    pub exposure: f64,
     pub width: u32,
     pub height: u32,
     pub spp: u32,
@@ -916,7 +955,6 @@ impl Frame {
             plan_yaw_deg: plan_yaw(cam.yaw),
             pitch_deg: cam.pitch,
             fov_deg: cam.fov,
-            exposure: cam.exposure,
             width,
             height,
             spp,
@@ -945,7 +983,7 @@ pub(crate) fn world_scene(
         height: frame.height,
         y_clip_min: (loaded_min[1] - 8).max(-64),
         y_clip_max: (loaded_max[1] + 16).min(320),
-        exposure: round6(frame.exposure),
+        exposure: scene::EXPOSURE,
         postprocess: scene::POSTPROCESS,
         postprocess_settings: scene::tone_curve(),
         output_mode: "PNG",
@@ -1165,12 +1203,12 @@ pub fn emit(
 #[derive(Debug, Clone, PartialEq)]
 pub enum Placement {
     /// A camera a tool estimated, taken verbatim from a record-format file
-    /// (`candidates.json`): pose, lens, exposure and frame. Written as
+    /// (`candidates.json`): pose, lens and frame. Written as
     /// `estimated`.
     Estimate(Camera),
     /// A pose a person captured in the running game (`camera-report.json`),
     /// with the field of view they stated. Written as `hand`; the row's frame
-    /// and exposure are kept.
+    /// is kept.
     Hand {
         pos: [f64; 3],
         yaw: f64,
@@ -1197,8 +1235,8 @@ pub enum Placed {
 ///   estimate may carry its own), and must equal the row's when given for an
 ///   existing one: aiming a camera at another picture is a new row.
 /// - A new hand row takes the showcase frame defaults (`panorama`'s: 1600×900,
-///   300 spp) and exposure 1.0; a replaced hand row keeps the row's frame and
-///   exposure, because a person placed the pose, not the exposure.
+///   300 spp); a replaced hand row keeps the row's frame, because a person
+///   placed the pose, not the frame.
 ///
 /// `sheet` is the record as it stands (`None` when the campaign has none yet),
 /// `campaign_id` the campaign the placement belongs to.
@@ -1292,7 +1330,6 @@ pub fn place(
             Camera {
                 after: None,
                 answers: answers.to_string(),
-                exposure: 1.0,
                 fov: *fov,
                 height: crate::compiler::view::panorama::DEFAULT_HEIGHT,
                 name: name.to_string(),
@@ -1568,7 +1605,6 @@ mod tests {
         Camera {
             after: None,
             answers: "concept/quay".to_string(),
-            exposure: 1.0,
             fov: 50.0,
             height: 900,
             name: name.to_string(),
@@ -1747,8 +1783,7 @@ mod tests {
         )
         .unwrap();
         type Edit = (&'static str, fn(&mut Camera));
-        let edits: [Edit; 9] = [
-            ("exposure", |c| c.exposure *= 2.0),
+        let edits: [Edit; 8] = [
             ("pos.x", |c| c.pos[0] += 1.0),
             ("pos.y", |c| c.pos[1] += 1.0),
             ("pos.z", |c| c.pos[2] += 1.0),
@@ -1803,8 +1838,7 @@ mod tests {
     fn the_record_refuses_what_is_not_a_camera() {
         let ok = serde_json::to_value(sheet("c", vec![cam("a")])).unwrap();
         assert!(parse_sheet(ok.to_string().as_bytes()).is_ok());
-        let edits: [(&str, serde_json::Value); 12] = [
-            ("/cameras/0/exposure", 0.0.into()),
+        let edits: [(&str, serde_json::Value); 11] = [
             ("/cameras/0/name", "Hero".into()),
             ("/cameras/0/answers", "".into()),
             ("/cameras/0/pitch", 91.0.into()),
@@ -1832,6 +1866,29 @@ mod tests {
         let twice = sheet("c", vec![cam("a"), cam("a")]);
         let err = parse_sheet(serde_json::to_string(&twice).unwrap().as_bytes()).unwrap_err();
         assert!(err.message.contains("two cameras"), "{err:?}");
+    }
+
+    /// **An exposure is derived, never stated.** A camera carrying `exposure`
+    /// is refused under `DW1010` at any value — the derived one included,
+    /// since a copy of a derivation is still typed — naming the camera, its
+    /// row and the remedy: remove the field, and light a dark room.
+    #[test]
+    fn a_stated_exposure_is_refused_with_its_remedy() {
+        let ok = serde_json::to_value(sheet("c", vec![cam("a"), cam("b")])).unwrap();
+        for value in [serde_json::json!(1.0), serde_json::json!(16.0), serde_json::json!(0)] {
+            let mut doc = ok.clone();
+            doc["cameras"][1]["exposure"] = value.clone();
+            let err = parse_sheet(doc.to_string().as_bytes()).unwrap_err();
+            assert_eq!(err.code, "DW1010", "{value}");
+            assert_eq!(err.code, DW_EXPOSURE_STATED.id());
+            for needle in ["camera `b`", "`concept/quay`", "Remove the field", "light the room"] {
+                assert!(err.message.contains(needle), "{needle}: {err:?}");
+            }
+        }
+        // The engine writes the derived exposure into every scene.
+        let out = emit3(OCEAN, &sheet("isle", vec![cam("a")]), &EmitOptions::default()).unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&out.scenes[0].1).unwrap();
+        assert_eq!(v["exposure"], scene::EXPOSURE);
     }
 
     #[test]
@@ -1970,7 +2027,7 @@ mod tests {
 
     /// **A hand camera is final.** An estimate over a `hand` row is refused
     /// naming the row; once the row is deleted the same write succeeds; a new
-    /// hand pose replaces a hand row and keeps its frame and exposure.
+    /// hand pose replaces a hand row and keeps its frame.
     #[test]
     fn an_estimate_is_never_written_over_a_hand_camera() {
         let (sheet, placed) = place5(
@@ -1989,8 +2046,8 @@ mod tests {
             ([1.5, 70.62, -3.0], -45.75, 12.1, 70.0)
         );
         assert_eq!(
-            (row.width, row.height, row.spp, row.exposure),
-            (1600, 900, 300, 1.0)
+            (row.width, row.height, row.spp),
+            (1600, 900, 300)
         );
 
         let estimate = Placement::Estimate(cam("hero.yaw+8"));
@@ -1999,14 +2056,14 @@ mod tests {
         assert!(err.message.contains("`hero` was placed by hand"), "{err:?}");
 
         // She re-fires `dw.cam`: the hand pose replaces the hand pose, and the
-        // exposure the agent set for the room stays.
-        let mut exposed = sheet.clone();
-        exposed.cameras[0].exposure = 8.0;
+        // frame the row had stays.
+        let mut framed = sheet.clone();
+        framed.cameras[0].spp = 4096;
         let (again, placed) =
-            place5(Some(exposed), "isle", "hero", None, hand([2.5, 71.0, -3.0])).unwrap();
+            place5(Some(framed), "isle", "hero", None, hand([2.5, 71.0, -3.0])).unwrap();
         assert_eq!(placed, Placed::Replaced);
         assert_eq!(again.cameras[0].pos, [2.5, 71.0, -3.0]);
-        assert_eq!(again.cameras[0].exposure, 8.0);
+        assert_eq!(again.cameras[0].spp, 4096);
 
         // Deleted, the name is free, and the same estimate is written.
         assert_eq!(delete(sheet.clone(), "hero").unwrap(), None);

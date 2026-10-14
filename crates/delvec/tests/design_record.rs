@@ -480,7 +480,7 @@ fn cameras(camp: &Path, pos: [f64; 3], rows: &[(&str, &str)]) {
         .iter()
         .map(|(name, answers)| {
             serde_json::json!({
-                "answers": answers, "exposure": 1.0, "fov": 70.0, "height": 90,
+                "answers": answers, "fov": 70.0, "height": 90,
                 "name": name, "pitch": 10.0, "pos": pos, "source": "estimated",
                 "spp": 16, "width": 160, "yaw": 0.0
             })

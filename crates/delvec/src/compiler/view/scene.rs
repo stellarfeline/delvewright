@@ -171,6 +171,19 @@ pub fn emitter_intensity() -> f64 {
     round6(CORE_EMITTER_INTENSITY * LANTERN_LIGHT_SCALE)
 }
 
+/// **The exposure every scene is written with: derived, never stated.** The
+/// scene's other values are calibrated at exposure 1 and only there: the sky's
+/// radiances are the pinned client's lightmap colours decoded, so at 1 a top
+/// face under the whole sky shows at the colour the game draws it under every
+/// weather; [`tone_curve`] holds [`MID_GREY`] where the game's transfer does at
+/// 1; and [`LANTERN_LIGHT_SCALE`] is fitted so a lantern-lit surface reads, on
+/// average, as the game draws it at 1. Any other value moves the frame off
+/// all three at once. A room that reads too dark at this exposure is short of
+/// light, and is repaired by its lights, never by the picture. No camera, no
+/// review shot and no panorama states its own (`DW1010` refuses a camera
+/// record that does). `compiler.md` §4 holds the measurements. **Derived.**
+pub const EXPOSURE: f64 = 1.0;
+
 /// How far below a water cell's top face the rendered surface sits, in blocks.
 /// Vanilla draws a full source block 1/8 short of the cell top; Chunky matches
 /// it (`Water.TOP_BLOCK_GAP` in the pinned core). So the surface of the water
@@ -1592,7 +1605,7 @@ pub fn scenes_from_plan(
             height: opts.height,
             y_clip_min,
             y_clip_max,
-            exposure: 1.0,
+            exposure: EXPOSURE,
             postprocess: POSTPROCESS,
             postprocess_settings: tone_curve(),
             output_mode: "PNG",
@@ -2414,7 +2427,6 @@ mod tests {
                     cameras: vec![camera::Camera {
                         after: None,
                         answers: "concept/x".into(),
-                        exposure: 1.0,
                         fov: 60.0,
                         height: 90,
                         name: "x".into(),
@@ -2572,7 +2584,6 @@ mod tests {
             cameras: vec![camera::Camera {
                 after: None,
                 answers: "concept/quay".into(),
-                exposure: 2.0,
                 fov: 50.0,
                 height: 900,
                 name: "hero".into(),

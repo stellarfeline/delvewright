@@ -1184,7 +1184,7 @@ pub fn render_plan(
         let showcase = prove_showcase(record, &parsed, radius, |cell| !world.is_clear(cell))
             .map_err(|refusal| match refusal {
                 ShowcaseRefusal::Record(d) => Failure {
-                    code: crate::compiler::view::camera::DW_RECORD_AT_BUILD,
+                    code: crate::compiler::view::camera::record_code_at_build(&d),
                     message: d.message,
                 },
                 ShowcaseRefusal::Camera(message) => Failure {
@@ -1203,7 +1203,7 @@ pub fn render_plan(
         if let Some(base) = base {
             let sheet =
                 crate::compiler::view::camera::parse_sheet(record).map_err(|d| Failure {
-                    code: crate::compiler::view::camera::DW_RECORD_AT_BUILD,
+                    code: crate::compiler::view::camera::record_code_at_build(&d),
                     message: d.message,
                 })?;
             crate::compiler::view::beat::check_record(plan, world, base, &sheet.cameras).map_err(

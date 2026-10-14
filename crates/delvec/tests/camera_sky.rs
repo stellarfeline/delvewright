@@ -77,7 +77,6 @@ fn cam(name: &str, answers: &str, sky: Option<CameraSky>) -> Camera {
     Camera {
         after: None,
         answers: answers.into(),
-        exposure: 1.0,
         fov: 60.0,
         height: 90,
         name: name.into(),
@@ -257,7 +256,7 @@ fn campaign(dir: &Path, cameras: Option<serde_json::Value>) {
 
 fn a_camera(sky: Option<serde_json::Value>) -> serde_json::Value {
     let mut c = serde_json::json!({
-        "answers": "concept/gate", "exposure": 2.0, "fov": 55.0, "height": 90, "name": "gate",
+        "answers": "concept/gate", "fov": 55.0, "height": 90, "name": "gate",
         "pitch": 12.0, "pos": [9.5, 72.0, -6.0], "source": "estimated", "spp": 16,
         "width": 160, "yaw": 20.0
     });

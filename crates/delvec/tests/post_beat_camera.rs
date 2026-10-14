@@ -123,7 +123,6 @@ fn cam(name: &str, after: Option<&str>) -> camera::Camera {
     camera::Camera {
         after: after.map(|s| camera::CameraAfter::parse(s).unwrap()),
         answers: "concept/keep".into(),
-        exposure: 1.0,
         fov: 70.0,
         height: 90,
         name: name.into(),

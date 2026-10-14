@@ -278,7 +278,7 @@ fn a_hand_row_is_written_as_stamped_and_no_estimate_replaces_it() {
 
 fn camera_row(name: &str, source: &str, pos: [f64; 3], yaw: f64, pitch: f64) -> serde_json::Value {
     serde_json::json!({
-        "answers": "concept/keep", "exposure": 1.0, "fov": 70.0, "height": 90,
+        "answers": "concept/keep", "fov": 70.0, "height": 90,
         "name": name, "pitch": pitch, "pos": pos, "source": source, "spp": 16,
         "width": 160, "yaw": yaw
     })
@@ -717,7 +717,7 @@ fn the_record_s_documented_fields_are_the_reader_s_fields() {
     // structs' and not this literal's.
     let sheet = camera::parse_sheet(
         br#"{"campaign_id":"c","cameras":[{"after":{"path":"branch/b","step":"obj/x"},
-            "answers":"concept/a","exposure":1.0,
+            "answers":"concept/a",
             "fov":70.0,"height":900,"name":"one","pitch":0.0,"pos":[0.5,70.0,0.5],
             "sky":{"time":"dusk","weather":"rain"},
             "source":"estimated","spp":300,"width":1600,"yaw":0.0}]}"#,

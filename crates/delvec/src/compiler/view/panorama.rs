@@ -613,8 +613,6 @@ pub fn panorama_from_plan(
         plan_yaw_deg: cam.yaw_deg,
         pitch_deg: cam.pitch_deg,
         fov_deg: cam.fov_deg,
-        // A panorama is the world as the path tracer measures it.
-        exposure: 1.0,
         width: opts.width,
         height: opts.height,
         spp: opts.spp_target,
@@ -629,7 +627,6 @@ pub fn panorama_from_plan(
         record: camera::Camera {
             after: None,
             answers: String::new(),
-            exposure: 1.0,
             fov: cam.fov_deg,
             height: opts.height,
             name: shot.replace('_', "-"),

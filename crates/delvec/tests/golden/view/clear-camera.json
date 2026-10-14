@@ -5,7 +5,7 @@
   "height": 900,
   "yClipMin": 48,
   "yClipMax": 96,
-  "exposure": 2.0,
+  "exposure": 1.0,
   "postprocess": "TONEMAP3",
   "postprocessSettings": {
     "shoulderStrength": 0.32138956,

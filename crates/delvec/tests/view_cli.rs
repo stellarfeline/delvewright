@@ -413,7 +413,7 @@ fn cameras_cmd(built: &Path, campaign: &Path, out: &Path) -> Command {
 
 fn a_camera(name: &str, answers: &str) -> serde_json::Value {
     serde_json::json!({
-        "answers": answers, "exposure": 2.0, "fov": 55.0, "height": 450, "name": name,
+        "answers": answers, "fov": 55.0, "height": 450, "name": name,
         "pitch": 12.0, "pos": [9.5, 72.0, -6.0], "source": "estimated", "spp": 64, "width": 800, "yaw": 20.0
     })
 }
@@ -443,7 +443,8 @@ fn cameras_emits_the_stated_cameras_and_their_candidates() {
     assert_eq!(v["name"], "hello-world_camera_gate");
     assert_eq!(v["width"], 800);
     assert_eq!(v["sppTarget"], 64);
-    assert_eq!(v["exposure"], 2.0);
+    // The exposure is the engine's derivation, never the record's.
+    assert_eq!(v["exposure"], 1.0);
     assert_eq!(v["camera"]["fov"], 55.0);
     assert_eq!(v["camera"]["position"]["z"], -6.0);
     assert!(v["sun"]["altitude"].is_number(), "{v}");
