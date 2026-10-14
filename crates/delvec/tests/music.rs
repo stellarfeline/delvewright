@@ -272,7 +272,7 @@ fn refused_1031(f: impl FnOnce(&mut Value, &mut Value)) -> Vec<Diagnostic> {
     let c = campaign(f);
     let d: Vec<Diagnostic> = validate_campaign(&c)
         .into_iter()
-        .filter(|d| d.code.to_string() == "DW1031")
+        .filter(|d| d.code == "DW1031")
         .collect();
     assert_eq!(d.len(), 1, "{d:#?}");
     let m = &d[0].message;
@@ -320,7 +320,7 @@ fn refused_1031_any(f: impl FnOnce(&mut Value, &mut Value)) -> Diagnostic {
     let c = campaign(f);
     let d: Vec<Diagnostic> = validate_campaign(&c)
         .into_iter()
-        .filter(|d| d.code.to_string() == "DW1031")
+        .filter(|d| d.code == "DW1031")
         .collect();
     assert_eq!(d.len(), 1, "{d:#?}");
     d[0].clone()
@@ -336,7 +336,7 @@ fn a_scene_that_states_its_music_validates() {
     let d = validate_campaign(&c);
     let d: Vec<&Diagnostic> = d
         .iter()
-        .filter(|d| d.code.to_string() == "DW1031" || d.code.to_string() == "DW0928")
+        .filter(|d| d.code == "DW1031" || d.code == "DW0928")
         .collect();
     assert!(d.is_empty(), "{d:#?}");
 }
@@ -648,7 +648,7 @@ fn hearing_an_undeclared_atmosphere_is_dw0112() {
     let d = validate_campaign(&c);
     assert!(
         d.iter()
-            .any(|d| d.code.to_string() == "DW0112" && d.path.ends_with("/hears")),
+            .any(|d| d.code == "DW0112" && d.path.ends_with("/hears")),
         "{:#?}",
         codes(&d)
     );
