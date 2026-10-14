@@ -182,16 +182,17 @@ pub fn census(
         }
     }
     for c in claims {
-        if !rows.contains_key(&c.cell) {
-            let Some(block) = &c.placed else { continue };
-            let Some(slots) = delvewright_dsl::blocks::container_slots(block) else {
-                continue;
-            };
-            rows.insert(c.cell, row(c.cell, block, slots));
-        }
-        if let Some(r) = rows.get_mut(&c.cell) {
-            r.claims.push((c.kind, c.id.clone()));
-        }
+        let r = match rows.entry(c.cell) {
+            std::collections::btree_map::Entry::Occupied(e) => e.into_mut(),
+            std::collections::btree_map::Entry::Vacant(e) => {
+                let Some(block) = &c.placed else { continue };
+                let Some(slots) = delvewright_dsl::blocks::container_slots(block) else {
+                    continue;
+                };
+                e.insert(row(c.cell, block, slots))
+            }
+        };
+        r.claims.push((c.kind, c.id.clone()));
     }
     let mut rows: Vec<ContainerRow> = rows.into_values().collect();
     for r in &mut rows {

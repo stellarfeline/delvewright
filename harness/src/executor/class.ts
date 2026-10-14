@@ -1,6 +1,7 @@
 // MineflayerExecutor: class selection and the kit: select, equip, re-arm after a respawn.
 
 import type { SelectClassStep } from "../critical-path.ts";
+import { judgeNotice } from "../containers.ts";
 import { delay } from "./connection.ts";
 import { SPAWN_POLL_MS } from "./death.ts";
 import type { MineflayerExecutor } from "../executor.ts";
@@ -31,9 +32,26 @@ export const methods = {
     // The class-selection dialog button runs `step.command` (a `/trigger`); the
     // bot fires the same command directly. The per-tick handler then applies the
     // kit and teleports the player to the campaign spawn.
+    // spec-0105 §5.3: the window the arrival line must land in opens with the
+    // class command and closes when the step has settled. Judged once, at the
+    // first selection — the class apply is one-shot per player.
+    const judge = this.containerLedger !== undefined && this.noticeVerdict === undefined;
+    const chatFrom = this.chatMark();
+    const titlesFrom = this.titlesTold.length;
     bot.chat(step.command);
     // Give the datapack a tick to reset the trigger, give the kit and teleport.
     await delay(CLASS_SETTLE_MS);
+    if (judge && this.containerLedger !== undefined) {
+      const window = this.chatSince(chatFrom);
+      const verdict = judgeNotice(this.containerLedger, {
+        chat: window.lines,
+        titles: this.titlesTold.slice(titlesFrom),
+        lost: window.lost,
+      });
+      this.noticeVerdict = verdict;
+      process.stderr.write(`[containers] ${verdict.detail}\n`);
+      if (!verdict.ok) throw new Error(`container notice: ${verdict.detail}`);
+    }
     // Equip the kit (sword + armor) so the bot can fight v0.3 combat waves. A
     // no-op for kits without those items.
     await this.equipLoadout();
