@@ -58,7 +58,7 @@ fn the_quests_stage_declares_assemblies() {
     );
     assert_eq!(
         props(&s, "Assembly"),
-        ["at", "facing", "hitbox", "id", "initial", "rig", "strikes"]
+        ["at", "facing", "hitbox", "id", "initial", "rig", "seen_from", "strikes"]
     );
     assert_eq!(props(&s, "AssemblyHitbox"), ["height", "offset", "width"]);
     assert_eq!(props(&s, "AssemblyStrikes"), ["aim", "pattern", "while_in"]);

@@ -24,6 +24,9 @@ fn premise_declines_are_enumerated() {
     // (file under `src/`, how many production call sites) — the path, not
     // the file name: `mod.rs` names more than one file.
     const EXPECTED: &[(&str, usize)] = &[
+        // `cli/edit.rs`: `delvec edit apply`'s review frames, whose manifest
+        // asks the one sight rule what a camera sees of the edited blocks.
+        ("cli/edit.rs", 1),
         // `cli/view.rs`: `delvec snapshot`, where a camera is stood up
         // against blocks.
         ("cli/view.rs", 1),
