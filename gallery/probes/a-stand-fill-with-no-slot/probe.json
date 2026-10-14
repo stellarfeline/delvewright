@@ -1,0 +1,17 @@
+{
+  "code": "DW1035",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/loot/4/items/1/slot"
+    },
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/loot/4/items/0/slot"
+    }
+  ],
+  "units": [],
+  "why": "The armour stand's fill with both its slots removed. A stand's slots have no order a reader would guess, so where a helmet or a sword sits is the author's judgement and every stack names its slot; the build, which knows the holder at the anchor is a stand, refuses the fill rather than putting a sword on a head."
+}
