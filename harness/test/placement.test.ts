@@ -134,6 +134,7 @@ function make(server: LateWorldServer): () => HarnessBot {
       bot: server as unknown as Bot,
       loaded: { phase: () => "loaded", windows: () => [], sent: () => [] } as unknown as ClientLoadedState,
       pack: { pushes: () => [] } as unknown as ResourcePackState,
+      biomes: { applied: () => 0, unheld: () => 0 },
     };
   };
 }
