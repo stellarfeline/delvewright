@@ -43,6 +43,7 @@
 //! - [`eclipse`]: no body stands in front of an affordance the party clicks (`DW0359`), no affordance shares a cell with a sealed gate's hitboxes (`DW0422`), and no two affordances share a cell with each other (`DW0878`).
 //! - [`edit`]: the map editor's stage-7 edit-script replay.
 //! - [`emit`]: build the `<out>/` output tree (bytes), deterministically.
+//! - [`ending`]: an ending reads the run — its inputs, their writers and kinds, its aftermath, and the story worlds that reach it (spec-0108; `DW1029`, `DW1030`).
 //! - [`engage`]: a body staged as a fight is one its own vanilla AI will fight under the delve's hour, weather and footing (`DW0920`).
 //! - [`faces`]: does the piece next to this one answer the way out it declares?
 //! - [`failure`]: the one type a compiler pass fails with — a DW code and the message that goes with it.

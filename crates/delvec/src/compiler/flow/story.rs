@@ -179,6 +179,9 @@ pub struct StoryModel {
     pub at_bound: usize,
     /// The data a story world leaves undatable.
     pub undatable: BTreeSet<String>,
+    /// The elective acts that write some final scene's input, by id — the acts
+    /// whose participation an ending's reading turns on.
+    pub relevant: Vec<String>,
 }
 
 impl StoryModel {
@@ -791,6 +794,7 @@ impl<'a> Flow<'a> {
                 let mut realized: BTreeMap<Vec<Class>, usize> = BTreeMap::new();
                 let mut seen: BTreeSet<(usize, Class)> = BTreeSet::new();
                 let mut values: BTreeMap<usize, BTreeSet<i64>> = BTreeMap::new();
+                let mut reached = false;
                 let order: Vec<usize> = std::iter::once(i_none)
                     .chain(cand_runs.iter().copied())
                     .chain(std::iter::once(i_all))
@@ -803,6 +807,7 @@ impl<'a> Flow<'a> {
                     let Some(snap) = run.scene_at.get(&scene.path) else {
                         continue;
                     };
+                    reached = true;
                     let mut target: Vec<Class> = Vec::new();
                     let mut whole = true;
                     for (ii, k) in scene.inputs.iter().enumerate() {
@@ -850,6 +855,11 @@ impl<'a> Flow<'a> {
                     }
                     let reason = match witness {
                         Some(_) => None,
+                        None if !reached => Some(
+                            "no story world's walkable run reaches this scene — its host never \
+                             completes, or every run that would is incoherent"
+                                .to_string(),
+                        ),
                         None => Some(self.unrealizable_reason(
                             &scenes,
                             scene,
@@ -923,6 +933,7 @@ impl<'a> Flow<'a> {
             bound,
             at_bound,
             undatable: acts.story_undatable.clone(),
+            relevant,
         }
     }
 

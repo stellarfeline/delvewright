@@ -2232,14 +2232,14 @@ pub fn world_rows(c: &Campaign) -> Vec<WorldRow> {
 }
 
 /// Whether the campaign exports a branch plan at all: it declares a branch
-/// point, or its story worlds distinguish more than its dialogue selections —
-/// some elective act writes what an ending reads.
+/// point, or some elective act writes what an ending reads — the worlds then
+/// differ in an ending's reading, and each is a run.
 pub fn plans_worlds(c: &Campaign) -> bool {
     if !c.quest_plan.content.branch_points.is_empty() {
         return true;
     }
     let flow = Flow::new(c);
-    flow.story_count() > flow.world_count()
+    !flow.story().relevant.is_empty()
 }
 
 /// The spec-0025/spec-0108 validation artifacts: `validation/branch-plan.json`,

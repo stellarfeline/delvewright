@@ -768,6 +768,14 @@ pub fn check(
             }
         }
     }
+    // `DW0201` (no world completes the finale) and the critical path's `DW0204`
+    // already name the cause of an ending nothing reaches; a second refusal
+    // about the one break is withheld, as `DW0879` withholds itself.
+    let flow = crate::compiler::flow::Flow::new(c);
+    let mainline = flow.playthrough();
+    if mainline.degenerate || flow.replay(&mainline).is_err() {
+        return d;
+    }
     for v in &a.endings {
         let reasons = story.reasons_for(&v.ending.path);
         let at_bound = story.at_bound;
