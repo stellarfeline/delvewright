@@ -102,7 +102,7 @@ fn campaign_under(guidance: &str, second: &str, complete: &str) -> Campaign {
         npcs: NPCS.to_string(),
         classes: hw("classes.json"),
         quest_plan: QUEST_PLAN.to_string(),
-        quests: common::with_teaching(quests_under(guidance, second, complete)),
+        quests: quests_under(guidance, second, complete),
         dialogue: DIALOGUE.to_string(),
         world_edits: None,
         geometry_brief: None,

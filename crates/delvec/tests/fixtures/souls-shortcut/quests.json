@@ -1,14 +1,6 @@
 {
   "campaign_id": "souls-shortcut",
   "content": {
-    "guidance": {
-      "teaching": {
-        "attack-block": null,
-        "attack-body": null,
-        "use-block": null,
-        "use-body": null
-      }
-    },
     "quests": [
       {
         "cast": {

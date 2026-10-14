@@ -221,7 +221,7 @@ fn build_all(
         npcs: npcs.unwrap_or_else(|| read_hw("npcs.json")),
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
-        quests: common::with_teaching(quests),
+        quests: quests,
         dialogue: dialogue_v06(),
         world_edits: Some(edits),
         geometry_brief: None,

@@ -177,11 +177,6 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("ShopOffer", "tooltip", Inventoried),
     ("Stake", "collected_message", Inventoried),
     ("Stake", "marker_item", Reference),
-    // spec-0104 §5.3: the teaching lines, read in chat (`guidance.teaching.<class>`).
-    ("Teaching", "use-block", Inventoried),
-    ("Teaching", "use-body", Inventoried),
-    ("Teaching", "attack-body", Inventoried),
-    ("Teaching", "attack-block", Inventoried),
     ("LootItem", "item", Reference),
     ("LootItem", "name", Inventoried),
     ("MobEffect", "effect", Reference),

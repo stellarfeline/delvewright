@@ -1239,7 +1239,7 @@ fn dw0890_deleting_the_set_time_effect_that_added_the_hour_builds() {
         "the message names the move:\n{before}"
     );
 
-    std::fs::write(camp.join("quests.json"), common::with_teaching(&quests)).unwrap();
+    std::fs::write(camp.join("quests.json"), &quests).unwrap();
     let (code, after) = build("sky-effect-green", &camp, &dir);
     assert_eq!(code, 0, "deleting the effect builds:\n{after}");
     assert!(!after.contains("DW0890 [error]"), "{after}");
@@ -1863,7 +1863,7 @@ fn muster(offsets: &[[i32; 3]; 7]) -> delvewright_dsl::Campaign {
         npcs: read("npcs.json"),
         classes: read("classes.json"),
         quest_plan: read("quest-plan.json"),
-        quests: common::with_teaching(quests.to_string()),
+        quests: quests.to_string(),
         dialogue: read("dialogue.json"),
         world_edits: None,
         geometry_brief: None,

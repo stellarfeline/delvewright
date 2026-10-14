@@ -64,7 +64,7 @@ fn build(base_entity: &str, edits: Option<String>) -> Result<Vec<Diagnostic>, Bu
         npcs: npcs_doc(base_entity),
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
-        quests: common::with_teaching(read_hw("quests.json")),
+        quests: read_hw("quests.json"),
         dialogue: read_hw("dialogue.json"),
         world_edits: edits,
         geometry_brief: None,

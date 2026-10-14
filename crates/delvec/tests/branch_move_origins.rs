@@ -159,7 +159,7 @@ fn parse_with(quests: &str) -> Campaign {
         npcs: read_hw("npcs.json"),
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
-        quests: common::with_teaching(quests),
+        quests: quests.to_string(),
         dialogue: read_hw("dialogue.json").replacen("\"0.2.0\"", "\"0.6.0\"", 1),
         world_edits: None,
         geometry_brief: None,

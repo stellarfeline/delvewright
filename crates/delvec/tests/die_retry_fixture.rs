@@ -69,7 +69,7 @@ fn parse_dir(dir: &std::path::Path) -> Campaign {
         npcs: read("npcs.json"),
         classes: read("classes.json"),
         quest_plan: read("quest-plan.json"),
-        quests: common::with_teaching(read("quests.json")),
+        quests: read("quests.json"),
         dialogue: read("dialogue.json"),
         world_edits: None,
         geometry_brief: None,

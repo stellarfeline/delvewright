@@ -124,7 +124,7 @@ fn build_quests(
         npcs: read_hw("npcs.json"),
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
-        quests: common::with_teaching(quests),
+        quests: quests,
         dialogue: read_hw("dialogue.json"),
         world_edits: Some(edits(middle)),
         geometry_brief: None,

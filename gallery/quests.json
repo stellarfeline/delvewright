@@ -389,13 +389,6 @@
         }
       }
     ],
-    "guidance": {
-      "teaching": {
-        "attack-body": "When something comes at you, [[key|attack]] to strike it.",
-        "use-block": "Things in this hall answer to a hand: [[key|use]] on them.",
-        "use-body": "Stand close to someone and [[key|use]] to speak with them."
-      }
-    },
     "lethal_volumes": [
       {
         "damage_type": "fall",

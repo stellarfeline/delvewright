@@ -31,7 +31,6 @@ mod seal;
 mod sequence;
 mod shortcut;
 mod standin;
-mod teaching;
 mod teleport;
 mod timed_gate;
 mod trap;
@@ -211,9 +210,6 @@ pub(super) fn emit_packtest(
     // the gallery the suite never executed at ANY depth — not driven, not even
     // reached transitively. Emits nothing for a campaign with no trigger.
     trigger::emit_env_trigger_packtests(plan, out);
-    // spec-0104 §5.4: every teaching site shows its line once. Emits nothing
-    // for a campaign with no `teaching` line.
-    teaching::emit_teaching_packtests(plan, out);
     loot::emit_loot_packtest(plan, out);
     actor::emit_actor_equipment_packtest(plan, out);
     // spec-0016 §6: the patrol NBT survives 1.21.11's strict codec, the lane

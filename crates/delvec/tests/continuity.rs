@@ -44,7 +44,7 @@ fn parse(deferred: bool, quests: &str) -> Campaign {
         npcs: npcs_doc(deferred),
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
-        quests: common::with_teaching(quests),
+        quests: quests.to_string(),
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
         geometry_brief: None,

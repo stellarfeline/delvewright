@@ -587,11 +587,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
             "campaign_id": campaign_id,
             "dsl_version": GYM_DSL_VERSION,
             "stage": "quests",
-            "content": {
-                // spec-0104 §5.5: the walk's one input, talking, is taught by
-                // the level — the Invigilator stands in the first bay.
-                "guidance": { "teaching": { "use-body": null } },
-                "quests": [{
+            "content": { "quests": [{
                 "id": "quest/walk-the-ladder",
                 "trigger": { "type": "campaign-start" },
                 "happening": {

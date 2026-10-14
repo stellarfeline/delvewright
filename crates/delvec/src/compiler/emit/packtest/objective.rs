@@ -267,21 +267,6 @@ fn activation_fixture(cmds: &[String]) -> Option<ActivationFixture> {
     Some(ActivationFixture::ContainerSlot { pos, item })
 }
 
-/// What a template runs after `drives` calls of an objective's activation so
-/// that it leaves no residue: a kill of exactly the entities those calls
-/// summoned (the objective's own tag, `count` per call). An activation that
-/// places a block or fills a slot re-places the same thing on every call and
-/// needs nothing. `None` when the activation places nothing
-/// [`activation_fixture`] can read.
-pub(super) fn activation_residue_cleanup(cmds: &[String], drives: usize) -> Option<Vec<String>> {
-    Some(match activation_fixture(cmds)? {
-        ActivationFixture::Entities { tag, count } => {
-            vec![format!("kill @e[tag={tag},limit={}]", count * drives)]
-        }
-        ActivationFixture::ContainerSlot { .. } | ActivationFixture::Block { .. } => Vec::new(),
-    })
-}
-
 /// Every objective's own activation body really materialises THAT objective's
 /// affordance.
 ///

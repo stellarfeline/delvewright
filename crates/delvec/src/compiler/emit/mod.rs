@@ -79,7 +79,6 @@ mod shortcut;
 mod stake;
 mod state;
 mod stealth;
-mod teaching;
 mod teleport;
 #[cfg(test)]
 mod tests;
@@ -656,13 +655,6 @@ pub fn build_with_warnings(
         eprintln!("{}", acts.line());
         refuse_first(refusals)?;
     }
-    // DW1016 (spec-0104 §5.5): the opening teaches each input a walked path
-    // needs, and teaches nothing no path needs, in a line that says the key.
-    {
-        let (teaching, refusals) = crate::compiler::promise::check_teaching(plan);
-        eprintln!("{}", teaching.line());
-        refuse_first(refusals)?;
-    }
     // DW0963 (spec-0093 §7): an unmarked `interact` with no `prop` stands on a
     // block the piece authored, or the party is asked to press empty space.
     // Read over the settled bytes, which only an assembled world has.
@@ -676,12 +668,6 @@ pub fn build_with_warnings(
                 message: f.message,
             });
         }
-        // DW1017 (spec-0104 §6): a pressable stands alone among its kind
-        // within the click's reach, unless it is marked.
-        let (twins, refusals) =
-            crate::compiler::promise::check_pressables_alone(plan, &assembled.blocks);
-        eprintln!("{}", twins.line());
-        refuse_first(refusals)?;
     }
 
     // DW1002: every block the build writes is one the pinned server keeps —

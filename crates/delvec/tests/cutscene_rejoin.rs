@@ -71,7 +71,7 @@ fn build(cutscene: &str) -> BuildOutput {
         npcs: read_hw("npcs.json"),
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
-        quests: common::with_teaching(quests_doc(cutscene)),
+        quests: quests_doc(cutscene),
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
         geometry_brief: None,

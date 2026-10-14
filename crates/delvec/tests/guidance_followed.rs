@@ -1,8 +1,6 @@
 //! Guidance a player can follow (spec-0104): every act is in sight or told
-//! (`DW0863`), the text names the act its type completes on (`DW1015`), the
-//! opening teaches each input (the key span, `DW1016`, the teaching line), a
-//! pressable stands alone among its kind (`DW1017`), and a hint's names are
-//! told (`DW0982`).
+//! (`DW0863`), a title that does not name the act its type completes on is a
+//! warning (`DW1015`), and a hint's names are told (`DW0982`).
 //!
 //! Each acceptance criterion of spec-0104 that a cargo test can hold is held
 //! here, against a hello-world-shaped campaign built from its plan, or against
@@ -14,7 +12,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use delvec::compiler::acts::{Act, ActWalk, ActWalks, ActWhat};
-use delvec::compiler::blockstate::{BlockMap, BlockState};
 use delvec::compiler::commands::CommandTree;
 use delvec::compiler::emit::{self, BuildOutput};
 use delvec::compiler::load::load_campaign_dir;
@@ -59,12 +56,12 @@ const GREETING: &str = "Halt, traveler. This keep is mine to guard, and the door
 
 /// Talk to the keeper, pull a lever at the exit, press a button at the
 /// keeper's post — every one titled and hinted, so nothing here is refused for
-/// sight unless a test removes a line. `teaching` is the campaign's block.
-fn quests(teaching: Value) -> Value {
+/// sight unless a test removes a line. `guidance` is the campaign's block.
+fn quests(guidance: Value) -> Value {
     json!({
         "campaign_id": NS, "stage": "quests",
         "content": {
-            "guidance": { "teaching": teaching },
+            "guidance": guidance,
             "quests": [{
                 "id": "quest/open-the-door",
                 "trigger": { "type": "campaign-start" },
@@ -91,10 +88,8 @@ fn quests(teaching: Value) -> Value {
 }
 
 fn nulls() -> Value {
-    json!({ "use-block": null, "use-body": null, "attack-body": null, "attack-block": null })
+    json!({})
 }
-
-const USE_LINE: &str = "Things here answer to a hand: [[key|use]] on them.";
 
 fn variant(name: &str, mut quests: Value, mut dialogue: Value) -> PathBuf {
     let base = common::hello_world_dir();
@@ -193,7 +188,6 @@ fn act(id: &str, what: ActWhat, kind: &'static str, from: [i32; 3], target: [i32
         id: id.into(),
         what,
         kind,
-        class: None,
         from: Some(from),
         from_what: "the previous act's cell".into(),
         target,
@@ -500,429 +494,6 @@ fn a_sidecar_title_is_judged_by_its_own_table_or_counted_unjudged() {
 }
 
 // ---------------------------------------------------------------------------
-// §5 — the key span, the teaching line, DW1016
-// ---------------------------------------------------------------------------
-
-/// spec-0104 criterion 4: a line carrying the key span lowers to a `with`
-/// argument `{"keybind":"key.use"}` under a `%1$s` fallback; the width check
-/// measures it at the default key's name; a zh-cn row that drops it is
-/// `DW0976`; an unknown input is `DW0975`.
-#[test]
-fn a_key_span_lowers_measures_and_holds_its_translation() {
-    let mut q = quests(nulls());
-    q["content"]["guidance"]["teaching"]["use-block"] = json!(USE_LINE);
-    let dir = variant("key-span", q, dialogue(GREETING));
-    let out = try_build(&dir).expect("builds");
-    let teach = fn_body(&out, "teach_use_block").expect("the teaching function");
-    assert!(
-        teach.contains(r#""with":[{"keybind":"key.use"}]"#),
-        "{teach}"
-    );
-    assert!(teach.contains("answer to a hand: %1$s on them."), "{teach}");
-
-    use delvec::compiler::textfit::{default_font_width, width_for};
-    use delvewright_dsl::NarrateStyle;
-    assert_eq!(
-        width_for(NarrateStyle::Chat, "[[key|use]]"),
-        default_font_width("Right Button")
-    );
-    assert_eq!(
-        width_for(NarrateStyle::Chat, "[[key|attack]]"),
-        default_font_width("Left Button")
-    );
-
-    let (_, c) = load(&dir);
-    let key = "guidance.teaching.use-block";
-    let mut s = BTreeMap::new();
-    s.insert(
-        "zh-cn".to_string(),
-        sidecar("zh-cn", &[(key, "这里的东西认得手：对它们按右键。")]),
-    );
-    let d = delvewright_dsl::textstyle::validate_inline_styles(&c, &s);
-    assert!(
-        d.iter()
-            .any(|d| d.code == delvewright_dsl::textstyle::INLINE_STYLE_UNMATCHED),
-        "{d:?}"
-    );
-    s.insert(
-        "zh-cn".to_string(),
-        sidecar("zh-cn", &[(key, "这里的东西认得手：对它们按[[key|use]]。")]),
-    );
-    assert!(delvewright_dsl::textstyle::validate_inline_styles(&c, &s).is_empty());
-
-    let mut q = quests(nulls());
-    q["content"]["guidance"]["teaching"]["use-block"] = json!("Press [[key|fly]].");
-    let (_, c) = load(&variant("key-fly", q, dialogue(GREETING)));
-    let d = delvewright_dsl::textstyle::validate_inline_styles(&c, &BTreeMap::new());
-    assert!(
-        d.iter()
-            .any(|d| d.code == delvewright_dsl::textstyle::INLINE_STYLE_MALFORMED),
-        "{d:?}"
-    );
-}
-
-/// spec-0104 criterion 5: the first `use-block` act's activation shows the
-/// line under `dw.taught_use-block`, and the second's does not; a class with
-/// `null` emits nothing; two builds are byte-identical.
-#[test]
-fn the_first_act_of_a_class_teaches_it_once() {
-    let mut q = quests(nulls());
-    q["content"]["guidance"]["teaching"]["use-block"] = json!(USE_LINE);
-    let dir = variant("teach-objective", q.clone(), dialogue(GREETING));
-    let out = try_build(&dir).expect("builds");
-    let first = fn_body(&out, "activate_o_pull").expect("the lever's activation");
-    assert!(
-        first.contains(
-            "execute as @a unless score @s dw.taught_use-block matches 1 run function hello-world:teach_use_block"
-        ),
-        "{first}"
-    );
-    let second = fn_body(&out, "activate_o_press").expect("the button's activation");
-    assert!(!second.contains("teach_"), "{second}");
-    let teach = fn_body(&out, "teach_use_block").unwrap();
-    assert!(teach.contains("scoreboard players set @s dw.taught_use-block 1"));
-    assert!(teach.contains("scoreboard players add #taught_use-block dw.sys 1"));
-    assert!(
-        fn_body(&out, "teach_use_body").is_none(),
-        "a `null` class emits nothing"
-    );
-    // The lever's activation places its prop AND teaches: the teaching line is
-    // asserted once-and-not-again by a template that drives that activation.
-    let t = packtest(&out, "teach_objective_pull").expect("the placing site's PackTest");
-    assert_eq!(
-        t.matches("function hello-world:activate_o_pull").count(),
-        2,
-        "{t}"
-    );
-    assert!(
-        t.contains("assert score #taught_use-block dw.sys matches 1.."),
-        "{t}"
-    );
-    assert!(
-        t.contains("if score #taught_use-block dw.sys = #tc0_pull dw.sys"),
-        "{t}"
-    );
-    let again = try_build(&dir).expect("builds again");
-    assert_eq!(out, again, "two builds are byte-identical");
-
-    // With no line anywhere, nothing of the surface is emitted.
-    let plain = try_build(&variant("teach-none", quests(nulls()), dialogue(GREETING))).unwrap();
-    assert!(!plain.keys().any(|k| k.contains("teach")));
-    assert!(
-        !plain
-            .values()
-            .any(|v| std::str::from_utf8(v).is_ok_and(|s| s.contains("dw.taught_")))
-    );
-}
-
-fn packtest<'a>(out: &'a BuildOutput, name: &str) -> Option<&'a str> {
-    out.get(&format!(
-        "packtest-datapack/data/{NS}/test/{name}.mcfunction"
-    ))
-    .map(|b| std::str::from_utf8(b).unwrap())
-}
-
-/// The function names `body` calls, by `function <ns>:<name>` anywhere in a line.
-fn calls(body: &str) -> Vec<String> {
-    let pre = format!("function {NS}:");
-    body.lines()
-        .filter_map(|l| l.split_once(&pre).map(|(_, r)| r))
-        .map(|r| r.split_whitespace().next().unwrap_or("").to_string())
-        .collect()
-}
-
-/// Every teaching site whose class `class` is taught by `activation`: the
-/// PackTest templates that drive `activation`, reset `#taught_<class>` to 0 and
-/// assert it at least 1 afterwards, and whether that assertion can hold — the
-/// static call closure of `activation` reaches the one command that moves the
-/// count. Returns (templates asserting it, assertion satisfiable).
-fn teaching_assertion(out: &BuildOutput, class: &str, activation: &str) -> (usize, bool) {
-    let drive = format!("function {NS}:{activation}");
-    let reset = format!("scoreboard players set #taught_{class} dw.sys 0");
-    let assert = format!("assert score #taught_{class} dw.sys matches 1..");
-    let asserting = out
-        .iter()
-        .filter(|(k, _)| k.starts_with(&format!("packtest-datapack/data/{NS}/test/")))
-        .filter_map(|(_, v)| std::str::from_utf8(v).ok())
-        .filter(|t| t.contains(&drive) && t.contains(&reset) && t.contains(&assert))
-        .count();
-    let moves = format!("scoreboard players add #taught_{class} dw.sys 1");
-    let mut seen: BTreeSet<String> = BTreeSet::new();
-    let mut todo = vec![activation.to_string()];
-    let mut reached = false;
-    while let Some(f) = todo.pop() {
-        if !seen.insert(f.clone()) {
-            continue;
-        }
-        let Some(body) = fn_body(out, &f) else {
-            continue;
-        };
-        reached |= body.lines().any(|l| l.trim() == moves);
-        todo.extend(calls(body));
-    }
-    (asserting, reached)
-}
-
-/// spec-0104 §5.4: a teaching line emitted inside an activation that also
-/// places something is asserted by a PackTest, and dropping the line from that
-/// activation turns the assertion unsatisfiable. A summoning activation's
-/// template removes exactly what its two calls summoned.
-#[test]
-fn a_placing_activation_that_teaches_is_asserted() {
-    let mut q = quests(nulls());
-    q["content"]["guidance"]["teaching"]["use-block"] = json!(USE_LINE);
-    let out = try_build(&variant("teach-placing", q, dialogue(GREETING))).expect("builds");
-    let body = fn_body(&out, "activate_o_pull").unwrap().to_string();
-    assert!(
-        body.lines().any(|l| l.starts_with("setblock ")),
-        "the activation places: {body}"
-    );
-    assert_eq!(
-        teaching_assertion(&out, "use-block", "activate_o_pull"),
-        (1, true)
-    );
-
-    // Perturbation: the teaching line dropped from the placing activation. The
-    // template still asserts the count, and nothing it drives can move it.
-    let mut cut = out.clone();
-    let stripped: String = body
-        .lines()
-        .filter(|l| !l.contains("teach_use_block"))
-        .map(|l| format!("{l}\n"))
-        .collect();
-    assert_ne!(
-        stripped.len(),
-        body.len(),
-        "the perturbation removed a line"
-    );
-    cut.insert(
-        format!("datapack/data/{NS}/function/activate_o_pull.mcfunction"),
-        stripped.into_bytes(),
-    );
-    assert_eq!(
-        teaching_assertion(&cut, "use-block", "activate_o_pull"),
-        (1, false),
-        "the template's assertion would fail"
-    );
-
-    // A summoning placement: the lever replaced by a lantern, a prop vanilla
-    // reports no use of, so the activation places it and summons a hitbox over
-    // it (still a `use-block` act); the template kills the two its two calls
-    // made.
-    let mut q = quests(nulls());
-    q["content"]["guidance"]["teaching"]["use-block"] = json!(USE_LINE);
-    q["content"]["quests"][0]["objectives"][1]["prop"] = json!({ "block": "minecraft:lantern" });
-    let out = try_build(&variant("teach-summoning", q, dialogue(GREETING))).expect("builds");
-    let body = fn_body(&out, "activate_o_pull").unwrap();
-    assert_eq!(body.matches("summon ").count(), 1, "{body}");
-    let t = packtest(&out, "teach_objective_pull").expect("the summoning site's PackTest");
-    assert!(t.contains("kill @e[tag=dw_i_pull,limit=2]"), "{t}");
-    assert_eq!(
-        teaching_assertion(&out, "use-block", "activate_o_pull"),
-        (1, true)
-    );
-}
-
-/// spec-0104 criterion 5: a `use` trigger that is the first `use-block` act
-/// emits a firing-cell poll that shows the line and marks the player, and its
-/// PackTest stands a dummy within reach and asserts one line and the score.
-#[test]
-fn a_use_trigger_that_teaches_polls_its_firing_cells() {
-    let mut q = quests(nulls());
-    q["content"]["guidance"]["teaching"]["use-block"] = json!(USE_LINE);
-    // The path performs the bell first: `obj/pull` waits on its flag.
-    q["content"]["triggers"] = json!([{
-        "id": "trigger/the-bell", "at": "spawn", "on": { "on": "use" },
-        "prop": { "block": "minecraft:bell[attachment=floor,facing=north]" },
-        "effects": [{ "type": "set-flag", "flag": "flag/rung" }]
-    }]);
-    q["content"]["quests"][0]["objectives"][1]["requires_flags"] = json!(["flag/rung"]);
-    let out = try_build(&variant("teach-trigger", q, dialogue(GREETING))).expect("builds");
-    let tick = fn_body(&out, "tick").unwrap();
-    assert!(
-        tick.contains("run function hello-world:teach_at_the_bell"),
-        "{tick}"
-    );
-    let poll = fn_body(&out, "teach_at_the_bell").expect("the poll");
-    assert!(
-        poll.contains("as @a[distance=..3,tag=!dw_cutscene] unless score @s dw.taught_use-block matches 1 run function hello-world:teach_use_block"),
-        "{poll}"
-    );
-    let t = std::str::from_utf8(
-        out.get(&format!(
-            "packtest-datapack/data/{NS}/test/teach_trigger_the_bell.mcfunction"
-        ))
-        .expect("the PackTest"),
-    )
-    .unwrap();
-    assert!(t.contains("function hello-world:teach_at_the_bell"), "{t}");
-    assert!(
-        t.contains("assert score #taught_use-block dw.sys matches 1"),
-        "{t}"
-    );
-}
-
-fn teaching_refusals(name: &str, q: Value) -> (promise::TeachingBinding, Vec<String>) {
-    let dir = variant(name, q, dialogue(GREETING));
-    let (_, c) = load(&dir);
-    let plan = Plan::build(&c, &prefabs()).expect("plan");
-    let (b, r) = promise::check_teaching(&plan);
-    assert!(
-        r.iter().all(|f| f.code == promise::DW_INPUT_UNTAUGHT),
-        "{r:?}"
-    );
-    (b, r.into_iter().map(|f| f.message).collect())
-}
-
-/// spec-0104 criterion 6: the three shapes of `DW1016`.
-#[test]
-fn teaching_and_need_must_agree() {
-    // A: the path needs `use-block` and `teaching` says nothing of it.
-    let mut t = nulls();
-    t.as_object_mut().unwrap().remove("use-block");
-    let (_, r) = teaching_refusals("teach-a", quests(t));
-    assert_eq!(r.len(), 1, "{r:?}");
-    assert!(
-        r[0].contains("`use-block` is needed and never taught"),
-        "{}",
-        r[0]
-    );
-    // Silent with the line; silent with `null`, counted as taught by the level.
-    let mut t = nulls();
-    t["use-block"] = json!(USE_LINE);
-    let (b, r) = teaching_refusals("teach-line", quests(t));
-    assert!(r.is_empty(), "{r:?}");
-    assert_eq!((b.lines, b.level), (1, 3));
-    let (b, r) = teaching_refusals("teach-null", quests(nulls()));
-    assert!(r.is_empty(), "{r:?}");
-    assert_eq!((b.required, b.lines, b.level), (2, 0, 4), "{}", b.line());
-    // B: a line nobody is owed.
-    let mut t = nulls();
-    t["attack-block"] = json!("Some stones want a blow: [[key|attack]] on them.");
-    let (_, r) = teaching_refusals("teach-b", quests(t));
-    assert_eq!(r.len(), 1, "{r:?}");
-    assert!(
-        r[0].contains("no walked path requires the class"),
-        "{}",
-        r[0]
-    );
-    // C: a line with no span, and one with the other input's span.
-    for line in [
-        "Things here answer to a hand.",
-        "Things answer to [[key|attack]].",
-    ] {
-        let mut t = nulls();
-        t["use-block"] = json!(line);
-        let (_, r) = teaching_refusals("teach-c", quests(t));
-        assert_eq!(r.len(), 1, "{line}: {r:?}");
-        assert!(r[0].contains("does not say the key"), "{}", r[0]);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// §6 — DW1017
-// ---------------------------------------------------------------------------
-
-fn twins(name: &str, q: Value, extra: &[([i32; 3], &str)], at: &str) -> Vec<String> {
-    let dir = variant(name, q, dialogue(GREETING));
-    let (_, c) = load(&dir);
-    let plan = Plan::build(&c, &prefabs()).expect("plan");
-    let cell = plan.point_any(at).expect("the anchor");
-    let mut blocks: BlockMap = BlockMap::new();
-    for (d, b) in extra {
-        blocks.insert(
-            [cell[0] + d[0], cell[1] + d[1], cell[2] + d[2]],
-            BlockState::from(*b),
-        );
-    }
-    let r = promise::check_pressables_alone(&plan, &blocks).1;
-    assert!(
-        r.iter()
-            .all(|f| f.code == promise::DW_PRESSABLE_AMONG_TWINS),
-        "{r:?}"
-    );
-    r.into_iter().map(|f| f.message).collect()
-}
-
-/// spec-0104 criterion 7.
-#[test]
-fn a_pressable_stands_alone_among_its_kind() {
-    let lever = "minecraft:lever[face=floor,facing=north]";
-    let r = twins(
-        "twin-2",
-        quests(nulls()),
-        &[([2, 0, 0], lever)],
-        "anchor/exit",
-    );
-    assert_eq!(r.len(), 1, "{r:?}");
-    assert!(
-        r[0].contains("at 2.0 blocks") && r[0].contains("`obj/pull`"),
-        "{}",
-        r[0]
-    );
-    assert!(
-        twins(
-            "twin-4",
-            quests(nulls()),
-            &[([4, 0, 0], lever)],
-            "anchor/exit"
-        )
-        .is_empty()
-    );
-    let r = twins(
-        "twin-state",
-        quests(nulls()),
-        &[([1, 0, 0], "minecraft:lever[face=wall,facing=east]")],
-        "anchor/exit",
-    );
-    assert_eq!(r.len(), 1, "state is ignored: {r:?}");
-
-    // An unmarked prop-less interact on an authored lamp beside a second lamp,
-    // then the same marked.
-    let lamp_q = |marker: Option<&str>| {
-        let mut q = quests(nulls());
-        let o = &mut q["content"]["quests"][0]["objectives"][1];
-        o.as_object_mut().unwrap().remove("prop");
-        o["title"] = json!("Light the lamp");
-        if let Some(m) = marker {
-            o["marker"] = json!(m);
-        } else {
-            o["marker"] = json!("hidden");
-        }
-        q
-    };
-    let lamps = [
-        ([0, 0, 0], "minecraft:redstone_lamp"),
-        ([0, 0, 2], "minecraft:redstone_lamp"),
-    ];
-    let r = twins("lamp", lamp_q(None), &lamps, "anchor/exit");
-    assert_eq!(r.len(), 1, "{r:?}");
-    assert!(twins("lamp-marked", lamp_q(Some("shown")), &lamps, "anchor/exit").is_empty());
-
-    // A `strike` trigger over an authored block among its twins.
-    let mut q = quests(nulls());
-    q["content"]["triggers"] = json!([{
-        "id": "trigger/the-stone", "at": "spawn", "on": { "on": "strike" },
-        "effects": [{ "type": "set-flag", "flag": "flag/struck" }]
-    }]);
-    let r = twins(
-        "strike",
-        q,
-        &[
-            ([0, 0, 0], "minecraft:smooth_stone_slab"),
-            ([1, 0, 1], "minecraft:smooth_stone_slab"),
-        ],
-        "spawn",
-    );
-    assert_eq!(r.len(), 1, "{r:?}");
-    assert!(
-        r[0].contains("`strike` trigger `trigger/the-stone`"),
-        "{}",
-        r[0]
-    );
-}
-
-// ---------------------------------------------------------------------------
 // §7 — DW0982, widened
 // ---------------------------------------------------------------------------
 
@@ -984,15 +555,5 @@ fn every_binding_line_states_its_zeroes() {
         promise::ActVerbBinding::default()
             .line()
             .starts_with("DW1015 binding: 0 title(s)")
-    );
-    assert!(
-        promise::TeachingBinding::default()
-            .line()
-            .starts_with("DW1016 binding: 0 class(es) required over 0 walk(s)")
-    );
-    assert!(
-        promise::TwinBinding::default()
-            .line()
-            .starts_with("DW1017 binding: 0 pressable(s)")
     );
 }

@@ -68,7 +68,7 @@ fn night_vision_clock(quests: String, world: String) -> String {
         npcs: read(&hw, "npcs.json"),
         classes: read(&hw, "classes.json"),
         quest_plan: read(&hw, "quest-plan.json"),
-        quests: common::with_teaching(quests),
+        quests: quests,
         dialogue: read(&hw, "dialogue.json").replacen("\"0.2.0\"", "\"0.6.0\"", 1),
         world_edits: None,
         geometry_brief: None,

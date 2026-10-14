@@ -62,7 +62,7 @@ fn parse_hw(dialogue: &str, world: Option<String>) -> Campaign {
         npcs: read_hw("npcs.json"),
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
-        quests: common::with_teaching(read_hw("quests.json")),
+        quests: read_hw("quests.json"),
         dialogue: dialogue.to_string(),
         world_edits: None,
         geometry_brief: None,

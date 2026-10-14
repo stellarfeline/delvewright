@@ -38,17 +38,6 @@ pub(super) fn has_collect_objective(c: &delvewright_dsl::Campaign) -> bool {
         .any(|o| matches!(o, Objective::Collect { .. }))
 }
 
-/// Everything an objective's activation function runs: its world placement
-/// ([`activation_commands`]) and the teaching lines it shows (spec-0104 §5.4,
-/// [`teaching::teaching_activation`]). Both the `tick` activation driver and
-/// the `activate_<obj>` function key off this being non-empty; the completion
-/// cleanup and the activation PackTest key off the placement alone.
-pub(super) fn activation_body(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
-    let mut cmds = activation_commands(plan, area, o);
-    cmds.extend(teaching::teaching_activation(plan, o.id().as_str()));
-    cmds
-}
-
 /// The world-placement commands run when an objective ACTIVATES (gap 13): a
 /// `collect` chest + item fill, an `interact` hitbox + glowing lantern marker, or a
 /// `reach` glowing end-rod marker. Empty for objectives with no prop (talk-to,

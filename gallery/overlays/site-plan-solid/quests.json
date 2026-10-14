@@ -1,12 +1,6 @@
 {
   "campaign_id": "gallery-rock",
   "content": {
-    "guidance": {
-      "teaching": {
-        "attack-body": "When something comes at you, [[key|attack]] to strike it.",
-        "use-body": "Stand close to someone and [[key|use]] to speak with them."
-      }
-    },
     "quests": [
       {
         "cast": {

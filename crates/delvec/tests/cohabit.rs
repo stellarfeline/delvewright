@@ -68,7 +68,7 @@ fn campaign_with(edit: impl FnOnce(&mut Value, &mut Value)) -> Campaign {
         npcs: npcs.to_string(),
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
-        quests: common::with_teaching(quests.to_string()),
+        quests: quests.to_string(),
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
         geometry_brief: None,

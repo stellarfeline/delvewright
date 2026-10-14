@@ -76,10 +76,7 @@ pub fn materialize_from(base: &Path, patch: &serde_json::Value, dst: &Path) {
     if let Some(docs) = patch.get("documents").and_then(|d| d.as_object()) {
         for (stage, doc) in docs {
             let file = dst.join(format!("{stage}.json"));
-            let mut text = serde_json::to_string_pretty(&stamped(doc)).unwrap();
-            if stage == "quests" {
-                text = with_teaching(&text);
-            }
+            let text = serde_json::to_string_pretty(&stamped(doc)).unwrap();
             std::fs::write(file, text).unwrap();
         }
     }
@@ -294,10 +291,7 @@ pub fn materialize(patch: &serde_json::Value, dst: &Path) {
     if let Some(docs) = patch.get("documents").and_then(|d| d.as_object()) {
         for (stage, doc) in docs {
             let file = dst.join(format!("{stage}.json"));
-            let mut text = serde_json::to_string_pretty(&stamped(doc)).unwrap();
-            if stage == "quests" {
-                text = with_teaching(&text);
-            }
+            let text = serde_json::to_string_pretty(&stamped(doc)).unwrap();
             std::fs::write(file, text).unwrap();
         }
     }
@@ -377,13 +371,7 @@ pub fn patch_doc(text: &str, f: impl FnOnce(&mut serde_json::Value)) -> String {
 /// [`patch_doc`] against a file, in place.
 pub fn patch_file(path: &Path, f: impl FnOnce(&mut serde_json::Value)) {
     let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
-    let mut out = patch_doc(&text, f);
-    // A patch that rewrites a quests document's whole `content` keeps the
-    // fixture's teaching declaration ([`with_teaching`]).
-    if path.file_name().is_some_and(|n| n == "quests.json") {
-        out = with_teaching(&out);
-    }
-    std::fs::write(path, out).unwrap();
+    std::fs::write(path, patch_doc(&text, f)).unwrap();
 }
 
 /// The effect list a quest runs when one of its objectives completes —
@@ -504,18 +492,6 @@ pub fn declare_story(
         })
         .unwrap_or_default();
     let content = &mut quests["content"];
-    // spec-0104 §5.5: a campaign declares how its level teaches each input
-    // its paths need (`DW1016`). A fixture that states no `teaching` declares
-    // every class taught by the level — a declaration, never a wording; a test
-    // about teaching writes its own block and this leaves it alone.
-    if content.is_object() && content["guidance"].get("teaching").is_none() {
-        if !content["guidance"].is_object() {
-            content["guidance"] = serde_json::json!({});
-        }
-        content["guidance"]["teaching"] = serde_json::json!({
-            "use-block": null, "use-body": null, "attack-body": null, "attack-block": null
-        });
-    }
     if let Some(list) = content["quests"].as_array_mut() {
         for q in list {
             let id = q["id"].as_str().unwrap_or("").to_string();
@@ -1337,30 +1313,4 @@ pub fn plan_structures_with_trap_triggers(
         }
     }
     out
-}
-
-/// A quests document with the teaching declaration every fixture makes
-/// (spec-0104 §5.5, [`declare_story`]'s note): every input class declared taught
-/// by the level, unless the document states its own `teaching`. A document that
-/// is not a quests envelope is returned unchanged, so a test that hands a
-/// malformed one still meets its own refusal.
-pub fn with_teaching(doc: impl AsRef<str>) -> String {
-    let text = doc.as_ref();
-    let Ok(mut v) = serde_json::from_str::<serde_json::Value>(text) else {
-        return text.to_string();
-    };
-    let content = &mut v["content"];
-    if !content.is_object() || !content["quests"].is_array() {
-        return text.to_string();
-    }
-    if content["guidance"].get("teaching").is_some() {
-        return text.to_string();
-    }
-    if !content["guidance"].is_object() {
-        content["guidance"] = serde_json::json!({});
-    }
-    content["guidance"]["teaching"] = serde_json::json!({
-        "use-block": null, "use-body": null, "attack-body": null, "attack-block": null
-    });
-    serde_json::to_string_pretty(&v).unwrap()
 }

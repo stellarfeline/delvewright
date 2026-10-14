@@ -73,7 +73,7 @@ fn campaign(atmospheres: Value, carried: Option<&str>, extra: Vec<Value>) -> Cam
         npcs: s(&hw("npcs.json")),
         classes: s(&hw("classes.json")),
         quest_plan: s(&hw("quest-plan.json")),
-        quests: common::with_teaching(s(&quests)),
+        quests: s(&quests),
         dialogue: s(&hw("dialogue.json")),
         world_edits: None,
         geometry_brief: None,

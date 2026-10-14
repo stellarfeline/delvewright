@@ -7,7 +7,7 @@
 //! were the ones a reader happened to add. `the_module_list_names_every_module`
 //! (`tests/module_list.rs`) is what keeps it whole.
 //!
-//! - [`acts`]: the acts on every walked path — what the party must do, where, and from where it stands (spec-0104), read by `DW0863`, `DW1016` and the teaching line.
+//! - [`acts`]: the acts on every walked path — what the party must do, where, and from where it stands (spec-0104), read by `DW0863`.
 //! - [`affordance`]: affordance hardware — the visible half of every right-click target the compiler owns (`DW0420`/`DW0421`).
 //! - [`analyze`]: deep quest/objective reachability (`DW02xx`, exit 2).
 //! - [`assembled`]: the shared assembled-world block model every geometric proof reads.

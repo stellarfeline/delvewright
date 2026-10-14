@@ -203,7 +203,7 @@ fn campaign(
         npcs: npcs.to_string(),
         classes: hw("classes.json"),
         quest_plan: hw("quest-plan.json"),
-        quests: common::with_teaching(quests.to_string()),
+        quests: quests.to_string(),
         dialogue: hw("dialogue.json"),
         world_edits: None,
         geometry_brief: None,

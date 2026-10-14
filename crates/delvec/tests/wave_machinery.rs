@@ -45,7 +45,7 @@ fn parse_hw_with(overrides: &[(&str, String)]) -> Campaign {
         npcs: get("npcs.json"),
         classes: get("classes.json"),
         quest_plan: get("quest-plan.json"),
-        quests: common::with_teaching(get("quests.json")),
+        quests: get("quests.json"),
         dialogue: get("dialogue.json"),
         world_edits: None,
         geometry_brief: None,

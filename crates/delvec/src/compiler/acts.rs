@@ -1,7 +1,6 @@
 //! **The acts on every walked path** (spec-0104 §1): the one reading of "what
 //! the party must do, where, and from where it stands", shared by the rules
-//! that judge an act — that it can be found (`DW0863`), that the input it needs
-//! is taught (`DW1016`) — and by the emission of the teaching line.
+//! that judge an act — that it can be found (`DW0863`).
 //!
 //! An **act** is a thing the party must do at a place to advance a walked
 //! path: every objective step of every kind, and every `use`, `strike`,
@@ -19,7 +18,7 @@
 
 use std::collections::BTreeMap;
 
-use delvewright_dsl::{EnvTrigger, Guidance, InputClass, Objective, TriggerOn};
+use delvewright_dsl::{EnvTrigger, Objective, TriggerOn};
 
 use crate::compiler::plan::{Plan, Step};
 
@@ -48,8 +47,6 @@ pub struct Act {
     pub what: ActWhat,
     /// Its kind tag: the objective's `type` or the trigger's event.
     pub kind: &'static str,
-    /// The input it needs ([`class_of_objective`], [`class_of_trigger`]).
-    pub class: Option<InputClass>,
     /// The cell the party stands on before it; `None` when the walk names no
     /// entry and nothing precedes it.
     pub from: Option<[i32; 3]>,
@@ -90,46 +87,11 @@ pub struct ActWalks {
     pub walks: Vec<ActWalk>,
 }
 
-/// The input class of an objective (spec-0104 §5.2), read off its kind and
-/// body: a `talk-to` right-clicks a person; an `interact` right-clicks its
-/// prop or the authored block it stands on, or — prop-less and marked — the
-/// hitbox beside the lantern, a body; a `collect` right-clicks its container
-/// (none when it is picked up off the ground); a `kill` left-clicks bodies;
-/// a `reach-anchor` needs no input beyond walking.
-pub fn class_of_objective(o: &Objective, guidance: &Guidance) -> Option<InputClass> {
-    match o {
-        Objective::TalkTo { .. } => Some(InputClass::UseBody),
-        Objective::Interact { prop, .. } => {
-            if prop.is_none() && o.marker_shown(guidance) {
-                Some(InputClass::UseBody)
-            } else {
-                Some(InputClass::UseBlock)
-            }
-        }
-        Objective::Collect { dropped_by, .. } => {
-            if dropped_by.is_some() {
-                None
-            } else {
-                Some(InputClass::UseBlock)
-            }
-        }
-        Objective::Kill { .. } => Some(InputClass::AttackBody),
-        Objective::ReachAnchor { .. } => None,
-    }
-}
-
-/// The input class of a trigger (spec-0104 §5.2): a `use` right-clicks a
-/// block, a `strike` left-clicks one, a `strike-npc` or `strike-assembly`
-/// left-clicks a body; an `approach` or `step` needs no input.
-pub fn class_of_trigger(t: &EnvTrigger) -> Option<InputClass> {
-    match t.on {
-        TriggerOn::Use => Some(InputClass::UseBlock),
-        TriggerOn::Strike => Some(InputClass::AttackBlock),
-        TriggerOn::StrikeNpc { .. } | TriggerOn::StrikeAssembly { .. } => {
-            Some(InputClass::AttackBody)
-        }
-        TriggerOn::Approach { .. } | TriggerOn::Step => None,
-    }
+/// Whether a trigger is an act (spec-0104 §1): a `use`, `strike`,
+/// `strike-npc` or `strike-assembly` is a thing the party presses; an
+/// `approach` or `step` is a place on the route.
+pub fn trigger_is_act(t: &EnvTrigger) -> bool {
+    !matches!(t.on, TriggerOn::Approach { .. } | TriggerOn::Step)
 }
 
 /// The acts of one path's steps, `transport` aligned 1:1 with them, departing
@@ -158,7 +120,6 @@ pub fn acts_of_from(
     entry: Option<[i32; 3]>,
 ) -> ActWalk {
     let c = plan.campaign;
-    let guidance = &c.quests.content.guidance;
     let mut objectives: BTreeMap<&str, (usize, usize, &Objective)> = BTreeMap::new();
     for (qi, q) in c.quests.content.quests.iter().enumerate() {
         for (oi, o) in q.objectives.iter().enumerate() {
@@ -179,7 +140,6 @@ pub fn acts_of_from(
                     objective: *oi,
                 },
                 kind: o.kind(),
-                class: class_of_objective(o, guidance),
                 from: from.as_ref().map(|f| f.0),
                 from_what: from.as_ref().map(|f| f.1.clone()).unwrap_or_default(),
                 target: pos,
@@ -193,13 +153,12 @@ pub fn acts_of_from(
             triggers
                 .iter()
                 .find(|t| t.id.as_str() == tid)
-                .filter(|t| class_of_trigger(t).is_some())
+                .filter(|t| trigger_is_act(t))
                 .map(|t| Act {
                     step: i,
                     id: tid.to_string(),
                     what: ActWhat::Trigger(tid.to_string()),
                     kind: t.on.kind(),
-                    class: class_of_trigger(t),
                     from: from.as_ref().map(|f| f.0),
                     from_what: from.as_ref().map(|f| f.1.clone()).unwrap_or_default(),
                     target: pos,
@@ -280,70 +239,6 @@ fn derive_walks(
             );
             walk.gates = Some(std::sync::Arc::new(plan.branch_gate_model(&cp)));
             out.walks.push(walk);
-        }
-    }
-    out
-}
-
-/// **Where each input class is taught** (spec-0104 §5.4): per class, the first
-/// act of that class on each walk — the objectives whose activation shows the
-/// line and the triggers whose firing cells show it. Deterministic (sorted
-/// sets).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct TeachSites {
-    /// Objective id → the classes its activation teaches.
-    pub objectives: BTreeMap<String, Vec<InputClass>>,
-    /// Trigger id → the classes its firing cells teach, and the cell the act
-    /// targets on the first walk that teaches there (its anchor, the struck
-    /// NPC's body, or the struck assembly's mark).
-    pub triggers: BTreeMap<String, (Vec<InputClass>, [i32; 3])>,
-}
-
-/// The classes some walk requires, each with the first act that requires it
-/// on the first walk that does: `(class, walk label, act id)`.
-pub fn required(plan: &Plan) -> BTreeMap<InputClass, (String, String)> {
-    let mut out: BTreeMap<InputClass, (String, String)> = BTreeMap::new();
-    for w in &walks(plan).walks {
-        for a in &w.acts {
-            if let Some(cl) = a.class {
-                out.entry(cl)
-                    .or_insert_with(|| (w.label.clone(), a.id.clone()));
-            }
-        }
-    }
-    out
-}
-
-/// The teaching sites of `plan`: for every class the campaign gives a line,
-/// the first act of that class on every walk.
-pub fn teach_sites(plan: &Plan) -> TeachSites {
-    let teaching = &plan.campaign.quests.content.guidance.teaching;
-    let mut out = TeachSites::default();
-    for w in &walks(plan).walks {
-        let mut seen: Vec<InputClass> = Vec::new();
-        for a in &w.acts {
-            let Some(cl) = a.class else { continue };
-            if seen.contains(&cl) {
-                continue;
-            }
-            seen.push(cl);
-            if teaching.get(cl).and_then(|t| t.line()).is_none() {
-                continue;
-            }
-            let slot = match a.what {
-                ActWhat::Objective { .. } => out.objectives.entry(a.id.clone()).or_default(),
-                ActWhat::Trigger(_) => {
-                    &mut out
-                        .triggers
-                        .entry(a.id.clone())
-                        .or_insert_with(|| (Vec::new(), a.target))
-                        .0
-                }
-            };
-            if !slot.contains(&cl) {
-                slot.push(cl);
-                slot.sort();
-            }
         }
     }
     out

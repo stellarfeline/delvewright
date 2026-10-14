@@ -825,7 +825,7 @@ fn the_binding_line_is_printed_on_every_build() {
     }
     std::fs::write(
         dir.join("quests.json"),
-        common::with_teaching(quests().to_string()),
+        quests().to_string(),
     )
     .unwrap();
     let with = run(&[
