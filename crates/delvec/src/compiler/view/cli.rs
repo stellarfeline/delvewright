@@ -994,8 +994,17 @@ pub fn run_place_camera(
     for r in &sky_of_row.resolved {
         eprintln!("{}", r.line());
     }
-    for s in stood.iter().flat_map(|s| &s.stands.stands) {
-        eprintln!("{}", s.line(0));
+    if let Some(st) = &stood {
+        for s in &st.stands.stands {
+            let drawn_out = written
+                .cameras
+                .iter()
+                .find(|c| c.name == s.camera)
+                .map_or(0, |c| {
+                    crate::compiler::view::beat::holders_in_frame(c, &st.holders)
+                });
+            eprintln!("{}", s.line(0, drawn_out));
+        }
     }
     // The count a creator is placing cameras to move (spec-0070 §5), so it moves
     // under their hand rather than at the next build.
@@ -1194,7 +1203,13 @@ pub fn run_cameras(
         paths.insert(key.clone(), w.path);
     }
     for s in &stood.stands.stands {
-        eprintln!("{}", s.line(omitted.get(&s.key).copied().unwrap_or(0)));
+        let drawn_out = framed.iter().find(|c| c.name == s.camera).map_or(0, |c| {
+            crate::compiler::view::beat::holders_in_frame(c, &stood.holders)
+        });
+        eprintln!(
+            "{}",
+            s.line(omitted.get(&s.key).copied().unwrap_or(0), drawn_out)
+        );
     }
     for l in &world_lines {
         eprintln!("{l}");
