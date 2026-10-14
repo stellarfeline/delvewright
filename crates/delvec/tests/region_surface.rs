@@ -44,16 +44,16 @@ fn write_doc(dir: &Path, name: &str, stage: &str, content: serde_json::Value) {
 
 /// The site plan: `base` and the surface's datum as given, the box's own
 /// `lighting` when `lit`.
-fn site_plan(base: serde_json::Value, datum: i64, lit: bool) -> serde_json::Value {
+fn site_plan(base: serde_json::Value, datum: i64, lit: bool, len: i32) -> serde_json::Value {
     let mut b = serde_json::json!({
-        "node": "node/house", "min": [1, 1], "extent": [16, 16],
+        "node": "node/house", "min": [1, 1], "extent": [16, len - 2],
         "floor": {"y": 64}, "ceiling": {"clearance": 8}, "base": base
     });
     if lit {
         b["lighting"] = serde_json::json!({"fixture": "torch", "min_light": 3});
     }
     serde_json::json!({
-        "region": {"min": [0, 50, 0], "extent": [SIZE[0], 23, SIZE[2]]},
+        "region": {"min": [0, 50, 0], "extent": [SIZE[0], 23, len]},
         "boxes": [b],
         "seams": [],
         "datums": [{"id": "datum/ground", "y": datum}],
@@ -66,7 +66,7 @@ fn site_plan(base: serde_json::Value, datum: i64, lit: bool) -> serde_json::Valu
 
 /// The campaign: the blockout fixture's cast and words, one place with three
 /// stations, one quest binding all three.
-fn campaign(dir: &Path, base: serde_json::Value, datum: i64, lit: bool) {
+fn campaign(dir: &Path, base: serde_json::Value, datum: i64, lit: bool, len: i32) {
     common::copy_dir_all(
         &common::repo_root().join("crates/delvec/tests/fixtures/blockout"),
         dir,
@@ -101,7 +101,7 @@ fn campaign(dir: &Path, base: serde_json::Value, datum: i64, lit: bool) {
         dir,
         "site-plan.json",
         "site-plan",
-        site_plan(base, datum, lit),
+        site_plan(base, datum, lit, len),
     );
     common::patch_file(&dir.join("npcs.json"), |v| {
         v["content"]["npcs"][0]["anchor"] = serde_json::json!("anchor/settle");
@@ -118,10 +118,10 @@ fn campaign(dir: &Path, base: serde_json::Value, datum: i64, lit: bool) {
     });
 }
 
-/// The piece's cell, piece-local.
-fn cell(p: [i32; 3]) -> &'static str {
+/// The piece's cell, piece-local, for a piece `len` long on z.
+fn cell(p: [i32; 3], len: i32) -> &'static str {
     let [x, y, z] = p;
-    let ring = x == 0 || x == SIZE[0] - 1 || z == 0 || z == SIZE[2] - 1;
+    let ring = x == 0 || x == SIZE[0] - 1 || z == 0 || z == len - 1;
     if y == 0 {
         return "minecraft:stone";
     }
@@ -158,8 +158,9 @@ fn region(from: [i32; 3], to: [i32; 3]) -> serde_json::Value {
     serde_json::json!({"from": from, "to": to})
 }
 
-fn piece_meta(exterior: bool) -> serde_json::Value {
+fn piece_meta(exterior: bool, len: i32) -> serde_json::Value {
     let top = SIZE[1] - 2;
+    let back = len - 2;
     let mut edges = vec![serde_json::json!(
         {"a": "west", "b": "east", "class": "walk", "rise": 0,
          "via": {"region": "door", "boxes": [region([9, WALK, 8], [9, WALK + 1, 9])]}}
@@ -170,7 +171,7 @@ fn piece_meta(exterior: bool) -> serde_json::Value {
     serde_json::json!({
         "prefab_id": "prefab/house",
         "structure": {
-            "file": "house.nbt", "id": "house", "size": SIZE, "data_version": 4671,
+            "file": "house.nbt", "id": "house", "size": [SIZE[0], SIZE[1], len], "data_version": 4671,
             "generator": "crates/delvec/tests/region_surface.rs"
         },
         "anchors": {
@@ -188,8 +189,8 @@ fn piece_meta(exterior: bool) -> serde_json::Value {
         "spatial_contract": {
             "entry": "west",
             "spaces": {
-                "west": {"envelope": "enclosed", "boxes": [region([1, WALK, 1], [8, top, 16])]},
-                "east": {"envelope": "enclosed", "boxes": [region([EAST.0, WALK, 1], [EAST.1, top, 16])]}
+                "west": {"envelope": "enclosed", "boxes": [region([1, WALK, 1], [8, top, back])]},
+                "east": {"envelope": "enclosed", "boxes": [region([EAST.0, WALK, 1], [EAST.1, top, back])]}
             },
             "no_body": {},
             "edges": edges,
@@ -201,24 +202,66 @@ fn piece_meta(exterior: bool) -> serde_json::Value {
 /// The library: `prefabs/house.{nbt,json}` under `root`. `exterior` adds an
 /// `exterior` edge to the contract.
 fn piece(root: &Path, exterior: bool) -> PathBuf {
+    piece_of(root, exterior, SIZE[2])
+}
+
+/// The house `len` long on z: one template within vanilla's 48-per-axis cap,
+/// past it a tile set — the `.nbt` tiles `delvewright_dsl::split` cuts and the
+/// metadata's `structure_set` naming them, the shape `delvec grammar export`
+/// writes for an oversize zone.
+fn piece_of(root: &Path, exterior: bool, len: i32) -> PathBuf {
+    use delvewright_dsl::split::{TilePart, TileSet, part_filename, plan_split};
     let prefabs = root.join("prefabs");
     std::fs::create_dir_all(&prefabs).unwrap();
-    let mut cells: Vec<([i32; 3], &str)> = Vec::new();
-    for x in 0..SIZE[0] {
-        for y in 0..SIZE[1] {
-            for z in 0..SIZE[2] {
-                cells.push(([x, y, z], cell([x, y, z])));
+    let size = [SIZE[0], SIZE[1], len];
+    let plan = plan_split(size, 48);
+    let mut meta = piece_meta(exterior, len);
+    let mut parts = Vec::new();
+    for part in &plan.parts {
+        let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+        for x in 0..part.size[0] {
+            for y in 0..part.size[1] {
+                for z in 0..part.size[2] {
+                    let at = [x + part.offset[0], y + part.offset[1], z + part.offset[2]];
+                    cells.push(([x, y, z], cell(at, len)));
+                }
             }
         }
+        let file = if plan.is_single() {
+            "house.nbt".to_string()
+        } else {
+            part_filename("house", part.grid_index)
+        };
+        std::fs::write(
+            prefabs.join(&file),
+            common::structure_nbt(part.size, &cells),
+        )
+        .unwrap();
+        parts.push(TilePart {
+            id: file.trim_end_matches(".nbt").to_string(),
+            file,
+            grid_index: part.grid_index,
+            offset: part.offset,
+            size: part.size,
+        });
+    }
+    if !plan.is_single() {
+        let set = TileSet {
+            base: "house".to_string(),
+            size,
+            part_max: 48,
+            grid: plan.grid,
+            data_version: 4671,
+            generator: "crates/delvec/tests/region_surface.rs".to_string(),
+            parts,
+        };
+        let m = meta.as_object_mut().unwrap();
+        m.remove("structure");
+        m.insert("structure_set".into(), serde_json::to_value(set).unwrap());
     }
     std::fs::write(
-        prefabs.join("house.nbt"),
-        common::structure_nbt(SIZE, &cells),
-    )
-    .unwrap();
-    std::fs::write(
         prefabs.join("house.json"),
-        serde_json::to_string_pretty(&piece_meta(exterior)).unwrap() + "\n",
+        serde_json::to_string_pretty(&meta).unwrap() + "\n",
     )
     .unwrap();
     prefabs
@@ -250,7 +293,7 @@ fn fixture(tag: &str, base: serde_json::Value, datum: i64, lit: bool) -> (PathBu
     let root = tempdir(tag);
     let dir = root.join("campaigns/blockout");
     std::fs::create_dir_all(&dir).unwrap();
-    campaign(&dir, base, datum, lit);
+    campaign(&dir, base, datum, lit, SIZE[2]);
     let prefabs = piece(&root, false);
     detail_plan(&dir);
     (dir, prefabs)
@@ -724,5 +767,76 @@ fn criterion_4_piece_over_a_seamed_place_requires_the_exterior_edge() {
         err.contains("does not answer how the place is entered")
             && err.contains("claims no way in"),
         "a seamed place's piece owes the exterior edge its seam meets: {err}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Criterion 7: a tile set
+// ---------------------------------------------------------------------------
+
+/// The fixture's piece 50 cells long on z — past vanilla's 48 — is a tile set
+/// of two, and a whole-site piece bound to its place builds from it: the
+/// datapack ships one structure per tile, and `place_verify` holds one
+/// sentinel per tile, so a tile that failed to land is a placement that
+/// retries rather than a site placed with a slice missing.
+#[test]
+fn criterion_7_a_whole_site_piece_past_the_cap_builds_as_its_tiles() {
+    let root = tempdir("tiled");
+    let dir = root.join("campaigns/blockout");
+    std::fs::create_dir_all(&dir).unwrap();
+    campaign(&dir, owned(), 56, true, 50);
+    let prefabs = piece_of(&root, false, 50);
+    detail_plan(&dir);
+    let names: Vec<String> = std::fs::read_dir(&prefabs)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".nbt"))
+        .collect();
+    assert_eq!(names.len(), 2, "the piece is a tile set of two: {names:?}");
+
+    let out = root.join("out");
+    let (code, err) = build(&dir, &prefabs, &out);
+    assert_eq!(code, Some(0), "{err}");
+
+    let structures = out.join("datapack/data/blockout/structure");
+    let mut shipped: Vec<String> = std::fs::read_dir(&structures)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("house.") && n.ends_with(".nbt"))
+        .collect();
+    shipped.sort();
+    assert_eq!(
+        shipped,
+        vec!["house.x0y0z0.nbt", "house.x0y0z1.nbt"],
+        "one structure per tile"
+    );
+
+    let verify = std::fs::read_to_string(
+        out.join("datapack/data/blockout/function/place_verify.mcfunction"),
+    )
+    .unwrap();
+    let sentinels: Vec<[i32; 3]> = verify
+        .lines()
+        .filter_map(|l| l.strip_prefix("execute if block "))
+        .map(|rest| {
+            let v: Vec<i32> = rest
+                .split_whitespace()
+                .take(3)
+                .map(|s| s.parse().unwrap())
+                .collect();
+            [v[0], v[1], v[2]]
+        })
+        .collect();
+    // The piece's claim is x 0..17, y 56..72, z 0..49: a sentinel inside it is
+    // one of the house's tiles, and each tile owns the z half it was cut at.
+    let in_house: Vec<&[i32; 3]> = sentinels
+        .iter()
+        .filter(|c| (0..18).contains(&c[0]) && (56..73).contains(&c[1]) && (0..50).contains(&c[2]))
+        .collect();
+    assert_eq!(in_house.len(), 2, "one sentinel per tile:\n{verify}");
+    assert_eq!(
+        in_house.iter().filter(|c| c[2] < 48).count(),
+        1,
+        "one sentinel in each tile's z span:\n{verify}"
     );
 }
