@@ -1314,3 +1314,60 @@ pub fn plan_structures_with_trap_triggers(
     }
     out
 }
+
+/// **A hello-world campaign furnished with containers** (spec-0105), written to
+/// `dst`: `blocks` are container blocks a stage-7 batch sets at offsets from
+/// `anchor/keeper-stand` (each one cell), `collect` replaces the reach
+/// objective with a `collect` whose own chest the compiler places at that
+/// anchor, and `notice` declares `containers.decoration_notice`. The one
+/// fixture every container-census test and remedy row builds from.
+pub fn container_campaign(
+    dst: &Path,
+    blocks: &[([i32; 3], &str)],
+    collect: Option<&str>,
+    notice: bool,
+) -> PathBuf {
+    let _ = std::fs::remove_dir_all(dst);
+    copy_dir_all(&hello_world_dir(), dst);
+    patch_file(&dst.join("quests.json"), |q| {
+        let c = &mut q["content"];
+        if let Some(anchor) = collect {
+            c["quests"][0]["objectives"][1] = serde_json::json!({
+                "type": "collect", "id": "obj/exit", "item": "minecraft:bread", "count": 1,
+                "anchor": anchor, "after": ["obj/talk"],
+                "happening": {"text": "the party takes the bread", "verb": "gains"}
+            });
+        }
+        if notice {
+            c["containers"] = serde_json::json!({
+                "decoration_notice": {"text": "The keep was stripped bare before you came."}
+            });
+        }
+    });
+    if !blocks.is_empty() {
+        let mut edits = Vec::new();
+        for (i, (off, block)) in blocks.iter().enumerate() {
+            edits.push(serde_json::json!({
+                "verb": "select", "name": format!("region/c{i}"),
+                "shape": {"frame": {"kind": "anchor-relative", "anchor": "anchor/keeper-stand"},
+                          "kind": "box", "min": off, "max": off}
+            }));
+            edits.push(serde_json::json!({
+                "verb": "fill", "region": format!("region/c{i}"),
+                "recipe": {"blocks": [{"block": block, "weight": 1.0}]}
+            }));
+        }
+        let doc = serde_json::json!({
+            "dsl_version": delvewright_dsl::DSL_VERSION,
+            "campaign_id": "hello-world",
+            "stage": "world-edits",
+            "content": {"batches": [{"area": "area/keep", "id": "batch/containers", "edits": edits}]}
+        });
+        std::fs::write(
+            dst.join("world-edits.json"),
+            serde_json::to_string_pretty(&doc).unwrap(),
+        )
+        .unwrap();
+    }
+    dst.to_path_buf()
+}

@@ -397,9 +397,10 @@ impl Census {
             parts.push(format!(
                 "\n  MIXED — `{}`: the container(s) that matter, {}, stand among the scenery \
                  container(s) {}. A player searching for what matters opens every one of them. \
-                 Fill every scenery container in this place so each pays off, or move the one \
-                 that matters to a place where every container pays off. A trap among loot is \
-                 allowed; a needed item among empty containers is not.",
+                 Fill every scenery container in this place so each pays off, replace it in the \
+                 place's piece or program with furniture that is not a container, or move the \
+                 one that matters to a place where every container pays off. A trap among loot \
+                 is allowed; a needed item among empty containers is not.",
                 f.place,
                 cells(&f.matter),
                 cells(&f.decoration)

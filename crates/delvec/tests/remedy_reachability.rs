@@ -3664,3 +3664,158 @@ fn dw0995_a_gate_the_route_opens_is_heard() {
     assert!(!after.contains("DW0995"), "{after}");
     assert!(after.contains("1 of 1 with a listening station"), "{after}");
 }
+
+// ---------------------------------------------------------------------------
+// DW1018 / DW1019 / DW1024 — the container class (spec-0105)
+// ---------------------------------------------------------------------------
+
+const BARREL: &str = "minecraft:barrel";
+
+/// The container fixture ([`common::container_campaign`]), built.
+fn containers_build(
+    tag: &str,
+    blocks: &[([i32; 3], &str)],
+    collect: Option<&str>,
+    notice: bool,
+) -> (i32, String) {
+    let camp =
+        common::container_campaign(&tmp(&format!("containers-{tag}")), blocks, collect, notice);
+    build(&format!("containers-{tag}"), &camp, &common::prefabs_dir())
+}
+
+/// **DW1018, scenery and no notice — both moves.** Declaring the notice builds;
+/// replacing the container with furniture that is not one builds.
+#[test]
+fn dw1018_declaring_the_notice_or_replacing_the_container_builds() {
+    let (code, log) = containers_build("1018-bare", &[([-3, 0, -2], BARREL)], None, false);
+    assert_eq!(code, 3, "{log}");
+    assert!(log.contains("DW1018"), "{log}");
+    let (code, log) = containers_build("1018-told", &[([-3, 0, -2], BARREL)], None, true);
+    assert_eq!(code, 0, "the notice the message names must build:\n{log}");
+    let (code, log) = containers_build(
+        "1018-replaced",
+        &[([-3, 0, -2], "minecraft:crafting_table")],
+        None,
+        false,
+    );
+    assert_eq!(code, 0, "replacing the container must build:\n{log}");
+}
+
+/// **DW1018, a notice with nothing to speak for.** Deleting it builds.
+#[test]
+fn dw1018_deleting_a_notice_with_no_scenery_builds() {
+    let (code, log) = containers_build("1018-stocked", &[], Some("anchor/exit"), true);
+    assert_eq!(code, 3, "{log}");
+    assert!(log.contains("DW1018"), "{log}");
+    let (code, log) = containers_build("1018-deleted", &[], Some("anchor/exit"), false);
+    assert_eq!(code, 0, "deleting the notice must build:\n{log}");
+}
+
+/// **DW1024, mixed.** Replacing the scenery container reaches a different
+/// verdict — the notice now speaks for nothing (`DW1018`) — and deleting the
+/// notice, the move that one names, builds.
+#[test]
+fn dw1024_replacing_the_scenery_beside_what_matters_reaches_the_next_verdict() {
+    let (code, log) = containers_build(
+        "1024-mixed",
+        &[([-3, 0, -2], BARREL)],
+        Some("anchor/exit"),
+        true,
+    );
+    assert_eq!(code, 3, "{log}");
+    assert!(log.contains("DW1024"), "{log}");
+    let (code, log) = containers_build(
+        "1024-replaced",
+        &[([-3, 0, -2], "minecraft:crafting_table")],
+        Some("anchor/exit"),
+        true,
+    );
+    assert_eq!(code, 3, "{log}");
+    assert!(
+        log.contains("DW1018") && !log.contains("DW1024"),
+        "a different verdict:\n{log}"
+    );
+    let (code, log) = containers_build(
+        "1024-replaced-untold",
+        &[([-3, 0, -2], "minecraft:crafting_table")],
+        Some("anchor/exit"),
+        false,
+    );
+    assert_eq!(code, 0, "{log}");
+}
+
+/// **DW1024, storeroom.** Replacing the surplus builds.
+#[test]
+fn dw1024_replacing_the_surplus_scenery_builds() {
+    let three = [
+        ([-3, 0, -2], BARREL),
+        ([3, 0, -2], BARREL),
+        ([-3, 0, -1], BARREL),
+    ];
+    let (code, log) = containers_build("1024-storeroom", &three, None, true);
+    assert_eq!(code, 3, "{log}");
+    assert!(log.contains("DW1024"), "{log}");
+    let two = [
+        ([-3, 0, -2], BARREL),
+        ([3, 0, -2], BARREL),
+        ([-3, 0, -1], "minecraft:crafting_table"),
+    ];
+    let (code, log) = containers_build("1024-two", &two, None, true);
+    assert_eq!(code, 0, "{log}");
+}
+
+/// `delvec validate` over the container fixture with one quests edit.
+fn containers_validate(tag: &str, f: impl FnOnce(&mut serde_json::Value)) -> (i32, String) {
+    let camp = common::container_campaign(&tmp(&format!("containers-v-{tag}")), &[], None, false);
+    common::patch_file(&camp.join("quests.json"), f);
+    let prefabs = common::prefabs_dir();
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    (r.status.code().unwrap_or(-1), log(&r))
+}
+
+/// **DW1019 — each shape and the move its message names.** A stack in the
+/// fill, the `containers` object deleted, a block that is not a container:
+/// each validates.
+#[test]
+fn dw1019_each_shape_validates_after_its_move() {
+    let empty = serde_json::json!([{ "id": "loot/stores", "anchor": "anchor/exit", "items": [] }]);
+    let stocked = serde_json::json!([{ "id": "loot/stores", "anchor": "anchor/exit",
+        "items": [{ "item": "minecraft:bread" }] }]);
+    let (code, log) = containers_validate("1019-empty", |q| q["content"]["loot"] = empty);
+    assert_eq!(code, 1, "{log}");
+    assert!(log.contains("DW1019"), "{log}");
+    let (code, log) = containers_validate("1019-stocked", |q| q["content"]["loot"] = stocked);
+    assert_eq!(code, 0, "{log}");
+
+    let (code, log) = containers_validate("1019-object", |q| {
+        q["content"]["containers"] = serde_json::json!({});
+    });
+    assert_eq!(code, 1, "{log}");
+    assert!(log.contains("DW1019"), "{log}");
+    let (code, log) = containers_validate("1019-deleted", |_| {});
+    assert_eq!(code, 0, "{log}");
+
+    let set = |block: &str| serde_json::json!({ "type": "set-block", "anchor": "anchor/exit", "block": block });
+    let chest = set("minecraft:chest");
+    let (code, log) = containers_validate("1019-runtime", |q| {
+        q["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap()
+            .push(chest);
+    });
+    assert_eq!(code, 1, "{log}");
+    assert!(log.contains("DW1019"), "{log}");
+    let lamp = set("minecraft:sea_lantern");
+    let (code, log) = containers_validate("1019-lamp", |q| {
+        q["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap()
+            .push(lamp);
+    });
+    assert_eq!(code, 0, "{log}");
+}
