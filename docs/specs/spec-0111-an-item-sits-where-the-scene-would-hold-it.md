@@ -123,6 +123,8 @@ The setup also writes **`gamerule entity_drops true`** beside the rules `emit/wo
 
 **Authored.** `compiler::containers` becomes **`compiler::holders`** and its census ranges over the class: every container cell of the twelve kinds and every holder entity of the piece, each a row with its **`kind`** (`container`, `item-frame`, `glow-item-frame`, `armor-stand`), its **slots** (the vocabulary of §3.3, filled slots marked) and its claims (`loot`, `collect`, `device` as today). The ledger is **`validation/holders.json`** — the rows and header `validation/containers.json` carries today plus `kind`, `slots` and the counts below — and `DW1018` and `DW1024` move to the module's page with it. An **empty holder** — a frame or stand no fill claims — is a row with claim `none` and the mark **`frozen`**: it is **not** a decoration cell for `DW1018` or §9 of spec-0105, because it costs the player nothing to learn (a hit on a frozen frame does nothing and a frozen stand gives nothing, where an empty chest opens and shows an empty grid), and the census prints its count on its own (`E empty holder(s), frozen`). A holder is never a `device` (non-goals).
 
+**Amendment (owner ruling, spec-0105 §9.5).** Every frame and stand is a holder whose contents show from outside, filled or empty, and so is exempt from the empty and scenery rules — no decoration cell, no place in the cap, free to stand among holders that matter, owed no notice — as is a brewing stand whose question is its bottle slots. The census line states the exempt count beside `E`: `…, E empty (frozen), X exempt (contents show from outside); …`.
+
 ## 5. Proving it reaches the party
 
 ### 5.1 The binding line

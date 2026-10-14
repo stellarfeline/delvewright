@@ -182,6 +182,10 @@ Both arms run after `DW1018` on the same census; a campaign whose census has no 
 
 Each arm is refusal-proven by a probe (`a-key-among-empty-chests` → `DW1024` mixed; `a-storeroom-of-nothing` → `DW1024` storeroom), the primary plus one declared patch; the primary itself passes both arms with its counts on the census line. A perturbation test for each arm lives in `compiler::containers`: moving a matter cell into a place with a decoration cell reds the mixed arm, and adding a third decoration cell to a place reds the storeroom arm, each from a model that passes.
 
+### 9.5 A holder whose contents show is exempt (amendment)
+
+**Authored, owner ruling.** A holder whose contents a player sees from outside is exempt from the empty and scenery rules: it is not a decoration cell, takes no place in the cap of §9.2, may stand among holders that matter (`DW1024` does not apply to it), and calls for no notice (`DW1018` does not apply to it). The kinds: item frames and glow item frames, armour stands (spec-0111), and a brewing stand whose question is its three bottle slots — `container.0`–`container.2`, drawn by the block state as `has_bottle_0`–`has_bottle_2` — that is, one no declaration claims, or one a `loot` or `collect` fills in those slots and no other. A brewing stand's ingredient and fuel slots do not show: a brewing stand filled there, or claimed by a device, is an ordinary container and is judged as one. A row of empty brewing stands with a few holding potions is legitimate. The census states the exempt count on its binding line (`X exempt (contents show from outside)`) and per row in the ledger (`exempt`).
+
 ## 10. The item-holder class, and the split
 
 **Authored** (a product rule of this spec): quest items and loot are not confined to chests and barrels. An item sits where the scene would hold it — a sword on a stand, a map in a frame, a potion in a brewing stand, a book on a shelf — so `loot[]` and `collect` target an **item holder**, of which the container is one family. A delve runs in adventure mode, so **a holder qualifies only if a player in adventure mode can take its item** without a hack.
