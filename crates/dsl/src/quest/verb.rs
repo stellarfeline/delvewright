@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::serde_fields::is_zero3;
 use crate::{
-    ActorId, AnchorId, AssemblyId, AtmosphereId, CameraShot, Carrier, CutsceneParty, DamageKind,
+    ActorId, AnchorId, AssemblyId, AtmosphereId, CameraShot, CameraSubject, Carrier, CutsceneParty, DamageKind,
     DespawnStyle, EndingId, FireworkExplosion, FlagId, Mark, NpcId, PlaceRef, PrefabId,
     QuestEffect, SequenceStep, StakeId, StateId, StealthZone, WaveId, WorldTime, WorldWeather,
 };
@@ -320,7 +320,10 @@ pub enum Verb {
     /// - single-shot (DSL v0.4): `{"path": […], "seconds": n, "look_at"?: …}` —
     ///   exactly equivalent to a one-entry `shots` list.
     ///
-    /// Mixing or omitting both is `DW0199`.
+    /// Mixing or omitting both is `DW0199`. Every shot names its `subject`
+    /// (spec-0110): the schema states it required on a `shots` entry and, through
+    /// `dependentRequired`, beside a single-shot `path`/`seconds`.
+    #[schemars(extend("dependentRequired" = {"path": ["subject"], "seconds": ["subject"]}))]
     Cutscene {
         /// Multi-shot form (DSL v0.6): the ordered shot list. Mutually exclusive
         /// with the single-shot `path`/`seconds` fields (`DW0199`).
@@ -333,10 +336,15 @@ pub enum Verb {
         /// Single-shot form (DSL v0.4): shot duration in seconds.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         seconds: Option<u32>,
-        /// Single-shot form (DSL v0.6): the subject the camera keeps framed.
-        /// Absent = face along the direction of travel.
+        /// Single-shot form (DSL v0.6): where the camera aims, overriding the aim
+        /// at the `subject` and nothing else.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         look_at: Option<Mark>,
+        /// Single-shot form (spec-0110): what the shot shows — required beside
+        /// `path` and `seconds` (`DW0199` when absent); see
+        /// [`CameraShot::subject`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        subject: Option<CameraSubject>,
         /// Whether the party's bodies stay in the scene while the camera flies
         /// (spec-0095). Absent = `present`: every player in play is shown by a
         /// stand-in wearing their own skin and equipment, standing where they

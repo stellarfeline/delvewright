@@ -27,6 +27,7 @@ pub(super) struct WorldProofs {
     pub(super) loop_gate: Option<crate::compiler::r#loop::LoopBinding>,
     pub(super) firework_gate: Option<crate::compiler::firework::FireworkGate>,
     pub(super) cutscene_shots_judged: usize,
+    pub(super) shot_ledger: Option<crate::compiler::framing::ShotLedger>,
     pub(super) lightning_gate: Option<crate::compiler::lightning::LightningGate>,
     pub(super) stake_table: Option<crate::compiler::stake::StakeTable>,
     pub(super) death_plan: Option<Value>,
@@ -120,6 +121,9 @@ pub(super) fn prove_world(
     // spec-0091: how many cutscene shots were judged against the served view
     // distance, for the binding line printed beside the render plan.
     let mut cutscene_shots_judged = 0usize;
+    // spec-0110: what every cutscene shot frames, judged per tick. `None` for a
+    // campaign with no cutscene — no line, no ledger.
+    let mut shot_ledger: Option<crate::compiler::framing::ShotLedger> = None;
     // The strike proofs' binding ledger (`compiler::lightning`, spec-0092 §5),
     // filled beside the firework's: `None` for a campaign that declares no
     // strike, so nobody who has not opted in moves a byte.
@@ -534,6 +538,27 @@ pub(super) fn prove_world(
                 let am = crate::compiler::nav::plan_actor_moves(plan, world)?;
                 cutscene_shots_judged =
                     crate::compiler::nav::check_cutscenes(plan, world, &m, &am)?;
+                // spec-0110: a shot frames its subject (`DW1033`) and a body
+                // subject is there to be seen (`DW1034`) — after the clip, served
+                // distance and pan proofs, so a camera inside a wall is named for
+                // that first. The binding line prints before the verdict, for
+                // every build with a cutscene.
+                {
+                    let (ledger, verdict) = crate::compiler::framing::judge(plan, world, &m, &am);
+                    if !ledger.cutscenes.is_empty() {
+                        eprintln!("{}", ledger.line());
+                        shot_ledger = Some(ledger);
+                    }
+                    if let Some((first, rest)) = verdict.split_first() {
+                        for extra in rest {
+                            eprintln!("{} [error] build: {}", extra.code, extra.message);
+                        }
+                        return Err(BuildFailure::Diagnostic {
+                            code: first.code,
+                            message: first.message.clone(),
+                        });
+                    }
+                }
                 // spec-0031: the one lethal-volume obligation routing cannot see.
                 // A respawn SEAT inside a volume is reached by teleport and routes
                 // perfectly while killing the party on arrival, forever. The wave
@@ -1164,6 +1189,7 @@ pub(super) fn prove_world(
         loop_gate,
         firework_gate,
         cutscene_shots_judged,
+        shot_ledger,
         lightning_gate,
         stake_table,
         death_plan,

@@ -66,6 +66,7 @@ pub mod mclang;
 pub mod metrics;
 pub mod npc;
 pub mod onkill;
+pub mod ordering;
 pub mod perception;
 pub mod placement;
 pub mod prefab;

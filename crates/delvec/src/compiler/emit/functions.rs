@@ -20,6 +20,7 @@ pub(super) fn emit_functions(
     stake_table: Option<&crate::compiler::stake::StakeTable>,
     asm_locks: &crate::compiler::assembly::Locks,
     pulses: &[crate::compiler::pulse::PulseRow],
+    assembly_ranges: &[crate::compiler::framing::AssemblyRange],
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -1165,6 +1166,7 @@ pub(super) fn emit_functions(
     fns.extend(crate::compiler::assembly::assembly_functions(
         plan,
         asm_locks,
+        assembly_ranges,
         &|e, body| {
             emit_gated_effect(
                 plan,

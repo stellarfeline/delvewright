@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::serde_fields::is_zero3;
-use crate::{ActorId, Mark, NpcId};
+use crate::{ActorId, AssemblyId, Mark, NpcId, StealthZone};
 
 /// Whether a `cutscene` shows the party's bodies (spec-0095).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -30,10 +30,11 @@ impl CutsceneParty {
 }
 
 /// One shot of a [`Verb::Cutscene`] (DSL v0.6): a camera dolly with its
-/// own duration and optional subject. A cutscene plays its shots back-to-back —
-/// a hard cut between them — inside a single gamemode/position save-restore
-/// bracket, so a wide establishing move can be followed by an interior close-up
-/// without the players ever leaving the cinematic.
+/// own duration and the subject it frames (spec-0110). A cutscene plays its
+/// shots back-to-back — a hard cut between them — inside a single
+/// gamemode/position save-restore bracket, so a wide establishing move can be
+/// followed by an interior close-up without the players ever leaving the
+/// cinematic.
 #[derive(Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CameraShot {
@@ -47,22 +48,25 @@ pub struct CameraShot {
     /// [`ShotStyle::default_seconds`]), and an explicit value always overrides.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seconds: Option<u32>,
-    /// Optional subject the camera keeps framed for this shot. Absent = face
-    /// along the direction of travel (or, under a `shot_style`, the style's own
-    /// aim at its `subject`). An explicit `look_at` always overrides a style's
-    /// aim.
+    /// Where the camera aims, overriding the aim at the `subject` and nothing
+    /// else. Absent = the camera aims at the subject's reference point (static
+    /// or tracking), or along the direction of travel for a `"landscape"`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub look_at: Option<Mark>,
     /// Shot-style preset (DSL v0.6, spec-0015 shot-grammar library): the
     /// compiler expands the style deterministically into a camera dolly +
-    /// per-keyframe aim from the `subject`'s resolved geometry. Requires
-    /// `subject`; `path`/`look_at`/`seconds` remain legal and always override
-    /// the corresponding expanded part (`DW0348` polices the combinations).
+    /// per-keyframe aim from the `subject`'s resolved geometry.
+    /// `path`/`look_at`/`seconds` remain legal and always override the
+    /// corresponding expanded part (`DW0348` polices the combinations).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shot_style: Option<ShotStyle>,
-    /// The styled shot's subject — what the shot is *about*. Required with
-    /// `shot_style`, rejected without one (`DW0348`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// What the shot shows (spec-0110) — required on every shot, styled or not
+    /// (`DW0199` when absent). The build proves the subject is inside the frame
+    /// and in sight at every tick (`DW1033`), and that a body subject is
+    /// present, sent and drawn (`DW1034`). A shot of the place the camera
+    /// stands in, about no thing in it, says `"landscape"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(required)]
     pub subject: Option<CameraSubject>,
     /// `two-shot` only: the second framed subject (`DW0348` elsewhere).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -161,21 +165,28 @@ impl ShotStyle {
     }
 }
 
-/// A styled shot's subject (DSL v0.6): the world thing the shot frames — a
-/// prefab anchor point, a stage-2 NPC, or a stage-5 actor — plus an integer
-/// block offset. For `npc`/`actor` subjects the aim point is the entity's cell
-/// **plus one block up** (torso height, so a close shot does not frame feet)
-/// before `offset` is applied; an `anchor` subject aims at the block centre
-/// exactly like a [`CameraTarget`].
-/// Each variant's payload is a **named struct** carrying `deny_unknown_fields`
-/// — serde has no variant-level `deny_unknown_fields`, so an untagged
-/// enum with inline struct variants silently *ignores* any key it does not
-/// recognise: `{"npc": …, "ofset": [0,1,0]}` would deserialize happily with the
-/// offset dropped, and `{"anchor": …, "npc": …}` would quietly match `Anchor`
-/// and discard the NPC. Lifting each variant into its own type keeps the repo-wide
-/// deny-unknown rule for both serde and the published JSON Schema
-/// (`additionalProperties: false`): a mistyped shot subject fails the schema
-/// instead of rendering a shot pointed somewhere the author never asked for.
+/// What a shot shows (spec-0110 §4.1): a mark, a body, an assembly, a place, a
+/// region of blocks, or `"landscape"` — an establishing shot of the place the
+/// camera stands in. Each kind has a **reference point** the aim and the frame
+/// proof read and a **sight box** the sight proof walks to:
+///
+/// | kind | reference point | sight box |
+/// |---|---|---|
+/// | `anchor` | the cell's centre | the cell |
+/// | `npc` / `actor` | the feet cell's centre one block up | the feet and head cells |
+/// | `assembly` | the centre of its envelope | the union of its parts' cells over every frame of every clip |
+/// | `place` | the centre of the place's box | the place's box |
+/// | `region` | the centre of the box | the box |
+/// | `"landscape"` | none | none |
+///
+/// Each object variant's payload is a **named struct** carrying
+/// `deny_unknown_fields` — serde has no variant-level `deny_unknown_fields`, so
+/// an untagged enum with inline struct variants silently *ignores* any key it
+/// does not recognise: `{"npc": …, "ofset": [0,1,0]}` would deserialize
+/// happily with the offset dropped, and `{"anchor": …, "npc": …}` would quietly
+/// match `Anchor` and discard the NPC. Lifting each variant into its own type
+/// keeps the repo-wide deny-unknown rule for both serde and the published JSON
+/// Schema (`additionalProperties: false`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum CameraSubject {
@@ -187,6 +198,49 @@ pub enum CameraSubject {
     /// A stage-5 actor — moving if a `move-actor` for it runs in the same
     /// effect group / sequence, else static at its declared anchor.
     Actor(ActorSubject),
+    /// A stage-5 assembly (spec-0082): every part, over every frame of every
+    /// clip, turned to its `facing`.
+    Assembly(AssemblySubject),
+    /// A whole place: an `area/…` id or a site-plan box's `node/…`.
+    Place(PlaceSubject),
+    /// An anchor-centred box of blocks (`anchor ± extent`).
+    Region(RegionSubject),
+    /// Nothing in particular: an establishing shot of the place the camera
+    /// stands in. Passes the frame and sight proofs with zero objects stated.
+    Landscape(Landscape),
+}
+
+/// The one word a [`CameraSubject::Landscape`] is spelled with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Landscape {
+    /// `"landscape"`.
+    Landscape,
+}
+
+/// A [`CameraSubject::Assembly`] payload.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AssemblySubject {
+    /// The assembly (stage-5 `assemblies` ref).
+    pub assembly: AssemblyId,
+}
+
+/// A [`CameraSubject::Place`] payload.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PlaceSubject {
+    /// The place: an `area/…` id, or a site-plan box's `node/…`.
+    pub place: String,
+}
+
+/// A [`CameraSubject::Region`] payload.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RegionSubject {
+    /// The box: an anchor and its half-extents, resolved through the one
+    /// anchor-centred box every box verb takes.
+    pub region: StealthZone,
 }
 
 /// A [`CameraSubject::Npc`] payload: a stage-2 NPC.
@@ -212,23 +266,79 @@ pub struct ActorSubject {
 }
 
 impl CameraSubject {
-    /// The subject's integer offset, whichever variant.
+    /// The subject's integer offset, whichever variant (`[0, 0, 0]` for the
+    /// kinds that carry none).
     pub fn offset(&self) -> [i32; 3] {
         match self {
             CameraSubject::Anchor(s) => s.offset,
             CameraSubject::Npc(s) => s.offset,
             CameraSubject::Actor(s) => s.offset,
+            _ => [0, 0, 0],
+        }
+    }
+
+    /// The kind token (`anchor`, `npc`, `actor`, `assembly`, `place`,
+    /// `region`, `landscape`).
+    pub fn kind(&self) -> &'static str {
+        match self {
+            CameraSubject::Anchor(_) => "anchor",
+            CameraSubject::Npc(_) => "npc",
+            CameraSubject::Actor(_) => "actor",
+            CameraSubject::Assembly(_) => "assembly",
+            CameraSubject::Place(_) => "place",
+            CameraSubject::Region(_) => "region",
+            CameraSubject::Landscape(_) => "landscape",
+        }
+    }
+
+    /// `true` for `"landscape"`.
+    pub fn is_landscape(&self) -> bool {
+        matches!(self, CameraSubject::Landscape(_))
+    }
+
+    /// `true` for a body the build must find present, sent and drawn
+    /// (`npc`, `actor`, `assembly`; spec-0110 §5.6).
+    pub fn is_body(&self) -> bool {
+        matches!(
+            self,
+            CameraSubject::Npc(_) | CameraSubject::Actor(_) | CameraSubject::Assembly(_)
+        )
+    }
+
+    /// The id the subject names (the anchor of a mark or a region), or `""`
+    /// for `"landscape"`.
+    pub fn id(&self) -> &str {
+        match self {
+            CameraSubject::Anchor(s) => s.anchor.as_str(),
+            CameraSubject::Npc(s) => s.npc.as_str(),
+            CameraSubject::Actor(s) => s.actor.as_str(),
+            CameraSubject::Assembly(s) => s.assembly.as_str(),
+            CameraSubject::Place(s) => s.place.as_str(),
+            CameraSubject::Region(s) => s.region.anchor.as_str(),
+            CameraSubject::Landscape(_) => "",
         }
     }
 
     /// A short canonical rendering for digests/diagnostics.
     pub fn canon(&self) -> String {
-        let (kind, id, o) = match self {
-            CameraSubject::Anchor(s) => ("a", s.anchor.as_str(), &s.offset),
-            CameraSubject::Npc(s) => ("n", s.npc.as_str(), &s.offset),
-            CameraSubject::Actor(s) => ("c", s.actor.as_str(), &s.offset),
-        };
-        format!("{kind}:{id}@{},{},{}", o[0], o[1], o[2])
+        match self {
+            CameraSubject::Region(s) => {
+                let e = s.region.extent;
+                format!("r:{}±{},{},{}", s.region.anchor.as_str(), e[0], e[1], e[2])
+            }
+            CameraSubject::Landscape(_) => "landscape".to_string(),
+            CameraSubject::Assembly(s) => format!("s:{}", s.assembly.as_str()),
+            CameraSubject::Place(s) => format!("p:{}", s.place),
+            _ => {
+                let kind = match self {
+                    CameraSubject::Anchor(_) => "a",
+                    CameraSubject::Npc(_) => "n",
+                    _ => "c",
+                };
+                let o = self.offset();
+                format!("{kind}:{}@{},{},{}", self.id(), o[0], o[1], o[2])
+            }
+        }
     }
 }
 
@@ -293,18 +403,22 @@ use std::collections::BTreeSet;
 crate::dw_code! {
     /// (v0.6) A `cutscene` effect's shape is invalid: it mixes the multi-shot
     /// `shots` list with the single-shot `path`/`seconds` fields, gives neither,
-    /// or declares a shot with an empty camera `path`. A cutscene must resolve to
-    /// at least one shot, and every shot to at least one camera position.
+    /// declares a shot with an empty camera `path`, or (spec-0110) declares a
+    /// shot with no `subject`, in either spelling. A cutscene must resolve to
+    /// at least one shot, every shot to at least one camera position, and every
+    /// shot to the thing it shows.
     pub const CUTSCENE_SHAPE: DwCode = DwCode::new("DW0199", ExitTier::Build);
 }
 
 crate::dw_code! {
     /// (v0.6) A `shot_style` declaration is semantically invalid (spec-0015 shot
-    /// grammar): a styled shot with no `subject`; style-only fields (`subject`,
-    /// `subject_b`, `dist`, `degrees`, `bearing`) on an unstyled shot; a
-    /// `subject_b` on a style other than `two-shot` (or a `two-shot` without
-    /// one); `degrees` off `orbit-arc` or outside `45..=120`; `dist` outside
-    /// `1..=48`; or `bearing` outside `-360..=360`. Validation-tier (exit 1).
+    /// grammar): style-only fields (`subject_b`, `dist`, `degrees`, `bearing`) on
+    /// an unstyled shot; a `subject_b` on a style other than `two-shot` (or a
+    /// `two-shot` without one); `degrees` off `orbit-arc` or outside `45..=120`;
+    /// `dist` outside `1..=48`; `bearing` outside `-360..=360`; or (spec-0110) a
+    /// `"landscape"` subject under a style, or as `subject_b` — a style builds
+    /// its dolly from a subject's geometry and a landscape has none.
+    /// Validation-tier (exit 1).
     pub const SHOT_STYLE_INVALID: DwCode = DwCode::new("DW0348", ExitTier::Build);
 }
 
@@ -318,6 +432,14 @@ crate::dw_code! {
     pub const SHOT_SUBJECT_UNMOVED: DwCode = DwCode::new("DW0349", ExitTier::Build);
 }
 
+/// The ids a shot subject may name, by kind (`DW0112`).
+struct Known<'a> {
+    npcs: &'a BTreeSet<&'a str>,
+    actors: &'a BTreeSet<&'a str>,
+    assemblies: &'a BTreeSet<&'a str>,
+    places: &'a BTreeSet<&'a str>,
+}
+
 /// `cutscene` shape (`DW0199`): a cutscene is written either multi-shot
 /// (`shots: [...]`, DSL v0.6) or single-shot (`path` + `seconds`, DSL v0.4) —
 /// never both, never neither — and every resolved shot needs at least one camera
@@ -329,12 +451,13 @@ pub(crate) fn check_cutscene_shape(eff: &QuestEffect, base_path: &str, d: &mut V
         shots,
         path,
         seconds,
+        subject,
         ..
     } = &eff.verb
     else {
         return;
     };
-    let single = !path.is_empty() || seconds.is_some();
+    let single = !path.is_empty() || seconds.is_some() || subject.is_some();
     let err = |d: &mut Vec<Diagnostic>, field: &str, msg: String| {
         d.push(Diagnostic::error(
             CUTSCENE_SHAPE,
@@ -348,15 +471,16 @@ pub(crate) fn check_cutscene_shape(eff: &QuestEffect, base_path: &str, d: &mut V
             d,
             "shots",
             "`cutscene` mixes the multi-shot `shots` list with the single-shot \
-             `path`/`seconds` fields — use one form: move the single-shot fields into a `shots` \
-             entry, or drop `shots`"
+             `path`/`seconds`/`subject` fields — use one form: move the single-shot fields into a \
+             `shots` entry, or drop `shots`"
                 .to_string(),
         ),
         (false, false) => err(
             d,
             "shots",
             "`cutscene` declares no shot — give a `shots` list of \
-             `{path, seconds, look_at?}` (multi-shot), or a single-shot `path` + `seconds`"
+             `{path, seconds, subject, look_at?}` (multi-shot), or a single-shot `path` + \
+             `seconds` + `subject`"
                 .to_string(),
         ),
         (false, true) if seconds.is_none() => err(
@@ -366,7 +490,22 @@ pub(crate) fn check_cutscene_shape(eff: &QuestEffect, base_path: &str, d: &mut V
         ),
         _ => {}
     }
+    let no_subject = |d: &mut Vec<Diagnostic>, field: &str, which: &str| {
+        err(
+            d,
+            field,
+            format!(
+                "`cutscene` {which} declares no `subject` — every shot says what it shows: \
+                 `{{\"anchor\": …}}`, `{{\"npc\": …}}`, `{{\"actor\": …}}`, \
+                 `{{\"assembly\": …}}`, `{{\"place\": …}}`, `{{\"region\": …}}`, or \
+                 `\"landscape\"` for a shot of the place the camera stands in, about no thing in it"
+            ),
+        )
+    };
     for (i, shot) in shots.iter().enumerate() {
+        if shot.subject.is_none() {
+            no_subject(d, &format!("shots/{i}/subject"), &format!("shot {i}"));
+        }
         // A `shot_style` supplies both a default dolly and a default duration
         // (spec-0015), so `path`/`seconds` become optional overrides on a
         // styled shot; the style's own shape is policed by `DW0348`/`DW0349`.
@@ -392,6 +531,9 @@ pub(crate) fn check_cutscene_shape(eff: &QuestEffect, base_path: &str, d: &mut V
             );
         }
     }
+    if shots.is_empty() && single && subject.is_none() {
+        no_subject(d, "subject", "single shot");
+    }
     if shots.is_empty() && single && path.is_empty() {
         err(
             d,
@@ -405,8 +547,9 @@ pub(crate) fn check_cutscene_shape(eff: &QuestEffect, base_path: &str, d: &mut V
 
 /// Shot-style semantics (DSL v0.6, spec-0015 shot grammar): `DW0348` for
 /// invalid style/param combinations, `DW0112` for a subject referencing an
-/// unknown npc/actor, and `DW0349` for a `side-track`/`low-follow` whose
-/// subject provably cannot move.
+/// unknown npc, actor, assembly or place (spec-0110, on every shot in both
+/// spellings), and `DW0349` for a `side-track`/`low-follow` whose subject
+/// provably cannot move.
 ///
 /// The moving-subject scope mirrors the compiler's expansion resolution
 /// exactly: a subject "moves" if a matching `move-npc`/`move-actor` runs in the
@@ -420,6 +563,15 @@ pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let npc_ids: BTreeSet<&str> = c.npcs.content.npcs.iter().map(|n| n.id.as_str()).collect();
     let npc_ids = &npc_ids;
     let actor_ids: BTreeSet<&str> = quests.actors.iter().map(|a| a.id.as_str()).collect();
+    let assembly_ids: BTreeSet<&str> = quests.assemblies.iter().map(|a| a.id.as_str()).collect();
+    let place_ids = crate::world::place_ids(c);
+    let known = Known {
+        npcs: npc_ids,
+        actors: &actor_ids,
+        assemblies: &assembly_ids,
+        places: &place_ids,
+    };
+    let known = &known;
 
     /// The sibling moves visible to a cutscene: `(is_actor, id)`.
     fn moves_in(list: &[QuestEffect], scope: &mut Vec<(bool, String)>) {
@@ -442,27 +594,36 @@ pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         sub: &CameraSubject,
         field: &str,
         path: &str,
-        npc_ids: &BTreeSet<&str>,
-        actor_ids: &BTreeSet<&str>,
+        known: &Known<'_>,
         d: &mut Vec<Diagnostic>,
     ) {
-        let (unknown, kind, id) = match sub {
-            CameraSubject::Anchor(_) => return,
-            CameraSubject::Npc(s) => (!npc_ids.contains(s.npc.as_str()), "npc", s.npc.as_str()),
-            CameraSubject::Actor(s) => (
-                !actor_ids.contains(s.actor.as_str()),
-                "actor",
-                s.actor.as_str(),
+        let (set, kind, id, home) = match sub {
+            CameraSubject::Anchor(_) | CameraSubject::Region(_) | CameraSubject::Landscape(_) => {
+                return;
+            }
+            CameraSubject::Npc(s) => (known.npcs, "npc", s.npc.as_str(), "stage-2 `npcs`"),
+            CameraSubject::Actor(s) => (known.actors, "actor", s.actor.as_str(), "stage-5 `actors`"),
+            CameraSubject::Assembly(s) => (
+                known.assemblies,
+                "assembly",
+                s.assembly.as_str(),
+                "stage-5 `assemblies`",
+            ),
+            CameraSubject::Place(s) => (
+                known.places,
+                "place",
+                s.place.as_str(),
+                "`world.areas[]` or a site-plan box's `node`",
             ),
         };
-        if unknown {
+        if !set.contains(id) {
             d.push(Diagnostic::error(
                 codes::DANGLING_REF,
                 "quests",
                 format!("{path}/{field}"),
                 format!(
-                    "shot `{field}` references unknown {kind} `{id}` — declare it (stage 2 npcs / \
-                     stage-5 `actors`) or correct the reference"
+                    "shot `{field}` references unknown {kind} `{id}` — declare it ({home}) or \
+                     correct the reference"
                 ),
             ));
         }
@@ -472,13 +633,22 @@ pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         eff: &QuestEffect,
         scope: &[(bool, String)],
         path: &str,
-        npc_ids: &BTreeSet<&str>,
-        actor_ids: &BTreeSet<&str>,
+        known: &Known<'_>,
         d: &mut Vec<Diagnostic>,
     ) {
-        let Verb::Cutscene { shots, .. } = &eff.verb else {
+        let Verb::Cutscene {
+            shots, subject, ..
+        } = &eff.verb
+        else {
             return;
         };
+        // The single-shot spelling's subject (spec-0110): it names a thing as
+        // a multi-shot subject does.
+        if shots.is_empty()
+            && let Some(sub) = subject
+        {
+            subject_check(sub, "subject", path, known, d);
+        }
         for (i, shot) in shots.iter().enumerate() {
             let spath = format!("{path}/shots/{i}");
             let err = |d: &mut Vec<Diagnostic>, field: &str, msg: String| {
@@ -489,9 +659,20 @@ pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     msg,
                 ));
             };
+            if let Some(sub) = &shot.subject {
+                subject_check(sub, "subject", &spath, known, d);
+            }
+            if shot.subject_b.as_ref().is_some_and(CameraSubject::is_landscape) {
+                err(
+                    d,
+                    "subject_b",
+                    "`subject_b` is `\"landscape\"` — a two-shot frames two things, and a \
+                     landscape is a shot about no thing; name the second subject"
+                        .to_string(),
+                );
+            }
             let Some(style) = shot.shot_style else {
                 for (field, present) in [
-                    ("subject", shot.subject.is_some()),
                     ("subject_b", shot.subject_b.is_some()),
                     ("dist", shot.dist.is_some()),
                     ("degrees", shot.degrees.is_some()),
@@ -511,16 +692,18 @@ pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 continue;
             };
             let token = style.token();
-            match &shot.subject {
-                None => err(
+            // A missing subject is the shape defect `DW0199` names; a
+            // landscape gives a style no geometry to build its dolly from.
+            if shot.subject.as_ref().is_some_and(CameraSubject::is_landscape) {
+                err(
                     d,
                     "subject",
                     format!(
-                        "`shot_style: {token}` needs a `subject` — the anchor, npc, or actor the \
-                         shot frames"
+                        "`shot_style: {token}` builds its dolly from the subject's geometry, and \
+                         `\"landscape\"` has none — give the shot an explicit `path` with no \
+                         style, or name the thing the style frames"
                     ),
-                ),
-                Some(sub) => subject_check(sub, "subject", &spath, npc_ids, actor_ids, d),
+                );
             }
             match (&shot.subject_b, style == ShotStyle::TwoShot) {
                 (None, true) => err(
@@ -533,7 +716,7 @@ pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     "subject_b",
                     format!("`subject_b` is only meaningful on `two-shot`, not `{token}`"),
                 ),
-                (Some(sub), true) => subject_check(sub, "subject_b", &spath, npc_ids, actor_ids, d),
+                (Some(sub), true) => subject_check(sub, "subject_b", &spath, known, d),
                 (None, false) => {}
             }
             if let Some(g) = shot.degrees {
@@ -580,8 +763,9 @@ pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                     Some(CameraSubject::Actor(s)) => {
                         scope.iter().any(|(a, id)| *a && id == s.actor.as_str())
                     }
-                    // An anchor can never move; a missing subject already got DW0348.
-                    Some(CameraSubject::Anchor(_)) => false,
+                    // A mark, an assembly, a place, a region or a landscape can
+                    // never move; a missing subject already got DW0199.
+                    Some(_) => false,
                     None => true,
                 };
                 if !moved {
@@ -606,15 +790,14 @@ pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
         list: &[QuestEffect],
         outer_scope: &[(bool, String)],
         path: &str,
-        npc_ids: &BTreeSet<&str>,
-        actor_ids: &BTreeSet<&str>,
+        known: &Known<'_>,
         d: &mut Vec<Diagnostic>,
     ) {
         let mut scope = outer_scope.to_vec();
         moves_in(list, &mut scope);
         for (j, e) in list.iter().enumerate() {
             let epath = format!("{path}/{j}");
-            check_shot_list(e, &scope, &epath, npc_ids, actor_ids, d);
+            check_shot_list(e, &scope, &epath, known, d);
             for (pseg, _kseg, inner) in e.nested_effect_lists_labeled() {
                 // A sequence step shares this timeline's scope; reaction lists
                 // (`on_arrive`/`on_caught`/`on_respawn`) fire at an unknowable
@@ -624,14 +807,7 @@ pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 } else {
                     &[]
                 };
-                walk_list(
-                    inner,
-                    inherited,
-                    &format!("{epath}/{pseg}"),
-                    npc_ids,
-                    actor_ids,
-                    d,
-                );
+                walk_list(inner, inherited, &format!("{epath}/{pseg}"), known, d);
             }
         }
     }
@@ -642,8 +818,7 @@ pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                 effs,
                 &[],
                 &format!("/content/quests/{i}/on_objective_complete/{key}"),
-                npc_ids,
-                &actor_ids,
+                known,
                 d,
             );
         }
@@ -651,8 +826,7 @@ pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             &q.on_complete,
             &[],
             &format!("/content/quests/{i}/on_complete"),
-            npc_ids,
-            &actor_ids,
+            known,
             d,
         );
     }
@@ -661,8 +835,7 @@ pub(crate) fn cutscene_style_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
             &t.effects,
             &[],
             &format!("/content/triggers/{i}/effects"),
-            npc_ids,
-            &actor_ids,
+            known,
             d,
         );
     }

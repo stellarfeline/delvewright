@@ -209,6 +209,16 @@ pub(crate) fn run_edit(
     // edited world (a dollhouse view pulled into open air, like `--at`).
     let grid = snapshot::VoxelGrid::build(&replay.assembled.blocks);
     snapshot::report_unpainted(&grid);
+    // The occupancy view of the same edited world: the manifest's in-frame and
+    // occlusion answers are the one sight rule's (`framing::sight`), read over
+    // the cells the build's proofs read.
+    let world = delvec::compiler::nav::World::from_occupancy(
+        delvec::compiler::assembled::occupancy_over(
+            &replay.assembled.blocks,
+            &replay.assembled.open_gates,
+        ),
+        delvec::compiler::nav::Premises::geometry_only(),
+    );
     let targets = snapshot::collect_targets(&plan);
     // The solved layout, hoisted out of the per-batch loop: it is a property of
     // the plan, identical in every batch's manifest.
@@ -237,7 +247,7 @@ pub(crate) fn run_edit(
         let cam = Camera::looking_at(pull_into_open_air(&grid, centre, eye), centre, DEFAULT_FOV);
 
         let mut frame = snapshot::render_frame(&grid, &cam, &opts);
-        let (inside, outside) = snapshot::resolve_targets(&grid, &cam, &opts, &targets);
+        let (inside, outside) = snapshot::resolve_targets(&world, &cam, &opts, &targets);
         snapshot::draw_labels(&mut frame, &grid, &cam, &inside);
         let png = delvec::compiler::png::encode_rgba(
             frame.canvas.width,

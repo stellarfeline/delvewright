@@ -35,9 +35,8 @@ pub(super) fn cutscene_shots_fn(shots: &[delvewright_dsl::CameraShot]) -> String
             // subject's id instead, so the function name stays greppable.
             head.shot_style.map(|style| {
                 let subj = match &head.subject {
-                    Some(delvewright_dsl::CameraSubject::Anchor(s)) => s.anchor.as_str(),
-                    Some(delvewright_dsl::CameraSubject::Npc(s)) => s.npc.as_str(),
-                    Some(delvewright_dsl::CameraSubject::Actor(s)) => s.actor.as_str(),
+                    Some(s) if s.is_landscape() => "landscape",
+                    Some(s) => s.id(),
                     None => "none",
                 };
                 format!(
@@ -49,7 +48,16 @@ pub(super) fn cutscene_shots_fn(shots: &[delvewright_dsl::CameraShot]) -> String
         })
         .unwrap_or_else(|| "none".to_string());
     let base = format!("cs_{first}_{}_{}", head.resolved_seconds(), head.path.len());
-    if shots.len() == 1 && head.look_at.is_none() && head.shot_style.is_none() {
+    // A bare single shot keeps the readable name alone: no `look_at`, no
+    // style, and a subject that does not aim it (a `"landscape"`, which
+    // faces along the travel — spec-0110 §4.2). Any subject that aims the
+    // camera is in the digest, so two shots down one path at two subjects
+    // never share a function.
+    let aims_nowhere = head
+        .subject
+        .as_ref()
+        .is_none_or(delvewright_dsl::CameraSubject::is_landscape);
+    if shots.len() == 1 && head.look_at.is_none() && head.shot_style.is_none() && aims_nowhere {
         return base;
     }
     format!("{base}_{}", cutscene_digest(shots))
@@ -58,7 +66,7 @@ pub(super) fn cutscene_shots_fn(shots: &[delvewright_dsl::CameraShot]) -> String
 /// A short, stable content digest of a normalized cutscene shot list: the first
 /// 8 hex chars of the sha256 of a canonical textual rendering. Deterministic
 /// (fixed algorithm, fixed field order, no hash-order iteration, ADR-0006).
-pub(super) fn cutscene_digest(shots: &[delvewright_dsl::CameraShot]) -> String {
+pub(crate) fn cutscene_digest(shots: &[delvewright_dsl::CameraShot]) -> String {
     let mut canon = String::new();
     for shot in shots {
         canon.push_str(&format!("s={};", shot.resolved_seconds()));
@@ -85,7 +93,10 @@ pub(super) fn cutscene_digest(shots: &[delvewright_dsl::CameraShot]) -> String {
         if let Some(style) = shot.shot_style {
             canon.push_str(&format!("y={};", style.token()));
         }
-        if let Some(sub) = &shot.subject {
+        // A landscape aims nowhere and frames nothing, so it adds nothing to
+        // the key: a landscape shot keeps the digest of the same shot written
+        // with no subject at all.
+        if let Some(sub) = shot.subject.as_ref().filter(|s| !s.is_landscape()) {
             canon.push_str(&format!("u={};", sub.canon()));
         }
         if let Some(sub) = &shot.subject_b {

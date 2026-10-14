@@ -149,6 +149,7 @@ pub mod faces;
 pub mod failure;
 pub mod firework;
 pub mod flow;
+pub mod framing;
 pub mod gates;
 pub mod guarantee;
 pub mod gym;

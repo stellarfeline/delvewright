@@ -256,105 +256,54 @@ crate::dw_code! {
     pub const NPC_SPAWNED_LATE: DwCode = DwCode::new("DW0198", ExitTier::Build);
 }
 
-/// Collect every NPC `e` (or an effect nested inside it) despawns **on every
-/// playthrough that runs `e` at all** — the only despawns `DW0195` may reason
-/// about, because its model is quest-DAG order with no branch semantics.
-///
-/// Two things stop the descent, and each is a real branch rather than a
-/// convenience:
-///
-/// - **A flag gate.** An effect carrying `requires_flags`/`forbids_flags` fires
-///   only when campaign state says so. The island's Perimedes walks out through
-///   the cave mouth and despawns *only* on the flee branch (`flag/flee`); the
-///   `talk-to`s that follow live on the sealed-in branch. Counting that despawn
-///   would reject a perfectly playable delve. Branch-conditional reachability is
-///   the branch-coherent completability proof's job (`DW0204`), not this rule's.
-/// - **A lifecycle reaction bundle.** `set-checkpoint`'s `on_respawn` runs only if
-///   a player dies and `begin-stealth`'s `on_caught` only if one is caught, so
-///   neither is guaranteed. A `sequence` step and a `move-*` `on_arrive` *are*
-///   guaranteed once their parent runs, so the descent continues through them.
-fn unconditional_despawns<'a>(e: &'a QuestEffect, out: &mut Vec<&'a crate::ids::NpcId>) {
-    if !e.requires_flags().is_empty() || !e.forbids_flags().is_empty() {
-        return;
-    }
-    if let Some(npc) = e.despawn_npc() {
-        out.push(npc);
-    }
-    for (_pseg, kseg, list) in e.nested_effect_lists_labeled() {
-        if kseg == "respawn" || kseg == "caught" {
-            continue;
-        }
-        for inner in list {
-            unconditional_despawns(inner, out);
-        }
-    }
-}
-
-/// DW0195: a `talk-to` targeting an NPC despawned by an effect that runs strictly
-/// before it on the quest dependency graph. Conservative: quest-ancestor despawn
-/// (via `on_complete`) or same-quest earlier-objective despawn (via
-/// `on_objective_complete` on a prerequisite `after` objective).
+/// DW0195: a `talk-to` targeting an NPC that a removal certain to run before
+/// the objective activates has taken out of the world, with no placing ordered
+/// between them. "Before" is the one ordering rule,
+/// [`crate::ordering::Order::ordered_before`]: a quest-graph ancestor's bundle,
+/// or a prerequisite objective's bundle in the same quest, through effects
+/// certain to run — a flag- or state-gated effect and a reaction bundle
+/// (`on_respawn`, `on_rest`, `on_caught`) are branches and count for nothing.
 pub(crate) fn despawned_ref_check(
     c: &Campaign,
     _npc_ids: &BTreeSet<&str>,
     d: &mut Vec<Diagnostic>,
 ) {
-    // Quest transitive ancestors (a quest completes before its dependents start).
-    let deps: BTreeMap<&str, &Vec<crate::ids::QuestId>> = c
-        .quest_plan
-        .content
-        .quests
-        .iter()
-        .map(|q| (q.id.as_str(), &q.depends_on))
-        .collect();
-    let ancestors = |q: &str| -> BTreeSet<&str> {
-        let mut out = BTreeSet::new();
-        let mut stack = vec![q];
-        while let Some(cur) = stack.pop() {
-            if let Some(ds) = deps.get(cur) {
-                for dep in ds.iter() {
-                    if out.insert(dep.as_str()) {
-                        stack.push(dep.as_str());
-                    }
-                }
-            }
+    use crate::ordering::{Beat, Order, removal_of};
+    let mut removals: Vec<&QuestEffect> = Vec::new();
+    crate::effects::for_each_campaign_effect(c, &mut |_path, _site, e| {
+        if e.despawn_npc().is_some() {
+            removals.push(e);
         }
-        out
-    };
-
-    // Where each npc is despawned: quests that despawn it on completion. Deep, but
-    // only through effects that are **certain to run** (see
-    // [`unconditional_despawns`]) — a `despawn-npc` nested one level down in a
-    // `sequence` step removes the NPC exactly as thoroughly as a top-level one, and
-    // the shallow scan this replaces walked straight past it.
-    let mut despawn_quest: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
-    for q in &c.quests.content.quests {
-        for e in q
-            .on_objective_complete
-            .values()
-            .flatten()
-            .chain(&q.on_complete)
-        {
-            let mut npcs = Vec::new();
-            unconditional_despawns(e, &mut npcs);
-            for npc in npcs {
-                despawn_quest
-                    .entry(npc.as_str())
-                    .or_default()
-                    .insert(q.id.as_str());
-            }
-        }
-    }
-    if despawn_quest.is_empty() {
+    });
+    if removals.is_empty() {
         return;
     }
+    let order = Order::of(c);
+    let mut placings: Vec<&QuestEffect> = Vec::new();
+    crate::effects::for_each_campaign_effect(c, &mut |_path, _site, e| {
+        if e.spawn_npc().is_some() {
+            placings.push(e);
+        }
+    });
     for (qi, q) in c.quests.content.quests.iter().enumerate() {
-        let anc = ancestors(q.id.as_str());
         for (oi, o) in q.objectives.iter().enumerate() {
-            if let Objective::TalkTo { npc, .. } = o
-                && let Some(dq) = despawn_quest.get(npc.as_str())
-                && dq.iter().any(|dqid| anc.contains(dqid))
-            {
+            let Objective::TalkTo { npc, .. } = o else {
+                continue;
+            };
+            let at = Beat::Activation {
+                quest: q.id.as_str(),
+                objective: o.id().as_str(),
+            };
+            let gone = removals.iter().any(|r| {
+                removal_of(r) == Some(npc.as_str())
+                    && order.ordered_before(Beat::Effect(r), at)
+                    && !placings.iter().any(|p| {
+                        p.spawn_npc().is_some_and(|n| n == npc)
+                            && order.ordered_before(Beat::Effect(r), Beat::Effect(p))
+                            && order.ordered_before(Beat::Effect(p), at)
+                    })
+            });
+            if gone {
                 d.push(Diagnostic::error(
                     NPC_DESPAWNED_REF,
                     "quests",
@@ -467,9 +416,18 @@ pub(crate) fn deferred_npc_checks(c: &Campaign, npc_ids: &BTreeSet<&str>, d: &mu
         return;
     }
 
-    // DW0198: a `talk-to` on a deferred npc whose every spawn site is a strict DAG
-    // descendant of the objective's quest.
-    let ancestors = crate::validate::quest_ancestors(c);
+    // DW0198: a `talk-to` on a deferred npc whose every spawn the objective's
+    // activation is ordered before — the one ordering rule,
+    // [`crate::ordering::Order::ordered_before`]. A spawn from a trigger or a
+    // dialogue option has no place on the quest graph and is ordered with
+    // nothing, so it suppresses the proof rather than risking a false positive.
+    let order = crate::ordering::Order::of(c);
+    let mut spawn_effects: BTreeMap<&str, Vec<&QuestEffect>> = BTreeMap::new();
+    crate::effects::for_each_campaign_effect(c, &mut |_path, _site, e| {
+        if let Some(n) = e.spawn_npc() {
+            spawn_effects.entry(n.as_str()).or_default().push(e);
+        }
+    });
     for (qi, q) in c.quests.content.quests.iter().enumerate() {
         for (oi, o) in q.objectives.iter().enumerate() {
             let Objective::TalkTo { npc, .. } = o else {
@@ -482,11 +440,13 @@ pub(crate) fn deferred_npc_checks(c: &Campaign, npc_ids: &BTreeSet<&str>, d: &mu
             let Some(sqs) = quest_spawns.get(npc) else {
                 continue; // never spawned at all — already DW0197
             };
-            let all_later = sqs.iter().all(|sq| {
-                sq.as_str() != q.id.as_str()
-                    && ancestors
-                        .get(sq.as_str())
-                        .is_some_and(|anc| anc.contains(q.id.as_str()))
+            let at = crate::ordering::Beat::Activation {
+                quest: q.id.as_str(),
+                objective: o.id().as_str(),
+            };
+            let all_later = spawn_effects.get(npc).is_some_and(|ss| {
+                ss.iter()
+                    .all(|s| order.ordered_before(at, crate::ordering::Beat::Effect(s)))
             });
             if !all_later {
                 continue;
@@ -498,7 +458,7 @@ pub(crate) fn deferred_npc_checks(c: &Campaign, npc_ids: &BTreeSet<&str>, d: &mu
                 format!("/content/quests/{qi}/objectives/{oi}/npc"),
                 format!(
                     "`talk-to` targets deferred npc `{npc}`, but every `spawn-npc` for it fires \
-                     in a quest that depends on this one (`{}`) — the objective activates on an \
+                     after this objective activates (in `{}`) — the objective activates on an \
                      empty anchor and can never complete. Move the `spawn-npc` to this quest or \
                      one of its prerequisites, or move the `talk-to` after the entrance. Do NOT \
                      drop `deferred` just to pass this — that puts the character back on stage \

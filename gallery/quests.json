@@ -234,6 +234,7 @@
         "id": "assembly/sentinel",
         "initial": "idle",
         "rig": "rig/gallery-sentinel",
+        "seen_from": 96,
         "strikes": {
           "aim": {
             "facings": 4
@@ -1097,6 +1098,15 @@
                 ]
               },
               "type": "clear-region"
+            },
+            {
+              "actor": "actor/standard-bearer",
+              "happening": {
+                "subject": "actor/standard-bearer",
+                "text": "The standard-bearer takes the march with the colours.",
+                "verb": "arrives"
+              },
+              "type": "spawn-actor"
             }
           ],
           "obj/press-the-case": [
@@ -1473,6 +1483,9 @@
                         }
                       ],
                       "seconds": 6,
+                      "subject": {
+                        "place": "area/hall"
+                      },
                       "type": "cutscene"
                     }
                   ]
@@ -2335,28 +2348,28 @@
               "type": "end-stealth"
             },
             {
-              "look_at": {
-                "anchor": "anchor/exit"
-              },
               "path": [
                 {
-                  "anchor": "anchor/muster",
+                  "anchor": "anchor/plinth",
                   "offset": [
-                    0,
-                    2,
-                    0
+                    -6,
+                    3,
+                    -3
                   ]
                 },
                 {
-                  "anchor": "anchor/vantage",
+                  "anchor": "anchor/plinth",
                   "offset": [
-                    0,
-                    2,
-                    0
+                    -6,
+                    3,
+                    1
                   ]
                 }
               ],
               "seconds": 4,
+              "subject": {
+                "assembly": "assembly/sentinel"
+              },
               "type": "cutscene",
               "when": {
                 "forbids_flags": [
@@ -2381,12 +2394,7 @@
                   "bearing": 45.0,
                   "dist": 3.0,
                   "look_at": {
-                    "anchor": "anchor/exit",
-                    "offset": [
-                      0,
-                      1,
-                      0
-                    ]
+                    "anchor": "anchor/muster"
                   },
                   "path": [
                     {
@@ -2413,12 +2421,11 @@
                   }
                 },
                 {
-                  "bearing": 90.0,
-                  "dist": 3.0,
+                  "bearing": -90.0,
                   "seconds": 2,
                   "shot_style": "two-shot",
                   "subject": {
-                    "actor": "actor/hall-moth",
+                    "npc": "npc/curator",
                     "offset": [
                       0,
                       1,
@@ -2426,16 +2433,11 @@
                     ]
                   },
                   "subject_b": {
-                    "npc": "npc/curator",
-                    "offset": [
-                      0,
-                      1,
-                      0
-                    ]
+                    "anchor": "anchor/label"
                   }
                 },
                 {
-                  "bearing": 90.0,
+                  "bearing": 0.0,
                   "dist": 3.0,
                   "seconds": 2,
                   "shot_style": "insert",
@@ -2463,7 +2465,7 @@
                   }
                 },
                 {
-                  "bearing": 180.0,
+                  "bearing": 90.0,
                   "dist": 3.0,
                   "seconds": 2,
                   "shot_style": "low-follow",
@@ -2495,7 +2497,7 @@
                   "seconds": 2,
                   "shot_style": "push-in",
                   "subject": {
-                    "actor": "actor/sergeant",
+                    "actor": "actor/standard-bearer",
                     "offset": [
                       0,
                       1,
@@ -2504,7 +2506,7 @@
                   }
                 },
                 {
-                  "bearing": 180.0,
+                  "bearing": 90.0,
                   "dist": 3.0,
                   "seconds": 2,
                   "shot_style": "side-track",
@@ -3928,6 +3930,16 @@
                       }
                     ],
                     "seconds": 1,
+                    "subject": {
+                      "region": {
+                        "anchor": "anchor/ferry-deck",
+                        "extent": [
+                          1,
+                          0,
+                          1
+                        ]
+                      }
+                    },
                     "type": "cutscene"
                   }
                 ]
@@ -4068,6 +4080,7 @@
               }
             ],
             "seconds": 10,
+            "subject": "landscape",
             "type": "cutscene"
           }
         ],
