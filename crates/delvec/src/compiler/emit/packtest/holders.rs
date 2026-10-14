@@ -100,6 +100,45 @@ pub(super) fn emit_holder_packtests(plan: &Plan, out: &mut BuildOutput, holders:
             format!("packtest-datapack/data/{ns}/test/holder_{id}.mcfunction"),
             lines(&b).into_bytes(),
         );
+        // A collect taking from the holder: its own reward, driven, completes
+        // it — the guards satisfied on this test's own dummy, as `verb_collect`
+        // drives the first collect's.
+        if let Some(obj) = &o.collect
+            && let Some((qid, objective)) =
+                plan.campaign.quests.content.quests.iter().find_map(|q| {
+                    q.objectives
+                        .iter()
+                        .find(|x| x.id().as_str() == obj)
+                        .map(|x| (q.id.as_str(), x))
+                })
+        {
+            let (pin, dummy) = pin_dummy(&format!("dw_t_h{}", plan::safe_local(obj)));
+            let mut t = packtest_header(&format!(
+                "{title}: taking `{obj}`'s stack off the `{}` completes it (spec-0111)",
+                o.holder.kind.id
+            ));
+            t.push(format!("function {ns}:setup"));
+            t.push(pin);
+            t.push(format!(
+                "scoreboard players set {} {} 0",
+                plan::PARTY,
+                obj_score(obj)
+            ));
+            t.extend(packtest_preamble(plan, qid, objective, true, &dummy));
+            t.push(format!(
+                "execute as {dummy} run function {ns}:c_reward_{}",
+                plan::safe_local(obj)
+            ));
+            t.push(format!(
+                "assert score {} {} matches 1",
+                plan::PARTY,
+                obj_score(obj)
+            ));
+            out.insert(
+                format!("packtest-datapack/data/{ns}/test/holder_take_{id}.mcfunction"),
+                lines(&t).into_bytes(),
+            );
+        }
     }
 }
 
