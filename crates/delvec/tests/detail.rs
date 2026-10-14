@@ -2493,7 +2493,7 @@ fn heart_dir(root: &Path) -> PathBuf {
                 "count": 1,
                 "anchor": "anchor/heart",
                 "container": "anchor/heart",
-                "title": "Take the heart",
+                "title": "Take it from the barrel",
                 "item_name": "The Heart",
                 "after": ["obj/enter-the-cell"],
                 "happening": {

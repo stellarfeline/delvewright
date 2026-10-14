@@ -42,15 +42,19 @@ fn roundtrip_all_valid_fixtures() {
 }
 
 /// spec-0104 §5.3: a document declaring no `teaching` canonicalises byte for
-/// byte as it did (the valid fixture declares none, and is asserted above);
-/// one that declares it keeps a `null` as a declaration and a line as a line,
-/// and drops an undeclared class.
+/// byte as it did — no `guidance` block appears; one that declares it keeps a
+/// `null` as a declaration and a line as a line, and drops an undeclared class.
 #[test]
 fn a_teaching_block_keeps_its_nulls_and_drops_what_it_does_not_declare() {
     let path = common::valid_dir().join("quests.json");
     let original = fs::read_to_string(&path).unwrap();
-    assert!(!original.contains("teaching"), "the fixture declares none");
     let mut doc: serde_json::Value = serde_json::from_str(&original).unwrap();
+    // The fixture without its `guidance` block: canonical in, canonical out.
+    doc["content"].as_object_mut().unwrap().remove("guidance");
+    let bare: Envelope<QuestsContent> = serde_json::from_value(doc.clone()).unwrap();
+    let bare_text = to_canonical_string(&bare).unwrap();
+    assert!(!bare_text.contains("guidance"), "{bare_text}");
+    assert_eq!(bare_text, to_canonical_string(&doc).unwrap());
     doc["content"]["guidance"] = serde_json::json!({
         "teaching": { "use-block": "Things answer to [[key|use]].", "attack-body": null }
     });

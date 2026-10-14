@@ -31,7 +31,7 @@
               "text": "The keeper hears the asking and yields the cell.",
               "verb": "opens"
             },
-            "hint": "The keeper of this hall has the answer.",
+            "hint": "Someone in this hall has the answer.",
             "id": "obj/ask",
             "npc": "npc/keeper",
             "title": "Ask about the way on",
