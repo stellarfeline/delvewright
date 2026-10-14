@@ -494,12 +494,46 @@ pub fn check(c: &Campaign) -> Vec<Diagnostic> {
             .collect();
         attribute_map_checks(
             reg,
+            "world",
             "the ground (`horizon`)",
             &audio,
-            "/content/horizon",
+            "/content/horizon/attributes",
             &mut d,
         );
     }
+    // spec-0109 §3.6: a cutscene's own music is the same statement, read by
+    // the same reader. An id other than the two music ids is `DW1031`
+    // (`dsl::music`), and is not judged twice here.
+    delvewright_dsl::for_each_campaign_effect(c, &mut |path, site, e| {
+        let Verb::Cutscene {
+            music: Some(music), ..
+        } = &e.verb
+        else {
+            return;
+        };
+        let stage = match site {
+            delvewright_dsl::EffectSite::DialogueRespawn { .. } => "dialogue",
+            _ => "quests",
+        };
+        let admitted: BTreeMap<String, Value> = music
+            .iter()
+            .filter(|(k, _)| {
+                matches!(
+                    canonical_id(k),
+                    delvewright_dsl::music::BACKGROUND_MUSIC | delvewright_dsl::music::MUSIC_VOLUME
+                )
+            })
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        attribute_map_checks(
+            reg,
+            stage,
+            "this cutscene's `music`",
+            &admitted,
+            &format!("{path}/music"),
+            &mut d,
+        );
+    });
     paint_exclusivity(c, &mut d);
     unbound(c, &mut d);
     d
@@ -508,20 +542,22 @@ pub fn check(c: &Campaign) -> Vec<Diagnostic> {
 fn attribute_checks(reg: &Registry, a: &Atmosphere, base: &str, d: &mut Vec<Diagnostic>) {
     attribute_map_checks(
         reg,
+        "world",
         &format!("atmosphere `{}`", a.id),
         &a.attributes,
-        base,
+        &format!("{base}/attributes"),
         d,
     );
     tint_checks(a, base, d);
 }
 
 /// `DW0928` over one attribute map: an atmosphere's, or the ground's
-/// (`horizon.attributes`, spec-0109 §3.2 — one type, one reader). `who` names
-/// the map's owner in the message; `base` is the JSON path of the object that
-/// holds `attributes`.
+/// (`horizon.attributes`, spec-0109 §3.2), or a cutscene's `music` (§3.6) —
+/// one type, one reader. `stage` is the document the map lives in, `who` names
+/// its owner in the message, and `base` is the JSON path of the map itself.
 fn attribute_map_checks(
     reg: &Registry,
+    stage: &str,
     who: &str,
     attributes: &BTreeMap<String, Value>,
     base: &str,
@@ -529,14 +565,11 @@ fn attribute_map_checks(
 ) {
     let mut keys: BTreeSet<&str> = BTreeSet::new();
     for (key, value) in attributes {
-        let path = format!(
-            "{base}/attributes/{}",
-            key.replace('~', "~0").replace('/', "~1")
-        );
+        let path = format!("{base}/{}", key.replace('~', "~0").replace('/', "~1"));
         let refuse = |d: &mut Vec<Diagnostic>, msg: String| {
             d.push(Diagnostic::error(
                 DW_ATMOSPHERE_ATTRIBUTE,
-                "world",
+                stage,
                 path.clone(),
                 format!("{who} attribute `{key}`: {msg}"),
             ));
@@ -838,8 +871,21 @@ pub fn biome_definition(a: &Atmosphere) -> Value {
 /// paint of a carried place, a `set-atmosphere` — comes through here or through
 /// [`fillbiome_lines`].
 pub fn fillbiome_line(min: [i32; 3], max: [i32; 3], biome: &str) -> String {
+    fillbiome_line_filtered(min, max, biome, None)
+}
+
+/// [`fillbiome_line`] with the optional `replace <filter>` form
+/// (`FillBiomeCommand`: a cell takes `biome` only when the filter accepts the
+/// biome it wears — spec-0109 §2.8).
+fn fillbiome_line_filtered(
+    min: [i32; 3],
+    max: [i32; 3],
+    biome: &str,
+    filter: Option<&str>,
+) -> String {
+    let tail = filter.map_or(String::new(), |f| format!(" replace {f}"));
     format!(
-        "fillbiome {} {} {} {} {} {} {biome}",
+        "fillbiome {} {} {} {} {} {} {biome}{tail}",
         min[0], min[1], min[2], max[0], max[1], max[2]
     )
 }
@@ -879,6 +925,35 @@ pub fn fillbiome_lines(min: [i32; 3], max: [i32; 3], biome: &str) -> Vec<String>
     let mut out = Vec::new();
     split(min, max, &mut |a, b| out.push(fillbiome_line(a, b, biome)));
     out
+}
+
+/// `fillbiome … <biome> replace <filter>` lines over `min..=max`, split exactly
+/// as [`fillbiome_lines`] splits: every cell wearing `filter` takes `biome`,
+/// and every other cell keeps what it wears (spec-0109 §3.6, the paint and the
+/// restore of a cutscene's own music).
+pub fn fillbiome_replace_lines(
+    min: [i32; 3],
+    max: [i32; 3],
+    biome: &str,
+    filter: &str,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    split(min, max, &mut |a, b| {
+        out.push(fillbiome_line_filtered(a, b, biome, Some(filter)))
+    });
+    out
+}
+
+/// The volume one `fillbiome` line is measured by (`FillBiomeCommand.fill`),
+/// read back from the line's six coordinates.
+pub fn line_volume(line: &str) -> Option<i64> {
+    let n: Vec<i32> = line
+        .split(' ')
+        .skip(1)
+        .take(6)
+        .map(|t| t.parse().ok())
+        .collect::<Option<Vec<i32>>>()?;
+    (n.len() == 6).then(|| command_volume([n[0], n[1], n[2]], [n[3], n[4], n[5]]))
 }
 
 fn split(min: [i32; 3], max: [i32; 3], f: &mut dyn FnMut([i32; 3], [i32; 3])) {

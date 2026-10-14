@@ -2917,6 +2917,58 @@ fn dw1031_stating_the_music_in_either_spelling_validates() {
     assert!(code != 0 && log.contains("DW1031"), "{log}");
 }
 
+/// `DW1031` on a cutscene's own `music` names its moves: write
+/// `audio/background_music` inside it — `{}` or a `default` track — remove a
+/// `creative` entry, remove an id other than the two music ids; or remove
+/// `music` and let the cutscene hear the places it looks at.
+#[test]
+fn dw1031_a_cutscene_that_states_its_score_validates() {
+    let shot = |music: Option<serde_json::Value>| {
+        let mut c = serde_json::json!({ "type": "cutscene", "seconds": 2,
+            "path": [{ "anchor": "anchor/keeper-stand", "offset": [0, 1, 0] }] });
+        if let Some(m) = music {
+            c["music"] = m;
+        }
+        c
+    };
+    let track = serde_json::json!({ "default": { "sound": "minecraft:music_disc.pigstep",
+        "min_delay": 0, "max_delay": 0, "replace_current_music": true } });
+    for (tag, refused) in [
+        ("score-empty", serde_json::json!({})),
+        (
+            "score-creative",
+            serde_json::json!({ "audio/background_music": { "creative": {
+                "sound": "minecraft:music.creative", "min_delay": 0, "max_delay": 0 } } }),
+        ),
+        (
+            "score-sky",
+            serde_json::json!({ "audio/background_music": track.clone(),
+                "visual/sky_color": "#7ba4ff" }),
+        ),
+    ] {
+        let (code, log) = validate_atm(&atmosphere_campaign(tag, |_, q| {
+            talk_bundle(q).push(shot(Some(refused.clone())));
+        }));
+        assert!(code != 0 && log.contains("DW1031"), "{tag}: {log}");
+    }
+    for (tag, music) in [
+        (
+            "score-track",
+            Some(serde_json::json!({ "audio/background_music": track.clone() })),
+        ),
+        (
+            "score-silence",
+            Some(serde_json::json!({ "audio/background_music": {} })),
+        ),
+        ("score-removed", None),
+    ] {
+        let (code, log) = validate_atm(&atmosphere_campaign(tag, |_, q| {
+            talk_bundle(q).push(shot(music.clone()));
+        }));
+        assert_eq!(code, 0, "{tag}: {log}");
+    }
+}
+
 /// `DW1032` names its moves: the shot's path, the place's atmosphere, or a
 /// repaint before the beat — each reaches a green build.
 #[test]

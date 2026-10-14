@@ -360,6 +360,18 @@ pub enum Verb {
         )]
         #[schemars(with = "Option<AtmosphereId>")]
         hears: Option<Option<AtmosphereId>>,
+        /// **The cutscene's own music** (spec-0109 §3.6): the music statement
+        /// every atmosphere makes, as an attribute map admitting exactly
+        /// `audio/background_music` (required inside it; `{}` is a scored
+        /// silence) and `audio/music_volume` (optional), read by the one
+        /// attribute reader. While the cutscene plays, every 4-cell its camera
+        /// can be in wears a derived biome carrying this statement; when it
+        /// ends, is interrupted, or the server restarts under it, every cell
+        /// wears what it wore before. A missing `audio/background_music`, a
+        /// `creative` entry or any other id is `DW1031`; a value outside its
+        /// shape is `DW0928`. Absent, the cutscene hears the places it looks at.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        music: Option<BTreeMap<String, serde_json::Value>>,
     },
     /// Cuts the dimension-global world time to a new state (DSL v0.5, spec-0010).
     /// Instantaneous (vanilla has no gradual transition); the state persists

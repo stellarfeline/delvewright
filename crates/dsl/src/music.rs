@@ -91,8 +91,10 @@ crate::dw_code! {
     /// `audio/background_music`; `horizon` absent, in its retired string form,
     /// or without `attributes.audio/background_music`; a `creative` entry in
     /// any `audio/background_music` (no delve body is in creative mode); a
-    /// `horizon.attributes` id outside `audio/`. Validation tier, at the world
-    /// document. Prescription: write `audio/background_music` — `{}` for
+    /// `horizon.attributes` id outside `audio/`; a cutscene's `music` without
+    /// `audio/background_music` or with an id other than it and
+    /// `audio/music_volume`. Validation tier, at the world document (at the
+    /// quests document for a cutscene). Prescription: write `audio/background_music` — `{}` for
     /// silence, or `{default: {sound, min_delay, max_delay,
     /// replace_current_music}}` for a track.
     pub const MUSIC_UNSTATED: DwCode = DwCode::new("DW1031", ExitTier::Build);
@@ -128,10 +130,10 @@ fn pointer_key(key: &str) -> String {
 
 /// A `creative` entry in a `background_music` value: declared for a game
 /// mode no delve body is ever in.
-fn creative_refusal(who: &str, path: String, d: &mut Vec<Diagnostic>) {
+fn creative_refusal(stage: &str, who: &str, path: String, d: &mut Vec<Diagnostic>) {
     d.push(Diagnostic::error(
         MUSIC_UNSTATED,
-        "world",
+        stage,
         path,
         format!(
             "{who} declares a `creative` track in `audio/background_music`. The pinned client \
@@ -144,9 +146,14 @@ fn creative_refusal(who: &str, path: String, d: &mut Vec<Diagnostic>) {
     ));
 }
 
-/// `DW1031` (spec-0109 §6.1): every atmosphere and the ground state their
-/// music, and say nothing no delve body can hear.
+/// `DW1031` (spec-0109 §6.1): every atmosphere, the ground and every cutscene
+/// that declares music state it, and say nothing no delve body can hear.
 pub(crate) fn check(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    check_world(c, d);
+    check_cutscene_music(c, d);
+}
+
+fn check_world(c: &Campaign, d: &mut Vec<Diagnostic>) {
     let w = &c.world.content;
     for (i, a) in w.atmospheres.iter().enumerate() {
         let base = format!("/content/atmospheres/{i}/attributes");
@@ -173,6 +180,7 @@ pub(crate) fn check(c: &Campaign, d: &mut Vec<Diagnostic>) {
                         .map(|k| pointer_key(k))
                         .unwrap_or_default();
                     creative_refusal(
+                        "world",
                         &format!("atmosphere `{}`", a.id),
                         format!("{base}/{key}/creative"),
                         d,
@@ -244,6 +252,7 @@ pub(crate) fn check(c: &Campaign, d: &mut Vec<Diagnostic>) {
                             .map(|k| pointer_key(k))
                             .unwrap_or_default();
                         creative_refusal(
+                            "world",
                             "the ground (`horizon`)",
                             format!("/content/horizon/attributes/{key}/creative"),
                             d,
@@ -253,6 +262,74 @@ pub(crate) fn check(c: &Campaign, d: &mut Vec<Diagnostic>) {
             }
         }
     }
+}
+
+/// The attribute a music statement may carry beside `audio/background_music`.
+pub const MUSIC_VOLUME: &str = "audio/music_volume";
+
+/// `DW1031` over a cutscene's own `music` (spec-0109 §3.6, §6.1): the statement
+/// every scene makes, admitting exactly `audio/background_music` (required) and
+/// `audio/music_volume`, and nothing no delve body can hear.
+fn check_cutscene_music(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    crate::for_each_campaign_effect(c, &mut |path, site, e| {
+        let crate::Verb::Cutscene {
+            music: Some(music), ..
+        } = &e.verb
+        else {
+            return;
+        };
+        let stage = match site {
+            crate::EffectSite::DialogueRespawn { .. } => "dialogue",
+            _ => "quests",
+        };
+        let base = format!("{path}/music");
+        for key in music.keys() {
+            let id = canonical_attribute(key);
+            if id != BACKGROUND_MUSIC && id != MUSIC_VOLUME {
+                d.push(Diagnostic::error(
+                    MUSIC_UNSTATED,
+                    stage,
+                    format!("{base}/{}", pointer_key(key)),
+                    format!(
+                        "a cutscene's `music` admits exactly `{BACKGROUND_MUSIC}` and \
+                         `{MUSIC_VOLUME}`, and `{key}` is neither. A cutscene's music is played \
+                         by a temporary repaint of the cells its camera passes with derived \
+                         biomes that differ from the places only in their music; the look of \
+                         those cells stays the places' own. Remove the line, or carry the look \
+                         on an atmosphere the place stands in."
+                    ),
+                ));
+            }
+        }
+        match background_music(music) {
+            None => d.push(Diagnostic::error(
+                MUSIC_UNSTATED,
+                stage,
+                base,
+                format!(
+                    "this cutscene declares `music` without `{BACKGROUND_MUSIC}`, so it states \
+                     no music: a cutscene that declares music is a scene, and a scene states a \
+                     track or silence. Add `{BACKGROUND_MUSIC}`: {SPELLINGS} — or remove \
+                     `music` and let the cutscene hear the places it looks at."
+                ),
+            )),
+            Some(v) => {
+                if v.get("creative").is_some() {
+                    let key = music
+                        .keys()
+                        .find(|k| canonical_attribute(k) == BACKGROUND_MUSIC)
+                        .map(|k| pointer_key(k))
+                        .unwrap_or_default();
+                    creative_refusal(
+                        stage,
+                        "this cutscene's `music`",
+                        format!("{base}/{key}/creative"),
+                        d,
+                    );
+                }
+            }
+        }
+    });
 }
 
 #[cfg(test)]
