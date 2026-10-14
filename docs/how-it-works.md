@@ -145,7 +145,7 @@ flowchart TD
     CK --> VR["12 · visual review<br/>the player's-eye frames in route order,<br/>each against design/concept/ and its expect line"]
     VR -.->|"finding"| BACK(["back to the documents"])
     VR --> SG["the staging gate<br/>tools/creator/staging-gate.py reads every class in<br/>docs/playtest-findings.json and mints an admission token<br/>for this exact tree"]
-    SG --> UP["tools/creator/playtest-server.sh up<br/>build · gate · a throwaway itzg container on localhost:25565<br/>the datapack's load verified over rcon"]
+    SG --> UP["tools/creator/playtest-server.sh up<br/>build · gate · a kept image of the admitted build, its world placed, run on localhost:25565<br/>the datapack's load verified over rcon"]
     UP --> HO["13 · the storybook<br/>campaigns/‹id›/README.md, spoiler-free, with its art<br/>tools/creator/check-storybook-version.py"]
     HO --> OUT(["the hand-over<br/>the documents, the storybook, the classes the gate could not check,<br/>one command that builds, checks and serves"])
     OUT -.-> PLAY{{"🖐 the first play — the finished first version<br/>the playtest profile, /trigger dw.note in game<br/>→ delvec harvest → playtest-report.json"}}:::human
@@ -243,7 +243,7 @@ flowchart TD
 | `delvec harvest` · `calibrate` | in-game notes and hand-placed shots, turned back into reports and patches | 5 | the agent, after a human plays |
 | `tools/creator/refimg.py` | concept art from a configured image provider | 2 | the agent; the human judges it |
 | `tools/creator/staging-gate.py` + `docs/playtest-findings.json` | the gate on the findings ledger; the only key to the play port | 5 | the agent |
-| `tools/creator/playtest-server.sh` | a throwaway local itzg server on `localhost:25565` | 5 | the agent starts it; the human plays |
+| `tools/creator/playtest-server.sh` | a local server on `localhost:25565`, run from a kept image of the admitted build; reopening the same build is `docker run` | 5 | the agent starts it; the human plays |
 | `tools/creator/skin`, `i18n-translate.py`, `block-appearance.py`, `refscore.py` | NPC faces, translation, block choice by appearance, candidate scoring | 3, 5 | the agent |
 | `tools/creator/check-storybook-version.py` | the storybook's engine-version marker | 5, 6 | the agent and the campaign's release |
 | `validation/` Docker Compose rig | `compose.yaml` with the `play`, `playtest`, `validate` and `packtest` profiles; `owner-play.yaml` | 4–6 | the agent and CI |
