@@ -82,7 +82,7 @@ static SIDE_DOOR: LazyLock<String> = LazyLock::new(|| {
             "name": "region/the-burn",
             "shape": {
               "kind": "box",
-              "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
+              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
               "min": [4, 0, 7],
               "max": [6, 0, 9]
             }
@@ -98,7 +98,7 @@ static SIDE_DOOR: LazyLock<String> = LazyLock::new(|| {
             "name": "region/side-door",
             "shape": {
               "kind": "box",
-              "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
+              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
               "min": [2, 1, 6],
               "max": [2, 2, 6]
             }
@@ -140,7 +140,7 @@ static BURNING_THRESHOLD: LazyLock<String> = LazyLock::new(|| {
             "name": "region/threshold-floor",
             "shape": {
               "kind": "box",
-              "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
+              "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
               "min": [0, 0, 5],
               "max": [8, 0, 7]
             }

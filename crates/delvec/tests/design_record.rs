@@ -140,9 +140,10 @@ fn a_night_design_under_a_noon_world_is_refused_at_validation_and_the_hour_repai
             && before.contains("stated times {night (day 0, 13000)}"),
         "the refusal states both sets:\n{before}"
     );
-    // Validation, not the build: nothing is placed to know this.
+    // Validation, not the build: nothing is placed to know this. (The plan's
+    // own packing, `site-plan placing:`, is a validation line on every map.)
     assert!(
-        !before.contains("site-plan placing:") && !before.contains("blockout sha256"),
+        !before.contains("place template") && !before.contains("blockout sha256"),
         "the verdict is reached with nothing placed:\n{before}"
     );
 

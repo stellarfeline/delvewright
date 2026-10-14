@@ -107,7 +107,11 @@ fn parse_hw(quests: &str) -> Campaign {
         detail_plan: Some(hw("detail-plan.json")),
         design: None,
     };
-    common::parse_campaign(&raw).expect("campaign parses")
+    let mut c = common::parse_campaign(&raw).expect("campaign parses");
+    // The keep declares the two doorway cells the private piece adds.
+    common::station_in(&mut c, "anchor/doorstep");
+    common::station_in(&mut c, "anchor/plank");
+    c
 }
 
 fn try_build(c: &Campaign, prefab_dir: &Path) -> Result<BuildOutput, emit::BuildFailure> {

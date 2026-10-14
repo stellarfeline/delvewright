@@ -256,7 +256,7 @@ fn wet_floor(dir: &Path, waterlogged: bool) {
                     "name": "region/under-floor",
                     "shape": {
                         "kind": "box",
-                        "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
+                        "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
                         "min": [0, -1, 0],
                         "max": [10, -1, 10]
                     }
@@ -274,7 +274,7 @@ fn wet_floor(dir: &Path, waterlogged: bool) {
                     "name": "region/yard-floor",
                     "shape": {
                         "kind": "box",
-                        "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
+                        "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
                         "min": [1, 0, 1],
                         "max": [9, 0, 9]
                     }

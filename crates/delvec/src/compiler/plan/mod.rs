@@ -448,6 +448,17 @@ impl<'a> Plan<'a> {
         is_bound_record(self.campaign, p)
     }
 
+    /// **The pieces `area` places, in placement order** — what a `piece-local`
+    /// edit frame's `piece` index counts and what the snapshot manifest lists:
+    /// every placement but a bound place's blockout record, which stands over
+    /// its piece and is not a second piece ([`Plan::is_bound_record`]).
+    pub fn frame_pieces<'p>(&self, area: &'p AreaPlacement) -> Vec<&'p PiecePlacement> {
+        area.pieces
+            .iter()
+            .filter(|p| !self.is_bound_record(p))
+            .collect()
+    }
+
     /// Build the plan. Requires a validated campaign and loaded prefab metadata.
     pub fn build(campaign: &'a Campaign, prefabs: &PrefabRegistry) -> Result<Self, PlanError> {
         Self::build_with(campaign, prefabs, Perturb::none())

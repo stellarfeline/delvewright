@@ -170,7 +170,7 @@ impl AnchorTable {
     /// Every area that provides `name`, in `BTreeMap` order.
     ///
     /// The question the by-name lookups never asked. **The scope of uniqueness
-    /// for an anchor name is the AREA** (`DW0857`), so more than one provider
+    /// for an anchor name is the AREA**, so more than one provider
     /// means the name *alone* does not pick out a place in the world — and a
     /// lookup that answers anyway has asked an honest question about the wrong
     /// object.
@@ -201,11 +201,12 @@ impl AnchorTable {
     ///    the first would settle it by whichever area id sorts first.
     ///
     /// A caller that goes through this function never sees a guess: the
-    /// ambiguous arm is [`AnchorHit::Ambiguous`], which the cast path raises as
-    /// [`crate::compiler::gates::DW_ANCHOR_AMBIGUOUS`].
+    /// ambiguous arm is [`AnchorHit::Ambiguous`]. On a site plan there is one
+    /// area and a station is named once on it (`DW0870`), so the arm is not
+    /// reached.
     ///
     /// **That is not yet true of the compiler as a whole, and the gap is stated
-    /// rather than implied.** One site raises `DW0859` today. The remaining
+    /// rather than implied.** The
     /// by-name helpers — `point_any`, `zone_box`, `gate_region_block_any` and
     /// the emitter's `anchor_point_any` — still take the first match across
     /// areas, because the objects they resolve for have no area to be scoped to:

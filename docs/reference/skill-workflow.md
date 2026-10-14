@@ -301,16 +301,11 @@ Every other gate on that pair asks whether the skill's claims are real; this one
 which is the question a skill written once and an engine that keeps moving needs
 somebody to ask.
 
-A campaign has **one placement authority**, and on this page it is the site
-plan (ADR-0032): the engine's `areas[]`, which seats prefab pieces from a pool
-on the compiler's fixed stride, is an assembly surface the page does not
-present. A one-building map is a plan of one box and no seam. Three things
-about the six stage JSONs follow, and none of them is optional:
+A campaign has **one placement authority**, the site plan (ADR-0032,
+ADR-0035): a map is placed by its plan and nothing else, and a prefab is a part
+a plan or a program places by name. A one-building map is a plan of one box and
+no seam. Two things about the six stage JSONs follow, and neither is optional:
 
-- **`world.areas` is empty.** Declaring both is refused (`DW0839`) — `areas[]`
-  seats pieces on the compiler's fixed stride and the plan seats the derived
-  blockout in its own region, so a world with both has two answers to every
-  question about where something is.
 - **The campaign's one area is `area/site`.** NPCs stand in it and planned
   quests belong to it; there is no other.
 - **Content binds to anchors nobody authored.** The blockout is derived, so

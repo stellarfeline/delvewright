@@ -756,8 +756,7 @@ fn the_vanilla_keywords_still_emit_keywords() {
 /// the test, so none of them binds the one step that decides it in a real build —
 /// `relight_over` asking the campaign. Perturbing that call to a hard-coded
 /// `Placement::Prefabs` left `cargo test --workspace` fully green while the
-/// message sent a site-plan author at `world.areas[].lighting` and
-/// `world.areas[].mitigation`, which `DW0839` and `DW0160` refuse. This is the
+/// message sent a site-plan author at a field the schema refuses. This is the
 /// test that reds.
 ///
 /// The fixture is the site-plan blockout (`tests/fixtures/blockout`) with its

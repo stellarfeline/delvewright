@@ -1042,8 +1042,8 @@ fn the_stage_five_battery_is_green_over_a_detailed_world() {
 ///
 /// It is asserted here because the two producers a plan seats through point
 /// opposite ways, and only a comment said so. A prefab-placed area is
-/// first-wins (`AnchorTable::declare`): a pool can seat one anchor-bearing
-/// piece twice, and `DW0498` reports the first carrier. The derived path is
+/// first-wins (`AnchorTable::declare`): the first carrier of a name is the one
+/// it resolves to. The derived path is
 /// last-wins (`AnchorTable::place`). Collapsing them into one rule compiles
 /// and leaves every existing test passing, while every detailed place's anchor
 /// moves silently back onto the massing — a quest that walks to `node/exit`

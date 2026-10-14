@@ -357,7 +357,7 @@ pub(super) fn point_of(
             format!(
                 "anchor `{anchor}` in area `{area}` did not resolve to a world position at build \
                  time — if the campaign references an anchor no bound prefab/pool provides, \
-                 `DW0142`/`DW0302` should have named it; reaching here means the resolver and \
+                 `DW0142` should have named it; reaching here means the resolver and \
                  validator disagree, a compiler bug — stop and escalate"
             ),
         )),

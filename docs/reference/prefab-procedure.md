@@ -888,9 +888,8 @@ and a term it does not know is refused by name (`DW0346`). There are two terms:
 - `entry` — the cell a body arrives at when it enters the area this piece is
   placed in. A campaign addresses every other anchor by name; this is the one the
   compiler has to find, so the piece that owns the cell says so. **The piece a
-  party arrives in declares it**, one anchor per area (`DW0804` refuses a second),
-  and in a `prefab_pool` that is the piece the layout is seeded from. A world
-  where nothing declares it is `DW0345`.
+  party arrives in declares it**; `delvec detail --piece` binds the place's
+  `spawn` and `anchor/node-<place>` to it.
 - `furniture` — blocks a body stands beside and is never walked onto: a laid
   table, an altar, a counter, a bed (spec-0065). The anchor carries a `region`
   over the furniture's **own blocks** — the legs and the top, not the air above
@@ -923,11 +922,7 @@ everything that consumes one, and widening a scattered bar to its bounding box
 would fill or delete cells the contract never called bar. Declare such a bar as
 one box, or as boxes that tile one.
 
-A gate-anchor name is unique **per area**. Two of a campaign's areas providing
-one gate-anchor name is `DW0857`: the compiler resolves a gate anchor by name
-across every area and takes the first match, so nothing an author can see says
-which building the verb addresses. Pool members inside one area may share a name
-freely — that is what a pool is.
+A station name is unique across the campaign's map (`DW0870`).
 
 The **spatial contract** is `{entry, spaces, no_body, edges, faces,
 no_body_majority_ack?}`, every box an inclusive `{from, to}` cell range in the

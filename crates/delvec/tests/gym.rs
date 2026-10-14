@@ -122,8 +122,7 @@ fn the_gym_writes_a_whole_campaign_in_canonical_form() {
     }
 }
 
-/// The gym is a SITE-PLAN campaign: it declares no `areas[]` entry, so it cannot
-/// be the two-placement-authorities refusal (`DW0839`) by construction.
+/// The gym is a SITE-PLAN campaign: the plan is its one placement authority.
 #[test]
 fn the_gym_has_one_placement_authority() {
     let table = Metrics::table();

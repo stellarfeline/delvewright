@@ -455,10 +455,11 @@ fn worldless_campaign(volley_anchor: &str) -> Campaign {
         )
         .to_string(),
         world_edits: None,
-        geometry_brief: None,
-        layout_graph: None,
-        site_plan: None,
-        detail_plan: None,
+        // hello-world's one place, bound to the piece the quest's anchor is on.
+        geometry_brief: Some(read_hw("geometry-brief.json")),
+        layout_graph: Some(read_hw("layout-graph.json")),
+        site_plan: Some(read_hw("site-plan.json")),
+        detail_plan: Some(read_hw("detail-plan.json")),
         design: None,
     })
     .expect("campaign parses")

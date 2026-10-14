@@ -5,7 +5,7 @@ this module declares. The catalog's shared rules are in [`compiler.md` §5](../.
 
 ## Diagnostics
 
-### DW0821/DW0836–DW0839 — the derived blockout (`compiler::blockout`; error + two advisories)
+### DW0821/DW0836–DW0838 — the derived blockout (`compiler::blockout`; error + two advisories)
 
 This module's rows of a section whose prose is on the [`delvec::compiler::blockout` page](blockout.md#dw0821dw0836dw0839--the-derived-blockout-compilerblockout-error--two-advisories).
 

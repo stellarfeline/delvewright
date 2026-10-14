@@ -523,7 +523,7 @@ is never handed to one. The gate refuses such a subject before any row is
 adjudicated, with or without `--strict`, and `--stage-anyway` does not reach
 the refusal, because the override admits a red list and this is not one. The
 subject is a blockout when EITHER instrument says so — the campaign places by
-site plan (`site-plan.json`; DW0839 makes the placement authorities exclusive)
+site plan (`site-plan.json`, the one placement authority)
 with no `detail-plan.json`, or the build's **compiler-written manifest** lists
 the site plan among its inputs and no detail plan — so a build compiled before
 the campaign was detailed is refused too.

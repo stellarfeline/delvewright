@@ -183,6 +183,16 @@ ALLOWLIST: dict[str, str] = {
         "(see crates/delvec/tests/render_gpu.rs, #[ignore]d); the detector algorithm "
         "it wraps is unit-tested in crates/delvec/src/compiler/view/detect.rs"
     ),
+    # The build's seal over the entry point. On a site plan the entry is always
+    # placed (a massed place's derived `spawn`, a bound place's binding of it,
+    # which `DW0845` owes), and a campaign with no plan is refused at validation
+    # (`DW0824`) and, past validation, at the plan (`DW0300`), so no campaign
+    # reaches the seal. Recorded as a debt in spec-0106.
+    "DW0345": (
+        "unreachable on every campaign the schema admits: a site plan always places "
+        "its entry (DW0845 owes the binding) and a plan-less campaign is refused first "
+        "(DW0824, DW0300); spec-0106 recorded debts"
+    ),
 }
 
 

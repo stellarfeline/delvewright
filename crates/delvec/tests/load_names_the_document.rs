@@ -171,6 +171,7 @@ fn an_unreadable_optional_document_is_a_named_finding_not_an_absence() {
 fn an_absent_optional_document_is_still_not_an_error() {
     let dir = campaign("opt-absent");
     for opt in OPTIONAL_FILES {
+        let _ = std::fs::remove_file(dir.join(opt));
         assert!(!dir.join(opt).exists());
     }
     let loaded =

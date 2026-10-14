@@ -68,7 +68,7 @@ place no piece fills yet, and drawn by the place's own piece once detailed.
 |------|---------|
 | `DW0988` | **A roof the plan has no room for.** Two shapes of one claim, both read off the plan before any geometry: `roof` on a box whose `ceiling` is `open` — a sky-open place claims its ground and its headroom and nothing above it, so it has no lid to put a roof on; and a course of the roof proper (over the shell footprint, above the lid) lying in another place's play space or floor course — the stacked case, named with both places and the colliding courses. Eaves are not this refusal: an eave stops where a neighbour's shell begins, and the handout prints where it stopped. Remedy: fewer courses, a taller neighbour, or one place whose piece carries both. Validation tier (exit 1). **Binding: roofed boxes, in the site-plan binding line.** |
 
-### DW0821/DW0836–DW0839 — the derived blockout (`compiler::blockout`; error + two advisories)
+### DW0821/DW0836–DW0838 — the derived blockout (`compiler::blockout`; error + two advisories)
 
 This module's rows of a section whose prose is on the [`delvec::compiler::blockout` page](../delvec/compiler/blockout.md#dw0821dw0836dw0839--the-derived-blockout-compilerblockout-error--two-advisories).
 

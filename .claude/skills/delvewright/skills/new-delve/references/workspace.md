@@ -163,12 +163,11 @@ Two things to expect while stubbing:
 
 ## `world.json`, written here
 
-**`world.json` is written here, before placement**, because seven of its eight
+**`world.json` is written here, before placement**, because its seven
 required fields are not about placement at all: `title`, `theme`, `premise`,
 `seed`, `target_minutes`, `time` and `weather`. Run `delvec schema --stage world`
-and write them now. The eighth is `areas`, and it is **empty**: the site plan
-is the placement authority, and a plan beside a non-empty `areas[]` is
-`DW0839`.
+and write them now; where things stand is the site plan's, written at
+placement.
 
 ## The hour the delve is played at
 

@@ -146,85 +146,6 @@ fn edit_meta(
 // DW0886 — the four shapes, and the move each one names
 // ---------------------------------------------------------------------------
 
-/// **DECLARE `walk_y`.** The move `DW0886` names for a piece that states no walk
-/// plane at all, and the only one it names: there is deliberately no default.
-#[test]
-fn dw0886_declaring_the_walk_plane_seats_the_piece() {
-    let dir = common::ocean_prefabs_dir("remedy-walk", common::OceanRoom::Shore);
-    let camp = campaign("walk", Some(serde_json::json!("ocean")), &dir);
-
-    // The refusal: the field is gone, which is exactly what an admission step
-    // that did not model it left behind.
-    let declared = {
-        let path = dir.join("hello-room.json");
-        let doc: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        doc["walk_y"].clone()
-    };
-    edit_meta(&dir, "hello-room", |m| {
-        m.remove("walk_y");
-    });
-    let (code, before) = build("walk-red", &camp, &dir);
-    assert_eq!(code, 1, "refused at validation:\n{before}");
-    assert!(before.contains("DW0886"), "{before}");
-    assert!(
-        before.contains("DECLARE `walk_y`"),
-        "the message names the move:\n{before}"
-    );
-
-    // The move, taken.
-    edit_meta(&dir, "hello-room", |m| {
-        m.insert("walk_y".into(), declared.clone());
-    });
-    let (code, after) = build("walk-green", &camp, &dir);
-    assert_eq!(code, 0, "the move reaches a different verdict:\n{after}");
-    assert!(!after.contains("DW0886"), "{after}");
-}
-
-/// **DECLARE `walk_y`, on a base that derives nothing from it.** The same move
-/// and the same message on `void`, whose area origin is a fixed datum rather
-/// than `walk_ref_y - walk_y`.
-///
-/// It is a row of its own because a remedy proven only where the number is also
-/// CONSUMED is a remedy proven for the ocean's arithmetic. `walk_y` is owed on
-/// every base (spec-0060 §4 rule 1 — a piece placed on ANY base without it is
-/// this code), so the refusal a creator meets on a base with no sea has to
-/// name a move that base can take, and this is the assertion that it does.
-#[test]
-fn dw0886_declaring_the_walk_plane_seats_the_piece_where_no_origin_needs_it() {
-    let dir = common::ocean_prefabs_dir("remedy-walk-void", common::OceanRoom::Shore);
-    let camp = campaign("walk-void", Some(serde_json::json!("void")), &dir);
-
-    let declared = {
-        let path = dir.join("hello-room.json");
-        let doc: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        doc["walk_y"].clone()
-    };
-    edit_meta(&dir, "hello-room", |m| {
-        m.remove("walk_y");
-    });
-    let (code, before) = build("walk-void-red", &camp, &dir);
-    assert_eq!(code, 1, "refused at validation:\n{before}");
-    assert!(before.contains("DW0886"), "{before}");
-    assert!(
-        before.contains("on a `void` horizon"),
-        "the refusal names the base it was raised on:\n{before}"
-    );
-    assert!(
-        before.contains("DECLARE `walk_y`"),
-        "the message names the move:\n{before}"
-    );
-
-    // The move, taken.
-    edit_meta(&dir, "hello-room", |m| {
-        m.insert("walk_y".into(), declared.clone());
-    });
-    let (code, after) = build("walk-void-green", &camp, &dir);
-    assert_eq!(code, 0, "the move reaches a different verdict:\n{after}");
-    assert!(!after.contains("DW0886"), "{after}");
-}
-
 /// **DECLARE `waterline_y: <n>`**, where `<n>` is the number the message reads
 /// out of the piece's own bytes. A move that named no number would be a move an
 /// author has to guess at.
@@ -684,13 +605,8 @@ fn dw0344_raising_the_low_floor_takes_the_piece_out_of_the_sea() {
 // DW0855 — both moves
 // ---------------------------------------------------------------------------
 
-/// **`Give the campaign a site plan.`** The other move `DW0855` names — and the
-/// one the cycle in spec-0060 §1 turned on, because adding a site plan to an
-/// `areas[]` campaign is `DW0839`, two placement authorities for one world.
-///
-/// The move is therefore not "add a document to this campaign"; it is "author
-/// the campaign under the other placement authority", and this asserts that the
-/// campaign which takes it validates. The gallery's site-plan point is that
+/// **`Give the campaign a site plan.`** The move `DW0855` names, and this asserts
+/// that the campaign which takes it validates. The gallery's site-plan point is that
 /// campaign — a real one, in this repository, declaring `{base: valley}`.
 #[test]
 fn dw0855_a_site_plan_campaign_on_a_terrain_base_validates() {
@@ -734,11 +650,6 @@ fn dw0855_a_site_plan_campaign_on_a_terrain_base_validates() {
     assert!(
         !text.contains("DW0855"),
         "a campaign that states its extent is not this refusal:\n{text}"
-    );
-    assert!(
-        !text.contains("DW0839"),
-        "and it is not two placement authorities either — which is what makes the move \
-         reachable rather than a cycle:\n{text}"
     );
 }
 

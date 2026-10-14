@@ -204,8 +204,7 @@ crate::dw_code! {
 
 /// **The one area a site-plan campaign has.**
 ///
-/// A campaign places its pieces either with `areas[]` or with a site plan, never
-/// both (`DW0839`), so a site-plan campaign has exactly one place for an NPC to
+/// A campaign's map is its site plan, so it has exactly one place for an NPC to
 /// stand in and one area for a quest to belong to. The name is fixed rather than
 /// authored because there is nothing to choose: the site plan is the whole map,
 /// and a second name for it would be a second way to spell one thing.
@@ -285,10 +284,8 @@ pub fn synthesized_gate_block(c: &Campaign, anchor: &str) -> Option<&'static str
     // the whole repair: this used to enumerate `Edge::Barred` alone, so a
     // `close-gate`, `shortcut` or `timed-gate` naming a **gate station**
     // (spec-0052) would have been refused by `DW0343` for declaring no fill
-    // block — a refusal whose message says "declare the gate on an anchor of a
-    // piece an area binds", which a site-plan campaign cannot do at all
-    // (`DW0839` refuses a campaign that carries both `areas[]` and a plan).
-    // A narrow binding on the general mechanism, reading as a missing feature.
+    // block. A narrow binding on the general mechanism, reading as a missing
+    // feature.
     matches!(
         synthesized_anchor_kinds(c).get(anchor),
         Some(StationKind::Gate)

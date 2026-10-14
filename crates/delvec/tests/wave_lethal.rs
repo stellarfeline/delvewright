@@ -71,7 +71,7 @@ fn edits(middle: &str) -> String {
     let local = |min: [i32; 3], max: [i32; 3]| {
         serde_json::json!({
             "kind": "box",
-            "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
+            "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
             "min": min, "max": max
         })
     };

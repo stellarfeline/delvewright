@@ -5,7 +5,7 @@ this module declares. The catalog's shared rules are in [`compiler.md` §5](../.
 
 ## Diagnostics
 
-### DW0821/DW0836–DW0839 — the derived blockout (`compiler::blockout`; error + two advisories)
+### DW0821/DW0836–DW0838 — the derived blockout (`compiler::blockout`; error + two advisories)
 
 Stage 5 of the map pipeline: the whole map's mass, derived from the site plan and
 the metrics table, and then **judged against the plan it was derived from**.

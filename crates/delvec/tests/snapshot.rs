@@ -117,10 +117,12 @@ fn manifest_lists_every_placed_piece_with_its_frame_inputs() {
         assert_eq!(index, *want, "area `{area}` piece indices are contiguous");
         *want += 1;
 
+        // The guard a frame names: a library piece, or a massed place's
+        // blockout record (`blockout/<node>`), which is a placement too.
         assert!(
             p["prefab"]
                 .as_str()
-                .is_some_and(|s| s.starts_with("prefab/")),
+                .is_some_and(|s| s.starts_with("prefab/") || s.starts_with("blockout/node/")),
             "the prefab guard value: {p}"
         );
         let arr = |v: &serde_json::Value| -> [i64; 3] {

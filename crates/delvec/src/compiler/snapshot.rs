@@ -873,7 +873,7 @@ impl Target {
 ///
 /// A `piece-local` edit frame (`{"kind":"piece-local","piece":N,"prefab":…}`) is
 /// resolved by the replay as `piece.origin + rotation.transform(local)` against
-/// `area.pieces[N]` (`edit::resolve_frame_point`). Before this listing existed
+/// the N-th of `Plan::frame_pieces`. Before this listing existed
 /// the manifest carried area bounds and anchors only, so an editor authoring a
 /// piece-local frame had to *back-solve* N, the prefab guard and the transform
 /// by hand from the rendered geometry. Every input to that resolution is now
@@ -906,7 +906,7 @@ pub struct PieceEntry {
 pub fn collect_pieces(plan: &Plan) -> Vec<PieceEntry> {
     let mut out = Vec::new();
     for area in &plan.areas {
-        for (index, piece) in area.pieces.iter().enumerate() {
+        for (index, piece) in plan.frame_pieces(area).into_iter().enumerate() {
             let (min, max) = piece.bbox();
             out.push(PieceEntry {
                 area: area.area_id.clone(),

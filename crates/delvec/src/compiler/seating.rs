@@ -713,7 +713,6 @@ pub fn check(
             read.insert(piece, facts);
         }
     }
-    diags.extend(bound_walk_planes(campaign, base, &read));
     // A waterline that is a fiction is a defect of the library on every base
     // (`DW0887`), asked of each piece this campaign binds.
     for facts in read.values() {
@@ -828,49 +827,6 @@ fn bound_shores(
                 ),
             ));
         }
-    }
-    out
-}
-
-/// **A bound piece states its walk plane** (`DW0886`), on every base: the local
-/// y a body's feet occupy on its principal floor is a measurement of the piece,
-/// and a piece that states none is a piece nothing can say a body stands on.
-fn bound_walk_planes(
-    campaign: &Campaign,
-    base: HorizonBase,
-    read: &BTreeMap<String, PieceFacts>,
-) -> Vec<Diagnostic> {
-    let Some(dp) = &campaign.detail_plan else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    for (i, row) in dp.content.details.iter().enumerate() {
-        let Some(f) = read.get(row.piece.as_str()) else {
-            continue;
-        };
-        if f.walk_y.is_some() {
-            continue;
-        }
-        out.push(Diagnostic::error(
-            DW_UNSEATABLE,
-            "detail-plan",
-            format!("/content/details/{i}/piece"),
-            format!(
-                "`{place}` places `{piece}` on a `{token}` horizon, and prefab `{piece}` \
-                 declares no `walk_y`, so nothing states the piece's own walk plane. It has no \
-                 default. The move: DECLARE `walk_y` in `{base_file}.json`, the local y of the \
-                 cell a body's feet occupy on this piece's principal floor — a measurement the \
-                 generator that built it writes; this piece's own bytes stand a body at local \
-                 y={measured}",
-                place = row.place,
-                piece = row.piece,
-                token = base.token(),
-                base_file = f.base,
-                measured = f
-                    .lowest_standable
-                    .map_or_else(|| "no cell at all".to_string(), |y| y.to_string()),
-            ),
-        ));
     }
     out
 }

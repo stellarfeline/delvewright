@@ -281,7 +281,7 @@ fn edit_breaching_the_outer_wall_is_dw0322() {
             "edits": [
                 { "verb": "select", "name": "region/breach", "shape": {
                     "kind": "box",
-                    "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
+                    "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
                     "min": [4, 1, 0], "max": [6, 2, 0]
                 }},
                 { "verb": "carve", "region": "region/breach" }
@@ -356,7 +356,7 @@ fn edit_select_only_batch_on_an_ocean_horizon_is_green() {
             "edits": [
                 { "verb": "select", "name": "region/probe", "shape": {
                     "kind": "box",
-                    "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
+                    "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
                     "min": [4, 1, 4], "max": [5, 2, 5]
                 }}
             ]
@@ -418,7 +418,7 @@ fn edit_ocean_a_carve_that_puts_a_walk_cell_under_the_sea_is_refused_dw0344() {
                     // body stands in at exactly the sea plane.
                     { "verb": "select", "name": "region/breach", "shape": {
                         "kind": "box",
-                        "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
+                        "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
                         "min": [4, 2, 4], "max": [6, 2, 6]
                     }},
                     { "verb": "carve", "region": "region/breach" }
@@ -485,7 +485,7 @@ fn edit_ocean_unbreached_hull_is_green_and_says_what_it_examined() {
             "edits": [
                 { "verb": "select", "name": "region/probe", "shape": {
                     "kind": "box",
-                    "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
+                    "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
                     "min": [4, 1, 4], "max": [5, 2, 5]
                 }}
             ]
@@ -599,7 +599,7 @@ fn edit_with_empty_region_is_dw0323() {
             "edits": [
                 { "verb": "select", "name": "region/box", "shape": {
                     "kind": "box",
-                    "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
+                    "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
                     "min": [1, 2, 1], "max": [3, 3, 3]
                 }},
                 // The box is interior air — no diorite matches anywhere.
@@ -826,7 +826,7 @@ fn edit_apply_rejects_a_red_candidate_without_persisting() {
             "edits": [
                 { "verb": "select", "name": "region/breach", "shape": {
                     "kind": "box",
-                    "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
+                    "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
                     "min": [4, 1, 0], "max": [6, 2, 0]
                 }},
                 { "verb": "carve", "region": "region/breach" }
@@ -953,7 +953,7 @@ fn piece_box(name: &str, min: [i32; 3], max: [i32; 3]) -> serde_json::Value {
     serde_json::json!({
         "verb": "select", "name": name, "shape": {
             "kind": "box",
-            "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
+            "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
             "min": min, "max": max
         }
     })

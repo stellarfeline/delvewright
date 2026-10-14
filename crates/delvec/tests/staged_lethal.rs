@@ -320,7 +320,7 @@ fn one_batch() -> String {
         "edits": [
           {{ "verb": "select", "name": "region/corner",
              "shape": {{ "kind": "box",
-               "frame": {{ "kind": "piece-local", "piece": 1, "prefab": "prefab/{ROOM}" }},
+               "frame": {{ "kind": "piece-local", "piece": 0, "prefab": "prefab/{ROOM}" }},
                "min": [1, 3, 1], "max": [2, 3, 2] }} }},
           {{ "verb": "replace", "region": "region/corner",
              "matching": ["minecraft:stone"],

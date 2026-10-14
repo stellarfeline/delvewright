@@ -684,7 +684,7 @@ fn a_refusal_after_a_world_edits_batch_prints_the_loop_binding() {
                             "verb": "select",
                             "shape": {
                                 "kind": "box",
-                                "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/long-gallery" },
+                                "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/long-gallery" },
                                 "min": [1, FLOOR_Y, bay(2) + 3],
                                 "max": [1, FLOOR_Y, bay(2) + 3]
                             }

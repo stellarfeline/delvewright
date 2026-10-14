@@ -59,7 +59,7 @@ fn over_limit_stamp() -> PathBuf {
                     "name": "region/under",
                     "shape": {
                         "kind": "box",
-                        "frame": { "kind": "piece-local", "piece": 1, "prefab": "prefab/hello-room" },
+                        "frame": { "kind": "piece-local", "piece": 0, "prefab": "prefab/hello-room" },
                         "min": [-18, -48, -18],
                         "max": [29, -1, 29]
                     }

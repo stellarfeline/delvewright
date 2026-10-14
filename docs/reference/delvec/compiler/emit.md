@@ -27,24 +27,6 @@ This module's rows of a section whose prose is on the [`delvec::compiler::nav` p
 |------|---------|
 | `DW0447` | A payload verb centres its volume (`kill_zone` / `region_anchor`) on an anchor no placed prefab piece provides, so the box cannot be resolved. Reported rather than silently degenerating to an empty — and therefore vacuously "covered" — zone. Build-tier (exit 3), `compiler::emit`. |
 
-### DW0494 — branch-aware inter-area transport (`compiler::emit`; error)
-
-`build_critical_path` derives an inter-area transport map for whatever
-playthrough it is handed, so every branch already has one
-(`Plan::branch_critical_path`), and `validation/branch-path-<slug>.json`
-publishes it to the harness. Emission carries them too: the
-**exported** path's crossings are emitted unconditionally in the objective's
-`complete_<obj>` bundle, and every crossing that exists only on a BRANCH is
-emitted beside them, gated on exactly that branch's flag assignment (`if score
-#party dw.f_<set> matches 1` / `unless … dw.f_<unset> …`), so a branch-only
-crossing the artifact promises is one the datapack performs. The overlay
-is empty for a campaign with no `branch_points`
-or one whose branches cross only where the exported path already does
-(`emit::branch_transport_overlay`).
-
-| Code | Meaning |
-|------|---------|
-
 ### DW0185 — untranslated player-visible literal (`compiler::emit`; error; exit 3)
 
 This module's rows of a section whose prose is on the [`delvewright_dsl::diagnostic` page](../../dsl/diagnostic.md#dw0185--untranslated-player-visible-literal-compileremit-error-exit-3).
@@ -61,7 +43,7 @@ This module's rows of a section whose prose is on the [`delvec::admit::diag` pag
 |------|------|---------|
 | `DW0803` | `compiler::emit` | **A placed structure template is not the size its prefab metadata says it is.** Two documents claim the same fact — the `.nbt`'s own `size` tag and the metadata's `structure.size` (or a tile's `structure_set.parts[].size`) — and *every pass but the placement itself reads the metadata's*: the forceload span, the piece AABB `DW0780` compares, massing's footprint, and the offset arithmetic that puts a tile in the world. When they disagree the world is built around a shape that is not the one whose blocks arrive, and no other check can see it because each half is internally consistent. Tiling is what makes it reachable: a manifest and its tiles are several files a `cp`, a partial re-export or a hand edit can leave at different ages, and a stale tile then lands at the offset the manifest gives it, sliding part of a building through the rest. A single-template prefab has the same exposure. Build tier (exit 3): the world would be wrong, so it is not built. Prescription is never “adjust the declared size” — the two sizes are one fact and the fix is to make them one export again. **Binding**: `TemplateExtentBinding { placed, checked }`, templates placed vs templates whose bytes decoded; a world where none decoded reports the zero binding as a `DW0803` warning rather than a clean pass over an empty comparison. **Bound at two entry points, deliberately**: `emit::build_with_warnings`, which protects the datapack, and `cli::campaign::read_structures`, the one place every CLI consumer of a campaign's placed prefab bytes passes through — `build`, `snapshot`, `blocking-chart`, `edit`, `detail` and `cameras --preview`. The second is the one that matters: a review artifact drawn from a stale tile is a picture that lies, and it is what a reviewer checks the world against. The check is pure, so the build path runs it twice for the cost of a walk. |
 
-### DW0821/DW0836–DW0839 — the derived blockout (`compiler::blockout`; error + two advisories)
+### DW0821/DW0836–DW0838 — the derived blockout (`compiler::blockout`; error + two advisories)
 
 This module's rows of a section whose prose is on the [`delvec::compiler::blockout` page](blockout.md#dw0821dw0836dw0839--the-derived-blockout-compilerblockout-error--two-advisories).
 

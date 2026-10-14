@@ -101,6 +101,13 @@ fn without_exit(at: &Path) -> PathBuf {
         "the fixture carries obj/exit to remove"
     );
     std::fs::write(&qp, serde_json::to_vec_pretty(&q).unwrap()).unwrap();
+    // …and its beat on the map.
+    common::patch_file(&dst.join("layout-graph.json"), |g| {
+        g["content"]["beats"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|b| b["objective"] != "obj/exit");
+    });
     dst
 }
 

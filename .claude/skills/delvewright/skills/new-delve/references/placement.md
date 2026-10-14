@@ -207,9 +207,8 @@ form and the commands are in *Reference: drawing the map's reference*.
 
 ## One area, and anchors nobody authored
 
-**The campaign has one area, `area/site`.** Quests, NPCs and waves name it;
-`world.json`'s `areas[]` is empty, and a plan beside a non-empty `areas[]` is
-`DW0839`.
+**The campaign has one area, `area/site`.** The site plan is the map, and
+`world.json` carries no placement.
 
 **The anchors are synthesized**, plus whatever a node's `stations[]` declares —
 there are no prefabs to read anchor names out of:

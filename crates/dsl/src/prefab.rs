@@ -755,9 +755,8 @@ pub struct AnchorEdit {
     ///   the place a party arrives at, and silently answering it as one is the
     ///   deletion this type exists to prevent.
     /// * `Some(None)` — the edit says the anchor has **no** role, and an
-    ///   existing one is removed. This is the remedy `DW0804` prescribes when
-    ///   two anchors in one area both claim a role, and it is reachable here
-    ///   rather than only by hand-editing the document.
+    ///   existing one is removed, reachable here rather than only by
+    ///   hand-editing the document.
     /// * `Some(Some(role))` — the anchor is declared to have that role.
     pub role: Option<Option<AnchorRole>>,
 }
@@ -1766,7 +1765,7 @@ mod tests {
         assert_eq!(meta.anchors["anchor/a"].pos, Some([2, 1, 1]));
         assert_eq!(meta.anchors["anchor/a"].role, Some(AnchorRole::Entry));
 
-        // Said to have none: removed — the remedy `DW0804` prescribes.
+        // Said to have none: removed.
         meta.edit_anchor("anchor/a", place(Some(None)));
         assert_eq!(meta.anchors["anchor/a"].role, None);
     }

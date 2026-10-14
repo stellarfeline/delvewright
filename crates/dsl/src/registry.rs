@@ -295,7 +295,7 @@ pub trait AnchorRegistry {
     /// mistyped `prefab` then removes the area from the anchor index, and the
     /// per-area anchor proof (`DW0142`) over every quest in it examines
     /// nothing and passes. The two questions are different and they are asked
-    /// separately for exactly that reason (`DW0856`).
+    /// separately for exactly that reason.
     ///
     /// The default is `None` — the safe answer for a test double or a subset
     /// registry, which refuses nothing it cannot vouch for. The compiler's

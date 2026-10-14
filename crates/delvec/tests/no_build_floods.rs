@@ -178,6 +178,7 @@ fn no_ocean_build_puts_a_walk_cell_at_or_below_the_sea() {
             waterless_shore(&dir, 3);
         }
         let camp = ocean_campaign(tag);
+        common::seat_on_ocean(&camp, &dir);
         let (code, text, out) = build(tag, &camp, &dir);
         assert_eq!(code, 0, "the `{tag}` ocean campaign builds:\n{text}");
         examined += 1;
@@ -252,6 +253,7 @@ fn no_ocean_build_puts_a_walk_cell_at_or_below_the_sea() {
 fn a_carve_that_lowers_a_floor_to_the_sea_plane_reds() {
     let dir = common::ocean_prefabs_dir("no-flood-carved", common::OceanRoom::Shore);
     let camp = ocean_campaign("carved");
+    common::seat_on_ocean(&camp, &dir);
     std::fs::write(
         camp.join("world-edits.json"),
         serde_json::to_string_pretty(&serde_json::json!({
@@ -266,7 +268,7 @@ fn a_carve_that_lowers_a_floor_to_the_sea_plane_reds() {
                             "kind": "box",
                             "frame": {
                                 "kind": "piece-local",
-                                "piece": 1,
+                                "piece": 0,
                                 "prefab": "prefab/hello-room"
                             },
                             "min": [4, 2, 4], "max": [6, 2, 6]
@@ -287,71 +289,5 @@ fn a_carve_that_lowers_a_floor_to_the_sea_plane_reds() {
     assert!(
         text.contains("DW0344") || text.contains("DW0851"),
         "and it is one of the two proofs that own the sea in the walk region:\n{text}"
-    );
-}
-
-/// The other outcome, and the assertion that there is no third: a campaign whose
-/// pieces cannot be seated on an ocean is refused at `analyze`, having placed
-/// nothing.
-#[test]
-fn a_pool_that_cannot_be_seated_is_refused_at_analyze_having_placed_nothing() {
-    let dir = common::ocean_prefabs_dir("no-flood-unseatable", common::OceanRoom::Shore);
-    let path = dir.join("hello-room.json");
-    let mut doc: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    doc.as_object_mut().unwrap().remove("walk_y");
-    std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap() + "\n").unwrap();
-
-    let camp = ocean_campaign("unseatable");
-    let r = delvec(&[
-        "analyze",
-        camp.to_str().unwrap(),
-        "--prefabs",
-        dir.to_str().unwrap(),
-    ]);
-    let text = log(&r);
-    assert_eq!(r.status.code(), Some(1), "refused at analyze:\n{text}");
-    assert!(text.contains("DW0886"), "{text}");
-    assert!(
-        !text.contains("place template"),
-        "having placed nothing:\n{text}"
-    );
-}
-
-/// **`walk_y` reaches the surface it changes** (spec-0060 §10.9): perturb one
-/// piece's walk plane and an emitted byte moves.
-///
-/// The byte is the `place template` line's y, which is the whole point of the
-/// declaration: an ocean area's origin IS `walk_ref_y - walk_y`, so a piece that
-/// says its floor is one course lower is seated one block higher, and the
-/// datapack says so. A declaration that moved no emitted byte would be a field
-/// the engine reads and the world does not.
-///
-/// The perturbation moves the BLOCKS and the number together, because that is
-/// what a walk plane is: `DW0888` holds the declaration to the bytes, so a
-/// document edited over an unmoved floor is refused before anything is emitted —
-/// which is that rule working, and would leave this one nothing to measure. The
-/// waterline is removed for the same reason one stage over: with one declared,
-/// moving the walk plane moves the waterline off the sea and `DW0344`'s first
-/// arm refuses first.
-#[test]
-fn perturbing_a_pieces_walk_plane_moves_an_emitted_byte() {
-    let seat_at = |tag: &str, walk_y: i32| -> Vec<i32> {
-        let dir = common::ocean_prefabs_dir(&format!("walk-moves-{tag}"), common::OceanRoom::Shore);
-        waterless_shore(&dir, walk_y);
-        let camp = ocean_campaign(tag);
-        let (code, text, out) = build(tag, &camp, &dir);
-        assert_eq!(code, 0, "`{tag}` builds:\n{text}");
-        placed_ys(&out)
-    };
-
-    let three = seat_at("walk3", 3);
-    let two = seat_at("walk2", 2);
-    assert_eq!(three, vec![WALK_REF_Y - 3], "declared 3, seated at 60");
-    assert_eq!(two, vec![WALK_REF_Y - 2], "declared 2, seated at 61");
-    assert_ne!(
-        three, two,
-        "the declaration moved and the emitted placement did not — a field the engine reads \
-         and the world does not"
     );
 }

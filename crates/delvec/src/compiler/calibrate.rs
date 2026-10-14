@@ -65,8 +65,6 @@ pub const PATCH_VERSION: &str = "0.1.0";
 pub struct Anchor {
     /// Anchor id (`anchor/…`).
     pub id: String,
-    /// The area it belongs to (`area/…`).
-    pub area: String,
     /// The absolute cell it resolved to in the assembled world.
     pub pos: [i64; 3],
 }
@@ -301,12 +299,10 @@ mod tests {
         vec![
             Anchor {
                 id: "anchor/fire-pit".to_string(),
-                area: "area/island".to_string(),
                 pos: [9, 69, -56],
             },
             Anchor {
                 id: "anchor/exit".to_string(),
-                area: "area/island".to_string(),
                 pos: [5, 67, 8],
             },
         ]
@@ -437,12 +433,10 @@ mod tests {
         let a = vec![
             Anchor {
                 id: "anchor/b".to_string(),
-                area: "a".to_string(),
                 pos: [0, 64, 0],
             },
             Anchor {
                 id: "anchor/a".to_string(),
-                area: "a".to_string(),
                 pos: [4, 64, 0],
             },
         ];

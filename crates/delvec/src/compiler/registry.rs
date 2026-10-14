@@ -607,7 +607,7 @@ impl AnchorRegistry for PrefabRegistry {
 
     /// This registry IS the library — every `*.json` in the prefabs dir the run
     /// was pointed at — so it answers, and `Some(false)` means the piece is not
-    /// there (`DW0856`). A file that failed to parse is `DW0346` and is absent
+    /// there. A file that failed to parse is `DW0346` and is absent
     /// from `by_id`, so it answers `Some(false)` too; that is the intended
     /// order, since the campaign's binding really cannot be honoured and both
     /// diagnostics are reported together.

@@ -116,6 +116,13 @@ fn campaign() -> Campaign {
         detail_plan: Some(hw("detail-plan.json")),
         design: None,
     })
+    .map(|mut c| {
+        // The keep declares the three cells the private piece adds.
+        for a in ["anchor/pillar", "anchor/pillar-top", "anchor/plank"] {
+            common::station_in(&mut c, a);
+        }
+        c
+    })
     .expect("campaign parses")
 }
 
@@ -975,6 +982,7 @@ fn a_cell_no_write_reached_holds_the_horizon_generators_block() {
     doc["content"]["horizon"] = serde_json::json!("ocean");
     doc["content"]["boundary"] = serde_json::json!({});
     std::fs::write(camp.join("world.json"), doc.to_string()).unwrap();
+    common::seat_on_ocean(&camp, &pf);
     let written = tmp("ww-ocean-world");
     let (code, log) = run(&[
         "--prefabs",

@@ -179,8 +179,8 @@ fn gallery_and_curate_merge_end_to_end() {
 /// Five claims, one document: the role is written; an unknown term is refused
 /// **where it is typed** rather than ridden through into the metadata; the role
 /// survives an edit that says nothing about it (moving a cell is not a statement
-/// that the piece stopped being the way in); `--no-role` removes it, which is the
-/// remedy `DW0804` prescribes; and the two flags cannot both be given.
+/// that the piece stopped being the way in); `--no-role` removes it; and the two
+/// flags cannot both be given.
 #[test]
 fn anchor_writes_and_clears_the_role_and_refuses_a_term_it_does_not_know() {
     let dir = tmp("anchor-role");

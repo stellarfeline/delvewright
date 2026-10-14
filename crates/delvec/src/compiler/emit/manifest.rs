@@ -341,9 +341,9 @@ pub(super) fn critical_path_json(
                     v
                 }
             };
-            // gap 8: mark a step whose completion teleports the player to another
-            // area with the absolute destination, so the harness waits for the
-            // position discontinuity before starting the next step.
+            // gap 8: mark a step whose completion teleports the player with the
+            // absolute destination, so the harness waits for the position
+            // discontinuity before starting the next step.
             if let (Some(pos), Some(obj)) = (transport, step.as_object_mut()) {
                 obj.insert("transport".to_string(), json!(pos));
             }

@@ -6,8 +6,7 @@ use super::*;
 /// (l10n key `world.outro`), else the finale quest's `goal` (key
 /// `quest.<id>.goal`) — the thing the party just accomplished, already inventoried
 /// and translated. Both are campaign content, so no English is baked in here.
-/// Falls back to the delve title only if the finale names no planned quest, which
-/// cross-stage validation (`DW0160`) already rejects.
+/// Falls back to the delve title only if the finale names no planned quest.
 pub(super) fn campaign_outro(c: &delvewright_dsl::Campaign) -> String {
     if let Some(outro) = &c.world.content.outro {
         return outro.clone();

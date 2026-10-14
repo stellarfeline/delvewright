@@ -135,9 +135,7 @@ fn move_target(
 
 /// Plan every `move-npc` in the campaign into a walked-path [`MovePlan`], deduped
 /// by `(npc, to)` in first-seen order. `DW0307` when a move is
-/// unroutable, `DW0859` when its destination names an anchor two areas answer
-/// to and neither the move's own quest nor the NPC's home settles it
-/// ([`move_target`]). Each NPC's successive moves **chain**: the first leg
+/// unroutable ([`move_target`]). Each NPC's successive moves **chain**: the first leg
 /// starts at the stage-2 anchor, every later leg at the previous leg's target
 /// (round-6; see
 /// [`plan_actor_moves`]). Two moves sharing `(npc, to)` still share one

@@ -67,9 +67,7 @@ pub enum PrefabCommand {
         /// kept.
         #[arg(long)]
         role: Option<String>,
-        /// Declare that this anchor has NO role, removing one it carries — the
-        /// remedy `DW0804` prescribes when two anchors in an area both claim
-        /// one.
+        /// Declare that this anchor has NO role, removing one it carries.
         #[arg(long, conflicts_with = "role")]
         no_role: bool,
     },

@@ -239,11 +239,9 @@ that embeds the graph — from which the engine derives where everything stands,
 and one piece per place, each drawing its own walls, roof and ground inside the
 frame the plan hands it at step 9. A map that is one building is a plan of one
 box and no seam, whose one piece is the whole site; how many places a map has
-is the layout graph's node count, your design and nothing else. `areas[]`,
-`world.json`'s field that seats library pieces on the compiler's stride, is the
-engine's assembly surface for prefab pools and is not how this page makes a
-map: a campaign leaves it empty, and a plan beside a non-empty `areas[]` is
-refused (`DW0839`). The surface and its rules are
+is the layout graph's node count, your design and nothing else. The site plan
+is the map's one placement authority: a prefab is a part a plan or a program
+places by name, never drawn from a pool. The surface and its rules are
 `$DELVEWRIGHT_ENGINE/docs/reference/compiler.md`.
 
 # The steps

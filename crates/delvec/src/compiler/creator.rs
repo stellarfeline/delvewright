@@ -1197,19 +1197,20 @@ fn emit_layout(plan: &Plan, inv: &Inventory) -> serde_json::Value {
             })
         })
         .collect();
-    // Resolved anchors, in the plan's own (area, name) order — a `BTreeMap`, so
-    // the listing is deterministic. A gate anchor resolves to its `from` corner,
+    // Resolved anchors, in the plan's own order — a `BTreeMap`, so the listing
+    // is deterministic. An anchor is named once on the map (`DW0870`), so the
+    // name is the whole key. A gate anchor resolves to its `from` corner,
     // exactly as `nav::anchor_offset_point` does, so a calibrated offset means
     // the same thing to the compiler as it does here.
     let anchors: Vec<serde_json::Value> = plan
         .anchors
         .iter()
-        .map(|((area, name), resolved)| {
+        .map(|((_, name), resolved)| {
             let (kind, pos) = match resolved {
                 ResolvedAnchor::Point { pos, .. } => ("point", *pos),
                 ResolvedAnchor::Gate { from, .. } => ("gate", *from),
             };
-            json!({ "id": name, "area": area, "kind": kind, "pos": pos })
+            json!({ "id": name, "kind": kind, "pos": pos })
         })
         .collect();
     let shots: Vec<serde_json::Value> = inv

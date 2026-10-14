@@ -74,11 +74,11 @@
 //! - [`raster`]: the shared RGBA canvas and bitmap-text primitives both renderers draw on.
 //! - [`reach`]: what completes a `reach` — the one authority for the volume a body has to be in.
 //! - [`registry`]: the full pinned-MC item registry and the prefab/anchor metadata.
-//! - [`rotation`]: the seeded stream and the quarter-turn a piece is placed at.
 //! - [`rehearsal`]: the compile-time inventory of every rehearsable cutscene beat and every shot inside it.
 //! - [`render_plan`]: `render-plan.json` emission.
 //! - [`resourcepack`]: the per-delve skin resource pack.
 //! - [`respawn`]: what separates a retry from a soft-lock — the evidence `DW0478` accepts.
+//! - [`rotation`]: the seeded stream and the quarter-turn a piece is placed at.
 //! - [`sculk`]: the sculk family works — at rest (`DW0998`/`DW0999`), a sensor's power reaching nothing (`DW1000`), a catalyst hearing no death (`DW1001`), and the walk's vibrations — spec-0100.
 //! - [`seating`]: a horizon and a piece set are a pair — this base cannot seat this piece set (`DW0886`), and a declared waterline is not in the bytes (`DW0887`).
 //! - [`seeding`]: no emitted comparison reads a score entry the emitted pack never creates (`DW0495`).

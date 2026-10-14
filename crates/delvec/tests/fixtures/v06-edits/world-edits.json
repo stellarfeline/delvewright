@@ -9,7 +9,7 @@
             "shape": {
               "frame": {
                 "kind": "piece-local",
-                "piece": 1,
+                "piece": 0,
                 "prefab": "prefab/hello-room"
               },
               "kind": "box",
@@ -72,7 +72,7 @@
             "shape": {
               "frame": {
                 "kind": "piece-local",
-                "piece": 1,
+                "piece": 0,
                 "prefab": "prefab/hello-room"
               },
               "kind": "box",
@@ -152,7 +152,7 @@
             "shape": {
               "frame": {
                 "kind": "piece-local",
-                "piece": 1,
+                "piece": 0,
                 "prefab": "prefab/hello-room"
               },
               "kind": "box",
@@ -174,7 +174,7 @@
             "shape": {
               "frame": {
                 "kind": "piece-local",
-                "piece": 1,
+                "piece": 0,
                 "prefab": "prefab/hello-room"
               },
               "kind": "box",
@@ -233,7 +233,7 @@
             "shape": {
               "frame": {
                 "kind": "piece-local",
-                "piece": 1,
+                "piece": 0,
                 "prefab": "prefab/hello-room"
               },
               "kind": "box",
@@ -255,7 +255,7 @@
             "shape": {
               "frame": {
                 "kind": "piece-local",
-                "piece": 1,
+                "piece": 0,
                 "prefab": "prefab/hello-room"
               },
               "kind": "box",
@@ -341,7 +341,7 @@
             "shape": {
               "frame": {
                 "kind": "piece-local",
-                "piece": 1,
+                "piece": 0,
                 "prefab": "prefab/hello-room"
               },
               "kind": "box",
@@ -409,7 +409,7 @@
             "shape": {
               "frame": {
                 "kind": "piece-local",
-                "piece": 1,
+                "piece": 0,
                 "prefab": "prefab/hello-room"
               },
               "kind": "box",

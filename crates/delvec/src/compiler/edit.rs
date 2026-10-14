@@ -1068,25 +1068,25 @@ fn resolve_shape(
             let (a, b) = match frame {
                 EditFrame::PieceLocal { piece, prefab } => {
                     let idx = *piece as usize;
-                    let placed = area.pieces.get(idx).ok_or_else(|| {
+                    let placed_pieces = plan.frame_pieces(area);
+                    let placed = *placed_pieces.get(idx).ok_or_else(|| {
                         format!(
                             "world-edits batch `{bid}`: piece index {idx} is out of range — \
-                             area `{}` placed {} piece(s) (0..={}). The layout this frame was \
+                             the map places {} piece(s) (0..={}). The layout this frame was \
                              authored against has drifted; re-inspect it with `delvec \
                              snapshot` and update the frame, do NOT guess an index",
-                            area.area_id,
-                            area.pieces.len(),
-                            area.pieces.len().saturating_sub(1),
+                            placed_pieces.len(),
+                            placed_pieces.len().saturating_sub(1),
                         )
                     })?;
                     if placed.prefab_id != prefab.as_str() {
                         return Err(format!(
-                            "world-edits batch `{bid}`: piece {idx} of area `{}` is \
-                             `{}`, not the frame's declared `{prefab}` — the solved layout \
-                             has drifted since this edit was authored. Re-inspect the layout \
-                             (`delvec snapshot`) and re-target the frame; do NOT just delete \
-                             the prefab guard",
-                            area.area_id, placed.prefab_id,
+                            "world-edits batch `{bid}`: piece {idx} of the map is `{}`, not \
+                             the frame's declared `{prefab}` — the layout has drifted since \
+                             this edit was authored. Re-inspect the layout (`delvec \
+                             snapshot`) and re-target the frame; do NOT just delete the \
+                             prefab guard",
+                            placed.prefab_id,
                         ));
                     }
                     let t1 = placed.rotation.transform(*min);

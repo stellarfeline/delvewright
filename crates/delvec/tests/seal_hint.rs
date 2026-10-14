@@ -528,12 +528,14 @@ fn dw0422_a_second_affordance_inside_the_seal() {
     meta["anchors"]["anchor/latch"] = serde_json::json!({ "pos": [4, 1, 6] });
     std::fs::write(&hello, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
 
-    let c = parse_hw(&quests_doc_with(
+    let mut c = parse_hw(&quests_doc_with(
         SEAL_IT,
         r#"{ "id": "trigger/latch", "at": "anchor/latch", "on": { "on": "use" },
              "once": false,
              "effects": [ { "type": "narrate", "style": "chat", "text": "The latch is cold." } ] }"#,
     ));
+    // The keep declares the latch the private piece adds.
+    common::station_in(&mut c, "anchor/latch");
     let prefabs = PrefabRegistry::load_dir(&tmp).unwrap();
     let err = try_build(&c, &prefabs).expect_err("a contested seal hitbox must stop the build");
     let _ = std::fs::remove_dir_all(&tmp);
