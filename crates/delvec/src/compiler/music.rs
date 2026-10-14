@@ -1015,11 +1015,15 @@ pub fn measure(
     }
     // The stop-sounds: where the route stands when each fires, and what the
     // cut is there.
+    // The last cell of the leg the step completes on; a step no walked leg
+    // reaches (a carry, a leg the path does not walk) completes where the
+    // step itself stands.
     let firing_cell = |step: usize| -> Option<[i32; 3]> {
         routes
             .iter()
             .rfind(|l| l.to_step == step)
             .and_then(|l| l.cells.last().copied())
+            .or_else(|| plan.critical_path.get(step).and_then(|s| s.pos()))
     };
     for ev in &evs {
         match &ev.effect.verb {
