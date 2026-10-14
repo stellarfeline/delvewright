@@ -151,8 +151,12 @@ export interface RepaintVerdict {
   readonly bound: number;
   /** Of the held chunks, how many a `chunk_biomes` named inside the window. */
   readonly told: number;
-  /** Of the held chunks, how many a `map_chunk` resent inside the window. */
+  /** Of the held chunks, how many a `map_chunk` resent inside the window
+   * while the client still held them. */
   readonly resent: number;
+  /** Of the held chunks, how many the client dropped inside the window (a
+   * `login`/`respawn`, or an `unload_chunk`) and was then sent afresh. */
+  readonly reloadedAfterDrop: number;
   /** Why it failed, when it did. */
   readonly failure?: string;
 }
@@ -238,7 +242,17 @@ export class RepaintWatch {
       const chunks = r.chunks.length;
       const sighting = r.after === null ? undefined : this.markers.get(r.after);
       if (sighting === undefined) {
-        return { effect: r.effect, performed: false, chunks, owed: 0, held: 0, bound: 0, told: 0, resent: 0 };
+        return {
+          effect: r.effect,
+          performed: false,
+          chunks,
+          owed: 0,
+          held: 0,
+          bound: 0,
+          told: 0,
+          resent: 0,
+          reloadedAfterDrop: 0,
+        };
       }
       const fired = sighting.at;
       const heldNow = this.heldAt(fired);
@@ -264,13 +278,28 @@ export class RepaintWatch {
           .filter((e) => e.kind === "biomes" && e.at >= fired - 1_000 && e.at <= fired + windowMs)
           .flatMap((e) => e.chunks),
       );
-      const resent = new Set(
-        this.events
-          .filter((e) => e.kind === "map" && e.at > fired && e.at <= fired + windowMs)
-          .flatMap((e) => e.chunks),
-      );
+      // A resend is a `map_chunk` for a chunk the client still holds. One that
+      // follows a `login`/`respawn` or an `unload_chunk` of that chunk is the
+      // client loading a level it no longer has — the same `held` model
+      // `heldAt` keeps — and is counted apart, never as a resend.
+      const resent = new Set<string>();
+      const loadedAfterDrop = new Set<string>();
+      const holding = new Set(heldNow);
+      for (const e of this.events) {
+        if (e.at <= fired) continue;
+        if (e.at > fired + windowMs) break;
+        if (e.kind === "reset") holding.clear();
+        for (const c of e.chunks) {
+          if (e.kind === "unload") holding.delete(c);
+          else if (e.kind === "map") {
+            (holding.has(c) ? resent : loadedAfterDrop).add(c);
+            holding.add(c);
+          }
+        }
+      }
       const missing = held.filter((c) => !told.has(c));
       const reloaded = held.filter((c) => resent.has(c));
+      const reloadedAfterDrop = held.filter((c) => loadedAfterDrop.has(c) && !resent.has(c));
       const failures: string[] = [];
       if (pos === undefined || served === undefined) {
         failures.push(
@@ -310,6 +339,7 @@ export class RepaintWatch {
         bound: bound.length,
         told: held.length - missing.length,
         resent: reloaded.length,
+        reloadedAfterDrop: reloadedAfterDrop.length,
         ...(failures.length > 0
           ? { failure: `set-atmosphere at ${r.effect} (${r.biome}): ${failures.join("; ")}` }
           : {}),
@@ -328,6 +358,7 @@ export function repaintBindingLine(plan: RepaintPlan, verdicts: readonly Repaint
     `${performed.length} performed; ${sum((v) => v.bound)} bound chunk(s) (held inside the ` +
     `served view distance) of ${sum((v) => v.owed)} owed of ${sum((v) => v.chunks)} painted; ` +
     `${sum((v) => v.told)} of ${sum((v) => v.held)} held chunk(s) told by chunk_biomes, ` +
-    `${sum((v) => v.resent)} resent by map_chunk`
+    `${sum((v) => v.resent)} resent by map_chunk, ${sum((v) => v.reloadedAfterDrop)} loaded afresh ` +
+    `after the client dropped them`
   );
 }

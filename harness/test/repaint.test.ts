@@ -86,6 +86,56 @@ test("a chunk resent by map_chunk after the repaint reds", () => {
   assert.match(w.verdicts()[0]!.failure ?? "", /map_chunk resent chunk\(s\) 0,1/);
 });
 
+test("a death inside the window: the respawn's fresh load is not a resend, and is counted apart", () => {
+  // The gallery's shape: the repaint is told, then a scripted death three
+  // seconds later, and the respawned client is sent its level afresh.
+  const w = watch();
+  loaded(w, 0);
+  w.marker("obj/ring-the-bell", 1_000, HERE);
+  w.packet("chunk_biomes", { biomes: [{ position: { x: 0, z: 0 } }, { position: { x: 0, z: 1 } }] }, 1_005);
+  w.packet("respawn", {}, 4_000);
+  loaded(w, 4_050);
+  const v = w.verdicts()[0]!;
+  assert.equal(v.failure, undefined);
+  assert.equal(v.resent, 0);
+  assert.equal(v.reloadedAfterDrop, 2);
+  assert.match(repaintBindingLine(plan, w.verdicts()), /0 resent by map_chunk, 2 loaded afresh after the client dropped them/);
+});
+
+test("a resend before a respawn in the same window still reds", () => {
+  const w = watch();
+  loaded(w, 0);
+  w.marker("obj/ring-the-bell", 1_000, HERE);
+  w.packet("map_chunk", { x: 0, z: 1 }, 1_002);
+  w.packet("chunk_biomes", { biomes: [{ position: { x: 0, z: 0 } }, { position: { x: 0, z: 1 } }] }, 1_005);
+  w.packet("respawn", {}, 4_000);
+  loaded(w, 4_050);
+  const v = w.verdicts()[0]!;
+  assert.equal(v.resent, 1);
+  assert.match(v.failure ?? "", /map_chunk resent chunk\(s\) 0,1/);
+});
+
+test("a respawn does not excuse a chunk the repaint never told", () => {
+  const w = watch();
+  loaded(w, 0);
+  w.marker("obj/ring-the-bell", 1_000, HERE);
+  w.packet("respawn", {}, 4_000);
+  loaded(w, 4_050);
+  assert.match(w.verdicts()[0]!.failure ?? "", /no chunk_biomes named chunk\(s\) 0,0 0,1/);
+});
+
+test("a chunk unloaded and sent again inside the window is a fresh load, not a resend", () => {
+  const w = watch();
+  loaded(w, 0);
+  w.marker("obj/ring-the-bell", 1_000, HERE);
+  w.packet("chunk_biomes", { biomes: [{ position: { x: 0, z: 0 } }, { position: { x: 0, z: 1 } }] }, 1_005);
+  w.packet("unload_chunk", { chunkX: 0, chunkZ: 1 }, 2_000);
+  w.packet("map_chunk", { x: 0, z: 1 }, 3_000);
+  const v = w.verdicts()[0]!;
+  assert.equal(v.failure, undefined);
+  assert.equal(v.reloadedAfterDrop, 1);
+});
+
 test("a repaint over chunks the client never held is a zero binding, and reds", () => {
   const w = watch();
   w.marker("obj/ring-the-bell", 1_000, HERE);
