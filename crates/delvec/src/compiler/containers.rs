@@ -133,6 +133,12 @@ pub struct Census {
     pub notice: Option<Narration>,
     /// SHA-256 of the census input — every cell and state of the model it read.
     pub input_digest: String,
+    /// The places still standing in their stand-in, in plan order: massing
+    /// nobody furnished, whose containers this build cannot see yet. While any
+    /// remains, a notice over a census with no scenery is owed to the build
+    /// that details them — the same deferral the container fills take
+    /// ([`crate::compiler::loot::split_owed_by_detail`]).
+    pub stand_ins: Vec<String>,
 }
 
 /// What one place holds that breaks §9.
@@ -203,6 +209,7 @@ pub fn census(
         rows,
         notice: notice.cloned(),
         input_digest: model_digest(blocks),
+        stand_ins: Vec::new(),
     }
 }
 
@@ -260,6 +267,21 @@ impl Census {
         (mixed, over)
     }
 
+    /// **Owe the places still standing in their stand-in to their detail**:
+    /// `places` is [`crate::compiler::blockout::Blockout::massed`].
+    #[must_use]
+    pub fn deferring(mut self, places: &[String]) -> Self {
+        self.stand_ins = places.to_vec();
+        self
+    }
+
+    /// Whether the notice's second arm — a notice with no scenery — is owed to
+    /// a later detail rather than judged now.
+    #[must_use]
+    pub fn notice_deferred(&self) -> bool {
+        self.notice.is_some() && self.decoration() == 0 && !self.stand_ins.is_empty()
+    }
+
     /// The binding line (spec-0105 §5.1), for stderr on every build.
     #[must_use]
     pub fn line(&self) -> String {
@@ -272,11 +294,27 @@ impl Census {
         let blocks = join(self.by(|r| r.block.clone()));
         let places = join(self.by(|r| r.place.clone()));
         let (mixed, over) = self.arrangement();
+        let deferred = if self.stand_ins.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " {k} place(s) still stand in their stand-in, whose containers this build cannot \
+                 see ({names}); {verdict}.",
+                k = self.stand_ins.len(),
+                names = self.stand_ins.join(", "),
+                verdict = if self.notice_deferred() {
+                    "the notice speaks for no scenery here, and is judged (DW1018) by the build \
+                     that details them"
+                } else {
+                    "a notice with no scenery would be judged by the build that details them"
+                },
+            )
+        };
         format!(
             "container census: {n} container cell(s) in the assembled world{blocks}; {l} loot, \
              {c} collect, {v} device, {d} decoration; notice {notice}; by place: {places}; \
              arrangement: {m} mixed place(s), {o} over the cap of {cap} decoration cell(s) per \
-             place.",
+             place.{deferred}",
             n = self.rows.len(),
             blocks = if blocks.is_empty() {
                 String::new()
@@ -353,7 +391,7 @@ impl Census {
                 ),
             });
         }
-        if d == 0 && self.notice.is_some() {
+        if d == 0 && self.notice.is_some() && !self.notice_deferred() {
             return Err(Failure {
                 code: DW_CONTAINERS_UNDECLARED,
                 message: format!(
@@ -452,6 +490,7 @@ impl Census {
             "max_scenery_per_place": MAX_SCENERY_PER_PLACE,
             "mixed_places": names(&mixed),
             "over_cap_places": names(&over),
+            "stand_ins": self.stand_ins,
             "notice": self.notice.as_ref().map(|n| json!({
                 "text": delvewright_dsl::l10n::plain(&n.text),
                 "style": n.style.unwrap_or(delvewright_dsl::NarrateStyle::Chat).token(),
@@ -781,6 +820,40 @@ mod tests {
         // With the notice it passes.
         let c = census(&blocks, &[], &one_place, Some(&notice()));
         assert!(c.check_declared(&BTreeMap::new()).is_ok());
+    }
+
+    /// A place still standing in its stand-in cannot show its containers, so a
+    /// notice over a census with no scenery is owed to its detail, stated on
+    /// the line; scenery that IS seen is judged as ever.
+    #[test]
+    fn a_notice_over_no_scenery_waits_for_the_places_still_in_their_stand_in() {
+        let empty = model(&[]);
+        let massed = vec!["node/house".to_string()];
+        let c = census(&empty, &[], &one_place, Some(&notice())).deferring(&massed);
+        assert!(c.notice_deferred());
+        assert!(c.check_declared(&BTreeMap::new()).is_ok());
+        let line = c.line();
+        assert!(
+            line.contains("1 place(s) still stand in their stand-in"),
+            "{line}"
+        );
+        assert!(line.contains("(node/house)"), "{line}");
+        assert!(line.contains("judged (DW1018) by the build"), "{line}");
+        // Detailed — nothing left in a stand-in — the arm judges and refuses.
+        let c = census(&empty, &[], &one_place, Some(&notice())).deferring(&[]);
+        assert!(!c.notice_deferred());
+        assert_eq!(
+            c.check_declared(&BTreeMap::new()).unwrap_err().code,
+            "DW1018"
+        );
+        assert!(!c.line().contains("stand-in"), "{}", c.line());
+        // A seen scenery container with no notice is refused at the stand-in too.
+        let bare = model(&[([1, 2, 3], "minecraft:barrel")]);
+        let c = census(&bare, &[], &one_place, None).deferring(&massed);
+        assert_eq!(
+            c.check_declared(&BTreeMap::new()).unwrap_err().code,
+            "DW1018"
+        );
     }
 
     #[test]
