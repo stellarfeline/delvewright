@@ -30,21 +30,16 @@ delvewright_dsl::dw_code! {
     const DW_COLLECT_NOT_A_CONTAINER: DwCode = DwCode::new("DW0438", ExitTier::Build);
 }
 
-/// The container blocks a `loot` fill accepts, with their slot counts.
-///
-/// Deliberately the *single-block, slot-addressable* inventories a box-garden
-/// delve furnishes rooms with. Excluded on purpose: `ender_chest` (per-player,
-/// not world state), `shulker_box` (a portable item), and the double chest,
-/// which is two block entities and would make `container.<n>` ambiguous about
-/// which half it addresses.
+/// The slot count of the container at a block state, or `None` when the block
+/// is not a container — read from the one container table,
+/// [`delvewright_dsl::blocks::CONTAINER_KINDS_1_21_11`] (spec-0105 §2.1: the
+/// twelve kinds that open an inventory screen, furnaces and smokers among
+/// them). A double chest is two block entities, each addressed by its own cell.
 pub fn container_slots(name: &str) -> Option<usize> {
-    match base_id(name) {
-        "minecraft:chest" | "minecraft:trapped_chest" | "minecraft:barrel" => Some(27),
-        _ => None,
-    }
+    delvewright_dsl::blocks::container_slots(name)
 }
 
-/// Whether `name` is a container a `loot` fill can target.
+/// Whether `name` is a container a `loot` fill or a `collect` can target.
 pub fn is_container(name: &str) -> bool {
     container_slots(name).is_some()
 }
@@ -602,17 +597,53 @@ mod tests {
         assert!(check_collect_containers(&BTreeMap::new(), &[], &[]).is_ok());
     }
 
+    /// spec-0105 §2.1: the container class is the table's twelve kinds — a
+    /// furnace-family container has three slots and a shulker box 27 — and the
+    /// blocks that hold items without an inventory screen are outside it.
     #[test]
-    fn non_containers_and_deliberate_exclusions_are_rejected() {
+    fn the_container_class_is_the_table() {
+        for (id, slots) in [
+            ("minecraft:furnace[facing=north,lit=false]", 3),
+            ("minecraft:smoker", 3),
+            ("minecraft:blast_furnace", 3),
+            ("minecraft:brewing_stand", 5),
+            ("minecraft:hopper", 5),
+            ("minecraft:dispenser", 9),
+            ("minecraft:shulker_box", 27),
+            ("minecraft:red_shulker_box", 27),
+        ] {
+            assert_eq!(container_slots(id), Some(slots), "{id}");
+        }
         for id in [
             "minecraft:stone",
             "minecraft:air",
             "minecraft:ender_chest",
-            "minecraft:shulker_box",
-            "minecraft:furnace",
+            "minecraft:decorated_pot",
+            "minecraft:lectern",
+            "minecraft:chiseled_bookshelf",
         ] {
-            assert!(!is_container(id), "{id} must not be fillable");
+            assert!(!is_container(id), "{id} is not a container");
         }
+    }
+
+    /// A smoker fill of three stacks builds; a fourth is refused naming the
+    /// real slot count (spec-0105 criterion 2).
+    #[test]
+    fn a_smoker_takes_three_stacks_and_refuses_four() {
+        let mut b = BTreeMap::new();
+        b.insert(
+            [1, 2, 3],
+            "minecraft:smoker[facing=north,lit=false]".to_string(),
+        );
+        let blocks = crate::compiler::blockstate::interned(b);
+        assert!(check_loot_containers(&blocks, &[mk("stores", [1, 2, 3], 3)], &[]).is_ok());
+        let e = check_loot_containers(&blocks, &[mk("stores", [1, 2, 3], 4)], &[]).unwrap_err();
+        assert_eq!(e.code, "DW0431");
+        assert!(e.message.contains("has 3 slots"), "{}", e.message);
+        assert!(check_collect_containers(&blocks, &[fill([1, 2, 3], 3)], &[]).is_ok());
+        let e = check_collect_containers(&blocks, &[fill([1, 2, 3], 4)], &[]).unwrap_err();
+        assert_eq!(e.code, "DW0438");
+        assert!(e.message.contains("has 3 slots"), "{}", e.message);
     }
 
     // --- what the refusal SAYS to do about it ------------------------------

@@ -3,10 +3,10 @@
 //! over the verbs its effects carry at every effect root (status effects, the
 //! `sequence` nesting rule, a `carrier: "one"` give, `give-item` enchantments).
 
+use crate::blocks::MAX_CONTAINER_SLOTS;
 use crate::cutscene::check_cutscene_shape;
 use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
-use crate::blocks::MAX_CONTAINER_SLOTS;
 use crate::loot::check_stack_count;
 use crate::registry::{AnchorRegistry, BlockRegistry, EffectRegistry, ItemRegistry};
 use crate::validate::{

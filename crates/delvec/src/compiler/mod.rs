@@ -134,6 +134,7 @@ pub mod clock;
 pub mod cohabit;
 pub mod combat;
 pub mod commands;
+pub mod containers;
 pub mod continuity;
 pub mod creator;
 pub mod crosshair;

@@ -492,6 +492,42 @@ pub fn build_with_warnings(
         )?;
     }
 
+    // spec-0105 container census: every container cell of the edited model is
+    // loot, a device or scenery, judged after the fills are proven real
+    // (DW0431/DW0438) so a fill into a wall is named for what it is first.
+    // `DW1018` (built vs declared) then `DW1024` (arrangement), with the
+    // binding line printed before either verdict.
+    let container_census = {
+        let blocks = &assembled.blocks;
+        let claims = crate::compiler::containers::claims_of(plan, blocks);
+        let place = |cell: [i32; 3]| crate::compiler::containers::place_of(plan, cell);
+        let census = crate::compiler::containers::census(
+            blocks,
+            &claims,
+            &place,
+            plan.campaign
+                .quests
+                .content
+                .containers
+                .as_ref()
+                .and_then(|k| k.decoration_notice.as_ref()),
+        );
+        eprintln!("{}", census.line());
+        census
+            .check_declared(&crate::compiler::containers::anchors_by_cell(&plan.anchors))
+            .map_err(|e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            })?;
+        census
+            .check_arrangement()
+            .map_err(|e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            })?;
+        census
+    };
+
     // v0.4 navigation planning over the solved voxel grid (spec-0008 addendum):
     // collision-safe `move-npc` walked paths (DW0307) + cutscene air-corridor
     // checks (DW0308). Only built when the campaign uses those verbs, so v0.2/v0.3
@@ -1194,6 +1230,13 @@ pub fn build_with_warnings(
     if let Some(ledger) = &gate_seal_ledger {
         put_json(&mut out, "validation/gate-seal.json", ledger);
     }
+    // The container census ledger (spec-0105 §4.3): one row per container cell
+    // with its claims, the counts, the notice and the census input's digest.
+    put_json(
+        &mut out,
+        "validation/containers.json",
+        &container_census.to_json(),
+    );
     // **What the derivation massed** (spec-0098 §8): every place this world
     // stands a stand-in in, by name, beside the binding line that counts them.
     // A stand-in never ships — the staging gate reads this, the one event

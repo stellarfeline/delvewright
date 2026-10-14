@@ -1407,10 +1407,16 @@ mod tests {
             }
         }
         assert_eq!(CONTAINER_KINDS_1_21_11.len(), 12);
-        assert_eq!(ids, 28, "eleven single-id kinds and seventeen shulker boxes");
+        assert_eq!(
+            ids, 28,
+            "eleven single-id kinds and seventeen shulker boxes"
+        );
         let max = CONTAINER_KINDS_1_21_11.iter().map(|k| k.slots).max();
         assert_eq!(max, Some(MAX_CONTAINER_SLOTS));
-        assert_eq!(container_slots("minecraft:smoker[facing=north,lit=false]"), Some(3));
+        assert_eq!(
+            container_slots("minecraft:smoker[facing=north,lit=false]"),
+            Some(3)
+        );
         assert_eq!(container_slots("barrel"), Some(27));
         assert_eq!(container_slots("minecraft:lectern"), None);
         assert_eq!(container_slots("minecraft:ender_chest"), None);

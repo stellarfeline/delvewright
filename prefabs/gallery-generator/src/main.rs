@@ -810,15 +810,38 @@ const ANCHORS: &[Anchor] = &[
     },
 ];
 
-/// **Container anchors** — the cells that hold a chest.
+/// **Container anchors** — the cells that hold a chest or a barrel.
 ///
 /// A `loot[]` fill and a `collect` objective's `container` both need a cell that
 /// really is a fillable container, and a point anchor cannot be one: a body
 /// stands in air and a chest is a block. So they are their own table, checked by
-/// [`assert_anchors_are_standable`] against `minecraft:chest` rather than
+/// [`assert_anchors_are_standable`] against a container block rather than
 /// against air — the standable rule would refuse every entry here for being
 /// solid, correctly and uselessly.
+///
+/// Every container in the hall is named here, because every one of them pays
+/// off (spec-0105 §9): the hall holds a loot fill, a collect and a trap, and a
+/// container that matters never stands among scenery. The hall's two barrels —
+/// the ferryman's in the cabin and the one at the long gallery's far end — are
+/// filled by `loot`; the one container no declaration claims is the long hall's
+/// end chest, in a place of its own, which is the gallery's scenery.
 const CONTAINERS: &[Anchor] = &[
+    Anchor {
+        name: "anchor/cabin-barrel",
+        pos: [CABIN_LAMP[0], CABIN_LAMP[1] - 1, CABIN_LAMP[2]],
+        facing: None,
+        trigger_block: None,
+        note: "the ferryman's barrel under the cabin's lamp, filled by a `loot` entry",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/long-gallery-barrel",
+        pos: long_gallery_cell(2, 1, CORRIDOR_SIZE[2] - 2),
+        facing: None,
+        trigger_block: None,
+        note: "the barrel at the long gallery's far end, filled by a `loot` entry",
+        role: None,
+    },
     Anchor {
         name: "anchor/case",
         pos: [16, 1, 9],
@@ -1397,10 +1420,10 @@ fn assert_anchors_are_standable(s: &Structure) {
         );
     }
     for a in CONTAINERS {
-        assert_eq!(
-            at(a.pos),
-            "minecraft:chest",
-            "{ID}: container anchor `{}` is not a chest",
+        let found = at(a.pos);
+        assert!(
+            found == "minecraft:chest" || found == "minecraft:barrel",
+            "{ID}: container anchor `{}` is not a chest or a barrel: `{found}`",
             a.name
         );
     }

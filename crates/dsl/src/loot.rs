@@ -152,7 +152,11 @@ pub(crate) fn container_declaration_checks(c: &Campaign, d: &mut Vec<Diagnostic>
                 .to_string(),
         ));
     }
-    fn descend(path: String, eff: &crate::QuestEffect, f: &mut dyn FnMut(String, &crate::QuestEffect)) {
+    fn descend(
+        path: String,
+        eff: &crate::QuestEffect,
+        f: &mut dyn FnMut(String, &crate::QuestEffect),
+    ) {
         f(path.clone(), eff);
         for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
             for (j, inner) in list.iter().enumerate() {
