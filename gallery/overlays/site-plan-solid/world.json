@@ -35,6 +35,6 @@
     "title": "The Gallery, Derived",
     "weather": "clear"
   },
-  "dsl_version": "0.41.0",
+  "dsl_version": "0.44.0",
   "stage": "world"
 }
