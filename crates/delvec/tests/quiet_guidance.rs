@@ -974,7 +974,7 @@ fn a_bell_that_plays_a_cutscene_is_rung_by_a_player_and_shows_the_party() {
         "id": "trigger/the-bell", "at": "anchor/exit", "on": { "on": "use" },
         "prop": { "block": "minecraft:bell[attachment=floor,facing=north]" },
         "effects": [{
-            "type": "cutscene", "seconds": 2,
+            "type": "cutscene", "subject": "landscape", "seconds": 2,
             "path": [ { "anchor": "anchor/exit", "offset": [-2, 2, 0] },
                       { "anchor": "anchor/exit", "offset": [2, 2, 0] } ]
         }]
