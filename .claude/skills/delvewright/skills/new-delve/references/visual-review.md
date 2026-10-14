@@ -83,11 +83,13 @@ the renderer*. A time is a keyword or a body, a position and a phase, and a
 keyword night is a full moon; the phase the brief asked for is confirmed in the
 game, never on a render. Declared-dark areas with a `night-vision` mitigation are the one thing the
 scene emitter makes legible, and it marks those frames as emulations; everything
-else you read as the player will see it. Never raise a budget, an exposure or an
-hour to make a picture come out: every sky — clear, rain or thunder — is drawn
-as the game draws it at that hour under that weather, at exposure 1, with the
-game's mid-tone, and its lanterns lit, on average, as bright as the game's, so
-an exterior that reads dark is dark in the game. Near a lantern a render is
+else you read as the player will see it. Never raise a budget or move an hour
+to make a picture come out, and never write an `exposure` into a camera: the
+engine derives it and `DW1010` refuses one. Every sky — clear, rain or thunder —
+is drawn as the game draws it at that hour under that weather, with the game's
+mid-tone, and its lanterns lit, on average, as bright as the game's, so a place
+that reads dark is dark in the game: light it where the room is designed
+([new-pieces.md](new-pieces.md#light-inside-a-cave-or-a-body)). Near a lantern a render is
 brighter than the game and far from it dimmer, so judge how a lit place reads in
 the game.
 

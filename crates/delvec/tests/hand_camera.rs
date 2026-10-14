@@ -797,6 +797,6 @@ fn the_record_s_documented_fields_are_the_reader_s_fields() {
          mention(s) in the documented paragraph",
         fields.len()
     );
-    assert_eq!(fields.len(), 19, "the record's fields");
+    assert_eq!(fields.len(), 18, "the record's fields");
     assert!(named >= fields.len(), "every field named at least once");
 }

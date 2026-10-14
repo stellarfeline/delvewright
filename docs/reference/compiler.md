@@ -3681,8 +3681,12 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   (`HableCurve::mid_grey_gain`, the positive root of the quadratic `h(y) = m /
   whiteScale` is in `y`): `k` = 1.463761, settings 0.32138956, 0.7318806, 0.1,
   0.2, 0.02, 0.3, 7.651521. **Derived**; the anchor is the 18% grey card
-  exposure is metered against, **cited**. The camera's `exposure` stays its
-  own field, 1.0 for the light as measured. A second derivation was measured
+  exposure is metered against, **cited**. **The exposure is derived with it**:
+  every scene is written at `scene::EXPOSURE`, 1.0, the one value at which
+  the sky's radiances are the lightmap's colours, this curve holds the
+  mid-grey and the lantern scale below is fitted; no camera, review shot or
+  panorama states its own, and a camera record that does is refused
+  (`DW1010`). A second derivation was measured
   and not taken: the `k` that best fits the game's transfer, in least squares
   with equal weight per display level, over the range a clear cell lights,
   `(0, L^(1/2.2)]` for its light `L` (the place frames below hold 99.6–99.9% of
@@ -5828,7 +5832,7 @@ required: `campaign_id` — the campaign the record belongs to, held equal to th
 build's, so a record cannot silently place cameras in another world — and
 `cameras`. Per camera: `name`, `answers` (a `design.json` row), `pos` (the lens,
 world blocks), `yaw`/`pitch` in the `--camera` convention above, vertical `fov`,
-`exposure`, `width`, `height`, `source` (`estimated` or `hand`), `spp`, and two
+`width`, `height`, `source` (`estimated` or `hand`), `spp`, and two
 optional fields: `sky` — an object of `time` and `weather`, both required
 when the object is present, typed by the hour and weather enums `world.json` uses — the
 sky the picture is taken under when it is not the sky of the row the camera
@@ -5841,7 +5845,11 @@ serde refuses a missing one, both as `DW0721`, naming the camera and the row it
 answers. Keys are alphabetical, so the
 record a tool writes is already canonical. This list is not hand-kept:
 `crates/delvec/tests/hand_camera.rs` serialises the reader's own structs and
-holds this paragraph to the field names that come out, in both directions. The record is not a stage document
+holds this paragraph to the field names that come out, in both directions. **There is no `exposure`**: a camera that carries one, at any value, is
+refused before serde reads the record, as `DW1010`
+([`compiler::view::camera`](delvec/compiler/view/camera.md)), naming the camera,
+its row and the remedy — remove the field, and light a dark room where it is
+designed; `delvec build` raises it before anything is placed. The record is not a stage document
 and reaches neither the datapack nor the plan's shots; `delvec build` reads it
 as a hashed input, proves every camera in it (`DW0724`, above) and holds it to
 `design.json` in both directions — every camera answers a row (`DW0721`) and
@@ -5956,7 +5964,7 @@ emulation. `delvec panorama` emits through the same scene builder
 and prints its solved camera as a record line. Refusals are `DW0721` (exit 2),
 before any file: a record that does not parse or carries an unknown key, an
 illegal name, two cameras of one name, an empty `answers` or one naming no row,
-a non-positive exposure, a pitch outside −90..90, a field of view outside
+a pitch outside −90..90, a field of view outside
 (0, 180), a zero frame or sample target, an empty record, a record for another
 campaign than the build, an `--only` name the record lacks, a `sky` with a
 member missing or a keyword outside the enums, **a stated `sky` equal to the
@@ -6034,8 +6042,7 @@ and nothing else. `--report` writes the pose `delvec harvest` read off slot `n`
 — the eye as `pos`, the rotation as `yaw`/`pitch`, verbatim, since the stamp and
 the record speak Minecraft's rotation — with the field of view the person
 framed with, as `source: hand`; a new hand row takes `--answers`, a 1600×900
-frame, 300 samples and exposure 1.0, and a replaced one keeps its frame and
-exposure. `--candidates` writes the named camera of a record-format file
+frame and 300 samples, and a replaced one keeps its frame. `--candidates` writes the named camera of a record-format file
 (`candidates.json`) as `source: estimated`. **An estimate over a `hand` row is
 refused, naming the row**; only `--delete` frees the name. A row keeps its
 `answers`: a different `--answers` for an existing row is refused (a camera

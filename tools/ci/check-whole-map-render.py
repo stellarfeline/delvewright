@@ -59,8 +59,9 @@ And for `delvec cameras`, on every point whose campaign carries a
 `design/cameras.json`:
 
 - **every stated camera is the scene's camera.** One scene per camera, named
-  `<campaign>_camera_<name>`, whose position, vertical `fov`, frame, exposure and
-  sample target are the record's, and whose view direction — derived from the
+  `<campaign>_camera_<name>`, whose position, vertical `fov`, frame and sample
+  target are the record's, whose exposure is the engine's derived 1.0 (the
+  record states none), and whose view direction — derived from the
   stored orientation in Chunky's basis — is the direction Minecraft looks for the
   record's own yaw and pitch (`(-sin yaw·cos pitch, -sin pitch, cos yaw·cos
   pitch)`), within 1e-5. That formula is written here from the game's convention,
@@ -226,6 +227,13 @@ def stub_world(build: Path) -> None:
     (region / "r.0.0.mca").write_bytes(b"stub")
 
 
+# The exposure every scene is written at: the one value the sky, the tone curve
+# and the lantern scale are calibrated at (`compiler.md` §4). Typed here from the
+# reference, not read from the engine, so a scene the engine exposes otherwise
+# is a red.
+DERIVED_EXPOSURE = 1.0
+
+
 def camera_matches(doc: dict, cam: dict) -> list[str]:
     """What differs between a stated camera and the scene emitted for it."""
     bad = []
@@ -239,8 +247,10 @@ def camera_matches(doc: dict, cam: dict) -> list[str]:
     for key, field in (("width", "width"), ("height", "height"), ("sppTarget", "spp")):
         if doc[key] != cam[field]:
             bad.append(f"{key} {doc[key]} is not the record's {cam[field]}")
-    if abs(doc["exposure"] - cam["exposure"]) > 1e-5:
-        bad.append(f"exposure {doc['exposure']} is not the record's {cam['exposure']}")
+    if "exposure" in cam:
+        bad.append(f"the record states `exposure` {cam['exposure']}, which the engine derives")
+    if abs(doc["exposure"] - DERIVED_EXPOSURE) > 1e-5:
+        bad.append(f"exposure {doc['exposure']} is not the derived {DERIVED_EXPOSURE}")
     yaw, pitch = c["orientation"]["yaw"], c["orientation"]["pitch"]
     got = (math.cos(yaw) * math.sin(pitch), -math.cos(pitch), -math.sin(yaw) * math.sin(pitch))
     y, p = math.radians(cam["yaw"]), math.radians(cam["pitch"])
