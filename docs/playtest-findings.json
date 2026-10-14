@@ -2995,6 +2995,60 @@
       "note": "The same class as `vh-02` on land. The route proofs could not see it: they take the walk step only, so a hedge top reached by a jump off a garden boulder was in no proof's reach. `DW0921` floods the player's own movement (`nav::World::body_moves`: the walk step, falls to the deepest an unarmoured body survives, and cardinal gap jumps inside `dsl::metrics::JUMP_REACH`, measured by `tools/spike-jump-arc/simulate.mjs at 84f364997d24`, which reproduces the live jump spike's 14 verdicts) from the critical path's route cells, once per quest configuration, and refuses every reached cell from which no movement leads back; a cell the boundary clock returns and a shortcut lever the pocket reaches are ways out. A room the story shuts the party into holds the objective the story waits on and is not refused, with no declaration. Measured on this campaign at `dd4429c`: 6 configurations, 316580 cells reached, 827 a body cannot leave, in 78 pockets over 5 configurations -- on land in each, the four hedge beds (the one at `[140, 82, 110]` among them: 25 cells, entered `by a fall of 2 block(s)` off the hedge top), a ruin hole in the curtain top, a tower slit one step under the wall walk and nine hollows in the east ditch between the crag and the field wall; and the Undertide well (`vh-02`) in three. At the fixed content: 0. Limits, named in the diagnostic: diagonal jumps, climbing, standing on a fence or wall top and diving are not moves.",
       "round": 2,
       "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "campaign-complete"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "kind": "artifact",
+        "file": "endings.json",
+        "path": "endings"
+      },
+      "finding": "an ending's text said the place was destroyed while the player stood afterwards unharmed in an intact world",
+      "general_form": "the world after an ending agrees with what the ending says happened: an ending can change the world and the party's situation, and a check reports an ending that changes nothing it narrates",
+      "id": "str-12",
+      "note": "Carried by spec-0108's ending reading: `validation/endings.json` lists, per ending, every aftermath effect of its final scene (the effects whose verb changes the world, `Verb::changes_world`) with the observable a proof reads after the scene, and the binding line states `aftermath: N effect(s)` per ending beside its happening text — an ending that changes nothing reads `aftermath: 0 effect(s)`, which a reviewer reads against the ending's words; the engine never reads the prose (CLAUDE.md, a check confirms intent). A cutscene's `then` is how a finale changes the world after the camera returns; each aftermath effect is proven by a PackTest per (ending, world) (`ending_<slug>_<k>`) and read by the bot (`assert-complete.aftermath[]`). spec-0108 assigns this finding no DW code: the class is reported and proven, never refused from prose.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quest-plan.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "forks_on"
+          ]
+        }
+      },
+      "binding": {
+        "file": "branch-plan.json",
+        "kind": "artifact",
+        "path": "branches"
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "kind": "dw",
+        "code": "DW1029"
+      },
+      "finding": "the ending depended only on the last dialogue choice and on nothing the player did before it",
+      "general_form": "each ending reports how many of its inputs are set before the final scene (an advisory, never a refusal)",
+      "id": "str-13",
+      "note": "Carried by spec-0108: every ending's inputs are the gates of its final scene, each dated and kinded (said, did, finished) and seeded or final-scene, printed per ending on every validate/analyze/build (`ending binding`) and in `validation/endings.json`; a campaign that declares `endings_read` on stage 4 is refused `DW1029` for an ending below either term, and every ending must be reached by a story world (`DW1030`). The doc comment on `dsl::quest::verb::CampaignComplete` now says the effect takes `when`. The skill's step-3 steer toward endings that read the run is held until the release that carries the surface is pinned (spec-0108, recorded debt).",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"
