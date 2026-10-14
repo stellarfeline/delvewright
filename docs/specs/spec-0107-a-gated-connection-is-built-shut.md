@@ -1,0 +1,178 @@
+# spec-0107: A gated connection is built shut — `gating` on any traversal connection stands a bar in its seam until the story opens it, the class says only how a body crosses once it is open, and the separation proof holds every one
+
+- **Status**: Proposed
+- **Ground**: written against engine `d336a2b1d` (`origin/main`), read only, and the `DW1011` branch at `84b0c07fa` (`origin/fix/a-shut-gate-separates`, unmerged). Read: `crates/dsl/src/layout.rs` (`Edge`, `EdgeGating`, `OpensFrom`, `Closure`, `Grants`, `DW0818`), `crates/dsl/src/siteplan/{mod,seam}.rs` (`synthesized_anchor_kinds`, `owed_anchors`, `seam_anchor`, `SEAM_BAR`, the per-class seam rules), `crates/delvec/src/compiler/blockout.rs` (`derive_with` steps 5–6b, `seal_unopened`, `DW0836`–`DW0838`, `DW0986`), `crates/delvec/src/compiler/nav/separate.rs` on the branch, `crates/delvec/src/grammar/ir.rs` (`EdgeClass`, `Way`, `Opens`), spec-0049 §3.1–3.3 and §5.2, spec-0042 §2.2, spec-0052, spec-0053 §4, spec-0098 §2, spec-0099 §2, `docs/reference/compiler.md` (the `edges[]` and `edges[].gating` rows, *a seam*, *Runtime region solidity*), `docs/reference/web-narrative.md` §1 and §6, `docs/reference/game-writing.md`. Every count in §1 was measured at those revisions by the scripts named there, not quoted.
+- **What it is for**: a story whose order the world keeps. A layout graph says a connection is passable only once the party holds a flag or has finished a quest; a delve whose later scenes can be walked into first has no order, whatever its quests say (`docs/reference/web-narrative.md` §1, the second defect of a chain). The direction this spec executes: **story order is enforced by the world, never by trust** — a connection the graph declares shut is shut in blocks from world load, and a proof says so.
+- **Research**: §4 is this spec's record. Each statement is **cited** (a reading of the tree at the ground revision, a constitution rule, a research page already in `docs/reference/`, or a named outside source) or **authored** (this spec chooses).
+- **Numbers**: spec `0107`. Two diagnostics: **`DW1027`** (a gated front, §8.1) and **`DW1028`** (a gated connection nothing opens, §8.2). `dsl_version` **0.45.0** (the layout graph's shape moves, §5; the number is free on every remote ref at the time of writing).
+- **Non-goals**: direction. `one_way` on a `walk`, `stair` or `climb` stays a declaration the proofs read and the world does not enforce (§11); a `drop` is one-way by its geometry already. A piece's own spatial contract (`grammar::ir::EdgeClass`, spec-0042) — a different document with its own `barred` and `way`, untouched. A carry (spec-0083 §7): nothing is crossed in blocks, so nothing is built; its required `gating` arms a link and stands. A clock-owned gate (spec-0016 §4), a gate station (spec-0052) and a prefab gate anchor: unchanged, already judged. Any campaign's migration.
+
+## 1. The defect, measured
+
+**Cited** (the tree at `d336a2b1d`; `crates/delvec/src/compiler/blockout.rs` step 6). The derivation realizes a seam's opening by the edge's **class**: `barred` fills it with `SEAM_BAR` (`minecraft:iron_bars`) and synthesizes `anchor/seam-<edge>` as a gate region; every other traversal class cuts it to air. `gating` is read by nothing in the derivation. `seal_unopened` — the world `DW0837` floods — seals `barred` seams only. So a `walk`, `stair`, `climb` or `drop` carrying `gating` is **open from world load**, and its gating is honoured by exactly one thing: the graph's monotone closure (`DW0816`/`DW0817`/`DW0819`), which is a proof over topology and builds nothing.
+
+**Cited** (`gallery/overlays/site-plan/layout-graph.json`, read by a script over `content.edges`): 4 of 15 connections carry `gating` on a class other than `barred` or `carry` — `edge/annex-chute` (`walk`, `quest/near-hall`, `shortcut`), `edge/loft-stair` (`stair`, `flag/muster-cleared`), `edge/undercroft-crawl` (`climb`, `flag/muster-cleared`, `shortcut`), `edge/undercroft-shaft` (`drop`, `flag/muster-cleared`). The solid overlay declares the same four. Each is cut to air. The chute joins the annex to the far hall before the quest that opens the hall's three doors is done; the shaft and the crawl join the near hall to the undercroft and the undercroft to the near hall before the muster is cleared; the loft stair is climbed before the muster is cleared. The `DW1011` branch met the consequence: the far hall is reached round the story doors, and the branch's repair was to declare `edge/west-door` and `edge/centre-door` `shortcut` — a declaration that the party may get round them, written to make a true refusal go quiet. That is the trigger, not the cause.
+
+**Cited** (every `layout-graph.json` on every remote ref of the content repository, 22 graphs, each read from its ref with `git show` and counted over `content.edges`): **0** connections carry `gating` on a class other than `barred` or `carry`; 9 connections are `barred`. The claim that a campaign's breach walks are gated and open is **not true at those revisions**: `edge/heart-to-breach` and `edge/breach-to-ridge` carry no `gating`, so the way round that campaign's barred diaphragm is a fact of its topology, which the closure honours exactly as written. Recorded here so the next reader does not re-measure it.
+
+**Cited** (`crates/dsl/src/layout.rs`, `DW0818`): spec-0049 §3.3 says `DW0818` refuses *a `barred` edge that no quest-side effect opens*. The code refuses an **empty** gating and a flag or quest nothing produces, and holds no opener obligation: no reference to `open-gate`, `shortcuts[]` or `anchor/seam-` exists in the module. A barred door nothing opens is caught, if at all, by a route proof that happens to need it (`DW0311`) or not at all when it is off every proven path. §8.2 closes this.
+
+**Cited** (`crates/dsl/src/siteplan/seam.rs`, the class match): a `barred` seam is realized under the `walk` rule — a sill, no run, no treads, no ladder — so a connection that is **both vertical and shut** has no spelling: a stair whose head is barred until a beat, a hatch over a ladder, a shaft shut until a fall is survivable to the story. The piece-level contract already states this generalisation (spec-0042 §2.2: *a portcullis over a climb — `stair` + cleared way — is now writable, which `barred`'s walk shape never could state*). The layout graph never received it.
+
+## 2. What the DSL promises
+
+**Cited.** spec-0049 §3.1 defines `gating` as *what a body must already hold for a connection to be passable* and §3.2 reads it in the closure: *beats grant, edges demand*. `compiler.md`'s `edges[].gating` row calls it *a projection of the campaign's runtime gating into topology* and `DW0818` keeps it a projection — every flag it names is one the campaign produces. `layout.rs`'s module note says a layout-graph edge is *evaluated by nothing at run time*. spec-0049 §5.2 says the derivation *fills* a `barred` seam, and §5.3's `DW0837` floods *with `barred` seams opened as their gating closure allows*.
+
+**The reading this spec fixes.** The record states one obligation twice and only half-meets it. A `gating` is a claim about **passability**, and the closure proves the campaign's graph against that claim; the derivation then builds a world in which the claim is true for one class and false for four. A claim the proofs honour and the world does not is the vacuous shape the constitution names: the route proofs are green over a graph whose order the player can ignore. So `gating` is **a story-order statement the build enforces in blocks**, on every connection that carries it — never a hint for the route proof alone. The `barred` class was that statement spelled as a class; it spelled it for a walk at grade and for nothing else.
+
+## 3. The decision
+
+**Three sentences.**
+
+1. **`gating` on a traversal connection builds a bar.** Every `walk`, `stair`, `climb` or `drop` whose `gating` names a term is realized **shut**: the derivation stands `SEAM_BAR` where §6 says for its kind, synthesizes `anchor/seam-<edge>` as a gate region over those cells (and `anchor/unlock-<edge>` when one-sided), and the world-load seal measures it shut as it measures every gate. The quest layer opens it with the verbs that already open a gate. The class says what the crossing **is** once open — a walk, a flight of treads, a ladder, a fall — and `gating` says it is shut until the story opens it. One mechanism, read from the object class it acts on: a connection.
+2. **The `barred` class is retired from the layout graph.** It is exactly `walk` + `gating` + `opens_from` (spec-0042 §2.2 says so of the piece-level twin). Two spellings of one shut way is two authorities for one rule; the engine keeps the general one. `opens_from` moves into `gating` (§5), so a side can only be named for a way that shuts.
+3. **`DW1011` judges every gated connection**, by the same relation it judges a barred one with today, with its population widened, its binding line saying so, and two readings it lacks supplied (§7.3).
+
+**Why build rather than refuse.** A refusal ("gating needs a barrier; use `barred`") names a remedy that is unreachable for every vertical connection (§1, last paragraph): the author's only move is to invent a landing place between two places so a barred walk can stand in it — a workaround outside the design, the shape the constitution refuses (*if vanilla provides a primitive content needs, the DSL exposes it first-class*). Vanilla provides the primitive: a bar that `fill` clears. The cost of building is one site-plan rule per seam orientation and a widening of three existing bindings; the cost of refusing is a vocabulary that cannot state the commonest shortcut in the genre (§4).
+
+## 4. Research record
+
+### 4.1 How established level design gates vertical traversal
+
+- **Cited** — Dark Souls, Undead Burg: a ladder the player kicks down from above links the bridge side to the bonfire below; before it is kicked the ladder cannot be climbed from below, and the route is taken the long way (GamesRadar, *Dark Souls Remastered full walkthrough*, part 8; StrategyWiki, *Dark Souls/Undead Burg*).
+- **Cited** — Bloodborne, Central Yharnam: a lever lowers a ladder that gives the way up to the lamp; until it is pulled the ladder hangs out of reach, and a second lever at the end of the street opens the shortcut back to the entrance (Gamer Guides, *Central Yharnam*; the Fextralife *Central Yharnam* page).
+- **Cited** — the one-way shortcut back: a door, gate or drop passable from one side only, which returns the player to explored ground after a detour (TV Tropes, *Door to Before*); the lock-and-key reading of dungeons, in which a door the player can touch but not open is a node of the graph and the order of keys is the order of the dungeon (Brown, *Boss Keys*, via Boris the Brave and Zelda Universe — already the reference for S3 in `docs/reference/web-narrative.md`).
+- **Authored**, from the three. What the practice gates is **the ascent**: the ladder is missing or pulled up, the stair is broken, the rope is not yet lowered; the descent is a fall the player may take, which is the one-way shortcut. In this DSL that shape is two connections already: a `drop` (always open, one-way by its geometry) and a gated `climb` or `stair` the story opens. The engine's job is to make the gated one shut in both directions until it opens, because a gated connection a body passes **downward** before its beat is as out of order as one it climbs.
+- **Authored** — what the bar is. Practice gates an ascent by **absence** (no treads, no rungs). spec-0042 names the two kinds — `laid` (absent as built, filled by the opener) and `cleared` (standing as built, voided by the opener). An absence separates the ascent only: a body **falls** past a missing rung or down a treadless well whenever the fall is survivable (`metrics::unarmoured_survivable_fall_blocks`), so `laid` cannot keep a story shut. The derivation builds the `cleared` kind for every gated connection: a bar a body meets from either side. A `laid` way stays a piece's own (spec-0042) and is not what `gating` builds.
+
+### 4.2 What vanilla does with the bar
+
+- **Cited** (`crates/dsl/src/siteplan/mod.rs`, `SEAM_BAR`; `compiler.md`, `open-gate`): the bar is `minecraft:iron_bars`; a shut gate is a region of it; `open-gate` is one `fill … minecraft:air replace <block>` over the region; the world-load seal model measures the region shut from the bytes, not from the anchor's word.
+- **Cited** (`compiler.md`, *Runtime region solidity*): a region write's conclusion is read off its block through the collision table, so the bar is a `Fill` while it stands and a `Clear` once opened; the route proofs take the configuration's state per critical leg; `DW1011` (branch) floods every body move from the party's reach while the gate is shut.
+- **Cited** (spec-0099 §2.2, bytecode): a body on a climbable rises 0.2 blocks a tick while pushing into it and keeps that only while its feet cell is climbable; in air the rise decays by `(v − 0.08) · 0.98` a tick. **Authored** from those numbers: a body whose feet leave the top rung into an air cell rises about 0.35 blocks more and falls back; a ladder whose top rung is **below** the hole in a floor cannot be climbed out of, and the hole cell of a floor climb must therefore hold the rung, never the bar. §6 places the bar of a floor climb accordingly.
+
+## 5. The surface — the layout graph at `dsl_version` 0.45.0
+
+`edges[]`: `class` is `walk | stair | climb | drop | carry | vision`. The four traversal classes carry:
+
+- **`gating`** (optional) — `{flags[]?, quest?, opens_from?}`. `flags` and `quest` as today (each a term the campaign produces, `DW0818`). **`opens_from`** — `a | b | either` (default `either`) — moves here from the retired class: which side can open the shut way; one-sided, the derivation stands `anchor/unlock-<edge>` on that side for a `shortcuts[]` affordance. A side cannot be named for a connection that never shuts, because the field has no home outside `gating`; a `gating` that names a side and no term is refused as the empty gating it is (`DW0818`, below).
+- `one_way`, `shortcut` — unchanged.
+
+`carry` keeps its own required `gating` of `{flags[]?, quest?}` with no `opens_from` — an `opens_from` on a carry is an unknown field (`DW0100`), as a `falls` on a walk is today.
+
+`DW0818` widens by one word: *a `gating` present on any connection that names no term* is refused where it is written — the rule the code states for `barred` today (*passable from world load, which is not barred*), read over the class that now carries the claim.
+
+The site plan's `seams[]` and `metrics` move by nothing: a seam's `opening`, `form`, `stair_in`, `contact` and `meets` are the crossing's; whether it is shut is the graph's.
+
+**Spellings that move**, read at the ground revision: `gallery/overlays/site-plan/layout-graph.json` and the solid overlay (three `barred` edges each become `walk` with `gating.opens_from`); the content repository's 9 barred edges adopt when their campaigns are next built, per the standing rule — a released campaign is never rebuilt and is untouched.
+
+## 6. The build — where the bar stands, per kind
+
+The derivation (`blockout::derive_with`, step 6) writes the bar for every seam whose edge is gated and whose plane it cuts; where a bound piece owns the plane, the piece ships the shut state against the gate region it owes, exactly as for a barred seam today (spec-0098 §2; `owed_anchors`). The bar is the **last word in the opening**: written after the treads and the ladder, except where this table says the crossing's own realization keeps the cell.
+
+| Seam | The crossing, open | The bar, shut | **Authored** reason |
+|---|---|---|---|
+| in a wall — `walk`, `stair` (treads in `stair_in`, arriving at the opening), `drop` through an arch, `climb` up a wall (the ladder outside the wall under the opening, topping at the sill's course) | the opening cut to air, as today | the opening's cells, as a barred seam's today | a body from either place meets it at the plane; a body on the wall ladder meets it at the sill |
+| in a floor — `drop` (a shaft), `stair` (treads arriving under or beside the hole) | the hole cut to air, as today | the hole's own cells — the hatch | a body above cannot enter the hole; a body on the top tread has its head in the hole |
+| in a floor — `climb` (the ladder rises into the hole's first cell, spec-0099) | the hole cut to air with the rung in it, as today | the course **above** the hole, over the hole's footprint — a grating standing on the upper floor | the hole cell holds the rung (§4.2), so the bar stands where the body must pass next: a body on the rung has its head in the grating; a body above stands on it and cannot enter the hole |
+
+The gate region is the bar's cells; its block is `SEAM_BAR`; its **normal axis is the seam's**, handed to the anchor by the derivation (a floor's gate is thin on `y`, a wall's on its face axis) so that no consumer guesses it from the region's shape — the grating over a one-wide hole is one cell on two axes, and a guess has no answer there. `anchor/seam-<edge>` is owed by the place that owns the cells the bar stands in (the floor course's owner for a hatch, the upper place for a grating, the plane's owner for a wall), by the existing owed rule.
+
+A gated **contact** has no bar: a front is where two places simply meet along a span (spec-0053 §4), and a bar across it is a wall the plan did not draw. §8.1 refuses it.
+
+What does not move: the seam's run, pitch, rise, sill and drop policy (`DW0829`–`DW0831`, `DW0836`) are judged as for the ungated kind, over the world with every bar open; `DW0986` (a portal nothing crosses) likewise. `seal_unopened` seals **every** gated seam the closure never opens, not `barred` ones, so `DW0837` floods the world the campaign builds.
+
+## 7. The opener, and the proofs
+
+### 7.1 The opener
+
+A gated connection is opened by the verbs that open a gate, naming `anchor/seam-<edge>`: an `open-gate` effect, a `shortcuts[]` entry's `gate` (one-sided, with `anchor/unlock-<edge>` as its `unlock`), or a `timed_gates[]` entry's `gate` (then the clock owns it and `DW1011` counts it as clocked). `synthesized_gate_block` answers for every gated connection's seam gate, as it answers for a barred one's today, so `DW0343` cannot refuse the opener for declaring no block.
+
+The projection and the runtime stay two objects on purpose (`layout.rs`, the module note): the closure reads `gating` to prove the graph; emission reads the opener to build the world; `DW0818` holds the first to terms the second produces, and `DW1028` (§8.2) holds the second to exist. Whether the opener fires at the beat the gating names is judged over bytes, per quest configuration, by the route proofs and `DW1011` — not by a third rule over documents.
+
+### 7.2 The route proofs
+
+Nothing new. A gated seam's bar is a world-load seal; each walked leg is routed with the seal's state by causal ancestry (*Runtime region solidity*); a leg the story forces through a bar its beat has not yet cleared is `DW0311` naming the gate, which is the point-of-no-return-by-geometry the staging wants.
+
+### 7.3 `DW1011` — the separation proof, extended
+
+The branch's rule stands: while a gate is shut, a body at its near face reaches its far face by no walk, fall, jump or swim without passing it. Three things widen:
+
+- **Population**: every gated connection's seam gate, not `barred` edges — the branch's `barred_edges`/`barred_bound` become **gated connections** and **gated connections bound**; the report labels a gate by its edge, class and gating. The binding line reads `DW1011 binding: N gate(s) resolved (N of N gated connection(s) among them); …`, and the ledger `validation/separation-proof.json` carries the renamed fields. Not judged and counted, unchanged: a `shortcuts[]` door and a connection declared `shortcut`, a clocked gate, a gate no beat operates, a gate with no two faces.
+- **A cell a body can be in** includes a cell where it holds a climbable (`World::holds_body`, spec-0099), beside standing and floating — otherwise the lower face of a climb's gate has no cell, the pair is counted *unstood*, and a grating nobody is judged against is a vacuous pass.
+- **The axis** of a synthesized gate is the one the derivation handed (§6); the thin-axis guess stays for a prefab gate, which hands none. A handed axis whose two faces hold no cell is still *unstood*, counted as today.
+
+The gallery's committed probe for this widening is §9.2's third probe: a gated connection whose bar a body gets round by a connection the author left open.
+
+## 8. Refusals
+
+Each is a validation-tier error (exit 1) at the document it is written in, naming the connection and the move; each remedy is one the author can make in the named document and is proven reachable by a `remedy_reachability.rs` row.
+
+### 8.1 `DW1027` — a gated front
+
+A gated connection whose seam is a `contact` (spec-0053 §4). A front has no opening to stand a bar in, and a bar across a front is a wall the plan did not draw. Site plan, `/content/seams/<i>`. Remedy: give the seam a standard `opening` (then the bar stands in it), or remove the `gating` from the connection. Quantifier: every seam whose edge carries a `gating` with a term; binding stated as *N gated connection(s), N of them fronts*.
+
+### 8.2 `DW1028` — a gated connection nothing opens
+
+A gated connection whose seam gate no `open-gate`, `shortcuts[].gate` or `timed_gates[].gate` anywhere in the quest documents names. Shut from world load and shut forever, it is a wall carrying a claim about order. Judged at the quest documents (stage 5), the stage that owns the opener, over the one anchor-bearing effect walk (`QuestEffect::anchor_refs`); where stage 5 declares no quests at all the refusal carries the `DW0150` clause `DW0818` carries, for the same reason. Remedy: write the opener naming `anchor/seam-<edge>` at the beat whose completion the gating names, or remove the `gating`. Quantifier: every gated connection; binding stated as *N gated connection(s), N opened by a beat, N by a shortcut, N by a clock*.
+
+Not a new refusal: an empty `gating` (`DW0818`, widened in §5); a `gating` naming a term nothing produces (`DW0818`); an `opens_from` on a `carry` (`DW0100`); a route forced through a bar its beat has not cleared (`DW0311`); a body getting round a bar (`DW1011`).
+
+## 9. Gallery, probes, demo, docs
+
+### 9.1 Bound elements (`gallery/overlays/site-plan/`, and the solid overlay alike)
+
+- The four gated connections of §1 are **built shut**: the chute's arch barred until `quest/near-hall` completes (opened by an `open-gate` beside the two doors' in `on_complete`); the loft stair's head, the undercroft shaft's hatch and the undercroft crawl's grating barred until `obj/clear-the-muster` completes (opened beside the reliquary grille's). One of each kind, in a wall and in a floor, a floor climb among them.
+- The three doors become `walk` + `gating`: `west-door` with `opens_from: a`, `centre-door` with `either`, `east-door` with `opens_from: b` and its `shortcuts[]` entry unchanged. The `shortcut` marks the `DW1011` branch put on `west-door` and `centre-door` come **off**: with the chute, shaft and crawl shut, the far hall is reachable while the story doors are shut by nothing, and the proof says so — `DW1011` judges the two doors instead of counting them as a declared way round.
+- Coverage units (`schema --stage all`): `gating.opens_from` and its three values bound; the retired class gone from the schema.
+
+### 9.2 Refusal probes (the primary plus one declared edit each)
+
+| Probe | Code | Edit |
+|---|---|---|
+| `a-gated-front` | `DW1027` | a `gating` of `flag/muster-cleared` added to `edge/causeway-front`, whose seam is the overlay's one contact |
+| `a-gated-way-nothing-opens` | `DW1028` | the `open-gate` naming `anchor/seam-annex-chute` removed from `quest/near-hall`'s `on_complete` |
+| `a-shaft-left-open-round-the-story-doors` | `DW1011` | the `gating` removed from `edge/undercroft-shaft`, so a body in the near hall drops to the undercroft, climbs its stair into the far hall and is past the story doors before `quest/near-hall` — the shape the branch declared away |
+| `a-side-named-for-a-way-that-never-shuts` | `DW0818` | `gating: {opens_from: "a"}` written on `edge/exit-arch` — a side and no term |
+
+### 9.3 Demo level
+
+One row in `docs/demo-levels.md`, queued by the implementation: a four-place level — a hall, a loft up a stair whose head is barred until a muster falls, a cellar down a shaft whose hatch is shut until the same beat, a ladder back up with a grating over its hole opened from above only — played in order, with the long way round taken on the walk and the bar met at each shut way.
+
+### 9.4 Docs, same change
+
+`compiler.md`: the `edges[]` and `edges[].gating` rows (the class list, `opens_from` under `gating`, the retired class gone), the *a seam* row (the bar per §6), the `DW1027`/`DW1028` catalog rows, the blockout binding line (*shut* for *barred*), the `DW1011` row and binding line as §7.3 words them; `docs/reference/dsl/layout.md` (`DW0818` as widened); `docs/reference/delvec/compiler/{blockout,nav}.md`; spec-0049 §3.1, §3.3 and §5.2 carry a one-line departure note pointing here, the way §9 of that spec records its others; the `/new-delve` skill's layout step says a connection the story shuts carries `gating` and its quest opens `anchor/seam-<edge>`, and `when-red.md` carries the two codes' repairs.
+
+## 10. Version discipline
+
+One `dsl_version` step to 0.45.0, fenced at the layout graph: a graph below it carrying `opens_from` under `gating` or a `walk` with `gating` is refused by the fence as today's fence refuses a shape its version lacks; a graph at it carrying `class: barred` is `DW0100`. No other document moves by a byte. The emission baseline over every released campaign is byte-identical before and after — released campaigns carry no site plan or pin an engine that predates this.
+
+## Acceptance criteria
+
+Each criterion is checked against the tree at `d336a2b1d` with the `DW1011` branch read beside it; **none is satisfied there**, and the ones the branch partly reaches are named. `delvec` is the implementing tree's binary, force-rebuilt before any comparison.
+
+1. **Surface.** `delvec schema --stage all` exports `edges[]` with `class` ∈ `{walk, stair, climb, drop, carry, vision}` and `gating: {flags[]?, quest?, opens_from?}` on the four traversal classes, `gating: {flags[]?, quest?}` on `carry`; a graph with `class: barred` is refused as `DW0100`; `opens_from` on a `carry` is refused as `DW0100`; `tools/ci/check-gallery-coverage.py` is green with every new unit bound in the gallery domain or refusal-proven.
+2. **Built shut.** On the gallery's site-plan overlay, for each of the four gated connections of §1, the assembled bytes hold `SEAM_BAR` at exactly the cells §6 names for its kind and nowhere else in the opening; a test asserts the cell set per connection; removing a connection's `gating` moves those bytes to air and nothing else. The derivation's binding line states `N shut` with `N` the count of gated connections; a plan with none states `0 shut`.
+3. **Separates, then opens.** Over the overlay, `DW1011`'s binding line reports every gated connection resolved and bound (`7 of 7 gated connection(s)` on the overlay as §9.1 leaves it), the two story doors judged (not counted as a way round), and `0 got round`; the route proofs and `DW0837` are green over the opened configurations; the undercroft crawl is proven both ways over the climb moves (spec-0099's existing proof) after its grating clears. The world-load seal measures all seven shut at step 0.
+4. **The climb's rung.** A test builds a floor climb with `gating`, asserts the hole cell holds the ladder and the course above it holds the bar, and asserts the climb proof from the lower place reaches the upper floor **only** in the configuration after the opener fires.
+5. **Determinism.** Two builds of the overlay are byte-identical (existing gate); changing the seed moves no bar.
+6. **Refusals.** `DW1027` and `DW1028` each have a fixture under `crates/delvec/tests/` refused with its code and message, a `remedy_reachability.rs` row per remedy §8 names, and the committed probe §9.2 names; `DW0818` fires on a `gating` naming a side and no term; `tools/ci/check-dw-codes.py` is green in both directions with zero new allowlist entries.
+7. **The handed axis.** A test hands `DW1011` a one-by-one-by-two bar with a stated axis and asserts it is judged on that axis's two faces; the same region with no stated axis is counted *no two faces*. A test places a body on a rung at a gate's lower face and asserts the pair is counted *with the party at a face*, not *unstood*.
+8. **Binding lines and ledgers.** `DW1027`, `DW1028`, the derivation and `DW1011` each print their binding with its denominator on every build, zero stated as zero; `validation/separation-proof.json` carries the renamed fields; `tools/ci/check-stated-counts.py` and the docs job are green.
+9. **The gallery's repair comes off.** `edge/west-door` and `edge/centre-door` carry no `shortcut` mark in either overlay, and `DW1011` is green — asserted by the overlay build, not by reading the document.
+10. **Fence and baseline.** A graph at a `dsl_version` below 0.45.0 carrying `opens_from` under `gating` is refused by the per-stage fence; the emission baseline over every released campaign is byte-identical before and after the implementation lands.
+11. **Docs and skill, same change.** Every row §9.4 names is present; `tools/ci/check-doc-dupes.py`, `check-numbered-doc-index.py` and `check-demo-levels.py` are green with the §9.3 row present.
+
+### Recorded debts
+
+Checked against the ground; each is a debt until the implementation discharges or records it.
+
+- **Criterion 3's seven.** The count assumes the overlay keeps its four gated connections and three doors; a round that changes the overlay re-derives the number and states it in the test, never by hand in this spec.
+- **Criterion 4.** The 0.35-block figure in §4.2 is arithmetic over cited movement constants, not a measurement on a server; the bot tier that walks the demo level (§9.3) is where it is measured, and the test holds the model's answer, not the game's.
+- **The piece-owned grating.** When the upper place of a floor climb is bound to a piece, that piece owes `anchor/seam-<edge>` over cells in its own first course; the existing owed rule reaches it, but no gallery piece yet ships one. The solid overlay's detailed places are where the implementation proves it, or records that no place there owns a gated floor climb's upper course and the proof waits for one that does.
+
+## 11. Not settled here
+
+- **Direction.** `one_way` on a `walk`, `stair` or `climb` is a declaration the proofs read and the world does not enforce — a bar is symmetric and, once open, passes both ways. The gap predates this spec; a ledger row is its home, not a line here.
+- **A gated connection declared `shortcut`.** `DW1011` counts it and does not judge it, as the branch does for a barred one; whether a connection can be both a way round and a way the story shuts is a question for the first campaign that needs the pair, with its brief as the falsifier.
+- **A `laid` way at the graph.** Treads or rungs absent as built and laid by a beat separate the ascent only (§4.1); the engine builds no such thing from `gating`. A campaign that wants the look of a broken stair over a shut way declares the gated stair here and builds the look in the piece.
