@@ -267,6 +267,15 @@ def test_a_pointer_to_a_file_that_is_not_there_reds(mod, tree, engine):
     assert has(rep, "names `references/when-red.md`")
 
 
+def test_a_pinned_url_into_another_repository_is_not_a_pointer(mod, tree, engine):
+    path = tree / "references" / "when-red.md"
+    url = "https://github.com/o/r/tree/0123abc/references/not-bundled"
+    path.write_text(path.read_text(encoding="utf-8") + f"\nSee <{url}>.\n", encoding="utf-8")
+    assert not has(run(mod, engine), "references/not-bundled")
+    path.write_text(path.read_text(encoding="utf-8") + "\nSee `references/not-bundled`.\n", encoding="utf-8")
+    assert has(run(mod, engine), "names `references/not-bundled`")
+
+
 # ------------------------------------------------------------------ rule 8, the shape --
 
 
