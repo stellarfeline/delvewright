@@ -81,6 +81,12 @@ pub struct QuestsContent {
     ///.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub loot: Vec<Loot>,
+    /// **The container class** (spec-0105): what this campaign says about the
+    /// containers its world holds that no fill and no device claims. Absent =
+    /// none is scenery, which the build's container census proves (`DW1018`);
+    /// present and empty is `DW1019`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub containers: Option<crate::Containers>,
     /// Runtime state data (DSL v0.10, spec-0031): named, scoped, integer-valued
     /// counters the campaign sets, adds to and clears at runtime, and compares
     /// against in any gate. A campaign that declares none emits none of it.

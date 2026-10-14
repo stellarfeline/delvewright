@@ -1257,9 +1257,165 @@ pub fn sculk_rest(state: &str, nbt: Option<&SculkNbt>) -> Result<(), SculkFault>
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// The container class (spec-0105 §2.1)
+// ---------------------------------------------------------------------------
+
+/// One kind of **container**: a block entity that opens an inventory screen to
+/// a player's click — a subclass of the server's `BaseContainerBlockEntity`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContainerKind {
+    /// The `block_entity_type` registry name.
+    pub kind: &'static str,
+    /// Every block id that stands behind this block-entity type.
+    pub blocks: &'static [&'static str],
+    /// How many slots the inventory has (`container.0` … `container.<n-1>`), read
+    /// from the block entity's constructor (`NonNullList.withSize`).
+    pub slots: usize,
+}
+
+/// **The twelve container kinds of the pinned 1.21.11 game**, with their slot
+/// counts — the one table every reader of "is this block a container, and how
+/// big" consults (`delvec::compiler::loot::container_slots`, the census).
+///
+/// Source: the 1.21.11 dedicated server jar (`versions.toml` pin, bundled
+/// `server-1.21.11.jar` sha256 `ec47239a…fcebc`), disassembled and named
+/// through Mojang's official server mappings (`server.txt` sha1
+/// `5621e925…`): the subclasses of `BaseContainerBlockEntity` and each
+/// constructor's slot count; recorded in `crates/delvec/data/PROVENANCE.md`.
+/// Cross-checked against the vendored block registry by a test that shares no
+/// configuration with that reading. A furnace-family container's slots are
+/// input, fuel, result, in that order.
+pub const CONTAINER_KINDS_1_21_11: [ContainerKind; 12] = [
+    ContainerKind {
+        kind: "minecraft:chest",
+        blocks: &["minecraft:chest"],
+        slots: 27,
+    },
+    ContainerKind {
+        kind: "minecraft:trapped_chest",
+        blocks: &["minecraft:trapped_chest"],
+        slots: 27,
+    },
+    ContainerKind {
+        kind: "minecraft:barrel",
+        blocks: &["minecraft:barrel"],
+        slots: 27,
+    },
+    ContainerKind {
+        kind: "minecraft:shulker_box",
+        blocks: &[
+            "minecraft:shulker_box",
+            "minecraft:white_shulker_box",
+            "minecraft:orange_shulker_box",
+            "minecraft:magenta_shulker_box",
+            "minecraft:light_blue_shulker_box",
+            "minecraft:yellow_shulker_box",
+            "minecraft:lime_shulker_box",
+            "minecraft:pink_shulker_box",
+            "minecraft:gray_shulker_box",
+            "minecraft:light_gray_shulker_box",
+            "minecraft:cyan_shulker_box",
+            "minecraft:purple_shulker_box",
+            "minecraft:blue_shulker_box",
+            "minecraft:brown_shulker_box",
+            "minecraft:green_shulker_box",
+            "minecraft:red_shulker_box",
+            "minecraft:black_shulker_box",
+        ],
+        slots: 27,
+    },
+    ContainerKind {
+        kind: "minecraft:hopper",
+        blocks: &["minecraft:hopper"],
+        slots: 5,
+    },
+    ContainerKind {
+        kind: "minecraft:brewing_stand",
+        blocks: &["minecraft:brewing_stand"],
+        slots: 5,
+    },
+    ContainerKind {
+        kind: "minecraft:dispenser",
+        blocks: &["minecraft:dispenser"],
+        slots: 9,
+    },
+    ContainerKind {
+        kind: "minecraft:dropper",
+        blocks: &["minecraft:dropper"],
+        slots: 9,
+    },
+    ContainerKind {
+        kind: "minecraft:crafter",
+        blocks: &["minecraft:crafter"],
+        slots: 9,
+    },
+    ContainerKind {
+        kind: "minecraft:furnace",
+        blocks: &["minecraft:furnace"],
+        slots: 3,
+    },
+    ContainerKind {
+        kind: "minecraft:blast_furnace",
+        blocks: &["minecraft:blast_furnace"],
+        slots: 3,
+    },
+    ContainerKind {
+        kind: "minecraft:smoker",
+        blocks: &["minecraft:smoker"],
+        slots: 3,
+    },
+];
+
+/// The largest slot count any container kind has — the validation-tier cap a
+/// fill is judged against before the build knows which container it names.
+pub const MAX_CONTAINER_SLOTS: usize = 27;
+
+/// The container kind standing behind a block id (a blockstate suffix is
+/// ignored), or `None` when the block is not a container.
+pub fn container_kind(name: &str) -> Option<&'static ContainerKind> {
+    let base = name.split('[').next().unwrap_or(name);
+    let base = namespace(base);
+    CONTAINER_KINDS_1_21_11
+        .iter()
+        .find(|k| k.blocks.contains(&base.as_ref()))
+}
+
+/// How many slots the container at a block id has, or `None` when it is not a
+/// container.
+pub fn container_slots(name: &str) -> Option<usize> {
+    container_kind(name).map(|k| k.slots)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// spec-0105 §2.1: every container id the table names is a block of the
+    /// vendored 1.21.11 registry — the cross-check that shares no configuration
+    /// with the jar reading the table came from — and the table has the twelve
+    /// kinds and the slot counts the reading found.
+    #[test]
+    fn every_container_kind_names_real_blocks() {
+        let reg = BlockRegistry::v1_21_11();
+        let mut ids = 0usize;
+        for k in &CONTAINER_KINDS_1_21_11 {
+            assert!(!k.blocks.is_empty(), "{}", k.kind);
+            for b in k.blocks {
+                assert!(reg.blocks.contains_key(*b), "{b} is not a 1.21.11 block");
+                ids += 1;
+            }
+        }
+        assert_eq!(CONTAINER_KINDS_1_21_11.len(), 12);
+        assert_eq!(ids, 28, "eleven single-id kinds and seventeen shulker boxes");
+        let max = CONTAINER_KINDS_1_21_11.iter().map(|k| k.slots).max();
+        assert_eq!(max, Some(MAX_CONTAINER_SLOTS));
+        assert_eq!(container_slots("minecraft:smoker[facing=north,lit=false]"), Some(3));
+        assert_eq!(container_slots("barrel"), Some(27));
+        assert_eq!(container_slots("minecraft:lectern"), None);
+        assert_eq!(container_slots("minecraft:ender_chest"), None);
+        assert_eq!(container_slots("minecraft:decorated_pot"), None);
+    }
 
     fn props(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         pairs

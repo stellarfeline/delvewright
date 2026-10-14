@@ -128,11 +128,11 @@ impl PressAnswer {
             once: false,
             audience: delvewright_dsl::TriggerAudience::Presser,
             effects: vec![
-                Verb::Narrate {
+                Verb::Narrate(delvewright_dsl::Narration {
                     text: chrome.rebind(&self.text),
                     style: Some(delvewright_dsl::NarrateStyle::Actionbar),
                     sound: None,
-                }
+                })
                 .into(),
             ],
         }

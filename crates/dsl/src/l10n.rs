@@ -120,7 +120,7 @@ use crate::{NarrateStyle, QuestEffect};
 /// effect's stable position-derived key prefix.
 fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, &mut String)) {
     match &mut eff.verb {
-        Verb::Narrate { text, .. } => f(&format!("{keybase}.narrate"), text),
+        Verb::Narrate(crate::Narration { text, .. }) => f(&format!("{keybase}.narrate"), text),
         Verb::GiveItem { name: Some(n), .. } => f(&format!("{keybase}.give"), n),
         // spec-0016 §1: the bonfire's rest dialog is
         // read by the player like any other on-screen line, so its authored
@@ -180,6 +180,21 @@ fn effect_strings_deep(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&
         }
     }
 }
+
+/// The l10n inventory key of `containers.decoration_notice` (spec-0105).
+pub const DECORATION_NOTICE_KEY: &str = "containers.decoration_notice";
+
+/// The decoration notice's stage-doc path and payload, when declared.
+fn decoration_notice(c: &Campaign) -> Option<&crate::Narration> {
+    c.quests
+        .content
+        .containers
+        .as_ref()
+        .and_then(|k| k.decoration_notice.as_ref())
+}
+
+/// The JSON pointer of the decoration notice within `quests.json`.
+const DECORATION_NOTICE_PATH: &str = "/content/containers/decoration_notice";
 
 /// The implicit, always-canonical language. Never appears in `world.languages`
 /// and never has a sidecar; `delvec build --lang en` emits the pure-English delve.
@@ -484,6 +499,17 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             }
         }
     }
+    // Stage 5 — the container class's arrival line (spec-0105): told to each
+    // player as they arrive, through the one `narrate` emitter.
+    if let Some(n) = c
+        .quests
+        .content
+        .containers
+        .as_mut()
+        .and_then(|k| k.decoration_notice.as_mut())
+    {
+        f(DECORATION_NOTICE_KEY, &mut n.text);
+    }
     // Stage 5 — lethal volumes (v0.10, spec-0031): the line the volume says as it
     // kills. As player-visible as a narrate, and read at the worst possible moment
     // to be reading a raw key, so it is inventoried like any other authored line.
@@ -687,6 +713,7 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
         },
         "loot" if n == 5 && last == "name" => ItemName,
         "lethal" if n == 3 && last == "message" => Narration,
+        "containers" if key == DECORATION_NOTICE_KEY => Narration,
         "stake" if n == 3 && last == "collected" => Narration,
         "shop" => match (n, last) {
             (3, "title") => Title,
@@ -980,6 +1007,14 @@ pub fn art_narrates(c: &Campaign) -> Vec<ArtNarrate> {
             });
         }
     });
+    if let Some(text) = decoration_notice(c).and_then(crate::Narration::art_text) {
+        out.push(ArtNarrate {
+            stage: "quests",
+            path: format!("{DECORATION_NOTICE_PATH}/text"),
+            key: DECORATION_NOTICE_KEY.to_string(),
+            text: text.to_string(),
+        });
+    }
     out
 }
 
@@ -1018,6 +1053,15 @@ pub fn on_screen_narrates(c: &Campaign) -> Vec<ScreenNarrate> {
             });
         }
     });
+    if let Some((style, text)) = decoration_notice(c).and_then(crate::Narration::on_screen) {
+        out.push(ScreenNarrate {
+            stage: "quests",
+            path: format!("{DECORATION_NOTICE_PATH}/text"),
+            key: DECORATION_NOTICE_KEY.to_string(),
+            style,
+            text: text.to_string(),
+        });
+    }
     out
 }
 
@@ -1249,6 +1293,14 @@ pub fn sound_refs(c: &Campaign) -> Vec<SoundRef> {
             });
         }
     });
+    // The decoration notice's sound (spec-0105), through the same registry rule.
+    if let Some(sound) = decoration_notice(c).and_then(|n| n.sound.as_ref()) {
+        out.push(SoundRef {
+            stage: "quests",
+            path: format!("{DECORATION_NOTICE_PATH}/sound"),
+            sound: sound.clone(),
+        });
+    }
     // A pulse's sound (spec-0102), through the same registry rule.
     for (i, p) in c.quests.content.pulses.iter().enumerate() {
         out.push(SoundRef {

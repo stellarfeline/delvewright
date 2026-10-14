@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ActorId, AnchorId, CameraShot, CameraSubject, Carrier, CutsceneParty,
     DEFAULT_COLLAPSE_FALLING_BLOCK, DEFAULT_VOLLEY_INTERVAL, DEFAULT_VOLLEY_PROJECTILE,
-    DEFAULT_VOLLEY_SALVOS, FlagId, Happening, HappeningSubject, Mark, NarrateStyle, NpcId,
+    DEFAULT_VOLLEY_SALVOS, FlagId, Happening, HappeningSubject, Mark, NarrateStyle, Narration, NpcId,
     ParticleAt, PlaceRef, PrefabId, SoundAt, StateCompare, StateId, StateWrite, StationKind,
     StealthZone, Verb, WaveId, WorldTime, WorldWeather,
 };
@@ -339,7 +339,7 @@ impl QuestEffect {
             | Verb::CampaignComplete { .. } => None,
             // v0.4 effects report via `v04_effect`; v0.5 via `v05_effect`; they
             // are not v0.3 verbs.
-            Verb::Narrate { .. }
+            Verb::Narrate(..)
             | Verb::SetBlock { .. }
             | Verb::DespawnNpc { .. }
             | Verb::MoveNpc { .. }
@@ -396,7 +396,7 @@ impl QuestEffect {
     /// in v0.4 campaigns.
     pub fn v04_effect(&self) -> Option<&'static str> {
         match &self.verb {
-            Verb::Narrate { .. } => Some("narrate"),
+            Verb::Narrate(..) => Some("narrate"),
             Verb::SetBlock { .. } => Some("set-block"),
             Verb::DespawnNpc { .. } => Some("despawn-npc"),
             Verb::MoveNpc { .. } => Some("move-npc"),
@@ -1150,23 +1150,13 @@ impl QuestEffect {
     /// `true` if this is a `narrate` carrying the `art` style (glyph-checked
     /// `DW0328`).
     pub fn narrate_art(&self) -> bool {
-        matches!(
-            &self.verb,
-            Verb::Narrate {
-                style: Some(NarrateStyle::Art),
-                ..
-            }
-        )
+        self.narrate_art_text().is_some()
     }
 
     /// The `narrate` line's text if this is a `narrate` with the `art` style.
     pub fn narrate_art_text(&self) -> Option<&str> {
         match &self.verb {
-            Verb::Narrate {
-                text,
-                style: Some(NarrateStyle::Art),
-                ..
-            } => Some(text.as_str()),
+            Verb::Narrate(n) => n.art_text(),
             _ => None,
         }
     }
@@ -1178,17 +1168,7 @@ impl QuestEffect {
     /// is exempt.
     pub fn narrate_on_screen(&self) -> Option<(NarrateStyle, &str)> {
         match &self.verb {
-            Verb::Narrate {
-                text,
-                style: Some(s),
-                ..
-            } if matches!(
-                s,
-                NarrateStyle::Title | NarrateStyle::Subtitle | NarrateStyle::Art
-            ) =>
-            {
-                Some((*s, text.as_str()))
-            }
+            Verb::Narrate(n) => n.on_screen(),
             _ => None,
         }
     }
@@ -1200,7 +1180,7 @@ impl QuestEffect {
     pub fn sound_refs(&self) -> Vec<(&'static str, &str)> {
         match &self.verb {
             Verb::PlaySound { sound, .. } => vec![("sound", sound.as_str())],
-            Verb::Narrate { sound: Some(s), .. } => vec![("sound", s.as_str())],
+            Verb::Narrate(Narration { sound: Some(s), .. }) => vec![("sound", s.as_str())],
             _ => Vec::new(),
         }
     }
