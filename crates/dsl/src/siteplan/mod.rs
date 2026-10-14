@@ -674,6 +674,18 @@ pub enum Base {
     /// whoever claims it, else the site's fill. Terrain reaching into the claim
     /// is refused (`DW0990`).
     Aloft(u32),
+    /// The place owns its ground (spec-0106 §3.1) — a whole site standing on
+    /// the whole's subsoil: its claim stops this many courses under its floor
+    /// course, everywhere, exactly as an aloft place's does, but the ground
+    /// inside its footprint and ring is the place's to draw — its valley
+    /// floor, its moat, its bedrock course. No ring cell is fixed by the
+    /// whole, the fill writes nothing inside the claim, and under the claim
+    /// the fill's ground meets it from below. The whole's terrain surface owes
+    /// it support: in every column of its footprint and ring the surface
+    /// stands at or above `floor − 2 − n`, or the place stands over air
+    /// (`DW1021`). Terrain standing higher inside the claim is the piece's to
+    /// replace, and is counted, not refused.
+    Owned(u32),
 }
 
 impl Base {
@@ -681,8 +693,29 @@ impl Base {
     #[must_use]
     pub fn aloft(self) -> Option<u32> {
         match self {
-            Base::Ground => None,
+            Base::Ground | Base::Owned(_) => None,
             Base::Aloft(n) => Some(n),
+        }
+    }
+
+    /// The courses of owned ground under the floor course, on an
+    /// owned-ground place (spec-0106 §3.1).
+    #[must_use]
+    pub fn owned(self) -> Option<u32> {
+        match self {
+            Base::Ground | Base::Aloft(_) => None,
+            Base::Owned(n) => Some(n),
+        }
+    }
+
+    /// The courses a place's claim reaches under its floor course when it
+    /// declares its own bottom — aloft or owned ground — and `None` for a
+    /// ground place, whose bottom is read per column off the terrain.
+    #[must_use]
+    pub fn declared_depth(self) -> Option<u32> {
+        match self {
+            Base::Ground => None,
+            Base::Aloft(n) | Base::Owned(n) => Some(n),
         }
     }
 
@@ -746,7 +779,8 @@ pub struct PlanBox {
     pub floor: Floor,
     /// What closes it overhead.
     pub ceiling: Ceiling,
-    /// What it stands on: `"ground"` (the default) or `{"aloft": n}`.
+    /// What it stands on: `"ground"` (the default), `{"aloft": n}`, or
+    /// `{"owned": n}` (spec-0106 §3.1).
     #[serde(default, skip_serializing_if = "Base::is_ground")]
     pub base: Base,
     /// **The sky this place stands under from the first tick** (spec-0080
@@ -756,6 +790,22 @@ pub struct PlanBox {
     /// other class of place with a world box. Absent: the horizon's biome.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub atmosphere: Option<crate::ids::AtmosphereId>,
+    /// **The light this place is relit to** (spec-0106 §3.2): the relight
+    /// pass guarantees `min_light` on every reachable walkable cell of the
+    /// place's BOUND PIECE by placing `fixture`s inside its frame, or fails
+    /// with `DW0211`. The declaration is the author's intent that the whole
+    /// hang the fixtures in a piece somebody designed — without it a bound
+    /// place lights itself and a dark one is `DW0210` naming the piece; the
+    /// plan's own `lighting` still reaches derived interiors only (spec-0050
+    /// §3). Range-checked (`DW0196`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lighting: Option<AreaLighting>,
+    /// **The darkness mitigation this place carries** (spec-0106 §3.2):
+    /// `night-vision` emits a clocked `effect give … night_vision` over the
+    /// box's claim and satisfies `DW0210` over the place's cells without
+    /// `lighting`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mitigation: Option<crate::AreaMitigation>,
     /// **The roof the whole reserves over this place** (spec-0098 §3): how
     /// many courses it rises above the ceiling course and how far it overhangs
     /// the shell on each horizontal side. Massed solid at stage 5 so a walker

@@ -206,16 +206,23 @@ pub(super) fn claims(c: &Campaign, plan: &SitePlanContent, d: &mut Vec<Diagnosti
                  edge, lower its roof, {fix}or change the brief's fact and re-derive the \
                  region.",
                 node = b.node,
-                under = match b.aloft() {
-                    Some(n) => format!(
+                under = match (b.aloft(), b.base.owned()) {
+                    (Some(n), _) => format!(
                         "its underside ({n} course(s) under its floor course, `base: \
                          {{\"aloft\": {n}}}`) down to y {}",
                         lo[1]
                     ),
-                    None => format!("the ground under it down to y {}", lo[1]),
+                    (None, Some(n)) => format!(
+                        "the ground it owns ({n} course(s) under its floor course, `base: \
+                         {{\"owned\": {n}}}`) down to y {}",
+                        lo[1]
+                    ),
+                    (None, None) => format!("the ground under it down to y {}", lo[1]),
                 },
                 fix = if b.aloft().is_some() {
                     "shorten its underside, "
+                } else if b.base.owned().is_some() {
+                    "own fewer courses of ground, "
                 } else {
                     ""
                 },

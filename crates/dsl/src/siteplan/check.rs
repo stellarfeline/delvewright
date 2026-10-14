@@ -723,18 +723,35 @@ pub fn refused_upstream(c: &Campaign, node: &NodeId, resolved: &[PlacedSeam]) ->
 /// The plan's one lighting setting, range-checked exactly as an area's is — the
 /// same code, because it is the same object being asked the same question.
 fn lighting(plan: &SitePlanContent, d: &mut Vec<Diagnostic>) {
-    let Some(l) = &plan.lighting else { return };
-    if (1..=14).contains(&l.min_light) {
-        return;
+    if let Some(l) = &plan.lighting
+        && !(1..=14).contains(&l.min_light)
+    {
+        d.push(Diagnostic::error(
+            crate::codes::LIGHTING_RANGE,
+            "site-plan",
+            "/content/lighting/min_light",
+            format!(
+                "`lighting.min_light` = {} is out of range — set it to a value in 1..=14 (7 is \
+                 the default)",
+                l.min_light
+            ),
+        ));
     }
-    d.push(Diagnostic::error(
-        crate::codes::LIGHTING_RANGE,
-        "site-plan",
-        "/content/lighting/min_light",
-        format!(
-            "`lighting.min_light` = {} is out of range — set it to a value in 1..=14 (7 is the \
-             default)",
-            l.min_light
-        ),
-    ));
+    // A place's own `lighting` (spec-0106 §3.2): the same object, the same rule.
+    for (i, b) in plan.boxes.iter().enumerate() {
+        let Some(l) = &b.lighting else { continue };
+        if (1..=14).contains(&l.min_light) {
+            continue;
+        }
+        d.push(Diagnostic::error(
+            crate::codes::LIGHTING_RANGE,
+            "site-plan",
+            format!("/content/boxes/{i}/lighting/min_light"),
+            format!(
+                "`{}`'s `lighting.min_light` = {} is out of range — set it to a value in 1..=14 \
+                 (7 is the default)",
+                b.node, l.min_light
+            ),
+        ));
+    }
 }

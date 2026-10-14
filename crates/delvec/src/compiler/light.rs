@@ -1343,25 +1343,56 @@ pub fn relight_with(
         // the author has to be told is not "some cells are dark" but *which
         // place is dark and which piece stands in it*, because that is the only
         // document the remedy is taken in — see [`DarkOwner`].
-        let frames: Vec<BoundFrame> = if area.area_id == delvewright_dsl::SITE_AREA {
+        //
+        // A place's own `lighting` and `mitigation` (spec-0106 §3.2) travel
+        // with its frame: the declaration is the author's intent that the whole
+        // hang fixtures inside this one piece, and the undeclared case is the
+        // spec-0050 §3 rule unchanged.
+        let all_frames = if area.area_id == delvewright_dsl::SITE_AREA {
             delvewright_dsl::Frame::all(c)
-                .into_iter()
-                .filter_map(|(f, b)| {
-                    let row = c
-                        .detail_plan
-                        .as_ref()
-                        .and_then(|e| e.content.detail_of(&b.node))?;
-                    Some(BoundFrame {
-                        place: b.node.0.clone(),
-                        piece: row.piece.0.clone(),
-                        lo: [f.lo[0] as i32, f.lo[1] as i32, f.lo[2] as i32],
-                        hi: [f.hi[0] as i32, f.hi[1] as i32, f.hi[2] as i32],
-                        owned: f.owned.clone(),
-                    })
-                })
-                .collect()
         } else {
             Vec::new()
+        };
+        let box_of = |node: &delvewright_dsl::NodeId| {
+            c.site_plan
+                .as_ref()
+                .and_then(|p| p.content.boxes.iter().find(|b| &b.node == node))
+        };
+        let frames: Vec<BoundFrame> = all_frames
+            .iter()
+            .filter_map(|(f, b)| {
+                let row = c
+                    .detail_plan
+                    .as_ref()
+                    .and_then(|e| e.content.detail_of(&b.node))?;
+                let declared = box_of(&b.node);
+                Some(BoundFrame {
+                    place: b.node.0.clone(),
+                    piece: row.piece.0.clone(),
+                    lo: [f.lo[0] as i32, f.lo[1] as i32, f.lo[2] as i32],
+                    hi: [f.hi[0] as i32, f.hi[1] as i32, f.hi[2] as i32],
+                    owned: f.owned.clone(),
+                    lighting: declared.and_then(|d| d.lighting),
+                    night_vision: declared
+                        .is_some_and(|d| matches!(d.mitigation, Some(AreaMitigation::NightVision))),
+                })
+            })
+            .collect();
+        // The cells of every place no piece is bound to that declares
+        // `mitigation: night-vision`: the whole's derived interior there is
+        // judged as mitigated, exactly as a mitigated piece's cells are.
+        let mitigated: Vec<delvewright_dsl::siteplan::Aabb> = all_frames
+            .iter()
+            .filter(|(_, b)| {
+                box_of(&b.node)
+                    .is_some_and(|d| matches!(d.mitigation, Some(AreaMitigation::NightVision)))
+            })
+            .flat_map(|(f, _)| f.owned.iter().copied())
+            .collect();
+        let in_mitigated = |cell: &[i32; 3]| {
+            mitigated.iter().any(|(lo, hi)| {
+                (0..3).all(|i| i64::from(cell[i]) >= lo[i] && i64::from(cell[i]) <= hi[i])
+            })
         };
         // Per bound place, so the report can name it. A cell is owned by at most
         // one place (spec-0098 §2), so the first owner is the only one.
@@ -1394,7 +1425,12 @@ pub fn relight_with(
                 None => {
                     // Measured-darkness gate over the assembled reachable walkable cells.
                     let night_vision = dsl_area.is_some_and(area_night_vision);
-                    let s = survey_undeclared(&model, &reachable, sky, night_vision);
+                    let (under_nv, bare): (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>) =
+                        reachable.iter().partition(|cell| in_mitigated(cell));
+                    let mut s = survey_undeclared(&model, &bare, sky, night_vision);
+                    if !under_nv.is_empty() {
+                        s.absorb(&survey_undeclared(&model, &under_nv, sky, true));
+                    }
                     dark.entry(DarkSite {
                         area: area.area_id.clone(),
                         owner: DarkOwner::Whole,
@@ -1416,7 +1452,26 @@ pub fn relight_with(
         // per place: it is taken inside one piece, and an author handed the union
         // is told a room is dark without being told which one to open.
         for (frame, cells) in &detailed_by_place {
-            let s = survey_undeclared(&model, cells, sky, false);
+            // A place that declares its own `lighting` (spec-0106 §3.2) is
+            // relit inside its frame, after the derived interiors and over the
+            // model they leave behind, then judged as every bound place is.
+            if let Some(spec) = frame.lighting {
+                relight_area(
+                    &mut model,
+                    nav,
+                    cells,
+                    &required,
+                    &area.area_id,
+                    placement,
+                    spec,
+                    sky,
+                    frame.lo,
+                    frame.hi,
+                    &mut out,
+                );
+                continue;
+            }
+            let s = survey_undeclared(&model, cells, sky, frame.night_vision);
             dark.entry(DarkSite {
                 area: area.area_id.clone(),
                 owner: DarkOwner::Bound {
@@ -1733,6 +1788,11 @@ struct BoundFrame {
     /// The cells the place owns (spec-0098 §2): frames overlap as boxes, so a
     /// cell is the place's by ownership, never by lying in its frame.
     owned: Vec<delvewright_dsl::siteplan::Aabb>,
+    /// The place's own `lighting` (spec-0106 §3.2): when declared, the relight
+    /// pass hangs fixtures inside the frame.
+    lighting: Option<AreaLighting>,
+    /// The place declares `mitigation: night-vision` (spec-0106 §3.2).
+    night_vision: bool,
 }
 
 impl BoundFrame {
@@ -1978,11 +2038,14 @@ fn dark_diagnostic(
         m.push_str(&format!(
             "Light each of these places INSIDE THE PIECE BOUND TO IT. A bound place lights itself \
              (spec-0050 §3): the fixture pass writes into the derived interiors only and never \
-             inside a bound frame, so declaring {} — or raising a `min_light` already declared \
-             there — moves nothing in the cells listed above. Put emitters in the piece at the \
-             cells named (the piece-local coordinates are the ones its program and its `.nbt` are \
-             written in), re-export it and build again; or bind a different piece to the place, or \
-             leave the place undetailed so the whole lights it. Light does cross a frame boundary, \
+             inside a bound frame unasked, so declaring {} — or raising a `min_light` already \
+             declared there — moves nothing in the cells listed above. Put emitters in the piece \
+             at the cells named (the piece-local coordinates are the ones its program and its \
+             `.nbt` are written in), re-export it and build again; or declare the place's own \
+             `boxes[].lighting` on the site plan, which asks the whole to hang fixtures inside \
+             that one piece (spec-0106 §3.2), or its `boxes[].mitigation: \"night-vision\"`; or \
+             bind a different piece to the place, or leave the place undetailed so the whole \
+             lights it. Light does cross a frame boundary, \
              so brightening what stands OUTSIDE the frame is a real remedy too. Do NOT lower \
              `DARK_THRESHOLD` or trim the reachable set — the darkness is real (spec-0050 §3, \
              spec-0010 DW0210)",

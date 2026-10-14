@@ -244,6 +244,22 @@ pub(super) fn night_vision_fns(plan: &Plan) -> Vec<(String, String)> {
             true,
         ));
     }
+    // A site-plan place's own `mitigation` (spec-0106 §3.2): the same clock over
+    // the box's claim — its frame, every cell it may own — in plan order.
+    for (f, _) in mitigated_frames(plan) {
+        let (min, max) = (narrow3(f.lo), narrow3(f.hi));
+        let sel = format!(
+            "@a[{}]",
+            box_selector_args(min, [max[0] + 1, max[1] + 1, max[2] + 1])
+        );
+        gives.push(effect_give_command(
+            &sel,
+            "minecraft:night_vision",
+            seconds,
+            0,
+            true,
+        ));
+    }
     if gives.is_empty() {
         return Vec::new();
     }
@@ -262,6 +278,38 @@ pub(super) fn has_night_vision_areas(plan: &Plan) -> bool {
         .areas
         .iter()
         .any(crate::compiler::light::area_night_vision)
+        || !mitigated_frames(plan).is_empty()
+}
+
+/// Every site-plan place declaring `mitigation: "night-vision"` (spec-0106
+/// §3.2), with its frame, in plan document order.
+fn mitigated_frames(
+    plan: &Plan,
+) -> Vec<(delvewright_dsl::Frame, delvewright_dsl::siteplan::PlacedBox)> {
+    let c = plan.campaign;
+    let Some(sp) = c.site_plan.as_ref() else {
+        return Vec::new();
+    };
+    delvewright_dsl::Frame::all(c)
+        .into_iter()
+        .filter(|(_, b)| {
+            sp.content.boxes.iter().any(|d| {
+                d.node == b.node
+                    && matches!(
+                        d.mitigation,
+                        Some(delvewright_dsl::AreaMitigation::NightVision)
+                    )
+            })
+        })
+        .collect()
+}
+
+fn narrow3(v: [i64; 3]) -> [i32; 3] {
+    [
+        i32::try_from(v[0]).unwrap_or(i32::MAX),
+        i32::try_from(v[1]).unwrap_or(i32::MAX),
+        i32::try_from(v[2]).unwrap_or(i32::MAX),
+    ]
 }
 
 /// The v0.6 boundary clock (spec-0013): a self-rescheduling 1s (20t) region check

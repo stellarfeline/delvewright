@@ -78,6 +78,11 @@ delvewright_dsl::dw_code! {
     pub const DW_PAINTS_NEIGHBOUR: DwCode = DwCode::new("DW0987", ExitTier::Build);
 }
 
+delvewright_dsl::dw_code! {
+    /// `DW1021`: an owned-ground place stands over air (spec-0106 §4).
+    pub const DW_OWNED_OVER_AIR: DwCode = DwCode::new("DW1021", ExitTier::Build);
+}
+
 // ---------------------------------------------------------------------------
 // The frames, and what they hand out
 // ---------------------------------------------------------------------------
@@ -361,9 +366,15 @@ pub struct HandedView {
 pub struct HandedGround {
     /// The site's fill kind, `solid` or `open`.
     pub fill: String,
-    /// What the place stands on, as the plan declares it: `ground`, or
-    /// `{"aloft": n}` — hung, handed no ground and no fixed ring.
+    /// What the place stands on, as the plan declares it: `ground`;
+    /// `{"aloft": n}` — hung, handed no ground and no fixed ring; or
+    /// `{"owned": n}` — a whole site that draws its own ground, handed no
+    /// fixed ring (spec-0106 §3.1).
     pub base: delvewright_dsl::siteplan::Base,
+    /// On an owned-ground place, the columns of its footprint and ring whose
+    /// terrain stands at or above the claim's bottom — terrain the piece
+    /// replaces, counted and never refused (spec-0106 §3.1). Zero elsewhere.
+    pub clipped_columns: usize,
     /// The claim's bottom, piece-local — the lowest course of ground the piece
     /// owns under its plot; on an aloft place, the lowest underside course.
     pub bottom_y: i64,
@@ -706,6 +717,7 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
         }
         .to_string(),
         base: b.base,
+        clipped_columns: site.owned_clipped(i),
         bottom_y: frame.bottom - frame.lo[1],
         floor_y: frame.datum_y(),
         perimeter,
@@ -1639,6 +1651,16 @@ pub struct AloftBinding {
     pub columns: usize,
     /// Of those, columns whose surface reaches the claim bottom.
     pub in_earth: usize,
+    /// Of the places, owned-ground ones (spec-0106 §3.1).
+    pub owned: usize,
+    /// Terrain columns under their footprints and rings examined.
+    pub owned_columns: usize,
+    /// Of those, columns whose surface stands below `floor − 2 − n`
+    /// (`DW1021`).
+    pub over_air: usize,
+    /// Of those, columns whose terrain stands at or above the claim's bottom —
+    /// the piece's to replace, counted and not refused.
+    pub clipped: usize,
 }
 
 impl AloftBinding {
@@ -1647,11 +1669,17 @@ impl AloftBinding {
     pub fn line(&self) -> String {
         format!(
             "aloft binding: {a} aloft place(s) of {p}, {c} terrain column(s) under them \
-             examined, {e} reaching into a claim (DW0990).",
+             examined, {e} reaching into a claim (DW0990); {o} owned-ground place(s), {oc} \
+             terrain column(s) under them examined, {air} standing over air (DW1021), {cl} \
+             clipped by the piece.",
             a = self.aloft,
             p = self.places,
             c = self.columns,
             e = self.in_earth,
+            o = self.owned,
+            oc = self.owned_columns,
+            air = self.over_air,
+            cl = self.clipped,
         )
     }
 }
@@ -1688,6 +1716,19 @@ pub fn check_aloft(c: &Campaign) -> (Vec<Diagnostic>, AloftBinding) {
         })
         .unwrap_or_default();
     for (i, b) in plan.boxes.iter().enumerate() {
+        if let Some(n) = b.base.owned() {
+            check_owned(
+                &site,
+                i,
+                b,
+                n,
+                plan.ground.is_open(),
+                &index,
+                &mut binding,
+                &mut d,
+            );
+            continue;
+        }
         let Some(n) = b.aloft() else { continue };
         binding.aloft += 1;
         if plan.ground.is_open() {
@@ -1732,6 +1773,63 @@ pub fn check_aloft(c: &Campaign) -> (Vec<Diagnostic>, AloftBinding) {
         ));
     }
     (d, binding)
+}
+
+/// **`DW1021`: an owned-ground place stands over air** (spec-0106 §4), one
+/// place. Its claim stops `n` courses under its floor course and the piece
+/// draws everything inside it; the whole's terrain owes it the course under
+/// that bottom, in every column of its footprint and ring. A column whose
+/// `open` surface stands lower leaves air under the piece's bottom course. A
+/// `solid` site has nothing to refuse and binds zero columns.
+#[allow(clippy::too_many_arguments)]
+fn check_owned(
+    site: &delvewright_dsl::siteplan::Site<'_>,
+    i: usize,
+    b: &PlacedBox,
+    n: u32,
+    open: bool,
+    index: &BTreeMap<&str, usize>,
+    binding: &mut AloftBinding,
+    d: &mut Vec<Diagnostic>,
+) {
+    binding.owned += 1;
+    if open {
+        let w = b.foot[1] - b.foot[0] + 3;
+        let dz = b.foot[3] - b.foot[2] + 3;
+        binding.owned_columns += usize::try_from(w * dz).unwrap_or(0);
+    }
+    binding.clipped += site.owned_clipped(i);
+    let hits = site.owned_over_air(i);
+    if hits.is_empty() {
+        return;
+    }
+    binding.over_air += hits.len();
+    let under = site.bottom(i) - 1;
+    let first = hits[0];
+    d.push(Diagnostic::error(
+        DW_OWNED_OVER_AIR,
+        "site-plan",
+        format!(
+            "/content/boxes/{}/base",
+            index.get(b.node.0.as_str()).copied().unwrap_or(0)
+        ),
+        format!(
+            "an owned-ground place stands over air: `{node}` owns its ground (`base: \
+             {{\"owned\": {n}}}`) down to y {bottom}, so the whole's terrain owes it a surface \
+             at y {under} or higher in every column of its footprint and ring, and in {k} \
+             column(s) the `open` fill's surface stands lower — first at [{x}, {z}], whose \
+             surface is y {t}, {short} course(s) short. The piece's bottom course would rest \
+             on the air the fill leaves above its surface. Raise the terrain under the plot, \
+             deepen `owned` until its bottom reaches the surface, or make the fill `solid`.",
+            node = b.node,
+            bottom = site.bottom(i),
+            k = hits.len(),
+            x = first[0],
+            z = first[1],
+            t = first[2],
+            short = under - first[2],
+        ),
+    ));
 }
 
 // ---------------------------------------------------------------------------

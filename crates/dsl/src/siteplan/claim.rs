@@ -200,7 +200,7 @@ impl<'a> Site<'a> {
                 let mut out = Vec::new();
                 for x in x0 - 1..=x1 + 1 {
                     for z in z0 - 1..=z1 + 1 {
-                        if let Some(n) = b.aloft() {
+                        if let Some(n) = b.base.declared_depth() {
                             out.push(course - i64::from(n));
                             continue;
                         }
@@ -266,6 +266,61 @@ impl<'a> Site<'a> {
     #[must_use]
     pub fn is_aloft(&self, i: usize) -> bool {
         self.boxes[i].aloft().is_some()
+    }
+
+    /// True when place `i` owns its ground (spec-0106 §3.1).
+    #[must_use]
+    pub fn is_owned(&self, i: usize) -> bool {
+        self.boxes[i].base.owned().is_some()
+    }
+
+    /// **An owned-ground place over air** (`DW1021`): every column of place
+    /// `i`'s footprint and ring whose terrain surface stands below
+    /// `floor − 2 − n` — one course under its claim's bottom — as `[x, z,
+    /// surface y]` in column order. Empty for any other place and on a `solid`
+    /// site, whose rock stands under every claim.
+    #[must_use]
+    pub fn owned_over_air(&self, i: usize) -> Vec<[i64; 3]> {
+        let b = &self.boxes[i];
+        if b.base.owned().is_none() || !self.ground.is_open() {
+            return Vec::new();
+        }
+        let under = self.bottoms[i] - 1;
+        let [x0, x1, z0, z1] = b.foot;
+        let mut out = Vec::new();
+        for x in x0 - 1..=x1 + 1 {
+            for z in z0 - 1..=z1 + 1 {
+                if let Some(t) = self.ground.top(x, z)
+                    && t < under
+                {
+                    out.push([x, z, t]);
+                }
+            }
+        }
+        out
+    }
+
+    /// The columns of an owned-ground place `i`'s footprint and ring whose
+    /// terrain surface stands at or above its claim's bottom — terrain the
+    /// piece replaces (spec-0106 §3.1: counted, not refused). Zero for any
+    /// other place and on a `solid` site.
+    #[must_use]
+    pub fn owned_clipped(&self, i: usize) -> usize {
+        let b = &self.boxes[i];
+        if b.base.owned().is_none() || !self.ground.is_open() {
+            return 0;
+        }
+        let bottom = self.bottoms[i];
+        let [x0, x1, z0, z1] = b.foot;
+        let mut n = 0;
+        for x in x0 - 1..=x1 + 1 {
+            for z in z0 - 1..=z1 + 1 {
+                if self.ground.top(x, z).is_some_and(|t| t >= bottom) {
+                    n += 1;
+                }
+            }
+        }
+        n
     }
 
     /// Place `i`'s shell, as one box: the ground under its plot from its
@@ -372,10 +427,11 @@ impl<'a> Site<'a> {
     }
 
     /// True when `cell` is fixed ground of place `i`: a ring cell of its shell
-    /// at or under the column's ground height. An aloft place has none.
+    /// at or under the column's ground height. An aloft place has none, and
+    /// neither has an owned-ground one: its ring is its own, ground and all.
     #[must_use]
     pub fn is_fixed(&self, i: usize, cell: [i64; 3]) -> bool {
-        !self.is_aloft(i)
+        self.boxes[i].base.declared_depth().is_none()
             && self.in_shell(i, cell)
             && self.boxes[i].is_ring_column(cell[0], cell[2])
             && cell[1] <= self.ground_height(i, cell[0], cell[2])
@@ -556,13 +612,13 @@ impl<'a> Site<'a> {
 
     /// Every fixed ground cell of place `i`, with its column's ground height,
     /// in a fixed order — what the terrain pass writes and the handout hands.
-    /// Empty on an aloft place.
+    /// Empty on an aloft place and on an owned-ground one.
     #[must_use]
     pub fn fixed_cells(&self, i: usize) -> Vec<([i64; 3], i64)> {
         let b = &self.boxes[i];
         let (lo, hi) = self.shell(i);
         let mut out = Vec::new();
-        if self.is_aloft(i) {
+        if b.base.declared_depth().is_some() {
             return out;
         }
         for x in lo[0]..=hi[0] {

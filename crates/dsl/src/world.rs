@@ -886,7 +886,9 @@ fn is_true(b: &bool) -> bool {
 /// A supplemental-lighting fixture the relight pass may place (DSL v0.5,
 /// spec-0010 fixture registry v1). The theme choice stays in the DSL layer; the
 /// compiler owns the placement rule and block-light emission.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum Fixture {
     /// Floor torch (block light 14); `wall_torch` on a wall face as fallback.
@@ -916,7 +918,9 @@ impl Fixture {
 /// presence puts the area on the relight path: the compiler guarantees every
 /// reachable walkable cell reaches `min_light` by placing `fixture`s, or fails
 /// with `DW0211` if it cannot.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(deny_unknown_fields)]
 pub struct AreaLighting {
     /// The fixture the relight pass places.
