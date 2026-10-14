@@ -2995,6 +2995,487 @@
       "note": "The same class as `vh-02` on land. The route proofs could not see it: they take the walk step only, so a hedge top reached by a jump off a garden boulder was in no proof's reach. `DW0921` floods the player's own movement (`nav::World::body_moves`: the walk step, falls to the deepest an unarmoured body survives, and cardinal gap jumps inside `dsl::metrics::JUMP_REACH`, measured by `tools/spike-jump-arc/simulate.mjs at 84f364997d24`, which reproduces the live jump spike's 14 verdicts) from the critical path's route cells, once per quest configuration, and refuses every reached cell from which no movement leads back; a cell the boundary clock returns and a shortcut lever the pocket reaches are ways out. A room the story shuts the party into holds the objective the story waits on and is not refused, with no declaration. Measured on this campaign at `dd4429c`: 6 configurations, 316580 cells reached, 827 a body cannot leave, in 78 pockets over 5 configurations -- on land in each, the four hedge beds (the one at `[140, 82, 110]` among them: 25 cells, entered `by a fall of 2 block(s)` off the hedge top), a ruin hole in the curtain top, a tower slit one step under the wall walk and nine hollows in the east ditch between the crag and the field wall; and the Undertide well (`vh-02`) in three. At the fixed content: 0. Limits, named in the diagnostic: diagonal jumps, climbing, standing on a fence or wall top and diving are not moves.",
       "round": 2,
       "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "layout-graph.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "class": "barred"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "the party reached scenes behind a shut barred door, out of story order, by entering the sea and swimming around it",
+      "general_form": "the far side of every barred edge or gate is unreachable from its near side while the gate is shut, by walking, falling, jumping or swimming",
+      "id": "str-01",
+      "note": "No check carries this class today; the check is to be built (work plan obligation A). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Verified by reading main: the route relation (`nav::World::neighbors`) treats water as impassable (spec-0038 §5), and the only allocation-leak check, `DW0838` (`compiler::blockout::crossings`), floods by walk only; `DW0921` floods with `body_moves` (swimming included) but asks the opposite question (can a body get back). No code proves a shut gate's far side unreachable. The binding counts barred edges in the layout graph.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "interact"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "an interact prop took many right-clicks before one registered: the click target's box coincides with the prop block's faces, so the crosshair resolves to the block",
+      "general_form": "every click target an objective or trigger summons wins the client's pick from every cell the party can click it from: its box protrudes past the faces of the block it stands in",
+      "id": "str-02",
+      "note": "No check carries this class today; the check is to be built (work plan obligation B1). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Verified by reading main and the build bytes: `emit/objective.rs` summons `interaction` width 1.0, height 2.0 at the cell centre for every non-pressable prop (all 16 interact objectives in this build), flush with a full-cube prop's faces; `emit/seal.rs` already states that vanilla picks the entity only when strictly nearer and gives seals, shortcut doors and region triggers a protruding box, but the objective path and point triggers do not use it. `DW0963` judges visibility only; `DW0489` is NPC-vs-NPC; the harness ray (`harness/src/crosshair.ts`) models no block occlusion. The tie-break is read from the engine's own statement, not planted in a client.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "any_of": [
+            {
+              "eq": {
+                "type": "interact"
+              }
+            },
+            {
+              "eq": {
+                "on": "use"
+              }
+            }
+          ]
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "a clicked prop is silent before its objective is open, so the step reads as broken; a multi-press puzzle kept accepting presses after it was solved and judged one wrong",
+      "general_form": "every click target answers every press: before its step is open it says so, and after its step is done a press changes nothing the story has settled",
+      "id": "str-03",
+      "note": "No check carries this class today; the check is to be built (work plan obligation B2). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Verified by reading main: the interact tick (`emit/functions.rs`) resets an out-of-window click with no message, the hitbox exists only while the objective is open (`emit/objective.rs` activation and cleanup), `missing_item_hint` fires only inside the window, and no DSL field carries a not-yet line. `once: false` use triggers are gated only by their own flags and state (`emit/trigger.rs`), so nothing disarms them when the objective they serve completes. The binding counts interact objectives and use triggers.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "obj/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "objectives carried no hint, so the player did not know a step existed or where it was",
+      "general_form": "every objective owes a hint that names the action as the player performs it and a place or landmark the player can find",
+      "id": "str-04",
+      "note": "No check carries this class today; the check is to be built (work plan obligation C1). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Verified by reading main: `hint` is optional on every objective variant (`dsl::quest::objective`); `DW0863` effectively demands one only for `kill`; nothing refuses an interact, talk-to, reach or collect objective without one. In this build 18 of 30 objectives have none.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "obj/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "an objective's text named a different act from the one that completes it: a hint said to walk past a thing that must be right-clicked, and a title said to go somewhere where talking to someone completes it",
+      "general_form": "an objective's title and hint name the act its type completes on (an interact objective says use or right-click, a talk-to objective names the person), never a different verb",
+      "id": "str-05",
+      "note": "No check carries this class today; the check is to be built (work plan obligation C1). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Verified by reading main: `compiler::promise` states that no machine reads hint prose and builds no verb check; `docs/reference/game-writing.md` lists hint-for-statement as human review only. A verb lexicon per objective type is a machine form the spec must settle.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "obj/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "the current objective's hint could be read only once, in chat, so a player who missed it had to walk back to the character who gave it",
+      "general_form": "the active objectives and their hints stay readable on demand for the whole time they are open",
+      "id": "str-06",
+      "note": "No check carries this class today; the check is to be built (work plan obligation C2). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Verified by reading main: `announce_<obj>` (`emit/quest.rs`) prints the title and hint once per party; no sidebar, action-bar repeat, book or recall trigger shows it again. `docs/reference/game-writing.md` L1 assumes an objective journal the engine does not have.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "any_of": [
+            {
+              "eq": {
+                "type": "interact"
+              }
+            },
+            {
+              "eq": {
+                "on": "use"
+              }
+            }
+          ]
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "nothing taught the player that the world's blocks are right-clicked: a sign started a cutscene unannounced, and later props were not tried",
+      "general_form": "a campaign whose progress needs a click on a world block teaches that in its opening, before the first such click is owed",
+      "id": "str-07",
+      "note": "No check carries this class today; the check is to be built (work plan obligation C1). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Verified by reading main: no DSL field and no check concerns teaching interaction; a `use` trigger has no prompt field. The owner's guidance principle (no highlight markers; text, props and scenes carry the guidance) is the design ground.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "interact"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "interact props did not read as the thing their text names, and one prop stood among many identical blocks with nothing to say which to press",
+      "general_form": "an interact prop is distinguishable at the distance the party first sees it: no block of the same kind stands within the click's reach around it unless the prop is marked",
+      "id": "str-08",
+      "note": "No check carries this class today; the check is to be built (work plan obligation C1). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Verified by reading main: `DW0963` refuses only a prop-less click on open air; nothing compares a prop with its neighbours. Whether a block reads as the named object is a judgement (owner QC); its machine half is the uniqueness rule above.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "assembly/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "cutscene shots meant to show a creature's assemblies showed nothing, and an assembly appeared only when the player stood on it",
+      "general_form": "every assembly a shot or a scene relies on is summoned and rendered to the viewer at the camera's distance for the whole span it must be seen",
+      "id": "str-09",
+      "note": "No check carries this class today; the check is to be built (work plan obligation D). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Verified by reading main: assembly parts are `block_display`s riding an `item_display` root at the mark (`compiler::assembly`), summoned only by a `spawn-assembly` beat, with no `view_range` emitted, so the client culls them at its default (64 blocks times the player's entity-distance setting, measured from the mark); the cutscene emission (`emit/cutscene.rs`) neither summons nor checks an assembly, and a shot cannot name one as its subject (`dsl::cutscene`). `DW0956` judges the served chunk distance, not the entity cull. Which of the two causes (cull distance or a late spawn beat) hid each instance is not established.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "cutscene"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "a whole cutscene framed only sea and sky, and a shot aimed at a stretch of ground where nothing happened",
+      "general_form": "every shot declares the subject it frames, and the build proves the subject is inside the frustum and unoccluded from the camera pose",
+      "id": "str-10",
+      "note": "No check carries this class today; the check is to be built (work plan obligation D). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Verified by reading main: the cutscene proofs are `DW0308` (the dolly clips a solid), `DW0956` (aim beyond the served chunk distance) and `DW0347` (pan budget); nothing checks line of sight, field of view or occlusion to a subject (`compiler::camera` names world-aware framing as future work).",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "cutscene"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "vanilla ambient music played over scenes it contradicted, with no way for the campaign to silence it or choose a track",
+      "general_form": "a campaign controls music per scene: silence or a chosen track, declared, with vanilla's ambient music never playing over a scene that declares otherwise",
+      "id": "str-11",
+      "note": "No check carries this class today; the check is to be built (work plan obligation E). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Verified by reading main: music is reachable only through an atmosphere's `audio/background_music` and `audio/music_volume` attributes, repainted per region by `set-atmosphere`; the ground biome sets no music, so vanilla's default plays; there is no stop-sound verb, no music on a cutscene, and `play-sound` of a `music.*` event plays in the master category over biome music. A first-class per-scene surface needs an approved spec. The binding counts cutscenes, the scenes where an unchosen track is most audible.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "campaign-complete"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "an ending's text said the place was destroyed while the player stood afterwards unharmed in an intact world",
+      "general_form": "the world after an ending agrees with what the ending says happened: an ending can change the world and the party's situation, and a check reports an ending that changes nothing it narrates",
+      "id": "str-12",
+      "note": "No check carries this class today; the check is to be built (work plan obligation K). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Needs a spec for the ending surface; the advisory half must not infer prose (CLAUDE.md, a check confirms intent).",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quest-plan.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "forks_on"
+          ]
+        }
+      },
+      "binding": {
+        "file": "branch-plan.json",
+        "kind": "artifact",
+        "path": "branches"
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "the ending depended only on the last dialogue choice and on nothing the player did before it",
+      "general_form": "each ending reports how many of its inputs are set before the final scene (an advisory, never a refusal)",
+      "id": "str-13",
+      "note": "No check carries this class today; the check is to be built (work plan obligation K). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Verified by reading main: an ending's effect may carry a guard over earlier flags and state (`dsl::quest::effect` `when`), so accumulated endings are expressible; `compiler::branch` (DW0480-DW0485, DW0927) counts nothing of an ending's inputs and the skill (`references/story.md`) never steers toward them. Research on choice-and-consequence practice is owed before the advisory's wording. Stale doc comment: `dsl::quest::verb` still calls campaign-complete not flag-gatable.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "glob": "programs/*.json",
+        "kind": "campaign"
+      },
+      "binding": {
+        "contains": "minecraft:(barrel|chest|trapped_chest)",
+        "glob": "programs/*.json",
+        "kind": "campaign"
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "empty decorative containers stood in reach and cost the player time searching them",
+      "general_form": "every placed container is declared loot or decoration; a loot container is never empty; when any decoration container exists, the opening tells the player in the campaign's words",
+      "id": "str-14",
+      "note": "No check carries this class today; the check is to be built (work plan obligation G). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Verified by reading main: `loot[]` fills a prefab container positionally and nothing enumerates the containers no fill claims; `items` may be empty; the skill asks only in prose (`references/quest-capabilities.md`) that a reachable container hold something. This campaign declares no loot, so every container it places is decoration. The binding counts detail programs that place a container.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "npcs.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "npc/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "characters stood with their backs to the player as the player walked up to talk",
+      "general_form": "a body the party talks to faces the direction the party arrives from, or watches the party (`watch`), at the moment the talk is owed",
+      "id": "str-15",
+      "note": "No check carries this class today; the check is to be built (work plan obligation F). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Verified by reading main: home yaw is the anchor's declared facing (`compiler::watching::npc_home`); `watch` (spec-0101) exists and is optional; nothing compares the yaw with the approach. The skill states the rule only in prose (`references/story.md`). Recurring across campaigns.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "npcs.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "npc/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "two bodies of one named character were visible at the same time",
+      "general_form": "one named character is never present as two bodies in any scene the party can see",
+      "id": "str-16",
+      "note": "No check carries this class today; the check is to be built (work plan obligation F). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Verified by reading main: nothing compares NPC display names; the cast ledger is keyed by id; `DW0983` groups names for wave members and actors only.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "actor/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "a standing body of a hostile mob type that cannot be harmed stood beside the route, inviting an attack that did nothing",
+      "general_form": "a body the party cannot harm and that does not fight is not staged in melee reach of the walked route without the campaign saying what it is",
+      "id": "str-17",
+      "note": "No check carries this class today; the check is to be built (work plan obligation F). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Unverified beyond the declaration: the actors here are `watch`ing bodies (spec-0101); no check relates an invulnerable body to the route.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "wave/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "a fight's bodies were seated far from the player and out of sight, so the player did not know where the fight was",
+      "general_form": "a wave's seated bodies are within sight of the party at the moment the wave is seated, or the objective's hint says where they are",
+      "id": "str-18",
+      "note": "No check carries this class today; the check is to be built (work plan obligation C1). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Nearest existing check: `DW0863` (a kill objective is announced with a hint, or every firing site is within the wave's aggro reach of its anchor); it does not ask about sight. Partly verified by reading.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "layout-graph.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "class": "barred"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "a long climb led to a way the story keeps shut, and the player found that only at its top and walked back down",
+      "general_form": "a way the story keeps shut is closed where its branch leaves the open route, not at the far end of a long dead end",
+      "id": "str-19",
+      "note": "No check carries this class today; the check is to be built (work plan obligation J). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Craft rule to be researched before the check's threshold is set; the check needs the reach flood of obligation A.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "any_of": [
+            {
+              "eq": {
+                "type": "clear-region"
+              }
+            },
+            {
+              "eq": {
+                "type": "set-block"
+              }
+            },
+            {
+              "eq": {
+                "type": "fill-region"
+              }
+            }
+          ]
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "blocks lay on the ground as dropped items near the start, and a lantern hung askew",
+      "general_form": "no block the build or any effect writes pops off as an item in any configuration, and the written-world record counts item entities as a defect",
+      "id": "str-20",
+      "note": "No check carries this class today; the check is to be built (work plan obligation H). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Partly verified by reading main: `DW1002` (`compiler::attached`) judges block survival at load and on the critical path's configurations but names unforced writes and branch configurations as unjudged; `tools/ci/check-written-world.py` (`DW0955`) compares block cells only and counts no item entity. Unverified: which write dropped these blocks, whether the build that was played carried `DW1002`, and the lantern's state (a hanging lantern keeps the state its piece wrote; `light.rs` chooses hanging only for the engine's own fixtures). The binding counts the effects that write blocks after load.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quest-plan.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "forks_on"
+          ]
+        }
+      },
+      "binding": {
+        "file": "branch-plan.json",
+        "kind": "artifact",
+        "path": "branches"
+      },
+      "campaign": "the-stranding",
+      "carrier": null,
+      "finding": "a served playtest could not return to a checkpoint, so the other branch could not be played without replaying the whole delve",
+      "general_form": "a served playtest of a branching campaign can save and restore the story state at each branch point",
+      "id": "str-21",
+      "note": "No check carries this class today; the check is to be built (work plan obligation M). The row reads NO-GENERAL-FORM until it lands, which is the gate's honest answer. Playtest tooling (`tools/creator/playtest-server.sh`); the binding counts the branches the campaign declares.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"
