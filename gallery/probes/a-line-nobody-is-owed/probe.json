@@ -20,8 +20,6 @@
       "value": "Some stones want a blow: [[key|attack]] on them."
     }
   ],
-  "units": [
-    "Teaching.attack-block"
-  ],
-  "why": "An `attack-block` teaching line added, with its zh-cn row. No walked path of the gallery strikes a block — the hearth stone's `strike` is a trigger no path performs — so the line would be shown to nobody: an inert declaration, refused with shape B. This is what proves `Teaching.attack-block` writable and refused when nothing owes it."
+  "units": [],
+  "why": "An `attack-block` teaching line added, with its zh-cn row. No walked path of the gallery strikes a block — the hearth stone's `strike` is a trigger no path performs — so the line would be shown to nobody: an inert declaration, refused with shape B."
 }
