@@ -233,6 +233,11 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("PotionEffect", "effect", Reference),
     ("Prop", "block", Reference),
     ("Pulse", "place", Reference),
+    // spec-0105: the one player-facing line payload — `narrate` and
+    // `containers.decoration_notice` — inventoried as `fx.….narrate` and
+    // `containers.decoration_notice`.
+    ("Narration", "sound", Reference),
+    ("Narration", "text", Inventoried),
     ("Pulse", "sound", Reference),
     ("QuestEffect", "block", Reference),
     ("QuestEffect", "place", Reference),

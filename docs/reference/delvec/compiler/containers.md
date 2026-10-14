@@ -10,7 +10,7 @@ Every build reads the **edited assembled model** — the cells every later proof
 |---|---|---|
 | `loot` | a `loot[]` entry | its anchor's cell |
 | `collect` | a `collect` adopting `container`; a `collect`'s own chest | the adopted cell; the `anchor` cell |
-| `device` | a `trapped-chest` trap; a `use` / `strike` trigger or an `interact` objective whose cell holds a container or whose `prop` is one | the `at` / `anchor` cell |
+| `device` | a `trapped-chest` trap, or any trap's dispenser (`dispenser` in the trap anchor's metadata); a `use` / `strike` trigger or an `interact` objective whose cell holds a container or whose `prop` is one | the `at` / `anchor` cell |
 | `decoration` | nothing | the remainder |
 
 A cell may carry `loot` and `device` together (the real chest among false trapped chests). Rows are in cell order (ADR-0006).

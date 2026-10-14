@@ -12,7 +12,7 @@
 //! |---|---|---|
 //! | `loot` | a `loot[]` entry | its anchor's cell |
 //! | `collect` | a `collect` adopting `container`, or one with neither `container` nor `dropped_by` (the compiler's own chest) | the adopted cell; the `anchor` cell, counted from the declaration because the model holds air there until runtime |
-//! | `device` | a `trapped-chest` trap; a `use` / `strike` trigger or an `interact` objective whose cell holds a container or whose `prop` is one | the `at` / `anchor` cell |
+//! | `device` | a `trapped-chest` trap, or any trap's dispenser; a `use` / `strike` trigger or an `interact` objective whose cell holds a container or whose `prop` is one | the `at` / `anchor` cell |
 //! | `decoration` | nothing | the remainder |
 //!
 //! Three verdicts are judged on the result: `DW1018` (the containers built and
@@ -587,6 +587,16 @@ pub fn claims_of(plan: &Plan, blocks: &BlockMap) -> Vec<Claim> {
                 kind: ClaimKind::Device,
                 id: t.id.clone(),
                 cell: t.trigger_cell,
+                placed: None,
+            });
+        }
+        // A trap's dispenser is a container (spec-0105 §2.1) and the trap's
+        // own hardware: what it holds is the trap's payload.
+        if let Some(cell) = t.dispenser {
+            out.push(Claim {
+                kind: ClaimKind::Device,
+                id: t.id.clone(),
+                cell,
                 placed: None,
             });
         }
