@@ -1335,6 +1335,8 @@ names to its md5 — and runs the core's own `Main-Class` on that classpath with
 A home that does not hold the pin is refused, exit 2, naming the pin, the home,
 any other core there, and the installer; nothing is rendered.
 
+**A render runs in the background.** Every JVM `chunky.sh` starts — the render, a snapshot, and the denoise step's raw-buffer snapshot and albedo and normal passes — carries `-Djava.awt.headless=true -Dapple.awt.UIElement=true`, so a render never takes the creator's focus or puts an icon in the macOS Dock (the core's texture loader asks AWT for a graphics environment, which on macOS otherwise starts a foreground Cocoa app); the pixels are unchanged — a `-snapshot` of one dump is byte-identical either way.
+
 **Every `-render` is denoised** (`tools/lib/chunky_denoise.py`; why: `compiler.md`
 §4, the lantern scale is fitted on denoised frames). `validation/chunky-install.sh`
 installs, after the core, the chunky-denoiser plugin and Open Image Denoise for

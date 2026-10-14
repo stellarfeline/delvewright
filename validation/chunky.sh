@@ -91,6 +91,16 @@ if [ "$status" -ne 0 ]; then
 fi
 main_class="$(python3 "$repo/tools/lib/chunky_core.py" main-class --home "$DW_CHUNKY_HOME")"
 echo "chunky: rendering with $(python3 "$repo/tools/lib/versions.py" render.chunky_core), content digest verified, from $DW_CHUNKY_HOME" >&2
+# Every java launch below carries these. The render never opens a window, and the
+# pinned core still reaches the platform toolkit: its texture loader
+# (`se.llbit.resources.ImageLoader`) copies each image through
+# `BufferedImage.getGraphics`, which asks for the local graphics environment, and
+# on macOS that starts the Cocoa application — a foreground app that takes the
+# creator's focus and puts an icon in the Dock (measured on a `-render`:
+# `sun.awt.CGraphicsDevice` loads, and Chunky becomes the frontmost app until it
+# exits). Headless hands it the headless environment; UIElement keeps any
+# toolkit that still starts out of the Dock and the app switcher.
+quiet_jvm=(-Djava.awt.headless=true -Dapple.awt.UIElement=true)
 tex_args=()
 if [ -n "$pack" ]; then
   jar="${DELVEWRIGHT_CLIENT_JAR:-$DW_CHUNKY_HOME/resources/minecraft.jar}"
@@ -99,7 +109,7 @@ if [ -n "$pack" ]; then
   tex_args=(-textures "$pack:$jar")
 fi
 if [ -z "$scene" ]; then
-  exec java "-Dchunky.home=$DW_CHUNKY_HOME" -cp "$classpath" "$main_class" "${tex_args[@]+"${tex_args[@]}"}" "$@"
+  exec java "${quiet_jvm[@]}" "-Dchunky.home=$DW_CHUNKY_HOME" -cp "$classpath" "$main_class" "${tex_args[@]+"${tex_args[@]}"}" "$@"
 fi
 
 # ---- -render: the denoise kit is owed before anything renders ----------------
@@ -116,7 +126,7 @@ dir="${scene_dir:-.}"
 python3 "$denoise" restore --scene-dir "$dir" --scene "$scene" >&2
 
 status=0
-java "-Dchunky.home=$DW_CHUNKY_HOME" -cp "$classpath" "$main_class" "${tex_args[@]+"${tex_args[@]}"}" "${budget_args[@]+"${budget_args[@]}"}" "$@" || status=$?
+java "${quiet_jvm[@]}" "-Dchunky.home=$DW_CHUNKY_HOME" -cp "$classpath" "$main_class" "${tex_args[@]+"${tex_args[@]}"}" "${budget_args[@]+"${budget_args[@]}"}" "$@" || status=$?
 [ "$status" -eq 0 ] || { echo "chunky: the render exited $status; nothing was denoised." >&2; exit "$status"; }
 
 # ---- the denoise step --------------------------------------------------------
@@ -126,10 +136,10 @@ thread_args=()
 python3 "$denoise" prepare --scene-dir "$dir" --scene "$scene" --work "$work"
 mkdir -p "$work/raw" "$work/aux"
 status=0
-java "-Dchunky.home=$DW_CHUNKY_HOME" -cp "$classpath" "$main_class" "${tex_args[@]+"${tex_args[@]}"}" \
+java "${quiet_jvm[@]}" "-Dchunky.home=$DW_CHUNKY_HOME" -cp "$classpath" "$main_class" "${tex_args[@]+"${tex_args[@]}"}" \
   -scene-dir "$work/raw" -snapshot "$scene" "$work/raw/$scene.pfm" > "$work/raw.log" 2>&1 || status=$?
 [ "$status" -eq 0 ] || { echo "chunky: the raw-buffer snapshot exited $status (see $work/raw.log); nothing was denoised." >&2; exit 1; }
-java "-Dchunky.home=$denoise_home" -cp "$classpath" "$main_class" "${tex_args[@]+"${tex_args[@]}"}" \
+java "${quiet_jvm[@]}" "-Dchunky.home=$denoise_home" -cp "$classpath" "$main_class" "${tex_args[@]+"${tex_args[@]}"}" \
   -scene-dir "$work/aux" -render "$scene" -f "${thread_args[@]+"${thread_args[@]}"}" -target 16 > "$work/aux.log" 2>&1 &
 passes=$!
 status=0
