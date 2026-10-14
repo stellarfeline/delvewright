@@ -200,7 +200,13 @@ pub(super) fn emit_shortcut_functions(plan: &Plan) -> Vec<(String, String)> {
             format!("scoreboard players set #sc_{id} dw.sys 1"),
             format!(
                 "fill {} {} {} {} {} {} minecraft:air replace {}",
-                from[0], from[1], from[2], to[0], to[1], to[2], sc.gate_block
+                from[0],
+                from[1],
+                from[2],
+                to[0],
+                to[1],
+                to[2],
+                replace_filter(&sc.gate_block)
             ),
             // The affordance is spent: the bar is thrown and the door is open,
             // so its hardware retires with it. This is the ONE function allowed

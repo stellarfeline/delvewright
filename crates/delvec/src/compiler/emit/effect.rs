@@ -355,13 +355,30 @@ pub(super) fn fill_region_command(
 ) -> String {
     let (from, to) = region;
     let filter = match only {
-        Some(o) => format!(" replace {o}"),
+        Some(o) => format!(" replace {}", replace_filter(o)),
         None => String::new(),
     };
     format!(
         "fill {} {} {} {} {} {} {block}{filter}",
         from[0], from[1], from[2], to[0], to[1], to[2]
     )
+}
+
+/// **The `replace` filter that clears a gate's block in any of its states.**
+///
+/// A gate declares a block, and the placed world holds that block in whatever
+/// state its neighbours gave it: iron bars set into a wall connect east and west,
+/// a door has a half and a hinge. The gate-seal ledger counts every state of the
+/// declared block as the gate's own (`assembled::measure_gate_seals` compares base
+/// ids), so the clear must match every state too: a vanilla block predicate with
+/// no state list matches any state. Copying a declared state into the filter
+/// would leave every cell in another state standing after the gate opened.
+/// Every `fill … replace <gate block>` the compiler emits takes its filter here.
+pub(super) fn replace_filter(block: &str) -> &str {
+    match block.find(['[', '{']) {
+        Some(at) => &block[..at],
+        None => block,
+    }
 }
 
 /// The block a cleared region is written with. Named because three verbs share it.
@@ -1228,5 +1245,42 @@ pub(super) fn push_effect_deep_audience<'a>(
                 push_effect_deep_audience(x, a, out);
             }
         }
+    }
+}
+
+/// The gate clear's `replace` filter matches every state of the declared block.
+#[cfg(test)]
+mod replace_filter_tests {
+    use super::*;
+
+    /// A gate declaring a block with a state list is cleared in every state the
+    /// placed world holds it in: the filter is the block's base id, which is how
+    /// the gate-seal ledger counts the gate's own cells.
+    #[test]
+    fn a_gate_declared_with_a_state_is_cleared_in_every_state() {
+        assert_eq!(
+            fill_region_command(
+                ([0, 64, 0], [1, 65, 0]),
+                AIR,
+                Some("minecraft:iron_bars[east=true,west=true]")
+            ),
+            "fill 0 64 0 1 65 0 minecraft:air replace minecraft:iron_bars"
+        );
+        assert_eq!(
+            replace_filter(
+                "minecraft:iron_door[facing=north,half=lower,hinge=left,open=false,powered=false]"
+            ),
+            "minecraft:iron_door"
+        );
+        assert_eq!(replace_filter("minecraft:iron_bars"), "minecraft:iron_bars");
+        // A close is not filtered: it lays the declared block, state and all.
+        assert_eq!(
+            fill_region_command(
+                ([0, 64, 0], [0, 64, 0]),
+                "minecraft:oak_fence[east=true]",
+                None
+            ),
+            "fill 0 64 0 0 64 0 minecraft:oak_fence[east=true]"
+        );
     }
 }

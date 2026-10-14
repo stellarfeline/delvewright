@@ -120,7 +120,13 @@ pub(super) fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
                 // is the opposite of a disarm.
                 format!(
                     "fill {} {} {} {} {} {} minecraft:air replace {}",
-                    from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
+                    from[0],
+                    from[1],
+                    from[2],
+                    to[0],
+                    to[1],
+                    to[2],
+                    replace_filter(&g.gate_block)
                 ),
                 guarded(format!(
                     "schedule function {ns}:tgate_close_{id} {}t",
@@ -193,7 +199,13 @@ pub(super) fn emit_timed_gate_disarm_functions(plan: &Plan) -> Vec<(String, Stri
             ),
             format!(
                 "fill {} {} {} {} {} {} minecraft:air replace {}",
-                from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
+                from[0],
+                from[1],
+                from[2],
+                to[0],
+                to[1],
+                to[2],
+                replace_filter(&g.gate_block)
             ),
             format!(
                 "kill @e[tag={}]",
