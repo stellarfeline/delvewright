@@ -785,3 +785,73 @@ fn dw0816_a_trigger_whose_own_gate_is_never_met_opens_nothing() {
     let got = reachability_of(&lever_campaign(HALL, &gated));
     assert!(got.contains(&"DW0816".to_string()), "{got:?}");
 }
+
+/// The gallery's site-plan overlay, read the way `site_plan_edit_script.rs`
+/// reads it: the primary with every document the overlay replaces taken from
+/// the overlay. `quests` may be patched before it is parsed.
+fn gallery_site_plan(patch_quests: impl Fn(&mut Value)) -> delvewright_dsl::Campaign {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap()
+        .join("gallery");
+    let overlay = root.join("overlays/site-plan");
+    let read = |name: &str| -> String {
+        let from = if overlay.join(name).is_file() {
+            overlay.join(name)
+        } else {
+            root.join(name)
+        };
+        std::fs::read_to_string(from).unwrap()
+    };
+    let mut quests: Value = serde_json::from_str(&read("quests.json")).unwrap();
+    patch_quests(&mut quests);
+    let raw = RawCampaign {
+        world: read("world.json"),
+        npcs: read("npcs.json"),
+        classes: read("classes.json"),
+        quest_plan: read("quest-plan.json"),
+        quests: serde_json::to_string(&quests).unwrap(),
+        dialogue: read("dialogue.json"),
+        world_edits: Some(read("world-edits.json")),
+        geometry_brief: Some(read("geometry-brief.json")),
+        layout_graph: Some(read("layout-graph.json")),
+        site_plan: Some(read("site-plan.json")),
+        detail_plan: Some(read("detail-plan.json")),
+        design: Some(read("design.json")),
+    };
+    delvewright_dsl::parse_campaign(&raw).expect("the gallery's site-plan point parses")
+}
+
+/// **The gallery element.** The site-plan overlay's east door is a barred way
+/// gated on `flag/east-door-drawn`, which only `shortcut/east-door`'s
+/// `on_unlock` sets, pulled at `anchor/unlock-east-door` on the far hall's side.
+/// The graph credits that row at the far hall, so the closure holds the flag;
+/// take the `set-flag` out of the shortcut and it does not.
+#[test]
+fn the_gallery_east_door_is_opened_by_its_shortcut_unlock() {
+    use delvewright_dsl::layout::{Closure, Grant, Grants};
+    let flag = Grant::Flag("flag/east-door-drawn".to_string());
+    let c = gallery_site_plan(|_| {});
+    let graph = &c.layout_graph.as_ref().unwrap().content;
+    assert_eq!(
+        graph
+            .place_of("anchor/unlock-east-door")
+            .map(|n| n.0.as_str()),
+        Some("node/far-hall")
+    );
+    let closure = Closure::run(graph, &Grants::of(&c, graph));
+    assert!(closure.obtained.contains(&flag), "{:?}", closure.obtained);
+
+    let c = gallery_site_plan(|q| {
+        let unlock = q["content"]["shortcuts"][0]["on_unlock"]
+            .as_array_mut()
+            .unwrap();
+        let before = unlock.len();
+        unlock.retain(|e| e["type"] != "set-flag");
+        assert_eq!(unlock.len(), before - 1, "exactly the one set-flag removed");
+    });
+    let graph = &c.layout_graph.as_ref().unwrap().content;
+    let closure = Closure::run(graph, &Grants::of(&c, graph));
+    assert!(!closure.obtained.contains(&flag), "{:?}", closure.obtained);
+}
