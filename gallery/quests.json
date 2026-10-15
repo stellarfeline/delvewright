@@ -702,6 +702,18 @@
     "quests": [
       {
         "cast": {
+          "npc/copyist": {
+            "at": {
+              "anchor": "anchor/usher",
+              "offset": [
+                0,
+                0,
+                -4
+              ]
+            },
+            "dialogue": "dlg/copyist-root",
+            "doing": "copying the catalogue at the wall desk, back to the wall"
+          },
           "npc/curator": {
             "at": "anchor/lectern",
             "dialogue": "dlg/curator-root",
@@ -1573,6 +1585,18 @@
       },
       {
         "cast": {
+          "npc/copyist": {
+            "at": {
+              "anchor": "anchor/usher",
+              "offset": [
+                0,
+                0,
+                -4
+              ]
+            },
+            "dialogue": "unchanged",
+            "doing": "copying the catalogue at the wall desk, back to the wall"
+          },
           "npc/curator": {
             "at": "anchor/pedestal",
             "dialogue": "unchanged",
@@ -3009,6 +3033,18 @@
       },
       {
         "cast": {
+          "npc/copyist": {
+            "at": {
+              "anchor": "anchor/usher",
+              "offset": [
+                0,
+                0,
+                -4
+              ]
+            },
+            "dialogue": "unchanged",
+            "doing": "copying the catalogue at the wall desk, back to the wall"
+          },
           "npc/curator": {
             "at": "anchor/pedestal",
             "dialogue": "unchanged",
@@ -3134,6 +3170,18 @@
       },
       {
         "cast": {
+          "npc/copyist": {
+            "at": {
+              "anchor": "anchor/usher",
+              "offset": [
+                0,
+                0,
+                -4
+              ]
+            },
+            "dialogue": "unchanged",
+            "doing": "copying the catalogue at the wall desk, back to the wall"
+          },
           "npc/curator": {
             "at": "anchor/pedestal",
             "dialogue": "unchanged",
