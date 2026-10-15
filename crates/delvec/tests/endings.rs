@@ -1065,8 +1065,8 @@ fn the_runner_fixture_exports_every_world_and_mocks_the_purchase() {
     );
 }
 
-/// The same fixture with `obj/walk-out`'s radius widened until its volume holds
-/// every cell the bell can be rung from: the deed world cannot ring it without
+/// The same fixture with `obj/walk-out`'s radius widened to 3, so its volume
+/// holds every cell the bell can be rung from: the deed world cannot ring it without
 /// completing the walk-out first, and the build refuses it rather than export it
 /// as walkable.
 #[test]
@@ -1075,9 +1075,10 @@ fn a_deed_no_stance_outside_an_armed_volume_performs_is_refused() {
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(&common::compiler_fixtures_dir().join("ending-runs"), &dir);
     common::patch_file(&dir.join("quests.json"), |q| {
-        q["content"]["quests"][1]["objectives"][0]["radius"] = json!(5);
+        q["content"]["quests"][1]["objectives"][0]["radius"] = json!(3);
     });
     let out = dir.with_extension("out");
+    let _ = std::fs::remove_dir_all(&out);
     let prefabs = common::prefabs_dir();
     let (code, log) = delvec_run(&[
         "build",

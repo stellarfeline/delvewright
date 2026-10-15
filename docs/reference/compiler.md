@@ -2562,11 +2562,17 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 
   **`keep_out[]` — the armed volumes a step stays out of** (format 5). Every
   walking step carries, when non-empty, `{objective, lo, hi}` per `reach`
-  objective armed while the party performs it and not yet due — the emitter's
-  pending guard, read by `Flow::objective_armed`: its quest running, every
-  `after` complete, its flag gate holding, not done, a numeric term read as open
-  (`plan::PathFiring::keep_out`). A step's own objective is never in its list, nor
-  is a volume that meets a `reach`'s own (the two complete together on arrival).
+  objective the path walks later that the replay proves armed while the party
+  performs it — the emitter's pending guard read over the guaranteed stance
+  (`Flow::walk_for_performing`, `Walk::armed_objectives`): its quest running, every
+  `after` complete, its flag gate holding on what the path has performed, every
+  numeric term holding on the value the walk knows (one on an undatable datum
+  reads shut), not done (`plan::PathFiring::keep_out`). A step in front of an
+  objective step reads the state before it acts; the objective step reads it once
+  the triggers and deeds due there have fired. A step's own objective is never in
+  its list, nor is a volume that meets a `reach`'s own (the two complete together
+  on arrival), nor one the party already stands in as the step begins (the cell
+  the step before left it on, a landing, the spawn).
   A body inside one completes that objective out of turn, so the route proof
   (`DW0311`) keeps every leg into the step out of them by the selector's hitbox
   rule (`World::keep_out`, read in `World::standable_fp` as a lethal volume is),

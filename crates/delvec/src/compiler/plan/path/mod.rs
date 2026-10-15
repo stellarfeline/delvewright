@@ -635,10 +635,12 @@ pub(super) fn build_critical_path(
     // a critical step is mapped back to the flags and data the party holds
     // walking up to it.
     let mut si_start: Vec<(usize, usize)> = Vec::new();
-    // Per entry of `si_start`, every objective armed as the party acts in front
-    // of that path step ([`crate::compiler::flow::Walk::armed_before_next`]) —
-    // what the step's keep-out volumes are read from.
-    let mut armed_at: Vec<BTreeSet<String>> = Vec::new();
+    // Per entry of `si_start`, every objective armed under the guaranteed
+    // stance ([`crate::compiler::flow::Flow::walk_for_performing`]) as the party
+    // acts in front of that path step, and as it takes the step itself — what
+    // each step's keep-out volumes are read from.
+    let mut armed_at: Vec<(BTreeSet<String>, BTreeSet<String>)> = Vec::new();
+    let mut guaranteed = flow.walk_for_performing(path);
     // (objective id, physical area, step index) in critical-path order, for the
     // transport map and the per-step transport marker.
     let mut obj_areas: Vec<(String, String, usize)> = Vec::new();
@@ -760,7 +762,22 @@ pub(super) fn build_critical_path(
 
     for (si, st) in path.steps.iter().enumerate() {
         si_start.push((si, steps.len()));
-        armed_at.push(walk.armed_before_next());
+        {
+            // In front of the step: what the path holds before it acts there.
+            // Taking it: once every trigger due there is performed and every
+            // entry deed due there has fired.
+            let before: BTreeSet<String> = guaranteed.armed_objectives().into_iter().collect();
+            for t in due.get(&si).into_iter().flatten().filter_map(Step::trigger) {
+                guaranteed = guaranteed.performing(t);
+            }
+            let taking: BTreeSet<String> = guaranteed
+                .with_due_deeds()
+                .armed_objectives()
+                .into_iter()
+                .collect();
+            armed_at.push((before, taking));
+            guaranteed.take(st);
+        }
         let qid = st.quest.as_str();
         let Some(quest) = stage5.get(qid) else {
             walk.take(st);
@@ -1202,12 +1219,18 @@ pub(super) fn build_critical_path(
 
     // ---- the volumes each step keeps out of ----
     //
-    // Per step, every `reach` objective armed while the party performs it: a
-    // body inside one of those volumes completes that objective there and then.
-    // A step's own objective is due at that step and is removed once the step
-    // list is final; a step performed in front of an objective step (a trigger,
-    // an exercise, a link) keeps out of that objective too.
+    // Per step, every `reach` objective this path walks later that the replay
+    // proves armed while the party performs it: a body inside one of those
+    // volumes completes that objective there and then, out of the order the
+    // path walks it in. A step's own objective is due at that step and is
+    // removed once the step list is final; a step performed in front of an
+    // objective step (a trigger, an exercise, a link) keeps out of that
+    // objective too. An objective the path never walks is due at no step.
+    let walked: BTreeSet<&str> = path.steps.iter().map(|s| s.objective.as_str()).collect();
     let reach_volume = |obj: &str| -> Option<crate::compiler::reach::KeepOut> {
+        if !walked.contains(obj) {
+            return None;
+        }
         let (qid, o) = objective_quest(campaign, obj)?;
         let Objective::ReachAnchor { anchor, radius, .. } = o else {
             return None;
@@ -1235,8 +1258,15 @@ pub(super) fn build_critical_path(
             si_start
                 .iter()
                 .rposition(|(_, first)| *first <= k)
-                .and_then(|i| armed_at.get(i))
-                .map(|armed| armed.iter().filter_map(|o| reach_volume(o)).collect())
+                .and_then(|i| Some((path.steps.get(si_start[i].0)?, armed_at.get(i)?)))
+                .map(|(st, (before, taking))| {
+                    let armed = if steps[k].objective() == Some(st.objective.as_str()) {
+                        taking
+                    } else {
+                        before
+                    };
+                    armed.iter().filter_map(|o| reach_volume(o)).collect()
+                })
                 .unwrap_or_default()
         })
         .collect();
@@ -1496,6 +1526,22 @@ pub(super) fn build_critical_path(
     // Every cutscene a step's completion schedules, at any depth of its
     // bundles, read off the step list as it is exported (links spliced).
     let cutscene_by_step = crate::compiler::hold::after_holds(campaign, &steps);
+    // A volume the party already stands in as a step begins — the cell the step
+    // before it left the party on, a carry's landing, the spawn — is no volume
+    // the step's walk can keep out of: whether it completes there was the
+    // earlier step's, and the walk only leaves it.
+    let mut at: Option<[i32; 3]> = start.map(|(_, p)| *p);
+    for (k, s) in steps.iter().enumerate() {
+        if let Some(cell) = at {
+            armed_by_step[k].retain(|v| {
+                !v.completion
+                    .possibly_completes_from(cell, f64::from(cell[1]))
+            });
+        }
+        if let Some(p) = transport_by_step[k].or(s.stand()).or(s.pos()) {
+            at = Some(p);
+        }
+    }
     // A step's own objective is due at it: the volume it walks INTO is its own.
     // An armed volume that meets a reach's own completes WITH it on arrival,
     // in the same tick, and not before it: the party arriving is the beat both

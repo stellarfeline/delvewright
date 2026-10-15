@@ -696,10 +696,12 @@ impl Walk<'_, '_> {
 
     /// **Every objective armed now** — the ones whose completion the datapack
     /// would award this instant to a body that did what it asks: its quest
-    /// running, every `after` complete, its flag gate holding, and not yet done
-    /// (`emit::quest::pending_guard`, read by [`Flow::objective_armed`]). A
-    /// numeric term is read as open, so the set never misses one the datapack
-    /// may arm. In declaration order.
+    /// running, every `after` complete, its flag gate holding, every numeric
+    /// term holding against the value this walk knows, and not yet done
+    /// (`emit::quest::pending_guard`, read by [`Flow::objective_armed`]). A term
+    /// on a datum the walk cannot date is read as SHUT: the set is what the
+    /// replay proves armed, so a keep-out built on it refuses nothing the replay
+    /// cannot show. In declaration order.
     pub fn armed_objectives(&self) -> Vec<String> {
         self.flow
             .c
@@ -708,26 +710,30 @@ impl Walk<'_, '_> {
             .quests
             .iter()
             .flat_map(|q| q.objectives.iter())
-            .map(|o| o.id().as_str())
-            .filter(|o| self.flow.objective_armed(o, &self.st))
-            .map(str::to_string)
+            .filter(|o| self.flow.objective_armed(o.id().as_str(), &self.st))
+            .filter(|o| {
+                o.requires_state()
+                    .iter()
+                    .all(|c| match self.st.state.get(c.state.as_str()) {
+                        Some(Datum::Known(v)) => i32::try_from(*v).is_ok_and(|v| c.holds(v)),
+                        _ => false,
+                    })
+            })
+            .map(|o| o.id().as_str().to_string())
             .collect()
     }
 
-    /// [`Self::armed_objectives`] at the moment the party acts in front of the
-    /// next step: every objective armed now, or once the entry deeds its story
-    /// world performs there have been performed — the union, so a deed that arms
-    /// an objective and one that disarms it both leave it counted.
-    pub fn armed_before_next(&self) -> BTreeSet<String> {
-        let mut out: BTreeSet<String> = self.armed_objectives().into_iter().collect();
+    /// This walk with the entry deeds its story world performs in front of the
+    /// next step performed — the state the party holds as it takes that step.
+    /// The walk itself when none is due there.
+    pub fn with_due_deeds(&self) -> Self {
+        let mut ahead = self.clone();
         if let Some(ctx) = &self.story {
-            let mut ahead = self.clone();
             for (_, act) in ctx.deeds.iter().filter(|(i, _)| *i == self.taken) {
                 ahead = ahead.performing(act);
-                out.extend(ahead.armed_objectives());
             }
         }
-        out
+        ahead
     }
 
     /// This walk with ambient act `act`'s own bundle fired here, once, and no

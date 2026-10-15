@@ -1123,6 +1123,31 @@ impl<'a> Flow<'a> {
 
     /// A walk that plays `p` the way its world plays it: a story world's
     /// participation and deeds when `p` carries one, today's stance otherwise.
+    /// [`Self::walk_for`] under the **guaranteed** stance
+    /// ([`Self::walk_performing`]): an ambient producer is credited only once the
+    /// path performs its trigger ([`Walk::perform`]), and a story world's entry
+    /// deeds are performed in front of the step its run performs them at. What
+    /// the party really holds walking the path — the reading an armed objective
+    /// is judged by (`plan::PathFiring::keep_out`).
+    pub fn walk_for_performing(&self, p: &Playthrough) -> Walk<'_, 'a> {
+        match &p.story {
+            None => self.walk_performing(),
+            Some(ctx) => {
+                let barred = self.barred(&ctx.performs);
+                let mut st = self.story_initial(&ctx.performs, &barred);
+                st.flags = self.initial_state_with(&|_| false).flags;
+                Walk {
+                    flow: self,
+                    st,
+                    complete_at: None,
+                    taken: 0,
+                    performed: Some(BTreeSet::new()),
+                    story: Some(ctx.clone()),
+                }
+            }
+        }
+    }
+
     pub fn walk_for(&self, p: &Playthrough) -> Walk<'_, 'a> {
         match &p.story {
             None => self.walk(),
