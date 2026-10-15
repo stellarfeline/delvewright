@@ -44,9 +44,11 @@ mod lethal;
 mod npc;
 mod respawn;
 mod sea;
+mod separate;
 mod shortcut;
 mod staging;
 mod stealth;
+mod threshold;
 mod timed_gate;
 mod trap;
 mod view;
@@ -64,9 +66,11 @@ pub use lethal::*;
 pub use npc::*;
 pub use respawn::*;
 pub use sea::*;
+pub use separate::*;
 pub use shortcut::*;
 pub use staging::*;
 pub use stealth::*;
+pub use threshold::*;
 pub use timed_gate::*;
 pub use trap::*;
 pub use view::*;
@@ -97,6 +101,16 @@ delvewright_dsl::dw_code! {
     /// variant because the author is looking at a ladder in the piece and must be
     /// told why it is not there — not sent to hunt a wedged doorway.
     pub const DW_CLIMB_UNHELD: DwCode = DwCode::new("DW0991", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW1044`: a walk-fired trigger (`approach`, `step`) the critical path
+    /// performs to pay a flag a later step reads can be **walked past** — some
+    /// walk from the position before it to where the needing step completes
+    /// never stands where the emitted selector is sure to catch it
+    /// ([`check_threshold_triggers`]). The bot walks onto the anchor; a player
+    /// walks round it, the flag is never set and the needing step never
+    /// completes.
+    pub const DW_THRESHOLD_WALKED_PAST: DwCode = DwCode::new("DW1044", ExitTier::Build);
 }
 delvewright_dsl::dw_code! {
     /// `DW0307`: a `move-npc` destination unreachable by any walkable path from the
@@ -460,6 +474,22 @@ delvewright_dsl::dw_code! {
     /// room shut until a later beat opens it is only a trap when the beat is out of
     /// reach from inside — which is what this refuses.
     pub const DW_BODY_CANNOT_LEAVE: DwCode = DwCode::new("DW0921", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW1011`: **a shut gate its two sides are joined round.** While a gate is
+    /// shut — a barred edge's seam gate, or any gate anchor, as the quest
+    /// configuration leaves it — a body standing at its near face reaches its far
+    /// face by moves a player makes ([`World::body_moves`]: walking, falling,
+    /// jumping, swimming) without passing it, and so reaches what the story keeps
+    /// shut out of order.
+    ///
+    /// Judged once per quest configuration the critical path passes through, from
+    /// the faces of each shut gate the party can get to there. A `shortcut`'s door
+    /// and a barred edge declared `shortcut` are got round by declaration and not
+    /// judged; a clocked gate's region is its clock's; a one-sided barred edge is
+    /// judged from its openable face.
+    pub const DW_GATE_BYPASSED: DwCode = DwCode::new("DW1011", ExitTier::Build);
 }
 
 delvewright_dsl::dw_code! {

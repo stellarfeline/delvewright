@@ -84,13 +84,34 @@ pub fn build_step_fn(k: usize) -> String {
     }
 }
 
-/// Is `name` (a function path) a world-build step?
+/// The first ground step's function name: the areas' own mass, written before
+/// any template is placed; step `k` (from 2) is `world_ground_<k>`
+/// ([`ground_step_fn`]).
+pub const GROUND_STEP_FN: &str = "world_ground";
+
+/// The ground's chunk gate: counts the chunks the areas' mass reaches, and
+/// starts the first ground step once every one is loaded.
+pub const GROUND_VERIFY_FN: &str = "ground_verify";
+
+/// The function name of ground step `k`, counted from 0.
+pub fn ground_step_fn(k: usize) -> String {
+    if k == 0 {
+        GROUND_STEP_FN.to_string()
+    } else {
+        format!("{GROUND_STEP_FN}_{}", k + 1)
+    }
+}
+
+/// Is `name` (a function path) a step of the world's one-shot build — a
+/// ground step or a world-build step?
 fn is_build_step(name: &str) -> bool {
-    name == BUILD_STEP_FN
-        || name
-            .strip_prefix(BUILD_STEP_FN)
-            .and_then(|r| r.strip_prefix('_'))
-            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+    [BUILD_STEP_FN, GROUND_STEP_FN].iter().any(|stem| {
+        name == *stem
+            || name
+                .strip_prefix(stem)
+                .and_then(|r| r.strip_prefix('_'))
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+    })
 }
 
 /// The `execute` sub-commands of the pinned command tree, `run` excluded: each

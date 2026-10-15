@@ -33,7 +33,7 @@
 //!
 //! One entity for a six-cell door, and its box spans `z 6..7` — coincident with
 //! the solid block on the near side (so it loses the client's ray-pick, the exact
-//! defect [`crate::compiler::emit::SEAL_MARGIN`] exists to fix) and protruding into the air
+//! defect [`crate::compiler::clickbox::CLICK_MARGIN`] exists to fix) and protruding into the air
 //! on the **far** side. The only authored answer available today is pressable
 //! only from the side the door opens from.
 //!
@@ -71,7 +71,7 @@
 //! ## Why the side is a position test and not a face test
 //!
 //! Vanilla carries no face data on that criterion, and the answer hitboxes are
-//! deliberately symmetric (one block plus [`crate::compiler::emit::SEAL_MARGIN`] on every
+//! deliberately symmetric (one block plus [`crate::compiler::clickbox::CLICK_MARGIN`] on every
 //! side, so every face of the door is pressable). Placing the hitbox on the near
 //! face alone and relying on the door to occlude the far side does **not** hold:
 //! a gate block is whatever the prefab metadata declares, and `minecraft:iron_bars`

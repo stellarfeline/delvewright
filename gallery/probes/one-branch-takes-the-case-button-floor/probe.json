@@ -1,0 +1,28 @@
+{
+  "code": "DW1002",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/1/on_objective_complete/obj~1take-the-bone/-",
+      "value": {
+        "region": {
+          "anchor": "anchor/pedestal",
+          "extent": [
+            0,
+            1,
+            0
+          ]
+        },
+        "type": "clear-region",
+        "when": {
+          "requires_flags": [
+            "flag/skipped-the-label"
+          ]
+        }
+      }
+    }
+  ],
+  "units": [],
+  "why": "A write only one branch makes, and a block it drops. The write waits on `flag/skipped-the-label`, which only `branch/skipped` sets, so the exported path never lays it and no configuration of it was walked; the runtime arm lays every block-writing line, conditional or not, at once. It clears the pedestal column under the case's button, and a fill clears from the bottom up, so the server drops the button as an item. The build refuses it, naming the button, the conditional line and the air it may stand on. It declares no unit: which block holds which is the pinned game's rule over blocks an effect already writes, and states no DSL surface."
+}

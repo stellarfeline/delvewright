@@ -293,6 +293,10 @@ export class MineflayerExecutor implements StepExecutor {
   deathLoopSkip: string | undefined;
   /** Trials of the death loop that ran to their own end — not cut off mid-way. */
   lethalTrialsFinished = 0;
+  /** Whether the death loop tries volumes at the critical path's step boundaries. */
+  deathLoopOnPath = false;
+  /** The declared volumes a trial has been opened for, at a boundary or after the path. */
+  readonly deathLoopTried = new Set<string>();
   /** Serial number of the last gate term asked — see {@link askTerm}. */
   gateAsks = 0;
   /**
