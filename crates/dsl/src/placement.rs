@@ -127,8 +127,8 @@ impl Placement {
             Self::SitePlan => {
                 "this campaign's map is its site plan, so there is no prefab metadata to \
                  read. Its anchor names are the ones the derivation places: `anchor/node-<place>` \
-                 for each place the layout graph declares, `anchor/seam-<edge>` over each barred \
-                 connection, `anchor/unlock-<edge>` on the far side of a one-sided one, and \
+                 for each place the layout graph declares, `anchor/seam-<edge>` over each gated \
+                 connection's bar, `anchor/unlock-<edge>` on the far side of a one-sided one, and \
                  `spawn` for the entry — plus every `stations[]` name its nodes declare. Write \
                  one of those, or declare this name as a station on the node it belongs to, and \
                  do NOT add an `areas[]` entry to get a prefab: a campaign carrying a site plan \
@@ -245,7 +245,7 @@ impl Extent {
 /// before any rule refuses a name for not being in it.
 ///
 /// A [`Placement::SitePlan`] campaign's anchor names are DERIVED: a `node-` per
-/// place, a `seam-` per barred way, an `unlock-` on the openable side of a
+/// place, a `seam-` per gated way, an `unlock-` on the openable side of a
 /// one-sided one, `spawn` for the entry, and every `stations[]` name its nodes
 /// declare — all of them read off `layout-graph.json`. With that document absent
 /// the derived set is not EMPTY, it is **unknown**, and `DW0824` is the finding:

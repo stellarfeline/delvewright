@@ -141,7 +141,7 @@ fn edge_of<'a>(c: &'a Campaign, s: &PlacedSeam) -> Option<&'a Edge> {
 /// table, keyed to the geometry rather than chosen by anyone.
 ///
 /// It takes the graph EDGE rather than the campaign, and that is not tidying: one
-/// row of the table — a `barred` seam lying in the piece's own floor course — is
+/// row of the table — a shut seam lying in the piece's own floor course — is
 /// reached by no site plan this repository ships, so with a `&Campaign` argument
 /// it could only be exercised by writing a whole campaign to reach one line. A
 /// function of a seam, a frame and an edge is a function `table_covers_every_row`
