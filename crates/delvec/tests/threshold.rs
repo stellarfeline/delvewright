@@ -95,6 +95,24 @@ fn the_range_the_refusal_names_builds() {
         ),
         "{log}"
     );
+    // The ledger states the line's counts, `judged` also as `examined` — the key
+    // the gallery's coverage gate refuses at zero.
+    let ledger: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            Path::new(env!("CARGO_TARGET_TMPDIR"))
+                .join("threshold-out-r2")
+                .join("validation/threshold-gate.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        ledger,
+        serde_json::json!({
+            "code": "DW1044", "performed": 1, "judged": 1, "examined": 1, "entered": 1,
+            "no_debt": 0, "by_hand": 0, "carried": 0
+        })
+    );
 }
 
 /// The perturbation only this proof catches: a second doorway round the
