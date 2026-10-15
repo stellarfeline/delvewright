@@ -9,5 +9,5 @@
     }
   ],
   "units": [],
-  "why": "One edit: `jump/the-broken-plank` leaves from `anchor/loft`, on the mezzanine's top, instead of the broken plank — a leap of five columns of floor and air, a course up, off its line, to the ferry deck's east edge. Flown as a body on cue makes it, the window misses, and `DW1041` refuses it naming the jump, the two cells, the facing and press tick that missed, where the body ended, the run-up measured and that no run-up up to six makes it. It declares no unit: `jumps[]` and its fields are bound by the primary, whose jump is proven, taken by the route and driven by the bot."
+  "why": "One edit: `jump/the-broken-plank` leaves from `anchor/loft`, on the mezzanine's top, instead of the broken plank — a leap over the plank and the gap, from a course up and off the jump's row, to the ferry deck's east edge. Flown as a body on cue makes it, the window misses, and `DW1041` refuses it naming the jump, the two cells, the facing and press tick that missed, where the body ended, the run-up measured and that no run-up up to six makes it. It declares no unit: `jumps[]` and its fields are bound by the primary, whose jump is proven, taken by the route and driven by the bot."
 }

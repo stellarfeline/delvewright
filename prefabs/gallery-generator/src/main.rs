@@ -66,7 +66,11 @@ const CABIN_LAMP: [i32; 3] = [2, 2, 29];
 /// the tiller stand on. A body on the hall's floor cannot step two courses, so
 /// the one way onto it is the broken plank of [`JETTY_PLANK`]; one that drops
 /// off it lands on the floor and walks round to the flight again.
-const FERRY_DECK: (i32, i32, i32, i32) = (7, 13, 20, 22);
+/// Its east edge stops at `x = 12`: the muster wave seats its spider at
+/// `[14.5, 19.5]`, and a spider's body is 1.4 wide, so a deck block at
+/// `x = 13` is inside it: measured, the gallery bot's die-retry read the
+/// re-seated spider at 15 of 16 health.
+const FERRY_DECK: (i32, i32, i32, i32) = (6, 12, 20, 22);
 
 /// The ferry deck's top solid course: a body stands on it at `y = 3`.
 const FERRY_DECK_TOP_Y: i32 = 2;
@@ -74,7 +78,7 @@ const FERRY_DECK_TOP_Y: i32 = 2;
 /// **The broken plank** (spec-0113 §9): the one plank left of the jetty, two
 /// long and one wide against the mezzanine's west face at the deck's height,
 /// `(x0, x1, y, z0, z1)` — a step down off the mezzanine's top. Between it and
-/// the ferry deck two columns of the jetty are gone (`x ∈ 14..=15`), so the critical path
+/// the ferry deck three columns of the jetty are gone (`x ∈ 13..=15`), so the critical path
 /// from the loft to the ferry crosses them by a sprint jump on the flat —
 /// declared `jump/the-broken-plank` from `anchor/jetty-near` to
 /// `anchor/jetty-far`, proven (`DW1041`), taken by the route and driven by the
@@ -769,7 +773,7 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/ferry-tiller",
-        pos: [13, FERRY_DECK_TOP_Y + 1, 21],
+        pos: [12, FERRY_DECK_TOP_Y + 1, 21],
         facing: Some("west"),
         trigger_block: None,
         note: "the ferry's tiller: outside the deck's volume and within a strike \
@@ -791,7 +795,7 @@ const ANCHORS: &[Anchor] = &[
         pos: [FERRY_DECK.1, FERRY_DECK_TOP_Y + 1, JETTY_ROW],
         facing: Some("west"),
         trigger_block: None,
-        note: "the ferry deck's east edge, across the two columns the jetty lost: \
+        note: "the ferry deck's east edge, across the three columns the jetty lost: \
                where the jump from the broken plank lands",
         role: None,
     },
