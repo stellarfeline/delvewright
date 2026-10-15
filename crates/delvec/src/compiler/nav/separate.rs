@@ -491,22 +491,9 @@ pub fn check_gates_separate(
             None => configs.push((st, step, cells.into_iter().collect())),
         }
     }
-    let shortcut_cells: BTreeSet<[i32; 3]> = plan
-        .shortcuts
-        .iter()
-        .flat_map(|s| crate::compiler::assembled::region_cells(s.gate_region.0, s.gate_region.1))
-        .collect();
     let owned: Vec<Option<World>> = configs
         .iter()
-        .map(|(st, _, _)| {
-            (!st.is_empty() || !shortcut_cells.is_empty()).then(|| {
-                if st.is_empty() {
-                    hold_shortcuts_shut(world, &shortcut_cells)
-                } else {
-                    hold_shortcuts_shut(&world.with_region_state(st), &shortcut_cells)
-                }
-            })
-        })
+        .map(|(st, _, _)| (!st.is_empty()).then(|| world.with_region_state(st)))
         .collect();
     let judged: Vec<SeparationConfig<'_>> = configs
         .iter()
@@ -539,14 +526,6 @@ pub fn check_gates_separate(
     binding.reached = core.reached;
     binding.bypassed = core.bypassed;
     (binding, verdict)
-}
-
-/// The world a configuration is judged in, with every shortcut's door held
-/// shut, open or not. A shortcut is the declared way round: a body that gets
-/// past a shut gate through a shortcut's door takes the loop the campaign says
-/// the party takes, so it is not a bypass. Every other way round still is.
-fn hold_shortcuts_shut(w: &World, shortcut_cells: &BTreeSet<[i32; 3]>) -> World {
-    w.with_sealed(shortcut_cells)
 }
 
 /// The pure core of [`check_gates_separate`]: the gates, the world with every
@@ -791,38 +770,6 @@ mod separate_tests {
         assert_eq!(b.reached, 1, "the party stands at the near face");
         assert_eq!(b.bypassed, 0);
         assert_eq!(b.faceless, 0, "a door one wide in a wall has two faces");
-    }
-
-    /// A second door in the same wall at x = 11, open: a shortcut the story has
-    /// unlocked beside the shut story door.
-    fn shortcut_beside(shut: bool) -> (World, BTreeSet<[i32; 3]>) {
-        let (mut solid, _) = walled_yards(shut);
-        let door: BTreeSet<[i32; 3]> = [[11, 1, 10], [11, 2, 10]].into_iter().collect();
-        for c in &door {
-            solid.remove(c);
-        }
-        (World::from_solid_cells(solid), door)
-    }
-
-    #[test]
-    fn a_way_round_through_an_open_door_is_refused_dw1011() {
-        let (base, _) = shortcut_beside(false);
-        let (shut, _) = shortcut_beside(true);
-        let (b, verdict) = judge(&base, &shut);
-        let Err(f) = verdict else {
-            panic!("a second open door beside a shut one is a way round")
-        };
-        assert_eq!(f.code.id(), "DW1011", "{}", f.message);
-        assert_eq!(b.bypassed, 1);
-    }
-
-    #[test]
-    fn a_way_round_through_a_shortcuts_door_is_the_declared_loop() {
-        let (base, door) = shortcut_beside(false);
-        let (shut, _) = shortcut_beside(true);
-        let (b, verdict) = judge(&base, &hold_shortcuts_shut(&shut, &door));
-        assert!(verdict.is_ok(), "{verdict:?}");
-        assert_eq!((b.shut, b.reached, b.bypassed), (1, 1, 0));
     }
 
     /// The wall stops at the sea: a channel of water two deep runs through the
