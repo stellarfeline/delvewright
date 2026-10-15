@@ -984,6 +984,101 @@ mod separate_tests {
         assert_eq!((b.shut, b.reached), (1, 0));
     }
 
+    /// spec-0107 §7.3: a handed axis decides the faces. A bar one wide and two
+    /// high standing alone on an open floor is thin on `x` and `z` alike and
+    /// both pairs of faces hold floor, so with no axis stated it names no two
+    /// faces; handed `z`, it is judged on the two faces across `z`.
+    #[test]
+    fn a_handed_axis_names_the_faces_a_tied_shape_cannot() {
+        let mut solid = BTreeSet::new();
+        for x in 0..11 {
+            for z in 0..11 {
+                solid.insert([x, 0, z]);
+            }
+        }
+        let base = World::from_solid_cells(solid);
+        let region = ([5, 1, 5], [5, 2, 5]);
+        assert!(faces_of(&base, region, None).is_none(), "tied, no axis");
+        let f = faces_of(&base, region, Some(2)).expect("a handed axis has faces");
+        assert_eq!(f.axis, 2);
+        assert!(f.low.iter().all(|c| c[2] == 4) && f.high.iter().all(|c| c[2] == 6));
+
+        let gate = |axis: Option<usize>| GateUnderTest {
+            label: "gated walk `edge/post`".to_string(),
+            region,
+            axis,
+            opens_low: None,
+            unlock: None,
+        };
+        let judge = |axis| {
+            verify_gates_separate(
+                &[gate(axis)],
+                &[],
+                &base,
+                &[(&base, "now".to_string(), vec![[1, 1, 1]], vec![0])],
+            )
+        };
+        let (b, _) = judge(None);
+        assert_eq!(b.faceless, 1, "no axis: counted as no two faces");
+        let (b, verdict) = judge(Some(2));
+        assert_eq!(b.faceless, 0, "handed: judged");
+        assert_eq!(b.reached, 1, "the party stands at a face");
+        assert_eq!(
+            verdict
+                .expect_err("an open floor round a post is a way round")
+                .code
+                .id(),
+            "DW1011"
+        );
+    }
+
+    /// spec-0107 §7.3: a cell where a body holds a climbable is a cell it can
+    /// be in. A grating stands in the course above a ladder's hole; its lower
+    /// face is the ladder, where no body stands, and judged by standing alone
+    /// the pair would be counted unstood and the grating never judged.
+    #[test]
+    fn a_body_on_a_rung_stands_at_a_gratings_lower_face() {
+        const LADDER: &str = "minecraft:ladder[facing=east,waterlogged=false]";
+        let build = |shut: bool| {
+            let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+            for x in 0..7 {
+                for z in 0..7 {
+                    cells.push(([x, 0, z], "minecraft:stone"));
+                    if [x, z] != [3, 3] {
+                        cells.push(([x, 5, z], "minecraft:stone"));
+                    }
+                }
+            }
+            // The ladder rises from the lower floor into the hole, on a pillar.
+            for y in 1..=5 {
+                cells.push(([3, y, 3], LADDER));
+                cells.push(([2, y, 3], "minecraft:stone"));
+            }
+            if shut {
+                cells.push(([3, 6, 3], "minecraft:iron_bars"));
+            }
+            crate::compiler::nav::testkit::blocks_world(&cells)
+        };
+        let (base, shut) = (build(false), build(true));
+        let grating = GateUnderTest {
+            label: "gated climb `edge/ladder`".to_string(),
+            region: ([3, 6, 3], [3, 6, 3]),
+            axis: Some(1),
+            opens_low: None,
+            unlock: None,
+        };
+        let (b, verdict) = verify_gates_separate(
+            &[grating],
+            &[],
+            &base,
+            &[(&shut, "now".to_string(), vec![[1, 1, 1]], vec![0])],
+        );
+        assert!(verdict.is_ok(), "{verdict:?}");
+        assert_eq!(b.unstood, 0, "the rung is a cell a body can be in");
+        assert_eq!(b.reached, 1, "counted with the party at a face");
+        assert_eq!(b.bypassed, 0);
+    }
+
     #[test]
     fn a_cube_gate_with_faces_on_two_axes_names_no_two_faces() {
         // A 1x1 column in the open yard: walkable round on both axes.
