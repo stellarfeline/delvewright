@@ -2477,7 +2477,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   campaign whose pack carries anything — a skin, the art font, a language, a
   replaced texture.
 - `<out>/manifest.json` carries exactly `campaign_id`, `delvec_version`,
-  `dsl_version`, `mc_version`, `inputs` (SHA-256 per authored document the build
+  `dsl_version`, `dw_codes` (every DW code the building binary's registry
+  declares, sorted, once each — what `tools/creator/staging-gate.py` judges a
+  ledger row's `dw` carrier against, since every unreleased revision states the
+  same `delvec_version`), `mc_version`, `inputs` (SHA-256 per authored document the build
   read, l10n sidecars included) and `outputs` (SHA-256 per emitted path), plus
   `language` on a non-`en` bake and `resource_pack_sha1` +
   `resource_pack_overrides_vanilla` on a build that ships a pack; `inputs`
