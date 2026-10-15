@@ -501,8 +501,18 @@ fn block_at<W: CollisionWorld + ?Sized>(world: &W, p: [f64; 3]) -> [i32; 3] {
     [floor(p[0]), floor(p[1]), floor(p[2])]
 }
 
-/// The water cells a box is in (`getWaterInBB`), as `(cell, fluid)`.
-fn water_in<W: CollisionWorld + ?Sized>(world: &W, bb: &Aabb) -> Vec<([i32; 3], Fluid)> {
+/// The water cells a box is in, as `(cell, fluid)`: prismarine's
+/// `getWaterInBB` under [`Rules::Bot`] (a cell counts when the box's top,
+/// rounded up, reaches the water's surface), and the jar's
+/// `Entity.updateFluidHeightAndDoFluidPushing` under [`Rules::Game`] (a cell
+/// counts when its surface — `y + 8/9` for a source, `y + 1` under more water —
+/// is at or over the box's bottom; cited, and measured by the PackTest
+/// `movement_ballistics`).
+fn water_in<W: CollisionWorld + ?Sized>(
+    world: &W,
+    bb: &Aabb,
+    rules: Rules,
+) -> Vec<([i32; 3], Fluid)> {
     let mut out = Vec::new();
     for y in floor(bb.min[1])..=floor(bb.max[1]) {
         for z in floor(bb.min[2])..=floor(bb.max[2]) {
@@ -511,7 +521,18 @@ fn water_in<W: CollisionWorld + ?Sized>(world: &W, bb: &Aabb) -> Vec<([i32; 3], 
                     && !f.lava
                 {
                     let level = f64::from(y) + 1.0 - (f64::from(f.depth) + 1.0) / 9.0;
-                    if bb.max[1].ceil() >= level {
+                    let touches = match rules {
+                        Rules::Bot => bb.max[1].ceil() >= level,
+                        Rules::Game => {
+                            let top = if world.fluid([x, y + 1, z]).is_some_and(|a| !a.lava) {
+                                f64::from(y) + 1.0
+                            } else {
+                                level
+                            };
+                            top >= bb.min[1]
+                        }
+                    };
+                    if touches {
                         out.push(([x, y, z], f));
                     }
                 }
@@ -637,10 +658,19 @@ fn tick_with<W: CollisionWorld + ?Sized>(
     }
     let fluids = world.may_hold_fluid_or_web();
     let bb = st.aabb(body);
-    let water_bb = bb.contract([0.001, 0.401, 0.001]);
-    let lava_bb = bb.contract([0.1, 0.4, 0.1]);
+    let (water_bb, lava_bb) = match rules {
+        Rules::Bot => (
+            bb.contract([0.001, 0.401, 0.001]),
+            bb.contract([0.1, 0.4, 0.1]),
+        ),
+        // `getBoundingBox().deflate(0.001)` for both fluids.
+        Rules::Game => (
+            bb.contract([0.001, 0.001, 0.001]),
+            bb.contract([0.001, 0.001, 0.001]),
+        ),
+    };
     let waters = if fluids {
-        water_in(world, &water_bb)
+        water_in(world, &water_bb, rules)
     } else {
         Vec::new()
     };
@@ -922,7 +952,7 @@ fn does_not_collide<W: CollisionWorld + ?Sized>(
 ) -> bool {
     let bb = player_box(p, body.width, height);
     surrounding(world, &bb, scratch);
-    !scratch.iter().any(|b| bb.intersects(b)) && water_in(world, &bb).is_empty()
+    !scratch.iter().any(|b| bb.intersects(b)) && water_in(world, &bb, Rules::Bot).is_empty()
 }
 
 /// The order the movement's axes are resolved in: `y` first, then `x` and
@@ -1238,6 +1268,8 @@ pub fn saturated_velocity(
     }
     st.vel
 }
+
+pub mod ballistics;
 
 #[cfg(test)]
 mod tests;

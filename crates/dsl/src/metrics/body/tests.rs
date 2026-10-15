@@ -501,3 +501,63 @@ fn the_step_rule_is_the_simulators() {
         "no phase of a sprint crosses one column"
     );
 }
+
+/// spec-0113 A4: the ballistic trajectories the PackTest `movement_ballistics`
+/// holds the pinned server to are the simulator's, committed. Rewrite with
+/// `DELVEWRIGHT_WRITE_BALLISTICS=1`. Every body moves, the slime body comes
+/// back up, the water body is slowed by the water, and the slab body ends on
+/// the slab.
+#[test]
+fn the_ballistic_trajectories_are_committed() {
+    use super::ballistics::{THROWS, TICKS, trajectories};
+    let t = trajectories();
+    assert_eq!(t.len(), 4);
+    let doc = serde_json::json!({
+        "rules": "game",
+        "ticks": TICKS,
+        "throws": THROWS.iter().zip(&t).map(|(th, tr)| serde_json::json!({
+            "name": th.name,
+            "start": th.start,
+            "motion": th.motion,
+            "pos": tr,
+        })).collect::<Vec<_>>(),
+    });
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/movement/ballistics-1.21.11.json");
+    let text = serde_json::to_string_pretty(&doc).unwrap() + "\n";
+    if std::env::var("DELVEWRIGHT_WRITE_BALLISTICS").is_ok() {
+        std::fs::write(&path, &text).unwrap();
+    }
+    let committed = std::fs::read_to_string(&path).expect("the committed trajectories");
+    assert_eq!(
+        committed, text,
+        "the simulator no longer computes the committed trajectories"
+    );
+    for (th, tr) in THROWS.iter().zip(&t) {
+        assert_eq!(tr.len(), TICKS);
+        let moved = (0..3)
+            .map(|a| (tr[TICKS - 1][a] - th.start[a]).abs())
+            .fold(0.0, f64::max);
+        assert!(moved > 0.1, "{} never moved", th.name);
+    }
+    let slime = &t[1];
+    let low = slime
+        .iter()
+        .position(|p| p[1] < 1.01)
+        .expect("the slime body lands");
+    assert!(
+        slime[low..].iter().any(|p| p[1] > 2.0),
+        "the slime body never bounced"
+    );
+    let water = &t[2];
+    assert!(
+        water[TICKS - 1][1] < 4.0,
+        "the water body did not enter the pool"
+    );
+    let slab = &t[3];
+    assert!(
+        (slab[TICKS - 1][1] - 1.5).abs() < 1e-9,
+        "the slab body is not on the slab: {:?}",
+        slab[TICKS - 1]
+    );
+}
