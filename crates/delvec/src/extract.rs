@@ -267,9 +267,23 @@ fn extract_from(args: &ExtractArgs<'_>, scope: &Scope, built: &Built<'_>) -> Res
                 eprintln!("error: `{}`'s space `{space}` holds no cell", s.row.piece);
                 return Err(1);
             };
+            // The space and its shell: a space is the cells a body stands
+            // in, and the structure that holds it is those cells grown by one
+            // course on every side — its floor, its walls, its lid — inside
+            // the piece's frame.
+            let lo = add(s.frame.lo, l.map(i64::from));
+            let hi = add(s.frame.lo, h.map(i64::from));
             (
-                add(s.frame.lo, l.map(i64::from)),
-                add(s.frame.lo, h.map(i64::from)),
+                [
+                    (lo[0] - 1).max(s.frame.lo[0]),
+                    (lo[1] - 1).max(s.frame.lo[1]),
+                    (lo[2] - 1).max(s.frame.lo[2]),
+                ],
+                [
+                    (hi[0] + 1).min(s.frame.hi[0]),
+                    (hi[1] + 1).min(s.frame.hi[1]),
+                    (hi[2] + 1).min(s.frame.hi[2]),
+                ],
                 Vec::new(),
             )
         }
@@ -651,6 +665,24 @@ fn extract_from(args: &ExtractArgs<'_>, scope: &Scope, built: &Built<'_>) -> Res
         }
     };
     let shown_faces = shown_faces(&sources, lo, hi);
+    if !place_scope {
+        let cross: Vec<&str> = ["north", "south", "east", "west", "up"]
+            .into_iter()
+            .filter(|f| !shown_faces.iter().any(|s| s == f))
+            .collect();
+        if !cross.is_empty() {
+            meta_residue_push(
+                &mut residue,
+                "shown_faces",
+                format!(
+                    "the cut's {} side(s) are a cross-section, which `shown_faces` does not claim \
+                     finished; `DW0885` judges each at seating, answered by a neighbour standing \
+                     against it, the world burying it, or the author declaring it shown",
+                    cross.join(", ")
+                ),
+            );
+        }
+    }
     let spdx: BTreeSet<String> = sources
         .iter()
         .filter_map(|s| s.meta.license.as_ref().map(|l| l.spdx.clone()))
@@ -828,6 +860,14 @@ fn extract_from(args: &ExtractArgs<'_>, scope: &Scope, built: &Built<'_>) -> Res
     Ok(())
 }
 
+fn meta_residue_push(residue: &mut Vec<Residue>, object: &str, severed: String) {
+    residue.push(Residue {
+        object: object.to_string(),
+        document: "extraction".to_string(),
+        severed,
+    });
+}
+
 fn palette_full() -> u8 {
     eprintln!(
         "error: the cuboid holds more distinct block states than one structure palette can; \
@@ -933,10 +973,20 @@ fn clean_commit(dir: &Path) -> Option<String> {
     (!tracked.is_empty() && dirty.is_empty()).then_some(head)
 }
 
-/// **The world as shipped, before any runtime write**, inside `clip`: the
-/// assembled pieces, the stage-7 edits over them, the world-load gate seals,
-/// the relight's fixtures and the trigger props — the derivation `delvec
-/// build` emits from, taken the way `emit::build_with_warnings` takes it.
+/// **The world as the piece's own bytes stand in it**, inside `clip`: the
+/// assembled pieces, the stage-7 edits over them and the world-load gate
+/// seals — what `delvec build` emits from, taken the way
+/// `emit::build_with_warnings` takes it — **less the two derivations the
+/// build makes from documents the piece does not hold**: the relight's
+/// fixtures (of the places' `boxes[].lighting`, which the piece carries as
+/// `extraction.relight` and a seating declares again) and the trigger props
+/// (of the campaign's triggers, which a seating campaign declares for
+/// itself). Each is derived again by the seated build, over the world it
+/// seats the piece in. Baked, they are wrong twice over, measured on
+/// Vesperhold: a fixture the source hung after every template stood hangs
+/// from a block of a later tile, and the pinned server drops it where the
+/// earlier tile lands (two wall torches at the x 47/48 tile seam); and a prop
+/// in the bytes moves a fixture the relight derives over them.
 fn shipped_world(
     built: &Built<'_>,
     clip: ([i32; 3], [i32; 3]),
@@ -956,15 +1006,37 @@ fn shipped_world(
             .as_ref()
             .expect("an assembly the replay did not take"),
     };
-    let geometry = delvec::compiler::light::geometry_world(world);
-    let relight = delvec::compiler::light::relight_with(plan, world, &geometry);
-    let mut map = assembled::shipped_blocks(
-        plan,
-        &world.blocks,
-        &relight.placements,
-        &world.gate_seals,
-        Some(clip),
-    );
+    let (lo, hi) = clip;
+    let inside = |c: [i32; 3]| (0..3).all(|a| lo[a] <= c[a] && c[a] <= hi[a]);
+    let mut map: delvec::compiler::blockstate::BlockMap = world
+        .blocks
+        .range(lo..=hi)
+        .filter(|(c, _)| inside(**c))
+        .map(|(c, b)| (*c, *b))
+        .collect();
+    // Every gate the placed world authors shut, written back as setup writes it.
+    for g in world.gate_seals.iter().filter(|g| g.sealed()) {
+        let hit = plan.anchors.iter().find_map(|((_, n), r)| match r {
+            delvec::compiler::plan::ResolvedAnchor::Gate { from, to, block } if *n == g.anchor => {
+                Some((*from, *to, block.clone()))
+            }
+            _ => None,
+        });
+        let Some((from, to, block)) = hit else {
+            continue;
+        };
+        let state = delvec::compiler::blockstate::BlockState::new(&block);
+        for c in assembled::region_cells(from, to) {
+            if !inside(c) {
+                continue;
+            }
+            if delvewright_dsl::blockshape::is_air(&block) {
+                map.remove(&c);
+            } else {
+                map.insert(c, state);
+            }
+        }
+    }
     // **A sealed gate is written back as its anchor's bare block**, and the
     // game shapes it to its neighbours as it lands; the template the piece
     // ships already holds that shaped state, so where the template's block is

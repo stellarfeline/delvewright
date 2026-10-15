@@ -587,6 +587,82 @@ fn a_seated_piece_answers_every_opening_or_is_refused() {
     );
 }
 
+/// Every place's frame, from `delvec allocation --all`: `(node, lo, hi)`.
+fn frames(dir: &Path) -> Vec<(String, [i64; 3], [i64; 3])> {
+    let (code, out) = run(&["allocation", s(dir), "--all"]);
+    assert_eq!(code, Some(0), "{out}");
+    let all: serde_json::Value = serde_json::from_str(&out).unwrap();
+    all.as_array()
+        .unwrap()
+        .iter()
+        .map(|a| {
+            let lo: Vec<i64> = (0..3)
+                .map(|i| a["world_min"][i].as_i64().unwrap())
+                .collect();
+            let ext: Vec<i64> = (0..3).map(|i| a["extent"][i].as_i64().unwrap()).collect();
+            (
+                a["place"].as_str().unwrap().to_string(),
+                [lo[0], lo[1], lo[2]],
+                [lo[0] + ext[0] - 1, lo[1] + ext[1] - 1, lo[2] + ext[2] - 1],
+            )
+        })
+        .collect()
+}
+
+/// **The residue a cut owes, computed from the documents alone** (spec-0106
+/// criterion 16's second method): every station of a place whose frame the
+/// cuboid reaches and whose anchor it leaves outside, and — the derivation's
+/// own rows — the entry when the campaign's lies outside, the candidates
+/// awaiting a neighbour, and the light at the cut. This fixture declares no
+/// gate, volume, pulse or assembly, so those classes are empty here.
+fn residue_from_documents(
+    dir: &Path,
+    prefabs: &Path,
+    lo: [i64; 3],
+    hi: [i64; 3],
+) -> BTreeSet<String> {
+    let inside = |c: [i64; 3]| (0..3).all(|a| lo[a] <= c[a] && c[a] <= hi[a]);
+    let mut out = BTreeSet::new();
+    let rows: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("detail-plan.json")).unwrap())
+            .unwrap();
+    for (node, flo, fhi) in frames(dir) {
+        if (0..3).any(|a| fhi[a] < lo[a] || flo[a] > hi[a]) {
+            continue;
+        }
+        let row = rows["content"]["details"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["place"] == node.as_str())
+            .unwrap();
+        let id = row["piece"].as_str().unwrap().trim_start_matches("prefab/");
+        let m = meta(prefabs, id);
+        for (owed, key) in row["anchors"].as_object().unwrap() {
+            let p = &m["anchors"][key.as_str().unwrap()]["pos"];
+            let w = [
+                flo[0] + p[0].as_i64().unwrap(),
+                flo[1] + p[1].as_i64().unwrap(),
+                flo[2] + p[2].as_i64().unwrap(),
+            ];
+            let station = PLACES
+                .iter()
+                .any(|(_, _, st)| owed == &format!("anchor/{st}"));
+            if station && !inside(w) {
+                out.insert(owed.clone());
+            }
+            if owed == "spawn" && !inside(w) {
+                out.insert("entry".to_string());
+            }
+        }
+    }
+    out.insert("openings".to_string());
+    out.insert("lighting".to_string());
+    // No source side lies on this cut's sides, so none is claimed finished.
+    out.insert("shown_faces".to_string());
+    out
+}
+
 /// Criterion 16's mechanism: a cuboid cut through a place declares the
 /// candidate openings the walk model finds at its faces and a residue that is
 /// exactly what the cut severs; the same box named as the place's contract
@@ -595,33 +671,141 @@ fn a_seated_piece_answers_every_opening_or_is_refused() {
 fn a_cut_declares_its_candidates_and_its_residue() {
     let (dir, prefabs) = fixture("cut");
     let lib = dir.parent().unwrap().join("lib");
-    // The mid room's west half, door to centre: x 9..13 cuts the room.
-    let (code, out) = extract(&dir, &prefabs, "9,63,0..13,68,9", &lib, "mid-cut");
+    // The mid room's west half, door to its middle, west's party wall in it.
+    let (lo, hi) = ([9, 63, 0], [13, 68, 9]);
+    let scope = format!(
+        "{},{},{}..{},{},{}",
+        lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]
+    );
+    let (code, out) = extract(&dir, &prefabs, &scope, &lib, "mid-cut");
     assert_eq!(code, Some(0), "{out}");
     let m = meta(&lib, "mid-cut");
     let x = &m["extraction"];
     assert_eq!(x["kind"], "cut");
     let ops = x["openings"].as_array().unwrap();
-    assert!(!ops.is_empty(), "{x:#}");
     assert!(ops.iter().all(|o| o["source"] == "cut"));
     // The west face meets the west room through the door; the east face runs
     // through the room's open floor.
-    let by_face: BTreeMap<&str, usize> = ops.iter().fold(BTreeMap::new(), |mut m, o| {
-        *m.entry(o["face"].as_str().unwrap()).or_default() += 1;
-        m
-    });
-    assert!(
-        by_face.contains_key("west") && by_face.contains_key("east"),
-        "{by_face:?}"
+    let by_face: BTreeMap<&str, Vec<&serde_json::Value>> =
+        ops.iter().fold(BTreeMap::new(), |mut m, o| {
+            m.entry(o["face"].as_str().unwrap()).or_default().push(o);
+            m
+        });
+    assert_eq!(by_face.len(), 2, "{by_face:#?}");
+    let west = &by_face["west"];
+    assert_eq!(west.len(), 1, "one run through the door: {west:#?}");
+    assert_eq!(
+        (west[0]["kind"].as_str(), west[0]["rise"].as_i64()),
+        (Some("walk"), Some(0))
     );
-    let residue: Vec<&str> = x["residue"]
+    assert_eq!(west[0]["width"], 1, "the door is one cell wide");
+    let east = &by_face["east"];
+    assert_eq!(east.len(), 1, "{east:#?}");
+    assert_eq!(east[0]["kind"], "walk");
+    assert!(
+        east[0]["width"].as_u64().unwrap() > 1,
+        "the open floor runs the room's depth"
+    );
+    // Every candidate is a face of the contract, so a seating must answer it.
+    assert_eq!(
+        m["spatial_contract"]["faces"].as_array().unwrap().len(),
+        ops.len()
+    );
+
+    // The residue is exactly what the cut severs, computed a second way.
+    let got: BTreeSet<String> = x["residue"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|r| r["object"].as_str().unwrap())
+        .map(|r| r["object"].as_str().unwrap().to_string())
         .collect();
+    let want = residue_from_documents(&dir, &prefabs, lo, hi);
+    assert_eq!(got, want);
     assert!(
-        residue.contains(&"openings") && residue.contains(&"lighting"),
-        "{residue:?}"
+        want.contains("anchor/hearth"),
+        "the cut parts the west room's station: {want:?}"
     );
+
+    // Seated with every candidate disposed to the commons, every residue row
+    // is answered by the seated campaign's own checks: it validates and builds.
+    let names: Vec<String> = ops
+        .iter()
+        .map(|o| o["name"].as_str().unwrap().to_string())
+        .collect();
+    let seated = fresh("cut-seat", "hall", "bench");
+    let (code, out) = seat(
+        &seated,
+        &lib,
+        "prefab/mid-cut",
+        "node/hall",
+        &["--commons", &names[0]],
+    );
+    assert_eq!(code, Some(1), "{out}");
+    assert!(
+        out.contains("DW1022") && out.contains(&format!("`{}`", names[1])),
+        "{out}"
+    );
+    let mut all: Vec<&str> = Vec::new();
+    for n in &names {
+        all.extend(["--commons", n.as_str()]);
+    }
+    // The cut's sides are a cross-section (the residue's `shown_faces` row):
+    // standing it on open ground, the author answers `DW0885` by declaring
+    // them finished as they stand — the piece's claim about itself, made by
+    // the one who chose to show it.
+    common::patch_file(&lib.join("mid-cut.json"), |v| {
+        v["shown_faces"] = serde_json::json!(["north", "south", "east", "west", "up"]);
+    });
+    let (code, out) = seat(&seated, &lib, "prefab/mid-cut", "node/hall", &all);
+    assert_eq!(code, Some(0), "{out}");
+    let (code, out) = build(&seated, &lib, &seated.parent().unwrap().join("out"));
+    assert_eq!(code, Some(0), "{out}");
+
+    // The same box named as the mid piece's contract space — the space and
+    // its shell — cuts the same bytes as those coordinates.
+    let (code, out) = extract(&dir, &prefabs, "node/mid/room", &lib, "mid-room");
+    assert_eq!(code, Some(0), "{out}");
+    let room = meta(&lib, "mid-room");
+    let lo2 = &room["license"]["provenance"];
+    assert!(lo2.as_str().unwrap().contains("structure scope"), "{lo2}");
+    let (code, out) = run(&["allocation", s(&dir), "node/mid"]);
+    assert_eq!(code, Some(0), "{out}");
+    let a: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let flo: Vec<i64> = (0..3)
+        .map(|i| a["world_min"][i].as_i64().unwrap())
+        .collect();
+    let ext: Vec<i64> = (0..3).map(|i| a["extent"][i].as_i64().unwrap()).collect();
+    let walk = a["datum_y"].as_i64().unwrap();
+    // The room's cells grown by one course every side, inside the frame.
+    let rlo = [flo[0], flo[1] + walk - 1, flo[2]];
+    let rhi = [
+        flo[0] + ext[0] - 1,
+        flo[1] + ext[1] - 1,
+        flo[2] + ext[2] - 1,
+    ];
+    let scope = format!(
+        "{},{},{}..{},{},{}",
+        rlo[0], rlo[1], rlo[2], rhi[0], rhi[1], rhi[2]
+    );
+    let (code, out) = extract(&dir, &prefabs, &scope, &lib, "mid-room-cut");
+    assert_eq!(code, Some(0), "{out}");
+    let cut = meta(&lib, "mid-room-cut");
+    assert_eq!(
+        std::fs::read(lib.join("mid-room.nbt")).unwrap(),
+        std::fs::read(lib.join("mid-room-cut.nbt")).unwrap(),
+        "the claim's box and the same cuboid cut the same bytes"
+    );
+    // The documents differ in the words that say which scope it was, and
+    // nowhere else.
+    let strip = |mut v: serde_json::Value| {
+        v["prefab_id"] = serde_json::Value::Null;
+        v["structure"]["file"] = serde_json::Value::Null;
+        v["structure"]["id"] = serde_json::Value::Null;
+        v["license"]["provenance"] = serde_json::Value::Null;
+        v["license"]["extracted"]["scope"] = serde_json::Value::Null;
+        v["license"]["extracted"]["digest"] = serde_json::Value::Null;
+        v["extraction"]["kind"] = serde_json::Value::Null;
+        v
+    };
+    assert_eq!(strip(room), strip(cut));
 }
