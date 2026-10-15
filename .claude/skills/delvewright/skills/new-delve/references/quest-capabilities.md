@@ -296,10 +296,7 @@ this section is what they are *for* and the traps in each.
   the anchor (`DW0317`). "Forced" excludes every optional bundle: a trap payload,
   `on_death`, a shop offer, a shortcut's far-side unlock. To spell "the party
   walks up to this and the door opens", use an environment `trigger` — that one
-  counts. A walk-fired trigger (`approach`, `step`) whose flag a later objective
-  reads must be one every walk to that objective enters: put it in the only way
-  through, or give it a range that spans the whole doorway, or the build is
-  refused (`DW1044`).
+  counts.
 - **A beat can change a place's sky.** `set-atmosphere {atmosphere, place |
   region}` repaints the fog, sky and air of a place to another of
   `world.atmospheres[]` (or to the horizon's own with `"atmosphere": null`)

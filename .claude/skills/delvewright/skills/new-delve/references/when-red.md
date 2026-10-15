@@ -29,14 +29,6 @@ INTO its wall. The message names each rung and the face it lacks. Turn the
 ladder to face away from the wall (`facing` is the way a body climbing it has
 its back), or give it a sturdy block behind; never move the objective.
 
-**`DW1044`: "trigger … pays `flag/…`, which `obj/…` reads … a player need
-not".** The trigger is an `approach` or a `step` the objective depends on, and a
-player can walk from the last beat to that objective without being caught by it
-— through the other half of a two-wide doorway, or another door. The message
-names the walk round it and the least range every walk enters. Widen the range
-to that, move the anchor into the only way through, or close the way round;
-never drop the flag from the objective.
-
 **`DW0891` says to seat the volume "on an anchor at the pit's bottom" and the
 place is detailed.** A quest names only the node's owed names, so declare a
 station on the node (`kind: point`), bind it in `detail-plan.json` to the
