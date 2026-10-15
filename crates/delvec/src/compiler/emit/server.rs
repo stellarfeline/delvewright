@@ -150,7 +150,7 @@ fn styled_rows(
                 out.insert(k.clone(), l.format);
                 for (i, (st, t)) in l.spans.into_iter().enumerate() {
                     // A key span's component is a `keybind`, read by no
-                    // language file (spec-0104 §5.1).
+                    // language file (spec-0104 §8.9).
                     if st.key.is_some() {
                         continue;
                     }

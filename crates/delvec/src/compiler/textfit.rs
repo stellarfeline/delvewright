@@ -590,3 +590,200 @@ mod tests {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Journal pages (DW0330, widened by spec-0104 §8.8)
+// ---------------------------------------------------------------------------
+
+/// The width of one line of a book page, in font pixels: `BookViewScreen`
+/// wraps a page at 114 pixels (read from the pinned client jar), which no GUI
+/// scale changes.
+pub const BOOK_LINE_WIDTH: u32 = 114;
+
+/// The lines a book page draws: `BookViewScreen` draws at most 14 (128 / 9)
+/// and drops the rest unseen (read from the pinned client jar).
+pub const BOOK_LINES: u32 = 14;
+
+/// The lines `text` takes on a book page, wrapped at [`BOOK_LINE_WIDTH`]: each
+/// `\n` starts a line, a line breaks at the last space that fits, and a run
+/// with no space (a Han sentence) breaks at any glyph. `bold` widens every
+/// character by one pixel. A key span is measured at its default key's name.
+pub fn book_lines(text: &str, bold: bool) -> u32 {
+    let shown = delvewright_dsl::textstyle::measured(text);
+    let advance = |ch: char| default_font_width(ch.encode_utf8(&mut [0u8; 4])) + u32::from(bold);
+    let mut lines = 0u32;
+    for para in shown.split('\n') {
+        lines += 1;
+        let mut used = 0u32;
+        let mut word = 0u32;
+        let mut started = false;
+        for ch in para.chars() {
+            let a = advance(ch);
+            if ch == ' ' {
+                used += word + a;
+                word = 0;
+                started = true;
+                continue;
+            }
+            if is_full_width(ch) {
+                // Breakable anywhere.
+                if used + word + a > BOOK_LINE_WIDTH && (used + word) > 0 {
+                    lines += 1;
+                    used = word;
+                    word = 0;
+                }
+                used += word + a;
+                word = 0;
+                started = true;
+                continue;
+            }
+            if used + word + a > BOOK_LINE_WIDTH && started && used > 0 {
+                lines += 1;
+                used = 0;
+            }
+            word += a;
+            started = true;
+            if word > BOOK_LINE_WIDTH {
+                lines += 1;
+                word = a;
+            }
+        }
+    }
+    lines
+}
+
+/// One journal page as the engine composes it: paragraphs separated by a
+/// blank line, each `(text, bold)`.
+pub fn page_lines(parts: &[(&str, bool)]) -> u32 {
+    let body: u32 = parts.iter().map(|(t, b)| book_lines(t, *b)).sum();
+    body + parts.len().saturating_sub(1) as u32
+}
+
+/// Every journal page the engine writes, measured, for every language a page
+/// is shown in (`DW0330`, spec-0104 §8.8): each manual page, the compass page,
+/// and each announced objective's open page with the mark's line counted. A
+/// page over [`BOOK_LINES`] is a warning naming the page and the language.
+/// Returns the warnings and every `(language, page, lines)` measured.
+pub fn check_book_pages(
+    c: &Campaign,
+    sidecars: &BTreeMap<String, L10nDoc>,
+) -> (Vec<Diagnostic>, Vec<(String, String, u32)>) {
+    use delvewright_dsl::chrome as ch;
+    let guidance = &c.quests.content.guidance;
+    let announced: Vec<(String, &delvewright_dsl::Objective, bool)> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| {
+            q.objectives
+                .iter()
+                .filter(|o| o.announced(guidance))
+                .map(move |o| {
+                    (
+                        format!(
+                            "obj.{}.{}",
+                            delvewright_dsl::l10n::local_id(q.id.as_str()),
+                            delvewright_dsl::l10n::local_id(o.id().as_str())
+                        ),
+                        o,
+                        o.tracked(guidance),
+                    )
+                })
+        })
+        .collect();
+    let compass = announced.iter().any(|(_, _, t)| *t);
+    let mut d = Vec::new();
+    let mut measured = Vec::new();
+    let mut langs: Vec<(String, Option<&L10nDoc>)> = vec![("en".to_string(), None)];
+    for lang in &c.world.content.languages {
+        if let Some(doc) = sidecars.get(lang) {
+            langs.push((lang.clone(), Some(doc)));
+        }
+    }
+    for (lang, doc) in &langs {
+        let table = doc
+            .and_then(|_| delvewright_dsl::mclang::mc_lang_code(lang))
+            .map(ch::lang_entries)
+            .unwrap_or_default();
+        let chrome = |s: ch::ChromeString| -> String {
+            table
+                .get(s.key)
+                .cloned()
+                .unwrap_or_else(|| s.en.to_string())
+                .replace("%s", "[[key|sneak]]")
+        };
+        let text = |key: &str, en: &str| -> String {
+            match doc {
+                None => en.to_string(),
+                Some(doc) => doc
+                    .content
+                    .get(key)
+                    .cloned()
+                    .unwrap_or_else(|| en.to_string()),
+            }
+        };
+        let mut pages: Vec<(String, u32)> = Vec::new();
+        if compass {
+            let parts = [
+                chrome(ch::JOURNAL_COMPASS_HEADING),
+                chrome(ch::JOURNAL_COMPASS_FOLLOWS),
+                chrome(ch::JOURNAL_COMPASS_SWITCH),
+                chrome(ch::JOURNAL_COMPASS_SPIN),
+                chrome(ch::JOURNAL_COMPASS_PAGES),
+            ];
+            // The heading, a blank line, then the four sentences one after
+            // another (`emit::guidance::item_modifiers`).
+            let body: u32 = parts[1..].iter().map(|t| book_lines(t, false)).sum();
+            pages.push((
+                "the compass page".to_string(),
+                book_lines(&parts[0], true) + 1 + body,
+            ));
+        }
+        if let Some(m) = &guidance.manual {
+            for (i, page) in m.pages.iter().enumerate() {
+                let key = format!("guidance.manual.pages.{i}");
+                let t = text(&key, &delvewright_dsl::l10n::plain(page));
+                pages.push((format!("`{key}`"), page_lines(&[(&t, false)])));
+            }
+        }
+        for (key, o, tracked) in &announced {
+            let open = chrome(ch::JOURNAL_OPEN);
+            let title = text(
+                &format!("{key}.title"),
+                &delvewright_dsl::l10n::plain(o.title().unwrap_or_default()),
+            );
+            let hint = o
+                .hint()
+                .map(|h| text(&format!("{key}.hint"), &delvewright_dsl::l10n::plain(h)));
+            let mark = chrome(ch::JOURNAL_FOLLOWING);
+            let mut p: Vec<(&str, bool)> = vec![(open.as_str(), false), (title.as_str(), true)];
+            if let Some(h) = &hint {
+                p.push((h.as_str(), false));
+            }
+            if *tracked {
+                p.push((mark.as_str(), false));
+            }
+            pages.push((
+                format!("the open page of `{}`", o.id().as_str()),
+                page_lines(&p),
+            ));
+        }
+        for (page, n) in pages {
+            if n > BOOK_LINES {
+                d.push(Diagnostic::warning(
+                    DW_TEXT_OVERRUNS_SCREEN,
+                    if doc.is_some() { "l10n" } else { "quests" },
+                    format!("{lang}: {page}"),
+                    format!(
+                        "the journal's {page}, in `{lang}`, takes {n} lines of a book page: \
+                         vanilla draws {BOOK_LINES} lines of {BOOK_LINE_WIDTH} font px and \
+                         drops the rest unseen. Shorten the text the page carries."
+                    ),
+                ));
+            }
+            measured.push((lang.clone(), page, n));
+        }
+    }
+    (d, measured)
+}

@@ -115,6 +115,9 @@
             },
             "hint": "Back down at the foot of the stair.",
             "id": "obj/door",
+            "prop": {
+              "block": "minecraft:lever"
+            },
             "requires_item": "minecraft:tripwire_hook",
             "title": "Open the door",
             "type": "interact"

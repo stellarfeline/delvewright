@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::serde_fields::{is_false, is_zero};
 use crate::{
-    AnchorId, FlagId, Guidance, Happening, NpcId, ObjectiveId, Prop, StateCompare, Visibility,
-    WaveId,
+    AnchorId, FlagId, Guidance, Happening, Highlight, NpcId, ObjectiveId, Prop, StateCompare,
+    Visibility, WaveId,
 };
 
 /// A quest objective.
@@ -34,6 +34,16 @@ pub enum Objective {
         /// `DW0961`. A hint on an unannounced objective is `DW0862`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         announcement: Option<Visibility>,
+        /// Whether this objective is one the compass can follow (spec-0104 §6).
+        /// Absent = the campaign's [`Guidance::compass`]. Only an announced
+        /// objective is followed; `shown` on one that is not is `DW1017`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        compass: Option<Visibility>,
+        /// The proximity highlight (spec-0104 §7): this objective's block or
+        /// body glows while a player is within `within` blocks and it is
+        /// pending. Absent = none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        highlight: Option<Highlight>,
         /// The NPC to talk to.
         npc: NpcId,
         /// Prerequisite objectives (intra-quest ordering).
@@ -81,13 +91,13 @@ pub enum Objective {
         /// `DW0961`. A hint on an unannounced objective is `DW0862`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         announcement: Option<Visibility>,
+        /// Whether this objective is one the compass can follow (spec-0104 §6).
+        /// Absent = the campaign's [`Guidance::compass`]. Only an announced
+        /// objective is followed; `shown` on one that is not is `DW1017`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        compass: Option<Visibility>,
         /// The anchor to reach.
         anchor: AnchorId,
-        /// Whether the glowing end-rod marker is summoned at the anchor when this
-        /// objective activates (spec-0093). Absent = the campaign's
-        /// [`Guidance::markers`]. The completion volume is adjudicated either way.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        marker: Option<Visibility>,
         /// Completion radius (blocks).
         radius: u32,
         /// Prerequisite objectives (intra-quest ordering).
@@ -135,6 +145,16 @@ pub enum Objective {
         /// `DW0961`. A hint on an unannounced objective is `DW0862`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         announcement: Option<Visibility>,
+        /// Whether this objective is one the compass can follow (spec-0104 §6).
+        /// Absent = the campaign's [`Guidance::compass`]. Only an announced
+        /// objective is followed; `shown` on one that is not is `DW1017`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        compass: Option<Visibility>,
+        /// The proximity highlight (spec-0104 §7): this objective's block or
+        /// body glows while a player is within `within` blocks and it is
+        /// pending. Absent = none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        highlight: Option<Highlight>,
         /// The wave (stage-5 `waves` ref) whose mobs must be slain.
         wave: WaveId,
         /// Prerequisite objectives.
@@ -188,6 +208,16 @@ pub enum Objective {
         /// `DW0961`. A hint on an unannounced objective is `DW0862`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         announcement: Option<Visibility>,
+        /// Whether this objective is one the compass can follow (spec-0104 §6).
+        /// Absent = the campaign's [`Guidance::compass`]. Only an announced
+        /// objective is followed; `shown` on one that is not is `DW1017`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        compass: Option<Visibility>,
+        /// The proximity highlight (spec-0104 §7): this objective's block or
+        /// body glows while a player is within `within` blocks and it is
+        /// pending. Absent = none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        highlight: Option<Highlight>,
         /// Vanilla item id to collect (validated against the registry).
         item: String,
         /// How many are required.
@@ -308,15 +338,18 @@ pub enum Objective {
         /// `DW0961`. A hint on an unannounced objective is `DW0862`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         announcement: Option<Visibility>,
+        /// Whether this objective is one the compass can follow (spec-0104 §6).
+        /// Absent = the campaign's [`Guidance::compass`]. Only an announced
+        /// objective is followed; `shown` on one that is not is `DW1017`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        compass: Option<Visibility>,
+        /// The proximity highlight (spec-0104 §7): this objective's block or
+        /// body glows while a player is within `within` blocks and it is
+        /// pending. Absent = none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        highlight: Option<Highlight>,
         /// The anchor the interaction entity stands at.
         anchor: AnchorId,
-        /// Whether the glowing lantern marker is summoned beside the hitbox when
-        /// this objective activates (spec-0093). Absent = the campaign's
-        /// [`Guidance::markers`]. The `minecraft:interaction` hitbox is summoned
-        /// either way — it is what the player presses. Meaningless beside a
-        /// `prop`, which never had a marker: declaring both is `DW0962`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        marker: Option<Visibility>,
         /// Item the player must be **holding in the main hand** for the
         /// interaction to complete (optional).
         ///
@@ -340,8 +373,8 @@ pub enum Objective {
         missing_item_hint: Option<String>,
         /// Prop block that IS the interaction affordance (DSL v0.4, spec-0008
         /// §2): the compiler `setblock`s it at the anchor on activation (exactly
-        /// as `collect` uses a real chest). Omitted = the glowing-lantern
-        /// hologram marker (the v0.3 fallback).
+        /// as `collect` uses a real chest). Omitted = the objective stands on a
+        /// block the piece authored at the anchor (`DW0963` refuses air).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         prop: Option<Prop>,
         /// Prerequisite objectives.
@@ -452,33 +485,34 @@ impl Objective {
         }
     }
 
-    /// The objective's own `marker`, when it is a kind that has one and states
-    /// it (spec-0093). `None` for a `talk-to`, `kill` or `collect`, which carry no
-    /// such field, and for an `interact` or `reach-anchor` that leaves it absent.
-    pub fn marker(&self) -> Option<Visibility> {
+    /// The objective's own `compass`, when it states one (spec-0104 §6).
+    pub fn compass(&self) -> Option<Visibility> {
         match self {
-            Objective::ReachAnchor { marker, .. } | Objective::Interact { marker, .. } => *marker,
-            Objective::TalkTo { .. } | Objective::Kill { .. } | Objective::Collect { .. } => None,
+            Objective::TalkTo { compass, .. }
+            | Objective::ReachAnchor { compass, .. }
+            | Objective::Kill { compass, .. }
+            | Objective::Collect { compass, .. }
+            | Objective::Interact { compass, .. } => *compass,
         }
     }
 
-    /// Whether this objective's kind summons a wayfinding marker at all: a
-    /// `reach-anchor` (its end rod) or an `interact` with no `prop` (its lantern).
-    /// A `collect` places its chest, a `talk-to` has a body, a `kill` has bodies,
-    /// and an `interact` with a `prop` has the prop.
-    pub fn summons_marker(&self) -> bool {
+    /// The objective's `highlight`, when its kind admits one and it states it
+    /// (spec-0104 §7). A `reach-anchor` has nothing to light.
+    pub fn highlight(&self) -> Option<Highlight> {
         match self {
-            Objective::ReachAnchor { .. } => true,
-            Objective::Interact { prop, .. } => prop.is_none(),
-            Objective::TalkTo { .. } | Objective::Kill { .. } | Objective::Collect { .. } => false,
+            Objective::TalkTo { highlight, .. }
+            | Objective::Kill { highlight, .. }
+            | Objective::Collect { highlight, .. }
+            | Objective::Interact { highlight, .. } => *highlight,
+            Objective::ReachAnchor { .. } => None,
         }
     }
 
-    /// **Is this objective marked** (spec-0093): its kind summons a marker and
-    /// its resolved visibility — its own `marker`, else the campaign's
-    /// [`Guidance::markers`] — is `shown`.
-    pub fn marker_shown(&self, guidance: &Guidance) -> bool {
-        self.summons_marker() && self.marker().unwrap_or(guidance.markers).is_shown()
+    /// **Is this objective tracked** (spec-0104 §6.1): announced, and its
+    /// resolved `compass` — its own, else the campaign's
+    /// [`Guidance::compass`] — is `shown`. The compass follows exactly these.
+    pub fn tracked(&self, guidance: &Guidance) -> bool {
+        self.announced(guidance) && self.compass().unwrap_or(guidance.compass).is_shown()
     }
 
     /// **Is this objective announced** (spec-0093): it has a `title` and its

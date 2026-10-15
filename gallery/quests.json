@@ -389,6 +389,16 @@
         }
       }
     ],
+    "guidance": {
+      "compass": "shown",
+      "manual": {
+        "pages": [
+          "Things in this hall answer to a hand: stand close and [[key|use]] on a case, a lever, a valve.",
+          "The Curator keeps the cases. Ask before you touch the glass, and do not keep what you take."
+        ],
+        "title": "The Curator's Notes"
+      }
+    },
     "lethal_volumes": [
       {
         "damage_type": "fall",
@@ -761,6 +771,7 @@
           {
             "after": [],
             "announcement": "shown",
+            "compass": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -768,6 +779,9 @@
               "subject": "npc/curator",
               "text": "The Curator tells them what the hall is for.",
               "verb": "learns"
+            },
+            "highlight": {
+              "within": 6
             },
             "hint": "The Curator stands at the lectern.",
             "id": "obj/hear-the-curator",
@@ -790,6 +804,7 @@
             ],
             "anchor": "anchor/pedestal",
             "announcement": "shown",
+            "compass": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -797,6 +812,9 @@
               "subject": "anchor/pedestal",
               "text": "The case opens under their hand.",
               "verb": "opens"
+            },
+            "highlight": {
+              "within": 6
             },
             "hint": "The case stands in the middle of the near hall.",
             "id": "obj/press-the-case",
@@ -822,6 +840,7 @@
               "obj/press-the-case"
             ],
             "anchor": "anchor/pedestal",
+            "compass": "shown",
             "container": "anchor/case",
             "count": 4,
             "fill_count": 4,
@@ -832,6 +851,9 @@
               "subject": "anchor/pedestal",
               "text": "They take the emeralds out of the case.",
               "verb": "gains"
+            },
+            "highlight": {
+              "within": 6
             },
             "hint": "Four of them, in the case.",
             "id": "obj/take-the-emeralds",
@@ -1661,6 +1683,7 @@
               "obj/back-in-the-hall"
             ],
             "announcement": "shown",
+            "compass": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -1668,6 +1691,9 @@
               "subject": "actor/sergeant",
               "text": "The muster is put down.",
               "verb": "dies"
+            },
+            "highlight": {
+              "within": 8
             },
             "hint": "They are at the muster line.",
             "id": "obj/clear-the-muster",
@@ -1752,7 +1778,6 @@
               "verb": "arrives"
             },
             "id": "obj/reach-the-end",
-            "marker": "hidden",
             "radius": 2,
             "requires_flags": [
               "flag/muster-cleared"
@@ -1780,7 +1805,6 @@
               "verb": "arrives"
             },
             "id": "obj/board-the-ferry",
-            "marker": "shown",
             "radius": 1,
             "requires_flags": [
               "flag/muster-cleared"
@@ -3096,6 +3120,7 @@
             ],
             "anchor": "anchor/west-pit",
             "announcement": "shown",
+            "compass": "hidden",
             "happening": {
               "subject": "anchor/west-pit",
               "text": "They come to the rim of the well and look down it.",
@@ -3961,6 +3986,9 @@
             "type": "sequence"
           }
         ],
+        "highlight": {
+          "within": 5
+        },
         "id": "trigger/ferry-tiller",
         "on": {
           "on": "use"
@@ -4227,6 +4255,9 @@
             }
           }
         ],
+        "highlight": {
+          "within": 5
+        },
         "id": "trigger/valve-first",
         "on": {
           "on": "use"

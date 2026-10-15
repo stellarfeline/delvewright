@@ -28,7 +28,7 @@ any game, however oblique its story.
   behind you), never by a compass point: Minecraft shows no compass, so
   `north` leaves the player guessing. `Hold the Warden's Key to the iron-bound
   door past the broken bell.` not `The keyhole is old and large.`, and not
-  `the door at the west end of the walk`. The landmark rule is **authored**. **Machine half:** a title opens with a verb of its objective kind's set in the act lexicon (`crates/dsl/data/act-verbs.json`), and a hint never names only another kind's act (`DW1015`); a key the act needs is named by a key span, `[[key|use]]`, never typed out (spec-0104).
+  `the door at the west end of the walk`. The landmark rule is **authored**. **Machine half:** a title with no verb of its objective kind's set in the act lexicon (`crates/dsl/data/act-verbs.json`), and a hint naming only another kind's act, are `DW1015` warnings the creator adjudicates — a closed set cannot tell a noun from a verb; a key the act needs is named by a key span, `[[key|use]]`, never typed out (spec-0104).
   **Cited:** Microsoft Writing Style Guide, *Top 10 tips* ("start each statement
   with a verb", "get to the point fast"); Game Accessibility Guidelines, *Use
   simple clear language* (basic level; about 14% of US/UK adults read below an
@@ -196,7 +196,7 @@ names that reach dialogue, is `DW0982`: the declared names (the inventory's
 order against what has told them (N1, N3). A question without an answer is
 `DW0981`: an option that asks and opens no line. A name tag on a crowd is
 `DW0983` (N6, [`compiler::telling` § DW0983](delvec/compiler/telling.md#dw0983--a-name-tag-marks-a-person-compilertelling-error-exit-1)). All three refuse at `delvec validate` ([`compiler::telling` § DW0981/DW0982](delvec/compiler/telling.md#dw0981dw0982--what-the-dialogue-tells-the-player-compilertelling-error-exit-1)).
-An objective's title naming the act its type completes on is `DW1015`; an act the party can see from where it stands, or that is announced with a hint, is `DW0863`; an input the opening teaches is `DW1016`; a pressable that stands alone among its kind is `DW1017` (spec-0104, [`compiler::promise`](delvec/compiler/promise.md)); and `DW0982` reads an announced objective's title and hint as well as dialogue. The rest is not built.
+An objective's title that may not name the act its type completes on is the `DW1015` warning, for the creator to adjudicate; an act the party can see from where it stands, or that is announced with a hint, is `DW0863` (spec-0104, [`compiler::promise`](delvec/compiler/promise.md)); and `DW0982` reads an announced objective's title and hint as well as dialogue. The rest is not built.
 
 | Check | What it reads | Estimated precision on Vesperhold |
 |---|---|---|
@@ -208,12 +208,10 @@ An objective's title naming the act its type completes on is `DW1015`; an act th
 | Calque markers (zh) | Marker list | 9 of 11 (82%); recall 9 of 23 |
 | Item tooltip without function | Shop/item tooltip with no mechanical word | 8 of 9 (89%); recall 8 of 16 |
 | Echo closer / symmetry (en) | Last sentence repeats a content word, tricolon fragment, twin short sentences | 9 of 14 (64%); recall 9 of 23 |
-| Title names another act (`DW1015`, built) | Every objective title and hint, in the English and every sidecar with a table, against the act lexicon: a title carries its own kind's verb; a hint names no other kind's act without its own | Measured on the motivating campaign at the commit that landed it (its body states the count against spec-0104 §2.7's hand count of 9 of 18 titles) |
+| Title names another act (`DW1015`, built, a warning the creator adjudicates) | Every objective title and hint, in the English and every sidecar with a table, against the act lexicon: a title carries its own kind's verb; a hint names no other kind's act without its own | Measured on the motivating campaign at the commit that landed it (its body states the count against spec-0104 §2.2's hand count of 9 of 18 titles) |
 | Act found (`DW0863`, built) | Every act on every walked path: announced with a hint, or a clear line within 64 blocks from where the party stands | Binding stated by every build |
-| Input taught (`DW1016`, built) | The input classes the walks need against `guidance.teaching` | Binding stated by every build |
-| Pressable among twins (`DW1017`, built) | Same-id blocks within the click's reach of every prop, authored pressed block and adopted container | Binding stated by every build |
 | Functional text without action or place | Functional keys lacking an imperative, a direction or a named object | 8 of 26 (31%) — not usable as a refusal |
-| Hint-for-statement (en) | No mechanical signal found | 6 of 16 (38%) — human review only; stays human beside the four rows above |
+| Hint-for-statement (en) | No mechanical signal found | 6 of 16 (38%) — human review only; stays human beside the rows above |
 
 Precision is against one rater's labels and is an estimate; §6 of this page is
 the cross-check.
@@ -289,7 +287,7 @@ How a quest plan is shaped as a web rather than a chain, how an ending reads the
   object exists only so that reading it opens something. **Authored.** A glowing
   entity, floating label or beam over a target is the defect; so is a sign
   pointing at a destination, or a note, plaque or lectern whose only job is to
-  be read so that a gate opens. **Machine half** (spec-0104 §3): every act on
+  be read so that a gate opens. **Machine half** (spec-0104 §4): every act on
   a walked path is in sight of where the party stands — a clear line within 64
   blocks — or its objective carries a `title` and a `hint` (`DW0863`); a hint
   names only what the party has been told (`DW0982`).

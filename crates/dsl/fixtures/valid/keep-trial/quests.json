@@ -115,6 +115,9 @@
             },
             "hint": "The barred door stands in the corner room; use the old key on it.",
             "id": "obj/door",
+            "prop": {
+              "block": "minecraft:lever"
+            },
             "requires_item": "minecraft:tripwire_hook",
             "title": "Open the Inner Door",
             "type": "interact"

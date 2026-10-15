@@ -351,6 +351,16 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
         let key = format!("quest.{}.goal", local(q.id.as_str()));
         f(&key, &mut q.goal);
     }
+    // Stage 5 — the journal's manual (spec-0104 §8.1): narration the party
+    // reads in the book, its title and each page.
+    if let Some(manual) = c.quests.content.guidance.manual.as_mut() {
+        if let Some(title) = manual.title.as_mut() {
+            f("guidance.manual.title", title);
+        }
+        for (i, page) in manual.pages.iter_mut().enumerate() {
+            f(&format!("guidance.manual.pages.{i}"), page);
+        }
+    }
     // Stage 5 — objective titles/hints (when set).
     for q in &mut c.quests.content.quests {
         let ql = local(q.id.as_str()).to_string();
@@ -687,6 +697,12 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
         },
         "loot" if n == 5 && last == "name" => ItemName,
         "lethal" if n == 3 && last == "message" => Narration,
+        "guidance"
+            if segs[1] == "manual"
+                && ((n == 3 && last == "title") || (n == 4 && segs[2] == "pages")) =>
+        {
+            Narration
+        }
         "stake" if n == 3 && last == "collected" => Narration,
         "shop" => match (n, last) {
             (3, "title") => Title,

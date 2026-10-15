@@ -88,7 +88,7 @@ pub fn span_key(line_key: &str, index: usize) -> String {
     format!("{line_key}.span.{index}")
 }
 
-/// The inputs a key span may name (spec-0104 §5.1), each with the vanilla
+/// The inputs a key span may name (spec-0104 §8.9), each with the vanilla
 /// key-mapping identifier the client resolves it through and the longest name
 /// the pinned client's default bindings show for it — the width a line
 /// carrying the span is measured at (`DW0330`), so the estimate can only be
@@ -137,7 +137,7 @@ pub struct SpanStyle {
     pub flags: Vec<&'static str>,
     /// `color`, lower-case: a vanilla name or `#rrggbb`.
     pub color: Option<String>,
-    /// A **key span** (spec-0104 §5.1): the input whose bound key the client
+    /// A **key span** (spec-0104 §8.9): the input whose bound key the client
     /// draws here (`use`, `attack`, …). A key span sets no other style, and its
     /// text is the input itself.
     pub key: Option<&'static str>,
@@ -792,7 +792,7 @@ mod tests {
         assert_eq!(l.format, "%1$s%2$s");
     }
 
-    /// spec-0104 §5.1: a key span parses, names an input the client knows,
+    /// spec-0104 §8.9: a key span parses, names an input the client knows,
     /// reads as its input in brackets, is measured at the widest default key
     /// name, and a translation must keep it byte for byte.
     #[test]

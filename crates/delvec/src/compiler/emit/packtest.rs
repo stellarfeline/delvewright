@@ -16,6 +16,7 @@ mod class;
 mod creator;
 mod dialogue;
 mod economy;
+mod guidance;
 mod healthbar;
 mod lane;
 mod lethal;
@@ -48,6 +49,10 @@ pub(super) struct Proved<'a> {
     pub(super) asm_locks: &'a crate::compiler::assembly::Locks,
     /// The watchers, as `watching::prove` judged them.
     pub(super) watch_binding: &'a crate::compiler::watching::WatchBinding,
+    /// The campaign's guidance (spec-0104 §6–§8).
+    pub(super) guide: &'a super::guidance::Guide,
+    /// The build's chrome, for the keys the journal's pages carry.
+    pub(super) chrome: &'a delvewright_dsl::Chrome,
 }
 
 /// Emit the compiler-generated PackTest suite (spec-0003). PackTest (misode,
@@ -69,6 +74,8 @@ pub(super) fn emit_packtest(
     let Proved {
         asm_locks,
         watch_binding,
+        guide,
+        chrome,
     } = *proved;
     let ns = &plan.namespace;
     put_json(
@@ -203,6 +210,11 @@ pub(super) fn emit_packtest(
     // two `fires` values apart. Emits nothing for a campaign with no bundle.
     onkill::emit_kill_pays_packtests(plan, out, waves.placements);
     objective::emit_objective_activation_packtests(plan, out);
+    // spec-0104 §6–§8: the compass, the journal and every highlight, driven on
+    // the dummy. Each emits nothing for a campaign without its surface.
+    guidance::emit_compass_packtests(plan, out, guide);
+    guidance::emit_journal_packtests(plan, out, guide, chrome);
+    guidance::emit_highlight_packtests(plan, out, guide);
     class::emit_class_apply_packtests(plan, out);
     npc::emit_npc_talk_packtests(plan, out);
     // Every environment trigger's own bundle, plus a presser's dispatch and

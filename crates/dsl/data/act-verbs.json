@@ -1,6 +1,6 @@
 {
   "_readme": [
-    "The act lexicon (spec-0104 §4): per language, per objective kind, the verbs that name the act vanilla completes the kind on. One verb belongs to one kind in a language.",
+    "The act lexicon (spec-0104 §5): per language, per objective kind, the verbs that name the act vanilla completes the kind on. One verb belongs to one kind in a language.",
     "`match` is how a string's visible text is read: `words` matches each entry as a whole word or phrase, case-insensitively; `substring` matches each entry as a substring. Either way the longest entry at a position is the one read, so a phrase is never also read as the shorter verb inside it.",
     "Read by `delvewright_dsl::actverbs`; judged by `DW1015` in `delvec`'s `compiler::promise`. A verb a campaign needs that is not here is an engine edit to this file."
   ],

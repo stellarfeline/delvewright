@@ -55,6 +55,7 @@ mod effect;
 mod equipment;
 mod firework;
 mod functions;
+pub(super) mod guidance;
 mod lane;
 mod lethal;
 mod lightning;
@@ -645,7 +646,7 @@ pub fn build_with_warnings(
     // the wave would silently never spawn (DW0310). Guards against the class of bug
     // where the spawn position was resolvable only via a `kill` objective.
     check_wave_spawns(plan)?;
-    // DW0863 (spec-0104 §3): every act on a walked path is announced with a
+    // DW0863 (spec-0104 §4): every act on a walked path is announced with a
     // hint, or in sight from where the party stands (and a kill's wave within
     // reach). Judged here, where the acts have places and the world has
     // blocks; the binding is printed whichever way it goes.
@@ -802,6 +803,9 @@ pub fn build_with_warnings(
             g
         }
     };
+    // spec-0104 §6–§8: the compass, the journal and the highlights, derived once
+    // over the assembled world every emitter here reads.
+    let guide = guidance::guide(plan, &assembled.blocks);
     let functions = emit_functions(
         plan,
         &chrome,
@@ -821,6 +825,7 @@ pub fn build_with_warnings(
         stake_table.as_ref(),
         &asm_locks,
         &pulse_gate.rows,
+        &guide,
     );
     // `DW0852` over the FINAL function list — after every emitter has had its say,
     // so a later pass that rewrote a judge cannot slip past a check that ran
@@ -909,6 +914,27 @@ pub fn build_with_warnings(
         )?;
     }
 
+    // spec-0104 §8.3: the journal's item modifiers; §6.4: the compass gesture.
+    for (name, value) in guidance::item_modifiers(&guide, plan, &chrome) {
+        insert_unique(
+            &mut out,
+            format!("datapack/data/{ns}/item_modifier/{name}.json"),
+            json_bytes(&value),
+            "item modifier",
+            &name,
+        )?;
+    }
+    if guide.compass {
+        put_json(
+            &mut out,
+            &format!(
+                "datapack/data/{ns}/predicate/{}.json",
+                guidance::COMPASS_CROUCH_PREDICATE
+            ),
+            &guidance::crouch_predicate(),
+        );
+    }
+
     // predicates — currently only the sneak-held gate (see
     // SNEAK_HELD_PREDICATE) the cutscene bounce and the respawn wait's view
     // binding read; a campaign with neither emits none.
@@ -935,6 +961,8 @@ pub fn build_with_warnings(
         &packtest::Proved {
             asm_locks: &asm_locks,
             watch_binding: &watch_binding,
+            guide: &guide,
+            chrome: &chrome,
         },
     );
 

@@ -351,6 +351,11 @@ pub(super) fn emit_objective_activation_packtests(plan: &Plan, out: &mut BuildOu
                     b.push(format!("assert score #fx1_{safe} dw.sys matches 1"));
                 }
             }
+            // spec-0104 §7.3: the activation also places the objective's
+            // highlight displays; remove exactly those.
+            if o.highlight().is_some() {
+                b.push(format!("kill @e[tag=dw_hl_o_{safe}]"));
+            }
             out.insert(
                 format!("packtest-datapack/data/{ns}/test/obj_activate_{safe}.mcfunction"),
                 lines(&b).into_bytes(),

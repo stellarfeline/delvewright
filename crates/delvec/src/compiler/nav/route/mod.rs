@@ -567,7 +567,7 @@ pub fn configuration_at(
     }
 }
 
-/// **The world each of `steps` is judged in** (spec-0104 §3): for every
+/// **The world each of `steps` is judged in** (spec-0104 §4): for every
 /// arrival, the configuration [`configuration_at`] gives it — `None` where it
 /// writes nothing and the base world stands — with arrivals under one region
 /// state sharing one world, so a sight proof over many acts builds each

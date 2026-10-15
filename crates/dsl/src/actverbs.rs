@@ -1,4 +1,4 @@
-//! The act lexicon (spec-0104 §4): per language and per objective kind, the
+//! The act lexicon (spec-0104 §5): per language and per objective kind, the
 //! verbs that name the act vanilla completes the kind on.
 //!
 //! The data is `data/act-verbs.json`; this module is its one reader. A string
@@ -188,7 +188,7 @@ mod tests {
         }
     }
 
-    /// Each row of spec-0104 §4's seed is in the file.
+    /// Each row of spec-0104 §5's seed is in the file.
     #[test]
     fn the_seed_is_in_the_file() {
         let en = table("en").unwrap();

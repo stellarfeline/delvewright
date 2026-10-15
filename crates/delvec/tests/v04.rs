@@ -551,11 +551,12 @@ fn completed_objectives_despawn_their_summoned_markers() {
         "interact completion does not remove the prop block: {door}"
     );
 
-    // reach obj/shrine: complete kills its end-rod marker tag (dw_r_shrine).
+    // reach obj/shrine summons nothing (spec-0104 §7.6), so its completion
+    // kills nothing.
     let shrine = fn_body(&out, "complete_o_shrine");
     assert!(
-        shrine.contains("kill @e[tag=dw_r_shrine]"),
-        "reach completion despawns its summoned marker: {shrine}"
+        !shrine.contains("kill @e[tag=dw_r_shrine]"),
+        "a reach summons no marker to despawn: {shrine}"
     );
 
     // talk-to obj/talk summons no per-objective entity → no cleanup kill.

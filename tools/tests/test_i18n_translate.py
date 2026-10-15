@@ -1245,7 +1245,7 @@ def test_prefab_root_that_is_not_a_directory_is_refused(tmp_path, monkeypatch, c
 
 
 def test_fact_check_keeps_a_key_span_whole():
-    """spec-0104 §5.1: a key span's identifier is a fact the translation keeps."""
+    """spec-0104 §8.9: a key span's identifier is a fact the translation keeps."""
     en = "Things here answer to a touch: [[key|use]] on them."
     row = _row("guidance.teaching.use-block", en, "narration")
     assert t.check_row(row, "这里的东西一碰就有回应：对它们按[[key|use]]。", NAMES, "zh-cn") == []

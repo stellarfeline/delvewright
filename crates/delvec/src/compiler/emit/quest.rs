@@ -158,6 +158,7 @@ pub(super) fn quest_completion_fns(
     plan: &Plan,
     chrome: &delvewright_dsl::Chrome,
     branch_transport: &BranchTransportOverlay,
+    guide: &guidance::Guide,
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -176,6 +177,12 @@ pub(super) fn quest_completion_fns(
                     activation_flag(oid)
                 )];
                 act.extend(cmds);
+                // spec-0104 §7.3: the highlight's displays come with the prop.
+                if let Some(h) = guide.highlight_of(oid)
+                    && matches!(h.body, guidance::HlBody::Blocks { .. })
+                {
+                    act.push(format!("function {ns}:hl_show_{}", h.safe));
+                }
                 fns.push((format!("activate_{}", safe_obj_fn(oid)), lines(&act)));
             }
             // v0.3 objective-activation feedback (M2 fix 4): the announce function
@@ -289,6 +296,8 @@ pub(super) fn quest_completion_fns(
             if !activation_commands(plan, q_area, o).is_empty() {
                 body.extend(completion_cleanup(o));
             }
+            // spec-0104 §7.3: the highlight goes out with the act.
+            body.extend(guidance::completion_lines(guide, oid));
             // `complete_<obj>` is dispatched `as @a` from `tick`, so this bundle
             // runs with the acting player as `@s` (see `Audience::Party`).
             body.extend(emit_effect_bundle(

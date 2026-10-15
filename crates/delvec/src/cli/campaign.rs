@@ -358,6 +358,22 @@ pub(super) fn validate_loaded(
             diags.extend(delvec::compiler::textfit::check_option_labels(
                 &campaign, &sidecars,
             ));
+            // spec-0104 §8.8: every journal page the engine writes fits a book
+            // page (DW0330, advisory), in the English and every declared
+            // sidecar.
+            {
+                let (bd, measured) =
+                    delvec::compiler::textfit::check_book_pages(&campaign, &sidecars);
+                let widest = measured.iter().map(|m| m.2).max().unwrap_or(0);
+                examined.push(format!(
+                    "journal pages: {} page(s) measured over the source and every declared \
+                     language, the fullest {widest} of {} line(s); {} over",
+                    measured.len(),
+                    delvec::compiler::textfit::BOOK_LINES,
+                    bd.len()
+                ));
+                diags.extend(bd);
+            }
             // A dialogue option that asks a question leads to a line that can
             // answer it (DW0981), in the English source and every declared
             // sidecar. A document fact, refused where the option is written.
@@ -477,6 +493,14 @@ pub(super) fn validate_loaded(
                 let (vd, vbind) = delvec::compiler::promise::check_act_verbs(&campaign, &sidecars);
                 examined.push(vbind.line());
                 diags.extend(vd);
+                // DW1017 (spec-0104 §6.6): the compass follows only an announced
+                // objective. DW1016 (§7.5): a highlight lights a block or a body.
+                let (cd, cbind) = delvec::compiler::promise::check_compass(&campaign);
+                examined.push(cbind.line());
+                diags.extend(cd);
+                let (hd, hbind) = delvec::compiler::promise::check_highlights(&campaign);
+                examined.push(hbind.line());
+                diags.extend(hd);
             }
             // spec-0050 (DSL v0.15): the detail plan. `DW0842`-`DW0845` (the
             // binding binds, the piece is the shape of its allocation, its

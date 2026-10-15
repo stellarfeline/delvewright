@@ -1,5 +1,6 @@
 //! **An objective keeps the promise its prompt makes** (`DW0860`–`DW0862`,
-//! `DW0961`, `DW0962`; `DW0863` needs places and lives in `quiet_guidance.rs`).
+//! `DW0961`; `DW0863` needs places and lives in `quiet_guidance.rs` and
+//! `guidance_followed.rs`).
 //!
 //! Fixture shape: hello-world's world/classes/npcs/dialogue, plus a two-quest DAG
 //! whose stage-5 document is supplied per test. Every test drives
@@ -208,7 +209,7 @@ fn hint_under_a_hidden_announcement_is_dw0862() {
     assert!(!codes(&c).iter().any(|c| c == "DW0862"), "{:?}", codes(&c));
 }
 
-// --- DW0961 / DW0962: a declaration that binds to nothing -------------------
+// --- DW0961: a declaration that binds to nothing ------------------------------
 
 /// `announcement: shown` with no title asks for an announcement nothing can
 /// print; with a title it is an ordinary opt-in.
@@ -230,30 +231,6 @@ fn an_announcement_asked_for_with_no_title_is_dw0961() {
     let quiet = r#"{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
         "radius": 2, "announcement": "hidden" }"#;
     assert!(!codes(&campaign(quiet, DONE)).iter().any(|c| c == "DW0961"));
-}
-
-/// `marker` beside a `prop` declares nothing: the prop is the affordance and no
-/// marker is ever summoned. Either value is refused; without the prop the field
-/// is the ordinary switch.
-#[test]
-fn a_marker_beside_a_prop_is_dw0962() {
-    for value in ["shown", "hidden"] {
-        let obj = format!(
-            r#"{{ "type": "interact", "id": "obj/lever", "anchor": "anchor/exit",
-                 "title": "Throw the lever", "prop": {{ "block": "minecraft:lever" }},
-                 "marker": "{value}" }}"#
-        );
-        let d = promise::check(&campaign(&obj, DONE))
-            .0
-            .into_iter()
-            .find(|d| d.code == promise::DW_MARKER_INERT)
-            .unwrap_or_else(|| panic!("`marker: {value}` beside a prop is DW0962"));
-        assert!(d.message.contains("minecraft:lever"), "{}", d.message);
-        assert!(d.message.contains(value), "{}", d.message);
-    }
-    let bare = r#"{ "type": "interact", "id": "obj/lever", "anchor": "anchor/exit",
-        "title": "Throw the lever", "marker": "hidden" }"#;
-    assert!(!codes(&campaign(bare, DONE)).iter().any(|c| c == "DW0962"));
 }
 
 /// A `prop` is the visible object a click acts on; on an `approach` nothing reads
@@ -508,7 +485,6 @@ fn the_binding_counts_what_it_examined() {
     let (_, b) = promise::check(&campaign(obj, bundle));
     assert_eq!(b.objectives, 2, "one talk-to and one collect");
     assert_eq!(b.announced, 2, "both are titled and the campaign is loud");
-    assert_eq!(b.marked, 0, "neither kind summons a marker");
     assert_eq!(b.adopted_containers, 1);
     assert_eq!(b.failure_clocks, 1);
     assert_eq!(
@@ -524,7 +500,7 @@ fn the_binding_counts_what_it_examined() {
 /// exists to expose, so this counts rather than asserts.
 #[test]
 fn every_rule_fires_on_its_own_perturbation() {
-    let cases: [(&str, &str, &str); 5] = [
+    let cases: [(&str, &str, &str); 4] = [
         (
             "DW0860",
             CLEAN_REACH,
@@ -550,13 +526,6 @@ fn every_rule_fires_on_its_own_perturbation() {
                  "announcement": "shown" }"#,
             DONE,
         ),
-        (
-            "DW0962",
-            r#"{ "type": "interact", "id": "obj/lever", "anchor": "anchor/exit",
-                 "title": "Throw the lever", "prop": { "block": "minecraft:lever" },
-                 "marker": "hidden" }"#,
-            DONE,
-        ),
     ];
     let fired = cases
         .iter()
@@ -565,7 +534,7 @@ fn every_rule_fires_on_its_own_perturbation() {
     assert_eq!(
         fired,
         cases.len(),
-        "each of the five rules must name itself on its own perturbation"
+        "each rule must name itself on its own perturbation"
     );
 
     // ...and the unperturbed document names none of them, so the count above is
@@ -577,6 +546,6 @@ fn every_rule_fires_on_its_own_perturbation() {
         .count();
     assert_eq!(
         leaked, 0,
-        "the clean fixture must raise none of the four: {base:?}"
+        "the clean fixture must raise none of them: {base:?}"
     );
 }

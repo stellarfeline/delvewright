@@ -3040,12 +3040,12 @@
       "finding": "an objective's text named a different act from the one that completes it: a hint said to walk past a thing that must be right-clicked, and a title said to go somewhere where talking to someone completes it",
       "general_form": "an objective's title and hint name the act its type completes on (an interact objective says use or right-click, a talk-to objective names the person), never a different verb",
       "id": "str-05",
-      "note": "Carried by `DW1015` (spec-0104 §4): an objective's title carries a verb of its own kind's set in the act lexicon (`crates/dsl/data/act-verbs.json`), and a hint never names another kind's act without naming its own — in the English and every sidecar whose language has a table. Membership in a closed set, never a reading of meaning; its recall is bounded by the lexicon's seed.",
+      "note": "Carried by `DW1015` (spec-0104 §5), a warning the creator adjudicates: an objective's title carrying no verb of its own kind's set in the act lexicon (`crates/dsl/data/act-verbs.json`), and a hint naming another kind's act without its own, are reported with the evidence — in the English and every sidecar whose language has a table — and validation exits 0. Membership in a closed set cannot tell a noun from a verb, so the verdict is the creator's; its recall is bounded by the lexicon's seed. What a hint says about where to go is a writing rule in the skill (`references/writing-craft.md` §F), with no machine half.",
       "round": 1,
       "triage": "capability"
     },
     {
-      "binding": {
+      "applies_when": {
         "files": [
           "quests.json"
         ],
@@ -3065,41 +3065,41 @@
           ]
         }
       },
-      "campaign": "the-stranding",
-      "carrier": {
-        "code": "DW1016",
-        "kind": "dw"
-      },
-      "finding": "nothing taught the player that the world's blocks are right-clicked: a sign started a cutscene unannounced, and later props were not tried",
-      "general_form": "a campaign whose progress needs a click on a world block teaches that in its opening, before the first such click is owed",
-      "id": "str-07",
-      "note": "Carried by `DW1016` (spec-0104 §5): every input class a walked path requires (right-click a block, right-click a body, left-click a body, left-click a block — derived from each act's kind and body) is named by `guidance.teaching`, with a line carrying its key span (`[[key|use]]` / `[[key|attack]]`) or `null` declaring the level teaches it; a line no walk needs and a line without its key span are refused too. The line is shown once per player when an act of the class is first next.",
-      "round": 1,
-      "triage": "capability"
-    },
-    {
       "binding": {
         "files": [
           "quests.json"
         ],
         "kind": "dsl",
         "match": {
-          "eq": {
-            "type": "interact"
-          }
+          "has_any": [
+            "highlight",
+            "manual"
+          ]
         }
       },
       "campaign": "the-stranding",
       "carrier": {
-        "code": "DW1017",
+        "code": "DW1016",
         "kind": "dw"
       },
-      "finding": "interact props did not read as the thing their text names, and one prop stood among many identical blocks with nothing to say which to press",
-      "general_form": "an interact prop is distinguishable at the distance the party first sees it: no block of the same kind stands within the click's reach around it unless the prop is marked",
-      "id": "str-08",
-      "note": "Carried by `DW1017` (spec-0104 §6): no block of the same id (blockstate ignored) stands within `INTERACTION_REACH` (3.0 blocks) of a pressable — an interact's prop or authored block, a use/strike trigger's, an adopted container — unless it is a prop-less interact whose marker is shown. Whether the block reads as the thing its text names stays QC.",
+      "finding": "nothing taught the player that the world's blocks are right-clicked: a sign started a cutscene unannounced, and later props were not tried",
+      "general_form": "a prop the party must act on that does not read as the thing is picked out on arrival by a highlight the author declares, and how the setting is operated where it contradicts vanilla is in the journal's manual, readable any time",
+      "id": "str-07",
+      "note": "Carried by `DW1016` and the journal (spec-0104 §7, §8): the author declares `highlight {within}` on an act whose block or body does not read as the thing — lit only while a player is within range and the act is armed, refused where it has nothing to light (`DW1016`) — and writes `guidance.manual` pages only where the setting contradicts vanilla or an item needs instructions; the journal in every hand holds them with the open and done objectives. No check asks that an input be taught: a vanilla player right-clicks a lever without being told. The binding counts the campaign's `highlight` declarations and its `manual`.",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "campaign": "the-stranding",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "interact props did not read as the thing their text names, and one prop stood among many identical blocks with nothing to say which to press",
+      "general_form": "none: whether a prop reads as the thing its text names is the author's judgement, and a row of identical blocks with a clue elsewhere is a legitimate puzzle",
+      "id": "str-08",
+      "justification": "Only the instance was fixed: three identical valves with no clue were a design fault of that scene. A rule refusing a pressable among blocks of its own kind (spec-0104's first draft) inferred a defect from a shape that is also a legitimate puzzle and was removed (spec-0104 §9). The half of the finding about a prop not reading as the thing is the author's `highlight` (spec-0104 §7, the str-07 row); no general check exists or is owed.",
+      "note": "Re-triaged content (spec-0104 §9): the instance was a design fault of that scene, not an engine gap.",
+      "round": 1,
+      "triage": "content"
     },
     {
       "binding": {

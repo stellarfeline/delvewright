@@ -74,6 +74,9 @@
               "verb": "opens"
             },
             "id": "obj/bolt",
+            "prop": {
+              "block": "minecraft:lever"
+            },
             "requires_flags": [
               "flag/flee"
             ],

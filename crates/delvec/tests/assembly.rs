@@ -823,11 +823,7 @@ fn the_binding_line_is_printed_on_every_build() {
     for f in common::STAGE_FILES {
         std::fs::copy(common::hello_world_dir().join(f), dir.join(f)).unwrap();
     }
-    std::fs::write(
-        dir.join("quests.json"),
-        quests().to_string(),
-    )
-    .unwrap();
+    std::fs::write(dir.join("quests.json"), quests().to_string()).unwrap();
     let with = run(&[
         "--prefabs",
         lib.to_str().unwrap(),
@@ -903,7 +899,7 @@ fn locked_quests() -> Value {
     quests_with(|q| {
         // The thing stands round the doorway's corner from the keeper's post,
         // out of his sight: the party steps into the room first, and strikes
-        // it from there (spec-0104 §3 — an act is in sight of where the party
+        // it from there (spec-0104 §4 — an act is in sight of where the party
         // stands).
         let quest = &mut q["content"]["quests"][0];
         quest["objectives"].as_array_mut().unwrap().insert(

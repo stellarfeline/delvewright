@@ -253,8 +253,8 @@ fn keep_trial_builds_all_verbs_and_is_deterministic() {
         "datapack/data/keep-trial/function/activate_o_door.mcfunction",
     );
     assert!(
-        act_door.contains("summon minecraft:interaction") && act_door.contains("dw_i_door"),
-        "interact hitbox summoned at activation"
+        act_door.contains("setblock") && act_door.contains("minecraft:lever"),
+        "the door's lever is placed at activation: {act_door}"
     );
     let act_key = text(
         &a,
@@ -416,31 +416,20 @@ fn keep_trial_m2_presentation_fixes() {
         "wave mob CustomName is a plain SNBT string"
     );
 
-    // Fix 3 (+ gap 13): a visible, glowing, non-colliding marker at the interact
-    // anchor, named from the objective title — now summoned at ACTIVATION (in
-    // activate_o_door), not at setup, so it does not glow next to the player before
-    // the objective is active.
+    // spec-0104 §7.6: no objective summons a marker. The door's lever is the
+    // whole affordance and nothing glows beside it; the reach places nothing,
+    // so it has no activation function.
     let act_door = text(
         &a,
         "datapack/data/keep-trial/function/activate_o_door.mcfunction",
     );
     assert!(
-        act_door.contains("summon minecraft:item_display")
-            && act_door.contains("Glowing:1b")
-            && act_door.contains("CustomName:\"Open the Inner Door\""),
-        "interact anchor gets a glowing named item_display marker at activation"
-    );
-    // Fix 3 (round 2): the reach anchor gets the same glowing marker treatment —
-    // a distinct end_rod (vs. the interact lantern), named from the reach title —
-    // so the finale altar can't be triggered "by wandering". Also activation-gated.
-    let act_shrine = text(
-        &a,
-        "datapack/data/keep-trial/function/activate_o_shrine.mcfunction",
+        act_door.contains("minecraft:lever") && !act_door.contains("summon minecraft:item_display"),
+        "the interact's activation is its lever alone: {act_door}"
     );
     assert!(
-        act_shrine.contains("item:{id:\"minecraft:end_rod\",count:1}")
-            && act_shrine.contains("CustomName:\"Reach the Shrine\""),
-        "reach anchor gets a glowing named end_rod marker at activation"
+        !a.contains_key("datapack/data/keep-trial/function/activate_o_shrine.mcfunction"),
+        "a reach places nothing"
     );
 
     // Fix 4: activation announce (title + hint + sound), completion feedback, and a

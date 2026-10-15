@@ -606,4 +606,461 @@ fn every_binding_line_states_its_zeroes() {
             .line()
             .starts_with("DW1015 binding: 0 title(s)")
     );
+    assert_eq!(
+        promise::CompassBinding::default().line(),
+        "compass binding: 0 tracked objective(s) of 0 — 0 by their own field, 0 by the campaign \
+         default; 0 refused"
+    );
+    assert_eq!(
+        promise::HighlightBinding::default().line(),
+        "highlight binding: 0 highlight(s) over 0 act(s) — 0 on a block, 0 on a body; 0 refused"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// §6 — the compass, DW1017
+// ---------------------------------------------------------------------------
+
+/// The campaign above with the button opened beside the lever (both after the
+/// talk), so two objectives are open at once.
+fn two_open(guidance: Value) -> Value {
+    let mut q = quests(guidance);
+    q["content"]["quests"][0]["objectives"][2]["after"] = json!(["obj/talk"]);
+    q
+}
+
+fn all_text(out: &BuildOutput) -> String {
+    let mut s = String::new();
+    for (k, v) in out {
+        if k.starts_with("datapack/")
+            && let Ok(t) = std::str::from_utf8(v)
+        {
+            s.push_str(t);
+        }
+    }
+    s
+}
+
+/// spec-0104 criterion 4, the bytes: the kit gives the compass, the refresh
+/// resolves the followed objective in document order and aims it through the
+/// one macro over every carried slot, the cycle wraps, the lines are told on a
+/// change and the others' count only with two open, and two builds are
+/// byte-identical. A campaign that hides the compass and opts nothing in
+/// emits none of it.
+#[test]
+fn the_compass_follows_an_open_objective() {
+    let dir = variant("compass", two_open(json!({})), dialogue(GREETING));
+    let out = try_build(&dir).expect("builds");
+    let apply = fn_body(&out, "class_apply_warden").or_else(|| {
+        out.iter()
+            .find(|(k, _)| k.contains("/function/class_apply_"))
+            .map(|(_, v)| std::str::from_utf8(v).unwrap())
+    });
+    let apply = apply.expect("a class apply");
+    assert!(
+        apply.contains("function hello-world:compass_give"),
+        "{apply}"
+    );
+    let give = fn_body(&out, "compass_give").unwrap();
+    assert!(
+        give.contains("custom_data={dw_compass:1b}") && give.contains("custom_name="),
+        "{give}"
+    );
+    let aim = fn_body(&out, "compass_aim").unwrap();
+    assert_eq!(aim.lines().count(), 41, "every carried slot: {aim}");
+    assert!(
+        aim.contains(
+            "lodestone_tracker={target:{pos:[I;$(x),$(y),$(z)],dimension:\"minecraft:overworld\"},tracked:false}"
+        ),
+        "{aim}"
+    );
+    assert!(aim.contains("weapon.offhand") && !aim.contains("container.36"));
+    let spin = fn_body(&out, "compass_spin").unwrap();
+    assert!(spin.contains("lodestone_tracker={tracked:false}"), "{spin}");
+    let refresh = fn_body(&out, "compass_refresh").unwrap();
+    assert!(
+        refresh.contains("if score @s dw.track matches 2"),
+        "{refresh}"
+    );
+    assert!(
+        refresh.contains("function hello-world:compass_tell"),
+        "{refresh}"
+    );
+    let followed = fn_body(&out, "compass_aim_followed").unwrap();
+    assert!(
+        followed.contains("compass_aim_body_talk"),
+        "a talk-to follows the body: {followed}"
+    );
+    let body = fn_body(&out, "compass_aim_body_talk").unwrap();
+    assert!(
+        body.contains("@e[tag=dw_npc_keeper,type=!minecraft:interaction,limit=1] Pos[0]"),
+        "{body}"
+    );
+    let cycle = fn_body(&out, "compass_cycle").unwrap();
+    assert!(
+        cycle.contains("scoreboard players set @s dw.told -1"),
+        "{cycle}"
+    );
+    let tell = fn_body(&out, "compass_tell").unwrap();
+    assert!(tell.contains("compass.following") && tell.contains("compass.nothing"));
+    assert!(
+        tell.contains("if score #gopen dw.guide matches 2..")
+            && tell.contains(r#"{"keybind":"key.sneak"}"#),
+        "{tell}"
+    );
+    let pred = out
+        .get("datapack/data/hello-world/predicate/compass_crouch.json")
+        .expect("the gesture's predicate");
+    let pred = std::str::from_utf8(pred).unwrap();
+    assert!(
+        pred.contains("is_sneaking") && pred.contains("dw_compass"),
+        "{pred}"
+    );
+    let again = try_build(&dir).expect("builds again");
+    assert_eq!(out, again, "two builds are byte-identical");
+
+    // A hidden objective is never a target.
+    let mut q = two_open(json!({}));
+    q["content"]["quests"][0]["objectives"][2]["compass"] = json!("hidden");
+    let out = try_build(&variant("compass-hidden-one", q, dialogue(GREETING))).unwrap();
+    let refresh = fn_body(&out, "compass_refresh").unwrap();
+    assert!(!refresh.contains("dw.track matches 3"), "{refresh}");
+    assert!(!refresh.contains("dw.o_press"), "{refresh}");
+
+    // Hidden campaign-wide and nothing opted in: no compass at all.
+    let out = try_build(&variant(
+        "compass-none",
+        two_open(json!({ "compass": "hidden" })),
+        dialogue(GREETING),
+    ))
+    .unwrap();
+    assert!(
+        !out.keys().any(|k| k.contains("compass")),
+        "no compass file"
+    );
+    let all = all_text(&out);
+    assert!(!all.contains("dw.track") && !all.contains("compass_crouch"));
+    let prefix = std::str::from_utf8(
+        out.get("datapack/data/hello-world/item_modifier/journal_prefix.json")
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(
+        !prefix.contains("journal.compass"),
+        "no compass page: {prefix}"
+    );
+}
+
+/// spec-0104 criterion 5.
+#[test]
+fn a_compass_on_an_objective_nobody_is_told_about_is_dw1017() {
+    let mut q = quests(nulls());
+    let pull = &mut q["content"]["quests"][0]["objectives"][1];
+    pull.as_object_mut().unwrap().remove("title");
+    pull.as_object_mut().unwrap().remove("hint");
+    pull["compass"] = json!("shown");
+    let (_, c) = load(&variant("dw1017-untitled", q.clone(), dialogue(GREETING)));
+    let (d, b) = promise::check_compass(&c);
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert_eq!(d[0].code, promise::DW_COMPASS_UNTOLD);
+    assert!(d[0].message.contains("obj/pull") && d[0].message.contains("no `title`"));
+    assert_eq!(b.refused, 1);
+    q["content"]["quests"][0]["objectives"][1]["title"] = json!("Pull the lever");
+    q["content"]["quests"][0]["objectives"][1]["announcement"] = json!("hidden");
+    let (_, c) = load(&variant("dw1017-hidden", q.clone(), dialogue(GREETING)));
+    let (d, _) = promise::check_compass(&c);
+    assert!(d[0].message.contains("announcement: hidden"), "{d:?}");
+    q["content"]["quests"][0]["objectives"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("announcement");
+    let (_, c) = load(&variant("dw1017-told", q, dialogue(GREETING)));
+    let (d, b) = promise::check_compass(&c);
+    assert!(d.is_empty(), "{d:?}");
+    assert_eq!(
+        b.line(),
+        "compass binding: 3 tracked objective(s) of 3 — 1 by their own field, 2 by the campaign \
+         default; 0 refused"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// §7 — the highlight, DW1016
+// ---------------------------------------------------------------------------
+
+/// spec-0104 criterion 6, the bytes.
+#[test]
+fn a_highlight_lights_the_thing_while_armed_and_near() {
+    let mut q = quests(nulls());
+    let objs = &mut q["content"]["quests"][0]["objectives"];
+    objs[1]["highlight"] = json!({ "within": 6 });
+    objs[0]["highlight"] = json!({ "within": 4 });
+    objs[2]["prop"] = json!({ "block": "minecraft:bell[attachment=floor,facing=north]" });
+    objs[2]["title"] = json!("Ring the bell");
+    objs[2]["highlight"] = json!({ "within": 6 });
+    let out = try_build(&variant("highlight", q, dialogue(GREETING))).expect("builds");
+    let act = fn_body(&out, "activate_o_pull").unwrap();
+    assert!(act.contains("function hello-world:hl_show_o_pull"), "{act}");
+    let show = fn_body(&out, "hl_show_o_pull").unwrap();
+    assert!(
+        show.contains("summon minecraft:block_display")
+            && show.contains("Name:\"minecraft:lever\"")
+            && show.contains("face:\"floor\"")
+            && show.contains("scale:[1.002f,1.002f,1.002f]")
+            && show.contains("translation:[-0.001f,-0.001f,-0.001f]")
+            && show.contains("glow_color_override:16755200"),
+        "{show}"
+    );
+    let bell = fn_body(&out, "hl_show_o_press").unwrap();
+    assert!(
+        bell.contains("summon minecraft:item_display") && bell.contains("id:\"minecraft:bell\""),
+        "a bell is drawn by its renderer: {bell}"
+    );
+    let poll = fn_body(&out, "hl_poll_o_pull").unwrap();
+    assert!(
+        poll.contains("if score #gs_pull dw.guide matches 1")
+            && poll.contains("@a[distance=..6,tag=!dw_cutscene]"),
+        "{poll}"
+    );
+    let on = fn_body(&out, "hl_on_o_pull").unwrap();
+    assert!(on.contains("{Glowing:1b}"), "{on}");
+    let talk = fn_body(&out, "hl_on_o_talk").unwrap();
+    assert!(
+        talk.contains(
+            "effect give @e[tag=dw_npc_keeper,type=!minecraft:interaction] minecraft:glowing"
+        ) && talk.contains("team join dw_hl"),
+        "{talk}"
+    );
+    let off = fn_body(&out, "hl_off_o_talk").unwrap();
+    assert!(
+        off.contains("effect clear") && off.contains("team leave"),
+        "{off}"
+    );
+    let done = fn_body(&out, "complete_o_pull").unwrap();
+    assert!(done.contains("kill @e[tag=dw_hl_o_pull]"), "{done}");
+    let setup = fn_body(&out, "setup").unwrap();
+    assert!(setup.contains("team modify dw_hl color gold"), "{setup}");
+    assert!(
+        out.contains_key(
+            "packtest-datapack/data/hello-world/test/guide_highlight_o_pull.mcfunction"
+        )
+    );
+}
+
+/// spec-0104 criterion 6: a wave and a `use` trigger are lit the same way.
+#[test]
+fn a_wave_and_a_trigger_are_lit() {
+    let v = std::fs::read_to_string(common::keep_trial_dir().join("quests.json")).unwrap();
+    let mut q: Value = serde_json::from_str(&v).unwrap();
+    for quest in q["content"]["quests"].as_array_mut().unwrap() {
+        for o in quest["objectives"].as_array_mut().unwrap() {
+            if o["type"] == "kill" {
+                o["highlight"] = json!({ "within": 10 });
+            }
+        }
+    }
+    let dir = std::env::temp_dir().join("dw-guidance-wave-hl");
+    let _ = std::fs::remove_dir_all(&dir);
+    common::materialize_from(
+        &common::keep_trial_dir(),
+        &json!({ "documents": { "quests": q } }),
+        &dir,
+    );
+    let out = try_build_ns(&dir, "keep-trial");
+    let on = std::str::from_utf8(
+        out.get("datapack/data/keep-trial/function/hl_on_o_slay.mcfunction")
+            .expect("the kill's highlight"),
+    )
+    .unwrap();
+    assert!(on.contains("@e[tag=dw_wave_"), "{on}");
+}
+
+fn try_build_ns(dir: &Path, _ns: &str) -> BuildOutput {
+    try_build(dir).expect("builds")
+}
+
+/// spec-0104 criterion 7.
+#[test]
+fn a_highlight_with_nothing_to_light_is_dw1016() {
+    let c = titled(
+        json!({ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper",
+        "title": "Talk to the keeper", "highlight": { "within": 6 } }),
+    );
+    let (d, b) = promise::check_highlights(&c);
+    assert!(d.is_empty(), "{d:?}");
+    assert_eq!((b.highlights, b.on_body), (1, 1));
+    let mut c2 = c.clone();
+    let o: delvewright_dsl::Objective = serde_json::from_value(json!({
+        "type": "collect", "id": "obj/bone", "item": "minecraft:bone", "count": 1,
+        "anchor": "anchor/exit", "dropped_by": "wave/none", "highlight": { "within": 6 }
+    }))
+    .unwrap();
+    c2.quests.content.quests[0].objectives.push(o);
+    let (d, b) = promise::check_highlights(&c2);
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert_eq!(d[0].code, promise::DW_HIGHLIGHT_INERT);
+    assert!(d[0].message.contains("obj/bone"));
+    assert_eq!(b.refused, 1);
+    for (on, ok) in [
+        (json!({ "on": "approach", "range": 3 }), false),
+        (json!({ "on": "step" }), false),
+        (
+            json!({ "on": "strike-assembly", "assembly": "assembly/x" }),
+            false,
+        ),
+        (json!({ "on": "use" }), true),
+        (json!({ "on": "strike" }), true),
+        (json!({ "on": "strike-npc", "npc": "npc/keeper" }), true),
+    ] {
+        let mut c3 = c.clone();
+        let mut t = json!({ "id": "trigger/t", "on": on, "effects": [],
+                            "highlight": { "within": 6 } });
+        if t["on"]["on"] != "strike-npc" && t["on"]["on"] != "strike-assembly" {
+            t["at"] = json!("anchor/exit");
+        }
+        let t: delvewright_dsl::EnvTrigger = serde_json::from_value(t).unwrap();
+        c3.quests.content.triggers.push(t);
+        let (d, _) = promise::check_highlights(&c3);
+        assert_eq!(d.is_empty(), ok, "{on}: {d:?}");
+        if !ok {
+            assert!(d[0].message.contains("trigger/t"), "{d:?}");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// §8 — the journal
+// ---------------------------------------------------------------------------
+
+const PAGE_ONE: &str = "Things on this shore answer to a hand: [[key|use]] on a lever.";
+const PAGE_TWO: &str = "The ferry comes when the bell is rung twice.";
+
+/// spec-0104 criterion 9, the bytes.
+#[test]
+fn the_journal_holds_the_manual_the_open_and_the_done() {
+    let g = json!({ "manual": { "pages": [PAGE_ONE, PAGE_TWO] } });
+    let out = try_build(&variant("journal", quests(g), dialogue(GREETING))).expect("builds");
+    let apply = out
+        .iter()
+        .find(|(k, _)| k.contains("/function/class_apply_"))
+        .map(|(_, v)| std::str::from_utf8(v).unwrap())
+        .unwrap();
+    assert!(
+        apply.contains("function hello-world:journal_give"),
+        "{apply}"
+    );
+    let give = fn_body(&out, "journal_give").unwrap();
+    assert!(
+        give.contains("minecraft:written_book[custom_data={dw_journal:1b},item_name={")
+            && give.contains("delvewright.ui.journal.title")
+            && give.contains("written_book_content={title:\"\""),
+        "{give}"
+    );
+    let im = |n: &str| {
+        out.get(&format!("datapack/data/hello-world/item_modifier/{n}.json"))
+            .map(|b| serde_json::from_slice::<Value>(b).unwrap())
+    };
+    let prefix = im("journal_prefix").unwrap();
+    assert_eq!(prefix["function"], "minecraft:set_written_book_pages");
+    assert_eq!(prefix["mode"], "replace_all");
+    let pages = prefix["pages"].as_array().unwrap();
+    assert_eq!(pages.len(), 3, "the compass page and two manual pages");
+    let text = serde_json::to_string(&prefix).unwrap();
+    assert!(text.contains(r#"{"keybind":"key.sneak"}"#), "{text}");
+    assert!(text.contains(r#"{"keybind":"key.use"}"#), "{text}");
+    for o in ["talk", "pull", "press"] {
+        assert_eq!(im(&format!("journal_open_{o}")).unwrap()["mode"], "append");
+        assert!(im(&format!("journal_open_following_{o}")).is_some());
+        assert!(im(&format!("journal_done_{o}")).is_some());
+    }
+    let write = fn_body(&out, "journal_write").unwrap();
+    let first = write.lines().next().unwrap();
+    assert_eq!(
+        first,
+        "$item modify entity @s $(slot) hello-world:journal_prefix"
+    );
+    assert!(write.contains(
+        "if score @s dw.track matches 2 run item modify entity @s $(slot) hello-world:journal_open_following_pull"
+    ));
+    assert!(write.contains(
+        "$execute if score #party dw.o_pull matches 1 run item modify entity @s $(slot) hello-world:journal_done_pull"
+    ));
+    // The announcement lines of spec-0093 stay beside the journal.
+    assert!(fn_body(&out, "announce_o_pull").is_some());
+
+    // An unannounced objective has no page.
+    let mut q = quests(nulls());
+    q["content"]["quests"][0]["objectives"][1]["announcement"] = json!("hidden");
+    q["content"]["quests"][0]["objectives"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("hint");
+    let out = try_build(&variant("journal-quiet", q, dialogue(GREETING))).unwrap();
+    assert!(!out.contains_key("datapack/data/hello-world/item_modifier/journal_open_pull.json"));
+
+    // No announced objective, no compass, no manual: no book.
+    let mut q = quests(nulls());
+    for o in q["content"]["quests"][0]["objectives"]
+        .as_array_mut()
+        .unwrap()
+    {
+        let o = o.as_object_mut().unwrap();
+        o.remove("title");
+        o.remove("hint");
+    }
+    let (_, c) = load(&variant("journal-none-src", q.clone(), dialogue(GREETING)));
+    assert!(
+        c.quests.content.quests[0]
+            .objectives
+            .iter()
+            .all(|o| o.title().is_none())
+    );
+    if let Ok(out) = try_build(&variant("journal-none", q, dialogue(GREETING))) {
+        assert!(
+            !out.keys()
+                .any(|k| k.contains("journal") || k.contains("guide"))
+        );
+        assert!(!all_text(&out).contains("dw.guide"));
+    }
+}
+
+/// spec-0104 criterion 9: a page over the book's box is a `DW0330` warning
+/// naming the page and the language; the key span is measured at its default
+/// key name; a zh-cn row that drops the key span is refused.
+#[test]
+fn a_journal_page_fits_its_book() {
+    use delvec::compiler::textfit;
+    let long = "A line that says a great deal about the shore. ".repeat(12);
+    let g = json!({ "manual": { "pages": [PAGE_ONE, long] } });
+    let (_, c) = load(&variant("journal-long", quests(g), dialogue(GREETING)));
+    let (d, measured) = textfit::check_book_pages(&c, &BTreeMap::new());
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert_eq!(d[0].code, textfit::DW_TEXT_OVERRUNS_SCREEN);
+    assert_eq!(d[0].severity, delvewright_dsl::Severity::Warning);
+    assert!(d[0].path.contains("guidance.manual.pages.1") && d[0].path.starts_with("en"));
+    assert!(measured.iter().any(|m| m.1 == "the compass page"));
+    assert_eq!(
+        textfit::book_lines("[[key|use]]", false),
+        1,
+        "a key span is one short line"
+    );
+    assert!(textfit::book_lines(&"word ".repeat(40), false) > 3);
+
+    let key = "guidance.manual.pages.0";
+    let mut s = BTreeMap::new();
+    s.insert(
+        "zh-cn".to_string(),
+        sidecar("zh-cn", &[(key, "这里的东西认得手：按右键。")]),
+    );
+    let (_, c) = load(&variant(
+        "journal-key",
+        quests(json!({ "manual": { "pages": [PAGE_ONE] } })),
+        dialogue(GREETING),
+    ));
+    let d = delvewright_dsl::textstyle::validate_inline_styles(&c, &s);
+    assert!(
+        d.iter()
+            .any(|d| d.code == delvewright_dsl::textstyle::INLINE_STYLE_UNMATCHED),
+        "{d:?}"
+    );
 }
