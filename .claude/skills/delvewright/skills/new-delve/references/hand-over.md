@@ -131,6 +131,8 @@ and verifies over rcon that the datapack actually loaded before it says READY:
     --written-world .out/written-world.json
 ```
 
+A reference level is served with `--prefabs campaigns/references/<id>/prefabs`.
+
 **`--run-report` and `--written-world` are step 10's two records**, and the gate
 admits only on them: the bot's critical path green, and the server's world equal
 to the engine's model, each for a build with this build's manifest. The build
