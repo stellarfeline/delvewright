@@ -1812,7 +1812,7 @@ mod tests {
         let base = json!({ "attributes": {
             "minecraft:audio/background_music": {},
             "minecraft:audio/music_volume": 0.0,
-            "minecraft:visual/sky_color": "#000000"
+            "minecraft:visual/sky_color": "#abcdef"
         }, "temperature": 0.5 });
         let mut m = BTreeMap::new();
         m.insert(
@@ -1824,7 +1824,7 @@ mod tests {
         assert_eq!(v["temperature"], json!(0.5));
         assert_eq!(
             v["attributes"]["minecraft:visual/sky_color"],
-            json!("#000000")
+            json!("#abcdef")
         );
         assert!(
             v["attributes"]
