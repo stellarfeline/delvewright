@@ -293,7 +293,6 @@ holding them at once.
 | `a-trap-that-takes-the-case-button-floor` | `DW1002` | `build` | having the plate trap's payload clear the pedestal column the case's button stands on: a beat nobody has to play, and the fill clears the pedestal before the button, so the server drops it |
 | `one-branch-takes-the-case-button-floor` | `DW1002` | `build` | having `obj/take-the-bone` clear the same column only once `flag/skipped-the-label` holds: a write only one branch makes, judged as every write is |
 | `a-copyist-in-the-open` | `DW1025` | `build` | standing the copyist, who declares `watch: "none"`, one block off the north wall, so seven of the cells a player can talk to her from lie behind her — though no step of the route talks to her |
-| `a-marshal-who-watches-only-his-own` | `DW1025` | `build` | narrowing the marshal's `watch` to the warder's class, so a wanderer coming from the north to answer him walks up to the back of a body facing south |
 | `a-name-two-bodies-wear-at-once` | `DW1026` | `validate` | giving the factor the curator's name, so two bodies of one character stand in the hall from world init |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
@@ -618,10 +617,12 @@ server, at every waypoint within reach, whether each body faces it, and prints
 
 The probes are the two ways a watch is refused:
 `probes/a-watcher-for-a-class-nobody-plays` (`DW0996`) and
-`probes/a-watcher-nobody-can-reach` (`DW0997`); and the two ways a body the
-party talks to is refused for facing away: `probes/a-marshal-who-watches-only-his-own`
-(on the route) and `probes/a-copyist-in-the-open` (a held facing, from every
-cell) (`DW1025`).
+`probes/a-watcher-nobody-can-reach` (`DW0997`); and a body the party talks to
+is refused for facing away by `probes/a-copyist-in-the-open` (a held facing,
+from every cell) (`DW1025`). The route's walk to the marshal arrives side-on,
+through the main gate in the west corner, so narrowing his watch to one class
+leaves him facing 90° off the approach, which `DW1025` admits; the route has
+no talk beat that a narrowed watch turns its back on.
 
 ## The heartbeat, and the drip
 
