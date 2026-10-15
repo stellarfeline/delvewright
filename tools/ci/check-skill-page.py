@@ -264,6 +264,15 @@ HEADING_RE = re.compile(r"^#{1,6} (.+?)\s*$")
 # A markdown link, and a bare `references/x.md` / `scripts/x.py` path in a span.
 LINK_RE = re.compile(r"\]\((?P<target>[^)\s]+)\)")
 BUNDLED_PATH_RE = re.compile(r"(?:references|scripts)/[A-Za-z0-9._-]+")
+# An absolute URL names a place on another host, not a path under the skill
+# root: a pinned link into the content repository's own `references/` directory
+# is not a pointer to a bundled file, so rule 7 reads the text without them.
+URL_RE = re.compile(r"https?://[^\s<>()\]`]+")
+
+
+def bundled_paths(text: str) -> list[str]:
+    """The bundled-file paths a document names, URLs set aside."""
+    return BUNDLED_PATH_RE.findall(URL_RE.sub("", text))
 
 # The subcommands that read no piece, so `--prefabs` is not owed. Kept here,
 # beside the rule, with the reason: `fmt` rewrites documents, `schema` and
@@ -1136,7 +1145,7 @@ def check(
     rep.bind("body line(s) of a 500 budget", len(body), 500)
 
     # -- 7. every bundled file is pointed at, and every pointer resolves -----
-    named = set(BUNDLED_PATH_RE.findall(page))
+    named = set(bundled_paths(page))
     files_on_disk = {str(p.relative_to(SKILL_ROOT)) for p in bundled()}
     for orphan in sorted(files_on_disk - named):
         rep.find(
@@ -1146,7 +1155,7 @@ def check(
         )
     pointed = 0
     for path in files:
-        for named_path in BUNDLED_PATH_RE.findall(path.read_text(encoding="utf-8")):
+        for named_path in bundled_paths(path.read_text(encoding="utf-8")):
             pointed += 1
             if not (SKILL_ROOT / named_path).is_file():
                 rep.find(
