@@ -841,6 +841,17 @@ const ANCHORS: &[Anchor] = &[
                figure the move cannot repeat",
         role: None,
     },
+    Anchor {
+        name: "anchor/flight-head",
+        pos: [FLIGHT.0, LOFT_TOP_Y + 1, LOFT.3],
+        facing: Some("north"),
+        trigger_block: None,
+        note: "the head of the broken flight, on the mezzanine's south edge where the relaid \
+               treads come out: every walk onto the loft steps through here, so a trigger \
+               the loft's objective relies on stands here and is judged entered by every \
+               walk (DW1044)",
+        role: None,
+    },
 ];
 
 /// **Container anchors** — the cells that hold a chest.
