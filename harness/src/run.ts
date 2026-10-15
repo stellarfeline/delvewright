@@ -215,7 +215,12 @@ async function main(): Promise<number> {
   const entryDeeds = driven
     ? assertEntryDeedsOnPath(
         driven,
-        criticalPath.steps as readonly { action: string; trigger?: string; objective?: string }[],
+        criticalPath.steps as readonly {
+          action: string;
+          trigger?: string;
+          objective?: string;
+          act?: string;
+        }[],
       )
     : [];
   if (driven && entryDeeds.length > 0) {
@@ -541,6 +546,7 @@ async function main(): Promise<number> {
     report.recordNamePreference(executor.namePreference());
     report.recordRests(executor.performedRests());
     report.recordAftermath(executor.aftermathResults);
+    report.recordMocks(executor.mockResults);
     report.recordLoadWindows(executor.loadWindows());
     for (const w of executor.loadWindows()) {
       process.stderr.write(
@@ -710,6 +716,7 @@ async function main(): Promise<number> {
             chronicle: b.chronicle,
             entryCommands,
             endings: b.endings,
+            mocked: executor.mockResults.map((m) => `${m.act}: mocked: ${m.kind}`),
           };
         }
         const skipped = selection.skipped.find((s) => s.branch === b.id);

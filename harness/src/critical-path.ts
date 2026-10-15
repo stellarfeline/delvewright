@@ -19,6 +19,7 @@
 
 import type { Watcher } from "./watch.ts";
 import type { AftermathEntry } from "./aftermath.ts";
+import type { GateTerm } from "./death-loop.ts";
 
 /**
  * `version` is the `dsl_version` the compiler built the campaign at. The harness
@@ -56,10 +57,15 @@ import type { AftermathEntry } from "./aftermath.ts";
  *   reason as `3`: the fallback — a literal set of entity names living in the
  *   harness — IS the defect, because it is right only for the campaigns whose
  *   author happened to pick those bodies.
+ * * `5` — a step may carry `keep_out`, the completion volumes of the objectives
+ *   armed while it is performed and not yet due, which every walk of the step keeps
+ *   out of; a `trigger` that carries nobody may name the `stand` outside them; and
+ *   a `mock` step performs an act no step kind drives by the engine's own bundle
+ *   function (spec-0108 §6.5).
  *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 4;
+export const CRITICAL_PATH_FORMAT_VERSION = 5;
 
 /** The closed set of critical-path step actions (spec-0002 / spec-0001 enum). */
 export const STEP_ACTIONS = [
@@ -73,6 +79,7 @@ export const STEP_ACTIONS = [
   "trigger",
   "witness-strike",
   "loop",
+  "mock",
   "assert-complete",
 ] as const;
 
@@ -408,6 +415,27 @@ export interface AssertCompleteStep {
   readonly aftermath?: readonly AftermathEntry[];
 }
 
+/**
+ * spec-0108 §6.5: perform an elective act no step kind drives — a shop purchase,
+ * a trap's payload, a shortcut's unlock, a fight's `on_kill`, a disarm — by
+ * running exactly the engine's own function for its bundle. Every `before` term
+ * must hold first and every `after` term once it has run: the state change is
+ * asserted, not assumed. Proves no objective and stands nowhere.
+ */
+export interface MockStep {
+  readonly action: "mock";
+  /** The act performed, as the branch plan's `entry_deeds` name it. */
+  readonly act: string;
+  /** Its kind, as the compiler's story model names it (`shop-offer`, `trap`, …). */
+  readonly kind: string;
+  /** The namespaced function the vanilla interaction would have called. */
+  readonly function: string;
+  /** The terms that hold in front of the act — what it changes. */
+  readonly before: readonly GateTerm[];
+  /** The same terms as the act leaves them; never empty. */
+  readonly after: readonly GateTerm[];
+}
+
 export type Step =
   | SelectClassStep
   | TalkToStep
@@ -419,6 +447,7 @@ export type Step =
   | TriggerStep
   | WitnessStrikeStep
   | LoopStep
+  | MockStep
   | AssertCompleteStep;
 
 /**
@@ -748,6 +777,35 @@ function presentationFields(
     });
   }
   return out;
+}
+
+/** One scoreboard term of a mock step, in the death plan's `GateTerm` shape. */
+function requireTerm(v: unknown, pointer: string): GateTerm {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) {
+    fail(pointer, `must be an object, got ${describe(v)}`);
+  }
+  const t = v as Record<string, unknown>;
+  rejectUnknownKeys(t, ["objective", "holder", "min", "max", "negate"], pointer);
+  const bound = (key: "min" | "max"): number | undefined => {
+    const b = t[key];
+    if (b === null || b === undefined) return undefined;
+    if (!Number.isInteger(b)) fail(`${pointer}/${key}`, `must be an integer or null, got ${describe(b)}`);
+    return b as number;
+  };
+  const min = bound("min");
+  const max = bound("max");
+  if (min === undefined && max === undefined) {
+    fail(pointer, "a term with both ends open matches every value and asserts nothing");
+  }
+  const negate = t["negate"];
+  if (typeof negate !== "boolean") fail(`${pointer}/negate`, `must be a boolean, got ${describe(negate)}`);
+  return {
+    objective: requireString(t, "objective", pointer),
+    holder: requireString(t, "holder", pointer),
+    min,
+    max,
+    negate,
+  };
 }
 
 /**
@@ -1195,6 +1253,37 @@ function parseStep(value: unknown, pointer: string): Step {
         times: times as number,
         transport,
         ...presentationFields(obj, pointer),
+      };
+    }
+    case "mock": {
+      rejectUnknownKeys(obj, ["action", "act", "kind", "function", "before", "after"], pointer);
+      const fn = requireString(obj, "function", pointer);
+      if (!/^[a-z0-9_.-]+:[a-z0-9_./-]+$/.test(fn)) {
+        fail(`${pointer}/function`, `must be a namespaced function id, got ${JSON.stringify(fn)}`);
+      }
+      const terms = (key: "before" | "after"): GateTerm[] => {
+        const raw = obj[key];
+        if (!Array.isArray(raw)) fail(`${pointer}/${key}`, `must be an array, got ${describe(raw)}`);
+        return raw.map((t, i) => requireTerm(t, `${pointer}/${key}/${i}`));
+      };
+      const before = terms("before");
+      const after = terms("after");
+      if (after.length === 0) {
+        fail(
+          `${pointer}/after`,
+          "a mock that changes nothing asserts nothing — the compiler exports no mock for such an act",
+        );
+      }
+      if (before.length !== after.length) {
+        fail(`${pointer}/before`, `must name the same ${after.length} term(s) as \`after\`, got ${before.length}`);
+      }
+      return {
+        action: "mock",
+        act: requireString(obj, "act", pointer),
+        kind: requireString(obj, "kind", pointer),
+        function: fn,
+        before,
+        after,
       };
     }
     case "assert-complete": {

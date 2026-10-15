@@ -413,6 +413,20 @@ pub(super) fn critical_path_json(
                     "action": "loop", "loop": loop_id, "pos": pos, "cross": cross,
                     "offset": offset, "times": times, "transport": transport
                 }),
+                // spec-0108 §6.5: an act the bot runs as the engine's own bundle
+                // function, asserting the terms it changes before and after.
+                Step::Mock { act, kind, function, before, after } => {
+                    let term = |t: &plan::GateTerm| json!({
+                        "objective": t.objective, "holder": t.holder(),
+                        "min": t.min, "max": t.max, "negate": t.negate,
+                    });
+                    json!({
+                        "action": "mock", "act": act, "kind": kind,
+                        "function": format!("{}:{function}", plan.namespace),
+                        "before": before.iter().map(term).collect::<Vec<_>>(),
+                        "after": after.iter().map(term).collect::<Vec<_>>(),
+                    })
+                }
                 Step::AssertComplete { objective, value } => {
                     let mut v = json!({
                         "action": "assert-complete", "scoreboard": { "objective": objective, "value": value }

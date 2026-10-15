@@ -1126,6 +1126,30 @@ pub fn build_with_warnings(
     // (each carries the `/trigger` line of the option belonging to that branch),
     // which is the only player-legal way to actuate a server-driven dialog button.
     for (slug, path) in branch_paths(plan, &moves, &actor_moves, &branch_takes, &path_legs)? {
+        // spec-0108 §6.5: a mock runs exactly the engine's own function for its
+        // act's bundle — one this datapack ships, or the build is wrong.
+        for m in path["steps"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|s| s["action"] == "mock")
+        {
+            let f = m["function"].as_str().unwrap_or("");
+            let file = f
+                .split_once(':')
+                .map(|(ns, name)| format!("datapack/data/{ns}/function/{name}.mcfunction"));
+            if !file.is_some_and(|k| out.contains_key(&k)) {
+                return Err(BuildFailure::Diagnostic {
+                    code: plan::DW_BUILD,
+                    message: format!(
+                        "internal invariant violation: {slug}'s mock of `{}` runs `{f}`, which \
+                         this datapack does not ship — the act's bundle function and the mock \
+                         disagree on its name. This is a compiler bug; stop and escalate",
+                        m["act"].as_str().unwrap_or("?")
+                    ),
+                });
+            }
+        }
         put_json(
             &mut out,
             &format!("validation/{}.json", world_file(&slug, "path")),

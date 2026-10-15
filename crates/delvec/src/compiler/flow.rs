@@ -730,6 +730,15 @@ impl Walk<'_, '_> {
         out
     }
 
+    /// This walk with ambient act `act`'s own bundle fired here, once, and no
+    /// ambient producer credited after it — exactly what the act itself writes,
+    /// which is what a mocked act is asserted by (spec-0108 §6.5).
+    pub fn performed_alone(&self, act: &str) -> Self {
+        let mut ahead = self.clone();
+        self.flow.perform_act(&mut ahead.st, act, self.taken + 1);
+        ahead
+    }
+
     /// This walk with ambient act `act` performed here, once, and nothing
     /// else — the state a mocked act leaves (spec-0108 §6.4): its bundle fired by
     /// the replay's one gate test, its producers then credited.

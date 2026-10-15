@@ -295,7 +295,10 @@ for row in merged["branches"]:
         state = "INFRA-FAILED"
     else:
         state = "skipped"
-    print(f"  {row['branch']}: {state}" + ("" if row["ran"] else f" — {row['reason']}"))
+    # spec-0108 §6.5: a world that ran an act by mock says so, with the count.
+    mocked = row.get("mocked") or []
+    mock_note = f" — {len(mocked)} mocked: {', '.join(mocked)}" if mocked else ""
+    print(f"  {row['branch']}: {state}{mock_note}" + ("" if row["ran"] else f" — {row['reason']}"))
 PY
 
 exit "$status"

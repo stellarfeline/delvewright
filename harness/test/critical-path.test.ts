@@ -16,7 +16,7 @@ import type { ReachCompletion } from "../src/critical-path.ts";
 function validRaw(): Record<string, unknown> {
   return {
     version: "0.2.0",
-    format_version: 4,
+    format_version: 5,
     campaign_id: "hello-world",
     non_combatants: {
       kinds: ["mannequin", "villager"],
@@ -192,7 +192,7 @@ test("rejects an unknown action with the closed enum in the message", () => {
     (err: unknown) =>
       err instanceof CriticalPathParseError &&
       err.pointer === "/steps/1/action" &&
-      /select-class, talk-to, reach, kill, collect, interact, rest, trigger, witness-strike, loop, assert-complete/.test(err.message),
+      /select-class, talk-to, reach, kill, collect, interact, rest, trigger, witness-strike, loop, mock, assert-complete/.test(err.message),
   );
 });
 
@@ -1134,4 +1134,36 @@ test("refuses a loop step whose transport is not cross + offset", () => {
       /\/steps\/2\/transport/.test(e.message) &&
       /cross \+ offset/.test(e.message),
   );
+});
+
+// --- spec-0108 §6.5: an act no step kind drives, performed by mock ----------------
+
+const candle = {
+  action: "mock",
+  act: "shop/stall/offer-0",
+  kind: "shop-offer",
+  function: "hello-world:shop_pick_0_0",
+  before: [{ objective: "dw.f_candle", holder: "#party", min: 1, max: 1, negate: true }],
+  after: [{ objective: "dw.f_candle", holder: "#party", min: 1, max: 1, negate: false }],
+};
+
+test("a mock step parses its act, its function and the terms it changes", () => {
+  const step = parseCriticalPath(withStep(candle)).steps[2];
+  assert.deepEqual(step, candle);
+});
+
+test("a mock that asserts nothing, or asserts a different set before and after, is refused", () => {
+  for (const [bad, pointer] of [
+    [{ ...candle, after: [] }, "/steps/2/after"],
+    [{ ...candle, before: [] }, "/steps/2/before"],
+    [{ ...candle, function: "shop_pick_0_0" }, "/steps/2/function"],
+    [{ ...candle, after: [{ objective: "dw.f_candle", holder: "#party", min: null, max: null, negate: false }] }, "/steps/2/after/0"],
+    [{ ...candle, pos: [0, 64, 0] }, "/steps/2/pos"],
+  ] as const) {
+    assert.throws(
+      () => parseCriticalPath(withStep(bad as Record<string, unknown>)),
+      (e: unknown) => e instanceof CriticalPathParseError && e.pointer === pointer,
+      JSON.stringify(bad),
+    );
+  }
 });

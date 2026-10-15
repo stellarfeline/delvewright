@@ -2177,9 +2177,37 @@ pub fn world_rows(c: &Campaign) -> Vec<WorldRow> {
             .as_ref()
             .map(|ctx| ctx.deeds.iter().map(|(i, a)| (a.clone(), *i)).collect())
             .unwrap_or_default();
+        // spec-0108 §6.5: an act no step kind drives is performed by mock — the
+        // engine's own bundle function, asserted by the terms it changes. A
+        // world still exports no path when its act has no such function, or
+        // changes nothing the replay reads (a mock of it would assert nothing).
+        let mocks = if deeds
+            .iter()
+            .any(|(a, _)| undrivable.contains_key(a.as_str()))
+        {
+            crate::compiler::plan::path_mocks(c, &flow, pt)
+        } else {
+            Vec::new()
+        };
         let needs: Vec<String> = deeds
             .iter()
-            .filter_map(|(a, _)| undrivable.get(a.as_str()).map(|r| format!("`{a}`: {r}")))
+            .filter_map(|(a, _)| {
+                let r = undrivable.get(a.as_str())?;
+                let mock = mocks.iter().find_map(|(_, m)| match m {
+                    crate::compiler::plan::Step::Mock { act, after, .. } if act == a => Some(after),
+                    _ => None,
+                });
+                match mock {
+                    Some(after) if !after.is_empty() => None,
+                    Some(_) => Some(format!(
+                        "`{a}`: {r}, and performing it changes no flag or datum the replay \
+                         can name, so a mock of it would assert nothing"
+                    )),
+                    None => Some(format!(
+                        "`{a}`: {r}, and its bundle has no engine function to mock it by"
+                    )),
+                }
+            })
             .collect();
         let no_path = if let Some(why) = &run.incoherent {
             Some(format!(
@@ -2189,7 +2217,7 @@ pub fn world_rows(c: &Campaign) -> Vec<WorldRow> {
             Some("unreachable: its run fires no ending".to_string())
         } else if !needs.is_empty() {
             Some(format!(
-                "its witness needs an act the harness has no step kind for — {}",
+                "its witness needs an act the harness can neither drive nor mock — {}",
                 needs.join("; ")
             ))
         } else {

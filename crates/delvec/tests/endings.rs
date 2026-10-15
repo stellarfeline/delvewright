@@ -888,12 +888,13 @@ fn permuting_two_optional_quests_keeps_every_world_id_and_path() {
 
 /// `tests/fixtures/ending-runs`: two endings on how often the bell (an elective
 /// `use` trigger past the Keeper's door) was rung, an epilogue line on a candle
-/// a shop sells. Four story worlds: the two the harness can walk export a path —
-/// the one that rings the bell carries it as an entry deed, performed after the
-/// door is open — and the two whose witness buys the candle export `path: null`
-/// with the reason naming the purchase.
+/// a shop sells. Four story worlds, and every one exports a path: the one that
+/// rings the bell carries it as an entry deed, performed after the door is open,
+/// and the two whose witness buys the candle perform the purchase by a mock step
+/// (spec-0108 §6.5) — the shop's own `shop_pick` function, asserted by the flag
+/// it sets.
 #[test]
-fn the_runner_fixture_exports_two_walkable_worlds_and_names_the_rest() {
+fn the_runner_fixture_exports_every_world_and_mocks_the_purchase() {
     let out = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("endings-runs.out");
     let _ = std::fs::remove_dir_all(&out);
     let fixture = common::compiler_fixtures_dir().join("ending-runs");
@@ -913,21 +914,78 @@ fn the_runner_fixture_exports_two_walkable_worlds_and_names_the_rest() {
     .unwrap();
     let rows = plan["branches"].as_array().unwrap();
     assert_eq!(rows.len(), 4, "{plan:#}");
-    let walkable: Vec<&Value> = rows.iter().filter(|r| r["path"].is_string()).collect();
-    assert_eq!(walkable.len(), 2, "{plan:#}");
-    let mut endings: Vec<&str> = walkable
+    assert!(
+        rows.iter()
+            .all(|r| r["path"].is_string() && r["path_reason"].is_null()),
+        "{plan:#}"
+    );
+    let mut endings: Vec<&str> = rows
         .iter()
         .map(|r| r["endings"][0].as_str().unwrap())
         .collect();
     endings.sort_unstable();
-    assert_eq!(endings, ["ending/rung", "ending/silent"]);
-    for r in rows.iter().filter(|r| r["path"].is_null()) {
-        let why = r["path_reason"].as_str().unwrap();
+    assert_eq!(
+        endings,
+        [
+            "ending/rung",
+            "ending/rung",
+            "ending/silent",
+            "ending/silent"
+        ]
+    );
+    let read = |r: &Value| -> Value {
+        serde_json::from_str(
+            &std::fs::read_to_string(out.join("validation").join(r["path"].as_str().unwrap()))
+                .unwrap(),
+        )
+        .unwrap()
+    };
+    // Each world that buys the candle performs the purchase by mock, in front of
+    // the walk-out, and nothing else does.
+    let buyers: Vec<&Value> = rows
+        .iter()
+        .filter(|r| {
+            r["entry_deeds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|d| d["act"] == "shop/stall/offer-0")
+        })
+        .collect();
+    assert_eq!(buyers.len(), 2, "{plan:#}");
+    for r in &rows[..] {
+        let path = read(r);
+        let mocks: Vec<&Value> = path["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|s| s["action"] == "mock")
+            .collect();
+        if !buyers.iter().any(|b| b["id"] == r["id"]) {
+            assert!(mocks.is_empty(), "{}: {mocks:?}", r["id"]);
+            continue;
+        }
+        assert_eq!(mocks.len(), 1, "{}: {path:#}", r["id"]);
+        let m = mocks[0];
+        assert_eq!(m["act"], "shop/stall/offer-0");
+        assert_eq!(m["kind"], "shop-offer");
+        assert_eq!(m["function"], "hello-world:shop_pick_0_0");
         assert!(
-            why.contains("a shop purchase has no harness step kind"),
-            "{why}"
+            out.join("datapack/data/hello-world/function/shop_pick_0_0.mcfunction")
+                .is_file()
         );
+        let flag = |negate: bool| {
+            json!([{"objective": "dw.f_candle", "holder": "#party", "min": 1, "max": 1,
+                    "negate": negate}])
+        };
+        assert_eq!(m["before"], flag(true), "{m:#}");
+        assert_eq!(m["after"], flag(false), "{m:#}");
+        assert!(m.get("keep_out").is_none(), "a mock walks nowhere: {m:#}");
     }
+    let walkable: Vec<&Value> = rows
+        .iter()
+        .filter(|r| !buyers.iter().any(|b| b["id"] == r["id"]))
+        .collect();
     // The deed world's path rings the bell after the talk that opens the door.
     let rung = walkable
         .iter()

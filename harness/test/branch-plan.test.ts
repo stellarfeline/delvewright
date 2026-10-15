@@ -250,3 +250,20 @@ test("a world run must perform every entry deed its row names", () => {
     (err: unknown) => err instanceof BranchTierError && /trigger\/bell/.test(err.message),
   );
 });
+
+test("an entry deed no step kind drives is on the path as a mock of that act", () => {
+  const json = planJson();
+  const hold = (json["branches"] as Record<string, unknown>[])[0]!;
+  hold["entry_deeds"] = [{ act: "shop/stall/offer-0", before_step: 1 }];
+  const world = parseBranchPlan(json, "/x").branches[0]!;
+  const performs = [
+    { action: "talk-to", objective: "obj/decide" },
+    { action: "mock", act: "shop/stall/offer-0" },
+  ];
+  assert.deepEqual(assertEntryDeedsOnPath(world, performs), ["shop/stall/offer-0"]);
+  // A mock of another act is not this deed.
+  assert.throws(
+    () => assertEntryDeedsOnPath(world, [{ action: "mock", act: "shop/stall/offer-1" }]),
+    (err: unknown) => err instanceof BranchTierError && /offer-0/.test(err.message),
+  );
+});

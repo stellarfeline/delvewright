@@ -501,6 +501,7 @@ export function assertEntryDeedsOnPath(
     readonly action: string;
     readonly trigger?: string;
     readonly objective?: string;
+    readonly act?: string;
   }[],
 ): string[] {
   const missing = branch.entryDeeds.filter((d) => {
@@ -512,9 +513,9 @@ export function assertEntryDeedsOnPath(
         (s) => s.objective !== undefined && branch.questOf.get(s.objective) === d.act,
       );
     }
-    // Any other act has no harness step kind; the compiler exports no path for
-    // a world that needs one, so meeting one here is a contract break.
-    return true;
+    // Any other act has no harness step kind: the path performs it by mock
+    // (spec-0108 §6.5), or the compiler exports no path for the world at all.
+    return !steps.some((s) => s.action === "mock" && s.act === d.act);
   });
   if (missing.length > 0) {
     throw new BranchTierError(

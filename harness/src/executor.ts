@@ -54,6 +54,7 @@ import { methods as climbMethods } from "./executor/climb.ts";
 import { methods as cutsceneMethods } from "./executor/cutscene.ts";
 import { methods as transportMethods } from "./executor/transport.ts";
 import { methods as loopMethods } from "./executor/loop.ts";
+import { methods as mockMethods } from "./executor/mock.ts";
 import { methods as sustainMethods } from "./executor/sustain.ts";
 import { methods as deathMethods } from "./executor/death.ts";
 import { methods as repaintMethods } from "./executor/repaint.ts";
@@ -147,6 +148,8 @@ export class MineflayerExecutor implements StepExecutor {
   campaignStoodAt: [number, number, number] | undefined;
   /** What the bot read of the world the ending left (spec-0108 §6.3). */
   aftermathResults: import("./aftermath.ts").AftermathResult[] = [];
+  /** Every act this run performed by mock (spec-0108 §6.5), in path order. */
+  mockResults: import("./mock.ts").MockResult[] = [];
   /** The step index currently executing, for marker attribution. */
   currentStep = -1;
   /**
@@ -610,6 +613,7 @@ type Methods = typeof connectionMethods &
   typeof cutsceneMethods &
   typeof transportMethods &
   typeof loopMethods &
+  typeof mockMethods &
   typeof sustainMethods &
   typeof deathMethods &
   typeof repaintMethods &
@@ -630,4 +634,4 @@ type Methods = typeof connectionMethods &
   typeof placementMethods &
   typeof clockMethods;
 export interface MineflayerExecutor extends Methods {}
-for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, pulseMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods]) Object.assign(MineflayerExecutor.prototype, methods);
+for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, mockMethods, sustainMethods, deathMethods, repaintMethods, pulseMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods]) Object.assign(MineflayerExecutor.prototype, methods);

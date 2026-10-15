@@ -2509,7 +2509,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   the release image's `org.opencontainers.image.revision` and
   `ca.stellarfeline.delvewright.campaign-commit` labels.
 - `<out>/critical-path.json`: the bot contract. `version` is the **campaign's DSL
-  version**; `format_version` is the **contract's own** version, currently `4`
+  version**; `format_version` is the **contract's own** version, currently `5`
   (`plan::CRITICAL_PATH_FORMAT_VERSION`) — bumped when what the harness is told
   about proving the path changes, independently of the DSL. At format 2 every
   objective-bearing step (`talk-to`/`reach`/`kill`/`collect`/`interact`) carries
@@ -2556,10 +2556,45 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   **A `trigger` step that carries the party** (spec-0083 §4) carries two more
   keys: `transport: [x, y, z]`, the link's `to` (the field every carried step
   has), and `stand: [x, y, z]`, the cell inside the link's volume the act is
-  performed from. Both are present exactly when performing the trigger carries
-  the party. The bot walks to `stand` as a block goal, performs the act from
+  performed from. The bot walks to `stand` as a block goal, performs the act from
   there, passes on the trigger's fired marker and then awaits the landing as for
   every carried step. The same keys ride every `world-path-<k>.json`.
+
+  **`keep_out[]` — the armed volumes a step stays out of** (format 5). Every
+  walking step carries, when non-empty, `{objective, lo, hi}` per `reach`
+  objective armed while the party performs it and not yet due — the emitter's
+  pending guard, read by `Flow::objective_armed`: its quest running, every
+  `after` complete, its flag gate holding, not done, a numeric term read as open
+  (`plan::PathFiring::keep_out`). A step's own objective is never in its list, nor
+  is a volume that meets a `reach`'s own (the two complete together on arrival).
+  A body inside one completes that objective out of turn, so the route proof
+  (`DW0311`) keeps every leg into the step out of them by the selector's hitbox
+  rule (`World::keep_out`, read in `World::standable_fp` as a lethal volume is),
+  and the harness prices the cells they reach like a lethal volume's on every
+  walk the step makes. A non-carrying `trigger` whose target lies within a reach
+  of one is performed from a `stand` the proof chooses outside every such volume
+  (`nav::route::leg::keep_out_stance`: standable on the leg's world, completing
+  the step, the target in sight, no NPC's station, nearest the target, then the
+  shorter walk, then cell order); the bot walks to it as a block goal. A leg, or
+  such a trigger, with no way outside is refused under `DW0311`, naming the armed
+  objective.
+
+  **`mock` — an act no step kind drives** (format 5, spec-0108 §6.5).
+  `{act, kind, function, before[], after[]}`: an entry deed of a story world that
+  is a shop purchase, a trap payload, a shortcut unlock, a fight's `on_kill`, or a
+  trap's or timed gate's disarm, placed in front of the step its run performed it
+  at. `function` is the act's own bundle function, namespaced
+  (`plan::mock_function`: `shop_pick_<i>_<j>`, `trap_fire_<id>`,
+  `shortcut_open_<id>`, `on_kill_w_<wave>`/`on_kill_a_<actor>`,
+  `trap_disarm_<id>`, `tgate_disarm_<id>`); the build refuses as an internal
+  invariant a mock naming a function the datapack does not ship. `before`/`after`
+  are the `GateTerm` rows (the death plan's shape) of every flag and datum the act
+  changes, read off the world without the act walked up to it, against that state
+  once the act's own bundle has fired (`Walk::performed_alone`). The bot asks every
+  `before` term, runs `execute as @s at @s run function <function>` in a reply
+  bracket judged by the shared rejection rule, asks every `after` term, prints
+  `[mock] …`, and records `mocked: <kind>` per act with the count in the run
+  report (`mocked`) and on the world's branch outcome.
 
   **A `reach` step a landing completes** carries `completed_on_landing: true`
   (`plan::completed_on_landing`, the one place the rule lives). It is present
@@ -2891,8 +2926,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   dialogue choices and the entry deeds that make it this world, and its path —
   plus one chronicle per world (every node's `happening` line in compiled play
   order) and, per world with a path, one **executable path** in the ordinary
-  `critical-path.json` contract, which is what the harness's world runs walk. A
-  world the harness cannot walk carries `path: null` and its `path_reason`; a
+  `critical-path.json` contract, which is what the harness's world runs walk. An
+  entry deed no step kind drives is a `mock` step on that path; a world whose deed
+  has no bundle function to mock it by, or changes nothing the replay can name,
+  and a world whose run is incoherent or fires no ending, carries `path: null` and
+  its `path_reason`; a
   declared branch no world realizes is named in `branches_unrealized`.
   **Validation metadata, not shipped gameplay**, excluded from the delve image
   like `critical-path-waypoints.json`, and emitted **only** for a campaign that

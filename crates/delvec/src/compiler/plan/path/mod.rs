@@ -4,10 +4,13 @@ use super::*;
 
 mod ancestors;
 mod drive;
+mod mock;
 mod region;
 mod triggers;
 
 pub(in crate::compiler::plan) use ancestors::*;
+pub use mock::mock_function;
+pub(crate) use mock::path_mocks;
 pub use region::*;
 pub(crate) use triggers::*;
 
@@ -168,6 +171,22 @@ pub enum Step {
         /// `cross + offset`: where every crossing lands the body.
         transport: [i32; 3],
     },
+    /// Perform an elective act no step kind drives by running the engine's own
+    /// function for its bundle (spec-0108 §6.5), asserting the scoreboard terms
+    /// it changes before and after. Proves no objective and stands nowhere.
+    Mock {
+        /// The act performed — a shop offer, a trap, a shortcut, a fight's
+        /// `on_kill`, a disarm (`flow::story` act ids).
+        act: String,
+        /// Its kind, as the story model names it (`shop-offer`, `trap`, …).
+        kind: String,
+        /// The function its bundle is lowered into, bare (no namespace).
+        function: String,
+        /// The terms that hold in front of the act and are what it changes.
+        before: Vec<GateTerm>,
+        /// The same terms as the act leaves them.
+        after: Vec<GateTerm>,
+    },
     /// Assert a scoreboard objective value.
     AssertComplete {
         /// The objective (`dw.campaign`).
@@ -192,6 +211,7 @@ impl Step {
             Step::SelectClass { .. }
             | Step::AssertComplete { .. }
             | Step::Trigger { .. }
+            | Step::Mock { .. }
             | Step::Loop { .. } => None,
         }
     }
@@ -212,7 +232,7 @@ impl Step {
             | Step::Interact { pos, .. }
             | Step::Trigger { pos, .. }
             | Step::Loop { pos, .. } => Some(*pos),
-            Step::SelectClass { .. } | Step::AssertComplete { .. } => None,
+            Step::SelectClass { .. } | Step::AssertComplete { .. } | Step::Mock { .. } => None,
         }
     }
 
@@ -272,6 +292,7 @@ impl Step {
             | Step::Kill { .. }
             | Step::Loop { .. }
             | Step::SelectClass { .. }
+            | Step::Mock { .. }
             | Step::AssertComplete { .. } => false,
         }
     }
@@ -338,10 +359,16 @@ pub fn completed_on_landing(walked: &[Step], transports: &[Option<[i32; 3]>], i:
 ///   handed a path without it would have to fall back to a literal set of entity
 ///   names, which is the compiler's knowledge written down where it cannot be
 ///   right.
+/// * `5` — a step may carry `keep_out`, the completion volumes of the objectives
+///   armed while it is performed and not yet due, and a non-carrying `trigger`
+///   may name the `stand` outside them it is performed from; a `mock` step
+///   performs an act no step kind drives by the engine's own bundle function
+///   (spec-0108 §6.5). A format change: a format-4 bot would walk into an armed
+///   volume and refuse a `mock` step it cannot perform.
 ///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 4;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 5;
 
 impl<'a> Plan<'a> {
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).
@@ -766,6 +793,12 @@ pub(super) fn build_critical_path(
             if let Some(pos) = step.pos() {
                 loops.stand(area, pos);
             }
+        }
+        // spec-0108 §6.5: an entry deed no step kind drives is performed by
+        // mock, after the triggers due here, from the state they leave.
+        for m in mock::mocks_before(campaign, flow, path, si) {
+            steps.push(m);
+            loops.record();
         }
         let Some(obj) = quest
             .objectives
@@ -1194,10 +1227,9 @@ pub(super) fn build_critical_path(
     };
     let mut armed_by_step: Vec<Vec<crate::compiler::reach::KeepOut>> = (0..steps.len())
         .map(|k| {
-            if matches!(
-                steps[k],
-                Step::SelectClass { .. } | Step::AssertComplete { .. }
-            ) {
+            // A step that stands nowhere walks nowhere: a class pick, a mock,
+            // the completion assertion.
+            if steps[k].pos().is_none() {
                 return Vec::new();
             }
             si_start

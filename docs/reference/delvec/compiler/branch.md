@@ -48,8 +48,10 @@ every branch point's `forks_on` and every flag a final scene reads),
 `participation{performs[],skips[]}`, `inputs` (the class each scene input is
 left in), `endings`, `entry_choices`, `entry_deeds` (each elective act performed
 and the step it precedes), `path` (`world-path-<k>.json`, or `null` with
-`path_reason` — unreachable, or a witness that needs an act no harness step
-performs: a trap, a disarm, a shortcut, a purchase, a credited kill), `chronicle`
+`path_reason` — unreachable, or a witness whose act no harness step drives and
+no `mock` step can perform: a trap, a disarm, a shortcut, a purchase or a credited
+kill whose bundle has no function, or changes nothing the replay can name;
+spec-0108 §6.5), `chronicle`
 (`world-chronicle-<k>.md`), `reachable`; plus `branches_unrealized`. It is
 emitted when the campaign declares a branch point or its story worlds outnumber
 its dialogue selections. Every world with a path gets its own route proof
