@@ -925,7 +925,7 @@ pub struct PieceOpening {
 /// A body the source campaign stood inside an extracted piece.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PieceEntity {
-    /// `npc`, `actor`, `assembly` or `furniture`.
+    /// `npc`, `actor`, `assembly`, `furniture` or `lethal-volume`.
     pub kind: String,
     /// The object's id in the source campaign.
     pub id: String,

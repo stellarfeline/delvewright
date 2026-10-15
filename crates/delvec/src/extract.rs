@@ -643,8 +643,8 @@ fn extract_from(args: &ExtractArgs<'_>, scope: &Scope, built: &Built<'_>) -> Res
         mitigation_text.map(|t| serde_json::from_str(&t).expect("mitigation round-trips"));
 
     // ---- what a cut leaves unestablished, and what it severs ----
+    severed_objects(campaign, built, &sources, lo, hi, &mut residue);
     if !place_scope {
-        severed_objects(campaign, built, &sources, lo, hi, &mut residue);
         let dark = dark_at_cut(&model, &contract, &openings, relight.as_ref());
         residue.push(Residue {
             object: "lighting".to_string(),
@@ -2008,6 +2008,20 @@ fn severed_objects(
             });
         }
     }
+    for v in &quests.lethal_volumes {
+        let Some((a, b)) = built.plan.zone_box(&v.region) else {
+            continue;
+        };
+        if straddles(a.map(i64::from), b.map(i64::from)) {
+            residue.push(Residue {
+                object: v.id.0.clone(),
+                document: "quests.json".to_string(),
+                severed: "a lethal volume the cut crosses: it is the campaign's, and the seated \
+                          campaign declares its own"
+                    .to_string(),
+            });
+        }
+    }
     for pl in &quests.pulses {
         let heard: Option<([i64; 3], [i64; 3])> = match (&pl.heard.region, &pl.heard.place) {
             (Some(zone), _) => built
@@ -2110,6 +2124,22 @@ fn derive_entities(
                 kind: "assembly".to_string(),
                 id: a.id.0.clone(),
                 anchor: anchor.to_string(),
+                document: "quests.json".to_string(),
+            });
+        }
+    }
+    // A lethal volume wholly inside: the campaign's danger, which the bytes
+    // do not hold and the seating campaign declares again (`DW0921` holds a
+    // pool nobody climbs out of to one).
+    for v in &quests.lethal_volumes {
+        let Some((a, b)) = built.plan.zone_box(&v.region) else {
+            continue;
+        };
+        if inside(a.map(i64::from)) && inside(b.map(i64::from)) {
+            out.push(PieceEntity {
+                kind: "lethal-volume".to_string(),
+                id: v.id.0.clone(),
+                anchor: v.region.anchor.as_str().to_string(),
                 document: "quests.json".to_string(),
             });
         }

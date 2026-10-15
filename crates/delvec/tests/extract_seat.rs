@@ -1332,7 +1332,17 @@ fn criterion_15_the_creature_extracted_and_seated() {
     let root = tempdir("c15");
     let lib = root.join("lib");
     let scope = CREATURE.join(",");
-    let (code, out) = extract(&src, &prefabs, &scope, &lib, "the-fathomer");
+    // `DW_STRANDING_EXTRACTED=<dir>` hands an extraction already made by this
+    // binary (a re-run of the seating half); the measurement of record runs
+    // without it.
+    let (code, out) = match std::env::var("DW_STRANDING_EXTRACTED") {
+        Ok(dir) => {
+            common::copy_dir_all(Path::new(&dir), &lib);
+            let log = std::fs::read_to_string(Path::new(&dir).join("extract.log")).unwrap();
+            (Some(0), log)
+        }
+        Err(_) => extract(&src, &prefabs, &scope, &lib, "the-fathomer"),
+    };
     assert_ne!(
         code,
         Some(3),
@@ -1455,6 +1465,48 @@ fn criterion_15_the_creature_extracted_and_seated() {
         .iter()
         .map(|s| s["anchor"].as_str().unwrap().to_string())
         .collect();
+    // The stations a body goes to: every one but those the source names
+    // only as the centre of a volume it never stands in (a lethal volume's
+    // region) — the route proves what the source's own quests walked to.
+    let source_quests: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(src.join("quests.json")).unwrap()).unwrap();
+    fn named_outside_volumes(v: &serde_json::Value, key: Option<&str>, out: &mut BTreeSet<String>) {
+        match v {
+            serde_json::Value::Object(o) => {
+                for (k, x) in o {
+                    if k != "lethal_volumes" {
+                        named_outside_volumes(x, Some(k), out);
+                    }
+                }
+            }
+            serde_json::Value::Array(a) => {
+                for x in a {
+                    named_outside_volumes(x, key, out);
+                }
+            }
+            serde_json::Value::String(t) if t.starts_with("anchor/") => {
+                out.insert(t.clone());
+            }
+            _ => {}
+        }
+    }
+    let mut walked_to: BTreeSet<String> = BTreeSet::new();
+    named_outside_volumes(&source_quests["content"], None, &mut walked_to);
+    let lethal_only: Vec<String> = stations
+        .iter()
+        .filter(|st| {
+            !walked_to.contains(*st)
+                && serde_json::to_string(&source_quests["content"]["lethal_volumes"])
+                    .unwrap()
+                    .contains(&format!("\"{st}\""))
+        })
+        .cloned()
+        .collect();
+    println!("stations the source names only as a lethal volume's centre: {lethal_only:?}");
+    let stations: Vec<String> = stations
+        .into_iter()
+        .filter(|st| !lethal_only.contains(st))
+        .collect();
     let gates: Vec<String> = m["anchors"]
         .as_object()
         .unwrap()
@@ -1473,6 +1525,27 @@ fn criterion_15_the_creature_extracted_and_seated() {
         ],
         [80, 60, 180],
     );
+    // The dangers the bytes do not hold, declared again by the campaign that
+    // seats the piece: each lethal volume `entities[]` records, as the source
+    // declared it.
+    let lethal: Vec<serde_json::Value> = entities
+        .iter()
+        .filter(|e| e["kind"] == "lethal-volume")
+        .filter_map(|e| {
+            source_quests["content"]["lethal_volumes"]
+                .as_array()?
+                .iter()
+                .find(|v| v["id"] == e["id"])
+                .cloned()
+        })
+        .collect();
+    println!(
+        "lethal volumes the seating campaign declares again: {}",
+        lethal.len()
+    );
+    common::patch_file(&seated.join("quests.json"), |v| {
+        v["content"]["lethal_volumes"] = serde_json::Value::Array(lethal.clone());
+    });
     // The body's own gates, named by the campaign that seats it and opened by
     // its first beat; then a walk to every station the piece declares.
     common::patch_file(&seated.join("layout-graph.json"), |v| {
@@ -1583,6 +1656,17 @@ fn criterion_15_the_creature_extracted_and_seated() {
     );
     assert_eq!(code, Some(0), "{out}");
     println!("{}", out.lines().find(|l| l.starts_with("seated")).unwrap());
+    // The body's light came in part from what stood around it; standing
+    // alone, its places declared no `boxes[].lighting` for the extraction to
+    // carry, and `DW0210` asks the seating campaign — which answers it by
+    // asking the whole to light the piece.
+    if x.get("relight").is_none() {
+        common::patch_file(&seated.join("site-plan.json"), |v| {
+            v["content"]["boxes"][0]["lighting"] =
+                serde_json::json!({"fixture": "torch", "min_light": 3});
+        });
+        println!("the seating campaign declares `boxes[].lighting {{torch, 3}}` on the body");
+    }
     let (code, out) = build(&seated, &lib, &root.join("out"));
     assert_eq!(code, Some(0), "{out}");
     for l in out
