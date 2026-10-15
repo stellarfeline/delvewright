@@ -3014,9 +3014,9 @@
         "kind": "dw"
       },
       "finding": "characters stood with their backs to the player as the player walked up to talk",
-      "general_form": "a body the party talks to faces the direction the party arrives from, or watches the party (`watch`), at the moment the talk is owed",
+      "general_form": "a body the party talks to watches the party by default; a body declared to hold its facing (`watch: \"none\"`) faces every cell the party can talk to it from, and one that watches only a class faces the party's approach at the moment the talk is owed",
       "id": "str-15",
-      "note": "Carried by DW1025 (compiler::approach, build tier): at every talk-to step of every configuration, the bearing from the body's feet to the party's last walked cell before it comes into talking reach (read off the leg the route proof walked) is compared with the yaw the body holds there, its home anchor's facing or the arrival turn of the walk that left it at the station; more than 90 degrees off without a `nearest` watch reaching the approach is refused, naming the watch that turns it. The skill's prose rule (`references/story.md`) is now a pointer at the check. Recurring across campaigns.",
+      "note": "Carried by DW1025 (compiler::approach, build tier) in two shapes. Every NPC a player can talk to watches the nearest player within 8 blocks unless it declares otherwise (`dsl::DEFAULT_WATCH_WITHIN`, resolved by `dsl::body_watch_sites`). On a walked route, at every talk-to step of every configuration, a body whose watch does not reach the approach (a class watch, or a short declared `within`) is judged by the yaw it holds against the party's last walked cell before it comes into talking reach. A body declaring `watch: \"none\"` is judged at every stance it holds (home summon, each walk's arrival) against every cell of the walked population from which a player can talk to it; any cell more than 90 degrees behind is refused. The skill's story guidance asks the author to decide, per speaking character, whether its gaze must not follow the player and to declare it. Recurring across campaigns.",
       "round": 1,
       "triage": "capability"
     },
