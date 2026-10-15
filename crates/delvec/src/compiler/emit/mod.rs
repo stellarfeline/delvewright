@@ -600,7 +600,6 @@ pub fn build_with_warnings(
     // After the declaration proofs, so a body whose mark leaves its piece
     // (`DW0897`) is sent to that line rather than told nobody can reach it.
     let mut watch_binding = prove_watchers(plan, &population)?;
-    drop(population);
 
     // ---- the world block: every proof over the assembled world ----
     let WorldProofs {
@@ -639,6 +638,26 @@ pub fn build_with_warnings(
         &mut warnings,
         &mut pacing,
     )?;
+
+    // ---- `DW1025`: a body that holds its facing faces every approach ----
+    //
+    // After the world block, because it reads the walks that leave a body
+    // where it stands (`moves`), over the watchers' population. The line prints
+    // before the verdict.
+    {
+        let (binding, findings) = crate::compiler::approach::check_held(plan, &population, &moves);
+        eprintln!("{}", binding.line());
+        if let Some((first, rest)) = findings.split_first() {
+            for extra in rest {
+                eprintln!("{} [error] build: {}", extra.code, extra.message);
+            }
+            return Err(BuildFailure::Diagnostic {
+                code: first.code,
+                message: first.message.clone(),
+            });
+        }
+    }
+    drop(population);
 
     // Every `spawn-wave` effect must resolve a spawn position, or its emitted
     // `function <ns>:spawn_<wave>` call would dangle to a never-emitted function and
@@ -974,7 +993,7 @@ pub fn build_with_warnings(
     // spec-0101 §5.4: the bot's watchers ride the record it already reads, and
     // the per-watcher record the PackTests stand on is stated beside it. Both
     // absent for a campaign that declares no watcher → byte-identical.
-    if watch_binding.declared() > 0 {
+    if watch_binding.watchers() > 0 {
         if let Some(obj) = cp.as_object_mut() {
             obj.insert(
                 "watchers".to_string(),

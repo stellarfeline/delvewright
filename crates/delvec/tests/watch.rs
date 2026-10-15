@@ -103,13 +103,17 @@ fn validation_codes(raw: &RawCampaign) -> Vec<(String, String)> {
 }
 
 fn build(campaign: &Campaign) -> Result<BuildOutput, BuildFailure> {
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    build_in(campaign, &common::prefabs_dir())
+}
+
+fn build_in(campaign: &Campaign, dir: &std::path::Path) -> Result<BuildOutput, BuildFailure> {
+    let prefabs = PrefabRegistry::load_dir(dir).unwrap();
     let plan = Plan::build(campaign, &prefabs).expect("plan builds");
     let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for area in &plan.areas {
         for piece in &area.pieces {
             for t in &piece.templates {
-                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                let bytes = std::fs::read(dir.join(&t.structure_file)).unwrap();
                 structures.insert(t.structure_file.clone(), bytes);
             }
         }
@@ -254,7 +258,9 @@ fn a_watch_nobody_can_draw_is_dw0997_and_its_ceiling_passes() {
     assert!(ceiling > 1);
     let out = build(&floating(ceiling)).unwrap_or_else(|e| panic!("within {ceiling}: {e:?}"));
     let w = watchers_json(&out).expect("watchers.json written");
+    // The keeper watches by default; the puppet's is the one declaration.
     assert_eq!(w["binding"]["declared"], 1);
+    assert_eq!(w["binding"]["by_default"], 1);
     assert_eq!(w["binding"]["refused"], 0);
 }
 
@@ -298,8 +304,59 @@ fn the_binding_counts_every_watcher_over_a_non_empty_population() {
 }
 
 #[test]
-fn a_campaign_with_no_watch_emits_none_of_it() {
+fn a_keeper_declaring_no_watch_watches_the_nearest_player_by_default() {
+    // hello-world's keeper has a dialogue tree, so a player can talk to it.
     let out = built(None, None);
+    assert_eq!(
+        function(&out, "watch_tick").expect("watch_tick emitted"),
+        format!(
+            "execute as @e[tag=dw_npc_keeper,tag=dw_npc,tag=dw_watch,tag=!dw_unseen,limit=1] at @s \
+             anchored eyes run rotate @s facing entity @p[distance=..{},tag=!dw_cutscene] eyes\n",
+            delvewright_dsl::DEFAULT_WATCH_WITHIN
+        )
+    );
+    let b = &watchers_json(&out).expect("watchers.json written")["binding"];
+    assert_eq!(b["watchers"], 1, "{b}");
+    assert_eq!(b["declared"], 0, "{b}");
+    assert_eq!(b["by_default"], 1, "{b}");
+}
+
+/// hello-room with `anchor/keeper-stand` facing south, in a scratch directory.
+fn stand_facing_south() -> std::path::PathBuf {
+    let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("watch-stand-south-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let src = common::prefabs_dir();
+    std::fs::copy(src.join("hello-room.nbt"), dir.join("hello-room.nbt")).unwrap();
+    let mut meta: Value =
+        serde_json::from_str(&std::fs::read_to_string(src.join("hello-room.json")).unwrap())
+            .unwrap();
+    meta["anchors"]["anchor/keeper-stand"]["facing"] = json!("south");
+    std::fs::write(
+        dir.join("hello-room.json"),
+        serde_json::to_string_pretty(&meta).unwrap(),
+    )
+    .unwrap();
+    dir
+}
+
+#[test]
+fn a_campaign_whose_bodies_watch_nobody_emits_none_of_it() {
+    // The keeper declares `none`, standing against the north wall facing the
+    // room so its held facing faces every cell it is talked to from (`DW1025`),
+    // and it does not walk; the actor declares no watch.
+    let mut r = raw(Some(json!("none")), None);
+    r.npcs = common::patch_doc(&r.npcs, |d| {
+        d["content"]["npcs"][0]["offset"] = json!([0, 0, -3]);
+    });
+    r.quests = common::patch_doc(&r.quests, |d| {
+        d["content"]["quests"][0]["cast"]["npc/keeper"]["at"] =
+            json!({ "anchor": "anchor/keeper-stand", "offset": [0, 0, -3] });
+        common::objective_effects(d, 0, "obj/talk").retain(|e| e["type"] != "move-npc");
+    });
+    let c = parse_campaign(&r).expect("campaign parses");
+    let out = build_in(&c, &stand_facing_south()).unwrap_or_else(|e| panic!("build fails: {e:?}"));
     assert!(function(&out, "watch_tick").is_none());
     assert!(watchers_json(&out).is_none());
     let cp: Value = serde_json::from_slice(out.get("critical-path.json").unwrap()).unwrap();
@@ -308,7 +365,7 @@ fn a_campaign_with_no_watch_emits_none_of_it() {
         let text = String::from_utf8_lossy(bytes);
         assert!(
             !text.contains("dw_watch") && !text.contains("watch_tick"),
-            "`{path}` carries watch bytes in a campaign that declares no watch"
+            "`{path}` carries watch bytes in a campaign whose bodies watch nobody"
         );
     }
 }
