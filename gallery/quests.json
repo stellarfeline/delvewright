@@ -1460,21 +1460,31 @@
                       "look_at": {
                         "anchor": "anchor/stall"
                       },
+                      "music": {
+                        "audio/background_music": {
+                          "default": {
+                            "max_delay": 0,
+                            "min_delay": 0,
+                            "replace_current_music": true,
+                            "sound": "minecraft:music_disc.pigstep"
+                          }
+                        }
+                      },
                       "path": [
                         {
                           "anchor": "anchor/stall",
                           "offset": [
                             0,
-                            14,
-                            -24
+                            28,
+                            -16
                           ]
                         },
                         {
                           "anchor": "anchor/stall",
                           "offset": [
                             0,
-                            16,
-                            -24
+                            30,
+                            -16
                           ]
                         }
                       ],

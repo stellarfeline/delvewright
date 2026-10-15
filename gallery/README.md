@@ -624,8 +624,11 @@ track and a `set-atmosphere` paints the reckoning over the whole hall, so the
 muster's flyover a step later hears the reckoning — and says so
 (`hears: atmosphere/the-reckoning`); the build reads every 4-cell its camera
 passes in the configuration the forced route reaches it in and confirms it. The
-emeralds' wide shot, whose camera hangs over the void outside the hall, says it
-hears the ground (`hears: null`). The porch at the long hall's mouth cuts the
+emeralds' wide shot, whose camera hangs in the void above the hall's sky, says
+it hears the ground (`hears: null`) — and scores itself (spec-0109 §3.6): its
+`music` names a single-file disc that replaces whatever plays and loops, so for
+the shot's length every 4-cell its camera can be in wears a variant of the
+ground carrying that disc, and when it ends every cell wears the ground again. The porch at the long hall's mouth cuts the
 cave's ambient mood and the warden's heartbeat by name, and silences the
 jukebox, weather, friendly-creature and voice categories, and the played sounds
 carry their own categories — the anvil and the case in `block`, the warden
@@ -637,17 +640,22 @@ written.
 The build says what it read on its `music binding:` line and writes
 `validation/music.json`: each biome's music, the word for what a playing track
 does when the camera enters (`replaces`, `plays-out`, `fades`,
-`plays-out-at-gain`) and its listening station on the forced route; each
+`plays-out-at-gain`); each
 cutscene's judged cells and verdict; each `stop-sound`'s biome where it fires
-and what it cuts there. PackTest re-establishes each declaring cutscene's
-configuration and reads the biome under every camera cell
-(`music_hears_<n>`).
+and what it cuts there; and for the scored wide shot its painted cells, its one
+paint line, its variant (`gallery:music/<digest>/void`) and the way out at the
+ground. PackTest runs the wide shot's real paint, restore, interrupt and restart
+functions and reads every painted cell's biome after each
+(`cutscene_music_<n>`).
 
 The probes are the ways a scene's music is refused:
 `probes/a-sky-that-leaves-the-music-to-the-game`,
 `probes/a-ground-that-leaves-the-music-to-the-game`,
-`probes/music-for-a-builder-nobody-is` and
-`probes/a-ground-that-paints-its-own-sky` (`DW1031`),
+`probes/music-for-a-builder-nobody-is`,
+`probes/a-ground-that-paints-its-own-sky`,
+`probes/a-cutscene-scored-with-nothing`,
+`probes/a-cutscene-scored-for-a-builder-nobody-is` and
+`probes/a-cutscene-that-paints-its-own-sky` (`DW1031`),
 `probes/a-cutscene-that-hears-the-wrong-place` (`DW1032`),
 `probes/a-cutscene-that-hears-a-sky-nobody-declared` (`DW0112`),
 `probes/a-sound-stopped-in-a-category-the-game-lacks` (`DW0100`) and
