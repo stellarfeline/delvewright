@@ -51,6 +51,14 @@ it where the block is authored, never by moving the write later:
 The build stops before a server boots; `check-written-world.py`'s item-entity
 count is the server's own answer if one is booted.
 
+**`DW0891` says to seat the volume "on an anchor at the pit's bottom" and the
+place is detailed.** A quest names only the node's owed names, so declare a
+station on the node (`kind: point`), bind it in `detail-plan.json` to the
+piece's anchor on the pit's floor, and put the volume's `region.anchor` on it.
+That anchor may stand in the piece's `no_body` region. `DW0845` refuses it only
+when something else (an NPC, an objective, a wave) names the same station, and
+it names that use: give the volume a station of its own.
+
 **`DW0438`: a `collect` container "holds `minecraft:air`, not a container".**
 The anchor you pointed at is not standing on a chest or barrel — an anchor named
 `anchor/chest` is not evidence there is one, and two shipped pieces declare

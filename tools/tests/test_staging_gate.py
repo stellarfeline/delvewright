@@ -51,6 +51,32 @@ def engine_of(gate):
     return _ENGINES[id(gate)]
 
 
+_LIVE_CODES: list[str] = []
+
+
+def live_codes() -> list[str]:
+    """Every DW code this repository's source declares — what an engine built
+    from this tree carries, and so what a fixture build made by "this engine"
+    states in its manifest. Read through the one source reader
+    (`tools/ci/check-dw-codes.py`), once."""
+    if not _LIVE_CODES:
+        path = REPO_ROOT / "tools" / "ci" / "check-dw-codes.py"
+        spec = importlib.util.spec_from_file_location("dw_codes_fixture", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _LIVE_CODES.extend(sorted(mod.source_codes()))
+    return _LIVE_CODES
+
+
+def manifest(*, codes=None, version="0.0.0-fixture", **fields) -> str:
+    """A build's `manifest.json` as the engine writes it: `delvec_version` and
+    `dw_codes` (the codes the building engine carries — by default every code
+    this tree declares), plus whatever the test names."""
+    doc = {"delvec_version": version, "dw_codes": live_codes() if codes is None else codes}
+    doc.update(fields)
+    return json.dumps(doc)
+
+
 # A DW code that certainly exists, is documented and is asserted by a test.
 # DW0100 is the stage-schema conformance error — the oldest rule in the
 # compiler; if it ever stops existing the whole DSL has been replaced.
@@ -81,9 +107,11 @@ def make_campaign(tmp_path, *, objectives, dsl_version="0.10.0"):
     return d
 
 
-def make_build(tmp_path, *, validation=None):
+def make_build(tmp_path, *, validation=None, with_manifest=True):
     b = tmp_path / "out"
     (b / "validation").mkdir(parents=True, exist_ok=True)
+    if with_manifest:
+        (b / "manifest.json").write_text(manifest())
     for name, doc in (validation or {}).items():
         (b / "validation" / name).write_text(json.dumps(doc))
     return b
@@ -175,6 +203,80 @@ def test_a_carrier_the_engine_does_not_have_is_red(gate, tmp_path):
     r = run(gate, tmp_path, row)
     assert r["verdict"] == "MISSING-CHECK"
     assert "DW9998" in r["detail"]
+
+
+def built_by(gate, tmp_path, *, codes, version="1.12.0"):
+    """`run`'s campaign over a build whose manifest says an engine carrying
+    exactly `codes` built it."""
+    camp = make_campaign(tmp_path, objectives=[{"type": "interact"}])
+    build = make_build(tmp_path)
+    (build / "manifest.json").write_text(manifest(codes=codes, version=version))
+    return gate.Subject(camp, build)
+
+
+def test_a_carrier_the_source_has_and_the_building_engine_lacks_is_refused(gate, tmp_path):
+    """The carrier is judged against the engine that BUILT the tree, never
+    against the source this gate reads. LIVE_CODE is live in source,
+    documented and tested; the build was compiled by an engine whose registry
+    did not hold it — a tree that engine built was never judged by the rule, so
+    the row it carries is not covered here. Refused by name, saying which
+    engine built the tree and that it predates the code."""
+    others = [c for c in live_codes() if c != LIVE_CODE]
+    subj = built_by(gate, tmp_path, codes=others)
+    r = gate.adjudicate(dict(BOUND_ROW, id="str"), engine_of(gate), subj)
+    assert r["verdict"] == "MISSING-CHECK", r
+    assert r["verdict"] in gate.RED_VERDICTS
+    assert LIVE_CODE in r["detail"]
+    assert "delvec 1.12.0" in r["detail"]
+    assert "predates" in r["detail"]
+    assert f"lists {len(others)} code(s)" in r["detail"]
+
+
+def test_the_same_carrier_the_building_engine_has_is_bound(gate, tmp_path):
+    """ONE variable against the test above: the building engine's registry
+    holds the code. Same source, same campaign, same row — BOUND."""
+    subj = built_by(gate, tmp_path, codes=[LIVE_CODE])
+    r = gate.adjudicate(dict(BOUND_ROW, id="str"), engine_of(gate), subj)
+    assert (r["verdict"], r["binding"]) == ("BOUND", 1), r
+
+
+def test_a_carrier_list_is_refused_when_the_building_engine_lacks_one_member(gate, tmp_path):
+    """`str-01`'s shape: a list carrier one of whose codes landed after the
+    tree was built. The member the engine has does not carry the row."""
+    row = dict(BOUND_ROW, id="str", carrier={"kind": "dw", "code": [LIVE_CODE, "DW0378"]})
+    subj = built_by(gate, tmp_path, codes=[LIVE_CODE])
+    r = gate.adjudicate(row, engine_of(gate), subj)
+    assert r["verdict"] == "MISSING-CHECK", r
+    assert "DW0378" in r["detail"] and "predates" in r["detail"]
+
+
+def test_a_build_whose_manifest_names_no_carried_codes_is_refused(gate, tmp_path):
+    """A tree from an engine that did not record its codes cannot answer, and
+    "cannot answer" is never "carried": refused, naming the engine and the
+    missing record."""
+    camp = make_campaign(tmp_path, objectives=[{"type": "interact"}])
+    build = make_build(tmp_path)
+    (build / "manifest.json").write_text(json.dumps({"delvec_version": "1.12.0", "outputs": {}}))
+    r = gate.adjudicate(dict(BOUND_ROW, id="str"), engine_of(gate), gate.Subject(camp, build))
+    assert r["verdict"] == "MISSING-CHECK", r
+    assert "dw_codes" in r["detail"] and "delvec 1.12.0" in r["detail"]
+    build_none = make_build(tmp_path / "bare", with_manifest=False)
+    r = gate.adjudicate(dict(BOUND_ROW, id="str"), engine_of(gate), gate.Subject(camp, build_none))
+    assert r["verdict"] == "MISSING-CHECK", r
+    assert "no manifest.json" in r["detail"]
+
+
+def test_the_cli_refuses_a_build_its_engine_predates(gate, tmp_path):
+    """End to end through the real gate: the refusal reaches the operator by
+    name, and no token is minted."""
+    camp = make_campaign(tmp_path, objectives=[{"type": "interact"}])
+    tree = make_build(tmp_path)
+    others = [c for c in live_codes() if c != LIVE_CODE]
+    (tree / "manifest.json").write_text(manifest(codes=others, version="1.12.0", outputs={"a": "b"}))
+    proc = stage(camp, tree, green_ledger(tmp_path))
+    assert proc.returncode == 1, proc.stderr
+    assert "not carried by the engine that built this tree (delvec 1.12.0)" in proc.stderr
+    assert not (tree / "staging-admission.json").exists()
 
 
 def test_a_named_invariant_that_no_longer_exists_is_red(gate, tmp_path):
@@ -311,7 +413,7 @@ def make_blockout_build(
 ):
     b = make_build(tmp_path, validation=validation)
     (b / "manifest.json").write_text(
-        json.dumps({"inputs": {k: "0" * 8 for k in inputs}, "outputs": {}})
+        manifest(inputs={k: "0" * 8 for k in inputs}, outputs={})
     )
     if massed is not None:
         n = len(massed) if line_count is None else line_count
@@ -851,10 +953,15 @@ def test_the_same_document_in_the_manifest_is_missing_check(gate, tmp_path):
 
 
 def test_a_build_that_cannot_say_what_it_read_fails_closed(gate, tmp_path):
-    """No manifest = no witness. "I could not look" is restored, not guessed."""
+    """No manifest = no witness. "I could not look" is restored, not guessed.
+
+    The row's carrier is a tool here: a `dw` carrier is refused on the same
+    missing manifest before the probe runs (no manifest names the engine that
+    built the tree), and the probe's own refusal is the subject."""
     camp = make_blockout_campaign(tmp_path)
-    build = make_build(tmp_path)  # deliberately no manifest.json
-    r = adjudicate_on(gate, camp, build, OPTIONAL_DOC_ROW)
+    build = make_build(tmp_path, with_manifest=False)
+    row = dict(OPTIONAL_DOC_ROW, carrier={"kind": "tool", "script": "creator/staging-gate.py"})
+    r = adjudicate_on(gate, camp, build, row)
     assert r["verdict"] == "MISSING-CHECK"
     assert "cannot say which documents the compiler read" in r["detail"]
 
@@ -864,7 +971,7 @@ def test_a_manifest_with_no_inputs_object_fails_closed(gate, tmp_path):
     answering nothing is not the same as answering zero."""
     camp = make_blockout_campaign(tmp_path)
     build = make_blockout_build(tmp_path)
-    (build / "manifest.json").write_text(json.dumps({"inputs": "gone", "outputs": {}}))
+    (build / "manifest.json").write_text(manifest(inputs="gone", outputs={}))
     r = adjudicate_on(gate, camp, build, OPTIONAL_DOC_ROW)
     assert r["verdict"] == "MISSING-CHECK"
 
@@ -876,7 +983,7 @@ def test_the_measured_zero_is_adjudicated_unchanged_on_an_assembled_campaign(gat
     camp = make_campaign(tmp_path, objectives=[{"type": "talk-to"}])
     build = make_build(tmp_path)
     (build / "manifest.json").write_text(
-        json.dumps({"inputs": {"quests.json": "0" * 8}, "outputs": {}})
+        manifest(inputs={"quests.json": "0" * 8}, outputs={})
     )
     r = adjudicate_on(gate, camp, build, OPTIONAL_DOC_ROW)
     assert r["verdict"] == "INAPPLICABLE"
@@ -1041,6 +1148,7 @@ def held_build(tmp_path, where, lines):
     fn.mkdir(parents=True)
     (b / "validation").mkdir()
     (fn / "tick.mcfunction").write_text("\n".join(lines) + "\n")
+    (b / "manifest.json").write_text(manifest())
     return b
 
 
@@ -1765,7 +1873,7 @@ def admitted_tree(tmp_path, gate, *, overridden=False):
     """A build tree carrying a real token, minted by the real gate."""
     tree = tmp_path / "out"
     (tree / "validation").mkdir(parents=True, exist_ok=True)
-    (tree / "manifest.json").write_text('{"outputs": {"a": "b"}}')
+    (tree / "manifest.json").write_text(manifest(outputs={"a": "b"}))
     camp = make_campaign(tmp_path, objectives=[{"type": "interact"}])
     ledger = tmp_path / "led.json"
     rows = [dict(BOUND_ROW, id="ok")]
@@ -1822,18 +1930,23 @@ def test_a_refusal_revokes_an_existing_token(gate, tmp_path):
 def test_a_token_minted_for_another_build_is_rejected(gate, tmp_path):
     """Run the gate green on one tree, serve another — the obvious bypass."""
     tree = admitted_tree(tmp_path, gate)
-    (tree / "manifest.json").write_text('{"outputs": {"a": "CHANGED"}}')
+    (tree / "manifest.json").write_text(manifest(outputs={"a": "CHANGED"}))
     r = verify(tree)
     assert r.returncode == 1
     assert "DIFFERENT build tree" in r.stderr
 
 
 def test_a_build_with_no_manifest_cannot_be_admitted(gate, tmp_path):
+    """A clean ledger over a tree with no manifest still has nothing to bind a
+    token to. The row's carrier is a tool: a `dw` carrier on the same tree is
+    already red (no manifest names the engine that built it), and the subject
+    here is the identity refusal a clean ledger reaches."""
     tree = tmp_path / "out"
     tree.mkdir()
     camp = make_campaign(tmp_path, objectives=[{"type": "interact"}])
     ledger = tmp_path / "led.json"
-    ledger.write_text(json.dumps({"findings": [dict(BOUND_ROW, id="ok")]}))
+    row = dict(BOUND_ROW, id="ok", carrier={"kind": "tool", "script": "creator/staging-gate.py"})
+    ledger.write_text(json.dumps({"findings": [row]}))
     proc = subprocess.run(
         [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree), *proofs(tree),
          "--ledger", str(ledger)],
@@ -1874,7 +1987,7 @@ def test_the_override_refuses_when_nothing_is_red(gate, tmp_path):
     """An override that overrode nothing would normalise the flag."""
     tree = tmp_path / "out"
     tree.mkdir()
-    (tree / "manifest.json").write_text("{}")
+    (tree / "manifest.json").write_text(manifest())
     camp = make_campaign(tmp_path, objectives=[{"type": "interact"}])
     ledger = tmp_path / "led.json"
     ledger.write_text(json.dumps({"findings": [dict(BOUND_ROW, id="ok")]}))
@@ -1886,7 +1999,7 @@ def test_the_override_refuses_when_nothing_is_red(gate, tmp_path):
 def _red_setup(tmp_path):
     tree = tmp_path / "out"
     tree.mkdir()
-    (tree / "manifest.json").write_text("{}")
+    (tree / "manifest.json").write_text(manifest())
     camp = make_campaign(tmp_path, objectives=[{"type": "interact"}])
     ledger = tmp_path / "led.json"
     ledger.write_text(json.dumps({"findings": [{"id": "r", "finding": "uncovered", "carrier": None}]}))
@@ -1980,7 +2093,7 @@ def gate_cli(tmp_path, where, objectives, rows, *extra):
     camp = make_campaign(root, objectives=objectives)
     tree = make_build(root)
     (tree / "manifest.json").write_text(
-        json.dumps({"inputs": {"quests.json": "0" * 8}, "outputs": {"a": where}})
+        manifest(inputs={"quests.json": "0" * 8}, outputs={"a": where})
     )
     ledger = root / "led.json"
     ledger.write_text(json.dumps({"findings": rows}))
@@ -2496,7 +2609,7 @@ def test_the_red_count_does_not_move_between_two_runs_of_one_tree(gate, tmp_path
     root.mkdir()
     camp = make_campaign(root, objectives=[{"type": "narrate"}])
     tree = make_build(root)
-    (tree / "manifest.json").write_text(json.dumps({"inputs": {"quests.json": "0" * 8}}))
+    (tree / "manifest.json").write_text(manifest(inputs={"quests.json": "0" * 8}))
     ledger = root / "led.json"
     ledger.write_text(json.dumps({"findings": [dict(SELF_HIT_ROW)]}))
     report = root / "out.gate" / "staging-gate.md"
@@ -2554,7 +2667,7 @@ def test_the_stale_count_guard_still_refuses(gate, tmp_path):
     root.mkdir()
     camp = make_campaign(root, objectives=[{"type": "narrate"}])
     tree = make_build(root)
-    (tree / "manifest.json").write_text(json.dumps({"inputs": {"quests.json": "0" * 8}}))
+    (tree / "manifest.json").write_text(manifest(inputs={"quests.json": "0" * 8}))
     ledger = root / "led.json"
     ledger.write_text(json.dumps({"findings": [
         {"id": "a", "finding": "uncovered", "carrier": None},
@@ -2597,7 +2710,7 @@ def test_the_staging_surface_writes_its_report_outside_the_tree(gate):
 def _proof_subject(tmp_path, *, red_ledger=False):
     tree = tmp_path / "out"
     (tree / "validation").mkdir(parents=True, exist_ok=True)
-    (tree / "manifest.json").write_text('{"outputs": {"a": "b"}}')
+    (tree / "manifest.json").write_text(manifest(outputs={"a": "b"}))
     camp = make_campaign(tmp_path, objectives=[{"type": "interact"}])
     ledger = tmp_path / "led.json"
     rows = [dict(BOUND_ROW, id="ok")]

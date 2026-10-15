@@ -433,7 +433,7 @@ with open(os.environ["JAVA_ARGS_OUT"], "a") as f:
     f.write("\\n".join(a) + "\\n--\\n")
 def val(flag):
     return a[a.index(flag) + 1] if flag in a else None
-home = a[0].split("=", 1)[1]
+home = next(x for x in a if x.startswith("-Dchunky.home=")).split("=", 1)[1]
 sd = val("-scene-dir") or "."
 pfm = b"PF\\n2 1\\n-1.0\\n" + struct.pack("<6f", 0.1, 0.2, 0.3, 0.4, 0.5, 0.6)
 if "-snapshot" in a:
@@ -460,7 +460,13 @@ def calls(out: Path) -> list[list[str]]:
     return [b.splitlines() for b in blocks if b.strip()]
 
 
-def render(root: Path, home: Path, *args: str, kit: bool = True) -> tuple[subprocess.CompletedProcess, Path]:
+def render(
+    root: Path,
+    home: Path,
+    *args: str,
+    kit: bool = True,
+    extra_env: dict[str, str] | None = None,
+) -> tuple[subprocess.CompletedProcess, Path]:
     if kit and not (home / "denoise").exists():
         install_kit(root, home)
     bindir = root.parent / "javabin"
@@ -477,6 +483,7 @@ def render(root: Path, home: Path, *args: str, kit: bool = True) -> tuple[subpro
     env["PATH"] = os.pathsep.join([str(bindir), str(shim), "/usr/bin", "/bin"])
     env["DELVEWRIGHT_CHUNKY_HOME"] = str(home)
     env["JAVA_ARGS_OUT"] = str(out)
+    env.update(extra_env or {})
     if out.exists():
         out.unlink()
     r = subprocess.run(
@@ -496,13 +503,50 @@ def test_chunky_sh_renders_with_the_pinned_classpath(tmp_path: Path) -> None:
 
     assert r.returncode == 0, r.stderr
     argv = calls(out)[0]
-    assert argv[0] == f"-Dchunky.home={home}"
+    assert f"-Dchunky.home={home}" in argv[: argv.index("-cp")]
     classpath = argv[argv.index("-cp") + 1].split(os.pathsep)
     assert classpath == [str(home / "lib" / f"{CORE_PIN}.jar"), str(home / "lib" / "gson-2.9.0.jar")]
     assert CORE_OTHER not in argv[argv.index("-cp") + 1]
     assert argv[argv.index("-cp") + 2] == "se.llbit.chunky.main.Chunky"
     assert argv[-4:] == ["-scene-dir", "s", "-render", "x"]
     assert f"rendering with {CORE_PIN}" in r.stderr
+
+
+QUIET_JVM = ("-Djava.awt.headless=true", "-Dapple.awt.UIElement=true")
+
+
+def test_every_chunky_launch_is_headless_and_stays_out_of_the_dock(tmp_path: Path) -> None:
+    """A render never opens a window, and the pinned core's texture loader still
+    asks AWT for the local graphics environment; on macOS a non-headless JVM
+    answers by starting the Cocoa application, which takes the creator's focus
+    and puts an icon in the Dock for every render. Each launch shape `chunky.sh`
+    has — a plain render, a snapshot, a render over a delve's pack, and every
+    launch of the denoise step behind a render — hands the JVM both properties, before the main class so Java reads them as its own."""
+    root = tree(tmp_path)
+    home = chunky_home(tmp_path, [CORE_PIN])
+    pack = tmp_path / "resourcepack.zip"
+    pack.write_bytes(b"a pack")
+    client = tmp_path / "minecraft.jar"
+    client.write_bytes(b"a client jar")
+    shapes = {
+        "render": ("-scene-dir", "s", "-render", "x"),
+        "snapshot": ("-scene-dir", "s", "-snapshot", "x", "out.png"),
+        "pack": ("--pack", str(pack), "-scene-dir", "s", "-render", "x"),
+    }
+    seen: dict[str, int] = {}
+    for shape, args in shapes.items():
+        r, out = render(root, home, *args, extra_env={"DELVEWRIGHT_CLIENT_JAR": str(client)})
+        assert r.returncode == 0, (shape, r.stderr)
+        launches = calls(out)
+        assert launches, shape
+        for argv in launches:
+            jvm = argv[: argv.index("-cp")]
+            for prop in QUIET_JVM:
+                assert prop in jvm, (shape, argv)
+        seen[shape] = len(launches)
+    # A render is three launches (the render, the raw-buffer snapshot, the
+    # albedo + normal passes), so every java call the denoise step adds is held.
+    assert seen == {"render": 3, "snapshot": 1, "pack": 3}, seen
 
 
 def scene_with_budget(tmp_path: Path, target: int) -> Path:
@@ -668,8 +712,8 @@ def test_a_render_is_denoised_and_the_raw_dump_is_kept(tmp_path: Path) -> None:
     c = calls(out)
     assert len(c) == 3, c  # the render, the raw snapshot, the passes
     assert c[0][c[0].index("-render") + 1] == "x" and c[0][-2:] == ["-threads", "2"]
-    assert c[1][0] == f"-Dchunky.home={home}" and "-snapshot" in c[1]
-    assert c[2][0] == f"-Dchunky.home={home / 'denoise' / 'home'}"
+    assert f"-Dchunky.home={home}" in c[1][: c[1].index("-cp")] and "-snapshot" in c[1]
+    assert f"-Dchunky.home={home / 'denoise' / 'home'}" in c[2][: c[2].index("-cp")]
     assert c[2][c[2].index("-target") + 1] == "16"
     s = root.parent / "s"
     raw = (s / "x.dump.raw").read_bytes()
