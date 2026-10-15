@@ -59,6 +59,32 @@ it where the block is authored, never by moving the write later:
 The build stops before a server boots; `check-written-world.py`'s item-entity
 count is the server's own answer if one is booted.
 
+**"The party walks up to its back" (build, exit 3).** A body the party
+talks to faces away from the way the route delivers them, and its watch does
+not turn it to them — a class watch turns only to that class, and a short
+`within` may not reach the approach. Its home anchor's `facing`, or the turn a
+walk left it on, is more than 90° off the party's approach. Declare the `watch`
+the message prints on that npc, so it turns to the party as they arrive; or
+stand it where the party comes at it from the front. Never move the objective
+or reroll to change the approach.
+
+**"… of the N cell(s) a player can talk to it from lie behind it" (build,
+exit 3).** An NPC that declares `"watch": "none"` is judged from every side a
+player can talk to it from, not only the route's. When one facing faces every
+one of those cells the message names it: declare the anchor's facing that way.
+When none does, the body stands in the open: give it an `offset` (and its
+cast entry the same mark) that puts a wall or a counter at its back. If the
+scene does not really need the body to stay still, remove `"watch": "none"`
+and it watches the party.
+
+**"The party can see one person twice" (validate, exit 1).** Two declarations
+carry one name and some story state has both in the world — usually a character
+re-declared per scene and spawned without the previous body leaving. Despawn the
+leaving body in the same effect list that spawns the next one (one list is one
+tick, so the swap is never seen); a despawn in a later `sequence` step or
+`on_arrive` leaves both standing meanwhile. If they really are different people,
+give each its own `name`.
+
 **`DW0891` says to seat the volume "on an anchor at the pit's bottom" and the
 place is detailed.** A quest names only the node's owed names, so declare a
 station on the node (`kind: point`), bind it in `detail-plan.json` to the
