@@ -263,3 +263,38 @@ prismarine-physics 1.11.1 both run every rig; the landing verdicts, apexes and
 per-tick positions agree. The pinned jar's own code is reached by neither of them
 without a running game; spec-0113 §6 states how the engine's simulator is held to
 all three.
+
+## 10. The ballistic measurement against the pinned jar
+
+**Measured once, never re-checked** (a check guards only what our toolchain
+owns). The instrument is `delvec::compiler::ballistics` — a PackTest of four
+`minecraft:armor_stand` bodies thrown with a declared `Motion` over the rig of
+`dsl::metrics::body::ballistics` (stone; slime under a four-block drop; a pool
+four deep; a course of bottom slabs), each body's `Pos` read every tick for
+sixty ticks as `data get entity … Pos[a] 10000` and asserted within `1e-4` of
+the trajectory the engine's simulator computes under `Rules::Game`. It is
+written by hand (`cargo test -p delvec --test movement_ballistics_instrument
+-- --ignored`) and run with `validation/packtest-run.sh`; no build emits it and
+no CI job runs it.
+
+- **Revision**: engine `88328cfbd` (the simulator and instrument as measured);
+  Minecraft Java 1.21.11, server jar sha256
+  `f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726`; PackTest
+  2.4.0 in `ghcr.io/stellarfeline/delvewright-toolserver@sha256:31ed5d5a5c50158470bfee8c7197a75e6f586a25c950bf25b69b533f88e0ba0b`.
+- **Result**: all 720 position asserts (4 bodies × 60 ticks × 3 axes) hold;
+  the committed trajectories are
+  `crates/dsl/tests/fixtures/movement/ballistics-1.21.11.json`.
+- **What the measurement settled**, each a red before its change:
+  - **In water** (read site `Entity.updateFluidHeightAndDoFluidPushing`): the
+    body is in water when a water cell's surface is at or over the bottom of
+    its box deflated by `0.001` (§6). The simulator had used prismarine's box
+    (`contract(0.001, 0.401, 0.001)` against the box's top); the water body
+    read y `303.7489` where that predicted `303.4718` on its first tick in the
+    pool. `Rules::Game` now uses the jar's test, for water and lava;
+    `Rules::Bot` keeps prismarine's.
+  - **A mob with `NoAI` is not moved**: a `minecraft:zombie{NoAI:1b}` summoned
+    with `Motion [0, 0, 0.6]` read z `0.5` on every tick. The instrument's
+    bodies are armour stands, living bodies the game moves with no input.
+  - **An armour stand does not step** (read site
+    `ArmorStand.createAttributes`, `step_height 0`): slid into a slab's face
+    it stopped with its front edge on the face (z `1.75`).
