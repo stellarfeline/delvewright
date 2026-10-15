@@ -122,17 +122,19 @@ Not a new refusal: an empty `gating` (`DW0818`, widened in §5); a `gating` nami
 
 ### 9.1 Bound elements (`gallery/overlays/site-plan/`, and the solid overlay alike)
 
-- The four gated connections of §1 are **built shut**: the chute's arch barred until `quest/near-hall` completes (opened by an `open-gate` beside the two doors' in `on_complete`); the loft stair's head, the undercroft shaft's hatch and the undercroft crawl's grating barred until `obj/clear-the-muster` completes (opened beside the reliquary grille's). One of each kind, in a wall and in a floor, a floor climb among them.
+- The four gated connections of §1 are **built shut**: the chute's arch barred until `quest/near-hall` completes (opened by an `open-gate` beside the two doors' in `on_complete`); the loft stair's head, the undercroft shaft's hatch and the undercroft crawl's grating barred until `obj/clear-the-muster` completes (opened beside the reliquary grille's). One of each kind, in a wall and in a floor, a floor climb among them. *Corrected against the tree:* both site-plan overlays detail every place, so each bar is shipped by the piece owning its cells (the annex its chute, the far hall the stair's head, the near hall the hatch and the grating), not written by the derivation. Two declarations the separation proof required on the built gallery: `edge/loft-stair` opens from the far hall (`opens_from: a`) — at either face, the loft side reaches the stair's head down the declared loft drop and up the stair, the declared loop rather than a way past the bar — and `edge/undercroft-shaft` is declared `shortcut` — once the story doors open, the undercroft is reached from the far hall's stair as well, so the hatch closes the near hall's loop to it. The chute and the crawl were already `shortcut`.
 - The three doors become `walk` + `gating`: `west-door` with `opens_from: a`, `centre-door` with `either`, `east-door` with `opens_from: b` and its `shortcuts[]` entry unchanged. The `shortcut` marks the `DW1011` branch put on `west-door` and `centre-door` come **off**: with the chute, shaft and crawl shut, the far hall is reachable while the story doors are shut by nothing, and the proof says so — `DW1011` judges the two doors instead of counting them as a declared way round.
 - Coverage units (`schema --stage all`): `gating.opens_from` and its three values bound; the retired class gone from the schema.
 
-### 9.2 Refusal probes (the primary plus one declared edit each)
+### 9.2 Refusal probes (the site-plan point plus one declared edit each)
+
+*Corrected against the tree:* the primary carries `areas[]` and no site plan, so none of these edits has a subject there; each probe names the overlay it perturbs (`"point": "site-plan"`, `tools/ci/gallery_domain.py`) and is that point plus its edit.
 
 | Probe | Code | Edit |
 |---|---|---|
 | `a-gated-front` | `DW1027` | a `gating` of `flag/muster-cleared` added to `edge/causeway-front`, whose seam is the overlay's one contact |
 | `a-gated-way-nothing-opens` | `DW1028` | the `open-gate` naming `anchor/seam-annex-chute` removed from `quest/near-hall`'s `on_complete` |
-| `a-shaft-left-open-round-the-story-doors` | `DW1011` | the `gating` removed from `edge/undercroft-shaft`, so a body in the near hall drops to the undercroft, climbs its stair into the far hall and is past the story doors before `quest/near-hall` — the shape the branch declared away |
+| `a-hatch-the-undercroft-stair-walks-round` | `DW1011` | the `shortcut` mark removed from `edge/undercroft-shaft`: its hatch, a gated `drop`, is got round through the opened west door and down the undercroft stair. *Corrected against the tree:* this table named the shaft's `gating` removed (`a-shaft-left-open-round-the-story-doors`); with every place detailed the near hall's piece ships the hatch, so that edit is refused at `delvec detail` (the piece answers a seam that no longer shuts) before any separation proof runs. The committed probe reds the widened population on a non-`barred` class instead; the shape the branch declared away — the doors got round by an open shaft — is the green overlay's `DW1011` line, which judges both doors |
 | `a-side-named-for-a-way-that-never-shuts` | `DW0818` | `gating: {opens_from: "a"}` written on `edge/exit-arch` — a side and no term |
 
 ### 9.3 Demo level
@@ -169,7 +171,7 @@ Checked against the ground; each is a debt until the implementation discharges o
 
 - **Criterion 3's seven.** The count assumes the overlay keeps its four gated connections and three doors; a round that changes the overlay re-derives the number and states it in the test, never by hand in this spec.
 - **Criterion 4.** The 0.35-block figure in §4.2 is arithmetic over cited movement constants, not a measurement on a server; the bot tier that walks the demo level (§9.3) is where it is measured, and the test holds the model's answer, not the game's.
-- **The piece-owned grating.** When the upper place of a floor climb is bound to a piece, that piece owes `anchor/seam-<edge>` over cells in its own first course; the existing owed rule reaches it, but no gallery piece yet ships one. The solid overlay's detailed places are where the implementation proves it, or records that no place there owns a gated floor climb's upper course and the proof waits for one that does.
+- **The piece-owned grating.** When the upper place of a floor climb is bound to a piece, that piece owes `anchor/seam-<edge>` over cells in its own first course; the existing owed rule reaches it, but no gallery piece yet ships one. The solid overlay's detailed places are where the implementation proves it, or records that no place there owns a gated floor climb's upper course and the proof waits for one that does. *Discharged:* the near hall's program in both site-plan overlays ships the grating over `edge/undercroft-crawl`'s hole as a `barred` contract edge whose bar is the course above the hole, bound to `anchor/seam-undercroft-crawl` by the row `delvec detail` writes; the contract checker admits the hole as an opening onto the room through the edge's own bar.
 
 ## 11. Not settled here
 
