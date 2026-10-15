@@ -184,6 +184,15 @@ pub fn needs(name: &str) -> Option<&'static Needs> {
     pinned_row(support_rows(), name)
 }
 
+/// **Whether a falling block falls into this block state** — the pinned jar's
+/// `FallingBlock.isFree(state)`, the question sand or gravel asks of the cell
+/// below it before it falls, and of the cell it lands in before it sets
+/// itself down (measured into `support-bases-1.21.11.tsv`'s `f` flag). `None`
+/// for a block the table does not hold.
+pub fn falls_into(name: &str) -> Option<bool> {
+    pinned_row(&bases().flags, name).map(|f| f.contains('f'))
+}
+
 /// Whether a block state is one a table row names: the row's block, carrying
 /// every property the row lists ([`crate::blockshape`]'s one comparison).
 fn pattern_has(pattern: &str, name: &str) -> bool {
@@ -469,6 +478,29 @@ mod tests {
             Some(true)
         );
         assert_eq!(kept(up, Face::Down, "minecraft:stone"), Some(false));
+    }
+
+    /// A falling block falls into air, water, short grass and fire, and rests
+    /// on stone, a slab and a torch's cell is no floor it can fall into
+    /// (measured: `FallingBlock.isFree`).
+    #[test]
+    fn a_falling_block_falls_into_what_the_jar_calls_free() {
+        for free in [
+            "minecraft:air",
+            "minecraft:water[level=0]",
+            "minecraft:short_grass",
+            "minecraft:fire[age=0,east=false,north=false,south=false,up=false,west=false]",
+        ] {
+            assert_eq!(falls_into(free), Some(true), "{free}");
+        }
+        for held in [
+            "minecraft:stone",
+            "minecraft:packed_mud",
+            "minecraft:oak_slab[type=bottom,waterlogged=false]",
+            "minecraft:torch",
+        ] {
+            assert_eq!(falls_into(held), Some(false), "{held}");
+        }
     }
 
     /// Every rule parses, every face a centre or rigid rule asks is carried, and

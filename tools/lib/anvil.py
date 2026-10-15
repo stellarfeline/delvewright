@@ -321,6 +321,32 @@ def count_tagged_entities(world: pathlib.Path, tag: str) -> int:
     return n
 
 
+def item_entities(world: pathlib.Path) -> list[tuple[tuple[float, float, float], str, int]]:
+    """Every item entity (`minecraft:item`, a block or item lying on the
+    ground) in `world/entities/*.mca`, as `((x, y, z), item id, count)` in file
+    and chunk order. The same region family as [`count_tagged_entities`]: each
+    chunk root holds `Entities`, each with an `id`, a `Pos` list of three
+    doubles and, for an item entity, an `Item` compound with `id` and `count`
+    (minecraft.wiki *Entity format*, *Item format*)."""
+    out = []
+    for f in sorted((world / "entities").glob("r.*.mca")):
+        for _cx, _cz, _ts, _comp, root in region_chunks(f):
+            for ent in root.value.get("Entities", Tag(T_LIST, [])).value:
+                v = ent.value
+                if v.get("id", Tag(T_STRING, "")).value != "minecraft:item":
+                    continue
+                pos = tuple(t.value for t in v.get("Pos", Tag(T_LIST, [])).value)
+                item = v.get("Item", Tag(T_COMPOUND, {})).value
+                out.append(
+                    (
+                        pos,
+                        item.get("id", Tag(T_STRING, "?")).value,
+                        item.get("count", Tag(T_INT, 1)).value,
+                    )
+                )
+    return out
+
+
 if __name__ == "__main__":
     import sys
 

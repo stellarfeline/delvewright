@@ -3019,6 +3019,44 @@
       "note": "Carried by `DW1013` (`compiler::clickbox`): every click box the compiler places at a cell is built by one rule, `ClickBox`, which pushes each face lying within 0.01 block of the block grid 0.01 past it (an `interact` objective's box is `width:1.02f,height:2.02f` with its floor 0.01 below the cell), and the build reads every `summon minecraft:interaction` it ships and refuses a fixture-class box at absolute coordinates with any face within 0.001 block of the grid. NPC dialogue hitboxes (borne, moved with the body) and stake markers (runtime position) are counted and not judged. The harness pick ray (`harness/src/crosshair.ts`) clips blocks first and keeps an entity only when strictly nearer, and reads an interaction's size from its entity data. The binding counts the campaign's `interact` objectives; the build's `validation/click-box.json` states how many placed boxes were judged.",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "any_of": [
+            {
+              "eq": {
+                "type": "clear-region"
+              }
+            },
+            {
+              "eq": {
+                "type": "set-block"
+              }
+            },
+            {
+              "eq": {
+                "type": "fill-region"
+              }
+            }
+          ]
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1002",
+        "kind": "dw"
+      },
+      "finding": "blocks lay on the ground as dropped items near the start, and a lantern hung askew",
+      "general_form": "no block the build or any effect writes pops off as an item in any configuration, and the written-world record counts item entities as a defect",
+      "id": "str-20",
+      "note": "Carried by `DW1002` (`compiler::attached`), whose three arms judge every block write: the load world; the write sequence, the load as the server runs it read off the shipped functions, each write laid in turn and every block the pinned jar asks as it lands judged (a falling block by the jar's `FallingBlock.isFree` once its function has run); and the runtime writes, every block-writing line outside the load, conditional or not, laid at once over the loaded world, so every configuration a path, a branch or an unforced beat can reach. The Stranding's drops were 347 gravel item entities holding 610 gravel in the played image's placed world (`delvewright/playtest:25ad5b95…`): each street template's gravel surface stood on the blockout mass, which the datapack wrote in the world build after `place_all` while the model wrote it first, so the gravel was set over air on every placement retry and fell, and the mass written under the falling blocks turned them into items. The played build carried no `DW1002` (delvec 1.12.0). The ground now goes down before any template (`world_ground` steps gated by `ground_verify`); the sequence arm refused that build's order with 308 falling gravel blocks and holds all 308 after the fix. `tools/ci/check-written-world.py` counts the save's item entities against the load's `summon minecraft:item` lines and reds `DW0955` on the excess (347 against 0 on the played save). The lantern near the start is held in the state its piece wrote (`lantern[hanging=true]` under spruce planks beside the post at [267, 98, 9], kept in the played save): a hanging lantern beside a post, not a drop. On The Stranding read by this engine (a scratch copy carried to this engine's `dsl_version`), `DW1002` refuses 37 blocks: a candle on a chest in the coyle house (load), and 26 dead bushes and 9 lanterns whose support a tide-out `fill … minecraft:air` takes in some configuration (runtime) — content repairs. The binding counts the effects that write blocks after load.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"
