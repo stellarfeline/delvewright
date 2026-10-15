@@ -1,6 +1,6 @@
 // MineflayerExecutor: the death loop: a lethal volume's trials.
 
-import type { KillStep, Vec3Tuple } from "../critical-path.ts";
+import type { KillStep, Step, Vec3Tuple } from "../critical-path.ts";
 import { BotDeathError, formatDeathPos } from "../death.ts";
 import { reseatedWaves, type Encounter } from "../combat.ts";
 import {
@@ -27,7 +27,8 @@ import {
 import { delay } from "./connection.ts";
 import { LEDGER_POLL_MS } from "./score.ts";
 import { GATE_DASH_TICK_MS } from "./timed-gate.ts";
-import { Movements } from "./walk.ts";
+import { Movements, goals } from "./walk.ts";
+import { allowNonCollidingEntities, configureLeg } from "../movement.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
 // --- the death loop ---------------------------------------------
@@ -60,6 +61,12 @@ const MARKER_RETIRE_TIMEOUT_MS = 5_000;
  * is really absent still reds — after this deadline, with the same sentence.
  */
 const MARKER_PLACE_TIMEOUT_MS = 10_000;
+
+/**
+ * How long the reach probe may search before a boundary leaves a volume for a
+ * later one. A probe that times out is not a path: the volume stays pending.
+ */
+const REACH_PROBE_MS = 5_000;
 
 /** The executor's methods this file holds; `executor.ts` installs them on its prototype. */
 export const methods = {
@@ -160,7 +167,10 @@ export const methods = {
    *
    * One trial per declared volume, and the loop is self-restoring: collecting the
    * stake puts the purse back, so the next volume's trial starts from a full
-   * ledger rather than from a zero the previous death left.
+   * ledger rather than from a zero the previous death left. A volume already
+   * tried at a step boundary ({@link afterStep}) is not tried again;
+   * every other one is tried here, after the path, whether or not it can still
+   * be reached — a trial that cannot is that volume's failure, never a skip.
    */
   async runDeathLoop(this: MineflayerExecutor): Promise<void> {
     this.stageNow = "death-loop";
@@ -175,12 +185,138 @@ export const methods = {
     }
     try {
       for (const volume of plan.volumes) {
-        await this.lethalTrial(plan, volume);
-        this.lethalTrialsFinished += 1;
+        if (this.deathLoopTried.has(volume.id)) continue;
+        await this.triedAt(plan, volume, "after the critical path");
       }
     } finally {
       this.clearScoreDisplay();
     }
+  },
+
+  /** Arm the death loop's trials at the critical path's step boundaries. */
+  armDeathLoopOnPath(this: MineflayerExecutor): void {
+    this.deathLoopOnPath = true;
+  },
+
+  /** One trial of `volume`, recorded as run `at` this point of the run. */
+  async triedAt(
+    this: MineflayerExecutor,
+    plan: DeathPlan,
+    volume: DeathPlan["volumes"][number],
+    at: string,
+  ): Promise<void> {
+    this.deathLoopTried.add(volume.id);
+    const before = this.lethalTrials.length;
+    await this.lethalTrial(plan, volume);
+    for (const t of this.lethalTrials.slice(before)) t.at = at;
+    this.lethalTrialsFinished += 1;
+  },
+
+  /**
+   * **The death loop at a step boundary** (sequencer `afterStep`): every
+   * declared volume not yet tried that is live here and whose near lip the
+   * pathfinder can reach from where the bot stands is tried now, at the
+   * earliest boundary that admits it. A volume the story later puts out of
+   * reach — a hall the reseal leaves behind a shut gate — is then exercised
+   * where the party can still get to it; one no boundary admits is tried after
+   * the path ({@link runDeathLoop}), where it fails if it cannot be reached.
+   *
+   * The boundary is put back as the path left it: the watch ledger counts the
+   * path's own walks only, so it is disarmed for the trials; every
+   * player-scope stake ledger the trials staged is set back to what the path
+   * had made it; and the bot walks back to the cell it stood at, so the next
+   * leg starts where it was proven.
+   */
+  async afterStep(this: MineflayerExecutor, index: number, done: Step): Promise<void> {
+    const plan = this.deathPlan;
+    if (!this.deathLoopOnPath || plan === undefined || plan.binding.unbound) return;
+    const pending = plan.volumes.filter((v) => !this.deathLoopTried.has(v.id));
+    if (pending.length === 0) return;
+    const due: DeathPlan["volumes"][number][] = [];
+    for (const v of pending) {
+      if (volumeIsStaged(v)) {
+        const answers = new Map<string, boolean | undefined>();
+        for (const t of v.gate.terms) {
+          if (!answers.has(termKey(t))) answers.set(termKey(t), await this.askTerm(t));
+        }
+        if (volumeGateVerdict(v, (t) => answers.get(termKey(t))).kind !== "open") continue;
+      }
+      if (this.reachableFromHere(nearLip(plan, v.id) ?? v.region.lo)) due.push(v);
+    }
+    if (due.length === 0) return;
+    const step =
+      "objective" in done && typeof done.objective === "string"
+        ? `${done.action} \`${done.objective}\``
+        : done.action;
+    const here = this.feetCell();
+    process.stderr.write(
+      `[death-loop] after step ${index} (${step}): ${due.map((v) => v.id).join(", ")} live and ` +
+        `reachable from [${(here ?? []).join(", ")}] — trying ${due.length === 1 ? "it" : "them"} here
+`,
+    );
+    const watch = this.watchLedger();
+    const armed = watch.armed;
+    watch.armed = false;
+    const ledgers = new Map<string, number | undefined>();
+    for (const s of plan.stakes) {
+      if ((s.currency.scope ?? "player") !== "player" || ledgers.has(s.currency.objective)) continue;
+      ledgers.set(
+        s.currency.objective,
+        (await this.trackScore(s.currency.objective)) ? this.myScore(s.currency.objective) : undefined,
+      );
+    }
+    const stage = this.stageNow;
+    this.stageNow = "death-loop";
+    try {
+      for (const v of due) await this.triedAt(plan, v, `after step ${index} (${step})`);
+      if (this.death !== undefined) await this.recoverFromDeath();
+      for (const [objective, value] of ledgers) {
+        if (value === undefined || this.myScore(objective) === value) continue;
+        const refusal = await this.refusalOf(`/scoreboard players set @s ${objective} ${value}`);
+        this.stagedRemovals.push({
+          kind: "player",
+          why: `stake datum \`${objective}\` set back to ${value}, what the critical path had made it before the death loop at step ${index}`,
+          performed: refusal === undefined,
+          detail: refusal,
+        });
+        await this.settledScore(objective, value);
+      }
+      if (here !== undefined) {
+        const back = await this.walkPastReseated(
+          `death-loop return to the critical path after step ${index}`,
+          here,
+          "the cell the critical path left off at",
+        );
+        if (this.death !== undefined) await this.recoverFromDeath();
+        if (back !== undefined) {
+          process.stderr.write(`[death-loop] the return after step ${index} fell short: ${back.why}\n`);
+        }
+      }
+    } finally {
+      this.stageNow = stage;
+      watch.armed = armed;
+      this.clearScoreDisplay();
+    }
+  },
+
+  /**
+   * Whether the pathfinder finds a whole path from where the bot stands to
+   * within a block of `dest`, under the movements every walk takes (no
+   * digging, doors opened, non-colliding entities passable, lethal volumes
+   * excluded). Asked, never walked.
+   */
+  reachableFromHere(this: MineflayerExecutor, dest: Vec3Tuple): boolean {
+    const bot = this.requireBot();
+    const movements = new Movements(bot);
+    configureLeg(bot, movements, false);
+    allowNonCollidingEntities(movements);
+    this.applyLethalExclusion(movements);
+    const result = bot.pathfinder.getPathTo(
+      movements,
+      new goals.GoalNear(dest[0], dest[1], dest[2], 1),
+      REACH_PROBE_MS,
+    );
+    return result.status === "success";
   },
 
   /**

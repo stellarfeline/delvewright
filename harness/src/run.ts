@@ -31,6 +31,7 @@ import {
 import {
   deathLoopBinding,
   deathLoopStage,
+  deathLoopCoverage,
   loadDeathPlanForCriticalPath,
 } from "./death-loop.ts";
 import {
@@ -431,16 +432,19 @@ async function main(): Promise<number> {
           }
           // From here the executor is the authority on which stage a crash is in.
           crashStage = "critical-path";
+          // Each lethal volume is tried at the earliest step boundary from
+          // which it is live and reachable; whatever no boundary admits is
+          // tried after the path.
+          if (deathLoop) executor.armDeathLoopOnPath();
           await runSequence(criticalPath, executor, {
             retryOnDeath: retryOnDeathFromEnv(),
           });
           pathProven = true;
           // The watch binding counts the proven path's walks only.
           executor.watchLedger().armed = false;
-          // Only after the path is proven. The death loop deliberately
-          // kills the player, so running it earlier would leave every later step
-          // walking out of a grave — and a delve whose critical path is broken
-          // has a bigger finding than its recovery stake.
+          // The volumes no step boundary admitted, after the path is proven.
+          // A trial at a boundary recovers the bot and walks it back to where
+          // the path left off, so no later step walks out of a grave.
           if (deathLoop) await executor.runDeathLoop();
         })(),
         budgetMs,
@@ -622,7 +626,13 @@ async function main(): Promise<number> {
       binding: deathBinding,
       trials: lethalTrials,
       trialsFinished: executor.deathLoopTrialsFinished(),
+      volumes: deathPlan?.volumes.map((v) => v.id) ?? [],
     });
+    if (deathPlan && deathLoop) {
+      process.stderr.write(
+        `${deathLoopCoverage(deathPlan.volumes.map((v) => v.id), lethalTrials).line}\n`,
+      );
+    }
     if (deathBinding) report.recordDeathLoop(deathBinding, lethalTrials);
     report.stage(deathStage);
     report.recordDieRetryBinding(retryBinding);
