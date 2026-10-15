@@ -179,8 +179,8 @@ chrome! {
     COMPASS_NAME = 14, "delvewright.ui.compass.name", 0, "Compass";
     /// The line a player reads when their compass starts following an objective. `%s` is its title.
     COMPASS_FOLLOWING = 15, "delvewright.ui.compass.following", 1, "Following: %s";
-    /// The line that follows it when more than one tracked objective is open. `%s` is the count of the others, then the bound sneak key.
-    COMPASS_OTHERS = 16, "delvewright.ui.compass.others", 2, "Other open tasks: %s — crouch (%s) with the compass in hand to switch.";
+    /// The line that follows it when more than one tracked objective is open. `%s` is the count of the others, then the bound use key.
+    COMPASS_OTHERS = 16, "delvewright.ui.compass.others", 2, "Other open tasks: %s — use (%s) the compass to choose.";
     /// The line a player reads when nothing is open to follow.
     COMPASS_NOTHING = 17, "delvewright.ui.compass.nothing", 0, "Nothing to follow yet.";
     /// The journal's name when the campaign writes no `guidance.manual.title` (spec-0104 §8.1).
@@ -189,8 +189,8 @@ chrome! {
     JOURNAL_COMPASS_HEADING = 19, "delvewright.ui.journal.compass.heading", 0, "Reading the compass";
     /// The journal's compass page: what the needle shows.
     JOURNAL_COMPASS_FOLLOWS = 20, "delvewright.ui.journal.compass.follows", 0, "Its needle points to the task you follow.";
-    /// The journal's compass page: the gesture. `%s` is the bound sneak key.
-    JOURNAL_COMPASS_SWITCH = 21, "delvewright.ui.journal.compass.switch", 1, "Crouch (%s) with the compass in hand to follow the next open task.";
+    /// The journal's compass page: the input. `%s` is the bound use key.
+    JOURNAL_COMPASS_SWITCH = 21, "delvewright.ui.journal.compass.switch", 1, "Use (%s) the compass to choose which open task it follows.";
     /// The journal's compass page: the spinning needle.
     JOURNAL_COMPASS_SPIN = 22, "delvewright.ui.journal.compass.spin", 0, "A spinning needle means nothing is open.";
     /// The journal's compass page: where the open tasks are.
@@ -201,10 +201,12 @@ chrome! {
     JOURNAL_DONE = 25, "delvewright.ui.journal.done", 0, "Done";
     /// The mark on the open page of the objective this player's compass follows.
     JOURNAL_FOLLOWING = 26, "delvewright.ui.journal.following", 0, "◆ You are following this.";
+    /// The compass menu's title (spec-0104 §6.4).
+    COMPASS_CHOOSE = 27, "delvewright.ui.compass.choose", 0, "Follow which task?";
 }
 
 /// One language's rendition of [`ALL`], in slot order.
-type Table = [&'static str; 27];
+type Table = [&'static str; 28];
 
 // --- the tables ------------------------------------------------------------
 // Slot order is ALL's: objective.new, objective.complete, campaign.complete,
@@ -213,7 +215,8 @@ type Table = [&'static str; 27];
 // respawn.wait, compass.name, compass.following, compass.others,
 // compass.nothing, journal.title, journal.compass.heading,
 // journal.compass.follows, journal.compass.switch, journal.compass.spin,
-// journal.compass.pages, journal.open, journal.done, journal.following.
+// journal.compass.pages, journal.open, journal.done, journal.following,
+// compass.choose.
 
 const ZH_HANS: Table = [
     "新目标：%s",
@@ -232,17 +235,18 @@ const ZH_HANS: Table = [
     "%s 秒后归队",
     "指南针",
     "正在追踪：%s",
-    "其他进行中的任务：%s——手持指南针潜行（%s）即可切换。",
+    "其他进行中的任务：%s——使用（%s）指南针即可选择。",
     "暂无可追踪的任务。",
     "日志",
     "读懂指南针",
     "指针指向你正在追踪的任务。",
-    "手持指南针潜行（%s），追踪下一个进行中的任务。",
+    "使用（%s）指南针，选择它追踪哪个进行中的任务。",
     "指针打转，说明没有进行中的任务。",
     "进行中的任务列在后面几页。",
     "待办",
     "已完成",
     "◆ 你正在追踪此任务。",
+    "追踪哪个任务？",
 ];
 
 const ZH_HANT: Table = [
@@ -262,17 +266,18 @@ const ZH_HANT: Table = [
     "%s 秒後歸隊",
     "指南針",
     "正在追蹤：%s",
-    "其他進行中的任務：%s——手持指南針潛行（%s）即可切換。",
+    "其他進行中的任務：%s——使用（%s）指南針即可選擇。",
     "暫無可追蹤的任務。",
     "日誌",
     "讀懂指南針",
     "指針指向你正在追蹤的任務。",
-    "手持指南針潛行（%s），追蹤下一個進行中的任務。",
+    "使用（%s）指南針，選擇它追蹤哪個進行中的任務。",
     "指針打轉，表示沒有進行中的任務。",
     "進行中的任務列在後面幾頁。",
     "待辦",
     "已完成",
     "◆ 你正在追蹤此任務。",
+    "追蹤哪個任務？",
 ];
 
 const JA: Table = [
@@ -292,17 +297,18 @@ const JA: Table = [
     "復帰まで %s",
     "コンパス",
     "追跡中: %s",
-    "ほかの未完了タスク: %s — コンパスを持ってスニーク（%s）で切り替え。",
+    "ほかの未完了タスク: %s — コンパスを使用（%s）して選ぶ。",
     "まだ追跡するものはない。",
     "日誌",
     "コンパスの読み方",
     "針は追跡中のタスクを指す。",
-    "コンパスを持ってスニーク（%s）すると、次の未完了タスクを追跡する。",
+    "コンパスを使用（%s）すると、追跡する未完了タスクを選べる。",
     "針が回り続けるなら、未完了のタスクはない。",
     "未完了のタスクは次のページから。",
     "やること",
     "完了",
     "◆ これを追跡中。",
+    "どのタスクを追跡する？",
 ];
 
 const KO: Table = [
@@ -322,17 +328,18 @@ const KO: Table = [
     "%s초 후 복귀",
     "나침반",
     "추적 중: %s",
-    "다른 진행 중인 임무: %s — 나침반을 들고 웅크리기(%s)로 전환하세요.",
+    "다른 진행 중인 임무: %s — 나침반을 사용(%s)해 선택하세요.",
     "아직 추적할 것이 없다.",
     "일지",
     "나침반 읽는 법",
     "바늘은 추적 중인 임무를 가리킨다.",
-    "나침반을 들고 웅크리면(%s) 다음 진행 중인 임무를 추적한다.",
+    "나침반을 사용(%s)하면 추적할 진행 중인 임무를 고를 수 있다.",
     "바늘이 빙빙 돌면 진행 중인 임무가 없다는 뜻이다.",
     "진행 중인 임무는 다음 페이지에 있다.",
     "할 일",
     "완료",
     "◆ 이 임무를 추적 중이다.",
+    "어떤 임무를 추적할까?",
 ];
 
 const DE: Table = [
@@ -352,17 +359,18 @@ const DE: Table = [
     "Zurück in %s",
     "Kompass",
     "Du folgst: %s",
-    "Weitere offene Aufgaben: %s – schleiche (%s) mit dem Kompass in der Hand, um zu wechseln.",
+    "Weitere offene Aufgaben: %s – benutze (%s) den Kompass, um zu wählen.",
     "Noch nichts zu verfolgen.",
     "Tagebuch",
     "Den Kompass lesen",
     "Seine Nadel zeigt auf die Aufgabe, der du folgst.",
-    "Schleiche (%s) mit dem Kompass in der Hand, um der nächsten offenen Aufgabe zu folgen.",
+    "Benutze (%s) den Kompass, um zu wählen, welcher offenen Aufgabe er folgt.",
     "Dreht sich die Nadel, ist nichts offen.",
     "Die offenen Aufgaben stehen auf den folgenden Seiten.",
     "Zu erledigen",
     "Erledigt",
     "◆ Du folgst dieser Aufgabe.",
+    "Welcher Aufgabe folgen?",
 ];
 
 const FR: Table = [
@@ -382,17 +390,18 @@ const FR: Table = [
     "Retour dans %s",
     "Boussole",
     "Suivi : %s",
-    "Autres tâches en cours : %s — accroupissez-vous (%s) boussole en main pour changer.",
+    "Autres tâches en cours : %s — utilisez (%s) la boussole pour choisir.",
     "Rien à suivre pour l'instant.",
     "Journal",
     "Lire la boussole",
     "Son aiguille indique la tâche que vous suivez.",
-    "Accroupissez-vous (%s) boussole en main pour suivre la tâche en cours suivante.",
+    "Utilisez (%s) la boussole pour choisir la tâche en cours qu'elle suit.",
     "Une aiguille qui tourne signifie qu'aucune tâche n'est en cours.",
     "Les tâches en cours figurent sur les pages suivantes.",
     "À faire",
     "Terminée",
     "◆ Vous suivez cette tâche.",
+    "Suivre quelle tâche ?",
 ];
 
 const ES: Table = [
@@ -412,17 +421,18 @@ const ES: Table = [
     "Vuelves en %s",
     "Brújula",
     "Siguiendo: %s",
-    "Otras tareas abiertas: %s — agáchate (%s) con la brújula en la mano para cambiar.",
+    "Otras tareas abiertas: %s — usa (%s) la brújula para elegir.",
     "Aún no hay nada que seguir.",
     "Diario",
     "Cómo leer la brújula",
     "Su aguja señala la tarea que sigues.",
-    "Agáchate (%s) con la brújula en la mano para seguir la siguiente tarea abierta.",
+    "Usa (%s) la brújula para elegir qué tarea abierta sigue.",
     "Si la aguja gira, no hay nada abierto.",
     "Las tareas abiertas están en las páginas siguientes.",
     "Por hacer",
     "Hecha",
     "◆ Estás siguiendo esta tarea.",
+    "¿Qué tarea seguir?",
 ];
 
 const PT_BR: Table = [
@@ -442,17 +452,18 @@ const PT_BR: Table = [
     "De volta em %s",
     "Bússola",
     "Seguindo: %s",
-    "Outras tarefas abertas: %s — agache (%s) com a bússola na mão para trocar.",
+    "Outras tarefas abertas: %s — use (%s) a bússola para escolher.",
     "Nada para seguir ainda.",
     "Diário",
     "Como ler a bússola",
     "A agulha aponta para a tarefa que você segue.",
-    "Agache (%s) com a bússola na mão para seguir a próxima tarefa aberta.",
+    "Use (%s) a bússola para escolher qual tarefa aberta ela segue.",
     "Agulha girando significa que nada está aberto.",
     "As tarefas abertas estão nas próximas páginas.",
     "A fazer",
     "Concluída",
     "◆ Você está seguindo esta tarefa.",
+    "Seguir qual tarefa?",
 ];
 
 const PT_PT: Table = [
@@ -472,17 +483,18 @@ const PT_PT: Table = [
     "De volta em %s",
     "Bússola",
     "A seguir: %s",
-    "Outras tarefas em aberto: %s — agacha-te (%s) com a bússola na mão para mudar.",
+    "Outras tarefas em aberto: %s — usa (%s) a bússola para escolher.",
     "Ainda nada para seguir.",
     "Diário",
     "Como ler a bússola",
     "A agulha aponta para a tarefa que segues.",
-    "Agacha-te (%s) com a bússola na mão para seguir a próxima tarefa em aberto.",
+    "Usa (%s) a bússola para escolher que tarefa em aberto ela segue.",
     "Se a agulha gira, não há nada em aberto.",
     "As tarefas em aberto estão nas páginas seguintes.",
     "Por fazer",
     "Concluída",
     "◆ Estás a seguir esta tarefa.",
+    "Seguir que tarefa?",
 ];
 
 const RU: Table = [
@@ -502,17 +514,18 @@ const RU: Table = [
     "Возвращение через %s",
     "Компас",
     "Отслеживается: %s",
-    "Других открытых задач: %s — крадитесь (%s) с компасом в руке, чтобы переключить.",
+    "Других открытых задач: %s — используйте (%s) компас, чтобы выбрать.",
     "Пока нечего отслеживать.",
     "Дневник",
     "Как читать компас",
     "Его стрелка указывает на отслеживаемую задачу.",
-    "Крадитесь (%s) с компасом в руке, чтобы отслеживать следующую открытую задачу.",
+    "Используйте (%s) компас, чтобы выбрать, какую открытую задачу он отслеживает.",
     "Если стрелка вращается, открытых задач нет.",
     "Открытые задачи — на следующих страницах.",
     "Сделать",
     "Выполнена",
     "◆ Вы отслеживаете эту задачу.",
+    "Какую задачу отслеживать?",
 ];
 
 const IT: Table = [
@@ -532,17 +545,18 @@ const IT: Table = [
     "Di ritorno tra %s",
     "Bussola",
     "Stai seguendo: %s",
-    "Altri incarichi aperti: %s — accovacciati (%s) con la bussola in mano per cambiare.",
+    "Altri incarichi aperti: %s — usa (%s) la bussola per scegliere.",
     "Ancora niente da seguire.",
     "Diario",
     "Leggere la bussola",
     "L'ago indica l'incarico che segui.",
-    "Accovacciati (%s) con la bussola in mano per seguire il prossimo incarico aperto.",
+    "Usa (%s) la bussola per scegliere quale incarico aperto seguire.",
     "Se l'ago gira, non c'è nulla di aperto.",
     "Gli incarichi aperti sono nelle pagine seguenti.",
     "Da fare",
     "Completato",
     "◆ Stai seguendo questo incarico.",
+    "Quale incarico seguire?",
 ];
 
 const NL: Table = [
@@ -562,17 +576,18 @@ const NL: Table = [
     "Terug over %s",
     "Kompas",
     "Je volgt: %s",
-    "Andere open taken: %s — sluip (%s) met het kompas in je hand om te wisselen.",
+    "Andere open taken: %s — gebruik (%s) het kompas om te kiezen.",
     "Nog niets om te volgen.",
     "Dagboek",
     "Het kompas lezen",
     "De naald wijst naar de taak die je volgt.",
-    "Sluip (%s) met het kompas in je hand om de volgende open taak te volgen.",
+    "Gebruik (%s) het kompas om te kiezen welke open taak het volgt.",
     "Een draaiende naald betekent dat er niets open is.",
     "De open taken staan op de volgende pagina's.",
     "Te doen",
     "Voltooid",
     "◆ Je volgt deze taak.",
+    "Welke taak volgen?",
 ];
 
 const PL: Table = [
@@ -592,17 +607,18 @@ const PL: Table = [
     "Powrót za %s",
     "Kompas",
     "Śledzisz: %s",
-    "Inne otwarte zadania: %s — skradaj się (%s) z kompasem w ręce, aby przełączyć.",
+    "Inne otwarte zadania: %s — użyj (%s) kompasu, aby wybrać.",
     "Na razie nie ma czego śledzić.",
     "Dziennik",
     "Jak czytać kompas",
     "Jego igła wskazuje śledzone zadanie.",
-    "Skradaj się (%s) z kompasem w ręce, aby śledzić następne otwarte zadanie.",
+    "Użyj (%s) kompasu, aby wybrać, które otwarte zadanie śledzi.",
     "Wirująca igła oznacza, że nic nie jest otwarte.",
     "Otwarte zadania są na kolejnych stronach.",
     "Do zrobienia",
     "Ukończone",
     "◆ Śledzisz to zadanie.",
+    "Które zadanie śledzić?",
 ];
 
 const TR: Table = [
@@ -622,17 +638,18 @@ const TR: Table = [
     "Dönüşe kalan: %s",
     "Pusula",
     "Takip ediliyor: %s",
-    "Diğer açık görevler: %s — değiştirmek için pusula elindeyken eğil (%s).",
+    "Diğer açık görevler: %s — seçmek için pusulayı kullan (%s).",
     "Henüz takip edilecek bir şey yok.",
     "Günlük",
     "Pusulayı okumak",
     "İğnesi takip ettiğin görevi gösterir.",
-    "Sıradaki açık görevi takip etmek için pusula elindeyken eğil (%s).",
+    "Pusulanın hangi açık görevi takip edeceğini seçmek için onu kullan (%s).",
     "İğne dönüyorsa açık görev yok demektir.",
     "Açık görevler sonraki sayfalarda.",
     "Yapılacak",
     "Tamamlandı",
     "◆ Bunu takip ediyorsun.",
+    "Hangi görev takip edilsin?",
 ];
 
 const UK: Table = [
@@ -652,17 +669,18 @@ const UK: Table = [
     "Повернення через %s",
     "Компас",
     "Відстежується: %s",
-    "Інших відкритих завдань: %s — крадіться (%s) з компасом у руці, щоб перемкнути.",
+    "Інших відкритих завдань: %s — використайте (%s) компас, щоб вибрати.",
     "Поки нічого відстежувати.",
     "Щоденник",
     "Як читати компас",
     "Його стрілка вказує на завдання, яке ви відстежуєте.",
-    "Крадіться (%s) з компасом у руці, щоб відстежувати наступне відкрите завдання.",
+    "Використайте (%s) компас, щоб вибрати, яке відкрите завдання він відстежує.",
     "Якщо стрілка обертається, відкритих завдань немає.",
     "Відкриті завдання — на наступних сторінках.",
     "Зробити",
     "Виконане",
     "◆ Ви відстежуєте це завдання.",
+    "Яке завдання відстежувати?",
 ];
 
 const CS: Table = [
@@ -682,17 +700,18 @@ const CS: Table = [
     "Návrat za %s",
     "Kompas",
     "Sleduješ: %s",
-    "Další otevřené úkoly: %s — plíž se (%s) s kompasem v ruce a přepneš.",
+    "Další otevřené úkoly: %s — použij (%s) kompas a vyber.",
     "Zatím není co sledovat.",
     "Deník",
     "Jak číst kompas",
     "Jeho střelka ukazuje na úkol, který sleduješ.",
-    "Plíž se (%s) s kompasem v ruce a budeš sledovat další otevřený úkol.",
+    "Použij (%s) kompas a vyber, který otevřený úkol bude sledovat.",
     "Točící se střelka znamená, že nic není otevřené.",
     "Otevřené úkoly jsou na následujících stránkách.",
     "Zbývá udělat",
     "Splněný",
     "◆ Tento úkol sleduješ.",
+    "Který úkol sledovat?",
 ];
 
 const SK: Table = [
@@ -712,17 +731,18 @@ const SK: Table = [
     "Návrat o %s",
     "Kompas",
     "Sleduješ: %s",
-    "Ďalšie otvorené úlohy: %s — zakrádaj sa (%s) s kompasom v ruke a prepneš.",
+    "Ďalšie otvorené úlohy: %s — použi (%s) kompas a vyber.",
     "Zatiaľ nie je čo sledovať.",
     "Denník",
     "Ako čítať kompas",
     "Jeho ihla ukazuje na úlohu, ktorú sleduješ.",
-    "Zakrádaj sa (%s) s kompasom v ruke a budeš sledovať ďalšiu otvorenú úlohu.",
+    "Použi (%s) kompas a vyber, ktorú otvorenú úlohu bude sledovať.",
     "Točiaca sa ihla znamená, že nič nie je otvorené.",
     "Otvorené úlohy sú na nasledujúcich stranách.",
     "Treba urobiť",
     "Splnená",
     "◆ Túto úlohu sleduješ.",
+    "Ktorú úlohu sledovať?",
 ];
 
 const SV: Table = [
@@ -742,17 +762,18 @@ const SV: Table = [
     "Tillbaka om %s",
     "Kompass",
     "Du följer: %s",
-    "Andra öppna uppgifter: %s — smyg (%s) med kompassen i handen för att byta.",
+    "Andra öppna uppgifter: %s — använd (%s) kompassen för att välja.",
     "Inget att följa än.",
     "Dagbok",
     "Att läsa kompassen",
     "Nålen pekar mot uppgiften du följer.",
-    "Smyg (%s) med kompassen i handen för att följa nästa öppna uppgift.",
+    "Använd (%s) kompassen för att välja vilken öppen uppgift den följer.",
     "En snurrande nål betyder att inget är öppet.",
     "De öppna uppgifterna finns på sidorna som följer.",
     "Att göra",
     "Klar",
     "◆ Du följer den här.",
+    "Vilken uppgift ska följas?",
 ];
 
 const DA: Table = [
@@ -772,17 +793,18 @@ const DA: Table = [
     "Tilbage om %s",
     "Kompas",
     "Du følger: %s",
-    "Andre åbne opgaver: %s — snig (%s) med kompasset i hånden for at skifte.",
+    "Andre åbne opgaver: %s — brug (%s) kompasset for at vælge.",
     "Intet at følge endnu.",
     "Dagbog",
     "Sådan læser du kompasset",
     "Nålen peger mod den opgave, du følger.",
-    "Snig (%s) med kompasset i hånden for at følge den næste åbne opgave.",
+    "Brug (%s) kompasset for at vælge, hvilken åben opgave det følger.",
     "En snurrende nål betyder, at intet er åbent.",
     "De åbne opgaver står på de følgende sider.",
     "Skal gøres",
     "Fuldført",
     "◆ Du følger denne.",
+    "Hvilken opgave skal følges?",
 ];
 
 const NB: Table = [
@@ -802,17 +824,18 @@ const NB: Table = [
     "Tilbake om %s",
     "Kompass",
     "Du følger: %s",
-    "Andre åpne oppgaver: %s — snik (%s) med kompasset i hånden for å bytte.",
+    "Andre åpne oppgaver: %s — bruk (%s) kompasset for å velge.",
     "Ingenting å følge ennå.",
     "Dagbok",
     "Slik leser du kompasset",
     "Nålen peker mot oppgaven du følger.",
-    "Snik (%s) med kompasset i hånden for å følge neste åpne oppgave.",
+    "Bruk (%s) kompasset for å velge hvilken åpen oppgave det følger.",
     "En nål som snurrer betyr at ingenting er åpent.",
     "De åpne oppgavene står på sidene som følger.",
     "Å gjøre",
     "Fullført",
     "◆ Du følger denne.",
+    "Hvilken oppgave skal følges?",
 ];
 
 const FI: Table = [
@@ -832,17 +855,18 @@ const FI: Table = [
     "Paluu %s kuluttua",
     "Kompassi",
     "Seuraat: %s",
-    "Muita avoimia tehtäviä: %s — vaihda hiipimällä (%s) kompassi kädessä.",
+    "Muita avoimia tehtäviä: %s — valitse käyttämällä (%s) kompassia.",
     "Ei vielä mitään seurattavaa.",
     "Päiväkirja",
     "Kompassin lukeminen",
     "Sen neula osoittaa seuraamaasi tehtävää.",
-    "Hiivi (%s) kompassi kädessä seurataksesi seuraavaa avointa tehtävää.",
+    "Käytä (%s) kompassia valitaksesi, mitä avointa tehtävää se seuraa.",
     "Pyörivä neula tarkoittaa, ettei mitään ole avoinna.",
     "Avoimet tehtävät ovat seuraavilla sivuilla.",
     "Tehtävänä",
     "Valmis",
     "◆ Seuraat tätä.",
+    "Mitä tehtävää seurataan?",
 ];
 
 const HU: Table = [
@@ -862,17 +886,18 @@ const HU: Table = [
     "Visszatérés: %s",
     "Iránytű",
     "Követed: %s",
-    "További nyitott feladatok: %s — lopakodj (%s) iránytűvel a kezedben a váltáshoz.",
+    "További nyitott feladatok: %s — használd (%s) az iránytűt a választáshoz.",
     "Még nincs mit követni.",
     "Napló",
     "Az iránytű olvasása",
     "A tűje a követett feladatra mutat.",
-    "Lopakodj (%s) iránytűvel a kezedben, hogy a következő nyitott feladatot kövesd.",
+    "Használd (%s) az iránytűt, hogy kiválaszd, melyik nyitott feladatot kövesse.",
     "Ha a tű pörög, nincs nyitott feladat.",
     "A nyitott feladatok a következő oldalakon vannak.",
     "Teendő",
     "Kész",
     "◆ Ezt követed.",
+    "Melyik feladatot kövesse?",
 ];
 
 const RO: Table = [
@@ -892,17 +917,18 @@ const RO: Table = [
     "Revii în %s",
     "Busolă",
     "Urmărești: %s",
-    "Alte sarcini deschise: %s — furișează-te (%s) cu busola în mână ca să schimbi.",
+    "Alte sarcini deschise: %s — folosește (%s) busola ca să alegi.",
     "Încă nimic de urmărit.",
     "Jurnal",
     "Cum citești busola",
     "Acul ei arată sarcina pe care o urmărești.",
-    "Furișează-te (%s) cu busola în mână ca să urmărești următoarea sarcină deschisă.",
+    "Folosește (%s) busola ca să alegi ce sarcină deschisă urmărește.",
     "Un ac care se rotește înseamnă că nimic nu e deschis.",
     "Sarcinile deschise sunt în paginile următoare.",
     "De făcut",
     "Încheiată",
     "◆ Urmărești această sarcină.",
+    "Ce sarcină urmărești?",
 ];
 
 const EL: Table = [
@@ -922,17 +948,18 @@ const EL: Table = [
     "Επιστροφή σε %s",
     "Πυξίδα",
     "Ακολουθείς: %s",
-    "Άλλες ανοιχτές αποστολές: %s — σκύψε (%s) με την πυξίδα στο χέρι για εναλλαγή.",
+    "Άλλες ανοιχτές αποστολές: %s — χρησιμοποίησε (%s) την πυξίδα για να διαλέξεις.",
     "Τίποτα να ακολουθήσεις ακόμα.",
     "Ημερολόγιο",
     "Πώς διαβάζεται η πυξίδα",
     "Η βελόνα της δείχνει την αποστολή που ακολουθείς.",
-    "Σκύψε (%s) με την πυξίδα στο χέρι για να ακολουθήσεις την επόμενη ανοιχτή αποστολή.",
+    "Χρησιμοποίησε (%s) την πυξίδα για να διαλέξεις ποια ανοιχτή αποστολή ακολουθεί.",
     "Αν η βελόνα γυρίζει, δεν υπάρχει τίποτα ανοιχτό.",
     "Οι ανοιχτές αποστολές βρίσκονται στις επόμενες σελίδες.",
     "Προς εκτέλεση",
     "Ολοκληρώθηκε",
     "◆ Ακολουθείς αυτήν.",
+    "Ποια αποστολή να ακολουθήσει;",
 ];
 
 const BG: Table = [
@@ -952,17 +979,18 @@ const BG: Table = [
     "Връщане след %s",
     "Компас",
     "Следиш: %s",
-    "Други отворени задачи: %s — промъкни се (%s) с компаса в ръка, за да смениш.",
+    "Други отворени задачи: %s — използвай (%s) компаса, за да избереш.",
     "Все още няма какво да следиш.",
     "Дневник",
     "Как се чете компасът",
     "Стрелката му сочи задачата, която следиш.",
-    "Промъкни се (%s) с компаса в ръка, за да следиш следващата отворена задача.",
+    "Използвай (%s) компаса, за да избереш коя отворена задача да следи.",
     "Въртяща се стрелка значи, че няма нищо отворено.",
     "Отворените задачи са на следващите страници.",
     "За вършене",
     "Изпълнена",
     "◆ Следиш тази задача.",
+    "Коя задача да следиш?",
 ];
 
 const TH: Table = [
@@ -982,17 +1010,18 @@ const TH: Table = [
     "กลับมาใน %s",
     "เข็มทิศ",
     "กำลังติดตาม: %s",
-    "ภารกิจอื่นที่ยังเปิดอยู่: %s — ถือเข็มทิศแล้วย่อง (%s) เพื่อสลับ",
+    "ภารกิจอื่นที่ยังเปิดอยู่: %s — ใช้ (%s) เข็มทิศเพื่อเลือก",
     "ยังไม่มีอะไรให้ติดตาม",
     "บันทึก",
     "วิธีอ่านเข็มทิศ",
     "เข็มชี้ไปยังภารกิจที่คุณติดตาม",
-    "ถือเข็มทิศแล้วย่อง (%s) เพื่อติดตามภารกิจถัดไปที่ยังเปิดอยู่",
+    "ใช้ (%s) เข็มทิศเพื่อเลือกว่าจะให้ติดตามภารกิจที่ยังเปิดอยู่ใด",
     "ถ้าเข็มหมุนไม่หยุด แปลว่าไม่มีภารกิจที่เปิดอยู่",
     "ภารกิจที่ยังเปิดอยู่อยู่ในหน้าถัดไป",
     "สิ่งที่ต้องทำ",
     "เสร็จแล้ว",
     "◆ คุณกำลังติดตามภารกิจนี้",
+    "ติดตามภารกิจไหน?",
 ];
 
 const VI: Table = [
@@ -1012,17 +1041,18 @@ const VI: Table = [
     "Quay lại sau %s",
     "La bàn",
     "Đang theo dõi: %s",
-    "Nhiệm vụ đang mở khác: %s — cầm la bàn và lén lút (%s) để chuyển.",
+    "Nhiệm vụ đang mở khác: %s — sử dụng (%s) la bàn để chọn.",
     "Chưa có gì để theo dõi.",
     "Nhật ký",
     "Cách đọc la bàn",
     "Kim của nó chỉ tới nhiệm vụ bạn đang theo dõi.",
-    "Cầm la bàn và lén lút (%s) để theo dõi nhiệm vụ đang mở tiếp theo.",
+    "Sử dụng (%s) la bàn để chọn nhiệm vụ đang mở mà nó theo dõi.",
     "Kim quay tròn nghĩa là không có gì đang mở.",
     "Các nhiệm vụ đang mở nằm ở những trang sau.",
     "Việc cần làm",
     "Hoàn thành",
     "◆ Bạn đang theo dõi nhiệm vụ này.",
+    "Theo dõi nhiệm vụ nào?",
 ];
 
 const ID: Table = [
@@ -1042,17 +1072,18 @@ const ID: Table = [
     "Kembali dalam %s",
     "Kompas",
     "Mengikuti: %s",
-    "Tugas terbuka lainnya: %s — menyelinaplah (%s) sambil memegang kompas untuk berganti.",
+    "Tugas terbuka lainnya: %s — gunakan (%s) kompas untuk memilih.",
     "Belum ada yang bisa diikuti.",
     "Jurnal",
     "Membaca kompas",
     "Jarumnya menunjuk tugas yang kamu ikuti.",
-    "Menyelinaplah (%s) sambil memegang kompas untuk mengikuti tugas terbuka berikutnya.",
+    "Gunakan (%s) kompas untuk memilih tugas terbuka mana yang diikutinya.",
     "Jarum yang berputar berarti tidak ada yang terbuka.",
     "Tugas yang terbuka ada di halaman-halaman berikutnya.",
     "Yang harus dilakukan",
     "Selesai",
     "◆ Kamu mengikuti tugas ini.",
+    "Ikuti tugas yang mana?",
 ];
 
 const MS: Table = [
@@ -1072,17 +1103,18 @@ const MS: Table = [
     "Kembali dalam %s",
     "Kompas",
     "Mengikuti: %s",
-    "Tugas terbuka lain: %s — menyelinap (%s) sambil memegang kompas untuk bertukar.",
+    "Tugas terbuka lain: %s — guna (%s) kompas untuk memilih.",
     "Belum ada apa-apa untuk diikuti.",
     "Jurnal",
     "Membaca kompas",
     "Jarumnya menunjuk ke tugas yang anda ikuti.",
-    "Menyelinap (%s) sambil memegang kompas untuk mengikuti tugas terbuka seterusnya.",
+    "Guna (%s) kompas untuk memilih tugas terbuka yang diikutinya.",
     "Jarum yang berpusing bermakna tiada tugas terbuka.",
     "Tugas terbuka ada di halaman-halaman seterusnya.",
     "Perlu dibuat",
     "Selesai",
     "◆ Anda sedang mengikuti tugas ini.",
+    "Ikut tugas yang mana?",
 ];
 
 const AR: Table = [
@@ -1102,17 +1134,18 @@ const AR: Table = [
     "العودة خلال %s",
     "بوصلة",
     "تتبع: %s",
-    "مهام مفتوحة أخرى: %s — تسلّل (%s) والبوصلة في يدك للتبديل.",
+    "مهام مفتوحة أخرى: %s — استخدم (%s) البوصلة للاختيار.",
     "لا شيء لتتبعه بعد.",
     "اليوميات",
     "قراءة البوصلة",
     "تشير إبرتها إلى المهمة التي تتبعها.",
-    "تسلّل (%s) والبوصلة في يدك لتتبع المهمة المفتوحة التالية.",
+    "استخدم (%s) البوصلة لتختار المهمة المفتوحة التي تتبعها.",
     "الإبرة الدوّارة تعني أنه لا توجد مهمة مفتوحة.",
     "المهام المفتوحة في الصفحات التالية.",
     "مهمة قائمة",
     "منجزة",
     "◆ أنت تتبع هذه المهمة.",
+    "أيّ مهمة تتبع؟",
 ];
 
 const HE: Table = [
@@ -1132,17 +1165,18 @@ const HE: Table = [
     "חזרה בעוד %s",
     "מצפן",
     "עוקב אחר: %s",
-    "משימות פתוחות נוספות: %s — התגנב (%s) עם המצפן ביד כדי להחליף.",
+    "משימות פתוחות נוספות: %s — השתמש (%s) במצפן כדי לבחור.",
     "אין עדיין אחרי מה לעקוב.",
     "יומן",
     "איך לקרוא את המצפן",
     "המחט שלו מצביעה על המשימה שאתה עוקב אחריה.",
-    "התגנב (%s) עם המצפן ביד כדי לעקוב אחר המשימה הפתוחה הבאה.",
+    "השתמש (%s) במצפן כדי לבחור אחר איזו משימה פתוחה הוא יעקוב.",
     "מחט מסתובבת פירושה שאין משימה פתוחה.",
     "המשימות הפתוחות מופיעות בעמודים הבאים.",
     "לביצוע",
     "הושלמה",
     "◆ אתה עוקב אחר משימה זו.",
+    "אחר איזו משימה לעקוב?",
 ];
 
 const HI: Table = [
@@ -1162,17 +1196,18 @@ const HI: Table = [
     "%s में वापसी",
     "कम्पास",
     "अनुसरण: %s",
-    "अन्य खुले कार्य: %s — बदलने के लिए कम्पास हाथ में लेकर दबे पाँव चलें (%s)।",
+    "अन्य खुले कार्य: %s — चुनने के लिए कम्पास का उपयोग करें (%s)।",
     "अभी अनुसरण करने को कुछ नहीं है।",
     "डायरी",
     "कम्पास कैसे पढ़ें",
     "इसकी सुई उस कार्य की ओर इशारा करती है जिसका आप अनुसरण कर रहे हैं।",
-    "अगले खुले कार्य का अनुसरण करने के लिए कम्पास हाथ में लेकर दबे पाँव चलें (%s)।",
+    "कम्पास का उपयोग करें (%s) और चुनें कि वह किस खुले कार्य का अनुसरण करे।",
     "घूमती सुई का अर्थ है कि कोई कार्य खुला नहीं है।",
     "खुले कार्य आगे के पन्नों पर हैं।",
     "करना बाकी",
     "पूर्ण",
     "◆ आप इसका अनुसरण कर रहे हैं।",
+    "किस कार्य का अनुसरण करें?",
 ];
 
 const CA: Table = [
@@ -1192,17 +1227,18 @@ const CA: Table = [
     "Tornes en %s",
     "Brúixola",
     "Seguint: %s",
-    "Altres tasques obertes: %s — ajup-te (%s) amb la brúixola a la mà per canviar.",
+    "Altres tasques obertes: %s — fes servir (%s) la brúixola per triar.",
     "Encara no hi ha res a seguir.",
     "Diari",
     "Com llegir la brúixola",
     "La seva agulla assenyala la tasca que segueixes.",
-    "Ajup-te (%s) amb la brúixola a la mà per seguir la següent tasca oberta.",
+    "Fes servir (%s) la brúixola per triar quina tasca oberta segueix.",
     "Si l'agulla gira, no hi ha res obert.",
     "Les tasques obertes són a les pàgines següents.",
     "Per fer",
     "Feta",
     "◆ Estàs seguint aquesta tasca.",
+    "Quina tasca vols seguir?",
 ];
 
 const FIL: Table = [
@@ -1222,17 +1258,18 @@ const FIL: Table = [
     "Babalik sa loob ng %s",
     "Kompas",
     "Sinusundan: %s",
-    "Iba pang bukas na gawain: %s — yumuko (%s) habang hawak ang kompas para lumipat.",
+    "Iba pang bukas na gawain: %s — gamitin (%s) ang kompas para pumili.",
     "Wala pang masusundan.",
     "Talaarawan",
     "Pagbasa ng kompas",
     "Itinuturo ng karayom nito ang gawaing sinusundan mo.",
-    "Yumuko (%s) habang hawak ang kompas para sundan ang susunod na bukas na gawain.",
+    "Gamitin (%s) ang kompas para piliin kung aling bukas na gawain ang susundan nito.",
     "Kapag umiikot ang karayom, walang bukas na gawain.",
     "Nasa mga kasunod na pahina ang mga bukas na gawain.",
     "Gagawin",
     "Tapos na",
     "◆ Sinusundan mo ito.",
+    "Aling gawain ang susundan?",
 ];
 
 /// Which Minecraft language file gets which table. Keyed on the client's own file
@@ -1475,7 +1512,7 @@ mod tests {
             );
             assert!(seen.insert(c.key), "duplicate chrome key `{}`", c.key);
         }
-        assert_eq!(ALL.len(), 27, "the chrome inventory changed size");
+        assert_eq!(ALL.len(), 28, "the chrome inventory changed size");
     }
 
     /// **The binding that makes `%s` safe.** Every language table renders every
@@ -1520,7 +1557,7 @@ mod tests {
     /// Chinese story is the exact defect this module exists to close.
     #[test]
     fn zh_cn_is_complete() {
-        assert_eq!(coverage("zh_cn"), (27, 27));
+        assert_eq!(coverage("zh_cn"), (28, 28));
         assert_eq!(lang_entries("zh_cn")[CLASS_TITLE.key], "选择你的职业");
     }
 
@@ -1528,9 +1565,9 @@ mod tests {
     /// masquerading as a translation.
     #[test]
     fn untabled_language_ships_no_chrome() {
-        assert_eq!(coverage("tlh_aa"), (0, 27));
+        assert_eq!(coverage("tlh_aa"), (0, 28));
         assert!(lang_entries("en_us").is_empty());
-        assert_eq!(english_entries().len(), 27);
+        assert_eq!(english_entries().len(), 28);
     }
 
     /// The multi-language build puts English on the component (the pack carries the

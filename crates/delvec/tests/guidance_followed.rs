@@ -696,25 +696,52 @@ fn the_compass_follows_an_open_objective() {
         body.contains("@e[tag=dw_npc_keeper,type=!minecraft:interaction,limit=1] Pos[0]"),
         "{body}"
     );
-    let cycle = fn_body(&out, "compass_cycle").unwrap();
+    // The menu: one button per pending tracked objective, each a pick.
+    let menu = fn_body(&out, "compass_menu").unwrap();
     assert!(
-        cycle.contains("scoreboard players set @s dw.told -1"),
-        "{cycle}"
+        menu.contains("type:\"minecraft:multi_action\"") && menu.contains("pause:false"),
+        "{menu}"
+    );
+    for k in 1..=3 {
+        assert!(
+            menu.contains(&format!("command:\"trigger dw.cpick set {k}\"")),
+            "button {k}: {menu}"
+        );
+    }
+    assert_eq!(
+        fn_body(&out, "compass_menu_show").unwrap().trim(),
+        "$dialog show @s $(dialog)"
+    );
+    let used = fn_body(&out, "compass_used").unwrap();
+    assert!(
+        used.contains("advancement revoke @s only hello-world:compass_use")
+            && used.contains("unless score @s dw.cuse matches 1.."),
+        "{used}"
+    );
+    let pick = fn_body(&out, "compass_pick").unwrap();
+    assert!(
+        pick.contains("scoreboard players operation @s dw.track = @s dw.cpick")
+            && pick.contains("scoreboard players set @s dw.told -1"),
+        "{pick}"
+    );
+    assert!(
+        give.contains("consumable={consume_seconds:1000000f"),
+        "{give}"
     );
     let tell = fn_body(&out, "compass_tell").unwrap();
     assert!(tell.contains("compass.following") && tell.contains("compass.nothing"));
     assert!(
         tell.contains("if score #gopen dw.guide matches 2..")
-            && tell.contains(r#"{"keybind":"key.sneak"}"#),
+            && tell.contains(r#"{"keybind":"key.use"}"#),
         "{tell}"
     );
-    let pred = out
-        .get("datapack/data/hello-world/predicate/compass_crouch.json")
-        .expect("the gesture's predicate");
-    let pred = std::str::from_utf8(pred).unwrap();
+    let adv = out
+        .get("datapack/data/hello-world/advancement/compass_use.json")
+        .expect("the compass's use advancement");
+    let adv = std::str::from_utf8(adv).unwrap();
     assert!(
-        pred.contains("is_sneaking") && pred.contains("dw_compass"),
-        "{pred}"
+        adv.contains("minecraft:using_item") && adv.contains("dw_compass"),
+        "{adv}"
     );
     let again = try_build(&dir).expect("builds again");
     assert_eq!(out, again, "two builds are byte-identical");
@@ -739,7 +766,7 @@ fn the_compass_follows_an_open_objective() {
         "no compass file"
     );
     let all = all_text(&out);
-    assert!(!all.contains("dw.track") && !all.contains("compass_crouch"));
+    assert!(!all.contains("dw.track") && !all.contains("dw.cpick"));
     let prefix = std::str::from_utf8(
         out.get("datapack/data/hello-world/item_modifier/journal_prefix.json")
             .unwrap(),
@@ -966,7 +993,6 @@ fn the_journal_holds_the_manual_the_open_and_the_done() {
     let pages = prefix["pages"].as_array().unwrap();
     assert_eq!(pages.len(), 3, "the compass page and two manual pages");
     let text = serde_json::to_string(&prefix).unwrap();
-    assert!(text.contains(r#"{"keybind":"key.sneak"}"#), "{text}");
     assert!(text.contains(r#"{"keybind":"key.use"}"#), "{text}");
     for o in ["talk", "pull", "press"] {
         assert_eq!(im(&format!("journal_open_{o}")).unwrap()["mode"], "append");

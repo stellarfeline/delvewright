@@ -711,7 +711,7 @@ pub fn check_book_pages(
                 .get(s.key)
                 .cloned()
                 .unwrap_or_else(|| s.en.to_string())
-                .replace("%s", "[[key|sneak]]")
+                .replace("%s", "[[key|use]]")
         };
         let text = |key: &str, en: &str| -> String {
             match doc {

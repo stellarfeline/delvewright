@@ -928,10 +928,10 @@ pub fn build_with_warnings(
         put_json(
             &mut out,
             &format!(
-                "datapack/data/{ns}/predicate/{}.json",
-                guidance::COMPASS_CROUCH_PREDICATE
+                "datapack/data/{ns}/advancement/{}.json",
+                guidance::COMPASS_USE_ADVANCEMENT
             ),
-            &guidance::crouch_predicate(),
+            &guidance::use_advancement(ns),
         );
     }
 

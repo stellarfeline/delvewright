@@ -42,7 +42,7 @@ this section is what they are *for* and the traps in each.
   objectives with their hints and the done ones, rewritten by the engine, so a
   hint is written to be re-read as well as heard.
 - **The compass** each player carries follows an announced objective; with
-  several open, crouching with it in hand moves to the next. `compass: hidden`
+  several open, using it (right-click) opens a list of the open ones to pick. `compass: hidden`
   on an objective keeps a secret off it; `guidance.compass: hidden` with no
   objective opting in carries no compass at all.
 - **A `highlight {within}`** is declared on an act whose block or body does not

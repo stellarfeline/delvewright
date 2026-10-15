@@ -9,7 +9,7 @@
 
 use super::*;
 use crate::compiler::emit::guidance::{
-    COMPASS_DATA, GUIDE, Guide, HlBody, JOURNAL_DATA, TRACK, Target, Watched,
+    COMPASS_DATA, GUIDE, Guide, HlBody, JOURNAL_DATA, PICK, TRACK, Target, Watched,
 };
 
 /// Save, drive and restore `#party` scores for one template.
@@ -220,7 +220,7 @@ pub(super) fn emit_compass_packtests(plan: &Plan, out: &mut BuildOutput, g: &Gui
     };
     isolate(plan, &open, &mut d);
     let mut b = packtest_header(&format!(
-        "{title}: the compass aims at the followed objective, cycles, spins when nothing is open, and comes back when lost (spec-0104 §6)"
+        "{title}: the compass aims at the followed objective, lists the open ones in its menu, follows a pick, spins when nothing is open, and comes back when lost (spec-0104 §6)"
     ));
     b.push(format!("function {ns}:setup"));
     b.push("clear @s".to_string());
@@ -238,14 +238,30 @@ pub(super) fn emit_compass_packtests(plan: &Plan, out: &mut BuildOutput, g: &Gui
     b.push(format!("assert score #cmp_a {GUIDE} matches 1"));
     if let Some((_, second)) = pair {
         let k2 = second.ordinal.expect("tracked");
-        b.push(format!("function {ns}:compass_cycle"));
+        // The menu holds the two open ones, each button its own pick.
+        b.push(format!("function {ns}:compass_menu"));
+        b.push(format!(
+            "execute store result score #cmp_m {GUIDE} run data get storage {ns}:guide menu.dialog.actions"
+        ));
+        b.push(format!("assert score #cmp_m {GUIDE} matches 2"));
+        for k in [k1, k2] {
+            b.push(format!(
+                "execute store result score #cmp_k {GUIDE} if data storage {ns}:guide menu.dialog.actions[{{action:{{command:\"trigger {PICK} set {k}\"}}}}]"
+            ));
+            b.push(format!("assert score #cmp_k {GUIDE} matches 1"));
+        }
+        // A pick of the second moves the needle to it, and back.
+        b.push(format!("scoreboard players set @s {PICK} {k2}"));
+        b.push(format!("function {ns}:compass_pick"));
         b.push(format!("assert score @s {TRACK} matches {k2}"));
+        b.push(format!("assert score @s {PICK} matches 0"));
         b.extend(compass_held(
             "#cmp_b",
             &tracker(cell(second).expect("a cell")),
         ));
         b.push(format!("assert score #cmp_b {GUIDE} matches 1"));
-        b.push(format!("function {ns}:compass_cycle"));
+        b.push(format!("scoreboard players set @s {PICK} {k1}"));
+        b.push(format!("function {ns}:compass_pick"));
         b.push(format!("assert score @s {TRACK} matches {k1}"));
     }
     // Everything done: the needle spins.

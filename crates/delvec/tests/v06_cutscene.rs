@@ -601,10 +601,8 @@ fn cutscene_less_campaign_emits_no_predicate() {
     ));
     let campaign: &'static Campaign = Box::leak(Box::new(parse_hw(&read_hw("quests.json"))));
     let (_, out) = build_plan(campaign, prefabs);
-    // The compass's gesture predicate (spec-0104 §6.4) is not the cutscene's.
     assert!(
-        !out.keys()
-            .any(|k| k.contains("/predicate/") && !k.ends_with("/compass_crouch.json")),
-        "no cutscene predicate for a cutscene-less campaign"
+        !out.keys().any(|k| k.contains("/predicate/")),
+        "no predicate directory for a cutscene-less campaign"
     );
 }

@@ -24,8 +24,11 @@ pub(super) const TRACK: &str = "dw.track";
 const TOLD: &str = "dw.told";
 /// Per player: the epoch last refreshed at.
 const SEEN: &str = "dw.gseen";
-/// Per player: crouching with the compass in hand last tick (the edge).
-const CROUCH: &str = "dw.crouch";
+/// Per player: the press latch — set while the compass is held in use, run
+/// down by the tick once it is not, so one press opens the menu once.
+const USE_LATCH: &str = "dw.cuse";
+/// Per player, a `trigger`: the ordinal a menu button picks.
+pub(super) const PICK: &str = "dw.cpick";
 /// Per player: scratch for the next ordinal a cycle moves to.
 const NEXT: &str = "dw.tnext";
 /// Per player: `1` while the followed objective is a `talk-to`, whose target
@@ -49,8 +52,8 @@ pub(super) const HL_TEAM: &str = "dw_hl";
 /// (`0xFFAA00`, `ChatFormatting.GOLD`).
 const HL_COLOR: &str = "gold";
 const HL_RGB: u32 = 0xFFAA00;
-/// The crouch-with-the-compass predicate.
-pub(super) const COMPASS_CROUCH_PREDICATE: &str = "compass_crouch";
+/// The advancement that sees the compass used (`minecraft:using_item`).
+pub(super) const COMPASS_USE_ADVANCEMENT: &str = "compass_use";
 
 /// The item predicate of the engine's compass.
 pub(super) fn compass_item() -> String {
@@ -530,9 +533,10 @@ pub(super) fn setup_lines(g: &Guide) -> Vec<String> {
         }
     }
     if g.compass {
-        for o in [TRACK, TOLD, CROUCH, NEXT, ON_BODY] {
+        for o in [TRACK, TOLD, USE_LATCH, NEXT, ON_BODY] {
             v.push(format!("scoreboard objectives add {o} dummy"));
         }
+        v.push(format!("scoreboard objectives add {PICK} trigger"));
     }
     if !g.highlights.is_empty() {
         v.push(format!("team add {HL_TEAM}"));
@@ -579,11 +583,16 @@ pub(super) fn tick_lines(g: &Guide, ns: &str) -> Vec<String> {
         ));
     }
     if g.compass {
+        // The menu's buttons run `/trigger`, which a player can use only while
+        // it is enabled for them; a pick is read on the tick.
         v.push(format!(
-            "execute as @a[scores={{dw.classed=1}}] if predicate {ns}:{COMPASS_CROUCH_PREDICATE} unless score @s {CROUCH} matches 1 run function {ns}:compass_cycle"
+            "scoreboard players enable @a[scores={{dw.classed=1}}] {PICK}"
         ));
         v.push(format!(
-            "execute as @a store success score @s {CROUCH} if predicate {ns}:{COMPASS_CROUCH_PREDICATE}"
+            "execute as @a[scores={{{PICK}=1..}}] run function {ns}:compass_pick"
+        ));
+        v.push(format!(
+            "scoreboard players remove @a[scores={{{USE_LATCH}=1..}}] {USE_LATCH} 1"
         ));
         if g.tracked()
             .any(|w| matches!(w.target, Some(Target::Body(_))))
@@ -596,21 +605,23 @@ pub(super) fn tick_lines(g: &Guide, ns: &str) -> Vec<String> {
     v
 }
 
-/// The predicate: crouching with the engine's compass in the main hand
-/// (§6.4).
-pub(super) fn crouch_predicate() -> Value {
+/// The advancement that sees the engine's compass used (§6.4):
+/// `minecraft:using_item` fires every tick it is held in use, and its reward
+/// re-arms it.
+pub(super) fn use_advancement(ns: &str) -> Value {
     json!({
-        "condition": "minecraft:entity_properties",
-        "entity": "this",
-        "predicate": {
-            "flags": { "is_sneaking": true },
-            "equipment": {
-                "mainhand": {
-                    "items": "minecraft:compass",
-                    "predicates": { "minecraft:custom_data": COMPASS_DATA }
+        "criteria": {
+            "use": {
+                "trigger": "minecraft:using_item",
+                "conditions": {
+                    "item": {
+                        "items": "minecraft:compass",
+                        "predicates": { "minecraft:custom_data": COMPASS_DATA }
+                    }
                 }
             }
-        }
+        },
+        "rewards": { "function": format!("{ns}:compass_used") }
     })
 }
 
@@ -638,7 +649,7 @@ fn compass_stack(chrome: &delvewright_dsl::Chrome, tracker: &str) -> String {
         &[("italic", json!(false))],
     ));
     format!(
-        "minecraft:compass[custom_name={name},custom_data={COMPASS_DATA},lodestone_tracker={tracker}]"
+        "minecraft:compass[custom_name={name},custom_data={COMPASS_DATA},consumable={{consume_seconds:1000000f,animation:\"none\",has_consume_particles:false}},lodestone_tracker={tracker}]"
     )
 }
 
@@ -808,7 +819,7 @@ pub(super) fn functions(
         format!("scoreboard players add @s {DEATHS} 0"),
     ];
     if g.compass {
-        for o in [TRACK, TOLD, NEXT, CROUCH, ON_BODY] {
+        for o in [TRACK, TOLD, NEXT, USE_LATCH, ON_BODY] {
             seed.push(format!("scoreboard players add @s {o} 0"));
         }
     }
@@ -993,7 +1004,7 @@ fn compass_functions(
                     "with",
                     json!([
                         { "score": { "name": "#gothers", "objective": GUIDE } },
-                        { "keybind": "key.sneak" }
+                        { "keybind": "key.use" }
                     ])
                 ),
             ]
@@ -1068,33 +1079,74 @@ fn compass_functions(
     fns.push(("compass_aim".to_string(), lines(&am)));
     fns.push(("compass_spin".to_string(), lines(&sp)));
 
-    // compass_cycle: the next pending tracked objective after the followed,
-    // wrapping (§6.4); the line is told whether or not it moved.
-    let mut cy = vec![format!("scoreboard players set @s {NEXT} 0")];
-    for w in &tracked {
-        let k = w.ordinal.expect("tracked");
-        cy.push(format!(
-            "execute if score @s {NEXT} matches 0 if score @s {TRACK} matches ..{}{} run scoreboard players set @s {NEXT} {k}",
-            k - 1,
-            w.guard
-        ));
-    }
-    for w in &tracked {
-        let k = w.ordinal.expect("tracked");
-        cy.push(format!(
-            "execute if score @s {NEXT} matches 0{} run scoreboard players set @s {NEXT} {k}",
-            w.guard
-        ));
-    }
-    cy.push(format!(
-        "scoreboard players operation @s {TRACK} = @s {NEXT}"
+    // compass_used: one press opens the menu once (§6.4).
+    fns.push((
+        "compass_used".to_string(),
+        lines(&[
+            format!("advancement revoke @s only {ns}:{COMPASS_USE_ADVANCEMENT}"),
+            format!(
+                "execute unless score @s {USE_LATCH} matches 1.. run function {ns}:compass_menu"
+            ),
+            format!("scoreboard players set @s {USE_LATCH} 2"),
+        ]),
     ));
-    cy.push(format!("scoreboard players set @s {TOLD} -1"));
-    cy.push(format!("function {ns}:compass_refresh"));
-    if g.journal {
-        cy.push(format!("function {ns}:journal_rewrite"));
+
+    // compass_menu: a dialog built in storage, one button per pending tracked
+    // objective; shown when it has one, `compass.nothing` otherwise.
+    let menu_title = snbt_of(&tr(&chrome.get(delvewright_dsl::chrome::COMPASS_CHOOSE)));
+    let mut menu = vec![format!(
+        "data modify storage {ns}:guide menu.dialog set value {{type:\"minecraft:multi_action\",title:{menu_title},pause:false,after_action:\"close\",actions:[]}}"
+    )];
+    for w in &tracked {
+        let k = w.ordinal.expect("tracked");
+        let o = &c.quests.content.quests[w.quest].objectives[w.objective];
+        let title = tr(o.title().unwrap_or_default());
+        let tooltip = o
+            .hint()
+            .map(|h| format!(",tooltip:{}", snbt_of(&tr(h))))
+            .unwrap_or_default();
+        let action =
+            format!("action:{{type:\"minecraft:run_command\",command:\"trigger {PICK} set {k}\"}}");
+        let marked = json!({ "text": "◆ ", "extra": [title.clone()] });
+        menu.push(format!(
+            "execute if score @s {TRACK} matches {k}{} run data modify storage {ns}:guide menu.dialog.actions append value {{label:{}{tooltip},{action}}}",
+            w.guard,
+            snbt_of(&marked)
+        ));
+        menu.push(format!(
+            "execute unless score @s {TRACK} matches {k}{} run data modify storage {ns}:guide menu.dialog.actions append value {{label:{}{tooltip},{action}}}",
+            w.guard,
+            snbt_of(&title)
+        ));
     }
-    fns.push(("compass_cycle".to_string(), lines(&cy)));
+    menu.push(format!(
+        "execute if data storage {ns}:guide menu.dialog.actions[0] run function {ns}:compass_menu_show with storage {ns}:guide menu"
+    ));
+    menu.push(format!(
+        "execute unless data storage {ns}:guide menu.dialog.actions[0] run tellraw @s {}",
+        tr_with(
+            &chrome.get(delvewright_dsl::chrome::COMPASS_NOTHING),
+            &[("color", json!("gray"))]
+        )
+    ));
+    fns.push(("compass_menu".to_string(), lines(&menu)));
+    fns.push((
+        "compass_menu_show".to_string(),
+        lines(&["$dialog show @s $(dialog)".to_string()]),
+    ));
+
+    // compass_pick: the button's trigger names the objective to follow; the
+    // line is told whether or not it moved, and the mark moves in the journal.
+    let mut pick = vec![
+        format!("scoreboard players operation @s {TRACK} = @s {PICK}"),
+        format!("scoreboard players set @s {PICK} 0"),
+        format!("scoreboard players set @s {TOLD} -1"),
+        format!("function {ns}:compass_refresh"),
+    ];
+    if g.journal {
+        pick.push(format!("function {ns}:journal_rewrite"));
+    }
+    fns.push(("compass_pick".to_string(), lines(&pick)));
     fns
 }
 
@@ -1121,7 +1173,7 @@ pub(super) fn item_modifiers(
             gap(),
             tr(&chrome.get(ch::JOURNAL_COMPASS_FOLLOWS)),
             line(),
-            tr_with(&chrome.get(ch::JOURNAL_COMPASS_SWITCH), &[("with", json!([{ "keybind": "key.sneak" }]))]),
+            tr_with(&chrome.get(ch::JOURNAL_COMPASS_SWITCH), &[("with", json!([{ "keybind": "key.use" }]))]),
             line(),
             tr(&chrome.get(ch::JOURNAL_COMPASS_SPIN)),
             line(),
