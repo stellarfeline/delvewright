@@ -1,0 +1,17 @@
+{
+  "code": "DW1022",
+  "patch": [
+    {
+      "doc": "site-plan.json",
+      "op": "add",
+      "path": "/content/boxes/0/commons",
+      "value": [
+        "hall-door"
+      ]
+    }
+  ],
+  "units": [
+    "PlanBox.commons"
+  ],
+  "why": "The hall's box disposes an opening `hall-door` to the commons, and `prefab/gallery-hall` declares no opening of that name: it was written by the gallery's generator, not lifted out of a campaign, so it declares none. A `commons` list answers a seated piece's declared openings (`delvec prefab seat --commons`), and a name that answers nothing is `DW1022`, which names the piece's declared openings. It discharges `PlanBox.commons`: the gallery seats no extracted piece, so the field is bound by its refusal."
+}

@@ -829,6 +829,119 @@ fn a_cut_declares_its_candidates_and_its_residue() {
     assert_eq!(strip(room), strip(cut));
 }
 
+/// **Joining a seated piece's openings to neighbours** (spec-0106 §3.9): the
+/// author names the connection each opening joins (`--join`), and the seam is
+/// written whole — its face as the edge's `a` box sees it, its offsets on both
+/// boxes from the opening's cells, its size from the opening — so the pieces
+/// either side are detailed against it and the whole builds.
+#[test]
+fn a_seated_piece_joins_its_openings_to_neighbours() {
+    let (dir, prefabs) = fixture("join-src");
+    let lib = dir.parent().unwrap().join("lib");
+    let (code, out) = extract(&dir, &prefabs, "node/mid", &lib, "mid-x");
+    assert_eq!(code, Some(0), "{out}");
+    let size: Vec<i64> = (0..3)
+        .map(|i| {
+            meta(&lib, "mid-x")["structure"]["size"][i]
+                .as_i64()
+                .unwrap()
+        })
+        .collect();
+
+    // left | hall (seated) | right, the hall the `a` of both connections.
+    let root = tempdir("join");
+    let seated = root.join("campaign");
+    std::fs::create_dir_all(&seated).unwrap();
+    campaign(&seated);
+    let at = [10i64, 0];
+    let (left_hi, right_lo) = (at[0] - 1, at[0] + size[0]);
+    write_doc(
+        &seated,
+        "layout-graph.json",
+        "layout-graph",
+        serde_json::json!({
+            "nodes": [
+                {"id": "node/left", "intent": "a room", "stations": [{"anchor": "anchor/hearth", "kind": "point"}]},
+                {"id": "node/hall", "intent": "the seated piece"},
+                {"id": "node/right", "intent": "a room", "stations": [{"anchor": "anchor/settle", "kind": "point"}]}
+            ],
+            "edges": [
+                {"id": "edge/hall-left", "class": "walk", "a": "node/hall", "b": "node/left"},
+                {"id": "edge/hall-right", "class": "walk", "a": "node/hall", "b": "node/right"}
+            ],
+            "entry": "node/left", "goal": "node/right",
+            "critical_path": ["node/left", "node/hall", "node/right"],
+            "beats": [
+                {"node": "node/left", "objective": "obj/ask", "quest": "quest/walk-the-whole"},
+                {"node": "node/hall", "objective": "obj/enter-the-cell", "quest": "quest/walk-the-whole"},
+                {"node": "node/right", "objective": "obj/walk-out", "quest": "quest/walk-the-whole"}
+            ]
+        }),
+    );
+    common::patch_file(&seated.join("site-plan.json"), |v| {
+        let c = &mut v["content"];
+        c["seams"] = serde_json::json!([]);
+        c["boxes"] = serde_json::json!([
+            {"node": "node/left", "min": [left_hi - SPAN + 1, 1], "extent": [SPAN, SPAN],
+             "floor": {"y": FLOOR}, "ceiling": {"open": 4}, "base": {"owned": 1}},
+            {"node": "node/right", "min": [right_lo, 1], "extent": [SPAN, SPAN],
+             "floor": {"y": FLOOR}, "ceiling": {"open": 4}, "base": {"owned": 1}}
+        ]);
+    });
+    let at_s = format!("{},{}", at[0], at[1]);
+    let (code, out) = seat_at(
+        &seated,
+        &lib,
+        "prefab/mid-x",
+        "node/hall",
+        &at_s,
+        &[
+            "--floor",
+            &FLOOR.to_string(),
+            "--join",
+            "west-mid=edge/hall-left",
+            "--join",
+            "mid-east=edge/hall-right",
+        ],
+    );
+    assert_eq!(code, Some(0), "{out}");
+    assert!(
+        out.contains("2 declared opening(s) examined (2 answered by a seam, 0 by the commons)"),
+        "{out}"
+    );
+    let plan: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(seated.join("site-plan.json")).unwrap())
+            .unwrap();
+    let seams = plan["content"]["seams"].as_array().unwrap();
+    assert_eq!(seams.len(), 2);
+    for sm in seams {
+        assert_eq!(
+            sm["form"], "a door in the party wall",
+            "the form is the opening's"
+        );
+        assert!(sm.get("at").is_some() && sm.get("meets").is_some(), "{sm}");
+    }
+    // The neighbours, detailed against the seams the seating wrote.
+    common::copy_dir_all(&lib, &prefabs);
+    piece(&seated, &prefabs, "left", "hearth");
+    piece(&seated, &prefabs, "right", "settle");
+    common::patch_file(&seated.join("detail-plan.json"), |v| {
+        let rows = v["content"]["details"].as_array_mut().unwrap();
+        rows.push(
+            serde_json::json!({"place": "node/left", "piece": "prefab/left",
+            "anchors": {"anchor/node-left": "seat", "spawn": "seat", "anchor/hearth": "hearth"}}),
+        );
+        rows.push(
+            serde_json::json!({"place": "node/right", "piece": "prefab/right",
+            "anchors": {"anchor/node-right": "seat", "anchor/settle": "settle"}}),
+        );
+    });
+    let (code, out) = run(&["fmt", s(&seated)]);
+    assert_eq!(code, Some(0), "{out}");
+    let (code, out) = build(&seated, &prefabs, &root.join("out"));
+    assert_eq!(code, Some(0), "{out}");
+}
+
 /// `DW1023`: a declared object the derivation can neither carry nor drop by
 /// a rule is refused, naming it and the field it could not fill, and nothing
 /// is written — here a cut through the air over the rooms, which has no walk
