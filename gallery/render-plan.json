@@ -174,6 +174,16 @@
     },
     {
       "area": "area/hall",
+      "id": "pov/leg12/wp10",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
+      "id": "pov/leg12/wp11",
+      "kind": "pov"
+    },
+    {
+      "area": "area/hall",
       "id": "pov/leg12/wp2",
       "kind": "pov"
     },
