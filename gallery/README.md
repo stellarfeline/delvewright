@@ -62,7 +62,11 @@ split by a wall with five barred openings in it — the story gate, the shortcut
 door, and three doors on clocks, each opening onto a roofed closet on the near
 side, so that while the story gate is shut nothing a body does gets it into the
 far half (`DW1011`) — and a mezzanine in the far half whose stair is missing
-its treads. Beside it the generator emits a small
+its treads. When the muster is cleared the story gate comes down again and the
+same beat unbars the shortcut door (`open-gate` on a shortcut's gate unlocks the
+shortcut), so a party that dies in the far half and wakes at the hearth walks
+back through the side door; `DW1011` reads a way round through a shortcut's door
+as the declared loop and judges every other. Beside it the generator emits a small
 **annex tileset** — four 7 × 6 × 7 boxes and a pool — plus a 3-cube **shard**
 that exists only to be stamped by `fragment`. The annex is deliberately plain:
 its job is the ASSEMBLY, and a tileset with interesting rooms would make the
@@ -119,6 +123,12 @@ blocks: the build states the nearest body cell and its distance. The waypoint
 export carries the plain sensor and its shrieker on the legs that walk past them
 and the calibrated sensor on the legs up and down the stair, and the bot asserts
 each click and shriek and closes the run with `[sculk] darkness 0, warden 0`.
+No wave body stands within the sensor's reach while a leg that carries the
+shriek is walked: a mob's footstep sets the sensor off and a shrieker answers
+only a player, so a body there would take the click the party is owed. The
+walk to the Marshal is the one such leg before the muster is cleared, and the
+muster forms up only once she has the party's answer; every later leg past the
+floor comes after the muster is cleared.
 A third sensor is set into the near hall's floor two cells south of the walk
 along the valves. Two legs pass within its earshot without predicting it: the
 walk from the emeralds to the first valve and the walk from the third valve to
@@ -756,7 +766,8 @@ this, because a fight does not stay where it is staged: the ladder's own census
 found a re-seated cohort spread 14.4 blocks from its anchor. So both killing
 volumes live in the NEAR hall — the west corner and the north wall — and the
 muster forms up beyond the dividing wall, in the far hall the quest's beat
-names. The wall is the guarantee; the generator checks the sides, not a radius.
+names — the Marshal's answer, so no body of it stands while the party walks to
+her. The wall is the guarantee; the generator checks the sides, not a radius.
 
 **The pits sit where nothing walks.** Each is four blocks clear of every anchor
 and of every cell the piece's own bodies are teleported through on their way to

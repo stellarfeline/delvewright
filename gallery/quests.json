@@ -954,30 +954,6 @@
           },
           {
             "happening": {
-              "subject": "anchor/muster",
-              "text": "The muster forms up beyond the wall.",
-              "verb": "arrives"
-            },
-            "type": "spawn-wave",
-            "wave": "wave/muster",
-            "when": {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ]
-            }
-          },
-          {
-            "happening": {
               "subject": "npc/warden",
               "text": "The Warden steps behind the wall and does not come back.",
               "verb": "departs"
@@ -1658,7 +1634,7 @@
           },
           {
             "after": [
-              "obj/back-in-the-hall"
+              "obj/answer-the-marshal"
             ],
             "announcement": "shown",
             "forbids_flags": [
@@ -1922,6 +1898,32 @@
           }
         ],
         "on_objective_complete": {
+          "obj/answer-the-marshal": [
+            {
+              "happening": {
+                "subject": "anchor/muster",
+                "text": "The muster forms up beyond the wall once the Marshal has the party's answer.",
+                "verb": "arrives"
+              },
+              "type": "spawn-wave",
+              "wave": "wave/muster",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
+            }
+          ],
           "obj/back-in-the-hall": [
             {
               "anchor": "anchor/hearth",
@@ -2930,6 +2932,14 @@
             {
               "assembly": "assembly/arm",
               "type": "despawn-assembly"
+            },
+            {
+              "anchor": "anchor/shortcut-door",
+              "happening": {
+                "text": "With the muster answered, the side door is unbarred from the far side, and the hearth is one door away again.",
+                "verb": "opens"
+              },
+              "type": "open-gate"
             }
           ],
           "obj/take-the-bone": [
