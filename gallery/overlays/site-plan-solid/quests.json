@@ -100,6 +100,14 @@
             },
             "type": "spawn-wave",
             "wave": "wave/muster"
+          },
+          {
+            "anchor": "anchor/seam-annex-chute",
+            "happening": {
+              "text": "The bars across the annex chute draw up with the hall's doors.",
+              "verb": "opens"
+            },
+            "type": "open-gate"
           }
         ],
         "trigger": {
@@ -225,6 +233,30 @@
             {
               "type": "set-weather",
               "weather": "thunder"
+            },
+            {
+              "anchor": "anchor/seam-loft-stair",
+              "happening": {
+                "text": "The bars at the head of the loft stair lift with the muster cleared.",
+                "verb": "opens"
+              },
+              "type": "open-gate"
+            },
+            {
+              "anchor": "anchor/seam-undercroft-shaft",
+              "happening": {
+                "text": "The hatch over the undercroft shaft falls open.",
+                "verb": "opens"
+              },
+              "type": "open-gate"
+            },
+            {
+              "anchor": "anchor/seam-undercroft-crawl",
+              "happening": {
+                "text": "The grating over the undercroft ladder comes up.",
+                "verb": "opens"
+              },
+              "type": "open-gate"
             }
           ]
         },

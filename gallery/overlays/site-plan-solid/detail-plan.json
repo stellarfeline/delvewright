@@ -12,7 +12,9 @@
       {
         "anchors": {
           "anchor/node-far-hall": "anchor/node-far-hall",
-          "anchor/unlock-east-door": "anchor/unlock-east-door"
+          "anchor/seam-loft-stair": "anchor/seam-loft-stair",
+          "anchor/unlock-east-door": "anchor/unlock-east-door",
+          "anchor/unlock-loft-stair": "anchor/unlock-loft-stair"
         },
         "piece": "prefab/gallery-rock-far-hall",
         "place": "node/far-hall"
@@ -31,6 +33,8 @@
           "anchor/reliquary-grille": "anchor/reliquary-grille",
           "anchor/seam-centre-door": "anchor/seam-centre-door",
           "anchor/seam-east-door": "anchor/seam-east-door",
+          "anchor/seam-undercroft-crawl": "anchor/seam-undercroft-crawl",
+          "anchor/seam-undercroft-shaft": "anchor/seam-undercroft-shaft",
           "anchor/seam-west-door": "anchor/seam-west-door",
           "anchor/unlock-west-door": "anchor/unlock-west-door",
           "spawn": "anchor/spawn"
@@ -40,7 +44,8 @@
       },
       {
         "anchors": {
-          "anchor/node-annex": "anchor/node-annex"
+          "anchor/node-annex": "anchor/node-annex",
+          "anchor/seam-annex-chute": "anchor/seam-annex-chute"
         },
         "piece": "prefab/gallery-rock-annex",
         "place": "node/annex"
