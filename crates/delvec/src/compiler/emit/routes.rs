@@ -634,6 +634,13 @@ pub(super) fn prove_world(
                 eprintln!("{}", route_binding.line());
                 route_verdict?;
                 legs_carried = route_binding.carried;
+                // DW1044: a trigger the path performs to pay a flag a later
+                // step reads is one every walk to that step enters — after
+                // DW0311, because it asks for walks over the legs DW0311 proved.
+                let (threshold_binding, threshold_verdict) =
+                    crate::compiler::nav::check_threshold_triggers(plan, world);
+                eprintln!("{}", threshold_binding.line());
+                threshold_verdict?;
                 // v0.6 checkpoint no-stranding + placement proofs (spec-0012,
                 // DW0315/DW0316) and stealth-zone standable/reachable proofs
                 // (spec-0014, DW0327), re-rooting DW0311 reachability at each beat.
