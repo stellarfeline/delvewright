@@ -139,10 +139,13 @@ const MUST_WALK_SENSOR: [i32; 3] = [17, 0, 3];
 /// **The sealed catalyst** (spec-0100 §3.7, `DW1001`): a sculk catalyst set
 /// into the solid stone over the near hall's roof, three courses above it,
 /// east of the terrace and west of the long gallery. The nearest place a body
-/// can stand is the near hall's floor nine courses below (`distSqr` 81 > 64)
-/// — so it can hear no death, and the build states the nearest body cell. Set
-/// six cells further west, over the terrace annex's rim, it is `DW1001`.
-const SEALED_CATALYST: [i32; 3] = [18, 10, 8];
+/// can stand is a rafter of the near hall, which a body jumps up to from a
+/// crate by the fence tops beside it (the reach graph's, spec-0113): six
+/// columns east, five courses down, three north (`distSqr` 70 > 64) — so it
+/// can hear no death, and the build states the nearest body cell. One column
+/// further east it is `DW1001` by that rafter; six further west, over the
+/// terrace annex's rim, likewise.
+const SEALED_CATALYST: [i32; 3] = [17, 10, 8];
 
 /// The block state of [`SEALED_CATALYST`].
 const SEALED_CATALYST_STATE: &[(&str, &str)] = &[("bloom", "false")];

@@ -185,7 +185,7 @@
               "verb": "departs"
             },
             "id": "obj/reach-the-end",
-            "radius": 3,
+            "radius": 1,
             "title": "Leave by the far door",
             "type": "reach-anchor"
           }
