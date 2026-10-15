@@ -821,6 +821,7 @@ mod tests {
             shown_faces: Vec::new(),
             spatial_contract: None,
             extra: Default::default(),
+            extraction: None,
         };
         (meta, s)
     }

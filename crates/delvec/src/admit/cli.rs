@@ -134,6 +134,65 @@ pub enum PrefabCommand {
         #[arg(short = 'o', long)]
         out: Option<PathBuf>,
     },
+    /// **Lift a prefab out of a built campaign** (spec-0106 §3.9): build the
+    /// campaign in memory, cut the world as shipped to a scope and write the
+    /// piece — its tiles and a document whose every field is derived: the
+    /// openings at its boundary, its ground, anchors, stations, contract,
+    /// light, the bodies the source stood inside it, what the scope severed
+    /// (`residue`) and the lock record of its source. Reads the library at
+    /// `--prefabs`; writes `<id>.json` and its tiles into `-o`.
+    Extract {
+        /// The built campaign's directory.
+        campaign: PathBuf,
+        /// What to lift: `node/<a>[,node/<b>…]` (one place or several),
+        /// `node/<place>/<space>` (a space of a bound piece's contract),
+        /// `anchor/<gate>` (a gate station's region) or `x0,y0,z0..x1,y1,z1`
+        /// (a cuboid of world cells, inclusive).
+        #[arg(long)]
+        scope: String,
+        /// The prefab library directory to write the piece into.
+        #[arg(short = 'o', long)]
+        out: PathBuf,
+        /// The piece's id. Omitted, it is derived from the scope: the place's
+        /// stem, the first and last places' stems, the place and its space,
+        /// or the campaign and the cut's low corner.
+        #[arg(long)]
+        id: Option<String>,
+    },
+    /// **Seat an extracted prefab as a place** (spec-0106 §3.9): write the
+    /// place's `boxes[]` row, its stations, its `details[]` row and one seam per
+    /// joined opening, every field derived from the piece but the two the
+    /// author decides — where it stands, and which neighbour each opening
+    /// joins. Judged before anything is written; an opening answered by
+    /// nothing is `DW1022`. Reads the library at `--prefabs`.
+    Seat {
+        /// The campaign to seat it in.
+        campaign: PathBuf,
+        /// The extracted piece (`prefab/<id>`).
+        prefab: String,
+        /// The layout-graph node it becomes (declared there first).
+        #[arg(long)]
+        node: String,
+        /// Where its cuboid's low corner stands, `x,z`.
+        #[arg(long)]
+        at: String,
+        /// The world `y` of its walk plane. Omitted, the piece's bottom course
+        /// rests on the highest terrain under its footprint and ring (on a
+        /// `solid` site, on the plan's floor).
+        #[arg(long)]
+        floor: Option<i64>,
+        /// Join a declared opening to a connection of the layout graph,
+        /// `<opening>=<edge>`; the seam is written at the opening's cells.
+        #[arg(long = "join", value_name = "OPENING=EDGE")]
+        joins: Vec<String>,
+        /// Dispose a declared opening to the site's commons (an `open` site).
+        #[arg(long = "commons", value_name = "OPENING")]
+        commons: Vec<String>,
+        /// Seat a station under another name, `<from>=<to>` — where the
+        /// campaign already holds the piece's name (`DW0870`).
+        #[arg(long = "rename", value_name = "FROM=TO")]
+        renames: Vec<String>,
+    },
     /// Merge a curation report's notes into catalog cards.
     CurateMerge {
         /// The curation report from `curate`.

@@ -15,6 +15,7 @@ fn license() -> License {
         note: "test".into(),
         provenance: "test".into(),
         generated_by: None,
+        extracted: None,
     }
 }
 
@@ -499,6 +500,7 @@ fn a_probed_profile_still_carries_its_measurement() {
             note: "n".into(),
             provenance: "p".into(),
             generated_by: None,
+            extracted: None,
         },
     );
     assert_eq!(

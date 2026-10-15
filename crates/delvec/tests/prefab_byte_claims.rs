@@ -72,6 +72,7 @@ fn honest_library(dir: &Path) {
             note: "Test fixture.".into(),
             provenance: "Synthesised by crates/delvec/tests/prefab_byte_claims.".into(),
             generated_by: None,
+            extracted: None,
         },
     );
     carve(&mut s, &mut meta, &SocketDecl::new([3, 1, 0], "north")).unwrap();

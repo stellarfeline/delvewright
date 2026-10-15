@@ -806,6 +806,14 @@ pub struct PlanBox {
     /// place (`DW0988`); its eaves stop at a neighbour's wall.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub roof: Option<Roof>,
+    /// **The bound piece's declared openings that open onto the commons**
+    /// (spec-0106 §3.9): each a name from the piece's `extraction.openings`,
+    /// whose outside is the site's open ground rather than a neighbour. An
+    /// opening a seam does not answer and this list does not name is
+    /// `DW1022`; one named here on a `solid` site, or whose outside cells a
+    /// neighbour claims, is `DW1022` too.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub commons: Vec<String>,
 }
 
 /// The roof a roofed place carries above its lid (spec-0098 §3).

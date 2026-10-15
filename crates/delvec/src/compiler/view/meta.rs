@@ -118,6 +118,7 @@ mod tests {
                 note: "n".to_string(),
                 provenance: "p".to_string(),
                 generated_by: None,
+                extracted: None,
             },
         );
         doc.lighting = Some(Lighting {

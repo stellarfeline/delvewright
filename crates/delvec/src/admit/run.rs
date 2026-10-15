@@ -69,6 +69,15 @@ pub fn run(args: PrefabArgs, json: bool) -> ExitCode {
             write,
             dark_threshold,
         } => run_lighting(&nbt, write, dark_threshold, json),
+        // The two that read a whole campaign and the library at `--prefabs`
+        // are dispatched by the binary, which owns that flag and the build.
+        PrefabCommand::Extract { .. } | PrefabCommand::Seat { .. } => {
+            eprintln!(
+                "internal error: `delvec prefab extract` and `seat` are dispatched by the \
+                 `delvec` binary"
+            );
+            ExitCode::from(10)
+        }
         PrefabCommand::Catalog { cmd } => match cmd {
             CatalogCmd::Validate { files } => run_catalog_validate(&files, json),
         },
@@ -1332,6 +1341,7 @@ fn skeleton_for(nbt: &Path, structure: &Structure) -> PrefabMeta {
             // Nothing regenerates an ingested piece: there is no program and no
             // seed, so the row is absent rather than invented.
             generated_by: None,
+            extracted: None,
         },
     )
 }

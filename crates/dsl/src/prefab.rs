@@ -242,6 +242,14 @@ pub struct PrefabMeta {
     /// as an absent `lighting` block differs from `unmeasured`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spatial_contract: Option<SpatialContract>,
+    /// **What an extraction derived** (spec-0106 §3.9): the openings at the
+    /// piece's boundary, the ground it owns, the light and sky it was
+    /// declared under, its stations, the bodies the source stood inside it
+    /// and what the scope severed. Written by `delvec prefab extract` and
+    /// read by `delvec prefab seat` and by `DW1022`; absent on every piece
+    /// no extraction wrote.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extraction: Option<Extraction>,
     /// Every top-level key this version does not model, kept verbatim so that
     /// reading and writing the document is not the same as editing it.
     ///
@@ -813,6 +821,129 @@ pub struct License {
     /// can act on rather than a sentence a human can read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub generated_by: Option<GeneratedBy>,
+    /// **The lock record of an extracted piece** (spec-0106 §3.10): which
+    /// build of which campaign these bytes were lifted from, by what scope
+    /// and engine, and the digest of what was written. A cache key and a
+    /// provenance row, never an input to a build.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extracted: Option<ExtractedFrom>,
+}
+
+/// Where an extracted piece came from (spec-0106 §3.10).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExtractedFrom {
+    /// The source campaign's id.
+    pub campaign: String,
+    /// The commit the source campaign directory was checked out at, when it
+    /// lies in a git work tree with no change under it; absent otherwise, and
+    /// [`Self::documents`] is then the only revision.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+    /// `sha256:<hex>` over every input of the source build, in path order —
+    /// the revision of the source that needs no repository.
+    pub documents: String,
+    /// The scope, as given to `extract`.
+    pub scope: String,
+    /// The engine that built the source and ran the extraction
+    /// (`delvec --version`).
+    pub engine: String,
+    /// `sha256:<hex>` of the source build's `manifest.json`.
+    pub manifest: String,
+    /// `sha256:<hex>` over the extracted tiles in grid order and this
+    /// document with this field empty.
+    pub digest: String,
+}
+
+/// What an extraction derived about a piece (spec-0106 §3.9).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Extraction {
+    /// Which kind of scope the piece was cut by: `place`, `structure` or
+    /// `cut`.
+    pub kind: String,
+    /// The piece's declared openings, in face then cell order. Empty where
+    /// the scope's boundary is all seams the scope holds and commons.
+    #[serde(default)]
+    pub openings: Vec<PieceOpening>,
+    /// What the piece stands on when seated: its own ground
+    /// (`{"owned": n}`, the courses under its floor course), or
+    /// `{"aloft": n}`.
+    pub ground: crate::siteplan::Base,
+    /// The relight the source places were declared under
+    /// (`boxes[].lighting`), when every place of the scope declared the same.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relight: Option<crate::AreaLighting>,
+    /// The darkness mitigation the source places carried, when every place
+    /// of the scope carried the same.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mitigation: Option<crate::AreaMitigation>,
+    /// The sky the source places stood under, when every place of the scope
+    /// stood under the same one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub atmosphere: Option<crate::ids::AtmosphereId>,
+    /// Every station of the source places inside the scope, named by the
+    /// piece anchor that answers it — the stations a seating declares.
+    #[serde(default)]
+    pub stations: Vec<crate::layout::Station>,
+    /// Every body the source campaign stands inside the scope: what the
+    /// bytes do not hold.
+    #[serde(default)]
+    pub entities: Vec<PieceEntity>,
+    /// Everything the scope severed, by name — each answered by a check of
+    /// the campaign the piece is seated in, never by a field an author types.
+    #[serde(default)]
+    pub residue: Vec<Residue>,
+}
+
+/// One declared opening of an extracted piece (spec-0106 §3.9).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PieceOpening {
+    /// The opening's name: the source seam's edge stem, or a derived
+    /// `cut-<face>-<n>` for a candidate at a cut.
+    pub name: String,
+    /// Which side of the piece it leaves by.
+    pub face: crate::siteplan::Face,
+    /// The opening's cells, piece-local and inclusive, in the piece's
+    /// boundary layer on that face — the cells a seam answering it allocates.
+    pub cells: [[i32; 3]; 2],
+    /// How a body crosses: the source seam's class, or the walk model's
+    /// reading at a cut (`walk`, `stair`, `drop`, `climb`, `swim`).
+    pub kind: String,
+    /// The floor beyond the opening less the floor inside it, in cells.
+    pub rise: i64,
+    /// The opening's clear width on the face's own horizontal axis (`x`
+    /// through a floor).
+    pub width: u32,
+    /// The opening's clear height (`z` through a floor).
+    pub height: u32,
+    /// What the crossing is: the source seam's `form`, or the walk model's
+    /// reading of a cut.
+    pub form: String,
+    /// `seam` where a source seam allocated it, `cut` where a cut found it.
+    pub source: String,
+}
+
+/// A body the source campaign stood inside an extracted piece.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PieceEntity {
+    /// `npc`, `actor`, `assembly` or `furniture`.
+    pub kind: String,
+    /// The object's id in the source campaign.
+    pub id: String,
+    /// The anchor it stands at.
+    pub anchor: String,
+    /// The source document that declared it.
+    pub document: String,
+}
+
+/// One object an extraction's scope severed (spec-0106 §3.9).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Residue {
+    /// The object's id, or the derivation's name for what is unestablished.
+    pub object: String,
+    /// The source document that declared it; `extraction` for a derived row.
+    pub document: String,
+    /// What severed it, and the check of the seated campaign that answers it.
+    pub severed: String,
 }
 
 /// Everything needed to reproduce the `.nbt` byte for byte (ADR-0006).
@@ -1079,6 +1210,7 @@ impl PrefabMeta {
             shown_faces: Vec::new(),
             spatial_contract: None,
             extra: BTreeMap::new(),
+            extraction: None,
         }
     }
 
@@ -1622,6 +1754,7 @@ mod tests {
                 note: String::new(),
                 provenance: String::new(),
                 generated_by: None,
+                extracted: None,
             },
         );
         let json = meta.to_json();
@@ -1743,6 +1876,7 @@ mod tests {
                 note: String::new(),
                 provenance: String::new(),
                 generated_by: None,
+                extracted: None,
             },
         );
         let place = |role| AnchorEdit {

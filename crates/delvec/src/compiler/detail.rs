@@ -83,6 +83,18 @@ delvewright_dsl::dw_code! {
     pub const DW_OWNED_OVER_AIR: DwCode = DwCode::new("DW1021", ExitTier::Build);
 }
 
+delvewright_dsl::dw_code! {
+    /// `DW1022`: a seated piece's declared opening is answered by nothing
+    /// (spec-0106 §3.9).
+    pub const DW_OPENING_UNANSWERED: DwCode = DwCode::new("DW1022", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW1023`: an extraction met a declared object its derivation cannot
+    /// place (spec-0106 §3.9).
+    pub const DW_EXTRACTION_CANNOT_PLACE: DwCode = DwCode::new("DW1023", ExitTier::Build);
+}
+
 // ---------------------------------------------------------------------------
 // The frames, and what they hand out
 // ---------------------------------------------------------------------------
@@ -839,6 +851,12 @@ pub struct DetailBinding {
     pub faces_examined: usize,
     /// Owed anchor names checked over every bound place — `DW0845`.
     pub owed: usize,
+    /// Declared openings of bound pieces examined — `DW1022`.
+    pub openings: usize,
+    /// Of those, answered by a seam of the plan.
+    pub by_seam: usize,
+    /// Of those, answered by the place's `commons`.
+    pub by_commons: usize,
 }
 
 impl DetailBinding {
@@ -850,7 +868,8 @@ impl DetailBinding {
         format!(
             "detail binding: {bd} of {b} place(s) bound over {r} `details[]` row(s), {m} \
              piece(s) measured against their frame, {sr} seam(s) required answering over {fe} \
-             declared face(s) examined, {o} owed anchor name(s) checked.",
+             declared face(s) examined, {o} owed anchor name(s) checked, {op} declared \
+             opening(s) examined ({bs} answered by a seam, {bc} by the commons).",
             bd = self.bound,
             b = self.boxes,
             r = self.rows,
@@ -858,6 +877,9 @@ impl DetailBinding {
             sr = self.seams_required,
             fe = self.faces_examined,
             o = self.owed,
+            op = self.openings,
+            bs = self.by_seam,
+            bc = self.by_commons,
         )
     }
 }
@@ -1388,9 +1410,26 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
         // The other direction: a face of the piece answering no seam is a way
         // out the plan never allocated — the discovered seam, at the earliest
         // tier there is.
+        // **A declared opening is answered by a seam or by the commons**
+        // (`DW1022`, spec-0106 §3.9), before the other direction below, which
+        // then reads a face the commons answers as answered.
+        let commons = openings_unanswered(
+            c,
+            &mut d,
+            &mut binding,
+            OpeningCtx {
+                row,
+                meta,
+                contract,
+                frame: &frame,
+                site: &site,
+                path: &path,
+                answered: &answered,
+            },
+        );
         for (idx, f) in contract.faces.iter().enumerate() {
             binding.faces_examined += 1;
-            if answered.contains(&idx) || f.class == "vision" {
+            if answered.contains(&idx) || commons.contains(&idx) || f.class == "vision" {
                 continue;
             }
             if dir_of(&f.dir).is_none() {
@@ -1432,7 +1471,205 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
 
         check_owed(c, &mut d, &mut binding, row, meta, &path, &gates);
     }
+    // A `commons` on a place no row binds disposes of openings no piece
+    // declares.
+    if let Some(p) = c.site_plan.as_ref() {
+        for (i, b) in p.content.boxes.iter().enumerate() {
+            if b.commons.is_empty() || doc.details.iter().any(|r| r.place == b.node) {
+                continue;
+            }
+            d.push(Diagnostic::error(
+                DW_OPENING_UNANSWERED,
+                "site-plan",
+                format!("/content/boxes/{i}/commons"),
+                format!(
+                    "`{place}`'s `commons` names {n} opening(s), and no `details[]` row binds a \
+                     piece to `{place}`, so there is no declared opening for it to answer. Bind \
+                     the piece whose openings these are (`delvec prefab seat`), or drop the list.",
+                    place = b.node,
+                    n = b.commons.len(),
+                ),
+            ));
+        }
+    }
     (d, binding)
+}
+
+/// What [`openings_unanswered`] reads about one bound row.
+struct OpeningCtx<'a> {
+    row: &'a delvewright_dsl::detailplan::Detail,
+    meta: &'a delvewright_dsl::PrefabMeta,
+    contract: &'a delvewright_dsl::prefab::SpatialContract,
+    frame: &'a Frame,
+    site: &'a delvewright_dsl::siteplan::Site<'a>,
+    path: &'a str,
+    answered: &'a BTreeSet<usize>,
+}
+
+/// **`DW1022`: every declared opening of a seated piece is answered**
+/// (spec-0106 §3.9) — by a seam of the plan, whose allocation `DW0844` has
+/// already matched to the contract face at the opening's cells, or by the
+/// place's `commons`, which on an `open` site says its outside is the site's
+/// open ground. A `commons` name the piece does not declare answers nothing
+/// and is refused too, as is one on a `solid` site or whose outside cells a
+/// neighbour claims.
+///
+/// Returns the contract faces the commons answers, which `DW0844`'s other
+/// direction then reads as answered: a face at a commons opening is a way out
+/// the author disposed of, not one the plan forgot.
+fn openings_unanswered(
+    c: &Campaign,
+    d: &mut Vec<Diagnostic>,
+    binding: &mut DetailBinding,
+    x: OpeningCtx<'_>,
+) -> BTreeSet<usize> {
+    let mut commons_faces = BTreeSet::new();
+    let declared: &[delvewright_dsl::prefab::PieceOpening] = x
+        .meta
+        .extraction
+        .as_ref()
+        .map_or(&[], |e| e.openings.as_slice());
+    let plan = c.site_plan.as_ref().map(|p| &p.content);
+    let commons: &[String] = plan
+        .and_then(|p| p.boxes.iter().find(|b| b.node == x.row.place))
+        .map_or(&[], |b| b.commons.as_slice());
+    let open_site =
+        plan.is_some_and(|p| matches!(p.fill, delvewright_dsl::siteplan::Fill::Open { .. }));
+    let remedies = |name: &str| {
+        format!(
+            "Answer it with a seam: a connection of the layout graph from `{place}` to the \
+             neighbour this opening meets, allocated in the site plan at the opening's cells \
+             (`delvec prefab seat … --join {name}=<edge>` writes it). Or, on an `open` site, \
+             name it in the box's `commons` (`--commons {name}`), which says its outside is the \
+             site's open ground.",
+            place = x.row.place,
+        )
+    };
+    for name in commons {
+        if !declared.iter().any(|o| &o.name == name) {
+            let known: Vec<String> = declared.iter().map(|o| format!("`{}`", o.name)).collect();
+            d.push(Diagnostic::error(
+                DW_OPENING_UNANSWERED,
+                STAGE,
+                x.path.to_string(),
+                format!(
+                    "`{place}`'s `commons` names `{name}`, and `{piece}` declares no opening of \
+                     that name, so the disposition answers nothing. The piece declares {n} \
+                     opening(s): {list}.",
+                    place = x.row.place,
+                    piece = x.row.piece,
+                    n = declared.len(),
+                    list = if known.is_empty() {
+                        "none".to_string()
+                    } else {
+                        known.join(", ")
+                    },
+                ),
+            ));
+        }
+    }
+    for o in declared {
+        binding.openings += 1;
+        let dir = o.face.vector();
+        let lo = [
+            x.frame.lo[0] + i64::from(o.cells[0][0].min(o.cells[1][0])),
+            x.frame.lo[1] + i64::from(o.cells[0][1].min(o.cells[1][1])),
+            x.frame.lo[2] + i64::from(o.cells[0][2].min(o.cells[1][2])),
+        ];
+        let hi = [
+            x.frame.lo[0] + i64::from(o.cells[0][0].max(o.cells[1][0])),
+            x.frame.lo[1] + i64::from(o.cells[0][1].max(o.cells[1][1])),
+            x.frame.lo[2] + i64::from(o.cells[0][2].max(o.cells[1][2])),
+        ];
+        let face = x
+            .contract
+            .faces
+            .iter()
+            .position(|f| dir_of(&f.dir) == Some(dir) && face_world(x.frame, f) == (lo, hi));
+        if face.is_some_and(|i| x.answered.contains(&i)) {
+            binding.by_seam += 1;
+            continue;
+        }
+        if commons.iter().any(|n| n == &o.name) {
+            // The opening's outside: the layer one step out of the frame.
+            let out: Vec<[i64; 3]> = region_cells64(
+                [lo[0] + dir[0], lo[1] + dir[1], lo[2] + dir[2]],
+                [hi[0] + dir[0], hi[1] + dir[1], hi[2] + dir[2]],
+            );
+            let claimed: Option<NodeId> = out.iter().find_map(|cell| match x.site.owner(*cell) {
+                delvewright_dsl::siteplan::Owner::Place(n) if n != x.row.place => Some(n),
+                _ => None,
+            });
+            let why = if !open_site {
+                Some(
+                    "the site's fill is `solid`, so there is no open ground outside it".to_string(),
+                )
+            } else {
+                claimed.map(|n| {
+                    format!(
+                        "its outside cells are `{n}`'s claim, which a seam answers, not the commons"
+                    )
+                })
+            };
+            match why {
+                None => {
+                    binding.by_commons += 1;
+                    if let Some(i) = face {
+                        commons_faces.insert(i);
+                    }
+                }
+                Some(why) => d.push(Diagnostic::error(
+                    DW_OPENING_UNANSWERED,
+                    STAGE,
+                    x.path.to_string(),
+                    format!(
+                        "`{place}` disposes `{piece}`'s opening `{name}` to the commons, and {why}. \
+                         {remedy}",
+                        place = x.row.place,
+                        piece = x.row.piece,
+                        name = o.name,
+                        remedy = remedies(&o.name),
+                    ),
+                )),
+            }
+            continue;
+        }
+        d.push(Diagnostic::error(
+            DW_OPENING_UNANSWERED,
+            STAGE,
+            x.path.to_string(),
+            format!(
+                "`{piece}` declares the opening `{name}` — a `{kind}` way out of `{place}` on \
+                 its {dir} side at {cells} (piece-local), {w}x{h} — and nothing answers it: no \
+                 seam of the plan allocates those cells, and the box's `commons` does not name \
+                 it. A seated piece's openings are where it meets the rest of the map, and one \
+                 left open is a way out nobody designed. {remedy}",
+                piece = x.row.piece,
+                name = o.name,
+                kind = o.kind,
+                place = x.row.place,
+                dir = o.face.as_str(),
+                cells = aabb(x.frame.to_local(lo), x.frame.to_local(hi)),
+                w = o.width,
+                h = o.height,
+                remedy = remedies(&o.name),
+            ),
+        ));
+    }
+    commons_faces
+}
+
+/// Every cell of the inclusive box `a..=b`.
+fn region_cells64(a: [i64; 3], b: [i64; 3]) -> Vec<[i64; 3]> {
+    let mut out = Vec::new();
+    for x in a[0].min(b[0])..=a[0].max(b[0]) {
+        for y in a[1].min(b[1])..=a[1].max(b[1]) {
+            for z in a[2].min(b[2])..=a[2].max(b[2]) {
+                out.push([x, y, z]);
+            }
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------

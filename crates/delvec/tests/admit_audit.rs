@@ -113,6 +113,7 @@ fn carved_jigsaw_socket_passes_the_audit() {
             note: String::new(),
             provenance: String::new(),
             generated_by: None,
+            extracted: None,
         },
     );
     socket::carve(&mut s, &mut meta, &SocketDecl::new([3, 1, 0], "north")).unwrap();

@@ -582,6 +582,7 @@ pub fn export_prefab(
         shown_faces: program.shown_faces.clone(),
         spatial_contract: contract_metadata(&expansion),
         extra: BTreeMap::new(),
+        extraction: None,
     };
     let metadata_json = metadata.to_json();
 
@@ -708,6 +709,7 @@ pub fn export_zone(
         // A freshly exported manifest models every key it writes; the map is
         // what a LATER engine's key survives in on the way back out.
         extra: BTreeMap::new(),
+        extraction: None,
     };
     let metadata_json =
         serde_json::to_string_pretty(&metadata).expect("tile-set manifest serialises") + "\n";
@@ -1197,6 +1199,7 @@ fn license_metadata(
             params: overrides.params.clone(),
             roles: overrides.roles.clone(),
         }),
+        extracted: None,
     }
 }
 

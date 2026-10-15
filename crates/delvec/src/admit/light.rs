@@ -558,6 +558,27 @@ pub fn probe_entered<V: BlockCells + ?Sized>(
     }
 }
 
+/// **Every reachable floor cell darker than `dark_threshold`** at night, by
+/// the same flood, entrance and walk [`probe_entered`] measures — the cells
+/// its `dark_by_level` counts, named. An extraction's cut reports the ones
+/// near its faces (spec-0106 §3.9).
+pub fn dark_cells<V: BlockCells + ?Sized>(
+    zone: &V,
+    dark_threshold: i32,
+    sky: SkyClaim,
+    doors: &BTreeSet<[i32; 3]>,
+) -> BTreeSet<[i32; 3]> {
+    let model = light_model(zone);
+    let night_field = model.flood(sky.night_sky() as u8);
+    let standable = nav::standable_cells(zone);
+    let mut entry = nav::ground_entry(zone);
+    entry.extend(doors.iter().filter(|c| standable.contains(*c)).copied());
+    nav::reachable_from(zone, &standable, &entry)
+        .into_iter()
+        .filter(|c| (night_field.get(c).copied().unwrap_or(0) as i32) < dark_threshold)
+        .collect()
+}
+
 /// The zone as the compiler's light model, in a box that lets sky in.
 ///
 /// The stated box is a cell larger than the piece on ±x, ±z and above it. Those

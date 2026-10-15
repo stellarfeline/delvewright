@@ -409,12 +409,14 @@ pub fn sculpt(form: &Form, seed: u64, id: Option<&str>) -> Result<Sculpture, Scu
                 params: BTreeMap::new(),
                 roles: BTreeMap::new(),
             }),
+            extracted: None,
         }),
         walk_y: readings.walk_y,
         waterline_y: None,
         shown_faces: readings.shown_faces.clone(),
         spatial_contract: None,
         extra: BTreeMap::new(),
+        extraction: None,
     };
     // Written in the repository's canonical form (`delvec fmt`), so the file a
     // sculpt writes is the file a library commits: "regenerated, never edited"

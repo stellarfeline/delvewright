@@ -204,7 +204,7 @@ pub(crate) fn validate_stage(
 /// [`validate_stage`] over an already-loaded (possibly augmented) campaign —
 /// split out so `delvec edit` can validate a script with a candidate batch
 /// appended before anything touches the campaign directory.
-pub(super) fn validate_loaded(
+pub(crate) fn validate_loaded(
     loaded: delvec::compiler::load::LoadedCampaign,
     prefabs_dir: &Path,
     json: bool,
@@ -1072,4 +1072,107 @@ pub(crate) fn read_skins(
         }
     }
     Ok(skins)
+}
+
+/// A campaign built in memory: everything `delvec build` computes, and the
+/// output tree it would write, unwritten.
+pub(crate) struct Built<'a> {
+    /// The campaign as the plan read it (translatables tagged, skins
+    /// namespaced, exactly as `build` leaves it).
+    pub(crate) campaign: &'a delvewright_dsl::Campaign,
+    /// The prefab library the build read.
+    pub(crate) prefabs: &'a PrefabRegistry,
+    /// The loaded directory: every input's bytes.
+    pub(crate) loaded: &'a LoadedCampaign,
+    /// The plan.
+    pub(crate) plan: Plan<'a>,
+    /// Every structure file the plan places, by file name.
+    pub(crate) structures: BTreeMap<String, Vec<u8>>,
+    /// The output tree, by path — `manifest.json` among it.
+    pub(crate) output: emit::BuildOutput,
+}
+
+/// **The build `delvec build` runs, held in memory** — validation, analysis,
+/// the approved-picture rule, the plan and the emission, each refusing as
+/// `build` refuses, with no `--out` and nothing written — handed to `f`. The
+/// extraction's source (spec-0106 §3.9) is the build a creator would have
+/// shipped, so it goes through the same funnel and no second one.
+pub(crate) fn build_in_memory<R>(
+    campaign_dir: &Path,
+    prefabs_dir: &Path,
+    json: bool,
+    f: impl FnOnce(&Built<'_>) -> Result<R, u8>,
+) -> Result<R, u8> {
+    let v = validate_stage(campaign_dir, prefabs_dir, json)?;
+    if has_error(&v.diags) {
+        return Err(1);
+    }
+    let Validated {
+        campaign,
+        prefabs,
+        loaded,
+        ..
+    } = v;
+    let adiags = analyze_campaign(&campaign, &prefabs);
+    if !adiags.is_empty() {
+        print_diags(&adiags, json);
+        return Err(2);
+    }
+    let answered = delvec::compiler::design::answered(&campaign, &loaded.design_files);
+    if !answered.is_empty() {
+        print_diags(&answered, json);
+        return Err(3);
+    }
+    let mut campaign = campaign;
+    delvewright_dsl::tag_translatables(&mut campaign);
+    let skin_sources = delvewright_dsl::namespace_skin_textures(&mut campaign);
+    let plan = match Plan::build(&campaign, &prefabs)
+        .map(|p| p.with_design_files(loaded.design_files.clone()))
+    {
+        Ok(p) => p,
+        Err(e) => {
+            print_diags(&e.warnings, json);
+            print_build_error(e.failure.code, &e.failure.message, json);
+            return Err(3);
+        }
+    };
+    let structures = read_structures(&plan, &prefabs, prefabs_dir, json)?;
+    let skins = read_skins(campaign_dir, &campaign, &skin_sources, json)?;
+    let tree = CommandTree::v1_21_11();
+    let output = match emit::build_with_warnings(
+        &plan,
+        &loaded.inputs,
+        &structures,
+        &tree,
+        &prefabs,
+        None,
+        &skins,
+    ) {
+        Ok((o, warnings)) => {
+            print_diags(&warnings, json);
+            o
+        }
+        Err(emit::BuildFailure::Validation(errors)) => {
+            eprintln!(
+                "build failure: {} emitted command(s) failed validation:",
+                errors.len()
+            );
+            for e in errors.iter().take(20) {
+                eprintln!("  {}: {}", e.reason, e.line);
+            }
+            return Err(3);
+        }
+        Err(emit::BuildFailure::Diagnostic { code, message }) => {
+            print_build_error(code, &message, json);
+            return Err(code.exit_tier().exit_status());
+        }
+    };
+    f(&Built {
+        campaign: &campaign,
+        prefabs: &prefabs,
+        loaded: &loaded,
+        plan,
+        structures,
+        output,
+    })
 }

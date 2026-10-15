@@ -14,6 +14,8 @@ use std::process::ExitCode;
 
 mod cli;
 mod detail;
+mod extract;
+mod seat;
 
 use clap::{Parser, Subcommand};
 use delvec::compiler::blockout::Knob;
@@ -581,7 +583,43 @@ fn main() -> ExitCode {
         ),
         Command::View(cmd) => cmd.run(cli.json),
         Command::Grammar(args) => delvec::grammar::cli::run(args.clone(), &cli.prefabs),
-        Command::Prefab(args) => delvec::admit::cli::run(args.clone(), cli.json),
+        Command::Prefab(args) => match &args.command {
+            delvec::admit::cli::PrefabCommand::Extract {
+                campaign,
+                scope,
+                out,
+                id,
+            } => extract::run_extract(&extract::ExtractArgs {
+                campaign_dir: campaign,
+                scope,
+                out,
+                id: id.as_deref(),
+                prefabs_dir: &cli.prefabs,
+                json: cli.json,
+            }),
+            delvec::admit::cli::PrefabCommand::Seat {
+                campaign,
+                prefab,
+                node,
+                at,
+                floor,
+                joins,
+                commons,
+                renames,
+            } => seat::run_seat(&seat::SeatArgs {
+                campaign_dir: campaign,
+                prefab,
+                node,
+                at,
+                floor: *floor,
+                joins,
+                commons,
+                renames,
+                prefabs_dir: &cli.prefabs,
+                json: cli.json,
+            }),
+            _ => delvec::admit::cli::run(args.clone(), cli.json),
+        },
         Command::Sculpt(args) => delvec::sculpt::cli::run(args.clone()),
         Command::Schem(args) => delvec::schem::cli::run(args.clone(), cli.json),
         Command::Harvest(args) => delvec::orchestrator::cli::run(args.clone()),
