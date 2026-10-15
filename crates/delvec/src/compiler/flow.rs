@@ -694,6 +694,58 @@ impl Walk<'_, '_> {
         &self.st.active
     }
 
+    /// **Every objective armed now** — the ones whose completion the datapack
+    /// would award this instant to a body that did what it asks: its quest
+    /// running, every `after` complete, its flag gate holding, and not yet done
+    /// (`emit::quest::pending_guard`, read by [`Flow::objective_armed`]). A
+    /// numeric term is read as open, so the set never misses one the datapack
+    /// may arm. In declaration order.
+    pub fn armed_objectives(&self) -> Vec<String> {
+        self.flow
+            .c
+            .quests
+            .content
+            .quests
+            .iter()
+            .flat_map(|q| q.objectives.iter())
+            .map(|o| o.id().as_str())
+            .filter(|o| self.flow.objective_armed(o, &self.st))
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// [`Self::armed_objectives`] at the moment the party acts in front of the
+    /// next step: every objective armed now, or once the entry deeds its story
+    /// world performs there have been performed — the union, so a deed that arms
+    /// an objective and one that disarms it both leave it counted.
+    pub fn armed_before_next(&self) -> BTreeSet<String> {
+        let mut out: BTreeSet<String> = self.armed_objectives().into_iter().collect();
+        if let Some(ctx) = &self.story {
+            let mut ahead = self.clone();
+            for (_, act) in ctx.deeds.iter().filter(|(i, _)| *i == self.taken) {
+                ahead = ahead.performing(act);
+                out.extend(ahead.armed_objectives());
+            }
+        }
+        out
+    }
+
+    /// This walk with ambient act `act` performed here, once, and nothing
+    /// else — the state a mocked act leaves (spec-0108 §6.4): its bundle fired by
+    /// the replay's one gate test, its producers then credited.
+    pub fn performing(&self, act: &str) -> Self {
+        let mut ahead = self.clone();
+        self.flow.perform_act(&mut ahead.st, act, self.taken + 1);
+        if let Some(done) = ahead.performed.as_mut() {
+            done.insert(act.to_string());
+        }
+        let mut flags = std::mem::take(&mut ahead.st.flags);
+        self.flow
+            .saturate_ambient_with(&mut flags, &|g: &GatedFlag| ahead.credits(g));
+        ahead.st.flags = flags;
+        ahead
+    }
+
     /// What a right-click on each NPC can put in front of the player now: every
     /// node the live scene opens or the drawn options lead to, and every option
     /// drawn on those nodes. `casts` is [`crate::compiler::cast::npc_casts`] of the
@@ -2002,22 +2054,28 @@ impl<'a> Flow<'a> {
     fn option_drawn(&self, o: &OptModel, st: &ReplayState) -> bool {
         o.requires.iter().all(|f| st.flags.contains(f))
             && !o.forbids.iter().any(|f| st.flags.contains(f))
-            && o.completes.iter().all(|obj| {
-                !st.done_obj.contains(obj)
-                    && self
-                        .objective_quest(obj)
-                        .is_some_and(|q| st.active.contains(q))
-                    && self.objective(obj).is_none_or(|ob| {
-                        ob.after().iter().all(|a| st.done_obj.contains(a.as_str()))
-                            && ob
-                                .requires_flags()
-                                .iter()
-                                .all(|f| st.flags.contains(f.as_str()))
-                            && !ob
-                                .forbids_flags()
-                                .iter()
-                                .any(|f| st.flags.contains(f.as_str()))
-                    })
+            && o.completes.iter().all(|obj| self.objective_armed(obj, st))
+    }
+
+    /// Whether objective `obj` is armed in state `st` — the model of
+    /// `emit::quest::pending_guard`: not yet done, its quest running, every
+    /// `after` complete, and its gate's flags holding. A numeric term is read as
+    /// open, so the model never disarms an objective the datapack might arm.
+    fn objective_armed(&self, obj: &str, st: &ReplayState) -> bool {
+        !st.done_obj.contains(obj)
+            && self
+                .objective_quest(obj)
+                .is_some_and(|q| st.active.contains(q))
+            && self.objective(obj).is_none_or(|ob| {
+                ob.after().iter().all(|a| st.done_obj.contains(a.as_str()))
+                    && ob
+                        .requires_flags()
+                        .iter()
+                        .all(|f| st.flags.contains(f.as_str()))
+                    && !ob
+                        .forbids_flags()
+                        .iter()
+                        .any(|f| st.flags.contains(f.as_str()))
             })
     }
 

@@ -964,4 +964,77 @@ fn the_runner_fixture_exports_two_walkable_worlds_and_names_the_rest() {
             "assert-complete "
         ]
     );
+    // The bell stands inside the completion volume of `obj/walk-out`, armed
+    // once the door opens and due only after the bell: the press is performed
+    // from a cell outside it, and the step names the volume it keeps out of.
+    let bell = &path["steps"][2];
+    let walk_out = &path["steps"][3]["completion"];
+    assert_eq!(bell["keep_out"][0]["objective"], "obj/walk-out", "{bell:#}");
+    assert_eq!(bell["keep_out"][0]["lo"], walk_out["lo"]);
+    assert_eq!(bell["keep_out"][0]["hi"], walk_out["hi"]);
+    let stand: Vec<i64> = bell["stand"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the bell step names no stand: {bell:#}"))
+        .iter()
+        .map(|v| v.as_i64().unwrap())
+        .collect();
+    let lo: Vec<i64> = walk_out["lo"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap())
+        .collect();
+    let hi: Vec<i64> = walk_out["hi"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap())
+        .collect();
+    // Outside by the selector's hitbox rule: a body anywhere in the stand cell
+    // reaches 0.3 past it, so it misses the box only from a column more than one
+    // cell clear of it on some horizontal axis.
+    assert!(
+        [0usize, 2]
+            .iter()
+            .any(|&i| stand[i] < lo[i] - 1 || stand[i] > hi[i] + 1),
+        "stand {stand:?} meets the volume {lo:?}..{hi:?}"
+    );
+    // The reach step itself walks INTO its own volume and keeps out of nothing.
+    assert!(
+        path["steps"][3].get("keep_out").is_none(),
+        "{:#}",
+        path["steps"][3]
+    );
+}
+
+/// The same fixture with `obj/walk-out`'s radius widened until its volume holds
+/// every cell the bell can be rung from: the deed world cannot ring it without
+/// completing the walk-out first, and the build refuses it rather than export it
+/// as walkable.
+#[test]
+fn a_deed_no_stance_outside_an_armed_volume_performs_is_refused() {
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("endings-runs-swallowed");
+    let _ = std::fs::remove_dir_all(&dir);
+    common::copy_dir_all(&common::compiler_fixtures_dir().join("ending-runs"), &dir);
+    common::patch_file(&dir.join("quests.json"), |q| {
+        q["content"]["quests"][1]["objectives"][0]["radius"] = json!(5);
+    });
+    let out = dir.with_extension("out");
+    let prefabs = common::prefabs_dir();
+    let (code, log) = delvec_run(&[
+        "build",
+        dir.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    assert_ne!(code, 0, "{log}");
+    assert!(
+        log.contains("DW0311 [error]")
+            && log.contains("trigger `trigger/bell`")
+            && log.contains("completion volume of `obj/walk-out`"),
+        "{log}"
+    );
+    assert!(!out.join("validation/world-path-3.json").exists());
 }

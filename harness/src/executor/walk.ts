@@ -561,6 +561,17 @@ export const methods = {
     // second time on a leg that has nothing to do with the delve's content, and the
     // run reads as flaky rather than as a navigator that disagreed with the build.
     this.applyLethalExclusion(movements);
+    // The completion volumes this step keeps out of: a walk that enters one
+    // completes an armed objective out of turn, so its cells cost what a lethal
+    // volume's do, by the same hitbox rule. Stated once per walk.
+    if (this.stepKeepOut.length > 0) {
+      const boxes = this.stepKeepOut.map((k) => ({ lo: k.lo, hi: k.hi }));
+      movements.exclusionAreasStep.push((block): number => lethalStepCost(block, boxes));
+      process.stderr.write(
+        `[keep-out] ${label}: ${boxes.length} armed completion volume(s) excluded — ` +
+          `${this.stepKeepOut.map((k) => `${k.objective} [${k.lo.join(", ")}]..[${k.hi.join(", ")}]`).join("; ")}\n`,
+      );
+    }
     bot.pathfinder.setMovements(movements);
     // Long multi-level layouts (e.g. a 5-storey keep, ~90 blocks + 4 staircases)
     // sit at the edge of the default A* budget and fail nondeterministically

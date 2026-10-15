@@ -366,7 +366,7 @@ pub fn with_links_taken<'a>(
     prefabs: &crate::compiler::registry::PrefabRegistry,
     world: &World,
 ) -> Result<Option<Plan<'a>>, Failure> {
-    if plan.links.is_empty() {
+    if plan.links.is_empty() && !plan.region_events.has_keep_out() {
         return Ok(None);
     }
     let takes = take_links(plan, world).unwrap_or_default();

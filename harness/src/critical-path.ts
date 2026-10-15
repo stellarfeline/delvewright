@@ -116,6 +116,21 @@ export interface PresentationMarkers {
   readonly sneak?: boolean;
   readonly cutsceneSeconds?: number;
   readonly enRouteCutsceneSeconds?: number;
+  /**
+   * The completion volumes this step's walks keep out of (`keep_out`): every
+   * `reach` objective the compiler reads as armed while the step is performed
+   * and not the step's own. A body inside one completes it out of turn, so the
+   * bot's pathfinder prices every cell such a volume's selector reaches as it
+   * prices a lethal one. Absent when the step keeps out of none.
+   */
+  readonly keepOut?: readonly KeepOut[];
+}
+
+/** One completion volume a step keeps out of: the armed objective, and its box. */
+export interface KeepOut {
+  readonly objective: string;
+  readonly lo: Vec3Tuple;
+  readonly hi: Vec3Tuple;
 }
 
 /** Talk to an NPC at `pos`, then chat the compiler-assigned dialog `/trigger`. */
@@ -293,9 +308,11 @@ export interface TriggerStep extends PresentationMarkers {
   /** An `approach` trigger's radius; present exactly for `approach`. */
   readonly range?: number;
   /**
-   * spec-0083 §4: where the party stands to be carried — a cell inside the
-   * link's volume the act reaches the body from. Present exactly when the step
-   * carries the party, together with {@link transport}.
+   * Where the party stands to perform the act, and acts without walking again:
+   * for a step that carries the party (spec-0083 §4), a cell inside the link's
+   * volume, together with {@link transport}; for one performed beside a volume
+   * it keeps out of ({@link PresentationMarkers.keepOut}), the cell outside every
+   * such volume the compiler proved the act is performed from.
    */
   readonly stand?: Vec3Tuple;
   /** The link's `to`: where performing this trigger puts the party. */
@@ -675,8 +692,13 @@ function transportFields(
 function presentationFields(
   obj: Record<string, unknown>,
   pointer: string,
-): { sneak?: boolean; cutsceneSeconds?: number; enRouteCutsceneSeconds?: number } {
-  const out: { sneak?: boolean; cutsceneSeconds?: number; enRouteCutsceneSeconds?: number } = {};
+): PresentationMarkers {
+  const out: {
+    sneak?: boolean;
+    cutsceneSeconds?: number;
+    enRouteCutsceneSeconds?: number;
+    keepOut?: readonly KeepOut[];
+  } = {};
   const sneak = obj["sneak"];
   if (sneak !== undefined) {
     if (typeof sneak !== "boolean") {
@@ -703,6 +725,27 @@ function presentationFields(
       );
     }
     out.enRouteCutsceneSeconds = enRoute;
+  }
+  const keepOut = obj["keep_out"];
+  if (keepOut !== undefined) {
+    if (!Array.isArray(keepOut) || keepOut.length === 0) {
+      fail(`${pointer}/keep_out`, `must be a non-empty array when present, got ${describe(keepOut)}`);
+    }
+    out.keepOut = keepOut.map((k, i) => {
+      const at = `${pointer}/keep_out/${i}`;
+      if (typeof k !== "object" || k === null || Array.isArray(k)) {
+        fail(at, `must be an object, got ${describe(k)}`);
+      }
+      const row = k as Record<string, unknown>;
+      rejectUnknownKeys(row, ["objective", "lo", "hi"], at);
+      const objective = requireObjectiveId(row, at);
+      const lo = requireVec3(row, "lo", at);
+      const hi = requireVec3(row, "hi", at);
+      if (lo.some((v, a) => v > hi[a]!)) {
+        fail(at, `lo [${lo.join(", ")}] must not exceed hi [${hi.join(", ")}] on any axis`);
+      }
+      return { objective, lo, hi };
+    });
   }
   return out;
 }
@@ -771,7 +814,7 @@ function parseStep(value: unknown, pointer: string): Step {
     case "talk-to": {
       rejectUnknownKeys(
         obj,
-        ["action", "objective", "npc", "pos", "command", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds"],
+        ["action", "objective", "npc", "pos", "command", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds", "keep_out"],
         pointer,
       );
       return {
@@ -799,6 +842,7 @@ function parseStep(value: unknown, pointer: string): Step {
           "sneak",
           "cutscene_seconds",
           "en_route_cutscene_seconds",
+          "keep_out",
         ],
         pointer,
       );
@@ -831,7 +875,7 @@ function parseStep(value: unknown, pointer: string): Step {
     case "kill": {
       rejectUnknownKeys(
         obj,
-        ["action", "objective", "wave", "pos", "tag", "count", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds"],
+        ["action", "objective", "wave", "pos", "tag", "count", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds", "keep_out"],
         pointer,
       );
       return {
@@ -859,6 +903,7 @@ function parseStep(value: unknown, pointer: string): Step {
           "sneak",
           "cutscene_seconds",
           "en_route_cutscene_seconds",
+          "keep_out",
         ],
         pointer,
       );
@@ -892,6 +937,7 @@ function parseStep(value: unknown, pointer: string): Step {
           "sneak",
           "cutscene_seconds",
           "en_route_cutscene_seconds",
+          "keep_out",
         ],
         pointer,
       );
@@ -919,7 +965,7 @@ function parseStep(value: unknown, pointer: string): Step {
     case "rest": {
       rejectUnknownKeys(
         obj,
-        ["action", "bonfire", "anchor", "pos", "command", "sneak", "cutscene_seconds", "en_route_cutscene_seconds"],
+        ["action", "bonfire", "anchor", "pos", "command", "sneak", "cutscene_seconds", "en_route_cutscene_seconds", "keep_out"],
         pointer,
       );
       const bonfire = obj["bonfire"];
@@ -951,6 +997,7 @@ function parseStep(value: unknown, pointer: string): Step {
           "transport",
           "cutscene_seconds",
           "en_route_cutscene_seconds",
+          "keep_out",
           "block",
         ],
         pointer,
@@ -999,14 +1046,22 @@ function parseStep(value: unknown, pointer: string): Step {
         fail(`${pointer}/range`, `a ${kind} trigger has no range`);
       }
       // spec-0083 §4: a trigger that carries the party says where to stand and
-      // where it lands — both, or neither.
+      // where it lands. A trigger that carries nobody names a stand when it is
+      // performed beside a volume it keeps out of — the cell outside it.
       const carried = transportFields(obj, pointer);
       const stand = obj["stand"] === undefined ? undefined : requireVec3(obj, "stand", pointer);
-      if ((stand === undefined) !== (carried.transport === undefined)) {
+      if (carried.transport !== undefined && stand === undefined) {
         fail(
-          `${pointer}/${stand === undefined ? "stand" : "transport"}`,
-          "a trigger that carries the party names both where to stand (`stand`) and where it " +
+          `${pointer}/stand`,
+          "a trigger that carries the party names where to stand (`stand`) as well as where it " +
             "lands (`transport`)",
+        );
+      }
+      if (stand !== undefined && carried.transport === undefined && obj["keep_out"] === undefined) {
+        fail(
+          `${pointer}/stand`,
+          "a trigger that carries nobody names a stand only when it keeps out of a volume " +
+            "(`keep_out`) — the cell outside it the compiler chose",
         );
       }
       if (stand !== undefined && carried.transport !== undefined) {
@@ -1101,7 +1156,7 @@ function parseStep(value: unknown, pointer: string): Step {
     case "loop": {
       rejectUnknownKeys(
         obj,
-        ["action", "loop", "pos", "cross", "offset", "times", "transport", "cutscene_seconds", "en_route_cutscene_seconds"],
+        ["action", "loop", "pos", "cross", "offset", "times", "transport", "cutscene_seconds", "en_route_cutscene_seconds", "keep_out"],
         pointer,
       );
       const loop = requireString(obj, "loop", pointer);

@@ -40,6 +40,7 @@ fn floored_with_furniture(
             base: "void",
             built: Vec::new(),
             lethal_regions: Vec::new(),
+            keep_out: Vec::new(),
             staged_lethal: Vec::new(),
             loop_slabs: Vec::new(),
             furniture_regions: region

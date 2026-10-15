@@ -270,6 +270,7 @@ pub(super) fn emit_critical_path(
         &plan.critical_path,
         &plan.critical_path_transport,
         &plan.critical_path_sneak,
+        &plan.path_firing.keep_out,
         CutsceneHolds {
             after: &plan.critical_path_cutscene,
             en_route: &en_route,
@@ -300,6 +301,7 @@ pub(super) fn critical_path_json(
     walked: &[plan::Step],
     transports: &[Option<[i32; 3]>],
     sneak: &[bool],
+    keep_out: &[Vec<crate::compiler::reach::KeepOut>],
     holds: CutsceneHolds<'_>,
     moves: &[crate::compiler::nav::MovePlan],
     actor_moves: &[crate::compiler::nav::ActorMovePlan],
@@ -449,6 +451,23 @@ pub(super) fn critical_path_json(
                 && let Some(obj) = step.as_object_mut()
             {
                 obj.insert("sneak".to_string(), json!(true));
+            }
+            // The completion volumes this step keeps out of (`DW0311`): every
+            // `reach` armed while the party performs it and not its own. The bot
+            // keeps every walk of the step out of them by the selector's hitbox
+            // rule. Present only when non-empty.
+            if let Some(ko) = keep_out.get(i)
+                && !ko.is_empty()
+                && let Some(obj) = step.as_object_mut()
+            {
+                obj.insert(
+                    "keep_out".to_string(),
+                    Value::Array(
+                        ko.iter()
+                            .map(crate::compiler::reach::KeepOut::to_json)
+                            .collect(),
+                    ),
+                );
             }
             if let Some(secs) = holds.after[i]
                 && secs > 0

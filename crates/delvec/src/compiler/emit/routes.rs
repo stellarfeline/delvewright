@@ -921,10 +921,12 @@ pub(super) fn prove_world(
                             .map_err(branch_fail)?;
                         // The branch's own links (spec-0083 §6): taken over its
                         // own steps and gate model, then spliced into its path.
-                        let takes = if plan.links.is_empty() {
+                        let (unlinked_events, unlinked_ancestors) =
+                            plan.branch_gate_model(&unlinked);
+                        let takes = if plan.links.is_empty() && !unlinked_events.has_keep_out() {
                             plan::LinkTakes::default()
                         } else {
-                            let (region_events, ancestors) = plan.branch_gate_model(&unlinked);
+                            let (region_events, ancestors) = (unlinked_events, unlinked_ancestors);
                             let ancestor = |g: usize, s: usize| {
                                 g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g))
                             };

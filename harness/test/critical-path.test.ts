@@ -888,13 +888,57 @@ test("a carrying trigger step parses its stand cell and its transport", () => {
 test("a carrying trigger names both where to stand and where it lands", () => {
   const base = { action: "trigger", trigger: "trigger/t", on: "use", anchor: "anchor/a", pos: [0, 64, 0] };
   for (const [bad, pointer] of [
-    [{ ...base, stand: [1, 64, 0] }, "/steps/2/transport"],
+    // A stand with no landing is a stance outside a keep-out volume, and only that.
+    [{ ...base, stand: [1, 64, 0] }, "/steps/2/stand"],
     [{ ...base, transport: [20, 64, 0] }, "/steps/2/stand"],
   ] as const) {
     assert.throws(
       () => parseCriticalPath(withStep(bad as Record<string, unknown>)),
       (e: unknown) => e instanceof CriticalPathParseError && e.pointer === pointer,
       JSON.stringify(bad),
+    );
+  }
+});
+
+// --- a step performed beside an armed completion volume -------------------------
+
+test("a trigger beside an armed volume parses its keep-out and the stand outside it", () => {
+  const step = parseCriticalPath(
+    withStep({
+      action: "trigger",
+      trigger: "trigger/bell",
+      on: "use",
+      anchor: "anchor/exit",
+      block: "minecraft:bell[attachment=floor,facing=north]",
+      pos: [5, 65, 8],
+      stand: [4, 65, 4],
+      keep_out: [{ objective: "obj/walk-out", lo: [3, 63, 6], hi: [7, 67, 10] }],
+    }),
+  ).steps[2];
+  assert.deepEqual(step, {
+    action: "trigger",
+    trigger: "trigger/bell",
+    on: "use",
+    anchor: "anchor/exit",
+    block: "minecraft:bell[attachment=floor,facing=north]",
+    pos: [5, 65, 8],
+    stand: [4, 65, 4],
+    keepOut: [{ objective: "obj/walk-out", lo: [3, 63, 6], hi: [7, 67, 10] }],
+  });
+});
+
+test("a keep-out row is a named objective over a well-formed box", () => {
+  const base = { action: "trigger", trigger: "trigger/t", on: "use", anchor: "anchor/a", pos: [0, 64, 0] };
+  for (const [keep, pointer] of [
+    [[], "/steps/2/keep_out"],
+    [[{ objective: "walk-out", lo: [0, 0, 0], hi: [1, 1, 1] }], "/steps/2/keep_out/0/objective"],
+    [[{ objective: "obj/w", lo: [2, 0, 0], hi: [1, 1, 1] }], "/steps/2/keep_out/0"],
+    [[{ objective: "obj/w", lo: [0, 0, 0], hi: [1, 1, 1], radius: 2 }], "/steps/2/keep_out/0/radius"],
+  ] as const) {
+    assert.throws(
+      () => parseCriticalPath(withStep({ ...base, keep_out: keep } as Record<string, unknown>)),
+      (e: unknown) => e instanceof CriticalPathParseError && e.pointer === pointer,
+      JSON.stringify(keep),
     );
   }
 });

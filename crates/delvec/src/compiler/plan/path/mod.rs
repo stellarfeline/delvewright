@@ -560,6 +560,12 @@ pub(crate) struct PathFiring {
     /// holds — the alternatives it does not take. No firing on this path sets
     /// one, so the staged-volume readings credit none of their setters.
     pub branch_excluded: BTreeSet<String>,
+    /// Per step, the completion volumes the party must keep out of while it
+    /// performs that step ([`crate::compiler::reach::KeepOut`]): every `reach`
+    /// objective armed then and not the step's own. Aligned 1:1 with the path's
+    /// steps; read by the route proof (`DW0311`) through
+    /// [`RegionEvents::keep_out`] and exported on the step for the bot.
+    pub keep_out: Vec<Vec<crate::compiler::reach::KeepOut>>,
 }
 
 impl PathFiring {
@@ -602,6 +608,10 @@ pub(super) fn build_critical_path(
     // a critical step is mapped back to the flags and data the party holds
     // walking up to it.
     let mut si_start: Vec<(usize, usize)> = Vec::new();
+    // Per entry of `si_start`, every objective armed as the party acts in front
+    // of that path step ([`crate::compiler::flow::Walk::armed_before_next`]) —
+    // what the step's keep-out volumes are read from.
+    let mut armed_at: Vec<BTreeSet<String>> = Vec::new();
     // (objective id, physical area, step index) in critical-path order, for the
     // transport map and the per-step transport marker.
     let mut obj_areas: Vec<(String, String, usize)> = Vec::new();
@@ -723,6 +733,7 @@ pub(super) fn build_critical_path(
 
     for (si, st) in path.steps.iter().enumerate() {
         si_start.push((si, steps.len()));
+        armed_at.push(walk.armed_before_next());
         let qid = st.quest.as_str();
         let Some(quest) = stage5.get(qid) else {
             walk.take(st);
@@ -1156,6 +1167,48 @@ pub(super) fn build_critical_path(
     loops.record();
     let mut spliced = loops.finish();
 
+    // ---- the volumes each step keeps out of ----
+    //
+    // Per step, every `reach` objective armed while the party performs it: a
+    // body inside one of those volumes completes that objective there and then.
+    // A step's own objective is due at that step and is removed once the step
+    // list is final; a step performed in front of an objective step (a trigger,
+    // an exercise, a link) keeps out of that objective too.
+    let reach_volume = |obj: &str| -> Option<crate::compiler::reach::KeepOut> {
+        let (qid, o) = objective_quest(campaign, obj)?;
+        let Objective::ReachAnchor { anchor, radius, .. } = o else {
+            return None;
+        };
+        let area = campaign
+            .quest_plan
+            .content
+            .quests
+            .iter()
+            .find(|q| q.id.as_str() == qid)
+            .map(|q| q.area.as_str())?;
+        let pos = point_of(anchors, area, anchor.as_str()).ok()?;
+        Some(crate::compiler::reach::KeepOut {
+            objective: obj.to_string(),
+            completion: reach_completion(pos, *radius),
+        })
+    };
+    let mut armed_by_step: Vec<Vec<crate::compiler::reach::KeepOut>> = (0..steps.len())
+        .map(|k| {
+            if matches!(
+                steps[k],
+                Step::SelectClass { .. } | Step::AssertComplete { .. }
+            ) {
+                return Vec::new();
+            }
+            si_start
+                .iter()
+                .rposition(|(_, first)| *first <= k)
+                .and_then(|i| armed_at.get(i))
+                .map(|armed| armed.iter().filter_map(|o| reach_volume(o)).collect())
+                .unwrap_or_default()
+        })
+        .collect();
+
     // ---- the legs the party must cross ----
     //
     // A **leg** is a move from where the party stands to where the next critical
@@ -1332,6 +1385,15 @@ pub(super) fn build_critical_path(
     // is a `trigger` step spliced directly in front of the leg it carries, in
     // the order taken. Every per-step vector and every step-index map is
     // re-indexed in the same pass, so the path is one path again.
+    // A trigger the route proof performs from a cell of its own choosing,
+    // outside every volume the step keeps out of (`DW0311`).
+    for (&k, &cell) in &takes.stood {
+        if let Some(Step::Trigger { stand: at, .. }) = steps.get_mut(k)
+            && at.is_none()
+        {
+            *at = Some(cell);
+        }
+    }
     for (&k, &(li, stand)) in &takes.performed {
         if let (Some(Step::Trigger { stand: at, .. }), Some(l)) = (steps.get_mut(k), links.get(li))
         {
@@ -1345,6 +1407,7 @@ pub(super) fn build_critical_path(
         let mut new_transport = Vec::with_capacity(n);
         let mut new_sneak = Vec::with_capacity(n);
         let mut new_live = Vec::with_capacity(n);
+        let mut new_armed = Vec::with_capacity(n);
         let mut moved: Vec<usize> = Vec::with_capacity(n);
         let mut spliced_at: Vec<(String, usize)> = Vec::new();
         for (k, step) in steps.into_iter().enumerate() {
@@ -1365,12 +1428,14 @@ pub(super) fn build_critical_path(
                 new_transport.push(Some(l.to));
                 new_sneak.push(false);
                 new_live.push(live_links_by_step[k].clone());
+                new_armed.push(armed_by_step[k].clone());
             }
             moved.push(new_steps.len());
             new_steps.push(step);
             new_transport.push(transport_by_step[k]);
             new_sneak.push(sneak_by_step[k]);
             new_live.push(std::mem::take(&mut live_links_by_step[k]));
+            new_armed.push(std::mem::take(&mut armed_by_step[k]));
         }
         for idx in obj_step.values_mut() {
             *idx = moved[*idx];
@@ -1393,11 +1458,30 @@ pub(super) fn build_critical_path(
         transport_by_step = new_transport;
         sneak_by_step = new_sneak;
         live_links_by_step = new_live;
+        armed_by_step = new_armed;
     }
 
     // Every cutscene a step's completion schedules, at any depth of its
     // bundles, read off the step list as it is exported (links spliced).
     let cutscene_by_step = crate::compiler::hold::after_holds(campaign, &steps);
+    // A step's own objective is due at it: the volume it walks INTO is its own.
+    // An armed volume that meets a reach's own completes WITH it on arrival,
+    // in the same tick, and not before it: the party arriving is the beat both
+    // were authored for, so it is not one the walk keeps out of.
+    let keep_out: Vec<Vec<crate::compiler::reach::KeepOut>> = steps
+        .iter()
+        .zip(armed_by_step)
+        .map(|(s, armed)| {
+            armed
+                .into_iter()
+                .filter(|v| Some(v.objective.as_str()) != s.objective())
+                .filter(|v| match s {
+                    Step::Reach { completion, .. } => !v.completion.meets(completion),
+                    _ => true,
+                })
+                .collect()
+        })
+        .collect();
     Ok(CriticalPath {
         steps,
         live_links_by_step,
@@ -1415,6 +1499,7 @@ pub(super) fn build_critical_path(
             data_before: replay.data_before,
             data_end: replay.data_end,
             branch_excluded,
+            keep_out,
         },
         loops: spliced,
     })

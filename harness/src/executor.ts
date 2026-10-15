@@ -11,7 +11,7 @@
 // NPC first (realism + reach mechanics that some dialogs gate on).
 
 import type { Bot } from "mineflayer";
-import type { Vec3Tuple } from "./critical-path.ts";
+import type { KeepOut, Vec3Tuple } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError } from "./death.ts";
 import { NavigationOwner } from "./navigation.ts";
@@ -289,6 +289,13 @@ export class MineflayerExecutor implements StepExecutor {
    * every compile-time proof green.
    */
   lethalBoxes: readonly Box[] = [];
+  /**
+   * The completion volumes the step under way keeps out of (its `keep_out`):
+   * every walk the step makes prices the cells they reach as it prices a lethal
+   * volume's, so a walk does not complete an armed objective out of turn. Set
+   * by `beforeStep`.
+   */
+  stepKeepOut: readonly KeepOut[] = [];
   /** The regions of the volumes live from world-load — always excluded. */
   unstagedBoxes: readonly Box[] = [];
   /**

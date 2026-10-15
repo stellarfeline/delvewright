@@ -152,7 +152,44 @@ pub fn reach_completion(pos: [i32; 3], radius: u32) -> ReachCompletion {
     }
 }
 
+/// **A completion volume a step must keep out of**: a `reach` objective armed
+/// while the party performs some other step, and not yet due. A body that
+/// enters it completes the objective there and then — out of the order the path
+/// walks it in — so every leg into that step is routed outside it, and every
+/// stance the step is performed from stands outside it (`DW0311`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeepOut {
+    /// The armed objective whose volume this is.
+    pub objective: String,
+    /// The volume the datapack completes it in ([`reach_completion`]).
+    pub completion: ReachCompletion,
+}
+
+impl KeepOut {
+    /// The volume's inclusive corners.
+    pub fn bounds(&self) -> ([i32; 3], [i32; 3]) {
+        match self.completion {
+            ReachCompletion::Cube { lo, hi } => (lo, hi),
+        }
+    }
+
+    /// The step-level `keep_out` entry `critical-path.json` hands the harness:
+    /// the objective and the volume, which the bot excludes from every walk the
+    /// step makes by the selector's own hitbox rule.
+    pub fn to_json(&self) -> serde_json::Value {
+        let (lo, hi) = self.bounds();
+        serde_json::json!({ "objective": self.objective, "lo": lo, "hi": hi })
+    }
+}
+
 impl ReachCompletion {
+    /// Whether the two volumes share a cell.
+    pub fn meets(&self, other: &ReachCompletion) -> bool {
+        let (ReachCompletion::Cube { lo: a0, hi: a1 }, ReachCompletion::Cube { lo: b0, hi: b1 }) =
+            (self, other);
+        (0..3).all(|i| a0[i] <= b1[i] && b0[i] <= a1[i])
+    }
+
     /// Whether a body whose feet are in `cell` is inside the volume.
     pub fn contains_cell(&self, cell: [i32; 3]) -> bool {
         match self {

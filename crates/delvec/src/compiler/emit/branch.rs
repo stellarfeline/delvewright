@@ -137,6 +137,7 @@ pub(super) fn branch_paths(
                 &cp.steps,
                 &cp.transport_by_step,
                 &cp.sneak_by_step,
+                &cp.firing.keep_out,
                 CutsceneHolds {
                     after: &cp.cutscene_by_step,
                     en_route: &en_route,

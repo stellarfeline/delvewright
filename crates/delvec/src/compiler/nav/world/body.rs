@@ -537,7 +537,7 @@ impl World {
     /// here, at the one predicate every route proof, snap, flood and export in
     /// this model funnels through, rather than at any of them.
     pub(in crate::compiler::nav) fn standable_fp(&self, c: [i32; 3], fp: &Footprint) -> bool {
-        if self.meets_lethal_fp(c, fp) {
+        if self.meets_lethal_fp(c, fp) || self.meets_keep_out_fp(c, fp) {
             return false;
         }
         // spec-0065: a body may not be PROVEN to stand on furniture. Asked beside
