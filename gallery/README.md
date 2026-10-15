@@ -47,7 +47,7 @@ order a player would:
 | `world-edits.json` | the annex's piece-verb batches, the shards stamped by `fragment`, the barrier course, and the batches that dress the floor, lay the hearth, open the vault and rough the lane |
 | `geometry-brief.json` | four numbers out of the hall's own brief, the kind a site plan is later held to |
 | `layout-graph.json` | the same hall stated as six places and twelve connections, before any coordinate — three barred doors through the wall because the hall really has three, a stair and a drop that close a loop, a sightline to the loft, and one place deliberately off the mandatory spine |
-| `overlays/site-plan/` | the same places given geometry, and then a whole map DERIVED from it: a region, a box each stating only its extent and plane, ONE pinned corner, a seam per connection stating which face of its `a` box it sits on, where along it and what the crossing is (the compiler derives every other corner and every sill — spec-0059; `delvec validate` prints the corners), an `open` fill over a generated heightmap with the rock and the sky the whole owns, a declared roof over the annex, whose program draws its own walls and gable while the yard stands as a faced plinth over the falling terrain (spec-0098), a plank gantry hung over the yard (`base: {"aloft": 0}`) that owns no ground, climbed from the yard on a ladder through its deck and walked to a small lookout hung at its far end, and eight comparisons holding all of it to its own written brief. It carries its own world, cast, quest layer and translations, because a campaign has ONE placement authority and the primary's is `areas[]` — so at this point of the campaign nothing describes a block, and everything a body meets is derived: the floors it walks, the doors it is stopped by, the stair it climbs, the anchors the quests bind to. Inside one place, too: the causeway's program raises a lookout on a stone stand and a crow's nest over it, reached by two ladders stacked one on the other — the first tops out on the foot of the second — which its spatial contract declares as three spaces and two `climb` edges: two floors of one place are two spaces, each ladder is proved both ways on the body's climb moves, and the critical path climbs the stack to the crow's nest (`obj/climb-the-crow`), so the exported route carries two one-column climbs each way. Its factor, whom the route brings the party to from behind the annex stand's facing, declares a watch of the nearest player within 4 blocks, so it turns to the party as they come into reach to talk (`DW1025`); declaring none, it would watch within 8 by default. The curator declares one too: the party reaches the near hall's stand side-on, at the edge of what `DW1025` admits, and a detailed variant of the place puts it behind |
+| `overlays/site-plan/` | the same places given geometry, and then a whole map DERIVED from it: a region, a box each stating only its extent and plane, ONE pinned corner, a seam per connection stating which face of its `a` box it sits on, where along it and what the crossing is (the compiler derives every other corner and every sill — spec-0059; `delvec validate` prints the corners), an `open` fill over a generated heightmap with the rock and the sky the whole owns, a declared roof over the annex, whose program draws its own walls and gable while the yard stands as a faced plinth over the falling terrain (spec-0098), a plank gantry hung over the yard (`base: {"aloft": 0}`) that owns no ground, climbed from the yard on a ladder through its deck and walked to a small lookout hung at its far end, and eight comparisons holding all of it to its own written brief. It carries its own world, cast, quest layer and translations, because a campaign has ONE placement authority and the primary's is `areas[]` — so at this point of the campaign nothing describes a block, and everything a body meets is derived: the floors it walks, the doors it is stopped by, the stair it climbs, the anchors the quests bind to. Inside one place, too: the causeway's program raises a lookout on a stone stand and a crow's nest over it, reached by two ladders stacked one on the other — the first tops out on the foot of the second — which its spatial contract declares as three spaces and two `climb` edges: two floors of one place are two spaces, each ladder is proved both ways on the body's climb moves, and the critical path climbs the stack to the crow's nest (`obj/climb-the-crow`), so the exported route carries two one-column climbs each way. Its factor, whom the route brings the party to from behind the annex stand's facing, declares a watch of the nearest player within 4 blocks, so it turns to the party as they come into reach to talk (`DW1025`); declaring none, it would watch within 8 by default. The curator declares one too: the party reaches the near hall's stand side-on, at the edge of what `DW1025` admits, and a detailed variant of the place puts it behind. The undercroft's ladder and stair join the near hall to the far hall round the dividing wall, so its west and centre doors are declared `shortcut`, as `east-door` is: a gate a body gets round is declared so, or the build refuses it (`DW1011`) — and the same holds in the solid overlay |
 | `overlays/site-plan-solid/` | the same seven places carved in rock: the plan states `fill: solid`, so every cell no place claims is deepslate and the exit's sky is a declared clearance well, and a one-cell clearance keeps the vista's air open through the rock between the near hall and the loft. It is its own campaign (`gallery-rock`), so its places — every one detailed from `programs/` by `delvec detail`, because a stand-in never ships — are frozen as `gallery-rock-<place>` and never share a name with the open point's pieces. Beside its open sibling it shows that the kind of site is the plan's declaration (spec-0098); its factor and curator declare their watches for the same reasons as the open point's (`DW1025`) |
 | `overlays/valley-site/` | a SITE placed: one area bound to one prefab on `horizon: valley`, which is the other way a campaign states how big its map is — the map IS that piece, so its declared region is the extent the surround rings. `gallery-bank` is what a site is: three courses of island mass, a bank of grass out to the box's own edge, a walled court on top. It is seated by its WALK PLANE, so the bank's top course is the valley's gap floor and a body walks off the piece onto ground the horizon built; and it carries both halves of `DW0885` at once, the courses under the bank buried by earth and the parapet above it answered by four `shown_faces`. It carries its own cast and quest layer, because its one area is not the primary's two |
 | `l10n/zh-cn.json` | the second language, so the sidecar surface is real rather than declared |
@@ -57,9 +57,18 @@ order a player would:
 | `probes/` | documents the engine **refuses**, each naming the diagnostic |
 | `baseline/` | the expected-warnings ledger — the one baseline document committed; the emission baseline is computed in every CI run from the merge base and the head, both built from source (ADR-0034) |
 
-The hall itself is generated, not committed: one 31 × 8 × 31 stone room split by
-a barred wall, with three doors in it and a mezzanine in the far half whose
-stair is missing its treads. Beside it the generator emits a small
+The hall itself is generated, not committed: one stone room 31 × 31 across,
+split by a wall with five barred openings in it — the story gate, the shortcut
+door, and three doors on clocks, each opening onto a roofed closet on the near
+side, so that while the story gate is shut nothing a body does gets it into the
+far half (`DW1011`) — and a mezzanine in the far half whose stair is missing
+its treads. When the muster is cleared the story gate comes down again, and the
+same beat moves the checkpoint to where the muster stood in the far half,
+where the way goes on: a party that dies after the reseal comes back on the side it is still
+owed. The near half, hearth and pits included, is behind the gate from then
+on, unless the party pulls the side door's lever on the far side and opens the
+shortcut back.
+Beside it the generator emits a small
 **annex tileset** — four 7 × 6 × 7 boxes and a pool — plus a 3-cube **shard**
 that exists only to be stamped by `fragment`. The annex is deliberately plain:
 its job is the ASSEMBLY, and a tileset with interesting rooms would make the
@@ -116,6 +125,12 @@ blocks: the build states the nearest body cell and its distance. The waypoint
 export carries the plain sensor and its shrieker on the legs that walk past them
 and the calibrated sensor on the legs up and down the stair, and the bot asserts
 each click and shriek and closes the run with `[sculk] darkness 0, warden 0`.
+No wave body stands within the sensor's reach while a leg that carries the
+shriek is walked: a mob's footstep sets the sensor off and a shrieker answers
+only a player, so a body there would take the click the party is owed. The
+walk to the Marshal is the one such leg before the muster is cleared, and the
+muster forms up only once she has the party's answer; every later leg past the
+floor comes after the muster is cleared.
 A third sensor is set into the near hall's floor two cells south of the walk
 along the valves. Two legs pass within its earshot without predicting it: the
 walk from the emeralds to the first valve and the walk from the third valve to
@@ -278,7 +293,6 @@ holding them at once.
 | `a-trap-that-takes-the-case-button-floor` | `DW1002` | `build` | having the plate trap's payload clear the pedestal column the case's button stands on: a beat nobody has to play, and the fill clears the pedestal before the button, so the server drops it |
 | `one-branch-takes-the-case-button-floor` | `DW1002` | `build` | having `obj/take-the-bone` clear the same column only once `flag/skipped-the-label` holds: a write only one branch makes, judged as every write is |
 | `a-copyist-in-the-open` | `DW1025` | `build` | standing the copyist, who declares `watch: "none"`, one block off the north wall, so seven of the cells a player can talk to her from lie behind her — though no step of the route talks to her |
-| `a-marshal-who-watches-only-his-own` | `DW1025` | `build` | narrowing the marshal's `watch` to the warder's class, so a wanderer coming from the north to answer him walks up to the back of a body facing south |
 | `a-name-two-bodies-wear-at-once` | `DW1026` | `validate` | giving the factor the curator's name, so two bodies of one character stand in the hall from world init |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
@@ -603,10 +617,12 @@ server, at every waypoint within reach, whether each body faces it, and prints
 
 The probes are the two ways a watch is refused:
 `probes/a-watcher-for-a-class-nobody-plays` (`DW0996`) and
-`probes/a-watcher-nobody-can-reach` (`DW0997`); and the two ways a body the
-party talks to is refused for facing away: `probes/a-marshal-who-watches-only-his-own`
-(on the route) and `probes/a-copyist-in-the-open` (a held facing, from every
-cell) (`DW1025`).
+`probes/a-watcher-nobody-can-reach` (`DW0997`); and a body the party talks to
+is refused for facing away by `probes/a-copyist-in-the-open` (a held facing,
+from every cell) (`DW1025`). The route's walk to the marshal arrives side-on,
+through the main gate in the west corner, so narrowing his watch to one class
+leaves him facing 90° off the approach, which `DW1025` admits; the route has
+no talk beat that a narrowed watch turns its back on.
 
 ## The heartbeat, and the drip
 
@@ -787,7 +803,8 @@ this, because a fight does not stay where it is staged: the ladder's own census
 found a re-seated cohort spread 14.4 blocks from its anchor. So both killing
 volumes live in the NEAR hall — the west corner and the north wall — and the
 muster forms up beyond the dividing wall, in the far hall the quest's beat
-names. The wall is the guarantee; the generator checks the sides, not a radius.
+names — the Marshal's answer, so no body of it stands while the party walks to
+her. The wall is the guarantee; the generator checks the sides, not a radius.
 
 **The pits sit where nothing walks.** Each is four blocks clear of every anchor
 and of every cell the piece's own bodies are teleported through on their way to

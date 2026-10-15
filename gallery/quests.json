@@ -607,7 +607,8 @@
         "type": "narrate",
         "when": {
           "forbids_flags": [
-            "flag/hall-sealed"
+            "flag/hall-sealed",
+            "flag/muster-cleared"
           ],
           "requires_state": [
             {
@@ -634,6 +635,19 @@
       {
         "stake": "stake/keepsake",
         "type": "drop-stake"
+      },
+      {
+        "style": "actionbar",
+        "text": "The hall puts you back where the muster stood.",
+        "type": "narrate",
+        "when": {
+          "forbids_flags": [
+            "flag/hall-sealed"
+          ],
+          "requires_flags": [
+            "flag/muster-cleared"
+          ]
+        }
       }
     ],
     "pulses": [
@@ -967,30 +981,6 @@
             },
             "npc": "npc/marshal",
             "type": "spawn-npc"
-          },
-          {
-            "happening": {
-              "subject": "anchor/muster",
-              "text": "The muster forms up beyond the wall.",
-              "verb": "arrives"
-            },
-            "type": "spawn-wave",
-            "wave": "wave/muster",
-            "when": {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ]
-            }
           },
           {
             "happening": {
@@ -1686,7 +1676,7 @@
           },
           {
             "after": [
-              "obj/back-in-the-hall"
+              "obj/answer-the-marshal"
             ],
             "announcement": "shown",
             "forbids_flags": [
@@ -1950,6 +1940,32 @@
           }
         ],
         "on_objective_complete": {
+          "obj/answer-the-marshal": [
+            {
+              "happening": {
+                "subject": "anchor/muster",
+                "text": "The muster forms up beyond the wall once the Marshal has the party's answer.",
+                "verb": "arrives"
+              },
+              "type": "spawn-wave",
+              "wave": "wave/muster",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
+            }
+          ],
           "obj/back-in-the-hall": [
             {
               "anchor": "anchor/hearth",
@@ -2958,6 +2974,22 @@
             {
               "assembly": "assembly/arm",
               "type": "despawn-assembly"
+            },
+            {
+              "anchor": "anchor/muster",
+              "happening": {
+                "text": "With the main gate down again, the party comes back where the muster stood, on the far side where the way goes on.",
+                "verb": "arrives"
+              },
+              "type": "set-checkpoint",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ]
+              }
             }
           ],
           "obj/take-the-bone": [

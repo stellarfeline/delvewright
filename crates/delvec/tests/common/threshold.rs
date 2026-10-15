@@ -46,6 +46,27 @@ pub fn doorway_campaign(camp: &Path, on: Value, at: &str, edits: Option<Vec<Valu
     }
 }
 
+/// The Keeper's door left barred: `obj/talk` no longer opens it.
+///
+/// A door the story shuts with a second doorway carved beside it is a way
+/// round a shut gate, which `DW1011` refuses whatever the trigger does. With
+/// [`second_door`] open, the door is one the story never operates instead,
+/// and the second doorway is the way through.
+pub fn bar_the_door(camp: &Path) {
+    super::patch_file(&camp.join("quests.json"), |q| {
+        let talk = q["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap();
+        let before = talk.len();
+        talk.retain(|e| !(e["type"] == "open-gate" && e["anchor"] == "anchor/door"));
+        assert_eq!(
+            before - talk.len(),
+            1,
+            "exactly one open-gate on the door is removed"
+        );
+    });
+}
+
 /// An `approach` with `range`.
 pub fn approach(range: u32) -> Value {
     json!({ "on": "approach", "range": range })

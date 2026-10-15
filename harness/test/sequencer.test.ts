@@ -618,6 +618,38 @@ test("runSequence runs the executor's beforeStep ahead of each step's own action
   ]);
 });
 
+test("runSequence runs the executor's afterStep at every boundary before completion is due", async () => {
+  const executor = new (class extends RecordingExecutor {
+    afterStep(index: number, step: Step): Promise<void> {
+      this.calls.push(`after:${index}:${step.action}`);
+      return Promise.resolve();
+    }
+  })();
+  await runSequence(path([selectClass, talkTo, reach, assertComplete]), executor);
+  // The reach is the last objective, where completion is due: no boundary
+  // follows it, and none follows `assert-complete`.
+  assert.deepEqual(executor.calls, [
+    "select-class",
+    "after:0:select-class",
+    "talk-to",
+    "after:1:talk-to",
+    "reach",
+    "assert-complete",
+  ]);
+});
+
+test("a failure at a step boundary is attributed to the step it follows", async () => {
+  const executor = new (class extends RecordingExecutor {
+    afterStep(index: number): Promise<void> {
+      return index === 1 ? Promise.reject(new Error("the death loop fell over")) : Promise.resolve();
+    }
+  })();
+  await assert.rejects(
+    runSequence(path([selectClass, talkTo, reach, assertComplete]), executor),
+    (err: unknown) => err instanceof StepExecutionError && err.index === 1,
+  );
+});
+
 // --- loop steps (spec-0086 §6) ---------------------------------------------------
 
 const crossTheGallery: LoopStep = {

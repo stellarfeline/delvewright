@@ -18,7 +18,7 @@
 
 mod common;
 
-use common::threshold::{approach, doorway_campaign, second_door};
+use common::threshold::{approach, bar_the_door, doorway_campaign, second_door};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -29,9 +29,20 @@ fn tmp(name: &str) -> PathBuf {
     dir
 }
 
-fn build(tag: &str, on: serde_json::Value, edits: Option<Vec<serde_json::Value>>) -> (i32, String) {
+fn build(
+    tag: &str,
+    on: serde_json::Value,
+    edits: Option<Vec<serde_json::Value>>,
+    barred: bool,
+) -> (i32, String) {
     let camp = tmp(&format!("camp-{tag}"));
+    // A second doorway is the way through only while the Keeper's door stays
+    // barred: carved beside a door the story opens, it is a way round a shut
+    // gate (`DW1011`).
     doorway_campaign(&camp, on, "anchor/door", edits);
+    if barred {
+        bar_the_door(&camp);
+    }
     let out = tmp(&format!("out-{tag}"));
     let r = Command::new(env!("CARGO_BIN_EXE_delvec"))
         .args(["build", camp.to_str().unwrap(), "-o", out.to_str().unwrap()])
@@ -49,7 +60,7 @@ fn build(tag: &str, on: serde_json::Value, edits: Option<Vec<serde_json::Value>>
 
 #[test]
 fn a_range_one_trigger_in_a_two_wide_doorway_is_refused() {
-    let (code, log) = build("r1", approach(1), None);
+    let (code, log) = build("r1", approach(1), None, false);
     assert_ne!(code, 0, "{log}");
     assert!(log.contains("DW1044 [error]"), "{log}");
     assert!(
@@ -85,7 +96,7 @@ fn a_range_one_trigger_in_a_two_wide_doorway_is_refused() {
 
 #[test]
 fn the_range_the_refusal_names_builds() {
-    let (code, log) = build("r2", approach(2), None);
+    let (code, log) = build("r2", approach(2), None, false);
     assert_eq!(code, 0, "{log}");
     assert!(!log.contains("DW1044 [error]"), "{log}");
     assert!(
@@ -101,7 +112,7 @@ fn the_range_the_refusal_names_builds() {
 /// trigger. The walk proof routes either door; this one is refused.
 #[test]
 fn a_second_door_round_the_widened_trigger_is_refused() {
-    let (code, log) = build("r2-door", approach(2), Some(second_door()));
+    let (code, log) = build("r2-door", approach(2), Some(second_door()), true);
     assert_ne!(code, 0, "{log}");
     assert!(log.contains("DW1044 [error]"), "{log}");
     assert!(log.contains("DW0311 binding: 3 leg(s); 3 walked"), "{log}");
