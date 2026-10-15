@@ -72,6 +72,11 @@ const CABIN_LAMP: [i32; 3] = [2, 2, 29];
 /// re-seated spider at 15 of 16 health.
 const FERRY_DECK: (i32, i32, i32, i32) = (6, 12, 20, 22);
 
+/// The deck's one column further east, `(x, z0)` to the deck's south edge,
+/// clear of the spider's body (it reaches `z = 20.2`): the tiller stands on
+/// it, three columns from the boarding volume's centre.
+const FERRY_TILLER_FOOT: (i32, i32) = (13, 21);
+
 /// The ferry deck's top solid course: a body stands on it at `y = 3`.
 const FERRY_DECK_TOP_Y: i32 = 2;
 
@@ -762,7 +767,7 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/ferry-deck",
-        pos: [10, FERRY_DECK_TOP_Y + 1, 21],
+        pos: [9, FERRY_DECK_TOP_Y + 1, 21],
         facing: Some("east"),
         trigger_block: None,
         note: "the centre of the ferry's deck: the link's volume is this cell \
@@ -773,7 +778,7 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/ferry-tiller",
-        pos: [12, FERRY_DECK_TOP_Y + 1, 21],
+        pos: [13, FERRY_DECK_TOP_Y + 1, 21],
         facing: Some("west"),
         trigger_block: None,
         note: "the ferry's tiller: outside the deck's volume and within a strike \
@@ -1312,6 +1317,13 @@ fn block_at(
     // The ferry deck and the one plank of its jetty (spec-0113 §9).
     let (dx0, dx1, dz0, dz1) = FERRY_DECK;
     if (dx0..=dx1).contains(&x) && (dz0..=dz1).contains(&z) && (1..=FERRY_DECK_TOP_Y).contains(&y) {
+        return ("minecraft:stone", None);
+    }
+    // The tiller's footing: the deck's east column past the spider's reach.
+    if x == FERRY_TILLER_FOOT.0
+        && (FERRY_TILLER_FOOT.1..=dz1).contains(&z)
+        && (1..=FERRY_DECK_TOP_Y).contains(&y)
+    {
         return ("minecraft:stone", None);
     }
     if (JETTY_PLANK.0..=JETTY_PLANK.1).contains(&x)
