@@ -455,8 +455,12 @@ fn extract_from(args: &ExtractArgs<'_>, scope: &Scope, built: &Built<'_>) -> Res
 
     // ---- anchors ----
     let mut residue: Vec<Residue> = Vec::new();
-    let (anchors, stations, entry_key) =
-        derive_anchors(campaign, &sources, &scope, lo, hi, &mut residue);
+    let Derived {
+        anchors,
+        stations,
+        entry_key,
+        named,
+    } = derive_anchors(campaign, &sources, &scope, lo, hi, &mut residue);
 
     // ---- openings and the contract ----
     let (openings, contract) = match &scope {
@@ -468,6 +472,29 @@ fn extract_from(args: &ExtractArgs<'_>, scope: &Scope, built: &Built<'_>) -> Res
         }
     };
     let mut anchors = anchors;
+    // A place scope none of whose pieces names its entry is entered where the
+    // first place of the scope is arrived at: the anchor its row binds the
+    // place's own name to.
+    let entry_key = entry_key.or_else(|| {
+        let first = scope_places.first()?;
+        let row = rows.get(first.0.as_str())?;
+        let piece_key = row
+            .anchors
+            .get(&delvewright_dsl::siteplan::node_anchor(first))?;
+        let key = named.get(&(first.clone(), piece_key.clone()))?;
+        let a = anchors.get_mut(key)?;
+        a.role = Some(delvewright_dsl::prefab::AnchorRole::Entry);
+        residue.push(Residue {
+            object: "entry".to_string(),
+            document: "extraction".to_string(),
+            severed: format!(
+                "the campaign's entry is not inside the scope, and no piece of it names its \
+                 entry: the seated entry is `{key}`, where the scope's first place `{first}` is \
+                 arrived at; `DW0837` proves reach from the seated `spawn`"
+            ),
+        });
+        Some(key.clone())
+    });
     let entry_key = match entry_key {
         Some(k) => Some(k),
         None => {
@@ -1177,6 +1204,15 @@ fn facing_in(face: Face) -> &'static str {
     }
 }
 
+/// What [`derive_anchors`] derives.
+struct Derived {
+    anchors: BTreeMap<String, Anchor>,
+    stations: Vec<Station>,
+    entry_key: Option<String>,
+    /// `(place, piece anchor key)` → the anchor's name in the extracted piece.
+    named: BTreeMap<(NodeId, String), String>,
+}
+
 /// **The anchors of the cuboid**: every source piece anchor that lies inside
 /// it, rebased, keyed by the station a `details[]` row binds to it where one
 /// does and by its own key otherwise (prefixed with its place's stem where two
@@ -1191,13 +1227,14 @@ fn derive_anchors(
     lo: [i64; 3],
     hi: [i64; 3],
     residue: &mut Vec<Residue>,
-) -> (BTreeMap<String, Anchor>, Vec<Station>, Option<String>) {
+) -> Derived {
     let inside = |c: [i64; 3]| (0..3).all(|a| lo[a] <= c[a] && c[a] <= hi[a]);
     let graph = campaign.layout_graph.as_ref().map(|g| &g.content);
     let entry_node = graph.map(|g| g.entry.clone());
     let mut out: BTreeMap<String, Anchor> = BTreeMap::new();
     let mut stations: Vec<Station> = Vec::new();
     let mut entry_key: Option<String> = None;
+    let mut named: BTreeMap<(NodeId, String), String> = BTreeMap::new();
     // Keys more than one source piece declares.
     let mut seen: BTreeMap<&str, usize> = BTreeMap::new();
     for s in sources {
@@ -1276,11 +1313,32 @@ fn derive_anchors(
                 .copied();
             let name = match station {
                 Some(st) => st.to_string(),
-                None if seen.get(key.as_str()).copied().unwrap_or(0) > 1 => {
-                    format!("anchor/{stem}-{}", key.trim_start_matches("anchor/"))
+                None => {
+                    // Out of the engine's derived namespace (`DW0869`): a
+                    // seating campaign names the piece's anchors as its own
+                    // stations, and a derived name cannot be one.
+                    let spelled = key.starts_with("anchor/");
+                    let local = key.trim_start_matches("anchor/");
+                    let local = if !spelled {
+                        local.to_string()
+                    } else if let Some(x) = local.strip_prefix("seam-") {
+                        format!("{x}-gate")
+                    } else if let Some(x) = local.strip_prefix("unlock-") {
+                        format!("{x}-unlock")
+                    } else if let Some(x) = local.strip_prefix("node-") {
+                        format!("{x}-arrival")
+                    } else {
+                        local.to_string()
+                    };
+                    let prefix = if spelled { "anchor/" } else { "" };
+                    if seen.get(key.as_str()).copied().unwrap_or(0) > 1 {
+                        format!("{prefix}{stem}-{local}")
+                    } else {
+                        format!("{prefix}{local}")
+                    }
                 }
-                None => key.clone(),
             };
+            named.insert((s.node.clone(), key.clone()), name.clone());
             let mut a = a.clone();
             let off = [
                 (s.frame.lo[0] - lo[0]) as i32,
@@ -1334,7 +1392,12 @@ fn derive_anchors(
             }
         }
     }
-    (out, stations, entry_key)
+    Derived {
+        anchors: out,
+        stations,
+        entry_key,
+        named,
+    }
 }
 
 /// **The openings at a place scope's boundary** (spec-0106 §3.9): every seam

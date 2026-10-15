@@ -1301,3 +1301,294 @@ fn criterion_16_a_tower_cut_out_of_vesperhold() {
     assert_eq!(code, Some(0), "{out}");
     println!("{}", relight_line(&out));
 }
+
+/// The Stranding's creature: the body's inside places and the places on its
+/// back, the scope criterion 15 names.
+const CREATURE: [&str; 14] = [
+    "node/mouth",
+    "node/throat",
+    "node/rib-cathedral",
+    "node/stomach",
+    "node/heart-chamber",
+    "node/breach",
+    "node/spine-stair",
+    "node/spine-top",
+    "node/crown",
+    "node/brow",
+    "node/back-upper",
+    "node/back-middle",
+    "node/back-lower",
+    "node/tail-flank",
+];
+
+/// **Criterion 15**: The Stranding's creature, extracted as one place scope
+/// and seated in a fresh one-region `open` campaign. Run with
+/// `DW_STRANDING=<a copy of campaigns/the-stranding stamped to this engine>`
+/// and `DW_STRANDING_PREFABS=<its library>`.
+#[test]
+#[ignore = "needs DW_STRANDING and DW_STRANDING_PREFABS"]
+fn criterion_15_the_creature_extracted_and_seated() {
+    let (src, prefabs) = handed("DW_STRANDING", "DW_STRANDING_PREFABS");
+    let root = tempdir("c15");
+    let lib = root.join("lib");
+    let scope = CREATURE.join(",");
+    let (code, out) = extract(&src, &prefabs, &scope, &lib, "the-fathomer");
+    assert_ne!(
+        code,
+        Some(3),
+        "DW1023 is a derivation finding, recorded, never a pass: {out}"
+    );
+    assert_eq!(code, Some(0), "{out}");
+    println!(
+        "{}",
+        out.lines().find(|l| l.starts_with("extracted")).unwrap()
+    );
+    for l in out
+        .lines()
+        .filter(|l| l.trim_start().starts_with("residue:"))
+    {
+        println!("{l}");
+    }
+    let m = meta(&lib, "the-fathomer");
+    let x = &m["extraction"];
+
+    // The openings, a second way: every seam `delvec allocation --all` hands a
+    // place of the set whose other place lies outside it, at the cells it
+    // hands, with its class and rise.
+    let (code, out) = run(&["allocation", s(&src), "--all"]);
+    assert_eq!(code, Some(0), "{out}");
+    let all: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let in_set = |p: &str| CREATURE.contains(&p);
+    let mut lo = [i64::MAX; 3];
+    for a in all.as_array().unwrap() {
+        if in_set(a["place"].as_str().unwrap()) {
+            for (i, v) in lo.iter_mut().enumerate() {
+                *v = (*v).min(a["world_min"][i].as_i64().unwrap());
+            }
+        }
+    }
+    let mut want: BTreeSet<(String, String, i64, [i64; 6])> = BTreeSet::new();
+    let mut internal: BTreeSet<(String, String, String)> = BTreeSet::new();
+    for a in all.as_array().unwrap() {
+        let place = a["place"].as_str().unwrap();
+        if !in_set(place) {
+            continue;
+        }
+        for sm in a["seams"].as_array().unwrap() {
+            let other = sm["other"].as_str().unwrap();
+            let edge = sm["edge"]
+                .as_str()
+                .unwrap()
+                .trim_start_matches("edge/")
+                .to_string();
+            if in_set(other) {
+                let (p, q) = if place < other {
+                    (place, other)
+                } else {
+                    (other, place)
+                };
+                internal.insert((edge, p.to_string(), q.to_string()));
+                continue;
+            }
+            let c = |k: usize, i: usize| {
+                a["world_min"][i].as_i64().unwrap() + sm["cells"][k][i].as_i64().unwrap() - lo[i]
+            };
+            want.insert((
+                edge,
+                sm["class"].as_str().unwrap().to_string(),
+                sm["rise"].as_i64().unwrap(),
+                [c(0, 0), c(0, 1), c(0, 2), c(1, 0), c(1, 1), c(1, 2)],
+            ));
+        }
+    }
+    let got: BTreeSet<(String, String, i64, [i64; 6])> = x["openings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|o| {
+            let c = |k: usize, i: usize| o["cells"][k][i].as_i64().unwrap();
+            (
+                o["name"].as_str().unwrap().to_string(),
+                o["kind"].as_str().unwrap().to_string(),
+                o["rise"].as_i64().unwrap(),
+                [c(0, 0), c(0, 1), c(0, 2), c(1, 0), c(1, 1), c(1, 2)],
+            )
+        })
+        .collect();
+    println!(
+        "openings: {} derived, {} computed from the allocations",
+        got.len(),
+        want.len()
+    );
+    assert_eq!(got, want);
+    // Every internal seam is a contract edge between the spaces either side.
+    let edges = m["spatial_contract"]["edges"].as_array().unwrap();
+    for (edge, p, q) in &internal {
+        let (sp, sq) = (p.trim_start_matches("node/"), q.trim_start_matches("node/"));
+        let joined = edges.iter().any(|e| {
+            let (a, b) = (e["a"].as_str().unwrap(), e["b"].as_str().unwrap());
+            (a.starts_with(&format!("{sp}-")) && b.starts_with(&format!("{sq}-")))
+                || (a.starts_with(&format!("{sq}-")) && b.starts_with(&format!("{sp}-")))
+        });
+        assert!(
+            joined,
+            "the internal seam `{edge}` ({p}, {q}) is no contract edge: {edges:?}"
+        );
+    }
+    println!(
+        "internal seams: {} examined, each a contract edge",
+        internal.len()
+    );
+    let entities = x["entities"].as_array().unwrap();
+    for e in entities {
+        println!("entity: {} {} at {}", e["kind"], e["id"], e["anchor"]);
+    }
+    assert!(
+        entities.iter().any(|e| e["id"] == "npc/davey-coyle"),
+        "{entities:?}"
+    );
+
+    // Seated in a fresh one-region `open` campaign.
+    let stations: Vec<String> = x["stations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["anchor"].as_str().unwrap().to_string())
+        .collect();
+    let gates: Vec<String> = m["anchors"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .filter(|(_, a)| a.get("region").is_some())
+        .map(|(k, _)| k.clone())
+        .collect();
+    let local = |a: &str| a.trim_start_matches("anchor/").to_string();
+    let seated = fresh_at(
+        "c15-seat",
+        "body",
+        [
+            local(&stations[0]).as_str(),
+            local(&stations[1]).as_str(),
+            local(&stations[2]).as_str(),
+        ],
+        [80, 60, 180],
+    );
+    // The body's own gates, named by the campaign that seats it and opened by
+    // its first beat; then a walk to every station the piece declares.
+    common::patch_file(&seated.join("layout-graph.json"), |v| {
+        let g = &mut v["content"];
+        g["nodes"][0]["stations"] = serde_json::Value::Array(
+            gates
+                .iter()
+                .map(|k| serde_json::json!({"anchor": k, "kind": "gate"}))
+                .collect(),
+        );
+        let beats = g["beats"].as_array_mut().unwrap();
+        for i in 0..stations.len() {
+            beats.push(serde_json::json!({
+                "node": "node/body", "objective": format!("obj/station-{i}"),
+                "quest": "quest/walk-the-whole"
+            }));
+        }
+    });
+    common::patch_file(&seated.join("quests.json"), |v| {
+        let q = &mut v["content"]["quests"][0];
+        let opens: Vec<serde_json::Value> = gates
+            .iter()
+            .map(|k| {
+                serde_json::json!({"type": "open-gate", "anchor": k,
+                "happening": {"text": "The way through the body opens.", "verb": "opens"}})
+            })
+            .collect();
+        q["on_objective_complete"]["obj/ask"]
+            .as_array_mut()
+            .unwrap()
+            .extend(opens);
+        let objectives = q["objectives"].as_array_mut().unwrap();
+        for o in objectives.iter_mut() {
+            if o.get("radius").is_some() {
+                o["radius"] = serde_json::json!(1);
+            }
+        }
+        let mut after = "obj/walk-out".to_string();
+        for (i, st) in stations.iter().enumerate() {
+            let id = format!("obj/station-{i}");
+            objectives.push(serde_json::json!({
+                "id": id, "type": "reach-anchor", "anchor": st, "radius": 1, "after": [after],
+                "happening": {"text": "The party reaches the next place in the body.", "verb": "arrives"}
+            }));
+            after = id;
+        }
+    });
+    let (code, out) = run(&["fmt", s(&seated)]);
+    assert_eq!(code, Some(0), "{out}");
+    let names: Vec<String> = x["openings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|o| o["name"].as_str().unwrap().to_string())
+        .collect();
+    let mut all_commons: Vec<&str> = Vec::new();
+    for n in &names {
+        all_commons.extend(["--commons", n.as_str()]);
+    }
+    let undisposed = &names[names.len() - 1];
+    let (code, out) = seat_at(
+        &seated,
+        &lib,
+        "prefab/the-fathomer",
+        "node/body",
+        "10,10",
+        &all_commons[..all_commons.len() - 2],
+    );
+    assert_eq!(code, Some(1), "{out}");
+    assert!(
+        out.contains("DW1022")
+            && out.contains(&format!("`{undisposed}`"))
+            && out.contains(&format!("--join {undisposed}=<edge>"))
+            && out.contains(&format!("--commons {undisposed}")),
+        "{out}"
+    );
+    // A station the campaign already holds is DW0870.
+    let held = root.join("held");
+    common::copy_dir_all(&seated, &held);
+    common::patch_file(&held.join("layout-graph.json"), |v| {
+        v["content"]["nodes"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id": "node/porch", "intent": "another place",
+                "stations": [{"anchor": stations[0], "kind": "point"}]
+            }));
+    });
+    let (code, out) = seat_at(
+        &held,
+        &lib,
+        "prefab/the-fathomer",
+        "node/body",
+        "10,10",
+        &all_commons,
+    );
+    assert_eq!(code, Some(1), "{out}");
+    assert!(out.contains("DW0870"), "{out}");
+    // Every opening to the commons: it validates and builds, and the route
+    // walks to every station from the seated `spawn`.
+    let (code, out) = seat_at(
+        &seated,
+        &lib,
+        "prefab/the-fathomer",
+        "node/body",
+        "10,10",
+        &all_commons,
+    );
+    assert_eq!(code, Some(0), "{out}");
+    println!("{}", out.lines().find(|l| l.starts_with("seated")).unwrap());
+    let (code, out) = build(&seated, &lib, &root.join("out"));
+    assert_eq!(code, Some(0), "{out}");
+    for l in out
+        .lines()
+        .filter(|l| l.starts_with("DW0311 binding") || l.starts_with("relight binding"))
+    {
+        println!("{l}");
+    }
+}
