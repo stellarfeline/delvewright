@@ -530,7 +530,7 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
         // Where the dummy stands to be near, and where it stands to be far.
         let at = match &h.body {
             HlBody::Blocks { at, .. } => *at,
-            HlBody::Bodies { npc: true, .. } => {
+            HlBody::Bodies { .. } => {
                 let Some(npc) = h
                     .objective
                     .as_deref()
@@ -548,8 +548,6 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
                 };
                 npc
             }
-            // A wave's bodies exist only once it is spawned.
-            HlBody::Bodies { npc: false, .. } => continue,
         };
         let mut d = Drive::new(&format!("hl{}", h.safe));
         let s = &h.safe;
@@ -614,6 +612,15 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
         b.push(format!("function {ns}:setup"));
         let (pin, me) = pin_dummy(&format!("dw_pt_{s}"));
         b.push(pin);
+        // A wave's bodies exist only once it is spawned: one stand-in body of
+        // its tag stands at its anchor for this template, removed after.
+        let stand_in = matches!(h.body, HlBody::Bodies { npc: false, .. });
+        if let (true, HlBody::Bodies { tag, .. }) = (stand_in, &h.body) {
+            b.push(format!(
+                "summon minecraft:armor_stand {}.5 {} {}.5 {{Invisible:1b,NoGravity:1b,Tags:[\"{tag}\",\"dw_pt_hlw\"]}}",
+                at[0], at[1], at[2]
+            ));
+        }
         if let Some(l) = &latch {
             b.push(format!(
                 "execute store result score #sv_{s}_latch {GUIDE} run scoreboard players get {l} dw.sys"
@@ -690,6 +697,9 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
         b.extend(d.close());
         if h.objective.is_some() {
             b.push(format!("kill @e[tag=dw_hl_{s}]"));
+        }
+        if stand_in {
+            b.push("kill @e[tag=dw_pt_hlw]".to_string());
         }
         out.insert(
             format!("packtest-datapack/data/{ns}/test/guide_highlight_{s}.mcfunction"),
