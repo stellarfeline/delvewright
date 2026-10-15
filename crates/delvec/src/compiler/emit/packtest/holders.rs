@@ -37,18 +37,29 @@ pub(super) fn emit_holder_packtests(plan: &Plan, out: &mut BuildOutput, holders:
             ));
             b.push(format!("assert score #hs{k}_{id} dw.sys matches 1"));
         }
-        let flags = match o.holder.kind.family {
-            HolderFamily::Stand => format!(
-                "Marker:0b,Invulnerable:1b,DisabledSlots:{}",
-                o.disabled_slots()
-            ),
-            _ => "ItemDropChance:1.0f".to_string(),
-        };
-        b.push(format!("scoreboard players set #hf_{id} dw.sys 0"));
-        b.push(format!(
-            "execute store success score #hf_{id} dw.sys if entity @e[tag={tag},nbt={{{flags}}}]"
-        ));
-        b.push(format!("assert score #hf_{id} dw.sys matches 1"));
+        // The owned flags, one assertion each, so a red names the key. A
+        // marker stand is asserted absent rather than `Marker:0b` present: the
+        // game may omit a false flag from the entity's saved NBT.
+        let mut flags: Vec<(String, bool)> = Vec::new();
+        match o.holder.kind.family {
+            HolderFamily::Stand => {
+                flags.push(("Invulnerable:1b".to_string(), true));
+                flags.push((format!("DisabledSlots:{}", o.disabled_slots()), true));
+                flags.push(("Marker:1b".to_string(), false));
+                if o.show_arms() {
+                    flags.push(("ShowArms:1b".to_string(), true));
+                }
+            }
+            _ => flags.push(("ItemDropChance:1.0f".to_string(), true)),
+        }
+        for (k, (flag, present)) in flags.iter().enumerate() {
+            let verb = if *present { "if" } else { "unless" };
+            b.push(format!("scoreboard players set #hf{k}_{id} dw.sys 0"));
+            b.push(format!(
+                "execute store success score #hf{k}_{id} dw.sys {verb} entity @e[tag={tag},nbt={{{flag}}}]"
+            ));
+            b.push(format!("assert score #hf{k}_{id} dw.sys matches 1"));
+        }
         if o.holder.kind.family == HolderFamily::Frame {
             let item = o
                 .fills
