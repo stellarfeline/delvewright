@@ -758,7 +758,7 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/ferry-deck",
-        pos: [8, FERRY_DECK_TOP_Y + 1, 21],
+        pos: [9, FERRY_DECK_TOP_Y + 1, 21],
         facing: Some("east"),
         trigger_block: None,
         note: "the centre of the ferry's deck: the link's volume is this cell \
@@ -769,7 +769,7 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/ferry-tiller",
-        pos: [12, FERRY_DECK_TOP_Y + 1, 21],
+        pos: [13, FERRY_DECK_TOP_Y + 1, 21],
         facing: Some("west"),
         trigger_block: None,
         note: "the ferry's tiller: outside the deck's volume and within a strike \
