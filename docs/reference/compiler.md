@@ -3187,6 +3187,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   where the body floats at the top of water — the population the water half
   judges), and `trapped` (zero on a build that ships). Written only when the
   proof holds.
+- `<out>/validation/threshold-gate.json`: the `DW1044` proof's **binding ledger**
+  (`compiler::nav::ThresholdBinding`): the binding line's counts — `performed`,
+  `judged` (also as `examined`), `entered`, `no_debt`, `by_hand`, `carried`.
+  Written on every build that passes the proof, zeroes included.
 - `<out>/validation/separation-proof.json`: the `DW1011` proof's **binding
   ledger** (`compiler::nav::SeparationBinding`): `gates` (every gate anchor the
   world resolves), `barred_edges` and `barred_bound` (the layout graph's barred
