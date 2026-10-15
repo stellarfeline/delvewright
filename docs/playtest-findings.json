@@ -2999,6 +2999,30 @@
     {
       "binding": {
         "files": [
+          "layout-graph.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "class": "barred"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1011",
+        "kind": "dw"
+      },
+      "finding": "the party reached scenes behind a shut barred door, out of story order, by entering the sea and swimming around it",
+      "general_form": "the far side of every barred edge or gate is unreachable from its near side while the gate is shut, by walking, falling, jumping or swimming",
+      "id": "str-01",
+      "note": "Carried by `DW1011` (`compiler::nav::separate`): per quest configuration, every gate the world resolves and every barred edge's seam gate is held to it: while the gate is shut, a body at its near face reaches its far face by no walk, fall, jump or swim (`World::body_moves`). Route proofs keep refusing water (spec-0038 §5); this is a separation proof. The binding counts barred edges in the layout graph.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
           "quests.json"
         ],
         "kind": "dsl",
