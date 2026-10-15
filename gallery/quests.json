@@ -607,7 +607,8 @@
         "type": "narrate",
         "when": {
           "forbids_flags": [
-            "flag/hall-sealed"
+            "flag/hall-sealed",
+            "flag/muster-cleared"
           ],
           "requires_state": [
             {
@@ -634,6 +635,19 @@
       {
         "stake": "stake/keepsake",
         "type": "drop-stake"
+      },
+      {
+        "style": "actionbar",
+        "text": "The hall puts you back where the muster stood.",
+        "type": "narrate",
+        "when": {
+          "forbids_flags": [
+            "flag/hall-sealed"
+          ],
+          "requires_flags": [
+            "flag/muster-cleared"
+          ]
+        }
       }
     ],
     "pulses": [
@@ -2934,9 +2948,9 @@
               "type": "despawn-assembly"
             },
             {
-              "anchor": "anchor/vantage",
+              "anchor": "anchor/muster",
               "happening": {
-                "text": "With the main gate down again, the party comes back at the vantage, on the far side where the way goes on.",
+                "text": "With the main gate down again, the party comes back where the muster stood, on the far side where the way goes on.",
                 "verb": "arrives"
               },
               "type": "set-checkpoint",
@@ -2946,13 +2960,6 @@
                 ],
                 "requires_flags": [
                   "flag/hall-open"
-                ],
-                "requires_state": [
-                  {
-                    "op": "at-most",
-                    "state": "state/labels-read",
-                    "value": 9
-                  }
                 ]
               }
             }

@@ -63,8 +63,8 @@ door, and three doors on clocks, each opening onto a roofed closet on the near
 side, so that while the story gate is shut nothing a body does gets it into the
 far half (`DW1011`) — and a mezzanine in the far half whose stair is missing
 its treads. When the muster is cleared the story gate comes down again, and the
-same beat moves the checkpoint to the vantage in the far half, where the way
-goes on: a party that dies after the reseal comes back on the side it is still
+same beat moves the checkpoint to where the muster stood in the far half,
+where the way goes on: a party that dies after the reseal comes back on the side it is still
 owed. The near half, hearth and pits included, is behind the gate from then
 on, unless the party pulls the side door's lever on the far side and opens the
 shortcut back.
