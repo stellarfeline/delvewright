@@ -711,7 +711,11 @@
                 -4
               ]
             },
-            "dialogue": "dlg/copyist-root",
+            "dialogue": {
+              "barks": [
+                "Mind the ink."
+              ]
+            },
             "doing": "copying the catalogue at the wall desk, back to the wall"
           },
           "npc/curator": {
