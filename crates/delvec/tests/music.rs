@@ -585,8 +585,8 @@ fn a_camera_that_stays_in_the_declared_place_is_confirmed() {
     assert_eq!(l["cutscenes"][0]["verdict"], json!("confirmed"));
     assert_eq!(l["cutscenes"][0]["cells_judged"], json!(1));
     assert!(
-        !out.keys().any(|k| k.contains("/test/music_hears_")),
-        "the `music_hears_<n>` family is withdrawn"
+        !out.keys().any(|k| k.contains("/test/") && k.contains("hears")),
+        "no PackTest re-proves the hearing (spec-0109 §5.4)"
     );
 }
 
