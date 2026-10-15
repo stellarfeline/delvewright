@@ -9,7 +9,7 @@
 
 use super::*;
 use crate::compiler::emit::guidance::{
-    COMPASS_DATA, GUIDE, Guide, HlBody, JOURNAL_DATA, PICK, TRACK, Target, Watched,
+    COMPASS_DATA, GUIDE, Guide, HlBody, JOURNAL_DATA, PICK, TRACK, Target, Watched, display_entity,
 };
 
 /// Save, drive and restore `#party` scores for one template.
@@ -337,8 +337,10 @@ pub(super) fn emit_compass_packtests(plan: &Plan, out: &mut BuildOutput, g: &Gui
     // stands at the station for this template, so the read below has one to
     // read, and is removed after.
     b.push(format!(
-        "summon minecraft:armor_stand {}.5 {} {}.5 {{Invisible:1b,NoGravity:1b,Marker:1b,Tags:[\"{tag}\",\"dw_pt_cmpn\"]}}",
-        home[0], home[1], home[2]
+        "summon minecraft:armor_stand {} {} {} {{Invisible:1b,NoGravity:1b,Marker:1b,Tags:[\"{tag}\",\"dw_pt_cmpn\"]}}",
+        center(home[0]),
+        corner(home[1]),
+        center(home[2])
     ));
     b.push(format!(
         "execute store result score #cmpn_n {GUIDE} if entity {sel}"
@@ -617,8 +619,10 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
         let stand_in = matches!(h.body, HlBody::Bodies { npc: false, .. });
         if let (true, HlBody::Bodies { tag, .. }) = (stand_in, &h.body) {
             b.push(format!(
-                "summon minecraft:armor_stand {}.5 {} {}.5 {{Invisible:1b,NoGravity:1b,Tags:[\"{tag}\",\"dw_pt_hlw\"]}}",
-                at[0], at[1], at[2]
+                "summon minecraft:armor_stand {} {} {} {{Invisible:1b,NoGravity:1b,Tags:[\"{tag}\",\"dw_pt_hlw\"]}}",
+                center(at[0]),
+                corner(at[1]),
+                center(at[2])
             ));
         }
         if let Some(l) = &latch {
@@ -629,9 +633,34 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
         b.extend(d.open());
         let near = i32::from(h.within) - 1;
         let far = i32::from(h.within) + 2;
-        let pos = |dx: i32| format!("{}.5 {} {}.5", at[0] + dx, at[1], at[2]);
-        if matches!(h.body, HlBody::Blocks { .. }) {
+        let pos = |dx: i32| format!("{} {} {}", center(at[0] + dx), corner(at[1]), center(at[2]));
+        if let HlBody::Blocks { cells, .. } = &h.body {
             b.push(format!("function {ns}:hl_show_{s}"));
+            // Each display stands where its kind draws the lit cell whole: a
+            // block display at the cell's corner, an item display at its
+            // centre. The positions are written here from the cell, never
+            // read from the emitter, and a display is found within a
+            // thousandth of a block of it.
+            for (i, (cell, state)) in cells.iter().enumerate() {
+                let kind = display_entity(state);
+                let half = if kind == "minecraft:item_display" {
+                    0.5
+                } else {
+                    0.0
+                };
+                let [x, y, z] = cell.map(|v| format!("{:.1}", f64::from(v) + half));
+                b.push(format!(
+                    "execute store result score #{s}_p{i} {GUIDE} if entity @e[type={kind},tag=dw_hl_{s},x={x},y={y},z={z},distance=..0.001]"
+                ));
+                b.push(format!("assert score #{s}_p{i} {GUIDE} matches 1"));
+            }
+            b.push(format!(
+                "execute store result score #{s}_pn {GUIDE} if entity @e[tag=dw_hl_{s}]"
+            ));
+            b.push(format!(
+                "assert score #{s}_pn {GUIDE} matches {}",
+                cells.len()
+            ));
         }
         // Start dark, whatever a sibling or the tick left lit.
         b.push(format!("scoreboard players set {hl} {GUIDE} 1"));
@@ -660,10 +689,10 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
         let hold = format!("dw_pt_hold_{s}");
         let probe = match &h.body {
             HlBody::Blocks { at, .. } => format!(
-                "execute positioned {}.5 {}.5 {}.5 run tag @a[distance=..{},tag=!{CUTSCENE_TAG}] add {hold}",
-                at[0],
-                at[1],
-                at[2],
+                "execute positioned {} {} {} run tag @a[distance=..{},tag=!{CUTSCENE_TAG}] add {hold}",
+                center(at[0]),
+                center(at[1]),
+                center(at[2]),
                 i32::from(h.within) + 1
             ),
             HlBody::Bodies { tag, npc } => {

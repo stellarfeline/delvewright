@@ -463,25 +463,55 @@ fn facing_rotation(state: &str) -> &'static str {
     }
 }
 
+/// The display entity a highlight draws `state` with (§7.2): a
+/// `minecraft:block_display` of the block, or a `minecraft:item_display` of its
+/// item for a block whose model draws nothing or only part of the thing.
+pub(super) fn display_entity(state: &str) -> &'static str {
+    let base = state.split('[').next().unwrap_or(state);
+    if drawn_by_renderer(&namespaced(base)) {
+        "minecraft:item_display"
+    } else {
+        "minecraft:block_display"
+    }
+}
+
+/// Where a highlight display of `state` stands to cover `cell`, as the three
+/// coordinates of its summon. A `block_display` draws its block from its
+/// origin as the minimum corner, so it stands at the cell's corner, written
+/// `x.0` so the summon cannot centre it; an `item_display` draws its item
+/// centred on its origin, so it stands at the cell's centre on all three axes.
+pub(super) fn display_origin(cell: [i32; 3], state: &str) -> String {
+    if display_entity(state) == "minecraft:item_display" {
+        format!(
+            "{} {} {}",
+            center(cell[0]),
+            center(cell[1]),
+            center(cell[2])
+        )
+    } else {
+        format!(
+            "{} {} {}",
+            corner(cell[0]),
+            corner(cell[1]),
+            corner(cell[2])
+        )
+    }
+}
+
 /// The summon of one highlight display at `cell` drawing `state` (§7.2).
 pub(super) fn display_summon(safe: &str, cell: [i32; 3], state: &str) -> String {
     let base = state.split('[').next().unwrap_or(state);
     let tags = format!("Tags:[{FIXTURE_NBT}\"dw_hl\",\"dw_hl_{safe}\"]");
-    if drawn_by_renderer(&namespaced(base)) {
+    let at = display_origin(cell, state);
+    if display_entity(state) == "minecraft:item_display" {
         format!(
-            "summon minecraft:item_display {}.5 {}.5 {}.5 {{{tags},item:{{id:{},count:1}},item_display:\"none\",transformation:{{left_rotation:{},right_rotation:[0f,0f,0f,1f],scale:[1.002f,1.002f,1.002f],translation:[0f,0f,0f]}},glow_color_override:{HL_RGB}}}",
-            cell[0],
-            cell[1],
-            cell[2],
+            "summon minecraft:item_display {at} {{{tags},item:{{id:{},count:1}},item_display:\"none\",transformation:{{left_rotation:{},right_rotation:[0f,0f,0f,1f],scale:[1.002f,1.002f,1.002f],translation:[0f,0f,0f]}},glow_color_override:{HL_RGB}}}",
             snbt_string(&renderer_item(base)),
             facing_rotation(state)
         )
     } else {
         format!(
-            "summon minecraft:block_display {} {} {} {{{tags},block_state:{},transformation:{{left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],scale:[1.002f,1.002f,1.002f],translation:[-0.001f,-0.001f,-0.001f]}},glow_color_override:{HL_RGB}}}",
-            cell[0],
-            cell[1],
-            cell[2],
+            "summon minecraft:block_display {at} {{{tags},block_state:{},transformation:{{left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],scale:[1.002f,1.002f,1.002f],translation:[-0.001f,-0.001f,-0.001f]}},glow_color_override:{HL_RGB}}}",
             block_state_snbt(state)
         )
     }
@@ -745,8 +775,11 @@ pub(super) fn functions(
         let mut poll = vec![format!("scoreboard players set {hin} {GUIDE} 0")];
         match &h.body {
             HlBody::Blocks { at, .. } => poll.push(format!(
-                "execute {}positioned {}.5 {}.5 {}.5 if entity {near} run scoreboard players set {hin} {GUIDE} 1",
-                h.armed, at[0], at[1], at[2]
+                "execute {}positioned {} {} {} if entity {near} run scoreboard players set {hin} {GUIDE} 1",
+                h.armed,
+                center(at[0]),
+                center(at[1]),
+                center(at[2])
             )),
             HlBody::Bodies { tag, npc } => poll.push(format!(
                 "execute {}as {} at @s if entity {near} run scoreboard players set {hin} {GUIDE} 1",
@@ -1244,4 +1277,50 @@ pub(super) fn item_modifiers(
         ));
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The coordinates a summon line is written at: its three tokens after
+    /// the entity id.
+    fn at(line: &str) -> [&str; 3] {
+        let t: Vec<&str> = line.split(' ').collect();
+        [t[2], t[3], t[4]]
+    }
+
+    /// A block display draws its block from its origin as the minimum corner,
+    /// so it is summoned at the lit cell's corner, every axis written with a
+    /// decimal point so the summon cannot centre it — on either side of zero.
+    #[test]
+    fn a_block_display_stands_at_its_cells_corner() {
+        for (cell, want) in [
+            ([8209, 64, 8192], ["8209.0", "64.0", "8192.0"]),
+            ([-16, -3, -1], ["-16.0", "-3.0", "-1.0"]),
+            ([0, 0, 0], ["0.0", "0.0", "0.0"]),
+        ] {
+            let line = display_summon("o_x", cell, "minecraft:lever[face=floor,facing=north]");
+            assert!(
+                line.starts_with("summon minecraft:block_display "),
+                "{line}"
+            );
+            assert_eq!(at(&line), want, "{line}");
+        }
+    }
+
+    /// An item display draws its item centred on its origin, so it is
+    /// summoned at the lit cell's centre on all three axes; a negative cell
+    /// `-16` is centred on `-15.5`, never `-16.5`.
+    #[test]
+    fn an_item_display_stands_at_its_cells_centre() {
+        for (cell, want) in [
+            ([8209, 64, 8192], ["8209.5", "64.5", "8192.5"]),
+            ([-16, -3, -1], ["-15.5", "-2.5", "-0.5"]),
+        ] {
+            let line = display_summon("o_x", cell, "minecraft:bell[attachment=floor,facing=north]");
+            assert!(line.starts_with("summon minecraft:item_display "), "{line}");
+            assert_eq!(at(&line), want, "{line}");
+        }
+    }
 }

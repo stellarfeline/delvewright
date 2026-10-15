@@ -843,6 +843,51 @@ fn a_highlight_lights_the_thing_while_armed_and_near() {
         bell.contains("summon minecraft:item_display") && bell.contains("id:\"minecraft:bell\""),
         "a bell is drawn by its renderer: {bell}"
     );
+    // Each display covers the cell its prop is set in: the block display at
+    // the cell's corner, written `x.0` so the summon cannot centre it; the
+    // item display at the cell's centre.
+    let cell_of = |f: &str, block: &str| -> [i32; 3] {
+        let body = fn_body(&out, f).unwrap();
+        let line = body
+            .lines()
+            .find(|l| l.starts_with("setblock ") && l.contains(block))
+            .unwrap_or_else(|| panic!("{f} sets {block}: {body}"));
+        let t: Vec<i32> = line
+            .split(' ')
+            .skip(1)
+            .take(3)
+            .map(|v| v.parse().unwrap())
+            .collect();
+        [t[0], t[1], t[2]]
+    };
+    let summon_at = |body: &str, kind: &str| -> String {
+        let line = body
+            .lines()
+            .find(|l| l.starts_with(&format!("summon {kind} ")))
+            .unwrap_or_else(|| panic!("a {kind}: {body}"));
+        line.split(' ')
+            .skip(2)
+            .take(3)
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let [x, y, z] = cell_of("activate_o_pull", "minecraft:lever");
+    assert_eq!(
+        summon_at(show, "minecraft:block_display"),
+        format!("{x}.0 {y}.0 {z}.0"),
+        "{show}"
+    );
+    let [x, y, z] = cell_of("activate_o_press", "minecraft:bell");
+    assert_eq!(
+        summon_at(bell, "minecraft:item_display"),
+        format!(
+            "{:.1} {:.1} {:.1}",
+            f64::from(x) + 0.5,
+            f64::from(y) + 0.5,
+            f64::from(z) + 0.5
+        ),
+        "{bell}"
+    );
     let poll = fn_body(&out, "hl_poll_o_pull").unwrap();
     assert!(
         poll.contains("if score #gs_pull dw.guide matches 1")
