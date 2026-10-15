@@ -159,7 +159,7 @@ crate::dw_code! {
     ///
     /// 1. it declares neither an `opening` nor a `contact`, or both;
     /// 2. its contact's span leaves the shared face `DW0828` established;
-    /// 3. it is a contact on a `stair`, `barred` or `vision` connection.
+    /// 3. it is a contact on a `stair`, `climb` or `vision` connection.
     ///
     /// They are one code rather than three because the author's next action is
     /// the same in every case — say which kind of hand-off this is and give it a
@@ -167,6 +167,20 @@ crate::dw_code! {
     /// crossing for any rule below to judge. A contact's width is the author's:
     /// a front one cell wide is as legal as one fifty-five wide.
     pub const DW_CONTACT: DwCode = DwCode::new("DW0876", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// `DW1027`: a gated connection's seam is a front (spec-0107 §8.1). A
+    /// contact has no opening to stand a bar in, and a bar across a front is a
+    /// wall the plan did not draw.
+    pub const DW_GATED_FRONT: DwCode = DwCode::new("DW1027", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// `DW1028`: a gated connection nothing opens (spec-0107 §8.2) — no
+    /// `open-gate`, `shortcuts[].gate` or `timed_gates[].gate` names its
+    /// `anchor/seam-<edge>`, so it is shut from world load and shut forever.
+    pub const DW_GATED_UNOPENED: DwCode = DwCode::new("DW1028", ExitTier::Build);
 }
 
 crate::dw_code! {
@@ -241,15 +255,15 @@ pub fn node_anchor(node: &NodeId) -> String {
     format!("anchor/node-{}", slug(node.0.as_str()))
 }
 
-/// The gate region over a `barred` seam's opening — what an `open-gate` or a
-/// `shortcut` names.
+/// The gate region over a shut seam's bar ([`PlacedSeam::bar`], spec-0107) —
+/// what an `open-gate`, a `shortcut` or a `timed-gate` names.
 #[must_use]
 pub fn seam_anchor(edge: &EdgeId) -> String {
     format!("anchor/seam-{}", slug(edge.0.as_str()))
 }
 
-/// The anchor on the openable side of a one-sided `barred` seam, where a
-/// shortcut's far-side affordance stands.
+/// The anchor on the openable side of a one-sided shut seam
+/// (`gating.opens_from`), where a shortcut's far-side affordance stands.
 #[must_use]
 pub fn seam_unlock_anchor(edge: &EdgeId) -> String {
     format!("anchor/unlock-{}", slug(edge.0.as_str()))
@@ -260,7 +274,7 @@ fn slug(id: &str) -> &str {
     id.split_once('/').map_or(id, |(_, rest)| rest)
 }
 
-/// **What a sealed `barred` seam stands in until content opens it.**
+/// **What a shut seam stands in until content opens it** (spec-0107).
 ///
 /// One definition, here rather than in the derivation that lays it, for the same
 /// structural reason the metrics table owns the nav model's constants: two
@@ -319,7 +333,8 @@ pub fn synthesized_gate_block(c: &Campaign, anchor: &str) -> Option<&'static str
 /// * every `anchor/unlock-…` — [`StationKind::Point`], where the shortcut's
 ///   far-side affordance stands.
 /// * every `anchor/seam-…` — [`StationKind::Gate`], the region the derivation
-///   fills with [`SEAM_BAR`] and content opens.
+///   fills with [`SEAM_BAR`] over a shut connection's seam ([`Edge::shuts`])
+///   and content opens.
 /// * every declared station — the kind its node declared (spec-0052 §3).
 ///
 /// Empty for a campaign with no site plan — it has prefabs instead, and their
@@ -353,12 +368,12 @@ pub fn synthesized_anchor_kinds(c: &Campaign) -> BTreeMap<String, StationKind> {
         }
     }
     for e in &graph.edges {
-        let Edge::Barred { id, opens_from, .. } = e else {
+        if !e.shuts() {
             continue;
-        };
-        out.insert(seam_anchor(id), StationKind::Gate);
-        if !matches!(opens_from, crate::layout::OpensFrom::Either) {
-            out.insert(seam_unlock_anchor(id), StationKind::Point);
+        }
+        out.insert(seam_anchor(e.id()), StationKind::Gate);
+        if e.opening_side().is_some() {
+            out.insert(seam_unlock_anchor(e.id()), StationKind::Point);
         }
     }
     out
@@ -389,9 +404,11 @@ pub fn synthesized_anchors(c: &Campaign) -> BTreeSet<String> {
 ///
 /// Its own `anchor/node-…`; [`ENTRY_ANCHOR`] when it is the entry node; each
 /// `anchor/unlock-…` whose `opens_from` side it is — the side the derivation
-/// stands that affordance in; and each `barred` seam's gate region
-/// (`anchor/seam-…`) whose plane this place owns (spec-0098 §2), because the
-/// piece that owns a plane ships the gate standing in it.
+/// stands that affordance in; and each shut seam's gate region
+/// (`anchor/seam-…`) whose bar cells this place owns ([`PlacedSeam::bar`]:
+/// the plane's owner for a bar in a wall or a hole, the upper place for the
+/// grating over a floor climb — spec-0098 §2, spec-0107 §6), because the piece
+/// that owns those cells ships the gate standing in them.
 ///
 /// Here rather than in `crate::detailplan` because the answer is a fact about
 /// the graph, and [`synthesized_anchors`] is the one authority for what a
@@ -436,30 +453,23 @@ pub fn owed_anchors(c: &Campaign, node: &NodeId) -> BTreeSet<String> {
     for s in &n.stations {
         out.insert(s.anchor.as_str().to_string());
     }
-    // The gate region over a `barred` seam is owed by the place that owns the
-    // plane it stands in (spec-0098 §2): every seam lies in a plane some place
-    // owns, so its shut state is that piece's to ship.
+    // The gate region over a shut seam is owed by the place that owns the
+    // cells its bar stands in (spec-0098 §2, spec-0107 §6): every bar lies in
+    // cells some place owns, so its shut state is that piece's to ship.
     let resolved = SitePlan::of(c);
     let site = resolved.site();
     for s in &resolved.seams {
-        if s.class != "barred" || (&s.a != node && &s.b != node) {
+        if &s.a != node && &s.b != node {
             continue;
         }
-        if site.owner(s.opening.0) == Owner::Place(node.clone()) {
+        let Some((lo, _)) = s.bar() else { continue };
+        if site.owner(lo) == Owner::Place(node.clone()) {
             out.insert(seam_anchor(&s.edge));
         }
     }
     for e in &graph.edges {
-        let Edge::Barred { id, opens_from, .. } = e else {
-            continue;
-        };
-        let side = match opens_from {
-            crate::layout::OpensFrom::A => e.a(),
-            crate::layout::OpensFrom::B => e.b(),
-            crate::layout::OpensFrom::Either => continue,
-        };
-        if side == node {
-            out.insert(seam_unlock_anchor(id));
+        if e.opening_side() == Some(node) {
+            out.insert(seam_unlock_anchor(e.id()));
         }
     }
     out

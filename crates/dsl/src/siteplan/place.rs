@@ -151,6 +151,44 @@ pub struct PlacedSeam {
     pub stair_in: Option<NodeId>,
     /// The crossing's declared form ([`Seam::form`]), handed to both places.
     pub form: String,
+    /// Whether the world builds this crossing **shut** until the story opens it
+    /// ([`Edge::shuts`], spec-0107): its connection's `gating` names a term.
+    pub shut: bool,
+}
+
+impl PlacedSeam {
+    /// **The cells a shut seam's bar stands in** (spec-0107 §6), inclusive —
+    /// the one answer the derivation writes, the owed rule hands a piece, and
+    /// the separation proof judges. `None` for a seam that never shuts, and for
+    /// a contact: a front has no opening to stand a bar in (`DW1027`).
+    ///
+    /// In a wall, and through a floor for a `drop` or a `stair`, the bar is the
+    /// opening's own cells. Through a floor for a `climb` it is the course
+    /// **above** the hole, over the hole's footprint — a grating standing on
+    /// the upper floor — because the hole cell holds the top rung: a body on a
+    /// rung below the hole could not climb out of it, so the rung keeps the
+    /// cell and the bar stands where the body must pass next.
+    #[must_use]
+    pub fn bar(&self) -> Option<([i64; 3], [i64; 3])> {
+        if !self.shut || self.crossing == Crossing::Contact {
+            return None;
+        }
+        let (mut lo, mut hi) = self.opening;
+        if self.normal_axis == 1 && self.class == "climb" {
+            lo[1] += 1;
+            hi[1] += 1;
+        }
+        Some((lo, hi))
+    }
+
+    /// The axis a shut seam's bar is thin on: the seam's own normal, handed to
+    /// every consumer so that none guesses it from the region's shape — the
+    /// grating over a one-wide hole is one cell on two axes, and a guess has no
+    /// answer there.
+    #[must_use]
+    pub fn bar_axis(&self) -> usize {
+        self.normal_axis
+    }
 }
 
 /// The plan's boxes, resolved by the code the stage-4 checks judge with.
@@ -515,6 +553,7 @@ pub fn placed_seams(c: &Campaign, boxes: &[PlacedBox], reads: &mut Reads) -> Vec
             rise: b.floor - a.floor,
             stair_in: s.stair_in.clone(),
             form: s.form.clone(),
+            shut: edge.shuts(),
         });
     }
     out

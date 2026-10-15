@@ -65,8 +65,8 @@ static GREEN: LazyLock<String> = LazyLock::new(|| {
     ],
     "edges": [
       { "id": "edge/porch-hall", "class": "walk", "a": "node/porch", "b": "node/hall" },
-      { "id": "edge/hall-vault", "class": "barred", "a": "node/hall", "b": "node/vault",
-        "opens_from": "a", "gating": { "quest": "quest/open-the-door" } },
+      { "id": "edge/hall-vault", "class": "walk", "a": "node/hall", "b": "node/vault",
+        "gating": { "quest": "quest/open-the-door", "opens_from": "a" } },
       { "id": "edge/cellar-stair", "class": "stair", "a": "node/hall", "b": "node/cellar" },
       { "id": "edge/cellar-drop", "class": "drop", "a": "node/porch", "b": "node/cellar",
         "falls": "a-to-b" },
@@ -406,12 +406,51 @@ fn dw0818_gating_on_state_the_campaign_never_produces() {
     assert!(validate(Some(g)).contains(&"DW0818".to_string()));
 }
 
-/// The stage-3 half of the opener obligation: a barred way must say what opens
+/// The stage-3 half of the opener obligation: a gated way must say what opens
 /// it, and `DW0818` then holds that name to something the campaign produces.
+/// Widened by spec-0107 §5 from one class to every traversal connection: an
+/// empty `gating` on a stair is the same empty claim as on a walk.
 #[test]
-fn dw0818_a_barred_way_that_says_nothing_about_what_opens_it() {
+fn dw0818_a_gated_way_that_says_nothing_about_what_opens_it() {
     let g = graph_with(|v| edges(v)[1]["gating"] = json!({}));
     assert!(validate(Some(g)).contains(&"DW0818".to_string()));
+    let g = graph_with(|v| edges(v)[2]["gating"] = json!({}));
+    assert!(validate(Some(g)).contains(&"DW0818".to_string()));
+}
+
+/// spec-0107 §9.2's `DW0818` probe, in miniature: a side named for a way that
+/// never shuts — `opens_from` and no term — is refused as the empty gating it
+/// is, and the refusal says the side was named for nothing.
+#[test]
+fn dw0818_a_side_named_for_a_way_that_never_shuts() {
+    let g = graph_with(|v| edges(v)[0]["gating"] = json!({ "opens_from": "a" }));
+    let raw = campaign(Some(g), Some(BRIEF.to_string()));
+    let d = delvewright_dsl::check_campaign(&raw);
+    let m = d
+        .iter()
+        .find(|x| x.code == "DW0818" && x.path == "/content/edges/0/gating")
+        .unwrap_or_else(|| panic!("an empty gating with a side is refused: {d:#?}"));
+    assert!(m.message.contains("`opens_from: a`"), "{}", m.message);
+}
+
+/// spec-0107 §5: the `barred` class is retired from the layout graph — it was
+/// exactly `walk` + `gating` + `opens_from` — so a graph that writes it is an
+/// unknown variant; and `opens_from` has no home on a `carry`, whose gating is
+/// terms only.
+#[test]
+fn dw0100_the_retired_barred_class_and_a_side_on_a_carry() {
+    let g = graph_with(|v| {
+        let e = &mut edges(v)[1];
+        e["class"] = json!("barred");
+    });
+    assert!(validate(Some(g)).contains(&"DW0100".to_string()));
+    let g = graph_with(|v| {
+        edges(v).push(json!({
+            "id": "edge/porch-carry", "class": "carry", "a": "node/porch", "b": "node/cellar",
+            "gating": { "quest": "quest/open-the-door", "opens_from": "a" }
+        }));
+    });
+    assert!(validate(Some(g)).contains(&"DW0100".to_string()));
 }
 
 /// **The ordering tooth**, and the direction that makes *graph before mission*

@@ -153,6 +153,21 @@ fn required_face_class(
     node: &NodeId,
     frame: &Frame,
 ) -> Vec<&'static str> {
+    let mut answers = open_face_class(edge, s, node);
+    // A shut seam (spec-0107) whose bar stands in cells this piece owns ships
+    // the shut state: it may answer with a `barred` face — the piece-level
+    // spelling of a crossing a bar stands in — beside the crossing's own
+    // class, which a `walk` carrying a cleared way over the bar also answers
+    // with (spec-0042 §2.2). The gate region it owes is held to the bar's
+    // cells by the owed-anchor check, whichever.
+    if s.bar().is_some_and(|(lo, _)| frame.owns(lo)) {
+        answers.insert(0, "barred");
+    }
+    answers
+}
+
+/// The class of face a piece answers a seam with, as the crossing is once open.
+fn open_face_class(edge: Option<&Edge>, s: &PlacedSeam, node: &NodeId) -> Vec<&'static str> {
     match s.class {
         "walk" => vec!["walk"],
         // A climb's ladder is the lower piece's to hang and the hole the
@@ -177,15 +192,6 @@ fn required_face_class(
             };
             if leaving == node {
                 vec!["drop"]
-            } else {
-                vec!["walk"]
-            }
-        }
-        "barred" => {
-            // The piece that owns the plane ships the gate's shut state
-            // (spec-0098 §2); the other side answers with the way it opens onto.
-            if frame.owns(s.opening.0) {
-                vec!["barred"]
             } else {
                 vec!["walk"]
             }
@@ -276,9 +282,15 @@ pub struct AllocatedSeam {
     /// The class of face the piece must answer with. More than one where both
     /// are correct — a stair the piece hosts may meet its opening at grade.
     pub answer_with: Vec<String>,
-    /// Whether this place owns the plane the opening stands in, and so cuts it
-    /// (and, on a `barred` way, ships its shut state).
+    /// Whether this place owns the plane the opening stands in, and so cuts it.
     pub owns_plane: bool,
+    /// **The bar this place ships**, piece-local, inclusive: on a shut seam
+    /// (spec-0107) whose bar stands in cells this place owns, the cells the
+    /// gate region `anchor/seam-<edge>` must cover — the opening in a wall or
+    /// a hole, the course above the hole over a floor climb. Absent where the
+    /// seam never shuts or another place ships its bar.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bar: Option<[[i64; 3]; 2]>,
     /// The ring's ground under a vertical seam, piece-local: the sill minus one,
     /// flat across the opening (spec-0098 §2c). `None` through a floor, and on
     /// an aloft place, which is handed no ground.
@@ -774,6 +786,10 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
                         .map(str::to_string)
                         .collect(),
                     owns_plane: frame.owns(s.opening.0),
+                    bar: s
+                        .bar()
+                        .filter(|(lo, _)| frame.owns(*lo))
+                        .map(|(lo, hi)| [frame.to_local(lo), frame.to_local(hi)]),
                     ground_y: (s.normal_axis != 1 && !aloft).then(|| {
                         site.ground_height(i, s.opening.0[0], s.opening.0[2]) - frame.lo[1]
                     }),
@@ -1114,8 +1130,8 @@ fn check_owed(
             .copied()
             .is_some_and(|k| k == delvewright_dsl::StationKind::Gate)
         {
-            // A seam's gate region, owed by the place that owns the plane
-            // (spec-0098 §2), is exactly the allocated opening.
+            // A shut seam's gate region, owed by the place that owns its bar's
+            // cells (spec-0098 §2, spec-0107 §6), is exactly those cells.
             if let (Some(want), Some(r)) = (gates.get(name), anchor.region.as_ref()) {
                 let lo = [
                     i64::from(r.from[0].min(r.to[0])),
@@ -1133,11 +1149,12 @@ fn check_owed(
                         STAGE,
                         format!("{path}/anchors/{name}"),
                         format!(
-                            "`{name}` is the gate over a seam whose plane `{place}` owns, and it \
-                             is bound to `{piece}`'s anchor `{bound_to}`, whose region is {got}. \
-                             The gate is exactly the opening the plan allocated: {want_s} \
-                             (piece-local). Bind it to a gate anchor whose region is those \
-                             cells.",
+                            "`{name}` is the gate over a shut seam whose bar `{place}` owns, and \
+                             it is bound to `{piece}`'s anchor `{bound_to}`, whose region is {got}. \
+                             The gate is exactly the bar's cells the plan allocates: {want_s} \
+                             (piece-local) — the opening in a wall or a hole, the course above \
+                             the hole over a floor climb. Bind it to a gate anchor whose region \
+                             is those cells.",
                             place = row.place,
                             piece = row.piece,
                             got = aabb(lo, hi),
@@ -1474,12 +1491,14 @@ pub fn check(c: &Campaign, prefabs: &PrefabRegistry) -> (Vec<Diagnostic>, Detail
         let mine = seams_of(seams, &row.place);
         let gates: BTreeMap<String, ([i64; 3], [i64; 3])> = mine
             .iter()
-            .filter(|(s, _)| s.class == "barred" && frame.owns(s.opening.0))
-            .map(|(s, _)| {
-                (
-                    delvewright_dsl::siteplan::seam_anchor(&s.edge),
-                    (frame.to_local(s.opening.0), frame.to_local(s.opening.1)),
-                )
+            .filter_map(|(s, _)| {
+                let (lo, hi) = s.bar()?;
+                frame.owns(lo).then(|| {
+                    (
+                        delvewright_dsl::siteplan::seam_anchor(&s.edge),
+                        (frame.to_local(lo), frame.to_local(hi)),
+                    )
+                })
             })
             .collect();
         let mut answered: BTreeSet<usize> = BTreeSet::new();
@@ -1941,8 +1960,8 @@ pub struct Detailing {
     /// it arrives in.
     pub anchors: Vec<(String, [i32; 3], Option<String>)>,
     /// `(campaign anchor name, world low corner, world high corner, fill
-    /// block)` for every owed gate a row binds — a gate station, or a barred
-    /// seam's gate region the place owns the plane of (spec-0098 §2). The block
+    /// block)` for every owed gate a row binds — a gate station, or a shut
+    /// seam's gate region whose bar the place owns (spec-0098 §2, spec-0107). The block
     /// is the piece's own bar, the one `close-gate` writes back.
     pub gates: Vec<(String, [i32; 3], [i32; 3], String)>,
 }
@@ -2081,6 +2100,7 @@ mod tests {
             rise: 0,
             stair_in: None,
             form: "a doorway".into(),
+            shut: false,
         }
     }
 
@@ -2128,9 +2148,12 @@ mod tests {
         assert_eq!(required_face_class(Some(&edge), &s, &a, &f), ["drop"]);
         assert_eq!(required_face_class(Some(&edge), &s, &b, &f), ["walk"]);
 
-        // `barred` in a plane this piece does NOT own → `walk`: the bar is the
-        // owner's to ship.
-        let s = a_seam("barred", Face::East, f.hi[0] + 1, 0);
+        // A shut walk in a plane this piece does NOT own → `walk`: the bar is
+        // the owner's to ship.
+        let s = PlacedSeam {
+            shut: true,
+            ..a_seam("walk", Face::East, f.hi[0] + 1, 0)
+        };
         assert!(!f.owns(s.opening.0), "the plane is beyond the frame");
         assert_eq!(
             answering_layer(&f, &s),
@@ -2139,16 +2162,20 @@ mod tests {
         );
         assert_eq!(required_face_class(None, &s, &a, &f), ["walk"]);
 
-        // `barred` in a plane this piece OWNS → `barred`: the piece ships the
-        // gate's shut state (spec-0098 §2), and answers at the plane itself.
-        let s = a_seam("barred", Face::East, f.hi[0], 0);
+        // A shut walk in a plane this piece OWNS → `barred`, or a `walk`
+        // carrying the cleared way: the piece ships the gate's shut state
+        // (spec-0098 §2, spec-0107), and answers at the plane itself.
+        let s = PlacedSeam {
+            shut: true,
+            ..a_seam("walk", Face::East, f.hi[0], 0)
+        };
         assert!(f.owns(s.opening.0), "the ring is the piece's");
         assert_eq!(
             answering_layer(&f, &s),
             s.plane,
             "the owner answers at the plane"
         );
-        assert_eq!(required_face_class(None, &s, &a, &f), ["barred"]);
+        assert_eq!(required_face_class(None, &s, &a, &f), ["barred", "walk"]);
     }
 
     /// The answering layer is the plane for its owner and the cell beside it,
@@ -2235,6 +2262,7 @@ mod tests {
                 rise: 0,
                 stair_in: None,
                 form: "open ground".into(),
+                shut: false,
             }
         };
         // The shared faces are the overlaps of the play spaces' spans: z 10..29

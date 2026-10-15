@@ -144,7 +144,7 @@ fn the_derivation_states_what_it_massed() {
         "two connections are built out of treads — one across a wall, one down \
          through a punched floor"
     );
-    assert_eq!(k.barred, 1, "one way is sealed at world load");
+    assert_eq!(k.shut, 1, "one way is built shut at world load");
     assert_eq!(k.volumes, 2);
     assert!(
         k.cells > 10_000,

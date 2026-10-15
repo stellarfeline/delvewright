@@ -57,8 +57,8 @@ static GRAPH: LazyLock<String> = LazyLock::new(|| {
     ],
     "edges": [
       { "id": "edge/porch-hall", "class": "walk", "a": "node/porch", "b": "node/hall" },
-      { "id": "edge/hall-vault", "class": "barred", "a": "node/hall", "b": "node/vault",
-        "opens_from": "a", "gating": { "quest": "quest/open-the-door" } },
+      { "id": "edge/hall-vault", "class": "walk", "a": "node/hall", "b": "node/vault",
+        "gating": { "quest": "quest/open-the-door", "opens_from": "a" } },
       { "id": "edge/hall-cellar", "class": "stair", "a": "node/hall", "b": "node/cellar",
         "shortcut": true },
       { "id": "edge/porch-cellar", "class": "drop", "a": "node/porch", "b": "node/cellar",
