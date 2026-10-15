@@ -345,10 +345,10 @@ fn extract_from(args: &ExtractArgs<'_>, scope: &Scope, built: &Built<'_>) -> Res
             (hi[2] + grow) as i32,
         ],
     );
-    let shipped = shipped_world(&built, clip).map_err(|d| refuse(d, args.json))?;
+    let shipped = shipped_world(built, clip).map_err(|d| refuse(d, args.json))?;
 
     // ---- block-entity data the bytes would lose ----
-    if let Some(d) = block_entities_inside(&built, lo, hi) {
+    if let Some(d) = block_entities_inside(built, lo, hi) {
         return Err(refuse(d, args.json));
     }
 
@@ -617,7 +617,7 @@ fn extract_from(args: &ExtractArgs<'_>, scope: &Scope, built: &Built<'_>) -> Res
 
     // ---- what a cut leaves unestablished, and what it severs ----
     if !place_scope {
-        severed_objects(campaign, &built, &sources, lo, hi, &mut residue);
+        severed_objects(campaign, built, &sources, lo, hi, &mut residue);
         let dark = dark_at_cut(&model, &contract, &openings, relight.as_ref());
         residue.push(Residue {
             object: "lighting".to_string(),
@@ -630,7 +630,7 @@ fn extract_from(args: &ExtractArgs<'_>, scope: &Scope, built: &Built<'_>) -> Res
     }
 
     // ---- bodies the bytes do not hold ----
-    let entities = derive_entities(campaign, &built, &anchors, lo, in_scope);
+    let entities = derive_entities(campaign, built, &anchors, lo, in_scope);
 
     // ---- the document ----
     let measured = {
@@ -1003,7 +1003,7 @@ fn shipped_world(
     let mut pristine = Some(assembled::assemble(plan, &built.structures));
     let replay = delvec::compiler::edit::replay_taking(
         plan,
-        &built.prefabs,
+        built.prefabs,
         &built.structures,
         &mut pristine,
     )
@@ -1685,7 +1685,7 @@ fn cut_openings(
             }
         }
     }
-    found.sort_by(|a, b| (a.face, a.cells).cmp(&(b.face, b.cells)));
+    found.sort_by_key(|a| (a.face, a.cells));
     let mut count: BTreeMap<Face, usize> = BTreeMap::new();
     for o in &mut found {
         let i = count.entry(o.face).or_default();

@@ -1202,10 +1202,10 @@ fn criterion_16_a_tower_cut_out_of_vesperhold() {
         }
     }
     for (k, a) in piece["anchors"].as_object().unwrap() {
-        if let Some(r) = a.get("region") {
-            if inside(at(&r["from"])) != inside(at(&r["to"])) {
-                want.insert(k.clone());
-            }
+        if let Some(r) = a.get("region")
+            && inside(at(&r["from"])) != inside(at(&r["to"]))
+        {
+            want.insert(k.clone());
         }
     }
     for d in ["entry", "openings", "lighting", "shown_faces"] {
