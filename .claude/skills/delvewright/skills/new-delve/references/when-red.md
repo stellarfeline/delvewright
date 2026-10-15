@@ -43,6 +43,14 @@ ground with an invisible barrier or mark it unwalkable, and never move the
 gate's objective to dodge it. If the party is meant to get round the gate —
 the door closes a loop — declare the barred edge `shortcut`.
 
+**`DW0891` says to seat the volume "on an anchor at the pit's bottom" and the
+place is detailed.** A quest names only the node's owed names, so declare a
+station on the node (`kind: point`), bind it in `detail-plan.json` to the
+piece's anchor on the pit's floor, and put the volume's `region.anchor` on it.
+That anchor may stand in the piece's `no_body` region. `DW0845` refuses it only
+when something else (an NPC, an objective, a wave) names the same station, and
+it names that use: give the volume a station of its own.
+
 **`DW0438`: a `collect` container "holds `minecraft:air`, not a container".**
 The anchor you pointed at is not standing on a chest or barrel — an anchor named
 `anchor/chest` is not evidence there is one, and two shipped pieces declare

@@ -1,6 +1,6 @@
-"""The whole-map gate's clear-sky rule: a clear scene's sky is the game's own sky
-at its tick, as a map — the gate's own drawing of the client's sky plus one
-uniform veil — and the light it casts is the lightmap's.
+"""The whole-map gate's sky rule: a scene's sky is the game's own sky at its tick
+under its weather, as a map — the gate's own drawing of the client's sky and its
+weather layer plus one uniform veil — and the light it casts is the lightmap's.
 
 The scene block below is the shape `delvec cameras` writes for a clear camera at
 the setting sun (tick 12782). The map beside it is drawn here by the gate's own
@@ -61,10 +61,10 @@ CAM = {"answers": "concept/x"}
 
 
 @functools.cache
-def drawn() -> tuple[tuple[float, ...], float]:
-    """The game's sky at TICK for SCENE's camera plus the least veil, and the
-    multiplier that makes its light the lightmap's — the engine's rule, built
-    from the gate's own drawing."""
+def drawn(weather: str = "clear") -> tuple[tuple[float, ...], float]:
+    """The game's sky at TICK under `weather` for SCENE's camera plus the least
+    veil, and the multiplier that makes its light the lightmap's — the engine's
+    rule, built from the gate's own drawing."""
     g = gate()
     o = SCENE["camera"]["orientation"]
     view = (
@@ -72,7 +72,7 @@ def drawn() -> tuple[tuple[float, ...], float]:
         -math.cos(o["pitch"]),
         -math.sin(o["yaw"]) * math.sin(o["pitch"]),
     )
-    colours = g.game_sky_colours(TICK, view)
+    colours = g.game_sky_colours(TICK, view, weather)
     px: list[float] = []
     acc, weight = [0.0, 0.0, 0.0], 0.0
     for j in range(g.MAP_H):
@@ -85,7 +85,7 @@ def drawn() -> tuple[tuple[float, ...], float]:
                 acc = [a + w * v for a, v in zip(acc, c)]
                 weight += w
     mean = [a / weight for a in acc]
-    light = g.lightmap_light(TICK)
+    light = g.lightmap_light(TICK, weather)
     s = min([50.0] + [light[c] / mean[c] for c in range(3) if mean[c] > 0])
     veil = [max(light[c] / s - mean[c], 0.0) for c in range(3)]
     return tuple(v + veil[k % 3] for k, v in enumerate(px)), s
@@ -171,14 +171,43 @@ def test_each_fixed_key_is_judged(tmp_path):
         assert any(needle in f for f in judge(doc, tmp_path)), (path, judge(doc, tmp_path))
 
 
-def test_clear_scenes_are_tallied_and_overcast_ones_judged_apart(tmp_path):
+def test_scenes_are_tallied_by_weather_and_rain_is_judged_by_its_layer(tmp_path):
     px, s = drawn()
     write(tmp_path, px)
     tally: dict[str, int] = {}
     gate().sky_matches(scene(s), CAM, DESIGN, {}, {}, tally, tmp_path)
-    assert tally == {"ramp": 1}
+    assert tally == {"clear ramp": 1}
     rain = {"content": {"references": [{"name": "concept/x", "time": "dusk", "weather": "rain"}]}}
-    doc = scene(s)
-    assert any("overcast" in f for f in gate().sky_matches(doc, CAM, rain, {}, {}))
-    doc["sky"]["mode"] = "SOLID_COLOR"
-    assert gate().sky_matches(doc, CAM, rain, {}, {}) == []
+    # The clear scene judged as a rain picture: wrong marker, wrong disc, wrong map and light.
+    found = gate().sky_matches(scene(s), CAM, rain, {}, {}, {}, tmp_path)
+    assert any("names the weather" in f for f in found), found
+    assert any("`sun.drawTexture`" in f for f in found), found
+    assert any("casts" in f for f in found), found
+    # The rain scene, drawn under the rain's layer, passes.
+    rpx, rs = drawn("rain")
+    write(tmp_path, rpx)
+    doc = scene(rs)
+    doc["delvewrightSky"]["weather"] = "rain"
+    doc["sun"]["drawTexture"] = False
+    tally = {}
+    assert gate().sky_matches(doc, CAM, rain, {}, {}, tally, tmp_path) == []
+    assert tally == {"rain ramp": 1}
+
+
+def test_the_weather_layer_is_the_clients():
+    """The gate's own port of `WeatherAttributes` at noon, worked by hand:
+    the sky light's factor and colour blended toward 0.24 and `#7a7aff`, the
+    ground biome's `#7ba4ff` blended to grey, the fog multiplied."""
+    g = gate()
+    clear, rain, thunder = (g.weather_attrs(6000, w) for w in ("clear", "rain", "thunder"))
+    assert (clear["factor"], clear["light"], clear["sky"]) == (1.0, [255, 255, 255], [123, 164, 255])
+    assert round(rain["factor"], 6) == 0.7625 and rain["light"] == [213, 213, 255]
+    assert round(thunder["factor"], 6) == 0.599219 and thunder["light"] == [185, 185, 255]
+    assert rain["sky"] == [102, 113, 135] and thunder["sky"] == [43, 45, 51]
+    assert rain["fog"] == [c * k // 255 for c, k in zip(clear["fog"], (127, 127, 153))]
+    assert g.weather_darken([102, 113, 135], "rain") == [51, 56, 81]
+    assert g.weather_darken([43, 45, 51], "thunder") == [10, 11, 15]
+    lit = [g.lightmap_light(6000, w)[2] for w in ("clear", "rain", "thunder")]
+    assert lit[0] > lit[1] > lit[2]
+    night = [g.lightmap_light(18000, w) for w in ("clear", "rain", "thunder")]
+    assert all(abs(a - b) < 1e-6 for n in night for a, b in zip(n, night[0]))

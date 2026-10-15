@@ -95,8 +95,7 @@
 //! (the number the sun's position is a function of), and the declared initial
 //! weather. `delvec scene` and `delvec panorama` turn it into a Chunky sky
 //! ([`crate::compiler::view::scene::sky_of`]: the sun, and the sky and fog of
-//! the pinned game's clear day at the tick, or an overcast sky and fog under
-//! rain or thunder) and refuse a plan that omits the hour or the
+//! the pinned game's day at the tick under the declared weather) and refuse a plan that omits the hour or the
 //! weather, so no frame can be taken under a default sun or a default clear sky
 //! again. A showcase camera takes its sky from the picture it answers instead
 //! (spec-0079 §5).
@@ -1185,7 +1184,7 @@ pub fn render_plan(
         let showcase = prove_showcase(record, &parsed, radius, |cell| !world.is_clear(cell))
             .map_err(|refusal| match refusal {
                 ShowcaseRefusal::Record(d) => Failure {
-                    code: crate::compiler::view::camera::DW_RECORD_AT_BUILD,
+                    code: crate::compiler::view::camera::record_code_at_build(&d),
                     message: d.message,
                 },
                 ShowcaseRefusal::Camera(message) => Failure {
@@ -1204,7 +1203,7 @@ pub fn render_plan(
         if let Some(base) = base {
             let sheet =
                 crate::compiler::view::camera::parse_sheet(record).map_err(|d| Failure {
-                    code: crate::compiler::view::camera::DW_RECORD_AT_BUILD,
+                    code: crate::compiler::view::camera::record_code_at_build(&d),
                     message: d.message,
                 })?;
             crate::compiler::view::beat::check_record(plan, world, base, &sheet.cameras).map_err(

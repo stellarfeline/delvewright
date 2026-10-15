@@ -278,7 +278,7 @@ fn a_hand_row_is_written_as_stamped_and_no_estimate_replaces_it() {
 
 fn camera_row(name: &str, source: &str, pos: [f64; 3], yaw: f64, pitch: f64) -> serde_json::Value {
     serde_json::json!({
-        "answers": "concept/keep", "exposure": 1.0, "fov": 70.0, "height": 90,
+        "answers": "concept/keep", "fov": 70.0, "height": 90,
         "name": name, "pitch": pitch, "pos": pos, "source": source, "spp": 16,
         "width": 160, "yaw": yaw
     })
@@ -604,10 +604,10 @@ fn the_instruments_that_close_the_hole_run_on_the_record_with_a_hole_in_it() {
 
 /// **Criterion 11 — byte identity.** Two builds of a campaign with a hand row
 /// write byte-identical `render-plan.json` and `manifest.json`, and `delvec
-/// cameras` over each writes byte-identical scenes — and so do the overcast
+/// cameras` over each writes byte-identical scenes — and so do the weather
 /// skies (spec-0079 criterion 4): the campaign is played in the rain, so the
-/// hand row's sky is DERIVED overcast (`noon+rain` from its row), and a second
-/// camera STATES an overcast sky of its own (`dusk+thunder`).
+/// hand row's sky is DERIVED rain (`noon+rain` from its row), and a second
+/// camera STATES a thunder sky of its own (`dusk+thunder`).
 #[test]
 fn a_hand_row_builds_byte_identically() {
     let (eye, _, _) = clear_eye_and_floor("plain-twice");
@@ -641,8 +641,8 @@ fn a_hand_row_builds_byte_identically() {
         assert!(r.status.success(), "{}", log(&r));
         let said = log(&r);
         assert!(
-            said.contains("sky: hero noon+rain derived from concept/keep class high")
-                && said.contains("sky: stormy dusk+thunder stated class low")
+            said.contains("sky: hero noon+rain derived from concept/keep — rain sky at daytime 6000")
+                && said.contains("sky: stormy dusk+thunder stated — thunder sky at daytime 12000")
                 && said.contains("skies: 1 derived, 1 stated, over 2 camera(s); weathers emitted: {rain, thunder}"),
             "{said}"
         );
@@ -679,13 +679,16 @@ fn a_hand_row_builds_byte_identically() {
     assert_eq!(
         masked(&outs[0].4),
         masked(&outs[1].4),
-        "the stated-overcast scene"
+        "the stated-thunder scene"
     );
     assert_eq!(outs[0].5, outs[1].5, "the written world");
-    for (what, bytes) in [("derived", &outs[0].2), ("stated", &outs[0].4)] {
+    for (what, bytes, weather) in [
+        ("derived", &outs[0].2, "rain"),
+        ("stated", &outs[0].4, "thunder"),
+    ] {
         let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
-        assert_eq!(v["sky"]["mode"], "SOLID_COLOR", "{what}: {v}");
-        assert_eq!(v["fog"]["mode"], "UNIFORM", "{what}: {v}");
+        assert_eq!(v["sky"]["mode"], "SKYMAP_EQUIRECTANGULAR", "{what}: {v}");
+        assert_eq!(v["delvewrightSky"]["weather"], weather, "{what}: {v}");
     }
     assert_eq!(outs[0].3, outs[1].3, "the shot index");
     let inputs = &outs[0].1["inputs"];
@@ -714,7 +717,7 @@ fn the_record_s_documented_fields_are_the_reader_s_fields() {
     // structs' and not this literal's.
     let sheet = camera::parse_sheet(
         br#"{"campaign_id":"c","cameras":[{"after":{"path":"branch/b","step":"obj/x"},
-            "answers":"concept/a","exposure":1.0,
+            "answers":"concept/a",
             "fov":70.0,"height":900,"name":"one","pitch":0.0,"pos":[0.5,70.0,0.5],
             "sky":{"time":"dusk","weather":"rain"},
             "source":"estimated","spp":300,"width":1600,"yaw":0.0}]}"#,
@@ -794,6 +797,6 @@ fn the_record_s_documented_fields_are_the_reader_s_fields() {
          mention(s) in the documented paragraph",
         fields.len()
     );
-    assert_eq!(fields.len(), 19, "the record's fields");
+    assert_eq!(fields.len(), 18, "the record's fields");
     assert!(named >= fields.len(), "every field named at least once");
 }

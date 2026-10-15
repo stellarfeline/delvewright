@@ -1515,6 +1515,350 @@ fn dw0891_naming_a_block_vanilla_hurts_with_passes_validation() {
 }
 
 // ---------------------------------------------------------------------------
+// DW0891 — the moves that change the VOLUME, taken in a detailed place
+// ---------------------------------------------------------------------------
+
+/// The pit house's frame: footprint x 1..16, z 1..16 on a site whose region
+/// starts four courses under the floor, so the one box is handed its ground and
+/// the piece can cut a pit into it.
+const PIT_SIZE: [i32; 3] = [18, 13, 18];
+
+/// The pit: one column cut through the floor at `(x, z)`, three courses deep.
+const PIT: (i32, i32) = (12, 3);
+
+/// The piece-local walk plane: the course a body stands in on the hall floor.
+const PIT_FLOOR: i32 = 4;
+
+/// The pit house's cell, piece-local: three courses of ground, an andesite
+/// floor, walls and a lit lid, and one column cut from the floor down to the
+/// pit's bottom.
+fn pit_cell(p: [i32; 3]) -> &'static str {
+    let [x, y, z] = p;
+    let ring = x == 0 || x == PIT_SIZE[0] - 1 || z == 0 || z == PIT_SIZE[2] - 1;
+    if (x, z) == PIT && (1..PIT_FLOOR).contains(&y) {
+        return "minecraft:air";
+    }
+    if y < PIT_FLOOR - 1 {
+        return "minecraft:stone";
+    }
+    if y == PIT_FLOOR - 1 {
+        return "minecraft:polished_andesite";
+    }
+    if y == PIT_SIZE[1] - 1 {
+        return if x % 3 == 0 && z % 3 == 0 {
+            "minecraft:sea_lantern"
+        } else {
+            "minecraft:spruce_planks"
+        };
+    }
+    if ring {
+        return "minecraft:stone_bricks";
+    }
+    "minecraft:air"
+}
+
+/// A one-place site-plan campaign whose one piece carries a pit, a killing
+/// volume on the node's station `anchor/pit`, and a detail plan binding that
+/// station to the piece anchor `bound` — `rim` (on the hall floor beside the
+/// hole) or `bottom` (the pit's floor, in the piece's `no_body` region `pit`).
+///
+/// Returns `(campaign, prefabs)`.
+fn pit_campaign(tag: &str, bound: &str, extent: [i32; 3]) -> (PathBuf, PathBuf) {
+    let root = tmp(&format!("pit-{tag}"));
+    let (dir, prefabs) = (root.join("campaign"), root.join("prefabs"));
+    common::copy_dir_all(
+        &common::repo_root().join("crates/delvec/tests/fixtures/blockout"),
+        &dir,
+    );
+    let write = |name: &str, stage: &str, content: serde_json::Value| {
+        let doc = serde_json::json!({
+            "campaign_id": "blockout", "content": content, "dsl_version": DSL_VERSION,
+            "stage": stage,
+        });
+        std::fs::write(
+            dir.join(name),
+            delvewright_dsl::to_canonical_string(&doc).unwrap(),
+        )
+        .unwrap();
+    };
+    write(
+        "layout-graph.json",
+        "layout-graph",
+        serde_json::json!({
+            "nodes": [{
+                "id": "node/house",
+                "intent": "a hall with a pit in its floor",
+                "note": "One place whose piece cuts a pit into its own ground.",
+                "stations": [
+                    {"anchor": "anchor/hearth", "kind": "point"},
+                    {"anchor": "anchor/bench", "kind": "point"},
+                    {"anchor": "anchor/pit", "kind": "point"}
+                ]
+            }],
+            "edges": [],
+            "entry": "node/house",
+            "goal": "node/house",
+            "critical_path": ["node/house"],
+            "beats": [
+                {"node": "node/house", "objective": "obj/ask", "quest": "quest/walk-the-whole"},
+                {"node": "node/house", "objective": "obj/enter-the-cell", "quest": "quest/walk-the-whole"},
+                {"node": "node/house", "objective": "obj/walk-out", "quest": "quest/walk-the-whole"}
+            ]
+        }),
+    );
+    write(
+        "site-plan.json",
+        "site-plan",
+        serde_json::json!({
+            "region": {"min": [0, 60, 0], "extent": PIT_SIZE},
+            "boxes": [{
+                "node": "node/house", "min": [1, 1], "extent": [16, 16],
+                "floor": {"y": 64}, "ceiling": {"clearance": 8}, "base": {"aloft": 3}
+            }],
+            "seams": [],
+            "fill": {"kind": "solid", "block": "minecraft:deepslate"}
+        }),
+    );
+    common::patch_file(&dir.join("npcs.json"), |v| {
+        v["content"]["npcs"][0]["anchor"] = serde_json::json!("anchor/node-house");
+    });
+    common::patch_file(&dir.join("quests.json"), |v| {
+        let q = &mut v["content"]["quests"][0];
+        q["cast"]["npc/keeper"]["at"] = serde_json::json!("anchor/node-house");
+        q["objectives"][1]["anchor"] = serde_json::json!("anchor/hearth");
+        q["objectives"][2]["anchor"] = serde_json::json!("anchor/bench");
+        q["on_objective_complete"]["obj/ask"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|e| e["type"] != "open-gate");
+        v["content"]["lethal_volumes"] = serde_json::json!([{
+            "id": "lethal/the-pit",
+            "message": "The pit in the hall floor has no bottom you would survive.",
+            "damage_type": "fall",
+            "region": {"anchor": "anchor/pit", "extent": extent}
+        }]);
+    });
+
+    std::fs::create_dir_all(&prefabs).unwrap();
+    let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..PIT_SIZE[0] {
+        for y in 0..PIT_SIZE[1] {
+            for z in 0..PIT_SIZE[2] {
+                cells.push(([x, y, z], pit_cell([x, y, z])));
+            }
+        }
+    }
+    std::fs::write(
+        prefabs.join("pit-house.nbt"),
+        common::structure_nbt(PIT_SIZE, &cells),
+    )
+    .unwrap();
+    let (px, pz) = PIT;
+    let region = |from: [i32; 3], to: [i32; 3]| serde_json::json!({"from": from, "to": to});
+    let meta = serde_json::json!({
+        "prefab_id": "prefab/pit-house",
+        "structure": {
+            "file": "pit-house.nbt", "id": "pit-house", "size": PIT_SIZE, "data_version": 4671,
+            "generator": "crates/delvec/tests/remedy_reachability.rs"
+        },
+        "anchors": {
+            "seat": {"pos": [8, PIT_FLOOR, 9], "facing": "south", "resolves_to": "space:hall"},
+            "hearth": {"pos": [3, PIT_FLOOR, 4], "facing": "south", "resolves_to": "space:hall"},
+            "bench": {"pos": [15, PIT_FLOOR, 14], "facing": "south", "resolves_to": "space:hall"},
+            "rim": {"pos": [px, PIT_FLOOR, pz + 1], "facing": "north", "resolves_to": "space:hall"},
+            "bottom": {"pos": [px, 1, pz], "facing": "north", "resolves_to": "no_body:pit"}
+        },
+        "connectors": [],
+        "lighting": {"profile": "lit", "measured_min_light": 8, "measured": "2026-10-14"},
+        "license": {
+            "source": "original", "spdx": "GPL-3.0-or-later", "note": "Test fixture.",
+            "provenance": "Written by crates/delvec/tests/remedy_reachability.rs."
+        },
+        "spatial_contract": {
+            "entry": "hall",
+            "spaces": {"hall": {"envelope": "enclosed", "boxes": [
+                region([1, PIT_FLOOR, 1], [16, PIT_SIZE[1] - 2, 16])
+            ]}},
+            "no_body": {"pit": {
+                "reason": "the floor of a killing pit: a body that reaches it has fallen",
+                "boxes": [region([px, 1, pz], [px, PIT_FLOOR - 1, pz])]
+            }},
+            "edges": [],
+            "faces": []
+        }
+    });
+    std::fs::write(
+        prefabs.join("pit-house.json"),
+        serde_json::to_string_pretty(&meta).unwrap() + "\n",
+    )
+    .unwrap();
+    set_pit_binding(&dir, bound);
+    (dir, prefabs)
+}
+
+/// Write the pit campaign's detail plan, binding `anchor/pit` to `bound`.
+fn set_pit_binding(dir: &Path, bound: &str) {
+    let doc = serde_json::json!({
+        "campaign_id": "blockout",
+        "content": {"details": [{
+            "place": "node/house", "piece": "prefab/pit-house",
+            "anchors": {
+                "anchor/node-house": "seat", "spawn": "seat",
+                "anchor/hearth": "hearth", "anchor/bench": "bench",
+                "anchor/pit": bound
+            }
+        }]},
+        "dsl_version": DSL_VERSION,
+        "stage": "detail-plan",
+    });
+    std::fs::write(
+        dir.join("detail-plan.json"),
+        delvewright_dsl::to_canonical_string(&doc).unwrap(),
+    )
+    .unwrap();
+}
+
+/// Assert a build of the pit campaign ends green with no refusal at all, and
+/// neither code of the pair anywhere in what it said.
+fn assert_green(code: i32, log: &str, what: &str) {
+    assert_eq!(code, 0, "{what} builds:\n{log}");
+    assert!(
+        !log.contains("[error]"),
+        "{what}: no refusal anywhere:\n{log}"
+    );
+    assert!(
+        !log.contains("DW0891") && !log.contains("DW0845"),
+        "{what}: neither code of the pair fires, warning included:\n{log}"
+    );
+}
+
+/// **LOWER the volume onto an anchor at the pit's bottom** — `DW0891`'s first
+/// move, taken in a detailed place, where it is the pair's case.
+///
+/// In a site-plan campaign the only anchors a quest can name are the node's
+/// owed names, so a volume reaches the pit's bottom through a station bound to
+/// the piece's anchor there — and the piece's contract declares that floor
+/// `no_body`, because a body that stands on it has fallen. `DW0845` refused
+/// that binding ("a body cannot be in a `no_body` region") while `DW0891`
+/// prescribed it: following the remedy landed in the other gate. The move now
+/// ends green, with the binding line counting the one admitted seat.
+#[test]
+fn dw0891_lowering_the_volume_onto_the_pits_bottom_builds() {
+    let (camp, prefabs) = pit_campaign("lower", "rim", [0, 0, 0]);
+    let (code, before) = build("pit-lower-rim", &camp, &prefabs);
+    assert_eq!(code, 3, "a volume on the rim is refused:\n{before}");
+    assert!(
+        before.contains("DW0891")
+            && before.contains("Lower the volume")
+            && before.contains("on an anchor at the pit's bottom"),
+        "the message names the move:\n{before}"
+    );
+    set_pit_binding(&camp, "bottom");
+    let (code, after) = build("pit-lower-bottom", &camp, &prefabs);
+    assert_green(code, &after, "the volume on the pit's bottom");
+    assert!(
+        after.contains("5 owed anchor name(s) checked, 1 of them a killing volume's seat"),
+        "the admission is counted:\n{after}"
+    );
+}
+
+/// **DRAW the volume's `extent` in** so its keep-out stops short of the floor
+/// — `DW0891`'s second move, over the same seat.
+#[test]
+fn dw0891_drawing_the_extent_in_builds() {
+    let (camp, prefabs) = pit_campaign("draw-in", "bottom", [0, 3, 0]);
+    let (code, before) = build("pit-draw-in-tall", &camp, &prefabs);
+    assert_eq!(
+        code, 3,
+        "a volume reaching up to the floor is refused:\n{before}"
+    );
+    assert!(
+        before.contains("DW0891") && before.contains("draw its `extent` in"),
+        "the message names the move:\n{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v)["region"]["extent"] = serde_json::json!([0, 0, 0]);
+    });
+    let (code, after) = build("pit-draw-in-short", &camp, &prefabs);
+    assert_green(code, &after, "the volume drawn in");
+}
+
+/// **AUTHOR one of the blocks vanilla hurts with under the caught cells** —
+/// the third move's other half. `dw0891_declaring_the_block_that_shows_the_hazard_builds`
+/// takes the declaration over bytes that already carry the signal; this takes
+/// the bytes, over a declaration they did not bear out. The volume is the tall
+/// one `dw0891_drawing_the_extent_in_builds` starts from, whose keep-out
+/// reaches the floor round the pit's mouth; that floor is laid in magma and
+/// nothing else changes.
+#[test]
+fn dw0891_authoring_the_signal_under_the_caught_floor_builds() {
+    let (camp, prefabs) = pit_campaign("author", "bottom", [0, 3, 0]);
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v).insert(
+            "shown_by".into(),
+            serde_json::json!(["minecraft:magma_block"]),
+        );
+    });
+    let (code, before) = build("pit-author-bare", &camp, &prefabs);
+    assert_eq!(code, 3, "a signal the floor does not carry:\n{before}");
+    assert!(
+        before.contains("DW0891") && before.contains("author one of the blocks"),
+        "the message names the move:\n{before}"
+    );
+    // The keep-out's floor course, piece-local: the mouth's eight neighbours.
+    let (px, pz) = PIT;
+    let mouth = |x: i32, z: i32| (x - px).abs() <= 1 && (z - pz).abs() <= 1;
+    let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..PIT_SIZE[0] {
+        for y in 0..PIT_SIZE[1] {
+            for z in 0..PIT_SIZE[2] {
+                let b = pit_cell([x, y, z]);
+                let b = if y == PIT_FLOOR - 1 && mouth(x, z) && b != "minecraft:air" {
+                    "minecraft:magma_block"
+                } else {
+                    b
+                };
+                cells.push(([x, y, z], b));
+            }
+        }
+    }
+    std::fs::write(
+        prefabs.join("pit-house.nbt"),
+        common::structure_nbt(PIT_SIZE, &cells),
+    )
+    .unwrap();
+    let (code, after) = build("pit-author-laid", &camp, &prefabs);
+    assert_green(code, &after, "the floor laid in what it declares");
+}
+
+/// **The admission is the pair's and nothing wider.** The same station, seated
+/// on the pit's bottom, also named by a quest's `reach-anchor` — a body is put
+/// there — is still `DW0845`, and the refusal names the use that disqualifies
+/// it. A perturbation only this gate can catch: the volume, the piece and the
+/// binding are the green ones above.
+#[test]
+fn dw0845_still_refuses_a_killing_seat_a_quest_also_names() {
+    let (camp, prefabs) = pit_campaign("shared", "bottom", [0, 0, 0]);
+    edit_doc(&camp, "quests.json", |v| {
+        v["content"]["quests"][0]["objectives"][2]["anchor"] = serde_json::json!("anchor/pit");
+    });
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    let t = log(&r);
+    assert_eq!(r.status.code(), Some(1), "refused at validation:\n{t}");
+    assert!(t.contains("DW0845"), "{t}");
+    assert!(
+        t.contains("centres the killing volume(s) `lethal/the-pit`")
+            && t.contains("quests:/quests/0/objectives/2/anchor"),
+        "names the volume and the use that disqualifies the seat:\n{t}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // DW0881 — the move for a volume no radius can narrow to
 // ---------------------------------------------------------------------------
 
@@ -1987,7 +2331,7 @@ fn design_cameras(camp: &Path, pos: [f64; 3], rows: &[(&str, &str)]) {
         .iter()
         .map(|(name, answers)| {
             serde_json::json!({
-                "answers": answers, "exposure": 1.0, "fov": 70.0, "height": 90,
+                "answers": answers, "fov": 70.0, "height": 90,
                 "name": name, "pitch": 10.0, "pos": pos, "source": "estimated",
                 "spp": 16, "width": 160, "yaw": 0.0
             })

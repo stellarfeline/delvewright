@@ -480,7 +480,7 @@ fn cameras(camp: &Path, pos: [f64; 3], rows: &[(&str, &str)]) {
         .iter()
         .map(|(name, answers)| {
             serde_json::json!({
-                "answers": answers, "exposure": 1.0, "fov": 70.0, "height": 90,
+                "answers": answers, "fov": 70.0, "height": 90,
                 "name": name, "pitch": 10.0, "pos": pos, "source": "estimated",
                 "spp": 16, "width": 160, "yaw": 0.0
             })
@@ -859,4 +859,40 @@ fn re_aiming_a_camera_at_an_answered_picture_moves_only_the_answered_count() {
             "the perturbation is caught by DW0900 and not by {other}:\n{b}"
         );
     }
+}
+
+/// **The build half of `DW1010`, and the engine side of the gallery probe
+/// `a-crypt-exposed-instead-of-lit`.** A record that builds green is refused at
+/// exit 3 once one camera states `exposure`, by `DW1010` and by no other rule
+/// over the record, before anything is written.
+#[test]
+fn a_stated_exposure_is_refused_by_the_build_and_by_nothing_else() {
+    let eye = proven_eye("exposure-eye");
+    let camp = campaign("exposure", "noon");
+    image(&camp, "concept/shore-far.png");
+    record(&camp, &[("concept/shore-far", "noon", "clear")]);
+    cameras(&camp, eye, &[("shore", "concept/shore-far")]);
+    let (code, out, _) = build("exposure-green", &camp);
+    assert_eq!(code, 0, "{out}");
+
+    let path = camp.join("design/cameras.json");
+    let mut doc: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    doc["cameras"][0]["exposure"] = 1.0.into();
+    std::fs::write(&path, serde_json::to_vec_pretty(&doc).unwrap()).unwrap();
+
+    let (code, b, dir) = build("exposure-red", &camp);
+    assert_eq!(code, 3, "{b}");
+    assert!(b.contains("DW1010"), "{b}");
+    assert!(
+        b.contains("camera `shore`") && b.contains("Remove the field"),
+        "{b}"
+    );
+    for other in ["DW0721 [error]", "DW0724 [error]", "DW0900 [error]"] {
+        assert!(
+            !b.contains(other),
+            "caught by DW1010 and not by {other}:\n{b}"
+        );
+    }
+    assert!(!dir.join("manifest.json").exists(), "nothing was written");
 }

@@ -226,7 +226,10 @@ def test_every_directory_up_mints_is_recorded():
     added later with neither would leak exactly as the first two did, with every
     other test here still green.
     """
-    text = SCRIPT.read_text(encoding="utf-8")
+    # The image-making half is sourced from tools/lib/playtest-image.sh into the
+    # same shell, so its directories are this session's too.
+    text = SCRIPT.read_text(encoding="utf-8") + (
+        SCRIPT.parents[2] / "tools" / "lib" / "playtest-image.sh").read_text(encoding="utf-8")
     code = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
     minted = re.findall(r'(\w+)="\$\(mktemp -d ', code)
     assert len(minted) == code.count("mktemp -d"), "a `mktemp -d` this test cannot attribute to a variable"

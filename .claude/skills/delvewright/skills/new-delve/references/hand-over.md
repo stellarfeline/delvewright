@@ -131,6 +131,8 @@ and verifies over rcon that the datapack actually loaded before it says READY:
     --written-world .out/written-world.json
 ```
 
+A reference level is served with `--prefabs campaigns/references/<id>/prefabs`.
+
 **`--run-report` and `--written-world` are step 10's two records**, and the gate
 admits only on them: the bot's critical path green, and the server's world equal
 to the engine's model, each for a build with this build's manifest. The build
@@ -167,6 +169,13 @@ own admission token against its manifest, and serves it; it prints
 from the last session is not kept. Anything that moved builds, gates and
 places afresh. `status` lists the kept images and their sizes;
 `down --name <name> --prune` removes them.
+
+**Going back to an earlier point in the story is `restore`.** While a campaign
+is served, `up` saves a checkpoint of the running world each time a quest
+completes, named by the title the player was shown (`03 Open the sea gate`);
+`playtest-server.sh checkpoint "<name>" --name <name>` saves one now, `status`
+lists them, and `playtest-server.sh restore <number or name> --name <name>`
+serves that exact world again in about the time of a reopen.
 
 **A large campaign can need more than the heap the build states.** `up`
 gives the server the ceiling the build computed for its declared view distance

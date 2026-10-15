@@ -428,7 +428,7 @@ the class is HERE and nothing this build carries would catch the defect again.
 | Verdict | What it means | Its real instance |
 |---|---|---|
 | `NO-GENERAL-FORM` | the instance was fixed, the class never built | rule 2's `DW0489`, eleven rounds late |
-| `MISSING-CHECK` | the ledger names a check this engine no longer has (absent from source, undocumented, or asserted by no test), or a stage document the COMPILER read that this gate holds no parsed copy of | four rows in the ledger's own first run named invariants that did not exist under those names |
+| `MISSING-CHECK` | the ledger names a check the engine that built this tree does not have (a `dw` code absent from the building engine's registry as its `manifest.json` `dw_codes` states it, or absent from source, undocumented, or asserted by no test), or a stage document the COMPILER read that this gate holds no parsed copy of | four rows in the ledger's own first run named invariants that did not exist under those names |
 | `UNBOUND` | the check matched zero objects, and objects that could have carried the defect are there — or nobody has measured whether they are | rule 1's coverage ledger, nineteen rounds |
 | `NO-SOURCE` | the campaign has no stage JSON, so nothing can be measured | a campaign directory holding design records and no stage documents |
 
@@ -577,7 +577,7 @@ put a build in front of the owner:
 
 | Staging path | How the gate is bound to it |
 |---|---|
-| `tools/creator/playtest-server.sh up` (`docker run` of a kept playtest image, binds 25565 — the one she actually runs) | runs the gate itself between `delvec build` and the image build; a refusal dies before any image or container exists. A later `up` of the same inputs runs the kept image without re-gating only after its own token passes `validation/staging-admission.sh` against its own manifest and both match the image's labels; any moved input, the findings ledger included, rebuilds and re-gates |
+| `tools/creator/playtest-server.sh up` (`docker run` of a kept playtest image, binds 25565 — the one she actually runs) | runs the gate itself between `delvec build` and the image build; a refusal dies before any image or container exists. A later `up` of the same inputs runs the kept image without re-gating only after its own token passes `validation/staging-admission.sh` against its own manifest and both match the image's labels; any moved input, the findings ledger included, rebuilds and re-gates. `restore <checkpoint>` serves the same kept image over a checkpoint's world through the same token check; a checkpoint taken on another image is refused, so a restore never serves a build the gate did not admit |
 | `docker compose -f validation/compose.yaml -f validation/owner-play.yaml --profile play\|playtest up` (the other sanctioned 25565 binder) | `owner-play.yaml` adds a `staging-admission` service that both port-publishing services `depends_on: service_completed_successfully` |
 | The content repository's `release` workflow (`stellarfeline/delvewright-campaigns`, on a `release/<campaign>/v<semver>` tag, spec-0024 §1) → multi-arch delve image to GHCR + a GitHub Release (she runs the image on the Pi) | **NOT BOUND.** That workflow runs its own ladder and publishes without ever calling this gate. To bind it, add a step in the content repository between `delvec build` and its `docker/login-action` that runs `python3 <engine checkout>/tools/creator/staging-gate.py --campaign <campaign dir> --build <build tree>` — the engine is already checked out there, at the revision `versions.toml` pins |
 

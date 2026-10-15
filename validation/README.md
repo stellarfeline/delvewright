@@ -379,8 +379,10 @@ runs this script; wiring it into `ci.yml`'s `tier 2` job as a step (never a new 
   when it is this engine — and it ends by saying whether the Chunky home holds
   the pinned core (`versions.toml [render]`), by the rule `chunky.sh` refuses by.
 - **Chunky**: `validation/chunky-install.sh --java-home <JDK 17>` builds the
-  pinned core from source and installs it; `validation/chunky.sh <Chunky args>`
-  renders with it and refuses a home that does not hold it
+  pinned core from source and installs it, then installs the pinned denoise kit
+  (the chunky-denoiser plugin and Open Image Denoise for this platform);
+  `validation/chunky.sh <Chunky args>` renders with them, denoises every
+  `-render`, and refuses a home that does not hold either
   (`docs/reference/tools.md` §4a).
 
 ## Harness
