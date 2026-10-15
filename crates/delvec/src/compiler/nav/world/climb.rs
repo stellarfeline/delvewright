@@ -314,17 +314,6 @@ impl World {
         None
     }
 
-    /// The bottom of the climb run `c` is in: the lowest climb cell reached by
-    /// sliding down from `c` without letting go.
-    pub(in crate::compiler::nav) fn climb_bottom(&self, c: [i32; 3]) -> [i32; 3] {
-        let fp = Footprint::player();
-        let mut b = c;
-        while self.climb_cell_fp([b[0], b[1] - 1, b[2]], &fp) {
-            b[1] -= 1;
-        }
-        b
-    }
-
     /// The climbs a route takes, as runs: each maximal stretch of consecutive
     /// route cells joined by a climb move ([`World::climb_moves_fp`]) rather
     /// than a walk, cut at every standable cell the stretch passes through after
@@ -572,18 +561,21 @@ mod tests {
         assert_eq!(w.climb_census(), (6, 0));
         // From the pillar top ([1, 61, 0]) a body steps east into column 2 and
         // falls: the ladder top at y = 55 is 5 blocks under its feet — caught.
-        assert!(w.body_moves([1, 61, 0]).contains(&[2, 55, 0]));
+        assert!(w.body_edge_cells([1, 61, 0]).contains(&[2, 55, 0]));
         // Nothing under the run: the step off is fatal all the same, because a
         // body that does not hold on slides off the bottom into the void.
-        assert_eq!(
-            w.fatal_step_off([1, 61, 0]).map(|(_, lava)| lava),
-            Some(false)
-        );
-        // Put a floor under the run and the same step is survived.
+        assert!(w.fatal_launch([1, 61, 0]).is_some());
+        // Put ground under the run and round it, and every launch off the
+        // pillar is survived: thirteen blocks of fall, the run's catch on the
+        // way down.
         let mut floored = cells.clone();
-        floored.push(([2, 48, 0], "minecraft:stone".to_string()));
+        for x in -16..=18 {
+            for z in -16..=16 {
+                floored.push(([x, 48, z], "minecraft:stone".to_string()));
+            }
+        }
         let f = world(&floored);
-        assert_eq!(f.fatal_step_off([1, 61, 0]), None, "caught, slid, stood");
+        assert_eq!(f.fatal_launch([1, 61, 0]), None, "caught, slid, stood");
     }
 
     /// **A runtime write that takes the support takes the ladder.** Clearing the

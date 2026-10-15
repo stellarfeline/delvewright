@@ -1526,7 +1526,7 @@ struct LaidRun {
 /// **Measured, not computed.** Which courses need the floor cut away is not
 /// answered by arithmetic over a body's height here: that would be a second
 /// model of how a body climbs, and the first is the one `DW0921` floods —
-/// [`crate::compiler::nav::World::body_moves`], over the engine's occupancy
+/// [`crate::compiler::nav::World::body_edges`], over the engine's occupancy
 /// model of these very blocks. So, from the foot of the run to its head, each
 /// step from one course (or the floor beyond the run) onto the next is asked of
 /// that relation over the mass as laid; where it is not a move, the floor over
@@ -1614,9 +1614,11 @@ fn stairwell(
         for across in run.clo..=run.chi {
             for column in [onto, from] {
                 let world = world_of(mass);
+                let to = feet(&world, onto, across);
                 if world
-                    .body_moves(feet(&world, from, across))
-                    .contains(&feet(&world, onto, across))
+                    .body_edges(feet(&world, from, across))
+                    .iter()
+                    .any(|e| e.to == to)
                 {
                     break;
                 }
@@ -2716,7 +2718,7 @@ fn nodes_reached(
     loop {
         let before = reached.len();
         let seeded = seeds.len();
-        reached.extend(world.reachable_walkable(&seeds));
+        reached.extend(world.walk_region(&seeds));
         // Every declared fall whose near side is now stood in hands the far side
         // a starting cell.
         for s in &b.seams {

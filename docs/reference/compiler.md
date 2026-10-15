@@ -2214,7 +2214,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   eye at the block centre, 1.62 over its floor): a site-plan box stands one
   eye per footprint column over its floor; an area, which states no floor,
   stands one at every cell of the party walk
-  (`World::reachable_walkable_rooted` from every anchor) inside its placed
+  (`World::walk_region_rooted` from every anchor) inside its placed
   bounds. The line is a measurement and
   refuses nothing.
 - **The cut in time** (spec-0080 §2.2, measured on The Thing Beyond the

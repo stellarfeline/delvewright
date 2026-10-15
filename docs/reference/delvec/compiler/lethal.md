@@ -151,7 +151,7 @@ configuration before each switch-on**: a body standing in a volume's keep-out
 when its gate flips is killed in the same server tick (`tools/spike-staged-lethal/ at aa5454feebf2`,
 three of three trials at zero ticks), so the floor it stood on must read as
 danger in that configuration's own bytes. Each configuration's world is its
-region state with every exclusion lifted, its population `reachable_walkable`
+region state with every exclusion lifted, its population `walk_region`
 from `lethal::population_roots`, and its bytes `RegionState::blocks_over` — the
 assembled block map with every forced write it credits laid as the block its
 command writes (a fill's block, air for a clear or an unseal; a `RegionEvent`

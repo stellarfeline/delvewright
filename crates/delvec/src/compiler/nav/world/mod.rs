@@ -450,6 +450,10 @@ pub struct World {
     /// Whether no fall kills a body in this world: a kit the campaign hands
     /// reduces fall damage (spec-0113 §4.2, [`Premises::unbounded_fall`]).
     pub(in crate::compiler::nav) unbounded_fall: bool,
+    /// The declared jumps (spec-0113 §6) as `(from, to)`: the one move the walk
+    /// relation gains ([`World::neighbors_fp`]). A build proves every one before
+    /// any route is taken (`DW1041`), so a jump here is one a body on cue makes.
+    pub(in crate::compiler::nav) declared_jumps: Vec<([i32; 3], [i32; 3])>,
 }
 
 /// The block-derived cell sets of a [`World`], as [`World::from_occupancy`]
@@ -522,6 +526,8 @@ pub struct Premises {
     /// enchantment, a max-health change or a fall-damage multiplier — so the
     /// reach graph credits a landing however far the body fell.
     pub(in crate::compiler::nav) unbounded_fall: bool,
+    /// The declared jumps, `(from, to)` (spec-0113 §6).
+    pub(in crate::compiler::nav) declared_jumps: Vec<([i32; 3], [i32; 3])>,
 }
 
 impl Premises {
@@ -582,6 +588,7 @@ impl Premises {
                 .filter_map(|s| Some((s.objective()?.to_string(), s.pos()?)))
                 .collect(),
             unbounded_fall: false,
+            declared_jumps: plan.jumps.iter().map(|j| (j.from, j.to)).collect(),
         }
     }
 
@@ -615,6 +622,7 @@ impl Premises {
             clocked_gates: BTreeSet::new(),
             objective_cells: Vec::new(),
             unbounded_fall: false,
+            declared_jumps: Vec::new(),
         }
     }
 }
@@ -762,6 +770,7 @@ impl World {
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
+            declared_jumps: self.declared_jumps.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -777,6 +786,53 @@ impl World {
             base: self.base,
             built: self.built.clone(),
         }
+    }
+
+    /// This world without its declared jumps — the walk relation they are
+    /// judged against (`DW1041`: a jump across a gap a walk already crosses is
+    /// no jump).
+    pub fn without_declared_jumps(&self) -> World {
+        let mut w = self.clone_world();
+        w.declared_jumps = Vec::new();
+        w
+    }
+
+    /// This world with a straight run-up of `k` floor cells laid behind
+    /// `from` along the jump toward `to`, each the launch cell's own floor with
+    /// air over it — the course a declared jump would need, flown to say how
+    /// long a run-up it needs (`DW1041`).
+    pub fn with_flat_run_up(&self, from: [i32; 3], to: [i32; 3], k: u32) -> World {
+        let mut w = self.clone_world();
+        let (dx, dz) = (to[0] - from[0], to[2] - from[2]);
+        let axis = if dx.abs() >= dz.abs() {
+            [dx.signum(), 0]
+        } else {
+            [0, dz.signum()]
+        };
+        let support = [from[0], from[1] - 1, from[2]];
+        let top = self.partial.get(&support).copied();
+        for i in 1..=k as i32 {
+            let c = [from[0] - axis[0] * i, from[1], from[2] - axis[1] * i];
+            let under = [c[0], c[1] - 1, c[2]];
+            w.solid.insert(under);
+            match top {
+                Some(t) => {
+                    w.partial.insert(under, t);
+                }
+                None => {
+                    w.partial.remove(&under);
+                }
+            }
+            for y in 0..3 {
+                let a = [c[0], c[1] + y, c[2]];
+                w.solid.remove(&a);
+                w.tall.remove(&a);
+                w.use_gates.remove(&a);
+                w.flooded.remove(&a);
+                w.partial.remove(&a);
+            }
+        }
+        w
     }
 
     /// Whether this world carries any furniture region at all. Call sites skip
@@ -1037,6 +1093,7 @@ impl World {
             built: premises.built,
             objective_cells: premises.objective_cells,
             unbounded_fall: premises.unbounded_fall,
+            declared_jumps: premises.declared_jumps,
         }
     }
 
@@ -1137,6 +1194,7 @@ impl World {
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
+            declared_jumps: self.declared_jumps.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1189,6 +1247,7 @@ impl World {
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
+            declared_jumps: self.declared_jumps.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1253,6 +1312,7 @@ impl World {
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
+            declared_jumps: self.declared_jumps.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1315,6 +1375,7 @@ impl World {
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
+            declared_jumps: self.declared_jumps.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1424,6 +1485,7 @@ impl World {
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
+            declared_jumps: self.declared_jumps.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1506,6 +1568,7 @@ impl World {
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
+            declared_jumps: self.declared_jumps.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),

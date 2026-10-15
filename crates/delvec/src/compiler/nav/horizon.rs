@@ -113,11 +113,11 @@ pub fn verify_boundary_safety(world: &World, starts: &[AnchorRoot]) -> Result<()
     // with. Sequencing lives here, in the proof, so no caller has an order to get
     // wrong — and the walk region is computed once and handed to both, so the two
     // cannot end up judging different sets of cells.
-    let reachable = world.reachable_walkable_rooted(starts);
-    if let Some(e) = measure_sea_seepage(world, &reachable).finding() {
+    let reach = world.body_reach_rooted(starts);
+    if let Some(e) = measure_sea_seepage(world, &reach.standing()).finding() {
         return Err(e);
     }
-    boundary_from(world, &world.body_reach_rooted(starts))
+    boundary_from(world, &reach)
 }
 
 /// Boundary safety alone, on a world whose fluid has already been accounted for.

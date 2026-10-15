@@ -175,7 +175,7 @@ fn verify_hazard_observability(
         // Pre-commitment ground: everywhere the player can walk from the entry
         // WITHOUT entering the span.
         let sealed = world.with_sealed(&span);
-        let pre_commit = sealed.reachable_walkable(&[entry]);
+        let pre_commit = sealed.walk_region(&[entry]);
         // Nearest candidate first — a real watch bay is close, so the passing case
         // costs a handful of sightlines. Ties break on cell order (ADR-0006).
         let mut candidates: Vec<(i32, [i32; 3])> = pre_commit

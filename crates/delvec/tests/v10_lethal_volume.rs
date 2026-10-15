@@ -783,7 +783,7 @@ fn the_population_is_the_lethality_free_one() {
         // taking the population from the world the ROUTER walks. Done here directly,
         // so the number this check would report if it read the wrong world is on the
         // record beside the number it does report.
-        let applied = world.reachable_walkable(&[entry.unwrap()]);
+        let applied = world.walk_region(&[entry.unwrap()]);
         let body = delvewright_dsl::metrics::Body::PLAYER;
         let v = &plan.lethal_volumes[0];
         let (klo, khi) = delvewright_dsl::metrics::keep_out_box(body, v.region.0, v.region.1);

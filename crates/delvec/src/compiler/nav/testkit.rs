@@ -66,6 +66,7 @@ pub(in crate::compiler::nav) fn floored_with_lethal(
             clocked_gates: BTreeSet::new(),
             objective_cells: Vec::new(),
             unbounded_fall: false,
+            declared_jumps: Vec::new(),
         },
     )
 }

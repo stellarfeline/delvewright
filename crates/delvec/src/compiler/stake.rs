@@ -814,7 +814,7 @@ pub fn build(
     // stake can strand.
     let from_entry = match seats.first() {
         Some(s) if s.cp == -1 => reach[0].clone(),
-        _ => world.reachable_walkable(&seats.iter().map(|s| s.cell).collect::<Vec<_>>()),
+        _ => world.walk_region(&seats.iter().map(|s| s.cell).collect::<Vec<_>>()),
     };
     let deaths = death_cells_per_seat(plan, world, &seats, &from_entry);
     let mut stranded_cells = 0usize;

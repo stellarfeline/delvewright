@@ -180,9 +180,15 @@ impl Dense {
                 hi[i] = hi[i].max(c[i]);
             }
         };
-        for (_, (a, b)) in &world.built {
-            note(*a);
-            note(*b);
+        // The window is the modelled cells' extent, never the premises': two
+        // views of one world (one with its campaign's premises, one with
+        // geometry alone) share a window, and so a lineage. Under an ocean the
+        // placed pieces' boxes join it, because they decide where the sea is.
+        if matches!(world.ambient, Ambient::Ocean(_)) {
+            for (_, (a, b)) in &world.built {
+                note(*a);
+                note(*b);
+            }
         }
         for set in [&world.solid, &world.tall, &world.use_gates, &world.flooded] {
             for c in set.iter() {
@@ -625,6 +631,9 @@ pub struct ReachParams {
     pub strafes: Vec<i8>,
     /// Whether no fall kills (a kit reduces fall damage, §4.2).
     pub unbounded_fall: bool,
+    /// The work past which a closure is refused rather than finished
+    /// (`DW1042`): launches simulated plus template arcs credited.
+    pub budget: u64,
 }
 
 impl ReachParams {
@@ -634,6 +643,7 @@ impl ReachParams {
             facing_step: FACING_STEP_DEG,
             strafes: vec![-1, 0, 1],
             unbounded_fall,
+            budget: delvewright_dsl::metrics::REACH_BUDGET_STATES,
         }
     }
 
@@ -651,12 +661,25 @@ enum Outcome {
     /// Nothing new: it came back to rest in its own cell, or never settled.
     Nowhere,
     /// It died: a lethal fall, lava, or (over the real world) a killing volume.
-    Dead,
+    Dead(Death),
     /// It left the world: below the window's floor with nothing under it.
     LeftWorld,
     /// It came to rest in these cells (relative to the launch cell), in this
     /// state, by this kind of movement.
     Rest(Vec<([i32; 3], RestKind)>, EdgeKind),
+}
+
+/// What killed a body a launch flew.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Death {
+    /// A declared killing volume.
+    Volume,
+    /// Lava.
+    Lava,
+    /// A fall it does not survive.
+    Fall,
+    /// Out of the world, into the void.
+    Void,
 }
 
 /// The ticks a launch is flown for before it is called unsettled: long enough
@@ -714,7 +737,9 @@ fn water_kind<C: Codes + ?Sized>(codes: &C, c: [i32; 3]) -> RestKind {
 }
 
 /// The furthest position along `dir` from the centre of `c` that the body's box
-/// is still supported at, inside the cell's own column — found by halving.
+/// is still supported at — the box overhanging the cell's faces by up to its
+/// half width, the support any collision top at the feet under the box — found
+/// by halving.
 fn edge_position<C: Codes + ?Sized>(
     codes: &C,
     body: &Attributes,
@@ -760,11 +785,14 @@ fn edge_position<C: Codes + ?Sized>(
         return None;
     }
     // The furthest the centre may go inside the cell along `dir`.
+    // The box may hang past the cell's face by its half width and still stand
+    // on the cell's own support; the centre goes no further than that.
+    let half = body.width / 2.0;
     let reach = |d: f64, c0: f64| {
         if d > 1e-9 {
-            (c0 + 1.0 - 1e-6 - (c0 + 0.5)) / d
+            (c0 + 1.0 + half - 1e-6 - (c0 + 0.5)) / d
         } else if d < -1e-9 {
-            (c0 + 1e-6 - (c0 + 0.5)) / d
+            (c0 - half + 1e-6 - (c0 + 0.5)) / d
         } else {
             f64::INFINITY
         }
@@ -857,7 +885,9 @@ fn fly<C: Codes + ?Sized>(
             };
             let mut st = State::standing(p, &body);
             st.vel = match launch.mode {
-                Mode::Creep => [0.0; 3],
+                // At rest on the edge: only the tick of gravity a resting body
+                // carries.
+                Mode::Creep => [0.0, -body.gravity * f64::from(0.98f32), 0.0],
                 _ => vel,
             };
             let press = match launch.mode {
@@ -903,11 +933,14 @@ fn fly<C: Codes + ?Sized>(
                 b.max[2].max(bb.max[2]),
             ),
         });
-        if killed(&st) || st.in_lava {
-            return (Outcome::Dead, bbox);
+        if killed(&st) {
+            return (Outcome::Dead(Death::Volume), bbox);
+        }
+        if st.in_lava {
+            return (Outcome::Dead(Death::Lava), bbox);
         }
         if !unbounded_fall && st.landing_damage >= body.max_health {
-            return (Outcome::Dead, bbox);
+            return (Outcome::Dead(Death::Fall), bbox);
         }
         let kind = if jumped {
             EdgeKind::Jump
@@ -1090,6 +1123,9 @@ pub(in crate::compiler::nav) struct NodeEdges {
     pub leaves_world: bool,
     /// The node is in the open sea (spec-0113 §4.7).
     pub open_sea: bool,
+    /// Some launch from here dies of lava, of the fall or of the void — the
+    /// first such death in launch order.
+    pub dies: Option<Death>,
     /// Launches flown over the real world.
     pub simulated: u64,
     /// Template arcs credited without a tick.
@@ -1099,6 +1135,9 @@ pub(in crate::compiler::nav) struct NodeEdges {
     /// same launches ([`GraphMemo::lineage`]).
     pub read: Option<([i32; 3], [i32; 3])>,
 }
+
+/// A closure taken over a graph, with the roots it was taken from.
+type Closure = (Vec<[i32; 3]>, Arc<Reach>);
 
 /// A node and the quadrants of its launch set that were flown.
 type FlownKey = ([i32; 3], Quadrants);
@@ -1122,6 +1161,8 @@ pub(in crate::compiler::nav) struct GraphMemo {
     lineage: Option<(Arc<GraphMemo>, Vec<[i32; 3]>)>,
     /// The killing volumes' and furniture's cells, for a later graph's diff.
     premise_cells: BTreeSet<[i32; 3]>,
+    /// Every closure taken over this graph, with the roots it was taken from.
+    closures: Mutex<Vec<Closure>>,
 }
 
 impl GraphMemo {
@@ -1366,6 +1407,7 @@ impl World {
             flown: Mutex::new(HashMap::new()),
             lineage,
             premise_cells,
+            closures: Mutex::new(Vec::new()),
         });
         // The latest graph is the next one's lineage: configurations are asked
         // about in story order, and the one before differs least.
@@ -1503,7 +1545,7 @@ impl World {
                 // straight drop into the next column — moves the launches below
                 // make too, taken first because they are cheap.
                 let walks = self.neighbors_fp(c, &fp);
-                for n in self.moves_of(c, &fp, false) {
+                for n in self.moves_of(c, &fp) {
                     if self.rest_kind(n).is_some() {
                         let kind = if self.climb_cell_fp(n, &fp) || self.climb_cell_fp(c, &fp) {
                             EdgeKind::Climb
@@ -1643,7 +1685,10 @@ impl World {
         out: &mut NodeEdges,
     ) {
         match outcome {
-            Outcome::LeftWorld => out.leaves_world = true,
+            Outcome::LeftWorld => {
+                out.leaves_world = true;
+                out.dies.get_or_insert(Death::Void);
+            }
             Outcome::Rest(cells, kind) => {
                 for (rel, rest) in cells {
                     let to = [c[0] + rel[0], c[1] + rel[1], c[2] + rel[2]];
@@ -1655,7 +1700,10 @@ impl World {
                     }
                 }
             }
-            Outcome::Nowhere | Outcome::Dead => {}
+            Outcome::Dead(d @ (Death::Lava | Death::Fall | Death::Void)) => {
+                out.dies.get_or_insert(*d);
+            }
+            Outcome::Nowhere | Outcome::Dead(Death::Volume) => {}
         }
     }
 
@@ -1719,7 +1767,255 @@ impl World {
         self.body_reach_at(roots, &ReachParams::shipped(self.unbounded_fall))
     }
 
+    /// **Every edge of the reach graph out of `c`**: its cell relation and
+    /// every launch of the launch set, flown — where one movement takes a body
+    /// standing, swimming or holding in `c`. Empty when `c` is no rest state.
+    pub fn body_edges(&self, c: [i32; 3]) -> Vec<Edge> {
+        let params = ReachParams::shipped(self.unbounded_fall);
+        let memo = self.graph_memo(&params);
+        let mut out = self.expand(&memo, &params, c, 0).edges;
+        if matches!(
+            self.rest_kind(c),
+            Some(RestKind::Standing | RestKind::Holding)
+        ) {
+            out.extend(self.expand(&memo, &params, c, ALL_QUADRANTS).edges);
+        }
+        out.sort();
+        out.dedup_by(|a, b| a.to == b.to && a.kind == b.kind);
+        out
+    }
+
+    /// **Fly a declared jump's window** (spec-0113 §4.4) from `from` toward
+    /// `to` under `rules`: facing every whole degree within
+    /// [`delvewright_dsl::metrics::DECLARED_JUMP_FACING_DEG`] of the line
+    /// between the two cells, strafe `0`, the forward key (the move vector at
+    /// [`delvewright_dsl::metrics::DECLARED_JUMP_INPUT`]), sprinting when
+    /// `sprint`, from rest at the back of a straight run-up of `run_up` cells
+    /// behind `from` along the jump's axis, the jump pressed on each of the
+    /// last [`delvewright_dsl::metrics::DECLARED_JUMP_PRESS_TICKS`] supported
+    /// ticks before the edge. Every launch must touch down on `to`'s support
+    /// with the exact box over it by at least
+    /// [`delvewright_dsl::metrics::DECLARED_JUMP_OVERLAP`] on both axes.
+    /// `Ok(())` when all land; the first that does not, otherwise.
+    pub fn declared_jump(
+        &self,
+        from: [i32; 3],
+        to: [i32; 3],
+        sprint: bool,
+        run_up: u32,
+        rules: Rules,
+    ) -> Result<(), JumpMiss> {
+        use delvewright_dsl::metrics as m;
+        let params = ReachParams::shipped(self.unbounded_fall);
+        let memo = self.graph_memo(&params);
+        let world = Sim(&memo.dense);
+        let body = Attributes::PLAYER;
+        let axis = jump_axis(from, to);
+        let back = [
+            from[0] - axis[0] * run_up as i32,
+            from[1],
+            from[2] - axis[1] * run_up as i32,
+        ];
+        let Some(feet) = feet_of(&memo.dense, back) else {
+            return Err(JumpMiss {
+                facing: 0.0,
+                press: 0,
+                ended: [
+                    f64::from(back[0]) + 0.5,
+                    f64::from(back[1]),
+                    f64::from(back[2]) + 0.5,
+                ],
+                rules,
+            });
+        };
+        let Some(land_feet) = feet_of(&memo.dense, to) else {
+            return Err(JumpMiss {
+                facing: 0.0,
+                press: 0,
+                ended: [
+                    f64::from(to[0]) + 0.5,
+                    f64::from(to[1]),
+                    f64::from(to[2]) + 0.5,
+                ],
+                rules,
+            });
+        };
+        let (dx, dz) = (f64::from(to[0] - from[0]), f64::from(to[2] - from[2]));
+        let yaw0 = (-dx).atan2(dz).to_degrees();
+        let start = [f64::from(back[0]) + 0.5, feet, f64::from(back[2]) + 0.5];
+        // A body at rest on a floor carries the one tick of gravity its last
+        // collision left (`(0 − g)·0.98`), and stays on the ground for it.
+        let rest = |p: [f64; 3]| {
+            let mut st = State::standing(p, &body);
+            st.vel[1] = -body.gravity * f64::from(0.98f32);
+            st
+        };
+        let window = m::DECLARED_JUMP_FACING_DEG as i32;
+        for k in -window..=window {
+            let yaw = yaw0 + f64::from(k);
+            let mut input = Input::forward(yaw);
+            input.sprint = sprint;
+            // The run without a jump: the last ticks that still start on the
+            // ground with the box over the launch cell's column are the window
+            // a press may come on.
+            let mut st = rest(start);
+            let mut supported: Vec<usize> = Vec::new();
+            for t in 0..(run_up as usize + 4) * 12 {
+                let over = st.on_ground && box_over_column(&st, &body, from);
+                if over {
+                    supported.push(t);
+                }
+                sim::tick(&world, &body, rules, &mut st, &input);
+                if !st.on_ground && !supported.is_empty() {
+                    break;
+                }
+            }
+            let presses: Vec<usize> = supported
+                .iter()
+                .rev()
+                .take(m::DECLARED_JUMP_PRESS_TICKS as usize)
+                .copied()
+                .collect();
+            if presses.is_empty() {
+                return Err(JumpMiss {
+                    facing: yaw,
+                    press: 0,
+                    ended: st.pos,
+                    rules,
+                });
+            }
+            for p in presses {
+                let mut st = rest(start);
+                let mut airborne = false;
+                let mut landed = None;
+                for t in 0..400 {
+                    let mut i = input;
+                    i.jump = t >= p;
+                    sim::tick(&world, &body, rules, &mut st, &i);
+                    if self.kills(&st) || st.in_lava || st.in_water {
+                        break;
+                    }
+                    if !self.unbounded_fall && st.landing_damage >= body.max_health {
+                        break;
+                    }
+                    if !st.on_ground {
+                        airborne = true;
+                    } else if airborne {
+                        landed = Some(st);
+                        break;
+                    }
+                }
+                let ok = landed.is_some_and(|l| {
+                    let bb = l.aabb(&body);
+                    let over = |lo: f64, hi: f64, c: i32| {
+                        hi.min(f64::from(c) + 1.0) - lo.max(f64::from(c))
+                    };
+                    (l.pos[1] - land_feet).abs() < 1e-6
+                        && over(bb.min[0], bb.max[0], to[0]) >= m::DECLARED_JUMP_OVERLAP
+                        && over(bb.min[2], bb.max[2], to[2]) >= m::DECLARED_JUMP_OVERLAP
+                });
+                if !ok {
+                    return Err(JumpMiss {
+                        facing: yaw,
+                        press: p,
+                        ended: landed.map_or(st.pos, |l| l.pos),
+                        rules,
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The straight run-up behind `from` along the jump toward `to`: how many
+    /// cells, up to [`delvewright_dsl::metrics::DECLARED_JUMP_RUN_UP_CAP`], a body
+    /// walks in a line into `from` — each a standing state the walk relation
+    /// joins to the next.
+    pub fn run_up(&self, from: [i32; 3], to: [i32; 3]) -> u32 {
+        let fp = Footprint::player();
+        let axis = jump_axis(from, to);
+        let mut n = 0u32;
+        let mut cur = from;
+        while n < delvewright_dsl::metrics::DECLARED_JUMP_RUN_UP_CAP {
+            let prev = [cur[0] - axis[0], cur[1], cur[2] - axis[1]];
+            if !self.standable_fp(prev, &fp) || !self.neighbors_walk_fp(prev, &fp).contains(&cur) {
+                break;
+            }
+            n += 1;
+            cur = prev;
+        }
+        n
+    }
+
+    /// The cells [`World::body_edges`] leads to from `c`.
+    pub fn body_edge_cells(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
+        let mut out: Vec<[i32; 3]> = self.body_edges(c).iter().map(|e| e.to).collect();
+        out.dedup();
+        out
+    }
+
+    /// How a body standing or holding in `c` dies by one of its launches, if
+    /// any does — of lava, of a fall it does not survive or out of the world (a
+    /// killing volume is the keep-out's to say).
+    pub fn fatal_launch(&self, c: [i32; 3]) -> Option<Death> {
+        let params = ReachParams::shipped(self.unbounded_fall);
+        let memo = self.graph_memo(&params);
+        self.expand(&memo, &params, c, ALL_QUADRANTS).dies
+    }
+
+    /// [`World::body_reach`] from `starts` each snapped to the nearest
+    /// standable cell first, as [`World::walk_region`] snaps them; a start
+    /// with none within [`crate::compiler::nav::SNAP_RADIUS`] contributes nothing.
+    pub fn body_reach_snapped(&self, starts: &[[i32; 3]]) -> Reach {
+        let seats: Vec<[i32; 3]> = starts
+            .iter()
+            .filter_map(|s| self.snap(*s, crate::compiler::nav::SNAP_RADIUS))
+            .collect();
+        self.body_reach(&seats)
+    }
+
+    /// **Every cell a body can stand in** from `starts` (snapped as
+    /// [`World::body_reach_snapped`] snaps them): the standing states of the
+    /// reach graph — the region every proof that asks "can a player be here"
+    /// reads (spec-0113 §5.1).
+    pub fn body_region(&self, starts: &[[i32; 3]]) -> BTreeSet<[i32; 3]> {
+        self.body_reach_snapped(starts).standing()
+    }
+
+    /// [`World::body_region`] from roots seated in the AABB that declares each
+    /// ([`crate::compiler::nav::AnchorRoot`]).
+    pub fn body_region_rooted(
+        &self,
+        roots: &[crate::compiler::nav::AnchorRoot],
+    ) -> BTreeSet<[i32; 3]> {
+        self.body_reach_rooted(roots).standing()
+    }
+
     /// [`World::body_reach`] at `params`.
+    pub fn body_reach_at(&self, roots: &[[i32; 3]], params: &ReachParams) -> Reach {
+        static TRACE: OnceLock<bool> = OnceLock::new();
+        let on = *TRACE.get_or_init(|| std::env::var("DELVEC_REACH_TRACE").is_ok());
+        let t = std::time::Instant::now();
+        let r = self.body_reach_at_inner(roots, params);
+        if on {
+            eprintln!(
+                "TRACE reach {} roots -> {} states, {} sims, {:?}\n{}",
+                roots.len(),
+                r.states.len(),
+                r.simulated,
+                t.elapsed(),
+                std::backtrace::Backtrace::force_capture()
+                    .to_string()
+                    .lines()
+                    .filter(|l| l.contains("delvec::compiler") && !l.contains("nav::world::reach"))
+                    .take(3)
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            );
+        }
+        r
+    }
+
     ///
     /// The closure is taken in rounds. Each round first closes over the cheap
     /// edges — the cell relation of every standing and holding node, and every
@@ -1731,15 +2027,24 @@ impl World {
     /// add a state by any launch, so its launches are not flown; the closure is
     /// the one every node's launches would give. Rounds end when no node is
     /// left to fly.
-    pub fn body_reach_at(&self, roots: &[[i32; 3]], params: &ReachParams) -> Reach {
+    fn body_reach_at_inner(&self, roots: &[[i32; 3]], params: &ReachParams) -> Reach {
         let memo = self.graph_memo(params);
-        let mut reach = Reach::default();
         let start: Vec<[i32; 3]> = roots
             .iter()
             .copied()
             .filter(|r| self.rest_kind(*r).is_some())
             .collect();
-        self.close(&memo, params, &mut reach, start);
+        // A closure this graph already took is this one when every root lies
+        // in it and, over its own edges, the roots reach every root it was
+        // taken from: then each closure holds the other.
+        let done: Vec<Closure> = memo.closures.lock().expect("memo").clone();
+        for (from, c) in &done {
+            if start.iter().all(|r| c.states.contains_key(r)) && c.reaches_all(&start, from) {
+                return (**c).clone();
+            }
+        }
+        let mut reach = Reach::default();
+        self.close(&memo, params, &mut reach, start.clone());
         loop {
             let todo: Vec<([i32; 3], Quadrants)> = reach
                 .states
@@ -1754,6 +2059,9 @@ impl World {
                 break;
             }
             for chunk in todo.chunks(2048) {
+                if reach.simulated + reach.credited > params.budget {
+                    break;
+                }
                 let chunk: Vec<([i32; 3], Quadrants)> = chunk
                     .iter()
                     .filter_map(|(c, _)| {
@@ -1763,7 +2071,18 @@ impl World {
                     .collect();
                 self.fly_into(&memo, params, &mut reach, &chunk);
             }
+            // The budget is refused, never truncated (`DW1042`): a closure that
+            // passed it stops here and says so, and every proof that reads it
+            // refuses the build.
+            if reach.simulated + reach.credited > params.budget {
+                reach.over_budget = Some(params.budget);
+                return reach;
+            }
         }
+        memo.closures
+            .lock()
+            .expect("memo")
+            .push((start, Arc::new(reach.clone())));
         reach
     }
 
@@ -1818,6 +2137,9 @@ impl World {
             if e.leaves_world {
                 reach.leaves_world.insert(*c);
             }
+            if let Some(d) = e.dies {
+                reach.fatal.insert(*c, d);
+            }
             let have: BTreeSet<([i32; 3], EdgeKind)> = reach
                 .succ
                 .get(c)
@@ -1861,18 +2183,40 @@ impl World {
         frontier.dedup();
         let mut queued: BTreeSet<[i32; 3]> = frontier.iter().copied().collect();
         while !frontier.is_empty() {
-            let expanded: Vec<Arc<NodeEdges>> = crate::par::map(&frontier, |c| {
-                if let Some(e) = memo.nodes.lock().expect("memo").get(c) {
-                    return Arc::clone(e);
+            // The nodes the memo holds are read under one lock; the rest are
+            // expanded across the cores only when there are enough of them to
+            // pay for the threads.
+            let mut expanded: Vec<Option<Arc<NodeEdges>>> = {
+                let held = memo.nodes.lock().expect("memo");
+                frontier.iter().map(|c| held.get(c).cloned()).collect()
+            };
+            let missing: Vec<[i32; 3]> = frontier
+                .iter()
+                .zip(&expanded)
+                .filter(|(_, e)| e.is_none())
+                .map(|(c, _)| *c)
+                .collect();
+            if !missing.is_empty() {
+                let fresh: Vec<Arc<NodeEdges>> = if missing.len() >= 64 {
+                    crate::par::map(&missing, |c| Arc::new(self.expand(memo, params, *c, 0)))
+                } else {
+                    missing
+                        .iter()
+                        .map(|c| Arc::new(self.expand(memo, params, *c, 0)))
+                        .collect()
+                };
+                let mut held = memo.nodes.lock().expect("memo");
+                let mut fresh = missing.iter().zip(fresh);
+                for (c, slot) in frontier.iter().zip(expanded.iter_mut()) {
+                    if slot.is_none() {
+                        let (m, e) = fresh.next().expect("one per missing node");
+                        debug_assert_eq!(m, c);
+                        *slot = Some(Arc::clone(held.entry(*c).or_insert(e)));
+                    }
                 }
-                let e = Arc::new(self.expand(memo, params, *c, 0));
-                memo.nodes
-                    .lock()
-                    .expect("memo")
-                    .entry(*c)
-                    .or_insert_with(|| Arc::clone(&e))
-                    .clone()
-            });
+            }
+            let expanded: Vec<Arc<NodeEdges>> =
+                expanded.into_iter().map(|e| e.expect("expanded")).collect();
             let mut next: Vec<[i32; 3]> = Vec::new();
             for (c, e) in frontier.iter().zip(expanded) {
                 reach.simulated += e.simulated;
@@ -1973,6 +2317,40 @@ impl World {
     }
 }
 
+/// The cardinal axis a jump from `from` to `to` runs along: the larger of its
+/// two horizontal components, as a unit `[dx, dz]`.
+fn jump_axis(from: [i32; 3], to: [i32; 3]) -> [i32; 2] {
+    let (dx, dz) = (to[0] - from[0], to[2] - from[2]);
+    if dx.abs() >= dz.abs() {
+        [dx.signum(), 0]
+    } else {
+        [0, dz.signum()]
+    }
+}
+
+/// Whether the body's box at `st` lies over `cell`'s column at all.
+fn box_over_column(st: &State, body: &Attributes, cell: [i32; 3]) -> bool {
+    let bb = st.aabb(body);
+    bb.max[0] > f64::from(cell[0])
+        && bb.min[0] < f64::from(cell[0]) + 1.0
+        && bb.max[2] > f64::from(cell[2])
+        && bb.min[2] < f64::from(cell[2]) + 1.0
+}
+
+/// A declared jump's launch that misses (spec-0113 §5.2): its facing, the tick
+/// its jump was pressed on, where the body ended, and the rules it flew under.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct JumpMiss {
+    /// The facing, the game's degrees.
+    pub facing: f64,
+    /// The tick of the run the jump was pressed on.
+    pub press: usize,
+    /// Where the body's feet ended.
+    pub ended: [f64; 3],
+    /// The rules the launch flew under.
+    pub rules: Rules,
+}
+
 /// The closure of the reach graph from a set of roots.
 #[derive(Debug, Clone, Default)]
 pub struct Reach {
@@ -1986,6 +2364,9 @@ pub struct Reach {
     pub leaves_world: BTreeSet<[i32; 3]>,
     /// The states in the open sea.
     pub open_sea: BTreeSet<[i32; 3]>,
+    /// The flown states some launch from which dies of lava, of the fall or of
+    /// the void.
+    pub fatal: BTreeMap<[i32; 3], Death>,
     /// Launches flown over the real world, summed over the states expanded.
     pub simulated: u64,
     /// Template arcs credited, summed likewise.
@@ -1993,11 +2374,37 @@ pub struct Reach {
     /// The standing and holding states whose launches have been flown, with
     /// the [`Quadrants`] flown.
     flown: BTreeMap<[i32; 3], Quadrants>,
+    /// Set to the budget when the closure's work passed it (`DW1042`): the
+    /// closure is then partial, and no proof may take a verdict over it.
+    pub over_budget: Option<u64>,
     /// The reached states inside the window, as a bitmap over it.
     bits: Vec<u64>,
 }
 
 impl Reach {
+    /// Whether, over this closure's own edges, `from` reaches every one of
+    /// `targets`.
+    fn reaches_all(&self, from: &[[i32; 3]], targets: &[[i32; 3]]) -> bool {
+        let mut want: BTreeSet<[i32; 3]> = targets.iter().copied().collect();
+        let mut seen: BTreeSet<[i32; 3]> = from.iter().copied().collect();
+        let mut queue: Vec<[i32; 3]> = from.to_vec();
+        for f in from {
+            want.remove(f);
+        }
+        while let Some(c) = queue.pop() {
+            if want.is_empty() {
+                return true;
+            }
+            for n in self.next(c) {
+                if seen.insert(n) {
+                    want.remove(&n);
+                    queue.push(n);
+                }
+            }
+        }
+        want.is_empty()
+    }
+
     fn flown_mask(&self, c: [i32; 3]) -> Quadrants {
         self.flown.get(&c).copied().unwrap_or(0)
     }
@@ -2033,6 +2440,15 @@ impl Reach {
     /// The reached cells.
     pub fn cells(&self) -> BTreeSet<[i32; 3]> {
         self.states.keys().copied().collect()
+    }
+
+    /// The reached standing states.
+    pub fn standing(&self) -> BTreeSet<[i32; 3]> {
+        self.states
+            .iter()
+            .filter(|(_, k)| **k == RestKind::Standing)
+            .map(|(c, _)| *c)
+            .collect()
     }
 
     /// The successors of `c`, open-sea states joined to one another.

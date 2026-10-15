@@ -38,7 +38,7 @@ pub(super) fn prove_assemblies(
         let config = step.and_then(|s| crate::compiler::nav::world_while_next(plan, world, s));
         let ground = config.as_ref().unwrap_or(world);
         ground
-            .reachable_walkable(&roots)
+            .body_region(&roots)
             .into_iter()
             .filter(|p| !crate::compiler::nav::returned_from(returned, *p))
             .any(|p| crate::compiler::strand::eye_reaches_box(ground, p, lo, hi))

@@ -19,7 +19,7 @@
 //!   [`crate::schem::nav::ground_entry`] seeds — or `DW0952`;
 //! - **no pocket**: the leave relation `DW0921` floods
 //!   ([`crate::compiler::nav::World::trapped_places`], over
-//!   [`crate::compiler::nav::World::body_moves`]) is run over the piece alone
+//!   [`crate::compiler::nav::World::body_reach`]) is run over the piece alone
 //!   from every anchor, and a reachable place from which no walk, fall, jump or
 //!   swim gets back to the ground at the piece's edge refuses the sculpt —
 //!   `DW0952`.

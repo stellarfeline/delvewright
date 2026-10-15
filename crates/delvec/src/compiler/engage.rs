@@ -236,7 +236,7 @@ fn wet_footing_within_reach(
             best = Some((d, cell));
         }
     };
-    for cell in world.reachable_walkable(from) {
+    for cell in world.walk_region(from) {
         if stands_in_water(world, blocks, cell) {
             consider(cell);
         }

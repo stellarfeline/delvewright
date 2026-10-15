@@ -1866,7 +1866,7 @@ fn relight_region(
     };
     let starts = anchor_starts(plan);
     let reachable: BTreeSet<[i32; 3]> = nav
-        .reachable_walkable_rooted(&starts)
+        .body_region_rooted(&starts)
         .into_iter()
         .filter(|cell| crate::compiler::light::in_bounds(*cell, amin, amax))
         .collect();
@@ -2645,7 +2645,7 @@ mod tests {
     /// standing over its middle column.
     fn walk(a: &Assembled, at: [i32; 3]) -> (BTreeSet<[i32; 3]>, f64) {
         let w = crate::compiler::light::geometry_world(a);
-        (w.reachable_walkable(&[[0, 65, 0]]), w.feet_y(at))
+        (w.body_region(&[[0, 65, 0]]), w.feet_y(at))
     }
 
     /// **What a world edit writes is classified by the collision table** — the

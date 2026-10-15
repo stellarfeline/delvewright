@@ -38,6 +38,7 @@ mod cutscene;
 mod furniture;
 mod hazard;
 mod horizon;
+mod jump;
 mod lane;
 mod leave;
 mod lethal;
@@ -58,6 +59,7 @@ pub use cutscene::*;
 pub use furniture::*;
 pub use hazard::*;
 pub use horizon::*;
+pub use jump::*;
 pub use lane::*;
 pub use leave::*;
 pub use lethal::*;
@@ -443,8 +445,34 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
+    /// `DW1041`: **a declared jump is not makeable** (spec-0113 §5.2). A
+    /// `world.jumps[]` entry is flown as a body on cue makes it — every facing
+    /// within the window of the line between its two cells, the jump pressed on
+    /// either of the last supported ticks, from the straight run-up the course
+    /// gives — under the game's rules and the bot's, and one launch that misses
+    /// refuses it, naming the facing, the press tick, where the body ended, the
+    /// run-up measured and the run-up it needs. An anchor that names no place a
+    /// body stands, or a jump across a gap the walk relation already crosses
+    /// (`not a jump` in the binding line), is refused too: a declaration that
+    /// confirms nothing is the author's intent misread. Derived by simulation,
+    /// never by table.
+    pub const DW_JUMP_NOT_MAKEABLE: DwCode = DwCode::new("DW1041", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW1042`: **the reach graph's work passed its budget** (spec-0113 §5.3):
+    /// launches simulated plus template arcs credited, for one configuration,
+    /// past `metrics::REACH_BUDGET_STATES`. The graph is refused rather than
+    /// truncated: an untraversed graph is a vacuity, and a green over a partial
+    /// one is not a pass. A property of the ENGINE's cost, not of anything the
+    /// campaign wrote wrong.
+    pub const DW_REACH_BUDGET: DwCode = DwCode::new("DW1042", ExitTier::Build).about_the_engine();
+}
+
+delvewright_dsl::dw_code! {
     /// `DW0921`: **a place a body can get into and not out of.** From a cell of the
-    /// proven route, a body walking, falling and jumping ([`World::body_moves`]) can
+    /// proven route, a body walking, falling and jumping (the reach graph,
+    /// [`World::body_reach`]) can
     /// reach a cell from which no walk, fall or jump leads back to the route — a
     /// garden bed ringed by a hedge it jumped onto and dropped off, a pit it fell
     /// into. The player is soft-locked there: nothing but leaving the game gets

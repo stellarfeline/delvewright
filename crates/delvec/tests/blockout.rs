@@ -500,7 +500,7 @@ fn a_stair_down_through_a_punched_floor_is_a_whole_run() {
         !seeds.is_empty(),
         "the place above offers somewhere to start"
     );
-    let reached = world.reachable_walkable(&seeds);
+    let reached = world.walk_region(&seeds);
     let landed = (lo[2]..=hi[2])
         .flat_map(|z| (lo[0]..=hi[0]).map(move |x| [x, under.floor, z]))
         .any(|c| reached.contains(&cell(c)));
@@ -521,7 +521,7 @@ fn a_stair_down_through_a_punched_floor_is_a_whole_run() {
 /// The hole the derivation cuts therefore clears the headroom over every course
 /// of the run, not just the cells the plan allocated.
 ///
-/// Judged by the movement relation `DW0921` floods (`nav::World::body_moves`), from
+/// Judged by the movement relation `DW0921` floods (the reach graph, `nav::World::body_reach`), from
 /// every standable cell of the lower place's walk plane — never a second model
 /// of how a body climbs.
 ///
@@ -598,20 +598,8 @@ fn a_stair_down_through_a_punched_floor_can_be_climbed_back_out() {
         (0..3).all(|i| i64::from(c[i]) >= alo[i] && i64::from(c[i]) <= ahi[i])
             && i64::from(c[1]) == above.floor
     };
-    let mut seen: std::collections::BTreeSet<[i32; 3]> = floor.iter().copied().collect();
-    let mut queue: std::collections::VecDeque<[i32; 3]> = seen.iter().copied().collect();
-    let mut out = false;
-    while let Some(cur) = queue.pop_front() {
-        if in_above(cur) {
-            out = true;
-            break;
-        }
-        for n in world.body_moves(cur) {
-            if seen.insert(n) {
-                queue.push_back(n);
-            }
-        }
-    }
+    let seen = world.body_reach(&floor).cells();
+    let out = seen.iter().any(|c| in_above(*c));
     assert!(
         out,
         "no body on `node/undercroft`'s walk plane ({} standable cell(s)) can walk, \

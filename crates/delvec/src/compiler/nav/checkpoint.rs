@@ -248,7 +248,7 @@ fn earliest_reaching_config(
     fire_cells: &BTreeSet<[i32; 3]>,
 ) -> Option<usize> {
     configs.iter().find_map(|(w, first, cells)| {
-        let reached = w.as_ref().unwrap_or(world).reachable_walkable(cells);
+        let reached = w.as_ref().unwrap_or(world).walk_region(cells);
         reached
             .iter()
             .any(|c| fire_cells.contains(c))

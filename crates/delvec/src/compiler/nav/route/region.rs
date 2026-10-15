@@ -679,7 +679,7 @@ pub fn reachable_under_every_quest_state(
         } else {
             Some(world.with_region_state(&st))
         };
-        let r = w.as_ref().unwrap_or(world).reachable_walkable(&[seat]);
+        let r = w.as_ref().unwrap_or(world).walk_region(&[seat]);
         seen.push(st);
         acc = Some(match acc {
             None => r,
@@ -691,7 +691,7 @@ pub fn reachable_under_every_quest_state(
     // would silently make every proof over it vacuous.
     (
         seen.len().max(1),
-        acc.unwrap_or_else(|| world.reachable_walkable(&[seat])),
+        acc.unwrap_or_else(|| world.walk_region(&[seat])),
     )
 }
 

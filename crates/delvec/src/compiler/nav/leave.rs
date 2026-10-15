@@ -313,12 +313,15 @@ fn verify_bodies_can_leave(
                 described,
                 link_exits,
                 rb,
+                judged.reach.over_budget,
             )
         })
         .collect();
     let mut pockets: Vec<String> = Vec::new();
     let mut pocket_count = 0usize;
-    for (route_cells, reached, afloat, trapped, described, link_exits, rb) in judged {
+    let mut over_budget: Option<u64> = None;
+    for (route_cells, reached, afloat, trapped, described, link_exits, rb, over) in judged {
+        over_budget = over_budget.or(over);
         binding.reach.configurations += rb.configurations;
         for i in 0..4 {
             binding.reach.states[i] += rb.states[i];
@@ -341,6 +344,12 @@ fn verify_bodies_can_leave(
                 pockets.push(pocket);
             }
         }
+    }
+    // `DW1042`: a configuration whose graph passed its budget is partial, and
+    // no verdict is taken over it.
+    if let Some(budget) = over_budget {
+        let failure = reach_budget_failure(&binding.reach, budget);
+        return (binding, Err(failure));
     }
     if pockets.is_empty() {
         return (binding, Ok(()));
@@ -598,11 +607,28 @@ impl World {
     }
 }
 
+/// `DW1042`'s refusal (spec-0113 §5.3): the configuration count, the work, the
+/// ceiling.
+pub fn reach_budget_failure(reach: &ReachBinding, budget: u64) -> Failure {
+    Failure {
+        code: DW_REACH_BUDGET,
+        message: format!(
+            "the reach graph's work passed its budget: {} launch state(s) simulated and {} \
+             template arc(s) credited over {} configuration(s), past the ceiling of {budget} \
+             (`metrics::REACH_BUDGET_STATES`). The graph is refused rather than truncated — a \
+             proof over a partial graph proves nothing — and the ceiling is the engine's, so \
+             this build is one the engine cannot yet afford; it is not something the campaign \
+             wrote wrong",
+            reach.simulated, reach.credited, reach.configurations,
+        ),
+    }
+}
+
 /// `DW0921` and the body-movement relation it floods ([`World::body_moves`]).
 #[cfg(test)]
 mod leave_tests {
     use super::*;
-    use delvewright_dsl::metrics::{jump_max_gap, unarmoured_survivable_fall_blocks};
+    use delvewright_dsl::metrics::unarmoured_survivable_fall_blocks;
 
     /// A flat yard, feet at y=1 over a stone floor at y=0, `w` × `d` cells.
     fn yard(w: i32, d: i32) -> BTreeSet<[i32; 3]> {
@@ -651,7 +677,7 @@ mod leave_tests {
         let w = hedged_bed(false);
         // Only a jump reaches the hedge's top: a gap of one column (z=3) at a
         // rise of one, off the boulder. The walk step never does.
-        assert!(w.body_moves([6, 2, 2]).contains(&[6, 3, 4]));
+        assert!(w.body_edge_cells([6, 2, 2]).contains(&[6, 3, 4]));
         assert!(!w.neighbors([6, 2, 2]).contains(&[6, 3, 4]));
         let (binding, verdict) = judge(&w, &[[1, 1, 1]]);
         let err = verdict.expect_err("the bed is a trap");
@@ -792,7 +818,7 @@ mod leave_tests {
         );
         let laddered = pit(true);
         assert!(
-            laddered.body_moves([2, 1, 3]).contains(&[3, 0, 3]),
+            laddered.body_edge_cells([2, 1, 3]).contains(&[3, 0, 3]),
             "caught at the top rung"
         );
         let (b, verdict) = judge(&laddered, &[[1, 1, 1]]);
@@ -818,41 +844,48 @@ mod leave_tests {
             material: Default::default(),
         };
         let w = World::from_occupancy(occ, Premises::geometry_only());
-        assert!(!w.body_moves([2, 1, 3]).contains(&[3, 0, 3]));
+        assert!(!w.body_edge_cells([2, 1, 3]).contains(&[3, 0, 3]));
         assert!(!w.is_water_surface([3, 0, 3]));
     }
 
-    /// `fatal_step_off` (spec-0085 §6.2): a lava pool let into the floor beside a
-    /// standing cell is a step into lava; level floor is not a step at all.
+    /// A launch into lava is fatal (spec-0085 §6.2, over the reach graph): a
+    /// pool let into a yard's floor kills a body that jumps or steps into it
+    /// from beside it, and a cell six columns from it and from the yard's rim
+    /// has no fatal launch at all.
     #[test]
-    fn a_step_into_a_lava_pool_is_fatal_and_level_floor_is_not() {
-        let mut solid = yard(6, 6);
-        solid.remove(&[3, 0, 3]);
-        solid.insert([3, -1, 3]);
+    fn a_launch_into_a_lava_pool_is_fatal_and_one_from_far_off_is_not() {
+        let mut solid = yard(24, 24);
+        solid.remove(&[12, 0, 12]);
+        solid.insert([12, -1, 12]);
         let occ = crate::compiler::assembled::Occupancy {
             solid,
             tall: BTreeSet::new(),
             use_gates: BTreeSet::new(),
-            flooded: [[3, 0, 3]].into_iter().collect(),
+            flooded: [[12, 0, 12]].into_iter().collect(),
             partial: BTreeMap::new(),
             waterloggable: BTreeSet::new(),
-            lava: [[3, 0, 3]].into_iter().collect(),
+            lava: [[12, 0, 12]].into_iter().collect(),
             climb: Default::default(),
             unheld_climb: Default::default(),
             material: Default::default(),
         };
         let w = World::from_occupancy(occ, Premises::geometry_only());
-        assert_eq!(w.fatal_step_off([2, 1, 3]), Some(([3, 1, 3], true)));
-        assert_eq!(w.fatal_step_off([1, 1, 1]), None, "level floor all round");
+        assert_eq!(w.fatal_launch([11, 1, 12]), Some(Death::Lava));
+        assert_eq!(
+            w.fatal_launch([6, 1, 6]),
+            None,
+            "far from the pool and the rim"
+        );
     }
 
-    /// `fatal_step_off`: a drop deeper than an unarmoured body survives is
-    /// fatal; one inside it is a landing.
+    /// A drop deeper than an unarmoured body survives is fatal; one a jump off
+    /// it survives too is not.
     #[test]
     fn a_drop_past_the_survivable_fall_is_fatal_and_one_inside_it_is_not() {
         let deepest = unarmoured_survivable_fall_blocks() as i32;
         let ledge_over = |depth: i32| {
-            // A one-cell ledge walled on three sides, open to the east.
+            // A one-cell ledge walled on three sides, open to the east, over
+            // ground `depth` down that catches every arc off it.
             let mut solid = BTreeSet::new();
             solid.insert([0, 0, 0]);
             for wall in [[-1, 0], [0, -1], [0, 1]] {
@@ -860,15 +893,19 @@ mod leave_tests {
                     solid.insert([wall[0], y, wall[1]]);
                 }
             }
-            solid.insert([1, -depth, 0]);
+            for x in 1..=24 {
+                for z in -12..=12 {
+                    solid.insert([x, -depth, z]);
+                }
+            }
             World::from_solid_cells(solid)
         };
-        // Feet at y=1; a landing whose top is at y=1-depth puts the feet at
-        // 1-depth+1, a fall of `depth` blocks.
-        assert_eq!(ledge_over(deepest).fatal_step_off([0, 1, 0]), None);
+        // Feet at y=1; a landing whose top is at y=1-depth is a fall of
+        // `depth` blocks, and a jump off adds its rise to it.
+        assert_eq!(ledge_over(deepest - 2).fatal_launch([0, 1, 0]), None);
         assert_eq!(
-            ledge_over(deepest + 1).fatal_step_off([0, 1, 0]),
-            Some(([1, 1, 0], false))
+            ledge_over(deepest + 1).fatal_launch([0, 1, 0]),
+            Some(Death::Fall)
         );
     }
 
@@ -891,7 +928,7 @@ mod leave_tests {
     }
 
     #[test]
-    fn the_jump_reaches_as_far_as_the_measured_envelope_and_no_further() {
+    fn the_jump_reaches_as_far_as_the_simulated_envelope_and_no_further() {
         // Two platforms at feet y=1, a gap of `g` air columns between them.
         let platforms = |g: i32| {
             let mut solid = BTreeSet::new();
@@ -903,15 +940,17 @@ mod leave_tests {
             }
             World::from_solid_cells(solid)
         };
-        let flat = jump_max_gap(0).expect("a flat jump") as i32;
+        // The record's sprint jump clears four columns of air on the flat
+        // (`docs/reference/body-movement.md` §5); five it does not.
+        let flat = 4;
         assert!(
             platforms(flat)
-                .body_moves([2, 1, 0])
+                .body_edge_cells([2, 1, 0])
                 .contains(&[3 + flat, 1, 0])
         );
         assert!(
             !platforms(flat + 1)
-                .body_moves([2, 1, 0])
+                .body_edge_cells([2, 1, 0])
                 .contains(&[4 + flat, 1, 0])
         );
     }

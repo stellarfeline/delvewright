@@ -911,7 +911,7 @@ fn the_population_is_the_lethality_free_one_in_the_live_configuration() {
         plan.lethal_volumes[0].region.1,
     );
     let caught = |w: &delvec::compiler::nav::World| {
-        w.reachable_walkable(&roots)
+        w.walk_region(&roots)
             .into_iter()
             .filter(|c| (0..3).all(|i| klo[i] <= c[i] && c[i] <= khi[i]))
             .count()

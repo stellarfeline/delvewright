@@ -76,7 +76,31 @@ pub mod body;
 /// plus template arcs credited, per build, past which the graph is refused
 /// (`DW1042`) rather than truncated. Authored from the measurements of
 /// spec-0113 §7, with headroom; stated with them in the commit that sets it.
-pub const REACH_BUDGET_STATES: u64 = 4_000_000_000;
+pub const REACH_BUDGET_STATES: u64 = 200_000_000;
+
+/// **A declared jump's facing window** (spec-0113 §4.4, `authored`): every
+/// launch facing within this many degrees of the straight line between the two
+/// anchors' cells must land.
+pub const DECLARED_JUMP_FACING_DEG: f64 = 5.0;
+
+/// **A declared jump's input** (spec-0113 §4.4, `authored`): the move vector's
+/// magnitude a body on cue holds — the forward key alone, `0.98` (the diagonal's
+/// `1.0` is the reach graph's most favourable, never a declared jump's).
+pub const DECLARED_JUMP_INPUT: f64 = 0.98;
+
+/// **A declared jump's press window** (spec-0113 §4.4, `authored`): the jump
+/// lands pressed on any of this many last supported ticks before the edge — a
+/// timing read, never a coin flip (spec-0016 §4's standard for a timed gate).
+pub const DECLARED_JUMP_PRESS_TICKS: u32 = 2;
+
+/// **A declared jump's landing margin** (spec-0113 §4.4, `authored`): the
+/// exact box over the landing support by at least this much on both axes.
+pub const DECLARED_JUMP_OVERLAP: f64 = 0.1;
+
+/// **How much straight run-up a declared jump is measured with** (spec-0113
+/// §4.4, `authored`): the walkable cells behind the launch cell along the jump's
+/// axis, counted up to this many.
+pub const DECLARED_JUMP_RUN_UP_CAP: u32 = 6;
 
 use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
 
@@ -218,91 +242,6 @@ pub fn step_allowed(rise_16: i64, head_clear: impl FnOnce() -> bool) -> bool {
     }
 }
 
-/// **How far a body can jump**, per rise: for each whole-block rise from `+1`
-/// down to the deepest survivable fall, the widest gap of air columns a body
-/// crosses along one cardinal axis and lands, by any control it has — walking
-/// or sprinting, the jump pressed on any tick — from a runway no longer than
-/// its own launch cell.
-///
-/// Measured, not derived: `tools/spike-jump-arc/simulate.mjs` drives the
-/// pinned game's movement code (prismarine-physics, the stack the harness bot
-/// and the live jump spike both run) over the live spike's rig with the runway
-/// as a variable, takes the minimum over runways of 1, 2, 3, 4, 6 and 10
-/// cells, and its `--check` mode reproduces every landed/missed verdict of the
-/// live spike (`docs/notes/jump-arc-model.md` §2, 14 of 14). The live spike's
-/// narrower figures (sprint 3 flat, 2 at `+1`) are what a bot does **on cue**
-/// with its jump pressed before the edge; these are what a body **can** do with
-/// the jump pressed on the last supported tick, which is the question "can a
-/// player get in there" asks.
-///
-/// Monotone: a deeper landing never admits a narrower gap.
-pub const JUMP_REACH: [(i64, u32); 24] = [
-    (1, 3),
-    (0, 4),
-    (-1, 4),
-    (-2, 4),
-    (-3, 5),
-    (-4, 5),
-    (-5, 6),
-    (-6, 6),
-    (-7, 6),
-    (-8, 6),
-    (-9, 7),
-    (-10, 7),
-    (-11, 7),
-    (-12, 7),
-    (-13, 7),
-    (-14, 8),
-    (-15, 8),
-    (-16, 8),
-    (-17, 8),
-    (-18, 9),
-    (-19, 9),
-    (-20, 9),
-    (-21, 9),
-    (-22, 9),
-];
-
-/// **How high a body afloat climbs out**, in whole cells above the top water
-/// cell it floats in: a ledge whose standing cell is at most this far above that
-/// cell is one a swimmer pressing into it gets onto; one higher is a wall.
-///
-/// Measured with the same instrument as [`JUMP_REACH`]:
-/// `tools/spike-jump-arc/simulate.mjs --water` floats a body in a three-deep
-/// pool of source water beside a ledge and holds forward and jump, walking and
-/// sprinting. A ledge standing one cell over the top water cell (its top block
-/// flush with the water's) is climbed; two cells over is not. What lifts the
-/// body is the water branch of the player's travel: pressed into a wall with
-/// room 0.6 above, it gets a 0.3 upward impulse (`outOfLiquidImpulse` in the
-/// harness's physics). It is the same relationship an `ocean` world's walk
-/// plane keeps with its sea, one block above it.
-pub const WATER_CLIMB_OUT_RISE: i32 = 1;
-
-/// The widest gap [`JUMP_REACH`] admits for a rise measured in sixteenths, or
-/// `None` when no jump makes it: past [`MAX_JUMP_RISE_16`] upward, or deeper than
-/// [`unarmoured_survivable_fall_blocks`] downward (a body that lands there is
-/// dead, and a dead body is not standing anywhere).
-///
-/// A rise between two table rows reads the **shallower** row — a positive
-/// partial rise reads `+1`, a drop of 1.5 reads `-1` — which admits the smaller
-/// gap, so a partial block can only ever narrow what this says a body reaches.
-#[must_use]
-pub fn jump_max_gap(rise_16: i64) -> Option<u32> {
-    if rise_16 > MAX_JUMP_RISE_16 {
-        return None;
-    }
-    if rise_16 < -(unarmoured_survivable_fall_blocks() as i64) * FULL_16 {
-        return None;
-    }
-    // Round toward zero rise: +0.25 reads +1, -1.5 reads -1.
-    let row = if rise_16 > 0 {
-        1
-    } else {
-        -((-rise_16) / FULL_16)
-    };
-    JUMP_REACH.iter().find(|(r, _)| *r == row).map(|(_, g)| *g)
-}
-
 /// **Does the selector volume of the inclusive block box `lo..=hi` reach a body
 /// standing anywhere in `cell`?**
 ///
@@ -403,9 +342,10 @@ pub const POLL_HORIZONTAL_BLOCKS_PER_TICK: f64 = 0.5878;
 /// drops and a three-cell slab 10 of 10.
 pub const POLL_FALL_BLOCKS_PER_TICK: f64 = 3.92;
 
-/// The fall distance in blocks below which vanilla deals no fall damage: damage
-/// is `ceil(distance − 3)` points, so a 3-block fall is free and a 4-block fall
-/// costs one.
+/// The fall distance in blocks below which vanilla deals no fall damage
+/// (`safe_fall_distance`): damage is `floor(distance + 1e-6 − 3)` points
+/// (`LivingEntity.calculateFallDamage`), so a 3.5-block fall is free and a
+/// 4-block fall costs one.
 pub const FALL_DAMAGE_ONSET_BLOCKS: f64 = 3.0;
 
 /// The vertical speed a body on a climbable is **given**, in blocks per tick,
@@ -482,8 +422,8 @@ pub fn walk_ticks_per_block() -> f64 {
 
 /// The largest fall an unarmoured player at full health survives, in blocks.
 ///
-/// `ceil(d − 3) < 20` holds up to `d = 22`, which lands on one half-heart; 23
-/// blocks deals 20 and kills. Derived from [`FALL_DAMAGE_ONSET_BLOCKS`] and
+/// `floor(d + 1e-6 − 3) < 20` holds up to `d = 22`, which lands on one
+/// half-heart; 23 blocks deals 20 and kills. Derived from [`FALL_DAMAGE_ONSET_BLOCKS`] and
 /// [`PLAYER_MAX_HEALTH`] so that moving either moves this, and it exists so the
 /// fall a designed drop may take has a physical ceiling (`DW0831`).
 #[must_use]
@@ -1893,27 +1833,5 @@ mod tests {
         assert_eq!(unarmoured_survivable_fall_blocks(), 22.0);
         assert_eq!(passable_width_cells(), 1);
         assert_eq!(passable_clearance_cells(), 2);
-    }
-
-    #[test]
-    fn the_jump_reach_runs_from_the_apex_to_the_deepest_survivable_fall_and_never_narrows() {
-        assert_eq!(JUMP_REACH.first().map(|r| r.0), Some(1));
-        assert_eq!(
-            JUMP_REACH.last().map(|r| r.0),
-            Some(-(unarmoured_survivable_fall_blocks() as i64))
-        );
-        for w in JUMP_REACH.windows(2) {
-            assert_eq!(w[1].0, w[0].0 - 1, "one row per whole block of rise");
-            assert!(
-                w[1].1 >= w[0].1,
-                "a deeper landing never admits a narrower gap: {w:?}"
-            );
-        }
-        assert_eq!(jump_max_gap(MAX_JUMP_RISE_16), Some(3));
-        assert_eq!(jump_max_gap(MAX_JUMP_RISE_16 + 1), None);
-        assert_eq!(jump_max_gap(0), Some(4));
-        assert_eq!(jump_max_gap(-24), Some(4), "a drop of 1.5 reads the -1 row");
-        assert_eq!(jump_max_gap(-22 * FULL_16), Some(9));
-        assert_eq!(jump_max_gap(-22 * FULL_16 - 1), None);
     }
 }

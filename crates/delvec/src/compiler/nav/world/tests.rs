@@ -50,6 +50,7 @@ fn floored_with_furniture(
             clocked_gates: BTreeSet::new(),
             objective_cells: Vec::new(),
             unbounded_fall: false,
+            declared_jumps: Vec::new(),
         },
     )
 }
@@ -183,7 +184,7 @@ fn a_ceiling_anchor_seats_in_its_room_not_on_the_roof() {
     // The defect: the nearest standable cell by squared distance is the roof
     // (Δy 2) rather than the room's own floor (Δy 3) — a solid ceiling in
     // between counts for nothing.
-    let loose = world.reachable_walkable(&[ceiling_anchor]);
+    let loose = world.walk_region(&[ceiling_anchor]);
     assert!(
         loose.contains(&roof),
         "unconfined snap climbs onto the roof"
@@ -194,7 +195,7 @@ fn a_ceiling_anchor_seats_in_its_room_not_on_the_roof() {
     );
 
     // The fix: the piece AABB (y 63..=68) excludes the roof cell entirely.
-    let seated = world.reachable_walkable_rooted(&[AnchorRoot {
+    let seated = world.walk_region_rooted(&[AnchorRoot {
         at: ceiling_anchor,
         within: ([0, 63, 0], [6, 68, 6]),
     }]);

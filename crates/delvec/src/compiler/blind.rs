@@ -22,12 +22,13 @@
 //!   effect that forbids the sprint and sprinting for one that does not
 //!   ([`delvewright_dsl::perception::reach_moves`]);
 //! * the **blind reach** `R`: every cell a body gets to from `S` in at most `n`
-//!   moves of [`World::body_moves`] — walk, survivable fall, jump — over the
-//!   world with its exclusions lifted ([`World::without_exclusions`], the
-//!   counterfactual `DW0891`'s population is measured over);
+//!   edges of the reach graph ([`World::body_reach`], spec-0113) — walking,
+//!   sprinting, falling, jumping at any facing — over the world with its
+//!   exclusions lifted ([`World::without_exclusions`], the counterfactual
+//!   `DW0891`'s population is measured over);
 //! * **caught**: a cell of `R` inside a killing volume's keep-out, or a standing
-//!   cell of `R` beside which a body steps off into a fall it does not survive
-//!   ([`World::fatal_step_off`]).
+//!   cell of `R` from which some launch of the graph dies of lava or of a fall
+//!   it does not survive (`Reach::fatal`).
 //!
 //! The remedy moves the blinding or the volume, never a cell of the walk.
 //!
@@ -37,7 +38,7 @@
 //! potion; momentum a sprint carried into the blinding. The demo level is where
 //! those are looked at.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::{DwCode, ExitTier, QuestEffect, Verb};
 use delvewright_dsl::{Objective, TrapTrigger, TriggerOn};
@@ -429,23 +430,35 @@ fn standing_set(
     }
 }
 
-/// Every cell a body gets to from `from` in at most `moves` body moves, with its
-/// depth.
-fn flood(open: &World, from: &BTreeSet<[i32; 3]>, moves: usize) -> BTreeMap<[i32; 3], usize> {
+/// Every cell a body gets to from `from` in at most `moves` edges of the reach
+/// graph, with its depth. Every cell the flood stands on is flown whole first,
+/// so the depth is taken over all of its edges.
+fn flood(
+    open: &World,
+    reach: &mut crate::compiler::nav::Reach,
+    from: &BTreeSet<[i32; 3]>,
+    moves: usize,
+) -> BTreeMap<[i32; 3], usize> {
     let mut seen: BTreeMap<[i32; 3], usize> = from.iter().map(|&c| (c, 0)).collect();
-    let mut queue: VecDeque<[i32; 3]> = from.iter().copied().collect();
-    while let Some(c) = queue.pop_front() {
-        let d = seen[&c];
-        if d >= moves {
-            continue;
-        }
-        for n in open.body_moves(c) {
-            if let std::collections::btree_map::Entry::Vacant(v) = seen.entry(n) {
-                v.insert(d + 1);
-                queue.push_back(n);
+    let mut layer: Vec<[i32; 3]> = from.iter().copied().collect();
+    for d in 0..moves {
+        open.fly_cells(reach, &layer);
+        let mut next: Vec<[i32; 3]> = Vec::new();
+        for c in &layer {
+            for n in reach.next(*c).collect::<Vec<_>>() {
+                if let std::collections::btree_map::Entry::Vacant(v) = seen.entry(n) {
+                    v.insert(d + 1);
+                    next.push(n);
+                }
             }
         }
+        if next.is_empty() {
+            break;
+        }
+        next.sort_unstable();
+        layer = next;
     }
+    open.fly_cells(reach, &layer);
     seen
 }
 
@@ -480,7 +493,8 @@ pub fn judge(
     if found.is_empty() {
         return (binding, Ok(()));
     }
-    let population = open.reachable_walkable(&crate::compiler::lethal::put_at_roots(plan, entry));
+    let mut graph = open.body_reach_snapped(&crate::compiler::lethal::put_at_roots(plan, entry));
+    let population = graph.standing();
     let body = delvewright_dsl::metrics::Body::PLAYER;
     let keep_outs: Vec<(&str, Box3)> = plan
         .lethal_volumes
@@ -513,10 +527,12 @@ pub fn judge(
         // fires, so it is not widened.
         if f.delay_ticks > 0 && f.eff.within.is_none() {
             let pre = delvewright_dsl::perception::reach_moves(f.delay_ticks.div_ceil(20), false);
-            standing = flood(open, &standing, pre).into_keys().collect();
+            standing = flood(open, &mut graph, &standing, pre)
+                .into_keys()
+                .collect();
         }
         let n = delvewright_dsl::perception::reach_moves(seconds, forbids_sprint);
-        let reach = flood(open, &standing, n);
+        let reach = flood(open, &mut graph, &standing, n);
         let mut caught: Vec<[i32; 3]> = Vec::new();
         let mut caught_by: Option<String> = None;
         for &c in reach.keys() {
@@ -535,17 +551,19 @@ pub fn judge(
                 });
                 continue;
             }
-            if open.is_standable(c)
-                && let Some((side, lava)) = open.fatal_step_off(c)
-            {
+            if let Some(death) = graph.fatal.get(&c) {
                 caught.push(c);
                 caught_by.get_or_insert_with(|| {
-                    if lava {
-                        format!("beside {c:?} a body steps into lava at {side:?}")
+                    if *death == crate::compiler::nav::Death::Lava {
+                        format!("from {c:?} a body that walks, runs or jumps off goes into lava")
+                    } else if *death == crate::compiler::nav::Death::Void {
+                        format!(
+                            "from {c:?} a body that walks, runs or jumps off falls out of the world"
+                        )
                     } else {
                         format!(
-                            "beside {c:?} a body steps off into column {side:?}, which arrests \
-                             no fall within the {} block(s) an unarmoured body survives",
+                            "from {c:?} a body that walks, runs or jumps off falls further than \
+                             the {} block(s) an unarmoured body survives",
                             delvewright_dsl::metrics::unarmoured_survivable_fall_blocks()
                         )
                     }

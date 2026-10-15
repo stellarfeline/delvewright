@@ -28,7 +28,7 @@
 //! Directionality, proved the family's way: graph connectivity over standable
 //! cells, not block placement — but a *player's* movement is not an NPC's, so
 //! the connectivity model has to be honest about that. `crate::grammar::nav`'s NPC
-//! pathing (`reachable_walkable`) never risks more than a one-block drop, which
+//! pathing (`walk_region`) never risks more than a one-block drop, which
 //! is right for an escorted NPC and wrong for a player who can walk off a
 //! ledge. `tests/staging.rs`'s `reachable_with_fall` models the player: the
 //! ordinary ±1-step edges `cliff_path` and `ambush_door` already use, plus a

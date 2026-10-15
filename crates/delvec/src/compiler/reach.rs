@@ -386,7 +386,7 @@ pub fn sites(plan: &Plan) -> Vec<ReachSite> {
 /// about; the empty set is what says so, and every binding line prints its size.
 pub fn standing_population(world: &World, entry: Option<[i32; 3]>) -> BTreeSet<[i32; 3]> {
     match entry {
-        Some(e) => world.reachable_walkable(&[e]),
+        Some(e) => world.body_region(&[e]),
         None => BTreeSet::new(),
     }
 }
@@ -833,7 +833,7 @@ pub fn check_reach_footprint(
     // and from every link's `to` — so an anchor in an area only a carry reaches
     // is judged too.
     let standing = match entry {
-        Some(_) => world.reachable_walkable(&crate::compiler::lethal::stands_at_roots(plan, entry)),
+        Some(_) => world.body_region(&crate::compiler::lethal::stands_at_roots(plan, entry)),
         None => BTreeSet::new(),
     };
     let mut binding = ReachFootprintBinding {

@@ -1252,7 +1252,7 @@ pub fn relight_with(
     // The base assembled geometry (nav) and required-path cells fixtures must avoid.
     //
     // **Geometry alone, and the decline is this pass's own** ([`nav::Premises`]).
-    // The darkness survey below floods `reachable_walkable` from an area's
+    // The darkness survey below floods `body_region` from an area's
     // anchors and asks what a player can SEE; the campaign's premises are about
     // what a player can survive, and applying them here would shrink the survey
     // rather than sharpen it. A declared lethal volume is the concrete case: it
@@ -1295,8 +1295,10 @@ pub fn relight_with(
                 }
             })
             .collect();
+        // Every cell a body can stand in — a ledge a body jumps to is a cell
+        // that must be lit (spec-0113 §5.1).
         let reachable: BTreeSet<[i32; 3]> = nav
-            .reachable_walkable(&starts)
+            .body_region(&starts)
             .into_iter()
             .filter(|cell| in_bounds(*cell, amin, amax))
             .collect();
@@ -2243,7 +2245,7 @@ mod tests {
         let nav = nav_of(map);
         let (min, max) = bounds(map);
         let center = [(min[0] + max[0]) / 2, min[1] + 1, (min[2] + max[2]) / 2];
-        nav.reachable_walkable(&[center])
+        nav.body_region(&[center])
     }
 
     fn bounds(map: &BTreeMap<[i32; 3], String>) -> ([i32; 3], [i32; 3]) {
@@ -2272,7 +2274,7 @@ mod tests {
 
     /// [`reachable_of`] over the real collision classifier, seeded at `start`.
     fn reachable_occ_of(map: &BTreeMap<[i32; 3], String>, start: [i32; 3]) -> BTreeSet<[i32; 3]> {
-        nav_occ_of(map).reachable_walkable(&[start])
+        nav_occ_of(map).body_region(&[start])
     }
 
     /// The `DW0210` diagnostic one undeclared area's survey produces, or `None`.
@@ -3586,8 +3588,8 @@ mod tests {
         let nav = nav_of(&map);
         let model = LightModel::from_blocks(map.clone());
 
-        let big_cells = nav.reachable_walkable(&[[5, 1, 5]]);
-        let small_cells = nav.reachable_walkable(&[[43, 1, 3]]);
+        let big_cells = nav.body_region(&[[5, 1, 5]]);
+        let small_cells = nav.body_region(&[[43, 1, 3]]);
         assert!(
             big_cells.len() > small_cells.len() && !small_cells.is_empty(),
             "fixture: two enclosed rooms of different sizes, got {} and {}",
@@ -3650,7 +3652,7 @@ mod tests {
         let map = corridor(31, &[[15, 3, 1]]);
         let nav = nav_of(&map);
         let model = LightModel::from_blocks(map.clone());
-        let reachable = nav.reachable_walkable(&[[15, 1, 1]]);
+        let reachable = nav.body_region(&[[15, 1, 1]]);
         let s = survey_undeclared(&model, &reachable, 0, false);
 
         let regions = s.regions(&nav);
@@ -3710,7 +3712,7 @@ mod tests {
         let map = corridor(15, &[[0, 1, 1]]);
         let nav = nav_of(&map);
         let model = LightModel::from_blocks(map.clone());
-        let reachable = nav.reachable_walkable(&[[7, 1, 1]]);
+        let reachable = nav.body_region(&[[7, 1, 1]]);
         let s = survey_undeclared(&model, &reachable, 0, false);
         assert_eq!(
             s.dark.len(),
@@ -3758,7 +3760,7 @@ mod tests {
         map.insert([4, 3, 4], "minecraft:glowstone".to_string());
         let nav = nav_of(&map);
         let model = LightModel::from_blocks(map.clone());
-        let reachable = nav.reachable_walkable(&[[4, 1, 4]]);
+        let reachable = nav.body_region(&[[4, 1, 4]]);
         let s = survey_undeclared(&model, &reachable, 0, false);
         assert!(!reachable.is_empty(), "fixture: the room is walkable");
         assert!(s.dark.is_empty(), "fixture: the room is lit");
@@ -3785,7 +3787,7 @@ mod tests {
         let map = corridor(108, &lamps);
         let nav = nav_of(&map);
         let model = LightModel::from_blocks(map.clone());
-        let reachable = nav.reachable_walkable(&[[15, 1, 1]]);
+        let reachable = nav.body_region(&[[15, 1, 1]]);
         let s = survey_undeclared(&model, &reachable, 0, false);
         let regions = s.regions(&nav);
         assert!(
@@ -3833,7 +3835,7 @@ mod tests {
         let model = LightModel::from_blocks(map.clone());
         let mut areas = BTreeMap::new();
         for i in 0..n {
-            let cells = nav.reachable_walkable(&[[20 * i as i32 + 2, 1, 2]]);
+            let cells = nav.body_region(&[[20 * i as i32 + 2, 1, 2]]);
             assert!(!cells.is_empty(), "fixture: room {i} must be walkable");
             areas.insert(
                 whole(&format!("area/cell-{i:02}")),
@@ -3876,7 +3878,7 @@ mod tests {
         let map = corridor(31, &[[15, 3, 1]]);
         let nav = nav_of(&map);
         let model = LightModel::from_blocks(map.clone());
-        let reachable = nav.reachable_walkable(&[[15, 1, 1]]);
+        let reachable = nav.body_region(&[[15, 1, 1]]);
         let build = || {
             let s = survey_undeclared(&model, &reachable, 0, false);
             (
@@ -3936,7 +3938,7 @@ mod tests {
                 geometry_world(&assembled),
                 crate::compiler::nav::Premises::geometry_only(),
             )
-            .reachable_walkable(&[[0, 65, 0]])
+            .body_region(&[[0, 65, 0]])
         };
         let open = walk_with(&[]);
         assert!(

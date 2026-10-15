@@ -2048,7 +2048,7 @@ Gates:
    **fall** edge: stepping off a standable cell into an adjacent column with
    nothing underfoot, landing on the first solid floor below however far that
    is. Deliberately more permissive than `crate::nav`'s NPC pathing
-   (`reachable_walkable`, ±1 only) — a player can walk off a ledge, an escorted
+   (`walk_region`, ±1 only) — a player can walk off a ledge, an escorted
    NPC never has to.
 2. **`anchor/landing` does *not* reach `anchor/spill`**, under the *plain* ±1
    step walk (no fall edge helps a climb). Proving the negative under gate 1's

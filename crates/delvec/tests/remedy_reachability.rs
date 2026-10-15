@@ -1973,7 +1973,7 @@ fn dw0881_moving_the_anchor_answers_where_no_radius_can() {
         "and a shelf two courses under it"
     );
     assert!(
-        world.reachable_walkable(&[entry]).contains(&shelf),
+        world.walk_region(&[entry]).contains(&shelf),
         "which the party really can walk to — an offender nobody can stand on is \
          outside this rule, and the row would prove nothing"
     );

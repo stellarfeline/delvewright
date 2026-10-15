@@ -199,6 +199,11 @@ prefixed_id!(
     /// affordance, its dialog, its `/trigger` routing value and its l10n keys.
     ShopId, "shop");
 prefixed_id!(
+    /// Declared-jump id: `jump/<kebab>` (world `jumps[]`, DSL v0.50, spec-0113
+    /// §6). One jump a creator declares makeable between two anchors, which the
+    /// engine proves (`DW1041`) and the route takes as a leg move.
+    JumpId, "jump");
+prefixed_id!(
     /// Recovery-stake id: `stake/<kebab>` (stage-5 `stakes` section, DSL v0.10,
     /// spec-0032). Unique within the stage-5 stake namespace; it names the
     /// per-player ledger objectives, the marker hardware's tag and the l10n key of

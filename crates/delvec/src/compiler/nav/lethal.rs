@@ -48,8 +48,9 @@ impl World {
 
     /// **Can a body moving from `roots` get its hitbox into any of `volumes`?**
     ///
-    /// Floods the body's own movement — [`World::mob_moves`] when `mob`,
-    /// [`World::body_moves`] otherwise — from `roots`, and asks of every place it
+    /// Floods the body's own movement — [`World::mob_moves`] when `mob`, the
+    /// cell relation [`World::moves_of`] otherwise, from roots a caller takes
+    /// off the reach graph (spec-0113) — from `roots`, and asks of every place it
     /// reaches whether its hitbox meets a volume there
     /// ([`delvewright_dsl::metrics::cell_can_meet_volume`], the test the router's
     /// keep-out is written against). Two ways in a flood of standing places cannot
@@ -64,8 +65,8 @@ impl World {
     ///   every cell of that water: the undead sink and walk the bottom, and a
     ///   drowned swims down. Not every mob sinks, so for the ones that float this
     ///   is wider than the truth; it can only refuse a wave, never pass one. A
-    ///   player body does not dive here, which is [`World::body_moves`]'s own
-    ///   rule.
+    ///   player body does not dive here: the reach graph is where a player's
+    ///   dive is taken.
     ///
     /// `radius`, when given, bounds the flood: a reached place lies within that
     /// many blocks of some root. Asked of a world with no lethal exclusion
@@ -74,7 +75,7 @@ impl World {
     /// nothing.
     ///
     /// Deterministic: breadth-first in `roots` order, each place's moves in
-    /// [`World::body_moves`]'s fixed order, the first way into each volume kept
+    /// the cell relation's fixed order, the first way into each volume kept
     /// (ADR-0006).
     pub fn reach_into_volumes(
         &self,
@@ -217,7 +218,7 @@ impl World {
             let next = if mob {
                 self.mob_moves(cur, fp)
             } else {
-                self.body_moves(cur)
+                self.moves_of(cur, fp)
             };
             for n in next {
                 if within(n) && out.reached.insert(n) {
@@ -282,7 +283,7 @@ mod mob_reach_tests {
         }
         // Deep under the gap, so the fall is not a way across either.
         let w = World::from_solid_cells(solid);
-        assert!(w.body_moves([2, 1, 0]).contains(&[4, 1, 0]));
+        assert!(w.body_edge_cells([2, 1, 0]).contains(&[4, 1, 0]));
         assert!(!w.mob_moves([2, 1, 0], &zombie()).contains(&[4, 1, 0]));
     }
 
@@ -311,7 +312,9 @@ mod mob_reach_tests {
             !w.mob_moves([2, 1, 0], &fp).contains(&[2, 2, 1]),
             "never from the floor beside it"
         );
-        assert!(!w.body_moves([1, 2, 1]).contains(&[2, 2, 1]));
+        // A player body stands on the wall top too (spec-0113 §4.1): a body
+        // that arrives from above rests on a fence or wall top at its height.
+        assert!(w.body_edge_cells([1, 2, 1]).contains(&[2, 2, 1]));
     }
 
     /// A drop through a volume at any depth is a way in, however far below the

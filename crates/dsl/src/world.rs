@@ -166,6 +166,31 @@ pub struct WorldContent {
     /// back to; `seconds` outside `1..=120`, or no checkpoint, is `DW0925`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub respawn_wait: Option<RespawnWait>,
+    /// **The jumps a creator declares makeable** (spec-0113 §6). Each names two
+    /// anchors a body stands at, one jump apart. The engine proves every one by
+    /// flying the jump under a margin a body on cue makes (`DW1041`); the route
+    /// takes a proven jump as a move between its two cells, the exported leg
+    /// carries it, and the bot drives it with its pathfinder's parkour move. A
+    /// gap nobody declares is judged only by where a body can be: the engine
+    /// infers no intent from geometry. Absent or empty: no route jumps.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub jumps: Vec<Jump>,
+}
+
+/// One declared jump (spec-0113 §6).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Jump {
+    /// The jump's id, `jump/<kebab>`, unique among the campaign's jumps.
+    pub id: crate::JumpId,
+    /// The anchor the body launches from: it resolves to the cell a body
+    /// stands in before the jump.
+    pub from: crate::AnchorId,
+    /// The anchor the body lands at.
+    pub to: crate::AnchorId,
+    /// Whether the jump is sprinted. Absent = `true`, the jump a run-up makes.
+    #[serde(default = "default_true")]
+    pub sprint: bool,
 }
 
 /// One vanilla texture a campaign replaces (spec-0084 §3.1). The row is a
@@ -1677,4 +1702,60 @@ pub(crate) fn atmosphere_dangling_refs(c: &Campaign, d: &mut Vec<Diagnostic>) {
             );
         }
     });
+}
+
+/// `world.jumps[]` structural checks (spec-0113 §6): id syntax and uniqueness,
+/// both anchors provided by some bound prefab, and the two distinct. Whether the
+/// jump is makeable is a question about the assembled world (`DW1041`, in the
+/// compiler).
+pub(crate) fn jump_checks(
+    c: &Campaign,
+    anchors: &dyn crate::registry::AnchorRegistry,
+    d: &mut Vec<Diagnostic>,
+) {
+    let jumps = &c.world.content.jumps;
+    if jumps.is_empty() {
+        return;
+    }
+    let providers = crate::validate::AnchorProviders::build(c, anchors);
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for (i, j) in jumps.iter().enumerate() {
+        if !j.id.is_valid_syntax() {
+            d.push(Diagnostic::error(
+                codes::ID_SYNTAX,
+                "world",
+                format!("/content/jumps/{i}/id"),
+                format!(
+                    "malformed jump id `{}` — jump ids must be lowercase kebab-case with the \
+                     `jump/` prefix (e.g. `jump/the-broken-plank`)",
+                    j.id
+                ),
+            ));
+        }
+        if !seen.insert(j.id.as_str()) {
+            d.push(Diagnostic::error(
+                codes::ID_DUPLICATE,
+                "world",
+                format!("/content/jumps/{i}/id"),
+                format!("duplicate jump id `{}`", j.id),
+            ));
+        }
+        for (end, anchor) in [("from", &j.from), ("to", &j.to)] {
+            if !providers.resolvable(anchor.as_str()) {
+                d.push(Diagnostic::error(
+                    codes::ANCHOR_UNRESOLVED,
+                    "world",
+                    format!("/content/jumps/{i}/{end}"),
+                    format!(
+                        "jump anchor `{anchor}` is not provided by any prefab bound in this \
+                         campaign — {}",
+                        providers.anchor_remedy(
+                            "use an anchor the prefab exposes (anchor names come from prefab \
+                             metadata; do NOT invent one)"
+                        ),
+                    ),
+                ));
+            }
+        }
+    }
 }

@@ -77,7 +77,7 @@ fn verify_stealth(
             let start = player_pos.and_then(|p| world.snap_standable(p, SNAP_RADIUS));
             if let Some(start) = start
                 && {
-                    let reachable = world.reachable_walkable(&[start]);
+                    let reachable = world.walk_region(&[start]);
                     !stands.iter().any(|s| reachable.contains(s))
                 }
             {

@@ -93,7 +93,7 @@
 //!   [`crate::compiler::nav::DEFAULT_FOLLOW_RANGE`]: one documented number, never a
 //!   per-species table, exactly as `DW0380`'s optional-elite spheres and
 //!   `DW0478`'s bonfire aggro test read it.
-//! * **Walkable** — [`crate::compiler::nav::World::reachable_walkable`] from the seated
+//! * **Walkable** — [`crate::compiler::nav::World::walk_region`] from the seated
 //!   spawn cells over the assembled (and stage-7 edited) world, unbounded: getting
 //!   there is a question about geometry, not about perception. Bounding the *walk*
 //!   by the radius would have been green on the incident — the yard is 15.6 blocks
@@ -721,7 +721,7 @@ fn sky_within_reach(
             .unwrap_or(i64::MAX)
     };
     world
-        .reachable_walkable(from)
+        .body_region(from)
         .into_iter()
         .filter(|&cell| d2(cell) <= r2 && light.sky_open(cell) && burns_here(cell))
         .min_by_key(|&cell| (d2(cell), cell))

@@ -48,18 +48,11 @@ impl Build {
     }
 }
 
-/// The closure of the old cell relation, `body_moves`, for comparison.
+/// The walk relation's closure — what every proof that asked "where can a
+/// player be" read before the reach graph, and the stand-in for the old body
+/// relation (`body_moves`, deleted with spec-0113 wave 2) in these tests.
 fn old_reach(w: &World, roots: &[[i32; 3]]) -> BTreeSet<[i32; 3]> {
-    let mut seen: BTreeSet<[i32; 3]> = roots.iter().copied().collect();
-    let mut q: Vec<[i32; 3]> = roots.to_vec();
-    while let Some(c) = q.pop() {
-        for n in w.body_moves(c) {
-            if seen.insert(n) {
-                q.push(n);
-            }
-        }
-    }
-    seen
+    w.walk_region(roots)
 }
 
 #[test]

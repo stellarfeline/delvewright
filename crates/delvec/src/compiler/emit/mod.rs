@@ -549,7 +549,7 @@ pub fn build_with_warnings(
     // it. A box's eyes stand over its floor; an area's are the party's walk
     // inside its bounds, read off this world.
     if biome_map.places().next().is_some() {
-        let walk = world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan));
+        let walk = world.body_region_rooted(&crate::compiler::edit::anchor_starts(plan));
         for p in biome_map.places() {
             let crate::compiler::horizon::PaintSource::Place { place, .. } = &p.source else {
                 continue;
