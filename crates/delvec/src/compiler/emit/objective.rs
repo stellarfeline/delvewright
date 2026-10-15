@@ -112,10 +112,15 @@ pub(super) fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec
                     return cmds;
                 }
                 let e = ent_xyz(pos);
-                cmds.push(format!(
-                    "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{}\"]}}",
-                    e[0], e[1], e[2], interact_entity_tag(id.as_str())
-                ));
+                // The standard column, bracketing the prop's cell and the one above
+                // it: a full-cube prop flush with a `1.0`-wide box wins every click
+                // that reaches its faces ([`crate::compiler::clickbox`]).
+                cmds.push(
+                    crate::compiler::clickbox::ClickBox::column(pos, 2).summon(&format!(
+                        "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{}\"]",
+                        interact_entity_tag(id.as_str())
+                    )),
+                );
                 if let Some(prop) = o.prop() {
                     // v0.4: the prop block IS the affordance (spec-0008 §2) — place
                     // it at the anchor. No hologram marker: the block is visible.

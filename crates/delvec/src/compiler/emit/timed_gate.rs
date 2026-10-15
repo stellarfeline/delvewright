@@ -31,10 +31,12 @@ pub(super) fn timed_gate_setup(plan: &Plan) -> Vec<String> {
             continue;
         };
         let v = ent_xyz(dis.via_cell);
-        out.push(format!(
-            "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_tgdis_{}\"]}}",
-            v[0], v[1], v[2], g.safe
-        ));
+        out.push(
+            crate::compiler::clickbox::ClickBox::column(dis.via_cell, 2).summon(&format!(
+                "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_tgdis_{}\"]",
+                g.safe
+            )),
+        );
         out.push(affordance_hardware(
             v,
             &format!("dw_tgdis_{}", g.safe),

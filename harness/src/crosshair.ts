@@ -38,6 +38,9 @@
  * ray meets **first**. The box is inflated by `Entity.getPickRadius()`, which is
  * `0.0` for every body a delve stages — so this is pure ray-vs-AABB with no
  * tolerance to hide in, which is exactly what {@link pickEntity} implements.
+ * The blocks are clipped first ({@link rayBlocks}): an entity is kept only when
+ * its box is strictly nearer than the block hit, so a box whose face lies on a
+ * block's face loses every ray that reaches that face.
  *
  * A player is not pinned to one spot, so neither is this: a step permits any
  * standing cell its walk goal allows, and a target counts as acquirable if
@@ -88,43 +91,63 @@ export const INTERACTION_REACH = 3.0;
 export const PICK_RADIUS = 0.0;
 
 /**
- * The box every affordance the compiler summons occupies.
+ * Vanilla's default `minecraft:interaction` size, both axes, 1.21.11.
  *
- * A `minecraft:interaction` has no *type* size — its width and height are NBT
- * fields on the individual entity — so `minecraft-data` reports `0 x 0` for it
- * and a client-reported box is not available. That zero is not a small box, it
- * is an ABSENCE, and taking it literally is how this proof would have shipped
- * vacuous: every affordance in the world would have been a body no ray could
- * meet, every acquisition would have found "no target tracked", and the ladder
- * would have gone green by looking at nothing (which is exactly what the first
- * run of this code did).
+ * An `interaction` has no *type* size — its width and height are entity data on
+ * the individual entity — so `minecraft-data` reports `0 x 0` for it and the
+ * client's `entity.width`/`entity.height` are not its box. That zero is not a
+ * small box, it is an ABSENCE, and taking it literally is how this proof would
+ * ship vacuous: every affordance a body no ray could meet, every acquisition
+ * "no target tracked", the ladder green by looking at nothing.
  *
- * The real size is a compiler invariant, not a guess: `emit` summons every one
- * of them as `{width:1.0f,height:2.0f}` — NPC dialogue hitboxes, `interact`
- * objectives, `use`/`strike` triggers, bonfires, shortcut unlocks and trap
- * disarms alike — and `compiler::eclipse` measures against those same two
- * constants. **These must stay equal to `eclipse::AFFORDANCE_WIDTH` and
- * `eclipse::AFFORDANCE_HEIGHT`.**
+ * The real size is read off the entity data the server sends
+ * ({@link interactionDims}). The server sends only values that differ from the
+ * type's defaults, so a field it did not send is this default — never a size the
+ * harness assumes the compiler wrote. The compiler builds every box it places
+ * at a cell one margin past the block grid on every face
+ * (`compiler::clickbox::ClickBox`: `1.02 x 2.02` for a press body), and that is
+ * the size this module meets on a live server.
  */
-export const AFFORDANCE_WIDTH = 1.0;
-export const AFFORDANCE_HEIGHT = 2.0;
+export const INTERACTION_DEFAULT_SIZE = 1.0;
+
+/**
+ * An `interaction`'s box from its entity data: `metadata` is mineflayer's
+ * per-entity array indexed by data key, `keys` the registry's key names for the
+ * type (`width` and `height` among them).
+ */
+export function interactionDims(
+  metadata: readonly unknown[] | undefined,
+  keys: readonly string[] | undefined,
+): { readonly width: number; readonly height: number } {
+  const read = (field: string): number => {
+    const i = keys?.indexOf(field) ?? -1;
+    const v = i >= 0 ? metadata?.[i] : undefined;
+    return typeof v === "number" && v > 0 ? v : INTERACTION_DEFAULT_SIZE;
+  };
+  return { width: read("width"), height: read("height") };
+}
 
 /**
  * The hitbox to use for an entity, given what the client reported.
  *
  * `null` means "this body has no box the ray can meet" — a marker, a display —
  * and it is dropped from the geometry entirely rather than treated as a point.
+ * An `interaction` whose type size is the registry's `0 x 0` takes `data`, its
+ * size read off its entity data ({@link interactionDims}).
  */
 export function hitboxDims(
   name: string,
   width: number | undefined,
   height: number | undefined,
+  data?: { readonly width: number; readonly height: number },
 ): { readonly width: number; readonly height: number } | null {
   if (typeof width === "number" && typeof height === "number" && width > 0 && height > 0) {
     return { width, height };
   }
-  // The one type whose size the client cannot tell us — see above.
-  if (name === "interaction") return { width: AFFORDANCE_WIDTH, height: AFFORDANCE_HEIGHT };
+  // The one type whose size the client cannot tell from the type — see above.
+  if (name === "interaction") {
+    return data ?? { width: INTERACTION_DEFAULT_SIZE, height: INTERACTION_DEFAULT_SIZE };
+  }
   return null;
 }
 
@@ -194,31 +217,107 @@ export function direction(from: Vec3Like, to: Vec3Like): Vec3Like | null {
 }
 
 /**
+ * The world's blocks as the pick ray meets them: the outline boxes of the block
+ * in cell `(x, y, z)`, world space, or `null` when the cell is not known (an
+ * unloaded chunk). An empty list is a cell the ray passes through (air, a fluid).
+ */
+export type BlockShapes = (x: number, y: number, z: number) => readonly Box[] | null;
+
+/** The block a ray meets first: where, what, and how far along the ray. */
+export interface BlockHit {
+  readonly t: number;
+  readonly cell: readonly [number, number, number];
+  /** The block's name, for the failure message. */
+  readonly name: string;
+}
+
+/** A cell's name lookup for {@link BlockHit}, beside its shapes. */
+export type BlockNames = (x: number, y: number, z: number) => string;
+
+/**
+ * The first block the ray from `eye` along `dir` meets within `reach` — vanilla's
+ * block clip, which the client's pick runs before it looks for entities.
+ *
+ * Every cell the segment's bounding box touches, widened by one cell (a shape may
+ * stand proud of its cell), is tested; an unknown cell (`null`) is treated as a
+ * full block, the conservative direction — inventing air would let an occlusion
+ * pass.
+ */
+export function rayBlocks(
+  eye: Vec3Like,
+  dir: Vec3Like,
+  reach: number,
+  shapes: BlockShapes,
+  names?: BlockNames,
+): BlockHit | null {
+  const end = { x: eye.x + dir.x * reach, y: eye.y + dir.y * reach, z: eye.z + dir.z * reach };
+  const lo = (a: number, b: number) => Math.floor(Math.min(a, b)) - 1;
+  const hi = (a: number, b: number) => Math.floor(Math.max(a, b)) + 1;
+  let best: BlockHit | null = null;
+  for (let x = lo(eye.x, end.x); x <= hi(eye.x, end.x); x += 1) {
+    for (let y = lo(eye.y, end.y); y <= hi(eye.y, end.y); y += 1) {
+      for (let z = lo(eye.z, end.z); z <= hi(eye.z, end.z); z += 1) {
+        const boxes = shapes(x, y, z) ?? [
+          { min: { x, y, z }, max: { x: x + 1, y: y + 1, z: z + 1 } },
+        ];
+        for (const box of boxes) {
+          const t = rayBox(eye, dir, box);
+          if (t === null || t > reach) continue;
+          if (best === null || t < best.t) {
+            best = { t, cell: [x, y, z], name: names?.(x, y, z) ?? "block" };
+          }
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/** Below this, two ray distances are the same distance: the client compares the
+ * entity hit against the block hit and keeps the entity only when strictly
+ * nearer, so a face shared with a block is the block's. */
+const SAME_DISTANCE = 1e-9;
+
+/**
  * What the crosshair picks: the candidate whose box the ray meets first, within
  * `reach`. Ties (coincident boxes) are the client's iteration order, which is not
  * knowable here — {@link acquire} treats a tie as a failure to acquire, because a
  * click whose outcome depends on entity iteration order is not a click a campaign
  * may rely on.
+ *
+ * With `shapes`, the blocks are in the ray too, as they are in the client:
+ * `GameRenderer.pick` clips the blocks first and keeps an entity only when its
+ * box is **strictly** nearer than the block hit. An entity at the block's
+ * distance or beyond is not picked; `block` then names what took the click.
  */
 export function pickEntity(
   eye: Vec3Like,
   dir: Vec3Like,
   candidates: readonly Hitbox[],
   reach: number = INTERACTION_REACH,
-): { readonly hit: Hitbox; readonly t: number; readonly tied: readonly Hitbox[] } | null {
+  shapes?: BlockShapes,
+  names?: BlockNames,
+): {
+  readonly hit: Hitbox;
+  readonly t: number;
+  readonly tied: readonly Hitbox[];
+} | { readonly hit: null; readonly block: BlockHit } | null {
+  const block = shapes ? rayBlocks(eye, dir, reach, shapes, names) : null;
   let best: { hit: Hitbox; t: number } | null = null;
   const tied: Hitbox[] = [];
   for (const c of candidates) {
     const t = rayBox(eye, dir, boxOf(c));
     if (t === null || t > reach) continue;
-    if (best === null || t < best.t - 1e-9) {
+    if (block !== null && t > block.t - SAME_DISTANCE) continue;
+    if (best === null || t < best.t - SAME_DISTANCE) {
       best = { hit: c, t };
       tied.length = 0;
-    } else if (Math.abs(t - best.t) <= 1e-9) {
+    } else if (Math.abs(t - best.t) <= SAME_DISTANCE) {
       tied.push(c);
     }
   }
-  return best === null ? null : { hit: best.hit, t: best.t, tied };
+  if (best !== null) return { hit: best.hit, t: best.t, tied };
+  return block === null ? null : { hit: null, block };
 }
 
 /** The aim points sampled on a target's box, nearest-first is not required —
@@ -243,7 +342,12 @@ export function aimPoints(target: Hitbox): readonly Vec3Like[] {
 /** The verdict for one eye position. */
 export type Acquisition =
   | { readonly ok: true; readonly eye: Vec3Like; readonly aim: Vec3Like }
-  | { readonly ok: false; readonly blockers: readonly Hitbox[] };
+  | {
+      readonly ok: false;
+      readonly blockers: readonly Hitbox[];
+      /** Blocks that took the click: met at or before the target's box. */
+      readonly blocks: readonly BlockHit[];
+    };
 
 /**
  * Can a player standing at `eye` put the crosshair on `target` and hit it first?
@@ -253,20 +357,33 @@ export type Acquisition =
  * inside a wider `interaction` affordance, so the ray meets the affordance first
  * from any side approach — modelling it honestly costs nothing and catches the
  * cases where it does not (a warden's head above its affordance).
+ *
+ * `shapes` puts the blocks in the ray: a target whose box shares a face with a
+ * block loses every ray that reaches that face, exactly as it does in the client.
  */
 export function acquire(
   eye: Vec3Like,
   target: Hitbox,
   others: readonly Hitbox[],
   reach: number = INTERACTION_REACH,
+  shapes?: BlockShapes,
+  names?: BlockNames,
 ): Acquisition {
   const candidates = [target, ...others];
   const blockers = new Map<number, Hitbox>();
+  const blocks = new Map<string, BlockHit>();
   for (const aim of aimPoints(target)) {
     const dir = direction(eye, aim);
     if (dir === null) continue;
-    const pick = pickEntity(eye, dir, candidates, reach);
+    const pick = pickEntity(eye, dir, candidates, reach, shapes, names);
     if (pick === null) continue;
+    if (pick.hit === null) {
+      // The ray would have met the target's box (the aim point is on it) had the
+      // block not been at or before it — only then is it the block's click.
+      const t = rayBox(eye, dir, boxOf(target));
+      if (t !== null && t <= reach) blocks.set(pick.block.cell.join(","), pick.block);
+      continue;
+    }
     if (pick.hit.id === target.id && pick.tied.length === 0) {
       return { ok: true, eye, aim };
     }
@@ -276,7 +393,7 @@ export function acquire(
       if (t.id !== target.id) blockers.set(t.id, t);
     }
   }
-  return { ok: false, blockers: [...blockers.values()] };
+  return { ok: false, blockers: [...blockers.values()], blocks: [...blocks.values()] };
 }
 
 /** The verdict over every stance a step allows. */
@@ -289,7 +406,12 @@ export type StanceVerdict =
       readonly clearStances: number;
       readonly triedStances: number;
     }
-  | { readonly ok: false; readonly blockers: readonly Hitbox[]; readonly triedStances: number };
+  | {
+      readonly ok: false;
+      readonly blockers: readonly Hitbox[];
+      readonly blocks: readonly BlockHit[];
+      readonly triedStances: number;
+    };
 
 /**
  * Acquire from any stance the step allows.
@@ -304,17 +426,21 @@ export function acquireFromStances(
   target: Hitbox,
   others: readonly Hitbox[],
   reach: number = INTERACTION_REACH,
+  shapes?: BlockShapes,
+  names?: BlockNames,
 ): StanceVerdict {
   const blockers = new Map<number, Hitbox>();
+  const blocks = new Map<string, BlockHit>();
   let first: { eye: Vec3Like; aim: Vec3Like } | null = null;
   let clear = 0;
   for (const eye of stances) {
-    const a = acquire(eye, target, others, reach);
+    const a = acquire(eye, target, others, reach, shapes, names);
     if (a.ok) {
       clear += 1;
       first ??= { eye: a.eye, aim: a.aim };
     } else {
       for (const b of a.blockers) blockers.set(b.id, b);
+      for (const b of a.blocks) blocks.set(b.cell.join(","), b);
     }
   }
   if (first !== null) {
@@ -326,7 +452,12 @@ export function acquireFromStances(
       triedStances: stances.length,
     };
   }
-  return { ok: false, blockers: [...blockers.values()], triedStances: stances.length };
+  return {
+    ok: false,
+    blockers: [...blockers.values()],
+    blocks: [...blocks.values()],
+    triedStances: stances.length,
+  };
 }
 
 /** How a body is named in a failure: type, server name, id and where it stands. */
@@ -350,8 +481,11 @@ export function occlusionFailure(
   target: Hitbox,
   blockers: readonly Hitbox[],
   triedStances: number,
+  blocks: readonly BlockHit[] = [],
 ): string {
-  const who = blockers.map(describeHitbox).join("; ") || "an exact ray-pick tie";
+  const bodies = blockers.map(describeHitbox);
+  const cells = blocks.map((b) => `block ${b.name} at [${b.cell.join(", ")}]`);
+  const who = [...bodies, ...cells].join("; ") || "an exact ray-pick tie";
   const coincident = blockers.some(
     (b) =>
       Math.abs(b.position.x - target.position.x) < 1e-6 &&
@@ -361,11 +495,16 @@ export function occlusionFailure(
     ? " Their hitboxes are COINCIDENT, so the client's entity ray-pick is an exact tie resolved " +
       "by iteration order — which body answers the click is not decidable at all."
     : "";
+  const flush =
+    blocks.length > 0
+      ? " A block takes the click when the target's box is not strictly nearer than it: a box " +
+        "whose face lies on a block's face loses every ray that reaches that face."
+      : "";
   return (
     `${what}: the crosshair cannot acquire ${describeHitbox(target)} from any of the ` +
     `${triedStances} standing position(s) this step allows within ${INTERACTION_REACH} blocks. ` +
-    `The entity-pick ray reaches ${who} first.${tie} A player cannot click this target, so the ` +
+    `The pick ray reaches ${who} first.${tie}${flush} A player cannot click this target, so the ` +
     `step is not performable by hand however green the rest of the ladder is. Fix the staging ` +
-    `(move one of the two bodies apart) — never the check.`
+    `(move one of the two bodies apart, or build the box past the block's faces) — never the check.`
   );
 }

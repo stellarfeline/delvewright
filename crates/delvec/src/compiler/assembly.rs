@@ -2356,14 +2356,16 @@ pub fn assembly_functions(
             ));
         }
         if let Some(hb) = &p.decl.hitbox {
-            summon.push(format!(
-                "summon minecraft:interaction {} {{width:{}f,height:{}f,response:1b,Tags:[\"{fixture}\",\"{}\",\"{}\"]}}",
-                pos(p.hitbox_cell()),
-                hb.width,
-                hb.height,
-                tag(s),
-                hit_tag(s)
-            ));
+            // The declared size, its faces that lie on the block grid pushed past
+            // it by the one click-box rule ([`crate::compiler::clickbox`]).
+            summon.push(
+                crate::compiler::clickbox::ClickBox::sized(p.hitbox_cell(), hb.width, hb.height)
+                    .summon(&format!(
+                        "response:1b,Tags:[\"{fixture}\",\"{}\",\"{}\"]",
+                        tag(s),
+                        hit_tag(s)
+                    )),
+            );
         }
         summon.push(format!("scoreboard players set {} dw.sys 1", h("live")));
         summon.push(format!("scoreboard players set {} dw.sys 0", h("sm")));
