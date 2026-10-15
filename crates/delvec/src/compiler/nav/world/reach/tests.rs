@@ -48,9 +48,8 @@ impl Build {
     }
 }
 
-/// The walk relation's closure — what every proof that asked "where can a
-/// player be" read before the reach graph, and the stand-in for the old body
-/// relation (`body_moves`, deleted with spec-0113 wave 2) in these tests.
+/// The walk relation's closure: the relation a route proof walks, which these
+/// tests hold the reach graph against.
 fn old_reach(w: &World, roots: &[[i32; 3]]) -> BTreeSet<[i32; 3]> {
     w.walk_region(roots)
 }
@@ -270,5 +269,48 @@ fn the_facing_step_has_converged() {
         let b = w.body_reach_at(&[root], &finer()).cells();
         let added: Vec<&[i32; 3]> = b.difference(&a).collect();
         assert!(added.is_empty(), "{name}: the finer set adds {added:?}");
+    }
+}
+
+/// The gallery's fenced garden (spec-0113 §9): a fence ring four by four, a
+/// boulder outside its west side, a step inside against the east fence.
+pub(in crate::compiler::nav) fn garden() -> World {
+    let mut b = Build::default();
+    b.fill([0, 0, 0], [10, 0, 10]);
+    for x in 3..=6 {
+        for z in 3..=6 {
+            if x == 3 || x == 6 || z == 3 || z == 6 {
+                b.tall.insert([x, 1, z]);
+            }
+        }
+    }
+    b.fill([2, 1, 4], [2, 1, 4]);
+    b.fill([5, 1, 5], [5, 1, 5]);
+    b.world(Ambient::Void, Vec::new())
+}
+
+/// spec-0113 §9: the bed is got into over the fence from the boulder, and
+/// left by the step — every bed cell reaches the ground outside the ring.
+#[test]
+fn the_garden_bed_is_got_into_and_left() {
+    let w = garden();
+    let r = w.body_reach(&[[1, 1, 1]]);
+    let bed = [[4, 1, 4], [4, 1, 5], [5, 1, 4]];
+    for c in bed {
+        assert!(
+            r.states.contains_key(&c),
+            "the bed cell {c:?} is not reached"
+        );
+    }
+    assert!(
+        !old_reach(&w, &[[1, 1, 1]]).contains(&[4, 1, 4]),
+        "the walk relation entered the bed"
+    );
+    for c in bed {
+        let back = w.body_reach(&[c]);
+        assert!(
+            back.states.contains_key(&[1, 1, 1]),
+            "{c:?} cannot leave the bed"
+        );
     }
 }

@@ -1450,6 +1450,12 @@ impl World {
             && !(self.is_water(up) || self.ambient_water(up) || self.is_occupied(up))
     }
 
+    /// Whether a body in `c` stands on a fence, wall or gate top — a standing
+    /// rest state the walk relation never stands a body in (spec-0113 §4.1).
+    pub fn is_perched(&self, c: [i32; 3]) -> bool {
+        !self.standable_fp(c, &Footprint::player()) && self.perch_feet_16_player(c)
+    }
+
     fn perch_feet_16_player(&self, c: [i32; 3]) -> bool {
         let fp = Footprint::player();
         let support = [c[0], c[1] - 1, c[2]];

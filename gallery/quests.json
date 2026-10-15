@@ -2266,9 +2266,9 @@
               "kill_zone": {
                 "anchor": "anchor/march",
                 "extent": [
-                  3,
                   1,
-                  2
+                  1,
+                  1
                 ]
               },
               "projectile": "minecraft:arrow",
@@ -3082,7 +3082,7 @@
               "verb": "learns"
             },
             "id": "obj/look-in-the-west-bay",
-            "radius": 3,
+            "radius": 1,
             "title": "Look into the west bay",
             "type": "reach-anchor"
           },
@@ -3914,7 +3914,7 @@
                         "anchor": "anchor/ferry-deck",
                         "offset": [
                           0,
-                          3,
+                          1,
                           2
                         ]
                       },
@@ -3922,7 +3922,7 @@
                         "anchor": "anchor/ferry-deck",
                         "offset": [
                           0,
-                          3,
+                          1,
                           -2
                         ]
                       }

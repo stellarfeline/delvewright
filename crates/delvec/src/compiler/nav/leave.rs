@@ -22,6 +22,9 @@ pub struct LeaveBinding {
     /// Of those, the cells where the body is afloat at the top of water — the
     /// population the water half of the proof judges.
     pub afloat: usize,
+    /// Of those, the cells where the body stands on a fence, wall or gate top
+    /// (spec-0113 §4.1) — places the walk never stands a body.
+    pub perched: usize,
     /// Of those, cells a body cannot leave.
     pub trapped: usize,
     /// Reached cells that are stand cells of a link live in their
@@ -37,12 +40,13 @@ impl LeaveBinding {
     pub fn line(&self) -> String {
         format!(
             "DW0921 binding: {} quest configuration(s), {} route cell(s), {} cell(s) a body can reach \
-             by walking, falling, jumping, swimming or climbing ({} of them afloat), {} it cannot leave; {} \
-             link stand cell(s) served as a way out",
+             by walking, falling, jumping, swimming or climbing ({} of them afloat, {} on a fence or \
+             wall top), {} it cannot leave; {} link stand cell(s) served as a way out",
             self.configurations,
             self.route_cells,
             self.reached,
             self.afloat,
+            self.perched,
             self.trapped,
             self.link_exits
         )
@@ -57,6 +61,7 @@ impl LeaveBinding {
             "route_cells": self.route_cells,
             "reached": self.reached,
             "afloat": self.afloat,
+            "perched": self.perched,
             "trapped": self.trapped,
         })
     }
@@ -279,6 +284,7 @@ fn verify_bodies_can_leave(
                 .iter()
                 .filter(|c| w.rest_kind(**c) == Some(RestKind::Afloat))
                 .count();
+            let perched = judged.reached.iter().filter(|c| w.is_perched(**c)).count();
             // A shortcut is opened from its far side by whoever stands at its lever,
             // and the completability model holds it shut. A pocket whose own reach
             // takes a body to a lever, and through the door that lever opens back to
@@ -308,7 +314,7 @@ fn verify_bodies_can_leave(
             (
                 seeds.len(),
                 reached.len(),
-                afloat,
+                (afloat, perched),
                 trapped.len(),
                 described,
                 link_exits,
@@ -320,7 +326,9 @@ fn verify_bodies_can_leave(
     let mut pockets: Vec<String> = Vec::new();
     let mut pocket_count = 0usize;
     let mut over_budget: Option<u64> = None;
-    for (route_cells, reached, afloat, trapped, described, link_exits, rb, over) in judged {
+    for (route_cells, reached, (afloat, perched), trapped, described, link_exits, rb, over) in
+        judged
+    {
         over_budget = over_budget.or(over);
         binding.reach.configurations += rb.configurations;
         for i in 0..4 {
@@ -337,6 +345,7 @@ fn verify_bodies_can_leave(
         binding.link_exits += link_exits;
         binding.reached += reached;
         binding.afloat += afloat;
+        binding.perched += perched;
         binding.trapped += trapped;
         for pocket in described {
             pocket_count += 1;
@@ -624,7 +633,7 @@ pub fn reach_budget_failure(reach: &ReachBinding, budget: u64) -> Failure {
     }
 }
 
-/// `DW0921` and the body-movement relation it floods ([`World::body_moves`]).
+/// `DW0921` and the reach graph it reads ([`World::body_reach`]).
 #[cfg(test)]
 mod leave_tests {
     use super::*;

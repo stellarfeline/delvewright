@@ -740,6 +740,18 @@ fn check_batch_invariants(
                 return Err(ctx(f));
             }
         }
+        // `DW1041` before the route proof, here as in `emit::build`: a declared
+        // jump no body makes is the cause, and the leg it was declared to carry
+        // closing is the consequence. Printed only when this pass refuses, as
+        // the loop binding is.
+        if !plan.jumps.is_empty() {
+            let (binding, _, verdict) =
+                crate::compiler::nav::check_declared_jumps(plan, &with_fixtures);
+            if let Err(f) = verdict {
+                eprintln!("{}", binding.line());
+                return Err(ctx(f));
+            }
+        }
         crate::compiler::nav::check_critical_path(plan, &with_fixtures).map_err(ctx)?;
         crate::compiler::nav::check_checkpoints(plan, &with_fixtures).map_err(ctx)?;
     }
