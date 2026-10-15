@@ -4014,10 +4014,21 @@ fn dw0995_a_gate_the_route_opens_is_heard() {
 // ---------------------------------------------------------------------------
 
 /// The chapel-door fixture (`common::threshold`) with the trigger `on`, `at`
-/// and `edits`, built.
-fn dw1044(tag: &str, range: u32, at: &str, edits: Option<Vec<serde_json::Value>>) -> (i32, String) {
+/// and `edits`, built. `barred` leaves the Keeper's door shut for good
+/// ([`common::threshold::bar_the_door`]), for a fixture whose second doorway
+/// is the way through.
+fn dw1044(
+    tag: &str,
+    range: u32,
+    at: &str,
+    edits: Option<Vec<serde_json::Value>>,
+    barred: bool,
+) -> (i32, String) {
     let camp = tmp(&format!("camp-{tag}"));
     common::threshold::doorway_campaign(&camp, common::threshold::approach(range), at, edits);
+    if barred {
+        common::threshold::bar_the_door(&camp);
+    }
     build(tag, &camp, &common::prefabs_dir())
 }
 
@@ -4026,14 +4037,14 @@ fn dw1044(tag: &str, range: u32, at: &str, edits: Option<Vec<serde_json::Value>>
 /// entered by every walk.
 #[test]
 fn dw1044_widening_the_range_to_the_one_named_builds() {
-    let (code, before) = dw1044("dw1044-r1", 1, "anchor/door", None);
+    let (code, before) = dw1044("dw1044-r1", 1, "anchor/door", None, false);
     assert_ne!(code, 0, "{before}");
     assert!(
         before.contains("DW1044 [error]")
             && before.contains("widen `range` from 1 to 2, the least range every walk enters"),
         "{before}"
     );
-    let (code, after) = dw1044("dw1044-r2", 2, "anchor/door", None);
+    let (code, after) = dw1044("dw1044-r2", 2, "anchor/door", None, false);
     assert_eq!(code, 0, "{after}");
     assert!(after.contains("1 entered by every walk"), "{after}");
 }
@@ -4044,10 +4055,10 @@ fn dw1044_widening_the_range_to_the_one_named_builds() {
 #[test]
 fn dw1044_moving_the_anchor_into_the_only_way_through_builds() {
     let door = common::threshold::second_door;
-    let (code, before) = dw1044("dw1044-door", 2, "anchor/door", Some(door()));
+    let (code, before) = dw1044("dw1044-door", 2, "anchor/door", Some(door()), true);
     assert_ne!(code, 0, "{before}");
     assert!(before.contains("DW1044 [error]"), "{before}");
-    let (code, after) = dw1044("dw1044-exit", 2, "anchor/exit", Some(door()));
+    let (code, after) = dw1044("dw1044-exit", 2, "anchor/exit", Some(door()), true);
     assert_eq!(code, 0, "{after}");
     assert!(after.contains("1 entered by every walk"), "{after}");
 }
@@ -4061,6 +4072,7 @@ fn dw1044_closing_the_way_round_builds() {
         2,
         "anchor/door",
         Some(common::threshold::second_door_closed()),
+        false,
     );
     assert_eq!(code, 0, "{after}");
     assert!(after.contains("1 entered by every walk"), "{after}");
