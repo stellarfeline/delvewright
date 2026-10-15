@@ -214,6 +214,15 @@ pub(in crate::compiler::nav) fn unforced_blame_over(
 /// `fire_step`, respecting the DAG linearisation) wins: the region is solid iff
 /// that latest write is a fill, and cleared iff it is a clear.
 ///
+/// **A walked leg reads one more thing: the path's own order.** A region the
+/// walk has opened by the leg's start — a forced `open-gate` (or clear, or pass)
+/// at a step the path performs no later than the start — is judged by the
+/// path's order instead, over every write the path has performed by then: the
+/// walk proved that order, so an opener a sibling objective performed earlier
+/// opens the door, and a seal the walk performed after it shuts it again
+/// ([`World::leg_region_state`]). A region with no such opener keeps the causal
+/// rule, so a door nothing on the walk opens is still `DW0317`.
+///
 /// A campaign that writes no region yields an empty state and routes byte-
 /// identically to the base world.
 ///
@@ -233,7 +242,7 @@ impl World {
         arrival: usize,
         ancestor: &dyn Fn(usize, usize) -> bool,
     ) -> RegionState {
-        self.region_state_inner(region_events, arrival, ancestor, true)
+        self.region_state_inner(region_events, arrival, ancestor, None, true)
     }
 
     /// [`World::region_state_at`] as it would be **if the world had been built with
@@ -245,15 +254,25 @@ impl World {
         region_events: &RegionEvents,
         arrival: usize,
         ancestor: &dyn Fn(usize, usize) -> bool,
+        performed: Option<usize>,
     ) -> RegionState {
-        self.region_state_inner(region_events, arrival, ancestor, false)
+        self.region_state_inner(region_events, arrival, ancestor, performed, false)
     }
 
+    /// `performed`, when given, is the last critical-path step the walk has
+    /// **performed** before this leg starts — the leg's own start. A region one
+    /// of whose forced openers (an `Unseal`, `Clear` or `Pass`) the path performs
+    /// by then is judged by the path's own order: every write on it the path has
+    /// performed by that step is credited, and latest-write-wins picks the one
+    /// the party finds. So an opener the proven walk performs earlier — a sibling
+    /// objective of the same talk — opens the door, and a seal the walk performs
+    /// after it still shuts it again. Every other region keeps the causal rule.
     fn region_state_inner(
         &self,
         region_events: &RegionEvents,
         arrival: usize,
         ancestor: &dyn Fn(usize, usize) -> bool,
+        performed: Option<usize>,
         world_load: bool,
     ) -> RegionState {
         // Per region, the causally-latest write that precedes this leg (ancestor of
@@ -271,8 +290,27 @@ impl World {
         } else {
             Vec::new()
         };
+        // The regions the walk has opened by the path's own order (see above).
+        let path_ordered: BTreeSet<([i32; 3], [i32; 3])> = performed
+            .map(|last| {
+                region_events
+                    .iter()
+                    .filter(|ev| {
+                        ev.is_forced()
+                            && ev.fire_step <= last
+                            && matches!(
+                                ev.write,
+                                RegionWrite::Unseal | RegionWrite::Clear | RegionWrite::Pass
+                            )
+                    })
+                    .map(|ev| ev.region)
+                    .collect()
+            })
+            .unwrap_or_default();
         for ev in world_load.into_iter().chain(region_events.iter().cloned()) {
-            if ancestor(ev.fire_step, arrival) {
+            let by_path = path_ordered.contains(&ev.region)
+                && performed.is_some_and(|last| ev.fire_step <= last);
+            if by_path || ancestor(ev.fire_step, arrival) {
                 let key = (
                     ev.fire_step,
                     ev.write,
@@ -472,7 +510,7 @@ impl World {
         to_step: usize,
     ) -> RegionState {
         let fired = leg_fired(ancestor, from_step, to_step);
-        self.region_state_at(region_events, to_step, &fired)
+        self.region_state_inner(region_events, to_step, &fired, Some(from_step), true)
     }
 
     /// The same leg with the world-load gate seals lifted — see
@@ -485,7 +523,7 @@ impl World {
         to_step: usize,
     ) -> RegionState {
         let fired = leg_fired(ancestor, from_step, to_step);
-        self.region_state_without_world_load(region_events, to_step, &fired)
+        self.region_state_without_world_load(region_events, to_step, &fired, Some(from_step))
     }
 
     /// [`World::leg_region_state`] for a leg the player is asked to WALK — the
