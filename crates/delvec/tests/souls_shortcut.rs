@@ -19,8 +19,11 @@ use delvewright_dsl::parse_campaign;
 const NS: &str = "souls-shortcut";
 
 fn build_fixture() -> BuildOutput {
-    let dir = common::compiler_fixtures_dir().join(NS);
-    let loaded = load_campaign_dir(&dir).unwrap();
+    build_dir(&common::compiler_fixtures_dir().join(NS))
+}
+
+fn build_dir(dir: &std::path::Path) -> BuildOutput {
+    let loaded = load_campaign_dir(dir).unwrap();
     let campaign = parse_campaign(&loaded.raw).expect("souls-shortcut parses");
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
 
@@ -103,6 +106,40 @@ fn unlock_clears_the_gate_once_and_forever() {
             "execute unless score #sc_inner_door dw.sys matches 1 if entity @e[tag=dw_sc_inner_door,nbt={{interaction:{{}}}}] run function {NS}:shortcut_open_inner_door"
         )),
         "the unlock is polled once, guarded by the sentinel: {tick}"
+    );
+}
+
+/// A story beat that opens a shortcut's gate unlocks the shortcut: the
+/// beat runs the shortcut's own open, guarded by its latch, so the latch is set,
+/// the lever retires and `on_unlock` plays once. A bare clear would leave the
+/// lever standing to announce an unbarring that already happened.
+#[test]
+fn an_open_gate_on_a_shortcuts_gate_unlocks_the_shortcut() {
+    let dir = fixture_variant(
+        "shortcut-opened-by-the-story",
+        &[("quests", |doc| {
+            doc["content"]["quests"][0]["on_objective_complete"]["obj/talk"] = serde_json::json!([{
+                "type": "open-gate", "anchor": "anchor/door",
+                "happening": { "text": "the keeper unbars the inner door", "verb": "opens" }
+            }]);
+        })],
+    );
+    let out = build_dir(&dir);
+    let talk = fn_body(&out, "complete_o_talk");
+    assert!(
+        talk.contains(&format!(
+            "execute unless score #sc_inner_door dw.sys matches 1 run function {NS}:shortcut_open_inner_door"
+        )),
+        "the beat runs the shortcut's open behind its latch: {talk}"
+    );
+    let clear = fn_body(&out, "shortcut_open_inner_door")
+        .lines()
+        .nth(1)
+        .expect("the open clears the gate on its second line")
+        .to_string();
+    assert!(
+        !talk.contains(&clear),
+        "the beat does not clear the gate itself beside the shortcut: {talk}"
     );
 }
 

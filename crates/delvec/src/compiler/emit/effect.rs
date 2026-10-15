@@ -464,6 +464,22 @@ pub(super) fn emit_quest_effect(
     let who = narrowed.as_str();
     match &eff.verb {
         Verb::OpenGate { anchor, .. } => {
+            // A gate a `shortcut` owns is opened by unlocking the shortcut: the
+            // latch, the clear, the spent lever, the door's voice and the
+            // `on_unlock` beat, all in the one function that owns them. A bare
+            // clear would leave the lever glowing and the latch unset, so a
+            // later press would announce an unbarring that already happened.
+            if let Some(sc) = plan
+                .shortcuts
+                .iter()
+                .find(|sc| sc.gate_anchor == anchor.as_str())
+            {
+                body.push(format!(
+                    "execute unless score #sc_{id} dw.sys matches 1 run function {ns}:shortcut_open_{id}",
+                    id = sc.safe
+                ));
+                return;
+            }
             // Find the gate anchor across areas (first match).
             for ((_, name), resolved) in &plan.anchors {
                 if name == anchor.as_str()
