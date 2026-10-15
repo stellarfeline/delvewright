@@ -315,12 +315,12 @@ about the six stage JSONs follow, and none of them is optional:
   quests belong to it; there is no other.
 - **Content binds to anchors nobody authored.** The blockout is derived, so
   there is no prefab metadata to name an anchor: the derivation synthesizes one
-  per reached place (`anchor/node-<place>`; scenery has none), a gate region over every barred connection
-  (`anchor/seam-<edge>`), the far-side affordance's footing on a one-sided one
+  per reached place (`anchor/node-<place>`; scenery has none), a gate region over every gated connection's bar
+  (`anchor/seam-<edge>`, spec-0107), the far-side affordance's footing on a one-sided one
   (`anchor/unlock-<edge>`), and the campaign's `spawn`. Those are the names to
   write, and validation resolves against exactly the set the derivation places.
-  Every barred connection must be opened by something naming its seam
-  (`DW0818`).
+  Every gated connection must be opened by something naming its seam
+  (`DW1028`).
 
 Nothing else about authoring changes: the quest, gate and shortcut surfaces do
 not know where the map came from.
