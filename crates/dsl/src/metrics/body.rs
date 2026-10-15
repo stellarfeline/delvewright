@@ -329,8 +329,10 @@ pub enum Rules {
 pub struct Input {
     /// `+1` forward, `-1` back, `0` neither.
     pub forward: i8,
-    /// `+1` right, `-1` left, `0` neither.
-    pub strafe: i8,
+    /// `+1` right, `-1` left, `0` neither — or a fraction between, as an
+    /// analogue stick would give (the reach graph's convergence test, spec-0113
+    /// A7).
+    pub strafe: f64,
     /// The jump key.
     pub jump: bool,
     /// The sprint key.
@@ -730,7 +732,7 @@ fn tick_with<W: CollisionWorld + ?Sized>(
         st.jump_ticks = 0;
     }
 
-    let mut strafe = f64::from(input.strafe) * 0.98;
+    let mut strafe = input.strafe * 0.98;
     let mut forward = f64::from(input.forward) * 0.98;
     if rules == Rules::Game && input.magnitude != 1.0 {
         strafe *= input.magnitude;

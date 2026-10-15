@@ -100,7 +100,7 @@ fn inputs_of(case: &serde_json::Value) -> Vec<Input> {
     for h in case["holds"].as_array().expect("holds") {
         let i = Input {
             forward: h["forward"].as_i64().expect("forward") as i8,
-            strafe: h["strafe"].as_i64().expect("strafe") as i8,
+            strafe: h["strafe"].as_f64().expect("strafe"),
             jump: h["jump"].as_bool().expect("jump"),
             sprint: h["sprint"].as_bool().expect("sprint"),
             sneak: h["sneak"].as_bool().expect("sneak"),

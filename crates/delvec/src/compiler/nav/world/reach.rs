@@ -482,7 +482,7 @@ enum Mode {
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Launch {
     yaw: f64,
-    strafe: i8,
+    strafe: f64,
     mode: Mode,
     /// The saturated velocity of the launch's input.
     vel: [f64; 3],
@@ -556,7 +556,7 @@ impl Launch {
 /// the jump pressed on the last supported tick or on the lagged one, or never
 /// (sprinting off); a walk off; and a tip off from rest — walking off at its
 /// fastest and its slowest. From a climb, a push off at each facing from rest.
-fn launch_set(holding: bool, step: f64, strafes: &[i8]) -> Vec<Launch> {
+fn launch_set(holding: bool, step: f64, strafes: &[f64]) -> Vec<Launch> {
     let mut out = Vec::new();
     let n = (360.0 / step).round() as i32;
     for k in 0..n {
@@ -628,7 +628,7 @@ pub struct ReachParams {
     /// Degrees between facings.
     pub facing_step: f64,
     /// The strafe inputs taken at each facing.
-    pub strafes: Vec<i8>,
+    pub strafes: Vec<f64>,
     /// Whether no fall kills (a kit reduces fall damage, §4.2).
     pub unbounded_fall: bool,
     /// The work past which a closure is refused rather than finished
@@ -641,7 +641,7 @@ impl ReachParams {
     pub fn shipped(unbounded_fall: bool) -> ReachParams {
         ReachParams {
             facing_step: FACING_STEP_DEG,
-            strafes: vec![-1, 0, 1],
+            strafes: vec![-1.0, 0.0, 1.0],
             unbounded_fall,
             budget: delvewright_dsl::metrics::REACH_BUDGET_STATES,
         }
@@ -1253,7 +1253,7 @@ fn carry_table() -> &'static [f64] {
         let world = Sim(&EmptyCodes);
         let body = Attributes::PLAYER;
         let mut table = vec![0.0f64; 1024];
-        for strafe in [-1i8, 0, 1] {
+        for strafe in [-1.0, 0.0, 1.0] {
             for sprint in [true, false] {
                 for jump in [true, false] {
                     let input = Input {
@@ -1840,6 +1840,28 @@ impl World {
                 rules,
             });
         };
+        // The landing support: `to`'s own floor and the floor round it at the
+        // same height the walk joins to it, out to
+        // [`delvewright_dsl::metrics::DECLARED_JUMP_LANDING_REACH`] cells — the
+        // far side a body that made the jump stands on, whatever cell of it a
+        // facing off the line or a long run-up puts it in.
+        let fp = Footprint::player();
+        let reach = m::DECLARED_JUMP_LANDING_REACH as i32;
+        let mut landing: Vec<[i32; 3]> = vec![to];
+        let mut i = 0;
+        while i < landing.len() {
+            let c = landing[i];
+            i += 1;
+            for n in self.neighbors_walk_fp(c, &fp) {
+                if !landing.contains(&n)
+                    && (n[0] - to[0]).abs() <= reach
+                    && (n[2] - to[2]).abs() <= reach
+                    && feet_of(&memo.dense, n).is_some_and(|f| (f - land_feet).abs() < 1e-6)
+                {
+                    landing.push(n);
+                }
+            }
+        }
         let (dx, dz) = (f64::from(to[0] - from[0]), f64::from(to[2] - from[2]));
         let yaw0 = (-dx).atan2(dz).to_degrees();
         let start = [f64::from(back[0]) + 0.5, feet, f64::from(back[2]) + 0.5];
@@ -1911,8 +1933,10 @@ impl World {
                         hi.min(f64::from(c) + 1.0) - lo.max(f64::from(c))
                     };
                     (l.pos[1] - land_feet).abs() < 1e-6
-                        && over(bb.min[0], bb.max[0], to[0]) >= m::DECLARED_JUMP_OVERLAP
-                        && over(bb.min[2], bb.max[2], to[2]) >= m::DECLARED_JUMP_OVERLAP
+                        && landing.iter().any(|c| {
+                            over(bb.min[0], bb.max[0], c[0]) >= m::DECLARED_JUMP_OVERLAP
+                                && over(bb.min[2], bb.max[2], c[2]) >= m::DECLARED_JUMP_OVERLAP
+                        })
                 });
                 if !ok {
                     return Err(JumpMiss {
@@ -2040,7 +2064,11 @@ impl World {
         let done: Vec<Closure> = memo.closures.lock().expect("memo").clone();
         for (from, c) in &done {
             if start.iter().all(|r| c.states.contains_key(r)) && c.reaches_all(&start, from) {
-                return (**c).clone();
+                let mut r = (**c).clone();
+                if r.simulated + r.credited > params.budget {
+                    r.over_budget = Some(params.budget);
+                }
+                return r;
             }
         }
         let mut reach = Reach::default();

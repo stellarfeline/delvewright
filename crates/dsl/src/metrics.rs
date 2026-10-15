@@ -97,6 +97,12 @@ pub const DECLARED_JUMP_PRESS_TICKS: u32 = 2;
 /// exact box over the landing support by at least this much on both axes.
 pub const DECLARED_JUMP_OVERLAP: f64 = 0.1;
 
+/// **How far round its landing cell a declared jump's landing support
+/// reaches** (spec-0113 §4.4, `authored`): the floor at the landing's height the
+/// walk joins to the landing cell, out to this many cells on each axis — the far
+/// side a body that made the jump stands on.
+pub const DECLARED_JUMP_LANDING_REACH: u32 = 3;
+
 /// **How much straight run-up a declared jump is measured with** (spec-0113
 /// §4.4, `authored`): the walkable cells behind the launch cell along the jump's
 /// axis, counted up to this many.
