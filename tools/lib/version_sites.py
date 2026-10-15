@@ -286,7 +286,19 @@ ROWS: dict[str, list[dict[str, object]]] = {
 # an entry is never a licence for the whole file. A statement the file no longer
 # contains is reported, which is how an entry keyed to a number is retired when
 # the number moves on.
-COUNTEREXAMPLES: dict[str, dict[str, object]] = {}
+COUNTEREXAMPLES: dict[str, dict[str, object]] = {
+    "docs/specs/spec-0113-a-body-can-be-where-the-game-lets-it.md": {
+        "statements": [
+            "**`dsl_version` moves to `{v}`**",
+            "`dsl_version {v}`",
+        ],
+        "reason": (
+            "the spec records the dsl_version its surface was allocated; a spec is a "
+            "historical decision record, so a later bump must not move it, and this "
+            "entry is retired by that bump"
+        ),
+    },
+}
 
 
 def files_named() -> list[str]:

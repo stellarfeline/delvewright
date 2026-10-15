@@ -665,7 +665,7 @@ test("a leg's jumps parse, and one outside the parkour move's table is a named g
     ],
     jumps: [{ from: [3, 64, 0], to: [6, 64, 0], run_up: 3, sprint: true }],
   };
-  const w = parseWaypoints({ version: "0.50.0", campaign_id: "c", legs: [leg] });
+  const w = parseWaypoints({ version: "0.4.0", campaign_id: "c", legs: [leg] });
   assert.equal(w.legs[0]!.jumps.length, 1);
   assert.equal(w.legs[0]!.jumps[0]!.runUp, 3);
   assert.equal(parkourGap(w.legs[0]!.jumps[0]!), undefined, "three forward, flat: the move's own");
@@ -673,7 +673,7 @@ test("a leg's jumps parse, and one outside the parkour move's table is a named g
   assert.throws(
     () =>
       parseWaypoints({
-        version: "0.50.0",
+        version: "0.4.0",
         campaign_id: "c",
         legs: [{ ...leg, jumps: [{ from: [0, 64, 0], to: [6, 64, 0], run_up: 0, sprint: true }] }],
       }),
