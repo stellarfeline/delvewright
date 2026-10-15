@@ -183,6 +183,40 @@ pub struct LayoutGraphContent {
     pub beats: Vec<Beat>,
 }
 
+impl LayoutGraphContent {
+    /// **The place an anchor belongs to**, read from the graph alone: the
+    /// entry anchor is the entry's, a place's own `anchor/node-…` and each of
+    /// its stations are that place's, and a barred edge's `anchor/unlock-…` is
+    /// the place on its `opens_from` side. The names are
+    /// [`crate::siteplan::synthesized_anchor_kinds`]'s spelling. A seam's gate
+    /// region stands between two places and belongs to neither; it and any name
+    /// the graph does not spell yield `None`.
+    #[must_use]
+    pub fn place_of(&self, anchor: &str) -> Option<&NodeId> {
+        if anchor == crate::siteplan::ENTRY_ANCHOR {
+            return Some(&self.entry);
+        }
+        if let Some(n) = self.nodes.iter().find(|n| {
+            (n.reached && crate::siteplan::node_anchor(&n.id) == anchor)
+                || n.stations.iter().any(|s| s.anchor.as_str() == anchor)
+        }) {
+            return Some(&n.id);
+        }
+        self.edges.iter().find_map(|e| match e {
+            Edge::Barred { id, opens_from, .. }
+                if crate::siteplan::seam_unlock_anchor(id) == anchor =>
+            {
+                match opens_from {
+                    OpensFrom::A => Some(e.a()),
+                    OpensFrom::B => Some(e.b()),
+                    OpensFrom::Either => None,
+                }
+            }
+            _ => None,
+        })
+    }
+}
+
 /// A **place**: a room, a courtyard, an arena, a stretch of shore, a cavern.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -748,6 +782,17 @@ impl Closure {
                     c.obtained.extend(given.iter().cloned());
                 }
             }
+            // A producer whose chain demands flags fires once its holder is held
+            // and the body holds what it demands.
+            for gg in &grants.gated {
+                let held = match &gg.holder {
+                    Holder::Node(n) => c.reached.contains(n.as_str()),
+                    Holder::Quest(q) => c.obtained.contains(&Grant::Quest(q.clone())),
+                };
+                if held && gg.requires.is_subset(&c.obtained) {
+                    c.obtained.insert(gg.grant.clone());
+                }
+            }
             if (c.reached.len(), c.obtained.len()) == before {
                 return c;
             }
@@ -759,28 +804,83 @@ impl Closure {
 /// documents — the *grant* half of §3.2's loop.
 #[derive(Debug, Clone, Default)]
 pub struct Grants {
-    /// node id -> what standing there eventually yields.
+    /// node id -> what standing there yields, unconditionally.
     pub by_node: BTreeMap<String, BTreeSet<Grant>>,
-    /// quest id -> (the nodes its beats sit in, what completing it yields).
+    /// quest id -> (the nodes its beats sit in, what completing it yields
+    /// unconditionally).
     pub by_quest: BTreeMap<String, (BTreeSet<String>, BTreeSet<Grant>)>,
+    /// What a place or a completed quest yields only once a body already holds
+    /// the flags the producing chain requires.
+    pub gated: Vec<GatedGrant>,
+}
+
+/// One producer whose chain demands flags of its own: credited once its
+/// [`Holder`] is held and every flag in `requires` is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GatedGrant {
+    /// What must be reached or completed for the producer to fire.
+    pub holder: Holder,
+    /// The flags the producing chain requires.
+    pub requires: BTreeSet<Grant>,
+    /// What it yields.
+    pub grant: Grant,
+}
+
+/// Where a [`GatedGrant`] fires.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Holder {
+    /// A body stands at this node.
+    Node(String),
+    /// This quest completed.
+    Quest(String),
 }
 
 impl Grants {
-    /// Derive the grants a graph's `beats[]` imply, from the campaign's quests
-    /// and dialogue.
+    /// Derive the grants a graph implies, from the campaign's one producer
+    /// table ([`crate::producers::flag_producers`]) and its dialogue.
     ///
-    /// A beat bound to an objective grants every flag the campaign sets when
-    /// that objective completes, plus — for a `talk-to` — every flag reachable
-    /// in the spoken-to NPC's dialogue tree, because the conversation happens
-    /// where the speaker stands. Both walks reach nested bundles, so a
-    /// `set-flag` inside a `sequence` step or an `on_respawn` hook counts
-    /// exactly as a top-level one does.
+    /// Every row of the table is credited where it happens:
+    ///
+    /// * an objective's row, at the place its beat is bound to;
+    /// * a quest's row, once the quest completes;
+    /// * an ambient row — a trigger, a trap's payload or disarm, a timed gate's
+    ///   disarm, a shortcut's unlock, a shop offer — at the place its anchor
+    ///   belongs to ([`LayoutGraphContent::place_of`]). A row whose anchor names
+    ///   no place of the graph is credited nowhere.
+    ///
+    /// A row whose chain requires flags is credited only once a body holds
+    /// them. A `talk-to` beat additionally grants every flag the spoken-to NPC's
+    /// dialogue options set, because the conversation happens where the speaker
+    /// stands.
     #[must_use]
     pub fn of(c: &Campaign, graph: &LayoutGraphContent) -> Grants {
         let mut g = Grants::default();
-        // objective id (scoped by quest) -> the flags its completion sets.
-        let mut on_objective: BTreeMap<(&str, &str), BTreeSet<Grant>> = BTreeMap::new();
-        let mut on_quest: BTreeMap<&str, BTreeSet<Grant>> = BTreeMap::new();
+        let flags_of = |req: &[String]| -> BTreeSet<Grant> {
+            req.iter().map(|f| Grant::Flag(f.clone())).collect()
+        };
+        // (quest, objective) -> the rows its completion fires.
+        let mut on_objective: BTreeMap<(&str, &str), Vec<(BTreeSet<Grant>, Grant)>> =
+            BTreeMap::new();
+        let mut on_quest: BTreeMap<&str, Vec<(BTreeSet<Grant>, Grant)>> = BTreeMap::new();
+        for p in crate::producers::flag_producers(c) {
+            let row = (flags_of(&p.requires), Grant::Flag(p.flag.to_string()));
+            match p.site {
+                crate::producers::ProducerSite::ObjectiveComplete { quest, objective } => {
+                    on_objective
+                        .entry((quest, objective))
+                        .or_default()
+                        .push(row);
+                }
+                crate::producers::ProducerSite::QuestComplete { quest } => {
+                    on_quest.entry(quest).or_default().push(row);
+                }
+                crate::producers::ProducerSite::Ambient { at, .. } => {
+                    if let Some(node) = at.and_then(|a| graph.place_of(a.as_str())) {
+                        g.credit(Holder::Node(node.0.clone()), row);
+                    }
+                }
+            }
+        }
         // NPC -> the flags anything in their dialogue tree can set.
         let mut npc_flags: BTreeMap<&str, BTreeSet<Grant>> = BTreeMap::new();
         for tree in &c.dialogue.content.dialogues {
@@ -795,57 +895,66 @@ impl Grants {
                 }
             }
         }
+        let mut talks: BTreeMap<(&str, &str), &str> = BTreeMap::new();
         for q in &c.quests.content.quests {
-            let mut done: BTreeSet<Grant> = BTreeSet::new();
-            for eff in &q.on_complete {
-                eff.visit_deep(&mut |e| {
-                    if let Some(f) = e.set_flag() {
-                        done.insert(Grant::Flag(f.0.clone()));
-                    }
-                });
-            }
-            on_quest.insert(q.id.0.as_str(), done);
-            for (obj, effects) in &q.on_objective_complete {
-                let entry = on_objective
-                    .entry((q.id.0.as_str(), obj.0.as_str()))
-                    .or_default();
-                for eff in effects {
-                    eff.visit_deep(&mut |e| {
-                        if let Some(f) = e.set_flag() {
-                            entry.insert(Grant::Flag(f.0.clone()));
-                        }
-                    });
-                }
-            }
             for obj in &q.objectives {
-                if let Objective::TalkTo { id, npc, .. } = obj
-                    && let Some(flags) = npc_flags.get(npc.0.as_str())
-                {
-                    on_objective
-                        .entry((q.id.0.as_str(), id.0.as_str()))
-                        .or_default()
-                        .extend(flags.iter().cloned());
+                if let Objective::TalkTo { id, npc, .. } = obj {
+                    talks.insert((q.id.0.as_str(), id.0.as_str()), npc.0.as_str());
                 }
             }
         }
         for beat in &graph.beats {
             let node = beat.node.0.clone();
-            let given = on_objective
-                .get(&(beat.quest.0.as_str(), beat.objective.0.as_str()))
-                .cloned()
-                .unwrap_or_default();
-            g.by_node.entry(node.clone()).or_default().extend(given);
-            let q = g
-                .by_quest
+            let key = (beat.quest.0.as_str(), beat.objective.0.as_str());
+            for row in on_objective.get(&key).into_iter().flatten() {
+                g.credit(Holder::Node(node.clone()), row.clone());
+            }
+            if let Some(flags) = talks.get(&key).and_then(|npc| npc_flags.get(npc)) {
+                g.by_node
+                    .entry(node.clone())
+                    .or_default()
+                    .extend(flags.iter().cloned());
+            }
+            g.by_quest
                 .entry(beat.quest.0.clone())
-                .or_insert_with(|| (BTreeSet::new(), BTreeSet::new()));
-            q.0.insert(node);
-            q.1 = on_quest
-                .get(beat.quest.0.as_str())
-                .cloned()
-                .unwrap_or_default();
+                .or_insert_with(|| (BTreeSet::new(), BTreeSet::new()))
+                .0
+                .insert(node);
+        }
+        for (quest, rows) in on_quest {
+            if !g.by_quest.contains_key(quest) {
+                continue; // a quest with no beat here never completes in this proof
+            }
+            for row in rows {
+                g.credit(Holder::Quest(quest.to_string()), row);
+            }
         }
         g
+    }
+
+    /// Record one producer row at its holder: unconditional when its chain
+    /// requires nothing, gated otherwise.
+    fn credit(&mut self, holder: Holder, (requires, grant): (BTreeSet<Grant>, Grant)) {
+        if !requires.is_empty() {
+            self.gated.push(GatedGrant {
+                holder,
+                requires,
+                grant,
+            });
+            return;
+        }
+        match holder {
+            Holder::Node(n) => {
+                self.by_node.entry(n).or_default().insert(grant);
+            }
+            Holder::Quest(q) => {
+                self.by_quest
+                    .entry(q)
+                    .or_insert_with(|| (BTreeSet::new(), BTreeSet::new()))
+                    .1
+                    .insert(grant);
+            }
+        }
     }
 }
 
@@ -1900,6 +2009,22 @@ fn collect_grants(grants: &Grants, visited: &BTreeSet<&str>, held: &mut BTreeSet
         if nodes.iter().all(|n| visited.contains(n.as_str())) {
             held.insert(Grant::Quest(quest.clone()));
             held.extend(given.iter().cloned());
+        }
+    }
+    // A gated producer can enable another; settle them in rounds.
+    loop {
+        let before = held.len();
+        for gg in &grants.gated {
+            let at = match &gg.holder {
+                Holder::Node(n) => visited.contains(n.as_str()),
+                Holder::Quest(q) => held.contains(&Grant::Quest(q.clone())),
+            };
+            if at && gg.requires.is_subset(held) {
+                held.insert(gg.grant.clone());
+            }
+        }
+        if held.len() == before {
+            return;
         }
     }
 }
