@@ -62,23 +62,37 @@ impl FiringVolume {
         match *self {
             FiringVolume::Cell(p) => c == p,
             FiringVolume::Sphere { anchor, range } => {
-                use delvewright_dsl::metrics::{PLAYER_WIDTH, POLL_HORIZONTAL_BLOCKS_PER_TICK};
-                let half = PLAYER_WIDTH / 2.0;
-                let walled = |d: [i32; 3]| w.is_solid(d) || w.is_solid([d[0], d[1] + 1, d[2]]);
-                let span = |lo: i32, minus: [i32; 3], plus: [i32; 3]| {
-                    let a = f64::from(lo) + if walled(minus) { half } else { 0.0 };
-                    let b = f64::from(lo + 1) - if walled(plus) { half } else { 0.0 };
-                    (a, b)
-                };
-                let (x0, x1) = span(c[0], [c[0] - 1, c[1], c[2]], [c[0] + 1, c[1], c[2]]);
-                let (z0, z1) = span(c[2], [c[0], c[1], c[2] - 1], [c[0], c[1], c[2] + 1]);
-                let px = f64::from(anchor[0]) + 0.5;
-                let pz = f64::from(anchor[2]) + 0.5;
-                let fx = (x0 - px).abs().max((x1 - px).abs());
-                let fz = (z0 - pz).abs().max((z1 - pz).abs());
+                use delvewright_dsl::metrics::POLL_HORIZONTAL_BLOCKS_PER_TICK;
+                let (far, _) = reach(w, c, anchor);
+                far + POLL_HORIZONTAL_BLOCKS_PER_TICK / 2.0 <= f64::from(range)
+            }
+        }
+    }
+
+    /// Whether some body standing in `c` on `w` can be caught — the outer
+    /// reading, used only to choose the clearest witness: a walk that keeps
+    /// out of every such cell never comes within reach of the selector at all.
+    fn may_fire(&self, w: &World, c: [i32; 3]) -> bool {
+        match *self {
+            // A body leans into the plate's cell from a horizontal neighbour.
+            FiringVolume::Cell(p) => {
+                c[1] == p[1] && (c[0] - p[0]).abs() <= 1 && (c[2] - p[2]).abs() <= 1
+            }
+            FiringVolume::Sphere { anchor, range } => reach(w, c, anchor).1 <= f64::from(range),
+        }
+    }
+
+    /// Whether a body standing at the middle of `c` is caught — the middle
+    /// reading, used only to choose a witness when no walk keeps clear of
+    /// every cell a body may be caught in.
+    fn centre_fires(&self, w: &World, c: [i32; 3]) -> bool {
+        match *self {
+            FiringVolume::Cell(p) => c == p,
+            FiringVolume::Sphere { anchor, range } => {
+                let dx = f64::from(c[0] - anchor[0]);
+                let dz = f64::from(c[2] - anchor[2]);
                 let dy = w.feet_y(c) - f64::from(anchor[1]);
-                (fx * fx + dy * dy + fz * fz).sqrt() + POLL_HORIZONTAL_BLOCKS_PER_TICK / 2.0
-                    <= f64::from(range)
+                (dx * dx + dy * dy + dz * dz).sqrt() <= f64::from(range)
             }
         }
     }
@@ -105,12 +119,60 @@ impl FiringVolume {
     }
 }
 
+/// The farthest and nearest distance from the `positioned` point of an anchor
+/// cell to the feet of a body standing in `c`: the column's square at the
+/// cell's feet height, drawn in by half the player's width on each side whose
+/// next column is solid at foot or head height.
+fn reach(w: &World, c: [i32; 3], anchor: [i32; 3]) -> (f64, f64) {
+    use delvewright_dsl::metrics::PLAYER_WIDTH;
+    let half = PLAYER_WIDTH / 2.0;
+    let walled = |d: [i32; 3]| w.is_solid(d) || w.is_solid([d[0], d[1] + 1, d[2]]);
+    let span = |lo: i32, minus: [i32; 3], plus: [i32; 3]| {
+        let a = f64::from(lo) + if walled(minus) { half } else { 0.0 };
+        let b = f64::from(lo + 1) - if walled(plus) { half } else { 0.0 };
+        (a, b)
+    };
+    let (x0, x1) = span(c[0], [c[0] - 1, c[1], c[2]], [c[0] + 1, c[1], c[2]]);
+    let (z0, z1) = span(c[2], [c[0], c[1], c[2] - 1], [c[0], c[1], c[2] + 1]);
+    let px = f64::from(anchor[0]) + 0.5;
+    let pz = f64::from(anchor[2]) + 0.5;
+    let far = |a: f64, b: f64, p: f64| (a - p).abs().max((b - p).abs());
+    let near = |a: f64, b: f64, p: f64| {
+        if p < a {
+            a - p
+        } else if p > b {
+            p - b
+        } else {
+            0.0
+        }
+    };
+    let dy = w.feet_y(c) - f64::from(anchor[1]);
+    let len = |x: f64, z: f64| (x * x + dy * dy + z * z).sqrt();
+    (
+        len(far(x0, x1, px), far(z0, z1, pz)),
+        len(near(x0, x1, px), near(z0, z1, pz)),
+    )
+}
+
 /// One walk round a trigger's volume: the leg it walks and its cells.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::compiler::nav) struct WalkRound {
     pub(in crate::compiler::nav) from: [i32; 3],
     pub(in crate::compiler::nav) to: [i32; 3],
     pub(in crate::compiler::nav) cells: Vec<[i32; 3]>,
+    /// How far the witness keeps from the selector.
+    pub(in crate::compiler::nav) margin: Margin,
+}
+
+/// How far a witness walk keeps from a trigger's selector, clearest first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::compiler::nav) enum Margin {
+    /// It never stands in a cell where a body may be caught at all.
+    Clear,
+    /// It never stands in a cell whose middle is caught.
+    Centred,
+    /// It only keeps out of the cells where a body is sure to be caught.
+    Unsure,
 }
 
 /// What the walks over a chain of legs do with a volume.
@@ -157,9 +219,22 @@ pub(in crate::compiler::nav) fn passage(
             return Passage::Crossed(n);
         };
         if first.is_none() {
+            // The clearest witness: a walk that never comes within reach of the
+            // selector, where one exists.
+            let fp = Footprint::player();
+            let clear = w.find_path_avoiding(start, goal, &fp, &|c| volume.may_fire(w, c));
+            let centred = || w.find_path_avoiding(start, goal, &fp, &|c| volume.centre_fires(w, c));
+            let (margin, cells) = match clear {
+                Some(p) => (Margin::Clear, p),
+                None => match centred() {
+                    Some(p) => (Margin::Centred, p),
+                    None => (Margin::Unsure, cells),
+                },
+            };
             first = Some(WalkRound {
                 from: start,
                 to: goal,
+                margin,
                 cells,
             });
         }
@@ -171,6 +246,7 @@ pub(in crate::compiler::nav) fn passage(
             from: [0; 3],
             to: [0; 3],
             cells: Vec::new(),
+            margin: Margin::Clear,
         }),
     }
 }
@@ -382,11 +458,23 @@ fn walked_past(
         .min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
     let witness = match near {
         Some((d, c)) => format!(
-            "a walk of {} cell(s) from {:?} to {:?} passes {c:?}, {d:.2} block(s) from the \
-             trigger's point, and never stands where the selector is sure to catch it",
+            "a walk of {} cell(s) from {:?} to {:?} {}: its nearest cell is {c:?}, {d:.2} \
+             block(s) from the trigger's point",
             w.cells.len(),
             w.from,
-            w.to
+            w.to,
+            match w.margin {
+                Margin::Clear => "never stands where the selector can catch a body",
+                Margin::Centred => {
+                    "keeps the middle of every cell it crosses out of range, and never stands \
+                     where the selector is sure to catch a body"
+                }
+                Margin::Unsure => {
+                    "never stands where the selector is sure to catch a body: in each cell it \
+                     crosses a body can stand out of range, or move out of it between two \
+                     one-tick polls"
+                }
+            }
         ),
         None => "no step between them is walked, so no walk enters it".to_string(),
     };
@@ -486,7 +574,23 @@ mod tests {
             anchor: [5, 64, 5],
             range: 2,
         };
-        assert!(matches!(walk(&chapel(&[10]), v), Passage::Round(_)));
+        let Passage::Round(w) = walk(&chapel(&[10]), v) else {
+            panic!("the second door is a way round")
+        };
+        // The witness goes by the far door, never within reach of the selector.
+        assert_eq!(w.margin, Margin::Clear);
+        assert!(w.cells.contains(&[10, 64, 5]), "{w:?}");
+        // In the three-wide door alone at range 1, every column of the doorway
+        // may catch a body and its outer two are caught at the middle: the
+        // witness only keeps out of the cells a body is sure to be caught in.
+        let one = FiringVolume::Sphere {
+            anchor: [5, 64, 5],
+            range: 1,
+        };
+        let Passage::Round(w) = walk(&chapel(&[]), one) else {
+            panic!("range 1 is walked round")
+        };
+        assert_eq!(w.margin, Margin::Unsure);
     }
 
     #[test]
