@@ -2022,30 +2022,6 @@ impl World {
     }
 
     /// [`World::body_reach`] at `params`.
-    pub fn body_reach_at(&self, roots: &[[i32; 3]], params: &ReachParams) -> Reach {
-        static TRACE: OnceLock<bool> = OnceLock::new();
-        let on = *TRACE.get_or_init(|| std::env::var("DELVEC_REACH_TRACE").is_ok());
-        let t = std::time::Instant::now();
-        let r = self.body_reach_at_inner(roots, params);
-        if on {
-            eprintln!(
-                "TRACE reach {} roots -> {} states, {} sims, {:?}\n{}",
-                roots.len(),
-                r.states.len(),
-                r.simulated,
-                t.elapsed(),
-                std::backtrace::Backtrace::force_capture()
-                    .to_string()
-                    .lines()
-                    .filter(|l| l.contains("delvec::compiler") && !l.contains("nav::world::reach"))
-                    .take(3)
-                    .collect::<Vec<_>>()
-                    .join(" | ")
-            );
-        }
-        r
-    }
-
     ///
     /// The closure is taken in rounds. Each round first closes over the cheap
     /// edges — the cell relation of every standing and holding node, and every
@@ -2057,7 +2033,7 @@ impl World {
     /// add a state by any launch, so its launches are not flown; the closure is
     /// the one every node's launches would give. Rounds end when no node is
     /// left to fly.
-    fn body_reach_at_inner(&self, roots: &[[i32; 3]], params: &ReachParams) -> Reach {
+    pub fn body_reach_at(&self, roots: &[[i32; 3]], params: &ReachParams) -> Reach {
         let memo = self.graph_memo(params);
         let start: Vec<[i32; 3]> = roots
             .iter()
