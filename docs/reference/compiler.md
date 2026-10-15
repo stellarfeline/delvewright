@@ -174,6 +174,8 @@ delvec l10n-apply <dir> --lang <c> --table <f>
 delvec allocation <dir> [<place>|--all]    # the handed allocation for a site-plan place
 delvec detail   <dir> [<place>|--all]      # detail a place inside its allocation (spec-0058)
 delvec detail   <dir> <place> --piece <id> # bind a library piece to a place (spec-0106 §3.5)
+delvec prefab extract <dir> --scope <s> -o <lib>  # lift a prefab out of the built campaign (spec-0106 §3.9)
+delvec prefab seat <dir> <prefab> --node <n> --at <x,z>  # seat an extracted prefab as a place
 delvec snapshot <dir> [framing] [-o f.png] # draft frame + scene manifest (§7)
 delvec blocking-chart <dir> [-o dir]       # per-elevation cutaway floor plans (§7)
 delvec edit apply   <dir> [--batch f] [-o dir]  # replay edit script (+ candidate), persist on green (§7)
@@ -669,6 +671,35 @@ lofts and pits inside a place, its materials and its light. What is not: the
 seams, their cells, their rises, and the absence of any way out the plan did not
 allocate.
 
+
+**A prefab lifted from a build, and seated** (spec-0106 §3.9). `delvec prefab
+extract` (`crates/delvec/src/extract.rs`) reads the world a build ships —
+`assembled::assemble`, the stage-7 replay over it, the world-load gate seals
+written back (a sealed gate's cells take the template's own shaped state where
+its block is the seal's) — inside a scope's cuboid, and freezes it through
+`grammar::export::freeze_model`, so a cuboid whose cells are a source piece's
+own writes that piece's tiles byte for byte. It leaves out what the build
+derives from documents the piece does not hold: the relight's fixtures (the
+places' `boxes[].lighting`, carried as `extraction.relight` and declared again
+at seating) and the trigger props (the seating campaign's triggers declare
+their own). A place scope voids a neighbour's cells and carries the whole's;
+its openings are the seams leaving the set, each at the cells the allocation
+hands the piece (`AllocatedSeam::cells`), and a seam inside the set is a
+contract edge between the spaces either side. A cut's openings are the walk
+model's candidates: every run of standable floor in the cuboid's boundary
+layer with a cell to walk, step, drop or swim to just outside it
+(`compiler::nav::World` over the shipped cells, cardinal faces). What a scope
+severs is `extraction.residue`, one row per object by name: a gate region the
+boundary crosses, a station of a place the cut parts, a site-plan volume, an
+assembly's body or a pulse's heard place across the boundary, an atmosphere,
+light or mitigation the places disagree on, a neighbour's voided cells, and the
+cut's unestablished facts (the entry, the candidates awaiting a neighbour, the
+dark cells within four of the cut, the cross-section sides `shown_faces` does
+not claim). An object it can neither carry nor drop is `DW1023`. `delvec prefab
+seat` (`crates/delvec/src/seat.rs`) writes the place's rows from the piece and
+judges the would-be campaign through `validate_loaded` before writing; a
+declared opening a seam does not answer and `boxes[].commons` does not name is
+`DW1022` (`detail::check`).
 ### Stage 7 — `world-edits` (optional; spec-0017)
 
 The map editor's edit script (`world-edits.json`), the artifact of record for
@@ -810,6 +841,7 @@ it.
 | `base: {"owned": n}` | (spec-0106 §3.1) **A place owns its ground.** Its claim's bottom is `floor − 1 − n` everywhere, like an aloft place's, and nothing of its ring is fixed: inside the footprint and ring the ground is the bound piece's to draw (its valley floor, its moat, its bedrock course), and under the claim's bottom the fill writes its ground as everywhere else. The allocation prints zero fixed cells and the columns whose terrain stood higher than the bottom (`clipped_columns`, the piece's to replace — counted, never refused). The one rule it owes: on an `open` fill, the terrain's surface stands at or above `floor − 2 − n` in every column of its footprint and ring, so the piece's bottom course rests on ground and never on air (`DW1021`, build tier, `compiler::detail`, naming the first short column and the course count; a `solid` fill has nothing to refuse). The `DW0990` crack shape is not asked of an owned place: its ring's ground is the piece's own. |
 | `boxes[].lighting {fixture,min_light}` | (spec-0106 §3.2) Optional, on a place whose piece is bound by `details[]`: the relight pass guarantees `min_light` (1..=14; `DW0196` out of range) over the **bound piece's** reachable walkable cells by placing `fixture` (`torch`/`lantern`/`campfire`/`shroomlight`), else `DW0211`. The plan's own `lighting` reaches derived interiors only; a dark bound place with no `boxes[].lighting` is `DW0210` naming the piece. The build prints `relight binding:` with the fixtures placed inside each lit place's frame. |
 | `boxes[].mitigation` | (spec-0106 §3.2) Optional, `night-vision` — the first-class darkness declaration. The compiler emits a self-rescheduling **1 s (20t)** `night_vision_tick` that runs `effect give @a[<this place's frame>] minecraft:night_vision <lease> 0 true` (amplifier 0, particles hidden). The lease is `max(12, longest camera + 10 + 1)` seconds — **the camera-coverage guarantee**: a granted vision effect must outlast any authored camera it can overlap, plus vanilla's 10 s wind-down, so it can never begin ramping down on screen. 12 s is the floor and is what a campaign with no cutscene emits. The longest camera is measured from the ticks `camera::shot_ticks` really emits, campaign-wide. |
+| `boxes[].commons` | (spec-0106 §3.9) Optional, a list of names from the bound piece's `extraction.openings`: the declared openings of a seated piece whose outside is the site's open ground rather than a neighbour. Every declared opening is answered by a seam whose allocation the piece's face at its cells answers, or named here; one answered by neither is `DW1022`, as is a name the piece declares no opening of, a name on a `solid` site, one whose outside cells a neighbour claims, and a list on a place no row binds. A face the commons answers counts as answered in `DW0844`'s other direction. Written by `delvec prefab seat --commons`. |
 | `seams[]` | `{edge, face, at?, meets?, opening? \| contact?, stair_in?}` — **exactly one per traversal edge** (`DW0824`). `face` is one of the engine's six face names (`east`/`west`/`up`/`down`/`south`/`north`), **of the edge's `a` box**. `at` is where the crossing sits on `a`'s face and `meets` where it sits on `b`'s, each an **offset from that box's own low corner**, never a world coordinate — one integer along a wall face (cells along `z` for east/west, `x` for north/south), `[dx, dz]` through a floor or ceiling — and each defaults to **centred**, `max(0, (extent − width) div 2)` by the standard's width (a contact's `extent`, or `0` for a contact with none). **The packing** (spec-0059 §3): the pinned boxes seed it; then `seams[]` in document order, repeatedly, a seam with exactly one end standing places the other **one cell beyond the named face** (`x0(b) = x0(a) + dx(a) + 1` across `east`, and so on) with `corner(b) = corner(a) + at − meets` along it, until a pass places nothing. A seam whose two ends both stand places nothing and is **checked**: the cells it names from `a` must be the cells it names from `b` (`DW0828`, the loop that does not close; `DW0883` when `b`'s corner is a pin). An offset off its own face, or of the wrong shape for the face, is `DW0828`. **The sill is not written**: it is `max(floor(a), floor(b))`. `delvec validate` prints every box's corner and the seam that placed it — the derivation handed back, never typed. A seam allocates **one of two kinds** of connection, and both or neither is `DW0876`. `stair_in` names which of the two boxes hosts the treads: required on a `stair` (`DW0830`) and refused on anything else (`DW0824`). |
 | `seams[].opening` | **A PORTAL**: a named standard from the metrics table (`DW0812` on an unknown name), or a size the seam declares itself, `{"width": w, "height": h}` on the face's two in-plane axes — the author's own opening, a one-cell rope-bridge end included. `DW0829` refuses either when it does not fit the shared face or its sill cannot be reached. A body crosses at exactly the cells `at` and the standard allocate, and **every one of them must be passable** over the built bytes (`DW0836`), and the hole must **lead somewhere**: a body standing in it steps onto ground on both sides, with every bar open (`DW0986`; a `drop` owes its high side only). |
 | `seams[].contact` | (spec-0053) **A CONTACT**: the two places simply meet along a front, rather than through a doorway. `{extent?: [u,v]}` — the span in cells on the face's own two in-plane axes, anchored where `at`/`meets` put it; omitted, it runs from that corner to the far edge of the shared face, which is how a front along the whole of a face is written (and both offsets then default to `0`). **What it means**: the boundary is continuous ground — the derivation writes **no wall along the span**, and wall as ever outside it, and no frame ring, because a ring around a fifty-five-cell front is a wall drawn in a second block. **What the proof reads**: the author allocates *where* the places meet and the engine measures the crossing profile from assembled bytes, so *"this face is fine"* is never a declaration this engine accepts. Seams stay allocated, never discovered: the span is the edge's allocation set for `DW0838`, so a crossing outside it is still a refusal. **No door check applies** — a contact has no opening name to resolve and no single sill, and calling a wide front a door would make every downstream door check wrong. A contact carries `walk` or `drop` only; `stair`, `barred` and `vision` are excluded. Its width is the author's: a front one cell wide is as legal as a wide one. Refusals: `DW0876`, `DW0877`. |

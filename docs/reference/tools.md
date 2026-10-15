@@ -229,6 +229,48 @@ declared. A name with no same-named anchor is `DW0842` with the piece's nearest
 names. `--piece` on a place that also has `programs/<stem>.json` is refused
 naming both doors. Nothing is written on any refusal.
 
+**A prefab is lifted out of a built campaign and seated in another**
+(spec-0106 §3.9):
+
+```
+delvec --prefabs <lib> prefab extract <campaign-dir> --scope <scope> -o <dir> [--id <id>]
+delvec --prefabs <lib> prefab seat <campaign-dir> prefab/<id> --node node/<place> --at <x>,<z>
+                       [--floor <y>] [--join <opening>=<edge>]... [--commons <opening>]...
+                       [--rename <from>=<to>]...
+```
+
+`extract` builds the campaign in memory through the funnel `delvec build`
+runs, then cuts the world as it ships to a **scope** — `node/<a>[,node/<b>…]`
+(one place or several), `node/<place>/<space>` (a space of a bound piece's
+contract, with its shell), `anchor/<gate>` (a gate station's region) or
+`x0,y0,z0..x1,y1,z1` (a cuboid, inclusive) — and writes `<id>.json` and its
+tiles into `-o`. Every field is derived: the bytes (the pieces, the stage-7
+edits and the world-load gate seals inside the scope; a neighbour's cells void
+in a place scope; the relight's fixtures and the trigger props left for the
+seated build to derive), the `extraction` block (the openings — the plan's seams
+leaving a place scope, or the walk model's candidates at a cut — the ground,
+the stations, the light, sky and mitigation the places agree on, the bodies the
+source stands inside it, and the `residue` the scope severs), the joined
+contract, the anchors, and `license.extracted`, the lock record of the source
+(campaign, commit when clean, documents digest, scope, engine, the build's
+manifest hash, the digest of what was written). It prints one summary line and
+every residue row; an object the derivation can neither carry nor drop by a rule
+is `DW1023`, and nothing is written. Two extractions of one build are
+byte-identical.
+
+`seat` turns an extracted piece into a place: the node must already be in the
+layout graph. It writes the `boxes[]` row (the cuboid less its ring at `--at`,
+the floor at `--floor` — omitted, the first commons opening's floor meets the
+ground outside it, else the bottom course rests on the terrain — an open
+ceiling over the walk plane, the ground the piece owns, the light, mitigation
+and sky the extraction carried, and `commons`), the node's stations (renamed by
+`--rename`), the `details[]` row, and one seam per `--join`, its face, offsets
+and size derived from the opening's cells and both boxes. The would-be campaign
+is validated through the funnel `delvec validate` runs before anything is
+written: an opening answered by neither a seam nor `--commons` is `DW1022`, a
+station another place holds is `DW0870` (naming `--rename`), and every gate a
+bound piece meets (`DW0843`, `DW0844`, `DW0845`, `DW0987`) holds.
+
 **`delvec fmt` is a mandatory step, not a tidiness option.** It also **writes
 the `dsl_version`**: every envelope comes out declaring the one number the
 engine implements, so adopting a campaign to a new surface is `delvec fmt` plus

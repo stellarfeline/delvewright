@@ -445,17 +445,9 @@ fn extract_from(args: &ExtractArgs<'_>, scope: &Scope, built: &Built<'_>) -> Res
             }
         }
     };
-    if walk_y < 1 {
-        return Err(refuse(
-            cannot_place(
-                args.scope,
-                "ground",
-                "the walk plane is the cuboid's bottom course, so no course of ground stands \
-                 under it; extend the cuboid down by one",
-            ),
-            args.json,
-        ));
-    }
+    // A standable cell stands on a course of the model, and a frame holds
+    // its floor course: the walk plane is never the bottom course.
+    debug_assert!(walk_y >= 1, "a walk plane over at least one course");
     let ground = match (&scope, sources.as_slice()) {
         (Scope::Places(_), [one]) if one.plan_box.base.aloft().is_some() => one.plan_box.base,
         _ => Base::Owned((walk_y - 1) as u32),
@@ -659,8 +651,24 @@ fn extract_from(args: &ExtractArgs<'_>, scope: &Scope, built: &Built<'_>) -> Res
                     .map(|w| s.frame.lo[1] + i64::from(w) - lo[1])
             })
             .collect();
+        // A waterline is a claim about the bytes: kept only where the cut
+        // still holds water at it.
+        let wet = |w: i64| {
+            let y = region.origin[1] + w as i32;
+            (region.origin[0]..region.origin[0] + region.size[0] as i32).any(|x| {
+                (region.origin[2]..region.origin[2] + region.size[2] as i32).any(|z| {
+                    model
+                        .get([x, y, z])
+                        .is_some_and(|b| b.to_string().starts_with("minecraft:water"))
+                })
+            })
+        };
         match lines.len() {
-            1 => lines.into_iter().next().map(|w| w as i32),
+            1 => lines
+                .into_iter()
+                .next()
+                .filter(|w| wet(*w))
+                .map(|w| w as i32),
             _ => None,
         }
     };

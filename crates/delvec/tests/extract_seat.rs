@@ -420,8 +420,15 @@ fn a_place_scope_declares_its_boundary_seams_as_openings() {
 }
 
 /// A fresh one-region campaign for a seated piece: the blockout cast, one
-/// node with no station, a site plan with no box.
+/// node with no station, a site plan with no box; the keeper stands at
+/// `station_name` and the quest walks to it.
 fn fresh(tag: &str, node: &str, station_name: &str) -> PathBuf {
+    fresh_at(tag, node, [station_name; 3], [20, 14, 20])
+}
+
+/// [`fresh`], the keeper at `stations[0]`, the quest's two walks to
+/// `stations[1]` and `stations[2]`, over a region of `extent`.
+fn fresh_at(tag: &str, node: &str, stations: [&str; 3], extent: [i64; 3]) -> PathBuf {
     let root = tempdir(tag);
     let dir = root.join("campaign");
     std::fs::create_dir_all(&dir).unwrap();
@@ -447,7 +454,7 @@ fn fresh(tag: &str, node: &str, station_name: &str) -> PathBuf {
         "site-plan.json",
         "site-plan",
         serde_json::json!({
-            "region": {"min": [0, 60, 0], "extent": [20, 14, 20]},
+            "region": {"min": [0, 60, 0], "extent": extent},
             "boxes": [], "seams": [],
             "datums": [{"id": "datum/ground", "y": 64}],
             "fill": {
@@ -460,8 +467,9 @@ fn fresh(tag: &str, node: &str, station_name: &str) -> PathBuf {
         common::patch_file(&dir.join(a), |v| {
             let t = serde_json::to_string(v).unwrap();
             let t = t
-                .replace("anchor/hearth", &format!("anchor/{station_name}"))
-                .replace("anchor/settle", &format!("anchor/{station_name}"));
+                .replace("anchor/hearth", &format!("anchor/{}", stations[0]))
+                .replace("anchor/bench", &format!("anchor/{}", stations[1]))
+                .replace("anchor/settle", &format!("anchor/{}", stations[2]));
             *v = serde_json::from_str(&t).unwrap();
         });
     }
@@ -477,6 +485,17 @@ fn fresh(tag: &str, node: &str, station_name: &str) -> PathBuf {
 }
 
 fn seat(dir: &Path, lib: &Path, prefab: &str, node: &str, extra: &[&str]) -> (Option<i32>, String) {
+    seat_at(dir, lib, prefab, node, "4,4", extra)
+}
+
+fn seat_at(
+    dir: &Path,
+    lib: &Path,
+    prefab: &str,
+    node: &str,
+    at: &str,
+    extra: &[&str],
+) -> (Option<i32>, String) {
     let mut args = vec![
         "--prefabs",
         s(lib),
@@ -487,7 +506,7 @@ fn seat(dir: &Path, lib: &Path, prefab: &str, node: &str, extra: &[&str]) -> (Op
         "--node",
         node,
         "--at",
-        "4,4",
+        at,
     ];
     args.extend_from_slice(extra);
     run(&args)
@@ -808,4 +827,364 @@ fn a_cut_declares_its_candidates_and_its_residue() {
         v
     };
     assert_eq!(strip(room), strip(cut));
+}
+
+/// `DW1023`: a declared object the derivation can neither carry nor drop by
+/// a rule is refused, naming it and the field it could not fill, and nothing
+/// is written — here a cut through the air over the rooms, which has no walk
+/// plane to seat it by.
+#[test]
+fn what_the_derivation_cannot_place_is_dw1023() {
+    let (dir, prefabs) = fixture("dw1023");
+    let lib = dir.parent().unwrap().join("lib");
+    let (code, out) = extract(&dir, &prefabs, "1,69,1..5,70,5", &lib, "air");
+    assert_eq!(code, Some(3), "{out}");
+    assert!(out.contains("DW1023") && out.contains("`walk_y`"), "{out}");
+    assert!(
+        !lib.join("air.json").exists(),
+        "a refused extraction writes nothing"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The real campaigns criteria 14 and 16 name. Run when the environment hands
+// them over:
+//   DW_VESPERHOLD_REGION=<campaigns/vesperhold of campaign/vesperhold-region>
+//   DW_VESPERHOLD_PREFABS=<that branch's prefabs/>
+//   cargo test -p delvec --test extract_seat -- --ignored --nocapture
+// ---------------------------------------------------------------------------
+
+/// The campaign and library the environment names, or the reason the
+/// measurement cannot run.
+fn handed(campaign: &str, prefabs: &str) -> (PathBuf, PathBuf) {
+    let get = |k: &str| {
+        PathBuf::from(std::env::var(k).unwrap_or_else(|_| {
+            panic!("{k} is unset: this measurement runs over a real campaign the environment names")
+        }))
+    };
+    (get(campaign), get(prefabs))
+}
+
+/// A copy of `src` with `node`'s box, stations and row taken out — the
+/// fresh campaign a seating fills.
+fn without_place(src: &Path, dst: &Path, node: &str) {
+    let _ = std::fs::remove_dir_all(dst);
+    common::copy_dir_all(src, dst);
+    common::patch_file(&dst.join("site-plan.json"), |v| {
+        v["content"]["boxes"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|b| b["node"] != node);
+    });
+    common::patch_file(&dst.join("layout-graph.json"), |v| {
+        for n in v["content"]["nodes"].as_array_mut().unwrap() {
+            if n["id"] == node {
+                n["stations"] = serde_json::json!([]);
+            }
+        }
+    });
+    common::patch_file(&dst.join("detail-plan.json"), |v| {
+        v["content"]["details"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|r| r["place"] != node);
+    });
+    let (code, out) = run(&["fmt", s(dst)]);
+    assert_eq!(code, Some(0), "{out}");
+}
+
+/// The relight binding line a build printed.
+fn relight_line(out: &str) -> String {
+    out.lines()
+        .find(|l| l.starts_with("relight binding:"))
+        .unwrap_or_else(|| panic!("no relight line in {out}"))
+        .to_string()
+}
+
+/// **Criterion 14**: Vesperhold's one region, extracted and seated again,
+/// builds the same output trees.
+#[test]
+#[ignore = "needs DW_VESPERHOLD_REGION and DW_VESPERHOLD_PREFABS"]
+fn criterion_14_vesperhold_extracted_and_seated() {
+    let (src, prefabs) = handed("DW_VESPERHOLD_REGION", "DW_VESPERHOLD_PREFABS");
+    let root = tempdir("c14");
+    let (lib, again) = (root.join("lib"), root.join("lib-again"));
+    let (code, out) = extract(&src, &prefabs, "node/vesperhold", &lib, "vesperhold");
+    assert_eq!(code, Some(0), "{out}");
+    println!(
+        "{}",
+        out.lines().find(|l| l.starts_with("extracted")).unwrap()
+    );
+    let (code, out) = extract(&src, &prefabs, "node/vesperhold", &again, "vesperhold");
+    assert_eq!(code, Some(0), "{out}");
+    let files: BTreeSet<String> = std::fs::read_dir(&lib)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    for f in &files {
+        assert_eq!(
+            std::fs::read(lib.join(f)).unwrap(),
+            std::fs::read(again.join(f)).unwrap(),
+            "{f} differs between two extractions"
+        );
+    }
+    println!("two extractions: {} file(s), byte-identical", files.len());
+
+    let m = meta(&lib, "vesperhold");
+    let anchors = m["anchors"].as_object().unwrap();
+    assert_eq!(anchors.len(), 144);
+    assert_eq!(
+        anchors
+            .values()
+            .filter(|a| a.get("region").is_some())
+            .count(),
+        7
+    );
+    let x = &m["extraction"];
+    assert_eq!(x["ground"], serde_json::json!({"owned": 7}));
+    assert_eq!(
+        x["relight"],
+        serde_json::json!({"fixture": "torch", "min_light": 3})
+    );
+    assert_eq!(x["openings"], serde_json::json!([]), "zero openings");
+    assert_eq!(x["residue"], serde_json::json!([]), "zero residue");
+    assert_eq!(x["stations"].as_array().unwrap().len(), 114);
+    let lock = &m["license"]["extracted"];
+    assert_eq!(lock["campaign"], "vesperhold");
+    assert_eq!(lock["scope"], "node/vesperhold");
+    for k in ["documents", "manifest", "digest"] {
+        assert!(
+            lock[k].as_str().unwrap().starts_with("sha256:"),
+            "{k}: {lock}"
+        );
+    }
+    assert!(
+        lock["engine"]
+            .as_str()
+            .unwrap()
+            .contains(delvewright_dsl::DSL_VERSION)
+    );
+    assert!(
+        m["license"]["provenance"]
+            .as_str()
+            .unwrap()
+            .contains("holds: prefab/vesperhold (GPL-3.0-or-later, original;")
+    );
+    let mut same = 0;
+    for f in files.iter().filter(|f| f.ends_with(".nbt")) {
+        assert_eq!(
+            std::fs::read(lib.join(f)).unwrap(),
+            std::fs::read(prefabs.join(f)).unwrap(),
+            "{f}: the extracted tile is not the source's"
+        );
+        same += 1;
+    }
+    println!("{same} extracted tile(s) byte-identical to the source tiles");
+
+    // Seated again as the one region of a fresh campaign.
+    let fresh_dir = root.join("vesperhold");
+    without_place(&src, &fresh_dir, "node/vesperhold");
+    let seated_lib = root.join("seated-lib");
+    common::copy_dir_all(&prefabs, &seated_lib);
+    common::copy_dir_all(&lib, &seated_lib);
+    let (code, out) = seat_at(
+        &fresh_dir,
+        &seated_lib,
+        "prefab/vesperhold",
+        "node/vesperhold",
+        "0,0",
+        &["--floor", "64"],
+    );
+    assert_eq!(code, Some(0), "{out}");
+    for f in ["site-plan.json", "layout-graph.json", "detail-plan.json"] {
+        assert_eq!(
+            std::fs::read(src.join(f)).unwrap(),
+            std::fs::read(fresh_dir.join(f)).unwrap(),
+            "{f}: the seating did not write §6's document"
+        );
+    }
+    let (a, b) = (root.join("out-src"), root.join("out-seat"));
+    let (code, out_a) = build(&src, &prefabs, &a);
+    assert_eq!(code, Some(0), "{out_a}");
+    let (code, out_b) = build(&fresh_dir, &seated_lib, &b);
+    assert_eq!(code, Some(0), "{out_b}");
+    println!(
+        "source: {}\nseated: {}",
+        relight_line(&out_a),
+        relight_line(&out_b)
+    );
+    assert_eq!(relight_line(&out_a), relight_line(&out_b));
+    let cmp = Command::new("python3")
+        .arg(common::repo_root().join("tools/ci/compare-build-trees.py"))
+        .args([s(&a), s(&b), "--report-only", "validation"])
+        .output()
+        .unwrap();
+    let text =
+        String::from_utf8_lossy(&cmp.stdout).into_owned() + &String::from_utf8_lossy(&cmp.stderr);
+    println!("{text}");
+    assert_eq!(cmp.status.code(), Some(0), "{text}");
+}
+
+/// **Criterion 16**: one tower of Vesperhold, cut out of its region by
+/// coordinates — the Sally Tower, `design/generator/castle/pockets.py`'s
+/// box 116..120 x 167..174 on the valley floor (feet 8) with its walls, its
+/// floor course and the door through its south face, at the piece's own
+/// origin `[0, 56, 0]`.
+#[test]
+#[ignore = "needs DW_VESPERHOLD_REGION and DW_VESPERHOLD_PREFABS"]
+fn criterion_16_a_tower_cut_out_of_vesperhold() {
+    let (src, prefabs) = handed("DW_VESPERHOLD_REGION", "DW_VESPERHOLD_PREFABS");
+    let root = tempdir("c16");
+    let lib = root.join("lib");
+    let (lo, hi) = ([115, 63, 166], [121, 73, 176]);
+    let scope = format!(
+        "{},{},{}..{},{},{}",
+        lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]
+    );
+    let (code, out) = extract(&src, &prefabs, &scope, &lib, "sally-tower");
+    assert_eq!(code, Some(0), "{out}");
+    println!(
+        "{}",
+        out.lines().find(|l| l.starts_with("extracted")).unwrap()
+    );
+    let m = meta(&lib, "sally-tower");
+    let x = &m["extraction"];
+    let ops = x["openings"].as_array().unwrap();
+    for o in ops {
+        println!(
+            "opening {}: {} {} rise {} {}x{} at {}",
+            o["name"], o["face"], o["kind"], o["rise"], o["width"], o["height"], o["cells"]
+        );
+    }
+    assert!(!ops.is_empty(), "the door in the south face meets the cut");
+
+    // The residue, a second way: from the documents, every station of the
+    // place the cut parts and every gate whose region straddles the cut
+    // (Vesperhold declares no site-plan volume; its assemblies and pulses are
+    // judged by the extraction's own rule and must be absent here).
+    let inside = |c: [i64; 3]| (0..3).all(|a| lo[a] <= c[a] && c[a] <= hi[a]);
+    let mut want: BTreeSet<String> = BTreeSet::new();
+    let piece = meta(&prefabs, "vesperhold");
+    let graph: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(src.join("layout-graph.json")).unwrap())
+            .unwrap();
+    let rows: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(src.join("detail-plan.json")).unwrap())
+            .unwrap();
+    let row = &rows["content"]["details"][0]["anchors"];
+    let origin = [0, 56, 0];
+    let at = |p: &serde_json::Value| -> [i64; 3] {
+        [
+            origin[0] + p[0].as_i64().unwrap(),
+            origin[1] + p[1].as_i64().unwrap(),
+            origin[2] + p[2].as_i64().unwrap(),
+        ]
+    };
+    for st in graph["content"]["nodes"][0]["stations"].as_array().unwrap() {
+        let name = st["anchor"].as_str().unwrap();
+        let a = &piece["anchors"][row[name].as_str().unwrap()];
+        let p = a.get("pos").unwrap_or(&a["region"]["from"]);
+        if !inside(at(p)) {
+            want.insert(name.to_string());
+        }
+    }
+    for (k, a) in piece["anchors"].as_object().unwrap() {
+        if let Some(r) = a.get("region") {
+            if inside(at(&r["from"])) != inside(at(&r["to"])) {
+                want.insert(k.clone());
+            }
+        }
+    }
+    for d in ["entry", "openings", "lighting", "shown_faces"] {
+        want.insert(d.to_string());
+    }
+    let got: BTreeSet<String> = x["residue"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["object"].as_str().unwrap().to_string())
+        .collect();
+    println!(
+        "residue: {} row(s), the documents' computation {} row(s)",
+        got.len(),
+        want.len()
+    );
+    assert_eq!(got, want);
+
+    // Seated in a fresh campaign with every residue row answered: the
+    // candidates to the commons, the cross-sections declared shown.
+    let names: Vec<String> = ops
+        .iter()
+        .map(|o| o["name"].as_str().unwrap().to_string())
+        .collect();
+    let seated = fresh_at(
+        "c16-seat",
+        "tower",
+        ["sally-tower", "sally-tally", "sally-chest"],
+        [24, 16, 24],
+    );
+    // The keeper stands at the tower's own mark, which the source named in
+    // no station: the fresh campaign declares it, and the seating binds it to
+    // the piece's anchor of the same name.
+    common::patch_file(&seated.join("layout-graph.json"), |v| {
+        v["content"]["nodes"][0]["stations"] =
+            serde_json::json!([{"anchor": "anchor/sally-tower", "kind": "point"}]);
+    });
+    // A tower room is small: a reach of radius 3 would complete from the
+    // valley floor outside (`DW0881`), so the walks reach their cell.
+    common::patch_file(&seated.join("quests.json"), |v| {
+        for o in v["content"]["quests"][0]["objectives"]
+            .as_array_mut()
+            .unwrap()
+        {
+            if o.get("radius").is_some() {
+                o["radius"] = serde_json::json!(1);
+            }
+        }
+    });
+    if names.len() > 1 {
+        let (code, out) = seat_at(
+            &seated,
+            &lib,
+            "prefab/sally-tower",
+            "node/tower",
+            "6,6",
+            &["--commons", &names[0]],
+        );
+        assert_eq!(code, Some(1), "{out}");
+        assert!(out.contains("DW1022"), "{out}");
+    } else {
+        let (code, out) = seat_at(
+            &seated,
+            &lib,
+            "prefab/sally-tower",
+            "node/tower",
+            "6,6",
+            &[],
+        );
+        assert_eq!(code, Some(1), "{out}");
+        assert!(
+            out.contains("DW1022") && out.contains(&format!("`{}`", names[0])),
+            "{out}"
+        );
+    }
+    common::patch_file(&lib.join("sally-tower.json"), |v| {
+        v["shown_faces"] = serde_json::json!(["north", "south", "east", "west", "up"]);
+    });
+    let mut all: Vec<&str> = Vec::new();
+    for n in &names {
+        all.extend(["--commons", n.as_str()]);
+    }
+    let (code, out) = seat_at(
+        &seated,
+        &lib,
+        "prefab/sally-tower",
+        "node/tower",
+        "6,6",
+        &all,
+    );
+    assert_eq!(code, Some(0), "{out}");
+    let (code, out) = build(&seated, &lib, &root.join("out"));
+    assert_eq!(code, Some(0), "{out}");
+    println!("{}", relight_line(&out));
 }
