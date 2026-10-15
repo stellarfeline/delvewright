@@ -3045,7 +3045,7 @@
       "triage": "capability"
     },
     {
-      "applies_when": {
+      "binding": {
         "files": [
           "quests.json"
         ],
@@ -3065,27 +3065,15 @@
           ]
         }
       },
-      "binding": {
-        "files": [
-          "quests.json"
-        ],
-        "kind": "dsl",
-        "match": {
-          "has_any": [
-            "highlight",
-            "manual"
-          ]
-        }
-      },
       "campaign": "the-stranding",
       "carrier": {
-        "code": "DW1016",
+        "code": "DW0963",
         "kind": "dw"
       },
       "finding": "nothing taught the player that the world's blocks are right-clicked: a sign started a cutscene unannounced, and later props were not tried",
-      "general_form": "a prop the party must act on that does not read as the thing is picked out on arrival by a highlight the author declares, and how the setting is operated where it contradicts vanilla is in the journal's manual, readable any time",
+      "general_form": "a world block the party must act on is a visible block that reads as the thing, picked out on arrival by a highlight the author declares where it does not, and how the setting is operated where it contradicts vanilla is in the journal's manual, readable any time",
       "id": "str-07",
-      "note": "Carried by `DW1016` and the journal (spec-0104 §7, §8): the author declares `highlight {within}` on an act whose block or body does not read as the thing — lit only while a player is within range and the act is armed, refused where it has nothing to light (`DW1016`) — and writes `guidance.manual` pages only where the setting contradicts vanilla or an item needs instructions; the journal in every hand holds them with the open and done objectives. No check asks that an input be taught: a vanilla player right-clicks a lever without being told. The binding counts the campaign's `highlight` declarations and its `manual`.",
+      "note": "Carried by `DW0963` (spec-0104 §7.6): every `interact` and every `use`/`strike` trigger sits on a visible block — a prop or an authored block — with no marker hatch. Where the block does not read as the thing, the author declares `highlight {within}` (lit while a player is near and the act is armed; `DW1016` refuses one with nothing to light), and where the setting contradicts vanilla the author writes `guidance.manual` pages, which the journal in every hand holds with the open and done objectives. No check asks that an input be taught: a vanilla player right-clicks a lever without being told.",
       "round": 1,
       "triage": "capability"
     },
