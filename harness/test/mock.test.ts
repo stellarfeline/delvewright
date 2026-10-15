@@ -53,7 +53,7 @@ test("a path with a mock step against an executor that cannot mock fails, never 
   await assert.rejects(
     runSequence(
       {
-        version: "0.46.0",
+        version: "0.0.0",
         formatVersion: 5,
         campaignId: "hello-world",
         nonCombatants: { kinds: [], examined: 0, ambiguous: [], unbound: false },
