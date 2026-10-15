@@ -230,7 +230,7 @@ pub fn check_threshold_triggers(
             continue;
         }
         b.performed += 1;
-        let Some(reader) = plan.path_firing.trigger_debts.get(trigger_id) else {
+        let Some((reader, flag)) = plan.path_firing.trigger_debts.get(trigger_id) else {
             b.no_debt += 1;
             continue;
         };
@@ -297,6 +297,7 @@ pub fn check_threshold_triggers(
                     refusal = Some(walked_past(
                         trigger_id,
                         reader,
+                        flag,
                         t.on.kind(),
                         &volume,
                         &witness,
@@ -360,6 +361,7 @@ fn chain(
 fn walked_past(
     trigger: &str,
     reader: &str,
+    flag: &str,
     kind: &str,
     volume: &FiringVolume,
     w: &WalkRound,
@@ -407,11 +409,11 @@ fn walked_past(
     Failure {
         code: super::DW_THRESHOLD_WALKED_PAST,
         message: format!(
-            "trigger `{trigger}` ({kind}) pays a flag `{reader}` reads, and the critical path \
-             performs it by walking onto its anchor; a player need not. Its volume is {}, and {witness}. \
+            "trigger `{trigger}` ({kind}) pays `{flag}`, which `{reader}` reads, and the \
+             critical path performs it by walking onto its anchor; a player need not. Its volume is {}, and {witness}. \
              A player who takes that walk never fires it, and `{reader}` never completes. \
              Remedy: {widen}; or move the anchor into the only way through; or close the way \
-             round it. Do not drop the flag from `{reader}` to silence the proof.",
+             round it. Do not drop `{flag}` from `{reader}` to silence the proof.",
             volume.words()
         ),
     }

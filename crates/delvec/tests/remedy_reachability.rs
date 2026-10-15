@@ -4008,3 +4008,60 @@ fn dw0995_a_gate_the_route_opens_is_heard() {
     assert!(!after.contains("DW0995"), "{after}");
     assert!(after.contains("1 of 1 with a listening station"), "{after}");
 }
+
+// ---------------------------------------------------------------------------
+// DW1044 — a trigger the path relies on, walked past
+// ---------------------------------------------------------------------------
+
+/// The chapel-door fixture (`common::threshold`) with the trigger `on`, `at`
+/// and `edits`, built.
+fn dw1044(tag: &str, range: u32, at: &str, edits: Option<Vec<serde_json::Value>>) -> (i32, String) {
+    let camp = tmp(&format!("camp-{tag}"));
+    common::threshold::doorway_campaign(&camp, common::threshold::approach(range), at, edits);
+    build(tag, &camp, &common::prefabs_dir())
+}
+
+/// **WIDEN THE RANGE.** A range-1 trigger on one column of the two-wide
+/// doorway is walked round through the other; the range the refusal names is
+/// entered by every walk.
+#[test]
+fn dw1044_widening_the_range_to_the_one_named_builds() {
+    let (code, before) = dw1044("dw1044-r1", 1, "anchor/door", None);
+    assert_ne!(code, 0, "{before}");
+    assert!(
+        before.contains("DW1044 [error]")
+            && before.contains("widen `range` from 1 to 2, the least range every walk enters"),
+        "{before}"
+    );
+    let (code, after) = dw1044("dw1044-r2", 2, "anchor/door", None);
+    assert_eq!(code, 0, "{after}");
+    assert!(after.contains("1 entered by every walk"), "{after}");
+}
+
+/// **MOVE THE ANCHOR INTO THE ONLY WAY THROUGH.** With a second doorway, the
+/// range-2 trigger at the door is walked round; the same trigger on the exit —
+/// the cell every walk to the exit ends in — is entered by every walk.
+#[test]
+fn dw1044_moving_the_anchor_into_the_only_way_through_builds() {
+    let door = common::threshold::second_door;
+    let (code, before) = dw1044("dw1044-door", 2, "anchor/door", Some(door()));
+    assert_ne!(code, 0, "{before}");
+    assert!(before.contains("DW1044 [error]"), "{before}");
+    let (code, after) = dw1044("dw1044-exit", 2, "anchor/exit", Some(door()));
+    assert_eq!(code, 0, "{after}");
+    assert!(after.contains("1 entered by every walk"), "{after}");
+}
+
+/// **CLOSE THE WAY ROUND.** The second doorway walled again leaves one way
+/// through, and the range-2 trigger in it is entered by every walk.
+#[test]
+fn dw1044_closing_the_way_round_builds() {
+    let (code, after) = dw1044(
+        "dw1044-closed",
+        2,
+        "anchor/door",
+        Some(common::threshold::second_door_closed()),
+    );
+    assert_eq!(code, 0, "{after}");
+    assert!(after.contains("1 entered by every walk"), "{after}");
+}

@@ -539,7 +539,8 @@ pub(crate) struct PathFiring {
     /// ([`crate::compiler::flow::Flow::trigger_debts`]) — the step that needs
     /// the trigger performed. A trigger absent here is performed for the way it
     /// opens, or not at all. Read by the threshold proof (`DW1044`).
-    pub trigger_debts: BTreeMap<String, String>,
+    /// Each entry is `(objective, flag)`.
+    pub trigger_debts: BTreeMap<String, (String, String)>,
     /// The quests this path completes. A quest's `on_complete` fires on this
     /// path exactly when its quest is here; one absent here is never forced on
     /// the path — `obj_step` cannot answer that for a quest with no objectives.
@@ -682,12 +683,12 @@ pub(super) fn build_critical_path(
 
     // Which objective needs each flag-paying trigger: the first reader of the
     // flag it pays, by the same withheld replay `path_triggers` performs it for.
-    let mut trigger_debts: BTreeMap<String, String> = BTreeMap::new();
+    let mut trigger_debts: BTreeMap<String, (String, String)> = BTreeMap::new();
     for d in flow.trigger_debts(path) {
         if let Some(st) = path.steps.get(d.step) {
             trigger_debts
                 .entry(d.trigger)
-                .or_insert_with(|| st.objective.clone());
+                .or_insert_with(|| (st.objective.clone(), d.flag));
         }
     }
     // The environment triggers this path performs, keyed by the path step each
