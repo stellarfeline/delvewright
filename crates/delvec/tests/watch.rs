@@ -67,7 +67,7 @@ fn raw(keeper_watch: Option<Value>, actor_watch: Option<Value>) -> RawCampaign {
         npcs,
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
-        quests: quests,
+        quests,
         dialogue: read_hw("dialogue.json"),
         world_edits: None,
         geometry_brief: None,

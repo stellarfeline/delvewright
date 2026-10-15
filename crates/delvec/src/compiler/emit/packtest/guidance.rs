@@ -272,6 +272,15 @@ pub(super) fn emit_compass_packtests(plan: &Plan, out: &mut BuildOutput, g: &Gui
             obj_score(&w.id)
         ));
     }
+    // …and the objectives that followed them shut with their quests, so
+    // nothing at all is open.
+    for qi in open.iter().map(|w| w.quest).collect::<BTreeSet<_>>() {
+        b.push(format!(
+            "scoreboard players set {} {} 0",
+            plan::PARTY,
+            quest_active_score(plan.campaign.quests.content.quests[qi].id.as_str())
+        ));
+    }
     b.push(format!("function {ns}:compass_refresh"));
     b.push(format!("assert score @s {TRACK} matches 0"));
     b.extend(compass_held(
@@ -324,23 +333,40 @@ pub(super) fn emit_compass_packtests(plan: &Plan, out: &mut BuildOutput, g: &Gui
     b.extend(d.open());
     b.push(format!("scoreboard players set @s {TRACK} 0"));
     b.push(format!("function {ns}:compass_give"));
-    let moved = [home[0] + 3, home[1], home[2] + 2];
+    // A sibling may have despawned or walked the person; one body of its tag
+    // stands at the station for this template, so the read below has one to
+    // read, and is removed after.
+    b.push(format!(
+        "summon minecraft:armor_stand {}.5 {} {}.5 {{Invisible:1b,NoGravity:1b,Marker:1b,Tags:[\"{tag}\",\"dw_pt_cmpn\"]}}",
+        home[0], home[1], home[2]
+    ));
     b.push(format!(
         "execute store result score #cmpn_n {GUIDE} if entity {sel}"
     ));
     b.push(format!("assert score #cmpn_n {GUIDE} matches 1.."));
-    b.push(format!("tp {sel} {}.5 {} {}.5", home[0], home[1], home[2]));
+    // The compass points where the body stands now, whatever moved it
+    // there: its `Pos` is read and compared with the tracker's target. The body
+    // is not moved here: a `tp` or a `data modify … Pos` of a non-player body
+    // leaves it unselectable until the tick ends (observed on the pinned
+    // server), and a template is one tick.
     b.push(format!("function {ns}:compass_refresh"));
-    b.extend(compass_held("#cmpn_a", &tracker(home)));
-    b.push(format!("assert score #cmpn_a {GUIDE} matches 1"));
-    b.push(format!(
-        "tp {sel} {}.5 {} {}.5",
-        moved[0], moved[1], moved[2]
-    ));
-    b.push(format!("function {ns}:compass_aim_followed"));
-    b.extend(compass_held("#cmpn_b", &tracker(moved)));
-    b.push(format!("assert score #cmpn_b {GUIDE} matches 1"));
-    b.push(format!("tp {sel} {}.5 {} {}.5", home[0], home[1], home[2]));
+    let one = sel.replace(']', ",limit=1]");
+    let target = format!(
+        "entity @s Inventory[{{components:{{\"minecraft:custom_data\":{COMPASS_DATA}}}}}].components.\"minecraft:lodestone_tracker\".target.pos"
+    );
+    for (i, axis) in ["x", "y", "z"].iter().enumerate() {
+        b.push(format!(
+            "execute store result score #cmpn_b{axis} {GUIDE} run data get entity {one} Pos[{i}]"
+        ));
+        b.push(format!(
+            "execute store result score #cmpn_c{axis} {GUIDE} run data get {target}[{i}]"
+        ));
+        b.push(format!(
+            "execute store success score #cmpn_e{axis} {GUIDE} if score #cmpn_b{axis} {GUIDE} = #cmpn_c{axis} {GUIDE}"
+        ));
+        b.push(format!("assert score #cmpn_e{axis} {GUIDE} matches 1"));
+    }
+    b.push("kill @e[tag=dw_pt_cmpn]".to_string());
     b.extend(d.close());
     b.push("clear @s".to_string());
     out.insert(
@@ -600,7 +626,9 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
         if matches!(h.body, HlBody::Blocks { .. }) {
             b.push(format!("function {ns}:hl_show_{s}"));
         }
-        b.push(format!("scoreboard players set {hl} {GUIDE} 0"));
+        // Start dark, whatever a sibling or the tick left lit.
+        b.push(format!("scoreboard players set {hl} {GUIDE} 1"));
+        b.push(format!("function {ns}:hl_off_{s}"));
         b.push(format!("tp {me} {}", pos(near)));
         // Not armed: dark, however near.
         if let Some(dis) = &disarm {
@@ -618,9 +646,36 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
             "execute store result score #{s}_n {GUIDE} if entity {lit}"
         ));
         b.push(format!("assert score #{s}_n {GUIDE} matches 1.."));
-        // Armed and far: dark.
+        // Armed and far: dark. Every other player within the range — a
+        // sibling's dummy standing at the same thing — is held out of play for
+        // this one poll, as a watcher is, and handed back at once.
         b.push(format!("tp {me} {}", pos(far)));
+        let hold = format!("dw_pt_hold_{s}");
+        let probe = match &h.body {
+            HlBody::Blocks { at, .. } => format!(
+                "execute positioned {}.5 {}.5 {}.5 run tag @a[distance=..{},tag=!{CUTSCENE_TAG}] add {hold}",
+                at[0],
+                at[1],
+                at[2],
+                i32::from(h.within) + 1
+            ),
+            HlBody::Bodies { tag, npc } => {
+                let sel = if *npc {
+                    format!("@e[tag={tag},type=!minecraft:interaction]")
+                } else {
+                    format!("@e[tag={tag}]")
+                };
+                format!(
+                    "execute as {sel} at @s run tag @a[distance=..{},tag=!{CUTSCENE_TAG}] add {hold}",
+                    i32::from(h.within) + 1
+                )
+            }
+        };
+        b.push(probe);
+        b.push(format!("tag @a[tag={hold}] add {CUTSCENE_TAG}"));
         b.push(format!("function {ns}:hl_poll_{s}"));
+        b.push(format!("tag @a[tag={hold}] remove {CUTSCENE_TAG}"));
+        b.push(format!("tag @a[tag={hold}] remove {hold}"));
         b.push(format!(
             "execute store result score #{s}_n {GUIDE} if entity {lit}"
         ));

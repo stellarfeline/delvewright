@@ -843,7 +843,7 @@ fn with_lethal_fixture<R>(
             npcs: read("npcs.json"),
             classes: read("classes.json"),
             quest_plan: read("quest-plan.json"),
-            quests: quests,
+            quests,
             dialogue: read("dialogue.json"),
             world_edits: Some(read("world-edits.json")),
             geometry_brief: None,

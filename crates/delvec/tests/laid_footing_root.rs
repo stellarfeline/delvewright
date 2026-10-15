@@ -247,7 +247,7 @@ fn parse_two_quest(mandatory: bool) -> Campaign {
         npcs: hw("npcs.json"),
         classes: hw("classes.json"),
         quest_plan: plan_with_second_quest(mandatory),
-        quests: quests,
+        quests,
         dialogue: hw("dialogue.json"),
         world_edits: Some(fence_the_doorway()),
         geometry_brief: None,

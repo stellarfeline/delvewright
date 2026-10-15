@@ -335,7 +335,7 @@ fn chained_moves_plan_from_last_staged_location() {
         npcs: read_hw("npcs.json"),
         classes: read_hw("classes.json"),
         quest_plan: read_hw("quest-plan.json"),
-        quests: quests,
+        quests,
         dialogue: dialogue_with_forbids(),
         world_edits: None,
         geometry_brief: None,

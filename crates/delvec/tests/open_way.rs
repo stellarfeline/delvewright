@@ -546,7 +546,7 @@ fn campaign_with(world: String, quests: String, tower: bool) -> Campaign {
         npcs: hw("npcs.json"),
         classes: hw("classes.json"),
         quest_plan: quest_plan_doc(tower),
-        quests: quests,
+        quests,
         dialogue: hw("dialogue.json"),
         world_edits: None,
         geometry_brief: None,

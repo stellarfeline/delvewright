@@ -477,120 +477,6 @@ fn label_over_budget(stage: &str, path: String, text: &str) -> Option<Diagnostic
     ))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A styled label is measured as it draws (spec-0096 §3.4): the markup is
-    /// not drawn, an obfuscated span is exactly as wide as its text, and a bold
-    /// span is one pixel wider per character.
-    #[test]
-    fn a_styled_span_is_measured_as_it_draws() {
-        let plain = "Ask the clerk";
-        let w = default_font_width(plain);
-        assert_eq!(
-            width_for(NarrateStyle::Chat, "Ask the [[obfuscated|clerk]]"),
-            w
-        );
-        assert_eq!(
-            width_for(NarrateStyle::Chat, "Ask the [[bold|clerk]]"),
-            w + "clerk".len() as u32
-        );
-        assert_eq!(
-            width_for(NarrateStyle::Chat, "[[bold,obfuscated|Ask the clerk]]"),
-            w + plain.chars().count() as u32
-        );
-        // A label whose bold span tips it over the button is refused; the same
-        // label unstyled is not.
-        let long = "Ask the clerk for more ink";
-        assert!(default_font_width(long) <= BUTTON_LABEL_BUDGET);
-        let bold = format!("[[bold|{long}]]");
-        let over = default_font_width(long) + long.chars().count() as u32 > BUTTON_LABEL_BUDGET;
-        assert_eq!(label_over_budget("s", "p".into(), &bold).is_some(), over);
-        assert!(label_over_budget("s", "p".into(), long).is_none());
-        assert!(label_over_budget("s", "p".into(), &format!("[[obfuscated|{long}]]")).is_none());
-    }
-
-    /// The vanilla ASCII advances the table encodes: the common letter is 6 px, and
-    /// the narrow glyphs are genuinely narrower (a character count would call `iii`
-    /// and `WWW` the same size — they are 6 px and 18 px).
-    #[test]
-    fn ascii_advances_match_the_vanilla_font() {
-        assert_eq!(default_font_width("A"), 6);
-        assert_eq!(default_font_width("i"), 2);
-        assert_eq!(default_font_width("l"), 3);
-        assert_eq!(default_font_width(" "), 4);
-        assert_eq!(default_font_width("iii"), 6);
-        assert_eq!(default_font_width("WWW"), 18);
-    }
-
-    /// A Han glyph is 9 px against a Latin letter's 6 — 1.5×, not the 2× a naive
-    /// "count CJK double" rule assumes.
-    #[test]
-    fn han_glyphs_are_one_and_a_half_latin_letters() {
-        assert_eq!(default_font_width("无"), FULL_WIDTH_ADVANCE);
-        assert_eq!(default_font_width("无人之洞"), 4 * FULL_WIDTH_ADVANCE);
-        assert_eq!(default_font_width("，"), FULL_WIDTH_ADVANCE);
-        assert_eq!(default_font_width("AA"), 12);
-        // 1.5×, exactly: three Han glyphs measure the same as four ASCII letters.
-        assert_eq!(default_font_width("无人之"), default_font_width("AAAA") + 3);
-    }
-
-    /// Prose punctuation that sits beside the CJK blocks still resolves to the
-    /// `nonlatin_european` bitmap sheet, which `default.json` declares **before**
-    /// `unihex` — so an em dash is a full 9 px, not a generic non-ASCII glyph. The
-    /// campaign's prose is full of them; getting this wrong under-measures every line
-    /// that uses one.
-    #[test]
-    fn prose_punctuation_uses_its_measured_bitmap_advance() {
-        assert_eq!(default_font_width("—"), 9);
-        assert_eq!(default_font_width("–"), 7);
-        assert_eq!(default_font_width("…"), 8);
-        assert_eq!(default_font_width("“”"), 10);
-        assert_eq!(default_font_width("‘’"), 6);
-        assert_eq!(default_font_width("·"), 2);
-        // An em dash is as wide as a Han glyph and 4.5× an `i`.
-        assert_eq!(default_font_width("—"), default_font_width("无"));
-    }
-
-    /// The art font's advance is derived from the constants that emit the font, so a
-    /// glyph-size change cannot leave the budget stale.
-    #[test]
-    fn art_glyphs_are_derived_from_the_font_it_emits() {
-        assert_eq!(art_font_width("A"), ART_GLYPH_ADVANCE as u32);
-        assert_eq!(art_font_width("A"), 6);
-        assert_eq!(art_font_width("A A"), 6 + 4 + 6);
-    }
-
-    /// The reason `ART_SCALE` is 1: the ×4 title pose leaves 90 font px, and an
-    /// ending banner needs at least a dozen glyphs in it. This is the acceptance the
-    /// scale was chosen against — if the font grows again, this fails first.
-    #[test]
-    fn the_art_budget_fits_a_real_banner() {
-        let fits = budget(NarrateStyle::Art) / ART_GLYPH_ADVANCE as u32;
-        assert_eq!(fits, 15, "art fits 15 glyphs at the ×4 title pose");
-        assert!(fits >= 12, "an ending banner needs ≥12 glyphs");
-        // The strings the owner hit on screen, both renditions of each.
-        assert!(art_font_width("NOBODY") <= budget(NarrateStyle::Art));
-        assert!(art_font_width("HOMEWARD") <= budget(NarrateStyle::Art));
-        // …and the check still bites past the budget.
-        assert!(art_font_width("HOMEWARD BOUND AGAIN") > budget(NarrateStyle::Art));
-    }
-
-    /// The budgets follow from the reference GUI width and the vanilla pose scales.
-    #[test]
-    fn budgets_follow_the_vanilla_pose_scales() {
-        assert_eq!(budget(NarrateStyle::Title), 90);
-        assert_eq!(budget(NarrateStyle::Subtitle), 181);
-        assert_eq!(budget(NarrateStyle::Art), 90);
-        // A subtitle gets twice a title's budget because it renders at half the scale.
-        assert_eq!(
-            budget(NarrateStyle::Subtitle),
-            2 * budget(NarrateStyle::Title) + 1
-        );
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Journal pages (DW0330, widened by spec-0104 §8.8)
 // ---------------------------------------------------------------------------
@@ -786,4 +672,118 @@ pub fn check_book_pages(
         }
     }
     (d, measured)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A styled label is measured as it draws (spec-0096 §3.4): the markup is
+    /// not drawn, an obfuscated span is exactly as wide as its text, and a bold
+    /// span is one pixel wider per character.
+    #[test]
+    fn a_styled_span_is_measured_as_it_draws() {
+        let plain = "Ask the clerk";
+        let w = default_font_width(plain);
+        assert_eq!(
+            width_for(NarrateStyle::Chat, "Ask the [[obfuscated|clerk]]"),
+            w
+        );
+        assert_eq!(
+            width_for(NarrateStyle::Chat, "Ask the [[bold|clerk]]"),
+            w + "clerk".len() as u32
+        );
+        assert_eq!(
+            width_for(NarrateStyle::Chat, "[[bold,obfuscated|Ask the clerk]]"),
+            w + plain.chars().count() as u32
+        );
+        // A label whose bold span tips it over the button is refused; the same
+        // label unstyled is not.
+        let long = "Ask the clerk for more ink";
+        assert!(default_font_width(long) <= BUTTON_LABEL_BUDGET);
+        let bold = format!("[[bold|{long}]]");
+        let over = default_font_width(long) + long.chars().count() as u32 > BUTTON_LABEL_BUDGET;
+        assert_eq!(label_over_budget("s", "p".into(), &bold).is_some(), over);
+        assert!(label_over_budget("s", "p".into(), long).is_none());
+        assert!(label_over_budget("s", "p".into(), &format!("[[obfuscated|{long}]]")).is_none());
+    }
+
+    /// The vanilla ASCII advances the table encodes: the common letter is 6 px, and
+    /// the narrow glyphs are genuinely narrower (a character count would call `iii`
+    /// and `WWW` the same size — they are 6 px and 18 px).
+    #[test]
+    fn ascii_advances_match_the_vanilla_font() {
+        assert_eq!(default_font_width("A"), 6);
+        assert_eq!(default_font_width("i"), 2);
+        assert_eq!(default_font_width("l"), 3);
+        assert_eq!(default_font_width(" "), 4);
+        assert_eq!(default_font_width("iii"), 6);
+        assert_eq!(default_font_width("WWW"), 18);
+    }
+
+    /// A Han glyph is 9 px against a Latin letter's 6 — 1.5×, not the 2× a naive
+    /// "count CJK double" rule assumes.
+    #[test]
+    fn han_glyphs_are_one_and_a_half_latin_letters() {
+        assert_eq!(default_font_width("无"), FULL_WIDTH_ADVANCE);
+        assert_eq!(default_font_width("无人之洞"), 4 * FULL_WIDTH_ADVANCE);
+        assert_eq!(default_font_width("，"), FULL_WIDTH_ADVANCE);
+        assert_eq!(default_font_width("AA"), 12);
+        // 1.5×, exactly: three Han glyphs measure the same as four ASCII letters.
+        assert_eq!(default_font_width("无人之"), default_font_width("AAAA") + 3);
+    }
+
+    /// Prose punctuation that sits beside the CJK blocks still resolves to the
+    /// `nonlatin_european` bitmap sheet, which `default.json` declares **before**
+    /// `unihex` — so an em dash is a full 9 px, not a generic non-ASCII glyph. The
+    /// campaign's prose is full of them; getting this wrong under-measures every line
+    /// that uses one.
+    #[test]
+    fn prose_punctuation_uses_its_measured_bitmap_advance() {
+        assert_eq!(default_font_width("—"), 9);
+        assert_eq!(default_font_width("–"), 7);
+        assert_eq!(default_font_width("…"), 8);
+        assert_eq!(default_font_width("“”"), 10);
+        assert_eq!(default_font_width("‘’"), 6);
+        assert_eq!(default_font_width("·"), 2);
+        // An em dash is as wide as a Han glyph and 4.5× an `i`.
+        assert_eq!(default_font_width("—"), default_font_width("无"));
+    }
+
+    /// The art font's advance is derived from the constants that emit the font, so a
+    /// glyph-size change cannot leave the budget stale.
+    #[test]
+    fn art_glyphs_are_derived_from_the_font_it_emits() {
+        assert_eq!(art_font_width("A"), ART_GLYPH_ADVANCE as u32);
+        assert_eq!(art_font_width("A"), 6);
+        assert_eq!(art_font_width("A A"), 6 + 4 + 6);
+    }
+
+    /// The reason `ART_SCALE` is 1: the ×4 title pose leaves 90 font px, and an
+    /// ending banner needs at least a dozen glyphs in it. This is the acceptance the
+    /// scale was chosen against — if the font grows again, this fails first.
+    #[test]
+    fn the_art_budget_fits_a_real_banner() {
+        let fits = budget(NarrateStyle::Art) / ART_GLYPH_ADVANCE as u32;
+        assert_eq!(fits, 15, "art fits 15 glyphs at the ×4 title pose");
+        assert!(fits >= 12, "an ending banner needs ≥12 glyphs");
+        // The strings the owner hit on screen, both renditions of each.
+        assert!(art_font_width("NOBODY") <= budget(NarrateStyle::Art));
+        assert!(art_font_width("HOMEWARD") <= budget(NarrateStyle::Art));
+        // …and the check still bites past the budget.
+        assert!(art_font_width("HOMEWARD BOUND AGAIN") > budget(NarrateStyle::Art));
+    }
+
+    /// The budgets follow from the reference GUI width and the vanilla pose scales.
+    #[test]
+    fn budgets_follow_the_vanilla_pose_scales() {
+        assert_eq!(budget(NarrateStyle::Title), 90);
+        assert_eq!(budget(NarrateStyle::Subtitle), 181);
+        assert_eq!(budget(NarrateStyle::Art), 90);
+        // A subtitle gets twice a title's budget because it renders at half the scale.
+        assert_eq!(
+            budget(NarrateStyle::Subtitle),
+            2 * budget(NarrateStyle::Title) + 1
+        );
+    }
 }
