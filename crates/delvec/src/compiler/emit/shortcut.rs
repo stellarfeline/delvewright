@@ -22,10 +22,12 @@ pub(super) fn shortcut_setup(plan: &Plan) -> Vec<String> {
     let mut out = Vec::new();
     for sc in &plan.shortcuts {
         let v = ent_xyz(sc.unlock);
-        out.push(format!(
-            "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_sc_{}\"]}}",
-            v[0], v[1], v[2], sc.safe
-        ));
+        out.push(
+            crate::compiler::clickbox::ClickBox::column(sc.unlock, 2).summon(&format!(
+                "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_sc_{}\"]",
+                sc.safe
+            )),
+        );
         out.push(affordance_hardware(
             v,
             &format!("dw_sc_{}", sc.safe),
@@ -119,7 +121,7 @@ pub(super) fn check_shortcut_sides(plan: &Plan) -> Result<(), BuildFailure> {
 /// fixture lands at AABB `[4,65,6]..[5,67,7]` inside a slab occupying
 /// `[4,65,6]..[6,68,7]`: flush with the block on every face it touches and
 /// interior on the rest, so vanilla never finds it strictly nearer than the block
-/// and no press from any angle reaches it (see [`SEAL_MARGIN`]).
+/// and no press from any angle reaches it (see [`crate::compiler::clickbox::CLICK_MARGIN`]).
 ///
 /// The body therefore stands in the **open air in front of the bars**, one cell
 /// per doorway cell, on the sealed side only
@@ -152,15 +154,9 @@ pub(super) fn ws_arm_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<(
             .approach_cells()
             .into_iter()
             .map(|c| {
-                // Integer hundredths, never f64 arithmetic: the datapack text is
-                // part of the byte-identity contract (ADR-0006).
-                let x = fmt_centi(c[0] as i64 * 100 + 50);
-                let y = fmt_centi(c[1] as i64 * 100 - 1);
-                let z = fmt_centi(c[2] as i64 * 100 + 50);
-                format!(
-                    "summon minecraft:interaction {x} {y} {z} \
-                     {{width:{SEAL_BOX_SIZE},height:{SEAL_BOX_SIZE},response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}{tag_list}]}}"
-                )
+                crate::compiler::clickbox::ClickBox::column(c, 1).summon(&format!(
+                    "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}{tag_list}]"
+                ))
             })
             .collect();
         out.push((format!("ws_arm_{}", sc.safe), lines(&body)));

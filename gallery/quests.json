@@ -716,6 +716,22 @@
     "quests": [
       {
         "cast": {
+          "npc/copyist": {
+            "at": {
+              "anchor": "anchor/usher",
+              "offset": [
+                0,
+                0,
+                -4
+              ]
+            },
+            "dialogue": {
+              "barks": [
+                "Mind the ink."
+              ]
+            },
+            "doing": "copying the catalogue at the wall desk, back to the wall"
+          },
           "npc/curator": {
             "at": "anchor/lectern",
             "dialogue": "dlg/curator-root",
@@ -816,7 +832,7 @@
             "id": "obj/press-the-case",
             "missing_item_hint": "The Curator gave you the case key. It only opens the case from your hand.",
             "prop": {
-              "block": "minecraft:stone_button"
+              "block": "minecraft:stone_button[face=floor,facing=north]"
             },
             "requires_flags": [],
             "requires_item": "minecraft:iron_pickaxe",
@@ -1563,6 +1579,18 @@
       },
       {
         "cast": {
+          "npc/copyist": {
+            "at": {
+              "anchor": "anchor/usher",
+              "offset": [
+                0,
+                0,
+                -4
+              ]
+            },
+            "dialogue": "unchanged",
+            "doing": "copying the catalogue at the wall desk, back to the wall"
+          },
           "npc/curator": {
             "at": "anchor/pedestal",
             "dialogue": "unchanged",
@@ -3041,6 +3069,18 @@
       },
       {
         "cast": {
+          "npc/copyist": {
+            "at": {
+              "anchor": "anchor/usher",
+              "offset": [
+                0,
+                0,
+                -4
+              ]
+            },
+            "dialogue": "unchanged",
+            "doing": "copying the catalogue at the wall desk, back to the wall"
+          },
           "npc/curator": {
             "at": "anchor/pedestal",
             "dialogue": "unchanged",
@@ -3166,6 +3206,18 @@
       },
       {
         "cast": {
+          "npc/copyist": {
+            "at": {
+              "anchor": "anchor/usher",
+              "offset": [
+                0,
+                0,
+                -4
+              ]
+            },
+            "dialogue": "unchanged",
+            "doing": "copying the catalogue at the wall desk, back to the wall"
+          },
           "npc/curator": {
             "at": "anchor/pedestal",
             "dialogue": "unchanged",

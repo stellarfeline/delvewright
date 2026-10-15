@@ -1694,10 +1694,19 @@ def proof_refusals(
                 if sample
                 else ""
             )
+            items = doc.get("item_entities") or {}
+            loose = ""
+            if items.get("entities", 0) > items.get("declared", 0):
+                lying = items.get("sample") or []
+                at = f", first {lying[0].get('item')} at {lying[0].get('pos')}" if lying else ""
+                loose = (
+                    f"; {items['entities']} item entit(y/ies) lie in the save against "
+                    f"{items.get('declared', 0)} declared{at}"
+                )
             reasons.append(
                 f"written world (DW0955): the server's world is not the engine's model — "
                 f"{classes.get('model', '?')} cell(s) of {doc.get('compared', '?')} compared "
-                f"differ{first}"
+                f"differ{first}{loose}"
             )
         proven["written_world"] = {
             "record_sha256": hashlib.sha256(written_world.read_bytes()).hexdigest(),

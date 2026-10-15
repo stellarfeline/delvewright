@@ -996,6 +996,25 @@ pub(super) fn prove_world(
                         path_legs.push((r.branch.slug.clone(), cp.steps.clone(), branch_routes));
                     }
                 }
+                // `DW1025`: a body the party talks to faces the party as they
+                // walk up, or watches them. Here, because it reads every
+                // configuration's walked legs (`path_legs`, complete only once
+                // the branches are routed) and the walks that leave a body
+                // where it is talked to. The line prints before the verdict.
+                {
+                    let (binding, findings) =
+                        crate::compiler::approach::check(plan, &path_legs, &m);
+                    eprintln!("{}", binding.line());
+                    if let Some((first, rest)) = findings.split_first() {
+                        for extra in rest {
+                            eprintln!("{} [error] build: {}", extra.code, extra.message);
+                        }
+                        return Err(BuildFailure::Diagnostic {
+                            code: first.code,
+                            message: first.message.clone(),
+                        });
+                    }
+                }
                 (m, am)
             } else {
                 (Vec::new(), Vec::new())
