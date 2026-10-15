@@ -125,6 +125,14 @@
     },
     "difficulty": "normal",
     "horizon": "ocean",
+    "jumps": [
+      {
+        "from": "anchor/jetty-near",
+        "id": "jump/the-broken-plank",
+        "sprint": true,
+        "to": "anchor/jetty-far"
+      }
+    ],
     "languages": [
       "zh-cn"
     ],

@@ -118,6 +118,14 @@
       "message": "The hall ends here."
     },
     "difficulty": "hard",
+    "jumps": [
+      {
+        "from": "anchor/jetty-near",
+        "id": "jump/the-broken-plank",
+        "sprint": true,
+        "to": "anchor/jetty-far"
+      }
+    ],
     "languages": [
       "zh-cn"
     ],
