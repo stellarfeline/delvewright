@@ -277,6 +277,17 @@ const DOES_NOT: &[(&[&str], &str)] = &[
         &["curate-merge"],
         "takes a curation report and a catalog directory, and edits cards",
     ),
+    (
+        &["extract"],
+        "builds a campaign, whose validation already holds every placed piece's document to its \
+         bytes (`DW0888`), and WRITES a piece whose every declaration it derives from the bytes it \
+         writes",
+    ),
+    (
+        &["seat"],
+        "reads a piece by id through the library's loader and writes campaign rows; the judgement \
+         it runs before writing is validation, which owes `DW0888` itself",
+    ),
 ];
 
 fn discovered_commands() -> Vec<Vec<String>> {

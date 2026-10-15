@@ -41,6 +41,12 @@ fn premise_declines_are_enumerated() {
         // (`from_solid_and_flooded`), which every unit-test world goes
         // through.
         ("compiler/nav/world/mod.rs", 1),
+        // `extract.rs`: the walk model over a cut's shipped cells, which
+        // asks only whether a body stands in the boundary layer with a cell
+        // to walk, step, drop or swim to just outside — the bytes' own
+        // geometry; the source campaign's premises are not the piece's, and
+        // the seated campaign judges its own (spec-0106 §3.9).
+        ("extract.rs", 1),
         // `grammar/contract.rs`: the climb edge's proof over ONE piece's own
         // blocks (`body_world`), judged before any campaign places it — no
         // horizon, no volume, no gate; the piece's ladder is the question.

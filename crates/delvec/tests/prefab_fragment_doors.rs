@@ -131,6 +131,15 @@ const NOT_PIECE_DOORS: &[(&[&str], &str)] = &[
         &["curate-merge"],
         "takes a curation report and a catalog directory, and edits cards",
     ),
+    (
+        &["extract"],
+        "takes a campaign directory and builds it; the pieces it reads are the ones the build \
+         places, through the library's one loader",
+    ),
+    (
+        &["seat"],
+        "takes a campaign directory and a piece by id, read through the library's one loader",
+    ),
 ];
 
 /// Every leaf command the parser has, as the words an author types.
@@ -232,6 +241,14 @@ fn run(path: &[&str], extra: &[&str], piece: &Path, out_dir: &Path) -> Output {
         }
         ["curate-merge"] => {
             cmd.arg("--catalog").arg(out_dir);
+        }
+        ["extract"] => {
+            cmd.args(["--scope", "node/a"])
+                .arg("-o")
+                .arg(out_dir.join("extract"));
+        }
+        ["seat"] => {
+            cmd.args(["prefab/a", "--node", "node/a", "--at", "0,0"]);
         }
         _ => {}
     }

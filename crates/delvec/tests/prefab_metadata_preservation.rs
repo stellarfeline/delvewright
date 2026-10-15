@@ -78,6 +78,8 @@ const DOES_NOT_WRITE_METADATA: &[&str] = &[
     "gallery",        // reads metadata, writes a world
     "curate",         // reads a server log, writes a report
     "curate-merge",   // writes catalog cards, a different document
+    "extract",        // writes a NEW piece, never an existing piece's metadata
+    "seat",           // reads a piece's metadata, writes campaign documents
     "help",
 ];
 
