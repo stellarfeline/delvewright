@@ -3,6 +3,14 @@
 
 The symptoms most likely to stop you, and what they actually mean.
 
+## Contents
+
+- [Validate and build](#validate-and-build)
+- [Run and stage](#run-and-stage)
+- [Toolchain reds](#toolchain-reds)
+
+## Validate and build
+
 **`DW0874`: "this campaign directory is missing N of the 6 stage documents"
 (exit 1).** Not a fault — `delvec validate` is whole-campaign and needs all six
 required documents on disk. The refusal names every one that is absent, the
@@ -60,6 +68,8 @@ containers and loot*: use `dropped_by`, or drop the `container` field and let th
 compiler place one, or make a piece that carries the container. Do not point the
 field at a different anchor and hope.
 
+## Run and stage
+
 **A bot step times out with "objective … did not complete".** Read the rest of
 that line before touching the campaign. The bot reports the server's own answer
 to the `/trigger` it sent: *the server ANSWERED …* means the trigger reached the
@@ -93,6 +103,8 @@ the session needs a red build.
 **`delvec metrics` "prints 341 lines of JSON, not a table".** It prints the
 table as JSON on stdout and its human summary and binding counts on stderr.
 Redirect them separately: `delvec metrics > table.json`.
+
+## Toolchain reds
 
 **A red that came from the toolchain rather than the campaign.** Stop content
 work and report it, with evidence. Never hand-edit compiler output, never
