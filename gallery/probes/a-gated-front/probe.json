@@ -1,0 +1,18 @@
+{
+  "code": "DW1027",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "add",
+      "path": "/content/edges/12/gating",
+      "value": {
+        "flags": [
+          "flag/muster-cleared"
+        ]
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The causeway's open front gated on the muster being cleared. The world builds a gated connection shut, with a bar standing in its opening until the story opens it, and a front is where two places simply meet along a span: it has no opening to stand a bar in, and a bar across it would be a wall the plan did not draw. `DW1027` names the connection and both repairs — a standard `opening` on the seam, or the `gating` removed. It declares no unit: `gating` is bound on the overlay's gated ways, and what must not compile is a gated front."
+}

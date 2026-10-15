@@ -75,6 +75,7 @@
         "b": "node/far-hall",
         "class": "walk",
         "gating": {
+          "opens_from": "either",
           "quest": "quest/near-hall"
         },
         "id": "edge/centre-door"
