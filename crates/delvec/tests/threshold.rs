@@ -53,6 +53,12 @@ fn a_range_one_trigger_in_a_two_wide_doorway_is_refused() {
     assert_ne!(code, 0, "{log}");
     assert!(log.contains("DW1044 [error]"), "{log}");
     assert!(
+        log.lines()
+            .filter(|l| l.contains("[error]"))
+            .all(|l| l.starts_with("DW1044")),
+        "the one refusal is this proof's, every other proof green:\n{log}"
+    );
+    assert!(
         log.contains(
             "trigger `trigger/through-the-door` (approach) pays `flag/through-the-door`, which \
              `obj/exit` reads"

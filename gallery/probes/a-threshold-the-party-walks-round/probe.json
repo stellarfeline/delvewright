@@ -1,0 +1,46 @@
+{
+  "code": "DW1044",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/1/on_objective_complete/obj~1back-in-the-hall/-",
+      "value": {
+        "flag": "flag/home-again",
+        "type": "set-flag"
+      }
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/triggers/-",
+      "value": {
+        "at": "anchor/gate-main",
+        "effects": [
+          {
+            "flag": "flag/through-the-gate",
+            "type": "set-flag"
+          }
+        ],
+        "id": "trigger/through-the-gate",
+        "on": {
+          "on": "approach",
+          "range": 1
+        },
+        "requires_flags": [
+          "flag/home-again"
+        ]
+      }
+    },
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/1/objectives/0/requires_flags",
+      "value": [
+        "flag/through-the-gate"
+      ]
+    }
+  ],
+  "units": [],
+  "why": "An `approach` trigger of range 1 on the main gate in the hall's dividing wall, armed once the party is back in the hall, pays the flag the Marshal's beat now reads. The critical path performs it by walking onto the gate's anchor cell; a player walking from the arrival to the Marshal goes through another of the wall's five doorways, never stands where the selector is sure to catch a body, and the Marshal's beat never completes. The build names the trigger, the flag, the beat, the walk round it and the remedies: a wider range (none up to 9 reaches the next doorway), the anchor moved into the only way through, or the way round closed. It declares no unit: `triggers[]`, `approach` and `set-flag` are bound elsewhere in the gallery; what the engine refuses is a trigger the path relies on that a walk goes round. Perturbing toward the vacuous shape goes green with the trigger judged: the same trigger on `anchor/muster` at range 3, where every walk to the Marshal ends, reads `1 judged ..., 1 entered by every walk`."
+}
