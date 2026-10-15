@@ -131,22 +131,23 @@ pub(super) fn env_trigger_setup(plan: &Plan, chrome: &delvewright_dsl::Chrome) -
             // per shell cell, exactly as a `close-gate` seal has always done.
             crate::compiler::pressable::Body::Region(cells) => {
                 for c in cells {
-                    let x = fmt_centi(c[0] as i64 * 100 + 50);
-                    let y = fmt_centi(c[1] as i64 * 100 - 1);
-                    let z = fmt_centi(c[2] as i64 * 100 + 50);
-                    out.push(format!(
-                        "summon minecraft:interaction {x} {y} {z} \
-                         {{width:{SEAL_BOX_SIZE},height:{SEAL_BOX_SIZE},response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{tag}\"]}}"
-                    ));
+                    out.push(
+                        crate::compiler::clickbox::ClickBox::column(c, 1).summon(&format!(
+                            "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{tag}\"]"
+                        )),
+                    );
                 }
             }
             // A point in open space: the ordinary body, byte-identical.
+            // A point: the standard column, bracketing the cell and the one above
+            // it, so a `prop` or an authored block standing there never ties the
+            // pick ([`crate::compiler::clickbox`]).
             crate::compiler::pressable::Body::Point(p) => {
-                let q = ent_xyz(p);
-                out.push(format!(
-                    "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{tag}\"]}}",
-                    q[0], q[1], q[2]
-                ));
+                out.push(
+                    crate::compiler::clickbox::ClickBox::column(p, 2).summon(&format!(
+                        "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{tag}\"]"
+                    )),
+                );
             }
             // `DW0426` has already failed the build.
             crate::compiler::pressable::Body::Nothing => {}

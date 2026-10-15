@@ -1300,6 +1300,13 @@ export interface LethalTrial {
    * pass — the volume was not exercised, and the binding says so.
    */
   notLiveAtTrial: string | undefined;
+  /**
+   * **Where in the run the trial ran**: after which critical-path step, or
+   * after the whole path. A volume is tried at the earliest step boundary from
+   * which it is live and its near lip can be walked to, so a volume the story
+   * later closes off is still exercised where the party can reach it.
+   */
+  at: string | undefined;
 }
 
 /** A fresh trial record for a walk into `volume`. */
@@ -1329,6 +1336,7 @@ export function openLethalTrial(
     approachFailure: undefined,
     walkBackFailure: undefined,
     notLiveAtTrial: undefined,
+    at: undefined,
   };
 }
 
@@ -1739,6 +1747,60 @@ export function datumsPromised(plan: DeathPlan): number {
   return plan.volumes.length * stakesDropped(plan).length;
 }
 
+/**
+ * **How many of the declared lethal volumes the stage exercised** — a trial
+ * that saw the bot die inside the volume — over how many the build declares,
+ * with where each trial ran and why each other volume was not exercised. A
+ * declared volume with no trial at all is named in `untried`: the stage never
+ * skips a volume silently.
+ */
+export interface DeathLoopCoverage {
+  readonly exercised: number;
+  readonly declared: number;
+  readonly untried: readonly string[];
+  readonly line: string;
+}
+
+/** {@link DeathLoopCoverage} of `trials` against the volumes `volumes` names. */
+export function deathLoopCoverage(
+  volumes: readonly string[],
+  trials: readonly LethalTrial[],
+): DeathLoopCoverage {
+  const byVolume = new Map<string, LethalTrial>();
+  for (const t of trials) if (!byVolume.has(t.volume)) byVolume.set(t.volume, t);
+  const exercisedIds = volumes.filter((v) => byVolume.get(v)?.died === true);
+  const untried = volumes.filter((v) => !byVolume.has(v));
+  const why = (t: LethalTrial): string =>
+    t.notLiveAtTrial !== undefined
+      ? `not live (${t.notLiveAtTrial})`
+      : (t.abandoned ?? t.approachFailure ?? (t.enteredVolume ? "entered and survived" : "never entered"));
+  const notExercised = volumes
+    .filter((v) => byVolume.has(v) && !exercisedIds.includes(v))
+    .map((v) => {
+      const t = byVolume.get(v)!;
+      return `${v}${t.at === undefined ? "" : ` ${t.at}`}: ${why(t)}`;
+    });
+  const parts = [
+    `exercised ${exercisedIds.length} of ${volumes.length} declared lethal volume(s)` +
+      (exercisedIds.length > 0
+        ? `: ${exercisedIds
+            .map((v) => {
+              const at = byVolume.get(v)!.at;
+              return at === undefined ? v : `${v} ${at}`;
+            })
+            .join(", ")}`
+        : ""),
+    ...(notExercised.length > 0 ? [`not exercised: ${notExercised.join("; ")}`] : []),
+    ...(untried.length > 0 ? [`never tried: ${untried.join(", ")}`] : []),
+  ];
+  return {
+    exercised: exercisedIds.length,
+    declared: volumes.length,
+    untried,
+    line: `[death-loop] ${parts.join("; ")}`,
+  };
+}
+
 /** What the run knows about the death-loop stage when it writes the report. */
 export interface DeathLoopStageInput {
   /** Whether this run meant to run the stage at all. */
@@ -1755,6 +1817,8 @@ export interface DeathLoopStageInput {
   readonly trials: readonly LethalTrial[];
   /** How many of {@link trials} ran to their own end. */
   readonly trialsFinished: number;
+  /** The declared lethal volumes, by id, in the plan's order. */
+  readonly volumes: readonly string[];
 }
 
 /**
@@ -1784,14 +1848,26 @@ export function deathLoopStage(i: DeathLoopStageInput): StageResult {
       ran: false,
       passed: false,
       findings: [
-        "the critical path failed, so the death loop was never reached — nothing " +
-          "about dying is proven or disproven by this run",
+        i.trials.length === 0
+          ? "the critical path failed, so the death loop was never reached — nothing " +
+            "about dying is proven or disproven by this run"
+          : `the critical path failed, so the death loop was never finished — ` +
+            `${i.trials.length} trial(s) ran at step boundaries before it did and are not ` +
+            `judged; nothing about dying is proven or disproven by this run`,
       ],
       failures: [],
     };
   }
   const finished = i.interruption === undefined ? i.trials : i.trials.slice(0, i.trialsFinished);
+  const coverage = deathLoopCoverage(i.volumes, i.trials);
   const failures = [
+    // Every declared volume is tried once, at a step boundary or after the
+    // path; one with no trial was skipped, and a skip is never silent.
+    ...(i.interruption === undefined
+      ? coverage.untried.map(
+          (v) => `${v} is a declared lethal volume and the stage never tried it`,
+        )
+      : []),
     ...(i.interruption === undefined
       ? i.binding
         ? deathLoopBindingFailures(i.binding)
@@ -1820,6 +1896,7 @@ export function deathLoopStage(i: DeathLoopStageInput): StageResult {
     ran: true,
     passed: failures.length === 0,
     findings: [
+      coverage.line,
       ...(i.skipReason === undefined
         ? []
         : [`the stage stopped before entering any volume — ${i.skipReason}`]),

@@ -1515,6 +1515,350 @@ fn dw0891_naming_a_block_vanilla_hurts_with_passes_validation() {
 }
 
 // ---------------------------------------------------------------------------
+// DW0891 — the moves that change the VOLUME, taken in a detailed place
+// ---------------------------------------------------------------------------
+
+/// The pit house's frame: footprint x 1..16, z 1..16 on a site whose region
+/// starts four courses under the floor, so the one box is handed its ground and
+/// the piece can cut a pit into it.
+const PIT_SIZE: [i32; 3] = [18, 13, 18];
+
+/// The pit: one column cut through the floor at `(x, z)`, three courses deep.
+const PIT: (i32, i32) = (12, 3);
+
+/// The piece-local walk plane: the course a body stands in on the hall floor.
+const PIT_FLOOR: i32 = 4;
+
+/// The pit house's cell, piece-local: three courses of ground, an andesite
+/// floor, walls and a lit lid, and one column cut from the floor down to the
+/// pit's bottom.
+fn pit_cell(p: [i32; 3]) -> &'static str {
+    let [x, y, z] = p;
+    let ring = x == 0 || x == PIT_SIZE[0] - 1 || z == 0 || z == PIT_SIZE[2] - 1;
+    if (x, z) == PIT && (1..PIT_FLOOR).contains(&y) {
+        return "minecraft:air";
+    }
+    if y < PIT_FLOOR - 1 {
+        return "minecraft:stone";
+    }
+    if y == PIT_FLOOR - 1 {
+        return "minecraft:polished_andesite";
+    }
+    if y == PIT_SIZE[1] - 1 {
+        return if x % 3 == 0 && z % 3 == 0 {
+            "minecraft:sea_lantern"
+        } else {
+            "minecraft:spruce_planks"
+        };
+    }
+    if ring {
+        return "minecraft:stone_bricks";
+    }
+    "minecraft:air"
+}
+
+/// A one-place site-plan campaign whose one piece carries a pit, a killing
+/// volume on the node's station `anchor/pit`, and a detail plan binding that
+/// station to the piece anchor `bound` — `rim` (on the hall floor beside the
+/// hole) or `bottom` (the pit's floor, in the piece's `no_body` region `pit`).
+///
+/// Returns `(campaign, prefabs)`.
+fn pit_campaign(tag: &str, bound: &str, extent: [i32; 3]) -> (PathBuf, PathBuf) {
+    let root = tmp(&format!("pit-{tag}"));
+    let (dir, prefabs) = (root.join("campaign"), root.join("prefabs"));
+    common::copy_dir_all(
+        &common::repo_root().join("crates/delvec/tests/fixtures/blockout"),
+        &dir,
+    );
+    let write = |name: &str, stage: &str, content: serde_json::Value| {
+        let doc = serde_json::json!({
+            "campaign_id": "blockout", "content": content, "dsl_version": DSL_VERSION,
+            "stage": stage,
+        });
+        std::fs::write(
+            dir.join(name),
+            delvewright_dsl::to_canonical_string(&doc).unwrap(),
+        )
+        .unwrap();
+    };
+    write(
+        "layout-graph.json",
+        "layout-graph",
+        serde_json::json!({
+            "nodes": [{
+                "id": "node/house",
+                "intent": "a hall with a pit in its floor",
+                "note": "One place whose piece cuts a pit into its own ground.",
+                "stations": [
+                    {"anchor": "anchor/hearth", "kind": "point"},
+                    {"anchor": "anchor/bench", "kind": "point"},
+                    {"anchor": "anchor/pit", "kind": "point"}
+                ]
+            }],
+            "edges": [],
+            "entry": "node/house",
+            "goal": "node/house",
+            "critical_path": ["node/house"],
+            "beats": [
+                {"node": "node/house", "objective": "obj/ask", "quest": "quest/walk-the-whole"},
+                {"node": "node/house", "objective": "obj/enter-the-cell", "quest": "quest/walk-the-whole"},
+                {"node": "node/house", "objective": "obj/walk-out", "quest": "quest/walk-the-whole"}
+            ]
+        }),
+    );
+    write(
+        "site-plan.json",
+        "site-plan",
+        serde_json::json!({
+            "region": {"min": [0, 60, 0], "extent": PIT_SIZE},
+            "boxes": [{
+                "node": "node/house", "min": [1, 1], "extent": [16, 16],
+                "floor": {"y": 64}, "ceiling": {"clearance": 8}, "base": {"aloft": 3}
+            }],
+            "seams": [],
+            "fill": {"kind": "solid", "block": "minecraft:deepslate"}
+        }),
+    );
+    common::patch_file(&dir.join("npcs.json"), |v| {
+        v["content"]["npcs"][0]["anchor"] = serde_json::json!("anchor/node-house");
+    });
+    common::patch_file(&dir.join("quests.json"), |v| {
+        let q = &mut v["content"]["quests"][0];
+        q["cast"]["npc/keeper"]["at"] = serde_json::json!("anchor/node-house");
+        q["objectives"][1]["anchor"] = serde_json::json!("anchor/hearth");
+        q["objectives"][2]["anchor"] = serde_json::json!("anchor/bench");
+        q["on_objective_complete"]["obj/ask"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|e| e["type"] != "open-gate");
+        v["content"]["lethal_volumes"] = serde_json::json!([{
+            "id": "lethal/the-pit",
+            "message": "The pit in the hall floor has no bottom you would survive.",
+            "damage_type": "fall",
+            "region": {"anchor": "anchor/pit", "extent": extent}
+        }]);
+    });
+
+    std::fs::create_dir_all(&prefabs).unwrap();
+    let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..PIT_SIZE[0] {
+        for y in 0..PIT_SIZE[1] {
+            for z in 0..PIT_SIZE[2] {
+                cells.push(([x, y, z], pit_cell([x, y, z])));
+            }
+        }
+    }
+    std::fs::write(
+        prefabs.join("pit-house.nbt"),
+        common::structure_nbt(PIT_SIZE, &cells),
+    )
+    .unwrap();
+    let (px, pz) = PIT;
+    let region = |from: [i32; 3], to: [i32; 3]| serde_json::json!({"from": from, "to": to});
+    let meta = serde_json::json!({
+        "prefab_id": "prefab/pit-house",
+        "structure": {
+            "file": "pit-house.nbt", "id": "pit-house", "size": PIT_SIZE, "data_version": 4671,
+            "generator": "crates/delvec/tests/remedy_reachability.rs"
+        },
+        "anchors": {
+            "seat": {"pos": [8, PIT_FLOOR, 9], "facing": "south", "resolves_to": "space:hall"},
+            "hearth": {"pos": [3, PIT_FLOOR, 4], "facing": "south", "resolves_to": "space:hall"},
+            "bench": {"pos": [15, PIT_FLOOR, 14], "facing": "south", "resolves_to": "space:hall"},
+            "rim": {"pos": [px, PIT_FLOOR, pz + 1], "facing": "north", "resolves_to": "space:hall"},
+            "bottom": {"pos": [px, 1, pz], "facing": "north", "resolves_to": "no_body:pit"}
+        },
+        "connectors": [],
+        "lighting": {"profile": "lit", "measured_min_light": 8, "measured": "2026-10-14"},
+        "license": {
+            "source": "original", "spdx": "GPL-3.0-or-later", "note": "Test fixture.",
+            "provenance": "Written by crates/delvec/tests/remedy_reachability.rs."
+        },
+        "spatial_contract": {
+            "entry": "hall",
+            "spaces": {"hall": {"envelope": "enclosed", "boxes": [
+                region([1, PIT_FLOOR, 1], [16, PIT_SIZE[1] - 2, 16])
+            ]}},
+            "no_body": {"pit": {
+                "reason": "the floor of a killing pit: a body that reaches it has fallen",
+                "boxes": [region([px, 1, pz], [px, PIT_FLOOR - 1, pz])]
+            }},
+            "edges": [],
+            "faces": []
+        }
+    });
+    std::fs::write(
+        prefabs.join("pit-house.json"),
+        serde_json::to_string_pretty(&meta).unwrap() + "\n",
+    )
+    .unwrap();
+    set_pit_binding(&dir, bound);
+    (dir, prefabs)
+}
+
+/// Write the pit campaign's detail plan, binding `anchor/pit` to `bound`.
+fn set_pit_binding(dir: &Path, bound: &str) {
+    let doc = serde_json::json!({
+        "campaign_id": "blockout",
+        "content": {"details": [{
+            "place": "node/house", "piece": "prefab/pit-house",
+            "anchors": {
+                "anchor/node-house": "seat", "spawn": "seat",
+                "anchor/hearth": "hearth", "anchor/bench": "bench",
+                "anchor/pit": bound
+            }
+        }]},
+        "dsl_version": DSL_VERSION,
+        "stage": "detail-plan",
+    });
+    std::fs::write(
+        dir.join("detail-plan.json"),
+        delvewright_dsl::to_canonical_string(&doc).unwrap(),
+    )
+    .unwrap();
+}
+
+/// Assert a build of the pit campaign ends green with no refusal at all, and
+/// neither code of the pair anywhere in what it said.
+fn assert_green(code: i32, log: &str, what: &str) {
+    assert_eq!(code, 0, "{what} builds:\n{log}");
+    assert!(
+        !log.contains("[error]"),
+        "{what}: no refusal anywhere:\n{log}"
+    );
+    assert!(
+        !log.contains("DW0891") && !log.contains("DW0845"),
+        "{what}: neither code of the pair fires, warning included:\n{log}"
+    );
+}
+
+/// **LOWER the volume onto an anchor at the pit's bottom** — `DW0891`'s first
+/// move, taken in a detailed place, where it is the pair's case.
+///
+/// In a site-plan campaign the only anchors a quest can name are the node's
+/// owed names, so a volume reaches the pit's bottom through a station bound to
+/// the piece's anchor there — and the piece's contract declares that floor
+/// `no_body`, because a body that stands on it has fallen. `DW0845` refused
+/// that binding ("a body cannot be in a `no_body` region") while `DW0891`
+/// prescribed it: following the remedy landed in the other gate. The move now
+/// ends green, with the binding line counting the one admitted seat.
+#[test]
+fn dw0891_lowering_the_volume_onto_the_pits_bottom_builds() {
+    let (camp, prefabs) = pit_campaign("lower", "rim", [0, 0, 0]);
+    let (code, before) = build("pit-lower-rim", &camp, &prefabs);
+    assert_eq!(code, 3, "a volume on the rim is refused:\n{before}");
+    assert!(
+        before.contains("DW0891")
+            && before.contains("Lower the volume")
+            && before.contains("on an anchor at the pit's bottom"),
+        "the message names the move:\n{before}"
+    );
+    set_pit_binding(&camp, "bottom");
+    let (code, after) = build("pit-lower-bottom", &camp, &prefabs);
+    assert_green(code, &after, "the volume on the pit's bottom");
+    assert!(
+        after.contains("5 owed anchor name(s) checked, 1 of them a killing volume's seat"),
+        "the admission is counted:\n{after}"
+    );
+}
+
+/// **DRAW the volume's `extent` in** so its keep-out stops short of the floor
+/// — `DW0891`'s second move, over the same seat.
+#[test]
+fn dw0891_drawing_the_extent_in_builds() {
+    let (camp, prefabs) = pit_campaign("draw-in", "bottom", [0, 3, 0]);
+    let (code, before) = build("pit-draw-in-tall", &camp, &prefabs);
+    assert_eq!(
+        code, 3,
+        "a volume reaching up to the floor is refused:\n{before}"
+    );
+    assert!(
+        before.contains("DW0891") && before.contains("draw its `extent` in"),
+        "the message names the move:\n{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v)["region"]["extent"] = serde_json::json!([0, 0, 0]);
+    });
+    let (code, after) = build("pit-draw-in-short", &camp, &prefabs);
+    assert_green(code, &after, "the volume drawn in");
+}
+
+/// **AUTHOR one of the blocks vanilla hurts with under the caught cells** —
+/// the third move's other half. `dw0891_declaring_the_block_that_shows_the_hazard_builds`
+/// takes the declaration over bytes that already carry the signal; this takes
+/// the bytes, over a declaration they did not bear out. The volume is the tall
+/// one `dw0891_drawing_the_extent_in_builds` starts from, whose keep-out
+/// reaches the floor round the pit's mouth; that floor is laid in magma and
+/// nothing else changes.
+#[test]
+fn dw0891_authoring_the_signal_under_the_caught_floor_builds() {
+    let (camp, prefabs) = pit_campaign("author", "bottom", [0, 3, 0]);
+    edit_doc(&camp, "quests.json", |v| {
+        volume(v).insert(
+            "shown_by".into(),
+            serde_json::json!(["minecraft:magma_block"]),
+        );
+    });
+    let (code, before) = build("pit-author-bare", &camp, &prefabs);
+    assert_eq!(code, 3, "a signal the floor does not carry:\n{before}");
+    assert!(
+        before.contains("DW0891") && before.contains("author one of the blocks"),
+        "the message names the move:\n{before}"
+    );
+    // The keep-out's floor course, piece-local: the mouth's eight neighbours.
+    let (px, pz) = PIT;
+    let mouth = |x: i32, z: i32| (x - px).abs() <= 1 && (z - pz).abs() <= 1;
+    let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..PIT_SIZE[0] {
+        for y in 0..PIT_SIZE[1] {
+            for z in 0..PIT_SIZE[2] {
+                let b = pit_cell([x, y, z]);
+                let b = if y == PIT_FLOOR - 1 && mouth(x, z) && b != "minecraft:air" {
+                    "minecraft:magma_block"
+                } else {
+                    b
+                };
+                cells.push(([x, y, z], b));
+            }
+        }
+    }
+    std::fs::write(
+        prefabs.join("pit-house.nbt"),
+        common::structure_nbt(PIT_SIZE, &cells),
+    )
+    .unwrap();
+    let (code, after) = build("pit-author-laid", &camp, &prefabs);
+    assert_green(code, &after, "the floor laid in what it declares");
+}
+
+/// **The admission is the pair's and nothing wider.** The same station, seated
+/// on the pit's bottom, also named by a quest's `reach-anchor` — a body is put
+/// there — is still `DW0845`, and the refusal names the use that disqualifies
+/// it. A perturbation only this gate can catch: the volume, the piece and the
+/// binding are the green ones above.
+#[test]
+fn dw0845_still_refuses_a_killing_seat_a_quest_also_names() {
+    let (camp, prefabs) = pit_campaign("shared", "bottom", [0, 0, 0]);
+    edit_doc(&camp, "quests.json", |v| {
+        v["content"]["quests"][0]["objectives"][2]["anchor"] = serde_json::json!("anchor/pit");
+    });
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    let t = log(&r);
+    assert_eq!(r.status.code(), Some(1), "refused at validation:\n{t}");
+    assert!(t.contains("DW0845"), "{t}");
+    assert!(
+        t.contains("centres the killing volume(s) `lethal/the-pit`")
+            && t.contains("quests:/quests/0/objectives/2/anchor"),
+        "names the volume and the use that disqualifies the seat:\n{t}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // DW0881 — the move for a volume no radius can narrow to
 // ---------------------------------------------------------------------------
 
@@ -3663,4 +4007,286 @@ fn dw0995_a_gate_the_route_opens_is_heard() {
     assert_eq!(code, 0, "{after}");
     assert!(!after.contains("DW0995"), "{after}");
     assert!(after.contains("1 of 1 with a listening station"), "{after}");
+}
+
+// ---------------------------------------------------------------------------
+// DW1025 — a body the party talks to has its back to them
+// ---------------------------------------------------------------------------
+
+/// A library holding only hello-room, with `anchor/keeper-stand` facing `facing`.
+fn hello_room_facing(tag: &str, facing: &str) -> PathBuf {
+    let dir = tmp(&format!("lib-{tag}"));
+    let src = common::prefabs_dir();
+    std::fs::copy(src.join("hello-room.nbt"), dir.join("hello-room.nbt")).unwrap();
+    std::fs::copy(src.join("hello-room.json"), dir.join("hello-room.json")).unwrap();
+    edit_meta(&dir, "hello-room", |m| {
+        m["anchors"]["anchor/keeper-stand"]["facing"] = serde_json::json!(facing);
+    });
+    dir
+}
+
+/// **DECLARE the `watch` the message prints.** hello-world's keeper stands
+/// facing east while the route delivers the party from the west, and watches
+/// only players of its class, so the party walks up to its back; the message
+/// names the declaration, with the reach, and the same campaign with that
+/// declaration builds.
+#[test]
+fn dw1025_declaring_the_watch_it_names_turns_the_keeper_to_the_party() {
+    let dir = hello_room_facing("dw1025", "east");
+    let camp = campaign("dw1025", None);
+    edit_doc(&camp, "npcs.json", |v| {
+        v["content"]["npcs"][0]["watch"] =
+            serde_json::json!({ "who": { "class": "class/wanderer" }, "within": 3 });
+    });
+    let (code, before) = build("dw1025-back", &camp, &dir);
+    assert_eq!(code, 3, "a back-turned stand is refused:\n{before}");
+    let named = "Declare `watch: { \"who\": \"nearest\", \"within\": 3 }` on `npc/keeper`";
+    assert!(
+        before.contains("DW1025") && before.contains(named),
+        "the message names the move:\n{before}"
+    );
+    edit_doc(&camp, "npcs.json", |v| {
+        v["content"]["npcs"][0]["watch"] = serde_json::json!({ "who": "nearest", "within": 3 });
+    });
+    let (code, after) = build("dw1025-watched", &camp, &dir);
+    assert_eq!(code, 0, "the declared watch builds:\n{after}");
+    assert!(!after.contains("DW1025 ["), "{after}");
+    assert!(after.contains("1 drawn by a watch"), "{after}");
+}
+
+/// hello-world with the keeper holding its facing (`watch: "none"`), at
+/// `offset` from its stand (the cast's mark with it).
+fn held_keeper(tag: &str, offset: [i32; 3]) -> PathBuf {
+    let camp = campaign(tag, None);
+    edit_doc(&camp, "npcs.json", |v| {
+        v["content"]["npcs"][0]["watch"] = serde_json::json!("none");
+        if offset != [0, 0, 0] {
+            v["content"]["npcs"][0]["offset"] = serde_json::json!(offset);
+        }
+    });
+    if offset != [0, 0, 0] {
+        edit_doc(&camp, "quests.json", |v| {
+            v["content"]["quests"][0]["cast"]["npc/keeper"]["at"] =
+                serde_json::json!({ "anchor": "anchor/keeper-stand", "offset": offset });
+        });
+    }
+    camp
+}
+
+/// **REMOVE `"watch": "none"`**, the move every held-facing refusal names: the
+/// keeper stands in the open middle of the room, where no facing faces every
+/// cell it is talked to from, and without the declaration it watches by
+/// default.
+#[test]
+fn dw1025_removing_the_held_declaration_lets_the_keeper_watch() {
+    let camp = held_keeper("dw1025-held", [0, 0, 0]);
+    let dir = common::prefabs_dir();
+    let (code, before) = build("dw1025-held-before", &camp, &dir);
+    assert_eq!(code, 3, "{before}");
+    assert!(
+        before.contains("DW1025")
+            && before.contains("remove `\"watch\": \"none\"` from `npc/keeper`"),
+        "the message names the move:\n{before}"
+    );
+    edit_doc(&camp, "npcs.json", |v| {
+        v["content"]["npcs"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("watch");
+    });
+    let (code, after) = build("dw1025-held-after", &camp, &dir);
+    assert_eq!(code, 0, "{after}");
+    assert!(after.contains("1 drawn by a watch"), "{after}");
+    assert!(after.contains("1 by default"), "{after}");
+}
+
+/// **SET the `offset` that puts a wall at its back**, the move named when no
+/// facing faces every cell: the stand faces south, and three blocks north the
+/// keeper's back is to the room's north wall.
+#[test]
+fn dw1025_an_offset_against_the_wall_answers_a_held_keeper_in_the_open() {
+    let dir = hello_room_facing("dw1025-offset", "south");
+    let camp = held_keeper("dw1025-offset", [0, 0, 0]);
+    let (code, before) = build("dw1025-offset-before", &camp, &dir);
+    assert_eq!(code, 3, "{before}");
+    assert!(
+        before.contains("No one facing faces every one of those cells")
+            && before.contains("set its `offset` from `anchor/keeper-stand`"),
+        "the message names the move:\n{before}"
+    );
+    let camp = held_keeper("dw1025-offset-moved", [0, 0, -3]);
+    let (code, after) = build("dw1025-offset-after", &camp, &dir);
+    assert_eq!(code, 0, "{after}");
+    assert!(after.contains("0 stance(s) refused"), "{after}");
+}
+
+/// **DECLARE the facing the message names**: against the north wall but
+/// facing it, the keeper is told the one facing that faces every cell.
+#[test]
+fn dw1025_declaring_the_named_facing_answers_a_held_keeper() {
+    let camp = held_keeper("dw1025-facing", [0, 0, -3]);
+    let wall = hello_room_facing("dw1025-facing-north", "north");
+    let (code, before) = build("dw1025-facing-before", &camp, &wall);
+    assert_eq!(code, 3, "{before}");
+    assert!(
+        before.contains("Declare `anchor/keeper-stand`'s facing `south`"),
+        "the message names the move:\n{before}"
+    );
+    let room = hello_room_facing("dw1025-facing-south", "south");
+    let (code, after) = build("dw1025-facing-after", &camp, &room);
+    assert_eq!(code, 0, "{after}");
+    assert!(after.contains("0 stance(s) refused"), "{after}");
+}
+
+// ---------------------------------------------------------------------------
+// DW1026 — one named character, two bodies at once
+// ---------------------------------------------------------------------------
+
+/// hello-world with a deferred second NPC carrying `name`, spawned when the
+/// keeper is talked to.
+fn two_keepers(tag: &str, name: &str) -> PathBuf {
+    let camp = campaign(tag, None);
+    edit_doc(&camp, "npcs.json", |v| {
+        let mut n = v["content"]["npcs"][0].clone();
+        n["id"] = serde_json::json!("npc/keeper-later");
+        n["name"] = serde_json::json!(name);
+        n["deferred"] = serde_json::json!(true);
+        v["content"]["npcs"].as_array_mut().unwrap().push(n);
+    });
+    edit_doc(&camp, "quests.json", |v| {
+        v["content"]["quests"][0]["cast"]["npc/keeper-later"] =
+            serde_json::json!({ "at": "offstage" });
+        v["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "type": "spawn-npc", "npc": "npc/keeper-later",
+                "happening": { "verb": "arrives", "text": "the keeper comes back" }
+            }));
+    });
+    camp
+}
+
+fn validate(camp: &Path) -> (i32, String) {
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+    ]);
+    (r.status.code().unwrap_or(-1), log(&r))
+}
+
+/// **DESPAWN the leaving body in the list that brings the next one in**, the
+/// first move `DW1026` names.
+#[test]
+fn dw1026_despawning_the_leaving_body_beside_the_spawn_validates() {
+    let camp = two_keepers("dw1026-hand", "The Keeper");
+    let (code, before) = validate(&camp);
+    assert_ne!(code, 0, "{before}");
+    assert!(
+        before.contains("DW1026") && before.contains("despawn the body that is leaving"),
+        "the message names the move:\n{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        v["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "type": "despawn-npc", "npc": "npc/keeper",
+                "happening": { "verb": "departs", "text": "the keeper steps away" }
+            }));
+    });
+    let (_, after) = validate(&camp);
+    assert!(!after.contains("DW1026 ["), "{after}");
+    assert!(after.contains("0 character(s) refused"), "{after}");
+}
+
+/// **GIVE each its own `name`**, the second move `DW1026` names.
+#[test]
+fn dw1026_a_name_of_its_own_validates() {
+    let camp = two_keepers("dw1026-name", "The Keeper");
+    let (_, before) = validate(&camp);
+    assert!(
+        before.contains("DW1026") && before.contains("give each its own `name`"),
+        "{before}"
+    );
+    edit_doc(&camp, "npcs.json", |v| {
+        v["content"]["npcs"][1]["name"] = serde_json::json!("The Keeper's Brother");
+    });
+    let (_, after) = validate(&camp);
+    assert!(!after.contains("DW1026 ["), "{after}");
+    assert!(
+        after.contains("0 name(s) carried by more than one declaration"),
+        "{after}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// DW1044 — a trigger the path relies on, walked past
+// ---------------------------------------------------------------------------
+
+/// The chapel-door fixture (`common::threshold`) with the trigger `on`, `at`
+/// and `edits`, built. `barred` leaves the Keeper's door shut for good
+/// ([`common::threshold::bar_the_door`]), for a fixture whose second doorway
+/// is the way through.
+fn dw1044(
+    tag: &str,
+    range: u32,
+    at: &str,
+    edits: Option<Vec<serde_json::Value>>,
+    barred: bool,
+) -> (i32, String) {
+    let camp = tmp(&format!("camp-{tag}"));
+    common::threshold::doorway_campaign(&camp, common::threshold::approach(range), at, edits);
+    if barred {
+        common::threshold::bar_the_door(&camp);
+    }
+    build(tag, &camp, &common::prefabs_dir())
+}
+
+/// **WIDEN THE RANGE.** A range-1 trigger on one column of the two-wide
+/// doorway is walked round through the other; the range the refusal names is
+/// entered by every walk.
+#[test]
+fn dw1044_widening_the_range_to_the_one_named_builds() {
+    let (code, before) = dw1044("dw1044-r1", 1, "anchor/door", None, false);
+    assert_ne!(code, 0, "{before}");
+    assert!(
+        before.contains("DW1044 [error]")
+            && before.contains("widen `range` from 1 to 2, the least range every walk enters"),
+        "{before}"
+    );
+    let (code, after) = dw1044("dw1044-r2", 2, "anchor/door", None, false);
+    assert_eq!(code, 0, "{after}");
+    assert!(after.contains("1 entered by every walk"), "{after}");
+}
+
+/// **MOVE THE ANCHOR INTO THE ONLY WAY THROUGH.** With a second doorway, the
+/// range-2 trigger at the door is walked round; the same trigger on the exit —
+/// the cell every walk to the exit ends in — is entered by every walk.
+#[test]
+fn dw1044_moving_the_anchor_into_the_only_way_through_builds() {
+    let door = common::threshold::second_door;
+    let (code, before) = dw1044("dw1044-door", 2, "anchor/door", Some(door()), true);
+    assert_ne!(code, 0, "{before}");
+    assert!(before.contains("DW1044 [error]"), "{before}");
+    let (code, after) = dw1044("dw1044-exit", 2, "anchor/exit", Some(door()), true);
+    assert_eq!(code, 0, "{after}");
+    assert!(after.contains("1 entered by every walk"), "{after}");
+}
+
+/// **CLOSE THE WAY ROUND.** The second doorway walled again leaves one way
+/// through, and the range-2 trigger in it is entered by every walk.
+#[test]
+fn dw1044_closing_the_way_round_builds() {
+    let (code, after) = dw1044(
+        "dw1044-closed",
+        2,
+        "anchor/door",
+        Some(common::threshold::second_door_closed()),
+        false,
+    );
+    assert_eq!(code, 0, "{after}");
+    assert!(after.contains("1 entered by every walk"), "{after}");
 }

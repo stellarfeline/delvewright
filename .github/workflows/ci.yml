@@ -1715,8 +1715,8 @@ jobs:
           built = json.load(open("validation/delve-output-gallery-primary/validation/watchers.json"))
           r = json.load(open("validation/run-out/dw-ci-gallery-bot/run-report.json"))
           b = r.get("watch_binding")
-          print(f"watchers declared by the build: {built['binding']['declared']}; bot: {json.dumps(b)}")
-          if b is None or b["in_record"] != built["binding"]["declared"]:
+          print(f"watchers in the build (declared and default): {built['binding']['watchers']}; bot: {json.dumps(b)}")
+          if b is None or b["in_record"] != built["binding"]["watchers"]:
               sys.exit("the bot's record does not carry the build's watchers")
           if b["within_reach"] < 1:
               sys.exit("the proven path came within reach of no watcher: the gallery's watch binds nothing at run time")
