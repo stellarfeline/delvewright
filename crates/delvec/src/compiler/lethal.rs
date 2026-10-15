@@ -568,9 +568,8 @@ fn loop_exercise_landings(plan: &Plan) -> Vec<[i32; 3]> {
 /// the cells the campaign MAY put the party at ([`put_at_roots`]) **and get
 /// back from** — the reach graph's standing states (spec-0113 §5.1), so a ledge
 /// a body jumps to and back from is in it, less the places a body gets into
-/// and not out of: a pit's bottom is not floor the party walks, which is the
-/// owner's ruling that a volume may sit there (`docs/reference/dsl/lethal.md`)
-/// — over `open`
+/// and not out of: a pit's bottom is not floor the party walks, so a volume
+/// may sit there (`docs/reference/dsl/lethal.md`) — over `open`
 /// — which `DW0891` passes as the lethality-free counterfactual
 /// ([`crate::compiler::nav::World::without_exclusions`]). The one derivation,
 /// read by `DW0891` and by `DW0938`'s caught cells (`compiler::assembly`).
