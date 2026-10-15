@@ -257,13 +257,28 @@ export const methods = {
     const watch = this.watchLedger();
     const armed = watch.armed;
     watch.armed = false;
-    const ledgers = new Map<string, number | undefined>();
+    // What the path has made each player-scope stake ledger, to put back after
+    // the trials. A ledger the bot holds no score in is `null`: the display
+    // slot a value is read through reports only a holder that HAS a score, so
+    // its presence is asked as a term first, and it is given a score of 0 for
+    // the trials to stage and reset to no score after them.
+    const ledgers = new Map<string, number | null | undefined>();
     for (const s of plan.stakes) {
-      if ((s.currency.scope ?? "player") !== "player" || ledgers.has(s.currency.objective)) continue;
-      ledgers.set(
-        s.currency.objective,
-        (await this.trackScore(s.currency.objective)) ? this.myScore(s.currency.objective) : undefined,
-      );
+      const objective = s.currency.objective;
+      if ((s.currency.scope ?? "player") !== "player" || ledgers.has(objective)) continue;
+      const held = await this.askTerm({
+        objective,
+        holder: "@s",
+        min: -2147483648,
+        max: undefined,
+        negate: false,
+      });
+      if (held === false) {
+        ledgers.set(objective, null);
+        await this.refusalOf(`/scoreboard players add @s ${objective} 0`);
+      } else {
+        ledgers.set(objective, (await this.trackScore(objective)) ? this.myScore(objective) : undefined);
+      }
     }
     const stage = this.stageNow;
     this.stageNow = "death-loop";
@@ -272,14 +287,20 @@ export const methods = {
       if (this.death !== undefined) await this.recoverFromDeath();
       for (const [objective, value] of ledgers) {
         if (value === undefined || this.myScore(objective) === value) continue;
-        const refusal = await this.refusalOf(`/scoreboard players set @s ${objective} ${value}`);
+        const refusal = await this.refusalOf(
+          value === null
+            ? `/scoreboard players reset @s ${objective}`
+            : `/scoreboard players set @s ${objective} ${value}`,
+        );
         this.stagedRemovals.push({
           kind: "player",
-          why: `stake datum \`${objective}\` set back to ${value}, what the critical path had made it before the death loop at step ${index}`,
+          why:
+            `stake datum \`${objective}\` set back to ${value === null ? "no score" : value}, what ` +
+            `the critical path had made it before the death loop after step ${index}`,
           performed: refusal === undefined,
           detail: refusal,
         });
-        await this.settledScore(objective, value);
+        if (value !== null) await this.settledScore(objective, value);
       }
       if (here !== undefined) {
         const back = await this.walkPastReseated(
@@ -293,9 +314,12 @@ export const methods = {
         }
       }
     } finally {
+      // The display slots stay held until the stage ends (runDeathLoop): a slot
+      // released and taken again is not re-reported by a server that still
+      // shows the same ledger elsewhere, and the next boundary's read of it
+      // would then see nothing.
       this.stageNow = stage;
       watch.armed = armed;
-      this.clearScoreDisplay();
     }
   },
 
