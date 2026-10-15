@@ -1135,3 +1135,74 @@ fn a_journal_page_fits_its_book() {
         "{d:?}"
     );
 }
+
+/// spec-0104 §6.3: a compass following a `kill` re-aims on the twenty-tick
+/// clock at the living body of the wave nearest the player holding it, and at
+/// the wave's anchor while none is alive.
+#[test]
+fn a_compass_following_a_kill_points_at_the_nearest_living_body() {
+    let out = try_build(&common::keep_trial_dir()).expect("keep-trial builds");
+    let body = |name: &str| -> &str {
+        out.get(&format!(
+            "datapack/data/keep-trial/function/{name}.mcfunction"
+        ))
+        .map(|b| std::str::from_utf8(b).unwrap())
+        .unwrap_or_else(|| panic!("{name} emitted"))
+    };
+    let followed = body("compass_aim_followed");
+    let k = followed
+        .lines()
+        .find(|l| l.ends_with("run function keep-trial:compass_aim_wave_slay"))
+        .and_then(|l| l.split("matches ").nth(1))
+        .and_then(|r| r.split(' ').next())
+        .unwrap_or_else(|| panic!("the kill dispatches its wave aim: {followed}"));
+    assert!(
+        followed.contains(&format!(
+            "execute if score @s dw.track matches {k} run scoreboard players set @s dw.tbody 1"
+        )),
+        "a followed kill is re-aimed on the clock: {followed}"
+    );
+    let tick = out
+        .iter()
+        .filter(|(p, _)| p.contains("/function/") && p.ends_with(".mcfunction"))
+        .map(|(_, b)| std::str::from_utf8(b).unwrap())
+        .find(|b| {
+            b.contains("as @a[scores={dw.tbody=1}] run function keep-trial:compass_aim_followed")
+        })
+        .expect("the clock line");
+    assert!(
+        tick.contains("execute if score #gclock dw.guide matches 0 as @a[scores={dw.tbody=1}]"),
+        "{tick}"
+    );
+    // The anchor the fallback names is the cell the wave is summoned around.
+    let spawn = body("spawn_guards");
+    assert!(
+        spawn.contains("summon minecraft:zombie 11.5 65.0 12.5"),
+        "{spawn}"
+    );
+    assert_eq!(
+        body("compass_aim_wave_slay").lines().collect::<Vec<_>>(),
+        vec![
+            "tag @e[tag=dw_caim] remove dw_caim",
+            "execute at @s run tag @e[tag=dw_wave_guards,sort=nearest,limit=1] add dw_caim",
+            "execute store result storage keep-trial:guide aim.x int 1 run data get entity @e[tag=dw_caim,limit=1] Pos[0]",
+            "execute store result storage keep-trial:guide aim.y int 1 run data get entity @e[tag=dw_caim,limit=1] Pos[1]",
+            "execute store result storage keep-trial:guide aim.z int 1 run data get entity @e[tag=dw_caim,limit=1] Pos[2]",
+            "execute if entity @e[tag=dw_caim,limit=1] run function keep-trial:compass_aim with storage keep-trial:guide aim",
+            "execute unless entity @e[tag=dw_caim,limit=1] run function keep-trial:compass_aim {x:11,y:65,z:12}",
+            "tag @e[tag=dw_caim] remove dw_caim",
+        ]
+    );
+    // The generated PackTest drives two bodies, kills the nearer, and re-aims.
+    let pt = out
+        .get("packtest-datapack/data/keep-trial/test/guide_compass_wave.mcfunction")
+        .map(|b| std::str::from_utf8(b).unwrap())
+        .expect("the wave compass PackTest");
+    assert_eq!(pt.matches("summon minecraft:zombie").count(), 2, "{pt}");
+    assert!(
+        pt.contains("kill @e[tag=dw_pt_cmpw_near]")
+            && pt.contains("function keep-trial:compass_aim_followed")
+            && pt.contains("@e[tag=dw_pt_cmpw_far,limit=1] Pos[0]"),
+        "{pt}"
+    );
+}

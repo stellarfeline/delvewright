@@ -31,8 +31,8 @@ const USE_LATCH: &str = "dw.cuse";
 pub(super) const PICK: &str = "dw.cpick";
 /// Per player: scratch for the next ordinal a cycle moves to.
 const NEXT: &str = "dw.tnext";
-/// Per player: `1` while the followed objective is a `talk-to`, whose target
-/// walks.
+/// Per player: `1` while the followed objective is a `talk-to` or a `kill`,
+/// whose target moves.
 const ON_BODY: &str = "dw.tbody";
 /// Per player: deaths since the last refresh (`deathCount`).
 const DEATHS: &str = "dw.gdeath";
@@ -40,7 +40,7 @@ const DEATHS: &str = "dw.gdeath";
 const SEEDED_TAG: &str = "dw_guide_seeded";
 /// The campaign's guidance epoch holder.
 const EPOCH: &str = "#epoch";
-/// The twenty-tick clock that re-aims a compass following a body.
+/// The twenty-tick clock that re-aims a compass following a body or a wave.
 const CLOCK: &str = "#gclock";
 /// The engine compass's `custom_data`.
 pub(super) const COMPASS_DATA: &str = "{dw_compass:1b}";
@@ -82,7 +82,8 @@ pub(super) struct Watched {
     pub announced: bool,
     /// Tracked: its ordinal on the compass, from 1, in document order.
     pub ordinal: Option<usize>,
-    /// Where the compass points: a cell, or a body's tag (a `talk-to`'s NPC).
+    /// Where the compass points: a cell, a body's tag (a `talk-to`'s NPC), or
+    /// a wave (a `kill`'s).
     pub target: Option<Target>,
 }
 
@@ -93,7 +94,16 @@ pub(super) enum Target {
     Cell([i32; 3]),
     /// A body's entity tag; read live.
     Body(String),
+    /// A wave: the living body of its tag nearest the player holding the
+    /// compass, read live; its anchor while none is alive.
+    Wave {
+        tag: String,
+        anchor: Option<[i32; 3]>,
+    },
 }
+
+/// The tag a wave's nearest living body carries for the length of one aim.
+const WAVE_AIM_TAG: &str = "dw_caim";
 
 /// What one highlight lights (§7.2).
 #[derive(Clone, Debug)]
@@ -226,6 +236,10 @@ pub(super) fn guide(plan: &Plan, blocks: &crate::compiler::blockstate::BlockMap)
                         "dw_npc_{}",
                         plan::safe_local(npc.as_str())
                     ))),
+                    Objective::Kill { wave, .. } => Some(Target::Wave {
+                        tag: plan::wave_tag(wave.as_str()),
+                        anchor: crate::compiler::promise::objective_place(plan, q, o),
+                    }),
                     _ => crate::compiler::promise::objective_place(plan, q, o).map(Target::Cell),
                 }
             } else {
@@ -622,7 +636,7 @@ pub(super) fn tick_lines(g: &Guide, ns: &str) -> Vec<String> {
             "scoreboard players remove @a[scores={{{USE_LATCH}=1..}}] {USE_LATCH} 1"
         ));
         if g.tracked()
-            .any(|w| matches!(w.target, Some(Target::Body(_))))
+            .any(|w| matches!(w.target, Some(Target::Body(_)) | Some(Target::Wave { .. })))
         {
             v.push(format!(
                 "execute if score {CLOCK} {GUIDE} matches 0 as @a[scores={{{ON_BODY}=1}}] run function {ns}:compass_aim_followed"
@@ -1095,6 +1109,19 @@ fn compass_functions(
                     ]),
                 ));
             }
+            Some(Target::Wave { tag, anchor }) => {
+                aim.push(format!(
+                    "execute if score @s {TRACK} matches {k} run scoreboard players set @s {ON_BODY} 1"
+                ));
+                aim.push(format!(
+                    "execute if score @s {TRACK} matches {k} run function {ns}:compass_aim_wave_{}",
+                    w.safe
+                ));
+                fns.push((
+                    format!("compass_aim_wave_{}", w.safe),
+                    lines(&wave_aim_lines(ns, tag, *anchor)),
+                ));
+            }
             None => aim.push(format!(
                 "execute if score @s {TRACK} matches {k} run function {ns}:compass_spin"
             )),
@@ -1192,6 +1219,41 @@ fn compass_functions(
     }
     fns.push(("compass_pick".to_string(), lines(&pick)));
     fns
+}
+
+/// The aim at a followed `kill` (spec-0104 §6.3), run as the player holding
+/// the compass: the living body carrying the wave's `tag` nearest that player
+/// (`@e` selects only living entities, so a body in its death animation is
+/// never picked: `docs/reference/compiler.md`, the `compass` row), its
+/// position read into the macro's storage; while no body of the wave is
+/// alive, the wave's `anchor` (spin when it has none).
+pub(super) fn wave_aim_lines(ns: &str, tag: &str, anchor: Option<[i32; 3]>) -> Vec<String> {
+    let alive = format!("@e[tag={tag}]");
+    let picked = format!("@e[tag={WAVE_AIM_TAG},limit=1]");
+    let mut v = vec![
+        format!("tag @e[tag={WAVE_AIM_TAG}] remove {WAVE_AIM_TAG}"),
+        format!(
+            "execute at @s run tag {} add {WAVE_AIM_TAG}",
+            alive.replace(']', ",sort=nearest,limit=1]")
+        ),
+    ];
+    for (i, axis) in ["x", "y", "z"].iter().enumerate() {
+        v.push(format!(
+            "execute store result storage {ns}:guide aim.{axis} int 1 run data get entity {picked} Pos[{i}]"
+        ));
+    }
+    v.push(format!(
+        "execute if entity {picked} run function {ns}:compass_aim with storage {ns}:guide aim"
+    ));
+    v.push(match anchor {
+        Some(p) => format!(
+            "execute unless entity {picked} run function {ns}:compass_aim {{x:{},y:{},z:{}}}",
+            p[0], p[1], p[2]
+        ),
+        None => format!("execute unless entity {picked} run function {ns}:compass_spin"),
+    });
+    v.push(format!("tag @e[tag={WAVE_AIM_TAG}] remove {WAVE_AIM_TAG}"));
+    v
 }
 
 /// The journal's item modifiers (§8.3): `(name, modifier)`.

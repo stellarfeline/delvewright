@@ -736,3 +736,77 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
         );
     }
 }
+
+/// A compass following a `kill` points at the nearest living body of its
+/// wave, and moves to the next when that one dies (spec-0104 §6.3).
+pub(super) fn emit_compass_wave_packtest(plan: &Plan, out: &mut BuildOutput, g: &Guide) {
+    if !g.compass {
+        return;
+    }
+    let ns = &plan.namespace;
+    let title = artifact_title(plan.campaign);
+    let Some(w) = g
+        .tracked()
+        .filter(|w| drivable(plan, w))
+        .find(|w| matches!(w.target, Some(Target::Wave { .. })))
+    else {
+        return;
+    };
+    let Some(Target::Wave { tag, .. }) = &w.target else {
+        return;
+    };
+    let k = w.ordinal.expect("tracked");
+    let mut d = Drive::new("cmpw");
+    isolate(plan, &[w], &mut d);
+    let mut b = packtest_header(&format!(
+        "{title}: a compass following `{}` points at the nearest living body of its wave, and at the next once that one dies (spec-0104 §6.3)",
+        w.id
+    ));
+    b.push(format!("function {ns}:setup"));
+    b.push("clear @s".to_string());
+    b.push(format!("function {ns}:guide_seed"));
+    b.extend(d.open());
+    b.push(format!("scoreboard players set @s {TRACK} 0"));
+    b.push(format!("function {ns}:compass_give"));
+    // Two bodies of the wave's tag, two and four blocks from the player: mobs
+    // that die as a wave's do, so the one killed lies in its death animation
+    // while the compass is re-aimed.
+    for (name, dx) in [("near", 2), ("far", 4)] {
+        b.push(format!(
+            "execute at @s run summon minecraft:zombie ~{dx} ~ ~ {{NoAI:1b,Silent:1b,PersistenceRequired:1b,DeathLootTable:\"minecraft:empty\",Tags:[\"{tag}\",\"dw_pt_cmpw\",\"dw_pt_cmpw_{name}\"]}}"
+        ));
+    }
+    b.push(format!("function {ns}:compass_refresh"));
+    b.push(format!("assert score @s {TRACK} matches {k}"));
+    let target = format!(
+        "entity @s Inventory[{{components:{{\"minecraft:custom_data\":{COMPASS_DATA}}}}}].components.\"minecraft:lodestone_tracker\".target.pos"
+    );
+    let aimed_at = |b: &mut Vec<String>, name: &str| {
+        for (i, axis) in ["x", "y", "z"].iter().enumerate() {
+            b.push(format!(
+                "execute store result score #cmpw_b{axis} {GUIDE} run data get entity @e[tag=dw_pt_cmpw_{name},limit=1] Pos[{i}]"
+            ));
+            b.push(format!(
+                "execute store result score #cmpw_c{axis} {GUIDE} run data get {target}[{i}]"
+            ));
+            b.push(format!(
+                "execute store success score #cmpw_e{axis} {GUIDE} if score #cmpw_b{axis} {GUIDE} = #cmpw_c{axis} {GUIDE}"
+            ));
+            b.push(format!("assert score #cmpw_e{axis} {GUIDE} matches 1"));
+        }
+    };
+    aimed_at(&mut b, "near");
+    // The nearer dies; the next aim is the other.
+    b.push("kill @e[tag=dw_pt_cmpw_near]".to_string());
+    b.push(format!("function {ns}:compass_aim_followed"));
+    aimed_at(&mut b, "far");
+    // The bodies leave the wave before they go, so no sibling counts them.
+    b.push(format!("tag @e[tag=dw_pt_cmpw] remove {tag}"));
+    b.push("kill @e[tag=dw_pt_cmpw]".to_string());
+    b.extend(d.close());
+    b.push("clear @s".to_string());
+    out.insert(
+        format!("packtest-datapack/data/{ns}/test/guide_compass_wave.mcfunction"),
+        lines(&b).into_bytes(),
+    );
+}

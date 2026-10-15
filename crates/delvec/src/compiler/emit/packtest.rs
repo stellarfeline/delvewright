@@ -213,6 +213,7 @@ pub(super) fn emit_packtest(
     // spec-0104 §6–§8: the compass, the journal and every highlight, driven on
     // the dummy. Each emits nothing for a campaign without its surface.
     guidance::emit_compass_packtests(plan, out, guide);
+    guidance::emit_compass_wave_packtest(plan, out, guide);
     guidance::emit_journal_packtests(plan, out, guide, chrome);
     guidance::emit_highlight_packtests(plan, out, guide);
     class::emit_class_apply_packtests(plan, out);
