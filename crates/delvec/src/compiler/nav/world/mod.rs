@@ -588,7 +588,7 @@ impl Premises {
                 .iter()
                 .filter_map(|s| Some((s.objective()?.to_string(), s.pos()?)))
                 .collect(),
-            unbounded_fall: false,
+            unbounded_fall: plan.movement.unbounded_fall(),
             declared_jumps: plan.jumps.iter().map(|j| (j.from, j.to)).collect(),
         }
     }

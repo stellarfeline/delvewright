@@ -120,6 +120,36 @@ pub fn verify_boundary_safety(world: &World, starts: &[AnchorRoot]) -> Result<()
     boundary_from(world, &reach)
 }
 
+/// [`verify_boundary_safety`] for `plan`'s world, minding what its party may
+/// carry (spec-0113 §5.4): when a body may hold a movement the reach graph
+/// does not fly from the first step, the stranding and void proof is
+/// unjudged — said on its own line, never refused (`DW1043` carries the
+/// warning) — and the fluid proofs it is sequenced behind still run.
+pub fn verify_boundary_safety_of(
+    plan: &crate::compiler::plan::Plan,
+    world: &World,
+    starts: &[AnchorRoot],
+) -> Result<(), Failure> {
+    match plan.movement.unbounded_from() {
+        Some(m) if m.stage == 0 => {
+            if let Some(e) = measure_fluid_escape(world).finding() {
+                return Err(e);
+            }
+            let reach = world.body_reach_rooted(starts);
+            if let Some(e) = measure_sea_seepage(world, &reach.standing()).finding() {
+                return Err(e);
+            }
+            eprintln!(
+                "DW0322 unjudged: a body may hold `{}` ({}) from the first step, a movement the \
+                 reach graph does not fly (DW1043)",
+                m.item, m.source
+            );
+            Ok(())
+        }
+        _ => verify_boundary_safety(world, starts),
+    }
+}
+
 /// Boundary safety alone, on a world whose fluid has already been accounted for.
 ///
 /// Split out of [`verify_boundary_safety`] for one reason: the masking that

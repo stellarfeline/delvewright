@@ -157,6 +157,9 @@ pub struct Plan<'a> {
     /// (validation already reported `DW0142`). Empty for every campaign that
     /// declares none.
     pub jumps: Vec<JumpPlan>,
+    /// Every item and effect the campaign gives a player, read for how it moves
+    /// a body (spec-0113 §5.4, `DW1043`).
+    pub movement: crate::compiler::nav::MovementItems,
     /// Resolved loops (spec-0086), declaration-ordered. Empty for every campaign
     /// that declares none, which keeps the region model, the emitted tick and
     /// every output byte-identical.
@@ -1233,6 +1236,8 @@ impl<'a> Plan<'a> {
             }
         }
 
+        let movement = crate::compiler::nav::movement_items(campaign, &cp.steps);
+
         Ok(Self {
             campaign,
             namespace,
@@ -1257,6 +1262,7 @@ impl<'a> Plan<'a> {
             checkpoints,
             lethal_volumes,
             jumps,
+            movement,
             furniture,
             stealth_beats,
             objective_steps,

@@ -33,6 +33,9 @@ pub struct LeaveBinding {
     pub link_exits: usize,
     /// The reach graph the judgement was taken over (spec-0113 §5.5).
     pub reach: ReachBinding,
+    /// Quest configurations left unjudged because a body in them may hold a
+    /// movement the reach graph does not fly (spec-0113 §5.4, `DW1043`).
+    pub unbounded: usize,
 }
 
 impl LeaveBinding {
@@ -41,14 +44,17 @@ impl LeaveBinding {
         format!(
             "DW0921 binding: {} quest configuration(s), {} route cell(s), {} cell(s) a body can reach \
              by walking, falling, jumping, swimming or climbing ({} of them afloat, {} on a fence or \
-             wall top), {} it cannot leave; {} link stand cell(s) served as a way out",
+             wall top), {} it cannot leave; {} link stand cell(s) served as a way out; {} \
+             configuration(s) unjudged, a body in them holding a movement the reach graph does not \
+             fly (DW1043)",
             self.configurations,
             self.route_cells,
             self.reached,
             self.afloat,
             self.perched,
             self.trapped,
-            self.link_exits
+            self.link_exits,
+            self.unbounded
         )
     }
 
@@ -63,6 +69,7 @@ impl LeaveBinding {
             "afloat": self.afloat,
             "perched": self.perched,
             "trapped": self.trapped,
+            "unbounded": self.unbounded,
         })
     }
 }
@@ -175,6 +182,13 @@ pub fn check_bodies_can_leave(
             None => configs.push((st, step, cells.into_iter().collect(), live)),
         }
     }
+    // spec-0113 §5.4: from the first step a body may hold a movement the
+    // graph does not fly, a configuration is not judged — reported, never
+    // refused (`DW1043`).
+    let from = plan.movement.unbounded_from().map(|m| m.stage);
+    let total = configs.len();
+    configs.retain(|(_, first, _, _)| from.is_none_or(|n| *first < n));
+    let unbounded = total - configs.len();
     let owned: Vec<Option<World>> = configs
         .iter()
         .map(|(st, _, _, _)| (!st.is_empty()).then(|| world.with_region_state(st)))
@@ -224,7 +238,9 @@ pub fn check_bodies_can_leave(
             (w, when, seeds.into_iter().collect(), exits)
         })
         .collect();
-    verify_bodies_can_leave(&worlds, returned, &plan.shortcuts)
+    let (mut binding, verdict) = verify_bodies_can_leave(&worlds, returned, &plan.shortcuts);
+    binding.unbounded = unbounded;
+    (binding, verdict)
 }
 
 /// One configuration as it is gathered: its region state, the first step that

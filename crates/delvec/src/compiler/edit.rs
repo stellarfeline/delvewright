@@ -778,7 +778,7 @@ fn check_batch_invariants(
         return Err(ctx(e));
     }
     let starts = anchor_starts(plan);
-    crate::compiler::nav::verify_boundary_safety(&with_fixtures, &starts).map_err(ctx)?;
+    crate::compiler::nav::verify_boundary_safety_of(plan, &with_fixtures, &starts).map_err(ctx)?;
     Ok(())
 }
 

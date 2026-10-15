@@ -42,6 +42,7 @@ mod jump;
 mod lane;
 mod leave;
 mod lethal;
+mod movement;
 mod npc;
 mod respawn;
 mod sea;
@@ -63,6 +64,7 @@ pub use jump::*;
 pub use lane::*;
 pub use leave::*;
 pub use lethal::*;
+pub use movement::*;
 pub use npc::*;
 pub use respawn::*;
 pub use sea::*;
@@ -457,6 +459,20 @@ delvewright_dsl::dw_code! {
     /// confirms nothing is the author's intent misread. Derived by simulation,
     /// never by table.
     pub const DW_JUMP_NOT_MAKEABLE: DwCode = DwCode::new("DW1041", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW1043`: **a movement the reach graph does not fly** (spec-0113 §5.4):
+    /// an item or effect the campaign gives a player changes how a body moves
+    /// in a way the simulator does not take — a movement potion or effect, an
+    /// elytra, a wind charge, a pearl, chorus fruit, a riptide trident, a
+    /// movement enchantment. A warning, not a refusal: from the first step a
+    /// body can hold it the graph is unbounded, `DW0921` and `DW0322` report
+    /// those steps as unjudged, and the build goes on. About the engine: the
+    /// campaign wrote nothing wrong. Fall-damage reducers are admitted, and make
+    /// every fall survivable to the graph.
+    pub const DW_MOVEMENT_UNMODELLED: DwCode =
+        DwCode::new("DW1043", ExitTier::Build).about_the_engine();
 }
 
 delvewright_dsl::dw_code! {

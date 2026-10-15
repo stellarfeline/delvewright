@@ -354,7 +354,8 @@ pub(super) fn prove_world(
                 }
             }
 
-            crate::compiler::nav::verify_boundary_safety(
+            crate::compiler::nav::verify_boundary_safety_of(
+                plan,
                 world,
                 &crate::compiler::edit::anchor_starts(plan),
             )
@@ -656,6 +657,15 @@ pub(super) fn prove_world(
                 );
                 eprintln!("{}", leave_binding.line());
                 eprintln!("{}", leave_binding.reach.line());
+                // spec-0113 §5.4 (`DW1043`): what the campaign gives a player,
+                // read for how it moves a body, with the configurations judged
+                // and left unbounded — zeroes included.
+                eprintln!(
+                    "{}",
+                    plan.movement
+                        .line(leave_binding.configurations, leave_binding.unbounded)
+                );
+                warnings.extend(plan.movement.findings(leave_binding.unbounded));
                 leave_verdict?;
                 put_json(out, "validation/leave-proof.json", &leave_binding.to_json());
                 put_json(

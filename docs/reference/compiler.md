@@ -3178,8 +3178,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   them by walking, falling, jumping, swimming or climbing), `afloat` (of those, cells
   where the body floats at the top of water — the population the water half
   judges), `perched` (of those, cells where the body stands on a fence, wall or
-  gate top, a rest state the walk never stands a body in), and `trapped` (zero
-  on a build that ships). Written only when the proof holds.
+  gate top, a rest state the walk never stands a body in), `trapped` (zero
+  on a build that ships) and `unbounded` (configurations left unjudged because
+  a body in them may hold a movement the reach graph does not fly, `DW1043`).
+  Written only when the proof holds.
 - `<out>/validation/reach-graph.json`: the **reach graph's** binding (spec-0113,
   `nav::ReachBinding`), summed over the configurations `DW0921` judges:
   `configurations`, `states` (rest states, by kind), `edges` (by kind: walk,
