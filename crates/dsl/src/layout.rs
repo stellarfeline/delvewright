@@ -828,6 +828,10 @@ pub struct GatedGrant {
     pub grant: Grant,
 }
 
+/// One producer row as the graph reads it: what its chain requires, and what
+/// it yields.
+type ProducerRow = (BTreeSet<Grant>, Grant);
+
 /// Where a [`GatedGrant`] fires.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Holder {
@@ -861,9 +865,8 @@ impl Grants {
             req.iter().map(|f| Grant::Flag(f.clone())).collect()
         };
         // (quest, objective) -> the rows its completion fires.
-        let mut on_objective: BTreeMap<(&str, &str), Vec<(BTreeSet<Grant>, Grant)>> =
-            BTreeMap::new();
-        let mut on_quest: BTreeMap<&str, Vec<(BTreeSet<Grant>, Grant)>> = BTreeMap::new();
+        let mut on_objective: BTreeMap<(&str, &str), Vec<ProducerRow>> = BTreeMap::new();
+        let mut on_quest: BTreeMap<&str, Vec<ProducerRow>> = BTreeMap::new();
         for p in crate::producers::flag_producers(c) {
             let row = (flags_of(&p.requires), Grant::Flag(p.flag.to_string()));
             match p.site {
@@ -936,7 +939,7 @@ impl Grants {
 
     /// Record one producer row at its holder: unconditional when its chain
     /// requires nothing, gated otherwise.
-    fn credit(&mut self, holder: Holder, (requires, grant): (BTreeSet<Grant>, Grant)) {
+    fn credit(&mut self, holder: Holder, (requires, grant): ProducerRow) {
         if !requires.is_empty() {
             self.gated.push(GatedGrant {
                 holder,
