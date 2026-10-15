@@ -26,8 +26,8 @@
 //!   while sprinting (`travelInWater`) and its sink (`getFluidFallingAdjustedMovement`),
 //!   the `Mth.sin` table, and the pose (`updatePlayerPose`). Everything else is
 //!   the bot's arithmetic, which the record found the jar's on every rig of its
-//!   §9. The ballistic half of these rules is held to the pinned server by the
-//!   PackTest `movement_ballistics`.
+//!   §9. The ballistic half of these rules was measured once against the pinned
+//!   server by the instrument `movement_ballistics` (`docs/reference/body-movement.md`).
 //!
 //! The reach graph runs [`Rules::Game`]: it asks what a player can do. A declared
 //! jump is proven under both, because the bot that drives it runs the other.
@@ -506,7 +506,7 @@ fn block_at<W: CollisionWorld + ?Sized>(world: &W, p: [f64; 3]) -> [i32; 3] {
 /// rounded up, reaches the water's surface), and the jar's
 /// `Entity.updateFluidHeightAndDoFluidPushing` under [`Rules::Game`] (a cell
 /// counts when its surface — `y + 8/9` for a source, `y + 1` under more water —
-/// is at or over the box's bottom; cited, and measured by the PackTest
+/// is at or over the box's bottom; cited, and measured once by the instrument
 /// `movement_ballistics`).
 fn water_in<W: CollisionWorld + ?Sized>(
     world: &W,

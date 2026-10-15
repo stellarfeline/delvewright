@@ -115,6 +115,7 @@ pub mod assembly;
 pub mod atmos;
 pub mod atmosphere;
 pub mod attached;
+pub mod ballistics;
 pub mod batchstate;
 pub mod blind;
 pub mod blocking;

@@ -4,14 +4,15 @@
 //! Four bodies of an armour stand's box are thrown over a small rig — stone, slime,
 //! water and a slab lip — and each tick's position is what the simulator
 //! ([`super::simulate`], [`Rules::Game`]) says a body with no input does there.
-//! The compiler's PackTest `movement_ballistics` builds the same rig on the
-//! pinned server, summons `minecraft:armor_stand` bodies with the same
+//! The one-time instrument `delvec::compiler::ballistics` — a PackTest written
+//! by hand, never by a build or CI — builds the same rig on the pinned server, summons `minecraft:armor_stand` bodies with the same
 //! `Motion` — a living body the game moves with no input (a mob with `NoAI`
 //! is not moved at all: measured, the body summoned with `Motion` stays where
 //! it was put), and asserts every tick's `Pos` against these trajectories within
 //! [`TOLERANCE`]. The trajectories are committed beside the case file
 //! (`crates/dsl/tests/fixtures/movement/ballistics-1.21.11.json`) and a test
-//! refuses when the simulator no longer computes them.
+//! refuses when the simulator no longer computes them. The measurement and the
+//! revision it was taken at are in `docs/reference/body-movement.md`.
 //!
 //! Coordinates are relative to the rig's origin cell, a block corner.
 

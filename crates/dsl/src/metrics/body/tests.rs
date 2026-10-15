@@ -502,8 +502,9 @@ fn the_step_rule_is_the_simulators() {
     );
 }
 
-/// spec-0113 A4: the ballistic trajectories the PackTest `movement_ballistics`
-/// holds the pinned server to are the simulator's, committed. Rewrite with
+/// spec-0113 §8.2: the ballistic trajectories the one-time instrument
+/// `movement_ballistics` measured the pinned server against are the
+/// simulator's, committed. Rewrite with
 /// `DELVEWRIGHT_WRITE_BALLISTICS=1`. Every body moves, the slime body comes
 /// back up, the water body is slowed by the water, and the slab body ends on
 /// the slab.

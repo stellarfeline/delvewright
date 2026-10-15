@@ -22,7 +22,6 @@ mod lethal;
 mod lightning;
 mod r#loop;
 mod loot;
-mod movement;
 mod npc;
 mod objective;
 mod onkill;
@@ -85,9 +84,6 @@ pub(super) fn emit_packtest(
     );
 
     quest::emit_campaign_packtest(plan, out, moves, actor_moves);
-    // spec-0113 §8.2: the engine's simulator held to the pinned server, in
-    // every build's suite.
-    movement::emit_movement_packtest(plan, out);
     world::emit_sealed_state_packtest(plan, out);
     world::emit_declared_difficulty_packtest(plan, out);
 

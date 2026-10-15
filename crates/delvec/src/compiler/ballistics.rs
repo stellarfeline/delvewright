@@ -1,4 +1,21 @@
-use super::*;
+//! **The ballistic instrument** (spec-0113 §8.2): a PackTest that holds the
+//! engine's simulator ([`delvewright_dsl::metrics::body`], `Rules::Game`) to the
+//! pinned server's own movement code, with no player input.
+//!
+//! A one-time measurement, never a recurring check (CLAUDE.md: a check guards
+//! only what our toolchain owns; vanilla behaviour is established once against
+//! the pinned jar and recorded). No build emits it and no CI job runs it: it
+//! is written into a build tree by hand with
+//! `cargo test -p delvec --test movement_ballistics_instrument -- --ignored`,
+//! and run with `validation/packtest-run.sh`. Its result, and the revision it
+//! was measured at, are recorded in `docs/reference/body-movement.md`.
+//!
+//! The rig of [`delvewright_dsl::metrics::body::ballistics`] is built at
+//! [`RIG_ORIGIN`] once its chunks are loaded, the dummy stood on a barrier over
+//! it, four `minecraft:armor_stand` bodies summoned with the throws' `Motion`,
+//! and every tick for sixty ticks each body's `Pos` asserted within the
+//! instrument's tolerance of the trajectory the simulator computed. The
+//! template clears its rig, its bodies and its force-load when it is done.
 
 /// The cell the rig is built from: over the world's origin, over every
 /// campaign's build and under the world's ceiling (`319`), so it overlaps no
@@ -16,22 +33,17 @@ const STAND: [i32; 3] = [7, 12, 12];
 /// The function the template schedules until the rig's chunks are loaded.
 const WAIT: &str = "movement_ballistics_wait";
 
-/// spec-0113 §8.2 (A4): **the simulator held to the pinned jar's own movement
-/// code.** One template for every build, because what it measures is the
-/// engine's simulator, not the campaign: the rig of
-/// [`delvewright_dsl::metrics::body::ballistics`] is built
-/// at [`RIG_ORIGIN`] once its chunks are loaded, four `minecraft:armor_stand`
-/// bodies are summoned with the throws' `Motion`,
-/// and every tick for sixty ticks each body's `Pos` is asserted within the
-/// instrument's tolerance of the trajectory the simulator computed. The
-/// template clears its rig, its bodies and its force-load when it is done.
-pub(super) fn emit_movement_packtest(plan: &Plan, out: &mut BuildOutput) {
+/// The instrument's files — the test and the chunk-wait function it schedules
+/// — as `(path in a build tree, bytes)`, for the campaign namespace `ns` whose
+/// `setup` it calls and the artifact title `title` its header names.
+#[must_use]
+pub fn instrument_files(ns: &str, title: &str) -> Vec<(String, Vec<u8>)> {
     use delvewright_dsl::metrics::body::ballistics::{
         RIG_BOX, THROWS, TICKS, TOLERANCE, rig, trajectories,
     };
-    let ns = &plan.namespace;
-    let title = artifact_title(plan.campaign);
-    let (pin, dummy) = pin_dummy("dw_mb_dummy");
+    let mut out: Vec<(String, Vec<u8>)> = Vec::new();
+    let pin = "tag @p add dw_mb_dummy".to_string();
+    let dummy = "@a[tag=dw_mb_dummy,limit=1]";
     let o = RIG_ORIGIN;
     let (lo, hi) = RIG_BOX;
     let abs = |c: [i32; 3]| [o[0] + c[0], o[1] + c[1], o[2] + c[2]];
@@ -85,10 +97,10 @@ pub(super) fn emit_movement_packtest(plan: &Plan, out: &mut BuildOutput) {
     wait.push(format!(
         "execute if score #mbl dw.sys matches 0 run schedule function {ns}:{WAIT} 1t"
     ));
-    out.insert(
+    out.push((
         format!("packtest-datapack/data/{ns}/function/{WAIT}.mcfunction"),
         lines(&wait).into_bytes(),
-    );
+    ));
     for (c, block) in rig() {
         let a = abs(c);
         b.push(format!(
@@ -140,8 +152,15 @@ pub(super) fn emit_movement_packtest(plan: &Plan, out: &mut BuildOutput) {
     ));
     b.push("kill @e[tag=dw_mb]".to_string());
     b.push(format!("forceload remove {forceload}"));
-    out.insert(
+    out.push((
         format!("packtest-datapack/data/{ns}/test/movement_ballistics.mcfunction"),
         lines(&b).into_bytes(),
-    );
+    ));
+    out
+}
+
+fn lines(v: &[String]) -> String {
+    let mut s = v.join("\n");
+    s.push('\n');
+    s
 }
