@@ -690,12 +690,22 @@ model's candidates: every run of standable floor in the cuboid's boundary
 layer with a cell to walk, step, drop or swim to just outside it
 (`compiler::nav::World` over the shipped cells, cardinal faces). What a scope
 severs is `extraction.residue`, one row per object by name: a gate region the
-boundary crosses, a station of a place the cut parts, a site-plan volume, an
-assembly's body or a pulse's heard place across the boundary, an atmosphere,
+boundary crosses, a station of a place the cut parts, a site-plan volume, a
+lethal volume, an assembly's body or a pulse's heard place across the
+boundary, an atmosphere,
 light or mitigation the places disagree on, a neighbour's voided cells, and the
 cut's unestablished facts (the entry, the candidates awaiting a neighbour, the
 dark cells within four of the cut, the cross-section sides `shown_faces` does
-not claim). An object it can neither carry nor drop is `DW1023`. `delvec prefab
+not claim). What the bytes do not hold and the scope holds whole is
+`extraction.entities`: the NPCs, actors and assemblies standing inside it, the
+piece's furniture anchors, and every lethal volume inside it, which the seating
+campaign declares again. A piece anchor named in a namespace the engine derives
+(`anchor/seam-`, `anchor/unlock-`, `anchor/node-`) is renamed out of it
+(`<edge>-gate`, `<x>-unlock`, `<place>-arrival`), because a seating campaign
+names the piece's anchors as its own stations (`DW0869`); a place scope none of
+whose pieces names its entry is entered at the anchor its first place's row
+binds the place's own name to. An object it can neither carry nor drop is
+`DW1023`. `delvec prefab
 seat` (`crates/delvec/src/seat.rs`) writes the place's rows from the piece and
 judges the would-be campaign through `validate_loaded` before writing; a
 declared opening a seam does not answer and `boxes[].commons` does not name is
