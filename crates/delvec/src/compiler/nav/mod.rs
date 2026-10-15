@@ -48,6 +48,7 @@ mod separate;
 mod shortcut;
 mod staging;
 mod stealth;
+mod threshold;
 mod timed_gate;
 mod trap;
 mod view;
@@ -69,6 +70,7 @@ pub use separate::*;
 pub use shortcut::*;
 pub use staging::*;
 pub use stealth::*;
+pub use threshold::*;
 pub use timed_gate::*;
 pub use trap::*;
 pub use view::*;
@@ -99,6 +101,16 @@ delvewright_dsl::dw_code! {
     /// variant because the author is looking at a ladder in the piece and must be
     /// told why it is not there — not sent to hunt a wedged doorway.
     pub const DW_CLIMB_UNHELD: DwCode = DwCode::new("DW0991", ExitTier::Build);
+}
+delvewright_dsl::dw_code! {
+    /// `DW1044`: a walk-fired trigger (`approach`, `step`) the critical path
+    /// performs to pay a flag a later step reads can be **walked past** — some
+    /// walk from the position before it to where the needing step completes
+    /// never stands where the emitted selector is sure to catch it
+    /// ([`check_threshold_triggers`]). The bot walks onto the anchor; a player
+    /// walks round it, the flag is never set and the needing step never
+    /// completes.
+    pub const DW_THRESHOLD_WALKED_PAST: DwCode = DwCode::new("DW1044", ExitTier::Build);
 }
 delvewright_dsl::dw_code! {
     /// `DW0307`: a `move-npc` destination unreachable by any walkable path from the

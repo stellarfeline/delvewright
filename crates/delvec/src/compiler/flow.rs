@@ -44,8 +44,14 @@
 //! | a timed gate's `disarm.sets_flag` | always (ambient — the jam lever is an optional player action) |
 //! | `set-flag` in an `on_respawn` / `on_caught` reaction bundle | **never** — reaction bundles fire at statically unknowable times, so they are not producers (the conservative stance [`crate::compiler::continuity`] already takes), whether the bundle is rooted in the quests stage or hung off a dialogue option's `set-checkpoint` |
 //!
+//! The effect-root and field rows of that table are not this module's: they
+//! are [`delvewright_dsl::producers::flag_producers`], the one producer table,
+//! which the layout graph's closure reads too, so a producer this model counts
+//! is a producer the graph counts. The dialogue row is this module's branch
+//! model.
+//!
 //! Which effect **lists** those rows range over is not this module's to decide:
-//! both the producer scan in [`Flow::new`] and the reader inventory
+//! both the producer table and the reader inventory
 //! ([`gate_flags`]) walk [`crate::compiler::plan::for_each_effect_root`], the single
 //! enumeration of the five roots emission can lower an effect from. A
 //! hand-listed subset is what lets a `set-flag` in a `traps[].payload` be no
@@ -835,116 +841,30 @@ impl<'a> Flow<'a> {
         let mut ambient = Vec::new();
         let mut obj_flags: BTreeMap<String, Vec<GatedFlag>> = BTreeMap::new();
         let mut quest_flags: BTreeMap<String, Vec<GatedFlag>> = BTreeMap::new();
-        // The producer model, root by root. The roots come from
-        // `plan::for_each_effect_root` — the ONE enumeration of what emission can
-        // lower — so the proof cannot believe in fewer firings than the datapack
-        // performs. What each root means is the policy stated here,
-        // once, and the match is exhaustive: a sixth root cannot be added without
-        // this file deciding what it is.
-        let gate_of = |fs: &[delvewright_dsl::FlagId]| -> Vec<String> {
-            fs.iter().map(|f| f.as_str().into()).collect()
-        };
-        crate::compiler::plan::for_each_effect_root(c, &mut |site, effs| match site.root {
-            // Dated by the DAG: credited when that objective / quest is proven
-            // reachable, under the gates on its own effect chain.
-            crate::compiler::plan::EffectRoot::ObjectiveComplete { objective, .. } => {
-                let mut out = Vec::new();
-                collect_flags(effs, &[], &mut out);
-                if !out.is_empty() {
-                    obj_flags
-                        .entry(objective.to_string())
-                        .or_default()
-                        .extend(out);
+        // The producer model is the ONE table `delvewright_dsl::producers`
+        // holds — the layout graph's closure reads the same rows — so this
+        // model and the graph cannot disagree about which effects set a flag.
+        // What it adds is time: an objective's or a quest's rows are dated by
+        // the DAG, and every ambient row is credited whenever its gate holds.
+        for p in delvewright_dsl::producers::flag_producers(c) {
+            let g = GatedFlag {
+                flag: p.flag.to_string(),
+                requires: p.requires,
+                trigger: None,
+            };
+            match p.site {
+                delvewright_dsl::producers::ProducerSite::ObjectiveComplete {
+                    objective, ..
+                } => obj_flags.entry(objective.to_string()).or_default().push(g),
+                delvewright_dsl::producers::ProducerSite::QuestComplete { quest } => {
+                    quest_flags.entry(quest.to_string()).or_default().push(g);
                 }
-            }
-            crate::compiler::plan::EffectRoot::QuestComplete(q) => {
-                let mut out = Vec::new();
-                collect_flags(effs, &[], &mut out);
-                if !out.is_empty() {
-                    quest_flags.insert(q.id.as_str().to_string(), out);
+                delvewright_dsl::producers::ProducerSite::Ambient { trigger, .. } => {
+                    ambient.push(GatedFlag {
+                        trigger: trigger.map(str::to_string),
+                        ..g
+                    });
                 }
-            }
-            // Ambient: player-initiated, no DAG position. A trap payload joins the
-            // environment trigger and the trap `disarm` it already sits beside —
-            // the party can always walk over and spring it, which is the same
-            // reason `strike`/`use`/`approach` are producers.
-            crate::compiler::plan::EffectRoot::Trigger(t) => {
-                collect_flags_from(
-                    effs,
-                    &gate_of(&t.requires_flags),
-                    Some(t.id.as_str()),
-                    &mut ambient,
-                );
-            }
-            crate::compiler::plan::EffectRoot::TrapPayload(trap) => {
-                collect_flags(effs, &gate_of(&trap.requires_flags), &mut ambient);
-            }
-            // A shortcut's `on_unlock` is ambient for the same reason, and the
-            // reachability of its firing is not an assumption here — `DW0373`
-            // proves the far-side `unlock` is walkable while the gate is still
-            // sealed, so "the party can always go and pull it" is a theorem this
-            // build has already discharged. It declares no flag gate, so the
-            // producer is ungated.
-            crate::compiler::plan::EffectRoot::ShortcutUnlock => {
-                collect_flags(effs, &[], &mut ambient);
-            }
-            // A shop offer is ambient too, and its producer IS gated — by the
-            // offer's own gate, which is the shared gate every other consumer
-            // carries. The flag half of it is what `collect_flags` wants; the
-            // numeric half is a runtime balance no static flag model can date, so
-            // an offer with a price is credited as an ambient producer behind its
-            // flags only, which is the conservative direction (a flag it may never
-            // afford is still not assumed by the mainline — the buyer must reach
-            // the shop, and reaching it is an ordinary route the completability
-            // proof already owns).
-            crate::compiler::plan::EffectRoot::ShopOffer => {
-                collect_flags(effs, &[], &mut ambient);
-            }
-            // Reaction bundles: they fire only when somebody dies, at a time no
-            // static model can name, so nothing inside either is a producer.
-            // Exactly what `collect_flags` already refuses for the identical
-            // bundle rooted in the quests stage — reached here, not credited here.
-            // Crediting `on_death` would be worse than a missing producer: it
-            // would let the mainline be proven reachable via a flag the party only
-            // obtains by dying.
-            //
-            // A fight's `on_kill` (spec-0074) is the same shape: it fires only
-            // when a player is CREDITED with a body, and a body may fall, burn or
-            // be cut down by another mob with nobody credited, so no kill is
-            // forced and nothing inside is a producer.
-            //
-            // An assembly's `on_land` (spec-0082) is the same shape again: a blow
-            // lands only on a player who chose to stand where it reaches, so no
-            // landing is forced and nothing inside is a producer.
-            crate::compiler::plan::EffectRoot::DialogueRespawn
-            | crate::compiler::plan::EffectRoot::OnDeath
-            | crate::compiler::plan::EffectRoot::OnKill(_)
-            | crate::compiler::plan::EffectRoot::AssemblyLand(_)
-            // A loop's `on_cross` (spec-0086) runs on a crossing, which a mob makes
-            // as readily as a player: no ordered walk dates it, so nothing inside
-            // is a producer the mainline may rely on.
-            | crate::compiler::plan::EffectRoot::LoopCross(_) => {}
-        });
-        // `disarm.sets_flag` is a field, not an effect list, so it has no root of
-        // its own; same ambient reasoning, same gate.
-        for trap in &c.quests.content.traps {
-            if let Some(d) = &trap.disarm {
-                ambient.push(GatedFlag {
-                    flag: d.sets_flag.as_str().to_string(),
-                    requires: gate_of(&trap.requires_flags),
-                    trigger: None,
-                });
-            }
-        }
-        // A timed gate's disarm produces its flag the same way — an
-        // optional player action nothing orders, so it is ambient, ungated.
-        for g in &c.quests.content.timed_gates {
-            if let Some(d) = &g.disarm {
-                ambient.push(GatedFlag {
-                    flag: d.sets_flag.as_str().to_string(),
-                    requires: Vec::new(),
-                    trigger: None,
-                });
             }
         }
 
@@ -2357,46 +2277,6 @@ fn produce(src: Option<&Vec<GatedFlag>>, flags: &mut BTreeSet<String>, changed: 
     for g in list {
         if g.requires.iter().all(|f| flags.contains(f)) && flags.insert(g.flag.clone()) {
             *changed = true;
-        }
-    }
-}
-
-/// Every `set-flag` in `effs`, carrying the conjunction of `gate` and the flag
-/// gates of the enclosing effect chain. Reaction bundles (`on_respawn` /
-/// `on_caught`) are NOT descended: they fire at statically unknowable times, so
-/// nothing inside them is a producer.
-fn collect_flags(effs: &[QuestEffect], gate: &[String], out: &mut Vec<GatedFlag>) {
-    collect_flags_from(effs, gate, None, out);
-}
-
-/// [`collect_flags`], each producer stamped with the trigger that fires it.
-fn collect_flags_from(
-    effs: &[QuestEffect],
-    gate: &[String],
-    trigger: Option<&str>,
-    out: &mut Vec<GatedFlag>,
-) {
-    for e in effs {
-        let mut here: Vec<String> = gate.to_vec();
-        here.extend(e.requires_flags().iter().map(|f| f.as_str().to_string()));
-        here.sort();
-        here.dedup();
-        if let Verb::SetFlag { flag, .. } = &e.verb {
-            out.push(GatedFlag {
-                flag: flag.as_str().to_string(),
-                requires: here.clone(),
-                trigger: trigger.map(str::to_string),
-            });
-        }
-        match &e.verb {
-            Verb::SetCheckpoint { .. } | Verb::Bonfire { .. } | Verb::BeginStealth { .. } => {
-                continue;
-            }
-            _ => {
-                for list in e.nested_effect_lists() {
-                    collect_flags_from(list, &here, trigger, out);
-                }
-            }
         }
     }
 }
