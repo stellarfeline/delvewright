@@ -215,7 +215,8 @@ impl World {
     ///   brink that the climbable catches within a block).
     ///
     /// The fall onto a climb from higher up is not here: a body does not fall on
-    /// cue. [`World::body_moves`] takes it ([`World::catch_fp`]).
+    /// cue. The reach graph takes it: a fall the simulator flies onto a climbable
+    /// is caught there.
     pub(in crate::compiler::nav) fn climb_moves_fp(
         &self,
         c: [i32; 3],

@@ -218,6 +218,30 @@ requires `K ≥ 1`.
 cave vine is refused by name at the hop — a harness gap, not a route defect — and
 is the owner's hour until the physics carries it.
 
+## What the ladder asserts at a declared jump
+
+**The bot leaps only where the compiler proved a leap** (spec-0113). A leg whose
+proven route takes a declared jump (`world.jumps[]`, proven by `DW1041`) carries
+`jumps[]` in `validation/critical-path-waypoints.json`: the launch and landing
+cells, whether it is sprinted, and the run-up the proof measured. mineflayer-
+pathfinder 2.4.5 leaps gaps on its own (`allowParkour` defaults on), so the
+harness turns the move off for every hop (`configureLeg`, `harness/src/movement.ts`)
+and on for the one hop from a proven jump's launch to its landing (`parkourFor`),
+and the bot walks what the proof proved. A declared jump the parkour move cannot
+express — not along one axis, under two or over four cells forward (two without
+the sprint), a rise of more than one or of one at four, a drop of more than one —
+is refused by name before the walk (`parkourGap`, `harness/src/waypoints.ts`): a
+harness gap, not a route defect.
+
+**The binding count.** Every walk whose leg carries a jump prints
+`[jump] <walk>: N jump(s) on the proven leg, M driven as a parkour hop`. `N > M`
+says a proven jump's ends did not survive to adjacent hops and the leap was left
+to the pathfinder, which it cannot make with the move off; a run on a campaign
+with a declared jump that prints no such line walked it with no proven leg at
+all, and the line's absence is the finding. The `gallery bot` job requires the
+gallery's broken plank to print `1 jump(s) on the proven leg, 1 driven as a
+parkour hop`.
+
 ## What the ladder asserts at a sculk device
 
 **The bot hears what the compiler predicted, and never a warden** (spec-0100).

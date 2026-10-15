@@ -180,8 +180,9 @@ base `applyInput` for the player whose client this is.
   deeper than `0.4` over a floor the body jumps as on land.
 - **Climbing out**: after the move, if the body collided horizontally and the space
   `0.6` above its feet is free, its vertical velocity becomes `0.3`
-  (`jumpOutOfFluid`). `metrics::WATER_CLIMB_OUT_RISE` (one block over the top water
-  cell) is this rule's consequence.
+  (`jumpOutOfFluid`). A climb out of one block over the top water cell is this
+  rule's consequence, and the simulator flies it rather than holding it as a
+  constant.
 - **Current**: each water cell the body overlaps contributes its flow vector
   (`FlowingFluid.getFlow`, from height differences to its four neighbours, `−6`
   vertical beside a falling column against a solid face), averaged and scaled by

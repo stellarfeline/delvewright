@@ -2995,6 +2995,62 @@
       "note": "The same class as `vh-02` on land. The route proofs could not see it: they take the walk step only, so a hedge top reached by a jump off a garden boulder was in no proof's reach. `DW0921` floods the player's own movement (`nav::World::body_moves`: the walk step, falls to the deepest an unarmoured body survives, and cardinal gap jumps inside `dsl::metrics::JUMP_REACH`, measured by `tools/spike-jump-arc/simulate.mjs at 84f364997d24`, which reproduces the live jump spike's 14 verdicts) from the critical path's route cells, once per quest configuration, and refuses every reached cell from which no movement leads back; a cell the boundary clock returns and a shortcut lever the pocket reaches are ways out. A room the story shuts the party into holds the objective the story waits on and is not refused, with no declaration. Measured on this campaign at `dd4429c`: 6 configurations, 316580 cells reached, 827 a body cannot leave, in 78 pockets over 5 configurations -- on land in each, the four hedge beds (the one at `[140, 82, 110]` among them: 25 cells, entered `by a fall of 2 block(s)` off the hedge top), a ruin hole in the curtain top, a tower slit one step under the wall walk and nine hollows in the east ditch between the crag and the field wall; and the Undertide well (`vh-02`) in three. At the fixed content: 0. Limits, named in the diagnostic: diagonal jumps, climbing, standing on a fence or wall top and diving are not moves.",
       "round": 2,
       "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "file": "reach-graph.json",
+        "kind": "artifact",
+        "path": "states.total"
+      },
+      "triage": "capability",
+      "id": "bct-01",
+      "campaign": "the-bell-changes-the-tune",
+      "carrier": {
+        "code": "DW0921",
+        "kind": "dw"
+      },
+      "finding": "a player sprint-jumped from a standing stone onto a buttress and over the yard wall, and fell out of the world",
+      "general_form": "no place a body can reach from the proven route, by any movement the pinned game's physics gives it, is one it cannot leave or one under the world",
+      "note": "The leave proof's relation took cardinal jumps from cell centres inside a measured gap table, so a jump at an angle onto a buttress, and the second jump off it over the wall, were in no proof's reach. Carried by the reach graph (spec-0113): every launch flown through the simulator of the pinned physics, read by `DW0921` and by `DW0322`'s void branch. The Bell yard fixture (`nav::world::reach::tests::bell_yard`) reaches outside the wall by the two jumps and is refused by `DW0921`; the walk relation does not (`the_two_escapes_are_seen`). Binding: the graph's rest states on the build being staged."
+    },
+    {
+      "applies_when": {
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "area/"
+          }
+        }
+      },
+      "binding": {
+        "file": "reach-graph.json",
+        "kind": "artifact",
+        "path": "states.total"
+      },
+      "triage": "capability",
+      "id": "tat-01",
+      "campaign": "the-thing-across-the-water",
+      "carrier": {
+        "code": "DW0322",
+        "kind": "dw"
+      },
+      "finding": "a player jumped off the jetty into the sea and could not get back onto land",
+      "general_form": "no movement the pinned game's physics gives a body puts it in open water with no way back to land it reached",
+      "note": "The stranding proof judged only walk cells beside the sea, and the walk never left the jetty, so a jump off its end was in no proof's reach. Carried by the reach graph (spec-0113): `DW0322`'s ocean branch judges every rest state afloat in the open sea the graph reaches, by any launch, and refuses one with no swim and climb back to a place on land it reached. The jetty fixture (`nav::world::reach::tests::jetty`) is refused by `DW0322` naming the jump; the walk relation never enters the sea (`the_two_escapes_are_seen`). Binding: the graph's rest states on the build being staged."
     }
   ],
   "ledger_version": "2026-08-11"

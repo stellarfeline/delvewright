@@ -310,9 +310,10 @@ pub struct World {
     /// which makes it a water source the block map does not contain.
     pub(in crate::compiler::nav) waterloggable: CellSet,
     /// The subset of `flooded` that is **lava** rather than water
-    /// ([`crate::compiler::assembled::Occupancy::lava`]). Read by exactly one
-    /// question, [`World::body_moves`]: a body that enters water floats at its
-    /// surface, and one that enters lava does not come out of it at all.
+    /// ([`crate::compiler::assembled::Occupancy::lava`]). Read by the questions
+    /// of where a body can be — the reach graph and a mob's moves: a body that
+    /// enters water floats at its surface, and one that enters lava does not
+    /// come out of it at all.
     lava: CellSet,
     /// The blocks that change how a body moves ([`crate::compiler::assembled::Occupancy::material`]).
     /// Read by the reach graph's simulator alone ([`reach`]).

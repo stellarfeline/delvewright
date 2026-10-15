@@ -1700,9 +1700,18 @@ jobs:
             --manifests .gallery-baseline/report/manifests.json
       - name: the bot walks the gallery
         run: |
+          set -o pipefail
           bash validation/bot-run.sh --project dw-ci-gallery-bot \
             --output ./delve-output-gallery-primary \
-            --run-out ./run-out/dw-ci-gallery-bot
+            --run-out ./run-out/dw-ci-gallery-bot 2>&1 | tee gallery-bot.log
+      # spec-0113 A13: the gallery's broken plank is a declared jump the proof
+      # takes, and the bot drives it as the one parkour hop of the run.
+      - name: the gallery's declared jump is driven as a parkour hop
+        run: |
+          set -euo pipefail
+          n=$(grep -c '\[jump\] .*: 1 jump(s) on the proven leg, 1 driven as a parkour hop' gallery-bot.log || true)
+          echo "proven legs whose declared jump was driven as a parkour hop: $n"
+          [ "$n" -ge 1 ] || { echo "::error:: the gallery's declared jump was not driven as a parkour hop"; exit 1; }
       # spec-0101 §5.4: the gallery owes a watcher the proven path comes within
       # reach of, and every watcher reached is asserted. The record's count is
       # the build's own, never written here.

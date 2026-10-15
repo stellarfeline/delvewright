@@ -363,7 +363,8 @@ impl DangerVisibility {
     /// modelled body can get into (`DW0891`'s vacuity half).
     ///
     /// Not a refusal. The usual cause is a movement the engine does not model —
-    /// a player diving to the bottom of a flooded shaft — and refusing would
+    /// an item that moves a body the reach graph does not fly (spec-0113 §5.4)
+    /// — and refusing would
     /// reject a legitimate design for an engine limitation. What it may not be is
     /// silent: an empty catch over a volume nothing can enter looks exactly like
     /// an empty catch over a volume that is clear of the floor.
@@ -405,8 +406,8 @@ impl DangerVisibility {
                          follow range, holds a body the volume catches.{where_} So the \
                          visibility proof caught nothing here because nothing can be caught, not \
                          because the volume is clear of the floor — this is a zero binding. A \
-                         body may still get in by a movement the model does not make (diving, a \
-                         diagonal jump), or nothing ever will. If a player is meant to \
+                         body may still get in by a movement the model does not make (an item \
+                         that moves a body, such as a pearl or an elytra), or nothing ever will. If a player is meant to \
                          be able to die here, the engine has not proven they can get in, and the \
                          bot cannot be sent there; if nothing is, delete the volume."
                     ),

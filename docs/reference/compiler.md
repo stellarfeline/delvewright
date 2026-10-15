@@ -1334,6 +1334,7 @@ Mechanism level (not full mcfunction). See `crates/delvec/src/compiler/emit/`, o
 | `firework` | `summon minecraft:firework_rocket <x>.5 <y> <z>.5 {LifeTime:<L>,FireworksItem:{id:"minecraft:firework_rocket",count:1,components:{"minecraft:fireworks":{flight_duration:<f>b,explosions:[…]}}}}` at the mark's cell centre. **`LifeTime` is written, never left to the game**: unset, vanilla randomises it at launch (`(flight + 1) × 10 + random(0..5) + random(0..6)` ticks [cited — *Firework Rocket*, entity data]), so two runs of one datapack would burst at two heights and nothing could be proven about where the burst is. The emitter writes `L = (flight + 1) × 10` — 20, 30, 40 — the floor of that range, which is deterministic (ADR-0006) and the conservative side of `DW0899`. The entity's item field is `FireworksItem` [cited — *Firework Rocket*]; colours are the packed integers the component reads (`#ffd700` → `16766720`), through `dsl::color`, which the potion bottle's `custom_color` also reads; an undeclared `trail`/`twinkle` is absent rather than false. Every spelling comes from `dsl::firework`, the one file the game facts are pinned in. |
 | `particle` | At `players`: `execute as <who> at @s run particle <id> ~ ~ ~ <dx> <dy> <dz> <speed> <count> force @s` — spawned at, and shown to, each addressed player. At a mark: `particle <id> <x>.5 <y> <z>.5 <dx> <dy> <dz> <speed> <count> force <who>` at the cell's horizontal centre on the mark's plane. `force` is written, never chosen: `normal` sends 32 blocks and may be dropped at the client's Minimal particle setting; `force` sends 512 and is always drawn [cited — Minecraft Wiki, *Commands/particle*]. `<who>` is the effect's audience, narrowed by its `in` box. |
 | `lightning` | `summon minecraft:lightning_bolt <x>.5 <y> <z>.5` at the mark's cell centre on its plane. Setup holds the strike's chunk loaded for the session (`forceload add`, beside an area's claim): a `summon` into a chunk nothing loads is refused by the server, and the beat would ship with no bolt. A generated `lightning_<n>` PackTest first waits for the strike's chunk — setup force-loads it on the template's own first tick, which loads nothing yet, so a scheduled probe (`lightning_wait_<n>`, in the PackTest datapack) sets `#lbl<n>` once `execute if loaded` holds at the cell and the template awaits it — then runs the beat's own line and asserts a `minecraft:lightning_bolt` within a block of the mark on the same tick. |
+| the engine's simulator (spec-0113 §8.2) | Nothing in the datapack: the reach graph's simulator (`dsl::metrics::body`) is held to the pinned server by one PackTest in every build's suite, `movement_ballistics` (`emit::packtest::movement`). The rig of `dsl::metrics::body::ballistics` — stone, slime, a pool four deep, a course of bottom slabs — is built at (0, 300, 0) once its chunks are loaded (`forceload add`, then a scheduled probe `movement_ballistics_wait` the template awaits), the dummy is stood on a barrier over it, four `minecraft:armor_stand` bodies are summoned with the throws' `Motion`, and every tick for sixty ticks each body's `Pos` is asserted within `1e-4` of the trajectory the simulator computes (`Rules::Game`, the armour stand's box and `step_height` 0), read as `data get … Pos[a] 10000`. The template clears the rig, its bodies and the force-load. The trajectories are committed at `crates/dsl/tests/fixtures/movement/ballistics-1.21.11.json` (`the_ballistic_trajectories_are_committed`). |
 | `damage-players` | `execute as <audience>[tag=!dw_cutscene] run damage @s <amount> <type>` for a party beat (`@a`), `execute if entity @s[…] run damage @s …` inside a solo `on_caught`/`on_respawn` (default type `minecraft:generic`). With `in`, the stealth-zone box (`x=…,dx=2·ext,…`) joins the same selector, so each player is judged on their own position — no double-hit. `/damage` takes a single entity, so the party form re-binds rather than widening the target (§1, single-entity arity). A generated `v06_damage` PackTest summons a tagged dummy, applies the declared amount+type, and asserts its `Health` strictly dropped. |
 | `set-block` | `setblock` at resolved anchor. |
 | `despawn-npc` | `function <ns>:despawn_npc_<id>`: body + interaction hitbox leave unseen (§4 "A body the story removes is never seen to die"). One generated `v04_despawn_<id>` PackTest per NPC a `despawn-npc` names (each function is that NPC's own body, `DW0810`); when the NPC is **deferred** it runs its `spawn_npc_<id>` entrance right after `setup_finish`. It re-issues the NPC's own body summon with a fixed UUID, asserts 2 entities before and 0 after the real `despawn_npc_<id>`, then reads the body by UUID through its death (a selector never matches a dying body): not dying on the removal's tick, nor `UNSEEN_DELAY_TICKS - 1` ticks later, and at Y ≤ -127 on the first tick it is. |
@@ -2781,7 +2782,12 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   letting go at that cell and the second taking hold from it, and the cell is
   held by the climb whose column it is in (`World::climb_runs`; the gallery's
   causeway stacks two ladders this way on its critical path). Omitted for a leg
-  that climbs nothing. A leg that sets a sculk sensor off (spec-0100 §4.6)
+  that climbs nothing. A leg whose route takes a **declared jump** (spec-0113,
+  `DW1041`) carries a `jumps` array, in route order: each `{from, to, sprint,
+  run_up}` — the launch and landing cells (both kept waypoints), whether the
+  declaration sprints, and the straight run-up the course gives, as the proof
+  measured it. The bot drives each as a parkour hop and no other leg lets its
+  pathfinder parkour. Omitted for a leg that jumps nothing. A leg that sets a sculk sensor off (spec-0100 §4.6)
   carries a `vibrations` array: each `{sensor, shriekers}` — the sensor's cell
   and the cells of the shriekers that answer it. A sensor is **predicted** for a
   leg when the leg is not a `sneak` leg and four consecutive cells of its proven
@@ -3171,8 +3177,19 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   proof was rooted at, summed over them), `reached` (cells a body reaches from
   them by walking, falling, jumping, swimming or climbing), `afloat` (of those, cells
   where the body floats at the top of water — the population the water half
-  judges), and `trapped` (zero on a build that ships). Written only when the
-  proof holds.
+  judges), `perched` (of those, cells where the body stands on a fence, wall or
+  gate top, a rest state the walk never stands a body in), and `trapped` (zero
+  on a build that ships). Written only when the proof holds.
+- `<out>/validation/reach-graph.json`: the **reach graph's** binding (spec-0113,
+  `nav::ReachBinding`), summed over the configurations `DW0921` judges:
+  `configurations`, `states` (rest states, by kind), `edges` (by kind: walk,
+  fall, jump, dive, climb, exit), `simulated` (launch states flown through the
+  simulator), `credited` (template arcs credited from a flat, open floor),
+  `budget` (`dsl::metrics::REACH_BUDGET_STATES`), `unbounded_fall` and
+  `occupancy_sha256` — one canonical hash per configuration of the occupancy
+  its graph was built over, in configuration order, so the record names what
+  it measured. Written whenever `DW0921` is
+  judged; `reach binding: …` prints the same counts.
 - `<out>/validation/watchers.json`: the watchers' **binding ledger and PackTest record** (`compiler::watching::WatchBinding`, spec-0101 §5.2): `binding {declared, population, drawable, refused, unobservable}` and one row per watching body — see §3 "body watch". Written for a campaign that declares a watcher, when the proof holds; the same rows are `critical-path.json`'s `watchers[]`, which the bot judges at every waypoint within reach (`docs/reference/playtest-methodology.md`).
 - `<out>/validation/assembly.json`: the assemblies' **binding ledger and staging record** (`compiler::assembly::AssemblyBinding`, spec-0082 §5.6): `declared`, `parts`, `clips`, `hitboxes`, `steps`, `refused`, `locks` (cells locked steps can lock onto, each proved), `writes_per_tick` (each assembly's part count over its fastest clip's cadence, summed) and `facings` (facings judged, one per landing per facing a blow can take), per strike step `windup_ticks`, `hold`, `strike_ticks` (to the landing: the strike's last frame drawn whole), the landings' `amounts`, every `caught` cell, `facing_count`, and per facing a blow can take its `k`, root `yaw`, `caught` cells, the cells the limb `comes_down` on and the `stand` cell that draws it — for a `locked` step one row per lockable cell, `k` its index, with the `clip` that strikes it and the cell itself as its `stand`; `spared` (per assembly, a cell outside its arming region) and `witnessed` (the assemblies the critical path's bot witnesses) — what a round summary states about a blow, and what the engine does not judge. Written for a campaign that declares an assembly, when the proofs hold. The same counts are the line every build prints, zeroes included: `assembly binding: A assembl(ies) declared, P part(s), C clip(s), H hitbox(es) examined, S strike step(s) checked over F facing(s) and L locked cell(s), R refused`, followed by `assembly cost: P display part(s) in all; at most W keyframe write(s) per tick at the declared cadences` beside spec-0082 §8 row 7's measured rate — the host meets the number; it never caps the capability.
 - `<out>/validation/strand.json`: the `DW0924` **binding ledger**
@@ -4089,12 +4106,13 @@ or one lower), over the top from the top rung onto a standable cell one higher,
 off the bottom onto the floor one under, and in from a standable cell beside (or
 one higher, the climbable catching the step off the brink). The route relation
 (`neighbors_fp`) takes them, so every route proof does; a body holding in mid-air
-walks nowhere. `body_moves` and `mob_moves` take them too, with a step off the
-side, letting go at the bottom of a run, and the **catch**: a fall is stopped by
-the first climb cell whose top is at most `metrics::climb_catch_fall_blocks()`
-(7, derived from the fall law: past it a body moves a block a tick and can pass a
-one-block cell between ticks) under the body's feet. `fatal_step_off` slides a
-caught body to the bottom of its run and asks the fall below it. Scaffolding and
+walks nowhere. `mob_moves` takes them too, with a step off the side, letting go
+at the bottom of a run, and the **catch**: a fall is stopped by the first climb
+cell whose top is at most `metrics::climb_catch_fall_blocks()` (7, derived from
+the fall law: past it a body moves a block a tick and can pass a one-block cell
+between ticks) under the body's feet. The reach graph (spec-0113) holds a body on
+a climbable as a rest state of its own and flies every launch from it through
+the simulator, so a fall it flies is caught where the game catches it. Scaffolding and
 the open-trapdoor-over-ladder rule are not modelled (spec-0099 §3.3–3.4). A
 ladder dams a flood; a vine does not, and a flooded cell holds no climb.
 
@@ -4115,7 +4133,7 @@ redstone table (`crates/dsl/data/redstone-1.21.11.tsv`, `dump-redstone.py`;
 `blockshape::redstone_conductor` / `redstone_source` / `redstone_reader`), over
 the world as placed and every block a runtime write may lay. The **catalyst
 proof** (`sculk::prove_catalysts`, `DW1001`): no cell of the closure of
-`body_moves` from every put-at root, or of `mob_moves` from every wave seat,
+the reach graph from every put-at root, or of `mob_moves` from every wave seat,
 lies within integer `distSqr ≤ 64` of a catalyst. A sensor is never a story
 trigger — vanilla gives a datapack no event for its firing (spec-0011, spec-0100
 §3.6) — and the walk's predicted vibrations travel on the waypoint export for
