@@ -1131,7 +1131,18 @@ pub fn build_with_warnings(
     // A branch's scripted dialogue choices ride inside its own `talk-to` steps
     // (each carries the `/trigger` line of the option belonging to that branch),
     // which is the only player-legal way to actuate a server-driven dialog button.
-    for (slug, path) in branch_paths(plan, &moves, &actor_moves, &branch_takes, &path_legs)? {
+    for (slug, mut path) in branch_paths(plan, &moves, &actor_moves, &branch_takes, &path_legs)? {
+        // The watchers stand in every configuration's world, so a branch's run
+        // judges them as the critical path's does (spec-0101 §5.4), and the
+        // branch the critical path walks keeps its byte-identical file.
+        if watch_binding.watchers() > 0
+            && let Some(obj) = path.as_object_mut()
+        {
+            obj.insert(
+                "watchers".to_string(),
+                Value::Array(watch_binding.watcher_rows()),
+            );
+        }
         put_json(
             &mut out,
             &format!("validation/branch-path-{slug}.json"),

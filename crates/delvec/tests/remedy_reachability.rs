@@ -4026,13 +4026,18 @@ fn hello_room_facing(tag: &str, facing: &str) -> PathBuf {
 }
 
 /// **DECLARE the `watch` the message prints.** hello-world's keeper stands
-/// facing east while the route delivers the party from the west, so the party
-/// walks up to its back; the message names the declaration, with the reach,
-/// and the same campaign with that declaration added builds.
+/// facing east while the route delivers the party from the west, and watches
+/// only players of its class, so the party walks up to its back; the message
+/// names the declaration, with the reach, and the same campaign with that
+/// declaration builds.
 #[test]
 fn dw1025_declaring_the_watch_it_names_turns_the_keeper_to_the_party() {
     let dir = hello_room_facing("dw1025", "east");
     let camp = campaign("dw1025", None);
+    edit_doc(&camp, "npcs.json", |v| {
+        v["content"]["npcs"][0]["watch"] =
+            serde_json::json!({ "who": { "class": "class/wanderer" }, "within": 3 });
+    });
     let (code, before) = build("dw1025-back", &camp, &dir);
     assert_eq!(code, 3, "a back-turned stand is refused:\n{before}");
     let named = "Declare `watch: { \"who\": \"nearest\", \"within\": 3 }` on `npc/keeper`";
@@ -4047,6 +4052,90 @@ fn dw1025_declaring_the_watch_it_names_turns_the_keeper_to_the_party() {
     assert_eq!(code, 0, "the declared watch builds:\n{after}");
     assert!(!after.contains("DW1025 ["), "{after}");
     assert!(after.contains("1 drawn by a watch"), "{after}");
+}
+
+/// hello-world with the keeper holding its facing (`watch: "none"`), at
+/// `offset` from its stand (the cast's mark with it).
+fn held_keeper(tag: &str, offset: [i32; 3]) -> PathBuf {
+    let camp = campaign(tag, None);
+    edit_doc(&camp, "npcs.json", |v| {
+        v["content"]["npcs"][0]["watch"] = serde_json::json!("none");
+        if offset != [0, 0, 0] {
+            v["content"]["npcs"][0]["offset"] = serde_json::json!(offset);
+        }
+    });
+    if offset != [0, 0, 0] {
+        edit_doc(&camp, "quests.json", |v| {
+            v["content"]["quests"][0]["cast"]["npc/keeper"]["at"] =
+                serde_json::json!({ "anchor": "anchor/keeper-stand", "offset": offset });
+        });
+    }
+    camp
+}
+
+/// **REMOVE `"watch": "none"`**, the move every held-facing refusal names: the
+/// keeper stands in the open middle of the room, where no facing faces every
+/// cell it is talked to from, and without the declaration it watches by
+/// default.
+#[test]
+fn dw1025_removing_the_held_declaration_lets_the_keeper_watch() {
+    let camp = held_keeper("dw1025-held", [0, 0, 0]);
+    let dir = common::prefabs_dir();
+    let (code, before) = build("dw1025-held-before", &camp, &dir);
+    assert_eq!(code, 3, "{before}");
+    assert!(
+        before.contains("DW1025")
+            && before.contains("remove `\"watch\": \"none\"` from `npc/keeper`"),
+        "the message names the move:\n{before}"
+    );
+    edit_doc(&camp, "npcs.json", |v| {
+        v["content"]["npcs"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("watch");
+    });
+    let (code, after) = build("dw1025-held-after", &camp, &dir);
+    assert_eq!(code, 0, "{after}");
+    assert!(after.contains("1 drawn by a watch"), "{after}");
+    assert!(after.contains("1 by default"), "{after}");
+}
+
+/// **SET the `offset` that puts a wall at its back**, the move named when no
+/// facing faces every cell: the stand faces south, and three blocks north the
+/// keeper's back is to the room's north wall.
+#[test]
+fn dw1025_an_offset_against_the_wall_answers_a_held_keeper_in_the_open() {
+    let dir = hello_room_facing("dw1025-offset", "south");
+    let camp = held_keeper("dw1025-offset", [0, 0, 0]);
+    let (code, before) = build("dw1025-offset-before", &camp, &dir);
+    assert_eq!(code, 3, "{before}");
+    assert!(
+        before.contains("No one facing faces every one of those cells")
+            && before.contains("set its `offset` from `anchor/keeper-stand`"),
+        "the message names the move:\n{before}"
+    );
+    let camp = held_keeper("dw1025-offset-moved", [0, 0, -3]);
+    let (code, after) = build("dw1025-offset-after", &camp, &dir);
+    assert_eq!(code, 0, "{after}");
+    assert!(after.contains("0 stance(s) refused"), "{after}");
+}
+
+/// **DECLARE the facing the message names**: against the north wall but
+/// facing it, the keeper is told the one facing that faces every cell.
+#[test]
+fn dw1025_declaring_the_named_facing_answers_a_held_keeper() {
+    let camp = held_keeper("dw1025-facing", [0, 0, -3]);
+    let wall = hello_room_facing("dw1025-facing-north", "north");
+    let (code, before) = build("dw1025-facing-before", &camp, &wall);
+    assert_eq!(code, 3, "{before}");
+    assert!(
+        before.contains("Declare `anchor/keeper-stand`'s facing `south`"),
+        "the message names the move:\n{before}"
+    );
+    let room = hello_room_facing("dw1025-facing-south", "south");
+    let (code, after) = build("dw1025-facing-after", &camp, &room);
+    assert_eq!(code, 0, "{after}");
+    assert!(after.contains("0 stance(s) refused"), "{after}");
 }
 
 // ---------------------------------------------------------------------------

@@ -38,11 +38,22 @@ ladder to face away from the wall (`facing` is the way a body climbing it has
 its back), or give it a sturdy block behind; never move the objective.
 
 **"The party walks up to its back" (build, exit 3).** A body the party
-talks to faces away from the way the route delivers them: its home anchor's
-`facing`, or the turn a walk left it on, is more than 90° off the party's
-approach. Declare the `watch` the message prints on that npc, so it turns to
-the party as they arrive; or stand it where the party comes at it from the
-front. Never move the objective or reroll to change the approach.
+talks to faces away from the way the route delivers them, and its watch does
+not turn it to them — a class watch turns only to that class, and a short
+`within` may not reach the approach. Its home anchor's `facing`, or the turn a
+walk left it on, is more than 90° off the party's approach. Declare the `watch`
+the message prints on that npc, so it turns to the party as they arrive; or
+stand it where the party comes at it from the front. Never move the objective
+or reroll to change the approach.
+
+**"… of the N cell(s) a player can talk to it from lie behind it" (build,
+exit 3).** An NPC that declares `"watch": "none"` is judged from every side a
+player can talk to it from, not only the route's. When one facing faces every
+one of those cells the message names it: declare the anchor's facing that way.
+When none does, the body stands in the open: give it an `offset` (and its
+cast entry the same mark) that puts a wall or a counter at its back. If the
+scene does not really need the body to stay still, remove `"watch": "none"`
+and it watches the party.
 
 **"The party can see one person twice" (validate, exit 1).** Two declarations
 carry one name and some story state has both in the world — usually a character
