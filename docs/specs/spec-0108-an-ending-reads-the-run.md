@@ -156,6 +156,16 @@ The `assert-complete` step gains `aftermath[]`, read off `validation/endings.jso
 
 `validation/branch-runs.sh` and `branch-select.ts` iterate the world rows of §4.3 unchanged in shape: tier `all` runs every world with a path; a world whose witness needs an act the harness has no step kind for (a trap disarm, a shop purchase) is exported with `path: null` and a reason naming the act, and the merged report names it skipped. `DELVEWRIGHT_BRANCH=world/<k>` drives one world; the run asserts the path performs every `entry_deed` and takes every `entry_choice`, so a run cannot claim a deed world while walking the extreme.
 
+### 6.5 Amendment — an act the bot cannot drive is mocked
+
+This section amends §6.4, criterion 10 and the §6.4 debt. **Authored.** A world whose entry deed is an act no harness step kind performs — a shop purchase, a sprung trap's payload, a shortcut's unlock, a credited kill's `on_kill`, a trap's or a timed gate's disarm — is no longer exported with `path: null` and skipped. Its path performs the act by a **mock step**, in front of the step its run performed the deed at:
+
+- The compiler exports `{"action": "mock", "act", "kind", "function", "before", "after"}` in `world-path-<k>.json` (the `critical-path.json` contract, whose format version moves with it in both the Rust and the TypeScript constants). `function` is exactly the engine's own function for that act's bundle — the one the vanilla interaction calls (`shop_pick_<i>_<j>`, `trap_fire_<id>`, `shortcut_open_<id>`, `on_kill_w_<wave>`/`on_kill_a_<actor>`, `trap_disarm_<id>`, `tgate_disarm_<id>`) — and the build refuses as an internal invariant a mock naming a function the datapack does not ship. `before` and `after` are the scoreboard terms (the `GateTerm` reduction the death plan hands the bot) of every flag and datum the act changes, as the world's replay holds them in front of the act and once it has fired; an act that changes nothing the replay can read exports no mock and keeps `path: null` with its reason.
+- The harness asks every `before` term, runs `execute as @s at @s run function <function>` on its opped command channel inside a reply bracket, judged by the shared rejection rule (`tools/lib/rcon.mjs`, which `harness/src/rejection.ts` restates character for character under test), then asks every `after` term. A term that does not hold, a rejected or unanswered command, or a mock with no `after` term fails the step. The run log prints each mock step, and the run report records `mocked: <kind>` per act with their count.
+- The world then runs to its ending like any other.
+
+The `ending-runs` fixture proves it: both shop worlds run and reach their endings.
+
 ## 7. Refusals
 
 ### 7.1 `DW1029` — an ending reads fewer inputs than the campaign declares (analysis tier, `compiler::ending`)
@@ -213,7 +223,7 @@ Each criterion is checked against the tree at `d336a2b1d`; none is satisfied the
 7. **The aftermath class.** A test names every `Verb` variant in exactly one of the two classes of §3.7 and fails on an unlisted variant; `validation/endings.json` lists each aftermath effect with its observable or `emission-only`.
 8. **PackTest.** One `ending_<slug>_<k>` template per (ending, witness world) with the assertions of §6.2's table for every observable aftermath effect the world fires, its scheduled parts driven in tick order (§6.2); the gallery's two endings each produce their templates and the templates pass on the toolserver; perturbing the gallery's `fill-region` block in a scratch copy turns the template red.
 9. **The bot.** `assert-complete.aftermath[]` is parsed, asserted and reported (`observed`/`not_observable` per effect) by `harness/`; the gallery's critical-path run observes the block, the position and the time of §8.1.
-10. **The runner.** `branch-plan.json` carries the world rows of §4.3; `branch-runs.sh` with `DELVEWRIGHT_BRANCHES=all` over a two-world fixture runs both worlds in fresh volumes and the merged report names each with its ending; a world whose witness needs an undrivable act is exported with `path: null` and its reason and reported skipped by name.
+10. **The runner.** `branch-plan.json` carries the world rows of §4.3; `branch-runs.sh` with `DELVEWRIGHT_BRANCHES=all` over a two-world fixture runs both worlds in fresh volumes and the merged report names each with its ending; a world whose witness needs an act no step kind drives runs it as a mock step (§6.5) and reaches its ending, the report recording `mocked: <kind>` with its count; a world whose act has no engine function or changes nothing the replay reads is exported with `path: null` and its reason and reported skipped by name.
 11. **Binding line.** Printed on every `validate`, `analyze` and `build` with every count of §6.1, zeroes included (CLI test on a campaign with no ending gate).
 12. **Determinism.** Two builds of the gallery are byte-identical, `validation/endings.json` and every world file included; the world order is canonical (a test permutes the declaration order of two optional quests and asserts the same world ids and paths).
 13. **Gallery** (spec-0039). §8.1's elements are bound and §8.2's four probes refused with the codes named, with the coverage gate's counts on its own line; `gallery/baseline/` is regenerated after the merge commit exists with every moved row attributed.
@@ -227,7 +237,6 @@ Checked against the tree at `d336a2b1d`; each is a debt, never a pass.
 - **Criterion 13, the baseline.** Regenerated on the feature branch against its merge base; the regeneration after the merge commit belongs to the integration that lands it.
 - **§4.2, a partial quest.** A target reachable only by completing some objectives of one optional quest is reported unrealizable; the participation unit is spec-0051's quest, and objective-level participation is a spec of its own.
 - **§6.2, emission-only verbs.** `give-item`, `give-effect`, `clear-effect`, `damage-players`, `volley`, `drop-stake`, `set-atmosphere` and `play-clip` are asserted on the bot where the bot can read them (§6.3) and nowhere on PackTest; the ledger row says so per effect.
-- **§6.4, undrivable acts.** A trap disarm and a shop purchase have no harness step kind; a world whose only witness needs one is proven statically (`DW1030`) and skipped by name at runtime.
 
 ## What stays out, and why
 
