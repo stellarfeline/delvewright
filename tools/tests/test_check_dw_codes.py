@@ -13,6 +13,7 @@ repo, so they keep failing for the right reason as the real catalog grows.
 """
 
 import importlib.util
+import json
 import pathlib
 
 import pytest
@@ -589,7 +590,7 @@ STAGING_GATE = pathlib.Path(__file__).resolve().parents[1] / "creator" / "stagin
 
 
 def test_a_code_documented_only_outside_the_catalog_is_undocumented_to_both_gates(
-    gate, monkeypatch
+    gate, monkeypatch, tmp_path
 ):
     """The pair: this gate and the staging gate guard one catalog and must read
     it by one rule. A code with its own `###` section and prose but no catalog
@@ -617,7 +618,13 @@ def test_a_code_documented_only_outside_the_catalog_is_undocumented_to_both_gate
     monkeypatch.setattr(staging, "REPO_ROOT", gate.REPO_ROOT)
     engine = staging.Engine()
     assert engine.dw_documented == gate.documented_codes() == {"DW0905"}
-    ok, why = engine.dw_exists("DW0904")
+    # The building engine carries both codes, so the only thing left to refuse
+    # DW0904 on is the catalog — the property this pair is about.
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"delvec_version": "x", "dw_codes": ["DW0904", "DW0905"]}),
+        encoding="utf-8",
+    )
+    ok, why = engine.dw_exists("DW0904", staging.BuildingEngine(tmp_path))
     assert not ok and "no diagnostics-catalog row" in why
 
 
