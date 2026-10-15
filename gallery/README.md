@@ -62,11 +62,13 @@ split by a wall with five barred openings in it — the story gate, the shortcut
 door, and three doors on clocks, each opening onto a roofed closet on the near
 side, so that while the story gate is shut nothing a body does gets it into the
 far half (`DW1011`) — and a mezzanine in the far half whose stair is missing
-its treads. When the muster is cleared the story gate comes down again and the
-same beat unbars the shortcut door (`open-gate` on a shortcut's gate unlocks the
-shortcut), so a party that dies in the far half and wakes at the hearth walks
-back through the side door; `DW1011` reads a way round through a shortcut's door
-as the declared loop and judges every other. Beside it the generator emits a small
+its treads. When the muster is cleared the story gate comes down again, and the
+same beat moves the checkpoint to the vantage in the far half, where the way
+goes on: a party that dies after the reseal comes back on the side it is still
+owed. The near half, hearth and pits included, is behind the gate from then
+on, unless the party pulls the side door's lever on the far side and opens the
+shortcut back.
+Beside it the generator emits a small
 **annex tileset** — four 7 × 6 × 7 boxes and a pool — plus a 3-cube **shard**
 that exists only to be stamped by `fragment`. The annex is deliberately plain:
 its job is the ASSEMBLY, and a tileset with interesting rooms would make the

@@ -2934,12 +2934,27 @@
               "type": "despawn-assembly"
             },
             {
-              "anchor": "anchor/shortcut-door",
+              "anchor": "anchor/vantage",
               "happening": {
-                "text": "With the muster answered, the side door is unbarred from the far side, and the hearth is one door away again.",
-                "verb": "opens"
+                "text": "With the main gate down again, the party comes back at the vantage, on the far side where the way goes on.",
+                "verb": "arrives"
               },
-              "type": "open-gate"
+              "type": "set-checkpoint",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             }
           ],
           "obj/take-the-bone": [
