@@ -15,7 +15,11 @@
           "motivation": "See the body walked, inside and out, before anyone asks her what it was.",
           "speech_style": "Short sentences. One thing at a time."
         },
-        "role": "quest-giver"
+        "role": "quest-giver",
+        "watch": {
+          "who": "nearest",
+          "within": 4
+        }
       }
     ]
   },
