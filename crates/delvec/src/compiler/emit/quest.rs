@@ -33,6 +33,14 @@ pub(super) const CUE_COMPLETE: &str = "minecraft:entity.experience_orb.pickup";
 /// See [`CUE_ANNOUNCE`].
 pub(super) const CUE_CAMPAIGN: &str = "minecraft:ui.toast.challenge_complete";
 
+/// The one line a quest cue is played by: at every member of the party, to
+/// that member. The functions a cue runs in carry the server's command source
+/// (tick-run, or `execute as` with no `at`), whose position is the world spawn,
+/// so a positionless `playsound … @a` would sound there.
+pub(super) fn cue_line(sound: &str) -> String {
+    format!("execute as @a at @s run playsound {sound} player @s")
+}
+
 /// `validation/cues.json`: the quest cues this build plays and the objectives
 /// that owe them, for the bot to judge where each one arrives. `objectives` are
 /// the announced objectives (spec-0093), in declaration order: each plays
@@ -262,7 +270,7 @@ pub(super) fn quest_completion_fns(
                         tr_with(hint, &[("color", json!("gray")), ("italic", json!(true))])
                     ));
                 }
-                ann.push(format!("playsound {CUE_ANNOUNCE} player @a"));
+                ann.push(cue_line(CUE_ANNOUNCE));
                 ann.push(format!(
                     "scoreboard players set {} {} 1",
                     plan::PARTY,
@@ -316,7 +324,7 @@ pub(super) fn quest_completion_fns(
                         ],
                     )
                 ));
-                body.push(format!("playsound {CUE_COMPLETE} player @a"));
+                body.push(cue_line(CUE_COMPLETE));
             }
             // Objective-marker lifecycle: despawn every ENTITY this
             // objective's activation summoned, so a completed interact/reach
@@ -496,7 +504,7 @@ pub(super) fn campaign_complete_fns(
         "title @a subtitle {}",
         tr_with(title, &[("color", json!("yellow"))])
     ));
-    cc.push(format!("playsound {CUE_CAMPAIGN} player @a"));
+    cc.push(cue_line(CUE_CAMPAIGN));
     // Machine-readable completion marker for the validation bot. The bot reads
     // `dw.campaign` from the sidebar per the amended contract, BUT mineflayer
     // 4.37.x cannot parse 1.21.11 scoreboard score packets (verified live: no
