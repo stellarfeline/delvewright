@@ -124,3 +124,78 @@ fn an_out_of_line_test_module_is_not_production() {
     }
     assert!(listed.contains(&"compiler/nav/world/mod.rs"));
 }
+
+/// spec-0113 A9: **every reader that floods a private relation instead of the
+/// reach graph, enumerated** — every production call of the cell relation
+/// `moves_of` and of the walk relation's floods (`walk_region`,
+/// `walk_region_rooted`). A route proof walks on cue and reads the walk
+/// relation (§4.5); a mob's moves are not a player's (§4.6); every other
+/// "where can a body be" question reads the graph. A new call reds this test
+/// until it is listed here, with its reason at the call site.
+#[test]
+fn the_graph_declines_are_enumerated() {
+    let src = common::repo_root().join("crates/delvec/src");
+    let files = common::source_scan::production_sources(&src);
+    let mut found: Vec<(String, &str, usize)> = Vec::new();
+    for (rel, prod) in &files {
+        for pat in ["moves_of(", ".walk_region(", ".walk_region_rooted("] {
+            let n = prod.matches(pat).count();
+            if n > 0 {
+                found.push((rel.clone(), pat, n));
+            }
+        }
+    }
+    found.sort();
+    // (file under `src/`, the call, how many production sites) — each with
+    // the question that keeps it off the graph.
+    const EXPECTED: &[(&str, &str, usize)] = &[
+        // The stage-5 battery's "two places joined where no seam was
+        // allocated" (`DW0838`) reads cells of a box, not an assembled world:
+        // spec-0113 §5.1's third wave, not moved until the graph is built
+        // over a box.
+        ("compiler/blockout.rs", ".walk_region(", 1),
+        // `DW0937`: the critical path performs the strike, so the question is
+        // whether the party walks on cue to a cell it strikes from (§4.5).
+        ("compiler/emit/proofs.rs", ".walk_region(", 1),
+        // `DW0920`: where the party is walked to engage a fight in water.
+        ("compiler/engage.rs", ".walk_region(", 1),
+        // `DW0315`/`DW0316`: checkpoints and respawns (§4.5).
+        ("compiler/nav/checkpoint.rs", ".walk_region(", 1),
+        // A timed hazard's pre-commitment ground: where the party walks
+        // before it commits to the span, on cue.
+        ("compiler/nav/hazard.rs", ".walk_region(", 1),
+        // `DW1041`'s `not a jump`: whether the walk already joins the two
+        // cells of a declared jump.
+        ("compiler/nav/jump.rs", ".walk_region(", 1),
+        // `reach_into_volumes`' player arm, the vacuity half of `DW0891`
+        // ("a volume no modelled body reaches"): the cell relation, not yet
+        // the graph — recorded debt. Its direction: it can only under-count
+        // the volumes a body reaches, which adds a zero-binding warning and
+        // never lets a hazard ship unjudged.
+        ("compiler/nav/lethal.rs", "moves_of(", 1),
+        // The route proofs' own region model (`DW0311` and family, §4.5).
+        ("compiler/nav/route/region.rs", ".walk_region(", 2),
+        // `DW0327`/`DW0355`: the stealth zone and its onset sprint (§4.5).
+        ("compiler/nav/stealth.rs", ".walk_region(", 1),
+        // The cell relation's definition, and the mob relation over it
+        // (§4.6).
+        ("compiler/nav/world/body.rs", "moves_of(", 2),
+        // The reach graph's own cheap edges, taken before it flies.
+        ("compiler/nav/world/reach.rs", "moves_of(", 1),
+        // A stake's way home: the route the party walks back on cue.
+        ("compiler/stake.rs", ".walk_region(", 1),
+    ];
+    let expected: Vec<(String, &str, usize)> = EXPECTED
+        .iter()
+        .map(|(f, p, n)| ((*f).to_string(), *p, *n))
+        .collect();
+    assert_eq!(
+        found,
+        expected,
+        "a production reader floods the cell or walk relation somewhere this list does not \
+         name. If its question is where a body can be, it reads the reach graph \
+         (`World::body_reach`); if it walks on cue or moves a mob, say so at the call site and \
+         add it here ({} source file(s) examined)",
+        files.len()
+    );
+}
