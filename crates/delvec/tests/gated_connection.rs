@@ -80,10 +80,13 @@ fn cells(lo: [i64; 3], hi: [i64; 3]) -> BTreeSet<[i64; 3]> {
     blockout::cells_of(lo, hi).collect()
 }
 
+/// A connection, the cells its bar stands in, and the opening the plan allocated.
+type GatedCells = (&'static str, BTreeSet<[i64; 3]>, BTreeSet<[i64; 3]>);
+
 /// The four gated connections of spec-0107 §1, each with the cells §6 names for
 /// its kind and the opening the plan allocated — read off `delvec allocation`
 /// over the materialised point (world = `world_min` + piece-local).
-fn the_four() -> Vec<(&'static str, BTreeSet<[i64; 3]>, BTreeSet<[i64; 3]>)> {
+fn the_four() -> Vec<GatedCells> {
     vec![
         // A walk in a wall: the arch's own cells.
         (
