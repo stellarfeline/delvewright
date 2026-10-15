@@ -98,8 +98,10 @@ base `applyInput` for the player whose client this is.
 
 - **Cited** `Entity.getBlockPosBelowThatAffectsMyMovement` = `getOnPos(0.500001)`:
   the main supporting block if it is a fence, wall or fence gate, else the block at
-  `floor(y − 0.500001)` under the body's position — the block the body stands on,
-  for a full block and for a slab alike.
+  `floor(y − 0.500001)` under the body's position — for a full block, the block
+  the body stands on; on a bottom slab (feet at the slab's `y + 0.5`), the block
+  *beneath* the slab, so a slab laid over ice slides. The simulator reads it so
+  (`game_below`); on a fence, wall or gate top it is the barrier itself.
 - **Cited** `BlockBehaviour.Properties`: defaults `friction 0.6`, `speedFactor 1.0`,
   `jumpFactor 1.0`. **Cited** `Blocks`: `ice`, `packed_ice` and `frosted_ice`
   `friction 0.98`; `blue_ice` `0.989`; `slime_block` `0.8`; `soul_sand`
