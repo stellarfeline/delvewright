@@ -262,6 +262,7 @@ mod mob_reach_tests {
                 lava: BTreeSet::new(),
                 climb: Default::default(),
                 unheld_climb: Default::default(),
+                material: Default::default(),
             },
             Premises::geometry_only(),
         )

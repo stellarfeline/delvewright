@@ -8,6 +8,8 @@ pub(in crate::compiler::nav) mod body;
 pub use body::*;
 pub(in crate::compiler::nav) mod climb;
 pub use climb::*;
+pub(in crate::compiler::nav) mod reach;
+pub use reach::*;
 
 use crate::compiler::cellset::{CellMap, CellSet};
 use crate::compiler::nav::route::region::RegionState;
@@ -312,6 +314,12 @@ pub struct World {
     /// question, [`World::body_moves`]: a body that enters water floats at its
     /// surface, and one that enters lava does not come out of it at all.
     lava: CellSet,
+    /// The blocks that change how a body moves ([`crate::compiler::assembled::Occupancy::material`]).
+    /// Read by the reach graph's simulator alone ([`reach`]).
+    pub(in crate::compiler::nav) material: CellMap<delvewright_dsl::metrics::body::Material>,
+    /// This world's content digest, computed once on first ask
+    /// ([`World::fingerprint`]): the key the reach graph is memoised on.
+    pub(in crate::compiler::nav) fingerprint: std::sync::OnceLock<[u8; 32]>,
     /// The climbables the assembled world **keeps**, with what keeps each
     /// (spec-0099, [`crate::compiler::assembled::climb_holds`]). Shared, never
     /// narrowed: a derived world narrows `climb`, not this.
@@ -439,6 +447,9 @@ pub struct World {
     /// reported as the objectives it drowns rather than as a list of
     /// coordinates.
     pub(in crate::compiler::nav) objective_cells: Vec<(String, [i32; 3])>,
+    /// Whether no fall kills a body in this world: a kit the campaign hands
+    /// reduces fall damage (spec-0113 §4.2, [`Premises::unbounded_fall`]).
+    pub(in crate::compiler::nav) unbounded_fall: bool,
 }
 
 /// The block-derived cell sets of a [`World`], as [`World::from_occupancy`]
@@ -451,6 +462,7 @@ struct Cells {
     partial: CellMap<u8>,
     waterloggable: CellSet,
     lava: CellSet,
+    material: CellMap<delvewright_dsl::metrics::body::Material>,
     climb_holds: ClimbHolds,
     unheld_climb: UnheldClimbs,
 }
@@ -505,6 +517,11 @@ pub struct Premises {
     pub(in crate::compiler::nav) world_load_seals: Vec<crate::compiler::assembled::GateSeal>,
     pub(in crate::compiler::nav) clocked_gates: BTreeSet<([i32; 3], [i32; 3])>,
     pub(in crate::compiler::nav) objective_cells: Vec<(String, [i32; 3])>,
+    /// **Whether every fall is survivable** (spec-0113 §4.2): a kit the
+    /// campaign hands a player reduces fall damage — a damage-reducing armour
+    /// enchantment, a max-health change or a fall-damage multiplier — so the
+    /// reach graph credits a landing however far the body fell.
+    pub(in crate::compiler::nav) unbounded_fall: bool,
 }
 
 impl Premises {
@@ -564,6 +581,7 @@ impl Premises {
                 .iter()
                 .filter_map(|s| Some((s.objective()?.to_string(), s.pos()?)))
                 .collect(),
+            unbounded_fall: false,
         }
     }
 
@@ -596,6 +614,7 @@ impl Premises {
             world_load_seals: Vec::new(),
             clocked_gates: BTreeSet::new(),
             objective_cells: Vec::new(),
+            unbounded_fall: false,
         }
     }
 }
@@ -736,10 +755,13 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            material: self.material.clone(),
+            fingerprint: std::sync::OnceLock::new(),
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            unbounded_fall: self.unbounded_fall,
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -938,6 +960,7 @@ impl World {
                 partial: occ.partial.into(),
                 waterloggable: occ.waterloggable.into(),
                 lava: occ.lava.into(),
+                material: occ.material.into(),
                 climb_holds: std::sync::Arc::new(occ.climb),
                 unheld_climb: std::sync::Arc::new(occ.unheld_climb),
             },
@@ -959,6 +982,7 @@ impl World {
                 partial: self.partial.clone(),
                 waterloggable: self.waterloggable.clone(),
                 lava: self.lava.clone(),
+                material: self.material.clone(),
                 climb_holds: self.climb_holds.clone(),
                 unheld_climb: self.unheld_climb.clone(),
             },
@@ -984,6 +1008,8 @@ impl World {
             partial: cells.partial,
             waterloggable: cells.waterloggable,
             lava: cells.lava,
+            material: cells.material,
+            fingerprint: std::sync::OnceLock::new(),
             climb: cells.climb_holds.keys().copied().collect(),
             climb_holds: cells.climb_holds,
             unheld_climb: cells.unheld_climb,
@@ -1010,6 +1036,7 @@ impl World {
             base: premises.base,
             built: premises.built,
             objective_cells: premises.objective_cells,
+            unbounded_fall: premises.unbounded_fall,
         }
     }
 
@@ -1103,10 +1130,13 @@ impl World {
             partial,
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            material: self.material.clone(),
+            fingerprint: std::sync::OnceLock::new(),
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            unbounded_fall: self.unbounded_fall,
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1152,10 +1182,13 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            material: self.material.clone(),
+            fingerprint: std::sync::OnceLock::new(),
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            unbounded_fall: self.unbounded_fall,
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1213,10 +1246,13 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            material: self.material.clone(),
+            fingerprint: std::sync::OnceLock::new(),
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            unbounded_fall: self.unbounded_fall,
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1272,10 +1308,13 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            material: self.material.clone(),
+            fingerprint: std::sync::OnceLock::new(),
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            unbounded_fall: self.unbounded_fall,
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1378,10 +1417,13 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            material: self.material.clone(),
+            fingerprint: std::sync::OnceLock::new(),
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            unbounded_fall: self.unbounded_fall,
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1457,10 +1499,13 @@ impl World {
             partial: self.partial.clone(),
             waterloggable: self.waterloggable.clone(),
             lava: self.lava.clone(),
+            material: self.material.clone(),
+            fingerprint: std::sync::OnceLock::new(),
             climb_holds: self.climb_holds.clone(),
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            unbounded_fall: self.unbounded_fall,
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1514,6 +1559,7 @@ impl World {
                 lava: BTreeSet::new(),
                 climb: BTreeMap::new(),
                 unheld_climb: BTreeMap::new(),
+                material: Default::default(),
             },
             Premises::geometry_only(),
         )

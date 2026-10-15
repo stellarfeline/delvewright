@@ -14,12 +14,6 @@ use std::collections::{BTreeMap, BTreeSet};
 /// completely different fixes.
 pub(in crate::compiler::nav) const BOUNDARY_LIST_LIMIT: usize = 6;
 
-/// How far past the placed geometry the ocean-stranding search window extends
-/// before the sea counts as **open sea** (see [`verify_boundary_safety`]). Any
-/// margin ≥ 1 works: the ring beyond the window is untouched ambient water in
-/// every direction, so every body that reaches it is one and the same sea.
-const OPEN_SEA_MARGIN: i32 = 2;
-
 /// Assert the reachable walk region's boundary is safe (spec-0017 boundary
 /// safety; [`DW_EDIT_BORDERS_VOID`]). `starts` are the reachability roots (the
 /// plan's resolved anchors, each carrying the piece that declares it — see
@@ -123,7 +117,7 @@ pub fn verify_boundary_safety(world: &World, starts: &[AnchorRoot]) -> Result<()
     if let Some(e) = measure_sea_seepage(world, &reachable).finding() {
         return Err(e);
     }
-    boundary_from(world, &reachable)
+    boundary_from(world, &world.body_reach_rooted(starts))
 }
 
 /// Boundary safety alone, on a world whose fluid has already been accounted for.
@@ -134,64 +128,30 @@ pub fn verify_boundary_safety(world: &World, starts: &[AnchorRoot]) -> Result<()
 /// `#[cfg(test)]` is what makes "nothing else" a fact rather than a request.
 #[cfg(test)]
 fn boundary_only(world: &World, starts: &[AnchorRoot]) -> Result<(), Failure> {
-    let reachable = world.reachable_walkable_rooted(starts);
-    boundary_from(world, &reachable)
+    boundary_from(world, &world.body_reach_rooted(starts))
 }
 
-/// Boundary safety over an already-computed walk region.
-fn boundary_from(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Result<(), Failure> {
+/// Boundary safety over the reach graph's closure from the roots (spec-0113
+/// §5.1): under a void a movement that leaves the world, under an ocean a body
+/// in the water no path in the graph brings back to standing.
+fn boundary_from(world: &World, reach: &Reach) -> Result<(), Failure> {
     match &world.ambient {
-        Ambient::Void => boundary_void(world, reachable),
-        Ambient::Ocean(sea) => boundary_ocean(world, reachable, sea),
+        Ambient::Void => boundary_void_reach(reach),
+        Ambient::Ocean(_) => boundary_ocean_reach(world, reach),
     }
 }
 
-/// Boundary safety under [`Ambient::Void`]: no reachable walkable cell may
-/// border a bottomless column. Every violation is collected (see
-/// [`BOUNDARY_LIST_LIMIT`]) so one report shows the scale of the breach.
-fn boundary_void(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Result<(), Failure> {
-    // Per-column lowest fall-arresting cell: solid, tall barrier, use-gate, or
-    // flooded — anything vanilla stops a falling player on (or in).
-    let mut col_min: BTreeMap<(i32, i32), i32> = BTreeMap::new();
-    for set in [&world.solid, &world.tall, &world.use_gates, &world.flooded] {
-        for c in set.iter() {
-            col_min
-                .entry((c[0], c[2]))
-                .and_modify(|m| *m = (*m).min(c[1]))
-                .or_insert(c[1]);
-        }
-    }
-    // (edge cell, void column entered) pairs, in deterministic BTreeSet order.
-    let mut hits: Vec<([i32; 3], [i32; 3])> = Vec::new();
-    let mut columns: BTreeSet<(i32, i32)> = BTreeSet::new();
-    for &cell in reachable {
-        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            let n = [cell[0] + dx, cell[1], cell[2] + dz];
-            let head = [n[0], n[1] + 1, n[2]];
-            // Enterable: feet + head clear of solids/talls/water. A use-gate
-            // cell is deliberately enterable (the player can open it and walk
-            // through — a gate onto a bottomless drop is exactly the hazard).
-            let blocked = |c: [i32; 3]| {
-                world.solid.contains(&c) || world.tall.contains(&c) || world.flooded.contains(&c)
-            };
-            if blocked(n) || blocked(head) {
-                continue;
-            }
-            let has_support = col_min
-                .get(&(n[0], n[2]))
-                .is_some_and(|&lowest| lowest < n[1]);
-            if !has_support {
-                hits.push((cell, n));
-                columns.insert((n[0], n[2]));
-            }
-        }
-    }
-    if hits.is_empty() {
+/// Boundary safety under [`Ambient::Void`] over the reach graph: no reached
+/// state may be left by a movement that falls out of the world — walking,
+/// sprinting or jumping off it at any facing (spec-0113 §4.7).
+fn boundary_void_reach(reach: &Reach) -> Result<(), Failure> {
+    if reach.leaves_world.is_empty() {
         return Ok(());
     }
+    let hits: Vec<[i32; 3]> = reach.leaves_world.iter().copied().collect();
     let mut listing = String::new();
-    for (cell, n) in hits.iter().take(BOUNDARY_LIST_LIMIT) {
-        listing.push_str(&format!("\n  - {cell:?} → void drop at {n:?}"));
+    for cell in hits.iter().take(BOUNDARY_LIST_LIMIT) {
+        listing.push_str(&format!("\n  - {cell:?} → a fall out of the world"));
     }
     if hits.len() > BOUNDARY_LIST_LIMIT {
         listing.push_str(&format!(
@@ -199,252 +159,159 @@ fn boundary_void(world: &World, reachable: &BTreeSet<[i32; 3]>) -> Result<(), Fa
             hits.len() - BOUNDARY_LIST_LIMIT
         ));
     }
-    let first = hits[0].1;
+    let first = hits[0];
     Err(Failure {
         code: DW_EDIT_BORDERS_VOID,
         message: format!(
-            "boundary safety (spec-0017): {} reachable walkable cell(s) border a void drop over \
-             {} distinct column(s) — one step off the proven ground falls out of the world:{}\n\
+            "boundary safety (spec-0017): {} place(s) a body can reach can be left by a movement \
+             that falls out of the world — walking, sprinting or jumping off it, at any facing:{}\n\
              There is no physical boundary here — either an edit stripped one or the scene ground \
              never had an edge: extend the terrain under the exposed edge (fill/morph a slope or \
-             outcrop below {first:?}) or reinstate a barrier shape; do NOT weaken this check or \
-             reroute the path to sidestep it",
+             outcrop below {first:?}) or reinstate a barrier shape a body cannot jump; do NOT \
+             weaken this check or reroute the path to sidestep it",
             hits.len(),
-            columns.len(),
             listing,
         ),
     })
 }
 
-/// One 4-connected body of sea-surface cells, plus what the walk region does
-/// with it (see [`verify_boundary_safety`]'s ocean model).
-struct SeaBody {
-    /// Reaches the search-window edge ⇒ it is the open sea, and every other
-    /// open body is the same water.
-    open: bool,
-    /// Some surface cell of the body is adjacent to a reachable walkable cell at
-    /// `sea.level` or `sea.level + 1`.
-    escapable: bool,
-    /// Reachable walkable cells from which the player enters this body, in
-    /// deterministic order.
-    entries: BTreeSet<[i32; 3]>,
-    /// A representative surface cell (the smallest, for a stable message).
-    sample: [i32; 3],
-    /// Surface cells in the body.
-    size: usize,
-}
-
-/// The sea-surface bodies of an ocean world, labelled, with where the walk region
-/// `reachable` enters each and climbs out of it — the one labelling
-/// [`boundary_ocean`] judges stranding over and [`open_sea_entry`] reads.
-fn sea_bodies(world: &World, reachable: &BTreeSet<[i32; 3]>, sea: &Sea) -> Vec<SeaBody> {
-    let level = sea.level;
-    let Some(([min_x, min_z], [max_x, max_z])) = ocean_window(world) else {
-        return Vec::new(); // nothing placed: open sea everywhere, nothing to strand
-    };
-    let w = (max_x - min_x + 1) as usize;
-    let d = (max_z - min_z + 1) as usize;
-    let idx = |x: i32, z: i32| (x - min_x) as usize * d + (z - min_z) as usize;
-    let inside = |x: i32, z: i32| (min_x..=max_x).contains(&x) && (min_z..=max_z).contains(&z);
-    let blocked = |c: [i32; 3]| world.solid.contains(&c) || world.tall.contains(&c);
-    let swimmable = |x: i32, z: i32| {
-        let c = [x, level, z];
-        !blocked(c) && (world.flooded.contains(&c) || world.ambient_water(c))
-    };
-
-    // --- label the sea-surface bodies (deterministic scan + BFS) -------------
-    const NONE: u32 = u32::MAX;
-    let mut label = vec![NONE; w * d];
-    let mut bodies: Vec<SeaBody> = Vec::new();
-    for x in min_x..=max_x {
-        for z in min_z..=max_z {
-            if label[idx(x, z)] != NONE || !swimmable(x, z) {
-                continue;
-            }
-            let id = bodies.len() as u32;
-            let mut body = SeaBody {
-                open: false,
-                escapable: false,
-                entries: BTreeSet::new(),
-                sample: [x, level, z],
-                size: 0,
-            };
-            let mut queue = std::collections::VecDeque::from([(x, z)]);
-            label[idx(x, z)] = id;
-            while let Some((cx, cz)) = queue.pop_front() {
-                body.size += 1;
-                if cx == min_x || cx == max_x || cz == min_z || cz == max_z {
-                    body.open = true;
-                }
-                for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                    let (nx, nz) = (cx + dx, cz + dz);
-                    if !inside(nx, nz) || label[idx(nx, nz)] != NONE || !swimmable(nx, nz) {
-                        continue;
-                    }
-                    label[idx(nx, nz)] = id;
-                    queue.push_back((nx, nz));
-                }
-            }
-            bodies.push(body);
-        }
-    }
-    if bodies.is_empty() {
-        return bodies;
-    }
-
-    // --- where the walk region touches the water ----------------------------
-    for &cell in reachable {
-        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            let n = [cell[0] + dx, cell[1], cell[2] + dz];
-            // Climb-out: standing at (or one above) the waterline beside water.
-            if (cell[1] == level || cell[1] == level + 1) && inside(n[0], n[2]) {
-                let id = label[idx(n[0], n[2])];
-                if id != NONE {
-                    bodies[id as usize].escapable = true;
-                }
-            }
-            // Entry: an enterable neighbour column that is open all the way to
-            // the sea surface. Water does not block walking in.
-            if blocked(n) || blocked([n[0], n[1] + 1, n[2]]) || !inside(n[0], n[2]) {
-                continue;
-            }
-            let id = label[idx(n[0], n[2])];
-            if id == NONE {
-                continue;
-            }
-            let (lo, hi) = if n[1] > level {
-                (level + 1, n[1])
-            } else {
-                (n[1], level)
-            };
-            if (lo..=hi).any(|y| blocked([n[0], y, n[2]])) {
-                continue;
-            }
-            bodies[id as usize].entries.insert(cell);
-        }
-    }
-
-    bodies
-}
-
-/// **Where a body can walk into the open sea** (spec-0092 §10): the first
-/// reachable walkable cell, in cell order, from which a body enters a sea body
-/// that reaches the search window's edge — `None` under a void horizon, or when
-/// every water body the walk region enters is enclosed. Read by `DW0960`: a
-/// boundary that does not return is legal only where this is `None`.
-pub fn open_sea_entry(world: &World, starts: &[AnchorRoot]) -> Option<[i32; 3]> {
-    let Ambient::Ocean(sea) = &world.ambient else {
-        return None;
-    };
-    let reachable = world.reachable_walkable_rooted(starts);
-    sea_bodies(world, &reachable, sea)
+/// Boundary safety under [`Ambient::Ocean`] over the reach graph: a body is in
+/// the sea exactly when the graph puts it afloat or submerged, and stranded when
+/// no path in the graph leads from there to standing — the open sea being one
+/// water, so a climb out anywhere on its rim serves all of it (spec-0113 §5.1).
+fn boundary_ocean_reach(world: &World, reach: &Reach) -> Result<(), Failure> {
+    let wet = |k: &RestKind| matches!(k, RestKind::Afloat | RestKind::Submerged);
+    // Every state that reaches standing, walked backwards from the standing
+    // states over the predecessor edges, the open sea joined to itself.
+    // Standing includes standing in the shallows: a water cell a body's feet
+    // reach a floor in, with air over it.
+    let mut back: BTreeSet<[i32; 3]> = reach
+        .states
         .iter()
-        .filter(|b| b.open)
-        .flat_map(|b| b.entries.iter().copied())
-        .min()
-}
-
-/// Boundary safety under [`Ambient::Ocean`]: the stranding invariant. See
-/// [`verify_boundary_safety`] for the model this implements.
-fn boundary_ocean(world: &World, reachable: &BTreeSet<[i32; 3]>, sea: &Sea) -> Result<(), Failure> {
-    let level = sea.level;
-    let bodies = sea_bodies(world, reachable, sea);
-    if bodies.is_empty() {
-        return Ok(());
-    }
-
-    // Every body that reaches the window edge is the same open sea: one climb-out
-    // anywhere on the coast serves all of them.
-    let open_escapable = bodies.iter().any(|b| b.open && b.escapable);
-    let stranding: Vec<&SeaBody> = bodies
-        .iter()
-        .filter(|b| !b.entries.is_empty() && !b.escapable && !(b.open && open_escapable))
+        .filter(|(c, k)| !wet(k) || world.wades(**c))
+        .map(|(c, _)| *c)
         .collect();
-    if stranding.is_empty() {
-        return Ok(());
-    }
-
-    let shores: usize = stranding.iter().map(|b| b.entries.len()).sum();
-    let mut listing = String::new();
-    let mut listed = 0usize;
-    for b in &stranding {
-        for cell in b.entries.iter() {
-            if listed == BOUNDARY_LIST_LIMIT {
-                break;
+    let mut queue: std::collections::VecDeque<[i32; 3]> = back.iter().copied().collect();
+    let mut sea = false;
+    while let Some(cur) = queue.pop_front() {
+        if !sea && reach.open_sea.contains(&cur) {
+            sea = true;
+            for s in &reach.open_sea {
+                if back.insert(*s) {
+                    queue.push_back(*s);
+                }
             }
-            listing.push_str(&format!(
-                "\n  - {cell:?} → the sea at {:?} ({})",
-                b.sample,
-                if b.open { "open sea" } else { "enclosed water" }
-            ));
-            listed += 1;
+        }
+        for (p, _) in reach.preds.get(&cur).into_iter().flatten() {
+            if back.insert(*p) {
+                queue.push_back(*p);
+            }
         }
     }
-    if shores > listed {
-        listing.push_str(&format!("\n  - … and {} more", shores - listed));
-    }
-    let first = stranding[0]
-        .entries
+    let stranded: BTreeSet<[i32; 3]> = reach
+        .states
         .iter()
-        .next()
-        .copied()
-        .unwrap_or_default();
+        .filter(|(c, k)| wet(k) && !back.contains(*c))
+        .map(|(c, _)| *c)
+        .collect();
+    if stranded.is_empty() {
+        return Ok(());
+    }
+    // The water a body reaches the open sea from, swimming.
+    let mut open: BTreeSet<[i32; 3]> = reach.open_sea.clone();
+    let mut queue: Vec<[i32; 3]> = open.iter().copied().collect();
+    while let Some(c) = queue.pop() {
+        for (p, _) in reach.preds.get(&c).into_iter().flatten() {
+            if reach.states.get(p).is_some_and(wet) && open.insert(*p) {
+                queue.push(*p);
+            }
+        }
+    }
+    // Where a body gets into the stranding water: each standing state with an
+    // edge into it, once, with the first such edge in words.
+    let mut shores: BTreeMap<[i32; 3], String> = BTreeMap::new();
+    for c in &stranded {
+        for (p, e) in reach.preds.get(c).into_iter().flatten() {
+            if reach.states.get(p).is_some_and(|k| !wet(k)) && !shores.contains_key(p) {
+                shores.insert(
+                    *p,
+                    format!(
+                        "\n  - {p:?} → {} at {c:?}, by {}",
+                        if open.contains(c) {
+                            "the open sea"
+                        } else {
+                            "enclosed water"
+                        },
+                        super::leave::movement_words(world, *p, e)
+                    ),
+                );
+            }
+        }
+    }
+    let shores_n = shores.len();
+    let mut listing: String = shores.values().take(BOUNDARY_LIST_LIMIT).cloned().collect();
+    if shores_n > BOUNDARY_LIST_LIMIT {
+        listing.push_str(&format!(
+            "\n  - … and {} more",
+            shores_n - BOUNDARY_LIST_LIMIT
+        ));
+    }
+    let shores = shores_n;
+    let first = stranded.iter().next().copied().unwrap_or_default();
     Err(Failure {
         code: DW_EDIT_BORDERS_VOID,
         message: format!(
-            "boundary safety (spec-0017, `horizon: ocean`): {shores} reachable walkable cell(s) \
-             let the player into {} body/bodies of water ({} surface cell(s)) with NO way back \
-             ashore — nothing in an ocean world falls out of the world, but a swimmer who cannot \
-             climb out is stranded there for the rest of the delve:{}\n\
-             A climb-out is a proven-walkable cell at y={level} (a rim one block under the \
-             waterline: wade out) or y={} (land flush with the sea surface) beside the water. \
-             Give the shoreline near {first:?} such a step — a beach, a bank, a ladder-free \
-             landing — or wall the edge off so the player cannot enter the water there; do NOT \
-             weaken this check",
-            stranding.len(),
-            stranding.iter().map(|b| b.size).sum::<usize>(),
-            listing,
-            level + 1,
+            "boundary safety (spec-0017, `horizon: ocean`): {shores} place(s) a body can reach let \
+             it into {} water cell(s) with NO way back ashore — nothing in an ocean world falls out of \
+             the world, but a swimmer who cannot climb out is stranded there for the rest of the \
+             delve:{listing}\n\
+             A swimmer climbs out onto a ledge it can press into from the water and be lifted over \
+             (land flush with the sea surface, or one block over it). Give the shoreline near \
+             {first:?} such a step — a beach, a bank, a stair into the water — or keep bodies out of \
+             the water there; do NOT weaken this check",
+            stranded.len(),
         ),
     })
 }
 
-/// The x/z window the ocean stranding search runs over: every placed piece and
-/// every modelled cell, inflated by [`OPEN_SEA_MARGIN`]. `None` when the world is
-/// completely empty. Beyond the window the ambient sea is uniform in every
-/// direction, so a body that reaches the edge is the open sea.
-fn ocean_window(world: &World) -> Option<([i32; 2], [i32; 2])> {
-    let mut lo = [i32::MAX; 2];
-    let mut hi = [i32::MIN; 2];
-    let mut note = |x: i32, z: i32| {
-        lo[0] = lo[0].min(x);
-        lo[1] = lo[1].min(z);
-        hi[0] = hi[0].max(x);
-        hi[1] = hi[1].max(z);
-    };
-    for (_, (bmin, bmax)) in &world.built {
-        note(bmin[0], bmin[2]);
-        note(bmax[0], bmax[2]);
-    }
-    for set in [&world.solid, &world.tall, &world.use_gates, &world.flooded] {
-        for c in set.iter() {
-            note(c[0], c[2]);
-        }
-    }
-    if lo[0] > hi[0] {
+/// **Where a body can get into the open sea** (spec-0092 §10, over the reach
+/// graph since spec-0113): the least standing state, in cell order, with an
+/// edge into an open-sea state — `None` under a void horizon, or when no body
+/// reaches the open sea. Read by `DW0960`: a boundary that does not return is
+/// legal only where this is `None`.
+pub fn open_sea_entry(world: &World, starts: &[AnchorRoot]) -> Option<[i32; 3]> {
+    if !matches!(world.ambient, Ambient::Ocean(_)) {
         return None;
     }
-    Some((
-        [lo[0] - OPEN_SEA_MARGIN, lo[1] - OPEN_SEA_MARGIN],
-        [hi[0] + OPEN_SEA_MARGIN, hi[1] + OPEN_SEA_MARGIN],
-    ))
+    let reach = world.body_reach_rooted(starts);
+    let wet = |c: &[i32; 3]| {
+        matches!(
+            reach.states.get(c),
+            Some(RestKind::Afloat | RestKind::Submerged)
+        )
+    };
+    // The open sea's own states, and every wet state that reaches it.
+    let mut sea: BTreeSet<[i32; 3]> = reach.open_sea.clone();
+    let mut queue: Vec<[i32; 3]> = sea.iter().copied().collect();
+    while let Some(c) = queue.pop() {
+        for (p, _) in reach.preds.get(&c).into_iter().flatten() {
+            if wet(p) && sea.insert(*p) {
+                queue.push(*p);
+            }
+        }
+    }
+    sea.iter()
+        .flat_map(|c| reach.preds.get(c).into_iter().flatten())
+        .map(|(p, _)| *p)
+        .filter(|p| !wet(p))
+        .min()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::compiler::nav::testkit::*;
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeSet;
 
     /// **Why `DW0318` runs before `DW0322`, demonstrated rather than asserted.**
     ///
@@ -516,7 +383,10 @@ mod tests {
         let err =
             verify_boundary_safety(&world, &roots([1, 64, 1])).expect_err("edge borders void");
         assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
-        assert!(err.message.contains("void drop"), "names the hazard");
+        assert!(
+            err.message.contains("a fall out of the world"),
+            "names the hazard"
+        );
     }
 
     #[test]
@@ -541,12 +411,17 @@ mod tests {
         let world = World::from_solid_cells(solid);
         verify_boundary_safety(&world, &roots([1, 64, 1])).expect("a 2-high rim holds the line");
 
-        // (b) A single floor cell whose four neighbour columns all have geometry
-        // far below: a deep drop is legal (falling, not leaving the world).
+        // (b) A single floor cell over ground far below, wide enough to catch
+        // every arc off it: a deep drop is legal (falling, not leaving the
+        // world).
         let mut solid = BTreeSet::new();
         solid.insert([0, 63, 0]);
-        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            solid.insert([dx, 10, dz]);
+        // A body that holds a sprint all the way down drifts some fourteen
+        // blocks over a fall of fifty.
+        for dx in -24..=24 {
+            for dz in -24..=24 {
+                solid.insert([dx, 10, dz]);
+            }
         }
         let world = World::from_solid_cells(solid);
         verify_boundary_safety(&world, &roots([0, 64, 0])).expect("deep drops onto land are legal");
@@ -558,9 +433,9 @@ mod tests {
 
     /// `DW0322` reports **every** violation of a run, not the first: a stripped
     /// boundary is systemic, and the scale of the breach is the most useful fact
-    /// about it. The bare 3×3 platform exposes 12 edge/void pairs over 12 columns
-    /// (4 corners × 2 + 4 edges × 1); the message counts all of them and lists
-    /// [`BOUNDARY_LIST_LIMIT`] before summarising the rest.
+    /// about it. Every cell of the bare 3×3 platform is left into the void by
+    /// some launch (the middle by a sprint jump over the rim); the message counts
+    /// all nine and lists [`BOUNDARY_LIST_LIMIT`] before summarising the rest.
     #[test]
     fn boundary_safety_aggregates_every_void_drop_dw0322() {
         let mut solid = BTreeSet::new();
@@ -574,23 +449,18 @@ mod tests {
             verify_boundary_safety(&world, &roots([1, 64, 1])).expect_err("edge borders void");
         assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
         assert!(
-            err.message.contains("12 reachable walkable cell(s)"),
+            err.message.contains("9 place(s)"),
             "counts every violation, not just the first:\n{}",
             err.message
         );
-        assert!(
-            err.message.contains("12 distinct column(s)"),
-            "counts the exposed columns:\n{}",
-            err.message
-        );
         assert_eq!(
-            err.message.matches("void drop at").count(),
+            err.message.matches("→ a fall out of the world").count(),
             BOUNDARY_LIST_LIMIT,
             "listing is bounded:\n{}",
             err.message
         );
         assert!(
-            err.message.contains("and 6 more"),
+            err.message.contains("and 3 more"),
             "summarises the tail:\n{}",
             err.message
         );
@@ -622,7 +492,7 @@ mod tests {
         let err = verify_boundary_safety(&voidish, &roots([3, 63, 3]))
             .expect_err("under `void` the same coast IS a void drop");
         assert_eq!(err.code, DW_EDIT_BORDERS_VOID);
-        assert!(err.message.contains("void drop"));
+        assert!(err.message.contains("a fall out of the world"));
 
         let sea = ocean(solid, BTreeSet::new(), covered);
         verify_boundary_safety(&sea, &roots([3, 63, 3]))
@@ -649,15 +519,16 @@ mod tests {
             "names the water body:\n{}",
             err.message
         );
-        // 8×8 plateau: 28 distinct rim cells touch the water (a corner counts
-        // once — the report is per shore *cell*, not per cell/direction pair).
+        // 8×8 plateau nine over the sea: a sprint jump and a fall carry a body
+        // into the water from every one of its 64 cells (a cell counts once —
+        // the report is per place, not per movement).
         assert!(
-            err.message.contains("28 reachable walkable cell(s)"),
+            err.message.contains("64 place(s)"),
             "aggregates every shore cell:\n{}",
             err.message
         );
         assert!(
-            err.message.contains("and 22 more"),
+            err.message.contains("and 58 more"),
             "bounded listing + tail count:\n{}",
             err.message
         );
@@ -696,13 +567,16 @@ mod tests {
             }
         }
         // Inner plateau one step up (top 63, walk plane 64) over 3..=9, with a
-        // 3×3 shaft at 5..=7 down to a pool at sea level.
+        // 3×3 shaft at 5..=7 down to a pool at sea level, two deep — water a
+        // body swims in rather than wades.
         let mut flooded = BTreeSet::new();
         for x in 3..=9 {
             for z in 3..=9 {
                 if (5..=7).contains(&x) && (5..=7).contains(&z) {
-                    solid.remove(&[x, 62, z]);
-                    flooded.insert([x, 62, z]);
+                    for y in 61..=62 {
+                        solid.remove(&[x, y, z]);
+                        flooded.insert([x, y, z]);
+                    }
                 } else {
                     solid.insert([x, 63, z]);
                 }
@@ -722,11 +596,6 @@ mod tests {
             "the outer beach is proven fine and must not be reported:\n{}",
             err.message
         );
-        assert!(
-            err.message.contains("1 body/bodies of water"),
-            "exactly one failing body:\n{}",
-            err.message
-        );
 
         // Lower the inner plateau to the outer datum and the pool is flush with
         // its bank: the player steps straight back out.
@@ -741,8 +610,10 @@ mod tests {
         let mut flooded = BTreeSet::new();
         for x in 5..=7 {
             for z in 5..=7 {
-                solid.remove(&[x, 62, z]);
-                flooded.insert([x, 62, z]);
+                for y in 61..=62 {
+                    solid.remove(&[x, y, z]);
+                    flooded.insert([x, y, z]);
+                }
             }
         }
         let world = ocean(solid, flooded, vec![([0, 60, 0], [12, 62, 12])]);

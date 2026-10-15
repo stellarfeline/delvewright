@@ -647,8 +647,14 @@ pub(super) fn prove_world(
                     playable_region(plan).map(|r| (r.min, r.max)),
                 );
                 eprintln!("{}", leave_binding.line());
+                eprintln!("{}", leave_binding.reach.line());
                 leave_verdict?;
                 put_json(out, "validation/leave-proof.json", &leave_binding.to_json());
+                put_json(
+                    out,
+                    "validation/reach-graph.json",
+                    &leave_binding.reach.to_json(),
+                );
                 // DW0924: a body a `kill` objective waits on cannot get to a
                 // place it survives and the party cannot strike it from. After
                 // DW0921 because it reads the same playable region and a party

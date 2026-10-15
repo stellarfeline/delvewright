@@ -34,6 +34,7 @@ fn floored_with_furniture(
             lava: BTreeSet::new(),
             climb: Default::default(),
             unheld_climb: Default::default(),
+            material: Default::default(),
         },
         Premises {
             ambient: Ambient::Void,
@@ -48,6 +49,7 @@ fn floored_with_furniture(
             world_load_seals: Vec::new(),
             clocked_gates: BTreeSet::new(),
             objective_cells: Vec::new(),
+            unbounded_fall: false,
         },
     )
 }

@@ -28,6 +28,8 @@ pub struct LeaveBinding {
     /// configuration — the third way out of a pocket (spec-0083 §3.9), counted
     /// over configurations.
     pub link_exits: usize,
+    /// The reach graph the judgement was taken over (spec-0113 §5.5).
+    pub reach: ReachBinding,
 }
 
 impl LeaveBinding {
@@ -60,38 +62,73 @@ impl LeaveBinding {
     }
 }
 
-/// How a body got from `from` to `to` in one [`World::body_moves`] movement, in
-/// words for a report.
-fn movement_words(world: &World, from: [i32; 3], to: [i32; 3]) -> String {
-    let run = (to[0] - from[0]).abs() + (to[2] - from[2]).abs();
+/// The compass point a facing points to: `yaw` is the game's degrees (`0`
+/// south, `-90` east).
+fn compass(yaw: i16) -> &'static str {
+    const POINTS: [&str; 8] = [
+        "south",
+        "south-west",
+        "west",
+        "north-west",
+        "north",
+        "north-east",
+        "east",
+        "south-east",
+    ];
+    let k = ((f64::from(yaw) / 45.0).round() as i32).rem_euclid(8);
+    POINTS[k as usize]
+}
+
+/// How a body got from `from` to `to` by one edge of the reach graph, in words
+/// a report can use: the edge's kind, its direction and how far it rose, fell
+/// or drifted (spec-0113 §5.1).
+pub(in crate::compiler::nav) fn movement_words(
+    world: &World,
+    from: [i32; 3],
+    edge: &Edge,
+) -> String {
+    let to = edge.to;
     let rise = to[1] - from[1];
-    if world.is_water_surface(from) {
-        return if world.is_water_surface(to) {
-            "swimming".to_string()
-        } else {
-            "climbing out of the water".to_string()
-        };
-    }
-    if world.is_water_surface(to) {
-        return if run == 1 && rise >= 0 {
-            "wading into water".to_string()
-        } else if run == 1 {
-            format!("a fall of {} block(s) into water", -rise)
-        } else {
-            format!("a jump across {} column(s) into water", run - 1)
-        };
-    }
-    if world.neighbors(from).contains(&to) {
-        "a walk".to_string()
-    } else if run == 1 {
-        format!("a fall of {} block(s)", -rise)
+    let drift = (to[0] - from[0]).abs().max((to[2] - from[2]).abs());
+    let height = match rise.cmp(&0) {
+        std::cmp::Ordering::Greater => format!(" up {rise}"),
+        std::cmp::Ordering::Less => format!(" down {}", -rise),
+        std::cmp::Ordering::Equal => String::new(),
+    };
+    let into_water = if world
+        .rest_kind(to)
+        .is_some_and(|k| matches!(k, RestKind::Afloat | RestKind::Submerged))
+    {
+        " into water"
     } else {
-        let height = match rise.cmp(&0) {
-            std::cmp::Ordering::Greater => format!(" up {rise}"),
-            std::cmp::Ordering::Less => format!(" down {}", -rise),
-            std::cmp::Ordering::Equal => String::new(),
-        };
-        format!("a jump across {} column(s){height}", run - 1)
+        ""
+    };
+    let dir = edge
+        .yaw
+        .map(|y| format!(" {}", compass(y)))
+        .unwrap_or_default();
+    match edge.kind {
+        EdgeKind::Walk => format!("a walk{into_water}"),
+        EdgeKind::Jump => format!(
+            "a {} jump{dir}{height}{into_water}",
+            if edge.sprint { "sprint" } else { "walking" }
+        ),
+        EdgeKind::Fall => format!(
+            "a fall of {} block(s), drifting {drift}{into_water}",
+            -rise.min(0)
+        ),
+        EdgeKind::Dive => "swimming".to_string(),
+        EdgeKind::Climb => {
+            if world
+                .rest_kind(from)
+                .is_some_and(|k| matches!(k, RestKind::Afloat | RestKind::Submerged))
+            {
+                "climbing out of the water".to_string()
+            } else {
+                "climbing".to_string()
+            }
+        }
+        EdgeKind::Exit => "leaving the world".to_string(),
     }
 }
 
@@ -205,75 +242,94 @@ fn verify_bodies_can_leave(
         configurations: worlds.len(),
         ..LeaveBinding::default()
     };
-    // Each configuration is judged over its own world alone, so they are
-    // judged in parallel and folded below in configuration order.
-    let judged = crate::par::map(worlds, |(w, when, seeds, exits)| {
-        let seeds: Vec<[i32; 3]> = seeds
-            .iter()
-            .copied()
-            .filter(|c| w.is_standable(*c))
-            .collect();
-        let seed_set: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
-        // The ways out: the route itself and every reached stand cell of a live
-        // link (spec-0083 §3.9), through the one leave relation (spec-0087).
-        let ways_out: BTreeSet<[i32; 3]> = seed_set.union(exits).copied().collect();
-        let judge = |ways: &BTreeSet<[i32; 3]>| w.trapped_places(&seeds, ways, returned);
-        let judged = judge(&ways_out);
-        // A stand cell SERVES as a way out where, without the links, a body
-        // standing in it could not get back — counted against the same closure
-        // judged with no link at all, and only when this configuration has one.
-        let link_exits = if exits.is_empty() {
-            0
-        } else {
-            let without = judge(&seed_set);
-            without
+    // Each configuration is judged over its own world alone, in configuration
+    // order: the reach graph spreads each over the cores itself, and a
+    // configuration judged after another re-flies only the nodes its own
+    // cells change (spec-0113 §7).
+    let judged: Vec<_> = worlds
+        .iter()
+        .map(|(w, when, seeds, exits)| {
+            let seeds: Vec<[i32; 3]> = seeds
+                .iter()
+                .copied()
+                .filter(|c| w.is_standable(*c))
+                .collect();
+            let seed_set: BTreeSet<[i32; 3]> = seeds.iter().copied().collect();
+            // The ways out: the route itself and every reached stand cell of a live
+            // link (spec-0083 §3.9), through the one leave relation (spec-0087).
+            let ways_out: BTreeSet<[i32; 3]> = seed_set.union(exits).copied().collect();
+            let judge = |ways: &BTreeSet<[i32; 3]>| w.trapped_places(&seeds, ways, returned);
+            let judged = judge(&ways_out);
+            // A stand cell SERVES as a way out where, without the links, a body
+            // standing in it could not get back — counted against the same closure
+            // judged with no link at all, and only when this configuration has one.
+            let link_exits = if exits.is_empty() {
+                0
+            } else {
+                let without = judge(&seed_set);
+                without
+                    .pockets
+                    .iter()
+                    .flatten()
+                    .filter(|c| exits.contains(*c))
+                    .count()
+            };
+            let afloat = judged
+                .reached
+                .iter()
+                .filter(|c| w.rest_kind(**c) == Some(RestKind::Afloat))
+                .count();
+            // A shortcut is opened from its far side by whoever stands at its lever,
+            // and the completability model holds it shut. A pocket whose own reach
+            // takes a body to a lever, and through the door that lever opens back to
+            // the route, is not a pocket.
+            let kept: Vec<Vec<[i32; 3]>> = judged
                 .pockets
                 .iter()
-                .flatten()
-                .filter(|c| exits.contains(*c))
-                .count()
-        };
-        let afloat = judged
-            .reached
-            .iter()
-            .filter(|c| w.is_water_surface(**c))
-            .count();
-        // A shortcut is opened from its far side by whoever stands at its lever,
-        // and the completability model holds it shut. A pocket whose own reach
-        // takes a body to a lever, and through the door that lever opens back to
-        // the route, is not a pocket.
-        let kept: Vec<Vec<[i32; 3]>> = judged
-            .pockets
-            .iter()
-            .filter(|p| !w.leaves_by_a_shortcut(p, &seed_set, returned, shortcuts))
-            .cloned()
-            .collect();
-        let trapped: BTreeSet<[i32; 3]> = kept.iter().flatten().copied().collect();
-        let reached = &judged.reached;
-        let described: Vec<String> = kept
-            .iter()
-            .map(|pocket| {
-                let how = w.way_in_words(pocket, &trapped, &judged.preds);
-                format!(
-                    "{} cell(s) around {:?} ({when}): {how}, and no walk, fall, jump or swim \
+                .filter(|p| !w.leaves_by_a_shortcut(p, &seed_set, returned, shortcuts))
+                .cloned()
+                .collect();
+            let trapped: BTreeSet<[i32; 3]> = kept.iter().flatten().copied().collect();
+            let reached = &judged.reached;
+            let described: Vec<String> = kept
+                .iter()
+                .map(|pocket| {
+                    let how = w.way_in_words(pocket, &trapped, &judged.preds);
+                    format!(
+                        "{} cell(s) around {:?} ({when}): {how}, and no walk, fall, jump or swim \
                      leads from any of them back to the route",
-                    pocket.len(),
-                    pocket[0]
-                )
-            })
-            .collect();
-        (
-            seeds.len(),
-            reached.len(),
-            afloat,
-            trapped.len(),
-            described,
-            link_exits,
-        )
-    });
+                        pocket.len(),
+                        pocket[0]
+                    )
+                })
+                .collect();
+            let mut rb = ReachBinding::default();
+            rb.add(w, &judged.reach);
+            (
+                seeds.len(),
+                reached.len(),
+                afloat,
+                trapped.len(),
+                described,
+                link_exits,
+                rb,
+            )
+        })
+        .collect();
     let mut pockets: Vec<String> = Vec::new();
     let mut pocket_count = 0usize;
-    for (route_cells, reached, afloat, trapped, described, link_exits) in judged {
+    for (route_cells, reached, afloat, trapped, described, link_exits, rb) in judged {
+        binding.reach.configurations += rb.configurations;
+        for i in 0..4 {
+            binding.reach.states[i] += rb.states[i];
+        }
+        for i in 0..6 {
+            binding.reach.edges[i] += rb.edges[i];
+        }
+        binding.reach.simulated += rb.simulated;
+        binding.reach.credited += rb.credited;
+        binding.reach.unbounded_fall |= rb.unbounded_fall;
+        binding.reach.digests.extend(rb.digests);
         binding.route_cells += route_cells;
         binding.link_exits += link_exits;
         binding.reached += reached;
@@ -302,11 +358,11 @@ fn verify_bodies_can_leave(
              soft-locked there: {}{tail}. Reshape the place so whoever gets in can walk, fall, \
              jump or climb out of the water (lower the wall they are ringed by, give them a step, \
              or take away what they jumped in from); do not fence walkable-looking ground with an \
-             invisible barrier. A body afloat climbs out only onto ground one cell above the \
-             water's top, and does not dive. A room the story is meant to shut the party into \
-             holds the objective the story waits on, and is not this. Moves are cardinal, and a \
-             climb counts only on a ladder or vine the world keeps: a diagonal jump is not counted, \
-             so a place left only that way reads as a trap.",
+             invisible barrier. Every movement the pinned game's physics gives a body is counted, \
+             flown tick by tick: walking, sprinting and jumping at any facing, falling, swimming, \
+             diving and climbing out, and a climb on a ladder or vine the world keeps. A room the \
+             story is meant to shut the party into holds the objective the story waits on, and is \
+             not this.",
             pockets.join("; ")
         ),
     });
@@ -351,7 +407,7 @@ fn pockets_of(trapped: &BTreeSet<[i32; 3]>) -> Vec<Vec<[i32; 3]>> {
 }
 
 /// **What a body can get into and not out of** over one world — the closure a
-/// body reaches from `roots` by [`World::body_moves`], and within it the places
+/// body reaches from `roots` over the reach graph ([`World::body_reach`]), and within it the places
 /// from which no movement sequence reaches a way out. The one leave relation:
 /// `DW0921` judges a campaign's route with it ([`check_bodies_can_leave`]) and
 /// `delvec sculpt` judges a sculpted piece with it (spec-0087 §3.4), so the two
@@ -363,8 +419,11 @@ pub struct TrappedPlaces {
     /// The cells of `reached` it cannot leave, split into touching places
     /// (26-neighbourhood), each sorted, in the order of their least cell.
     pub pockets: Vec<Vec<[i32; 3]>>,
-    /// Every reached cell's predecessors, so a report can say how a body got in.
-    pub preds: BTreeMap<[i32; 3], Vec<[i32; 3]>>,
+    /// Every reached cell's predecessors, with the edge that joins them, so a
+    /// report can say how a body got in.
+    pub preds: BTreeMap<[i32; 3], Vec<([i32; 3], Edge)>>,
+    /// The reach graph's closure the judgement was taken over.
+    pub reach: Reach,
 }
 
 impl World {
@@ -377,11 +436,12 @@ impl World {
         ways_out: &BTreeSet<[i32; 3]>,
         returned: Option<([i32; 3], [i32; 3])>,
     ) -> TrappedPlaces {
-        let (reached, trapped, preds) = self.cells_a_body_cannot_leave(roots, ways_out, returned);
+        let (reached, trapped, reach) = self.cells_a_body_cannot_leave(roots, ways_out, returned);
         TrappedPlaces {
             reached,
             pockets: pockets_of(&trapped),
-            preds,
+            preds: reach.preds.clone(),
+            reach,
         }
     }
 
@@ -391,18 +451,18 @@ impl World {
         &self,
         pocket: &[[i32; 3]],
         trapped: &BTreeSet<[i32; 3]>,
-        preds: &BTreeMap<[i32; 3], Vec<[i32; 3]>>,
+        preds: &BTreeMap<[i32; 3], Vec<([i32; 3], Edge)>>,
     ) -> String {
         let entry = pocket.iter().find_map(|c| {
             preds
                 .get(c)
-                .and_then(|ps| ps.iter().find(|p| !trapped.contains(*p)))
-                .map(|p| (*p, *c))
+                .and_then(|ps| ps.iter().find(|(p, _)| !trapped.contains(p)))
+                .map(|(p, e)| (*p, *c, e))
         });
         match entry {
-            Some((from, to)) => format!(
+            Some((from, to, edge)) => format!(
                 "a body gets in from {from:?} to {to:?} by {}",
-                movement_words(self, from, to)
+                movement_words(self, from, edge)
             ),
             None => "a body gets in".to_string(),
         }
@@ -440,17 +500,12 @@ impl World {
                 owned = self.with_cleared(&cells);
                 &owned
             };
-            let mut seen: BTreeSet<[i32; 3]> = pocket.iter().copied().collect();
-            let mut queue: std::collections::VecDeque<[i32; 3]> = seen.iter().copied().collect();
-            while let Some(cur) = queue.pop_front() {
-                if seeds.contains(&cur) || returned_from(returned, cur) {
-                    return true;
-                }
-                for n in w.body_moves(cur) {
-                    if seen.insert(n) {
-                        queue.push_back(n);
-                    }
-                }
+            let seen: BTreeSet<[i32; 3]> = w.body_reach(pocket).cells();
+            if seen
+                .iter()
+                .any(|c| seeds.contains(c) || returned_from(returned, *c))
+            {
+                return true;
             }
             let before = opened.len();
             for (i, lever) in levers.iter().enumerate() {
@@ -464,36 +519,54 @@ impl World {
         }
     }
 
-    /// The body-movement closure of `seeds` ([`World::body_moves`]) and, within it,
-    /// the cells from which no movement sequence returns to a seed. Returns the
-    /// closure, the trapped cells, and every closure cell's predecessors (so a
-    /// report can say how a body got in).
+    /// The reach-graph closure of `roots` ([`World::body_reach`], spec-0113)
+    /// and, within it, the cells from which no movement sequence reaches a way
+    /// out. Returns the closure, the trapped cells, and every closure cell's
+    /// predecessors with the edge that joins them (so a report can say how a
+    /// body got in).
     ///
     /// Exact over the closure: whatever a closure cell reaches is itself in the
-    /// closure, so walking the predecessor edges backwards from the seeds inside
-    /// it answers "can this cell get back" for every cell without leaving it.
+    /// closure, so walking the predecessor edges backwards from the ways out
+    /// inside it answers "can this cell get back" for every cell without leaving
+    /// it. The open sea is one place (spec-0113 §4.7): a body that reaches any of
+    /// it reaches all of it.
     #[allow(clippy::type_complexity)]
     fn cells_a_body_cannot_leave(
         &self,
         roots: &[[i32; 3]],
         ways_out: &BTreeSet<[i32; 3]>,
         returned: Option<([i32; 3], [i32; 3])>,
-    ) -> (
-        BTreeSet<[i32; 3]>,
-        BTreeSet<[i32; 3]>,
-        BTreeMap<[i32; 3], Vec<[i32; 3]>>,
-    ) {
-        let mut preds: BTreeMap<[i32; 3], Vec<[i32; 3]>> = BTreeMap::new();
-        let mut seen: BTreeSet<[i32; 3]> = roots.iter().copied().collect();
-        let mut queue: std::collections::VecDeque<[i32; 3]> = seen.iter().copied().collect();
-        while let Some(cur) = queue.pop_front() {
-            for n in self.body_moves(cur) {
-                preds.entry(n).or_default().push(cur);
-                if seen.insert(n) {
-                    queue.push_back(n);
-                }
+    ) -> (BTreeSet<[i32; 3]>, BTreeSet<[i32; 3]>, Reach) {
+        let mut reach = self.body_reach(roots);
+        // A node the closure did not fly has only its cheap edges; a node that
+        // reads as trapped is flown, and the judgement taken again, until every
+        // trapped node has all its edges (spec-0113 §4.3: the envelope proves
+        // what a node reaches, never what it can leave by).
+        loop {
+            let back = self.back_to(&reach, ways_out, returned);
+            let unflown: Vec<[i32; 3]> = reach
+                .states
+                .keys()
+                .copied()
+                .filter(|c| !back.contains(c) && reach.unflown(*c))
+                .collect();
+            if unflown.is_empty() {
+                let seen = reach.cells();
+                let trapped = seen.difference(&back).copied().collect();
+                return (seen, trapped, reach);
             }
+            self.fly_cells(&mut reach, &unflown);
         }
+    }
+
+    /// The states of `reach` from which a movement sequence reaches a way out.
+    fn back_to(
+        &self,
+        reach: &Reach,
+        ways_out: &BTreeSet<[i32; 3]>,
+        returned: Option<([i32; 3], [i32; 3])>,
+    ) -> BTreeSet<[i32; 3]> {
+        let seen = reach.cells();
         // The ways out: the cells that count as having left (the route itself,
         // for `DW0921`) that the closure reaches, and every reached cell the
         // boundary clock carries a body back from.
@@ -503,17 +576,25 @@ impl World {
             .filter(|c| ways_out.contains(c) || returned_from(returned, *c))
             .collect();
         let mut queue: std::collections::VecDeque<[i32; 3]> = back.iter().copied().collect();
+        let mut sea_back = false;
         while let Some(cur) = queue.pop_front() {
-            if let Some(ps) = preds.get(&cur) {
-                for p in ps {
+            if !sea_back && reach.open_sea.contains(&cur) {
+                sea_back = true;
+                for s in &reach.open_sea {
+                    if back.insert(*s) {
+                        queue.push_back(*s);
+                    }
+                }
+            }
+            if let Some(ps) = reach.preds.get(&cur) {
+                for (p, _) in ps {
                     if back.insert(*p) {
                         queue.push_back(*p);
                     }
                 }
             }
         }
-        let trapped = seen.difference(&back).copied().collect();
-        (seen, trapped, preds)
+        back
     }
 }
 
@@ -664,7 +745,10 @@ mod leave_tests {
         assert_eq!(err.code.id(), "DW0921");
         assert!(err.message.contains("into water"), "{}", err.message);
         assert_eq!(b.afloat, 9, "the pool's nine surface cells, all afloat");
-        assert_eq!(b.trapped, 9);
+        assert_eq!(
+            b.trapped, 18,
+            "the pool's two courses: nine afloat, nine under them"
+        );
     }
 
     #[test]
@@ -731,6 +815,7 @@ mod leave_tests {
             lava: [[3, 0, 3]].into_iter().collect(),
             climb: Default::default(),
             unheld_climb: Default::default(),
+            material: Default::default(),
         };
         let w = World::from_occupancy(occ, Premises::geometry_only());
         assert!(!w.body_moves([2, 1, 3]).contains(&[3, 0, 3]));
@@ -754,6 +839,7 @@ mod leave_tests {
             lava: [[3, 0, 3]].into_iter().collect(),
             climb: Default::default(),
             unheld_climb: Default::default(),
+            material: Default::default(),
         };
         let w = World::from_occupancy(occ, Premises::geometry_only());
         assert_eq!(w.fatal_step_off([2, 1, 3]), Some(([3, 1, 3], true)));

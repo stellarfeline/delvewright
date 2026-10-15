@@ -72,6 +72,12 @@ use serde::Serialize;
 
 pub mod body;
 
+/// **The reach graph's work ceiling** (spec-0113 §5.3): launches simulated
+/// plus template arcs credited, per build, past which the graph is refused
+/// (`DW1042`) rather than truncated. Authored from the measurements of
+/// spec-0113 §7, with headroom; stated with them in the commit that sets it.
+pub const REACH_BUDGET_STATES: u64 = 4_000_000_000;
+
 use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
 
 crate::dw_code! {

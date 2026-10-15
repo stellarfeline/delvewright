@@ -175,6 +175,25 @@ impl Material {
     }
 }
 
+/// The [`Material`] of a block state (`Blocks`, the block classes of
+/// `body-movement.md` §3.1 and §7). A climbable is not read here: whether a
+/// ladder or a vine holds a body is the world's to say (spec-0099).
+#[must_use]
+pub fn material_of_block(name: &str) -> Material {
+    let id = crate::blockshape::bare_id(name);
+    match id {
+        "ice" | "packed_ice" | "frosted_ice" => Material::Ice,
+        "blue_ice" => Material::BlueIce,
+        "slime_block" => Material::Slime,
+        "honey_block" => Material::Honey,
+        "soul_sand" => Material::SoulSand,
+        "hay_block" => Material::Hay,
+        "cobweb" => Material::Cobweb,
+        _ if id.ends_with("_bed") => Material::Bed,
+        _ => Material::Plain,
+    }
+}
+
 /// A fluid cell, as the simulator reads it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Fluid {
@@ -209,6 +228,12 @@ pub trait CollisionWorld {
     fn material(&self, c: [i32; 3]) -> Material;
     /// The fluid in the cell, if any.
     fn fluid(&self, c: [i32; 3]) -> Option<Fluid>;
+    /// Whether any cell of this world can hold a fluid or a cobweb — `false`
+    /// lets a tick skip the cells it would otherwise ask. A world that answers
+    /// `false` must answer `None` and no [`Material::Cobweb`] everywhere.
+    fn may_hold_fluid_or_web(&self) -> bool {
+        true
+    }
 }
 
 /// The body's attribute set (`body-movement.md` §8; spec-0113 §4.2).
@@ -436,9 +461,20 @@ fn facing(rules: Rules, yaw: f64) -> (f64, f64) {
     }
 }
 
-/// The simulator's scratch: the boxes a query gathered.
+/// The simulator's scratch: the boxes a query gathered, and the step-up's.
+/// One per thread, reused by every tick on it, so a tick allocates nothing.
 struct Scratch {
     boxes: Vec<Aabb>,
+    step: Vec<Aabb>,
+}
+
+thread_local! {
+    static SCRATCH: std::cell::RefCell<Scratch> = const {
+        std::cell::RefCell::new(Scratch {
+            boxes: Vec::new(),
+            step: Vec::new(),
+        })
+    };
 }
 
 fn floor(v: f64) -> i32 {
@@ -562,16 +598,50 @@ pub fn tick<W: CollisionWorld + ?Sized>(
     st: &mut State,
     input: &Input,
 ) {
-    let mut scratch = Scratch { boxes: Vec::new() };
+    SCRATCH.with(|s| match s.try_borrow_mut() {
+        Ok(mut scratch) => tick_with(world, body, rules, st, input, &mut scratch),
+        // Re-entered from inside a tick (a world that simulates): fresh scratch.
+        Err(_) => tick_with(
+            world,
+            body,
+            rules,
+            st,
+            input,
+            &mut Scratch {
+                boxes: Vec::new(),
+                step: Vec::new(),
+            },
+        ),
+    });
+}
+
+fn tick_with<W: CollisionWorld + ?Sized>(
+    world: &W,
+    body: &Attributes,
+    rules: Rules,
+    st: &mut State,
+    input: &Input,
+    scratch: &mut Scratch,
+) {
     if rules == Rules::Game {
-        st.height = pose_height(world, body, st, input, &mut scratch.boxes);
+        // A body that stood last tick and is not sneaking still fits standing:
+        // the move it made was collided with its standing box over a world that
+        // does not change between ticks.
+        if st.height != body.height || input.sneak {
+            st.height = pose_height(world, body, st, input, &mut scratch.boxes);
+        }
     } else {
         st.height = body.height;
     }
+    let fluids = world.may_hold_fluid_or_web();
     let bb = st.aabb(body);
     let water_bb = bb.contract([0.001, 0.401, 0.001]);
     let lava_bb = bb.contract([0.1, 0.4, 0.1]);
-    let waters = water_in(world, &water_bb);
+    let waters = if fluids {
+        water_in(world, &water_bb)
+    } else {
+        Vec::new()
+    };
     st.in_water = !waters.is_empty();
     let mut acc = [0.0f64; 3];
     for (c, f) in &waters {
@@ -586,7 +656,7 @@ pub fn tick<W: CollisionWorld + ?Sized>(
             *v += a / len * 0.014;
         }
     }
-    st.in_lava = lava_in(world, &lava_bb);
+    st.in_lava = fluids && lava_in(world, &lava_bb);
     if st.in_water || st.in_lava {
         st.fall = 0.0;
     }
@@ -671,16 +741,7 @@ pub fn tick<W: CollisionWorld + ?Sized>(
         forward *= body.sneaking_speed;
     }
     travel(
-        world,
-        body,
-        rules,
-        st,
-        input,
-        strafe,
-        forward,
-        sin,
-        cos,
-        &mut scratch,
+        world, body, rules, st, input, strafe, forward, sin, cos, scratch,
     );
 }
 
@@ -976,13 +1037,13 @@ fn move_entity<W: CollisionWorld + ?Sized>(
         let (col_x, col_y, col_z, col_bb) = (dx, dy, dz, bb);
         let up = body.step_height;
         let q = start.extend([old_x, up, old_z]);
-        let mut boxes = Vec::new();
-        surrounding(world, &q, &mut boxes);
+        let boxes = &mut scratch.step;
+        surrounding(world, &q, boxes);
         let mut b1 = start;
         let mut b2 = start;
         let bxz = b1.extend([dx, 0.0, dz]);
         let (mut dy1, mut dy2) = (up, up);
-        for b in &boxes {
+        for b in boxes.iter() {
             dy1 = b.offset_along(&bxz, 1, dy1);
             dy2 = b.offset_along(&b2, 1, dy2);
         }
@@ -991,7 +1052,7 @@ fn move_entity<W: CollisionWorld + ?Sized>(
         let mut d1 = [old_x, 0.0, old_z];
         let mut d2 = [old_x, 0.0, old_z];
         for axis in order {
-            for b in &boxes {
+            for b in boxes.iter() {
                 d1[axis] = b.offset_along(&b1, axis, d1[axis]);
                 d2[axis] = b.offset_along(&b2, axis, d2[axis]);
             }
@@ -1010,7 +1071,7 @@ fn move_entity<W: CollisionWorld + ?Sized>(
             (d2[0], -dy2, d2[2], b2)
         };
         let mut ny = ny;
-        for b in &boxes {
+        for b in boxes.iter() {
             ny = b.offset_along(&nbb, 1, ny);
         }
         nbb = nbb.offset([0.0, ny, 0.0]);
@@ -1094,6 +1155,9 @@ fn move_entity<W: CollisionWorld + ?Sized>(
         st.vel[2] *= k;
     }
 
+    if !world.may_hold_fluid_or_web() {
+        return;
+    }
     let inside = bb.contract([0.001, 0.001, 0.001]);
     for y in floor(inside.min[1])..=floor(inside.max[1]) {
         for z in floor(inside.min[2])..=floor(inside.max[2]) {

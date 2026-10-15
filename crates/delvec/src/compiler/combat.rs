@@ -1719,6 +1719,7 @@ mod tests {
             lava: BTreeSet::new(),
             climb: BTreeMap::new(),
             unheld_climb: BTreeMap::new(),
+            material: Default::default(),
         }
     }
 

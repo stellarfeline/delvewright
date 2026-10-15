@@ -283,6 +283,13 @@ impl World {
         self.flood_walkable(roots.iter().filter_map(|r| self.seat(r)))
     }
 
+    /// [`World::body_reach`] from roots seated as [`World::reachable_walkable_rooted`]
+    /// seats them: each confined to the AABB that declares it.
+    pub fn body_reach_rooted(&self, roots: &[AnchorRoot]) -> crate::compiler::nav::world::Reach {
+        let seats: Vec<[i32; 3]> = roots.iter().filter_map(|r| self.seat(r)).collect();
+        self.body_reach(&seats)
+    }
+
     /// Where a root actually puts a walker: the nearest standable cell to
     /// `root.at` **inside `root.within`**. `None` when the declaring piece offers
     /// no footing within [`SNAP_RADIUS`] — a root that seats nowhere contributes
@@ -982,7 +989,12 @@ impl World {
 
     /// The one movement relation behind [`World::body_moves`] and
     /// [`World::mob_moves`]; `gap_jumps` is the only thing that differs.
-    fn moves_of(&self, c: [i32; 3], fp: &Footprint, gap_jumps: bool) -> Vec<[i32; 3]> {
+    pub(in crate::compiler::nav) fn moves_of(
+        &self,
+        c: [i32; 3],
+        fp: &Footprint,
+        gap_jumps: bool,
+    ) -> Vec<[i32; 3]> {
         const HORIZ: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
         let clear =
             |x: i32, y0: i32, y1: i32, z: i32| (y0..=y1).all(|y| !self.is_occupied([x, y, z]));
