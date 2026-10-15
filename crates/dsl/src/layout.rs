@@ -699,7 +699,9 @@ pub enum Grant {
 
 /// The monotone reachability closure of a layout graph.
 ///
-/// Exactly Dormans' loop, and exactly §3.2: beats grant, edges demand.
+/// Exactly Dormans' loop, and exactly §3.2: places grant, edges demand. What a
+/// place grants is [`Grants::of`]'s reading of the campaign's one producer
+/// table.
 /// Deterministic, linear in the number of edges times the number of rounds, and
 /// **optimistic in every direction it cannot decide** — which is one property,
 /// stated once, rather than a list of exceptions:
