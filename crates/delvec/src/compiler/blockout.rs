@@ -2539,7 +2539,11 @@ fn portal_crossing(
                  its face (`at`), or move what stands flush behind it — a stair laid in either \
                  place moves with its own edge's `at`/`meets`, and a detailed place's piece is \
                  re-detailed — so that the opening meets floor on the side that has none.",
-                class = s.class,
+                class = if s.shut {
+                    format!("shut {}", s.class)
+                } else {
+                    s.class.to_string()
+                },
                 id = s.edge,
                 a = s.a,
                 b = s.b,

@@ -433,6 +433,20 @@ fn dw0818_a_side_named_for_a_way_that_never_shuts() {
     assert!(m.message.contains("`opens_from: a`"), "{}", m.message);
 }
 
+/// spec-0107 criterion 10: a graph written for an earlier surface — here at
+/// 0.41.0, carrying `opens_from` under `gating` — is refused by the one
+/// version check (ADR-0024), `DW0102`, whatever it carries.
+#[test]
+fn dw0102_a_graph_below_the_gated_surface_is_refused_by_the_version_check() {
+    let g = graph_with(|v| v["dsl_version"] = json!("0.41.0"));
+    assert!(
+        g.contains("\"opens_from\":\"a\""),
+        "the green carries a side"
+    );
+    let got = validate(Some(g));
+    assert!(got.contains(&"DW0102".to_string()), "{got:?}");
+}
+
 /// spec-0107 §5: the `barred` class is retired from the layout graph — it was
 /// exactly `walk` + `gating` + `opens_from` — so a graph that writes it is an
 /// unknown variant; and `opens_from` has no home on a `carry`, whose gating is
