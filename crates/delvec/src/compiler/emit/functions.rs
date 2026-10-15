@@ -806,6 +806,8 @@ pub(super) fn emit_functions(
             plan::interact_trigger(&oid)
         ));
     }
+    // spec-0104 §6.4: the compass menu's answer channel.
+    tick.extend(guidance::enable_lines(guide));
     // The lobby (spec-0018 `world.min_players`). A design that genuinely needs n
     // players declares it, and the delve refuses to START below n: the class
     // dialog stays shut and the waiting players get a live party-count actionbar.

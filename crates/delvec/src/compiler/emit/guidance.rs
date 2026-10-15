@@ -583,11 +583,8 @@ pub(super) fn tick_lines(g: &Guide, ns: &str) -> Vec<String> {
         ));
     }
     if g.compass {
-        // The menu's buttons run `/trigger`, which a player can use only while
-        // it is enabled for them; a pick is read on the tick.
-        v.push(format!(
-            "scoreboard players enable @a[scores={{dw.classed=1}}] {PICK}"
-        ));
+        // A pick is read on the tick (the trigger is enabled with the other
+        // answer channels, `enable_lines`).
         v.push(format!(
             "execute as @a[scores={{{PICK}=1..}}] run function {ns}:compass_pick"
         ));
@@ -603,6 +600,19 @@ pub(super) fn tick_lines(g: &Guide, ns: &str) -> Vec<String> {
         }
     }
     v
+}
+
+/// The `tick` lines that enable the menu's answer channel: the buttons run
+/// `/trigger`, which a player can use only while it is enabled for them.
+/// Emitted with the other answer channels, ahead of the respawn wait's lock,
+/// so a waiting player's channel stays locked.
+pub(super) fn enable_lines(g: &Guide) -> Vec<String> {
+    if !g.compass {
+        return Vec::new();
+    }
+    vec![format!(
+        "scoreboard players enable @a[scores={{dw.classed=1}}] {PICK}"
+    )]
 }
 
 /// The advancement that sees the engine's compass used (§6.4):
@@ -1084,8 +1094,9 @@ fn compass_functions(
         "compass_used".to_string(),
         lines(&[
             format!("advancement revoke @s only {ns}:{COMPASS_USE_ADVANCEMENT}"),
+            // A watcher is out of play everywhere (spec-0077 §5).
             format!(
-                "execute unless score @s {USE_LATCH} matches 1.. run function {ns}:compass_menu"
+                "execute unless entity @s[tag={CUTSCENE_TAG}] unless score @s {USE_LATCH} matches 1.. run function {ns}:compass_menu"
             ),
             format!("scoreboard players set @s {USE_LATCH} 2"),
         ]),
