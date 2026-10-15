@@ -576,14 +576,14 @@ pub fn tick<W: CollisionWorld + ?Sized>(
     let mut acc = [0.0f64; 3];
     for (c, f) in &waters {
         let fl = flow(world, *c, *f);
-        for i in 0..3 {
-            acc[i] += fl[i];
+        for (a, f) in acc.iter_mut().zip(fl) {
+            *a += f;
         }
     }
     let len = (acc[0] * acc[0] + acc[1] * acc[1] + acc[2] * acc[2]).sqrt();
     if len > 0.0 {
-        for i in 0..3 {
-            st.vel[i] += acc[i] / len * 0.014;
+        for (v, a) in st.vel.iter_mut().zip(acc) {
+            *v += a / len * 0.014;
         }
     }
     st.in_lava = lava_in(world, &lava_bb);
