@@ -21,6 +21,13 @@ import type { MineflayerExecutor } from "../executor.ts";
 const DROP_SEARCH_NEAR = WAVE_ENGAGE_NEAR;
 
 /**
+ * How long after hitting a frame the bot looks for it again: three ticks, past
+ * the freeze `tick` applies the tick after the pop (spec-0111 §4.3) and short
+ * of the popped item's ten-tick pickup delay.
+ */
+const FRAME_CHECK_MS = 150;
+
+/**
  * The dropped `item` (unnamespaced id) nearest `anchor` within `radius` blocks,
  * off the item entities the client tracks, or `undefined` when none is in sight.
  */
@@ -163,15 +170,20 @@ export const methods = {
     }
     await bot.lookAt(body.position, true);
     bot.attack(body);
-    await this.pickUpDrop(step);
-    await this.requireObjective(step.objective, `collect ${step.item}`);
+    // The frame is judged while the bot still stands beside it: three ticks
+    // after the hit, past the freeze (the next tick) and before the popped
+    // item's ten-tick pickup delay lets the objective complete and a carry
+    // take the bot out of the frame's tracking range.
+    await delay(FRAME_CHECK_MS);
     const still = bot.entities[body.id];
     if (!still || !still.isValid) {
       throw new Error(
-        `the ${holder.kind} at [${step.pos.join(", ")}] is gone after ${step.objective}'s take — ` +
+        `the ${holder.kind} at [${step.pos.join(", ")}] is gone after ${step.objective}'s hit — ` +
           "an emptied frame must freeze (spec-0111 §4.3), not break",
       );
     }
+    await this.pickUpDrop(step);
+    await this.requireObjective(step.objective, `collect ${step.item}`);
     const frameItem = bot.inventory
       .items()
       .find((i) => i.name === "item_frame" || i.name === "glow_item_frame");

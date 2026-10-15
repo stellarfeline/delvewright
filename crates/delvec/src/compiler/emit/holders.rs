@@ -82,6 +82,18 @@ pub(crate) fn summon_nbt(o: &OwnedHolder) -> String {
                 "Facing:{}b",
                 h.facing.expect("a frame has a facing").byte()
             ));
+            // `BlockAttachedEntity.readAdditionalSaveData` reads `block_pos`
+            // and refuses one further than 16 blocks from where the body
+            // stands as it loads, logging an invalid position; the summon
+            // loads the NBT before it moves the body, so `Pos` is written too,
+            // and the body loads where it hangs. Both are the engine's
+            // derivations from the piece.
+            let p = summon_pos(o);
+            parts.push(format!("Pos:[{}d,{}d,{}d]", p[0], p[1], p[2]));
+            parts.push(format!(
+                "block_pos:[I;{},{},{}]",
+                h.cell[0], h.cell[1], h.cell[2]
+            ));
             for (k, v) in &h.scene {
                 parts.push(format!("{k}:{}", snbt(v)));
             }
@@ -332,8 +344,8 @@ mod tests {
         assert_eq!(
             lines[0],
             "execute unless entity @e[tag=dw_holder_map_frame] run summon \
-             minecraft:glow_item_frame 3.5 65.5 -1.5 {Facing:2b,Fixed:0b,Invulnerable:0b,\
-             ItemDropChance:1.0f,Tags:[\"dw_fixture\",\"dw_holder\",\"dw_holder_map_frame\"]}"
+             minecraft:glow_item_frame 3.5 65.5 -1.5 {Facing:2b,Pos:[3.5d,65.5d,-1.5d],block_pos:[I;3,65,-2],Fixed:0b,\
+             Invulnerable:0b,ItemDropChance:1.0f,Tags:[\"dw_fixture\",\"dw_holder\",\"dw_holder_map_frame\"]}"
         );
         assert_eq!(
             lines[1],

@@ -387,7 +387,8 @@ fn holders_are_stripped_summoned_filled_and_ledgered() {
         "{frame}"
     );
     assert!(
-        frame.contains("Facing:5b,Fixed:0b,Invulnerable:0b,ItemDropChance:1.0f"),
+        frame.contains("Fixed:0b,Invulnerable:0b,ItemDropChance:1.0f")
+            && frame.contains("Facing:5b,block_pos:[I;"),
         "{frame}"
     );
     assert!(
