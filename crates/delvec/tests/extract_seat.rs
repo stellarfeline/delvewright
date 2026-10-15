@@ -1470,18 +1470,18 @@ fn criterion_15_the_creature_extracted_and_seated() {
     // region) — the route proves what the source's own quests walked to.
     let source_quests: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(src.join("quests.json")).unwrap()).unwrap();
-    fn named_outside_volumes(v: &serde_json::Value, key: Option<&str>, out: &mut BTreeSet<String>) {
+    fn named_outside_volumes(v: &serde_json::Value, out: &mut BTreeSet<String>) {
         match v {
             serde_json::Value::Object(o) => {
                 for (k, x) in o {
                     if k != "lethal_volumes" {
-                        named_outside_volumes(x, Some(k), out);
+                        named_outside_volumes(x, out);
                     }
                 }
             }
             serde_json::Value::Array(a) => {
                 for x in a {
-                    named_outside_volumes(x, key, out);
+                    named_outside_volumes(x, out);
                 }
             }
             serde_json::Value::String(t) if t.starts_with("anchor/") => {
@@ -1491,7 +1491,7 @@ fn criterion_15_the_creature_extracted_and_seated() {
         }
     }
     let mut walked_to: BTreeSet<String> = BTreeSet::new();
-    named_outside_volumes(&source_quests["content"], None, &mut walked_to);
+    named_outside_volumes(&source_quests["content"], &mut walked_to);
     let lethal_only: Vec<String> = stations
         .iter()
         .filter(|st| {
