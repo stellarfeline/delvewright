@@ -70,6 +70,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
+pub mod body;
+
 use crate::diagnostic::{Diagnostic, DwCode, ExitTier};
 
 crate::dw_code! {
