@@ -255,15 +255,21 @@ fn keep_crawl_builds_and_double_build_is_byte_identical() {
         assert_eq!(bytes, &b[path], "keep-crawl byte mismatch in {path}");
     }
     // The comparison read a built map, not an empty one: the site plan's massed
-    // places are laid by the world build.
-    let build =
-        String::from_utf8_lossy(&a["datapack/data/keep-crawl/function/world_build.mcfunction"])
-            .lines()
-            .filter(|l| l.starts_with("fill "))
-            .count();
+    // places are laid by the ground steps, before any template.
+    let build = a
+        .iter()
+        .filter(|(p, _)| p.starts_with("datapack/data/keep-crawl/function/world_ground"))
+        .flat_map(|(_, b)| {
+            String::from_utf8_lossy(b)
+                .lines()
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .filter(|l| l.starts_with("fill "))
+        .count();
     assert!(
         build > 0,
-        "the world build lays the massed places, saw {build} fill(s)"
+        "the ground steps lay the massed places, saw {build} fill(s)"
     );
 }
 
