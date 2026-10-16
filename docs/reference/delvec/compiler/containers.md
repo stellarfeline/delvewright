@@ -46,6 +46,16 @@ Spec-0105 §10: `loot[]` and `collect` target an **item holder**, of which the c
 | `campfire` | none — no `useWithoutItem`; a stack leaves only cooked | — | `CampfireBlock` | **excluded** |
 | `item_display` | none — `Display` overrides no interaction and is not pickable | — | `Display`, `Display$ItemDisplay` | **excluded** |
 
+## The state a holder shows
+
+Read once from the pinned 1.21.11 server jar (bundled `server-1.21.11.jar` sha256 `ec47239a…fcebc`, `javap -c -p`, names through `server.txt` sha1 `5621e925…`). Recorded here as a constant; no check re-reads it.
+
+- **The brewing stand.** `BrewingStandBlockEntity.serverTick` (`elf.a(dwo, is, eoh, elf)`, offsets 216–301) computes `getPotionBits()` (`elf.h()`): `!items[n].isEmpty()` for `n` in 0–2. When the bits differ from `lastPotionCount`, it sets each `BrewingStandBlock.HAS_BOTTLE[n]` to its bit and writes the state with flag 2. `lastPotionCount` starts `null` (the constructor never sets it), so the first tick always writes. The bit is occupancy, not item type. `item replace block … container.<n>` (`ItemCommands.setBlockItem`, `apj`) checks only that the slot is in range before `Container.setItem`, so any stack in a bottle slot is drawn as a bottle.
+- **The furnace family** (`furnace`, `blast_furnace`, `smoker`). `AbstractFurnaceBlockEntity.serverTick` (`eko.a(axf, is, eoh, eko)`, offsets 384–415) sets `AbstractFurnaceBlock.LIT` to `isLit()` (`litTimeRemaining > 0`). Burning starts only when the fuel and input slots are both non-empty, the input matches a recipe of that furnace's kind, and the result fits (`canBurn`); it then counts down by the fuel's burn duration. So `lit` is a function of the contents, the recipe book, the fuel values and the clock, not of which slots are filled.
+- **No other fill target's state reads its contents.** The props of the other container blocks are `facing`, `type`, `waterlogged` (chests), `open` (barrel, its viewers), `enabled` (hopper, redstone), `triggered` (dispenser, dropper), and `crafting`, `orientation`, `triggered` (crafter, redstone). `chiseled_bookshelf` (`slot_<n>_occupied`), `lectern` (`has_book`) and `jukebox` (`has_record`) draw their contents, but none of them is a fill target.
+
+**In the engine.** `loot::show_contents` applies the brewing-stand rule in `assembled::shipped_blocks`, the one derivation of the world as shipped. Every brewing stand is set to show a bottle in each bottle slot a `loot` stack lands in, and none in any other. A stand no fill reaches therefore shows none, whatever its piece wrote. The written world (`DW0955`) and every camera's configuration read this map. A `collect` fill lands at the objective's activation, not at setup, so the map does not carry it. A furnace-family fill that would light is not modelled (`lit` needs recipe and fuel data the engine does not carry); the gallery fills no furnace.
+
 ## Diagnostics
 
 ### DW101x / DW102x — the container class (spec-0105)
