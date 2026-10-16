@@ -355,7 +355,7 @@ fn a_campaign_whose_bodies_watch_nobody_emits_none_of_it() {
             json!({ "anchor": "anchor/keeper-stand", "offset": [0, 0, -3] });
         common::objective_effects(d, 0, "obj/talk").retain(|e| e["type"] != "move-npc");
     });
-    let c = parse_campaign(&r).expect("campaign parses");
+    let c = common::parse_campaign(&r).expect("campaign parses");
     let out = build_in(&c, &stand_facing_south()).unwrap_or_else(|e| panic!("build fails: {e:?}"));
     assert!(function(&out, "watch_tick").is_none());
     assert!(watchers_json(&out).is_none());
