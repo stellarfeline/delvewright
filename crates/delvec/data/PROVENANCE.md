@@ -116,15 +116,15 @@ not third-party reconstructions.
   thumbnail — nothing from which any part of a texture can be recovered. That is
   what makes it committable when the jar is not (ADR-0013, CLAUDE.md forbidden
   zones), the same footing the font metrics and the shape-carrying property
-  table stand on, and it is why the draft rasteriser makes its own positional
+  table stand on, and it is why the blocking chart makes its own positional
   pattern and takes only the AMPLITUDE from here.
   **Why it exists**: what a block looks like is the client jar's answer, and the
   jar is EULA-bound and never committed — the same rule as the shape-carrying
   property table above and the font metrics below. This file carries that answer
-  to every machine without one, so the CPU draft rasteriser (`delvec snapshot`,
-  `delvec cameras --preview`, `delvec edit preview`) and the GPU path paint from
-  one derivation rather than holding two opinions about a question with one
-  answer. Consumed by `delvec::compiler::snapshot::block_color`. Its one
+  to every machine without one, so the blocking chart (`delvec blocking-chart`)
+  and the GPU path paint from one derivation rather than holding two opinions
+  about a question with one answer. Consumed by
+  `delvec::compiler::blocking::block_color`. Its one
   derivation is `delvec::compiler::view::blockcolor::Deriver`, which resolves a
   blockstate to its model chain and its textures as the client does and which the
   interactive viewer runs live against a jar.

@@ -269,9 +269,9 @@ pub fn undrawn(shows: &[Value], stats: &frames::Stats) -> Vec<Value> {
                 _ => "no model in the renderer",
             };
             let judge_by = if s["occluded"].as_bool().unwrap_or(false) {
-                "in game"
+                "in game: a block stands between it and this camera"
             } else {
-                "frames --labels"
+                "by its row in validation/placed.json (what it holds), or in game"
             };
             let mut v = json!({
                 "id": s["id"],
@@ -458,23 +458,34 @@ pub fn run_frames(build_dir: &Path, opts: &FramesOptions, json: bool) -> ExitCod
         }
         frame_seconds.push(drawn.seconds());
         let gone = undrawn(&shows, &drawn.stats);
-        for u in &gone {
+        // One report per frame (spec-0112 §8.1), naming every body in it the
+        // renderer did not draw.
+        if !gone.is_empty() {
+            let bodies: Vec<String> = gone
+                .iter()
+                .map(|u| {
+                    format!(
+                        "`{}` ({}) at {} facing {}, {} blocks away — {}; judge it {}",
+                        u["id"].as_str().unwrap_or(""),
+                        u["body"].as_str().unwrap_or(""),
+                        u.get("pos")
+                            .or(u.get("box"))
+                            .cloned()
+                            .unwrap_or(Value::Null),
+                        u["facing"].as_str().unwrap_or("-"),
+                        u["distance"],
+                        u["reason"].as_str().unwrap_or(""),
+                        u["judge_by"].as_str().unwrap_or("")
+                    )
+                })
+                .collect();
             crate::compiler::view::diag::Diagnostic::warning(
                 DW_FRAME_UNDRAWN.id(),
                 format!(
-                    "shot `{}`: {} `{}` ({}) at {} {} blocks away is in frame and not drawn — {}; \
-                     judge it {}",
+                    "shot `{}`: {} body(ies) in frame the renderer did not draw: {}",
                     shot.id,
-                    u["kind"].as_str().unwrap_or(""),
-                    u["id"].as_str().unwrap_or(""),
-                    u["body"].as_str().unwrap_or(""),
-                    u.get("pos")
-                        .or(u.get("box"))
-                        .cloned()
-                        .unwrap_or(Value::Null),
-                    u["distance"],
-                    u["reason"].as_str().unwrap_or(""),
-                    u["judge_by"].as_str().unwrap_or("")
+                    gone.len(),
+                    bodies.join("; ")
                 ),
             )
             .print(json);

@@ -430,6 +430,15 @@ fn row_of_line(fired: &Firing, line: &str) -> Option<(String, Placed)> {
         return Some((String::new(), Placed::removed(fired.clone(), &tag, line)));
     }
     let (prefix, cmd) = split_run(line);
+    if !prefix.is_empty()
+        && cmd.starts_with("kill ")
+        && let Some(tag) = removal_tag(cmd)
+    {
+        return Some((
+            prefix.to_string(),
+            Placed::removed(fired.clone(), &tag, cmd),
+        ));
+    }
     let row = Placed::of_summon(fired.clone(), cmd)
         .or_else(|| Placed::of_block_line(fired.clone(), cmd))?;
     Some((prefix.to_string(), row))
@@ -437,7 +446,9 @@ fn row_of_line(fired: &Firing, line: &str) -> Option<(String, Placed)> {
 
 /// Which functions the ledger reads, and how each one fires: `setup_finish`
 /// at setup; `activate_<obj>` at the step its objective activates on; a
-/// `complete_<obj>` at its objective's step; and a beat's function —
+/// `complete_<obj>` at its objective's step and a `complete_q_<quest>` at its
+/// last objective's; a `trig_<trigger>` at the trigger's own step; a `trap_`
+/// or `loop_` function unforced; and a beat's function —
 /// `spawn_npc_<n>`, `despawn_npc_<n>`, `spawn_actor_<a>`, `despawn_actor_<a>`,
 /// `asm_summon_<s>`, `asm_despawn_<s>` — at every step an effect that runs it
 /// fires, unforced where the effect is.
@@ -468,6 +479,63 @@ fn firings_of(plan: &crate::compiler::plan::Plan, name: &str) -> Option<Vec<Firi
                 o.id().as_str()
             )),
         }]);
+    }
+    if let Some(safe) = name.strip_prefix("complete_q_") {
+        // A quest's completion fires at the step its last objective completes
+        // on, when every objective of it is on the critical path.
+        let q = plan
+            .campaign
+            .quests
+            .content
+            .quests
+            .iter()
+            .find(|q| safe_local(q.id.as_str()) == safe)?;
+        let optional = plan.campaign.quest_plan.content.optional();
+        let steps: Option<Vec<usize>> = q
+            .objectives
+            .iter()
+            .map(|o| plan.objective_steps.get(o.id().as_str()).copied())
+            .collect();
+        return Some(vec![match steps.and_then(|s| s.into_iter().max()) {
+            Some(s) if !optional.contains(q.id.as_str()) => Firing::Step(s),
+            _ => Firing::Unforced(format!(
+                "the completion of `{}`, which the critical path does not force",
+                q.id.as_str()
+            )),
+        }]);
+    }
+    if let Some(safe) = name.strip_prefix("trig_") {
+        // An environment trigger's effects fire at the step the trigger is,
+        // when the critical path carries it; a trigger no step is fires when a
+        // player happens to.
+        let t = plan
+            .campaign
+            .quests
+            .content
+            .triggers
+            .iter()
+            .find(|t| safe_local(t.id.as_str()) == safe)?;
+        let step = plan
+            .critical_path
+            .iter()
+            .position(|st| crate::compiler::view::beat::step_id(st) == Some(t.id.as_str()));
+        return Some(vec![match step {
+            Some(s) => Firing::Step(s),
+            None => Firing::Unforced(format!(
+                "trigger `{}`, which the critical path does not carry",
+                t.id.as_str()
+            )),
+        }]);
+    }
+    if name.starts_with("trap_") {
+        return Some(vec![Firing::Unforced(
+            "a trap's state or payload, which fires when a player springs it".to_string(),
+        )]);
+    }
+    if name.starts_with("loop_") {
+        return Some(vec![Firing::Unforced(
+            "a loop's crossing, which fires as the party crosses it".to_string(),
+        )]);
     }
     let beats = [
         ("spawn_npc_", "spawn-npc"),

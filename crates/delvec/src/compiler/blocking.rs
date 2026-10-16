@@ -1,8 +1,8 @@
 //! `delvec blocking-chart` — per-elevation cutaway floor plans (spec-0015
 //! pillar 3).
 //!
-//! The viewport ([`crate::compiler::snapshot`]) answers "what does it look like from
-//! here". This answers the question a viewport structurally cannot: **is there
+//! A frame (`delvec frames`, [`crate::compiler::view::frameset`]) answers "what
+//! does it look like from here". This answers the question a viewport structurally cannot: **is there
 //! room**. Crowding, an NPC standing in a doorway, a stealth zone that overlaps
 //! the only walk corridor, a fire pit with no clearance around it — those are
 //! *plan* defects, and a plan is what you read them off.

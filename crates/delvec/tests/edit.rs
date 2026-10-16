@@ -1419,7 +1419,7 @@ fn edit_inside_a_close_gate_region_warns_dw0353() {
 
 /// **Finding 5b, now refused (`DW1002`).** `scatter` dropping flowers onto
 /// bare stone: the server pops every one of them off at the first shape
-/// update, so the dressing the author sees in `delvec snapshot` never reaches
+/// update, so the dressing the author sees in `delvec frames --campaign` never reaches
 /// players. It was an advisory (`DW0354`) the build shipped past; the build
 /// that would ship them is now refused, naming each flower's cell and the soil
 /// it lacks.

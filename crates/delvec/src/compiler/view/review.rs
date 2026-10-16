@@ -468,11 +468,15 @@ pub struct BodyTarget {
 
 /// The bodies of `rows` as targets a frame can show (spec-0112 §7.5).
 pub fn body_targets(rows: &[&crate::compiler::placed::Placed]) -> Vec<BodyTarget> {
+    // The tags that say what class of body a thing is, not which one.
     let class = [
         crate::compiler::affordance::FIXTURE_TAG,
         crate::compiler::affordance::BORNE_TAG,
         "dw_npc",
         "dw_marker",
+        "dw_actor",
+        "dw_watch",
+        "dw_unseen",
     ];
     // An entity the game draws nothing for is no body a frame can show: a
     // hitbox (`interaction`) and a `marker` carry a body's tags, not its looks.
@@ -481,6 +485,17 @@ pub fn body_targets(rows: &[&crate::compiler::placed::Placed]) -> Vec<BodyTarget
     for r in rows {
         let Some(e) = r.entity_record() else { continue };
         if invisible.contains(&e.kind.as_str()) {
+            continue;
+        }
+        // A display entity with nothing to display draws nothing in the game
+        // either: an assembly's root `item_display`, which carries no item.
+        let shows_nothing = match e.kind.as_str() {
+            "minecraft:item_display" => e.nbt.get("item").is_none(),
+            "minecraft:block_display" => e.nbt.get("block_state").is_none(),
+            "minecraft:text_display" => e.nbt.get("text").is_none(),
+            _ => false,
+        };
+        if shows_nothing {
             continue;
         }
         let id = e
