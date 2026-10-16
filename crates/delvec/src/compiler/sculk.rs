@@ -42,7 +42,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use delvewright_dsl::blockshape::{
     bare_id, redstone_conductor, redstone_reader, redstone_source, state_value,
 };
-use delvewright_dsl::{DwCode, ExitTier, Verb};
+use delvewright_dsl::{DwCode, ExitTier, Objective, Verb};
 
 use crate::compiler::blockstate::BlockMap;
 use crate::compiler::failure::Failure;
@@ -182,8 +182,9 @@ impl Write {
 
 /// **Every block a runtime write may lay, and where** — the `fill-region`,
 /// `set-block` and `close-gate` effects at every root and depth, every laid
-/// write the region model carries (a way, a shortcut seal), and both phases of
-/// every timed gate. Sorted and deduplicated (ADR-0006). Clears lay air, which
+/// write the region model carries (a way, a shortcut seal), both phases of
+/// every timed gate, and every prop an `interact` objective or a click trigger
+/// sets. Sorted and deduplicated (ADR-0006). Clears lay air, which
 /// no rule here reads, so they are not carried.
 pub fn runtime_writes(plan: &Plan) -> Vec<Write> {
     let mut out: BTreeSet<Write> = BTreeSet::new();
@@ -239,6 +240,31 @@ pub fn runtime_writes(plan: &Plan) -> Vec<Write> {
             region: g.gate_region,
             block: g.gate_block.clone(),
             label: format!("timed gate `{}` closed", g.id),
+        });
+    }
+    // The props: an `interact` objective's block, set when the objective is
+    // armed (`emit::objective`), and a click trigger's, set at setup
+    // (`pressable::trigger_props`) — blocks no structure carries.
+    for q in &plan.campaign.quests.content.quests {
+        let area = plan.quest_area(q.id.as_str()).unwrap_or("");
+        for o in &q.objectives {
+            let (Objective::Interact { id, anchor, .. }, Some(prop)) = (o, o.prop()) else {
+                continue;
+            };
+            if let Some(p) = plan.point(area, anchor.as_str()) {
+                out.insert(Write {
+                    region: (p, p),
+                    block: prop.block.clone(),
+                    label: format!("the prop of `interact` objective `{}`", id.as_str()),
+                });
+            }
+        }
+    }
+    for (id, p) in crate::compiler::pressable::trigger_props(plan) {
+        out.insert(Write {
+            region: (p.pos, p.pos),
+            block: p.block,
+            label: format!("the prop of trigger `{id}`"),
         });
     }
     out.into_iter().collect()

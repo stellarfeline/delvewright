@@ -294,10 +294,21 @@ pub fn prove(
     (b, first)
 }
 
-/// [`prove`] over every shut gate of the plan, the assembled world and every
-/// runtime write.
-pub fn check(plan: &Plan, blocks: &BlockMap) -> (GateSignalBinding, Option<Failure>) {
-    prove(&shut_gates(plan), blocks, &runtime_writes(plan))
+/// [`prove`] over every shut gate of the plan, the assembled world, every
+/// runtime write and prop (`sculk::runtime_writes`), and the relight fixtures
+/// the datapack sets at setup.
+pub fn check(
+    plan: &Plan,
+    blocks: &BlockMap,
+    fixtures: &[crate::compiler::light::Placement],
+) -> (GateSignalBinding, Option<Failure>) {
+    let mut writes = runtime_writes(plan);
+    writes.extend(fixtures.iter().map(|f| Write {
+        region: (f.pos, f.pos),
+        block: f.block.clone(),
+        label: "a relight fixture set at setup".to_string(),
+    }));
+    prove(&shut_gates(plan), blocks, &writes)
 }
 
 #[cfg(test)]
