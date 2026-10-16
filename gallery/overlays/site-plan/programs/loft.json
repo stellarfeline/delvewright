@@ -336,40 +336,6 @@
     "place": [
       {
         "body": {
-          "op": "mark",
-          "mark": {
-            "anchor": "loft-stand",
-            "at": "offset",
-            "facing": "south",
-            "x": {
-              "expr": "int",
-              "value": 5
-            },
-            "y": {
-              "expr": "int",
-              "value": 6
-            },
-            "z": {
-              "expr": "int",
-              "value": 3
-            },
-            "holder": {
-              "kind": "armor-stand",
-              "pose": {
-                "head": [
-                  0,
-                  0,
-                  0
-                ],
-                "right_arm": [
-                  -15,
-                  0,
-                  10
-                ]
-              },
-              "show_arms": true
-            }
-          },
           "body": {
             "body": {
               "axis": "y",
@@ -784,7 +750,41 @@
               }
             },
             "op": "mark"
-          }
+          },
+          "mark": {
+            "anchor": "loft-stand",
+            "at": "offset",
+            "facing": "south",
+            "holder": {
+              "kind": "armor-stand",
+              "pose": {
+                "head": [
+                  0,
+                  0,
+                  0
+                ],
+                "right_arm": [
+                  -15,
+                  0,
+                  10
+                ]
+              },
+              "show_arms": true
+            },
+            "x": {
+              "expr": "int",
+              "value": 5
+            },
+            "y": {
+              "expr": "int",
+              "value": 6
+            },
+            "z": {
+              "expr": "int",
+              "value": 3
+            }
+          },
+          "op": "mark"
         },
         "weight": 1
       }

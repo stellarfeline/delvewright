@@ -877,7 +877,6 @@
               "obj/press-the-case"
             ],
             "anchor": "anchor/pedestal",
-            "holder": "anchor/case",
             "count": 4,
             "fill_count": 4,
             "forbids_flags": [
@@ -889,6 +888,7 @@
               "verb": "gains"
             },
             "hint": "Four of them, in the case.",
+            "holder": "anchor/case",
             "id": "obj/take-the-emeralds",
             "item": "minecraft:emerald",
             "item_name": "Hall Emerald",
@@ -944,7 +944,6 @@
               "obj/take-the-emeralds"
             ],
             "anchor": "anchor/pedestal",
-            "holder": "anchor/seal-frame",
             "count": 1,
             "forbids_flags": [
               "flag/hall-sealed"
@@ -955,6 +954,7 @@
               "verb": "gains"
             },
             "hint": "A frame on the south wall holds it.",
+            "holder": "anchor/seal-frame",
             "id": "obj/take-the-seal",
             "item": "minecraft:paper",
             "item_name": "Hall Seal",
