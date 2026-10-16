@@ -2048,7 +2048,13 @@ fn an_interior_overview_stands_over_a_place_stacked_over_its_eye() {
     let frames = delvec::compiler::view::review::frame_worlds(&plan, &world);
     let picture = delvec::compiler::blockstate::BlockMap::new();
     let (rp, _) = delvec::compiler::render_plan::render_plan(
-        &plan, &prefabs, &[], &world, &frames, &picture,
+        &plan,
+        &prefabs,
+        &[],
+        &[],
+        &world,
+        &frames,
+        &picture,
     )
     .expect("every camera's eye is proven clear");
     let shot = rp["shots"]

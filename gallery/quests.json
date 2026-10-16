@@ -2458,7 +2458,7 @@
                   }
                 },
                 {
-                  "bearing": 90.0,
+                  "bearing": 180.0,
                   "dist": 3.0,
                   "seconds": 2,
                   "shot_style": "two-shot",

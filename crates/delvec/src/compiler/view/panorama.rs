@@ -900,7 +900,10 @@ mod tests {
     #[test]
     fn the_frame_size_is_the_one_asked_for() {
         let p = panorama_from_plan(MINI, &[], &PanoramaOptions::default()).unwrap();
-        assert_eq!((p.frame.width, p.frame.height), (DEFAULT_WIDTH, DEFAULT_HEIGHT));
+        assert_eq!(
+            (p.frame.width, p.frame.height),
+            (DEFAULT_WIDTH, DEFAULT_HEIGHT)
+        );
         let opts = PanoramaOptions {
             width: 1024,
             height: 1024,

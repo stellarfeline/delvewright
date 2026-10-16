@@ -296,7 +296,10 @@ pub fn undrawn(shows: &[Value], stats: &frames::Stats) -> Vec<Value> {
 fn unchecked_of(shot: &PlanShot) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     if shot.sky.weather != delvewright_dsl::WorldWeather::Clear {
-        out.push("the rain in the air: the sky's colours under the weather are drawn, the rain is not".into());
+        out.push(
+            "the rain in the air: the sky's colours under the weather are drawn, the rain is not"
+                .into(),
+        );
     }
     let stamp: Option<crate::compiler::view::scene::LightingStamp> = shot
         .lighting
@@ -319,7 +322,8 @@ fn unchecked_of(shot: &PlanShot) -> Vec<String> {
 pub fn run_frames(build_dir: &Path, opts: &FramesOptions, json: bool) -> ExitCode {
     let started = std::time::Instant::now();
     let read = |p: PathBuf| {
-        std::fs::read(&p).map_err(|e| Diagnostic::error(DW_INPUT, format!("read {}: {e}", p.display())))
+        std::fs::read(&p)
+            .map_err(|e| Diagnostic::error(DW_INPUT, format!("read {}: {e}", p.display())))
     };
     let plan_bytes = match read(build_dir.join("render-plan.json")) {
         Ok(b) => b,
@@ -332,7 +336,10 @@ pub fn run_frames(build_dir: &Path, opts: &FramesOptions, json: bool) -> ExitCod
     let record: Value = match read(build_dir.join("validation").join("review-frames.json"))
         .and_then(|b| {
             serde_json::from_slice(&b).map_err(|e| {
-                Diagnostic::error(DW_INPUT, format!("parse validation/review-frames.json: {e}"))
+                Diagnostic::error(
+                    DW_INPUT,
+                    format!("parse validation/review-frames.json: {e}"),
+                )
             })
         }) {
         Ok(r) => r,
@@ -461,7 +468,10 @@ pub fn run_frames(build_dir: &Path, opts: &FramesOptions, json: bool) -> ExitCod
                     u["kind"].as_str().unwrap_or(""),
                     u["id"].as_str().unwrap_or(""),
                     u["body"].as_str().unwrap_or(""),
-                    u.get("pos").or(u.get("box")).cloned().unwrap_or(Value::Null),
+                    u.get("pos")
+                        .or(u.get("box"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
                     u["distance"],
                     u["reason"].as_str().unwrap_or(""),
                     u["judge_by"].as_str().unwrap_or("")

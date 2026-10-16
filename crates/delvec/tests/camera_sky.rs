@@ -472,7 +472,10 @@ fn the_gallery_reaches_every_weather_and_every_class() {
     let mut moved = sheet.clone();
     moved.cameras[i].sky.as_mut().unwrap().weather = WorldWeather::Rain;
     let after = camera::frames_of(&plan, &moved, &rows, &EmitOptions::default()).unwrap();
-    assert_ne!(after[i].sky, emission[i].sky, "the stated sky reaches the frame");
+    assert_ne!(
+        after[i].sky, emission[i].sky,
+        "the stated sky reaches the frame"
+    );
     assert_ne!(
         frames::quick_sky(sky_of(&after[i])).fog,
         frames::quick_sky(sky_of(&emission[i])).fog,
@@ -508,7 +511,10 @@ fn the_gallery_reaches_every_weather_and_every_class() {
         WorldWeather::Clear
     };
     let after = camera::frames_of(&plan, &sheet, &rows2, &EmitOptions::default()).unwrap();
-    assert_ne!(after[j].sky, emission[j].sky, "the row's sky reaches the frame");
+    assert_ne!(
+        after[j].sky, emission[j].sky,
+        "the row's sky reaches the frame"
+    );
 }
 
 /// **A night picture renders the night** (spec-0079, departure 1). The

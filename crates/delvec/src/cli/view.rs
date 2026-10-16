@@ -92,7 +92,7 @@ pub(crate) fn run_frames_campaign(
         delvec::compiler::view::review::WorldMaker::new(&plan, &assembled, &base, &structures);
     let laid = delvec::compiler::view::beat::load_laid(&plan, &world);
     let day_time = delvec::compiler::view::review::Clock::at(&plan, 0).day_time(&plan);
-    let written = maker.encode_blocks(&load, &laid, day_time, &[]);
+    let (_, written) = maker.encode_blocks(&load, &laid, day_time, &[]);
     if let Err(e) = delvec::compiler::view::world::write_files(&written, &world_dir) {
         eprintln!("internal error: cannot write {}: {e}", world_dir.display());
         return ExitCode::from(EXIT_INTERNAL);
@@ -262,33 +262,6 @@ pub(crate) fn camera_stands(
     })
 }
 
-/// **The world at load, with no camera record** (`delvec written-world`): the
-/// campaign assembled exactly as [`camera_stands`] assembles it, and the one
-/// configuration [`delvec::compiler::view::beat::load_blocks`] derives — the
-/// world a camera with no `after` stands in, under the same key.
-pub(crate) fn load_stood(
-    campaign_dir: &Path,
-    prefabs_dir: &Path,
-    json: bool,
-) -> Result<
-    delvec::compiler::view::beat::Stood,
-    (Option<delvec::compiler::view::diag::Diagnostic>, u8),
-> {
-    stood_over(campaign_dir, prefabs_dir, json, |plan, world, base| {
-        Ok(delvec::compiler::view::beat::Stands {
-            stands: Vec::new(),
-            worlds: vec![(
-                delvec::compiler::view::beat::AT_LOAD.to_string(),
-                delvec::compiler::view::beat::load_blocks(plan, world, base),
-            )],
-            laid: vec![(
-                delvec::compiler::view::beat::AT_LOAD.to_string(),
-                delvec::compiler::view::beat::load_laid(plan, world),
-            )],
-        })
-    })
-}
-
 /// What a configuring closure answers: the worlds to write, or a refusal.
 type StandsOrRefusal = Result<
     delvec::compiler::view::beat::Stands,
@@ -344,6 +317,7 @@ fn stood_over(
             &structures,
         ),
         day_time: delvec::compiler::view::review::Clock::at(plan, 0).day_time(plan),
+        ancestors: plan.strict_ancestor_steps.clone(),
     })
 }
 

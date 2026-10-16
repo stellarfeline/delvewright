@@ -131,6 +131,9 @@ pub struct FrameWorld {
     /// The cells the configuration's writes lay and the block each lays: what
     /// makes two configurations one world.
     laid: BTreeMap<[i32; 3], Option<String>>,
+    /// The ledger rows its arrival holds, by index into the build's ledger
+    /// ([`crate::compiler::placed::rows_at`]).
+    pub rows: Vec<usize>,
 }
 
 /// Every distinct world the critical path arrives under, and per arrival
@@ -164,6 +167,16 @@ impl FrameWorlds {
 /// **The configurations the critical path arrives under**, one per distinct
 /// region state and clock, in first-arrival order — the load world first.
 pub fn frame_worlds(plan: &Plan, world: &World) -> FrameWorlds {
+    frame_worlds_with(plan, world, None)
+}
+
+/// [`frame_worlds`], a world's identity also holding the placements ledger's
+/// rows its arrival holds.
+pub fn frame_worlds_with(
+    plan: &Plan,
+    world: &World,
+    ledger: Option<&crate::compiler::placed::Ledger>,
+) -> FrameWorlds {
     let path = PathModel::critical(plan);
     let mut worlds: Vec<FrameWorld> = Vec::new();
     let mut per_arrival = Vec::new();
@@ -180,9 +193,16 @@ pub fn frame_worlds(plan: &Plan, world: &World) -> FrameWorlds {
             .into_iter()
             .map(|(c, b)| (c, b.map(str::to_string)))
             .collect();
+        let rows: Vec<usize> = match ledger {
+            Some(l) => crate::compiler::placed::rows_at(plan, l, s)
+                .into_iter()
+                .filter_map(|r| l.rows.iter().position(|x| std::ptr::eq(x, r)))
+                .collect(),
+            None => Vec::new(),
+        };
         let found = worlds
             .iter()
-            .position(|w| w.laid == laid && w.clock == clock);
+            .position(|w| w.laid == laid && w.clock == clock && w.rows == rows);
         let i = match found {
             Some(i) => i,
             None => {
@@ -208,6 +228,7 @@ pub fn frame_worlds(plan: &Plan, world: &World) -> FrameWorlds {
                     config,
                     clock,
                     laid,
+                    rows,
                 });
                 worlds.len() - 1
             }
@@ -279,51 +300,217 @@ impl WorldMaker {
     }
 
     /// **Encode a world**: `blocks` (a configuration's bytes) with the regions
-    /// its writes `laid` held out of the generator's ground, its block
-    /// entities, `entities`, its light and `day_time`.
+    /// its writes `laid` held out of the generator's ground, the ledger `rows`
+    /// its arrival holds laid in firing order (a block at its cell, a
+    /// container's item into the container's compound, a body into the
+    /// entity file), its block entities, its light and `day_time`.
     pub fn encode_blocks(
         &self,
         blocks: &BlockMap,
         laid: &[Region],
         day_time: i64,
-        entities: &[EntityRecord],
-    ) -> WrittenWorld {
+        rows: &[&crate::compiler::placed::Placed],
+    ) -> (BlockMap, WrittenWorld) {
+        use crate::compiler::placed::PlacedObject;
+        let mut blocks = blocks.clone();
         let mut ground = self.ground.clone();
         for (lo, hi) in laid {
             ground.mark_box(*lo, *hi);
         }
-        let bes = self.block_entities(blocks);
+        let mut items: BTreeMap<[i32; 3], Vec<(String, String)>> = BTreeMap::new();
+        let mut entities: Vec<EntityRecord> = Vec::new();
+        for r in rows {
+            match &r.object {
+                PlacedObject::Block { cell, state } => {
+                    ground.mark(*cell);
+                    if crate::compiler::assembled::base_id(state) == "minecraft:air" {
+                        blocks.remove(cell);
+                    } else {
+                        blocks.insert(*cell, crate::compiler::blockstate::BlockState::new(state));
+                    }
+                }
+                PlacedObject::Item { cell, slot, stack } => {
+                    items
+                        .entry(*cell)
+                        .or_default()
+                        .push((slot.clone(), stack.clone()));
+                }
+                PlacedObject::Entity { .. } => entities.extend(r.entity_record()),
+                PlacedObject::Removed { .. } => {}
+            }
+        }
+        let mut bes = self.block_entities(&blocks);
+        for (cell, stacks) in &items {
+            let Some(state) = blocks.get(cell) else {
+                continue;
+            };
+            let id = crate::compiler::assembled::base_id(state.as_str()).to_string();
+            let entry = bes
+                .entry(*cell)
+                .or_insert_with(|| Nbt::Compound(vec![("id".to_string(), Nbt::Str(id))]));
+            let mut list: Vec<Nbt> = match entry.get("Items") {
+                Some(Nbt::List(l)) => l.clone(),
+                _ => Vec::new(),
+            };
+            for (slot, stack) in stacks {
+                if let Some(item) = item_compound(slot, stack) {
+                    list.push(item);
+                }
+            }
+            entry.set("Items", Nbt::List(list));
+        }
         let biome = |c: [i32; 3]| self.biome.at(c).0.to_string();
-        crate::compiler::view::world::encode_world(&WorldInput {
-            blocks,
+        let w = crate::compiler::view::world::encode_world(&WorldInput {
+            blocks: &blocks,
             biome: &biome,
             spawn: self.spawn,
             ground: &ground,
             extent: Some(self.extent),
             block_entities: &bes,
-            entities,
+            entities: &entities,
             day_time: Some(day_time),
-        })
+        });
+        (blocks, w)
     }
 
-    /// A configuration's world over `picture`, at `clock`.
+    /// A configuration's world over `picture`, at `clock`, with the ledger
+    /// rows `rows` laid.
     pub fn encode(
         &self,
         plan: &Plan,
         picture: &BlockMap,
         config: &Configuration,
         clock: &Clock,
-        entities: &[EntityRecord],
+        rows: &[&crate::compiler::placed::Placed],
     ) -> (BlockMap, WrittenWorld) {
-        let blocks = config.blocks(picture);
-        let w = self.encode_blocks(
-            &blocks,
+        self.encode_blocks(
+            &config.blocks(picture),
             &config.laid_regions(),
             clock.day_time(plan),
-            entities,
-        );
-        (blocks, w)
+            rows,
+        )
     }
+}
+
+/// A container slot's item compound from an `item replace` stack:
+/// `container.<n>` and `<id>[<components>] <count>`. `None` for a slot that is
+/// no container slot or a stack that does not read.
+fn item_compound(slot: &str, stack: &str) -> Option<Nbt> {
+    let n: i8 = slot.strip_prefix("container.")?.parse().ok()?;
+    let (item, count) = stack.rsplit_once(' ')?;
+    let count: i32 = count.parse().ok()?;
+    let (id, comps) = match item.split_once('[') {
+        Some((id, rest)) => (id, Some(rest.strip_suffix(']')?)),
+        None => (item, None),
+    };
+    let mut c = vec![
+        ("Slot".to_string(), Nbt::Byte(n)),
+        ("id".to_string(), Nbt::Str(id.to_string())),
+        ("count".to_string(), Nbt::Int(count)),
+    ];
+    if let Some(comps) = comps {
+        let mut entries = Vec::new();
+        for part in split_top_level(comps) {
+            let (k, v) = part.split_once('=')?;
+            let key = if k.contains(':') {
+                k.to_string()
+            } else {
+                format!("minecraft:{k}")
+            };
+            entries.push((key, crate::compiler::placed::parse_snbt(v).ok()?));
+        }
+        c.push(("components".to_string(), Nbt::Compound(entries)));
+    }
+    Some(Nbt::Compound(c))
+}
+
+/// Split `text` at the commas no bracket, brace or quote encloses.
+fn split_top_level(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let (mut depth, mut quote, mut start) = (0i32, None::<char>, 0usize);
+    let mut escaped = false;
+    for (i, ch) in text.char_indices() {
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '"' | '\'' => quote = Some(ch),
+            '[' | '{' => depth += 1,
+            ']' | '}' => depth -= 1,
+            ',' if depth == 0 => {
+                out.push(&text[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if start < text.len() {
+        out.push(&text[start..]);
+    }
+    out
+}
+
+/// A body a world holds, as a frame shows it: the target (kind `body`, named
+/// by its first tag that is no class tag and its cell), its entity kind without
+/// the namespace, and the compass direction it faces.
+pub struct BodyTarget {
+    pub target: crate::compiler::framing::Target,
+    pub kind: String,
+    pub facing: &'static str,
+}
+
+/// The bodies of `rows` as targets a frame can show (spec-0112 §7.5).
+pub fn body_targets(rows: &[&crate::compiler::placed::Placed]) -> Vec<BodyTarget> {
+    let class = [
+        crate::compiler::affordance::FIXTURE_TAG,
+        crate::compiler::affordance::BORNE_TAG,
+        "dw_npc",
+        "dw_marker",
+    ];
+    let mut out = Vec::new();
+    for r in rows {
+        let Some(e) = r.entity_record() else { continue };
+        let id = e
+            .tags
+            .iter()
+            .find(|t| !class.contains(&t.as_str()))
+            .cloned()
+            .unwrap_or_else(|| e.kind.clone());
+        let cell = [
+            e.pos[0].floor() as i32,
+            e.pos[1].floor() as i32,
+            e.pos[2].floor() as i32,
+        ];
+        let yaw = (f64::from(e.yaw)).rem_euclid(360.0);
+        let facing = match ((yaw + 45.0) / 90.0).floor() as i32 % 4 {
+            0 => "south",
+            1 => "west",
+            2 => "north",
+            _ => "east",
+        };
+        out.push(BodyTarget {
+            target: crate::compiler::framing::Target::point(
+                format!("{id}@{},{},{}", cell[0], cell[1], cell[2]),
+                "body",
+                String::new(),
+                cell,
+            ),
+            kind: e
+                .kind
+                .strip_prefix("minecraft:")
+                .unwrap_or(&e.kind)
+                .to_string(),
+            facing,
+        });
+    }
+    out
 }
 
 /// The binding line of one written world (spec-0112 §9).
@@ -355,7 +542,11 @@ pub fn shot_camera(shot: &Value) -> Option<crate::compiler::framing::Camera> {
     let cam = &shot["camera"];
     let p = cam["pos"].as_array()?;
     Some(crate::compiler::framing::Camera {
-        pos: [p.first()?.as_f64()?, p.get(1)?.as_f64()?, p.get(2)?.as_f64()?],
+        pos: [
+            p.first()?.as_f64()?,
+            p.get(1)?.as_f64()?,
+            p.get(2)?.as_f64()?,
+        ],
         yaw: cam["yaw"].as_f64()?,
         pitch: cam["pitch"].as_f64()?,
         fov: cam["fov"]
@@ -366,10 +557,15 @@ pub fn shot_camera(shot: &Value) -> Option<crate::compiler::framing::Camera> {
 
 /// One target as a shot's `shows` lists it: the manifest's entry, which the
 /// frame copies verbatim.
-fn shown(plan: &Plan, r: &crate::compiler::framing::ResolvedTarget<'_>) -> Value {
+fn shown(
+    _plan: &Plan,
+    r: &crate::compiler::framing::ResolvedTarget<'_>,
+    bodies: &[BodyTarget],
+) -> Value {
     let mut v = crate::compiler::framing::target_json(r.target);
-    if let Some(body) = crate::compiler::framing::body_of(plan, r.target) {
-        v["body"] = json!(body);
+    if let Some(b) = bodies.iter().find(|b| b.target == *r.target) {
+        v["body"] = json!(b.kind);
+        v["facing"] = json!(b.facing);
     }
     v["screen_bbox"] = json!({
         "x": r.bbox.x, "y": r.bbox.y, "w": r.bbox.w, "h": r.bbox.h,
@@ -395,6 +591,8 @@ pub fn write_review(
     picture: &BlockMap,
     maker: &WorldMaker,
     frames: &FrameWorlds,
+    ledger: &crate::compiler::placed::Ledger,
+    cutscenes: &crate::compiler::nav::CutsceneProof,
     doc: &Value,
     out: &mut BTreeMap<String, Vec<u8>>,
 ) -> Review {
@@ -418,7 +616,12 @@ pub fn write_review(
     for key in &keys {
         let Some(fw) = frames.get(key) else { continue };
         let started = std::time::Instant::now();
-        let (blocks, w) = maker.encode(plan, picture, &fw.config, &fw.clock, &[]);
+        let rows: Vec<&crate::compiler::placed::Placed> =
+            fw.rows.iter().map(|i| &ledger.rows[*i]).collect();
+        let (blocks, w) = maker.encode(plan, picture, &fw.config, &fw.clock, &rows);
+        let bodies = body_targets(&rows);
+        let mut targets = targets.clone();
+        targets.extend(bodies.iter().map(|b| b.target.clone()));
         let ms = started.elapsed().as_millis();
         let dir = format!("validation/worlds/{key}");
         for (rel, bytes) in &w.files {
@@ -445,7 +648,7 @@ pub fn write_review(
                     "mode": s["mode"],
                     "sky": s["sky"],
                     "size": size,
-                    "shows": inside.iter().map(|r| shown(plan, r)).collect::<Vec<_>>(),
+                    "shows": inside.iter().map(|r| shown(plan, r, &bodies)).collect::<Vec<_>>(),
                     "out_of_frame": outside
                         .iter()
                         .map(|t| crate::compiler::framing::target_json(t))
@@ -479,26 +682,55 @@ pub fn write_review(
     };
     let at_load = rows.iter().filter(|r| r["world"] == AT_LOAD).count();
     let quick = rows.iter().filter(|r| r["mode"] == "quick").count();
-    let light_quick = shots
+    let light_quick = shots.iter().filter(|s| light_question(s)).count();
+    let cutscene_frames = shots.iter().filter(|s| s["kind"] == "cutscene").count();
+    let framed_shots: std::collections::BTreeSet<(usize, usize, usize)> = cutscenes
+        .frames
         .iter()
-        .filter(|s| light_question(s))
-        .count();
+        .map(|f| (f.step, f.n, f.shot))
+        .collect();
+    let framed: std::collections::BTreeSet<(usize, usize)> =
+        framed_shots.iter().map(|(s, n, _)| (*s, *n)).collect();
+    let framed_names: Vec<String> = framed
+        .iter()
+        .map(|(s, n)| {
+            let id = plan
+                .critical_path
+                .get(*s)
+                .and_then(crate::compiler::view::beat::step_id)
+                .map_or_else(|| format!("step-{}", s + 1), str::to_string);
+            format!("{id} #{n}")
+        })
+        .collect();
     lines.insert(
         0,
         format!(
             "review frames: {} shot(s) in {} world(s) ({at_load} at load, {} after a step); \
-             {quick} quick, {} hq, {light_quick} light frame(s) rendered quick; cameras proven \
-             clear: {} of {} in their own worlds",
+             {quick} quick, {} hq, {light_quick} light frame(s) rendered quick; \
+             {cutscene_frames} cutscene frame(s) of {} shot(s) in {} cutscene(s), {} cutscene(s) \
+             no critical step fires{}; cameras proven clear: {} of {} in their own worlds",
             rows.len(),
             keys.len(),
             rows.len() - at_load,
             rows.len() - quick,
+            framed_shots.len(),
+            framed.len(),
+            cutscenes.unfired.len(),
+            if cutscenes.unfired.is_empty() {
+                String::new()
+            } else {
+                format!(": {}", cutscenes.unfired.join(", "))
+            },
             doc["camera_eye_proof"]["cameras"].as_u64().unwrap_or(0),
             shots.len(),
         ),
     );
     let record = json!({
         "worlds": worlds_json,
+        "cutscenes": {
+            "framed": framed_names,
+            "unfired": cutscenes.unfired,
+        },
         "shots": rows,
         "shots_digest": digest,
         "unchecked": UNCHECKED,
@@ -516,7 +748,9 @@ pub fn write_review(
 pub fn light_question(shot: &Value) -> bool {
     shot.get("lighting").is_some()
         || !shot["sky"]["set_by"].is_null()
-        || shot["sky"]["weather"].as_str().is_some_and(|w| w != "clear")
+        || shot["sky"]["weather"]
+            .as_str()
+            .is_some_and(|w| w != "clear")
 }
 
 /// What no review frame shows, by name (spec-0112 §11).

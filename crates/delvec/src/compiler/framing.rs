@@ -393,7 +393,6 @@ impl VoxelGrid {
 // Camera
 // ---------------------------------------------------------------------------
 
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Camera {
     /// Eye position in world coordinates.
@@ -1080,7 +1079,6 @@ pub fn target_json(t: &Target) -> Value {
 // ---------------------------------------------------------------------------
 // Label / grid overlay
 // ---------------------------------------------------------------------------
-
 
 #[cfg(test)]
 mod tests {

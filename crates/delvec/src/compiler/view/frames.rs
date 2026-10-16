@@ -400,12 +400,7 @@ pub fn draw(req: &FrameRequest<'_>, opened: Option<&OpenedWorld>) -> Result<Draw
     })?;
     let short = |m: &std::collections::BTreeMap<String, usize>| {
         m.iter()
-            .map(|(k, v)| {
-                (
-                    k.strip_prefix("minecraft:").unwrap_or(k).to_string(),
-                    *v,
-                )
-            })
+            .map(|(k, v)| (k.strip_prefix("minecraft:").unwrap_or(k).to_string(), *v))
             .collect()
     };
     Ok(Drawn {

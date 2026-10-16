@@ -127,7 +127,9 @@ pub fn check_cutscenes(
             }
         };
         let in_world = match firing {
-            Some(_) => format!(" in world `{key}`, the configuration its firing step arrives under"),
+            Some(_) => {
+                format!(" in world `{key}`, the configuration its firing step arrives under")
+            }
             None => String::new(),
         };
         let mut offset: i32 = 0;
@@ -137,7 +139,23 @@ pub fn check_cutscenes(
                 crate::compiler::camera::expand_shot(plan, moves, actor_moves, shot, &ctx, offset);
             offset += ex.ticks + 1;
             let pts = ex.clip_polyline();
-            if let Some((seg, cell)) = first_clip(world, pts) {
+            if let [p] = pts
+                && let Some((_, cell)) = first_clip(world, pts)
+            {
+                return Err(Failure {
+                    code: DW_CUTSCENE_CLIP,
+                    message: format!(
+                        "cutscene: shot {si} is a still camera at {:?}, which stands inside a \
+                         solid block at {cell:?}{in_world} — the frame would render the inside of \
+                         the block; move the shot's `bearing`/`dist` (or its waypoint \
+                         `anchor`/`offset`) so the camera stands in open air",
+                        round3(*p),
+                    ),
+                });
+            }
+            if pts.len() > 1
+                && let Some((seg, cell)) = first_clip(world, pts)
+            {
                 return Err(Failure {
                     code: DW_CUTSCENE_CLIP,
                     message: format!(
@@ -152,7 +170,9 @@ pub fn check_cutscenes(
             }
             let frames = ex.frames();
             let chord: Vec<[f64; 3]> = frames.frames.iter().map(|f| f.pos).collect();
-            if let Some((seg, cell)) = first_clip(world, &chord) {
+            if chord.len() > 1
+                && let Some((seg, cell)) = first_clip(world, &chord)
+            {
                 return Err(Failure {
                     code: DW_CUTSCENE_CLIP,
                     message: format!(
@@ -256,6 +276,16 @@ pub fn check_cutscenes(
 /// (a segment passing exactly through a cell corner) resolve on the fixed axis
 /// order x, y, z.
 fn first_clip(world: &World, pts: &[[f64; 3]]) -> Option<(usize, [i32; 3])> {
+    // A still camera is one point and no segment: the cell it stands in is
+    // the whole of its path.
+    if let [p] = pts {
+        let cell = [
+            p[0].floor() as i32,
+            p[1].floor() as i32,
+            p[2].floor() as i32,
+        ];
+        return world.blocks_camera(cell).then_some((0, cell));
+    }
     for (seg, w) in pts.windows(2).enumerate() {
         if let Some(cell) = walk_cells(w[0], w[1], |c| world.blocks_camera(c)) {
             return Some((seg, cell));
@@ -318,5 +348,17 @@ mod tests {
         // A parallel path that never enters the cell stays clean.
         let clear = [[0.9, 0.5, 0.9], [0.9, 0.5, 2.5]];
         assert_eq!(first_clip(&world, &clear), None);
+    }
+
+    #[test]
+    fn a_still_camera_inside_a_block_clips() {
+        // A still shot is one point and no segment; the cell it stands in is
+        // judged, so a camera parked inside a block is caught.
+        let world = World::from_solid_cells([[1, 0, 1]].into_iter().collect());
+        assert_eq!(
+            first_clip(&world, &[[1.5, 0.5, 1.5]]).map(|(_, c)| c),
+            Some([1, 0, 1])
+        );
+        assert_eq!(first_clip(&world, &[[2.5, 0.5, 1.5]]), None);
     }
 }

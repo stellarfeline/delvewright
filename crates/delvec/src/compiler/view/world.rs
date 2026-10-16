@@ -434,7 +434,9 @@ impl EntityRecord {
             h.update(p.to_bits().to_be_bytes());
         }
         let d = h.finalize();
-        std::array::from_fn(|i| i32::from_be_bytes([d[4 * i], d[4 * i + 1], d[4 * i + 2], d[4 * i + 3]]))
+        std::array::from_fn(|i| {
+            i32::from_be_bytes([d[4 * i], d[4 * i + 1], d[4 * i + 2], d[4 * i + 3]])
+        })
     }
 
     /// The compound as the entity file holds it.
@@ -448,7 +450,10 @@ impl EntityRecord {
             "Pos",
             Nbt::List(self.pos.iter().map(|v| Nbt::Double(*v)).collect()),
         );
-        c.set("Rotation", Nbt::List(vec![Nbt::Float(self.yaw), Nbt::Float(0.0)]));
+        c.set(
+            "Rotation",
+            Nbt::List(vec![Nbt::Float(self.yaw), Nbt::Float(0.0)]),
+        );
         let mut tags: Vec<Nbt> = match c.get("Tags") {
             Some(Nbt::List(t)) => t.clone(),
             _ => Vec::new(),
@@ -616,7 +621,11 @@ pub fn encode_world(input: &WorldInput<'_>) -> WrittenWorld {
     for (cx, cz) in &chunk_set {
         for sy in &gsecs {
             for i in 0..4096 {
-                let c = [cx * 16 + (i % 16), sy * 16 + i / 256, cz * 16 + ((i / 16) % 16)];
+                let c = [
+                    cx * 16 + (i % 16),
+                    sy * 16 + i / 256,
+                    cz * 16 + ((i / 16) % 16),
+                ];
                 if blocks.contains_key(&c) {
                     continue;
                 }
@@ -646,7 +655,8 @@ pub fn encode_world(input: &WorldInput<'_>) -> WrittenWorld {
             .map(|sy| {
                 let (x0, y0, z0) = (cx * 16, sy * 16, cz * 16);
                 let cell = |i: i32| [x0 + (i % 16), y0 + i / 256, z0 + ((i / 16) % 16)];
-                let block_cells: Vec<&str> = (0..4096).map(|i| at(cell(i)).unwrap_or(AIR)).collect();
+                let block_cells: Vec<&str> =
+                    (0..4096).map(|i| at(cell(i)).unwrap_or(AIR)).collect();
                 let biome_cells = (0..64).map(|i| {
                     biome([
                         x0 + 4 * (i % 4) + 2,
@@ -870,7 +880,10 @@ pub fn write(
 /// lectern's book — and whose compound `block_entities` does not carry
 /// (spec-0112 §5.4). The count is a measured zero on a campaign that places
 /// none.
-pub fn block_entities_omitted(blocks: &BlockMap, block_entities: &BTreeMap<[i32; 3], Nbt>) -> usize {
+pub fn block_entities_omitted(
+    blocks: &BlockMap,
+    block_entities: &BTreeMap<[i32; 3], Nbt>,
+) -> usize {
     blocks
         .iter()
         .filter(|(c, s)| {

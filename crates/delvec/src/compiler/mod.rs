@@ -78,6 +78,7 @@
 //! - [`pressable`]: what a player's click reaches at an anchor — the one authority every `strike`/`use` trigger dispatches from.
 //! - [`promise`]: an objective keeps the promise its prompt makes (`DW0860`–`DW0863`).
 //! - [`pulse`]: a sound that beats over a place — its derived range and listening stations (`DW0994`, `DW0995`).
+//! - [`placed`]: the placements ledger — every block, container item and body the datapack places outside the templates, and every removal, one record each, the command written from the record (spec-0112 §4).
 //! - [`raster`]: the shared RGBA canvas and bitmap-text primitives the blocking chart, the contact sheet and a labelled frame draw on.
 //! - [`reach`]: what completes a `reach` — the one authority for the volume a body has to be in.
 //! - [`registry`]: the full pinned-MC item registry and the prefab/anchor metadata.
@@ -176,6 +177,7 @@ pub mod nav;
 pub(crate) mod nbtread;
 pub mod observer;
 pub mod onkill;
+pub mod placed;
 pub mod plan;
 pub mod png;
 pub mod pool;

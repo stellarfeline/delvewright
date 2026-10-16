@@ -939,7 +939,10 @@ pub struct FiredCutscene<'a> {
 /// the bundles a step's completion fires ([`crate::compiler::hold`]'s
 /// completion bundles), at any depth of their `sequence` steps.
 pub fn critical_cutscenes<'a>(plan: &'a crate::compiler::plan::Plan<'a>) -> Vec<FiredCutscene<'a>> {
-    fn walk<'a>(list: &'a [delvewright_dsl::QuestEffect], out: &mut Vec<&'a delvewright_dsl::QuestEffect>) {
+    fn walk<'a>(
+        list: &'a [delvewright_dsl::QuestEffect],
+        out: &mut Vec<&'a delvewright_dsl::QuestEffect>,
+    ) {
         for e in list {
             if matches!(e.verb, Verb::Cutscene { .. }) {
                 out.push(e);

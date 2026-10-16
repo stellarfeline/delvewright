@@ -85,8 +85,8 @@ pub(crate) fn run_edit(
     persist: bool,
     json: bool,
 ) -> ExitCode {
-    use delvec::compiler::load::WORLD_EDITS_FILE;
     use delvec::compiler::framing::{self, Camera, DEFAULT_FOV};
+    use delvec::compiler::load::WORLD_EDITS_FILE;
 
     let mut loaded = match load_or_refuse(campaign_dir, json) {
         Ok(l) => l,
@@ -225,9 +225,10 @@ pub(crate) fn run_edit(
     // The solved layout, hoisted out of the per-batch loop: it is a property of
     // the plan, identical in every batch's manifest.
     let pieces = framing::collect_pieces(&plan);
-    let maker = delvec::compiler::view::review::WorldMaker::new(&plan, assembled, &base, &structures);
+    let maker =
+        delvec::compiler::view::review::WorldMaker::new(&plan, assembled, &base, &structures);
     let clock = delvec::compiler::view::review::Clock::at(&plan, 0);
-    let written = maker.encode_blocks(
+    let (_, written) = maker.encode_blocks(
         &load,
         &delvec::compiler::view::beat::load_laid(&plan, &nav),
         clock.day_time(&plan),
@@ -248,13 +249,17 @@ pub(crate) fn run_edit(
     let (lo, hi) = maker.extent;
     let mut shots: Vec<(String, String)> = Vec::new(); // (batch id, png path)
     for b in &replay.batches {
-        let Some((lo_b, hi_b)) = b.bounds else { continue };
+        let Some((lo_b, hi_b)) = b.bounds else {
+            continue;
+        };
         let centre = [
             (lo_b[0] + hi_b[0]) as f64 / 2.0,
             (lo_b[1] + hi_b[1]) as f64 / 2.0,
             (lo_b[2] + hi_b[2]) as f64 / 2.0,
         ];
-        let span = ((hi_b[0] - lo_b[0]).max(hi_b[1] - lo_b[1]).max(hi_b[2] - lo_b[2])) as f64;
+        let span = ((hi_b[0] - lo_b[0])
+            .max(hi_b[1] - lo_b[1])
+            .max(hi_b[2] - lo_b[2])) as f64;
         let d = (span * 1.1).max(12.0);
         let eye = [
             centre[0] + d * 0.75,
@@ -300,7 +305,12 @@ pub(crate) fn run_edit(
             })
             .collect();
         let mut rgba = drawn.rgba.clone();
-        delvec::compiler::view::frameset::stamp_labels(&mut rgba, drawn.width, drawn.height, &shows);
+        delvec::compiler::view::frameset::stamp_labels(
+            &mut rgba,
+            drawn.width,
+            drawn.height,
+            &shows,
+        );
         let png = delvec::compiler::png::encode_rgba(drawn.width, drawn.height, &rgba);
         let name = b.id.strip_prefix("batch/").unwrap_or(&b.id);
         let image_name = format!("{name}.png");

@@ -25,7 +25,7 @@ use crate::cli::edit::{EditAction, run_edit};
 use crate::cli::l10n::{run_l10n_apply, run_l10n_inventory};
 use crate::cli::metrics::{RigAction, run_calibrate, run_metrics, run_rig_describe};
 use crate::cli::view::{
-    FramesCampaignArgs, camera_stands, load_stood, run_blocking_chart, run_frames_campaign,
+    FramesCampaignArgs, camera_stands, run_blocking_chart, run_frames_campaign,
 };
 
 /// Internal-error exit code (spec-0002: ≥10).
@@ -271,12 +271,12 @@ enum Command {
         out: String,
     },
     /// Write the world the engine models at load — the configuration arriving
-    /// at the critical path's first step, every world-load seal in place, no
-    /// beat fired — as an Anvil save (`level.dat` + `region/`) under `-o`,
-    /// from the campaign and `--prefabs` alone: no camera record, no server
-    /// boot. It is the world `delvec build` writes as
-    /// `validation/worlds/at-load`, through the same writer, and the written
-    /// half of `DW0955` (`tools/ci/check-written-world.py`).
+    /// at the critical path's first step, every world-load seal in place, the
+    /// datapack's setup placements laid, no beat fired — as an Anvil save
+    /// (`level.dat`, `region/`, `entities/`) under `-o`, from the campaign and
+    /// `--prefabs` alone: the build runs in memory and no server boots. It is
+    /// the world `delvec build` writes as `validation/worlds/at-load`, byte for
+    /// byte, and the written half of `DW0955` (`tools/ci/check-written-world.py`).
     WrittenWorld {
         /// Campaign directory.
         campaign_dir: PathBuf,
@@ -418,11 +418,7 @@ fn main() -> ExitCode {
             textures,
         } => run_textures(campaign_dir, out, textures.as_deref(), cli.json),
         Command::WrittenWorld { campaign_dir, out } => {
-            delvec::compiler::view::cli::run_written_world(
-                out,
-                cli.json,
-                load_stood(campaign_dir, &cli.prefabs, cli.json),
-            )
+            crate::cli::campaign::run_written_world(campaign_dir, out, &cli.prefabs, cli.json)
         }
         Command::View(delvec::compiler::view::cli::ViewCommand::Cameras {
             build_dir,

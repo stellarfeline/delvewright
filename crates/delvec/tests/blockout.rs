@@ -2520,9 +2520,16 @@ fn overview_of(c: &Campaign, prefab: &str) -> serde_json::Value {
     let world = delvec::compiler::nav::World::from_plan(&plan, &BTreeMap::new());
     let frames = delvec::compiler::view::review::frame_worlds(&plan, &world);
     let picture = delvec::compiler::blockstate::BlockMap::new();
-    let (rp, _) =
-        delvec::compiler::render_plan::render_plan(&plan, &reg, &[], &world, &frames, &picture)
-            .expect("every camera's eye is proven clear");
+    let (rp, _) = delvec::compiler::render_plan::render_plan(
+        &plan,
+        &reg,
+        &[],
+        &[],
+        &world,
+        &frames,
+        &picture,
+    )
+    .expect("every camera's eye is proven clear");
     rp["shots"]
         .as_array()
         .unwrap()

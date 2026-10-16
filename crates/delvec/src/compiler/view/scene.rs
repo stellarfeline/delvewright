@@ -704,7 +704,11 @@ pub fn sky_phrase(weather: WorldWeather, daytime_ticks: i64) -> String {
          lightmap's, peak channel), sun {}",
         weather.keyword(),
         round6(c.sky_light),
-        if c.sun_draw_texture { "drawn" } else { "not drawn" }
+        if c.sun_draw_texture {
+            "drawn"
+        } else {
+            "not drawn"
+        }
     )
 }
 
@@ -1011,5 +1015,4 @@ mod tests {
         }
         assert!(worst < 1e-12, "{worst}");
     }
-
 }

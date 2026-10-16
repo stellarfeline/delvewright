@@ -44,6 +44,32 @@ pub(super) fn has_collect_objective(c: &delvewright_dsl::Campaign) -> bool {
 /// kill) or an unresolvable anchor — both the `tick` activation driver and the
 /// `activate_<obj>` function key off this being non-empty, so they never diverge.
 pub(super) fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
+    activation_rows(plan, area, o)
+        .iter()
+        .map(crate::compiler::placed::Placed::command)
+        .collect()
+}
+
+/// The ledger rows of [`activation_commands`] (spec-0112 §4): every block,
+/// container item and body an objective's activation places, fired at the
+/// step the caller states (setup here).
+pub(super) fn activation_rows(
+    plan: &Plan,
+    area: &str,
+    o: &Objective,
+) -> Vec<crate::compiler::placed::Placed> {
+    activation_lines(plan, area, o)
+        .iter()
+        .map(|l| {
+            let f = crate::compiler::placed::Firing::Setup;
+            crate::compiler::placed::Placed::of_summon(f.clone(), l)
+                .or_else(|| crate::compiler::placed::Placed::of_block_line(f, l))
+                .expect("an activation places blocks, items and bodies")
+        })
+        .collect()
+}
+
+fn activation_lines(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
     let mut cmds = Vec::new();
     match o {
         Objective::Collect {
@@ -187,6 +213,31 @@ pub(super) fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec
 /// (chest block only), `talk-to` and `kill` summon no per-objective entity, so they
 /// contribute nothing.
 pub(super) fn completion_cleanup(o: &Objective) -> Vec<String> {
+    completion_rows(o)
+        .iter()
+        .map(crate::compiler::placed::Placed::command)
+        .collect()
+}
+
+/// The ledger rows of [`completion_cleanup`]: one removal per objective tag.
+pub(super) fn completion_rows(o: &Objective) -> Vec<crate::compiler::placed::Placed> {
+    completion_lines(o)
+        .into_iter()
+        .map(|l| {
+            let tag = l
+                .trim_start_matches("kill @e[tag=")
+                .trim_end_matches(']')
+                .to_string();
+            crate::compiler::placed::Placed::removed(
+                crate::compiler::placed::Firing::Setup,
+                &tag,
+                &l,
+            )
+        })
+        .collect()
+}
+
+fn completion_lines(o: &Objective) -> Vec<String> {
     match o {
         Objective::Interact { id, .. } => {
             vec![format!("kill @e[tag={}]", interact_entity_tag(id.as_str()))]

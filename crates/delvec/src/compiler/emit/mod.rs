@@ -827,7 +827,7 @@ pub fn build_with_warnings(
             g
         }
     };
-    let functions = emit_functions(
+    let mut functions = emit_functions(
         plan,
         &chrome,
         &sentinels,
@@ -847,6 +847,33 @@ pub fn build_with_warnings(
         &asm_locks,
         &pulse_gate.rows,
     );
+    // **The placements ledger** (spec-0112 §4): every block, container item and
+    // body the datapack places outside the templates, and every removal, read
+    // off the functions that place them and written back from the row, so a
+    // line and its record cannot disagree. A review frame's world lays the rows
+    // its arrival holds.
+    let (ledger, placing_lines) =
+        crate::compiler::placed::ledger_of_functions(plan, &mut functions);
+    let unplaceable = ledger.unplaceable();
+    eprintln!(
+        "placements ledger: {} row(s) over {placing_lines} placing line(s) of the functions that \
+         place outside the templates; {} body row(s) no frame's world can hold as written{}",
+        ledger.rows.len(),
+        unplaceable.len(),
+        if unplaceable.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " ({})",
+                unplaceable
+                    .iter()
+                    .map(|r| format!("`{}` in `{}`", r.command(), r.function))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )
+        }
+    );
+    put_json(&mut out, "validation/placed.json", &ledger.to_json(plan));
     // DW1002's write arms over the FINAL function list, read off the shipped
     // commands so what is judged is what is emitted: the load as the server
     // runs it — `setup`, the ground, the templates, the world build,
@@ -1046,6 +1073,10 @@ pub fn build_with_warnings(
     // Every shot stands in a world of the critical path's own configurations
     // (spec-0112 §3) and its eye is proven clear there; the worlds are written
     // under `validation/worlds/` beside the plan, with the review record.
+    // The frame worlds again, now that the ledger exists: a world is its
+    // configuration's bytes, the rows its arrival holds, and its clock.
+    let frame_worlds =
+        crate::compiler::view::review::frame_worlds_with(plan, &world, Some(&ledger));
     let (render_plan_doc, camera_warnings) = crate::compiler::render_plan::render_plan(
         plan,
         prefabs,
@@ -1064,6 +1095,8 @@ pub fn build_with_warnings(
         &picture,
         &maker,
         &frame_worlds,
+        &ledger,
+        &cutscene_proof,
         &render_plan_doc,
         &mut out,
     );

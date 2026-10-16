@@ -36,6 +36,20 @@ pub(super) fn npc_summon_commands(
     plan: &Plan,
     npc: &plan::NpcPlan,
 ) -> Vec<String> {
+    npc_summon_rows(c, plan, npc)
+        .iter()
+        .map(crate::compiler::placed::Placed::command)
+        .collect()
+}
+
+/// The ledger rows of [`npc_summon_commands`]: the body and its hitbox
+/// (spec-0112 §4), fired at setup; the caller states another firing when the
+/// rows are a `spawn-npc`'s.
+pub(super) fn npc_summon_rows(
+    c: &delvewright_dsl::Campaign,
+    plan: &Plan,
+    npc: &plan::NpcPlan,
+) -> Vec<crate::compiler::placed::Placed> {
     let dsl_npc = c
         .npcs
         .content
@@ -110,7 +124,12 @@ pub(super) fn npc_summon_commands(
         "summon minecraft:interaction {} {} {} {{width:{NPC_HITBOX_WIDTH:.1}f,height:{NPC_HITBOX_HEIGHT:.1}f,response:1b,Invulnerable:1b,Tags:[{BORNE_NBT}{tag_list}]}}",
         p[0], p[1], p[2]
     ));
-    out
+    out.iter()
+        .map(|l| {
+            crate::compiler::placed::Placed::of_summon(crate::compiler::placed::Firing::Setup, l)
+                .expect("an NPC's lines are summons")
+        })
+        .collect()
 }
 
 /// The `dw_trig_<id>` tags of every `strike` trigger whose `at` anchor is

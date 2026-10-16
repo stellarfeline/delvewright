@@ -1625,7 +1625,10 @@ mod tests {
         assert_eq!(e.len(), 1);
         let f = &e[0];
         assert_eq!(f.stem, "isle_camera_hero");
-        assert_eq!((f.frame.width, f.frame.height, f.frame.spp), (1600, 900, 300));
+        assert_eq!(
+            (f.frame.width, f.frame.height, f.frame.spp),
+            (1600, 900, 300)
+        );
         assert_eq!(f.frame.fov_deg, 50.0);
         assert_eq!(f.frame.pos, [10.5, 70.0, -4.25]);
         assert_eq!((f.frame.yaw_deg, f.frame.pitch_deg), (30.0, 10.0));
@@ -1663,7 +1666,10 @@ mod tests {
             let mut c = cam("a");
             edit(&mut c);
             let moved = emit3(OCEAN, &sheet("isle", vec![c]), &EmitOptions::default()).unwrap();
-            assert_ne!(base[0].frame, moved[0].frame, "{what} did not reach the frame");
+            assert_ne!(
+                base[0].frame, moved[0].frame,
+                "{what} did not reach the frame"
+            );
         }
     }
 

@@ -42,10 +42,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Value, json};
 
+use crate::compiler::framing::Target;
 use crate::compiler::nav::World;
 use crate::compiler::plan::Plan;
 use crate::compiler::raster::{Canvas, GLYPH_ROWS, LabelPlacer, ScreenBox, kind_color, text_width};
-use crate::compiler::framing::Target;
 
 /// The colour a block the pinned version does not have is drawn as: full
 /// magenta, the missing-texture key — loud, so a block the chart cannot paint

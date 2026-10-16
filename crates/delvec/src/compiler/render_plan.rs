@@ -123,9 +123,9 @@ use serde_json::{Value, json};
 
 use crate::compiler::failure::Failure;
 use crate::compiler::nav::{CameraEye, LegRoute, World};
-use crate::compiler::view::review::FrameWorlds;
 use crate::compiler::plan::{Plan, ResolvedAnchor, Step};
 use crate::compiler::registry::PrefabRegistry;
+use crate::compiler::view::review::FrameWorlds;
 
 /// Player eye height above the standing cell's floor (vanilla: 1.62 blocks). The
 /// first-person camera sits here so a render frames exactly what the player sees.
@@ -810,7 +810,10 @@ impl<'c> Shots<'c> {
 
     /// `DW0724` over every eye, each in its own arrival's configuration.
     /// Returns how many distinct world keys the eyes were proven in.
-    fn prove_eyes(&mut self, picture: &crate::compiler::blockstate::BlockMap) -> Result<usize, Failure> {
+    fn prove_eyes(
+        &mut self,
+        picture: &crate::compiler::blockstate::BlockMap,
+    ) -> Result<usize, Failure> {
         let mut by_world: std::collections::BTreeMap<usize, Vec<CameraEye>> = Default::default();
         for (w, e) in std::mem::take(&mut self.eyes) {
             by_world.entry(w).or_default().push(e);
@@ -1256,7 +1259,11 @@ pub fn render_plan(
         for (k, f) in cs.keyframes.iter().enumerate() {
             let (y, p) = (f.yaw.to_radians(), f.pitch.to_radians());
             let fwd = [-y.sin() * p.cos(), -p.sin(), y.cos() * p.cos()];
-            let look = [f.pos[0] + fwd[0] * 8.0, f.pos[1] + fwd[1] * 8.0, f.pos[2] + fwd[2] * 8.0];
+            let look = [
+                f.pos[0] + fwd[0] * 8.0,
+                f.pos[1] + fwd[1] * 8.0,
+                f.pos[2] + fwd[2] * 8.0,
+            ];
             let end = if k == 0 && last == 0 {
                 "the whole of a still shot"
             } else if k == 0 {

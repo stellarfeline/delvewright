@@ -277,6 +277,28 @@ pub struct Stood {
     pub maker: crate::compiler::view::review::WorldMaker,
     /// `level.dat`'s `DayTime` for every world written.
     pub day_time: i64,
+    /// The plan's causal ancestry of critical-path steps
+    /// ([`Plan::gate_fired_before`]'s relation), so a world can lay the
+    /// placements ledger rows its arrival holds.
+    pub ancestors: BTreeMap<usize, BTreeSet<usize>>,
+}
+
+impl Stood {
+    /// The critical-path arrival world `key` stands at: 0 at load, the step
+    /// after the camera's `after` on the critical path, `None` on a branch's.
+    pub fn arrival_of(&self, key: &str) -> Option<usize> {
+        if key == AT_LOAD {
+            return Some(0);
+        }
+        let s = self.stands.stands.iter().find(|s| s.key == key)?;
+        let a = s.after.as_ref()?;
+        (a.path == "the critical path").then_some(a.index)
+    }
+
+    /// Whether step `g` fires before arrival `s` ([`Plan::gate_fired_before`]).
+    pub fn fired_before(&self, g: usize, s: usize) -> bool {
+        g == 0 || self.ancestors.get(&s).is_some_and(|a| a.contains(&g))
+    }
 }
 
 /// The load configuration's bytes: the critical path's arrival at step 0 over

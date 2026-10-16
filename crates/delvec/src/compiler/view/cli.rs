@@ -492,7 +492,10 @@ pub fn client_jar_home() -> Option<PathBuf> {
         PathBuf::from(h)
             .join(".delvewright")
             .join("client")
-            .join(format!("minecraft-{}.jar", delvewright_dsl::blocks::MC_VERSION))
+            .join(format!(
+                "minecraft-{}.jar",
+                delvewright_dsl::blocks::MC_VERSION
+            ))
     })
 }
 
@@ -968,11 +971,15 @@ pub fn write_world(
     key: &str,
     blocks: &crate::compiler::blockstate::BlockMap,
     stood: &crate::compiler::view::beat::Stood,
+    rows: &[&crate::compiler::placed::Placed],
     dir: &Path,
 ) -> Result<WorldWritten, Diagnostic> {
     let started = std::time::Instant::now();
     let laid = stood.stands.laid_in(key).to_vec();
-    let written = stood.maker.encode_blocks(blocks, &laid, stood.day_time, &[]);
+    let (blocks, written) = stood
+        .maker
+        .encode_blocks(blocks, &laid, stood.day_time, rows);
+    let blocks = &blocks;
     crate::compiler::view::world::write_files(&written, dir)
         .map_err(|e| Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", dir.display())))?;
     let abs = std::path::absolute(dir)
@@ -991,54 +998,6 @@ pub fn write_world(
         omitted: crate::compiler::view::world::block_entities_omitted(blocks, &bes),
         written,
     })
-}
-
-/// `delvec written-world`: the world the engine models at load — the
-/// configuration arriving at the critical path's first step, every world-load
-/// seal in place, no beat fired — written under `out` (its `level.dat`,
-/// `region/` and `entities/`), with no camera record. It is the world `delvec
-/// build` writes as `validation/worlds/at-load` and `delvec cameras` as
-/// `<out>/worlds/at-load`, through the same writer, and the written half of
-/// `DW0955` (`tools/ci/check-written-world.py`). `stood` is the caller's
-/// assembly of the campaign, carrying exactly the load world.
-pub fn run_written_world(
-    out: &Path,
-    json: bool,
-    stood: Result<crate::compiler::view::beat::Stood, (Option<Diagnostic>, u8)>,
-) -> ExitCode {
-    let stood = match stood {
-        Ok(s) => s,
-        Err((Some(d), code)) => return fail(d, json, code),
-        Err((None, code)) => return ExitCode::from(code),
-    };
-    let (key, blocks) = stood
-        .stands
-        .worlds
-        .first()
-        .expect("the load assembly carries the load world");
-    let w = match write_world(key, blocks, &stood, out) {
-        Ok(w) => w,
-        Err(d) => return fail(d, json, exit::OUTPUT),
-    };
-    if json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "world": w.path,
-                "key": key,
-                "block_entities": w.written.block_entities,
-                "block_entities_omitted": w.omitted,
-                "sha256": w.written.sha256,
-            })
-        );
-    }
-    eprintln!("{}", w.line);
-    eprintln!(
-        "block entities: {} written from the templates, {} drawn blank (a sign, banner, head or \
-         lectern whose compound no template carries)",
-        w.written.block_entities, w.omitted
-    );
-    ExitCode::SUCCESS
 }
 
 /// `delvec cameras`: draw one frame per camera the run frames, each in the
@@ -1144,12 +1103,25 @@ pub fn run_cameras(
         Err((Some(d), code)) => return fail(d, json, code),
         Err((None, code)) => return ExitCode::from(code),
     };
+    // The bodies and props the datapack places, from the build's own ledger
+    // (`validation/placed.json`): the rows each world's arrival holds.
+    let ledger = std::fs::read(build_dir.join("validation").join("placed.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .map(|v| crate::compiler::placed::Ledger::from_json(&v))
+        .unwrap_or_default();
     let worlds_dir = out.join("worlds");
     let mut world_lines = Vec::new();
     let mut paths = std::collections::BTreeMap::new();
     let mut omitted = std::collections::BTreeMap::new();
     for (key, blocks) in &stood.stands.worlds {
-        let w = match write_world(key, blocks, &stood, &worlds_dir.join(key)) {
+        let rows = match stood.arrival_of(key) {
+            Some(a) => {
+                crate::compiler::placed::rows_under(&ledger, a, &|g, s| stood.fired_before(g, s))
+            }
+            None => crate::compiler::placed::rows_under(&ledger, 0, &|_, _| false),
+        };
+        let w = match write_world(key, blocks, &stood, &rows, &worlds_dir.join(key)) {
             Ok(w) => w,
             Err(d) => return fail(d, json, exit::OUTPUT),
         };
@@ -1180,7 +1152,12 @@ pub fn run_cameras(
     let mut seconds = 0.0f64;
     let mut obstructed = 0usize;
     for f in &frames {
-        let Some(stand) = stood.stands.stands.iter().find(|s| s.camera == f.camera.name) else {
+        let Some(stand) = stood
+            .stands
+            .stands
+            .iter()
+            .find(|s| s.camera == f.camera.name)
+        else {
             return fail(
                 Diagnostic::error(
                     DW_INPUT,
@@ -1288,7 +1265,11 @@ pub fn run_cameras(
         } else {
             "hq"
         },
-        if preview { "" } else { " at each camera's samples" },
+        if preview {
+            ""
+        } else {
+            " at each camera's samples"
+        },
         if opts.bracket.is_some() {
             format!(
                 "; every candidate is in {}",
