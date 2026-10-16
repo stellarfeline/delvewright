@@ -282,6 +282,22 @@ impl ThresholdBinding {
             self.performed, self.judged, self.crossed, self.no_debt, self.by_hand, self.carried
         )
     }
+
+    /// The ledger `validation/threshold-gate.json` carries: the line's counts,
+    /// with `judged` also as `examined`, the key every reader of a binding
+    /// ledger refuses at zero.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "code": super::DW_THRESHOLD_WALKED_PAST.id(),
+            "performed": self.performed,
+            "judged": self.judged,
+            "examined": self.judged,
+            "entered": self.crossed,
+            "no_debt": self.no_debt,
+            "by_hand": self.by_hand,
+            "carried": self.carried,
+        })
+    }
 }
 
 /// **`DW1044`**: every walk-fired trigger the critical path performs to pay a

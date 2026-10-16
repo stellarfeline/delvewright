@@ -961,9 +961,9 @@ pub(super) fn effect_give_command(
 /// (spec-0018: `@a` for a party beat, `@s` inside a solo `on_respawn`/`on_caught`
 /// bundle). An `at: anchor` sound carries absolute coordinates, so every listener
 /// hears it in the same place; the default `players` target is
-/// listener-relative and, when a volume/pitch is declared (which forces an
-/// explicit position), is emitted through `execute as <who> at @s run … ~ ~ ~` so
-/// `~ ~ ~` resolves at each listener rather than at the command's own position.
+/// listener-relative and is always emitted through `execute as <who> at @s run
+/// playsound … @s`, so it sounds at each listener rather than at the command's
+/// own position (the world spawn, for a tick- or setup-run function).
 /// `at: actor` never reaches emission — no position resolves for a live actor,
 /// so it is rejected at validate-time (`DW0335`).
 pub(super) fn emit_play_sound(
@@ -1013,7 +1013,7 @@ pub(super) fn emit_play_sound(
         Some(SoundAt::Actor { .. }) => return, // unsupported: DW0335 at validate-time
         _ => None,                             // `players` (default): player-relative
     };
-    let listener_relative = pos.is_none() && (volume.is_some() || pitch.is_some());
+    let listener_relative = pos.is_none();
     let mut cmd = format!(
         "playsound {sound} master {}",
         if listener_relative { "@s" } else { who }
@@ -1028,9 +1028,10 @@ pub(super) fn emit_play_sound(
             }
         }
     }
-    if listener_relative && who != "@s" {
-        // `~ ~ ~` is the COMMAND's position, not the listener's — rebind so each
-        // party member hears it at their own feet.
+    if listener_relative {
+        // A positionless or `~ ~ ~` sound plays at the COMMAND's position, not
+        // the listener's — rebind so each listener hears it at their own feet.
+        // `@s` too: a solo bundle runs `as` its player, never `at` them.
         cmd = format!("execute as {who} at @s run {cmd}");
     }
     body.push(cmd);
@@ -1159,9 +1160,13 @@ pub(super) fn emit_damage_players(
 
 /// Emit a `narrate` line in its channel (DSL v0.4). `chat` = `tellraw`; `title`
 /// / `subtitle` = the vanilla `title` command (a subtitle is paired with a blank
-/// title so it renders on its own). An optional sound plays alongside. `who` is
-/// the audience selector (spec-0018): the story is told to the whole party
-/// (`@a`), except inside a solo `on_respawn`/`on_caught` bundle (`@s`).
+/// title so it renders on its own). An optional sound plays alongside, at each
+/// listener: a `playsound` with no position plays at the command source, which
+/// for a tick- or setup-run function is the world spawn, so the line is played
+/// `at` every member of the audience to `@s` — heard where the player stands,
+/// by construction. `who` is the audience selector (spec-0018): the story is
+/// told to the whole party (`@a`), except inside a solo `on_respawn`/`on_caught`
+/// bundle (`@s`).
 pub(super) fn emit_narrate(
     text: &str,
     style: Option<delvewright_dsl::NarrateStyle>,
@@ -1193,7 +1198,9 @@ pub(super) fn emit_narrate(
         NarrateStyle::Actionbar => body.push(format!("title {who} actionbar {comp}")),
     }
     if let Some(s) = sound {
-        body.push(format!("playsound {s} player {who}"));
+        body.push(format!(
+            "execute as {who} at @s run playsound {s} player @s"
+        ));
     }
 }
 

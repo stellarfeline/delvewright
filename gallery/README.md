@@ -540,6 +540,18 @@ The build publishes the ledger at `validation/ways.json`: one way staged across
 one piece of four, four cells behind it, opened by a forced beat at critical-path
 step 6, and twelve required elements examined against it.
 
+**The treads are tested where every walk onto the loft steps.** Taking the bone
+also sets `flag/flight-relaid`, and `trigger/test-the-treads` — an `approach`
+within 2 of `anchor/flight-head`, the mezzanine's south edge where the flight
+comes out — sets `flag/treads-held` and says so on the actionbar.
+`obj/climb-the-loft` reads that flag, so the critical path performs the trigger,
+and `DW1044` judges it: every walk from the bone to the loft passes the head of
+the flight, so the build prints `1 judged …, 1 entered by every walk` and writes
+the same counts to `validation/threshold-gate.json`. At range 1 the build is
+refused: a walk exists that never stands where the selector is sure to catch a
+body, and the message names range 2 as the least range every walk enters. The coverage gate reds if that ledger ever judges no
+trigger; the refusal side is `probes/a-threshold-the-party-walks-round`.
+
 ## The barrier pocket
 
 In the near hall's north-east corner is a pocket whose only way in is a

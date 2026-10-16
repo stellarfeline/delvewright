@@ -1295,6 +1295,10 @@ pub fn build_with_warnings(
     if pulse_gate.declared > 0 {
         put_json(&mut out, "validation/pulses.json", &pulse_gate.to_json());
     }
+    // The engine's quest cues and the objectives that owe them, so the bot
+    // judges where each one arrives. Every build plays the campaign cue, so
+    // every build writes the file.
+    put_json(&mut out, "validation/cues.json", &cue_ledger(plan));
     if let Some(gate) = firework_gate.as_ref().filter(|g| g.declared > 0) {
         put_json(&mut out, "validation/firework-gate.json", &gate.to_json());
     }

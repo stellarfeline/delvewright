@@ -1752,7 +1752,8 @@
             "id": "obj/climb-the-loft",
             "radius": 1,
             "requires_flags": [
-              "flag/muster-cleared"
+              "flag/muster-cleared",
+              "flag/treads-held"
             ],
             "stealth": false,
             "title": "Climb to the mezzanine",
@@ -3059,6 +3060,18 @@
                   }
                 ]
               }
+            },
+            {
+              "flag": "flag/flight-relaid",
+              "type": "set-flag",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/muster-cleared"
+                ]
+              }
             }
           ]
         },
@@ -4313,6 +4326,28 @@
         "prop": {
           "block": "minecraft:lever[face=floor,facing=south]"
         }
+      },
+      {
+        "at": "anchor/flight-head",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "The relaid treads hold under you.",
+            "type": "narrate"
+          },
+          {
+            "flag": "flag/treads-held",
+            "type": "set-flag"
+          }
+        ],
+        "id": "trigger/test-the-treads",
+        "on": {
+          "on": "approach",
+          "range": 2
+        },
+        "requires_flags": [
+          "flag/flight-relaid"
+        ]
       }
     ],
     "waves": [
