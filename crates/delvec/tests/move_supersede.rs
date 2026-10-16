@@ -915,3 +915,58 @@ fn a_watching_body_yields_to_the_walk_that_supersedes_and_resumes_on_its_arrival
         "the simulation ran past the arrival, so the resume was observed"
     );
 }
+
+/// A watching keeper whose one walk's `on_arrive` takes the body away
+/// (`despawn-npc` of the walker): `watch_yield_npc_keeper` must read the body
+/// before the arrival bundle runs — it fast-forwards the walk through the same
+/// rule `v04_move` does — and leave no reschedule behind that would run the
+/// arrival into a sibling template.
+#[test]
+fn the_watch_yield_template_reads_the_body_before_its_arrival_takes_it_away() {
+    let npcs = common::patch_doc(&read_hw("npcs.json"), |d| {
+        d["content"]["npcs"][0]["watch"] = serde_json::json!({ "who": "nearest", "within": 8 });
+    });
+    let quests = QUESTS_ONE_WALK.replacen(
+        r#"{ "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }"#,
+        r#"{ "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" },
+              "on_arrive": [ { "type": "despawn-npc", "npc": "npc/keeper" } ] }"#,
+        1,
+    );
+    let out = build_with_npcs(npcs, quests);
+    let fns = driver_fns(&out, "mv_");
+    let path = "packtest-datapack/data/hello-world/test/watch_yield_npc_keeper.mcfunction";
+    let template: Vec<String> = out
+        .iter()
+        .find(|(p, _)| p.as_str() == path)
+        .map(|(_, b)| String::from_utf8(b.clone()).unwrap())
+        .expect("the build emits `watch_yield_npc_keeper`")
+        .lines()
+        .filter(|l| {
+            l.starts_with("scoreboard ") || l.starts_with("function ") || l.starts_with("schedule ")
+        })
+        .map(str::to_string)
+        .collect();
+    let mut sim = Sim::new(fns);
+    sim.tags.insert("dw_watch".to_string());
+    sim.fns.insert("template".to_string(), template);
+    sim.call("template");
+    assert!(
+        !sim.outside.iter().any(|f| f == "despawn_npc_keeper"),
+        "`watch_yield_npc_keeper` ran the walk's arrival, whose `despawn-npc` takes the body \
+         it then counts: {:?}",
+        sim.outside
+    );
+    assert!(
+        sim.final_pos().is_some(),
+        "the template drove the walk: its driver teleported the body"
+    );
+    assert!(
+        !sim.tags.contains("dw_watch"),
+        "the template read the body while its walk still held the watch"
+    );
+    sim.run(5);
+    assert!(
+        !sim.outside.iter().any(|f| f == "despawn_npc_keeper"),
+        "the template left the driver scheduled, and its arrival ran a tick later"
+    );
+}
