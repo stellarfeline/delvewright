@@ -208,10 +208,10 @@ impl StoryModel {
         self.electives.iter().any(|e| e.id == id)
     }
 
-    /// The scene an effect pointer stands in, when it is a final scene's.
+    /// The final scene the `campaign-complete` at `path` stands in.
     fn scene_of(&self, path: &str) -> Option<&crate::compiler::ending::Scene> {
-        let parent = path.rsplit_once('/').map(|(p, _)| p)?;
-        self.scenes.scenes.iter().find(|s| s.path == parent)
+        let e = self.scenes.endings.iter().find(|e| e.path == path)?;
+        self.scenes.scenes.get(e.scene)
     }
 
     /// The unrealizable targets of the scene `ending_path` stands in, grouped by

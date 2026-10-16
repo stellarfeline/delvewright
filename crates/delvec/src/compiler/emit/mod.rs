@@ -1118,6 +1118,21 @@ pub fn build_with_warnings(
     // writers, its aftermath and how each change is observed, the story worlds
     // that reach it — validation metadata, listed in the manifest like the rest.
     out.insert("validation/endings.json".to_string(), endings_ledger(plan));
+    // ...and every ending a world reaches with an observable aftermath owes its
+    // `ending_<slug>_<k>` template, wherever its `campaign-complete` stands.
+    let unproven = packtest::ending::unproven_endings(plan);
+    if !unproven.is_empty() {
+        return Err(BuildFailure::Diagnostic {
+            code: plan::DW_BUILD,
+            message: format!(
+                "internal invariant violation: {} ending world(s) fire an observable aftermath \
+                 and got no `ending_<slug>_<k>` PackTest: {}. The template generator does not \
+                 drive this scene's root. This is a compiler bug; stop and escalate",
+                unproven.len(),
+                unproven.join("; ")
+            ),
+        });
+    }
     // ...and, for the harness tier, one EXECUTABLE path per reachable branch:
     // `validation/branch-path-<branch>.json`, in the same `critical-path.json`
     // contract the bot has always consumed. The plan artifact above says WHICH

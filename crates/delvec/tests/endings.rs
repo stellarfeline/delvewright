@@ -779,6 +779,69 @@ fn the_ledger_lists_each_aftermath_effect_with_its_observable() {
     }
 }
 
+/// A `campaign-complete` nested under a timeline owes its PackTests exactly as
+/// one at the root of its bundle does, and its final scene is the whole bundle
+/// the act fires — so an epilogue line spoken before the banner, in the root
+/// list, is one of the ending's inputs.
+#[test]
+fn a_nested_ending_owes_its_templates_and_reads_its_whole_bundle() {
+    let dir = reach_copy("nested", |q| {
+        q["content"]["quests"][2]["on_complete"] = json!([
+            {"type": "narrate", "style": "chat", "text": "Counted.",
+             "when": {"requires_state": [{"op": "at-least", "state": "state/tally", "value": 1}]}},
+            {"type": "sequence", "steps": [{"at_ticks": 20, "effects": [
+                {"type": "set-block", "anchor": "anchor/exit", "block": "minecraft:moss_block"},
+                cc("ending/home", Value::Null)
+            ]}]}
+        ]);
+    });
+    let out = dir.with_extension("out");
+    let prefabs = common::prefabs_dir();
+    let (code, log) = delvec_run(&[
+        "build",
+        dir.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "{log}");
+    let ledger: Value = serde_json::from_str(
+        &std::fs::read_to_string(out.join("validation/endings.json")).unwrap(),
+    )
+    .unwrap();
+    let home = &ledger["endings"][0];
+    assert_eq!(
+        home["path"],
+        "/content/quests/2/on_complete/1/steps/0/effects/1"
+    );
+    assert_eq!(home["scene"], "/content/quests/2/on_complete");
+    let keys: Vec<&str> = home["inputs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["key"].as_str().unwrap())
+        .collect();
+    assert_eq!(keys, vec!["state/tally"], "{home}");
+    let worlds = home["worlds"].as_array().unwrap().len();
+    assert!(worlds > 0, "{home}");
+    let templates = home["packtests"].as_array().unwrap();
+    assert_eq!(templates.len(), worlds, "{home}");
+    for t in templates {
+        let name = t["template"].as_str().unwrap();
+        let body = std::fs::read_to_string(out.join(format!(
+            "packtest-datapack/data/hello-world/test/{name}.mcfunction"
+        )))
+        .unwrap_or_else(|e| panic!("{name}: {e}"));
+        let run = body
+            .find("function hello-world:complete_q_end")
+            .expect(&body);
+        let step = body.find("schedule clear hello-world:").expect(&body);
+        let check = body.find("assert block").expect(&body);
+        assert!(run < step && step < check, "{body}");
+    }
+}
+
 /// Criterion 11: the binding line is printed on every validate, analyze and
 /// build, every count stated, zeroes included — here a campaign whose ending's
 /// scene carries no gate at all.

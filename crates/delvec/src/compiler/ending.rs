@@ -1,9 +1,10 @@
 //! **An ending reads the run** (spec-0108, `DW1029`, `DW1030`).
 //!
 //! An ending is a `campaign-complete`. What it reads is every gate in its
-//! **final scene** — the effect list the `campaign-complete` stands in, with
-//! every list nested under any effect of that list — the ending's own gate and
-//! its siblings' alike (§3.2). A sibling gated on an input is the epilogue line
+//! **final scene** — the whole bundle the act that fires it fires: the effect
+//! root the `campaign-complete` stands in at any depth, with every list nested
+//! under it — the ending's own gate and every other line's alike (§3.2 as
+//! amended). A sibling gated on an input is the epilogue line
 //! that states that thread's outcome, so counting siblings is what makes "the
 //! epilogue states the outcome per thread" and "the ending reads the input" one
 //! fact.
@@ -130,10 +131,11 @@ pub struct Aftermath {
     pub verb: &'static str,
 }
 
-/// A final scene: one effect list holding at least one `campaign-complete`.
+/// A final scene: one effect root whose bundle holds at least one
+/// `campaign-complete`, at any depth — everything the act that fires it fires.
 #[derive(Clone, Debug)]
 pub struct Scene {
-    /// The list's JSON pointer (an element's is this plus `/<index>`).
+    /// The root list's JSON pointer (an element's is this plus `/<index>`).
     pub path: String,
     /// The stage document.
     pub stage: &'static str,
@@ -179,23 +181,23 @@ impl Scenes {
     pub fn of(c: &Campaign) -> Scenes {
         let mut out = Scenes::default();
         let optional = c.quest_plan.content.optional();
-        // Every effect list, with its path, its root's owner and the quest that
-        // dates it.
-        let mut lists: Vec<(String, &'static str, Option<String>, &[QuestEffect])> = Vec::new();
+        // Every effect root, with its path and the quest that dates it. A final
+        // scene is the WHOLE bundle the act fires — the root list, with every list
+        // nested under it — whenever a `campaign-complete` stands anywhere in it.
+        let mut roots: Vec<(String, &'static str, Option<String>, &[QuestEffect])> = Vec::new();
         delvewright_dsl::for_each_effect_root(c, &mut |site, list| {
             let quest = match site.owner {
                 EffectRootOwner::ObjectiveComplete { quest, .. }
                 | EffectRootOwner::QuestComplete { quest } => Some(quest.id.as_str().to_string()),
                 _ => None,
             };
-            push_lists(&site.path, site.stage, quest, list, &mut lists);
+            roots.push((site.path.clone(), site.stage, quest, list));
         });
-        for (path, stage, quest, list) in &lists {
-            let ends: Vec<(usize, &QuestEffect)> = list
-                .iter()
-                .enumerate()
-                .filter(|(_, e)| matches!(e.verb, Verb::CampaignComplete { .. }))
-                .collect();
+        for (path, stage, quest, list) in &roots {
+            let mut ends: Vec<(String, &QuestEffect)> = Vec::new();
+            for (i, e) in list.iter().enumerate() {
+                completes_deep(e, &format!("{path}/{i}"), &mut ends);
+            }
             if ends.is_empty() {
                 continue;
             }
@@ -220,7 +222,7 @@ impl Scenes {
                 aftermath,
                 terms,
             });
-            for (i, e) in ends {
+            for (at, e) in ends {
                 let id = match &e.verb {
                     Verb::CampaignComplete {
                         ending: Some(ending),
@@ -229,7 +231,7 @@ impl Scenes {
                 };
                 out.endings.push(Ending {
                     id,
-                    path: format!("{path}/{i}"),
+                    path: at,
                     scene,
                 });
             }
@@ -448,24 +450,14 @@ impl Class {
     }
 }
 
-/// Every effect list under `list` (itself first), with its pointer.
-fn push_lists<'a>(
-    path: &str,
-    stage: &'static str,
-    quest: Option<String>,
-    list: &'a [QuestEffect],
-    out: &mut Vec<(String, &'static str, Option<String>, &'a [QuestEffect])>,
-) {
-    out.push((path.to_string(), stage, quest.clone(), list));
-    for (i, e) in list.iter().enumerate() {
-        for (pseg, _, inner) in e.nested_effect_lists_labeled() {
-            push_lists(
-                &format!("{path}/{i}/{pseg}"),
-                stage,
-                quest.clone(),
-                inner,
-                out,
-            );
+/// Every `campaign-complete` at or under `e`, with its pointer, in walk order.
+fn completes_deep<'a>(e: &'a QuestEffect, path: &str, out: &mut Vec<(String, &'a QuestEffect)>) {
+    if matches!(e.verb, Verb::CampaignComplete { .. }) {
+        out.push((path.to_string(), e));
+    }
+    for (pseg, _, inner) in e.nested_effect_lists_labeled() {
+        for (j, x) in inner.iter().enumerate() {
+            completes_deep(x, &format!("{path}/{pseg}/{j}"), out);
         }
     }
 }

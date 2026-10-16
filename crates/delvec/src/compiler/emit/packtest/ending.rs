@@ -134,6 +134,19 @@ fn scene_list<'a>(c: &'a delvewright_dsl::Campaign, scene: &str) -> Option<&'a [
 
 /// Every ending template the build owes, in ending then world order.
 pub(crate) fn ending_templates(plan: &Plan) -> Vec<EndingTemplate> {
+    templates_and_unproven(plan).0
+}
+
+/// Every (ending, world) pair whose world fires an observable aftermath effect
+/// of the ending's scene and for which no template could be generated, in
+/// words. Empty on every campaign the generator covers; the build refuses a
+/// non-empty list as an internal invariant, so an ending that owes a proof
+/// never ships without one, wherever its `campaign-complete` stands.
+pub(crate) fn unproven_endings(plan: &Plan) -> Vec<String> {
+    templates_and_unproven(plan).1
+}
+
+fn templates_and_unproven(plan: &Plan) -> (Vec<EndingTemplate>, Vec<String>) {
     let c = plan.campaign;
     let ns = &plan.namespace;
     let title = artifact_title(c);
@@ -148,21 +161,34 @@ pub(crate) fn ending_templates(plan: &Plan) -> Vec<EndingTemplate> {
     let world_time = c.world.content.time;
     let world_weather = c.world.content.weather;
     let mut out = Vec::new();
+    let mut unproven = Vec::new();
     for v in &a.endings {
         let scene = &scenes.scenes[v.ending.scene];
         let slug =
             plan::safe_local(v.ending.id.trim_start_matches("ending/")).replace(['<', '>'], "");
-        let Some(list) = scene_list(c, &scene.path) else {
-            continue;
-        };
         for &k in &v.worlds {
             let run = &story.runs[k];
-            let Some(snap) = run.scene_at.get(&scene.path) else {
-                continue;
-            };
+            // What this world owes: an observable change its scene fires.
+            let owes = scene.aftermath.iter().any(|x| {
+                run.fired.contains(&x.path)
+                    && by_path
+                        .get(&x.path)
+                        .and_then(|e| crate::compiler::emit::ending::observation(plan, e))
+                        .is_some()
+            });
             let name = format!("ending_{slug}_{k}");
             let (pin, me) = pin_dummy(&format!("dw_endtest_{slug}_{k}"));
-            let Some(driver) = scene_driver(plan, &scene.path, &me) else {
+            let (Some(list), Some(snap), Some(driver)) = (
+                scene_list(c, &scene.path),
+                run.scene_at.get(&scene.path),
+                scene_driver(plan, &scene.path, &me),
+            ) else {
+                if owes {
+                    unproven.push(format!(
+                        "`{}` at `{}` in world/{k} (scene `{}`)",
+                        v.ending.id, v.ending.path, scene.path
+                    ));
+                }
                 continue;
             };
             let sc = format!("{slug}_{k}");
@@ -390,6 +416,12 @@ pub(crate) fn ending_templates(plan: &Plan) -> Vec<EndingTemplate> {
                 n += 1;
             }
             if n == 0 {
+                if owes {
+                    unproven.push(format!(
+                        "`{}` at `{}` in world/{k}: no observable of its scene could be staged",
+                        v.ending.id, v.ending.path
+                    ));
+                }
                 continue;
             }
             // The scene, through its real function, and every part of it the
@@ -419,5 +451,5 @@ pub(crate) fn ending_templates(plan: &Plan) -> Vec<EndingTemplate> {
             });
         }
     }
-    out
+    (out, unproven)
 }
