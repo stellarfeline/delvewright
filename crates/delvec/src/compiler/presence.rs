@@ -224,7 +224,10 @@ pub fn check(c: &Campaign) -> (Vec<Diagnostic>, PresenceBinding) {
     let mut walks = vec![("the critical path".to_string(), main)];
     for r in crate::compiler::branch::realize(c) {
         if let Some(w) = r.world {
-            walks.push((format!("branch `{}`", r.branch.id), flow.story_playthrough(w)));
+            walks.push((
+                format!("branch `{}`", r.branch.id),
+                flow.story_playthrough(w),
+            ));
         }
     }
     bind.configurations = walks.len();

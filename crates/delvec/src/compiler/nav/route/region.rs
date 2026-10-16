@@ -541,7 +541,8 @@ impl World {
         to_step: usize,
     ) -> RegionState {
         let fired = leg_fired(ancestor, from_step, to_step);
-        let mut st = self.region_state_without_world_load(region_events, to_step, &fired, Some(from_step));
+        let mut st =
+            self.region_state_without_world_load(region_events, to_step, &fired, Some(from_step));
         st.keep_out = keep_out_of(region_events, to_step);
         st
     }
