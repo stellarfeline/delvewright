@@ -270,7 +270,10 @@ fn trap_disarm_and_fire_emit_end_to_end() {
         "function hello-world:trap_detect",
         "assert score #trapfire_dart_hall dw.sys matches 1",
     ] {
-        assert!(pt.contains(expected), "the fire PackTest lacks `{expected}`:\n{pt}");
+        assert!(
+            pt.contains(expected),
+            "the fire PackTest lacks `{expected}`:\n{pt}"
+        );
     }
 
     // Every emitted trap command validates against the vendored 1.21.11 Brigadier
@@ -626,7 +629,11 @@ fn strung_room(dir: &Path, wire: bool) -> delvec::admit::structure::Structure {
     let hook = |facing| {
         PaletteEntry::with_props(
             "minecraft:tripwire_hook",
-            &[("attached", "true"), ("facing", facing), ("powered", "false")],
+            &[
+                ("attached", "true"),
+                ("facing", facing),
+                ("powered", "false"),
+            ],
         )
     };
     s.set_cell([west, y, z], hook("east"), None);
@@ -746,7 +753,10 @@ fn a_tripwire_trap_builds_from_an_admitted_piece() {
         &out,
         &format!("packtest-datapack/data/{NS}/test/v06_trap_fire_wire.mcfunction"),
     );
-    assert!(pt.contains("tp @a[tag=dw_t_trap_wire,limit=1] 5.5 65 7.5"), "{pt}");
+    assert!(
+        pt.contains("tp @a[tag=dw_t_trap_wire,limit=1] 5.5 65 7.5"),
+        "{pt}"
+    );
     assert!(pt.contains("function hello-world:trap_detect"), "{pt}");
 
     match build("trap-hooks-only", false).1 {

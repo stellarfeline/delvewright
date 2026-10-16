@@ -445,7 +445,11 @@ fn a_tripwire_and_its_hooks_pass_the_default_allowlist() {
     let hook = |facing| {
         PaletteEntry::with_props(
             "minecraft:tripwire_hook",
-            &[("attached", "true"), ("facing", facing), ("powered", "false")],
+            &[
+                ("attached", "true"),
+                ("facing", facing),
+                ("powered", "false"),
+            ],
         )
     };
     let mut s = fixtures::clean_room();
