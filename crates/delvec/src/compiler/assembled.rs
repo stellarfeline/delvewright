@@ -1157,6 +1157,10 @@ pub fn shipped_blocks(
             m.insert(p.pos, BlockState::new(&p.block));
         }
     }
+    // Last, what a holder shows of its contents: `setup_finish` fills every
+    // `loot` holder, and a brewing stand's first tick then draws its bottle
+    // slots as `has_bottle_<n>` (`loot::show_contents`).
+    crate::compiler::loot::show_contents(&plan.loot, &mut m);
     m
 }
 

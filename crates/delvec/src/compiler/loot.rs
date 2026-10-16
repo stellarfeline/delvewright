@@ -48,6 +48,68 @@ pub fn is_container(name: &str) -> bool {
     container_slots(name).is_some()
 }
 
+/// **The block state a filled holder shows**
+/// (`docs/reference/delvec/compiler/holders.md`, "The state a holder shows").
+/// In the pinned 1.21.11 server jar `BrewingStandBlockEntity.serverTick` sets
+/// `has_bottle_<n>` to `getPotionBits()[n]`, which is `!items[n].isEmpty()`
+/// for the three bottle slots ([`holders::BREWING_BOTTLE_SLOTS`]). It does so
+/// on the stand's first tick and again whenever the bits change. So a stack in
+/// a bottle slot shows as a bottle, and an empty bottle slot shows none,
+/// whatever the piece wrote. No other fill target's block state is a function
+/// of its slots.
+///
+/// `filled` lists the slots a fill lands a stack in, in the container's
+/// vocabulary (`container.<n>`). Every bottle property of the stand is
+/// rewritten; its other properties (none at 1.21.11) are kept. `None` when
+/// `state` is not a brewing stand.
+///
+/// [`holders::BREWING_BOTTLE_SLOTS`]: crate::compiler::holders::BREWING_BOTTLE_SLOTS
+pub fn shown_state(state: &str, filled: &[String]) -> Option<String> {
+    use crate::compiler::holders::{BREWING_BOTTLE_SLOTS, BREWING_STAND};
+    let (name, props) = match state.split_once('[') {
+        Some((n, rest)) => (n, rest.trim_end_matches(']')),
+        None => (state, ""),
+    };
+    if base_id(name) != BREWING_STAND {
+        return None;
+    }
+    let mut kv: BTreeMap<String, String> = props
+        .split(',')
+        .filter_map(|p| p.split_once('='))
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    for (n, slot) in BREWING_BOTTLE_SLOTS.iter().enumerate() {
+        let shown = filled.iter().any(|f| f == slot);
+        kv.insert(format!("has_bottle_{n}"), shown.to_string());
+    }
+    let props: Vec<String> = kv.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    Some(format!("{name}[{}]", props.join(",")))
+}
+
+/// **Every brewing stand of `m` as the server shows it once `setup_finish`
+/// has filled it** ([`shown_state`]). Its bottles are the bottle slots a
+/// `loot` fill lands a stack in, by the one landing rule
+/// ([`crate::compiler::holders::loot_slots`]: a stack's named slot, else its
+/// position), and a stand no fill reaches shows none.
+pub fn show_contents(loot: &[LootPlan], m: &mut crate::compiler::blockstate::BlockMap) {
+    let mut filled: BTreeMap<[i32; 3], Vec<String>> = BTreeMap::new();
+    for l in loot {
+        filled
+            .entry(l.cell)
+            .or_default()
+            .extend(crate::compiler::holders::loot_slots(
+                delvewright_dsl::holders::HolderFamily::Container,
+                &l.items,
+            ));
+    }
+    for (cell, state) in m.iter_mut() {
+        let slots = filled.get(cell).map_or(&[][..], Vec::as_slice);
+        if let Some(shown) = shown_state(state.as_str(), slots) {
+            *state = crate::compiler::blockstate::BlockState::new(&shown);
+        }
+    }
+}
+
 /// **A container this campaign's assembled world really has, at an anchor a
 /// campaign document can name.**
 ///
@@ -630,6 +692,33 @@ impl ContainerBinding {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The brewing stand shows a bottle in each bottle slot a fill lands a
+    /// stack in and none elsewhere, whatever was written; slot 3 (the
+    /// ingredient) draws nothing; no other block is touched.
+    #[test]
+    fn a_brewing_stand_shows_the_bottle_slots_its_fill_lands_in() {
+        let slots = |s: &[&str]| s.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        let one =
+            "minecraft:brewing_stand[has_bottle_0=true,has_bottle_1=false,has_bottle_2=false]";
+        assert_eq!(
+            shown_state(one, &slots(&["container.1", "container.2", "container.3"])).as_deref(),
+            Some("minecraft:brewing_stand[has_bottle_0=false,has_bottle_1=true,has_bottle_2=true]")
+        );
+        assert_eq!(
+            shown_state("minecraft:brewing_stand", &[]).as_deref(),
+            Some(
+                "minecraft:brewing_stand[has_bottle_0=false,has_bottle_1=false,has_bottle_2=false]"
+            )
+        );
+        assert_eq!(
+            shown_state(
+                "minecraft:furnace[facing=north,lit=false]",
+                &slots(&["container.0", "container.1"])
+            ),
+            None
+        );
+    }
 
     #[test]
     fn the_three_accepted_containers_have_27_slots() {
