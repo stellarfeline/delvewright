@@ -225,7 +225,7 @@ there are no prefabs to read anchor names out of:
 | --- | --- |
 | `spawn` | the entry node |
 | `anchor/node-<place>` | the floor centre of each reached place — where NPCs, waves and `reach-anchor` objectives go |
-| `anchor/seam-<edge>` | the gate region over a gated connection's bar: what `open-gate`, a `shortcut` or a `timed-gate` names. The bar is the opening in a wall (iron bars), the hole through a floor for a drop or a stair (a closed iron trapdoor in the hole's upper half), the course above the hole for a ladder through a floor (a closed iron trapdoor lying on the floor over the hole). A trapdoor opens on a redstone signal, so keep every lever, button, plate or other source off its six neighbours and off the solid blocks beside it (`DW1047`) |
+| `anchor/seam-<edge>` | the gate region over a gated connection's bar: what `open-gate`, a `shortcut` or a `timed-gate` names. The bar is the opening in a wall (iron bars), the hole through a floor for a drop or a stair (a closed iron trapdoor in the hole's upper half), the course above the hole for a ladder through a floor (a closed iron trapdoor lying on the floor over the hole). A trapdoor opens on a redstone signal, so keep every lever, button, plate or other source off its six neighbours and off the solid blocks beside it |
 | `anchor/unlock-<edge>` | the far-side affordance of a one-sided gated connection, where a `shortcut`'s `unlock` stands. Present only when `gating.opens_from` is `a` or `b` |
 | a `stations[]` entry's `anchor` | a station a layout-graph node declares; it may not take a derived name |
 
