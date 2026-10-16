@@ -308,7 +308,15 @@ pub fn pov_shots(plan: &Plan, routes: &[LegRoute]) -> Vec<PovShot> {
                 cell[2] as f64 + 0.5,
             ];
             let (look_at, arriving) = if wp < last {
-                let n = wps[wp + 1];
+                // The shot before a climb's take-hold frames the climb: it looks
+                // where the climb lands, not level at the wall the climbable
+                // hangs on.
+                let into_climb = wp + 2 <= last
+                    && route
+                        .climbs
+                        .iter()
+                        .any(|r| r.from == wps[wp + 1] && r.to == wps[wp + 2]);
+                let n = if into_climb { wps[wp + 2] } else { wps[wp + 1] };
                 (
                     [
                         n[0] as f64 + 0.5,
@@ -731,17 +739,31 @@ impl<'c> Shots<'c> {
         // like a POV eye — a keyframe inside a block is `DW0724` against it.
         let pov = shot.kind == "pov" || shot.kind == "cutscene";
         let world = self.nav(shot.world);
-        let eye = if pov || world.is_clear(eye_cell(requested)) {
-            // The requested stand-off is honoured wherever it can be: an interior
-            // shot's dollhouse eye ABOVE the piece is deliberately outside the
-            // room, and pulling it down the sight line just because a roof is in
-            // the way would replace the framing this kind exists for. The
-            // stand-off yields to exactly one fact — that the cell it names holds
-            // a block in the world the frame stands in.
+        // A stand-off whose sight line to its subject crosses a block draws the
+        // block, not the subject — a spawn camera outside the hall draws the
+        // hall's wall. Past the subject's own cells, the first block on the line
+        // from the subject outward is where the frame's view ends.
+        let subject = eye_cell(shot.look_at);
+        let mut past_subject = false;
+        let sight_blocked = crate::compiler::nav::walk_cells(shot.look_at, requested, |c| {
+            let blocked = !world.is_clear(c);
+            if !blocked {
+                past_subject = true;
+            }
+            past_subject && blocked && c != subject
+        })
+        .is_some();
+        let eye = if pov || (world.is_clear(eye_cell(requested)) && !sight_blocked) {
+            // The requested stand-off is honoured wherever it sees its subject.
+            // It yields to two facts of the world the frame stands in: the cell
+            // it names holds a block, or a block stands between it and the
+            // subject — a frame drawn from real geometry shows that block, so an
+            // interior shot's dollhouse eye over a roof would draw the roof.
             requested
         } else {
             // The subject may itself be a block in this world — a gate a frame
-            // at load shows shut — so the camera stands before it.
+            // at load shows shut — so the camera stands before it, at the
+            // farthest open point on its own sight line.
             crate::compiler::camera::stand_before(
                 |cell| !world.is_clear(cell),
                 shot.look_at,

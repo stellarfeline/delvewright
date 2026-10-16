@@ -673,6 +673,15 @@ fn run_panorama(
                 "fill": crate::compiler::framing::round3(pano.span.fill()),
             },
         },
+        "frame": {
+            "featureless": crate::compiler::view::detect::is_featureless(
+                &drawn.rgba,
+                drawn.width,
+                drawn.height,
+            )
+            .map(|f| serde_json::json!({ "distinct_colors": f.distinct }))
+            .unwrap_or(serde_json::Value::Null),
+        },
         "renderer_stats": drawn.stats.to_json(),
     });
     let mut mbytes = serde_json::to_vec_pretty(&manifest).expect("a manifest serializes");
@@ -1316,6 +1325,15 @@ pub fn run_cameras(
                 "weather": f.sky.weather.keyword(),
             },
             "mode": mode.keyword(),
+        "frame": {
+                "featureless": crate::compiler::view::detect::is_featureless(
+                    &drawn.rgba,
+                    drawn.width,
+                    drawn.height,
+                )
+                .map(|f| serde_json::json!({ "distinct_colors": f.distinct }))
+                .unwrap_or(serde_json::Value::Null),
+            },
             "renderer_stats": drawn.stats.to_json(),
         });
         let mut mbytes = serde_json::to_vec_pretty(&manifest).expect("a manifest serializes");

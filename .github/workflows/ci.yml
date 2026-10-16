@@ -325,6 +325,13 @@ jobs:
         run: bash tools/ci/fmt-workspaces.sh --check
       - name: cargo clippy -D warnings
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      # Every frame a test draws is drawn with Minecraft's own textures, read
+      # out of the pinned client jar (spec-0112 §6.1). The jar is never
+      # committed or cached in the repository: this is the job's one live
+      # Mojang fetch, checked on its bytes against versions.toml, and a red
+      # here is the network, never a frame.
+      - name: the pinned client jar (one verified fetch)
+        run: echo "DELVEWRIGHT_CLIENT_JAR=$(bash validation/client-jar-cache.sh --cache "$RUNNER_TEMP/client-jar" | tail -n 1)" >> "$GITHUB_ENV"
       - name: cargo test (incl. determinism double-build gate)
         run: cargo test --locked --workspace
 
@@ -1504,11 +1511,14 @@ jobs:
       # there: this is the build those gates read, not a second judgement of it.
       - name: the build the views read
         run: target/debug/delvec build gallery -o gallery-out-en --prefabs gallery-prefabs
-      # spec-0039 §7. CI rendered nothing until this ran. The CPU arms only —
-      # they need no GPU, no client jar and no `nucleation`, so the whole step
-      # runs on an ordinary runner. Whether the GPU arms can be driven here
-      # through a software adapter is a separate question and moves only where
-      # frames come from, never what the engine can do.
+      # The frames are drawn by Lumenwright, in-process, with the pinned client
+      # jar's textures: the job's one verified fetch (spec-0112 §6.1).
+      - name: the pinned client jar (one verified fetch)
+        run: echo "DELVEWRIGHT_CLIENT_JAR=$(bash validation/client-jar-cache.sh --cache "$RUNNER_TEMP/client-jar" | tail -n 1)" >> "$GITHUB_ENV"
+      # spec-0039 §7, spec-0112 §9: `delvec frames` draws every shot of the
+      # build's plan on the CPU backend, each from the world the build wrote
+      # for it, and the gate reads every frame's manifest. A runner has no GPU;
+      # the CPU backend draws the same frame.
       - name: every declared view is produced, and shows something
         if: '!cancelled()'
         run: |
@@ -1531,14 +1541,10 @@ jobs:
           python3 tools/ci/check-seating-agrees.py \
             --delvec target/debug/delvec --prefabs gallery-prefabs
 
-      # The other half of the render surface, and until this ran nothing in this
-      # repository invoked it. The step above renders FRAMES of declared views
-      # through `snapshot`; this runs the whole-map illustration path — `delvec
-      # scene` and `delvec panorama` — which reads the same `render-plan.json`
-      # through a different reader, and had been refusing every valley campaign
-      # outright for as long as the base existed. It builds one gallery point per
-      # horizon base the engine's own schema declares, so a base added later reds
-      # this until something renders it.
+      # The other half of the render surface: the panorama and the showcase
+      # cameras, drawn from the worlds each build writes. It builds one gallery
+      # point per horizon base the engine's own schema declares, so a base
+      # added later reds this until something draws it.
       - name: the whole-map illustration path runs, on every horizon
         if: '!cancelled()'
         run: |
@@ -1558,6 +1564,18 @@ jobs:
           python3 tools/ci/check-gallery-post-beat.py \
             --delvec target/debug/delvec --prefabs gallery-prefabs \
             --build-out gallery-out-en --work gallery-post-beat
+
+      # spec-0112 §15: the gallery's review frames show what its scene holds,
+      # bound by perturbation — the muster's fill moves its world, the
+      # curator's mark moves what a frame shows, a lantern moves the load
+      # world's light, the cutscene views are in the committed set, a cut sets
+      # the later legs' sky.
+      - name: the review frames show what the scene holds
+        if: '!cancelled()'
+        run: |
+          python3 tools/ci/check-gallery-review-frames.py \
+            --delvec target/debug/delvec --prefabs gallery-prefabs \
+            --build-out gallery-out-en --work gallery-review-frames
       - uses: actions/upload-artifact@v4
         if: always()
         with:
