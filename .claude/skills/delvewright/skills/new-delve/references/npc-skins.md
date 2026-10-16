@@ -185,8 +185,8 @@ ships. Every step is mandatory once a design calls for one:
    `review/textures/` — vanilla beside yours. That sheet is the only place a
    mob's skin or the moon can be seen before the hand-over: no render this engine
    makes draws either. A block texture also shows in the build's own pack:
-   `delvec --prefabs "$DELVEWRIGHT_PREFABS" viewer --pack <out>/resourcepack.zip …` and Chunky through
-   `validation/chunky.sh --pack <out>/resourcepack.zip …`.
+      `delvec --prefabs "$DELVEWRIGHT_PREFABS" viewer --pack <out>/resourcepack.zip …`, and in every frame
+   `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames <out>` draws, which layers the build's own pack over the jar.
 5. **Say it in the hand-over.** Each row is one item of step 13's report, in the
    player's words — *the moon tonight*, *the drowned on the shore*. A server
    never reads a resource pack, so only a person looking can confirm it.

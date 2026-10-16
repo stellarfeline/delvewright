@@ -130,7 +130,7 @@ waist-deep in a sea, seen through fog and revealed by a lightning strike.
 **Do not copy**: the cutscene, the bolt and the stand-ins verify other
 capabilities; this work is the reference for the figure's form, not for how a
 reveal is staged. The record says its stand-in and clearing readings were taken
-in a real client, which a CPU snapshot cannot show.
+in a real client, which a still frame cannot show.
 
 **URLs** (commit `7a67e92d77a3831cd3aca26005b84a1862e1c02e`; no tag exists yet)
 
