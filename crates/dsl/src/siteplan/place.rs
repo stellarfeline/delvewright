@@ -189,6 +189,21 @@ impl PlacedSeam {
     pub fn bar_axis(&self) -> usize {
         self.normal_axis
     }
+
+    /// **What a shut seam's bar is built of** (spec-0107 §6): in a wall,
+    /// [`super::SEAM_BAR`]; through a floor, a block that holds the body that
+    /// stands on it — [`super::SEAM_HATCH`] in the hole's own cells for a
+    /// `drop` or a `stair`, [`super::SEAM_COVER`] on the course above the hole
+    /// for a `climb`. One answer, read by the derivation that writes the bar
+    /// and by every piece that ships it.
+    #[must_use]
+    pub fn bar_block(&self) -> &'static str {
+        match (self.normal_axis, self.class) {
+            (1, "climb") => super::SEAM_COVER,
+            (1, _) => super::SEAM_HATCH,
+            _ => super::SEAM_BAR,
+        }
+    }
 }
 
 /// The plan's boxes, resolved by the code the stage-4 checks judge with.

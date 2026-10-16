@@ -975,13 +975,13 @@ pub fn derive_with(
             let dy = blo[1] - s.opening.0[1];
             ([olo[0], olo[1] + dy, olo[2]], [ohi[0], ohi[1] + dy, ohi[2]])
         };
-        mass.write(blo, bhi, palette::BAR);
+        mass.write(blo, bhi, s.bar_block());
         anchors.insert(
             seam_anchor(&s.edge),
             AnchorSpec::Gate {
                 from: narrow(blo),
                 to: narrow(bhi),
-                block: palette::BAR.to_string(),
+                block: s.bar_block().to_string(),
             },
         );
     }
@@ -2055,7 +2055,7 @@ fn seal_unopened(
         for cell in cells_of(lo, hi) {
             out.insert(
                 narrow(cell),
-                crate::compiler::blockstate::BlockState::new(palette::BAR),
+                crate::compiler::blockstate::BlockState::new(s.bar_block()),
             );
         }
     }

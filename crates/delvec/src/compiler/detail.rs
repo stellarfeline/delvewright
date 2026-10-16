@@ -291,6 +291,13 @@ pub struct AllocatedSeam {
     /// seam never shuts or another place ships its bar.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bar: Option<[[i64; 3]; 2]>,
+    /// **What that bar is built of** (`PlacedSeam::bar_block`, spec-0107 §6):
+    /// `minecraft:iron_bars` in a wall; through a floor, a closed iron trapdoor,
+    /// in the hole's upper half for a drop or a stair and lying on the course
+    /// above the hole for a floor climb — a floor holds the body standing on
+    /// it, and bars laid flat do not. Handed beside `bar`, and absent with it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bar_block: Option<String>,
     /// The ring's ground under a vertical seam, piece-local: the sill minus one,
     /// flat across the opening (spec-0098 §2c). `None` through a floor, and on
     /// an aloft place, which is handed no ground.
@@ -790,6 +797,10 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
                         .bar()
                         .filter(|(lo, _)| frame.owns(*lo))
                         .map(|(lo, hi)| [frame.to_local(lo), frame.to_local(hi)]),
+                    bar_block: s
+                        .bar()
+                        .filter(|(lo, _)| frame.owns(*lo))
+                        .map(|_| s.bar_block().to_string()),
                     ground_y: (s.normal_axis != 1 && !aloft).then(|| {
                         site.ground_height(i, s.opening.0[0], s.opening.0[2]) - frame.lo[1]
                     }),

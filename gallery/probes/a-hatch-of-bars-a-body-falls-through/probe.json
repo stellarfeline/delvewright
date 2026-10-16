@@ -1,0 +1,14 @@
+{
+  "code": "DW0921",
+  "patch": [
+    {
+      "doc": "programs/near-hall.json",
+      "op": "replace",
+      "path": "/palette/hatch",
+      "value": "minecraft:iron_bars[east=false,north=false,south=false,waterlogged=false,west=false]"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The shaft's hatch in the near hall's floor built of iron bars instead of a closed iron trapdoor. Bars laid flat are posts two sixteenths wide, and the server joins them with arms two sixteenths wide; a player-wide body drops between them, and the walk model reads a floor from the blocks' collision footprints, not from whether the cells hold a block. So the hatch is no floor: a body stepping onto it falls into the undercroft before the beat that opens it, and the proof that every place a body can get into has a way back out names the fall. It declares no unit: the surface is the bar's block, and what must not compile is a floor a body falls through."
+}

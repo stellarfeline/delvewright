@@ -16,7 +16,11 @@ use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::Campaign;
 
-const BAR: &str = "minecraft:iron_bars";
+/// The bar of a wall, the hatch of a floor, the cover over a ladder's hole
+/// (spec-0107 §6): the three blocks a shut seam is built of.
+const BAR: &str = delvewright_dsl::siteplan::SEAM_BAR;
+const HATCH: &str = delvewright_dsl::siteplan::SEAM_HATCH;
+const COVER: &str = delvewright_dsl::siteplan::SEAM_COVER;
 
 /// The final block map a derivation writes, replayed in order (air removes).
 fn mass_map(c: &Campaign) -> BTreeMap<[i64; 3], String> {
@@ -80,8 +84,14 @@ fn cells(lo: [i64; 3], hi: [i64; 3]) -> BTreeSet<[i64; 3]> {
     blockout::cells_of(lo, hi).collect()
 }
 
-/// A connection, the cells its bar stands in, and the opening the plan allocated.
-type GatedCells = (&'static str, BTreeSet<[i64; 3]>, BTreeSet<[i64; 3]>);
+/// A connection, the cells its bar stands in, the opening the plan allocated,
+/// and the block the bar is built of.
+type GatedCells = (
+    &'static str,
+    BTreeSet<[i64; 3]>,
+    BTreeSet<[i64; 3]>,
+    &'static str,
+);
 
 /// The four gated connections of spec-0107 §1, each with the cells §6 names for
 /// its kind and the opening the plan allocated — read off `delvec allocation`
@@ -93,18 +103,21 @@ fn the_four() -> Vec<GatedCells> {
             "edge/annex-chute",
             cells([20, 64, 22], [20, 66, 23]),
             cells([20, 64, 22], [20, 66, 23]),
+            BAR,
         ),
         // A stair's head in a wall: the passage's cells.
         (
             "edge/loft-stair",
             cells([41, 69, 20], [43, 71, 20]),
             cells([41, 69, 20], [43, 71, 20]),
+            BAR,
         ),
         // A drop through a floor: the hole's own cells, the hatch.
         (
             "edge/undercroft-shaft",
             cells([25, 63, 16], [25, 63, 17]),
             cells([25, 63, 16], [25, 63, 17]),
+            HATCH,
         ),
         // A climb through a floor: the course ABOVE the hole, over its
         // footprint; the hole keeps its rung.
@@ -112,6 +125,7 @@ fn the_four() -> Vec<GatedCells> {
             "edge/undercroft-crawl",
             cells([28, 64, 16], [30, 64, 18]),
             cells([28, 63, 16], [30, 63, 18]),
+            COVER,
         ),
     ]
 }
@@ -124,18 +138,18 @@ fn the_four() -> Vec<GatedCells> {
 fn each_gated_connection_is_built_shut_at_its_kinds_cells() {
     let c = gallery_stand_ins("built-shut");
     let shut = mass_map(&c);
-    for (edge, bar, opening) in the_four() {
+    for (edge, bar, opening, block) in the_four() {
         for cell in &bar {
             assert_eq!(
                 shut.get(cell).map(String::as_str),
-                Some(BAR),
+                Some(block),
                 "`{edge}`: the bar stands at {cell:?}"
             );
         }
         for cell in opening.difference(&bar) {
             assert_ne!(
                 shut.get(cell).map(String::as_str),
-                Some(BAR),
+                Some(block),
                 "`{edge}`: {cell:?} is the opening, not the bar"
             );
         }
@@ -298,7 +312,7 @@ fn a_gated_floor_climb_keeps_its_rung_and_opens_only_with_its_beat() {
         mass.get(&hlo)
     );
     for cell in blockout::cells_of([hlo[0], hlo[1] + 1, hlo[2]], [hhi[0], hhi[1] + 1, hhi[2]]) {
-        assert_eq!(mass.get(&cell).map(String::as_str), Some(BAR), "{cell:?}");
+        assert_eq!(mass.get(&cell).map(String::as_str), Some(COVER), "{cell:?}");
     }
 
     let structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -318,10 +332,10 @@ fn a_gated_floor_climb_keeps_its_rung_and_opens_only_with_its_beat() {
     let grating = blockout::cells_of([hlo[0], hlo[1] + 1, hlo[2]], [hhi[0], hhi[1] + 1, hhi[2]]);
     let mut with_bar = blocks.clone();
     for cell in grating {
-        assert_eq!(mass.get(&cell).map(String::as_str), Some(BAR));
+        assert_eq!(mass.get(&cell).map(String::as_str), Some(COVER));
         with_bar.insert(
             [cell[0] as i32, cell[1] as i32, cell[2] as i32],
-            delvec::compiler::blockstate::BlockState::new(BAR),
+            delvec::compiler::blockstate::BlockState::new(COVER),
         );
     }
     let shut = world_of(&with_bar);
@@ -423,7 +437,7 @@ fn a_gated_stair_through_a_stand_ins_floor_keeps_its_hatch() {
     let mass = mass_map(&shut);
     let missing: Vec<[i64; 3]> = hole
         .iter()
-        .filter(|c| mass.get(*c).map(String::as_str) != Some(BAR))
+        .filter(|c| mass.get(*c).map(String::as_str) != Some(HATCH))
         .copied()
         .collect();
     assert!(

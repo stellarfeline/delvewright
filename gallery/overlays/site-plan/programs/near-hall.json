@@ -38,7 +38,7 @@
         "a": "room",
         "b": "exterior",
         "bar": {
-          "block": "bar",
+          "block": "cover",
           "region": "seam-undercroft-crawl"
         },
         "class": "barred",
@@ -48,7 +48,7 @@
         "a": "room",
         "b": "exterior",
         "bar": {
-          "block": "bar",
+          "block": "hatch",
           "region": "seam-undercroft-shaft"
         },
         "class": "barred"
@@ -82,8 +82,10 @@
   "name": "gallery-near-hall",
   "palette": {
     "bar": "minecraft:iron_bars[east=false,north=false,south=false,waterlogged=false,west=false]",
+    "cover": "minecraft:iron_trapdoor[facing=north,half=bottom,open=false,powered=false,waterlogged=false]",
     "floor": "minecraft:polished_andesite",
     "furniture": "minecraft:chiseled_stone_bricks",
+    "hatch": "minecraft:iron_trapdoor[facing=north,half=top,open=false,powered=false,waterlogged=false]",
     "ladder": "minecraft:ladder[facing=east,waterlogged=false]",
     "lamp": "minecraft:sea_lantern",
     "lid": "minecraft:spruce_planks",
@@ -2003,7 +2005,7 @@
         "body": {
           "body": {
             "material": {
-              "role": "bar"
+              "role": "cover"
             },
             "op": "fill"
           },
@@ -2018,7 +2020,7 @@
         "body": {
           "body": {
             "material": {
-              "role": "bar"
+              "role": "hatch"
             },
             "op": "fill"
           },

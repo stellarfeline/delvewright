@@ -285,6 +285,30 @@ fn slug(id: &str) -> &str {
 /// declares one. A copy in each place would be an agreement rather than a fact.
 pub const SEAM_BAR: &str = "minecraft:iron_bars";
 
+/// **What a shut seam through a floor stands in** — the hatch over a `drop`'s
+/// shaft or a `stair`'s head: a closed iron trapdoor in the upper half of the
+/// hole's own cells, its top face flush with the floor around it (spec-0107 §6).
+///
+/// A trapdoor and not [`SEAM_BAR`], because a floor must hold the body that
+/// stands on it. Iron bars laid flat are posts two sixteenths wide, and a
+/// player-wide body drops between them (the pinned jar's collision footprints,
+/// `crates/dsl/data/collision-footprints-1.21.11.tsv`); a closed iron trapdoor
+/// covers its whole cell. Its texture is a grille, so the hatch still reads as
+/// a barred way down that shows what lies below; no hand opens it in adventure
+/// mode (`BlockSetType.IRON`, `canOpenByHand` false), and the `open-gate` that
+/// clears it is the same `fill … air replace` that clears a bar.
+pub const SEAM_HATCH: &str =
+    "minecraft:iron_trapdoor[facing=north,half=top,open=false,powered=false,waterlogged=false]";
+
+/// **What a shut floor `climb` stands in** — the cover over a ladder's hole: a
+/// closed iron trapdoor in the lower half of the course above the hole, lying
+/// on the upper floor (spec-0107 §6). The hole cell keeps the top rung; the
+/// cover stops the head of a body on that rung and holds a body standing over
+/// the hole, which one bar post in a room, the shape [`SEAM_BAR`] gave, read as
+/// neither. Every reason [`SEAM_HATCH`] gives holds for it.
+pub const SEAM_COVER: &str =
+    "minecraft:iron_trapdoor[facing=north,half=bottom,open=false,powered=false,waterlogged=false]";
+
 /// The fill block a **synthesized** gate anchor declares, or `None` when `anchor`
 /// is not one of this campaign's derived seam gates.
 ///
@@ -309,11 +333,21 @@ pub fn synthesized_gate_block(c: &Campaign, anchor: &str) -> Option<&'static str
     // piece an area binds", which a site-plan campaign cannot do at all
     // (`DW0839` refuses a campaign that carries both `areas[]` and a plan).
     // A narrow binding on the general mechanism, reading as a missing feature.
-    matches!(
+    if !matches!(
         synthesized_anchor_kinds(c).get(anchor),
         Some(StationKind::Gate)
+    ) {
+        return None;
+    }
+    // A seam's gate stands in the block its seam is built of; a station's is
+    // the derivation's own bar.
+    Some(
+        SitePlan::of(c)
+            .seams
+            .iter()
+            .find(|s| seam_anchor(&s.edge) == anchor)
+            .map_or(SEAM_BAR, PlacedSeam::bar_block),
     )
-    .then_some(SEAM_BAR)
 }
 
 /// **Every anchor a site-plan campaign's blockout provides, and what SHAPE each
