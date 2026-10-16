@@ -1342,8 +1342,8 @@ each run's first line naming its backend, against the pinned client jar
 | One gallery showcase camera (`hall-exterior`) | Metal | 1 hq, 1600×900, 300 spp | 2.92 s | 194.3 MB | 1.65 s | 60 s (at 256 spp) |
 
 The Armoury is content `demo/the-armoury` at `7ee698e9a19204f5c2deff290931dc7eb156e949`,
-whose documents declare `dsl_version` 0.49.0, newer than this engine's 0.41.0:
-it was rebuilt for the measurement on a scratch copy at 0.41.0 with the surface
+whose documents declare `dsl_version` 0.49.0, newer than the instrument's:
+it was rebuilt for the measurement on a scratch copy at the instrument's with the surface
 this engine lacks removed — item holders (the stands' and the frame's `holder`,
 the three `loot` rows they hold, a `collect`'s `holder` written as its
 `anchor`), give-item `slot`, program version 1.12.0 written as 1.10.0, and the

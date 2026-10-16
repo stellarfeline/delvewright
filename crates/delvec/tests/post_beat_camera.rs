@@ -996,6 +996,114 @@ fn cells_written_below_sea(back: &BTreeMap<String, String>, cells: &[([i32; 3], 
 /// moved in a copy of the written world reds it, a gravel column the server
 /// settled lands in the gravity class and does not. The written world is
 /// `delvec written-world`'s, on a campaign with no camera record.
+/// Copy `from`'s bodies (`entities/r.*.mca`) into `into`: a "server" world a
+/// cell perturbation writes holds the same bodies the written world does, so
+/// the placed-object comparison judges nothing but what the case perturbs.
+fn bodies_of(from: &Path, into: &Path) {
+    let src = from.join("entities");
+    let dst = into.join("entities");
+    std::fs::create_dir_all(&dst).unwrap();
+    for e in std::fs::read_dir(&src).unwrap() {
+        let p = e.unwrap().path();
+        std::fs::copy(&p, dst.join(p.file_name().unwrap())).unwrap();
+    }
+}
+
+/// **`DW1040` — the placed-object cross-check** (spec-0112 §8.2): the written
+/// load world against a copy whose keeper carries another tag reds under the
+/// engine's own code, naming the body; a copy whose keeper carries a key the
+/// server writes for itself (`Motion`) is the bookkeeping class, not red.
+#[test]
+fn the_written_world_cross_check_reds_on_a_body_the_server_does_not_hold() {
+    use delvec::compiler::view::world::{EntityRecord, Nbt, WorldInput};
+    let camp = tmp("dw1040-camp");
+    common::copy_dir_all(&common::hello_world_dir(), &camp);
+    let out = built("dw1040", &camp);
+    let written = tmp("dw1040-written");
+    let (code, log) = written_world(&camp, &written);
+    assert_eq!(code, 0, "{log}");
+    let gate = common::repo_root().join("tools/ci/check-written-world.py");
+    let check = |server: &Path| {
+        let o = Command::new("python3")
+            .arg(&gate)
+            .arg(&out)
+            .arg(&written)
+            .arg(server)
+            .output()
+            .unwrap();
+        (
+            o.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&o.stdout).to_string(),
+        )
+    };
+    let (code, said) = check(&written);
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("objects binding: "), "{said}");
+    // The keeper as the build summons it, re-written into a copy with one
+    // field moved: its tag, then its UUID.
+    let blocks: BlockMap = read_back(&written)
+        .into_iter()
+        .map(|(k, v)| {
+            let c: Vec<i32> = k.split(',').map(|n| n.parse().unwrap()).collect();
+            (
+                [c[0], c[1], c[2]],
+                delvec::compiler::blockstate::BlockState::new(&v),
+            )
+        })
+        .collect();
+    let ledger: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(out.join("validation/placed.json")).unwrap())
+            .unwrap();
+    let rows = delvec::compiler::placed::Ledger::from_json(&ledger);
+    let bodies: Vec<EntityRecord> = rows
+        .rows
+        .iter()
+        .filter(|r| r.fired == delvec::compiler::placed::Firing::Setup)
+        .filter_map(|r| r.entity_record())
+        .collect();
+    assert!(!bodies.is_empty(), "the hello world summons a keeper");
+    let write_with = |dir: &Path, bodies: &[EntityRecord]| {
+        let none = BTreeMap::new();
+        world::write_world(
+            &WorldInput {
+                blocks: &blocks,
+                biome: &|_| "minecraft:plains".into(),
+                spawn: [5, 65, 2],
+                ground: &world::Ground::void(),
+                extent: None,
+                block_entities: &none,
+                entities: bodies,
+                day_time: None,
+            },
+            dir,
+        )
+        .unwrap();
+    };
+    let mut retagged = bodies.clone();
+    retagged[0].tags = vec!["dw_npc".into(), "dw_npc_stranger".into()];
+    retagged[0].nbt.set("Tags", Nbt::List(Vec::new()));
+    let moved = tmp("dw1040-retagged");
+    write_with(&moved, &retagged);
+    let (code, said) = check(&moved);
+    assert_eq!(code, 1, "{said}");
+    assert!(
+        said.contains(world::DW_WRITTEN_OBJECTS.id()) && said.contains("DW1040"),
+        "{said}"
+    );
+    assert!(said.contains("written, not in the server save"), "{said}");
+    // A key the server writes for itself (`Motion`): bookkeeping, not a finding.
+    let mut reuuid = bodies.clone();
+    reuuid[0].nbt.set(
+        "Motion",
+        Nbt::List(vec![Nbt::Double(0.0), Nbt::Double(-0.08), Nbt::Double(0.0)]),
+    );
+    let other = tmp("dw1040-uuid");
+    write_with(&other, &reuuid);
+    let (code, said) = check(&other);
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("bookkeeping: "), "{said}");
+}
+
 #[test]
 fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
     let camp = tmp("dw0955-camp");
@@ -1048,6 +1156,7 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
         &moved,
     )
     .unwrap();
+    bodies_of(&written, &moved);
     let (code, said) = check(&moved);
     assert_eq!(code, 1, "{said}");
     assert!(
@@ -1074,6 +1183,7 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
         &settled,
     )
     .unwrap();
+    bodies_of(&written, &settled);
     let (code, said) = check(&settled);
     assert_eq!(code, 0, "{said}");
     assert!(said.contains("gravity: 1 differing cell(s)"), "{said}");
@@ -1169,6 +1279,7 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
         &voided,
     )
     .unwrap();
+    bodies_of(&written, &voided);
     let record = tmp("dw0955-record").join("written-world.json");
     let o = Command::new("python3")
         .arg(&gate)

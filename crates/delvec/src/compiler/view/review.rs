@@ -181,7 +181,8 @@ pub fn frame_worlds_with(
     // Every clock a configuration holds is one the campaign can reach
     // (`light::reachable_clocks`, the set `DW0890` holds the design to): two
     // walks of one campaign's set-time and set-weather effects, which must agree.
-    let (reachable_times, reachable_weathers) = crate::compiler::light::reachable_clocks(plan.campaign);
+    let (reachable_times, reachable_weathers) =
+        crate::compiler::light::reachable_clocks(plan.campaign);
     let world_time = plan.campaign.world.content.time;
     let mut worlds: Vec<FrameWorld> = Vec::new();
     let mut per_arrival = Vec::new();
