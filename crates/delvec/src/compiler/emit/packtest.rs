@@ -234,6 +234,10 @@ pub(super) fn emit_packtest(
 
     // spec-0018: one n-dummy division-of-labour test per AND-join.
     objective::emit_party_join_packtests(plan, out);
+
+    // Last, over every template the emitters above wrote: a template that
+    // re-runs `setup` and then the load takes the settled setup.
+    settle_loads(ns, out);
 }
 
 // ------------------------------------------- per-object watch claims (DW0811) --
@@ -320,6 +324,106 @@ fn settled_setup(ns: &str) -> [String; 2] {
         format!("function {ns}:setup"),
         "scoreboard players set #placed dw.sys 1".to_string(),
     ]
+}
+
+/// **The one rule that settles a template's load**, applied to every template
+/// the suite ships: a template whose lines run `setup` and then, before any
+/// write of `#placed` of their own, `tick` or `setup_finish` (directly, or
+/// through one of the suite's own helper functions) takes the settled setup —
+/// the latch line of [`settled_setup`] straight after its `setup`.
+///
+/// Decided here, over the finished templates, so that no emitter decides it:
+/// whether a template's tick runs depends on what it drives (a flag-gate
+/// template ticks only for an interact objective), and a template written
+/// tomorrow is settled without its author knowing the rule. A template that
+/// means the reload writes `#placed` itself after `setup`, and is left as it
+/// declared. `tests/packtest_batch.rs`
+/// (`no_template_ticks_with_the_load_re_armed`) judges the shipped bytes.
+fn settle_loads(ns: &str, out: &mut BuildOutput) {
+    let [setup, latch] = settled_setup(ns);
+    let helper_prefix = format!("packtest-datapack/data/{ns}/function/");
+    let test_prefix = format!("packtest-datapack/data/{ns}/test/");
+    let call = format!("function {ns}:");
+    // Every `<ns>:` function a line calls in its own tick (`schedule` runs a
+    // later tick, and is not followed).
+    let callees = |line: &str| -> Vec<String> {
+        if line.starts_with('#') || line.starts_with("schedule ") {
+            return Vec::new();
+        }
+        line.match_indices(&call)
+            .map(|(i, _)| {
+                line[i + call.len()..]
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .to_string()
+            })
+            .collect()
+    };
+    // The suite's helpers that run the load in the caller's tick, transitively.
+    let helpers: BTreeMap<String, String> = out
+        .iter()
+        .filter_map(|(p, b)| {
+            let name = p
+                .strip_prefix(&helper_prefix)?
+                .strip_suffix(".mcfunction")?;
+            Some((name.to_string(), String::from_utf8_lossy(b).into_owned()))
+        })
+        .collect();
+    fn loads(
+        name: &str,
+        helpers: &BTreeMap<String, String>,
+        callees: &dyn Fn(&str) -> Vec<String>,
+        seen: &mut BTreeSet<String>,
+    ) -> bool {
+        if name == "tick" || name == "setup_finish" {
+            return true;
+        }
+        let Some(body) = helpers.get(name) else {
+            return false;
+        };
+        if !seen.insert(name.to_string()) {
+            return false;
+        }
+        body.lines()
+            .flat_map(|l| callees(l.trim()))
+            .any(|c| loads(&c, helpers, callees, seen))
+    }
+    let runs_load = |line: &str| {
+        callees(line)
+            .iter()
+            .any(|c| loads(c, &helpers, &callees, &mut BTreeSet::new()))
+    };
+    let templates: Vec<String> = out
+        .keys()
+        .filter(|p| p.starts_with(&test_prefix) && p.ends_with(".mcfunction"))
+        .cloned()
+        .collect();
+    for path in templates {
+        let text = String::from_utf8_lossy(&out[&path]).into_owned();
+        let mut body: Vec<&str> = text.split('\n').collect();
+        let mut armed: Option<usize> = None;
+        let mut settle: Vec<usize> = Vec::new();
+        for (i, line) in body.iter().enumerate() {
+            if *line == setup {
+                armed = Some(i);
+            } else if line.starts_with("scoreboard players set #placed dw.sys ") {
+                armed = None;
+            } else if let Some(at) = armed
+                && runs_load(line)
+            {
+                settle.push(at);
+                armed = None;
+            }
+        }
+        if settle.is_empty() {
+            continue;
+        }
+        for at in settle.into_iter().rev() {
+            body.insert(at + 1, latch.as_str());
+        }
+        out.insert(path, body.join("\n").into_bytes());
+    }
 }
 
 /// The header lines shared by every generated PackTest (`# @dummy` + timeout).
