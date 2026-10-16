@@ -206,6 +206,10 @@
             "kind": "point"
           },
           {
+            "anchor": "anchor/flight-head",
+            "kind": "point"
+          },
+          {
             "anchor": "anchor/gate-main",
             "kind": "gate"
           },
