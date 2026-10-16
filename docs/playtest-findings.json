@@ -3275,22 +3275,50 @@
       "triage": "content"
     },
     {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "obj/"
+          }
+        }
+      },
       "campaign": "the-treehouse-camp",
-      "carrier": null,
+      "carrier": {
+        "code": "DW1045",
+        "kind": "dw"
+      },
       "finding": "an objective titled \"Bring both to Oru\" completes on talking to Oru, and nothing is given: no completion takes a thing from the party and gives it to a body",
-      "general_form": "a dialogue option can complete an objective only while the speaking player holds a declared item, and can take one of it from that player, so giving a thing to a body is a completion the engine performs",
+      "general_form": "an objective's title opens on a word naming an act its completion performs: the head word's act set, read from the engine's act lexicon, intersects the act set the completion's kind, fields and give-item effects perform",
       "id": "tc-03",
-      "note": "Open capability gap (spec-0114 §6.4): a dialogue option reads no hand and takes nothing. The engine work is a held-item gate on a dialogue option (requires_item on DialogueOption, read where option_display_conditions reads requires_state) and a take. Until it lands DW1045 refuses the title and the honest title is a talk word (\"Tell Oru you have both\").",
+      "note": "Carried by DW1045: the title that names the act no completion performs is refused, so it cannot ship. The capability itself is OPEN (spec-0114 §6.4): a dialogue option reads no hand and takes nothing. The engine work is a held-item gate on a dialogue option (requires_item on DialogueOption, read where option_display_conditions reads requires_state) and a take. Until it lands DW1045 refuses the title and the honest title is a talk word (\"Tell Oru you have both\").",
       "round": 1,
       "triage": "capability"
     },
     {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "obj/"
+          }
+        }
+      },
       "campaign": "the-treehouse-camp",
-      "carrier": null,
+      "carrier": {
+        "code": "DW1045",
+        "kind": "dw"
+      },
       "finding": "an objective titled \"Show Neve the lit lantern\" completes on talking to Neve, and nothing is shown: no completion reads what the party holds when it speaks to a body",
-      "general_form": "a dialogue option can complete an objective only while the speaking player holds a declared item in the main hand, so showing a thing to a body is a completion the engine performs",
+      "general_form": "an objective's title opens on a word naming an act its completion performs: the head word's act set, read from the engine's act lexicon, intersects the act set the completion's kind, fields and give-item effects perform",
       "id": "tc-04",
-      "note": "Open capability gap (spec-0114 §6.4): a dialogue option reads no hand. The engine work is a held-item gate on a dialogue option (requires_item on DialogueOption, read where option_display_conditions reads requires_state). Also met as \"Show Tamsin the tongue\" (row vh-18). Until it lands DW1045 refuses the title and the honest title is a talk word.",
+      "note": "Carried by DW1045: the title that names the act no completion performs is refused, so it cannot ship. The capability itself is OPEN (spec-0114 §6.4): a dialogue option reads no hand. The engine work is a held-item gate on a dialogue option (requires_item on DialogueOption, read where option_display_conditions reads requires_state). Also met as \"Show Tamsin the tongue\" (row vh-18). Until it lands DW1045 refuses the title and the honest title is a talk word.",
       "round": 1,
       "triage": "capability"
     }
