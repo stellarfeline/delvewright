@@ -36,7 +36,7 @@ fn cell(p: [i32; 3]) -> &'static str {
 }
 
 fn library(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("dw-prefab-op-{tag}"));
+    let dir = std::env::temp_dir().join(format!("dw-prefab-op-{}-{tag}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let mut cells = Vec::new();

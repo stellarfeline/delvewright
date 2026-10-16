@@ -24,7 +24,7 @@ const WALK: i32 = 8;
 const EAST: (i32, i32) = (10, 16);
 
 fn tempdir(name: &str) -> PathBuf {
-    let p = std::env::temp_dir().join(format!("dw-region-surface-{name}"));
+    let p = std::env::temp_dir().join(format!("dw-region-surface-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
     p
