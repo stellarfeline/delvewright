@@ -478,7 +478,7 @@ fn the_laid_roll_leaves_the_hand() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|s| s["objective_id"] == "obj/shrine")
+        .find(|s| s["objective"] == "obj/shrine")
         .expect("the step");
     assert_eq!(step["action"], "interact", "{step}");
     assert_eq!(step["requires_item"], "minecraft:paper", "{step}");

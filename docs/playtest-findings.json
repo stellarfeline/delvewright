@@ -3129,6 +3129,170 @@
       "note": "Carried by DW1026 (compiler::presence, validation funnel): NPC and actor declarations that carry one visible name are one character; every story state of every configuration (the replay's journal, one effect list per tick, from world init) that leaves two of them in the world is refused. On this campaign's records it refuses the three Ivo Marrack skiff bodies spawned in one list (`obj/the-pillars`) and the four Sleeper NPCs on stage from world init.",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "obj/"
+          }
+        }
+      },
+      "campaign": "the-muster-loft",
+      "carrier": {
+        "code": "DW1045",
+        "kind": "dw"
+      },
+      "finding": "an objective titled \"Lay the roll in the loft\" completed the moment a body stood in the loft, and the roll stayed in the pack",
+      "general_form": "an objective's title opens on a word naming an act its completion performs: the head word's act set, read from the engine's act lexicon, intersects the act set the completion's kind, fields and give-item effects perform",
+      "id": "ml-01",
+      "note": "Carried by DW1045 (compiler::telling, validation funnel): the head `lay` states give and a reach-anchor performs reach, so the title is refused with both repairs. Repair for this objective: add takes_item: true — re-kind it to an interact at a prop in the loft with requires_item minecraft:paper and takes_item: true (spec-0114 §6.3), so the roll leaves the hand when it is laid. Binding verified non-zero on the reproduction fixture of spec-0114 §9.4 (crates/delvec/tests/act_check.rs, the v0.4 showcase with the roll): 5 objectives, 1 refused, and green under both repairs.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "obj/"
+          }
+        }
+      },
+      "campaign": "hollow-vigil",
+      "carrier": {
+        "code": "DW1045",
+        "kind": "dw"
+      },
+      "finding": "an objective titled \"Speak the Ending\" completes on reaching a place, with nothing spoken",
+      "general_form": "an objective's title opens on a word naming an act its completion performs: the head word's act set, read from the engine's act lexicon, intersects the act set the completion's kind, fields and give-item effects perform",
+      "id": "hv-11",
+      "note": "Carried by DW1045: `speak` states talk, a reach-anchor performs reach. Repair: re-kind to a talk-to of the body the ending is spoken to, or re-head with a reach word.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "obj/"
+          }
+        }
+      },
+      "campaign": "nobodys-cave-island",
+      "carrier": {
+        "code": "DW1045",
+        "kind": "dw"
+      },
+      "finding": "an objective titled \"Get Under a Ram\" completes on using a thing, not on getting under the ram",
+      "general_form": "an objective's title opens on a word naming an act its completion performs: the head word's act set, read from the engine's act lexicon, intersects the act set the completion's kind, fields and give-item effects perform",
+      "id": "isl-62",
+      "note": "Carried by DW1045: `get under` states reach, an interact performs use. Repair: a reach-anchor under the ram, or re-head with a use word.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "obj/"
+          }
+        }
+      },
+      "campaign": "the-treehouse-camp",
+      "carrier": {
+        "code": "DW1045",
+        "kind": "dw"
+      },
+      "finding": "an objective titled \"Climb up to Oru\" completes on talking to Oru, wherever the party stands",
+      "general_form": "an objective's title opens on a word naming an act its completion performs: the head word's act set, read from the engine's act lexicon, intersects the act set the completion's kind, fields and give-item effects perform",
+      "id": "tc-01",
+      "note": "Carried by DW1045: `climb up` states reach, a talk-to performs talk. Repair: re-head with a talk word (\"Speak to Oru up the tree\").",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "obj/"
+          }
+        }
+      },
+      "campaign": "the-treehouse-camp",
+      "carrier": {
+        "code": "DW1045",
+        "kind": "dw"
+      },
+      "finding": "an objective titled \"Hang the lantern on the hook\" completes on a click at the hook holding the lantern, and the lantern stays in the hand",
+      "general_form": "an objective's title opens on a word naming an act its completion performs: the head word's act set, read from the engine's act lexicon, intersects the act set the completion's kind, fields and give-item effects perform",
+      "id": "tc-02",
+      "note": "Carried by DW1045: `hang` states give, an interact with requires_item performs use and present. Repair for this objective: add takes_item: true, so the lantern leaves the hand when it is hung (spec-0114 §6.3); the click at the hook already reads true and is kept.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "obj/"
+          }
+        }
+      },
+      "campaign": "vesperhold",
+      "carrier": {
+        "code": "DW1045",
+        "kind": "dw"
+      },
+      "finding": "an objective titled \"Show Tamsin the tongue\" completes on talking to Tamsin, with nothing shown",
+      "general_form": "an objective's title opens on a word naming an act its completion performs: the head word's act set, read from the engine's act lexicon, intersects the act set the completion's kind, fields and give-item effects perform",
+      "id": "vh-18",
+      "note": "Carried by DW1045: `show` states present, a talk-to performs talk. Showing a thing to a body is an open capability gap (row tc-04); until it closes the honest title is a talk word (\"Tell Tamsin of the tongue\").",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "campaign": "the-treehouse-camp",
+      "carrier": null,
+      "finding": "an objective titled \"Bring both to Oru\" completes on talking to Oru, and nothing is given: no completion takes a thing from the party and gives it to a body",
+      "general_form": "a dialogue option can complete an objective only while the speaking player holds a declared item, and can take one of it from that player, so giving a thing to a body is a completion the engine performs",
+      "id": "tc-03",
+      "note": "Open capability gap (spec-0114 §6.4): a dialogue option reads no hand and takes nothing. The engine work is a held-item gate on a dialogue option (requires_item on DialogueOption, read where option_display_conditions reads requires_state) and a take. Until it lands DW1045 refuses the title and the honest title is a talk word (\"Tell Oru you have both\").",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "campaign": "the-treehouse-camp",
+      "carrier": null,
+      "finding": "an objective titled \"Show Neve the lit lantern\" completes on talking to Neve, and nothing is shown: no completion reads what the party holds when it speaks to a body",
+      "general_form": "a dialogue option can complete an objective only while the speaking player holds a declared item in the main hand, so showing a thing to a body is a completion the engine performs",
+      "id": "tc-04",
+      "note": "Open capability gap (spec-0114 §6.4): a dialogue option reads no hand. The engine work is a held-item gate on a dialogue option (requires_item on DialogueOption, read where option_display_conditions reads requires_state). Also met as \"Show Tamsin the tongue\" (row vh-18). Until it lands DW1045 refuses the title and the honest title is a talk word.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"

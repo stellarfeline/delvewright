@@ -913,6 +913,39 @@
             "stealth": false,
             "title": "Reach the counter",
             "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/reach-the-counter"
+            ],
+            "anchor": "anchor/tray",
+            "announcement": "shown",
+            "forbids_flags": [
+              "flag/hall-sealed"
+            ],
+            "happening": {
+              "subject": "npc/factor",
+              "text": "The party leaves one emerald on the Factor's tray.",
+              "verb": "gains"
+            },
+            "hint": "The Factor's tray sits at the west end of the counter.",
+            "id": "obj/lay-an-emerald",
+            "prop": {
+              "block": "minecraft:smooth_stone_slab"
+            },
+            "requires_flags": [],
+            "requires_item": "minecraft:emerald",
+            "requires_state": [
+              {
+                "op": "at-most",
+                "state": "state/labels-read",
+                "value": 9
+              }
+            ],
+            "stealth": false,
+            "takes_item": true,
+            "title": "Lay an emerald on the counter",
+            "type": "interact"
           }
         ],
         "on_complete": [
