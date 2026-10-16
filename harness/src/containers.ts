@@ -16,6 +16,7 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { bareSound, heardAt, SOUND_POS_TOLERANCE } from "./sound-heard.ts";
 
 /** Where the ledger sits, relative to the critical path's directory. */
 export const CONTAINER_LEDGER_SUBPATH = ["validation", "holders.json"] as const;
@@ -130,16 +131,6 @@ export interface NoticeVerdict {
 }
 
 /**
- * How far (blocks, per axis) the notice's sound may land from the bot's
- * position after the warp. The packet carries its position in eighths of a
- * block and the body may settle onto the floor after the teleport; a sound at
- * the command source instead of the player misses by the distance between them.
- */
-export const NOTICE_SOUND_TOLERANCE = 1.5;
-
-const bare = (s: string): string => s.replace(/^minecraft:/, "");
-
-/**
  * **Judge the window against the ledger.** A declared notice must arrive: a
  * chat-family line (`chat`, `actionbar`) among the chat lines, an on-screen one
  * among the titles, carrying the compiler's text. With none declared there is
@@ -194,10 +185,8 @@ function judgeNoticeSound(
     return { ok: true, detail: `no sound owed (${told.sounds.length} sound packet(s) heard)`, heard: null };
   }
   const want = n.sound;
-  const named = told.sounds.filter((h) => bare(h.name) === bare(want));
-  const here = named.find((h) =>
-    h.pos.every((v, i) => Math.abs(v - told.arrival[i]!) <= NOTICE_SOUND_TOLERANCE),
-  );
+  const named = told.sounds.filter((h) => bareSound(h.name) === bareSound(want));
+  const here = named.find((h) => heardAt(h.pos, told.arrival));
   if (here) {
     return {
       ok: true,
@@ -210,7 +199,7 @@ function judgeNoticeSound(
     ok: false,
     detail: elsewhere
       ? `its sound ${want} arrived at ${JSON.stringify(elsewhere.pos)}, NOT at the bot (${at} ` +
-        `after the warp, tolerance ${NOTICE_SOUND_TOLERANCE})`
+        `after the warp, tolerance ${SOUND_POS_TOLERANCE})`
       : `its sound ${want} did NOT arrive: ${told.sounds.length} sound packet(s) heard in the ` +
         `window, none naming it (the bot at ${at} after the warp)`,
     heard: elsewhere ?? null,

@@ -348,7 +348,59 @@ pub(super) fn emit_functions(
             cell[0], cell[2], cell[0], cell[2],
         ));
     }
-    setup.push("scoreboard players set #placed dw.sys 0".to_string());
+    // **The ground goes down before any template** — each area's own mass (a
+    // derived blockout's region writes, spec-0049 §5), in the order the
+    // compile-time model applies it (`crate::compiler::assembled::placed_blocks`):
+    // under the templates, which carve and stand on it. A template placed first
+    // stands its blocks over air: a gravel street over a mass that is not there
+    // yet falls, and the mass written under the falling block turns it into an
+    // item on the ground (`DW1002`'s write-sequence arm). One chunk sentinel per
+    // chunk the mass reaches gates the ground's first step, as `place_verify`
+    // gates the world build; a chunk no other forceload holds is held here.
+    // Empty for every prefab-placed campaign → setup byte-identical.
+    let ground: Vec<String> = plan
+        .areas
+        .iter()
+        .flat_map(|a| a.mass.iter())
+        .map(|m| {
+            format!(
+                "fill {} {} {} {} {} {} {}",
+                m.from[0], m.from[1], m.from[2], m.to[0], m.to[1], m.to[2], m.block
+            )
+        })
+        .collect();
+    let mut ground_chunks: BTreeMap<(i32, i32), [i32; 3]> = BTreeMap::new();
+    for m in plan.areas.iter().flat_map(|a| a.mass.iter()) {
+        let lo = [0, 1, 2].map(|i| m.from[i].min(m.to[i]));
+        let hi = [0, 1, 2].map(|i| m.from[i].max(m.to[i]));
+        for (cx, cz) in chunk_span(lo, hi) {
+            ground_chunks.entry((cx, cz)).or_insert([
+                (cx * 16).max(lo[0]),
+                lo[1],
+                (cz * 16).max(lo[2]),
+            ]);
+        }
+    }
+    {
+        let held: BTreeSet<(i32, i32)> = plan
+            .placed_pieces()
+            .flat_map(|p| {
+                let (min, max) = p.bbox();
+                chunk_span(min, max)
+            })
+            .collect();
+        for ((cx, cz), cell) in &ground_chunks {
+            if !held.contains(&(*cx, *cz)) {
+                setup.push(format!("forceload add {} {}", cell[0], cell[2]));
+            }
+        }
+    }
+    // `#placed` 3: the ground is waiting on its chunks; the last ground step
+    // sets 0 and the placement loop below starts.
+    setup.push(format!(
+        "scoreboard players set #placed dw.sys {}",
+        if ground.is_empty() { 0 } else { 3 }
+    ));
 
     // The edit-script chunk ledger (map-editor audit, findings 2 + 6): which
     // chunks the edit writes need loaded, and which of those the piece
@@ -419,8 +471,8 @@ pub(super) fn emit_functions(
     fns.push(("place_all".to_string(), lines(&place_all)));
 
     // --- world_build: the world's own block writes, split across ticks ---
-    // Every block write the world is built from, in the order the compile-time
-    // model applied them: each area's derived mass and socket seals, then the
+    // Every block write the world is built from after its templates, in the
+    // order the compile-time model applied them: each area's socket seals, then the
     // stage-7 edit script (spec-0017) — after the seals, which overwrite raw
     // structure blocks, and before `setup_finish`'s relight fixtures, which
     // were measured over the edited world. The sequence grows with the
@@ -430,7 +482,7 @@ pub(super) fn emit_functions(
     // runs the first from `place_verify` and latches `#placed` at 2, so the
     // tick stops re-placing templates over the writes; each step schedules
     // the next, and the last schedules `setup_finish`, which latches 1. Empty
-    // for a campaign with no mass, seal or edit → no step, and `place_verify`
+    // for a campaign with no seal or edit → no step, and `place_verify`
     // calls `setup_finish` directly.
     let mut build: Vec<String> = Vec::new();
     // seal/clear sockets: open sockets get a wall fill; mated sockets get their
@@ -440,16 +492,14 @@ pub(super) fn emit_functions(
     // area binding one, whose lone piece has all its sockets unmated and so gets
     // a wall fill per connector.
     for area in &plan.areas {
-        // The area's own mass first — a derived blockout's blocks (spec-0049 §5)
-        // arrive as region writes rather than in a `.nbt`, in the same order the
-        // compile-time model applied them (`crate::compiler::assembled::placed_blocks`), so
-        // the world the server builds is the world every proof was taken over.
-        // Empty for every prefab-placed area → byte-identical setup.
+        // The area's mass went down in the ground steps, before the templates
+        // (above); its seals land here, after them, as the compile-time model
+        // applies them (`crate::compiler::assembled::placed_blocks`).
         //
         // Each write is already inside vanilla's `/fill` cap: the derivation
         // splits at the point of writing, because a `fill` the server refuses
         // fails in a function nobody reads.
-        for m in area.mass.iter().chain(&area.seals) {
+        for m in &area.seals {
             build.push(format!(
                 "fill {} {} {} {} {} {} {}",
                 m.from[0], m.from[1], m.from[2], m.to[0], m.to[1], m.to[2], m.block
@@ -473,6 +523,41 @@ pub(super) fn emit_functions(
         };
         body.push(format!("schedule function {ns}:{next} 1t"));
         fns.push((step_name(k), lines(&body)));
+    }
+    // --- the ground steps and their chunk gate ---
+    if !ground.is_empty() {
+        let ground_steps =
+            crate::compiler::chain::steps(&ground, crate::compiler::chain::SETUP_STEP_BUDGET);
+        let step = crate::compiler::chain::ground_step_fn;
+        for (k, lines_k) in ground_steps.iter().enumerate() {
+            let mut body: Vec<String> = Vec::new();
+            if k == 0 {
+                body.push("scoreboard players set #placed dw.sys 2".to_string());
+            }
+            body.extend(lines_k.iter().cloned());
+            if k + 1 < ground_steps.len() {
+                body.push(format!("schedule function {ns}:{} 1t", step(k + 1)));
+            } else {
+                body.push("scoreboard players set #placed dw.sys 0".to_string());
+            }
+            fns.push((step(k), lines(&body)));
+        }
+        let mut verify: Vec<String> = vec!["scoreboard players set #placeok dw.sys 0".to_string()];
+        for cell in ground_chunks.values() {
+            verify.push(format!(
+                "execute if loaded {} {} {} run scoreboard players add #placeok dw.sys 1",
+                cell[0], cell[1], cell[2]
+            ));
+        }
+        verify.push(format!(
+            "execute if score #placeok dw.sys matches {} run function {ns}:{}",
+            ground_chunks.len(),
+            step(0)
+        ));
+        fns.push((
+            crate::compiler::chain::GROUND_VERIFY_FN.to_string(),
+            lines(&verify),
+        ));
     }
     let after_verify = if build_steps.is_empty() {
         "setup_finish".to_string()
@@ -729,11 +814,19 @@ pub(super) fn emit_functions(
 
     // --- tick ---
     let mut tick: Vec<String> = Vec::new();
-    // Placement retry loop: until every sentinel verifies, re-place and re-check
-    // each tick (idempotent). Gated on `#placed` 0: the world build latches it
+    // The ground's chunk gate first, while `#placed` is 3 (only a campaign with
+    // mass sets it). Then the placement retry loop: until every sentinel
+    // verifies, re-place and re-check each tick (idempotent). Gated on
+    // `#placed` 0: the world build latches it
     // at 2 while its steps run, so no template is placed back over a write, and
     // `setup_finish` latches 1. Converges as soon as the forceloaded chunks
     // finish loading.
+    if !ground.is_empty() {
+        tick.push(format!(
+            "execute if score #init dw.sys matches 1 if score #placed dw.sys matches 3 run function {ns}:{}",
+            crate::compiler::chain::GROUND_VERIFY_FN
+        ));
+    }
     tick.push(format!(
         "execute if score #init dw.sys matches 1 if score #placed dw.sys matches 0 run function {ns}:place_all"
     ));

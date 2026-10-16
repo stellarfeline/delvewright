@@ -265,6 +265,13 @@ export const methods = {
     bot.on("title", (text: unknown) => {
       this.titlesTold.push(typeof text === "string" ? text : JSON.stringify(text));
     });
+    // The quest cues: every sound packet naming one, in arrival order beside the
+    // markers above, so each is judged against the marker that owed it.
+    bot.on(
+      "soundEffectHeard",
+      (name: string, pos: { x: number; y: number; z: number }, volume: number, pitch: number) =>
+        this.observeCueSound(name, pos, volume, pitch),
+    );
     bot.on("death", () => this.onDeath());
     // A mid-run disconnect is recorded the moment it happens (see lostConnection).
     // `close()` detaches the bot before it ends it, so our own quit never lands here.

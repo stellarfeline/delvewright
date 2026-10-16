@@ -9,6 +9,7 @@
 //!
 //! - [`affordance`]: affordance hardware — the visible half of every right-click target the compiler owns (`DW0420`/`DW0421`).
 //! - [`analyze`]: deep quest/objective reachability (`DW02xx`, exit 2).
+//! - [`approach`]: a body the party talks to faces their approach, or watches it (`DW1025`).
 //! - [`assembled`]: the shared assembled-world block model every geometric proof reads.
 //! - [`assembly`]: an assembly's hitbox, reach and strike judgements, and its emission (spec-0082).
 //! - [`atmos`]: sound-event validation (`DW0326`), the refused `play-sound at: actor` (`DW0335`), and the `delve:art` banner font (`DW0328`).
@@ -29,6 +30,7 @@
 //! - [`chain`]: a tick's command chain stays under the game's limit, and one-shot work is split across ticks (`DW0984`).
 //! - [`claims`]: a prefab document says nothing its own bytes deny — every byte-asserting key of the document, one rule (`DW0888`).
 //! - [`clearance`]: the body-vs-block proof — no body occupies the same space as block geometry (`DW0450`/`DW0451`).
+//! - [`clickbox`]: the one rule every compiler-placed click box is built by — each face near the block grid pushed one margin past it — and its proof over the shipped bytes that a box is strictly nearer than any block it stands in (`DW1013`).
 //! - [`clock`]: the clock binding line — every time value the campaign states, as the clock it resolves to (spec-0081 §5.5).
 //! - [`cohabit`]: one mark, one body — two bodies whose lifetimes overlap may not be declared on one cell (`DW0896`).
 //! - [`combat`]: compile-time combat winnability — the arithmetic half of the combat proofs.
@@ -72,6 +74,7 @@
 //! - [`plan`]: resolve a validated campaign into the placement + naming model emission reads.
 //! - [`png`]: the deterministic hand-rolled PNG writer.
 //! - [`pool`]: a pool draw that seats the same anchored prefab twice (`DW0498`).
+//! - [`presence`]: one named character is one body in every story state (`DW1026`).
 //! - [`pressable`]: what a player's click reaches at an anchor — the one authority every `strike`/`use` trigger dispatches from.
 //! - [`promise`]: an objective keeps the promise its prompt makes (`DW0860`–`DW0863`).
 //! - [`pulse`]: a sound that beats over a place — its derived range and listening stations (`DW0994`, `DW0995`).
@@ -111,6 +114,7 @@
 
 pub mod affordance;
 pub mod analyze;
+pub mod approach;
 pub mod assembled;
 pub mod assembly;
 pub mod atmos;
@@ -131,6 +135,7 @@ pub mod cellset;
 pub mod chain;
 pub mod claims;
 pub mod clearance;
+pub mod clickbox;
 pub mod clock;
 pub mod cohabit;
 pub mod combat;
@@ -175,6 +180,7 @@ pub mod onkill;
 pub mod plan;
 pub mod png;
 pub mod pool;
+pub mod presence;
 pub mod pressable;
 pub mod promise;
 pub mod pulse;

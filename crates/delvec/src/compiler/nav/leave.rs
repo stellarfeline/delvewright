@@ -62,7 +62,7 @@ impl LeaveBinding {
 
 /// How a body got from `from` to `to` in one [`World::body_moves`] movement, in
 /// words for a report.
-fn movement_words(world: &World, from: [i32; 3], to: [i32; 3]) -> String {
+pub(super) fn movement_words(world: &World, from: [i32; 3], to: [i32; 3]) -> String {
     let run = (to[0] - from[0]).abs() + (to[2] - from[2]).abs();
     let rise = to[1] - from[1];
     if world.is_water_surface(from) {
@@ -420,48 +420,27 @@ impl World {
         returned: Option<([i32; 3], [i32; 3])>,
         shortcuts: &[crate::compiler::plan::ShortcutPlan],
     ) -> bool {
-        let levers: Vec<Option<[i32; 3]>> = shortcuts
-            .iter()
-            .map(|s| self.snap_standable(s.unlock, SNAP_RADIUS))
-            .collect();
-        let mut opened: BTreeSet<usize> = BTreeSet::new();
-        loop {
-            let owned;
-            let w: &World = if opened.is_empty() {
-                self
-            } else {
-                let cells: BTreeSet<[i32; 3]> = opened
-                    .iter()
-                    .flat_map(|&i| {
-                        let (lo, hi) = shortcuts[i].gate_region;
-                        crate::compiler::assembled::region_cells(lo, hi)
-                    })
-                    .collect();
-                owned = self.with_cleared(&cells);
-                &owned
-            };
-            let mut seen: BTreeSet<[i32; 3]> = pocket.iter().copied().collect();
-            let mut queue: std::collections::VecDeque<[i32; 3]> = seen.iter().copied().collect();
-            while let Some(cur) = queue.pop_front() {
-                if seeds.contains(&cur) || returned_from(returned, cur) {
-                    return true;
-                }
-                for n in w.body_moves(cur) {
-                    if seen.insert(n) {
-                        queue.push_back(n);
+        self.in_shortcut_rounds(
+            shortcuts,
+            |c| self.with_cleared(c),
+            |w| {
+                let mut seen: BTreeSet<[i32; 3]> = pocket.iter().copied().collect();
+                let mut queue: std::collections::VecDeque<[i32; 3]> =
+                    seen.iter().copied().collect();
+                while let Some(cur) = queue.pop_front() {
+                    if seeds.contains(&cur) || returned_from(returned, cur) {
+                        return std::ops::ControlFlow::Break(());
+                    }
+                    for n in w.body_moves(cur) {
+                        if seen.insert(n) {
+                            queue.push_back(n);
+                        }
                     }
                 }
-            }
-            let before = opened.len();
-            for (i, lever) in levers.iter().enumerate() {
-                if lever.is_some_and(|l| seen.contains(&l)) {
-                    opened.insert(i);
-                }
-            }
-            if opened.len() == before {
-                return false;
-            }
-        }
+                std::ops::ControlFlow::Continue(seen)
+            },
+        )
+        .is_break()
     }
 
     /// The body-movement closure of `seeds` ([`World::body_moves`]) and, within it,

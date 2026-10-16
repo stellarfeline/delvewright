@@ -622,8 +622,12 @@ fn collapse_trap(zone: serde_json::Value, extra: serde_json::Value) -> serde_jso
     })
 }
 
+/// The ceiling over the room's north side, between its two north lanterns
+/// (`hello-room` hangs them at local x 3 and 7): a collapse of the ceiling a
+/// lantern hangs from drops the lantern as an item (`DW1002`), so the box
+/// stays clear of both.
 fn ceiling() -> (&'static str, serde_json::Value) {
-    ("anchor/ceiling", serde_json::json!({ "pos": [4, 5, 3] }))
+    ("anchor/ceiling", serde_json::json!({ "pos": [5, 5, 3] }))
 }
 
 fn ceiling_zone() -> serde_json::Value {
@@ -659,7 +663,7 @@ fn collapse_drops_the_ceiling_and_clears_the_region() {
     // Impact damage is what makes it a trap rather than a scenery effect.
     assert!(body.contains("HurtEntities:1b"), "{body}");
     // …and the region is genuinely gone afterwards.
-    assert!(body.contains("fill 3 69 2 5 69 4 minecraft:air"), "{body}");
+    assert!(body.contains("fill 4 69 2 6 69 4 minecraft:air"), "{body}");
     // A collapse with no `then_floor` schedules no paving pass.
     assert!(!body.contains("schedule"), "{body}");
 }
@@ -790,4 +794,29 @@ fn collapse_packtest_asserts_region_gone_and_debris_spawned() {
     assert!(t.contains("assert score #cpost dw.sys matches 9.."), "{t}");
     let air = t.lines().filter(|l| l.starts_with("assert block ")).count();
     assert_eq!(air, 9, "{t}");
+}
+
+/// `DW1002`'s runtime arm over a trap: a collapse of the ceiling a lantern
+/// hangs from (`hello-room`'s lantern at local `[3, 4, 3]`, under the ceiling
+/// the box centred one cell west of [`ceiling`] takes) leaves the lantern with
+/// nothing above it, and the server drops it as an item. The trap is a beat
+/// nobody has to play; the arm judges it anyway.
+#[test]
+fn a_collapse_under_a_hanging_lantern_is_dw1002() {
+    let e = build_payload(
+        "p-collapse-lantern",
+        collapse_trap(ceiling_zone(), serde_json::json!({})),
+        &[("anchor/ceiling", serde_json::json!({ "pos": [4, 5, 3] }))],
+    )
+    .expect_err("a collapse that takes a lantern's ceiling must not build");
+    let msg = err_code(&e);
+    assert!(msg.contains("DW1002"), "{msg}");
+    assert!(
+        msg.contains("`minecraft:lantern[hanging=true]` at [3, 68, 3] (at load)"),
+        "{msg}"
+    );
+    assert!(
+        msg.contains("left by `fill 3 69 2 5 69 4 minecraft:air`"),
+        "{msg}"
+    );
 }

@@ -400,6 +400,19 @@ pub(super) fn check_finished_tree(
         .count();
     put_json(out, "validation/fixture-gate.json", &fixture_gate.to_json());
 
+    // ---- a click box wins the pick (DW1013) ----
+    // Every `minecraft:interaction` placed at a cell must be strictly nearer than
+    // any block it stands in along every click ray, or the block wins the tie and
+    // the click never reaches the box. Read off the shipped tree, so every emitter
+    // that summons a box is an entry point by existing.
+    let click_boxes =
+        crate::compiler::clickbox::check(out).map_err(|e| BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        })?;
+    eprintln!("{}", click_boxes.line());
+    put_json(out, "validation/click-box.json", &click_boxes.to_json());
+
     // ---- the party is seen in its own cutscenes (spec-0095, DW0971) ----
     // Every cutscene declared `present` places its stand-ins before the party
     // goes to spectator and removes them at its end; every `absent` one places

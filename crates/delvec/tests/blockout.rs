@@ -2573,3 +2573,88 @@ fn an_interior_overview_stands_over_a_hung_place_over_its_eye() {
         "the eye is over the hung canopy's lid (y {lid}): {cam}"
     );
 }
+
+/// **The ground goes down before any template** (`DW1002`'s write-sequence
+/// arm): the derived mass is written by the ground steps, gated on its chunks
+/// and run before `place_all`, in the order the compile-time model applies it
+/// (`assembled::placed_blocks`) — never by the world build, after the
+/// templates, where a template's falling block placed over the mass's air
+/// falls and a later write turns it into an item.
+#[test]
+fn the_mass_is_written_before_any_template() {
+    use delvec::compiler::commands::CommandTree;
+    use delvec::compiler::emit;
+    let c = campaign();
+    let reg = prefabs();
+    let plan = Plan::build(&c, &reg).expect("the blockout fixture plans");
+    let mass: Vec<String> = plan
+        .areas
+        .iter()
+        .flat_map(|a| a.mass.iter())
+        .map(|m| {
+            format!(
+                "fill {} {} {} {} {} {} {}",
+                m.from[0], m.from[1], m.from[2], m.to[0], m.to[1], m.to[2], m.block
+            )
+        })
+        .collect();
+    assert!(!mass.is_empty(), "the fixture derives a mass");
+    let structures = common::plan_structures_with_trap_triggers(&plan, &common::prefabs_dir());
+    let out = emit::build(
+        &plan,
+        &BTreeMap::new(),
+        &structures,
+        &CommandTree::v1_21_11(),
+        &reg,
+        None,
+        &BTreeMap::new(),
+    )
+    .expect("the blockout fixture builds");
+    let ns = &plan.namespace;
+    let body = |name: &str| -> String {
+        out.get(&format!("datapack/data/{ns}/function/{name}.mcfunction"))
+            .map(|b| String::from_utf8(b.clone()).unwrap())
+            .unwrap_or_default()
+    };
+    // Every ground step's lines, in order.
+    let mut ground: Vec<String> = Vec::new();
+    let mut k = 0;
+    loop {
+        let b = body(&delvec::compiler::chain::ground_step_fn(k));
+        if b.is_empty() {
+            break;
+        }
+        ground.extend(
+            b.lines()
+                .filter(|l| l.starts_with("fill "))
+                .map(str::to_string),
+        );
+        k += 1;
+    }
+    assert_eq!(
+        ground, mass,
+        "the ground steps write the mass, whole and in order"
+    );
+    assert!(body("setup").contains("scoreboard players set #placed dw.sys 3"));
+    let tick = body("tick");
+    let verify = tick.find(&format!(
+        "run function {ns}:{}",
+        delvec::compiler::chain::GROUND_VERIFY_FN
+    ));
+    let place = tick.find(&format!("run function {ns}:place_all"));
+    assert!(
+        matches!((verify, place), (Some(v), Some(p)) if v < p),
+        "the tick gates the ground before the placement:\n{tick}"
+    );
+    let last = body(&delvec::compiler::chain::ground_step_fn(k - 1));
+    assert!(
+        last.trim_end()
+            .ends_with("scoreboard players set #placed dw.sys 0"),
+        "the last ground step starts the placement:\n{last}"
+    );
+    let build = body("world_build");
+    assert!(
+        mass.iter().all(|m| !build.contains(m.as_str())),
+        "the world build writes none of the mass"
+    );
+}
