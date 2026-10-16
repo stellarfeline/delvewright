@@ -25,6 +25,7 @@ mod loot;
 mod npc;
 mod objective;
 mod onkill;
+mod party;
 mod pulse;
 mod quest;
 mod seal;
@@ -224,7 +225,12 @@ pub(super) fn emit_packtest(
 
     // spec-0018: one n-dummy division-of-labour test per AND-join.
     objective::emit_party_join_packtests(plan, out);
+    // spec-0018: one two-player test per objective that hands a `carrier: one`
+    // item, asserting exactly one member holds it.
+    party::emit_carrier_one_packtests(plan, out);
 }
+
+pub(super) use party::{PartyBinding, party_binding};
 
 // ------------------------------------------- per-object watch claims (DW0811) --
 //
