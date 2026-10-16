@@ -73,6 +73,7 @@ export const methods = {
   observeMarker(this: MineflayerExecutor, message: string): void {
     const marker = parseCompletionMarker(message);
     if (!marker || marker.campaignId !== this.campaignId) return;
+    this.observeCueMarker(marker.token);
     if (this.repaintWatch) {
       // Where the bot stood decides which chunks of a repaint it was owed.
       const p = this.bot?.entity?.position;

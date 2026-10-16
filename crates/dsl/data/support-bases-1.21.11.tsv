@@ -5,8 +5,9 @@
 # BlockState.isFaceSturdy(EmptyBlockGetter.INSTANCE, BlockPos.ZERO, face,
 # SupportType.CENTER) answers true, and `rigid` those for SupportType.RIGID;
 # `flags` holds a when BlockState.isAir(), s when BlockState.isSolid(), w when
-# getFluidState().getType() is Fluids.WATER; `-` when none. FULL is
-# faces-<version>.tsv's `sturdy` column.
+# getFluidState().getType() is Fluids.WATER, f when FallingBlock.isFree(state)
+# (a falling block falls into such a cell, and cannot stay on one); `-` when
+# none. FULL is faces-<version>.tsv's `sturdy` column.
 # A face column carries only the faces some support rule asks of it:
 #   center faces carried: du
 #   rigid faces carried: u
@@ -2914,7 +2915,7 @@ minecraft:acacia_wall_sign	flags	s	4
 minecraft:acacia_wood	flags	s	3
 minecraft:activator_rail[waterlogged=true]	flags	w	12
 minecraft:activator_rail	flags	-	12
-minecraft:air	flags	a	1
+minecraft:air	flags	af	1
 minecraft:allium	flags	-	1
 minecraft:amethyst_block	flags	s	1
 minecraft:amethyst_cluster[waterlogged=true]	flags	sw	6
@@ -3084,7 +3085,7 @@ minecraft:brown_stained_glass_pane	flags	s	16
 minecraft:brown_terracotta	flags	s	1
 minecraft:brown_wall_banner	flags	s	4
 minecraft:brown_wool	flags	s	1
-minecraft:bubble_column	flags	w	2
+minecraft:bubble_column	flags	wf	2
 minecraft:bubble_coral[waterlogged=true]	flags	w	1
 minecraft:bubble_coral	flags	-	1
 minecraft:bubble_coral_block	flags	s	1
@@ -3093,7 +3094,7 @@ minecraft:bubble_coral_fan	flags	-	1
 minecraft:bubble_coral_wall_fan[waterlogged=true]	flags	w	4
 minecraft:bubble_coral_wall_fan	flags	-	4
 minecraft:budding_amethyst	flags	s	1
-minecraft:bush	flags	-	1
+minecraft:bush	flags	f	1
 minecraft:cactus	flags	s	16
 minecraft:cactus_flower	flags	-	1
 minecraft:cake	flags	s	7
@@ -3109,7 +3110,7 @@ minecraft:carrots	flags	-	8
 minecraft:cartography_table	flags	s	1
 minecraft:carved_pumpkin	flags	s	4
 minecraft:cauldron	flags	s	1
-minecraft:cave_air	flags	a	1
+minecraft:cave_air	flags	af	1
 minecraft:cave_vines	flags	-	52
 minecraft:cave_vines_plant	flags	-	2
 minecraft:chain_command_block	flags	s	12
@@ -3227,7 +3228,7 @@ minecraft:crimson_hyphae	flags	s	3
 minecraft:crimson_nylium	flags	s	1
 minecraft:crimson_planks	flags	s	1
 minecraft:crimson_pressure_plate	flags	s	2
-minecraft:crimson_roots	flags	-	1
+minecraft:crimson_roots	flags	f	1
 minecraft:crimson_shelf[waterlogged=true]	flags	sw	32
 minecraft:crimson_shelf	flags	s	32
 minecraft:crimson_sign[waterlogged=true]	flags	sw	16
@@ -3321,7 +3322,7 @@ minecraft:dead_bubble_coral_fan[waterlogged=true]	flags	sw	1
 minecraft:dead_bubble_coral_fan	flags	s	1
 minecraft:dead_bubble_coral_wall_fan[waterlogged=true]	flags	sw	4
 minecraft:dead_bubble_coral_wall_fan	flags	s	4
-minecraft:dead_bush	flags	-	1
+minecraft:dead_bush	flags	f	1
 minecraft:dead_fire_coral[waterlogged=true]	flags	sw	1
 minecraft:dead_fire_coral	flags	s	1
 minecraft:dead_fire_coral_block	flags	s	1
@@ -3433,8 +3434,8 @@ minecraft:exposed_cut_copper_stairs	flags	s	40
 minecraft:exposed_lightning_rod[waterlogged=true]	flags	sw	12
 minecraft:exposed_lightning_rod	flags	s	12
 minecraft:farmland	flags	s	8
-minecraft:fern	flags	-	1
-minecraft:fire	flags	-	512
+minecraft:fern	flags	f	1
+minecraft:fire	flags	f	512
 minecraft:fire_coral[waterlogged=true]	flags	w	1
 minecraft:fire_coral	flags	-	1
 minecraft:fire_coral_block	flags	s	1
@@ -3455,8 +3456,8 @@ minecraft:gilded_blackstone	flags	s	1
 minecraft:glass	flags	s	1
 minecraft:glass_pane[waterlogged=true]	flags	sw	16
 minecraft:glass_pane	flags	s	16
-minecraft:glow_lichen[waterlogged=true]	flags	w	64
-minecraft:glow_lichen	flags	-	64
+minecraft:glow_lichen[waterlogged=true]	flags	wf	64
+minecraft:glow_lichen	flags	f	64
 minecraft:glowstone	flags	s	1
 minecraft:gold_block	flags	s	1
 minecraft:gold_ore	flags	s	1
@@ -3502,8 +3503,8 @@ minecraft:green_terracotta	flags	s	1
 minecraft:green_wall_banner	flags	s	4
 minecraft:green_wool	flags	s	1
 minecraft:grindstone	flags	s	12
-minecraft:hanging_roots[waterlogged=true]	flags	w	1
-minecraft:hanging_roots	flags	-	1
+minecraft:hanging_roots[waterlogged=true]	flags	wf	1
+minecraft:hanging_roots	flags	f	1
 minecraft:hay_block	flags	s	3
 minecraft:heavy_core[waterlogged=true]	flags	w	1
 minecraft:heavy_core	flags	-	1
@@ -3576,14 +3577,14 @@ minecraft:lapis_block	flags	s	1
 minecraft:lapis_ore	flags	s	1
 minecraft:large_amethyst_bud[waterlogged=true]	flags	sw	6
 minecraft:large_amethyst_bud	flags	s	6
-minecraft:large_fern	flags	-	2
-minecraft:lava	flags	-	16
+minecraft:large_fern	flags	f	2
+minecraft:lava	flags	f	16
 minecraft:lava_cauldron	flags	s	1
-minecraft:leaf_litter	flags	-	16
+minecraft:leaf_litter	flags	f	16
 minecraft:lectern	flags	s	16
 minecraft:lever	flags	-	24
-minecraft:light[waterlogged=true]	flags	w	16
-minecraft:light	flags	-	16
+minecraft:light[waterlogged=true]	flags	wf	16
+minecraft:light	flags	f	16
 minecraft:light_blue_banner	flags	s	16
 minecraft:light_blue_bed	flags	s	16
 minecraft:light_blue_candle[waterlogged=true]	flags	w	8
@@ -3732,7 +3733,7 @@ minecraft:nether_bricks	flags	s	1
 minecraft:nether_gold_ore	flags	s	1
 minecraft:nether_portal	flags	-	2
 minecraft:nether_quartz_ore	flags	s	1
-minecraft:nether_sprouts	flags	-	1
+minecraft:nether_sprouts	flags	f	1
 minecraft:nether_wart	flags	-	4
 minecraft:nether_wart_block	flags	s	1
 minecraft:netherite_block	flags	s	1
@@ -4229,8 +4230,8 @@ minecraft:resin_brick_wall[east=tall,north=tall,south=tall,up=true,waterlogged=t
 minecraft:resin_brick_wall[east=tall,north=tall,south=tall,up=true,waterlogged=true,west=tall]	flags	sw	1
 minecraft:resin_brick_wall	flags	s	161
 minecraft:resin_bricks	flags	s	1
-minecraft:resin_clump[waterlogged=true]	flags	w	64
-minecraft:resin_clump	flags	-	64
+minecraft:resin_clump[waterlogged=true]	flags	wf	64
+minecraft:resin_clump	flags	f	64
 minecraft:respawn_anchor	flags	s	5
 minecraft:rooted_dirt	flags	s	1
 minecraft:rose_bush	flags	-	2
@@ -4255,9 +4256,9 @@ minecraft:sculk_vein	flags	s	64
 minecraft:sea_lantern	flags	s	1
 minecraft:sea_pickle[waterlogged=true]	flags	w	4
 minecraft:sea_pickle	flags	-	4
-minecraft:seagrass	flags	w	1
-minecraft:short_dry_grass	flags	-	1
-minecraft:short_grass	flags	-	1
+minecraft:seagrass	flags	wf	1
+minecraft:short_dry_grass	flags	f	1
+minecraft:short_grass	flags	f	1
 minecraft:shroomlight	flags	s	1
 minecraft:shulker_box	flags	s	6
 minecraft:skeleton_skull	flags	-	32
@@ -4289,11 +4290,11 @@ minecraft:smooth_stone	flags	s	1
 minecraft:smooth_stone_slab[waterlogged=true]	flags	sw	3
 minecraft:smooth_stone_slab	flags	s	3
 minecraft:sniffer_egg	flags	s	3
-minecraft:snow	flags	-	8
+minecraft:snow	flags	f	8
 minecraft:snow_block	flags	s	1
 minecraft:soul_campfire[waterlogged=true]	flags	sw	16
 minecraft:soul_campfire	flags	s	16
-minecraft:soul_fire	flags	-	1
+minecraft:soul_fire	flags	f	1
 minecraft:soul_lantern[waterlogged=true]	flags	sw	2
 minecraft:soul_lantern	flags	s	2
 minecraft:soul_sand	flags	s	1
@@ -4371,15 +4372,15 @@ minecraft:stripped_spruce_wood	flags	s	3
 minecraft:stripped_warped_hyphae	flags	s	3
 minecraft:stripped_warped_stem	flags	s	3
 minecraft:structure_block	flags	s	4
-minecraft:structure_void	flags	-	1
+minecraft:structure_void	flags	f	1
 minecraft:sugar_cane	flags	-	16
 minecraft:sunflower	flags	-	2
 minecraft:suspicious_gravel	flags	s	4
 minecraft:suspicious_sand	flags	s	4
 minecraft:sweet_berry_bush	flags	-	4
-minecraft:tall_dry_grass	flags	-	1
-minecraft:tall_grass	flags	-	2
-minecraft:tall_seagrass	flags	w	2
+minecraft:tall_dry_grass	flags	f	1
+minecraft:tall_grass	flags	f	2
+minecraft:tall_seagrass	flags	wf	2
 minecraft:target	flags	s	16
 minecraft:terracotta	flags	s	1
 minecraft:test_block	flags	s	4
@@ -4420,8 +4421,8 @@ minecraft:twisting_vines	flags	-	26
 minecraft:twisting_vines_plant	flags	-	1
 minecraft:vault	flags	s	32
 minecraft:verdant_froglight	flags	s	3
-minecraft:vine	flags	-	32
-minecraft:void_air	flags	a	1
+minecraft:vine	flags	f	32
+minecraft:void_air	flags	af	1
 minecraft:wall_torch	flags	-	4
 minecraft:warped_button	flags	-	24
 minecraft:warped_door	flags	s	64
@@ -4435,7 +4436,7 @@ minecraft:warped_hyphae	flags	s	3
 minecraft:warped_nylium	flags	s	1
 minecraft:warped_planks	flags	s	1
 minecraft:warped_pressure_plate	flags	s	2
-minecraft:warped_roots	flags	-	1
+minecraft:warped_roots	flags	f	1
 minecraft:warped_shelf[waterlogged=true]	flags	sw	32
 minecraft:warped_shelf	flags	s	32
 minecraft:warped_sign[waterlogged=true]	flags	sw	16
@@ -4452,8 +4453,8 @@ minecraft:warped_wall_hanging_sign	flags	s	4
 minecraft:warped_wall_sign[waterlogged=true]	flags	sw	4
 minecraft:warped_wall_sign	flags	s	4
 minecraft:warped_wart_block	flags	s	1
-minecraft:water[level=0]	flags	w	1
-minecraft:water	flags	-	15
+minecraft:water[level=0]	flags	wf	1
+minecraft:water	flags	f	15
 minecraft:water_cauldron	flags	s	3
 minecraft:waxed_chiseled_copper	flags	s	1
 minecraft:waxed_copper_bars[waterlogged=true]	flags	sw	16
