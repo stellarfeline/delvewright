@@ -21,7 +21,7 @@ use std::process::Command;
 use delvewright_dsl::{Group, Subject};
 
 fn tempdir(name: &str) -> PathBuf {
-    let p = std::env::temp_dir().join(format!("dw-order-{name}"));
+    let p = std::env::temp_dir().join(format!("dw-order-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
     p

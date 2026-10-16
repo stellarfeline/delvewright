@@ -41,7 +41,7 @@ fn parse(dir: &Path) -> Campaign {
 /// stage-5 envelope) and parse it. Structural parse only — these tests exercise
 /// the flow model, not anchor resolution.
 fn variant(name: &str, quests: serde_json::Value) -> Campaign {
-    let dst = std::env::temp_dir().join(format!("dw-flow-{name}"));
+    let dst = std::env::temp_dir().join(format!("dw-flow-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dst);
     common::materialize_from(
         &branch_endings_dir(),
@@ -54,7 +54,7 @@ fn variant(name: &str, quests: serde_json::Value) -> Campaign {
 /// Materialize `branch-endings` with an arbitrary set of stage documents
 /// replaced, and parse it (structural parse only, as above).
 fn variant_docs(name: &str, docs: serde_json::Value) -> Campaign {
-    let dst = std::env::temp_dir().join(format!("dw-flow-{name}"));
+    let dst = std::env::temp_dir().join(format!("dw-flow-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dst);
     common::materialize_from(
         &branch_endings_dir(),
