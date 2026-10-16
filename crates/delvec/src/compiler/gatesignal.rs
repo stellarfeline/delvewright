@@ -173,6 +173,10 @@ pub fn shut_gates(plan: &Plan) -> Vec<ShutGate> {
     out.into_values().collect()
 }
 
+/// The conductor a source's power passes through to reach a cell, and the
+/// conductor's block in words.
+type Via = ([i32; 3], String);
+
 fn manhattan(a: [i32; 3], b: [i32; 3]) -> i64 {
     (0..3)
         .map(|i| (i64::from(a[i]) - i64::from(b[i])).abs())
@@ -252,7 +256,7 @@ pub fn prove(
         };
         // What the source powers: its face neighbours, and the neighbours of
         // any of them that may hold a conductor.
-        let mut reach: Vec<([i32; 3], Option<([i32; 3], String)>)> =
+        let mut reach: Vec<([i32; 3], Option<Via>)> =
             neighbours(*s).into_iter().map(|n| (n, None)).collect();
         for n in neighbours(*s) {
             if let Some((cond, chow)) = possible(blocks, writes, n)
