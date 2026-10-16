@@ -184,6 +184,12 @@ pub struct Plan<'a> {
     /// it, so there are no approved image files to find. A run that has one
     /// attaches it with [`Plan::with_design_files`].
     pub design_files: crate::compiler::design::DesignFiles,
+    /// What the act check (`DW1045`, spec-0114) judged over the campaign's
+    /// ENGLISH titles. A `--lang` bake plans a campaign whose titles are
+    /// already in another language, so the run that read the English attaches
+    /// its verdict with [`Plan::with_act_binding`]; absent, the build reads the
+    /// plan's own campaign, which is English.
+    pub act_binding: Option<crate::compiler::telling::ActBinding>,
     /// What the ocean-datum invariant (`DW0344`) examined in this build, printed
     /// as its own line by [`crate::compiler::emit::build`]. `NOT_AN_OCEAN` for
     /// every world that declares another horizon.
@@ -1256,6 +1262,7 @@ impl<'a> Plan<'a> {
             blockout,
             surround,
             design_files: crate::compiler::design::DesignFiles::default(),
+            act_binding: None,
             waterline,
             face_binding: binding,
         })
@@ -1271,6 +1278,14 @@ impl<'a> Plan<'a> {
     #[must_use]
     pub fn with_design_files(mut self, files: crate::compiler::design::DesignFiles) -> Self {
         self.design_files = files;
+        self
+    }
+
+    /// Attach what the act check judged over the English campaign
+    /// ([`Plan::act_binding`]).
+    #[must_use]
+    pub fn with_act_binding(mut self, binding: crate::compiler::telling::ActBinding) -> Self {
+        self.act_binding = Some(binding);
         self
     }
 }
