@@ -11,6 +11,12 @@
       "op": "add",
       "path": "/content/quests/0/on_objective_complete/obj~1hear-the-curator/-",
       "value": {
+        "back": {
+          "lines": [
+            "",
+            "chalk dust"
+          ]
+        },
         "front": {
           "color": "blue",
           "lines": [
@@ -81,6 +87,28 @@
       "op": "add",
       "path": "/source/fx.near-hall.oc.hear-the-curator.8.front.2",
       "value": "the slate is wiped"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/content/fx.near-hall.oc.reach-the-counter.6.back.1"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/content/fx.near-hall.oc.hear-the-curator.8.back.1",
+      "value": "粉笔灰"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/source/fx.near-hall.oc.reach-the-counter.6.back.1"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/source/fx.near-hall.oc.hear-the-curator.8.back.1",
+      "value": "chalk dust"
     }
   ],
   "units": [],

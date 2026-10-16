@@ -69,43 +69,67 @@ impl SignFace {
 /// The sixteen dye colours a sign's text can take, in the game's own
 /// `DyeColor` order. Not the chat palette: `dark_purple`, `light_purple` and
 /// `dark_gray` are not dyes.
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
+///
+/// A vanilla registry's values, so the schema states them as a string `enum`
+/// (data, never sixteen surface units — spec-0039 §3), and serde refuses any
+/// other word (`DW0100`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(missing_docs)]
 pub enum Dye {
-    /// `white`.
     White,
-    /// `orange`.
     Orange,
-    /// `magenta`.
     Magenta,
-    /// `light_blue`.
     LightBlue,
-    /// `yellow`.
     Yellow,
-    /// `lime`.
     Lime,
-    /// `pink`.
     Pink,
-    /// `gray`.
     Gray,
-    /// `light_gray`.
     LightGray,
-    /// `cyan`.
     Cyan,
-    /// `purple`.
     Purple,
-    /// `blue`.
     Blue,
-    /// `brown`.
     Brown,
-    /// `green`.
     Green,
-    /// `red`.
     Red,
-    /// `black`.
     Black,
+}
+
+impl Dye {
+    /// Every dye, in the game's order.
+    pub const ALL: [Dye; 16] = [
+        Dye::White,
+        Dye::Orange,
+        Dye::Magenta,
+        Dye::LightBlue,
+        Dye::Yellow,
+        Dye::Lime,
+        Dye::Pink,
+        Dye::Gray,
+        Dye::LightGray,
+        Dye::Cyan,
+        Dye::Purple,
+        Dye::Blue,
+        Dye::Brown,
+        Dye::Green,
+        Dye::Red,
+        Dye::Black,
+    ];
+}
+
+impl JsonSchema for Dye {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Dye".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let names: Vec<&str> = Dye::ALL.iter().map(|d| d.token()).collect();
+        schemars::json_schema!({
+            "description": "One of the sixteen dye colours a sign's text can take, in the game's own `DyeColor` order. Not the chat palette: `dark_purple`, `light_purple` and `dark_gray` are not dyes.",
+            "type": "string",
+            "enum": names,
+        })
+    }
 }
 
 impl Dye {
@@ -513,24 +537,7 @@ mod tests {
     /// The sixteen dye names are the game's, in its order.
     #[test]
     fn the_dyes_are_the_games_sixteen() {
-        let all = [
-            Dye::White,
-            Dye::Orange,
-            Dye::Magenta,
-            Dye::LightBlue,
-            Dye::Yellow,
-            Dye::Lime,
-            Dye::Pink,
-            Dye::Gray,
-            Dye::LightGray,
-            Dye::Cyan,
-            Dye::Purple,
-            Dye::Blue,
-            Dye::Brown,
-            Dye::Green,
-            Dye::Red,
-            Dye::Black,
-        ];
+        let all = Dye::ALL;
         let names: Vec<&str> = all.iter().map(|d| d.token()).collect();
         for (d, n) in all.iter().zip(&names) {
             assert_eq!(serde_json::to_value(d).unwrap(), serde_json::json!(n));

@@ -290,11 +290,11 @@ fn the_surface_is_signs_a_face_and_letter_sign() {
     assert_eq!(keys(face), ["color", "glowing", "lines"]);
     assert_eq!(face["lines"]["minItems"], 1);
     assert_eq!(face["lines"]["maxItems"], 4);
-    let dyes: Vec<&str> = defs["Dye"]["oneOf"]
+    let dyes: Vec<&str> = defs["Dye"]["enum"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|v| v["const"].as_str().unwrap())
+        .map(|v| v.as_str().unwrap())
         .collect();
     assert_eq!(dyes.len(), 16, "{dyes:?}");
     let text = serde_json::to_string(defs).unwrap();

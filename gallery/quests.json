@@ -1425,6 +1425,12 @@
               "type": "set-atmosphere"
             },
             {
+              "back": {
+                "lines": [
+                  "",
+                  "chalk dust"
+                ]
+              },
               "front": {
                 "color": "blue",
                 "lines": [
