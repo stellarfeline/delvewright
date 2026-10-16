@@ -84,7 +84,7 @@ fn has_massing_for(campaign: &Campaign, area_id: &str) -> bool {
 /// A massing application's outcome for one area.
 #[derive(Default)]
 pub struct MassingOutcome {
-    /// Each applied batch's affected world AABB (per-batch snapshot framing).
+    /// Each applied batch's affected world AABB (per-batch frame framing).
     pub bounds: BTreeMap<String, ([i32; 3], [i32; 3])>,
     /// Socket world cells whose doorways a `rewire-socket sealed` severed —
     /// the DW0306 piece-connectivity graph must not count those edges.

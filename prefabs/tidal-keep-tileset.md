@@ -390,8 +390,7 @@ through a green pipeline.
 `delvec render piece` (Nucleation) has **no blockstate for `minecraft:chain`**: a
 chain-hung lamp reads as a lamp floating in mid-air in every review shot. Lamp
 stems are therefore masonry corbels; chain survives only in the bell tower's
-ropes, where it *is* the subject. In-game and in Chunky the chains render
-normally. Recorded, not worked around.
+ropes, where it *is* the subject. In-game the chains render normally. Recorded, not worked around.
 
 ## Provenance / license
 

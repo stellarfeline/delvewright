@@ -60,18 +60,18 @@ one with `--prefabs <dir>`.
 | `metrics` | The metrics standard — player facts and building standards — as JSON. |
 | `allocation` | The frame, datum, seams and owed anchors a site plan hands one place. |
 | `detail` | Detail a place inside its allocation: bind, expand, gate and freeze its piece. |
-| `snapshot` | Render one frame of the assembled world plus a scene manifest. |
+| `frames` | Draw every review frame of a build from the worlds it wrote, or one frame of a campaign's load world, each with its manifest. |
 | `blocking-chart` | Per-elevation cutaway floor plans of every area. |
 | `edit` | Replay the world-edit script, re-proving the invariants per batch. |
 | `calibrate` | Turn a harvested rehearsal report into camera DSL patches. |
 | `viewer` | One self-contained HTML page per room or zone: a camera you drive, drawn from the game's own block models and textures. |
 | `palette` | The per-blockstate colour and shape table a room is built from, as JSON. |
-| `scene` | Chunky scene descriptions for every planned shot of a build. |
-| `panorama` | One oblique exterior scene framed on the placed areas — the storybook shot. |
-| `cameras` | A Chunky scene per showcase camera the campaign's `design/cameras.json` states. |
+
+| `panorama` | One oblique exterior frame of the placed areas — the storybook shot. |
+| `cameras` | A frame per showcase camera the campaign's `design/cameras.json` states. |
 | `place-camera` | Write one row of `design/cameras.json`: a hand-placed pose, an estimate, or a deletion. |
 | `contact-sheet` | Many candidate renders laid out on one page to choose from. |
-| `index` | The shot list as (image, expectation) pairs, for review. |
+
 | `grammar` | Prefab authoring from a rule program: `list`, `show`, `check`, `expand`, `coverage`, `audit`. |
 | `prefab` | Prefab admission: `audit`, `seating`, `anchors`, `socket`, `resolve-jigsaw`, `anchor`, `planes`, `lighting`, `catalog`, `gallery`, `curate`, `curate-merge`. |
 | `schem` | `convert` a Sponge schematic into a structure template. |

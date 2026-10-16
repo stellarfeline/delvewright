@@ -1805,9 +1805,9 @@ mod tests {
         assert!((dx - -6.0 * 30f64.to_radians().sin()).abs() < 1e-5, "{dx}");
         assert!((dz - 6.0 * 30f64.to_radians().cos()).abs() < 1e-5, "{dz}");
         assert_eq!(fwd.pos[1], c.pos[1]);
-        // Truck moves square to the heading, to the right on `+`: the camera's
-        // right is the snapshot rasteriser's `right` negated, i.e. the direction
-        // a frame's right edge lies in. Heading (dx, dz) turned to (-dz, dx).
+        // Truck moves square to the heading, to the right on `+`: the
+        // direction a frame's right edge lies in. Heading (dx, dz) turned to
+        // (-dz, dx).
         let side = named("hero.truck+2");
         let (sx, sz) = (side.pos[0] - c.pos[0], side.pos[2] - c.pos[2]);
         assert!(

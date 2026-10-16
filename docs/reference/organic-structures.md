@@ -124,13 +124,13 @@ is under half of that. Below about 220 blocks a 2.6-block rib cannot keep a
   - **The return mechanic** for falls into the void (see `tools/spike-death-teleport/ at 84f364997d24`).
   - The owner's "danger is visible" ruling decides which falls are allowed.
 - **Cloud sea:** a cloud sea is a surround, not a prefab, and none exists.
-  - The pinned Chunky core's `Sky` carries `cloudsEnabled`, `cloudSize` and `cloudOffset` (strings in `Sky.class`), so Minecraft-style block clouds can be rendered.
+  
   - A `horizon: clouds` kind would have to be analytically known so that the proofs read it as void (§0's surround row).
   - Nothing in the engine emits these today.
 
 ## 7. Verdict (measured on the spike's path-traced frames)
 
-**No scale reaches the reference image. Both routes are far past the grammar study.** Read against the reference by eye, on frames from the pinned Chunky:
+**No scale reaches the reference image. Both routes are far past the grammar study.** Read against the reference by eye, on the spike's path-traced frames:
 
 - **The fitter works.** Curves come out smooth at 224, 320 and 448 blocks. Every piece passes `delvec prefab audit`, with stairs examined equal to stairs written. The pieces are deterministic: rebuilt and compared by hash.
 - **A faithful scan gives the wrong animal for this reference.**

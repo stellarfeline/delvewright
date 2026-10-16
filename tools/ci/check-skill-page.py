@@ -178,7 +178,7 @@ only faithful reading of serde is the binary's own `delvec schema`.
 A fragment — one inline span, or one whole fence — is read as a campaign
 document when MORE THAN HALF of the keys it names are fields of some schema the
 release exports; only then does an unknown key red. The object decides the kind:
-a Chunky option, a skin palette or a text component names keys no schema
+a renderer option, a skin palette or a text component names keys no schema
 carries, and is printed as unread rather than refused. What that costs is
 stated: a fragment whose keys are mostly unknown to the pin is indistinguishable
 from a non-document, and a variant is checked only where EVERY field of that

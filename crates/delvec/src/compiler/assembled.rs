@@ -70,7 +70,7 @@ pub use delvewright_dsl::blockshape::{
 /// the affected properties before, which is why it never surfaced — the
 /// occupancy classifiers read only `type`/`layers`/`open`/`waterlogged`/`bottom`,
 /// every one of them rotation-invariant, so this correction leaves nav, seating,
-/// relight, snapshots and every emitted command byte-identical (ADR-0006). The
+/// relight, frames and every emitted command byte-identical (ADR-0006). The
 /// stair-orientation proof (`DW0430`) is the first consumer that reads `facing`,
 /// and without this it would report a false defect on every rotated piece.
 ///
@@ -877,7 +877,7 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
     // generated rather than a prefab an author bound, entering the voxel model
     // on exactly the terms a placed piece does — so gravity settling, the
     // occupancy model, relight, the fluid model, boundary safety and the
-    // snapshot renderer all see the landform without one of them being taught a
+    // frame worlds all see the landform without one of them being taught a
     // new horizon.
     //
     // AFTER, not before: the surround stands OUTSIDE the map's declared

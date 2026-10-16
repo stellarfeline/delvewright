@@ -79,7 +79,7 @@ const STAND_STEP: f64 = 0.5;
 /// vantage on this sight line at all.
 ///
 /// **A camera's stand-off is a preference, not a position.** Every review camera
-/// the toolchain derives — a snapshot `--at` orbit, a seam or gate or NPC or
+/// the toolchain derives — a `frames --campaign --at` orbit, a seam or gate or NPC or
 /// interact shot in the render plan — is placed at a fixed offset from the thing
 /// it frames, and a fixed offset into authored geometry lands inside a block
 /// about a quarter of the time (measured over every campaign and fixture that

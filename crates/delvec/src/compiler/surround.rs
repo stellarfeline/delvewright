@@ -13,7 +13,7 @@
 //! Design law (spec-0026 §1 valley row, §5; dossier §2.2):
 //! - Surround tiles are structure NBT synthesized here at build time, placed by
 //!   the same bootstrap `place template` path as scene prefabs, and present in
-//!   the assembled voxel model (nav / DW0322 / gravity / snapshots see them).
+//!   the assembled voxel model (nav / DW0322 / gravity / frames see them).
 //! - They are **excluded from boundary-region derivation** and carry no
 //!   interior-lighting obligations (wired by the caller, not here).
 //! - The inner slopes are proven un-climbable **empirically** (a nav flood from

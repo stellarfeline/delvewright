@@ -684,7 +684,7 @@ pub(crate) fn read_structures(
     //
     // Bound here as well as inside `emit::build_with_warnings`, and the second
     // binding is the point: this function is the ONE place every CLI consumer
-    // of prefab bytes passes through — `build`, `snapshot`, `viewer` and
+    // of prefab bytes passes through — `build`, `frames --campaign`, `viewer` and
     // `blocking-chart` — and a review artifact drawn from a stale tile is a
     // picture that lies, which is worse than a datapack that does not build.
     // The check is pure, so running it twice on the build path costs a walk and

@@ -13,8 +13,7 @@ the metrics table, and then **judged against the plan it was derived from**.
 **There is no authored form.** No document, no schema, no file. The only path to
 blockout bytes is `compiler::blockout::derive`, whose input is a validated site
 plan, and the only caller is `Plan::build` — which is the only constructor
-`build`, `snapshot`, `blocking-chart`, `edit`, `detail` and `cameras --preview`
-can reach a world through. That is what makes *blockout before site plan* uncompilable rather
+`build`, `frames --campaign`, `blocking-chart`, `edit`, `detail` and `cameras --preview` can reach a world through. That is what makes *blockout before site plan* uncompilable rather
 than forbidden: there is nothing to author early.
 
 **The mass is region writes, not a structure template.** A blockout box is a

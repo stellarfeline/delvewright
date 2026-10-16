@@ -345,7 +345,7 @@ lumenwright_revision = "ed3f049cc496d5f1b7df9829bda1bcb443ad1d06"
 lumenwright_license = "GPL-3.0-or-later"
 
 # deepslate (MIT) — the rendering core of the prefab review page
-# (`delvec viewer`, ADR-0021 §4). Unlike Chunky it IS bundled: the page is
+# (`delvec viewer`, ADR-0021 §4). It IS bundled: the page is
 # one self-contained file, so the renderer ships inside it as
 # `crates/delvec/src/compiler/view/viewer/deepslate.bundle.js`. Vendored, never forked — the
 # bundle carries one local patch, of two block-entity texture ids upstream points

@@ -27,9 +27,7 @@ Surfaces do fail when something first reaches them, which is the whole reason
 this campaign exists: an ambush and a named mob drop could not compile at all, a
 generated flag-gate test could not pass, and a one-waypoint lane emitted a march
 test asserting an index it had no way to reach — each found here, by binding it.
-Two are still open: the build's render plan and the one `delvec snapshot`
-derives disagree whenever a world-edit blocks the route, and nothing refuses an
-objective gated on a state an earlier forced beat clears.
+One is still open: nothing refuses an objective gated on a state an earlier forced beat clears.
 
 ## Reading it
 
@@ -583,9 +581,7 @@ earns no advisory, all three declarations change no verdict, and `DW0454` refuse
 them by name. Reproduce it in one edit —
 `gallery/world-edits.json` → `batch/lay-the-barrier` → `region/barrier-course`.
 
-The pocket sits off the critical path on purpose. Blocking geometry on the route
-makes the build's render plan and the one `delvec snapshot` derives disagree —
-see below.
+The pocket sits off the critical path on purpose.
 
 ## The still ones
 
@@ -856,12 +852,7 @@ gallery-hall: lane clearance bound — the patrol line passes `anchor/muster` at
 
 ## Open findings
 
-**The build's render plan and `snapshot`'s disagree when an edit blocks the
-route.** One is computed after world-edits and the other before them, so solid
-geometry on the critical path makes the build's legs longer than the ones
-`snapshot` can resolve, and declared views become unproducible by name. The
-gallery keeps its blocking geometry (the shards, the barrier course) off the
-route; the divergence itself has no diagnostic.
+
 
 **An objective can be gated on a state an earlier forced beat clears, and
 nothing says so.** `obj/reach-the-end` requires `state/labels-read` `at-least`
