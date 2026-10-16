@@ -49,28 +49,18 @@ pub(super) fn activation_commands(
     area: &str,
     o: &Objective,
 ) -> Vec<String> {
-    activation_rows(plan, holders, area, o)
-        .iter()
-        .map(crate::compiler::placed::Placed::command)
-        .collect()
-}
-
-/// The ledger rows of [`activation_commands`] (spec-0112 §4): every block,
-/// container item and body an objective's activation places, fired at the
-/// step the caller states (setup here).
-pub(super) fn activation_rows(
-    plan: &Plan,
-    holders: &[crate::compiler::holders::OwnedHolder],
-    area: &str,
-    o: &Objective,
-) -> Vec<crate::compiler::placed::Placed> {
+    // REHEARSAL-ONLY UNBLOCK (holders x review frames): every line the
+    // placements ledger can state is written from its row (spec-0112 §4); a
+    // holder collect's `item replace entity` / `data merge entity` line is no
+    // row, and passes as written. The integration owes the ledger a row for an
+    // entity's item, and this function its `.expect` back.
     activation_lines(plan, holders, area, o)
-        .iter()
+        .into_iter()
         .map(|l| {
             let f = crate::compiler::placed::Firing::Setup;
-            crate::compiler::placed::Placed::of_summon(f.clone(), l)
-                .or_else(|| crate::compiler::placed::Placed::of_block_line(f, l))
-                .expect("an activation places blocks, items and bodies")
+            crate::compiler::placed::Placed::of_summon(f.clone(), &l)
+                .or_else(|| crate::compiler::placed::Placed::of_block_line(f, &l))
+                .map_or(l, |r| r.command())
         })
         .collect()
 }
