@@ -527,6 +527,26 @@ pub(super) fn prove_world(
                     code: f.code,
                     message: f.message,
                 })?;
+            // DW1047: no redstone signal can open a shut gate — a source in the
+            // world as placed or laid by any runtime write powers no cell of a
+            // shut seam whose block reads a signal. It reads the assembled
+            // blocks and the plan, never a route. The line prints before the
+            // verdict, zeroes included, and the ledger is written beside it.
+            {
+                let (binding, refused) = crate::compiler::gatesignal::check(
+                    plan.campaign,
+                    blocks,
+                    &crate::compiler::sculk::runtime_writes(plan),
+                );
+                eprintln!("{}", binding.line());
+                put_json(out, "validation/gate-signal.json", &binding.to_json());
+                if let Some(f) = refused {
+                    return Err(BuildFailure::Diagnostic {
+                        code: f.code,
+                        message: f.message,
+                    });
+                }
+            }
             let (moves, actor_moves) = if crate::compiler::nav::needs_world(plan) {
                 let m = crate::compiler::nav::plan_moves(plan, world)?;
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
