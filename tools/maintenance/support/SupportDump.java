@@ -46,7 +46,9 @@
 //      table answers what holds a block, not everything that can break it.
 //
 // Also written, per state, the faces the game calls CENTER- and RIGID-sturdy
-// (the FULL faces are `faces-<version>.tsv`'s `sturdy` column).
+// (the FULL faces are `faces-<version>.tsv`'s `sturdy` column), and whether
+// `FallingBlock.isFree(state)` holds: the question a falling block asks of the
+// cell below it before it falls, and of the cell it lands in.
 //
 // This file hardcodes NO obfuscated name. Every class/member it touches is passed
 // in on the command line as key=value, resolved from the official Mojang
@@ -166,6 +168,7 @@ public final class SupportDump {
         Method isSolid = method("BlockStateBase", "isSolid");
         Method fluidType = method("FluidState", "getType");
         Object water = staticField("Fluids", "Fluids.WATER");
+        Method isFree = method("FallingBlock", "isFree", cls("BlockState"));
         getFluidStateOfState = method("BlockStateBase", "getFluidState");
         Method sturdy4 = method("BlockStateBase", "isFaceSturdy", blockGetter, blockPos, direction, supportType);
         Method relative = method("BlockPos", "relative", direction);
@@ -276,6 +279,9 @@ public final class SupportDump {
             if (fluidType.invoke(getFluidStateOfState.invoke(st)) == water) {
                 waterSet.set(i);
                 flags.append('w');
+            }
+            if ((Boolean) isFree.invoke(null, st)) {
+                flags.append('f');
             }
             StringBuilder[] col = {new StringBuilder(), new StringBuilder(), new StringBuilder()};
             for (int t = 0; t < 3; t++) {

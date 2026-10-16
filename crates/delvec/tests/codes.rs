@@ -6,6 +6,9 @@
 //! second parse rule here. A declaration written outside `dw_code!` is in the
 //! source and missing from the registry, and this test reds.
 
+mod common;
+
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::Command;
 
@@ -78,5 +81,44 @@ fn the_registry_is_exactly_the_declared_codes() {
             rows().len()
         )),
         "{stdout}"
+    );
+}
+
+/// **A build states the codes its engine carries.** `manifest.json` `dw_codes`
+/// is what `tools/creator/staging-gate.py` judges a ledger row's `dw` carrier
+/// against — the engine that built the tree, never the source the gate reads —
+/// so it must be exactly this binary's registry: sorted, once each, nothing
+/// added or lost.
+#[test]
+fn a_build_manifest_states_exactly_the_registry() {
+    let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("codes-manifest");
+    let _ = std::fs::remove_dir_all(&out);
+    let r = Command::new(BIN)
+        .arg("build")
+        .arg(common::hello_world_dir())
+        .arg("-o")
+        .arg(&out)
+        .arg("--prefabs")
+        .arg(common::prefabs_dir())
+        .output()
+        .expect("run delvec build");
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(out.join("manifest.json")).expect("manifest"))
+            .expect("manifest parses");
+    let stated: Vec<&str> = manifest["dw_codes"]
+        .as_array()
+        .expect("`dw_codes` is a list")
+        .iter()
+        .map(|c| c.as_str().expect("a code is a string"))
+        .collect();
+    let registry: BTreeSet<String> = rows()
+        .iter()
+        .map(|row| row["code"].as_str().expect("code").to_string())
+        .collect();
+    assert_eq!(
+        stated,
+        registry.iter().map(String::as_str).collect::<Vec<_>>(),
+        "manifest `dw_codes` is not the registry, sorted and once each"
     );
 }

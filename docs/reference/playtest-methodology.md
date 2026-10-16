@@ -428,7 +428,7 @@ the class is HERE and nothing this build carries would catch the defect again.
 | Verdict | What it means | Its real instance |
 |---|---|---|
 | `NO-GENERAL-FORM` | the instance was fixed, the class never built | rule 2's `DW0489`, eleven rounds late |
-| `MISSING-CHECK` | the ledger names a check this engine no longer has (absent from source, undocumented, or asserted by no test), or a stage document the COMPILER read that this gate holds no parsed copy of | four rows in the ledger's own first run named invariants that did not exist under those names |
+| `MISSING-CHECK` | the ledger names a check the engine that built this tree does not have (a `dw` code absent from the building engine's registry as its `manifest.json` `dw_codes` states it, or absent from source, undocumented, or asserted by no test), or a stage document the COMPILER read that this gate holds no parsed copy of | four rows in the ledger's own first run named invariants that did not exist under those names |
 | `UNBOUND` | the check matched zero objects, and objects that could have carried the defect are there — or nobody has measured whether they are | rule 1's coverage ledger, nineteen rounds |
 | `NO-SOURCE` | the campaign has no stage JSON, so nothing can be measured | a campaign directory holding design records and no stage documents |
 

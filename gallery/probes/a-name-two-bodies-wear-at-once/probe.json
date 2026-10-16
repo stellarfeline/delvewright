@@ -1,0 +1,23 @@
+{
+  "code": "DW1026",
+  "patch": [
+    {
+      "doc": "npcs.json",
+      "op": "replace",
+      "path": "/content/npcs/2/name",
+      "value": "The Curator"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/content/npc.factor.name"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/source/npc.factor.name"
+    }
+  ],
+  "units": [],
+  "why": "The factor is given the curator's name, so two declarations carry one name and both stand in the hall from world init: the party sees one person twice, at the lectern and at the counter. It declares no unit: both halves are legal on their own — an NPC may be called anything, and two NPCs may stand in one hall — and what the engine refuses is holding them at once. Before this refusal existed the build was green and the bot walked it; nothing compared one body's name with another's."
+}

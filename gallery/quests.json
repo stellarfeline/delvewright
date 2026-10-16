@@ -607,7 +607,8 @@
         "type": "narrate",
         "when": {
           "forbids_flags": [
-            "flag/hall-sealed"
+            "flag/hall-sealed",
+            "flag/muster-cleared"
           ],
           "requires_state": [
             {
@@ -634,6 +635,19 @@
       {
         "stake": "stake/keepsake",
         "type": "drop-stake"
+      },
+      {
+        "style": "actionbar",
+        "text": "The hall puts you back where the muster stood.",
+        "type": "narrate",
+        "when": {
+          "forbids_flags": [
+            "flag/hall-sealed"
+          ],
+          "requires_flags": [
+            "flag/muster-cleared"
+          ]
+        }
       }
     ],
     "pulses": [
@@ -702,6 +716,22 @@
     "quests": [
       {
         "cast": {
+          "npc/copyist": {
+            "at": {
+              "anchor": "anchor/usher",
+              "offset": [
+                0,
+                0,
+                -4
+              ]
+            },
+            "dialogue": {
+              "barks": [
+                "Mind the ink."
+              ]
+            },
+            "doing": "copying the catalogue at the wall desk, back to the wall"
+          },
           "npc/curator": {
             "at": "anchor/lectern",
             "dialogue": "dlg/curator-root",
@@ -802,7 +832,7 @@
             "id": "obj/press-the-case",
             "missing_item_hint": "The Curator gave you the case key. It only opens the case from your hand.",
             "prop": {
-              "block": "minecraft:stone_button"
+              "block": "minecraft:stone_button[face=floor,facing=north]"
             },
             "requires_flags": [],
             "requires_item": "minecraft:iron_pickaxe",
@@ -951,30 +981,6 @@
             },
             "npc": "npc/marshal",
             "type": "spawn-npc"
-          },
-          {
-            "happening": {
-              "subject": "anchor/muster",
-              "text": "The muster forms up beyond the wall.",
-              "verb": "arrives"
-            },
-            "type": "spawn-wave",
-            "wave": "wave/muster",
-            "when": {
-              "forbids_flags": [
-                "flag/hall-sealed"
-              ],
-              "requires_flags": [
-                "flag/hall-open"
-              ],
-              "requires_state": [
-                {
-                  "op": "at-most",
-                  "state": "state/labels-read",
-                  "value": 9
-                }
-              ]
-            }
           },
           {
             "happening": {
@@ -1573,6 +1579,18 @@
       },
       {
         "cast": {
+          "npc/copyist": {
+            "at": {
+              "anchor": "anchor/usher",
+              "offset": [
+                0,
+                0,
+                -4
+              ]
+            },
+            "dialogue": "unchanged",
+            "doing": "copying the catalogue at the wall desk, back to the wall"
+          },
           "npc/curator": {
             "at": "anchor/pedestal",
             "dialogue": "unchanged",
@@ -1658,7 +1676,7 @@
           },
           {
             "after": [
-              "obj/back-in-the-hall"
+              "obj/answer-the-marshal"
             ],
             "announcement": "shown",
             "forbids_flags": [
@@ -1734,7 +1752,8 @@
             "id": "obj/climb-the-loft",
             "radius": 1,
             "requires_flags": [
-              "flag/muster-cleared"
+              "flag/muster-cleared",
+              "flag/treads-held"
             ],
             "stealth": false,
             "title": "Climb to the mezzanine",
@@ -2029,6 +2048,32 @@
           }
         ],
         "on_objective_complete": {
+          "obj/answer-the-marshal": [
+            {
+              "happening": {
+                "subject": "anchor/muster",
+                "text": "The muster forms up beyond the wall once the Marshal has the party's answer.",
+                "verb": "arrives"
+              },
+              "type": "spawn-wave",
+              "wave": "wave/muster",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
+            }
+          ],
           "obj/back-in-the-hall": [
             {
               "anchor": "anchor/hearth",
@@ -3037,6 +3082,22 @@
             {
               "assembly": "assembly/arm",
               "type": "despawn-assembly"
+            },
+            {
+              "anchor": "anchor/muster",
+              "happening": {
+                "text": "With the main gate down again, the party comes back where the muster stood, on the far side where the way goes on.",
+                "verb": "arrives"
+              },
+              "type": "set-checkpoint",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ]
+              }
             }
           ],
           "obj/take-the-bone": [
@@ -3106,6 +3167,18 @@
                   }
                 ]
               }
+            },
+            {
+              "flag": "flag/flight-relaid",
+              "type": "set-flag",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/muster-cleared"
+                ]
+              }
             }
           ]
         },
@@ -3116,6 +3189,18 @@
       },
       {
         "cast": {
+          "npc/copyist": {
+            "at": {
+              "anchor": "anchor/usher",
+              "offset": [
+                0,
+                0,
+                -4
+              ]
+            },
+            "dialogue": "unchanged",
+            "doing": "copying the catalogue at the wall desk, back to the wall"
+          },
           "npc/curator": {
             "at": "anchor/pedestal",
             "dialogue": "unchanged",
@@ -3241,6 +3326,18 @@
       },
       {
         "cast": {
+          "npc/copyist": {
+            "at": {
+              "anchor": "anchor/usher",
+              "offset": [
+                0,
+                0,
+                -4
+              ]
+            },
+            "dialogue": "unchanged",
+            "doing": "copying the catalogue at the wall desk, back to the wall"
+          },
           "npc/curator": {
             "at": "anchor/pedestal",
             "dialogue": "unchanged",
@@ -4346,6 +4443,28 @@
         "prop": {
           "block": "minecraft:lever[face=floor,facing=south]"
         }
+      },
+      {
+        "at": "anchor/flight-head",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "The relaid treads hold under you.",
+            "type": "narrate"
+          },
+          {
+            "flag": "flag/treads-held",
+            "type": "set-flag"
+          }
+        ],
+        "id": "trigger/test-the-treads",
+        "on": {
+          "on": "approach",
+          "range": 2
+        },
+        "requires_flags": [
+          "flag/flight-relaid"
+        ]
       }
     ],
     "waves": [

@@ -247,7 +247,7 @@ impl Scenes {
         // Effect writers, every root, every depth — a reaction bundle is no
         // producer (R4).
         delvewright_dsl::for_each_effect_root(c, &mut |site, list| {
-            let (kind_of, quest, act) = root_reading(c, &site.owner, &site.path, &optional);
+            let (kind_of, quest, act) = root_reading(&site.owner, &site.path, &optional);
             let Some(kind_of) = kind_of else {
                 return;
             };
@@ -496,7 +496,6 @@ fn read_deep(
 type KindOf = Box<dyn Fn(Option<&str>) -> WriterKind>;
 
 fn root_reading(
-    c: &Campaign,
     owner: &EffectRootOwner<'_>,
     path: &str,
     optional: &BTreeSet<&str>,
@@ -526,39 +525,14 @@ fn root_reading(
         other => (
             Some(Box::new(|_| WriterKind::Did)),
             None,
-            act_of_owner(c, other, path),
+            act_of_owner(other, path),
         ),
     }
 }
 
-/// The act an ambient root is, by id — the one spelling the flow model, the
-/// ledger and the world rows share (§4.3). `None` for a root a story world
-/// neither performs nor skips (a quest bundle, `on_death`, an assembly's
-/// `on_land`, a loop's `on_cross`, a dialogue respawn).
-pub fn act_of_owner(_c: &Campaign, owner: &EffectRootOwner<'_>, path: &str) -> Option<String> {
-    match owner {
-        EffectRootOwner::Trigger(t) => Some(t.id.as_str().to_string()),
-        EffectRootOwner::TrapPayload(t) => Some(t.id.as_str().to_string()),
-        EffectRootOwner::ShortcutUnlock(s) => Some(s.id.as_str().to_string()),
-        EffectRootOwner::ShopOffer(h) => {
-            // `/content/shops/<h>/offers/<i>/effects`: segment 5 is the offer.
-            let offer = path.split('/').nth(5).unwrap_or("0");
-            Some(format!("{}/offer-{offer}", h.id.as_str()))
-        }
-        EffectRootOwner::OnKill(f) => Some(f.id().to_string()),
-        EffectRootOwner::ObjectiveComplete { .. }
-        | EffectRootOwner::QuestComplete { .. }
-        | EffectRootOwner::DialogueRespawn
-        | EffectRootOwner::OnDeath
-        | EffectRootOwner::AssemblyLand(_)
-        | EffectRootOwner::LoopCross(_) => None,
-    }
-}
-
-/// The act a trap's or timed gate's disarm is.
-pub fn disarm_act(id: &str) -> String {
-    format!("{id}/disarm")
-}
+/// The act an ambient root is, and the act a disarm is: the producer table's
+/// one spelling (§4.3).
+pub use delvewright_dsl::producers::{act_of_owner, disarm_act};
 
 #[allow(clippy::too_many_arguments)]
 fn writers_deep(
