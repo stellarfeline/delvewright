@@ -270,7 +270,7 @@ impl Door {
         // The place kind, derived from the campaigns that place this piece and
         // never read from the piece itself; judged by the one checker the
         // writer judged it by, with the kind `delvec detail` sealed it on.
-        let kind = scenery::place_kind(meta_path, &meta);
+        let kind = scenery::place_kind(meta_path, &meta.prefab_id);
         let mut report = check_sealed(model, contract, &anchors, kind.sealed);
         report.enumeration.insert(0, kind.line());
         let binding = DoorBinding {

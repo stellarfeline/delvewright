@@ -870,7 +870,9 @@ floor in it whose light nobody has ever measured (`"profile": "unmeasured"`, no
 `lighting` block, or no document beside the bytes); `delvec grammar expand`
 measures what it produces, so the move for anything else is `delvec prefab
 lighting <piece> --write`. A measured `dark` is shown, and so is a piece with
-nowhere in them to stand. `DW0895` reports the roofed floor no
+nowhere in it to stand, and an unmeasured scenery piece — one every campaign
+beside the library places at a `reached: false` node — counted with its standable
+cells. `DW0895` reports the roofed floor no
 body can walk to, the pockets it forms and the step the walk was refused at. Both
 are asked before the client jar is opened.
 

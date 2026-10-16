@@ -234,8 +234,9 @@ this needs are subcommands of the one binary Init I3 installed.
    the binding it was taken over — you do not run a probe by hand after an
    expansion. Read the `lighting` block: a `dark` piece renders, and it is telling
    you the room needs a light where the delve reaches night. This step refuses
-   only a piece with floor in it that nobody measured (`DW0894`), which means it
-   came from somewhere other than an expansion; `delvec --prefabs
+   only a piece with floor in it that nobody measured (`DW0894`) and that is not
+   scenery (a `reached: false` place), which means it came from somewhere other
+   than an expansion; `delvec --prefabs
    "$DELVEWRIGHT_PREFABS" prefab lighting <piece> --write` is the same
    measurement through the other door. Read the `DW0895` line too: it reports the
    roofed floor no body can walk to and the step the walk was refused at — a room

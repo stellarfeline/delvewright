@@ -1117,6 +1117,166 @@ fn the_render_arms_refuse_an_unmeasured_piece_before_they_resolve_textures() {
     }
 }
 
+/// **Scenery is shown unmeasured, and a piece's own document cannot make it
+/// scenery.**
+///
+/// The pinned `the-treehouse-camp-hearth-crown` is a tree's crown that the
+/// campaign places at a `reached: false` node: its leaf tops are standable and
+/// no body stands on them, so `delvec detail` leaves it unprobed and its document
+/// honestly says `"profile": "unmeasured"`. It is shown, and its standable cells
+/// are counted where a reader sees them — the same number the enclosure survey
+/// measures off the bytes.
+///
+/// The perturbation only this gate could catch: the same bytes and the same
+/// document in a copied library, with the campaign's node flipped to reached, or
+/// with no campaign beside the library at all. Both refuse with `DW0894` at the
+/// viewer and at `render piece`. The copy unperturbed is shown, so the flip is
+/// the only thing that decides.
+#[test]
+fn a_scenery_piece_is_shown_unmeasured_and_a_reached_one_is_refused() {
+    const ID: &str = "the-treehouse-camp-hearth-crown";
+    let src = prefab(&format!("{ID}.nbt"));
+    let campaign = common::pinned::root().join("campaigns/the-treehouse-camp");
+    let doc: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(src.with_extension("json")).unwrap()).unwrap();
+    assert_eq!(
+        doc["lighting"]["profile"], "unmeasured",
+        "the pinned piece this test is about moved"
+    );
+    let dir = tmp("scenery");
+    let pack = pack_for(&dir, &src, &[]);
+
+    // The standable count the enclosure survey prints, read back off a line.
+    let standable = |stderr: &str| -> usize {
+        let line = stderr
+            .lines()
+            .find(|l| l.starts_with(&format!("enclosure: `{ID}`")))
+            .unwrap_or_else(|| panic!("no enclosure line: {stderr}"));
+        let of = line.split(" of ").nth(1).expect("`N of M standable`");
+        of.split_whitespace().next().unwrap().parse().unwrap()
+    };
+
+    // The pinned library, as it is.
+    let out = dir.join("pinned.html");
+    let r = viewer(&src, &out, &pack);
+    let stderr = String::from_utf8_lossy(&r.stderr);
+    assert_eq!(r.status.code(), Some(0), "{stderr}");
+    assert!(!stderr.contains("DW0894"), "{stderr}");
+    let cells = standable(&stderr);
+    assert!(cells > 0, "the crown has floor, or this test binds nothing");
+    assert!(
+        stderr.contains(&format!(
+            "1 carr(y/ies) none and are scenery, built to be seen and never entered, with \
+             {cells} standable cell(s)"
+        )),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("`the-treehouse-camp` at `node/hearth-crown` (`reached: false`)"),
+        "the evidence is named: {stderr}"
+    );
+    assert!(out.exists());
+
+    // A copied library: the piece and the one campaign that places it.
+    let copy = |tag: &str, reached: Option<bool>| -> PathBuf {
+        let root = dir.join(tag);
+        let lib = root.join("prefabs");
+        std::fs::create_dir_all(&lib).unwrap();
+        for ext in ["nbt", "json"] {
+            std::fs::copy(src.with_extension(ext), lib.join(format!("{ID}.{ext}"))).unwrap();
+        }
+        if let Some(reached) = reached {
+            let to = root.join("campaigns/the-treehouse-camp");
+            std::fs::create_dir_all(&to).unwrap();
+            std::fs::copy(
+                campaign.join("detail-plan.json"),
+                to.join("detail-plan.json"),
+            )
+            .unwrap();
+            let mut graph: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(campaign.join("layout-graph.json")).unwrap())
+                    .unwrap();
+            let nodes = graph["content"]["nodes"].as_array_mut().unwrap();
+            let node = nodes
+                .iter_mut()
+                .find(|n| n["id"] == "node/hearth-crown")
+                .expect("the campaign names the crown's node");
+            assert_eq!(node["reached"], false, "the pinned node is scenery");
+            node["reached"] = serde_json::json!(reached);
+            std::fs::write(
+                to.join("layout-graph.json"),
+                serde_json::to_string_pretty(&graph).unwrap(),
+            )
+            .unwrap();
+        }
+        lib.join(format!("{ID}.nbt"))
+    };
+
+    let control = copy("control", Some(false));
+    let r = viewer(&control, &dir.join("control.html"), &pack);
+    let stderr = String::from_utf8_lossy(&r.stderr);
+    assert_eq!(r.status.code(), Some(0), "the unperturbed copy: {stderr}");
+    assert!(!stderr.contains("DW0894"), "{stderr}");
+
+    let absent = dir.join("no-such-client-jar");
+    for (tag, reached, why) in [
+        ("reached", Some(true), "`node/hearth-crown` (reached)"),
+        ("no-campaign", None, "no campaign was consulted"),
+    ] {
+        let nbt = copy(tag, reached);
+        let out = dir.join(format!("{tag}.html"));
+        let r = viewer(&nbt, &out, &pack);
+        let stderr = String::from_utf8_lossy(&r.stderr);
+        assert_eq!(r.status.code(), Some(2), "{tag}: {stderr}");
+        assert!(stderr.contains("DW0894"), "{tag}: {stderr}");
+        assert!(
+            stderr.contains(why),
+            "{tag}: the evidence is named: {stderr}"
+        );
+        assert!(!out.exists(), "{tag}: no page for a refused piece");
+
+        // The render arm judges by the same rule, before it looks for textures.
+        let r = Command::new(BIN)
+            .arg("render")
+            .arg("--textures")
+            .arg(&absent)
+            .args(["piece", nbt.to_str().unwrap()])
+            .arg("-o")
+            .arg(dir.join(format!("{tag}-shots")))
+            .env("DELVEWRIGHT_CLIENT_JAR", &absent)
+            .env("HOME", &dir)
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&r.stderr);
+        assert_eq!(r.status.code(), Some(2), "`render piece`, {tag}: {stderr}");
+        assert!(stderr.contains("DW0894"), "`render piece`, {tag}: {stderr}");
+    }
+
+    // And the scenery piece passes the render arm's gate: it goes on to look for
+    // textures, and fails there (exit 5) rather than on the piece.
+    let r = Command::new(BIN)
+        .arg("render")
+        .arg("--textures")
+        .arg(&absent)
+        .args(["piece", control.to_str().unwrap()])
+        .arg("-o")
+        .arg(dir.join("control-shots"))
+        .env("DELVEWRIGHT_CLIENT_JAR", &absent)
+        .env("HOME", &dir)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&r.stderr);
+    assert!(
+        !stderr.contains("DW0894"),
+        "`render piece`, scenery: {stderr}"
+    );
+    assert_eq!(
+        r.status.code(),
+        Some(5),
+        "`render piece`, scenery: {stderr}"
+    );
+}
+
 /// `palette -o` creates the output's parent directory, as `grammar expand` and
 /// `render` do for theirs.
 #[test]

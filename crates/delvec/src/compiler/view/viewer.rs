@@ -203,6 +203,7 @@ pub struct ViewerModel {
     id: String,
     structure: Structure,
     meta: Option<PrefabMeta>,
+    meta_path: std::path::PathBuf,
     tiles: usize,
 }
 
@@ -233,6 +234,7 @@ impl ViewerModel {
             id,
             structure,
             meta,
+            meta_path,
             tiles,
         })
     }
@@ -253,6 +255,13 @@ impl ViewerModel {
     /// claim with a different remedy, and `DW0894` says which.
     pub fn meta(&self) -> Option<&PrefabMeta> {
         self.meta.as_ref()
+    }
+
+    /// Where the prefab document is (or would be): beside a single template, or
+    /// the tile set's manifest. What the showing gate derives the piece's place
+    /// kind from (`admit::scenery::place_kind`).
+    pub fn meta_path(&self) -> &Path {
+        &self.meta_path
     }
 
     /// How many anchors and sockets this prefab declares. A page whose models all

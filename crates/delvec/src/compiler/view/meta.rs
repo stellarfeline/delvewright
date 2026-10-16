@@ -31,6 +31,11 @@ pub use delvewright_dsl::registry::Lighting;
 /// document (single template or tile-set manifest).
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct PrefabMeta {
+    /// The document's `prefab/<stem>` id — the name a campaign's `detail-plan`
+    /// binds the piece by, which is how the showing gate finds the campaigns
+    /// that place it (`admit::scenery::place_kind`). A name, never a claim.
+    #[serde(default)]
+    pub prefab_id: Option<String>,
     /// Named anchors (`spawn`, `anchor/…`), keyed by name.
     #[serde(default)]
     pub anchors: std::collections::BTreeMap<String, AnchorMeta>,
@@ -170,6 +175,7 @@ mod tests {
         assert_eq!(view.anchors, doc.anchors);
         assert_eq!(view.connectors, doc.connectors);
         assert_eq!(view.lighting, doc.lighting);
+        assert_eq!(view.prefab_id.as_deref(), Some(doc.prefab_id.as_str()));
 
         // Bound, not vacuous: two empty documents satisfy every equality above.
         assert_eq!(view.anchors.len(), 2, "the fixture declares two anchors");

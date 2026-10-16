@@ -460,7 +460,8 @@ measures its own light (§6), so this is a piece from somewhere else, or from an
 expansion older than that rule: re-expand it, or run `delvec prefab lighting
 <piece> --write` (§7) and render again. A measured `dark` is fine, not knowing is
 not; a piece with nowhere in it to stand is shown and counted, because there is
-no floor for a measurement to be about.
+no floor for a measurement to be about, and so is scenery — a piece every campaign
+beside the library places at a `reached: false` node — which no body stands in.
 The second is a report: how much of the piece's roofed floor no body can walk to,
 which pockets it forms, and — where the walk was turned back by the step rule —
 the cell to open. The same two run on `delvec viewer`.
