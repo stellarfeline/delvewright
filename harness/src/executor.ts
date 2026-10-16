@@ -327,6 +327,8 @@ export class MineflayerExecutor implements StepExecutor {
    * move started from.
    */
   tickPos: { x: number; y: number; z: number } | undefined;
+  /** The last clientbound `position` packet, raw, taken before mineflayer applied it. */
+  lastPositionPacket: unknown;
   /** The loops the path exercises, by id → offset (spec-0086 §6). A forced move
    * during a plain walk whose delta is one of these fails that walk. */
   loopOffsets = new Map<string, Vec3Tuple>();

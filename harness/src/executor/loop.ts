@@ -60,6 +60,11 @@ export const methods = {
     if (from) {
       const delta: Vec3Tuple = [now.x - from.x, now.y - from.y, now.z - from.z];
       if (this.loopWatch) {
+        process.stderr.write(
+          `[loop-diag] forced move: tick delta [${delta.map((c) => c.toFixed(4)).join(", ")}] ` +
+            `from [${[from.x, from.y, from.z].map((c) => c.toFixed(4)).join(", ")}], packet ` +
+            `${JSON.stringify(this.lastPositionPacket)}\n`,
+        );
         this.loopWatch.deltas.push(delta);
       } else {
         for (const [id, offset] of this.loopOffsets) {
