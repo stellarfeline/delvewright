@@ -23,6 +23,11 @@
         "quest": "quest/near-hall"
       },
       {
+        "node": "node/near-hall",
+        "objective": "obj/lay-an-emerald",
+        "quest": "quest/near-hall"
+      },
+      {
         "node": "node/far-hall",
         "objective": "obj/answer-the-marshal",
         "quest": "quest/far-hall"
