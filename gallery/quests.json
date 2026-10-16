@@ -3969,7 +3969,8 @@
           }
         ],
         "forbids_flags": [
-          "flag/hall-sealed"
+          "flag/hall-sealed",
+          "flag/muster-cleared"
         ],
         "id": "trigger/strike-the-hearth",
         "on": {
