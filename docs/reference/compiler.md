@@ -2936,7 +2936,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   performs and skips, the class each ending input is left in, its endings, the
   dialogue choices and the entry deeds that make it this world, and its path —
   plus one chronicle per world (every node's `happening` line in compiled play
-  order) and, per world with a path, one **executable path** in the ordinary
+  order; an elective trigger's or trap's beat the world performs as an entry
+  deed is a dated `deed` line in front of the step it is performed at, one the
+  world skips has no line, and every other trigger or trap beat is listed after
+  the dated account as ambient) and, per world with a path, one **executable path** in the ordinary
   `critical-path.json` contract, which is what the harness's world runs walk. An
   entry deed no step kind drives is a `mock` step on that path; a world whose deed
   has no bundle function to mock it by, or changes nothing the replay can name,

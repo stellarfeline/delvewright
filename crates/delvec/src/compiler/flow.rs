@@ -497,6 +497,10 @@ pub struct JournalStep {
     /// The members of `fired` whose gate held only on an undatable numeric
     /// term — played by the replay, never forced (`plan::firing_of`).
     pub undecided: BTreeSet<String>,
+    /// A story world's entry deeds performed in front of this step (spec-0108
+    /// §4.1), in order: each elective ambient act by id, with the pointer of
+    /// every effect its bundle fired. Empty outside a story world.
+    pub deeds: Vec<(String, Vec<String>)>,
 }
 
 /// One play order under construction ([`Flow::walk`]): the replay state
@@ -585,9 +589,12 @@ impl Walk<'_, '_> {
     pub fn take(&mut self, step: &PathStep) -> JournalStep {
         // A story world's entry deeds due in front of this step (spec-0108
         // §4.1): each elective ambient act it performs, fired once, here.
+        let mut deeds: Vec<(String, Vec<String>)> = Vec::new();
         if let Some(ctx) = self.story.clone() {
             for (_, act) in ctx.deeds.iter().filter(|(i, _)| *i == self.taken) {
+                let from = self.st.fired.len();
                 self.flow.perform_act(&mut self.st, act, self.taken + 1);
+                deeds.push((act.clone(), self.st.fired[from..].to_vec()));
             }
             if self.performed.is_none() {
                 let mut flags = std::mem::take(&mut self.st.flags);
@@ -624,6 +631,7 @@ impl Walk<'_, '_> {
             flags_after: self.st.flags.clone(),
             fired: self.st.fired.iter().cloned().collect(),
             undecided: self.st.undecided.iter().cloned().collect(),
+            deeds,
         }
     }
 

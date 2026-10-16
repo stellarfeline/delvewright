@@ -905,6 +905,101 @@ fn the_exported_path_carries_only_what_one_world_shows() {
     }
 }
 
+/// Build `tests/fixtures/elective-reach` with `patch`, and hand back each world
+/// row with its chronicle and whether it performs the bell.
+fn chronicles(tag: &str, patch: impl FnOnce(&mut Value)) -> Vec<(Value, String, bool)> {
+    let dir = reach_copy(tag, patch);
+    let out = dir.with_extension("out");
+    let prefabs = common::prefabs_dir();
+    let (code, log) = delvec_run(&[
+        "build",
+        dir.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "{log}");
+    let plan: Value = serde_json::from_str(
+        &std::fs::read_to_string(out.join("validation/branch-plan.json")).unwrap(),
+    )
+    .unwrap();
+    let rows: Vec<(Value, String, bool)> = plan["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            let file = row["chronicle"].as_str().unwrap();
+            let md = std::fs::read_to_string(out.join("validation").join(file)).unwrap();
+            let performs = row["participation"]["performs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|a| a == "trigger/bell");
+            (row.clone(), md, performs)
+        })
+        .collect();
+    assert!(
+        rows.iter().any(|r| r.2) && rows.iter().any(|r| !r.2),
+        "fixture premise: one world rings the bell and one does not"
+    );
+    rows
+}
+
+/// A world chronicle dates an elective ambient act's beat where the world
+/// performs it: the bell, here a writer of the tally the final scene reads, is
+/// an entry deed, so its `happening` is a `deed` line in front of the step it
+/// is performed at; the world that leaves it alone has no bell line at all.
+#[test]
+fn a_world_chronicle_dates_the_deed_it_performs_and_omits_the_one_it_skips() {
+    let rows = chronicles("chronicle-deed", |q| {
+        q["content"]["triggers"][0]["effects"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"type": "add-state", "state": "state/tally", "amount": 1}));
+    });
+    for (row, md, performs) in rows {
+        let storyline = md.split("## Endings reached").next().unwrap();
+        assert!(!md.contains("## Ambient beats"), "{}:\n{md}", row["id"]);
+        if performs {
+            assert!(
+                !row["entry_deeds"].as_array().unwrap().is_empty(),
+                "fixture premise: the bell is an entry deed: {row}"
+            );
+            let bell = storyline
+                .find("(deed `/content/triggers/0/effects/0`) — The bell rings.")
+                .unwrap_or_else(|| panic!("{} dates no bell deed:\n{md}", row["id"]));
+            // The entry deed lands in front of the walk out (the latest step
+            // before the scene at which its gate holds, spec-0108 §4.1).
+            let decided = storyline.find("The Keeper listens.").expect(&md);
+            let out = storyline.find("obj/walk-out is reached.").expect(&md);
+            assert!(
+                decided < bell && bell < out,
+                "{}: the bell is not dated in front of the step it is rung at:\n{md}",
+                row["id"]
+            );
+        } else {
+            assert!(!md.contains("The bell rings."), "{}:\n{md}", row["id"]);
+        }
+    }
+}
+
+/// An elective act a world performs with no entry deed (its flag is credited,
+/// nothing it writes is read by an ending) has no position: it stays an
+/// ambient beat in the world that performs it, and the world that skips it does
+/// not list it.
+#[test]
+fn an_undated_elective_beat_is_listed_only_where_the_world_performs_it() {
+    for (row, md, performs) in chronicles("chronicle-ambient", |_| {}) {
+        assert_eq!(
+            md.contains("## Ambient beats") && md.contains("The bell rings."),
+            performs,
+            "{}:\n{md}",
+            row["id"]
+        );
+    }
+}
+
 /// Criterion 11: the binding line is printed on every validate, analyze and
 /// build, every count stated, zeroes included — here a campaign whose ending's
 /// scene carries no gate at all.

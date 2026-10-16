@@ -52,7 +52,11 @@ and the step it precedes), `path` (`world-path-<k>.json`, or `null` with
 no `mock` step can perform: a trap, a disarm, a shortcut, a purchase or a credited
 kill whose bundle has no function, or changes nothing the replay can name;
 spec-0108 §6.5), `chronicle`
-(`world-chronicle-<k>.md`), `reachable`; plus `branches_unrealized`. It is
+(`world-chronicle-<k>.md`: an elective ambient act the world performs as an
+entry deed writes its effects' `happening` lines as dated `deed` lines in front
+of the step it precedes; an elective act the world skips writes none; every
+other trigger and trap beat is listed after the dated account as ambient),
+`reachable`; plus `branches_unrealized`. It is
 emitted when the campaign declares a branch point or its story worlds outnumber
 its dialogue selections. Every world with a path gets its own route proof
 (`DW0311` and the rest, messages naming `branch `X` (world/<k>)`) and

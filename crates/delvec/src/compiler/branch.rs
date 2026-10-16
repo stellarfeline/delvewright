@@ -240,6 +240,20 @@ pub struct RealizedBranch {
     pub completed: BTreeSet<String>,
 }
 
+/// The elective acts the story world `pt` walks does not perform, by id —
+/// empty for a playthrough that is no story world's.
+fn skipped_acts(flow: &Flow<'_>, pt: &crate::compiler::flow::Playthrough) -> BTreeSet<String> {
+    let Some(ctx) = &pt.story else {
+        return BTreeSet::new();
+    };
+    flow.story()
+        .electives
+        .iter()
+        .map(|e| e.id.clone())
+        .filter(|id| !ctx.performs.contains(id))
+        .collect()
+}
+
 /// Realize every enumerated branch against the flow model.
 pub fn realize(c: &Campaign) -> Vec<RealizedBranch> {
     let flow = Flow::new(c);
@@ -270,7 +284,7 @@ fn realize_one(c: &Campaign, flow: &Flow<'_>, branch: EnumeratedBranch) -> Reali
     };
     let pt = flow.story_playthrough(w);
     let journal = flow.journal(&pt);
-    let (chronicle, endings) = chronicle_of(c, &journal);
+    let (chronicle, endings) = chronicle_of(c, &journal, &skipped_acts(flow, &pt));
     let entry_choices = entry_choices(c, &pt, &branch.set);
     RealizedBranch {
         branch,
@@ -360,8 +374,19 @@ fn talk_to_npc<'a>(c: &'a Campaign, obj: &str) -> Option<&'a str> {
 /// The SKELETON — which nodes appear, in what order — is derived machine truth:
 /// it is exactly the order [`Flow::journal`] replays, which is exactly the order
 /// [`Flow::replay`] proves. Only the flesh (each line's `text`) is authored.
-fn chronicle_of(c: &Campaign, journal: &[JournalStep]) -> (Vec<ChronicleLine>, Vec<String>) {
+///
+/// `skipped` are the elective acts the story world does not perform (empty
+/// outside one). An elective ambient act the world performs as an entry deed is
+/// dated where it is performed — a `deed` line in front of that step — and one
+/// it skips has no line at all; neither is listed among the undated ambient
+/// beats, which keep every other trigger and trap beat.
+fn chronicle_of(
+    c: &Campaign,
+    journal: &[JournalStep],
+    skipped: &BTreeSet<String>,
+) -> (Vec<ChronicleLine>, Vec<String>) {
     let mut w = Chronicler::new(c);
+    w.not_ambient = skipped.clone();
     for step in journal {
         w.push_step(step);
     }
@@ -383,6 +408,9 @@ struct Chronicler<'c> {
     endings: Vec<String>,
     /// The quests whose own line has been written.
     announced: BTreeSet<&'c str>,
+    /// The acts never listed among the ambient beats: the elective acts the
+    /// story world skips, and every act it dated as a `deed`.
+    not_ambient: BTreeSet<String>,
 }
 
 impl<'c> Chronicler<'c> {
@@ -402,6 +430,7 @@ impl<'c> Chronicler<'c> {
             written: 0,
             endings: Vec::new(),
             announced: BTreeSet::new(),
+            not_ambient: BTreeSet::new(),
         }
     }
 
@@ -425,6 +454,27 @@ impl<'c> Chronicler<'c> {
 
     fn push_step(&mut self, step: &JournalStep) {
         let c = self.c;
+        // A story world's entry deeds land in front of the step they are
+        // performed at (spec-0108 §4.1): each fired effect of the act's bundle
+        // that declares a `happening` is a dated `deed` line.
+        if !step.deeds.is_empty() {
+            let mut by_path: BTreeMap<String, &QuestEffect> = BTreeMap::new();
+            for_each_campaign_effect(c, &mut |path, _, eff| {
+                by_path.insert(path.to_string(), eff);
+            });
+            for (act, fired) in &step.deeds {
+                self.not_ambient.insert(act.clone());
+                for path in fired {
+                    let Some(eff) = by_path.get(path) else {
+                        continue;
+                    };
+                    if let Some(h) = eff.happening.as_ref() {
+                        let subject = eff.happening_subject().map(|s| s.id.to_string());
+                        self.push("deed", path.clone(), h, subject);
+                    }
+                }
+            }
+        }
         let Some(q) = c
             .quests
             .content
@@ -524,8 +574,14 @@ impl<'c> Chronicler<'c> {
         // deliberately does not order them against it.
         let lines = &mut self.lines;
         let written = &mut self.written;
+        let not_ambient = &self.not_ambient;
         for_each_campaign_effect(self.c, &mut |path, site, eff| {
-            if !matches!(site, EffectSite::Trigger { .. } | EffectSite::Trap { .. }) {
+            let act = match site {
+                EffectSite::Trigger { trigger } => trigger,
+                EffectSite::Trap { trap } => trap,
+                _ => return,
+            };
+            if not_ambient.contains(act.as_str()) {
                 return;
             }
             if let Some(h) = eff.happening.as_ref() {
@@ -2101,7 +2157,7 @@ pub fn world_rows(c: &Campaign) -> Vec<WorldRow> {
         let run = &story.runs[k];
         let pt = &run.playthrough;
         let journal = flow.journal(pt);
-        let (chronicle, _) = chronicle_of(c, &journal);
+        let (chronicle, _) = chronicle_of(c, &journal, &skipped_acts(&flow, pt));
         let fired: Vec<String> = scenes
             .endings
             .iter()
