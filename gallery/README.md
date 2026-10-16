@@ -255,6 +255,7 @@ holding them at once.
 | `a-party-purse-the-sidebar-cannot-draw` | `DW0919` | `validate` | moving the standing display onto the party's bounty, whose `#party` holder the sidebar hides |
 | `an-archer-seated-beside-the-burning-corner` | `DW0922` | `build` | summoning the edge skeleton around the east bay, so its ring stands it in the near hall within its pursuit of the burning corner in the barrier pocket |
 | `a-hatch-the-party-leaves-open` | `DW0923` | `build` | seating the muster at the hearth beside the terrace and laying a trapdoor shut over the west well: a player can open it and leave it open, and the muster then falls in |
+| `a-strongbox-beside-the-hatch` | `DW1047` | `build` | sinking two trapped chests in the near hall's floor beside the site-plan point's shaft hatch: opening a chest powers the closed iron trapdoor, which opens with no beat while the story still holds it shut |
 | `a-sky-the-sun-does-not-obey` | `DW0928` | `validate` | holding the hall's sun in place: the overworld's day timeline overrides `visual/sun_angle` every tick, so the line would ship and do nothing |
 | `an-attribute-the-game-never-heard-of` | `DW0928` | `validate` | spelling `visual/sky_colour`, which the pinned game does not register — the refusal names `visual/sky_color` |
 | `a-colour-that-is-a-number` | `DW0928` | `validate` | writing the hall's sky colour as an integer where vanilla's data writes `#rrggbb` |
@@ -551,6 +552,17 @@ the same counts to `validation/threshold-gate.json`. At range 1 the build is
 refused: a walk exists that never stands where the selector is sure to catch a
 body, and the message names range 2 as the least range every walk enters. The coverage gate reds if that ledger ever judges no
 trigger; the refusal side is `probes/a-threshold-the-party-walks-round`.
+
+**No signal opens a shut gate.** Every gate the hall resolves is examined for a
+redstone signal that could open it (`DW1047`): the five divider gates are iron
+bars, which read no signal, so the build prints `5 shut gate(s) examined; 0 …
+judged …, 5 whose block reads none not judged` beside the signal sources it
+examined, as placed and as the quests' props and effects lay them, and writes
+the counts to `validation/gate-signal.json`. The judged side is
+the site-plan point: the shaft's hatch and the crawl's cover are closed iron
+trapdoors, which do read one, and no source stands where its power reaches
+them. The coverage gate reds if the ledger ever examines no gate; the refusal
+side is `probes/a-strongbox-beside-the-hatch`.
 
 ## The barrier pocket
 

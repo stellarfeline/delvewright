@@ -106,6 +106,17 @@ the story shuts the party into is not this: its objective is inside it. The
 build prints the leave-proof binding line either way; the counts are in
 `validation/leave-proof.json`.
 
+**Every campaign: no redstone opens a shut gate.** A shut gate whose block
+reads a signal — the closed iron trapdoor a floor is shut with — opens on any
+signal beside it, with no beat, while the story still holds it shut. The build
+refuses (`DW1047`) a signal source — a lever, a button, a pressure plate, a
+trapped chest, a redstone torch or block, a prop or an effect that lays one —
+in one of the trapdoor's six face neighbours, or beside a solid block that is
+one of them. The message names the trapdoor, the source and how the power gets
+there: move the source or the gate. A wall's iron bars read no signal and are
+never judged. The build prints `DW1047 binding:` either way; the counts are in
+`validation/gate-signal.json`.
+
 **Every campaign: every block the build writes is one the server keeps.** A
 block that needs a neighbour to stay — a wall torch, a lever, a ladder, a
 lantern, a flower, a carpet, a door's upper half — is judged by the pinned

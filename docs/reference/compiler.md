@@ -50,7 +50,7 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
 | 7 | Assemble world model (placed pieces → voxel grid; ocean sea-level datum check) | `compiler::plan` | `DW030x`/`DW0344` (exit 3) |
 | 8 | Replay the stage-7 edit script over the assembled model (spec-0017; per-batch invariant re-proofs — trap-hardware integrity, gravity, relight, walkability, fluid containment against the horizon, sea seepage into the built volume, boundary safety, block support; plus the advisory gate-region check). Skipped entirely for a campaign without one (byte-identical). | `compiler::edit` | `DW0318`/`DW0322`/`DW0323`/`DW0352`/`DW0354`/`DW0851` + reused invariant codes, batch-attributed (tier per code); advisory `DW0353`/`DW0354` |
 | 9 | Assembled-light + relight (measure, place fixtures; over the **edited** model when a script exists) | `compiler::light` | `DW0210`/`DW0211` (**exit 2**) |
-| 10 | Nav checks (**the ambient sea inside the built volume** (`DW0851`) and **boundary safety over the finished world** (`DW0322`, error tier) for every campaign that assembles one — the floor under the per-batch stage-8 call, which an edit-free campaign never reached; then A* `move-npc`/`move-actor` (footprint-aware, each walk routed over its **own timeline's** gate state), cutscene clip (authored polyline + rendered keyframe chords) + angular budget, critical-path walkability — incl. relight fixtures + water flood, and **per reachable branch** over each branch's own path under its own gate-seal step space; talk-to endpoint snap; a body talked to faces the party's approach on every configuration, or watches it (`DW1025`, `compiler::approach`; prints `approach binding (DW1025):`), and, after the world block, a body declaring `"watch": "none"` faces every cell of the walked population a player can talk to it from, at every stance (`DW1025`, `compiler::approach::check_held`; prints `held-facing binding (DW1025):`); waypoint self-check (critical path + per branch); a trigger the path relies on is entered by every walk to the step that needs it (`DW1044`); v0.6 checkpoint no-stranding/placement + no place a body gets into and not out of (`DW0921`) + no shut gate a body gets round (`DW1011`) + stealth-zone/onset + trap completability proofs; spec-0016 §6 TD lane polylines; spec-0016 §1 bonfire safe zone) — all over the **edited** model when a script exists | `compiler::nav` + `compiler::timeline` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0318`/`DW0322`/`DW0325`/`DW0327`/`DW0342`/`DW0347`/`DW0355`/`DW0386`/`DW0410`/`DW0430`/`DW0478`/`DW0488`/`DW0851`/`DW0921`/`DW1025`/`DW1044` (exit 3; `DW0342` → exit 2) |
+| 10 | Nav checks (**the ambient sea inside the built volume** (`DW0851`) and **boundary safety over the finished world** (`DW0322`, error tier) for every campaign that assembles one — the floor under the per-batch stage-8 call, which an edit-free campaign never reached; no redstone signal can open a shut gate (`DW1047`, `compiler::gatesignal`, after the sculk proofs; prints `DW1047 binding:` and writes `validation/gate-signal.json`); then A* `move-npc`/`move-actor` (footprint-aware, each walk routed over its **own timeline's** gate state), cutscene clip (authored polyline + rendered keyframe chords) + angular budget, critical-path walkability — incl. relight fixtures + water flood, and **per reachable branch** over each branch's own path under its own gate-seal step space; talk-to endpoint snap; a body talked to faces the party's approach on every configuration, or watches it (`DW1025`, `compiler::approach`; prints `approach binding (DW1025):`), and, after the world block, a body declaring `"watch": "none"` faces every cell of the walked population a player can talk to it from, at every stance (`DW1025`, `compiler::approach::check_held`; prints `held-facing binding (DW1025):`); waypoint self-check (critical path + per branch); a trigger the path relies on is entered by every walk to the step that needs it (`DW1044`); v0.6 checkpoint no-stranding/placement + no place a body gets into and not out of (`DW0921`) + no shut gate a body gets round (`DW1011`) + stealth-zone/onset + trap completability proofs; spec-0016 §6 TD lane polylines; spec-0016 §1 bonfire safe zone) — all over the **edited** model when a script exists | `compiler::nav` + `compiler::timeline` + `compiler::gatesignal` | `DW0307`/`DW0308`/`DW0311`/`DW0314`/`DW0315`/`DW0316`/`DW0318`/`DW0322`/`DW0325`/`DW0327`/`DW0342`/`DW0347`/`DW0355`/`DW0386`/`DW0410`/`DW0430`/`DW0478`/`DW0488`/`DW0851`/`DW0921`/`DW1025`/`DW1044`/`DW1047` (exit 3; `DW0342` → exit 2) |
 | 11 | Referential + placement seals inside emission: every anchor-bearing effect resolves (`DW0360`), no generated name collides (`DW0361`), no body eclipses an interaction affordance (`DW0359`, `compiler::eclipse`), no body, destination or cast row stands at a mark whose offset leaves its anchor's piece (`DW0897`, `compiler::mark`), no two bodies whose lifetimes overlap are declared on one cell (`DW0896`, `compiler::cohabit`), no body occupies block geometry at its anchor or on any walked leg (`DW0450`/`DW0451`, `compiler::clearance`), no walked leg contains a move its own body cannot make and no body's `traversal` declaration goes unexercised (`DW0452`/`DW0453`/`DW0454`, `compiler::traversal`), no two bodies the party clicks contest one crosshair in a scene the cast ledger declares (`DW0489`, `compiler::crosshair`), no daylight-burning body is staged for a fight whose walkable ground reaches open sky in an hour and weather it can stand in that burn it (`DW0496`, `compiler::daylight`, measured off the seated wave cells), no body whose AI takes no land target while the level is bright is staged as a fight that is bright until its `kill` completes with no water for the party's feet in reach (`DW0920`, `compiler::engage`, the same seated cells and the same clock; prints `engagement binding:`), and every block the build writes is one the server keeps: the load world, then every configuration the critical path passes around its laid writes, judged by the pinned jar's measured `canSurvive` table (`DW1002`, [`compiler::attached`](delvec/compiler/attached.md), after the route proofs; prints `attached blocks (DW1002):`) | `compiler::emit`, `compiler::attached` | `DW0359`/`DW0360`/`DW0361`/`DW0450`/`DW0452`/`DW0489`/`DW0496`/`DW0896`/`DW0920`/`DW1002` (exit 3); advisory `DW0359`/`DW0451`/`DW0453`/`DW0489` |
 | 12 | Emit (datapack incl. the world build — the mass, seal and stage-7 writes in steps across ticks, packtest, server, critical-path, resourcepack, and the visual tier's `render-plan.json` — whose every camera is stood up in open air and then proven clear-eyed against the assembled world, `DW0724`) | `compiler::emit`, `compiler::render_plan` | `DW0300`+/`DW0724` (exit 3) |
 | 13 | Emission self-checks over the **finished tree**: every affordance is visible and only its owner retires it (`DW0420`/`DW0421`), no engine fixture is reachable by a box-narrowed selector (`DW0545`), every click box placed at a cell is strictly nearer than any block it stands in — no face on the block grid (`DW1013`, `compiler::clickbox`), the call graph is closed — no `function <ns>:<name>` points at a function that was never emitted (`DW0497`) — and the score reads are closed: no `if score` / `unless score` / `scores={…}` reads a scoreboard entry the pack never creates (`DW0495`) — and no shipped function's command chain, with every function it calls in the same tick, can pass the game's `max_command_sequence_length` (`DW0984`, `compiler::chain`) | `compiler::affordance` + `compiler::clickbox` + `compiler::integrity` + `compiler::seeding` + `compiler::chain` | `DW0420`/`DW0421`/`DW0495`/`DW0497`/`DW0545`/`DW0984`/`DW1013` (exit 3) |
@@ -3217,6 +3217,16 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   (`compiler::nav::ThresholdBinding`): the binding line's counts — `performed`,
   `judged` (also as `examined`), `entered`, `no_debt`, `by_hand`, `carried`.
   Written on every build that passes the proof, zeroes included.
+- `<out>/validation/gate-signal.json`: the `DW1047` proof's **binding ledger**
+  (`compiler::gatesignal::GateSignalBinding`): `gates_examined` (every gate
+  region the plan resolves, and every shut seam), `gates` (of those, whose
+  block reads a signal — judged), `floor_gates`, `cells` (their cells),
+  `inert_gates` (whose block reads none — a wall's iron bars — not judged),
+  `sources` (cells that may hold a signal source, as placed or laid),
+  `sources_written` (of those, laid by a runtime write or prop) and `nearest`
+  (the least Manhattan distance from a source to a judged cell, `null` with
+  none). Written on every build that assembles a world, before the verdict,
+  zeroes included.
 - `<out>/validation/separation-proof.json`: the `DW1011` proof's **binding
   ledger** (`compiler::nav::SeparationBinding`): `gates` (every gate anchor the
   world resolves), `gated_edges` and `gated_bound` (the layout graph's gated
@@ -4168,6 +4178,37 @@ when its `BlockSetType` cannot be opened by hand, and `BlockSetType.IRON` is
 built with `canOpenByHand` (and `canOpenByWindCharge`) `false`: no hand opens it,
 in adventure mode or any other. `TrapDoorBlock.neighborChanged` opens it on
 `Level.hasNeighborSignal`: a redstone source beside a hatch opens it.
+
+**No signal opens a shut gate (`DW1047`).** *Cited* (the pinned jar, read with
+`javap -c -p` and the server mappings, sha1 `5621e925…5955`, while this was
+built): `TrapDoorBlock.neighborChanged` (lines 124–140) reads
+`hasSignal = level.hasNeighborSignal(pos)` and, when it differs from `powered`,
+sets `open` to it — so a signal opens a closed iron trapdoor and its loss shuts
+it again. `Level` inherits `SignalGetter.hasNeighborSignal` (81–96): true when
+`getSignal(pos.relative(d), d) > 0` for any of the six faces, in the order down,
+up, north, south, west, east. `SignalGetter.getSignal` (71–77) is the
+neighbour's own **weak** signal toward the cell (`BlockState.getSignal`) and,
+when the neighbour `isRedstoneConductor`, the greater of that and
+`getDirectSignalTo(neighbour)` (19–44): the greatest **strong** signal
+(`BlockState.getDirectSignal`) any of the neighbour's six neighbours sends into
+it. A conductor sends no signal of its own, so power reaches a trapdoor from a
+source in a face neighbour (weak or strong), or from a source's strong signal
+into a conductor in a face neighbour, and from nowhere further. Which way a
+source sends strong power is the source's: `LeverBlock.getSignal` is 15 on every
+face while powered, `getDirectSignal` 15 only toward its attached face.
+*Authored* (the model, which can only refuse more): `gatesignal::prove` powers,
+from every cell that may hold a signal source (`blockshape::redstone_source`),
+its six face neighbours and the six neighbours of each that may hold a
+conductor (`blockshape::redstone_conductor`), reading every source as on and
+strong toward every face. Every gate region the plan resolves and every shut
+seam is examined (`gatesignal::shut_gates`); one whose block, or any block a
+cell of it may hold, reads a signal (`blockshape::redstone_reader`) is judged —
+a seam through a floor (`SEAM_HATCH`, `SEAM_COVER`) among them; a wall's
+`minecraft:iron_bars` reads none and is counted, not judged. A cell's blocks are
+the world as placed and every block a runtime write, a prop or a relight fixture
+may lay there (`sculk::possible` over `sculk::runtime_writes`). The build
+prints `DW1047 binding: …` before the verdict and writes
+`validation/gate-signal.json`.
 **A body climbs (spec-0099).** A climbable the assembled world **keeps** is a
 fourth kind of place beside standing, floating and falling: a body whose feet
 cell holds one, with its body's cells unoccupied, **holds** there
@@ -4210,7 +4251,9 @@ conducts, hold no block that reads a redstone signal, and a calibrated sensor's
 input cell holds neither a source nor a conductor — read from the pinned jar's
 redstone table (`crates/dsl/data/redstone-1.21.11.tsv`, `dump-redstone.py`;
 `blockshape::redstone_conductor` / `redstone_source` / `redstone_reader`), over
-the world as placed and every block a runtime write may lay. The **catalyst
+the world as placed and every block a runtime write may lay — an effect, a laid
+way, a timed gate's phase, and every prop an `interact` objective or a click
+trigger sets (`sculk::runtime_writes`). The **catalyst
 proof** (`sculk::prove_catalysts`, `DW1001`): no cell of the closure of
 `body_moves` from every put-at root, or of `mob_moves` from every wave seat,
 lies within integer `distSqr ≤ 64` of a catalyst. A sensor is never a story

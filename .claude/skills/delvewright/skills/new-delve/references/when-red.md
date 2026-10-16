@@ -11,6 +11,13 @@ The symptoms most likely to stop you, and what they actually mean.
 
 ## Validate and build
 
+**`DW1047`: "the shut gate `anchor/…` stands `minecraft:iron_trapdoor…` … and
+the signal source … can power that cell".** A lever, button, plate, chest or
+prop that emits redstone stands beside the trapdoor, or on or against a solid
+block beside it. Move the source clear of both — off the trapdoor's six
+neighbours and off every solid block touching it — or move the gate; never
+swap the trapdoor for bars through a floor, which a body falls through.
+
 **`DW0874`: "this campaign directory is missing N of the 6 stage documents"
 (exit 1).** Not a fault — `delvec validate` is whole-campaign and needs all six
 required documents on disk. The refusal names every one that is absent, the

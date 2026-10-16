@@ -1,7 +1,9 @@
-//! **No signal opens a shut gate** (`DW1047`): a shut seam's block that reads
-//! a redstone signal — the closed iron trapdoor a floor is shut with
-//! (`siteplan::SEAM_HATCH`, `SEAM_COVER`) — has no signal source anywhere that
-//! can power its cell, in the world as placed or after any runtime write.
+//! **No signal opens a shut gate** (`DW1047`): a shut gate whose block reads a
+//! redstone signal — the closed iron trapdoor a floor is shut with
+//! (`siteplan::SEAM_HATCH`, `SEAM_COVER`) among them — has no signal source
+//! anywhere that can power its cell, in the world as placed or after any
+//! runtime write or prop. A wall's iron bars read no signal: examined, counted,
+//! never judged.
 //!
 //! The pinned jar's rule, read once while this was built (`javap -c -p` with
 //! the server mappings, `docs/reference/compiler.md`, *No signal opens a shut
@@ -26,7 +28,8 @@
 //! table `crates/dsl/data/redstone-1.21.11.tsv`. Every block a cell may hold is
 //! `sculk::possible`, over `sculk::runtime_writes`: the as-placed block and
 //! every block a `fill-region`, `set-block`, `close-gate`, laid way, shortcut
-//! seal or timed gate may lay there, all at once.
+//! seal, timed gate or prop may lay there, all at once, and the relight
+//! fixtures.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -43,8 +46,8 @@ use crate::compiler::sculk::{Write, neighbours, possible, runtime_writes};
 
 delvewright_dsl::dw_code! {
     /// `DW1047`: **a redstone signal can open a shut gate**. A cell of a shut
-    /// seam's gate holds a block that reads a signal (a closed iron trapdoor
-    /// through a floor), and a signal source — as placed, or laid by a runtime
+    /// gate holds a block that reads a signal (a closed iron trapdoor through
+    /// a floor), and a signal source — as placed, or laid by a runtime
     /// write — stands in one of its six face neighbours, or beside a conductor
     /// in one of them. The trapdoor would open on that signal without its story
     /// beat while the seal model holds it shut. Build tier.
