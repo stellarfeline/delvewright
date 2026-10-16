@@ -201,11 +201,6 @@
       "code": "DW0475",
       "pointer": "/content/waves",
       "stage": "quests"
-    },
-    {
-      "code": "DW0810",
-      "pointer": "packtest watch coverage",
-      "stage": "build"
     }
   ],
   "hard.en": [
@@ -393,11 +388,6 @@
       "code": "DW0475",
       "pointer": "/content/waves",
       "stage": "quests"
-    },
-    {
-      "code": "DW0810",
-      "pointer": "packtest watch coverage",
-      "stage": "build"
     }
   ],
   "ocean-horizon.en": [
@@ -585,11 +575,6 @@
       "code": "DW0475",
       "pointer": "/content/waves",
       "stage": "quests"
-    },
-    {
-      "code": "DW0810",
-      "pointer": "packtest watch coverage",
-      "stage": "build"
     }
   ],
   "primary.en": [
@@ -777,11 +762,6 @@
       "code": "DW0475",
       "pointer": "/content/waves",
       "stage": "quests"
-    },
-    {
-      "code": "DW0810",
-      "pointer": "packtest watch coverage",
-      "stage": "build"
     }
   ],
   "primary.zh-cn": [
@@ -969,11 +949,6 @@
       "code": "DW0475",
       "pointer": "/content/waves",
       "stage": "quests"
-    },
-    {
-      "code": "DW0810",
-      "pointer": "packtest watch coverage",
-      "stage": "build"
     }
   ],
   "site-plan-solid.en": [
@@ -1272,11 +1247,6 @@
       "code": "DW0475",
       "pointer": "/content/waves",
       "stage": "quests"
-    },
-    {
-      "code": "DW0810",
-      "pointer": "packtest watch coverage",
-      "stage": "build"
     }
   ]
 }
