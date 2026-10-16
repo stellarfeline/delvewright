@@ -12,14 +12,13 @@ The full inventory — every binary, script and flag that exists today — is
 `$DELVEWRIGHT_ENGINE/docs/reference/tools.md`. Check it before assuming a capability is missing.
 
 - **Judging any visual outcome** (cutscene framing, set dressing, terrain):
-  `delvec snapshot` (`--camera x,y,z,yaw,pitch`, `--at <anchor> --dist`,
-  `--shot <render-plan id>`, `--labels`) and `delvec blocking-chart` (per-floor
-  cutaways). *Always* for cutscenes: render start, mid and end of every dolly
-  segment and **look at the frames** before calling the step done — `DW0308`
-  proves the path is air, not that the shot is pointed at the subject, and an
-  inside-out cinematic can be fully DW-green.
+  `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames <build-dir>` (`--shot <id>`, `--labels`), `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames --campaign <dir>`
+  (`--camera x,y,z,yaw,pitch`, `--at <anchor> --dist`) and `delvec blocking-chart`.
+  *Always* for cutscenes: **look at the `cutscene/…` frames** before calling the
+  step done — `DW0308` proves the path is air, not that the shot is pointed at
+  the subject, and an inside-out cinematic can be fully DW-green.
 - **Terrain or visual fixes beyond swapping prefabs**: `delvec edit` — the map
-  editor loop (edit script batch → replay → snapshot). The script is a campaign
+  editor loop (edit script batch → replay → frame). The script is a campaign
   document, `world-edits.json`: batches of declared edits, replayed
   deterministically, with the post-batch invariants enforced. Never hand-patch
   `.nbt` or invent block edits outside it.

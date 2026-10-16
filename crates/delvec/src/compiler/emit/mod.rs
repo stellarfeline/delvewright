@@ -696,6 +696,11 @@ pub fn build_with_warnings(
     // (`DW0897`) is sent to that line rather than told nobody can reach it.
     let mut watch_binding = prove_watchers(plan, &population)?;
 
+    // The configurations the critical path arrives under (spec-0112 §3): the
+    // worlds the review frames stand in, and the worlds a cutscene a critical
+    // step fires is flown through (`DW0308`).
+    let frame_worlds = crate::compiler::view::review::frame_worlds(plan, &world);
+
     // ---- the world block: every proof over the assembled world ----
     let WorldProofs {
         moves,
@@ -717,7 +722,7 @@ pub fn build_with_warnings(
         lethal_gate,
         loop_gate,
         firework_gate,
-        cutscene_shots_judged,
+        cutscene_proof,
         lightning_gate,
         stake_table,
         death_plan,
@@ -732,6 +737,7 @@ pub fn build_with_warnings(
         &mut out,
         &mut warnings,
         &mut pacing,
+        &frame_worlds,
     )?;
 
     // ---- `DW1025`: a body that holds its facing faces every approach ----
@@ -925,7 +931,7 @@ pub fn build_with_warnings(
             g
         }
     };
-    let functions = emit_functions(
+    let mut functions = emit_functions(
         plan,
         &chrome,
         &sentinels,
@@ -946,6 +952,33 @@ pub fn build_with_warnings(
         &pulse_gate.rows,
         &owned_holders,
     );
+    // **The placements ledger** (spec-0112 §4): every block, container item and
+    // body the datapack places outside the templates, and every removal, read
+    // off the functions that place them and written back from the row, so a
+    // line and its record cannot disagree. A review frame's world lays the rows
+    // its arrival holds.
+    let (ledger, placing_lines) =
+        crate::compiler::placed::ledger_of_functions(plan, &mut functions);
+    let unplaceable = ledger.unplaceable();
+    eprintln!(
+        "placements ledger: {} row(s) over {placing_lines} placing line(s) of the functions that \
+         place outside the templates; {} body row(s) no frame's world can hold as written{}",
+        ledger.rows.len(),
+        unplaceable.len(),
+        if unplaceable.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " ({})",
+                unplaceable
+                    .iter()
+                    .map(|r| format!("`{}` in `{}`", r.command(), r.function))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )
+        }
+    );
+    put_json(&mut out, "validation/placed.json", &ledger.to_json(plan));
     // DW1002's write arms over the FINAL function list, read off the shipped
     // commands so what is judged is what is emitted: the load as the server
     // runs it — `setup`, the ground, the templates, the world build,
@@ -1151,15 +1184,42 @@ pub fn build_with_warnings(
     // proof — every kind, not the one that needed it first. It also states the
     // proof's binding count in the artifact and hands back a warning when that
     // count is zero.
+    //
+    // Every shot stands in a world of the critical path's own configurations
+    // (spec-0112 §3) and its eye is proven clear there; the worlds are written
+    // under `validation/worlds/` beside the plan, with the review record.
+    // The frame worlds again, now that the ledger exists: a world is its
+    // configuration's bytes, the rows its arrival holds, and its clock.
+    let frame_worlds =
+        crate::compiler::view::review::frame_worlds_with(plan, &world, Some(&ledger));
     let (render_plan_doc, camera_warnings) = crate::compiler::render_plan::render_plan(
         plan,
         prefabs,
         &pov_shots,
+        &cutscene_proof.frames,
         &world,
-        Some(&picture),
+        &frame_worlds,
+        &picture,
     )?;
     warnings.extend(camera_warnings);
     put_json(&mut out, "render-plan.json", &render_plan_doc);
+    let maker =
+        crate::compiler::view::review::WorldMaker::new(plan, assembled, &picture, structures);
+    let review = crate::compiler::view::review::write_review(
+        plan,
+        &picture,
+        &maker,
+        crate::compiler::view::review::ReviewOf {
+            frames: &frame_worlds,
+            ledger: &ledger,
+            cutscenes: &cutscene_proof,
+        },
+        &render_plan_doc,
+        &mut out,
+    );
+    for line in &review.lines {
+        eprintln!("{line}");
+    }
     // spec-0091: the served view distance, what the build judged against it
     // (every showcase camera and cutscene shot — a refusal stopped the build
     // before here), and the cost stated to the host.
@@ -1171,7 +1231,7 @@ pub fn build_with_warnings(
             showcase_cameras: render_plan_doc["camera_eye_proof"]["showcase"]
                 .as_u64()
                 .unwrap_or(0) as usize,
-            cutscene_shots: cutscene_shots_judged,
+            cutscene_shots: cutscene_proof.judged,
         }
         .line()
     );

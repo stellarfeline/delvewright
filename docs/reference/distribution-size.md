@@ -65,6 +65,13 @@ ls -l target/aarch64-apple-darwin/release/delvec             → 24,489,840 B
 wc -c < target/aarch64-apple-darwin/release/delvec           → 24,489,840 (second reader, same answer)
 ```
 
+The renderer is inside the binary (spec-0112): `target/release/delvec` built
+`cargo build --release --locked -p delvec` at `8150c02f9` on
+`aarch64-apple-darwin` measures 44,841,056 B (`ls -l target/release/delvec`),
+against 24,489,840 B for the shelf binary at 1.1.0 above — re-measure the shelf
+archive with the commands above before quoting a download size for a later
+engine.
+
 The **harvested game-registry data is not a separate download**: 1,280,075 B of
 `crates/{delvec,dsl}/data/*.json` is `include_str!`-ed into the binary and is
 already inside the numbers above (§4).
@@ -84,21 +91,17 @@ that guarantees every capability on every machine (§2 there). This is the 2.1 G
   skip). 94 MB.
 - **`tools/creator/i18n-translate.py`** — only for a campaign declaring non-English
   languages. Python stdlib only.
-- **The 1.21.11 client jar** (31,152,600 B, `ls -l ~/.chunky/resources/minecraft.jar`)
-  — for every render arm, CPU or GPU: the textures come from the creator's own
+- **The 1.21.11 client jar** (31,152,600 B, `ls -l ~/.delvewright/client/minecraft-1.21.11.jar`)
+  — for every arm that draws, CPU or GPU: the textures come from the creator's own
   jar, which is never downloaded, bundled or redistributed (ADR-0023 §9).
-- **A GPU adapter** — for `delvec render` only. The three GPU arms are inside
-  the binary on every platform; what they need at run time is an adapter (on
-  Linux, a Vulkan loader the binary opens when asked). `delvec snapshot`,
-  `blocking-chart`, `viewer` and the rest of the CPU surface need none.
+- **A GPU adapter** — for `delvec render` only. The three GPU arms are inside the binary on every platform; what they need at run time is an adapter (on Linux, a Vulkan loader the binary opens when asked). `delvec frames`, `cameras` and `panorama` take a GPU when one answers and draw on the CPU otherwise; `blocking-chart`, `viewer` and the rest of the view surface need none.
 
 ### Required by the page's later steps, sized in §5
 
 - **Docker with Compose v2, and a JDK 21+.** The page's Init I1 requires both:
   step 9's play server and step 10's ladder run in Docker, and the Minecraft
   server jar is fetched at run time.
-- **Chunky, and a JDK 17 to build it.** Init I7 names them; step 12 installs the
-  pinned core.
+
 
 None of these is part of the binary or the plugin, and none is needed to author,
 validate statically, compile or look at a delve.
@@ -229,9 +232,7 @@ grep -rEoh 'include_(str|bytes)!\("[^"]*"\)' crates/delvec/src crates/dsl/src \
 | the remaining 5 (dsl `entities`, `items`, `anchors`, `block-renames`, `pools`) | 856 |
 | **total** | **1,280,075** |
 
-The second-largest row is the block-appearance table: it is what lets the CPU
-draft rasteriser paint from the pinned client jar on a machine that has no jar
-(`compiler.md`, `delvec snapshot`).
+The second-largest row is the block-appearance table: it is what lets the blocking chart paint from the pinned client jar on a machine that has no jar (`compiler.md`, `delvec blocking-chart`).
 
 Embedding it is correct — it is what makes `delvec` a single self-contained
 download with no data directory to lose (ADR-0006 reproducibility).
@@ -265,7 +266,7 @@ statically, compile, or look at a delve.
 | built delve image | PackTest + bot ladder | 863–865 MB | `docker images` |
 | harness bot image | bot ladder | 1.04 GB | `docker images` |
 | Minecraft server jar | any server boot | 56,327,581 B | `versions.toml [minecraft].server_jar_size` — fetched at run time, never baked (EULA) |
-| Chunky + core, plus a JVM | beauty tier | ~55 MB | `du -sh ~/.chunky`; pins in `versions.toml [render]` |
+
 
 ---
 

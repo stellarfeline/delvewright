@@ -1,16 +1,19 @@
-//! **A picture states its sky** (spec-0079): a showcase camera renders under the
-//! `time` and `weather` of the `design.json` row it answers, or under a `sky` it
-//! states; the panorama and the review frames render under the plan's; and the
-//! record's sky rule is one answer from `delvec cameras` and `delvec
-//! place-camera` (the build's half is in `remedy_reachability.rs`).
+//! **A picture states its sky** (spec-0079, spec-0112 §6.1 item 6): a showcase
+//! camera is drawn under the `time` and `weather` of the `design.json` row it
+//! answers, or under a `sky` it states; the panorama under the plan's; a review
+//! frame under its shot's own; and the record's sky rule is one answer from
+//! `delvec cameras` and `delvec place-camera` (the build's half is in
+//! `remedy_reachability.rs`). The renderer is handed the engine's sky of that
+//! tick and weather and derives none of its own.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use delvec::compiler::view::camera::{
-    self, ApprovedRow, Camera, CameraSheet, CameraSky, EmitOptions, Source,
+    self, ApprovedRow, Camera, CameraFrame, CameraSheet, CameraSky, EmitOptions, Source,
 };
-use delvec::compiler::view::{panorama, scene, sky_image};
+use delvec::compiler::view::frames::{self, FrameSky};
+use delvec::compiler::view::{panorama, scene};
 use delvewright_dsl::{WorldTime, WorldWeather};
 
 const BIN: &str = env!("CARGO_BIN_EXE_delvec");
@@ -18,19 +21,6 @@ const BIN: &str = env!("CARGO_BIN_EXE_delvec");
 const OCEAN: &[u8] = include_bytes!("fixtures/view/render-plan-ocean.json");
 /// The mini fixture played at `dusk` in the `clear`.
 const MINI: &[u8] = include_bytes!("fixtures/view/render-plan-mini.json");
-
-/// Every camera of `sheet` standing in one stub world: these tests are about
-/// the scene's sky, not the world it loads.
-fn stood(sheet: &CameraSheet) -> EmitOptions {
-    EmitOptions {
-        world_paths: sheet
-            .cameras
-            .iter()
-            .map(|c| (c.name.clone(), "/abs/world".to_string()))
-            .collect(),
-        ..EmitOptions::default()
-    }
-}
 
 fn tmp(tag: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("camera-sky-{tag}"));
@@ -48,29 +38,32 @@ fn log(o: &Output) -> String {
     )
 }
 
-/// Whether an emitted scene carries the sky of `tick` under `weather`
-/// ([`scene::sky_cell`]): the game's sky as a map drawn for its camera at that
-/// tick and weather, seen whole by the lens, its `skyLight` the multiplier that
-/// makes the light it casts the lightmap's ([`sky_image::sky_map`]), and no
-/// light from the sun.
-fn carries_sky(v: &serde_json::Value, tick: i64, weather: WorldWeather) -> bool {
-    let o = &v["camera"]["orientation"];
-    let view = sky_image::view_of(o["yaw"].as_f64().unwrap(), o["pitch"].as_f64().unwrap());
-    let map = sky_image::sky_map(tick, weather, view);
-    let near = |a: &serde_json::Value, b: f64| a.as_f64().is_some_and(|a| (a - b).abs() < 5e-7);
-    let marked = match weather {
-        WorldWeather::Clear => v["delvewrightSky"].get("weather").is_none(),
-        w => v["delvewrightSky"]["weather"] == w.keyword(),
-    };
-    v["sky"]["mode"] == "SKYMAP_EQUIRECTANGULAR"
-        && v["sky"]["skyMirrored"] == false
-        && v["delvewrightSky"]["daytimeTicks"] == tick
-        && marked
-        && v["fog"]["skyFogDensity"] == 0.0
-        && v["fog"]["uniformDensity"] == 0.0
-        && v["sun"]["intensity"] == 0.0
-        && near(&v["sky"]["skyLight"], map.sky_light)
-        && v["sky"]["apparentSkyLight"] == 1.0
+/// Whether a frame is taken under the sky of `tick` under `weather`, and the
+/// renderer is handed the engine's reading of it: the client's sky and fog
+/// colours and lightmap factor in quick mode ([`scene::sky_attributes`]), the
+/// cast light in hq mode ([`scene::sky_cell`]), and a sun drawn only while its
+/// disc is up under a clear sky.
+fn carries_sky(sky: FrameSky, tick: i64, weather: WorldWeather) -> bool {
+    let at = scene::sky_attributes(tick, weather);
+    let cell = scene::sky_cell(tick, weather);
+    let quick = frames::quick_sky(sky);
+    let hq = frames::hq_sky(sky);
+    let near = |a: f32, b: f64| (f64::from(a) - b).abs() < 1e-6;
+    sky == FrameSky {
+        daytime_ticks: tick,
+        weather,
+    } && near(quick.sky_factor, at.sky_light_factor)
+        && near(quick.sky.x, f64::from(at.sky_color[0]) / 255.0)
+        && near(quick.fog.z, f64::from(at.fog_color[2]) / 255.0)
+        && near(hq.zenith.z, cell.sky_color.blue * cell.sky_light)
+        && (hq.sun_color.x > 0.0) == (cell.sun_draw_texture && hq.sun_dir.y > 0.0)
+}
+
+fn sky_of(f: &CameraFrame) -> FrameSky {
+    FrameSky {
+        daytime_ticks: f.sky.daytime_ticks,
+        weather: f.sky.weather,
+    }
 }
 
 fn cam(name: &str, answers: &str, sky: Option<CameraSky>) -> Camera {
@@ -98,13 +91,14 @@ fn row(name: &str, time: WorldTime, weather: WorldWeather) -> ApprovedRow {
     }
 }
 
-fn scene_of(plan: &[u8], c: Camera, rows: &[ApprovedRow]) -> serde_json::Value {
+fn frame_of(plan: &[u8], c: Camera, rows: &[ApprovedRow]) -> CameraFrame {
     let sheet = CameraSheet {
         campaign_id: camera::plan_campaign_id(plan).unwrap(),
         cameras: vec![c],
     };
-    let e = camera::emit(plan, &sheet, rows, &stood(&sheet)).unwrap();
-    serde_json::from_slice(&e.scenes[0].1).unwrap()
+    camera::frames_of(plan, &sheet, rows, &EmitOptions::default())
+        .unwrap()
+        .remove(0)
 }
 
 /// A plan with its `sky.weather` rewritten.
@@ -115,9 +109,9 @@ fn with_weather(plan: &[u8], weather: &str) -> Vec<u8> {
 }
 
 /// **Criterion 2 — default and override.** A camera with no `sky` answering a
-/// `midnight`+`thunder` row, in a world played at `day` in the `clear`, emits a
-/// midnight sun and the game's midnight sky under thunder; a camera stating
-/// `noon`+`clear` against that row emits a noon sun and nothing of the row's.
+/// `midnight`+`thunder` row, in a world played at `day` in the `clear`, is drawn
+/// under the game's midnight sky under thunder; a camera stating `noon`+`clear`
+/// against that row under noon and nothing of the row's.
 #[test]
 fn a_camera_takes_its_pictures_sky_or_the_one_it_states() {
     let rows = [row(
@@ -125,19 +119,17 @@ fn a_camera_takes_its_pictures_sky_or_the_one_it_states() {
         WorldTime::Midnight,
         WorldWeather::Thunder,
     )];
-    let derived = scene_of(OCEAN, cam("crypt", "concept/crypt", None), &rows);
-    let midnight = scene::sun_at(WorldTime::Midnight.daytime_ticks());
-    assert_eq!(derived["sun"]["altitude"], midnight.altitude, "{derived}");
+    let derived = frame_of(OCEAN, cam("crypt", "concept/crypt", None), &rows);
     assert!(
         carries_sky(
-            &derived,
+            sky_of(&derived),
             WorldTime::Midnight.daytime_ticks(),
             WorldWeather::Thunder
         ),
-        "{derived}"
+        "{derived:?}"
     );
 
-    let stated = scene_of(
+    let stated = frame_of(
         OCEAN,
         cam(
             "crypt",
@@ -149,19 +141,17 @@ fn a_camera_takes_its_pictures_sky_or_the_one_it_states() {
         ),
         &rows,
     );
-    let noon = scene::sun_at(WorldTime::Noon.daytime_ticks());
-    assert_eq!(stated["sun"]["altitude"], noon.altitude, "{stated}");
     assert!(
         carries_sky(
-            &stated,
+            sky_of(&stated),
             WorldTime::Noon.daytime_ticks(),
             WorldWeather::Clear
         ),
-        "{stated}"
+        "{stated:?}"
     );
 
     // A stated rain sky against a clear row: the stated pair, wholly.
-    let stormy = scene_of(
+    let stormy = frame_of(
         OCEAN,
         cam(
             "crypt",
@@ -173,38 +163,41 @@ fn a_camera_takes_its_pictures_sky_or_the_one_it_states() {
         ),
         &[row("concept/quay", WorldTime::Day, WorldWeather::Clear)],
     );
-    assert_eq!(
-        stormy["sun"]["altitude"],
-        scene::sun_at(WorldTime::Dusk.daytime_ticks()).altitude
-    );
     assert!(
-        carries_sky(&stormy, WorldTime::Dusk.daytime_ticks(), WorldWeather::Rain),
-        "{stormy}"
+        carries_sky(
+            sky_of(&stormy),
+            WorldTime::Dusk.daytime_ticks(),
+            WorldWeather::Rain
+        ),
+        "{stormy:?}"
     );
 }
 
-/// **Criterion 2 — each scene kind reads its sky from its own source** (§5): of
-/// one plan played at `dusk` in the `rain`, the panorama and a review frame are
-/// under its rain, and a showcase camera stating `dusk`+`clear` — against a row drawn
-/// in that rain — is not; a camera deriving a `clear` row is not either, because
-/// a camera's sky is its picture's, not the plan's.
+/// **Criterion 2 — each frame kind reads its sky from its own source** (§5): of
+/// one plan played at `dusk` in the `rain`, the panorama is under its rain, and
+/// a showcase camera stating `dusk`+`clear` — against a row drawn in that rain —
+/// is not; a camera deriving a `clear` row is not either, because a camera's
+/// sky is its picture's, not the plan's. A review frame's sky is its shot's own
+/// (`delvec frames` reads it off the shot, `index::plan_shots`).
 #[test]
-fn each_scene_kind_reads_its_sky_from_its_own_source() {
+fn each_frame_kind_reads_its_sky_from_its_own_source() {
     let rain = with_weather(MINI, "rain");
     let pano =
         panorama::panorama_from_plan(&rain, &[], &panorama::PanoramaOptions::default()).unwrap();
-    let pano: serde_json::Value = serde_json::from_slice(&pano.bytes).unwrap();
     let dusk = WorldTime::Dusk.daytime_ticks();
-    assert!(carries_sky(&pano, dusk, WorldWeather::Rain), "{pano}");
+    assert!(
+        carries_sky(
+            FrameSky {
+                daytime_ticks: pano.sky.daytime_ticks,
+                weather: pano.sky.weather
+            },
+            dusk,
+            WorldWeather::Rain
+        ),
+        "{pano:?}"
+    );
 
-    let review = scene::scenes_from_plan(&rain, &scene::SceneOptions::default(), &[]).unwrap();
-    assert!(!review.is_empty());
-    for (name, bytes) in &review {
-        let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
-        assert!(carries_sky(&v, dusk, WorldWeather::Rain), "{name}");
-    }
-
-    let stated_clear = scene_of(
+    let stated_clear = frame_of(
         &rain,
         cam(
             "gate",
@@ -217,19 +210,30 @@ fn each_scene_kind_reads_its_sky_from_its_own_source() {
         &[row("concept/gate", WorldTime::Dusk, WorldWeather::Rain)],
     );
     assert!(
-        carries_sky(&stated_clear, dusk, WorldWeather::Clear),
-        "{stated_clear}"
+        carries_sky(sky_of(&stated_clear), dusk, WorldWeather::Clear),
+        "{stated_clear:?}"
     );
 
-    let derived_clear = scene_of(
+    let derived_clear = frame_of(
         &rain,
         cam("gate", "concept/gate", None),
         &[row("concept/gate", WorldTime::Dusk, WorldWeather::Clear)],
     );
     assert!(
-        carries_sky(&derived_clear, dusk, WorldWeather::Clear),
-        "{derived_clear}"
+        carries_sky(sky_of(&derived_clear), dusk, WorldWeather::Clear),
+        "{derived_clear:?}"
     );
+
+    // A review frame: the sky the shot states, whatever the plan's.
+    let shot = serde_json::json!({"campaign_id": "mini", "shots": [{
+        "id": "pov/leg0/wp0", "kind": "pov", "world": "after-obj-x",
+        "camera": {"pos": [4.5, 70.0, 4.5], "yaw": 0.0, "pitch": 5.0, "fov": 70.0},
+        "sky": {"time": "midnight", "daytime_ticks": 18000, "weather": "thunder",
+                "set_by": "obj/x"},
+        "mode": "quick"}]});
+    let (_, shots) =
+        delvec::compiler::view::index::plan_shots(&serde_json::to_vec(&shot).unwrap()).unwrap();
+    assert!(carries_sky(shots[0].sky, 18000, WorldWeather::Thunder));
 }
 
 /// A campaign directory holding what `delvec cameras` and `delvec
@@ -424,30 +428,20 @@ fn the_gallery_reaches_every_weather_and_every_class() {
     }))
     .unwrap();
 
-    let emission = camera::emit(&plan, &sheet, &rows, &stood(&sheet)).unwrap();
-    assert_eq!(emission.scenes.len(), sheet.cameras.len());
+    let emission = camera::frames_of(&plan, &sheet, &rows, &EmitOptions::default()).unwrap();
+    assert_eq!(emission.len(), sheet.cameras.len());
     let mut weathers = std::collections::BTreeMap::<&str, usize>::new();
     let mut classes = std::collections::BTreeMap::<&str, usize>::new();
-    for (c, (_, bytes)) in sheet.cameras.iter().zip(&emission.scenes) {
-        let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+    for (c, f) in sheet.cameras.iter().zip(&emission) {
         let resolved = camera::resolve_sky(c, &rows).unwrap();
-        // Read off the scene: its marker names the weather its map is drawn
-        // under, and the scene carries that sky of its tick.
-        let read: WorldWeather = serde_json::from_value(
-            v["delvewrightSky"]
-                .get("weather")
-                .cloned()
-                .unwrap_or(serde_json::json!("clear")),
-        )
-        .unwrap();
-        let weather = read.keyword();
+        let weather = f.sky.weather.keyword();
         assert!(
-            carries_sky(&v, resolved.sky.time.daytime_ticks(), read),
-            "{}: {v}",
+            carries_sky(sky_of(f), resolved.sky.time.daytime_ticks(), f.sky.weather),
+            "{}: {f:?}",
             c.name
         );
         assert_eq!(weather, resolved.sky.weather.keyword(), "{}", c.name);
-        let altitude = v["sun"]["altitude"].as_f64().unwrap().to_degrees();
+        let altitude = scene::sun_at(f.sky.daytime_ticks).altitude.to_degrees();
         let class = if altitude >= 20.0 {
             "high"
         } else if altitude >= 0.0 {
@@ -473,54 +467,36 @@ fn the_gallery_reaches_every_weather_and_every_class() {
     );
     assert_eq!(stated, 1, "one gallery camera states its own sky");
 
-    // Perturbation: the stated sky's weather `clear` -> `rain` moves its bytes.
+    // Perturbation: the stated sky's weather `clear` -> `rain` moves its frame's sky.
     let i = sheet.cameras.iter().position(|c| c.sky.is_some()).unwrap();
     let mut moved = sheet.clone();
     moved.cameras[i].sky.as_mut().unwrap().weather = WorldWeather::Rain;
-    let after = camera::emit(&plan, &moved, &rows, &stood(&moved)).unwrap();
+    let after = camera::frames_of(&plan, &moved, &rows, &EmitOptions::default()).unwrap();
     assert_ne!(
-        after.scenes[i], emission.scenes[i],
-        "the stated sky reaches a byte"
+        after[i].sky, emission[i].sky,
+        "the stated sky reaches the frame"
     );
-    // The clear cell is bound by the gallery's stated clear camera: its tick
-    // moved (its time `just-risen` -> `high`) moves the sky block it writes,
-    // and keeps it the clear cell of the new tick.
+    assert_ne!(
+        frames::quick_sky(sky_of(&after[i])).fog,
+        frames::quick_sky(sky_of(&emission[i])).fog,
+        "and the colours the renderer is handed"
+    );
+    // The stated clear camera: its tick moved (`just-risen` -> `noon`) moves
+    // the light the renderer is handed.
     assert_eq!(sheet.cameras[i].name, "hall-exterior");
-    let sky_of = |bytes: &[u8]| -> serde_json::Value {
-        let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
-        v["sky"].clone()
-    };
     let mut ticked = sheet.clone();
     ticked.cameras[i].sky.as_mut().unwrap().time = WorldTime::Noon;
-    let noon = camera::emit(&plan, &ticked, &rows, &stood(&ticked)).unwrap();
+    let noon = camera::frames_of(&plan, &ticked, &rows, &EmitOptions::default()).unwrap();
     assert_ne!(
-        sky_of(&noon.scenes[i].1),
-        sky_of(&emission.scenes[i].1),
-        "the stated sky's tick reaches the clear cell's bytes"
+        frames::hq_sky(sky_of(&noon[i])).zenith,
+        frames::hq_sky(sky_of(&emission[i])).zenith,
+        "the stated sky's tick reaches the light"
     );
-    let v: serde_json::Value = serde_json::from_slice(&noon.scenes[i].1).unwrap();
-    assert!(
-        carries_sky(&v, WorldTime::Noon.daytime_ticks(), WorldWeather::Clear),
-        "{v}"
-    );
-    // …and the sky map written beside the scene: its bytes move with the tick,
-    // and are a function of it.
-    let map = |bytes: &[u8]| {
-        sky_image::companion(bytes)
-            .expect("a clear scene names a map")
-            .1
-    };
-    let (own, moved) = (map(&emission.scenes[i].1), map(&noon.scenes[i].1));
-    assert_ne!(
-        own, moved,
-        "the stated sky's tick reaches the sky map's bytes"
-    );
-    assert_eq!(own, map(&emission.scenes[i].1), "the map is byte-stable");
-    eprintln!(
-        "gallery clear cell: hall-exterior skyLight {} at its own tick, {} at noon",
-        sky_of(&emission.scenes[i].1)["skyLight"],
-        sky_of(&noon.scenes[i].1)["skyLight"]
-    );
+    assert!(carries_sky(
+        sky_of(&noon[i]),
+        WorldTime::Noon.daytime_ticks(),
+        WorldWeather::Clear
+    ));
     // …and so does the answered row's weather, for a derived camera.
     let j = sheet.cameras.iter().position(|c| c.sky.is_none()).unwrap();
     let mut rows2 = rows.clone();
@@ -534,10 +510,10 @@ fn the_gallery_reaches_every_weather_and_every_class() {
     } else {
         WorldWeather::Clear
     };
-    let after = camera::emit(&plan, &sheet, &rows2, &stood(&sheet)).unwrap();
+    let after = camera::frames_of(&plan, &sheet, &rows2, &EmitOptions::default()).unwrap();
     assert_ne!(
-        after.scenes[j], emission.scenes[j],
-        "the row's sky reaches a byte"
+        after[j].sky, emission[j].sky,
+        "the row's sky reaches the frame"
     );
 }
 
@@ -545,12 +521,9 @@ fn the_gallery_reaches_every_weather_and_every_class() {
 /// Treehouse Camp's `lantern-night` shape: a camera answering a row drawn
 /// under `{"moon": "high"}` in the clear, in a delve whose world opens at
 /// dusk. The camera's sun is the row's hour — the moon high puts the sun at
-/// the nadir — and the scene carries the clear cell of that tick: the lens
-/// sees the game's night sky, black above, the sky casts the timeline's night
-/// light, the sun gives none
-/// and its disc is not drawn. The same camera answering a clear dusk row
-/// carries the clear cell of the dusk tick: a lit sky the lens sees, and the
-/// sun's disc above the horizon, still giving no light.
+/// the nadir — so the renderer is handed the night: the sky's lightmap factor
+/// the night's, and no sun. The same camera answering a clear dusk row is
+/// handed a lit sky and the sun's disc above the horizon.
 #[test]
 fn a_camera_at_a_night_beat_renders_the_night_sky() {
     let moon_high: WorldTime = serde_json::from_value(serde_json::json!({"moon": "high"})).unwrap();
@@ -558,28 +531,26 @@ fn a_camera_at_a_night_beat_renders_the_night_sky() {
         row("concept/lantern-night", moon_high, WorldWeather::Clear),
         row("concept/evening", WorldTime::Dusk, WorldWeather::Clear),
     ];
-    let night = scene_of(
+    let night = frame_of(
         MINI,
         cam("lantern-night", "concept/lantern-night", None),
         &rows,
     );
-    let altitude = night["sun"]["altitude"].as_f64().unwrap();
     assert!(
-        altitude < 0.0,
-        "the moon high puts the sun under the horizon: {altitude}"
+        scene::sun_at(night.sky.daytime_ticks).altitude < 0.0,
+        "the moon high puts the sun under the horizon"
     );
-    assert!(carries_sky(&night, 18000, WorldWeather::Clear), "{night}");
-    assert_eq!(night["sun"]["drawTexture"], false, "{night}");
+    assert!(carries_sky(sky_of(&night), 18000, WorldWeather::Clear));
+    let n = frames::quick_sky(sky_of(&night));
+    assert!(n.sun_dir.y < 0.0, "no sun drawn: {n:?}");
+    assert_eq!(frames::hq_sky(sky_of(&night)).sun_color.x, 0.0);
 
-    let dusk = scene_of(MINI, cam("evening", "concept/evening", None), &rows);
-    assert!(dusk["sun"]["altitude"].as_f64().unwrap() > 0.0);
-    assert!(
-        carries_sky(&dusk, WorldTime::Dusk.daytime_ticks(), WorldWeather::Clear),
-        "{dusk}"
-    );
-    assert!(
-        dusk["sky"]["apparentSkyLight"].as_f64().unwrap() > 0.0,
-        "{dusk}"
-    );
-    assert_eq!(dusk["sun"]["drawTexture"], true, "{dusk}");
+    let dusk = frame_of(MINI, cam("evening", "concept/evening", None), &rows);
+    assert!(carries_sky(
+        sky_of(&dusk),
+        WorldTime::Dusk.daytime_ticks(),
+        WorldWeather::Clear
+    ));
+    let d = frames::quick_sky(sky_of(&dusk));
+    assert!(d.sun_dir.y > 0.0 && d.sky_factor > n.sky_factor, "{d:?}");
 }

@@ -159,7 +159,7 @@ def emission_tsv(rows: int = 3, states: int = 30) -> str:
 
 
 # The preview-colour oracle reads the vendored appearance table, so the
-# miniature tree carries a miniature one: two blocks, and a `delvec snapshot`
+# miniature tree carries a miniature one: two blocks, and a `delvec blocking-chart`
 # section below claiming exactly that. The claim and the artifact have to be
 # able to disagree, which is why both are parameters.
 def block_appearance_json(blocks: int = 2) -> str:
@@ -188,7 +188,7 @@ def analyze_md(rows: str = "3", states: str = "30") -> str:
 def compiler_md(blocks: str = "2") -> str:
     return (
         "# compiler\n\n"
-        "### `delvec snapshot`\n\n"
+        "### `delvec blocking-chart`\n\n"
         f"The draft paints from the pinned jar: {blocks} of {blocks} non-air "
         "blocks resolve.\n"
     )

@@ -1,27 +1,29 @@
-//! The **CPU render surface** — the part of the visual channel that ships in the
-//! one binary a creator installs (ADR-0021 §1).
+//! The **render surface** — the visual channel that ships in the one binary a
+//! creator installs (ADR-0021 §1, ADR-0023 §3).
 //!
-//! Everything here is CPU: JSON emission, PNG compositing, and a self-contained
-//! HTML page. Nothing in this module reaches a GPU, a Vulkan loader or
-//! `nucleation`, so every arm below runs on a machine with no adapter. The
-//! `view::` prefix is what makes that edge visible in review: a `use
-//! nucleation::…` under this directory is the defect, and it has exactly one
-//! legitimate home, which is the render crate.
+//! Every review frame, showcase camera and panorama is drawn here, in this
+//! process, by Lumenwright linked as a library ([`frames`], spec-0112 §6): on
+//! the GPU wgpu finds, or on the CPU when there is none, the same frame either
+//! way. The other arms are CPU: JSON emission, PNG compositing, and a
+//! self-contained HTML page. `nucleation` has exactly one legitimate home,
+//! which is the prefab-piece render crate (`crates/delvec/src/render`).
 //!
 //! The arms it backs, all reachable as `delvec` subcommands:
 //!
+//! - [`frameset`] — `delvec frames`: a build's review set, drawn, with the shot
+//!   index beside it.
+//! - [`review`] — the worlds a review frame stands in, written by the build.
 //! - [`viewer`] — prefabs → one self-contained interactive HTML page, the camera
 //!   a reviewer drives.
-//! - [`scene`] — Chunky scene emission from the compiler's `render-plan.json`
-//!   (the free-camera path behind the first-person player-POV shots).
 //! - [`panorama`] — the oblique exterior of the built place, the storybook shot,
 //!   solved for a subject.
 //! - [`camera`] — the showcase camera record (`design/cameras.json`): a stated
 //!   camera on the assembled world, estimated from an approved image or placed
-//!   by hand, and its Chunky scene — the one reader of that record.
+//!   by hand — the one reader of that record.
 //! - [`sheet`] — the contact sheet: many candidate renders on one page, ordered
 //!   by a similarity score that RANKS and never gates.
-//! - [`index`] — shot index: (image ↔ expect) pairs for the vision reviewer.
+//! - [`index`] — the shot index: (image ↔ expect) pairs for the vision reviewer,
+//!   each saying what its frame shows.
 //! - [`blockcolor`] — blockstate → colour and shape, derived from the client jar,
 //!   which is also what `palette` prints.
 //!
@@ -33,41 +35,35 @@
 //!   length (`DW0893`), and where a body stands back along an anchor's facing so
 //!   the frame shows the room it stands in.
 //!
-//! and the pieces those rest on: [`assets`] (lazy read access to the client jar /
-//! resource pack), [`cache`] (Chunky's derived per-scene caches and their
-//! invalidation), [`font`] (the built-in 5×7 bitmap font the sheet labels cells
-//! with), [`meta`] (prefab metadata — sockets/anchors), [`nbt`] (the vanilla
-//! structure reader), [`tileset`] (a zone past the 48-per-axis template cap,
-//! reassembled from its manifest so an author reviews one scene and never a
-//! fragment), and [`diag`] (the `DW072x` / `DW079x` diagnostics and exit codes,
-//! shared with the GPU arms).
-//!
-//! What is deliberately NOT here is the GPU half — `piece`, `batch` and
-//! `fidelity-gate`, which mesh and rasterise through `nucleation`/`wgpu`. Those
-//! live in `crates/delvec/src/render` and are built from a checkout rather than shipped on
-//! the shelf (ADR-0021 §3). That is a statement about distribution and never
-//! about capability: the source build is what guarantees a creator can run every
-//! validation the pipeline needs, and the skill's `Init` section builds the arm
-//! at the step that needs it.
+//! and the pieces those rest on: [`frames`] (the one function every frame goes
+//! through), [`scene`] (the sky a frame is taken under, and the plan it is read
+//! from), [`world`] (the one writer of a world), [`assets`] (lazy read access to
+//! the client jar / resource pack), [`font`] (the built-in 5×7 bitmap font the
+//! sheet labels cells with), [`meta`] (prefab metadata — sockets/anchors),
+//! [`nbt`] (the vanilla structure reader), [`tileset`] (a zone past the
+//! 48-per-axis template cap, reassembled from its manifest so an author reviews
+//! one scene and never a fragment), and [`diag`] (the `DW072x` / `DW079x`
+//! diagnostics and exit codes, shared with the prefab-piece arms).
 
 pub mod assets;
 pub mod beat;
 pub mod blockcolor;
-pub mod cache;
 pub mod camera;
 pub mod cli;
 pub mod detect;
 pub mod diag;
 pub mod font;
+pub mod frames;
+pub mod frameset;
 pub mod index;
 pub mod meta;
 pub mod nbt;
 pub mod panorama;
+pub mod review;
 pub mod scene;
 pub mod sheet;
 pub mod showing;
 pub mod sight;
-pub mod sky_image;
 pub mod tileset;
 pub mod viewer;
 pub mod world;

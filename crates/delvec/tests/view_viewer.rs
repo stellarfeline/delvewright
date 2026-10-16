@@ -1083,7 +1083,7 @@ fn the_render_arms_refuse_an_unmeasured_piece_before_they_resolve_textures() {
         let arm = args[0].to_string();
         // **Every fallback closed, or this test only discriminates on a machine
         // with no client jar.** `resolve_textures` tries `--textures`, then
-        // `$DELVEWRIGHT_CLIENT_JAR`, then `$HOME/.chunky/resources/minecraft.jar`
+        // `$DELVEWRIGHT_CLIENT_JAR`, then Init I5's `$HOME/.delvewright/client/` jar
         // — so on a developer's own machine it succeeds whatever `--textures`
         // says, the run reaches the gate either way, and the assertion below
         // passes for both orderings. Measured: with the gate deliberately moved

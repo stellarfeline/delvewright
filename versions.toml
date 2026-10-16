@@ -27,6 +27,18 @@ server_jar_url = "https://piston-data.mojang.com/v1/objects/64bb6d763bed0a9f1d63
 server_jar_sha1 = "64bb6d763bed0a9f1d632ec347938594144943ed"
 server_jar_sha256 = "f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726"
 server_jar_size = 56327581
+# Mojang client jar, from piston-meta 1.21.11 (downloads.client): the textures
+# and models every frame is drawn with. NEVER committed, cached in the
+# repository or redistributed (ADR-0010, ADR-0023 §9); a creator puts it on
+# their machine at Init I5, and `validation/client-jar-cache.sh` fetches it once
+# per CI job and refuses anything whose sha256 is not the pin below.
+# Consumed by: validation/client-jar-cache.sh, tools/maintenance/derive-client-textures.py,
+# tools/maintenance/extract-model-parts.py, the texture census header
+# (crates/delvec/data/textures-1.21.11.json).
+client_jar_url = "https://piston-data.mojang.com/v1/objects/ba2df812c2d12e0219c489c4cd9a5e1f0760f5bd/client.jar"
+client_jar_sha1 = "ba2df812c2d12e0219c489c4cd9a5e1f0760f5bd"
+client_jar_sha256 = "1473c9489ac50fda3c435049a76a70d61a10b8610db27f5ba9d8756b686cd3bd"
+client_jar_size = 31152600
 
 [datapack]
 # Datapack pack_format for 1.21.11 (min_format = max_format = [94, 1]).
@@ -319,82 +331,21 @@ sha = "ff73411a1d7feabad57a4537e1384402a2b096d0"
 nucleation_version = "0.10.14"
 nucleation_license = "MIT"
 
-# Chunky (whole-scene path tracer, GPL-3.0, out-of-process — NOT bundled). The
-# OFFICIAL renderer for review frames, storybook art and the release panorama
-# invoked as a separate program, never linked.
-# 1.21.x needs a snapshot core (stable stops at 1.20.4); this is the snapshot the
-# spike verified. The launcher's `--update` installs a CHANNEL's newest build and
-# cannot be asked for this one, so `validation/chunky-install.sh` builds it from
-# `chunky_source` at `chunky_revision` with Chunky's own Gradle build, under the
-# JDK its toolchain declares at that revision (`chunky_build_java`), and installs
-# it only when the jar answers `chunky_core_content_sha256` — the digest over the
-# jar's entries that `tools/lib/chunky_core.py` defines. Measured when recorded:
-# the launcher-installed core (md5 975D8F95B017CEE750B851F5C39AA51A) and a source
-# build at this revision answer the same digest, and the next snapshot does not.
-# `validation/chunky.sh` renders with that core and nothing else.
-# Consumed by: crates/delvec/src/compiler (scene emission targets this scene format),
-# validation/chunky-install.sh, validation/chunky.sh, validation/render-shots.sh
-# (through tools/lib/versions.py) + docs/reference/tools.md §4a.
-chunky_core = "chunky-core-2.5.0-SNAPSHOT.474.g156e2bb"
-chunky_source = "https://github.com/chunky-dev/chunky.git"
-chunky_revision = "156e2bba2526fe4cf218243704b6f3e6d0281d1a"
-chunky_build_java = "17"
-chunky_core_content_sha256 = "6710920a30882d3e8a32121c8d97ce940a9f35539137ef91fff0e70256a809fc"
-chunky_license = "GPL-3.0"
-
-# The denoise step after every Chunky `-render` (`compiler.md` §4): the
-# chunky-denoiser plugin renders a scene's albedo and normal passes, and Open
-# Image Denoise removes the grain the lantern-scaled emitters leave. Both are
-# external programs, acquired by `validation/chunky-install.sh` into the Chunky
-# home only when the downloaded bytes answer these sha256s, and run by
-# `validation/chunky.sh` (`tools/lib/chunky_denoise.py`). Open Image Denoise is
-# pinned per platform its project ships an archive for; on a platform it ships
-# none for (aarch64 Linux among the engine's targets) it is built from its pinned
-# source release with pinned CMake, Ninja and ISPC and a pinned oneTBB source,
-# which needs only a C and C++ compiler on the machine; a platform with neither
-# an archive nor a pinned source build, or a source build with no compiler, is
-# refused by name.
-# Digests: GitHub's release-asset sha256, cross-checked by hashing each
-# downloaded file. GPL-3.0 (plugin) and Apache-2.0 (Open Image Denoise).
-# Consumed by: tools/lib/chunky_denoise.py, validation/chunky-install.sh,
-# validation/chunky.sh + docs/reference/tools.md §4a.
-denoiser_plugin_version = "0.5.0-pre3"
-denoiser_plugin_url = "https://github.com/chunky-dev/chunky-denoiser/releases/download/v0.5.0-pre3/chunky-denoiser-v0.5.0-pre3.jar"
-denoiser_plugin_sha256 = "70157d9936b38b0a14efe6c8317b812e5c7c0429d7049d2e106e1b30093bc812"
-denoiser_plugin_license = "GPL-3.0"
-oidn_version = "2.5.1"
-oidn_license = "Apache-2.0"
-oidn_url_base = "https://github.com/RenderKit/oidn/releases/download/v2.5.1/"
-oidn_archive_aarch64_apple_darwin = "oidn-2.5.1.arm64.macos.tar.gz"
-oidn_sha256_aarch64_apple_darwin = "98e0aca8e7ab69e9f4f0191582a500fd8b0d9085d68662f18ab6469e934a6efd"
-oidn_archive_x86_64_apple_darwin = "oidn-2.5.1.x86_64.macos.tar.gz"
-oidn_sha256_x86_64_apple_darwin = "a4341639005a33ce0d944bd7c771ce34de1465be7eb3189b7c3b5b0064429832"
-oidn_archive_x86_64_unknown_linux_gnu = "oidn-2.5.1.x86_64.linux.tar.gz"
-oidn_sha256_x86_64_unknown_linux_gnu = "743c3e2aff8c220d5d70fe6cb970fb3d36f2702d2693c61d1d148e404cf37cd6"
-oidn_archive_x86_64_pc_windows_msvc = "oidn-2.5.1.x64.windows.zip"
-oidn_sha256_x86_64_pc_windows_msvc = "f11f91bc072a5e3a564515724cb72ab8fcfbc445c84a84c197ff9b16cc01396f"
-# The source build (oneTBB Apache-2.0, CMake BSD-3-Clause, Ninja Apache-2.0,
-# ISPC BSD-3-Clause; ISPC 1.30.0 is the oldest Open Image Denoise 2.5.1's build
-# accepts). oneTBB ships no source asset, so its tag archive is pinned; two
-# downloads answered the same digest. The tool archives are pinned for the
-# platforms that build from source.
-oidn_source_archive = "oidn-2.5.1.src.tar.gz"
-oidn_source_sha256 = "e71fd043a70f1cc80e301d1b90df6c1f536098c4dd94baa612742f6db3369c36"
-oidn_build_tbb_name = "oneTBB-v2022.3.0.tar.gz"
-oidn_build_tbb_url = "https://github.com/uxlfoundation/oneTBB/archive/refs/tags/v2022.3.0.tar.gz"
-oidn_build_tbb_sha256 = "01598a46c1162c27253a0de0236f520fd8ee8166e9ebb84a4243574f88e6e50a"
-oidn_build_cmake_url_base = "https://github.com/Kitware/CMake/releases/download/v4.3.5/"
-oidn_build_cmake_aarch64_unknown_linux_gnu = "cmake-4.3.5-linux-aarch64.tar.gz"
-oidn_build_cmake_sha256_aarch64_unknown_linux_gnu = "0ccecc2ba6b5ed4a97fbfd1f52136a9120262908185d8419c1ed2abb09199245"
-oidn_build_ninja_url_base = "https://github.com/ninja-build/ninja/releases/download/v1.13.2/"
-oidn_build_ninja_aarch64_unknown_linux_gnu = "ninja-linux-aarch64.zip"
-oidn_build_ninja_sha256_aarch64_unknown_linux_gnu = "fd2cacc8050a7f12a16a2e48f9e06fca5c14fc4c2bee2babb67b58be17a607fc"
-oidn_build_ispc_url_base = "https://github.com/ispc/ispc/releases/download/v1.30.0/"
-oidn_build_ispc_aarch64_unknown_linux_gnu = "ispc-v1.30.0-linux.aarch64.tar.gz"
-oidn_build_ispc_sha256_aarch64_unknown_linux_gnu = "509399c399ec162d746889458a10cc13797a1aed1c0164b2bd3faddf7d023f13"
+# Lumenwright (GPL-3.0-or-later) — the renderer every review frame, showcase
+# camera and panorama is drawn by, linked into `delvec` as a library and called
+# in-process (spec-0112 §6). In development it is a git dependency by exact
+# revision, and this is that revision: `validation/check-versions.sh` holds the
+# manifest's `rev` and `frames::RENDERER_REVISION` equal to it, so the revision
+# a frame names is the one that drew it. Moved by a reviewed edit. At release it
+# becomes a registry dependency by `=` version, which needs `lumenwright` and
+# `lumenwright-kernel` on crates.io first.
+# Consumed by: crates/delvec/Cargo.toml (`lumenwright = { git, rev }`),
+# crates/delvec/src/compiler/view/frames.rs + docs/reference/tools.md §4a.
+lumenwright_revision = "ed3f049cc496d5f1b7df9829bda1bcb443ad1d06"
+lumenwright_license = "GPL-3.0-or-later"
 
 # deepslate (MIT) — the rendering core of the prefab review page
-# (`delvec viewer`, ADR-0021 §4). Unlike Chunky it IS bundled: the page is
+# (`delvec viewer`, ADR-0021 §4). It IS bundled: the page is
 # one self-contained file, so the renderer ships inside it as
 # `crates/delvec/src/compiler/view/viewer/deepslate.bundle.js`. Vendored, never forked — the
 # bundle carries one local patch, of two block-entity texture ids upstream points
@@ -412,15 +363,6 @@ deepslate_bundle = "crates/delvec/src/compiler/view/viewer/deepslate.bundle.js"
 deepslate_bundle_sha256 = "0d9496f187600b479bb83d015e49eccbf70997c5886f0c70b101ca4595bb2c46"
 gl_matrix_version = "3.4.4"
 esbuild_version = "0.28.2"
-
-# Textures come from the pinned 1.21.11 client jar (the same MC version as
-# [minecraft]). Never committed (EULA); resolved at run time from --textures,
-# $DELVEWRIGHT_CLIENT_JAR, or ~/.chunky/resources/minecraft.jar.
-textures = "minecraft-client-1.21.11.jar"
-# The sha256 of that jar. `tools/maintenance/derive-client-textures.py` refuses
-# any other jar, and `crates/delvec/data/textures-1.21.11.json` (the census a
-# `world.textures[]` row is judged against, spec-0084) states it in its header.
-textures_sha256 = "1473c9489ac50fda3c435049a76a70d61a10b8610db27f5ba9d8756b686cd3bd"
 
 [ci]
 # The toolchains CI selects, and the packages it installs into them. Until these

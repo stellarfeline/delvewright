@@ -371,8 +371,8 @@ pub struct HandedView {
     /// The view's note, when it has one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    /// The `delvec snapshot` invocation that renders it over the whole.
-    pub snapshot: String,
+    /// The `delvec frames --campaign` invocation that draws it over the whole.
+    pub frame: String,
 }
 
 /// The ground the whole hands the place (spec-0098 §2c), piece-local.
@@ -522,7 +522,7 @@ fn kind_of(b: &PlacedBox) -> String {
     if b.open { "open" } else { "roofed" }.to_string()
 }
 
-/// The `delvec snapshot --camera` value that stands at `eye` looking at `at`.
+/// The `delvec frames --camera` value that stands at `eye` looking at `at`.
 fn camera(eye: [i64; 3], at: [i64; 3]) -> String {
     let d = [
         (at[0] - eye[0]) as f64,
@@ -661,8 +661,8 @@ pub fn allocation(c: &Campaign, node: &NodeId) -> Option<Allocation> {
                 .map(|v| HandedView {
                     id: v.id.0.clone(),
                     note: v.note.clone(),
-                    snapshot: format!(
-                        "delvec snapshot <campaign> --camera {}",
+                    frame: format!(
+                        "delvec frames --campaign <campaign> --camera {}",
                         camera(v.eye, v.look_at)
                     ),
                 })

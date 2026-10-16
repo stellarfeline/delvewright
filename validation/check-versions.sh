@@ -51,7 +51,8 @@ emit("MINEFLAYER",        d["harness"]["mineflayer"])
 emit("CONTENT_REPO",      d["content"]["repo"])   # spec-0007 pinned content repo
 emit("CONTENT_SHA",       d["content"]["sha"])
 emit("NUCLEATION_VERSION", d["render"]["nucleation_version"])   # spec-0007 render layer
-emit("CHUNKY_CORE",       d["render"]["chunky_core"])
+emit("LUMENWRIGHT_REVISION", d["render"]["lumenwright_revision"])
+emit("LUMENWRIGHT_LICENSE",  d["render"]["lumenwright_license"])
 emit("DEEPSLATE_VERSION", d["render"]["deepslate_version"])
 emit("GL_MATRIX_VERSION", d["render"]["gl_matrix_version"])
 emit("ESBUILD_VERSION",   d["render"]["esbuild_version"])
@@ -192,37 +193,56 @@ else
   fail "$DEEPSLATE_BUNDLE missing (the review page has no renderer to embed)"
 fi
 
-# Chunky is a snapshot core (1.21.x needs it); assert the pin looks like one.
-if [[ $CHUNKY_CORE =~ ^chunky-core-.*SNAPSHOT ]]; then
-  pass "render.chunky_core is a snapshot build ($CHUNKY_CORE)"
+# Lumenwright draws every frame, linked as a library (spec-0112 §6.2): in
+# development by git revision, and that revision is ONE number — the
+# manifest's `rev`, the pin here, and the revision the binary states on every
+# frame (`frames::RENDERER_REVISION`). A path dependency, or a branch, names no
+# revision at all, so the manifest is parsed rather than grepped.
+if [[ $LUMENWRIGHT_REVISION =~ ^[0-9a-f]{40}$ ]]; then
+  pass "render.lumenwright_revision is a full 40-hex commit ($LUMENWRIGHT_REVISION)"
 else
-  fail "render.chunky_core '$CHUNKY_CORE' is not a chunky-core snapshot build"
+  fail "render.lumenwright_revision '$LUMENWRIGHT_REVISION' is not a full 40-hex commit"
 fi
-
-# The core's name carries the revision it was built from (`.g<sha7>`), and the
-# installer builds `chunky_revision`: the two are one revision or the install
-# builds a core the name does not describe.
-CHUNKY_REVISION="$(python3 "$ROOT/tools/lib/versions.py" render.chunky_revision 2>/dev/null || true)"
-if [[ $CHUNKY_CORE =~ \.g([0-9a-f]{7})$ ]] && [[ $CHUNKY_REVISION == "${BASH_REMATCH[1]}"* ]]; then
-  pass "render.chunky_revision is the revision render.chunky_core names ($CHUNKY_REVISION)"
-else
-  fail "render.chunky_revision '$CHUNKY_REVISION' is not the revision render.chunky_core '$CHUNKY_CORE' names"
-fi
-
-# The emitter states the same revision in Rust — `delvec scene` prints it on
-# every run, and the camera basis it implements was read off that core's
-# bytecode. A binary carries no versions.toml, so the constant cannot read the
-# pin at run time; what it can be is BOUND to it, which is what makes
-# versions.toml the one home rather than one of two places the number lives.
-SCENE_RS="$ROOT/crates/delvec/src/compiler/view/scene.rs"
-if [ -f "$SCENE_RS" ]; then
-  if grep -qF "pub const CHUNKY_CORE: &str = \"$CHUNKY_CORE\";" "$SCENE_RS"; then
-    pass "scene::CHUNKY_CORE == render.chunky_core ($CHUNKY_CORE)"
+if [ -f "$DELVEC_CARGO" ]; then
+  LW_DEP="$(python3 - "$DELVEC_CARGO" <<'PY'
+import sys, tomllib
+sys.stdout.reconfigure(newline="\n")
+dep = tomllib.load(open(sys.argv[1], "rb")).get("dependencies", {}).get("lumenwright")
+if not isinstance(dep, dict):
+    print("absent")
+else:
+    keys = sorted(dep)
+    print(dep.get("git", "") + " " + str(dep.get("rev", "")) + " " + str(dep.get("default-features", "")) + " " + ",".join(dep.get("features", [])) + " " + ("path" if "path" in dep else "nopath"))
+PY
+)"
+  read -r LW_GIT LW_REV LW_DEFAULTS LW_FEATURES LW_PATH <<<"$LW_DEP"
+  if [ "$LW_DEP" = "absent" ]; then
+    fail "crates/delvec/Cargo.toml declares no \`lumenwright\` dependency table"
+  elif [ "$LW_PATH" = "path" ]; then
+    fail "crates/delvec/Cargo.toml names lumenwright by \`path\`: a path builds whatever that checkout holds; name it by \`git\` and \`rev\`"
+  elif [ "$LW_GIT" = "https://github.com/stellarfeline/lumenwright" ] && [ "$LW_REV" = "$LUMENWRIGHT_REVISION" ]; then
+    pass "lumenwright rev -> crates/delvec/Cargo.toml ($LW_REV)"
   else
-    fail "scene::CHUNKY_CORE in ${SCENE_RS##*/} does not state render.chunky_core '$CHUNKY_CORE' — every \`delvec scene\` run would name a core versions.toml does not pin"
+    fail "crates/delvec/Cargo.toml names lumenwright at git '$LW_GIT' rev '$LW_REV', not render.lumenwright_revision '$LUMENWRIGHT_REVISION'"
+  fi
+  if [ "$LW_DEFAULTS" = "False" ] && [ "$LW_FEATURES" = "gpu" ]; then
+    pass "lumenwright is taken with default-features = false, features = [\"gpu\"]"
+  else
+    fail "crates/delvec/Cargo.toml takes lumenwright with default-features '$LW_DEFAULTS' and features '$LW_FEATURES', not false and [\"gpu\"]"
   fi
 else
-  fail "${SCENE_RS##*/} is missing — nothing binds the emitted 'render with <core>' line to render.chunky_core"
+  fail "crates/delvec/Cargo.toml missing (cannot verify the lumenwright pin)"
+fi
+FRAMES_RS="$ROOT/crates/delvec/src/compiler/view/frames.rs"
+if [ -f "$FRAMES_RS" ] && grep -qF "pub const RENDERER_REVISION: &str = \"$LUMENWRIGHT_REVISION\";" "$FRAMES_RS"; then
+  pass "frames::RENDERER_REVISION == render.lumenwright_revision"
+else
+  fail "frames::RENDERER_REVISION in crates/delvec/src/compiler/view/frames.rs does not state render.lumenwright_revision '$LUMENWRIGHT_REVISION' — every frame would name a renderer versions.toml does not pin"
+fi
+if [ "$LUMENWRIGHT_LICENSE" = "GPL-3.0-or-later" ]; then
+  pass "render.lumenwright_license is GPL-3.0-or-later"
+else
+  fail "render.lumenwright_license '$LUMENWRIGHT_LICENSE' is not the licence Lumenwright's LICENSE states (GPL-3.0-or-later)"
 fi
 
 echo "== Engine release line ([engine], ADR-0016 / ADR-0017 / ADR-0023) =="

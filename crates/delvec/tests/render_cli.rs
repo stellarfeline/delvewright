@@ -42,7 +42,7 @@ fn prefab(name: &str) -> PathBuf {
 
 #[test]
 fn piece_without_textures_is_dw0723_exit5() {
-    // No --textures, and an empty HOME so `~/.chunky/resources/minecraft.jar`
+    // No --textures, and an empty HOME so Init I5's `~/.delvewright/client/` jar
     // cannot exist; DELVEWRIGHT_CLIENT_JAR is stripped too.
     //
     // **The input is a real, measured library piece**, and it has to be. This

@@ -149,7 +149,12 @@ fn summoned_texture_refs(out: &Path) -> BTreeSet<String> {
             let mut at = 0usize;
             while let Some(i) = text[at..].find(PREFIX) {
                 let start = at + i;
-                let end = text[start..].find('"').expect("a texture ref is quoted") + start;
+                // Quoted in a function; in a JSON record of the line (the
+                // placements ledger) the quote is escaped, `\"`.
+                let end = text[start..]
+                    .find(['"', '\\'])
+                    .expect("a texture ref is quoted")
+                    + start;
                 found.insert(text[start..end].to_string());
                 at = end;
             }

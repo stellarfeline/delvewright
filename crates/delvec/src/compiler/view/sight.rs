@@ -15,8 +15,8 @@
 //!
 //! A frame is blind when **more than half of it is a surface across the view
 //! within arm's reach**. It is measured by casting [`SIGHT_SAMPLES`]² rays through
-//! the pixel centres of the frame (the draft renderer's own camera and voxel walk,
-//! [`crate::compiler::snapshot`]) and counting the rays whose first hit is
+//! the pixel centres of the frame (the framing camera and voxel walk,
+//! [`crate::compiler::framing`]) and counting the rays whose first hit is
 //!
 //! * a face turned **toward the camera** — its normal within 45° of the view
 //!   axis — and
@@ -90,7 +90,7 @@
 
 use delvewright_dsl::metrics::PLAYER_EYE_HEIGHT;
 
-use crate::compiler::snapshot::{Camera, VoxelGrid};
+use crate::compiler::framing::{Camera, VoxelGrid};
 use crate::compiler::view::blockcolor;
 use crate::compiler::view::diag::Diagnostic;
 use crate::compiler::view::nbt::Structure;

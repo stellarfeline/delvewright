@@ -181,7 +181,7 @@ What the numbers cannot decide, stated so you do not wait for them to:
 **When the tool cannot run.** It needs two things that are not always there: the
 pinned block registry at `crates/dsl/data/blocks-1.21.11.json`, and a
 1.21.11 client jar (`--jar`, `$DELVEWRIGHT_CLIENT_JAR`, or
-`~/.chunky/resources/minecraft.jar`). Missing either one is a named refusal that
+`~/.delvewright/client/minecraft-1.21.11.jar`). Missing either one is a named refusal that
 says which. **The step does not become optional** — it becomes a different
 source of measured names: the rule library is a corpus somebody already
 measured, so take roles from it (`delvec grammar list`, then `delvec grammar show

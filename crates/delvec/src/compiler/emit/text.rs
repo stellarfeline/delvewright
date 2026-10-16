@@ -81,8 +81,18 @@ pub fn check_untranslated_literals(
 /// separately, before zipping). The compiler writes no authored string into any of
 /// these, so they are outside the `DW0185` scan; everything else must be readable
 /// text, and a new output that is neither fails the scan rather than skipping it.
+///
+/// One class of compiler-written binary joins them: the **review worlds** under
+/// `validation/worlds/` (spec-0112 §5), Anvil saves the review frames are drawn
+/// from. Every string they hold is a copy — a template's block-entity text, or
+/// a summon compound the datapack emits and this scan reads where it is
+/// emitted — and no world ships in a delve (`validation/Dockerfile.delve`
+/// copies nothing under `validation/`).
 pub(super) fn is_verbatim_binary_output(path: &str) -> bool {
-    path.ends_with(".nbt") || path.ends_with(".png") || path == "resourcepack.zip"
+    path.ends_with(".nbt")
+        || path.ends_with(".png")
+        || path == "resourcepack.zip"
+        || path.starts_with("validation/worlds/")
 }
 
 /// Escape a player-facing string as a double-quoted SNBT string. On 1.21.11

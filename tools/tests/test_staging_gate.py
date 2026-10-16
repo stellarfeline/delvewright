@@ -735,7 +735,7 @@ def test_a_row_may_not_declare_its_own_binding_as_its_precondition(gate, tmp_pat
         gate.load_ledger(bad)
 
 
-def proofs(tree, *, critical_path=True, world=True, other_build=False, items=0):
+def proofs(tree, *, critical_path=True, world=True, other_build=False, items=0, objects=True):
     """The two machine-proof records the gate demands before it mints a token,
     written BESIDE `tree` for its current `manifest.json`: a bot ladder run
     report whose critical path passed, and a written-world record that passed.
@@ -758,7 +758,9 @@ def proofs(tree, *, critical_path=True, world=True, other_build=False, items=0):
     }))
     ww = where / "written-world.json"
     ww.write_text(json.dumps({
-        "check": "written-world", "code": "DW0955", "verdict": "pass" if world and not items else "fail",
+        "check": "written-world", "code": "DW0955",
+        "verdict": "pass" if world and not items and objects else "fail",
+        "cells_verdict": "pass" if world else "fail",
         "manifest_sha256": sha, "compared": 100,
         "classes": {"gravity": 0, "fluid": 0, "re-derived": 0, "clock": 0, "model": 0 if world else 7},
         "model_sample": [] if world else [{"cell": [30, 86, 48], "written": "minecraft:oak_planks",
@@ -767,6 +769,10 @@ def proofs(tree, *, critical_path=True, world=True, other_build=False, items=0):
         # count alone (`check-written-world.py`'s item-entity arm).
         "item_entities": {"entities": items, "items": items, "declared": 0,
                           "sample": [{"pos": [118.84, 66.0, 99.7], "item": "minecraft:gravel", "count": 1}] if items else []},
+        **({} if objects is None else {"objects": {
+            "verdict": "pass" if objects else "fail", "differing": 0 if objects else 1,
+            "sample": [] if objects else ["entity minecraft:villager at [5, 65, 4]: Tags differ"],
+        }}),
     }))
     return ["--run-report", str(run), "--written-world", str(ww)]
 
@@ -2744,6 +2750,8 @@ def test_no_token_without_the_two_proof_records(gate, tmp_path):
         ({"world": False}, "7 cell(s) of 100 compared differ; first [30, 86, 48]: written minecraft:oak_planks / server minecraft:structure_void"),
         ({"other_build": True}, "is a run of another build"),
         ({"items": 347}, "0 cell(s) of 100 compared differ; 347 item entit(y/ies) lie in the save against 0 declared, first minecraft:gravel at [118.84, 66.0, 99.7]"),
+        ({"objects": False}, "written world (DW1040): 1 placed object(s) differ in no class; first: entity minecraft:villager at [5, 65, 4]: Tags differ"),
+        ({"objects": None}, "written world (DW1040): "),
     ],
 )
 def test_a_red_or_foreign_proof_refuses_and_the_override_does_not_reach_it(gate, tmp_path, perturb, said):

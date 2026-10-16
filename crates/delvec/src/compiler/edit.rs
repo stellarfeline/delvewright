@@ -2,7 +2,7 @@
 //!
 //! Replays the optional stage-7 `world-edits.json` deterministically over the
 //! assembled world, **after** assembly and before every downstream consumer —
-//! so relight, nav, wave seating, waypoint export, snapshots and the emitted
+//! so relight, nav, wave seating, waypoint export, frames and the emitted
 //! datapack all see the *edited* world. The edit script is the artifact of
 //! record (ADR-0006): same DSL + same edits + same seed → byte-identical world;
 //! the replay never mutates world files as truth.
@@ -251,7 +251,7 @@ fn shortfall_message(bid: &str, verb: &str, d: Delivery) -> String {
     )
 }
 
-/// One replayed batch's outcome, for snapshot rendering and reporting.
+/// One replayed batch's outcome, for its frame and its report.
 pub struct BatchOutcome {
     /// The batch id (`batch/<kebab>`).
     pub id: String,
@@ -373,7 +373,7 @@ pub fn replay_taking(
     replay_with(plan, prefabs, structures, true, pristine)
 }
 
-/// [`replay`] for **view** commands (`delvec snapshot` / `blocking-chart`): the
+/// [`replay`] for **view** commands (`delvec frames --campaign` / `blocking-chart`): the
 /// edits are applied and gravity re-settles, but the invariant re-proofs are
 /// skipped — a view command must be able to SHOW a world state whose invariants
 /// fail (that is exactly what the author needs to look at). Region-resolution
@@ -633,7 +633,7 @@ fn replay_with(
             warnings.extend(gate_region_warnings(plan, bid, &batch_writes));
         }
 
-        // Runtime materialization + snapshot bounds for this batch.
+        // Runtime materialization + frame bounds for this batch.
         commands.extend(coalesce_commands(&batch_writes));
         batches.push(BatchOutcome {
             id: bid.to_string(),
@@ -859,7 +859,7 @@ fn gate_region_warnings(
                 "world-edits batch `{bid}` writes {} cell(s) (first [{}, {}, {}]) inside a \
                  `close-gate` region [{}, {}, {}]..[{}, {}, {}]. That region is filled solid \
                  when the gate closes and cleared to AIR when it opens, so one close/open \
-                 cycle erases the edit — the dressing you see in `delvec snapshot` is not what \
+                 cycle erases the edit — the dressing you see in `delvec frames --campaign` is not what \
                  players see after the beat fires. Move the edit outside the gate region, or \
                  keep it only if you are deliberately dressing the sealed state",
                 hits.len(),
@@ -897,7 +897,7 @@ fn needs_support(block: &str) -> bool {
 /// under a torch, or a `scatter` that dropped flowers onto bare stone, leaves a
 /// block the server pops off as an item the first time a shape update reaches
 /// it — the edit silently undone, with the compile-time model (which has no
-/// item-drop physics) still showing it in every snapshot.
+/// item-drop physics) still showing it in every frame.
 ///
 /// Advisory for decoration — the finished world is judged by `DW1002`, which
 /// refuses a block the build ships unheld. **Error** when the popped block is a
@@ -979,7 +979,7 @@ fn check_support(
                  none of their neighbours (first at [{}, {}, {}], which needs {asks}). The \
                  server pops a block its `canSurvive` rule does not hold off as an item the \
                  first time a shape update reaches it, so these writes vanish in the delivered \
-                 world while every snapshot still shows them, and a build that ships one is \
+                 world while every frame still shows them, and a build that ships one is \
                  refused (`DW1002`). Fix the support (put soil under flora, keep the floor \
                  under a torch) or reorder the batches so the carve happens first",
                 first[0], first[1], first[2],
@@ -1073,7 +1073,7 @@ fn used_region<'r>(
                 "world-edits batch `{bid}`: region `{name}` resolves to zero cells, so this \
                  edit would be a silent no-op — its palette-match/composition no longer \
                  matches the world it targeted. Re-check the region against a fresh \
-                 `delvec snapshot` and fix the select; do NOT leave a dead edit in the script"
+                 `delvec frames --campaign` and fix the select; do NOT leave a dead edit in the script"
             ),
         });
     }
@@ -1108,7 +1108,7 @@ fn resolve_shape(
                             "world-edits batch `{bid}`: piece index {idx} is out of range — \
                              area `{}` placed {} piece(s) (0..={}). The layout this frame was \
                              authored against has drifted; re-inspect it with `delvec \
-                             snapshot` and update the frame, do NOT guess an index",
+                             frames --campaign` and update the frame, do NOT guess an index",
                             area.area_id,
                             area.pieces.len(),
                             area.pieces.len().saturating_sub(1),
@@ -1119,7 +1119,7 @@ fn resolve_shape(
                             "world-edits batch `{bid}`: piece {idx} of area `{}` is \
                              `{}`, not the frame's declared `{prefab}` — the solved layout \
                              has drifted since this edit was authored. Re-inspect the layout \
-                             (`delvec snapshot`) and re-target the frame; do NOT just delete \
+                             (`delvec frames --campaign`) and re-target the frame; do NOT just delete \
                              the prefab guard",
                             area.area_id, placed.prefab_id,
                         ));
@@ -1151,7 +1151,7 @@ fn resolve_shape(
                                 area.area_id,
                                 delvewright_dsl::Placement::of(plan.campaign).anchor_remedy(
                                     "use an anchor the area's placed prefab metadata declares \
-                                     (see the `delvec snapshot` manifest's target list)"
+                                     (see the `delvec frames --campaign` manifest's target list)"
                                 ),
                             ));
                         }
@@ -1932,7 +1932,7 @@ fn resolve_frame_point(
                 format!(
                     "world-edits batch `{bid}`: piece index {idx} is out of range — area `{}` \
                      placed {} piece(s) (0..={}). The layout this frame was authored against \
-                     has drifted; re-inspect it with `delvec snapshot` and update the frame, \
+                     has drifted; re-inspect it with `delvec frames --campaign` and update the frame, \
                      do NOT guess an index",
                     area.area_id,
                     area.pieces.len(),
@@ -1943,7 +1943,7 @@ fn resolve_frame_point(
                 return Err(format!(
                     "world-edits batch `{bid}`: piece {idx} of area `{}` is `{}`, not the \
                      frame's declared `{prefab}` — the solved layout has drifted since this \
-                     edit was authored. Re-inspect the layout (`delvec snapshot`) and \
+                     edit was authored. Re-inspect the layout (`delvec frames --campaign`) and \
                      re-target the frame; do NOT just delete the prefab guard",
                     area.area_id, placed.prefab_id,
                 ));
@@ -1966,7 +1966,7 @@ fn resolve_frame_point(
                         area.area_id,
                         delvewright_dsl::Placement::of(plan.campaign).anchor_remedy(
                             "use an anchor the area's placed prefab metadata declares (see the \
-                             `delvec snapshot` manifest's target list)"
+                             `delvec frames --campaign` manifest's target list)"
                         ),
                     ));
                 }

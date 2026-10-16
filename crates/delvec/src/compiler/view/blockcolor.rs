@@ -911,8 +911,8 @@ pub const PALETTE_VERSION: u32 = 2;
 /// installed one — and every CI runner — has no assets to derive from. What is
 /// committed is this derivation's output, exactly as the shape-carrying
 /// property table and the font metrics are committed (`crates/delvec/data/`,
-/// `PROVENANCE.md`). It is what lets the CPU draft rasteriser
-/// ([`crate::compiler::snapshot`]) paint what the GPU path paints without
+/// `PROVENANCE.md`). It is what lets the blocking chart
+/// ([`crate::compiler::blocking`]) paint what the GPU path paints without
 /// holding a second opinion about what a block looks like: one derivation, one
 /// jar, two consumers.
 ///

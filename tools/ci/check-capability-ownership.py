@@ -112,11 +112,11 @@ INTERACTION_SITES = {
         "assembly summons and removes it with its parts. The general construct "
         "RIDES it: `TriggerOn::StrikeAssembly` is an ordinary `EnvTrigger` whose "
         "poll and clear read this box's `attack` record (`emit::trigger_carrier_tag`), "
-        "exactly as `strike-npc` rides `npc_summon_commands`'s body, so a hit, a "
+        "exactly as `strike-npc` rides `npc_summon_rows`'s body, so a hit, a "
         "count and what happens at the count are the general trigger, state and "
         "gate. Shape 3, closed rather than catalogued."
     ),
-    "npc_summon_commands": (
+    "npc_summon_rows": (
         "An NPC's dialogue hitbox. Legitimately its own: the box must track a "
         "character's body, not a cell, and it carries the NPC's identity. It is "
         "also the reason `strike-npc` exists as a separate `TriggerOn` variant — a "
@@ -149,7 +149,7 @@ INTERACTION_SITES = {
         "mechanism: the body is arrayed over the gate's approach cells, and a click "
         "trigger the author anchors there RIDES these hitboxes (`seal_rider_tags`) "
         "instead of summoning a co-located one, exactly as `strike-npc` rides "
-        "`npc_summon_commands`'s body. The compiler supplies the SHAPE; the campaign "
+        "`npc_summon_rows`'s body. The compiler supplies the SHAPE; the campaign "
         "supplies the ANSWER, in the general effect vocabulary, so the reply is "
         "l10n-inventoried and flag-gated by construction. Empty for a campaign with "
         "no shortcut — byte-identical output. Shape 3, closed rather than catalogued. "
@@ -218,7 +218,7 @@ INTERACTION_SITES = {
         "`retired_by` function `DW0421` polices. What is private is only the "
         "summoning, which is the half no declaration could have supplied."
     ),
-    "activation_commands": (
+    "activation_lines": (
         "OPEN FINDING. `Objective::Interact` summons its own affordance, and carries "
         "its own `missing_item_hint` for the refusal reply — a private narrate. The "
         "objective genuinely needs an activation-gated body; the REPLY does not have "

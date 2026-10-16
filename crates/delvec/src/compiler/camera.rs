@@ -79,7 +79,7 @@ const STAND_STEP: f64 = 0.5;
 /// vantage on this sight line at all.
 ///
 /// **A camera's stand-off is a preference, not a position.** Every review camera
-/// the toolchain derives — a snapshot `--at` orbit, a seam or gate or NPC or
+/// the toolchain derives — a `frames --campaign --at` orbit, a seam or gate or NPC or
 /// interact shot in the render plan — is placed at a fixed offset from the thing
 /// it frames, and a fixed offset into authored geometry lands inside a block
 /// about a quarter of the time (measured over every campaign and fixture that
@@ -123,6 +123,43 @@ pub fn stand_in_open_air(
         t += STAND_STEP;
     }
     best
+}
+
+/// [`stand_in_open_air`] for a subject that may itself be a block — a gate
+/// shut at load, a lever, a sealed door the frame is of: the walk starts at the
+/// first open sample past the subject's own blocks on the segment `subject →
+/// eye`, and stands at the farthest open point before the next block. `None`
+/// when the whole segment past the subject is occupied.
+pub fn stand_before(
+    occupied: impl Fn([i32; 3]) -> bool,
+    subject: [f64; 3],
+    eye: [f64; 3],
+) -> Option<[f64; 3]> {
+    let d = [
+        eye[0] - subject[0],
+        eye[1] - subject[1],
+        eye[2] - subject[2],
+    ];
+    let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+    if len < 1e-6 {
+        return (!occupied(cell_of(eye))).then_some(eye);
+    }
+    let dir = [d[0] / len, d[1] / len, d[2] / len];
+    let at = |t: f64| {
+        [
+            subject[0] + dir[0] * t,
+            subject[1] + dir[1] * t,
+            subject[2] + dir[2] * t,
+        ]
+    };
+    let mut t = 0.0;
+    while t <= len + 1e-9 && occupied(cell_of(at(t))) {
+        t += STAND_STEP;
+    }
+    if t > len + 1e-9 {
+        return None;
+    }
+    stand_in_open_air(occupied, at(t), eye)
 }
 
 /// The integer block a point sits in.
@@ -877,6 +914,47 @@ fn neg(v: [f64; 3]) -> [f64; 3] {
 // Cutscene discovery with move context
 // ---------------------------------------------------------------------------
 
+/// One cutscene a critical-path step fires (spec-0112 §7.2): the step whose
+/// completion (or performance, for a trigger) runs it, its index among the
+/// cutscenes that step fires, and the effect.
+pub struct FiredCutscene<'a> {
+    /// The `critical_path` index of the firing step.
+    pub step: usize,
+    /// Its index among the cutscenes that step fires, in list order.
+    pub n: usize,
+    pub effect: &'a delvewright_dsl::QuestEffect,
+}
+
+/// **Every cutscene a critical-path step fires**, in path order then list order:
+/// the bundles a step's completion fires ([`crate::compiler::hold`]'s
+/// completion bundles), at any depth of their `sequence` steps.
+pub fn critical_cutscenes<'a>(plan: &'a crate::compiler::plan::Plan<'a>) -> Vec<FiredCutscene<'a>> {
+    fn walk<'a>(
+        list: &'a [delvewright_dsl::QuestEffect],
+        out: &mut Vec<&'a delvewright_dsl::QuestEffect>,
+    ) {
+        for e in list {
+            if matches!(e.verb, Verb::Cutscene { .. }) {
+                out.push(e);
+            }
+            for (_, _, inner) in e.nested_effect_lists_labeled() {
+                walk(inner, out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for (step, s) in plan.critical_path.iter().enumerate() {
+        let mut found = Vec::new();
+        for bundle in crate::compiler::hold::completion_bundles(plan.campaign, s) {
+            walk(bundle, &mut found);
+        }
+        for (n, effect) in found.into_iter().enumerate() {
+            out.push(FiredCutscene { step, n, effect });
+        }
+    }
+    out
+}
+
 /// Every `cutscene` effect in the campaign (quests + triggers, transitively
 /// nested), each with the sibling-move context its styled shots resolve
 /// against. Traversal order matches `emit`'s effect walk, so the first
@@ -1060,9 +1138,8 @@ impl Path {
 ///   faces −Z (north), `-90` faces +X (east).
 /// - `pitch = atan2(-dy, hypot(dx, dz))`: positive looks **down**, `0` is level.
 ///
-/// Note this is *not* the render-plan / Chunky convention
-/// ([`crate::compiler::render_plan`], `yaw = atan2(-dz, dx)`, `0` = +X): pitch agrees, yaw
-/// does not. Rotations are rounded to 3 decimals so emission is byte-stable
+/// It is the convention `render-plan.json` and every frame speak too
+/// ([`crate::compiler::render_plan`]). Rotations are rounded to 3 decimals so emission is byte-stable
 /// across platforms (the ADR-0006 gate compares bytes; repeatable rounding
 /// avoids libm ulp drift).
 fn aim_from_dir(d: [f64; 3]) -> (f64, f64) {

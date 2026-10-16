@@ -563,8 +563,7 @@ const ANCHORS: &[Anchor] = &[
                in the wall line, so a body that walks here has crossed a line its \
                species is not allowed through — which is the whole of what a \
                `traversal` declaration answers. Off the critical path on purpose: \
-               blocking geometry on the route makes the build's render plan and \
-               the one `snapshot` derives disagree",
+               the route stays open",
         role: None,
     },
     Anchor {

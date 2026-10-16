@@ -11,7 +11,7 @@ flowchart LR
     S["1 · 准备<br/>插件及其工具链"] --> D["2 · 设计<br/>摆放、故事、<br/>设计关卡 🖐"]
     D --> B["3 · 内容与构建<br/>quests、dialogue、<br/>delvec build"]
     B --> V["4 · 细化与验证阶梯<br/>delvec detail、PackTest、<br/>机器人阶梯"]
-    V --> R["5 · 审查与交付<br/>Chunky 渲染、storybook、<br/>第一次游玩 🖐"]
+    V --> R["5 · 审查与交付<br/>delvec frames、storybook、<br/>第一次游玩 🖐"]
     R --> P["6 · 发布<br/>GitHub Actions、GHCR"]
     P --> H["7 · 托管<br/>生产主机"]
     E["引擎自身的流水线<br/>CI、发布"] -.->|"delvec、插件、镜像"| S
@@ -34,10 +34,10 @@ flowchart TD
     I3A -->|"没有适合这台机器的归档"| I3B["I3b · 源码兜底<br/>cargo build --release -p delvec"]
     I3A --> I4["I3c–I4 · delvec --version 与钉住版本一致<br/>写出 ~/.delvewright/env.sh"]
     I3B --> I4
-    I4 --> I5{{"🖐 I5 · Minecraft 客户端 jar<br/>fetch-client-jar.py，或你指定的一份副本<br/>→ ~/.chunky/resources/minecraft.jar"}}:::human
+    I4 --> I5{{"🖐 I5 · Minecraft 客户端 jar<br/>fetch-client-jar.py，或你指定的一份副本<br/>→ ~/.delvewright/client/minecraft-1.21.11.jar"}}:::human
     I1B -->|"退出码 0：跳过 I2–I4"| I5
     I5 --> I6["I6 · prefab 库<br/>DELVEWRIGHT_PREFABS"]
-    I6 --> I7["I7 · 确认 Chunky 的源码和一个 JDK 17<br/>绘图路径上运行 refimg.py --dry-run"]
+    I6 --> I7["I7 · 只点名，不安装<br/>绘图路径上运行 refimg.py --dry-run"]
     I7 --> I8["I8 · 检查清单，全部经由 env.sh<br/>delvec grammar list · render fidelity-gate<br/>grammar expand · palette · docker"]
     I8 -.->|"有一行回答不对"| STOP(["Init 未完成：停下并说明"])
 
@@ -139,10 +139,8 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    G(["验证阶梯通过"]) --> WS2["validation/world-save.sh<br/>启动构建，让它的世界落到磁盘上"]
-    WS2 --> RS["validation/render-shots.sh<br/>delvec scene · delvec panorama · delvec index<br/>沿已证明路线的第一人称画面"]
-    RS --> CK["validation/chunky-install.sh · validation/chunky.sh<br/>Chunky 渲染，钉住的核心版本"]
-    CK --> VR["12 · 视觉审查<br/>按路线顺序看玩家视角画面，<br/>每一帧对照 design/concept/ 和它的 expect 行"]
+    G(["阶梯全绿"]) --> RS["delvec frames<br/>在进程内从构建写出的世界里画出每一张审查画面<br/>沿已证明路线的第一人称画面，以及每个过场镜头的起点"]
+    RS --> VR["12 · 视觉审查<br/>按路线顺序看玩家视角画面，<br/>每一帧对照 design/concept/ 和它的 expect 行"]
     VR -.->|"发现问题"| BACK(["回到文档"])
     VR --> SG["staging gate<br/>tools/creator/staging-gate.py 读取<br/>docs/playtest-findings.json 中的每一类问题，<br/>为这棵确切的树签发准入令牌"]
     SG --> UP["tools/creator/playtest-server.sh up<br/>构建 · 关卡 · 把通过关卡的构建连同已摆好的世界存成本地镜像，在 localhost:25565 上运行<br/>通过 rcon 确认 datapack 已加载"]
@@ -156,7 +154,7 @@ flowchart TD
 
 staging gate 握着游玩端口唯一的钥匙：`validation/owner-play.yaml` 是唯一发布 25565 端口的文件，它拒绝启动没有为之签发令牌的构建树。红色的关卡结果逐项列出玩家尚未受到保护的缺陷类别，交付时一类一类点明，第一次游玩的时间就不会耗在这些问题上。
 
-草图来自 CPU 渲染器（`delvec snapshot`、`delvec viewer`、`delvec contact-sheet`）和 GPU 渲染（`delvec render`）；每一张必须看起来像 Minecraft 的图都是 Chunky 渲染的。文档是记录在案的产物：完成的 delve 能从它们逐字节相同地重建出来，整个过程不需要模型。
+每一张必须看起来像 Minecraft 的图，都由 `delvec` 自己在进程内用游戏本身的贴图画出（`delvec frames`、`delvec cameras`、`delvec panorama`）；`delvec viewer`、`delvec contact-sheet` 和 GPU 渲染 `delvec render` 服务于各个 piece。文档是记录在案的产物：完成的 delve 能从它们逐字节相同地重建出来，整个过程不需要模型。
 
 ## 6 · 发布——GitHub Actions 与 GHCR
 
@@ -238,7 +236,7 @@ flowchart TD
 | [`/new-delve`](../.claude/skills/delvewright/skills/new-delve/SKILL.md) | skill 页面：Init 加十三个步骤，每步一个参考文件 | 1–5 | 智能体 |
 | 分阶段的 JSON 文档 | `world` · `npcs` · `classes` · `quest-plan` · `quests` · `dialogue`，以及 `geometry-brief` · `layout-graph` · `site-plan` · `detail-plan` · `design` | 2–5 | 由智能体编写 |
 | `delvec` | Rust 引擎，一个二进制：`schema` · `validate` · `analyze` · `build` · `fmt` · `metrics` · `allocation` · `detail` · `l10n-inventory` · `l10n-apply` | 2–4 | 智能体 |
-| `delvec` 渲染表面 | `snapshot` · `blocking-chart` · `viewer` · `palette` · `scene` · `panorama` · `cameras` · `place-camera` · `contact-sheet` · `index`（CPU），`render`（GPU，经由 Nucleation 和 wgpu） | 3、5 | 智能体 |
+| `delvec` 画面表面 | `frames` · `panorama` · `cameras`（经由 Lumenwright，GPU 或 CPU）· `blocking-chart` · `viewer` · `palette` · `place-camera` · `contact-sheet`，`render`（GPU，经由 Nucleation 和 wgpu） | 3、5 | 智能体 |
 | `delvec` 构件 | `grammar`（box-split 语法） · `prefab`（收录、jigsaw 接口、锚点、照明） · `schem`（外部 schematic） | 2、4 | 智能体 |
 | `delvec harvest` · `calibrate` | 把游戏内笔记和手动放置的镜头转回报告和补丁 | 5 | 人玩过之后由智能体运行 |
 | `tools/creator/refimg.py` | 由配置的图像服务生成概念图 | 2 | 智能体；由人评判 |
@@ -249,7 +247,7 @@ flowchart TD
 | `validation/` Docker Compose 装置 | 带 `play`、`playtest`、`validate`、`packtest` profile 的 `compose.yaml`；`owner-play.yaml` | 4–6 | 智能体和 CI |
 | Fabric 上的 PackTest | 在工具服务器上的机制测试；从不出现在发布的 delve 里 | 4、6 | 智能体和 CI |
 | `harness/` | mineflayer 机器人（TypeScript）：关键路径、die-retry、death-loop、分支运行 | 4、6 | 智能体和 CI |
-| Chunky | 每一张必须看起来像 Minecraft 的图 | 5 | 智能体 |
+| Lumenwright（在 `delvec` 内） | 每一张必须看起来像 Minecraft 的图 | 3、5 | 智能体 |
 | GitHub Actions | 本仓库的 `ci.yml`、`engine-release.yml`、`dsl-crate-publish.yml`、`plugin-release.yml`、`infra-images.yml`、`gpu-probe.yml`；内容仓库的 `release.yml` | 引擎流水线、6 | CI，由人触发 |
 | GHCR | 多架构 delve 镜像、镜像的服务器基础镜像和工具服务器 | 6、7 | CI |
 | crates.io 与 GitHub Releases | `delvec` 和 `delvewright-dsl`；各平台的归档 | 引擎流水线、1 | CI |

@@ -379,7 +379,7 @@ pub fn take_links(plan: &Plan, world: &World) -> Result<crate::compiler::plan::L
 
 /// **The plan every reader of the path reads** (spec-0083 §3.4): `plan` with
 /// the links the route proof takes over `world` spliced in, or `None` when it
-/// takes none and `plan` is already that path. The build, the snapshot camera
+/// takes none and `plan` is already that path. The build, the review frames
 /// and the blocking chart all go through here, so a `pov/…` shot, a corridor
 /// and the proof are taken over one path. A leg nothing carries is not refused
 /// here: the walk proof refuses it in its own place.
@@ -511,6 +511,11 @@ pub struct Configuration {
 }
 
 impl Configuration {
+    /// Whether two configurations hold one region state.
+    pub fn same_state(&self, other: &Configuration) -> bool {
+        self.state == other.state
+    }
+
     /// This configuration's world: `base` with every runtime write it credits,
     /// staged volumes included, or `None` when it writes nothing.
     pub fn world(&self, base: &World) -> Option<World> {

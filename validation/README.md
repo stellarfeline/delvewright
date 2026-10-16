@@ -365,25 +365,8 @@ runs this script; wiring it into `ci.yml`'s `tier 2` job as a step (never a new 
   and there is no daemon-wide mode — a teardown that can reach another project is
   an outage, not a teardown. It reclaims the project's images too, and states
   what it examined, removed and kept.
-- **The world first**: `EULA=TRUE validation/world-save.sh <build-dir> --project
-  dw-<id>` boots the shipped delve image for that tree once, waits for the
-  datapack to report `#placed dw.sys = 1` over rcon, and copies the world save it
-  stamped into `<build-dir>/world/`. A build output carries no world — the
-  geometry is placed on the first ticks of a server boot — and a Chunky scene
-  over a missing world renders an empty sky at exit 0.
-- **Shot sets**: `validation/render-shots.sh <build-dir> [out-dir] [--delvec BIN]`
-  turns a build output into the Chunky scene set plus the shot index
-  (`delvec scene` + `index`) for visual review, including the first-person
-  player-POV shots. It refuses a tree with no `world/`, naming `world-save.sh`.
-  Its engine comes from `tools/lib/delvec-bin.sh` — a `delvec` on `PATH` only
-  when it is this engine — and it ends by saying whether the Chunky home holds
-  the pinned core (`versions.toml [render]`), by the rule `chunky.sh` refuses by.
-- **Chunky**: `validation/chunky-install.sh --java-home <JDK 17>` builds the
-  pinned core from source and installs it, then installs the pinned denoise kit
-  (the chunky-denoiser plugin and Open Image Denoise for this platform);
-  `validation/chunky.sh <Chunky args>` renders with them, denoises every
-  `-render`, and refuses a home that does not hold either
-  (`docs/reference/tools.md` §4a).
+- **The server's world**: `EULA=TRUE validation/world-save.sh <build-dir> --project dw-<id>` boots the shipped delve image for that tree once, waits for the datapack to report `#placed dw.sys = 1` over rcon, and copies the world save it stamped into `<build-dir>/world/` — the save `tools/ci/check-written-world.py` holds the engine's written load world to, cell by cell (`DW0955`) and object by object (`DW1040`).
+- **Frames**: `delvec frames <build-dir>` draws every review frame in-process from the worlds the build wrote; nothing here installs a renderer. A CI job that draws fetches the pinned client jar once with `validation/client-jar-cache.sh`, checked against `versions.toml [minecraft] client_jar_sha256` (`docs/reference/tools.md` §4a).
 
 ## Harness
 

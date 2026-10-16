@@ -1232,12 +1232,12 @@ fn a_site_plan_place_only_a_link_reaches_is_reached_and_carried_to() {
 }
 
 /// spec-0083 × the review tools: every `pov/…` shot the build's render plan
-/// names is one `delvec snapshot --shot` resolves, because both read the path
-/// with the taken link spliced in (`nav::with_links_taken`). A snapshot that
-/// re-derived the path without it numbered the legs differently and refused
-/// the build's own shots as "not in this campaign's render plan".
+/// names is one `delvec frames --shot` draws, from the world the build wrote
+/// for it — the frame reads the build's own plan, with the taken link spliced
+/// in (`nav::with_links_taken`), so no review tool re-derives the path and
+/// numbers the legs differently.
 #[test]
-fn every_pov_shot_the_build_names_is_one_the_snapshot_resolves() {
+fn every_pov_shot_the_build_names_is_one_frames_draws() {
     let dir = campaign("pov-shots", |_| {});
     let run = build(&dir);
     run.green();
@@ -1253,28 +1253,23 @@ fn every_pov_shot_the_build_names_is_one_the_snapshot_resolves() {
     assert!(!pov.is_empty(), "the ferry's path names pov shots");
     let frames = dir.with_extension("frames");
     let _ = std::fs::remove_dir_all(&frames);
-    std::fs::create_dir_all(&frames).unwrap();
-    let mut refused = Vec::new();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_delvec"));
+    cmd.arg("frames")
+        .arg(&run.out)
+        .arg("-o")
+        .arg(&frames)
+        .args(["--size", "16", "--backend", "cpu"]);
     for id in &pov {
-        let o = Command::new(env!("CARGO_BIN_EXE_delvec"))
-            .arg("--prefabs")
-            .arg(ferry_prefabs())
-            .arg("snapshot")
-            .arg(&dir)
-            .arg("--shot")
-            .arg(id)
-            .arg("-o")
-            .arg(frames.join(format!("{}.png", id.replace('/', "_"))))
-            .output()
-            .expect("delvec runs");
-        let err = String::from_utf8_lossy(&o.stderr).to_string();
-        if err.contains("is not in this campaign's render plan") {
-            refused.push(id.clone());
-        }
+        cmd.arg("--shot").arg(id);
     }
+    let o = cmd.output().expect("delvec runs");
     assert!(
-        refused.is_empty(),
-        "of {} pov shot(s) the build named, the snapshot refused {refused:?}",
-        pov.len()
+        o.status.success(),
+        "of {} pov shot(s) the build named, frames refused: {}",
+        pov.len(),
+        String::from_utf8_lossy(&o.stderr)
     );
+    let index: Value =
+        serde_json::from_slice(&std::fs::read(frames.join("shot-index.json")).unwrap()).unwrap();
+    assert_eq!(index["count"], pov.len());
 }
