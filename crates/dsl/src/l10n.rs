@@ -861,6 +861,17 @@ pub fn key_situations(c: &Campaign) -> BTreeMap<String, Vec<String>> {
                     if let Some(h) = obj.happening() {
                         lines.push(format!("Completing it: {}", h.text));
                     }
+                    // spec-0114 §5: the act the completion performs rides
+                    // beside the title, so a transcreation that departs from
+                    // its source's act departs in front of the writer.
+                    if *field == "title"
+                        && let Some(quest) = quests.get(q)
+                    {
+                        lines.push(format!(
+                            "act: {}",
+                            crate::acts_line(&quest.objective_acts(obj))
+                        ));
+                    }
                 }
             }
             ["cast", q, np, b, "bark", _] => {

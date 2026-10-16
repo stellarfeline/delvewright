@@ -643,3 +643,27 @@ def test_a_gate_signal_ledger_that_examines_no_gate_is_a_zero_binding(tmp_path):
     ledger.unlink()
     zeroes = mod.read_build_ledgers(out)[1]
     assert len(zeroes) == 1 and zeroes[0].startswith("gate-signal.json: absent"), zeroes
+
+
+def test_an_act_ledger_that_judges_no_title_is_a_zero_binding(tmp_path):
+    """spec-0114 §9.6 on the gallery: its objectives carry titles, so an
+    `act-gate.json` judging none is a proof that stopped reaching what the
+    gallery writes — read through the shared `examined` rule — and an English
+    build with no act ledger at all is one whose titles nothing read."""
+    mod = _load_checker()
+    out = tmp_path / "build"
+    (out / "validation").mkdir(parents=True)
+    row = {"code": "DW1045", "objectives": 20, "titled": 18, "judged": 18, "examined": 18,
+           "unknown": [], "untitled": 2, "refused": 0}
+    ledger = out / "validation" / "act-gate.json"
+    ledger.write_text(json.dumps(row))
+    assert mod.read_build_ledgers(out)[1] == []
+    ledger.write_text(json.dumps({**row, "judged": 0, "examined": 0}))
+    assert mod.read_build_ledgers(out)[1] == ["act-gate.json: `examined` is 0"]
+    ledger.unlink()
+    assert mod.read_build_ledgers(out)[1] == [], "no path, no objective proven: nothing owed"
+    (out / "critical-path.json").write_text(
+        json.dumps({"steps": [{"action": "reach", "objective": "obj/x"}]})
+    )
+    zeroes = mod.read_build_ledgers(out)[1]
+    assert len(zeroes) == 1 and zeroes[0].startswith("act-gate.json: absent"), zeroes

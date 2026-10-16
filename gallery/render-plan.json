@@ -54,6 +54,11 @@
     },
     {
       "area": "area/hall",
+      "id": "interact/lay_an_emerald",
+      "kind": "interact"
+    },
+    {
+      "area": "area/hall",
       "id": "interact/press_the_case",
       "kind": "interact"
     },

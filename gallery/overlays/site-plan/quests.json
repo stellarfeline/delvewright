@@ -52,7 +52,7 @@
             "hint": "The Factor minds the counter in the side gallery.",
             "id": "obj/reach-the-counter",
             "npc": "npc/factor",
-            "title": "Reach the counter",
+            "title": "Speak to the Factor at the counter",
             "type": "talk-to"
           },
           {
@@ -165,7 +165,7 @@
             "hint": "The Marshal is up in the loft.",
             "id": "obj/climb-the-loft",
             "npc": "npc/marshal",
-            "title": "Climb the loft",
+            "title": "Speak to the Marshal in the loft",
             "type": "talk-to"
           },
           {
