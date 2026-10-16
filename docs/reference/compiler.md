@@ -4455,6 +4455,15 @@ body's drivers carry the guard (`walk_claim`). The generation is taken, not bump
 a walk a sibling is running is not superseded by the template. A body whose drivers
 carry no guard gets no claim line.
 
+**A walk whose own `on_arrive` takes its body away is read before arrival.** The
+arrival bundle (`mv_arrive_<key>`) runs in the same driver call, on the same tick, as
+the last waypoint's tp, so a `despawn-npc` of the walker in it leaves no body at the
+target by construction. For such a walk `v04_move` jumps the driver to the tick
+before arrival, clears the reschedule it queues and its run latch (so the arrival
+never runs into a sibling template), and asserts the body on that waypoint and within
+one block of the target cell; any other walk is jumped to its last tick and asserted
+on the target cell.
+
 The new walk still starts at **its own first waypoint** (waypoints are precomputed
 from the walk's declared start anchor, so "resume from wherever the body stands" is
 not expressible), i.e. an instant snap onto the new route — the same snap single-walk

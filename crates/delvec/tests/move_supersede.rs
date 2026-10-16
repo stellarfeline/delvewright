@@ -236,6 +236,9 @@ struct Sim {
     pending: Vec<String>,
     tick: u32,
     tps: Vec<Tp>,
+    /// Every call to a function outside the simulated set, in call order — a
+    /// `despawn_npc_<n>` an arrival bundle runs, a `setup` a template runs.
+    outside: Vec<String>,
 }
 
 impl Sim {
@@ -248,6 +251,7 @@ impl Sim {
             pending: Vec::new(),
             tick: 0,
             tps: Vec::new(),
+            outside: Vec::new(),
         }
     }
 
@@ -355,7 +359,13 @@ impl Sim {
                     let bare = f.split_once(':').map(|(_, n)| n).unwrap_or(f).to_string();
                     if self.fns.contains_key(&bare) {
                         self.call(&bare);
+                    } else {
+                        self.outside.push(bare);
                     }
+                }
+                ["schedule", "clear", f] => {
+                    let bare = f.split_once(':').map(|(_, n)| n).unwrap_or(f);
+                    self.pending.retain(|p| p != bare);
                 }
                 ["tag", _sel, "add", t] => {
                     self.tags.insert(t.to_string());
@@ -761,6 +771,57 @@ fn the_move_npc_template_claims_the_driver_it_invokes() {
         Some(endpoint(&fns, &driver)),
         "`v04_move` invoked `{driver}` after a sibling fired both walks, and the driver \
          teleported nothing: its stamp is behind the body's walk generation"
+    );
+}
+
+/// A walk whose own `on_arrive` takes its body away (`despawn-npc` of the walker)
+/// leaves nothing at the target after the arrival tick, by construction. The
+/// template must read the body before the arrival bundle runs, and leave no
+/// reschedule behind that would run it into a sibling template.
+#[test]
+fn the_move_npc_template_reads_the_body_before_its_arrival_takes_it_away() {
+    let quests = QUESTS_ONE_WALK.replacen(
+        r#"{ "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" } }"#,
+        r#"{ "type": "move-npc", "npc": "npc/keeper", "to": { "anchor": "anchor/exit" },
+              "on_arrive": [ { "type": "despawn-npc", "npc": "npc/keeper" } ] }"#,
+        1,
+    );
+    let out = build_with(quests);
+    let fns = driver_fns(&out, "mv_");
+    let path = "packtest-datapack/data/hello-world/test/v04_move.mcfunction";
+    let template: Vec<String> = out
+        .iter()
+        .find(|(p, _)| p.as_str() == path)
+        .map(|(_, b)| String::from_utf8(b.clone()).unwrap())
+        .expect("the build emits `v04_move`")
+        .lines()
+        .filter(|l| {
+            l.starts_with("scoreboard ") || l.starts_with("function ") || l.starts_with("schedule ")
+        })
+        .map(str::to_string)
+        .collect();
+    let driver = invoked_driver(&template, "mv_");
+    let end = endpoint(&fns, &driver);
+    let mut sim = Sim::new(fns);
+    sim.fns.insert("template".to_string(), template);
+    sim.call("template");
+    assert!(
+        !sim.outside.iter().any(|f| f == "despawn_npc_keeper"),
+        "`v04_move` ran the walk's arrival, whose `despawn-npc` takes the body it then looks \
+         for: {:?}",
+        sim.outside
+    );
+    let last = sim.final_pos().expect("the template moved the body");
+    let d = ((last[0] - end[0]).powi(2) + (last[1] - end[1]).powi(2) + (last[2] - end[2]).powi(2))
+        .sqrt();
+    assert!(
+        d <= 1.0,
+        "the body stands {d} from the walk's endpoint {end:?}"
+    );
+    sim.run(5);
+    assert!(
+        !sim.outside.iter().any(|f| f == "despawn_npc_keeper"),
+        "the template left the driver scheduled, and its arrival ran a tick later"
     );
 }
 

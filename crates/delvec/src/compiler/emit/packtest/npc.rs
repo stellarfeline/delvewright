@@ -477,13 +477,45 @@ pub(super) fn emit_v04_packtests(
             &safe,
             supersedable_walkers(moves.iter().map(|m| m.npc.as_str())).contains(m.npc.as_str()),
         ));
-        b.push(format!("scoreboard players set #mt_{bare} dw.sys {total}"));
-        b.push(format!("function {ns}:mv_tick_{bare}"));
-        b.push(format!(
-            "execute store result score #npos_nmov dw.sys if entity @e[tag=dw_npc_{safe},x={},dx=0,y={},dy=0,z={},dz=0]",
-            p[0], p[1], p[2]
-        ));
-        b.push("assert score #npos_nmov dw.sys matches 1..".to_string());
+        if arrival_takes_the_body(c, m) {
+            // The walk's own `on_arrive` takes the body away on the arrival
+            // tick — the same tick, and the same function, as the last tp — so
+            // no body stands at the target after it by construction. Drive the
+            // walk to the tick before arrival instead: the body stands on that
+            // waypoint, within one tick's stride of the target cell. The
+            // reschedule the driver queues and its run latch are then cleared,
+            // so the arrival bundle never runs into a sibling template.
+            let w = m.waypoints[total - 1];
+            b.push(format!(
+                "scoreboard players set #mt_{bare} dw.sys {}",
+                total - 1
+            ));
+            b.push(format!("function {ns}:mv_tick_{bare}"));
+            b.push(format!("schedule clear {ns}:mv_tick_{bare}"));
+            b.push(format!("scoreboard players set #mrun_{bare} dw.sys 0"));
+            b.push(format!(
+                "execute store result score #npos_nmov dw.sys if entity @e[tag=dw_npc_{safe},x={},y={},z={},distance=..0.01]",
+                fmt_f64(w[0]),
+                fmt_f64(w[1]),
+                fmt_f64(w[2])
+            ));
+            b.push("assert score #npos_nmov dw.sys matches 1..".to_string());
+            b.push(format!(
+                "execute store result score #nnear_nmov dw.sys if entity @e[tag=dw_npc_{safe},x={},y={},z={},distance=..1]",
+                f64::from(p[0]) + 0.5,
+                p[1],
+                f64::from(p[2]) + 0.5
+            ));
+            b.push("assert score #nnear_nmov dw.sys matches 1..".to_string());
+        } else {
+            b.push(format!("scoreboard players set #mt_{bare} dw.sys {total}"));
+            b.push(format!("function {ns}:mv_tick_{bare}"));
+            b.push(format!(
+                "execute store result score #npos_nmov dw.sys if entity @e[tag=dw_npc_{safe},x={},dx=0,y={},dy=0,z={},dz=0]",
+                p[0], p[1], p[2]
+            ));
+            b.push("assert score #npos_nmov dw.sys matches 1..".to_string());
+        }
         write("v04_move", b);
     }
 
@@ -663,4 +695,31 @@ mod tests {
             )
         );
     }
+}
+
+/// Whether the walk `m`'s own `on_arrive` takes its body away — a
+/// `despawn-npc` of the walker at any depth of the bundle the emitter lowers
+/// into `mv_arrive_<key>` (the first-seen `move-npc` for this body and mark, as
+/// `emit::npc` picks it).
+fn arrival_takes_the_body(
+    c: &delvewright_dsl::Campaign,
+    m: &crate::compiler::nav::MovePlan,
+) -> bool {
+    fn despawns(list: &[QuestEffect], npc: &str) -> bool {
+        list.iter().any(|e| {
+            matches!(&e.verb, Verb::DespawnNpc { npc: n } if n.as_str() == npc)
+                || e.nested_effect_lists_labeled()
+                    .into_iter()
+                    .any(|(_, _, inner)| despawns(inner, npc))
+        })
+    }
+    all_campaign_effects(c)
+        .into_iter()
+        .find_map(|e| match &e.verb {
+            Verb::MoveNpc {
+                npc, to, on_arrive, ..
+            } if npc.as_str() == m.npc && *to == m.to => Some(on_arrive.as_slice()),
+            _ => None,
+        })
+        .is_some_and(|on_arrive| despawns(on_arrive, &m.npc))
 }
