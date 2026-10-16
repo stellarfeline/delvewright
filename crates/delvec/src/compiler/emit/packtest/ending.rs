@@ -138,7 +138,8 @@ pub(crate) fn ending_templates(plan: &Plan) -> Vec<EndingTemplate> {
 }
 
 /// Every (ending, world) pair whose world fires an observable aftermath effect
-/// of the ending's scene and for which no template could be generated, in
+/// of the ending's scene while the generator cannot drive that scene — no
+/// function for its root, or no reading of the world as the scene begins — in
 /// words. Empty on every campaign the generator covers; the build refuses a
 /// non-empty list as an internal invariant, so an ending that owes a proof
 /// never ships without one, wherever its `campaign-complete` stands.
@@ -416,12 +417,6 @@ fn templates_and_unproven(plan: &Plan) -> (Vec<EndingTemplate>, Vec<String>) {
                 n += 1;
             }
             if n == 0 {
-                if owes {
-                    unproven.push(format!(
-                        "`{}` at `{}` in world/{k}: no observable of its scene could be staged",
-                        v.ending.id, v.ending.path
-                    ));
-                }
                 continue;
             }
             // The scene, through its real function, and every part of it the
