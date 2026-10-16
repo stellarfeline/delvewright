@@ -50,6 +50,7 @@
 //! - [`failure`]: the one type a compiler pass fails with — a DW code and the message that goes with it.
 //! - [`firework`]: `DW0899` — a rocket bursts in open air, clear of every posted body (spec-0068).
 //! - [`flow`]: the branch-coherent flag/quest flow model and the critical-path extraction (`DW0204`).
+//! - [`framing`]: what a frame frames — the camera, the occupancy grid a sight line is asked of, the targets a review names, and the frame manifest.
 //! - [`gates`]: `close-gate` gate-block validation — the physical dual of `open-gate`.
 //! - [`guarantee`]: which anchors an area's binding guarantees, answered before anything is placed (`DW0889`).
 //! - [`gym`]: the metrics gym — a site-plan campaign generated from the metrics table.
@@ -77,7 +78,7 @@
 //! - [`pressable`]: what a player's click reaches at an anchor — the one authority every `strike`/`use` trigger dispatches from.
 //! - [`promise`]: an objective keeps the promise its prompt makes (`DW0860`–`DW0863`).
 //! - [`pulse`]: a sound that beats over a place — its derived range and listening stations (`DW0994`, `DW0995`).
-//! - [`raster`]: the shared RGBA canvas and bitmap-text primitives both renderers draw on.
+//! - [`raster`]: the shared RGBA canvas and bitmap-text primitives the blocking chart, the contact sheet and a labelled frame draw on.
 //! - [`reach`]: what completes a `reach` — the one authority for the volume a body has to be in.
 //! - [`registry`]: the full pinned-MC item registry and the prefab/anchor metadata.
 //! - [`rehearsal`]: the compile-time inventory of every rehearsable cutscene beat and every shot inside it.
@@ -89,7 +90,6 @@
 //! - [`seeding`]: no emitted comparison reads a score entry the emitted pack never creates (`DW0495`).
 //! - [`served`]: what the declared view distance costs the host — the pinned server's chunk set, the fitted live heap, the ceiling stated in `server/resources.properties` (spec-0091).
 //! - [`skinparts`]: the model-part table every skin and entity texture is drawn to, and the one rule that refuses paint no box samples (`DW0978`) or nobody standing level sees (`DW0979`) — spec-0097.
-//! - [`snapshot`]: `delvec snapshot` — the voxel raycaster and scene manifest an authoring agent looks at its own build through.
 //! - [`solver`]: the jigsaw layout solver.
 //! - [`stairs`]: the stair-orientation proof over the assembled world (`DW0430`).
 //! - [`stake`]: the recovery stake's compile-time placement table and the proofs it owes.
@@ -154,6 +154,7 @@ pub mod faces;
 pub mod failure;
 pub mod firework;
 pub mod flow;
+pub mod framing;
 pub mod gates;
 pub mod guarantee;
 pub mod gym;
@@ -194,7 +195,6 @@ pub mod seating;
 pub mod seeding;
 pub mod served;
 pub mod skinparts;
-pub mod snapshot;
 pub mod solver;
 pub mod stairs;
 pub mod stake;

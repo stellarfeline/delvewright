@@ -511,6 +511,11 @@ pub struct Configuration {
 }
 
 impl Configuration {
+    /// Whether two configurations hold one region state.
+    pub fn same_state(&self, other: &Configuration) -> bool {
+        self.state == other.state
+    }
+
     /// This configuration's world: `base` with every runtime write it credits,
     /// staged volumes included, or `None` when it writes nothing.
     pub fn world(&self, base: &World) -> Option<World> {

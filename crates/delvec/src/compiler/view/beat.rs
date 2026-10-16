@@ -269,19 +269,14 @@ fn trap_shut_at_load(plan: &Plan, t: &crate::compiler::plan::TrapPlan) -> bool {
     })
 }
 
-/// Where a run's cameras stand, with what the world writer needs beside the
-/// block maps: which biome a cell stands in, and the spawn `level.dat` names.
+/// Where a run's cameras stand, with the one writer of their worlds
+/// ([`crate::compiler::view::review::WorldMaker`]) and the clock a world is
+/// written at: the world's own, arriving at the critical path's first step.
 pub struct Stood {
     pub stands: Stands,
-    /// The build's biome answer ([`crate::compiler::horizon::biome_map`]).
-    pub biome: Box<dyn Fn([i32; 3]) -> String>,
-    /// The campaign's start cell.
-    pub spawn: [i32; 3],
-    /// What a cell no write reached holds ([`crate::compiler::view::world::Ground`]):
-    /// the horizon's generator, held out of every cell the assembled world and
-    /// the shipped setup reach. A world's own laid writes ([`Stands::laid`])
-    /// are held out by the writer.
-    pub ground: crate::compiler::view::world::Ground,
+    pub maker: crate::compiler::view::review::WorldMaker,
+    /// `level.dat`'s `DayTime` for every world written.
+    pub day_time: i64,
 }
 
 /// The load configuration's bytes: the critical path's arrival at step 0 over

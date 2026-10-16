@@ -126,67 +126,81 @@ impl Ground {
     }
 }
 
-/// What a write produced, for the binding line (spec-0089 §7).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WrittenWorld {
-    /// Chunks written.
-    pub chunks: usize,
-    /// Non-air cells written from the block map.
-    pub cells: usize,
-    /// Cells holding the generator's block ([`Ground`]): no write reached them.
-    pub ground: usize,
-    /// sha-256 over the region files' bytes, in file-name order.
-    pub sha256: String,
-    /// `(relative path, bytes)` of every file, `level.dat` first then the
-    /// region files in name order.
-    pub files: Vec<(String, Vec<u8>)>,
-}
-
 // ---------------------------------------------------------------------- NBT
 
-/// The tags this writer emits — the subset a minimal world needs, written in
-/// the order they are pushed.
-enum Tag {
+/// An NBT tag as this writer emits it. A compound keeps its entries in the
+/// order they were pushed, so every compound the writer builds is in a fixed
+/// key order and two writes agree (ADR-0006); a compound taken from a decoded
+/// template ([`Nbt::from_value`]) is sorted by key, since its source is a hash
+/// map.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Nbt {
     Byte(i8),
+    Short(i16),
     Int(i32),
+    Long(i64),
+    Float(f32),
+    Double(f64),
+    ByteArray(Vec<i8>),
     Str(String),
+    List(Vec<Nbt>),
+    Compound(Vec<(String, Nbt)>),
+    IntArray(Vec<i32>),
     LongArray(Vec<i64>),
-    List(Vec<Tag>),
-    Compound(Vec<(String, Tag)>),
 }
 
-impl Tag {
+impl Nbt {
     fn id(&self) -> u8 {
         match self {
-            Tag::Byte(_) => 1,
-            Tag::Int(_) => 3,
-            Tag::Str(_) => 8,
-            Tag::List(_) => 9,
-            Tag::Compound(_) => 10,
-            Tag::LongArray(_) => 12,
+            Nbt::Byte(_) => 1,
+            Nbt::Short(_) => 2,
+            Nbt::Int(_) => 3,
+            Nbt::Long(_) => 4,
+            Nbt::Float(_) => 5,
+            Nbt::Double(_) => 6,
+            Nbt::ByteArray(_) => 7,
+            Nbt::Str(_) => 8,
+            Nbt::List(_) => 9,
+            Nbt::Compound(_) => 10,
+            Nbt::IntArray(_) => 11,
+            Nbt::LongArray(_) => 12,
         }
     }
 
     fn write_payload(&self, out: &mut Vec<u8>) {
         match self {
-            Tag::Byte(v) => out.extend_from_slice(&v.to_be_bytes()),
-            Tag::Int(v) => out.extend_from_slice(&v.to_be_bytes()),
-            Tag::Str(s) => write_str(out, s),
-            Tag::LongArray(v) => {
+            Nbt::Byte(v) => out.extend_from_slice(&v.to_be_bytes()),
+            Nbt::Short(v) => out.extend_from_slice(&v.to_be_bytes()),
+            Nbt::Int(v) => out.extend_from_slice(&v.to_be_bytes()),
+            Nbt::Long(v) => out.extend_from_slice(&v.to_be_bytes()),
+            Nbt::Float(v) => out.extend_from_slice(&v.to_be_bytes()),
+            Nbt::Double(v) => out.extend_from_slice(&v.to_be_bytes()),
+            Nbt::ByteArray(v) => {
+                out.extend_from_slice(&(v.len() as i32).to_be_bytes());
+                out.extend(v.iter().map(|b| *b as u8));
+            }
+            Nbt::Str(s) => write_str(out, s),
+            Nbt::IntArray(v) => {
                 out.extend_from_slice(&(v.len() as i32).to_be_bytes());
                 for l in v {
                     out.extend_from_slice(&l.to_be_bytes());
                 }
             }
-            Tag::List(items) => {
+            Nbt::LongArray(v) => {
+                out.extend_from_slice(&(v.len() as i32).to_be_bytes());
+                for l in v {
+                    out.extend_from_slice(&l.to_be_bytes());
+                }
+            }
+            Nbt::List(items) => {
                 // An empty list is written with element type End, as the game does.
-                out.push(items.first().map_or(0, Tag::id));
+                out.push(items.first().map_or(0, Nbt::id));
                 out.extend_from_slice(&(items.len() as i32).to_be_bytes());
                 for t in items {
                     t.write_payload(out);
                 }
             }
-            Tag::Compound(entries) => {
+            Nbt::Compound(entries) => {
                 for (k, v) in entries {
                     out.push(v.id());
                     write_str(out, k);
@@ -196,9 +210,63 @@ impl Tag {
             }
         }
     }
+
+    /// A decoded tag, with every compound's keys sorted.
+    pub fn from_value(v: &fastnbt::Value) -> Nbt {
+        use fastnbt::Value as V;
+        match v {
+            V::Byte(b) => Nbt::Byte(*b),
+            V::Short(s) => Nbt::Short(*s),
+            V::Int(i) => Nbt::Int(*i),
+            V::Long(l) => Nbt::Long(*l),
+            V::Float(f) => Nbt::Float(*f),
+            V::Double(d) => Nbt::Double(*d),
+            V::String(s) => Nbt::Str(s.clone()),
+            V::ByteArray(a) => Nbt::ByteArray(a.iter().copied().collect()),
+            V::IntArray(a) => Nbt::IntArray(a.iter().copied().collect()),
+            V::LongArray(a) => Nbt::LongArray(a.iter().copied().collect()),
+            V::List(items) => Nbt::List(items.iter().map(Nbt::from_value).collect()),
+            V::Compound(m) => {
+                let mut entries: Vec<(String, Nbt)> = m
+                    .iter()
+                    .map(|(k, v)| (k.clone(), Nbt::from_value(v)))
+                    .collect();
+                entries.sort_by(|a, b| a.0.cmp(&b.0));
+                Nbt::Compound(entries)
+            }
+        }
+    }
+
+    /// The entry `key` of a compound.
+    pub fn get(&self, key: &str) -> Option<&Nbt> {
+        match self {
+            Nbt::Compound(e) => e.iter().find(|(k, _)| k == key).map(|(_, v)| v),
+            _ => None,
+        }
+    }
+
+    /// Set `key` in a compound, replacing an entry of that name or appending.
+    pub fn set(&mut self, key: &str, value: Nbt) {
+        if let Nbt::Compound(e) = self {
+            match e.iter_mut().find(|(k, _)| k == key) {
+                Some(slot) => slot.1 = value,
+                None => e.push((key.to_string(), value)),
+            }
+        }
+    }
+
+    /// The tag as an uncompressed root compound named `""`.
+    pub fn to_root_bytes(&self) -> Vec<u8> {
+        nbt_root(self.clone())
+    }
 }
 
+/// The writer's own name for [`Nbt`], kept short.
+type Tag = Nbt;
+
 fn write_str(out: &mut Vec<u8>, s: &str) {
+    // Modified UTF-8 matches UTF-8 for every character outside the null and
+    // the supplementary planes, which nothing this writer emits carries.
     out.extend_from_slice(&(s.len() as u16).to_be_bytes());
     out.extend_from_slice(s.as_bytes());
 }
@@ -219,7 +287,6 @@ fn compound(entries: Vec<(&str, Tag)>) -> Tag {
             .collect(),
     )
 }
-
 // ------------------------------------------------------------------ packing
 
 /// Bits per index for a palette of `n` entries with a `floor` (4 for blocks,
@@ -330,59 +397,246 @@ fn paletted<S: AsRef<str>>(cells: impl Iterator<Item = S>, floor: u32) -> Tag {
 
 const AIR: &str = "minecraft:air";
 
-/// Encode `blocks` as a world in memory: `level.dat` with the spawn at
-/// `spawn`, and one region file per region a cell stands in. `biome(cell)`
-/// answers which biome a 4×4×4 cell stands in, asked at the cell's centre
-/// (coordinates 2 mod 4), the point vanilla's own reading never jitters off.
+/// One body the world holds (spec-0112 §5.5): the summon's whole compound
+/// (`nbt`, a compound, without `id`, `Pos`, `Rotation`, `Tags` or `UUID`,
+/// which the writer adds), its kind, where it stands, its yaw and its tags.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EntityRecord {
+    /// Namespaced id, `minecraft:mannequin`.
+    pub kind: String,
+    pub pos: [f64; 3],
+    pub yaw: f32,
+    pub tags: Vec<String>,
+    pub nbt: Nbt,
+}
+
+impl EntityRecord {
+    /// The UUID written for this body: derived from its tags and position, so
+    /// two writes agree (ADR-0006) and two bodies apart differ.
+    pub fn uuid(&self) -> [i32; 4] {
+        let mut h = Sha256::new();
+        h.update(self.kind.as_bytes());
+        for t in &self.tags {
+            h.update([0u8]);
+            h.update(t.as_bytes());
+        }
+        for p in self.pos {
+            h.update(p.to_bits().to_be_bytes());
+        }
+        let d = h.finalize();
+        std::array::from_fn(|i| i32::from_be_bytes([d[4 * i], d[4 * i + 1], d[4 * i + 2], d[4 * i + 3]]))
+    }
+
+    /// The compound as the entity file holds it.
+    fn compound(&self) -> Nbt {
+        let mut c = match &self.nbt {
+            Nbt::Compound(_) => self.nbt.clone(),
+            _ => Nbt::Compound(Vec::new()),
+        };
+        c.set("id", Nbt::Str(self.kind.clone()));
+        c.set(
+            "Pos",
+            Nbt::List(self.pos.iter().map(|v| Nbt::Double(*v)).collect()),
+        );
+        c.set("Rotation", Nbt::List(vec![Nbt::Float(self.yaw), Nbt::Float(0.0)]));
+        let mut tags: Vec<Nbt> = match c.get("Tags") {
+            Some(Nbt::List(t)) => t.clone(),
+            _ => Vec::new(),
+        };
+        for t in &self.tags {
+            if !tags.iter().any(|x| *x == Nbt::Str(t.clone())) {
+                tags.push(Nbt::Str(t.clone()));
+            }
+        }
+        if !tags.is_empty() {
+            c.set("Tags", Nbt::List(tags));
+        }
+        c.set("UUID", Nbt::IntArray(self.uuid().to_vec()));
+        c
+    }
+}
+
+/// Everything a written world is made of beyond its blocks.
+pub struct WorldInput<'a> {
+    pub blocks: &'a BlockMap,
+    /// Which biome a 4×4×4 cell stands in, asked at its centre.
+    pub biome: &'a dyn Fn([i32; 3]) -> String,
+    pub spawn: [i32; 3],
+    pub ground: &'a Ground,
+    /// The inclusive box every chunk of which is written, its generator's
+    /// ground included, whether or not a block of the map stands in it
+    /// (spec-0112 §5.3) — the build's loaded extent. `None`: the chunks the
+    /// map's cells stand in.
+    pub extent: Option<([i32; 3], [i32; 3])>,
+    /// Per cell, the block entity's compound (its `id` included; the writer
+    /// adds `x`, `y`, `z`). Written only where the cell holds a block.
+    pub block_entities: &'a BTreeMap<[i32; 3], Nbt>,
+    /// Every body the world holds.
+    pub entities: &'a [EntityRecord],
+    /// `level.dat`'s `DayTime`: the configuration's clock.
+    pub day_time: Option<i64>,
+}
+
+/// What a write produced, for the binding line (spec-0089 §7, spec-0112 §9).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WrittenWorld {
+    /// Chunks written.
+    pub chunks: usize,
+    /// Non-air cells written from the block map.
+    pub cells: usize,
+    /// Cells holding the generator's block ([`Ground`]): no write reached them.
+    pub ground: usize,
+    /// Block entities written.
+    pub block_entities: usize,
+    /// Bodies written.
+    pub entities: usize,
+    /// Cells the light arrays cover (4096 per written section).
+    pub light_cells: usize,
+    /// sha-256 over every section's `SkyLight` then `BlockLight`, in chunk and
+    /// section order.
+    pub light_sha256: String,
+    /// sha-256 over the region and entity files' bytes, in file-name order.
+    pub sha256: String,
+    /// `(relative path, bytes)` of every file, `level.dat` first then the
+    /// region files then the entity files, each in name order.
+    pub files: Vec<(String, Vec<u8>)>,
+}
+
+/// Pack 4096 light levels (`y`-`z`-`x` order) into the 2048 bytes a section
+/// stores: two cells a byte, the even index in the low nibble.
+pub fn pack_nibbles(levels: &[u8]) -> Vec<i8> {
+    levels
+        .chunks(2)
+        .map(|p| ((p[0] & 0xf) | ((p.get(1).copied().unwrap_or(0) & 0xf) << 4)) as i8)
+        .collect()
+}
+
+/// Encode `blocks` as a world in memory with no block entity, no body and no
+/// clock: [`encode_world`] over the map alone.
 pub fn encode(
     blocks: &BlockMap,
     biome: &dyn Fn([i32; 3]) -> String,
     spawn: [i32; 3],
     ground: &Ground,
 ) -> WrittenWorld {
-    // chunk (cx, cz) -> section Y -> present.
-    let mut chunks: BTreeMap<(i32, i32), BTreeMap<i32, ()>> = BTreeMap::new();
+    encode_world(&WorldInput {
+        blocks,
+        biome,
+        spawn,
+        ground,
+        extent: None,
+        block_entities: &BTreeMap::new(),
+        entities: &[],
+        day_time: None,
+    })
+}
+
+/// **Encode a world in memory**: `level.dat` with the spawn and the clock, one
+/// region file per region a written chunk stands in, and one entity file per
+/// region a body stands in.
+///
+/// Every written chunk carries every section from the lowest to the highest
+/// any cell of the chunk set needs, each with its blocks, its biomes and its
+/// two light arrays (the engine's flood over every written cell,
+/// [`crate::compiler::light::LightArrays`]), and the chunk's block entities.
+pub fn encode_world(input: &WorldInput<'_>) -> WrittenWorld {
+    let WorldInput {
+        blocks,
+        biome,
+        spawn,
+        ground,
+        ..
+    } = input;
+    // The chunks written: every chunk a cell stands in, and every chunk of the
+    // extent.
+    let mut chunk_set: std::collections::BTreeSet<(i32, i32)> = Default::default();
+    let mut lo_y = i32::MAX;
+    let mut hi_y = i32::MIN;
     let mut cells = 0usize;
-    for (c, state) in blocks {
+    for (c, state) in blocks.iter() {
         if state.as_str() == AIR {
             continue;
         }
         cells += 1;
-        chunks
-            .entry((c[0].div_euclid(16), c[2].div_euclid(16)))
-            .or_default()
-            .insert(c[1].div_euclid(16), ());
+        chunk_set.insert((c[0].div_euclid(16), c[2].div_euclid(16)));
+        lo_y = lo_y.min(c[1]);
+        hi_y = hi_y.max(c[1]);
     }
-    // Every written chunk carries the sections the generator lays a block in,
-    // as every chunk of the server's world does.
-    for sections in chunks.values_mut() {
-        for sy in ground.sections() {
-            sections.insert(sy, ());
+    if let Some((lo, hi)) = input.extent {
+        for cx in lo[0].div_euclid(16)..=hi[0].div_euclid(16) {
+            for cz in lo[2].div_euclid(16)..=hi[2].div_euclid(16) {
+                chunk_set.insert((cx, cz));
+            }
+        }
+        lo_y = lo_y.min(lo[1]);
+        hi_y = hi_y.max(hi[1]);
+    }
+    let gsecs = ground.sections();
+    if let (Some(a), Some(b)) = (gsecs.first(), gsecs.last()) {
+        lo_y = lo_y.min(a * 16);
+        hi_y = hi_y.max(b * 16 + 15);
+    }
+    if chunk_set.is_empty() {
+        lo_y = 0;
+        hi_y = 0;
+    }
+    let (sec_lo, sec_hi) = (lo_y.div_euclid(16), hi_y.div_euclid(16));
+    // The block at a cell of a written chunk: the map's, else the generator's.
+    let at = |c: [i32; 3]| -> Option<&str> {
+        match blocks.get(&c) {
+            Some(s) => Some(s.as_str()),
+            None => ground.at(c),
+        }
+    };
+    // The light of the written box: one flood over every written cell.
+    let (box_lo, box_hi) = match (chunk_set.first(), chunk_set.last()) {
+        (Some(_), Some(_)) => {
+            let (mut x0, mut x1, mut z0, mut z1) = (i32::MAX, i32::MIN, i32::MAX, i32::MIN);
+            for (cx, cz) in &chunk_set {
+                x0 = x0.min(cx * 16);
+                x1 = x1.max(cx * 16 + 15);
+                z0 = z0.min(cz * 16);
+                z1 = z1.max(cz * 16 + 15);
+            }
+            ([x0, sec_lo * 16, z0], [x1, sec_hi * 16 + 15, z1])
+        }
+        _ => ([0, 0, 0], [0, 0, 0]),
+    };
+    let mut ground_cells: Vec<([i32; 3], &str)> = Vec::new();
+    for (cx, cz) in &chunk_set {
+        for sy in &gsecs {
+            for i in 0..4096 {
+                let c = [cx * 16 + (i % 16), sy * 16 + i / 256, cz * 16 + ((i / 16) % 16)];
+                if blocks.contains_key(&c) {
+                    continue;
+                }
+                if let Some(g) = ground.at(c) {
+                    ground_cells.push((c, g));
+                }
+            }
         }
     }
-    let mut ground_cells = 0usize;
+    let light = crate::compiler::light::LightArrays::over(
+        box_lo,
+        box_hi,
+        blocks
+            .iter()
+            .map(|(c, s)| (*c, s.as_str()))
+            .chain(ground_cells.iter().copied()),
+    );
+    let ground_count = ground_cells.len();
+    drop(ground_cells);
+    let mut light_hash = Sha256::new();
+    let mut light_cells = 0usize;
+    let mut block_entities = 0usize;
     // region (rx, rz) -> chunk index -> payload.
     let mut regions: BTreeMap<(i32, i32), BTreeMap<usize, Vec<u8>>> = BTreeMap::new();
-    for ((cx, cz), sections) in &chunks {
-        let secs: Vec<Tag> = sections
-            .keys()
+    for (cx, cz) in &chunk_set {
+        let secs: Vec<Tag> = (sec_lo..=sec_hi)
             .map(|sy| {
                 let (x0, y0, z0) = (cx * 16, sy * 16, cz * 16);
-                let block_cells: Vec<&str> = (0..4096)
-                    .map(|i| {
-                        let cell = [x0 + (i % 16), y0 + i / 256, z0 + ((i / 16) % 16)];
-                        match blocks.get(&cell) {
-                            Some(s) => s.as_str(),
-                            None => match ground.at(cell) {
-                                Some(g) => {
-                                    ground_cells += 1;
-                                    g
-                                }
-                                None => AIR,
-                            },
-                        }
-                    })
-                    .collect();
+                let cell = |i: i32| [x0 + (i % 16), y0 + i / 256, z0 + ((i / 16) % 16)];
+                let block_cells: Vec<&str> = (0..4096).map(|i| at(cell(i)).unwrap_or(AIR)).collect();
                 let biome_cells = (0..64).map(|i| {
                     biome([
                         x0 + 4 * (i % 4) + 2,
@@ -390,41 +644,86 @@ pub fn encode(
                         z0 + 4 * ((i / 4) % 4) + 2,
                     ])
                 });
+                let sky: Vec<u8> = (0..4096).map(|i| light.sky(cell(i))).collect();
+                let blk: Vec<u8> = (0..4096).map(|i| light.block(cell(i))).collect();
+                let (sky, blk) = (pack_nibbles(&sky), pack_nibbles(&blk));
+                light_hash.update(sky.iter().map(|b| *b as u8).collect::<Vec<u8>>());
+                light_hash.update(blk.iter().map(|b| *b as u8).collect::<Vec<u8>>());
+                light_cells += 4096;
                 compound(vec![
-                    // A section's `Y` is a byte, as the game writes it: the
-                    // pinned core reads it as one, and an int `Y` loads the
-                    // chunk as empty (measured: an empty frame at rms 33.7
-                    // against the server save's frame).
-                    ("Y", Tag::Byte(*sy as i8)),
+                    // A section's `Y` is a byte, as the game writes it.
+                    ("Y", Tag::Byte(sy as i8)),
                     ("block_states", paletted(block_cells.into_iter(), 4)),
                     ("biomes", paletted(biome_cells, 0)),
+                    ("BlockLight", Tag::ByteArray(blk)),
+                    ("SkyLight", Tag::ByteArray(sky)),
                 ])
             })
             .collect();
-        let root = compound(vec![
+        // The chunk's block entities, in cell order.
+        let bes: Vec<Tag> = input
+            .block_entities
+            .range([cx * 16, i32::MIN, i32::MIN]..=[cx * 16 + 15, i32::MAX, i32::MAX])
+            .filter(|(c, _)| c[2].div_euclid(16) == *cz && at(**c).is_some())
+            .map(|(c, nbt)| {
+                let mut t = match nbt {
+                    Nbt::Compound(_) => nbt.clone(),
+                    _ => Nbt::Compound(Vec::new()),
+                };
+                t.set("x", Tag::Int(c[0]));
+                t.set("y", Tag::Int(c[1]));
+                t.set("z", Tag::Int(c[2]));
+                t
+            })
+            .collect();
+        block_entities += bes.len();
+        let mut root = vec![
             ("DataVersion", Tag::Int(DATA_VERSION)),
             ("xPos", Tag::Int(*cx)),
             ("zPos", Tag::Int(*cz)),
-            ("yPos", Tag::Int(MIN_SECTION)),
+            ("yPos", Tag::Int(sec_lo)),
             ("Status", Tag::Str("minecraft:full".to_string())),
             ("sections", Tag::List(secs)),
-        ]);
-        let mut z =
-            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::new(ZLIB_LEVEL));
-        z.write_all(&nbt_root(root)).expect("zlib into memory");
-        let comp = z.finish().expect("zlib into memory");
+        ];
+        if !bes.is_empty() {
+            root.push(("block_entities", Tag::List(bes)));
+        }
         let index = (cz.rem_euclid(32) * 32 + cx.rem_euclid(32)) as usize;
         regions
             .entry((cx.div_euclid(32), cz.div_euclid(32)))
             .or_default()
-            .insert(index, comp);
+            .insert(index, zlib(&nbt_root(compound(root))));
     }
-    let mut files = vec![("level.dat".to_string(), level_dat(spawn))];
+    // The bodies, one entity chunk per chunk a body stands in.
+    let mut by_chunk: BTreeMap<(i32, i32), Vec<Tag>> = BTreeMap::new();
+    for e in input.entities {
+        let (cx, cz) = (
+            (e.pos[0].floor() as i32).div_euclid(16),
+            (e.pos[2].floor() as i32).div_euclid(16),
+        );
+        by_chunk.entry((cx, cz)).or_default().push(e.compound());
+    }
+    let mut entity_regions: BTreeMap<(i32, i32), BTreeMap<usize, Vec<u8>>> = BTreeMap::new();
+    for ((cx, cz), list) in by_chunk {
+        let root = compound(vec![
+            ("DataVersion", Tag::Int(DATA_VERSION)),
+            ("Position", Tag::IntArray(vec![cx, cz])),
+            ("Entities", Tag::List(list)),
+        ]);
+        let index = (cz.rem_euclid(32) * 32 + cx.rem_euclid(32)) as usize;
+        entity_regions
+            .entry((cx.div_euclid(32), cz.div_euclid(32)))
+            .or_default()
+            .insert(index, zlib(&nbt_root(root)));
+    }
+    let mut files = vec![("level.dat".to_string(), level_dat(*spawn, input.day_time))];
     let mut hasher = Sha256::new();
-    // Region files in name order, so the hash is over a fixed order.
     let mut named: Vec<(String, Vec<u8>)> = regions
         .iter()
         .map(|((rx, rz), payloads)| (format!("region/r.{rx}.{rz}.mca"), region_file(payloads)))
+        .chain(entity_regions.iter().map(|((rx, rz), payloads)| {
+            (format!("entities/r.{rx}.{rz}.mca"), region_file(payloads))
+        }))
         .collect();
     named.sort_by(|a, b| a.0.cmp(&b.0));
     for (_, bytes) in &named {
@@ -432,12 +731,23 @@ pub fn encode(
     }
     files.extend(named);
     WrittenWorld {
-        chunks: chunks.len(),
+        chunks: chunk_set.len(),
         cells,
-        ground: ground_cells,
+        ground: ground_count,
+        block_entities,
+        entities: input.entities.len(),
+        light_cells,
+        light_sha256: format!("{:x}", light_hash.finalize()),
         sha256: format!("{:x}", hasher.finalize()),
         files,
     }
+}
+
+/// zlib at [`ZLIB_LEVEL`], as every chunk is compressed.
+fn zlib(raw: &[u8]) -> Vec<u8> {
+    let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::new(ZLIB_LEVEL));
+    z.write_all(raw).expect("zlib into memory");
+    z.finish().expect("zlib into memory")
 }
 
 /// One region file: the location table, a zero timestamp table, and each
@@ -463,10 +773,11 @@ fn region_file(payloads: &BTreeMap<usize, Vec<u8>>) -> Vec<u8> {
     header
 }
 
-/// The minimal `level.dat` the pinned core loads (spec-0089 §2.3): gzip
-/// (mtime 0) of `Data{DataVersion, LevelName, SpawnX, SpawnY, SpawnZ, version}`.
-fn level_dat(spawn: [i32; 3]) -> Vec<u8> {
-    let data = compound(vec![
+/// The minimal `level.dat` (spec-0089 §2.3, spec-0112 §5.8): gzip (mtime 0) of
+/// `Data{DataVersion, LevelName, SpawnX, SpawnY, SpawnZ, version, DayTime}`,
+/// `DayTime` present when the world states a clock.
+fn level_dat(spawn: [i32; 3], day_time: Option<i64>) -> Vec<u8> {
+    let mut entries = vec![
         ("DataVersion", Tag::Int(DATA_VERSION)),
         ("LevelName", Tag::Str("delve".to_string())),
         ("SpawnX", Tag::Int(spawn[0])),
@@ -474,8 +785,11 @@ fn level_dat(spawn: [i32; 3]) -> Vec<u8> {
         ("SpawnZ", Tag::Int(spawn[2])),
         // The Anvil format's own version number.
         ("version", Tag::Int(19133)),
-    ]);
-    let raw = nbt_root(compound(vec![("Data", data)]));
+    ];
+    if let Some(t) = day_time {
+        entries.push(("DayTime", Tag::Long(t)));
+    }
+    let raw = nbt_root(compound(vec![("Data", compound(entries))]));
     let mut g = flate2::GzBuilder::new()
         .mtime(0)
         .operating_system(255)
@@ -484,9 +798,41 @@ fn level_dat(spawn: [i32; 3]) -> Vec<u8> {
     g.finish().expect("gzip into memory")
 }
 
-/// [`encode`], written under `dir`: the directory is emptied of a previous
-/// write's `level.dat` and region files first, so a world never carries a
-/// region file a later configuration does not hold.
+/// [`encode_world`], written under `dir`: the directory is emptied of a
+/// previous write's `level.dat`, region and entity files first, so a world
+/// never carries a file a later configuration does not hold.
+pub fn write_world(input: &WorldInput<'_>, dir: &Path) -> std::io::Result<WrittenWorld> {
+    let w = encode_world(input);
+    write_files(&w, dir)?;
+    Ok(w)
+}
+
+/// Write an encoded world's files under `dir`, emptying it of a previous
+/// write's region and entity files first.
+pub fn write_files(w: &WrittenWorld, dir: &Path) -> std::io::Result<()> {
+    for sub in ["region", "entities"] {
+        let d = dir.join(sub);
+        if d.is_dir() {
+            for e in std::fs::read_dir(&d)? {
+                let p = e?.path();
+                if p.extension().is_some_and(|x| x == "mca") {
+                    std::fs::remove_file(p)?;
+                }
+            }
+        }
+    }
+    std::fs::create_dir_all(dir.join("region"))?;
+    for (rel, bytes) in &w.files {
+        let path = dir.join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, bytes)?;
+    }
+    Ok(())
+}
+
+/// [`encode`], written under `dir` ([`write_world`] over the map alone).
 pub fn write(
     blocks: &BlockMap,
     biome: &dyn Fn([i32; 3]) -> String,
@@ -494,39 +840,38 @@ pub fn write(
     ground: &Ground,
     dir: &Path,
 ) -> std::io::Result<WrittenWorld> {
-    let w = encode(blocks, biome, spawn, ground);
-    let region = dir.join("region");
-    if region.is_dir() {
-        for e in std::fs::read_dir(&region)? {
-            let p = e?.path();
-            if p.extension().is_some_and(|x| x == "mca") {
-                std::fs::remove_file(p)?;
-            }
-        }
-    }
-    std::fs::create_dir_all(&region)?;
-    for (rel, bytes) in &w.files {
-        std::fs::write(dir.join(rel), bytes)?;
-    }
-    Ok(w)
+    write_world(
+        &WorldInput {
+            blocks,
+            biome,
+            spawn,
+            ground,
+            extent: None,
+            block_entities: &BTreeMap::new(),
+            entities: &[],
+            day_time: None,
+        },
+        dir,
+    )
 }
 
-/// How many cells of `blocks` hold a block whose picture the pinned core
-/// draws from block-entity NBT a block map does not carry — a sign's text, a
-/// banner's pattern, a head's profile, a lectern's book (spec-0089 §6.2). The
-/// written world draws each blank, and the binding line counts them, so the
-/// count is a measured zero on a campaign that places none.
-pub fn block_entities_omitted(blocks: &BlockMap) -> usize {
+/// How many cells of `blocks` hold a block whose picture is drawn from
+/// block-entity NBT — a sign's text, a banner's pattern, a head's profile, a
+/// lectern's book — and whose compound `block_entities` does not carry
+/// (spec-0112 §5.4). The count is a measured zero on a campaign that places
+/// none.
+pub fn block_entities_omitted(blocks: &BlockMap, block_entities: &BTreeMap<[i32; 3], Nbt>) -> usize {
     blocks
-        .values()
-        .filter(|s| {
+        .iter()
+        .filter(|(c, s)| {
             let id = s.as_str().split('[').next().unwrap_or("");
             let id = id.rsplit(':').next().unwrap_or(id);
-            id.ends_with("_sign")
+            (id.ends_with("_sign")
                 || id.ends_with("_banner")
                 || id.ends_with("_head")
                 || id.ends_with("_skull")
-                || id == "lectern"
+                || id == "lectern")
+                && !block_entities.contains_key(*c)
         })
         .count()
 }

@@ -231,6 +231,9 @@ pub struct Plan<'a> {
     /// `close-gate` completability model in `crate::compiler::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
     pub region_events: RegionEvents,
+    /// Every `set-time` and `set-weather` the quest graph performs, dated on
+    /// the critical path ([`collect_clock_events`], spec-0112 §7.6).
+    pub clock_events: Vec<ClockEvent>,
     /// **Every contingent way the placed world stages** (spec-0042 §2.4), in
     /// area → placement → declaration order, with its world cells, its block and
     /// its direction read from the carrying piece's metadata. Empty for every
@@ -1147,6 +1150,7 @@ impl<'a> Plan<'a> {
             region_events_of(campaign, region_events, &path_firing, &npcs),
             &loop_spliced,
         );
+        let clock_events = collect_clock_events(campaign, &path_firing);
 
         // ---- what became of every staged way (spec-0042 §2.5, DW0548) ----
         //
@@ -1249,6 +1253,7 @@ impl<'a> Plan<'a> {
             seal_hints,
             press_answers,
             region_events,
+            clock_events,
             ways,
             way_gate,
             strict_ancestor_steps,

@@ -3,21 +3,28 @@
 //! The compiler knows every world coordinate, so the visual-tier camera plan is
 //! **computed, not guessed**: one deterministic shot list derived from the layout,
 //! each shot carrying a camera (pos + orientation) and a machine-generated
-//! `expect` checklist derived from the DSL. `delvec scene` turns this into
-//! Chunky scenes; the generation-time vision agent reviews each render against its
+//! `expect` checklist derived from the DSL. `delvec frames` draws one frame per
+//! shot; the generation-time vision agent reviews each frame against its
 //! `expect` strings (findings are DSL-addressable, same shape as playtest notes).
 //!
-//! ## Camera convention (shared with `delvec render`)
+//! ## Camera convention: Minecraft's own
 //!
 //! `pos`/`look_at` are world coordinates (block-centre floats). `yaw`/`pitch` are
-//! **degrees**, aimed from `pos` at `look_at`:
-//! - `yaw = atan2(-dz, dx)`: `0` faces +X (east), `90` faces −Z (north), `180`
-//!   faces −X (west), `-90`/`270` faces +Z (south).
+//! **Minecraft degrees**, aimed from `pos` at `look_at` — the numbers `/tp` and
+//! the debug screen speak, the cutscene aim and the showcase record use:
+//! - `yaw = atan2(-dx, dz)`: `0` faces +Z (south), `90` faces −X (west), `180`
+//!   north, `-90` east.
 //! - `pitch = atan2(-dy, hypot(dx, dz))`: positive looks **down**, `0` is level.
+//! - `fov` is the vertical field of view, degrees; every shot states it.
 //!
-//! This matches the camera axes the spike-render-fidelity spike verified for
-//! Chunky (`yaw ≈ π/2` faces −Z, positive pitch = down); `delvec scene`
-//! converts these degrees to Chunky's radians directly.
+//! ## The state a frame is of (spec-0112 §3)
+//!
+//! Every shot states the world its frame stands in (`world`: `at-load`, or
+//! `after-<step>` — a key of `validation/worlds/`), the clock it is of (`sky`:
+//! `{time, daytime_ticks, weather, set_by}`) and the mode it is drawn in
+//! (`mode`: `quick` for every review kind). A POV shot stands in its leg's
+//! configuration, every other kind at load
+//! ([`crate::compiler::view::review::frame_worlds`]).
 //!
 //! ## Determinism
 //!
@@ -121,6 +128,7 @@ use serde_json::{Value, json};
 
 use crate::compiler::failure::Failure;
 use crate::compiler::nav::{CameraEye, LegRoute, World};
+use crate::compiler::view::review::FrameWorlds;
 use crate::compiler::plan::{Plan, ResolvedAnchor, Step};
 use crate::compiler::registry::PrefabRegistry;
 
@@ -147,13 +155,13 @@ fn facing_vec(facing: Option<&str>) -> [f64; 3] {
     }
 }
 
-/// Aim a camera at `look_at` from `pos`; returns `(yaw_deg, pitch_deg)` in the
-/// documented convention.
+/// Aim a camera at `look_at` from `pos`; returns `(yaw_deg, pitch_deg)` in
+/// Minecraft's convention.
 fn aim(pos: [f64; 3], look_at: [f64; 3]) -> (f64, f64) {
     let dx = look_at[0] - pos[0];
     let dy = look_at[1] - pos[1];
     let dz = look_at[2] - pos[2];
-    let yaw = (-dz).atan2(dx).to_degrees();
+    let yaw = (-dx).atan2(dz).to_degrees();
     let horiz = (dx * dx + dz * dz).sqrt();
     let pitch = (-dy).atan2(horiz).to_degrees();
     (round3(yaw), round3(pitch))
@@ -169,15 +177,19 @@ fn centre(pos: [i32; 3]) -> [f64; 3] {
     [pos[0] as f64 + 0.5, pos[1] as f64, pos[2] as f64 + 0.5]
 }
 
-fn camera(pos: [f64; 3], look_at: [f64; 3]) -> Value {
+fn camera(pos: [f64; 3], look_at: [f64; 3], fov: f64) -> Value {
     let (yaw, pitch) = aim(pos, look_at);
     json!({
         "pos": [round3(pos[0]), round3(pos[1]), round3(pos[2])],
         "yaw": yaw,
         "pitch": pitch,
         "look_at": [round3(look_at[0]), round3(look_at[1]), round3(look_at[2])],
+        "fov": round3(fov),
     })
 }
+
+/// The vertical field of view a shot states when its kind declares none.
+pub const DEFAULT_FOV_DEG: f64 = 70.0;
 
 /// The thin (wall-normal) axis of an inclusive `[from,to]` region, or `None` when
 /// it is not planar (no axis with `from == to`); prefers the first such axis.
@@ -655,34 +667,57 @@ struct Shot {
     /// Whether the area's stage-1 `lighting` declaration is stamped on
     /// ([`area_lighting_stamp`]).
     stamped: bool,
+    /// The critical-path arrival the frame stands at: the world it stands in
+    /// is that arrival's ([`FrameWorlds::per_arrival`]), and its eye is proven
+    /// in that arrival's own configuration.
+    world: usize,
 }
 
 /// The shot list under construction, the eye cells the clear-eye proof owes a
-/// verdict on, and the world both are judged against.
+/// verdict on, and the worlds both are judged against.
 ///
-/// [`Shots::push`] is the only way a shot enters the plan, and it does three
-/// things no kind may skip: it stands the camera up in open air, it writes the
-/// resulting eye into the shot's `camera`, and it records that same eye for the
-/// `DW0724` proof. A kind added later gets all three whether or not its author
-/// thought about it — which is the whole finding this shape exists to answer,
-/// since both the standing-up and the proof used to belong to one caller each.
+/// [`Shots::push`] is the only way a shot enters the plan, and it does four
+/// things no kind may skip: it stands the camera up in open air in the frame's
+/// own world, it writes the resulting eye into the shot's `camera`, it records
+/// that same eye for the `DW0724` proof in that world, and it states the
+/// frame's world, clock and mode. A kind added later gets all four whether or
+/// not its author thought about it.
 struct Shots<'c> {
     campaign: &'c Campaign,
-    world: &'c World,
+    plan: &'c Plan<'c>,
+    frames: &'c FrameWorlds,
+    /// The nav world every configuration is laid over.
+    base: &'c World,
+    /// Per arrival, its nav world once asked (`None` inside: the base).
+    navs: Vec<Option<Option<World>>>,
     shots: Vec<Value>,
-    eyes: Vec<CameraEye>,
+    eyes: Vec<(usize, CameraEye)>,
     /// How many cameras could not stand at their requested stand-off.
     pulled_in: usize,
 }
 
 impl<'c> Shots<'c> {
-    fn new(campaign: &'c Campaign, world: &'c World) -> Self {
+    fn new(plan: &'c Plan<'c>, frames: &'c FrameWorlds, base: &'c World) -> Self {
         Shots {
-            campaign,
-            world,
+            campaign: plan.campaign,
+            plan,
+            frames,
+            base,
+            navs: (0..frames.arrivals.len()).map(|_| None).collect(),
             shots: Vec::new(),
             eyes: Vec::new(),
             pulled_in: 0,
+        }
+    }
+
+    /// The nav world of arrival `i`.
+    fn nav(&mut self, i: usize) -> &World {
+        if self.navs[i].is_none() {
+            self.navs[i] = Some(self.frames.arrivals[i].world(self.base));
+        }
+        match &self.navs[i] {
+            Some(Some(w)) => w,
+            _ => self.base,
         }
     }
 
@@ -694,17 +729,19 @@ impl<'c> Shots<'c> {
         // not a position. The distinction is a property of the kind, so it is read
         // off the kind here rather than chosen per shot.
         let requested = shot.eye;
-        let eye = if shot.kind == "pov" || self.world.is_clear(eye_cell(requested)) {
+        let pov = shot.kind == "pov";
+        let world = self.nav(shot.world);
+        let eye = if pov || world.is_clear(eye_cell(requested)) {
             // The requested stand-off is honoured wherever it can be: an interior
             // shot's dollhouse eye ABOVE the piece is deliberately outside the
-            // room (the renderer strips the ceiling), and pulling it down the
-            // sight line just because a roof is in the way would replace the
-            // framing this kind exists for. The stand-off yields to exactly one
-            // fact — that the cell it names holds a block.
+            // room, and pulling it down the sight line just because a roof is in
+            // the way would replace the framing this kind exists for. The
+            // stand-off yields to exactly one fact — that the cell it names holds
+            // a block in the world the frame stands in.
             requested
         } else {
             crate::compiler::camera::stand_in_open_air(
-                |cell| !self.world.is_clear(cell),
+                |cell| !world.is_clear(cell),
                 shot.look_at,
                 requested,
             )
@@ -714,11 +751,8 @@ impl<'c> Shots<'c> {
         if moved {
             self.pulled_in += 1;
         }
-        let mut cam = camera(eye, shot.look_at);
+        let mut cam = camera(eye, shot.look_at, shot.fov.unwrap_or(DEFAULT_FOV_DEG));
         let cam_obj = cam.as_object_mut().expect("camera is a JSON object");
-        if let Some(fov) = shot.fov {
-            cam_obj.insert("fov".to_string(), json!(round3(fov)));
-        }
         if moved {
             // A displaced camera is invisible in its own frame, so the plan says
             // where it was asked to stand and why it does not.
@@ -738,6 +772,7 @@ impl<'c> Shots<'c> {
                 ),
             );
         }
+        let fw = &self.frames.worlds[self.frames.per_arrival[shot.world]];
         let mut obj = serde_json::Map::new();
         obj.insert("id".to_string(), json!(shot.id));
         obj.insert("kind".to_string(), json!(shot.kind));
@@ -746,19 +781,64 @@ impl<'c> Shots<'c> {
             obj.insert(k.to_string(), v);
         }
         obj.insert("camera".to_string(), cam);
+        obj.insert("world".to_string(), json!(fw.key));
+        obj.insert("sky".to_string(), fw.clock.to_json(self.plan));
+        obj.insert("mode".to_string(), json!(review_mode(shot.kind)));
         obj.insert("expect".to_string(), Value::Array(shot.expect));
         if shot.stamped
             && let Some(stamp) = area_lighting_stamp(self.campaign, &shot.area)
         {
             obj.insert("lighting".to_string(), stamp);
         }
-        self.eyes.push(CameraEye {
-            shot_id: shot.id,
-            kind: shot.kind,
-            cell: eye_cell(eye),
-        });
+        self.eyes.push((
+            shot.world,
+            CameraEye {
+                shot_id: shot.id,
+                kind: shot.kind,
+                cell: eye_cell(eye),
+                world: fw.key.clone(),
+            },
+        ));
         self.shots.push(Value::Object(obj));
     }
+
+    /// `DW0724` over every eye, each in its own arrival's configuration.
+    /// Returns how many distinct world keys the eyes were proven in.
+    fn prove_eyes(&mut self, picture: &crate::compiler::blockstate::BlockMap) -> Result<usize, Failure> {
+        let mut by_world: std::collections::BTreeMap<usize, Vec<CameraEye>> = Default::default();
+        for (w, e) in std::mem::take(&mut self.eyes) {
+            by_world.entry(w).or_default().push(e);
+        }
+        let worlds = by_world
+            .keys()
+            .map(|a| self.frames.per_arrival[*a])
+            .collect::<std::collections::BTreeSet<_>>()
+            .len();
+        for (w, eyes) in &by_world {
+            let config = &self.frames.arrivals[*w];
+            let block_at = |c: [i32; 3]| {
+                config
+                    .blocks(picture)
+                    .get(&c)
+                    .map(|b| b.as_str().to_string())
+            };
+            let nav = self.nav(*w);
+            crate::compiler::nav::verify_camera_eyes(nav, eyes, &block_at)?;
+        }
+        self.eyes = by_world
+            .into_iter()
+            .flat_map(|(w, v)| v.into_iter().map(move |e| (w, e)))
+            .collect();
+        Ok(worlds)
+    }
+}
+
+/// **The mode a frame is drawn in, from what it asks** (spec-0112 §6.1 item 4):
+/// `quick` — the lightmap the client draws from the light the world carries —
+/// for every review kind. The showcase cameras and the panorama are hq; they
+/// are no shot of this plan.
+pub fn review_mode(_kind: &str) -> &'static str {
+    "quick"
 }
 
 /// Build the `render-plan.json` value for a compiled plan (spec-0003), proving
@@ -839,44 +919,42 @@ fn ground_plane(plan: &Plan) -> Option<f64> {
 }
 
 ///
-/// `base` is the bytes a picture starts from
-/// ([`crate::compiler::view::beat::picture_base`]): with it, every POV shot
-/// states the configuration its leg is walked in (`after`, spec-0089 §8) and
-/// the camera record's `after` rules are asked (`DW0721`). The build always
-/// hands it; `delvec snapshot --shot`, which reads one shot's camera and writes
-/// no plan, does not.
+/// `frames` is the build's frame worlds
+/// ([`crate::compiler::view::review::frame_worlds`]): every shot states the
+/// world it stands in, and its eye is proven clear there. `picture` is the
+/// bytes a picture starts from ([`crate::compiler::view::beat::picture_base`]):
+/// every POV shot states the configuration its leg is walked in (`after`,
+/// spec-0089 §8), and the camera record's `after` rules are asked (`DW0721`).
 pub fn render_plan(
     plan: &Plan,
     prefabs: &PrefabRegistry,
     pov: &[PovShot],
     world: &World,
-    base: Option<&crate::compiler::blockstate::BlockMap>,
+    frames: &FrameWorlds,
+    picture: &crate::compiler::blockstate::BlockMap,
 ) -> Result<(Value, Vec<Diagnostic>), Failure> {
     let c = plan.campaign;
-    // spec-0089 §8: the configuration each POV shot stands in, from the
-    // critical path's own enumeration — per leg, the step whose configuration
-    // the leg arrives under and the cells its bytes move from load.
-    let pov_after: Option<Vec<Value>> = base.map(|base| {
-        let (configs, per_step) = crate::compiler::nav::path_configurations(plan, world);
-        let load = crate::compiler::view::beat::load_blocks(plan, world, base);
-        let mut moved: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
-        pov.iter()
-            .map(|shot| {
-                let ci = per_step.get(shot.step).copied();
-                let cells = ci.map_or(0, |ci| {
-                    *moved
-                        .entry(ci)
-                        .or_insert_with(|| configs[ci].moved_from(&load))
-                });
-                let after = plan.critical_path[..shot.step.min(plan.critical_path.len())]
-                    .iter()
-                    .rev()
-                    .find_map(crate::compiler::view::beat::step_id);
-                json!({ "step": after, "cells_moved": cells })
-            })
-            .collect()
-    });
-    let mut out = Shots::new(c, world);
+    // spec-0089 §8: the configuration each POV shot stands in — per leg, the
+    // step whose configuration the leg arrives under and the cells its bytes
+    // move from load.
+    let load = frames.worlds[0].config.blocks(picture);
+    let mut moved: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
+    let pov_after: Vec<Value> = pov
+        .iter()
+        .map(|shot| {
+            let wi = frames.per_arrival.get(shot.step).copied().unwrap_or(0);
+            let cells = *moved
+                .entry(wi)
+                .or_insert_with(|| frames.worlds[wi].config.moved_from(&load));
+            let after = plan.critical_path[..shot.step.min(plan.critical_path.len())]
+                .iter()
+                .rev()
+                .find_map(crate::compiler::view::beat::step_id);
+            json!({ "step": after, "cells_moved": cells })
+        })
+        .collect();
+    let mut out = Shots::new(plan, frames, world);
+    let at_load = 0usize;
 
     // --- spawn -------------------------------------------------------------
     if let Some((area, pos, facing)) = spawn_of(plan) {
@@ -901,6 +979,7 @@ pub fn render_plan(
                 Value::String("area entry framed — no void gap at the floor".into()),
             ],
             stamped: false,
+            world: at_load,
         });
     }
 
@@ -963,6 +1042,7 @@ pub fn render_plan(
                 extra: vec![("prefab", json!(piece.prefab_id))],
                 expect,
                 stamped: true,
+                world: at_load,
             });
         }
         // Seam (doorway) shots: air-clear seals are cut openings between mated
@@ -989,6 +1069,7 @@ pub fn render_plan(
                     Value::String("doorway opening is clear — passage traversable".into()),
                 ],
                 stamped: false,
+                world: at_load,
             });
         }
     }
@@ -1041,6 +1122,7 @@ pub fn render_plan(
                 ),
             ],
             stamped: false,
+            world: at_load,
         });
     }
 
@@ -1072,6 +1154,7 @@ pub fn render_plan(
             extra: vec![("objective", json!(obj_id))],
             expect,
             stamped: false,
+            world: at_load,
         });
     }
 
@@ -1103,6 +1186,7 @@ pub fn render_plan(
                     ),
                 ],
                 stamped: false,
+                world: at_load,
             });
         }
     }
@@ -1127,17 +1211,18 @@ pub fn render_plan(
                     ("objective", json!(shot.objective)),
                     ("standing_cell", json!(shot.standing_cell)),
                 ];
-                if let Some(a) = pov_after.as_ref().and_then(|v| v.get(si)) {
+                if let Some(a) = pov_after.get(si) {
                     e.push(("after", a.clone()));
                 }
                 e
             },
             expect,
             stamped: true,
+            world: shot.step.min(frames.arrivals.len() - 1),
         });
     }
 
-    crate::compiler::nav::verify_camera_eyes(world, &out.eyes)?;
+    let proven_in = out.prove_eyes(picture)?;
     let mut warnings = Vec::new();
     if out.eyes.is_empty() {
         warnings.push(Diagnostic::warning(
@@ -1155,8 +1240,12 @@ pub fn render_plan(
         "version": c.world.dsl_version,
         "campaign_id": plan.namespace,
         "layout_aabb": { "min": amin, "max": amax },
-        "camera_convention": "yaw/pitch degrees; yaw=atan2(-dz,dx) (0=+X,90=-Z); pitch=atan2(-dy,horiz) (+down)",
-        "camera_eye_proof": { "cameras": out.eyes.len(), "pulled_in": out.pulled_in },
+        "camera_convention": "minecraft degrees: yaw=atan2(-dx,dz) (0=south +Z, 90=west -X); pitch=atan2(-dy,horiz) (+down); fov vertical",
+        "camera_eye_proof": {
+            "cameras": out.eyes.len(),
+            "pulled_in": out.pulled_in,
+            "worlds": proven_in,
+        },
         "sky": sky_fact(c),
         "shots": out.shots,
     });
@@ -1200,19 +1289,16 @@ pub fn render_plan(
         // spec-0089: every camera's `after` stands somewhere — the record's own
         // rules, asked of the build's configurations by the reader `delvec
         // cameras` asks them through.
-        if let Some(base) = base {
-            let sheet =
-                crate::compiler::view::camera::parse_sheet(record).map_err(|d| Failure {
-                    code: crate::compiler::view::camera::record_code_at_build(&d),
-                    message: d.message,
-                })?;
-            crate::compiler::view::beat::check_record(plan, world, base, &sheet.cameras).map_err(
-                |message| Failure {
-                    code: crate::compiler::view::camera::DW_RECORD_AT_BUILD,
-                    message,
-                },
-            )?;
-        }
+        let sheet = crate::compiler::view::camera::parse_sheet(record).map_err(|d| Failure {
+            code: crate::compiler::view::camera::record_code_at_build(&d),
+            message: d.message,
+        })?;
+        crate::compiler::view::beat::check_record(plan, world, picture, &sheet.cameras).map_err(
+            |message| Failure {
+                code: crate::compiler::view::camera::DW_RECORD_AT_BUILD,
+                message,
+            },
+        )?;
     }
     Ok((root, warnings))
 }
@@ -1391,6 +1477,25 @@ fn interact_anchors(c: &Campaign) -> Vec<(String, String, String, Option<String>
 }
 
 /// Union world AABB across every placed area (for the Chunky `chunkList`).
+/// **The box a frame of this build loads, and the world writer fills whole**
+/// (spec-0112 §5.3): the layout, and on a `valley` the landform the horizon
+/// built around it — the plan's `layout_aabb` widened by its `horizon.extent`,
+/// as [`crate::compiler::view::scene::loaded_extent`] reads them back.
+pub fn loaded_extent(plan: &Plan) -> ([i32; 3], [i32; 3]) {
+    let (mut min, mut max) = layout_aabb(plan);
+    let base = delvewright_dsl::resolved_horizon(&plan.campaign.world.content.horizon).base;
+    if base == HorizonBase::Valley
+        && let Some(s) = plan.surround.as_ref()
+    {
+        let (p, d) = (s.piece.pos, s.piece.size);
+        for a in 0..3 {
+            min[a] = min[a].min(p[a]);
+            max[a] = max[a].max(p[a] + d[a] - 1);
+        }
+    }
+    (min, max)
+}
+
 fn layout_aabb(plan: &Plan) -> ([i32; 3], [i32; 3]) {
     let mut min = [i32::MAX; 3];
     let mut max = [i32::MIN; 3];

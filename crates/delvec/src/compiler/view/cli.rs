@@ -1,10 +1,11 @@
-//! The CPU render arms as `delvec` subcommands (ADR-0021 §1).
+//! The render arms as `delvec` subcommands (ADR-0021 §1).
 //!
-//! `viewer`, `scene`, `panorama`, `contact-sheet`, `index` and `palette` are
-//! declared here and flattened into the top level of the one binary — not
-//! because rendering is a compiler concern, but because the surface a creator
-//! installs is ONE binary. The drivers below read the modules under
-//! [`crate::compiler::view`].
+//! `frames`, `cameras`, `place-camera`, `panorama`, `viewer`, `contact-sheet`
+//! and `palette` are declared here and flattened into the top level of the one
+//! binary — not because rendering is a compiler concern, but because the
+//! surface a creator installs is ONE binary. The drivers below read the
+//! modules under [`crate::compiler::view`]; every frame is drawn in this
+//! process by [`crate::compiler::view::frames`].
 //!
 //! **No cargo feature gates any of this.** A feature would ship a
 //! same-name-different-capability binary — an artifact whose name promises a
@@ -12,9 +13,9 @@
 //! `tools/ci/build-release-binaries.sh` proves per target that the built binary's
 //! own `--help` lists exactly the surface the source declares.
 //!
-//! The three arms that are NOT here — `piece`, `batch`, `fidelity-gate` — are
-//! the ones that mesh and rasterise through `nucleation`/`wgpu`. They live in
-//! `crates/delvec/src/render` and mount as `delvec render …` (ADR-0023 §3).
+//! The three prefab-piece arms — `piece`, `batch`, `fidelity-gate` — mesh and
+//! rasterise through `nucleation`. They live in `crates/delvec/src/render` and
+//! mount as `delvec render …` (ADR-0023 §3).
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -28,10 +29,10 @@ use crate::compiler::view::diag::{
     DW_BINDING, DW_INPUT, DW_OUTPUT, DW_RANK_ORDER, DW_RENDER, DW_UNDERSPECIFIED_STATE,
     DW_UNRESOLVED_BLOCK, DW_VIEWER_RESOURCES, Diagnostic, exit,
 };
+use crate::compiler::view::frames::Backend;
 use crate::compiler::view::panorama::{self, Bearing, PanoramaOptions, Subject};
-use crate::compiler::view::scene::{self, SceneOptions};
 use crate::compiler::view::sheet::{self, ScoreSet, SheetOptions};
-use crate::compiler::view::{cache, index, nbt, showing, viewer};
+use crate::compiler::view::{frameset, showing, viewer};
 
 /// The options every render arm shares. On `delvec render` these were three
 /// global flags; here they are declared by the arms that read them, so that
@@ -39,8 +40,8 @@ use crate::compiler::view::{cache, index, nbt, showing, viewer};
 pub struct ViewOpts {
     /// Emit diagnostics as one JSON object per line.
     pub json: bool,
-    /// Resource pack for textures (the 1.21.11 client jar). Overrides the
-    /// `$DELVEWRIGHT_CLIENT_JAR` / `~/.chunky` fallbacks.
+    /// The pinned client jar. Overrides `$DELVEWRIGHT_CLIENT_JAR` and the
+    /// location Init I5 writes it to ([`client_jar_home`]).
     pub textures: Option<String>,
     /// A delve's `resourcepack.zip`, layered above the textures (spec-0084
     /// §5.1): a block texture the delve replaces is drawn as the delve draws it.
@@ -49,33 +50,82 @@ pub struct ViewOpts {
     pub size: u32,
 }
 
-/// The default frame dimension, unchanged from `delvec render`.
+/// The default frame dimension of a page arm.
 pub const DEFAULT_SIZE: u32 = 1024;
+
+/// How a run that draws frames draws them: the backend, the CPU backend's
+/// thread count, and the client jar.
+#[derive(Debug, Clone, clap::Args)]
+pub struct DrawArgs {
+    /// Which backend draws: `auto` takes the GPU wgpu finds (Metal, Vulkan,
+    /// DX12) and falls back to the CPU, saying so on the first line; a named
+    /// backend that is not available is refused (`DW0723`).
+    #[arg(long, value_enum, default_value_t = Backend::Auto)]
+    pub backend: Backend,
+    /// Threads the CPU backend draws with (default: every core). The CPU
+    /// backend's pixels are the same for any count.
+    #[arg(long)]
+    pub threads: Option<usize>,
+    /// The pinned client jar. Overrides `$DELVEWRIGHT_CLIENT_JAR` and the
+    /// location Init I5 writes it to.
+    #[arg(long)]
+    pub textures: Option<String>,
+}
 
 #[derive(Subcommand)]
 pub enum ViewCommand {
-    /// Emit Chunky scene JSONs from a build output's `render-plan.json`.
-    Scene {
-        /// A `delvec build` output directory (containing `render-plan.json`).
-        build_dir: PathBuf,
-        /// Output directory for the scene JSONs.
+    /// Draw the review frames of a build — every shot of its `render-plan.json`
+    /// (or the `--shot`s named), each from the world the build wrote for the
+    /// configuration it stands in — with `shot-index.json` beside them; or,
+    /// with `--campaign`, one frame of a campaign's load world from a camera
+    /// stated by hand, for placing things (spec-0015).
+    Frames {
+        /// A `delvec build` output directory (holding `render-plan.json` and
+        /// `validation/worlds/`).
+        #[arg(required_unless_present = "campaign", conflicts_with = "campaign")]
+        build_dir: Option<PathBuf>,
+        /// Output: the directory the frames and the index are written to
+        /// (default `<build-dir>/frames`), or with `--campaign` the PNG
+        /// (default `frame.png`).
         #[arg(short, long)]
-        out: PathBuf,
-        /// The world save the scenes load (default `<build-dir>/world`, where
-        /// `validation/world-save.sh` writes it). Refused unless it holds
-        /// `level.dat` and a region file; written into the scenes as an absolute
-        /// path.
+        out: Option<PathBuf>,
+        /// Only this shot, by id (repeatable): `pov/leg0/wp0`, `cutscene/…`.
+        #[arg(long, conflicts_with = "campaign")]
+        shot: Vec<String>,
+        /// Stamp every target's outline and name on the frame.
         #[arg(long)]
-        world: Option<PathBuf>,
-        /// Rendered frame dimension (square), in pixels.
-        #[arg(long, default_value_t = DEFAULT_SIZE)]
+        labels: bool,
+        /// Frame dimension (square), in pixels.
+        #[arg(long, default_value_t = crate::compiler::view::frames::REVIEW_SIZE,
+              value_parser = clap::value_parser!(u32).range(1..))]
         size: u32,
+        #[command(flatten)]
+        draw: DrawArgs,
+        /// A campaign directory: draw one frame of its load world, assembled
+        /// in this process (placement and assembly, no emission).
+        #[arg(long)]
+        campaign: Option<PathBuf>,
+        /// The camera, `x,y,z,yaw,pitch[,fov]` in Minecraft degrees (yaw 0 =
+        /// south/+Z, 90 = west/−X; pitch positive looks down).
+        #[arg(long, requires = "campaign", conflicts_with = "at")]
+        camera: Option<String>,
+        /// Frame an anchor (`anchor/fire-pit`, or `area/island:anchor/pen`)
+        /// from `--dist` blocks away.
+        #[arg(long, requires = "campaign")]
+        at: Option<String>,
+        /// Compass bearing (degrees) the `--at` camera stands on: 0 = due south
+        /// of the subject looking north, 90 = due west looking east.
+        #[arg(long, requires = "at", default_value_t = 0.0)]
+        orbit: f64,
+        /// Distance in blocks from the `--at` subject.
+        #[arg(long, requires = "at")]
+        dist: Option<f64>,
     },
-    /// Emit a Chunky scene per showcase camera a campaign states in
-    /// `design/cameras.json` — a camera on the assembled world, estimated from the
-    /// approved image it answers or placed by hand — against a build's
-    /// `render-plan.json`, each loading the world the engine writes for the
-    /// configuration the camera stands in (at load, or after its `after` step).
+    /// Draw a frame per showcase camera a campaign states in
+    /// `design/cameras.json` — a camera on the assembled world, estimated from
+    /// the approved image it answers or placed by hand — each in the world the
+    /// engine writes for the configuration the camera stands in (at load, or
+    /// after its `after` step), path traced at the camera's own samples.
     Cameras {
         /// A `delvec build` output directory (containing `render-plan.json`).
         build_dir: PathBuf,
@@ -83,7 +133,7 @@ pub enum ViewCommand {
         /// camera's `answers` is held to its `design.json`.
         #[arg(long)]
         campaign: PathBuf,
-        /// Output directory for the scene JSONs, and for the worlds they load
+        /// Output directory for the frames, and for the worlds they stand in
         /// (`<out>/worlds/<key>/`, one per configuration a camera stands in:
         /// `at-load`, or `after-<step>`). The worlds are written by the engine
         /// from the campaign and `--prefabs` (spec-0089); no server boot is
@@ -93,7 +143,7 @@ pub enum ViewCommand {
         /// Only this camera, by name (repeatable).
         #[arg(long)]
         only: Vec<String>,
-        /// Emit, beside each camera, the camera moved each way by each step —
+        /// Draw, beside each camera, the camera moved each way by each step —
         /// `yaw=8,pitch=4,fov=10,dolly=6,truck=3,rise=3`, any subset — and write every
         /// candidate to `candidates.json` in the output directory, in the record
         /// format.
@@ -101,16 +151,17 @@ pub enum ViewCommand {
         bracket: Option<Bracket>,
         // The numbers are the draft constants' own, so the help cannot drift from them.
         #[arg(long, conflicts_with = "preview", help = format!(
-            "Emit each frame at 1/{DRAFT_DIVISOR} of its width and height and at most \
-             {DRAFT_SPP} samples, under its own `_draft` scene name: for judging what is in frame."
+            "Draw each frame at 1/{DRAFT_DIVISOR} of its width and height and at most \
+             {DRAFT_SPP} samples, as `<stem>_draft.png`: for judging what is in frame."
         ))]
         draft: bool,
-        /// Write no scene: draw each camera (and candidate) on the CPU, flat-lit,
-        /// at half its width and height, as `<stem>_preview.png` — seconds per
-        /// frame, for placing a camera before a path tracer is asked about light.
-        /// Draws each camera's own configuration (its `after`).
+        /// Draw each camera (and candidate) in quick mode — the vanilla
+        /// client's look — at half its width and height, as `<stem>_preview.png`:
+        /// for placing a camera before light is judged.
         #[arg(long)]
         preview: bool,
+        #[command(flatten)]
+        draw: DrawArgs,
     },
     /// Write one row of `design/cameras.json` — the record's one writer: a pose a
     /// person captured in the game (`--report` + `--slot`, written as `hand`),
@@ -166,22 +217,17 @@ pub enum ViewCommand {
         #[arg(long)]
         delete: bool,
     },
-    /// Emit an oblique exterior scene of the delve's built place — the storybook
-    /// shot — from a build output's `render-plan.json`. The camera frames the
-    /// subject (the placed areas unless `--subject` names anchors); the ground a
-    /// horizon built around them is loaded, not framed.
+    /// Draw an oblique exterior of the delve's built place — the storybook
+    /// shot — path traced from the world the build wrote at load. The camera
+    /// frames the subject (the placed areas unless `--subject` names anchors);
+    /// the ground a horizon built around them is loaded, not framed.
     Panorama {
-        /// A `delvec build` output directory (containing `render-plan.json`).
+        /// A `delvec build` output directory (containing `render-plan.json` and
+        /// `validation/worlds/at-load`).
         build_dir: PathBuf,
-        /// Output directory for the scene JSON.
+        /// Output directory for the frame.
         #[arg(short, long)]
         out: PathBuf,
-        /// The world save the scene loads (default `<build-dir>/world`, where
-        /// `validation/world-save.sh` writes it). Refused unless it holds
-        /// `level.dat` and a region file; written into the scene as an absolute
-        /// path.
-        #[arg(long)]
-        world: Option<PathBuf>,
         /// Which side the camera stands on: a corner (se, sw, ne, nw) looks along
         /// the diagonal, a face (n, e, s, w) looks square at that side.
         #[arg(long, value_enum, default_value_t = Bearing::Se)]
@@ -204,7 +250,7 @@ pub enum ViewCommand {
         /// at the layout's full height.
         #[arg(long, default_value = "layout", value_parser = Subject::parse)]
         subject: Subject,
-        /// Path-tracing sample target: ~64 for a draft, ~300 for release art.
+        /// Path-tracing samples a pixel: ~64 for a draft, ~300 for release art.
         #[arg(long, default_value_t = panorama::DEFAULT_SPP)]
         spp: u32,
         /// Frame width, in pixels.
@@ -215,6 +261,8 @@ pub enum ViewCommand {
         #[arg(long, default_value_t = panorama::DEFAULT_HEIGHT,
               value_parser = clap::value_parser!(u32).range(1..))]
         height: u32,
+        #[command(flatten)]
+        draw: DrawArgs,
     },
     /// Lay candidate renders out as ONE contact sheet for the owner to curate
     /// massing from (spec-0027 §3). With `--scores`, the similarity score
@@ -264,8 +312,8 @@ pub enum ViewCommand {
         /// Page title. Defaults to the prefab id, or a count when several.
         #[arg(long)]
         title: Option<String>,
-        /// Resource pack for textures (the 1.21.11 client jar). Overrides the
-        /// `$DELVEWRIGHT_CLIENT_JAR` / `~/.chunky` fallbacks.
+        /// The pinned client jar. Overrides `$DELVEWRIGHT_CLIENT_JAR` and the
+        /// location Init I5 writes it to.
         #[arg(long)]
         textures: Option<String>,
         /// A delve's `resourcepack.zip`, read above the textures — the order a
@@ -296,8 +344,8 @@ pub enum ViewCommand {
         /// tints the table. Requires `--build`.
         #[arg(long, requires = "build")]
         place: Option<String>,
-        /// Resource pack for textures (the 1.21.11 client jar). Overrides the
-        /// `$DELVEWRIGHT_CLIENT_JAR` / `~/.chunky` fallbacks.
+        /// The pinned client jar. Overrides `$DELVEWRIGHT_CLIENT_JAR` and the
+        /// location Init I5 writes it to.
         #[arg(long)]
         textures: Option<String>,
         /// A delve's `resourcepack.zip`, read above the textures — the order a
@@ -306,15 +354,6 @@ pub enum ViewCommand {
         #[arg(long)]
         pack: Option<String>,
     },
-    /// Emit a shot index (image ↔ expect pairs) from a build's `render-plan.json`,
-    /// for handing shots to a reviewing agent / vision model.
-    Index {
-        /// A `delvec build` output directory (containing `render-plan.json`).
-        build_dir: PathBuf,
-        /// Output file for the shot index JSON.
-        #[arg(short, long)]
-        out: PathBuf,
-    },
 }
 
 impl ViewCommand {
@@ -322,27 +361,35 @@ impl ViewCommand {
     /// render arms answer to exactly as every other subcommand does.
     pub fn run(&self, json: bool) -> ExitCode {
         match self {
-            ViewCommand::Scene {
-                build_dir,
+            ViewCommand::Frames {
+                build_dir: Some(build_dir),
                 out,
-                world,
+                shot,
+                labels,
                 size,
-            } => run_scene(
+                draw,
+                campaign: None,
+                ..
+            } => frameset::run_frames(
                 build_dir,
-                out,
-                world.as_deref(),
-                &ViewOpts {
-                    json,
-                    textures: None,
-                    pack: None,
+                &frameset::FramesOptions {
+                    out: out
+                        .clone()
+                        .unwrap_or_else(|| build_dir.join(frameset::FRAMES_DIR)),
+                    shots: shot.clone(),
+                    labels: *labels,
                     size: *size,
+                    draw: draw.clone(),
                 },
+                json,
             ),
-            ViewCommand::Cameras { .. } | ViewCommand::PlaceCamera { .. } => fail(
+            ViewCommand::Frames { .. }
+            | ViewCommand::Cameras { .. }
+            | ViewCommand::PlaceCamera { .. } => fail(
                 Diagnostic::error(
                     DW_INPUT,
-                    "`delvec cameras` and `delvec place-camera` assemble the world, and are run by \
-                     the `delvec` binary rather than this arm",
+                    "`delvec frames --campaign`, `delvec cameras` and `delvec place-camera` \
+                     assemble the world, and are run by the `delvec` binary rather than this arm",
                 ),
                 json,
                 exit::INPUT,
@@ -350,7 +397,6 @@ impl ViewCommand {
             ViewCommand::Panorama {
                 build_dir,
                 out,
-                world,
                 bearing,
                 pitch,
                 fov,
@@ -358,13 +404,12 @@ impl ViewCommand {
                 spp,
                 width,
                 height,
+                draw,
             } => run_panorama(
                 build_dir,
                 out,
-                world.as_deref(),
                 json,
                 PanoramaOptions {
-                    world_path: String::new(),
                     width: *width,
                     height: *height,
                     spp_target: *spp,
@@ -373,6 +418,7 @@ impl ViewCommand {
                     fov_deg: *fov,
                     subject: subject.clone(),
                 },
+                draw,
             ),
             ViewCommand::ContactSheet {
                 dir,
@@ -434,22 +480,25 @@ impl ViewCommand {
                     size: DEFAULT_SIZE,
                 },
             ),
-            ViewCommand::Index { build_dir, out } => run_index(
-                build_dir,
-                out,
-                &ViewOpts {
-                    json,
-                    textures: None,
-                    pack: None,
-                    size: DEFAULT_SIZE,
-                },
-            ),
         }
     }
 }
 
-/// Resolve the textures path from `--textures`, `$DELVEWRIGHT_CLIENT_JAR`, then
-/// `~/.chunky/resources/minecraft.jar`. Returns the first that exists.
+/// **Where Init I5 writes the client jar**: `~/.delvewright/client/minecraft-
+/// <mc>.jar`, the last of the three places every jar-reading arm looks. `None`
+/// when no home directory is known.
+pub fn client_jar_home() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|h| {
+        PathBuf::from(h)
+            .join(".delvewright")
+            .join("client")
+            .join(format!("minecraft-{}.jar", delvewright_dsl::blocks::MC_VERSION))
+    })
+}
+
+/// Resolve the client jar from `--textures`, `$DELVEWRIGHT_CLIENT_JAR`, then
+/// [`client_jar_home`]: the first that exists, else `DW0723` naming every place
+/// looked and the step that puts the jar there (Init I5).
 pub fn resolve_textures(textures: Option<&str>) -> Result<String, Diagnostic> {
     let mut candidates: Vec<String> = Vec::new();
     if let Some(t) = textures {
@@ -458,18 +507,30 @@ pub fn resolve_textures(textures: Option<&str>) -> Result<String, Diagnostic> {
     if let Ok(env) = std::env::var("DELVEWRIGHT_CLIENT_JAR") {
         candidates.push(env);
     }
-    if let Ok(home) = std::env::var("HOME") {
-        candidates.push(format!("{home}/.chunky/resources/minecraft.jar"));
+    if let Some(home) = client_jar_home() {
+        candidates.push(home.display().to_string());
     }
     for c in &candidates {
-        if Path::new(c).exists() {
+        if Path::new(c).is_file() {
             return Ok(c.clone());
         }
     }
     Err(Diagnostic::error(
         DW_RENDER,
-        "no textures found — pass --textures <1.21.11 client jar>, set \
-         $DELVEWRIGHT_CLIENT_JAR, or place it at ~/.chunky/resources/minecraft.jar",
+        format!(
+            "no client jar found — looked at {}. Every frame is drawn with Minecraft {}'s own \
+             textures, and the jar is never downloaded by an arm that draws: Init I5 puts it at \
+             {}; or pass --textures <jar>, or set $DELVEWRIGHT_CLIENT_JAR",
+            if candidates.is_empty() {
+                "nothing (no --textures, no $DELVEWRIGHT_CLIENT_JAR, no home directory)".to_string()
+            } else {
+                candidates.join(", ")
+            },
+            delvewright_dsl::blocks::MC_VERSION,
+            client_jar_home()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "~/.delvewright/client/".to_string())
+        ),
     ))
 }
 
@@ -494,154 +555,12 @@ fn create_parent_dir(out: &Path, json: bool) -> Result<(), ExitCode> {
     Ok(())
 }
 
-/// Union block palette (block-state strings, sorted, deduped) of every shipped
-/// structure `.nbt` under the build's `datapack/data/<ns>/structure/`. Consumed
-/// only by the night-vision review emulation (`scene::scenes_from_plan`); an
-/// absent structure tree yields an empty palette (harmless unless the plan
-/// stamps a dark shot — then scene emission refuses, see `scene.rs`). An
-/// *unreadable* structure is an error: a corrupt build dir must not silently
-/// degrade the review.
-fn structure_palette(build_dir: &Path) -> Result<Vec<String>, Diagnostic> {
-    let data = build_dir.join("datapack").join("data");
-    let mut nbts: Vec<PathBuf> = Vec::new();
-    if let Ok(namespaces) = std::fs::read_dir(&data) {
-        let mut dirs: Vec<PathBuf> = namespaces
-            .filter_map(|e| e.ok().map(|e| e.path().join("structure")))
-            .collect();
-        dirs.sort();
-        for dir in dirs {
-            let Ok(entries) = std::fs::read_dir(&dir) else {
-                continue;
-            };
-            nbts.extend(
-                entries
-                    .filter_map(|e| e.ok().map(|e| e.path()))
-                    .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("nbt")),
-            );
-        }
-    }
-    nbts.sort();
-    let mut palette = std::collections::BTreeSet::new();
-    for path in &nbts {
-        let st = nbt::parse_structure(path).map_err(|e| {
-            Diagnostic::error(DW_INPUT, format!("structure {}: {e}", path.display()))
-        })?;
-        palette.extend(st.palette);
-    }
-    Ok(palette.into_iter().collect())
-}
-
-fn run_scene(build_dir: &Path, out: &Path, world: Option<&Path>, vopts: &ViewOpts) -> ExitCode {
-    let plan_path = build_dir.join("render-plan.json");
-    let bytes = match std::fs::read(&plan_path) {
-        Ok(b) => b,
-        Err(e) => {
-            return fail(
-                Diagnostic::error(DW_INPUT, format!("read {}: {e}", plan_path.display())),
-                vopts.json,
-                exit::INPUT,
-            );
-        }
-    };
-    let world_path = match resolve_world(build_dir, world) {
-        Ok(w) => w,
-        Err(d) => return fail(d, vopts.json, exit::INPUT),
-    };
-    let opts = SceneOptions {
-        world_path,
-        width: vopts.size,
-        height: vopts.size,
-        spp_target: 500,
-    };
-    // The shipped structures' block palette feeds the dark-shot night-vision
-    // review emulation (no-op for plans without dark-stamped shots).
-    let palette = match structure_palette(build_dir) {
-        Ok(p) => p,
-        Err(d) => return fail(d, vopts.json, exit::INPUT),
-    };
-    let scenes = match scene::scenes_from_plan(&bytes, &opts, &palette) {
-        Ok(s) => s,
-        Err(d) => return fail(d, vopts.json, exit::INPUT),
-    };
-    let purged = match write_scenes(out, &scenes) {
-        Ok(n) => n,
-        Err((d, code)) => return fail(d, vopts.json, code),
-    };
-    eprintln!(
-        "emitted {} Chunky scene(s) -> {} ({purged} stale cache file(s) purged; render with {}; \
-         see README)",
-        scenes.len(),
-        out.display(),
-        scene::CHUNKY_CORE
-    );
-    eprintln!("{}", review_frame_limit(&bytes));
-    ExitCode::SUCCESS
-}
-
-/// The review frames' stated limit (spec-0089 §8): they render the world at
-/// load, and the plan states which POV shots stand in a configuration other
-/// than load (`after.cells_moved` above zero) — counted here so the limit is a
-/// measured one.
-pub fn review_frame_limit(plan_json: &[u8]) -> String {
-    let doc: serde_json::Value = serde_json::from_slice(plan_json).unwrap_or_default();
-    let pov: Vec<&serde_json::Value> = doc["shots"]
-        .as_array()
-        .map(|a| a.iter().filter(|s| s["kind"] == "pov").collect())
-        .unwrap_or_default();
-    let moved = pov
-        .iter()
-        .filter(|s| s["after"]["cells_moved"].as_u64().is_some_and(|n| n > 0))
-        .count();
-    format!(
-        "review frames render the world at load; {moved} of {} POV shots stand in a configuration \
-         other than load",
-        pov.len()
-    )
-}
-
-/// Write scene JSONs into `out`, deleting each one's now-stale Chunky caches
-/// (see `cache`: Chunky reuses `<scene>.octree2`/`.dump` silently, so a re-emitted
-/// scene would render from the chunks and settings it just replaced). Returns
-/// the number of cache files removed.
-fn write_scenes(out: &Path, scenes: &[(String, Vec<u8>)]) -> Result<usize, (Diagnostic, u8)> {
-    std::fs::create_dir_all(out).map_err(|e| {
-        (
-            Diagnostic::error(DW_OUTPUT, format!("mkdir {}: {e}", out.display())),
-            exit::OUTPUT,
-        )
-    })?;
-    let mut purged = 0usize;
-    for (name, data) in scenes {
-        std::fs::write(out.join(name), data).map_err(|e| {
-            (
-                Diagnostic::error(DW_OUTPUT, format!("write {name}: {e}")),
-                exit::OUTPUT,
-            )
-        })?;
-        purged += cache::purge_scene_caches(out, name)
-            .map_err(|d| (d, exit::OUTPUT))?
-            .len();
-        // A clear scene names a sky map drawn from its own tick and camera
-        // (`sky_image::companion`); it is written beside the scene, so the two
-        // are always one emission.
-        if let Some((map, bytes)) = crate::compiler::view::sky_image::companion(data) {
-            std::fs::write(out.join(&map), bytes).map_err(|e| {
-                (
-                    Diagnostic::error(DW_OUTPUT, format!("write {map}: {e}")),
-                    exit::OUTPUT,
-                )
-            })?;
-        }
-    }
-    Ok(purged)
-}
-
 fn run_panorama(
     build_dir: &Path,
     out: &Path,
-    world: Option<&Path>,
     json: bool,
-    mut opts: PanoramaOptions,
+    opts: PanoramaOptions,
+    draw: &DrawArgs,
 ) -> ExitCode {
     let plan_path = build_dir.join("render-plan.json");
     let bytes = match std::fs::read(&plan_path) {
@@ -653,10 +572,6 @@ fn run_panorama(
                 exit::INPUT,
             );
         }
-    };
-    opts.world_path = match resolve_world(build_dir, world) {
-        Ok(w) => w,
-        Err(d) => return fail(d, json, exit::INPUT),
     };
     // An anchor subject is resolved against the anchors this build placed; the
     // default subject reads nothing but the plan.
@@ -677,21 +592,52 @@ fn run_panorama(
         Ok(s) => s,
         Err(d) => return fail(d, json, exit::INPUT),
     };
-    let scene = (pano.file_name.clone(), pano.bytes.clone());
-    let purged = match write_scenes(out, std::slice::from_ref(&scene)) {
-        Ok(n) => n,
-        Err((d, code)) => return fail(d, json, code),
+    let world = match frameset::build_world(build_dir, crate::compiler::view::beat::AT_LOAD) {
+        Ok(w) => w,
+        Err(d) => return fail(d, json, exit::INPUT),
     };
+    let jar = match resolve_textures(draw.textures.as_deref()) {
+        Ok(j) => j,
+        Err(d) => return fail(d, json, exit::RENDER),
+    };
+    let packs = frameset::build_packs(build_dir);
+    let drawn = match frameset::draw_frame(
+        &crate::compiler::view::frames::FrameRequest {
+            world: &world,
+            chunks: pano.chunks,
+            jar: Path::new(&jar),
+            packs: &packs,
+            camera: pano.frame.view(),
+            sky: crate::compiler::view::frames::FrameSky {
+                daytime_ticks: pano.sky.daytime_ticks,
+                weather: pano.sky.weather,
+            },
+            mode: crate::compiler::view::frames::Mode::Hq {
+                spp: pano.frame.spp,
+            },
+            backend: draw.backend,
+            width: pano.frame.width,
+            height: pano.frame.height,
+        },
+        draw.threads,
+    ) {
+        Ok(d) => d,
+        Err(d) => return fail(d, json, exit::RENDER),
+    };
+    eprintln!("{}", frameset::renderer_line(&drawn, draw.backend));
+    let png = out.join(format!("{}.png", pano.stem));
+    if let Err(d) = frameset::write_png(&png, &drawn) {
+        return fail(d, json, exit::OUTPUT);
+    }
     let (smin, smax) = pano.subject;
     eprintln!(
-        "emitted panorama {} -> {} ({purged} stale cache file(s) purged; {}x{}, {} spp, render with {}; \
-         see README)",
-        pano.file_name,
-        out.display(),
-        opts.width,
-        opts.height,
-        opts.spp_target,
-        scene::CHUNKY_CORE
+        "drew panorama {} ({}x{}, {} spp, hq) in {:.2} s -> {}",
+        pano.stem,
+        pano.frame.width,
+        pano.frame.height,
+        pano.frame.spp,
+        drawn.seconds(),
+        png.display()
     );
     eprintln!(
         "subject: {}, box {smin:?}..{smax:?} — covers {:.0}% of the frame \
@@ -1005,51 +951,54 @@ pub fn run_place_camera(
 
 /// One world the engine wrote: its binding line, its absolute path, and how
 /// many block-entity pictures it draws blank.
-struct WorldWritten {
-    line: String,
-    path: String,
-    omitted: usize,
+pub struct WorldWritten {
+    pub line: String,
+    pub path: String,
+    pub omitted: usize,
+    pub written: crate::compiler::view::world::WrittenWorld,
 }
 
-/// **The one writer of a configuration's world** (spec-0089 §5): `blocks`
-/// written under `dir` by [`crate::compiler::view::world::write`] with the
-/// build's biome answer and spawn, and the binding line that names it. Both
-/// `delvec cameras` and `delvec written-world` write through here.
-fn write_world(
+/// **The one writer of a configuration's world** (spec-0089 §5, spec-0112 §5):
+/// `blocks` written under `dir` by the stood campaign's
+/// [`crate::compiler::view::review::WorldMaker`], with the regions world `key`
+/// lays held out of the generator's ground, and the binding line that names
+/// it. `delvec cameras`, `delvec written-world` and `delvec frames --campaign`
+/// write through here, and `delvec build` through the same maker.
+pub fn write_world(
     key: &str,
     blocks: &crate::compiler::blockstate::BlockMap,
     stood: &crate::compiler::view::beat::Stood,
     dir: &Path,
 ) -> Result<WorldWritten, Diagnostic> {
-    // The generator shows through every cell no write reached: held out of
-    // the assembled world's and the setup's cells already, and here out of
-    // the regions this world's own configuration lays.
-    let mut ground = stood.ground.clone();
-    for (lo, hi) in stood.stands.laid_in(key) {
-        ground.mark_box(*lo, *hi);
-    }
-    let written =
-        crate::compiler::view::world::write(blocks, &*stood.biome, stood.spawn, &ground, dir)
-            .map_err(|e| Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", dir.display())))?;
+    let started = std::time::Instant::now();
+    let laid = stood.stands.laid_in(key).to_vec();
+    let written = stood.maker.encode_blocks(blocks, &laid, stood.day_time, &[]);
+    crate::compiler::view::world::write_files(&written, dir)
+        .map_err(|e| Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", dir.display())))?;
     let abs = std::path::absolute(dir)
         .map_err(|e| Diagnostic::error(DW_OUTPUT, format!("resolve {}: {e}", dir.display())))?
         .display()
         .to_string();
+    let bes = stood.maker.block_entities(blocks);
     Ok(WorldWritten {
-        line: format!(
-            "world: {key} {} chunk(s), {} cell(s), {} ground cell(s), sha256 {} -> {abs}",
-            written.chunks, written.cells, written.ground, written.sha256
+        line: crate::compiler::view::review::world_line(
+            key,
+            &written,
+            &abs,
+            started.elapsed().as_millis(),
         ),
         path: abs,
-        omitted: crate::compiler::view::world::block_entities_omitted(blocks),
+        omitted: crate::compiler::view::world::block_entities_omitted(blocks, &bes),
+        written,
     })
 }
 
 /// `delvec written-world`: the world the engine models at load — the
 /// configuration arriving at the critical path's first step, every world-load
-/// seal in place, no beat fired — written under `out` (its `level.dat` and
-/// `region/`), with no camera record. It is the world `delvec cameras` writes
-/// as `<out>/worlds/at-load`, through the same writer, and the written half of
+/// seal in place, no beat fired — written under `out` (its `level.dat`,
+/// `region/` and `entities/`), with no camera record. It is the world `delvec
+/// build` writes as `validation/worlds/at-load` and `delvec cameras` as
+/// `<out>/worlds/at-load`, through the same writer, and the written half of
 /// `DW0955` (`tools/ci/check-written-world.py`). `stood` is the caller's
 /// assembly of the campaign, carrying exactly the load world.
 pub fn run_written_world(
@@ -1077,28 +1026,35 @@ pub fn run_written_world(
             serde_json::json!({
                 "world": w.path,
                 "key": key,
+                "block_entities": w.written.block_entities,
                 "block_entities_omitted": w.omitted,
+                "sha256": w.written.sha256,
             })
         );
     }
     eprintln!("{}", w.line);
     eprintln!(
-        "block entities drawn blank: {} (sign, banner, head, lectern: the written world carries no block-entity NBT)",
-        w.omitted
+        "block entities: {} written from the templates, {} drawn blank (a sign, banner, head or \
+         lectern whose compound no template carries)",
+        w.written.block_entities, w.omitted
     );
     ExitCode::SUCCESS
 }
 
-/// `delvec cameras`: emit one scene per camera the run frames, each naming the
-/// world the engine writes for the configuration it stands in (spec-0089 §5.3).
-/// `ask` is the caller's assembly of the campaign; it is consulted after every
-/// rule of the record that needs no world has held.
+/// `delvec cameras`: draw one frame per camera the run frames, each in the
+/// world the engine writes for the configuration it stands in (spec-0089
+/// §5.3). `ask` is the caller's assembly of the campaign; it is consulted after
+/// every rule of the record that needs no world has held. `preview` draws each
+/// in quick mode at [`camera::PREVIEW_DIVISOR`] of its size.
+#[allow(clippy::too_many_arguments)]
 pub fn run_cameras(
     build_dir: &Path,
     campaign: &Path,
     out: &Path,
     json: bool,
-    mut opts: EmitOptions,
+    opts: EmitOptions,
+    preview: bool,
+    draw: &DrawArgs,
     ask: &mut StandAsker<'_>,
 ) -> ExitCode {
     let read = |path: PathBuf| {
@@ -1119,18 +1075,18 @@ pub fn run_cameras(
         Err(d) => return fail(d, json, exit::INPUT),
     };
     // **Every approved picture is answered** (`DW0900`, spec-0070). Read where
-    // the record is read FRESH, so a record edited after the build cannot emit a
-    // set with a hole in it; `--only` selects which scenes are written and
-    // exempts nothing, because the record is what is judged. `--preview` is the
-    // instrument that closes the hole and is not this path.
+    // the record is read FRESH, so a record edited after the build cannot draw
+    // a set with a hole in it; `--only` selects which frames are drawn and
+    // exempts nothing, because the record is what is judged. `--preview` is
+    // the instrument that closes the hole, so it reports the count and never
+    // refuses on it (spec-0070 §3).
     let answers = camera::tally(
         &sheet,
         &rows.iter().map(|r| r.name.clone()).collect::<Vec<_>>(),
     );
     // **The sky each camera is taken under** (spec-0079 §6), printed on every
     // run, refused or not: one line per camera this run frames, and the summary
-    // with its denominator. Cameras that cannot be selected (`--only` naming
-    // nobody, a record for another campaign) are refused by `emit` below.
+    // with its denominator.
     let framed = camera::selected(
         &sheet.campaign_id,
         &sheet,
@@ -1154,7 +1110,7 @@ pub fn run_cameras(
             exit::INPUT,
         );
     }
-    if !answers.unanswered.is_empty() {
+    if !preview && !answers.unanswered.is_empty() {
         return fail(
             Diagnostic::error(
                 crate::compiler::design::DW_DESIGN_ANSWERED.id(),
@@ -1171,6 +1127,14 @@ pub fn run_cameras(
             exit::INPUT,
         );
     }
+    let frames = match camera::frames_of(&plan, &sheet, &rows, &opts) {
+        Ok(f) => f,
+        Err(d) => return fail(d, json, exit::INPUT),
+    };
+    let jar = match resolve_textures(draw.textures.as_deref()) {
+        Ok(j) => j,
+        Err(d) => return fail(d, json, exit::RENDER),
+    };
     // **The world each camera stands in** (spec-0089 §4, §5): one world per
     // distinct configuration, written by the engine under `<out>/worlds/`.
     // Asked of exactly the cameras this run frames — a candidate stands where
@@ -1191,7 +1155,7 @@ pub fn run_cameras(
         };
         world_lines.push(w.line);
         omitted.insert(key.clone(), w.omitted);
-        paths.insert(key.clone(), w.path);
+        paths.insert(key.clone(), PathBuf::from(w.path));
     }
     for s in &stood.stands.stands {
         eprintln!("{}", s.line(omitted.get(&s.key).copied().unwrap_or(0)));
@@ -1200,28 +1164,108 @@ pub fn run_cameras(
         eprintln!("{l}");
     }
     eprintln!("{}", crate::compiler::view::beat::summary(&stood.stands));
-    opts.world_paths = stood
-        .stands
-        .stands
-        .iter()
-        .map(|s| (s.camera.clone(), paths[&s.key].clone()))
-        .collect();
-    let emission = match camera::emit(&plan, &sheet, &rows, &opts) {
-        Ok(e) => e,
-        Err(d) => return fail(d, json, exit::INPUT),
+    let packs = frameset::build_packs(build_dir);
+    let chunks = {
+        let (lo, hi) = stood.maker.extent;
+        crate::compiler::view::scene::chunk_rect(lo, hi)
     };
-    let purged = match write_scenes(out, &emission.scenes) {
-        Ok(n) => n,
-        Err((d, code)) => return fail(d, json, code),
-    };
+    if let Err(e) = std::fs::create_dir_all(out) {
+        return fail(
+            Diagnostic::error(DW_OUTPUT, format!("mkdir {}: {e}", out.display())),
+            json,
+            exit::OUTPUT,
+        );
+    }
+    let mut first = true;
+    let mut seconds = 0.0f64;
+    let mut obstructed = 0usize;
+    for f in &frames {
+        let Some(stand) = stood.stands.stands.iter().find(|s| s.camera == f.camera.name) else {
+            return fail(
+                Diagnostic::error(
+                    DW_INPUT,
+                    format!(
+                        "camera `{}` stands in no written world: every camera a run frames is \
+                         asked where it stands before a frame is drawn",
+                        f.camera.name
+                    ),
+                ),
+                json,
+                exit::INPUT,
+            );
+        };
+        let grid_blocks = stood
+            .stands
+            .worlds
+            .iter()
+            .find(|(k, _)| *k == stand.key)
+            .map(|(_, b)| b);
+        if let Some(blocks) = grid_blocks
+            && let Some(cell) = camera::lens_obstruction(f.frame.pos, |c| blocks.contains_key(&c))
+        {
+            obstructed += 1;
+            eprintln!(
+                "camera `{}`: the lens at {:?} is inside or within {} block of `{}` at {cell:?}. A \
+                 pinhole camera has no near plane, so the frame shows that block's inside faces or \
+                 a sliver of it across a corner: move the camera",
+                f.camera.name,
+                f.frame.pos,
+                camera::LENS_CLEARANCE,
+                blocks.get(&cell).map_or("a block", |b| b.as_str())
+            );
+        }
+        let (mode, width, height, file) = if preview {
+            (
+                crate::compiler::view::frames::Mode::Quick,
+                (f.frame.width / camera::PREVIEW_DIVISOR).max(1),
+                (f.frame.height / camera::PREVIEW_DIVISOR).max(1),
+                camera::preview_file(&sheet.campaign_id, &f.camera.name),
+            )
+        } else {
+            (
+                crate::compiler::view::frames::Mode::Hq { spp: f.frame.spp },
+                f.frame.width,
+                f.frame.height,
+                format!("{}.png", f.stem),
+            )
+        };
+        let drawn = match frameset::draw_frame(
+            &crate::compiler::view::frames::FrameRequest {
+                world: &paths[&stand.key],
+                chunks,
+                jar: Path::new(&jar),
+                packs: &packs,
+                camera: f.frame.view(),
+                sky: crate::compiler::view::frames::FrameSky {
+                    daytime_ticks: f.sky.daytime_ticks,
+                    weather: f.sky.weather,
+                },
+                mode,
+                backend: draw.backend,
+                width,
+                height,
+            },
+            draw.threads,
+        ) {
+            Ok(d) => d,
+            Err(d) => return fail(d, json, exit::RENDER),
+        };
+        if first {
+            eprintln!("{}", frameset::renderer_line(&drawn, draw.backend));
+            first = false;
+        }
+        seconds += drawn.seconds();
+        if let Err(d) = frameset::write_png(&out.join(&file), &drawn) {
+            return fail(d, json, exit::OUTPUT);
+        }
+    }
     if opts.bracket.is_some() {
         let path = out.join(camera::CANDIDATES_FILE);
-        let written =
-            camera::candidates_bytes(&sheet.campaign_id, &emission.cameras).and_then(|b| {
-                std::fs::write(&path, b).map_err(|e| {
-                    Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", path.display()))
-                })
-            });
+        let cams: Vec<camera::Camera> = frames.iter().map(|f| f.camera.clone()).collect();
+        let written = camera::candidates_bytes(&sheet.campaign_id, &cams).and_then(|b| {
+            std::fs::write(&path, b)
+                .map_err(|e| Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", path.display())))
+        });
         if let Err(d) = written {
             return fail(d, json, exit::OUTPUT);
         }
@@ -1232,13 +1276,19 @@ pub fn run_cameras(
         opts.only.len()
     };
     eprintln!(
-        "emitted {} Chunky scene(s) for {stated} of {} stated camera(s) -> {} ({purged} stale cache \
-         file(s) purged; {}render with {}){}",
-        emission.scenes.len(),
+        "drew {} camera frame(s) for {stated} of {} stated camera(s) -> {} ({}{} in {seconds:.2} \
+         s){}",
+        frames.len(),
         sheet.cameras.len(),
         out.display(),
-        if opts.draft { "drafts, " } else { "" },
-        scene::CHUNKY_CORE,
+        if preview {
+            "previews, quick"
+        } else if opts.draft {
+            "drafts, hq"
+        } else {
+            "hq"
+        },
+        if preview { "" } else { " at each camera's samples" },
         if opts.bracket.is_some() {
             format!(
                 "; every candidate is in {}",
@@ -1248,77 +1298,13 @@ pub fn run_cameras(
             String::new()
         }
     );
+    eprintln!(
+        "lens: {} of {} camera(s) clear of every block by {} block, {obstructed} flagged",
+        frames.len() - obstructed,
+        frames.len(),
+        camera::LENS_CLEARANCE
+    );
     eprintln!("{}", answers.line());
-    ExitCode::SUCCESS
-}
-
-/// The world save a scene names, as the absolute path Chunky will be handed.
-///
-/// Chunky resolves a scene's world path against the RENDERING process's working
-/// directory, and renders a world it cannot find as an empty frame at exit 0 with
-/// the reason inside a Java stack trace. `delvec build` writes no world — the
-/// datapack stamps the geometry during a server boot, and
-/// `validation/world-save.sh` copies that save to `<build-dir>/world`. So the
-/// default is that directory, the path is made absolute here, and a directory
-/// without `level.dat` and at least one region file is refused before a scene is
-/// written.
-fn resolve_world(build_dir: &Path, world: Option<&Path>) -> Result<String, Diagnostic> {
-    let dir = world.map_or_else(|| build_dir.join("world"), Path::to_path_buf);
-    let level = dir.join("level.dat").is_file();
-    let regions = std::fs::read_dir(dir.join("region"))
-        .map(|rd| {
-            rd.filter_map(Result::ok)
-                .filter(|e| e.path().extension().is_some_and(|x| x == "mca"))
-                .count()
-        })
-        .unwrap_or(0);
-    if !level || regions == 0 {
-        return Err(Diagnostic::error(
-            DW_INPUT,
-            format!(
-                "{} holds no world save (level.dat: {}, region files: {regions}). A scene names \
-                 the world Chunky loads, `delvec build` writes none, and Chunky renders a \
-                 missing world as an empty frame at exit 0. Boot the build once to write it: \
-                 `EULA=TRUE \"$DELVEWRIGHT_ENGINE/validation/world-save.sh\" {} --project dw-<id>` \
-                 writes `<build-dir>/world`, the default; `--world` names a save elsewhere",
-                dir.display(),
-                if level { "present" } else { "MISSING" },
-                build_dir.display(),
-            ),
-        ));
-    }
-    let abs = std::path::absolute(&dir)
-        .map_err(|e| Diagnostic::error(DW_INPUT, format!("resolve {}: {e}", dir.display())))?;
-    Ok(abs.display().to_string())
-}
-
-fn run_index(build_dir: &Path, out: &Path, vopts: &ViewOpts) -> ExitCode {
-    let plan_path = build_dir.join("render-plan.json");
-    let bytes = match std::fs::read(&plan_path) {
-        Ok(b) => b,
-        Err(e) => {
-            return fail(
-                Diagnostic::error(DW_INPUT, format!("read {}: {e}", plan_path.display())),
-                vopts.json,
-                exit::INPUT,
-            );
-        }
-    };
-    let idx = match index::index_from_plan(&bytes) {
-        Ok(b) => b,
-        Err(d) => return fail(d, vopts.json, exit::INPUT),
-    };
-    if let Err(code) = create_parent_dir(out, vopts.json) {
-        return code;
-    }
-    if let Err(e) = std::fs::write(out, &idx) {
-        return fail(
-            Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", out.display())),
-            vopts.json,
-            exit::OUTPUT,
-        );
-    }
-    eprintln!("wrote shot index -> {}", out.display());
     ExitCode::SUCCESS
 }
 

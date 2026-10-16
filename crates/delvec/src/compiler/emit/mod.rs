@@ -1036,15 +1036,34 @@ pub fn build_with_warnings(
     // proof — every kind, not the one that needed it first. It also states the
     // proof's binding count in the artifact and hands back a warning when that
     // count is zero.
+    //
+    // Every shot stands in a world of the critical path's own configurations
+    // (spec-0112 §3) and its eye is proven clear there; the worlds are written
+    // under `validation/worlds/` beside the plan, with the review record.
+    let frame_worlds = crate::compiler::view::review::frame_worlds(plan, &world);
     let (render_plan_doc, camera_warnings) = crate::compiler::render_plan::render_plan(
         plan,
         prefabs,
         &pov_shots,
         &world,
-        Some(&picture),
+        &frame_worlds,
+        &picture,
     )?;
     warnings.extend(camera_warnings);
     put_json(&mut out, "render-plan.json", &render_plan_doc);
+    let maker =
+        crate::compiler::view::review::WorldMaker::new(plan, assembled, &picture, structures);
+    let review = crate::compiler::view::review::write_review(
+        plan,
+        &picture,
+        &maker,
+        &frame_worlds,
+        &render_plan_doc,
+        &mut out,
+    );
+    for line in &review.lines {
+        eprintln!("{line}");
+    }
     // spec-0091: the served view distance, what the build judged against it
     // (every showcase camera and cutscene shot — a refusal stopped the build
     // before here), and the cost stated to the host.

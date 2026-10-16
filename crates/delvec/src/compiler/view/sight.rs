@@ -90,7 +90,7 @@
 
 use delvewright_dsl::metrics::PLAYER_EYE_HEIGHT;
 
-use crate::compiler::snapshot::{Camera, VoxelGrid};
+use crate::compiler::framing::{Camera, VoxelGrid};
 use crate::compiler::view::blockcolor;
 use crate::compiler::view::diag::Diagnostic;
 use crate::compiler::view::nbt::Structure;
