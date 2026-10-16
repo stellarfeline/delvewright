@@ -68,7 +68,7 @@ The site plan's `seams[]` and `metrics` move by nothing: a seam's `opening`, `fo
 
 ## 6. The build — where the bar stands, per kind
 
-The derivation (`blockout::derive_with`, step 6) writes the bar for every seam whose edge is gated and whose plane it cuts; where a bound piece owns the plane, the piece ships the shut state against the gate region it owes, exactly as for a barred seam today (spec-0098 §2; `owed_anchors`). The bar is the **last word in the opening**: written after the treads and the ladder, except where this table says the crossing's own realization keeps the cell.
+The derivation (`blockout::derive_with`, step 6) writes the bar for every seam whose edge is gated and whose plane it cuts; where a bound piece owns the plane, the piece ships the shut state against the gate region it owes, exactly as for a barred seam today (spec-0098 §2; `owed_anchors`). The bar is the **last word in the opening**: written after the treads, the ladder and the stairwell over a through-floor run — after every cut that can reach its cells — except where this table says the crossing's own realization keeps the cell.
 
 | Seam | The crossing, open | The bar, shut | **Authored** reason |
 |---|---|---|---|
