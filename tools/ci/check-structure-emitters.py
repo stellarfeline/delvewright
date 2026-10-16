@@ -122,6 +122,13 @@ NOT_CONNECTION_EMITTERS = {
         "stone, a lantern and an oak log — none of them a fence, wall, pane or multiface block, "
         "and the box it frames is never admitted into the library."
     ),
+    "crates/delvec/tests/review_frame_worlds.rs": (
+        "test fixture for spec-0112's written block entities: a copy of the pinned hello room "
+        "with one oak sign added to its palette, judged against the pinned registry before the "
+        "bytes are written. A standing sign carries `rotation` and `waterlogged`, neither a "
+        "connection, and the copy lives in the test target's scratch directory, never admitted "
+        "into the library."
+    ),
 }
 
 # Sites that serialise NBT and are NOT prefab emitters. Each is named

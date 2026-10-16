@@ -388,6 +388,15 @@ fn library_with_a_sign(dir: &Path) -> PathBuf {
     props.insert("rotation".to_string(), Value::String("8".into()));
     props.insert("waterlogged".to_string(), Value::String("false".into()));
     sign.insert("Properties".to_string(), Value::Compound(props));
+    // The sign's state is judged against the pinned registry before it is
+    // written into the library copy: an id the pin lacks would load as air.
+    let registry = delvewright_dsl::blocks::BlockRegistry::v1_21_11();
+    let sign_props = std::collections::BTreeMap::from([
+        ("rotation".to_string(), "8".to_string()),
+        ("waterlogged".to_string(), "false".to_string()),
+    ]);
+    let judged = registry.validate("minecraft:oak_sign", &sign_props);
+    judged.expect("the sign is a block the pin has");
     palette.push(Value::Compound(sign));
     let state = (palette.len() - 1) as i32;
     let Some(Value::List(blocks)) = top.get_mut("blocks") else {
