@@ -943,6 +943,26 @@ def test_every_row_sent_carries_its_intent():
     assert by_key["quest.greet.goal"]["situation"][0].startswith("What the quest does")
 
 
+def test_an_objective_title_row_carries_its_act_to_the_prompt():
+    """spec-0114 §5: the act the completion performs rides the title row's
+    situation as `act: <acts>`, and reaches the model unchanged, so a
+    transcreation that departs from its source's act departs in front of it."""
+    doc = json.loads(json.dumps(INVENTORY_DOC))
+    situation = ["Completing it: The roll is laid in the loft.", "act: use, present, give"]
+    doc["entries"].append(
+        {
+            "key": "obj.the-roll.lay-the-roll.title",
+            "en": "Lay the roll on the lectern",
+            "kind": "objective",
+            "situation": situation,
+        }
+    )
+    inv = t.parse_inventory(doc)
+    rows = sent_rows({"messages": t.translate_step(inv, inv.pending(), "zh-cn").messages})
+    by_key = {r["key"]: r for r in rows}
+    assert by_key["obj.the-roll.lay-the-roll.title"]["situation"] == situation
+
+
 def test_the_critique_and_revision_see_the_intent_too():
     inv = inventory()
     batch = inv.pending()
