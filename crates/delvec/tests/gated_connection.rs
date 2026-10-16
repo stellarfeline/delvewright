@@ -357,3 +357,84 @@ fn a_gated_floor_climb_keeps_its_rung_and_opens_only_with_its_beat() {
         "opened, the climb reaches the upper floor"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The bar is the last write to its own cells
+// ---------------------------------------------------------------------------
+
+/// `c` with the stair `edge` gated on the terms the connection `like` carries.
+fn gate_like(c: &Campaign, edge: &str, like: &str) -> Campaign {
+    let mut c = c.clone();
+    let g = &mut c.layout_graph.as_mut().expect("a graph").content;
+    let gating_of = |e: &delvewright_dsl::layout::Edge| match e {
+        delvewright_dsl::layout::Edge::Walk { gating, .. }
+        | delvewright_dsl::layout::Edge::Stair { gating, .. }
+        | delvewright_dsl::layout::Edge::Climb { gating, .. }
+        | delvewright_dsl::layout::Edge::Drop { gating, .. } => gating.clone(),
+        _ => None,
+    };
+    let terms = g
+        .edges
+        .iter()
+        .find(|e| e.id().0 == like)
+        .and_then(gating_of)
+        .unwrap_or_else(|| panic!("`{like}` is gated"));
+    for e in &mut g.edges {
+        if e.id().0 != edge {
+            continue;
+        }
+        match e {
+            delvewright_dsl::layout::Edge::Stair { gating, .. } => *gating = Some(terms.clone()),
+            _ => panic!("`{edge}` is a stair"),
+        }
+    }
+    c
+}
+
+/// **A gated stair through a floor, its treads hosted by a stand-in, is built
+/// shut.** The stairwell the derivation cuts over a through-floor run reaches
+/// the hole's own cells, so a bar laid before it is cut back to air and the
+/// world loads with the way open. The bar is the last write to its cells: every
+/// cell of the hole holds it, and the run under it still has its stairwell.
+#[test]
+fn a_gated_stair_through_a_stand_ins_floor_keeps_its_hatch() {
+    let open = gallery_stand_ins("stairwell-hatch");
+    let line = derivation_line(&open);
+    assert!(
+        !line.contains(" 0 stairwell cell(s)"),
+        "the ungated stair's run is cut a stairwell, so the cut can reach the hole: {line}"
+    );
+    // The gallery's stair down through the far hall's floor, its treads in the
+    // undercroft, gated on the flag the shaft beside it waits on.
+    let shut = gate_like(&open, "edge/undercroft-stair", "edge/undercroft-shaft");
+
+    let reg = PrefabRegistry::load_dir(&common::prefabs_dir()).expect("the library loads");
+    let plan = Plan::build(&shut, &reg).expect("the gated stair plans");
+    let b = plan.blockout.as_ref().expect("a blockout");
+    let s = b
+        .seams
+        .iter()
+        .find(|s| s.edge.0 == "edge/undercroft-stair")
+        .expect("the stair's seam");
+    assert_eq!(s.normal_axis, 1, "the stair goes through a floor");
+    let hole = cells(s.opening.0, s.opening.1);
+    assert!(!hole.is_empty());
+
+    let mass = mass_map(&shut);
+    let missing: Vec<[i64; 3]> = hole
+        .iter()
+        .filter(|c| mass.get(*c).map(String::as_str) != Some(BAR))
+        .copied()
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "every cell of the hole holds the hatch; {} of {} do not: {missing:?}",
+        missing.len(),
+        hole.len()
+    );
+    let line = derivation_line(&shut);
+    assert!(
+        !line.contains(" 0 stairwell cell(s)"),
+        "gated, the run still has its stairwell: {line}"
+    );
+}

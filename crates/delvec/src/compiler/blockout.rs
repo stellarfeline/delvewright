@@ -938,11 +938,24 @@ pub fn derive_with(
         climbs += 1;
     }
 
-    // (6c) **Every shut seam's bar, last** (spec-0107 §6): the opening is cut
-    // and the crossing realized — treads, ladder — and then the bar is the last
-    // word in the cells [`PlacedSeam::bar`] names: the opening itself in a wall
-    // and through a floor for a drop or a stair, the course above the hole for a
-    // floor climb, whose hole cell keeps its rung. Written by whoever owns those
+    // (6c) **The stairwell over every through-floor run.** A stair up through a
+    // floor starts under the hole and walks back under the floor it pierces, so
+    // its upper courses stand where that floor takes a climbing body's head. The
+    // hole the plan allocated is where the stair ARRIVES; the stairwell is what
+    // lets a body get there. It is cut after the openings because it is measured
+    // over them — see [`stairwell`] — and before the bars, because its cut
+    // reaches the hole's own cells: a hatch laid first is cut back to air.
+    let mut stairwell_cells = 0u64;
+    for (s, host, run) in &runs {
+        stairwell_cells += stairwell(&mut mass, s, host, run, perturb.open_stairwells);
+    }
+
+    // (6d) **Every shut seam's bar, last** (spec-0107 §6): the opening is cut
+    // and the crossing realized — treads, ladder, stairwell — and then the bar
+    // is the last write to the cells [`PlacedSeam::bar`] names, after every cut
+    // that can reach them: the opening itself in a wall and through a floor for
+    // a drop or a stair, the course above the hole for a floor climb, whose hole
+    // cell keeps its rung. Written by whoever owns those
     // cells: where a bound piece owns them, the piece ships the shut state
     // against the gate region it owes (`owed_anchors`), exactly as it ships its
     // own doorway.
@@ -986,17 +999,6 @@ pub fn derive_with(
             ohi[s.normal_axis] += b_off;
             mass.write(olo, ohi, palette::WALL);
         }
-    }
-
-    // (7) **The stairwell over every through-floor run.** A stair up through a
-    // floor starts under the hole and walks back under the floor it pierces, so
-    // its upper courses stand where that floor takes a climbing body's head. The
-    // hole the plan allocated is where the stair ARRIVES; the stairwell is what
-    // lets a body get there. It is cut after the openings because it is measured
-    // over them — see [`stairwell`].
-    let mut stairwell_cells = 0u64;
-    for (s, host, run) in &runs {
-        stairwell_cells += stairwell(&mut mass, s, host, run, perturb.open_stairwells);
     }
 
     // The synthesized spatial vocabulary (spec-0049 §5.2), read off the mass
