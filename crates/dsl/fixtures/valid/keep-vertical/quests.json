@@ -30,14 +30,6 @@
         "on_objective_complete": {
           "obj/talk": [
             {
-              "anchor": "anchor/gate",
-              "happening": {
-                "text": "the gate at anchor/gate opens",
-                "verb": "opens"
-              },
-              "type": "open-gate"
-            },
-            {
               "happening": {
                 "text": "wave/guards arrives",
                 "verb": "arrives"
