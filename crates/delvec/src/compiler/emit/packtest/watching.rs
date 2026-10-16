@@ -335,8 +335,7 @@ fn yield_template(
             let guarded = supersedable_walkers(moves.iter().map(|m| m.npc.as_str()));
             for m in moves.iter().filter(|m| m.npc == w.id) {
                 let bare = movenpc_bare(&m.npc, &m.to, &m.gate_key);
-                let claim =
-                    walk_claim(Walker::Npc, &bare, &safe, guarded.contains(m.npc.as_str()));
+                let claim = walk_claim(Walker::Npc, &bare, &safe, guarded.contains(m.npc.as_str()));
                 legs.push((
                     movenpc_fn(&m.npc, &m.to, &m.gate_key),
                     format!("#mrun_{bare}"),
