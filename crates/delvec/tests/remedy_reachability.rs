@@ -4290,3 +4290,49 @@ fn dw1044_closing_the_way_round_builds() {
     assert_eq!(code, 0, "{after}");
     assert!(after.contains("1 entered by every walk"), "{after}");
 }
+
+// ---------------------------------------------------------------------------
+// DW1048 (spec-0115 §6.1): a sign's line over its face
+// ---------------------------------------------------------------------------
+
+/// A hello-world campaign carrying one sign whose front is `lines`.
+fn sign_campaign(lines: &[&str]) -> delvewright_dsl::Campaign {
+    let mut c = common::campaign_at(&common::hello_world_dir());
+    c.quests.content.signs = vec![delvewright_dsl::Sign {
+        id: serde_json::from_value(serde_json::json!("sign/board")).unwrap(),
+        anchor: serde_json::from_value(serde_json::json!("anchor/exit")).unwrap(),
+        front: delvewright_dsl::SignFace {
+            lines: lines.iter().map(|s| s.to_string()).collect(),
+            color: None,
+            glowing: false,
+        },
+        back: None,
+    }];
+    c
+}
+
+fn fit(c: &delvewright_dsl::Campaign, kind: delvewright_dsl::SignKind) -> Vec<String> {
+    delvec::compiler::textfit::check_sign_lines(c, &BTreeMap::new(), &|_| Some(kind))
+        .into_iter()
+        .map(|d| d.code.to_string())
+        .collect()
+}
+
+/// Each of `DW1048`'s three moves — shorten the line, split it over another
+/// line of the face, stand a wider sign — takes the refused line to a fitting
+/// one.
+#[test]
+fn dw1048_each_remedy_fits_the_line() {
+    use delvewright_dsl::SignKind::{Hanging, Standing};
+    let refused = sign_campaign(&["THE DOOR IS WIDE OPEN"]);
+    assert_eq!(fit(&refused, Hanging), ["DW1048"]);
+    assert_eq!(fit(&refused, Standing), ["DW1048"]);
+    // Shorten the line.
+    assert!(fit(&sign_campaign(&["DOOR OPEN"]), Hanging).is_empty());
+    // Split it over another line of the face.
+    assert!(fit(&sign_campaign(&["THE DOOR", "IS WIDE", "OPEN"]), Hanging).is_empty());
+    // Stand a wider sign: the line a hanging face cuts, a standing face holds.
+    let mid = sign_campaign(&["THE DOORWAY"]);
+    assert_eq!(fit(&mid, Hanging), ["DW1048"]);
+    assert!(fit(&mid, Standing).is_empty());
+}
