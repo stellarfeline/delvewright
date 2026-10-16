@@ -316,3 +316,39 @@ Chinese matter more than the rules? Measured once, blind.
   repository; the answer key hashes `sha256:6be143cfede1d28a…`, the DeepSeek
   outputs `sha256:878c62602d5ac1fd…`, the rewritten-line set
   `sha256:48464da4a01ec93d…` (first 16 hex digits of each).
+
+## 8. The act a title states against the act that completes it
+
+Evidence behind game-writing.md F7 and spec-0114 §1. The instrument is spec-0114
+§4's reading — the longest lexicon phrase at the title's head, case-folded, up to
+four words, against the act set the objective's kind, fields and `give-item`
+completion effects perform — over the seed lexicon in that spec's appendix.
+
+- **Corpus.** `stellarfeline/delvewright-campaigns` at
+  `7a67e92d77a3831cd3aca26005b84a1862e1c02e` (content `main`: doune-castle-tour,
+  hollow-vigil, nobodys-cave-island, the-treehouse-camp, vesperhold) and at
+  `fa5e9246` (`campaigns/the-muster-loft`); the gallery primary and its four
+  quest-carrying overlays at engine `e7bd149428a6768b71d9f6e08746bfec917fc0ac`.
+  Every `quests.json` objective: **127**, of which **117** carry a `title` and
+  **10** do not; **7** have a `give-item` effect in `on_objective_complete`.
+- **Reading.** 0 heads outside the lexicon; **105** titles agree; **12**
+  disagree, listed in spec-0114 §1 — one `reach-anchor` headed *Speak*, one
+  `interact` headed *Get under*, six `talk-to` headed *Climb*, *Bring*, *Show*
+  (×2) and *Reach*/*Climb* (the gallery's two overlays, each twice), one
+  `interact` with `requires_item` headed *Hang*, and the motivating *Lay* over a
+  `reach-anchor`.
+- **Second method.** One reader labelled all 117 titles by hand, asking of each
+  whether the completion performs what the head word says, before running the
+  lexicon. The hand set and the lexicon set are the same 12; nothing the hand
+  rated a lie passed, nothing it rated true was refused. One rater, so this is an
+  agreement between two readings by one person, not a consensus; §6 of
+  game-writing.md is the cross-check protocol.
+- **What it does not see.** *Climb the cellar ladder* (the-muster-loft) is a
+  `reach-anchor` at the ladder's foot: the act agrees and the place does not.
+  The place is spec-0114 §8's open question.
+- **Where the lie lives.** All 12 are on `talk-to`, `reach-anchor` and
+  `interact`; none on `kill` or `collect`, whose titles in this corpus open on
+  the fight or the taking without exception. Eight of the twelve name a deed the
+  DSL cannot complete today — giving, showing, hanging — which is why spec-0114
+  closes `give` at a place (`takes_item`) and records `give`/`present` to a
+  body as gaps rather than only prescribing new words.

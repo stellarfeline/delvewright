@@ -62,6 +62,24 @@ any game, however oblique its story.
 - **F6 — A class blurb names the role in plain words.** `Front-line fighter.
   Heavy axe, heavy armour; slow, but very hard to kill.` not `Slow, and hard to
   stop.` **Authored.**
+- **F7 — An objective title's first word is the act that completes it.** A
+  `reach-anchor` is reached (`Climb to the loft`), a `talk-to` is spoken to
+  (`Speak to Oru`), a `kill` is fought (`Put down the muster`), a `collect` is
+  taken (`Take the levy's roll`), an `interact` is used (`Draw the grating`) and,
+  with `requires_item`, presented (`Show the hook the lantern`); `Lay`, `Hang`,
+  `Give`, `Bring` are true only of an `interact` that takes the presented item
+  (`takes_item`). `Lay the roll in the loft` over a `reach-anchor` tells the
+  player to do one thing and rewards another, which L2 forbids. **Cited:** quest
+  structure reduces to atomic actions whose post-condition is the state the game
+  checks — `goto` → *you are there*, `take` → *you have it*, `give` → *they have
+  it, and you don't* (Doran & Parberry 2011, Table 5); getting somewhere is a
+  quest kind of its own (Aarseth 2005, via Karlsen 2008); an MMO tracker derives
+  the objective line from the condition and types it (Warcraft Wiki,
+  `GetQuestObjectiveInfo`); where the line is authored free — the game's own
+  advancements (Minecraft Wiki, *Advancement definition*), the Creation Kit's
+  objective display text (UESP) — nothing binds it to the completion, and this
+  lie is that shape's ordinary failure. The head-word reading, the act
+  vocabulary and the engine's check (`DW1045`, spec-0114) are **authored**.
 
 ## 2. Story text: say it
 
@@ -305,7 +323,9 @@ How a quest plan is shaped as a web rather than a chain, how an ending reads the
 
 ## Sources
 
+- Aarseth, E. From Hunt the Wumpus to EverQuest: Introduction to Quest Theory. ICEC 2005, LNCS 3711; as read in Karlsen, F. Quests in Context: A Comparative Analysis of Discworld and World of Warcraft. Game Studies 8(1), 2008.
 - Callison-Burch, Fordyce, Koehn, Monz, Schroeder. (Meta-) Evaluation of Machine Translation. WMT 2007.
+- Doran, J. & Parberry, I. A Prototype Quest Generator Based on a Structural Analysis of Quests from Four MMORPGs. PCGames 2011. ianparberry.com/pubs/pcg2011.pdf.
 - Fextralife wikis: Dark Souls *Estus Flask*; Elden Ring *Flask of Crimson Tears*.
 - Game Accessibility Guidelines. *Use simple clear language*. gameaccessibilityguidelines.com.
 - Grice, H. P. Logic and Conversation (1975), as summarised in the Stanford Encyclopedia of Philosophy, *Implicature*.
@@ -316,11 +336,16 @@ How a quest plan is shaped as a web rather than a chain, how an ending reads the
 - Li, Zhang, Wang, Zhang, Cui, Yin, Xiao, Zhang. Lost in Literalism: How Supervised Training Shapes Translationese in LLMs. ACL 2025. arXiv:2503.04369.
 - Mangiron, C. & O'Hagan, M. Game Localisation: Unleashing Imagination with "Restricted" Translation. JoSTrans 6, 2006.
 - Microsoft Writing Style Guide. *Top 10 tips for Microsoft style and voice*.
+- Microsoft. *Xbox Accessibility Guideline 109: Objective clarity*. learn.microsoft.com.
+- Minecraft Wiki. *Advancement definition*. minecraft.wiki/w/Advancement_definition.
 - Nielsen Norman Group (Neusesser, Sunwall). *Error-Message Guidelines*.
 - Paech, Roush, Goldfeder, Shwartz-Ziv. Antislop. arXiv:2510.15061.
 - Reinhart et al. Do LLMs write like humans? Variation in grammatical and rhetorical styles. PNAS 122(8), 2025.
 - Slabinski, M. 8 Key Principles of Writing Effective Game Dialogue. Game Developer.
 - Tencent News / 半月谈. AI味儿到底是一种什么味儿？文字创作也有"预制菜".
+- TES Renewal: Skywind. *Quest Design Principles*. handbook.tesrskywind.com/dev/Principles.
+- UESP Creation Kit wiki. *Bethesda Tutorial Quest Objectives*; *SetObjectiveCompleted – Quest*. ck.uesp.net.
+- Warcraft Wiki. *API GetQuestObjectiveInfo*. warcraft.wiki.gg.
 - Wein, S. & Schneider, N. Lost in Translationese? Reducing Translation Effect Using Abstract Meaning Representation. EACL 2024. arXiv:2304.11501.
 - Wikipedia. *Signs of AI writing* (ideas only, as in `docs/ACKNOWLEDGEMENTS.md`).
 - Xiao, R. How different is translated Chinese from native Chinese? IJCL 15(1), 2010.
