@@ -395,6 +395,25 @@ pub(crate) fn sign_checks(c: &Campaign, anchors: &dyn AnchorRegistry, d: &mut Ve
             ));
         }
     });
+    // A face holds one to four lines: the game's `SignText` fixes its list at
+    // four, and a face with none is no face. The schema states the bound; it is
+    // held here, where the document is read.
+    for (sign, side, face, _, stage, path) in stated_faces(c) {
+        let n = face.lines.len();
+        if !(1..=4).contains(&n) {
+            d.push(Diagnostic::error(
+                codes::SCHEMA,
+                stage,
+                format!("{path}/lines"),
+                format!(
+                    "the {} face of sign `{sign}` declares {n} line(s); a sign's face holds one \
+                     to four lines, top to bottom (a fifth has nowhere to be drawn). Fold the \
+                     words into four lines, or put the rest on the other face",
+                    side.token()
+                ),
+            ));
+        }
+    }
     if signs.is_empty() {
         return;
     }

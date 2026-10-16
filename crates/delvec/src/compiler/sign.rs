@@ -358,7 +358,7 @@ pub fn kinds(gate: &SignGate) -> BTreeMap<String, SignKind> {
 
 /// One measured line of the ledger.
 fn measured(text: &str) -> u32 {
-    crate::compiler::textfit::sign_line_width(&delvewright_dsl::l10n::plain(text))
+    crate::compiler::textfit::sign_line_width(text)
 }
 
 /// **The sign binding line** (spec-0115 §5.1), every figure computed from the
@@ -459,7 +459,7 @@ pub fn ledger(plan: &Plan, gate: &SignGate) -> serde_json::Value {
                 );
                 let mut langs = vec![(
                     "en".to_string(),
-                    delvewright_dsl::l10n::plain(&l.text).into_owned(),
+                    crate::compiler::textfit::authored(&l.text).to_string(),
                 )];
                 for (lang, doc) in &plan.sidecars {
                     if let Some(t) = doc.content.get(&l.key) {

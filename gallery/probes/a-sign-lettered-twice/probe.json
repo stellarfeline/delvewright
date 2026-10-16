@@ -1,0 +1,21 @@
+{
+  "code": "DW0435",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/signs/-",
+      "value": {
+        "id": "sign/the-label-again",
+        "anchor": "anchor/label",
+        "front": {
+          "lines": [
+            "AGAIN"
+          ]
+        }
+      }
+    }
+  ],
+  "units": [],
+  "why": "A second row lettering `anchor/label`. One cell holds one sign, so the later row would replace the first's words whole; the engine refuses two rows on one anchor, as it refuses two fills of one chest. A change of words at a beat is a `letter-sign`. It declares no unit."
+}

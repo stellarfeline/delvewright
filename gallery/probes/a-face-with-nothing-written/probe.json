@@ -1,0 +1,15 @@
+{
+  "code": "DW1048",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/signs/1/front/lines",
+      "value": [
+        ""
+      ]
+    }
+  ],
+  "units": [],
+  "why": "The notice's front declared with one blank line. A blank face is what the piece's sign already shows, so declaring it says nothing, and the engine refuses it rather than lettering a board with nothing. It declares no unit."
+}

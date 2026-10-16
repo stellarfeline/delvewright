@@ -1,0 +1,13 @@
+{
+  "code": "DW0100",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/signs/1/front/color",
+      "value": "dark_purple"
+    }
+  ],
+  "units": [],
+  "why": "The notice's text coloured `dark_purple`, a chat colour and not one of the sixteen dyes a sign's text takes. The schema holds `color` to the dye names. It declares no unit."
+}

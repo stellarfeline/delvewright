@@ -1,0 +1,88 @@
+{
+  "code": "DW0431",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/0/on_objective_complete/obj~1reach-the-counter/6"
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/on_objective_complete/obj~1hear-the-curator/-",
+      "value": {
+        "front": {
+          "color": "blue",
+          "lines": [
+            "EMERALDS TAKEN",
+            "",
+            "the slate is wiped"
+          ]
+        },
+        "sign": "sign/the-slate",
+        "type": "letter-sign",
+        "when": {
+          "forbids_flags": [
+            "flag/hall-sealed"
+          ],
+          "requires_flags": [
+            "flag/hall-open"
+          ],
+          "requires_state": [
+            {
+              "op": "at-most",
+              "state": "state/labels-read",
+              "value": 9
+            }
+          ]
+        }
+      }
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/content/fx.near-hall.oc.reach-the-counter.6.front.0"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/content/fx.near-hall.oc.hear-the-curator.8.front.0",
+      "value": "绿宝石已取走"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/source/fx.near-hall.oc.reach-the-counter.6.front.0"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/source/fx.near-hall.oc.hear-the-curator.8.front.0",
+      "value": "EMERALDS TAKEN"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/content/fx.near-hall.oc.reach-the-counter.6.front.2"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/content/fx.near-hall.oc.hear-the-curator.8.front.2",
+      "value": "石板已擦净"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/source/fx.near-hall.oc.reach-the-counter.6.front.2"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/source/fx.near-hall.oc.hear-the-curator.8.front.2",
+      "value": "the slate is wiped"
+    }
+  ],
+  "units": [],
+  "why": "The slate's `letter-sign` moved from the counter's beat to the Curator's, which the path plays before the case is pressed and the `set-block` hangs the slate. At that beat the cell is bare wall, so the re-lettering would write to nothing; the build refuses it, naming the beat and the write that places the sign. Its two zh-cn rows move with it, keyed by the beat that now holds them. It declares no unit."
+}

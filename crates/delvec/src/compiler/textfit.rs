@@ -490,11 +490,18 @@ fn label_over_budget(stage: &str, path: String, text: &str) -> Option<Diagnostic
 // Sign lines (DW1048)
 // ---------------------------------------------------------------------------
 
+/// A line as its author wrote it, markup included: the English behind a
+/// translation tag (the build's campaign is tagged), else the line itself.
+pub fn authored(text: &str) -> &str {
+    delvewright_dsl::l10n::untag(text).map_or(text, |(_, e)| e)
+}
+
 /// The rendered width of a sign line as authored, in font pixels: the
 /// `DW0331` measurement — the default font over its visible text, plus one
 /// pixel per bold character — which is what the client's `Font.width`
 /// compares with the face's line width.
 pub fn sign_line_width(text: &str) -> u32 {
+    let text = authored(text);
     default_font_width(&delvewright_dsl::textstyle::visible(text)) + bold_widening(text)
 }
 
@@ -542,7 +549,7 @@ pub fn check_sign_lines(
             let Some(kind) = kind_of(&l.sign) else {
                 return;
             };
-            let width = sign_line_width(&delvewright_dsl::l10n::plain(text));
+            let width = sign_line_width(text);
             let budget = kind.budget();
             if width <= budget {
                 return;

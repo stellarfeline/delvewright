@@ -881,6 +881,52 @@ const CONTAINERS: &[Anchor] = &[
     },
 ];
 
+/// **Sign anchors** — the cells a sign stands in, or comes to (spec-0115).
+///
+/// What a sign SAYS is the campaign's, declared against the anchor where the
+/// sign stands (`signs[]`); the piece places the board and marks the cell, and
+/// nothing here letters it. Two routes the hall carries: the notice is a
+/// hanging sign the piece itself lays on the near hall's north wall — the
+/// template route, and the narrow 60-pixel face — and the slate is a cell of
+/// the same wall the campaign's story writes a wall sign into (`set-block`).
+/// A sign is no place to stand, so they are their own table, checked by
+/// [`assert_anchors_are_standable`] against the board they hold or the wall
+/// a written board hangs on.
+const SIGN_ANCHORS: &[Anchor] = &[
+    Anchor {
+        name: "anchor/notice",
+        pos: NOTICE,
+        facing: Some("east"),
+        trigger_block: None,
+        note: "the hanging sign on the near hall's north wall, which the piece lays \
+               and the campaign letters (`signs[]`, the 60-pixel face)",
+        role: None,
+    },
+    Anchor {
+        name: "anchor/slate",
+        pos: SLATE,
+        facing: Some("south"),
+        trigger_block: None,
+        note: "the bare stretch of north wall a beat hangs a wall sign on \
+               (`set-block`), which the campaign letters and a later beat \
+               re-letters (`letter-sign`)",
+        role: None,
+    },
+];
+
+/// The notice's cell: a wall hanging sign facing east, hung from the north
+/// wall at `z = 0` — over head height, clear of the valves.
+const NOTICE: [i32; 3] = [12, 3, 1];
+
+/// The notice's block. A wall hanging sign hangs from the block on its left
+/// or right; facing east, that is the wall to its north.
+const NOTICE_BLOCK: (&str, &[(&str, &str)]) =
+    ("minecraft:oak_wall_hanging_sign", &[("facing", "east")]);
+
+/// The slate's cell: air against the north wall, at eye height beside the
+/// arrival, where a beat writes `minecraft:oak_wall_sign[facing=south]`.
+const SLATE: [i32; 3] = [16, 2, 1];
+
 /// **Solid anchors** — cells that are deliberately stone.
 ///
 /// `collapse` needs a slab of blocks to bring down and refuses both an empty
@@ -1199,6 +1245,9 @@ fn block_at(
     if x == 0 || x == SIZE[0] - 1 || z == 0 || z == SIZE[2] - 1 {
         return ("minecraft:stone", None);
     }
+    if [x, y, z] == NOTICE {
+        return (NOTICE_BLOCK.0, Some(NOTICE_BLOCK.1));
+    }
     // The long gallery's stair: one course of rise per cell, climbing east
     // along the far wall from the far hall's floor to the gallery's porch, in
     // the corner away from the lane the boss marches.
@@ -1453,6 +1502,31 @@ fn assert_anchors_are_standable(s: &Structure) {
             a.name
         );
     }
+    // A sign anchor holds the board the piece lays, or is the air a beat
+    // writes one into against the wall that holds it.
+    for a in SIGN_ANCHORS {
+        let found = at(a.pos);
+        let [x, y, z] = a.pos;
+        if a.pos == NOTICE {
+            assert_eq!(
+                found, NOTICE_BLOCK.0,
+                "{ID}: sign anchor `{}` holds no sign",
+                a.name
+            );
+        } else {
+            assert_eq!(
+                found, "minecraft:air",
+                "{ID}: sign anchor `{}` is not air",
+                a.name
+            );
+        }
+        assert_eq!(
+            at([x, y, z - 1]),
+            "minecraft:stone",
+            "{ID}: sign anchor `{}` has no wall to its north to hang from",
+            a.name
+        );
+    }
     // A volume's centre hangs in the air it centres.
     for a in VOLUME_ANCHORS {
         assert_eq!(
@@ -1519,15 +1593,18 @@ fn assert_anchors_are_standable(s: &Structure) {
         !ANCHORS.is_empty()
             && !GATE_ANCHORS.is_empty()
             && !CONTAINERS.is_empty()
+            && !SIGN_ANCHORS.is_empty()
             && !SOLID_ANCHORS.is_empty()
             && !FURNITURE_ANCHORS.is_empty(),
         "{ID}: the anchor inventory is empty, so nothing above examined anything"
     );
     println!(
         "{ID}: anchor inventory bound — {} point anchor(s), {} container(s), \
-         {} solid anchor(s), {} gate anchor(s), {} furniture anchor(s) checked against the blocks",
+         {} sign anchor(s), {} solid anchor(s), {} gate anchor(s), {} furniture anchor(s) \
+         checked against the blocks",
         ANCHORS.len(),
         CONTAINERS.len(),
+        SIGN_ANCHORS.len(),
         SOLID_ANCHORS.len(),
         GATE_ANCHORS.len(),
         FURNITURE_ANCHORS.len()
@@ -2014,6 +2091,7 @@ fn metadata() -> serde_json::Value {
     for a in ANCHORS
         .iter()
         .chain(CONTAINERS)
+        .chain(SIGN_ANCHORS)
         .chain(SOLID_ANCHORS)
         .chain(VOLUME_ANCHORS)
     {

@@ -1,0 +1,13 @@
+{
+  "code": "DW0112",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/on_objective_complete/obj~1reach-the-counter/6/sign",
+      "value": "sign/nobody"
+    }
+  ],
+  "units": [],
+  "why": "The slate's `letter-sign` pointed at `sign/nobody`, which no `signs[]` row declares. A beat re-letters a sign the campaign declared at its anchor, so the reference dangles. It declares no unit."
+}

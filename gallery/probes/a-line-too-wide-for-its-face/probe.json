@@ -1,0 +1,13 @@
+{
+  "code": "DW1048",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/signs/0/front/lines/0",
+      "value": "EVERYSURFACEONCE"
+    }
+  ],
+  "units": [],
+  "why": "The label's first line written as sixteen capitals with no space: 96 font pixels on a standing sign whose face draws 90. The client keeps a line's first wrapped segment and drops the rest, and a line with no space wraps mid-word, so the label would read `EVERYSURFACEON`. The label is a trigger's prop, so the document states the kind of sign and validation measures the line where it is typed. It declares no unit: the face and its lines are bound by the primary; what the engine refuses is a line wider than its face."
+}

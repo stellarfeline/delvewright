@@ -1,0 +1,13 @@
+{
+  "code": "DW0431",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/signs/0/anchor",
+      "value": "anchor/pedestal"
+    }
+  ],
+  "units": [],
+  "why": "The label's words declared on `anchor/pedestal`, whose cell holds a sea lantern a beat writes and never a sign. `data merge block` against a cell with no sign fails silently, so the build refuses the row, lists the cells that do hold a sign, and says a sign is furniture a piece or a write places. It declares no unit: `signs[].anchor` is bound by the primary."
+}

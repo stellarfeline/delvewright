@@ -1,0 +1,19 @@
+{
+  "code": "DW0100",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/signs/0/front/lines/-",
+      "value": "x"
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/signs/0/front/lines/-",
+      "value": "y"
+    }
+  ],
+  "units": [],
+  "why": "The label's front given five lines. A sign's face holds exactly four (`SignText` fixes the list at four), so the schema refuses a fifth. It declares no unit."
+}

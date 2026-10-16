@@ -1,0 +1,13 @@
+{
+  "code": "DW0193",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/triggers/0/prop/block",
+      "value": "minecraft:oak_sign[rotation=8]{front_text:{messages:['\"EVERY SURFACE\"','\"\"','\"\"','\"\"']}}"
+    }
+  ],
+  "units": [],
+  "why": "The label's prop block given the words as NBT in the block string. That would be raw NBT outside every translation and fit check, the hack `signs[]` exists to make unnecessary, so a `{` in any block string is refused and the message names `signs[]`. It declares no unit."
+}

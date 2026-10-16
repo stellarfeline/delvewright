@@ -1279,6 +1279,26 @@
                   }
                 ]
               }
+            },
+            {
+              "anchor": "anchor/slate",
+              "block": "minecraft:oak_wall_sign[facing=south]",
+              "type": "set-block",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             }
           ],
           "obj/reach-the-counter": [
@@ -1403,6 +1423,33 @@
               "atmosphere": "atmosphere/frost-hall",
               "place": "area/hall",
               "type": "set-atmosphere"
+            },
+            {
+              "front": {
+                "color": "blue",
+                "lines": [
+                  "EMERALDS TAKEN",
+                  "",
+                  "the slate is wiped"
+                ]
+              },
+              "sign": "sign/the-slate",
+              "type": "letter-sign",
+              "when": {
+                "forbids_flags": [
+                  "flag/hall-sealed"
+                ],
+                "requires_flags": [
+                  "flag/hall-open"
+                ],
+                "requires_state": [
+                  {
+                    "op": "at-most",
+                    "state": "state/labels-read",
+                    "value": 9
+                  }
+                ]
+              }
             }
           ],
           "obj/take-the-emeralds": [
@@ -3536,6 +3583,51 @@
           }
         ],
         "unlock": "anchor/side-lever"
+      }
+    ],
+    "signs": [
+      {
+        "anchor": "anchor/label",
+        "back": {
+          "color": "red",
+          "glowing": true,
+          "lines": [
+            "",
+            "[[bold|turn back]]"
+          ]
+        },
+        "front": {
+          "lines": [
+            "EVERY SURFACE",
+            "",
+            "written once"
+          ]
+        },
+        "id": "sign/the-label"
+      },
+      {
+        "anchor": "anchor/notice",
+        "front": {
+          "lines": [
+            "NOTICE",
+            "",
+            "no running"
+          ]
+        },
+        "id": "sign/the-notice"
+      },
+      {
+        "anchor": "anchor/slate",
+        "front": {
+          "color": "white",
+          "glowing": true,
+          "lines": [
+            "THE CASE",
+            "",
+            "was pressed"
+          ]
+        },
+        "id": "sign/the-slate"
       }
     ],
     "stakes": [

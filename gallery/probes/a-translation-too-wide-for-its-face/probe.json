@@ -1,0 +1,13 @@
+{
+  "code": "DW1048",
+  "patch": [
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "replace",
+      "path": "/content/sign.the-label.front.0",
+      "value": "每一处表面都只写下一次"
+    }
+  ],
+  "units": [],
+  "why": "The zh-cn row for the label's first line made eleven Han characters: 99 font pixels against the standing sign's 90, where the English fits. The refusal names the language and the row, so the translation is shortened rather than the English. It declares no unit: the sidecar row is bound by the primary."
+}

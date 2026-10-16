@@ -326,6 +326,11 @@ Rules:
     a caption, never a sentence. Budget: about 146 font pixels, i.e. roughly
     20 Latin characters or 12 Han characters. Being shorter than the English here
     is correct, not a loss.
+  - `sign-line`: one line on a sign, read at a glance from a board — a few words,
+    never a sentence. The client cuts a line wider than the sign's face, so its
+    `situation` states the face's budget (about 90 font pixels on a standing or
+    wall sign, 60 on a hanging one: roughly 15 or 10 Latin, 10 or 6 Han
+    characters) and the face's other lines. Stay inside the budget.
   - `button-tooltip`: the full line or consequence that button stands for, shown
     in a hover box; it reads as the longer form of its sibling label.
   - `item-name`, `item-tooltip`: an item's name, and what the item does first.

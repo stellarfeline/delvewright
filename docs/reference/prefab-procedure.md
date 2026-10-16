@@ -604,7 +604,8 @@ Each of these was established by running it, except the two marked otherwise:
 - **No block entities and no NBT.** No chest loot, no sign text, no spawner, no
   banner. Anything with a payload is bound by the *campaign* against an anchor
   (spec-0021), never by the piece. So the piece must **declare an anchor** for
-  every such thing.
+  every such thing. A sign's words are a `signs[]` row at the anchor the piece
+  marks where its sign stands (spec-0115); the piece places the board only.
 - **No jigsaw connectors.** The export emits none. A grammar prefab is usable as
   a single-`prefab` area as it stands; for a `prefab_pool` a socket is carved
   afterwards (§7).
