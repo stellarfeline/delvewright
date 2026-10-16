@@ -52,11 +52,15 @@ const TO_ANCHOR: &str = "anchor/exit";
 /// the cross-feature case: one guard on the effect, a destination scoped to the
 /// beat.
 fn fixture(guard: bool) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(if guard {
-        "dw-move-npc-beat-scope-guarded"
-    } else {
-        "dw-move-npc-beat-scope"
-    });
+    let dir = std::env::temp_dir().join(format!(
+        "{}-{}",
+        if guard {
+            "dw-move-npc-beat-scope-guarded"
+        } else {
+            "dw-move-npc-beat-scope"
+        },
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(
         &common::compiler_fixtures_dir().join("talkto-cast-pos"),
