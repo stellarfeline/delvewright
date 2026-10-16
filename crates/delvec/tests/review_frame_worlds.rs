@@ -492,3 +492,92 @@ fn a_template_sign_is_written_with_its_text_and_drawn() {
         .unwrap();
     assert!(glyphs > 0, "the sign's letters were drawn: {m}");
 }
+
+/// **An `interact` frame stands where the player meets the thing** (spec-0112
+/// §3 item 3, §7.3): the gallery's `obj/press-the-case` places its `prop`
+/// when its quest activates, so its frame stands in a world after that
+/// activation — the world holds the prop at the anchor, the frame's `shows`
+/// lists that cell, and its `expect` names the prop's block and never a
+/// lantern marker the objective does not have.
+#[test]
+fn a_prop_objectives_interact_frame_stands_in_the_world_that_holds_the_prop() {
+    const OBJ: &str = "obj/press-the-case";
+    let dir = tmp("rfw-interact-prop");
+    let (campaign, prefabs) = common::gallery_primary_at(&dir.join("gallery"));
+    let out = dir.join("build");
+    build(&campaign, &prefabs, &out);
+    let quests = json(&campaign.join("quests.json"));
+    let block = quests["content"]["quests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|q| q["objectives"].as_array().unwrap())
+        .find(|o| o["id"] == OBJ)
+        .and_then(|o| o["prop"]["block"].as_str())
+        .expect("the gallery's prop objective")
+        .to_string();
+    // The prop's cell, as the placements ledger records the activation laying
+    // it.
+    let ledger = json(&out.join("validation/placed.json"));
+    let row = ledger["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["object"]["block"] == block.as_str())
+        .unwrap_or_else(|| panic!("a ledger row places `{block}`: {ledger}"));
+    let cell: Vec<i64> = row["object"]["cell"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap())
+        .collect();
+
+    let plan = json(&out.join("render-plan.json"));
+    let shot = plan["shots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "interact" && s["objective"] == OBJ)
+        .expect("the objective's interact frame");
+    let key = shot["world"].as_str().unwrap();
+    assert_ne!(
+        key, "at-load",
+        "the prop is placed when its quest activates: {shot}"
+    );
+
+    // The world the frame stands in holds the prop at its cell.
+    let w = out.join(format!("validation/worlds/{key}"));
+    let (x, y, z) = (cell[0].to_string(), cell[1].to_string(), cell[2].to_string());
+    let got = anvil(&["cells", w.to_str().unwrap(), &x, &y, &z, &x, &y, &z]);
+    let id = |s: &str| s.split('[').next().unwrap().to_string();
+    assert_eq!(
+        got[format!("{x},{y},{z}")].as_str().map(id),
+        Some(id(&block)),
+        "world `{key}` at {cell:?}: {got}"
+    );
+
+    // `shows` lists the prop's cell.
+    let record = json(&out.join("validation/review-frames.json"));
+    let row = record["shots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == shot["id"])
+        .expect("the frame's review row");
+    assert!(
+        row["shows"].as_array().unwrap().iter().any(|t| {
+            t["kind"] == "interact" && t["id"] == OBJ && t["pos"] == serde_json::json!(cell)
+        }),
+        "{row}"
+    );
+
+    // `expect` names the prop's block, and no marker the objective lacks.
+    let expect: Vec<&str> = shot["expect"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e.as_str().unwrap())
+        .collect();
+    assert!(expect.iter().any(|e| e.contains(&block)), "{expect:?}");
+    assert!(expect.iter().all(|e| !e.contains("lantern")), "{expect:?}");
+}
