@@ -187,7 +187,7 @@ fn the_surface_is_exported() {
     assert_eq!(audience, ["party", "actor"]);
     let branches = q["oneOf"].as_array().unwrap();
     // The union's size is stated once, by `v29_firework`'s
-    // `the_effect_union_names_forty_five_verbs`.
+    // `the_effect_union_names_forty_six_verbs`.
     let branch = |t: &str| {
         branches
             .iter()
@@ -378,6 +378,11 @@ fn samples() -> Vec<(&'static str, Value)> {
         (
             "set-block",
             json!({"type":"set-block","anchor":"anchor/exit","block":"minecraft:stone"}),
+        ),
+        // spec-0115: a sign's words are a world fact.
+        (
+            "letter-sign",
+            json!({"type":"letter-sign","sign":"sign/board","front":{"lines":["SHUT"]}}),
         ),
         (
             "fill-region",

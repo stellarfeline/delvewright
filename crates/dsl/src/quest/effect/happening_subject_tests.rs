@@ -87,6 +87,12 @@ fn every_verb_answers_the_census() {
             serde_json::json!({"type":"set-block","anchor":"anchor/altar","block":"minecraft:stone"}),
             Some("anchor/altar"),
         ),
+        // spec-0115: a re-lettering names a sign, never an anchor or a body.
+        (
+            "letter-sign",
+            serde_json::json!({"type":"letter-sign","sign":"sign/board","front":{"lines":["SHUT"]}}),
+            None,
+        ),
         (
             "fill-region",
             serde_json::json!({"type":"fill-region","region":{"anchor":"anchor/pit","extent":[2,2,2]},"block":"minecraft:water"}),
