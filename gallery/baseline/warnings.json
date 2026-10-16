@@ -201,6 +201,11 @@
       "code": "DW0475",
       "pointer": "/content/waves",
       "stage": "quests"
+    },
+    {
+      "code": "DW0380",
+      "pointer": "/content/waves/wave/edge",
+      "stage": "quests"
     }
   ],
   "hard.en": [
@@ -387,6 +392,11 @@
     {
       "code": "DW0475",
       "pointer": "/content/waves",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0380",
+      "pointer": "/content/waves/wave/edge",
       "stage": "quests"
     }
   ],
@@ -575,6 +585,11 @@
       "code": "DW0475",
       "pointer": "/content/waves",
       "stage": "quests"
+    },
+    {
+      "code": "DW0380",
+      "pointer": "/content/waves/wave/edge",
+      "stage": "quests"
     }
   ],
   "primary.en": [
@@ -762,6 +777,11 @@
       "code": "DW0475",
       "pointer": "/content/waves",
       "stage": "quests"
+    },
+    {
+      "code": "DW0380",
+      "pointer": "/content/waves/wave/edge",
+      "stage": "quests"
     }
   ],
   "primary.zh-cn": [
@@ -948,6 +968,11 @@
     {
       "code": "DW0475",
       "pointer": "/content/waves",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0380",
+      "pointer": "/content/waves/wave/edge",
       "stage": "quests"
     }
   ],
@@ -1246,6 +1271,11 @@
     {
       "code": "DW0475",
       "pointer": "/content/waves",
+      "stage": "quests"
+    },
+    {
+      "code": "DW0380",
+      "pointer": "/content/waves/wave/edge",
       "stage": "quests"
     }
   ]
