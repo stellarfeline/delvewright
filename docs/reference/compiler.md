@@ -1934,6 +1934,7 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
   them — and then has the LAST member, never the one who cleared the first arm,
   complete the successor. n = the join's arm count, raised to `world.min_players`
   and capped at 4 (the party maximum); arms are handed out round-robin.
+- **One carrier, two players.** `give @a` and `give @s` are one command to a party of one, so a `carrier: "one"` give is judged by a `party_carrier_<obj>` template per objective whose completion bundle hands one at its top level with no `when`/`in`: it spawns a second member, has `@s` run the real `complete_<obj>`, counts each member's copies with `clear <who> <item> 0`, and asserts the completing player holds every copy and the other none. A carrier give anywhere else is counted in `party-division.json` as not judged.
 - **`assert` does not abort the template, and the log names the LAST failing
   line.** Measured while proving a seal by mutation: a
   template with two failing asserts reported only the second, and flipping the
@@ -3226,6 +3227,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   (`compiler::nav::ThresholdBinding`): the binding line's counts — `performed`,
   `judged` (also as `examined`), `entered`, `no_debt`, `by_hand`, `carried`.
   Written on every build that passes the proof, zeroes included.
+- `<out>/validation/party-division.json`: the party-division checks' **binding ledger** (`compiler::emit::PartyBinding`, spec-0018), counted off the emitted suite and printed as the `party binding (spec-0018):` line: `objectives`, `and_joins` and `and_joins_bound` (a `party_join_<obj>` template is in the suite), `party_join_templates` of `templates`, `gives` (every `give-item` at every root and depth), `carrier_one`, `carrier_one_judged` (asserted by a `party_carrier_<obj>` template), `carrier_one_enveloped` (top level of an objective's completion, under `when`/`in`) and `carrier_one_elsewhere` (any other site), `min_players`, and `division` (`null` for a party of one; else the analyzer's join and each agent's arms). `unbound: true` when a join or a judgeable give has no template. Written on every build, zeroes included.
 - `<out>/validation/separation-proof.json`: the `DW1011` proof's **binding
   ledger** (`compiler::nav::SeparationBinding`): `gates` (every gate anchor the
   world resolves), `barred_edges` and `barred_bound` (the layout graph's barred
