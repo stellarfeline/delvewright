@@ -860,6 +860,14 @@ fn lang_build_localizes_only_strings_and_is_deterministic() {
                 // tier verifies the localized in-game name tag, so it localizes
                 // with the build (unlike the bot-facing critical-path.json).
                 || p.as_str() == "render-plan.json"
+                // The placements ledger is the placing lines of the functions,
+                // each summon's compound (a body's `CustomName`) included, and
+                // the review worlds hold those bodies: both localize with the
+                // functions they are read off; the review record names each
+                // world by its sha256.
+                || p.as_str() == "validation/placed.json"
+                || p.starts_with("validation/worlds/")
+                || p.as_str() == "validation/review-frames.json"
                 || p.as_str() == "manifest.json",
             "unexpected non-string file differs between en and zh-cn: {p}"
         );

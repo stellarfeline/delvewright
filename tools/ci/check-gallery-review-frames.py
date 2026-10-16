@@ -185,9 +185,7 @@ def main(argv: list[str]) -> int:
 
     # 3. A lantern of the hall's template.
     lib = a.work / "prefabs-lantern"
-    if lib.exists():
-        shutil.rmtree(lib)
-    shutil.copytree(a.prefabs, lib)
+    gallery_domain.probe_prefabs(a.prefabs, lib)
     nbt = lib / "gallery-hall.nbt"
     name, root = anvil.nbt_read(gzip.decompress(nbt.read_bytes()))
     palette = root.value["palette"].value

@@ -66,12 +66,10 @@ one with `--prefabs <dir>`.
 | `calibrate` | Turn a harvested rehearsal report into camera DSL patches. |
 | `viewer` | One self-contained HTML page per room or zone: a camera you drive, drawn from the game's own block models and textures. |
 | `palette` | The per-blockstate colour and shape table a room is built from, as JSON. |
-
 | `panorama` | One oblique exterior frame of the placed areas — the storybook shot. |
 | `cameras` | A frame per showcase camera the campaign's `design/cameras.json` states. |
 | `place-camera` | Write one row of `design/cameras.json`: a hand-placed pose, an estimate, or a deletion. |
 | `contact-sheet` | Many candidate renders laid out on one page to choose from. |
-
 | `grammar` | Prefab authoring from a rule program: `list`, `show`, `check`, `expand`, `coverage`, `audit`. |
 | `prefab` | Prefab admission: `audit`, `seating`, `anchors`, `socket`, `resolve-jigsaw`, `anchor`, `planes`, `lighting`, `catalog`, `gallery`, `curate`, `curate-merge`. |
 | `schem` | `convert` a Sponge schematic into a structure template. |

@@ -6128,15 +6128,9 @@ than a second repository's contents; `delvec build` output trees are absent for
 the same reason `BUILD_OUTPUT_MARKER` skips them. None of those is a rule that
 can go stale.
 
-There is exactly **one** exemption, and it is a pointer rather than a judgement:
-`crates/delvec/tests/golden/`, whose files are recordings of emitter output
-asserted byte-for-byte by `golden_scene_matches`, with the directory's membership
-closed by `every_golden_is_emitter_output`. Getting a document in there means
-making the emitter actually emit its bytes — which is why it is not a hatch that
-"it's generated" can open. The check refuses if that exemption matches zero
-tracked files, or if either pin has been deleted.
+Nothing is exempt.
 
-Generated JSON is otherwise not exempt: it is made canonical **at the writer**.
+Generated JSON is not exempt: it is made canonical **at the writer**.
 `tools/ci/gallery-baseline.py` writes `gallery/baseline/warnings.json` with `ensure_ascii=False`
 for exactly that reason. Where a foreign program owns the file — npm's
 `package.json` and `package-lock.json`, the agent harness's `.claude/settings.json`

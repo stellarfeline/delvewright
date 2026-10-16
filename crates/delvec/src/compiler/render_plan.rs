@@ -743,22 +743,27 @@ impl<'c> Shots<'c> {
         // block, not the subject — a spawn camera outside the hall draws the
         // hall's wall. Past the subject's own cells, the first block on the line
         // from the subject outward is where the frame's view ends.
+        // An `interior` overview is exempt: it stands over the whole stack it
+        // looks down into by construction (above the ground, over every place
+        // stacked over its column), and pulling it through a lid would put it
+        // inside the place it is the overview of.
         let subject = eye_cell(shot.look_at);
         let mut past_subject = false;
-        let sight_blocked = crate::compiler::nav::walk_cells(shot.look_at, requested, |c| {
-            let blocked = !world.is_clear(c);
-            if !blocked {
-                past_subject = true;
-            }
-            past_subject && blocked && c != subject
-        })
-        .is_some();
+        let sight_blocked = shot.kind != "interior"
+            && crate::compiler::nav::walk_cells(shot.look_at, requested, |c| {
+                let blocked = !world.is_clear(c);
+                if !blocked {
+                    past_subject = true;
+                }
+                past_subject && blocked && c != subject
+            })
+            .is_some();
         let eye = if pov || (world.is_clear(eye_cell(requested)) && !sight_blocked) {
             // The requested stand-off is honoured wherever it sees its subject.
             // It yields to two facts of the world the frame stands in: the cell
             // it names holds a block, or a block stands between it and the
-            // subject — a frame drawn from real geometry shows that block, so an
-            // interior shot's dollhouse eye over a roof would draw the roof.
+            // subject (an `interior` overview excepted, above) — a frame drawn
+            // from real geometry shows that block.
             requested
         } else {
             // The subject may itself be a block in this world — a gate a frame

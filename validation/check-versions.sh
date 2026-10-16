@@ -206,6 +206,7 @@ fi
 if [ -f "$DELVEC_CARGO" ]; then
   LW_DEP="$(python3 - "$DELVEC_CARGO" <<'PY'
 import sys, tomllib
+sys.stdout.reconfigure(newline="\n")
 dep = tomllib.load(open(sys.argv[1], "rb")).get("dependencies", {}).get("lumenwright")
 if not isinstance(dep, dict):
     print("absent")

@@ -105,7 +105,9 @@ impl Placed {
         let x = it.next()?;
         let y = it.next()?;
         let z = it.next()?;
-        let nbt = it.next().unwrap_or("{}");
+        // A summon with no compound keeps none: the line is written back as
+        // it was read.
+        let nbt = it.next().unwrap_or("");
         Some(Placed::entity(
             fired,
             kind,
@@ -169,7 +171,12 @@ impl Placed {
                 cell[0], cell[1], cell[2]
             ),
             PlacedObject::Entity { kind, pos, nbt } => {
-                format!("summon {kind} {} {} {} {nbt}", pos[0], pos[1], pos[2])
+                let line = format!("summon {kind} {} {} {}", pos[0], pos[1], pos[2]);
+                if nbt.is_empty() {
+                    line
+                } else {
+                    format!("{line} {nbt}")
+                }
             }
             PlacedObject::Removed { line, .. } => line.clone(),
         }
@@ -217,7 +224,11 @@ impl Placed {
             pos[1].parse::<f64>().ok()?,
             pos[2].parse::<f64>().ok()?,
         ];
-        let compound = parse_snbt(nbt).unwrap_or(Nbt::Compound(Vec::new()));
+        let compound = if nbt.is_empty() {
+            Nbt::Compound(Vec::new())
+        } else {
+            parse_snbt(nbt).unwrap_or(Nbt::Compound(Vec::new()))
+        };
         let yaw = match compound.get("Rotation") {
             Some(Nbt::List(r)) => match r.first() {
                 Some(Nbt::Float(f)) => *f,
@@ -306,7 +317,8 @@ impl Ledger {
             .iter()
             .filter(|r| match &r.object {
                 PlacedObject::Entity { pos, nbt, .. } => {
-                    pos.iter().any(|p| p.parse::<f64>().is_err()) || parse_snbt(nbt).is_err()
+                    pos.iter().any(|p| p.parse::<f64>().is_err())
+                        || (!nbt.is_empty() && parse_snbt(nbt).is_err())
                 }
                 _ => false,
             })
