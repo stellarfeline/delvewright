@@ -2,8 +2,8 @@
 //! there** (`DW0917`).
 //!
 //! A trap's `trigger` names a kind of hardware — a pressure plate, a tripwire,
-//! a trapped chest — and the prefab places it, exactly as it places a trap's
-//! dispenser or a `loot` container. The compiler never places a trigger. What
+//! a trapped chest — and the prefab places it, exactly as it places a `loot`
+//! container. The compiler never places a trigger. What
 //! it emits at the trigger cell is detection: a position test for a plate or a
 //! tripwire, an invisible `minecraft:interaction` hitbox for a trapped chest.
 //! Neither needs the block to exist, so a trap whose cell holds air still
@@ -82,7 +82,7 @@ pub fn check_trap_triggers(
         code: DW_TRAP_TRIGGER_MISSING,
         message: format!(
             "{} trap(s) have no trigger block at their trigger cell.\n{}\n\
-             A trap's trigger is hardware the PREFAB places, exactly as a trap's dispenser \
+             A trap's trigger is hardware the PREFAB places, exactly as a `loot` container \
              is; the compiler only detects it. Detection does not need the block, so this \
              would have shipped a trap the player cannot see: a click on empty air where the \
              chest should be, or an invisible plate. Point the trap's `at` at an anchor whose \
@@ -221,8 +221,6 @@ mod tests {
             trigger,
             at_anchor: "anchor/strongbox".to_string(),
             trigger_cell: cell,
-            dispenser: None,
-            payload: None,
             payload_effects: Vec::new(),
             lethality: Lethality::Nonlethal,
             reset: TrapReset::Once,

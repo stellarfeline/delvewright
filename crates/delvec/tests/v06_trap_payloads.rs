@@ -44,7 +44,7 @@ fn payload_prefabs(name: &str, extra: &[(&str, serde_json::Value)]) -> PathBuf {
         .unwrap();
     anchors.insert(
         "anchor/trap".to_string(),
-        serde_json::json!({ "pos": [5, 1, 7], "dispenser": [4, 1, 7] }),
+        serde_json::json!({ "pos": [5, 1, 7] }),
     );
     anchors.insert(
         "anchor/lever".to_string(),
@@ -492,8 +492,7 @@ fn volley_kill_zone_on_an_unknown_anchor_is_dw0447() {
 // Validation tier
 // ---------------------------------------------------------------------------
 
-/// `DW0440`: a trap with neither a redstone `effect` nor a command `payload`
-/// does nothing at all.
+/// `DW0440`: a trap with an empty command `payload` does nothing at all.
 #[test]
 fn a_trap_with_no_consequence_is_dw0440() {
     let d = diags_for(
@@ -562,43 +561,6 @@ fn unknown_payload_verb_ids_are_dw0441() {
         &[],
     );
     assert!(codes(&d).contains(&"DW0441"), "{d:#?}");
-}
-
-// ---------------------------------------------------------------------------
-// Byte-identity
-// ---------------------------------------------------------------------------
-
-/// A spec-0011 redstone trap — no `payload` — emits exactly what it emitted
-/// before: no detection tick, no fire function, no payload machinery.
-#[test]
-fn a_payload_free_trap_emits_no_new_machinery() {
-    let out = build_payload(
-        "p-legacy",
-        serde_json::json!({
-            "id": "trap/dart-hall",
-            "at": "anchor/trap",
-            "trigger": "pressure-plate",
-            "effect": { "dispense": { "item": "minecraft:arrow", "count": 8 } },
-            "lethality": "harmful",
-            "reset": "rearm"
-        }),
-        &[],
-    )
-    .expect("builds");
-    let tick = fn_body(&out, "tick");
-    assert!(!tick.contains("trapfire"), "{tick}");
-    assert!(!tick.contains("volley_"), "{tick}");
-    for n in fn_names(&out) {
-        assert!(!n.starts_with("volley_"), "{n}");
-        assert!(!n.starts_with("collapse_"), "{n}");
-        assert!(!n.starts_with("trap_fire_"), "{n}");
-    }
-    // The legacy dispenser fill is untouched.
-    let setup = fn_body(&out, "setup_finish");
-    assert!(
-        setup.contains("item replace block 4 65 7 container.0 with minecraft:arrow 8"),
-        "{setup}"
-    );
 }
 
 // ---------------------------------------------------------------------------

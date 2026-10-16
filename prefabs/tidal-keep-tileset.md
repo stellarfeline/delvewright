@@ -245,8 +245,8 @@ Three stacked rooms around one vertical void.
 
 Every anchor, by piece. `point` anchors are all proved standable at generation
 time (air at feet and head, solid floor below); `region` anchors carry the `block`
-their gate verbs fill with; `trap` anchors additionally carry the pre-wired
-dispenser socket and the trigger blockstate.
+their gate verbs fill with; `trap` anchors additionally carry the trigger
+blockstate.
 
 One class is deliberately **not** a footing: a *slot* anchor (spec-0022
 `volley.from_anchor`) marks the opening a summoned projectile spawns in, so it is
@@ -262,7 +262,7 @@ an arrow loop.
 **`tk-gatehouse`** — `anchor/l1a-approach`, `anchor/l1a-watch`,
 `anchor/l1a-watch-corpse`, `anchor/l1a-gate-timed` *(region, `iron_bars`)*,
 `anchor/l1a-ward`, `anchor/l1a-stair-foot`, `anchor/l1a-trap-boulder` *(trap;
-dispenser `[14,12,15]`, trigger `minecraft:stone_pressure_plate[powered=false]`)*,
+trigger `minecraft:stone_pressure_plate[powered=false]`)*,
 `anchor/l1a-volley-slot` *(slot; the arch-rib opening at `[14,11,15]`, one course
 under the dispenser)*, `anchor/l1a-stair-run` *(the volley kill-zone centre,
 `[14,8,19]`)*, `anchor/l1a-stair-head`, `anchor/l1a-runout`,
@@ -284,8 +284,8 @@ under the dispenser)*, `anchor/l1a-stair-run` *(the volley kill-zone centre,
 `anchor/l3-commit-gate` *(region, `iron_bars`)*, `anchor/l3-shortcut-a` *(region,
 `iron_bars`)*, `anchor/l3-shortcut-a-sign`, `anchor/l3-shallows`,
 `anchor/l3-ambush-a`, `anchor/l3-ambush-b`, `anchor/l3-item-alcove`,
-`anchor/l3-ledge`, `anchor/l3-secret`, `anchor/l3-trap-darts` *(trap; dispenser
-`[39,9,28]`, trigger `minecraft:stone_pressure_plate[powered=false]`)*,
+`anchor/l3-ledge`, `anchor/l3-secret`, `anchor/l3-trap-darts` *(trap;
+trigger `minecraft:stone_pressure_plate[powered=false]`)*,
 `anchor/l3-gallery-slot` *(slot; the shaft head at `[38,10,27]`, three treads
 above the plate so the climber walks into the fire)*, `anchor/l3-dart-lever`,
 `anchor/l3-unlock`, `anchor/l3-landing`.
@@ -343,7 +343,7 @@ Fixtures: `lantern`, `soul_lantern`, `sea_lantern`, `wall_torch`, `campfire`,
 `redstone_wire`, `dispenser`. Greeble: `dead_bush`, `short_grass`, `seagrass`,
 `moss_carpet`, `pointed_dripstone`, `oak_log` / `dark_oak_log`, `oak_fence`,
 `black_wool`, `hay_block`. No command or structure blocks; no NBT-bearing block
-entities beyond the dispenser sockets the trap contract requires.
+entities beyond the dispensers the traps keep as scenery.
 
 ## Generator invariants (what fails the build, not the QA hour)
 
@@ -359,8 +359,7 @@ Debug doctrine: each lesson is pinned as a generator assertion rather than prose
 - `sightline_clear` — every rafter perch is visible from the loft doorway.
 - `assert_anchors_sane` — every *footing* anchor is standable and every *slot*
   anchor is clear and dry, every anchor id is a legal `anchor/<kebab>` (or the
-  reserved `spawn`), every trap marker's declared dispenser socket really is a
-  dispenser, and every region is in bounds.
+  reserved `spawn`), and every region is in bounds.
 - `seal_stair_flanks` + `assert_stair_flanks_sealed` — **a flight is entered at
   its foot, never over its side rail.** Where a floor sits flush one block under
   a mid-flight tread, the nav model reads a perfectly legal side-step onto that

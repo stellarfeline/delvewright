@@ -610,13 +610,6 @@ pub struct Anchor {
     /// silence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolves_to: Option<String>,
-    /// The pre-wired dispenser socket cell (local coords) for an `anchor/trap`
-    /// marker. `pos` is the trap's trigger/hazard cell (the plate, tripwire or
-    /// chest modelled as the hazard); `dispenser` is the separate cell holding
-    /// the empty dispenser whose payload is filled at compile time. Absent for
-    /// every non-trap anchor.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dispenser: Option<[i32; 3]>,
     /// The block the prefab wired as this `anchor/trap`'s **trigger** — the
     /// plate or tripwire sitting on `pos` — with its full blockstate exactly as
     /// authored (`minecraft:oak_pressure_plate[powered=false]`), because
@@ -641,8 +634,8 @@ pub struct Anchor {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     /// Every anchor key this version does not model, kept verbatim. The anchor
-    /// block is where this document has grown most often — `resolves_to`,
-    /// `dispenser` and `trigger_block` were each a new key on a shipped
+    /// block is where this document has grown most often — `resolves_to` and
+    /// `trigger_block` were each a new key on a shipped
     /// document — so it captures for the same reason [`PrefabMeta::extra`]
     /// does.
     #[serde(flatten)]
@@ -1099,7 +1092,7 @@ impl PrefabMeta {
     ///
     /// An anchor is an object, not a value. A tool that names where the anchor
     /// is has said nothing about the hardware the prefab wired at it
-    /// ([`Anchor::dispenser`], [`Anchor::trigger_block`]), about which contract
+    /// ([`Anchor::trigger_block`]), about which contract
     /// element an exporter resolved it into ([`Anchor::resolves_to`]), or about
     /// any key this version has never heard of ([`Anchor::extra`]) — so none of
     /// those is touched. Replacing the whole anchor instead is the same silent
@@ -1384,10 +1377,10 @@ mod tests {
     /// nothing at all.
     ///
     /// An editing step that re-annotates an anchor already on the piece names
-    /// only where it is. The dispenser cell the prefab wired, the trigger block
-    /// it must put back, the contract element the exporter resolved, and a key
-    /// no version has heard of are all properties of the anchor and not of the
-    /// edit — so all four survive, and only the place changes.
+    /// only where it is. The trigger block the prefab wired and must put back,
+    /// the contract element the exporter resolved, and a key no version has
+    /// heard of are all properties of the anchor and not of the edit — so all
+    /// three survive, and only the place changes.
     #[test]
     fn re_annotating_an_anchor_keeps_the_hardware_the_piece_carries() {
         let text = r#"{
@@ -1398,7 +1391,6 @@ mod tests {
       "pos": [3, 1, 3],
       "facing": "north",
       "resolves_to": "space:hall",
-      "dispenser": [3, 2, 4],
       "trigger_block": "minecraft:oak_pressure_plate[powered=false]",
       "acoustics": "reverberant"
     }
@@ -1424,11 +1416,6 @@ mod tests {
             "the place is edited"
         );
         assert_eq!(a["facing"], serde_json::json!("south"));
-        assert_eq!(
-            a["dispenser"],
-            serde_json::json!([3, 2, 4]),
-            "the pre-wired dispenser cell is the piece's hardware, not the edit's"
-        );
         assert_eq!(
             a["trigger_block"],
             serde_json::json!("minecraft:oak_pressure_plate[powered=false]"),

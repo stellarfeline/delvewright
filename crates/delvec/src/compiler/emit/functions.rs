@@ -768,7 +768,7 @@ pub(super) fn emit_functions(
     // v0.4: summon the interaction entities strike/use environment triggers watch
     // (empty for a campaign with no triggers → byte-identical).
     setup.extend(env_trigger_setup(plan, chrome));
-    // v0.6: fill each trap dispenser payload and summon disarm affordances
+    // v0.6: summon each trap's detection hitbox and disarm affordance
     // (spec-0011). Empty for a campaign with no traps → byte-identical.
     setup.extend(trap_setup(plan, trap_gates));
     // spec-0021: fill each declared container. Empty for a campaign with no

@@ -157,11 +157,9 @@ pub(super) fn emit_packtest(
     // watch) the filter; per watching body with a walk, the yield. Emits nothing
     // for a campaign that declares no watcher.
     watching::emit_watch_packtests(plan, out, moves, actor_moves, watch_binding);
-    // v0.6: trap payload loads into the dispenser; a disarm empties it (spec-0011).
-    // Emits nothing when the campaign declares no traps.
-    trap::emit_trap_packtests(plan, out);
-    // The gate's own template, independent of the dispenser one: a campaign
-    // whose gated trap carries a command payload and no dispenser still owes it.
+    // v0.6: every trap fires, by its body and through the tick's detection
+    // (spec-0011, spec-0022). Emits nothing when the campaign declares no traps.
+    trap::emit_trap_fire_packtests(plan, out);
     trap::emit_trap_gate_packtest(plan, out);
     trap::emit_payload_packtests(plan, out, payloads);
     // spec-0016 §1: resting at a bonfire moves the party respawn point and
@@ -265,6 +263,7 @@ pub(super) fn watch_claims(plan: &Plan) -> Vec<crate::compiler::watch::Claim> {
         pulse::pulse_watch_claim(plan),
     ];
     watch_claims.extend(trigger::env_trigger_watch_claims(plan));
+    watch_claims.extend(trap::trap_fire_watch_claims(plan));
     watch_claims.extend(dialogue::dialogue_mask_watch_claims(plan));
     watch_claims.extend(cast::cast_bark_watch_claims(plan));
     watch_claims

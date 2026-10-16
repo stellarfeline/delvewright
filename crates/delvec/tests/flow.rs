@@ -400,7 +400,7 @@ fn trap_disarm_flag_is_a_producer() {
         "id": "trap/dart",
         "at": "anchor/trap",
         "trigger": "pressure-plate",
-        "effect": { "dispense": { "item": "minecraft:arrow", "count": 8 } },
+        "payload": [ { "type": "damage-players", "amount": 2 } ],
         "disarm": { "via": "anchor/keeper-stand", "sets_flag": "flag/disarmed" }
     }]);
     for quest in q["content"]["quests"].as_array_mut().unwrap() {

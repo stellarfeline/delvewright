@@ -44,8 +44,7 @@ Every debugging lesson from this tileset is pinned as an assertion, not prose â€
 `assert_route_walkable` (nav-model walkability of every promised route),
 `assert_field_open` (the optional elite's bypass lanes), `sightline_clear` (the
 loft perches are visible from the doorway), `assert_anchors_sane` (standable
-footings, clear-and-dry volley slots, legal ids, real dispenser sockets,
-in-bounds regions), `assert_stair_flanks_sealed` (no flight is enterable over its
+footings, clear-and-dry volley slots, legal ids, in-bounds regions), `assert_stair_flanks_sealed` (no flight is enterable over its
 side rail â€” the `DW0430` lesson), `wire_dust` (redstone supports and up-step
 clearances) and `assert_no_unsupported_gravity`.
 See the tileset doc for the full list and what each one caught.

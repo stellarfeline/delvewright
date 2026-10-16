@@ -2,13 +2,13 @@
 //! `DW0438` for a DSL v0.8 `collect` that adopts a prefab container).
 //!
 //! A `loot` declaration fills a container the **prefab already placed** — the
-//! same division of labour a trap has with its dispenser. That makes the
+//! same division of labour a trap has with its trigger block. That makes the
 //! container a piece of authored hardware, and "is there actually a container
 //! at this anchor?" a question only the assembled world can answer.
 //!
 //! It has to be answered, because the failure is silent. `item replace block …
 //! container.<n>` against a cell that is not a container **fails without
-//! output** — the same hazard `DW0352` documents for trap dispensers. Nothing
+//! output**. Nothing
 //! in the delve would look wrong at build time; the player would simply find an
 //! ordinary wall where the stores were meant to be, which is exactly the class
 //! of defect this compiler turns loud.
@@ -214,7 +214,7 @@ fn container_remedy(available: &[ContainerAnchor], what: &str) -> String {
         "**No anchor anywhere in this campaign's assembled world holds a container**, so there is \
          nothing to point {what} at and no edit to these campaign documents can create one. A \
          chest, trapped chest or barrel is FURNITURE: a placed piece puts it there, exactly as a \
-         piece places a trap's dispenser, and the campaign fills what the piece placed. The two \
+         piece places a trap's trigger block, and the campaign fills what the piece placed. The two \
          ways forward are both about the piece, and only the first is yours: bind one of this \
          campaign's areas to a piece that already carries a container, or have the piece you are \
          using export one — that second is a change to the prefab library and goes through the \
@@ -269,7 +269,7 @@ pub fn check_loot_containers(
         message: format!(
             "{} `loot` declaration(s) do not resolve to a fillable container.\n{}\n\
              A `loot` entry fills a container the PREFAB placed — it never places one, exactly \
-             as a trap never places its dispenser. `item replace block … container.<n>` against \
+             as a trap never places its trigger block. `item replace block … container.<n>` against \
              a non-container fails SILENTLY, so this would have shipped as an empty wall where \
              the stores should be. {remedy}",
             bad.len(),

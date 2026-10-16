@@ -44,14 +44,14 @@
         "traps": [
           {
             "at": "anchor/nowhere",
-            "effect": {
-              "dispense": {
-                "count": 8,
-                "item": "minecraft:torch"
-              }
-            },
             "id": "trap/dart-hall",
             "lethality": "harmful",
+            "payload": [
+              {
+                "amount": 2,
+                "type": "damage-players"
+              }
+            ],
             "trigger": "pressure-plate"
           }
         ]

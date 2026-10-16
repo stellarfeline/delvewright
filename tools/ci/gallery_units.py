@@ -407,8 +407,8 @@ class Binder:
             self._hit(child, f"{ptr}/{_esc(key)}")
             self._scalar_variant(sub, child, v, f"{ptr}/{_esc(key)}")
             # An ANONYMOUS subschema belongs to its site, and the enumeration
-            # names its members that way (`TrapEffect.dispense.item`). Passing
-            # the parent's own name here instead binds `TrapEffect.item`, which
+            # names its members that way (`Enum.variant.field`). Passing
+            # the parent's own name here instead binds `Enum.field`, which
             # is a unit that does not exist — so the real one reads as unbound
             # while the walk reports a hit. `_value` overrides this the moment it
             # resolves a `$ref`, which is exactly when the type has a name.

@@ -14,7 +14,7 @@ use crate::enchantment_component;
 /// barrel the prefab already placed.
 ///
 /// The container is **hardware the prefab authored**, exactly like a trap's
-/// dispenser: this declaration gives an already-placed, already-lit, already
+/// trigger block: this declaration gives an already-placed, already-lit, already
 /// composed piece of furniture its contents. The compiler never places the
 /// container itself — if the anchor's cell does not already hold one, that is a
 /// content defect and a build error (`DW0431`), not something to paper over by

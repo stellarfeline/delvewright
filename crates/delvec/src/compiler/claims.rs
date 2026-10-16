@@ -18,7 +18,6 @@
 //! | `structure.data_version` | the templates were written for this game version |
 //! | `walk_y` | a body can stand at that local plane |
 //! | `anchors.*.pos` / `.region` | that cell, that range, is inside the piece |
-//! | `anchors.*.dispenser` | that cell holds the dispenser a trap loads |
 //! | `anchors.*.trigger_block` | that block, with that state, sits on the anchor |
 //! | `anchors.*.furniture` | that region is solid furniture a body could otherwise stand on |
 //! | `connectors[].local_pos` + `.opening` | the piece is open there, and a body fits |
@@ -108,8 +107,6 @@ pub enum ClaimKey {
     AnchorPos,
     /// `anchors.*.region` — a named cell range.
     AnchorRegion,
-    /// `anchors.*.dispenser` — a trap's pre-wired dispenser socket.
-    AnchorDispenser,
     /// `anchors.*.trigger_block` — the block a trap triggers on.
     AnchorTrigger,
     /// `anchors.*.furniture` — a `role: furniture` anchor's region is solid
@@ -132,7 +129,6 @@ impl ClaimKey {
         ClaimKey::WalkPlane,
         ClaimKey::AnchorPos,
         ClaimKey::AnchorRegion,
-        ClaimKey::AnchorDispenser,
         ClaimKey::AnchorTrigger,
         ClaimKey::AnchorFurniture,
         ClaimKey::ConnectorOpening,
@@ -147,7 +143,6 @@ impl ClaimKey {
             ClaimKey::WalkPlane => "walk_y",
             ClaimKey::AnchorPos => "anchors.*.pos",
             ClaimKey::AnchorRegion => "anchors.*.region",
-            ClaimKey::AnchorDispenser => "anchors.*.dispenser",
             ClaimKey::AnchorTrigger => "anchors.*.trigger_block",
             ClaimKey::AnchorFurniture => "anchors.*.furniture",
             ClaimKey::ConnectorOpening => "connectors[].opening",
@@ -455,30 +450,6 @@ pub fn check_piece(meta: &PrefabMeta, grid: &VoxelModel, facts: &ByteFacts) -> C
                          leaves the piece writes blocks into whatever the world put next to it. \
                          The move: correct the region in `{file}.json` to cells of the piece.",
                         ex = extent(grid),
-                    ),
-                );
-            }
-        }
-        if let Some(cell) = anchor.dispenser {
-            if holds(grid, cell, "minecraft:dispenser") {
-                v.binding.saw(ClaimKey::AnchorDispenser, false);
-            } else {
-                deny(
-                    &mut v.binding,
-                    ClaimKey::AnchorDispenser,
-                    format!(
-                        "anchor `{name}` names a dispenser at {cell:?}; that cell holds {found}",
-                        found = spelled(grid, cell)
-                    ),
-                    format!(
-                        "prefab `{id}` declares anchor `{name}`'s `dispenser` at local {cell:?} \
-                         and that cell holds {found}. The declaration is what tells the compiler \
-                         where to load a trap's payload, and it loads it with a `data merge` \
-                         against a block entity that has to be there. The moves: (1) WIRE the \
-                         dispenser into the piece at that cell — the socket is the prefab's \
-                         hardware, not the campaign's; (2) correct the cell in `{file}.json` to \
-                         the one the piece really wired.",
-                        found = spelled(grid, cell),
                     ),
                 );
             }
@@ -909,9 +880,8 @@ mod tests {
         assert!(v.denied.iter().any(|c| c.key == ClaimKey::AnchorRegion));
     }
 
-    /// A trap's hardware is hardware: a dispenser socket and a trigger block
-    /// are cells the piece wired, and a declaration over anything else is
-    /// denied.
+    /// A trap's hardware is hardware: a trigger block is a cell the piece
+    /// wired, and a declaration over anything else is denied.
     #[test]
     fn trap_hardware_the_piece_did_not_wire_is_denied() {
         let (mut meta, s) = piece();
@@ -919,13 +889,11 @@ mod tests {
             "anchor/trap".into(),
             Anchor {
                 pos: Some([1, 1, 1]),
-                dispenser: Some([1, 1, 2]),
                 trigger_block: Some("minecraft:stone_pressure_plate".into()),
                 ..Anchor::default()
             },
         );
         let v = judge(&meta, &s);
-        assert!(v.denied.iter().any(|c| c.key == ClaimKey::AnchorDispenser));
         assert!(v.denied.iter().any(|c| c.key == ClaimKey::AnchorTrigger));
     }
 

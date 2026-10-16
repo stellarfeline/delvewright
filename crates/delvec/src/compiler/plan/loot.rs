@@ -3,9 +3,8 @@
 use super::*;
 
 /// Resolve every stage-5 trap (DSL v0.6, spec-0011) in content order into a
-/// [`TrapPlan`]: the trigger/hazard cell (the trap's `at` anchor), the dispenser
-/// socket cell (from the `at` anchor's metadata), the dispense payload, and the
-/// disarm affordance. A trap whose `at` anchor does not resolve to a point is
+/// [`TrapPlan`]: the trigger/hazard cell (the trap's `at` anchor), the command
+/// payload, and the disarm affordance. A trap whose `at` anchor does not resolve to a point is
 /// skipped (validation guarantees the anchor exists; an unresolved pool anchor
 /// simply carries no proof/emission — the same policy as `collect_v06_effects`).
 /// A resolved container fill (spec-0021).

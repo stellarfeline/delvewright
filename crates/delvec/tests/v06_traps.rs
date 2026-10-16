@@ -1,13 +1,14 @@
 //! DSL v0.6 traps (spec-0011) end-to-end. Built on hello-world with the `world`
 //! and `quests` stages bumped to 0.6.0 and a `traps[]` section added. The prefab
 //! library is copied and `hello-room.json` patched to expose an `anchor/trap`
-//! (with a `dispenser` socket) on the walked critical path plus an `anchor/lever`
-//! disarm affordance beside it — no island prefab carries trap anchors yet, so the
-//! fixture builds the hardware contract locally.
+//! on the walked critical path plus an `anchor/lever` disarm affordance beside
+//! it — no island prefab carries trap anchors yet, so the fixture builds the
+//! hardware contract locally.
 //!
-//! Covers: the dispenser payload fill + disarm emission, the `tnt_explodes` seal
-//! (v0.6-gated), the trap PackTest, and the DW0342 completability proof (a lethal
-//! forced-path trap with no discharge fails the build).
+//! Covers: the disarm emission and the detection it guards, the `tnt_explodes`
+//! seal (v0.6-gated), the trap-fire PackTest, the DW0342 completability proof
+//! (a lethal forced-path trap with no discharge fails the build), and a
+//! tripwire trap built from a piece that passed admission.
 
 mod common;
 
@@ -31,7 +32,7 @@ fn tmp(name: &str) -> PathBuf {
 }
 
 /// A private prefab copy whose `hello-room.json` gains an `anchor/trap` (trigger
-/// cell [5,1,7] on the spawn→exit path, dispenser socket at [4,1,7]) and an
+/// cell [5,1,7] on the spawn→exit path) and an
 /// `anchor/lever` disarm affordance at [3,1,6]. The trap stands one cell past
 /// the doorway, not in it: the door is a gate region the compiler clears, so a
 /// trigger placed inside it would be erased by the open-gate (`DW0917` reads the
@@ -47,7 +48,7 @@ fn patched_prefabs(name: &str, trigger_block: Option<&str>) -> PathBuf {
         .get_mut("anchors")
         .and_then(|a| a.as_object_mut())
         .unwrap();
-    let mut trap_anchor = serde_json::json!({ "pos": [5, 1, 7], "dispenser": [4, 1, 7] });
+    let mut trap_anchor = serde_json::json!({ "pos": [5, 1, 7] });
     // The trigger hardware the prefab wired onto the trap cell, declared with its
     // blockstate exactly as a gate anchor declares its fill `block`. Only a
     // flag-gated trap needs it (`DW0363`), so it stays optional here.
@@ -171,70 +172,6 @@ fn build_trap_world(
     )
 }
 
-/// Validate only (no build) against the FULL 1.21.11 registry, so a test can
-/// assert on a diagnostic instead of asserting the campaign is clean.
-fn validate_trap(name: &str, trap: serde_json::Value) -> Vec<delvewright_dsl::Diagnostic> {
-    let camp_dir = tmp(&format!("{name}-camp"));
-    let patch = serde_json::json!({
-        "documents": { "world": world_v06(), "quests": quests_v06(trap) }
-    });
-    common::materialize_from(&common::hello_world_dir(), &patch, &camp_dir);
-    let prefabs_dir = patched_prefabs(
-        &format!("{name}-prefabs"),
-        Some("minecraft:oak_pressure_plate[powered=false]"),
-    );
-    let loaded = load_campaign_dir(&camp_dir).unwrap();
-    let campaign = parse_campaign(&loaded.raw).expect("campaign parses");
-    let prefabs = PrefabRegistry::load_dir(&prefabs_dir).unwrap();
-    validate_campaign_with(
-        &campaign,
-        &FullItemRegistry::v1_21_11(),
-        &prefabs,
-        &FullEntityRegistry::v1_21_11(),
-    )
-}
-
-/// `DW0436`: a dispenser payload is the same single-slot `item replace …
-/// container.0` fill a `loot` entry is, and fails just as silently above the
-/// item's max stack size — a splash potion caps at 1, so `count: 3` would load
-/// an empty dispenser and the trap would fire nothing.
-#[test]
-fn a_dispense_count_above_the_stack_size_is_dw0436() {
-    let diags = validate_trap(
-        "trap-overcap",
-        serde_json::json!({
-            "id": "trap/dart-hall",
-            "at": "anchor/trap",
-            "trigger": "trapped-chest",
-            "effect": { "dispense": { "item": "minecraft:splash_potion", "count": 3 } },
-            "lethality": "nonlethal"
-        }),
-    );
-    let d = diags
-        .iter()
-        .find(|d| d.code == "DW0436")
-        .unwrap_or_else(|| panic!("an over-cap dispense count must fire DW0436: {diags:#?}"));
-    assert!(
-        d.message.contains("trap/dart-hall")
-            && d.message.contains("minecraft:splash_potion")
-            && d.message.contains("at most 1"),
-        "{}",
-        d.message
-    );
-    // A stack of arrows (cap 64) is exactly what a dispense trap is for: clean.
-    let clean = validate_trap(
-        "trap-in-cap",
-        serde_json::json!({
-            "id": "trap/dart-hall",
-            "at": "anchor/trap",
-            "trigger": "trapped-chest",
-            "effect": { "dispense": { "item": "minecraft:arrow", "count": 64 } },
-            "lethality": "nonlethal"
-        }),
-    );
-    assert!(!clean.iter().any(|d| d.code == "DW0436"), "{clean:#?}");
-}
-
 fn text(out: &BuildOutput, key: &str) -> String {
     String::from_utf8(
         out.get(key)
@@ -244,33 +181,36 @@ fn text(out: &BuildOutput, key: &str) -> String {
     .unwrap()
 }
 
-/// A harmful dispense trap with a disarm builds clean and emits the payload fill,
-/// the disarm affordance + function, the v0.6 `tnt_explodes` seal, and a PackTest.
+/// A harmful trap with a disarm builds clean and emits the disarm affordance +
+/// function, the detection the disarm latch guards, the v0.6 `tnt_explodes`
+/// seal, and a PackTest that fires the trap.
 #[test]
-fn trap_dispense_and_disarm_emit_end_to_end() {
+fn trap_disarm_and_fire_emit_end_to_end() {
     let trap = serde_json::json!({
         "id": "trap/dart-hall",
         "at": "anchor/trap",
         "trigger": "trapped-chest",
-        "effect": { "dispense": { "item": "minecraft:arrow", "count": 8 } },
+        "payload": [ { "type": "damage-players", "amount": 2 } ],
         "lethality": "harmful",
         "disarm": { "via": "anchor/lever", "sets_flag": "flag/darts-off" }
     });
     let out = build_with_trap("trap-clean", trap).expect("harmful trap builds");
 
-    // Dispenser payload fill lands in setup_finish (dispenser socket = [4,65,6]).
     let setup_finish = text(
         &out,
         &format!("datapack/data/{NS}/function/setup_finish.mcfunction"),
     );
     assert!(
-        setup_finish.contains("item replace block 4 65 7 container.0 with minecraft:arrow 8"),
-        "dispenser payload fill missing:\n{setup_finish}"
-    );
-    // Disarm interaction affordance is summoned.
-    assert!(
         setup_finish.contains("dw_trapdis_dart_hall"),
         "disarm affordance summon missing:\n{setup_finish}"
+    );
+    assert!(
+        setup_finish.contains("dw_trapfire_dart_hall"),
+        "the trapped chest's detection hitbox is missing:\n{setup_finish}"
+    );
+    assert!(
+        !setup_finish.contains("item replace block"),
+        "a trap loads no container:\n{setup_finish}"
     );
 
     // v0.6-gated TNT seal appears in setup.
@@ -283,28 +223,55 @@ fn trap_dispense_and_disarm_emit_end_to_end() {
         "v0.6 tnt_explodes seal missing:\n{setup}"
     );
 
-    // The disarm function sets the flag and empties the dispenser.
+    // The disarm function sets the flag and the latch the fire guard reads.
     let disarm = text(
         &out,
         &format!("datapack/data/{NS}/function/trap_disarm_dart_hall.mcfunction"),
     );
     assert!(
-        disarm.contains("data modify block 4 65 7 Items set value []"),
-        "disarm must empty the dispenser:\n{disarm}"
+        disarm.contains("scoreboard players set #trapdis_dart_hall dw.sys 1"),
+        "disarm must set the latch the fire guard reads:\n{disarm}"
     );
     assert!(
         disarm.contains("scoreboard players set #party dw.f_darts_off 1"),
         "disarm must set the flag on the party holder (spec-0018) — one lever, \
          everyone's trap off, and it survives a relog:\n{disarm}"
     );
-
-    // The trap PackTest is emitted.
-    assert!(
-        out.contains_key(&format!(
-            "packtest-datapack/data/{NS}/test/v06_trap.mcfunction"
-        )),
-        "trap PackTest missing"
+    let detect = text(
+        &out,
+        &format!("datapack/data/{NS}/function/trap_detect.mcfunction"),
     );
+    assert!(
+        detect.contains(
+            "execute unless score #trapfire_dart_hall dw.sys matches 1 unless score \
+             #trapdis_dart_hall dw.sys matches 1 if entity"
+        ),
+        "the detection must stand down once the trap is disarmed:\n{detect}"
+    );
+    let tick = text(
+        &out,
+        &format!("datapack/data/{NS}/function/tick.mcfunction"),
+    );
+    assert!(
+        tick.lines()
+            .any(|l| l.trim() == "function hello-world:trap_detect"),
+        "the tick must run the detection:\n{tick}"
+    );
+
+    // The PackTest fires the trap through the real detection, disarm unthrown.
+    let pt = text(
+        &out,
+        &format!("packtest-datapack/data/{NS}/test/v06_trap_fire_dart_hall.mcfunction"),
+    );
+    for expected in [
+        "function hello-world:trap_fire_dart_hall",
+        "scoreboard players set #trapdis_dart_hall dw.sys 0",
+        "data modify entity @e[tag=dw_trapfire_dart_hall,limit=1] interaction set value",
+        "function hello-world:trap_detect",
+        "assert score #trapfire_dart_hall dw.sys matches 1",
+    ] {
+        assert!(pt.contains(expected), "the fire PackTest lacks `{expected}`:\n{pt}");
+    }
 
     // Every emitted trap command validates against the vendored 1.21.11 Brigadier
     // tree (the ADR-0011 cross-check CI also runs via mecha).
@@ -323,7 +290,7 @@ fn lethal_forced_trap_without_discharge_is_dw0342() {
         "id": "trap/dart-hall",
         "at": "anchor/trap",
         "trigger": "pressure-plate",
-        "effect": { "dispense": { "item": "minecraft:arrow", "count": 8 } },
+        "payload": [ { "type": "damage-players", "amount": 2 } ],
         "lethality": "lethal",
         "reset": "rearm"
     });
@@ -345,7 +312,7 @@ fn lethal_forced_once_trap_builds() {
         "id": "trap/dart-hall",
         "at": "anchor/trap",
         "trigger": "pressure-plate",
-        "effect": { "dispense": { "item": "minecraft:arrow", "count": 8 } },
+        "payload": [ { "type": "damage-players", "amount": 2 } ],
         "lethality": "lethal",
         "reset": "once"
     });
@@ -364,7 +331,7 @@ fn gated_trap() -> serde_json::Value {
         "id": "trap/dart-hall",
         "at": "anchor/trap",
         "trigger": "pressure-plate",
-        "effect": { "dispense": { "item": "minecraft:arrow", "count": 8 } },
+        "payload": [ { "type": "damage-players", "amount": 2 } ],
         "lethality": "harmful",
         "disarm": { "via": "anchor/lever", "sets_flag": "flag/darts-off" },
         "forbids_flags": ["flag/darts-off"]
@@ -629,4 +596,165 @@ fn a_trapped_chest_trap_with_no_chest_is_dw0917() {
         Ok(_) => panic!("a trapped-chest trap over empty air built"),
     }
     build_trap_world("trap-with-chest", trap, None, true).expect("the placed chest builds");
+}
+
+/// The hello room with a tripwire strung across the trap's row, wall to wall:
+/// a hook against each wall, facing into the room, and the string between them
+/// passing over the trap cell. `wire` false leaves the hooks and takes the
+/// string out.
+fn strung_room(dir: &Path, wire: bool) -> delvec::admit::structure::Structure {
+    use delvec::admit::structure::{PaletteEntry, Structure};
+    let path = dir.join("hello-room.nbt");
+    let mut s = Structure::read(&std::fs::read(&path).unwrap()).unwrap();
+    let (y, z) = (1, 7);
+    let open = |s: &Structure, x: i32| {
+        s.entry_at([x, y, z])
+            .is_none_or(|e| e.name == "minecraft:air")
+    };
+    let mut west = 5;
+    while open(&s, west - 1) {
+        west -= 1;
+    }
+    let mut east = 5;
+    while open(&s, east + 1) {
+        east += 1;
+    }
+    assert!(
+        west < 5 && east > 5,
+        "the trap's row must leave room for a hook either side of the cell: {west}..={east}"
+    );
+    let hook = |facing| {
+        PaletteEntry::with_props(
+            "minecraft:tripwire_hook",
+            &[("attached", "true"), ("facing", facing), ("powered", "false")],
+        )
+    };
+    s.set_cell([west, y, z], hook("east"), None);
+    s.set_cell([east, y, z], hook("west"), None);
+    for x in west + 1..east {
+        let entry = if wire {
+            PaletteEntry::with_props(
+                "minecraft:tripwire",
+                &[
+                    ("attached", "true"),
+                    ("disarmed", "false"),
+                    ("east", "true"),
+                    ("north", "false"),
+                    ("powered", "false"),
+                    ("south", "false"),
+                    ("west", "true"),
+                ],
+            )
+        } else {
+            PaletteEntry::simple("minecraft:air")
+        };
+        s.set_cell([x, y, z], entry, None);
+    }
+    s.prune_palette();
+    std::fs::write(&path, s.write()).unwrap();
+    s
+}
+
+/// **A tripwire trap is built from a piece that passed admission** (`DW0917`
+/// against `DW0730`). The piece strings a tripwire across the trap's row; the
+/// audit admits it with the default allowlist; the campaign builds from those
+/// exact bytes, with nothing written into the trap cell by the test, and emits
+/// the trap's detection and its fire PackTest. The same piece with the string
+/// taken out and the hooks left is `DW0917`: what the trap needs is the string.
+#[test]
+fn a_tripwire_trap_builds_from_an_admitted_piece() {
+    use delvec::admit::allowlist::Allowlist;
+    use delvec::admit::audit::audit;
+    let trap = serde_json::json!({
+        "id": "trap/wire",
+        "at": "anchor/trap",
+        "trigger": "tripwire",
+        "payload": [ { "type": "damage-players", "amount": 2 } ],
+        "lethality": "harmful",
+        "reset": "once"
+    });
+    let build = |name: &str, wire: bool| {
+        let camp_dir = tmp(&format!("{name}-camp"));
+        let patch = serde_json::json!({
+            "documents": { "world": world_v06(), "quests": quests_v06(trap.clone()) }
+        });
+        common::materialize_from(&common::hello_world_dir(), &patch, &camp_dir);
+        let prefabs_dir = patched_prefabs(&format!("{name}-prefabs"), None);
+        let piece = strung_room(&prefabs_dir, wire);
+        let loaded = load_campaign_dir(&camp_dir).unwrap();
+        let campaign = parse_campaign(&loaded.raw).expect("campaign parses");
+        let prefabs = PrefabRegistry::load_dir(&prefabs_dir).unwrap();
+        let diags = validate_campaign_with(
+            &campaign,
+            &FullItemRegistry::v1_21_11(),
+            &prefabs,
+            &FullEntityRegistry::v1_21_11(),
+        );
+        assert!(diags.is_empty(), "must validate clean: {diags:#?}");
+        let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+        let mut raw: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        for area in &plan.areas {
+            for p in &area.pieces {
+                for t in &p.templates {
+                    raw.insert(
+                        t.structure_file.clone(),
+                        std::fs::read(prefabs_dir.join(&t.structure_file)).unwrap(),
+                    );
+                }
+            }
+        }
+        let out = emit::build(
+            &plan,
+            &loaded.inputs,
+            &raw,
+            &CommandTree::v1_21_11(),
+            &prefabs,
+            None,
+            &BTreeMap::new(),
+        );
+        (piece, out)
+    };
+
+    let (piece, out) = build("trap-strung", true);
+    let (rep, _) = audit("hello-room", &piece, &Allowlist::default_building());
+    assert!(
+        rep.findings.iter().all(|f| f.code != "DW0730"),
+        "the strung piece must pass the palette allowlist: {:?}",
+        rep.findings
+    );
+    for id in ["minecraft:tripwire", "minecraft:tripwire_hook"] {
+        assert!(
+            rep.palette.iter().any(|b| b == id),
+            "{id} was not examined: {:?}",
+            rep.palette
+        );
+    }
+    let out = out.expect("a tripwire trap over an admitted, strung piece builds");
+    let detect = text(
+        &out,
+        &format!("datapack/data/{NS}/function/trap_detect.mcfunction"),
+    );
+    assert!(
+        detect.contains(
+            "execute unless score #trapfire_wire dw.sys matches 1 if entity \
+             @a[x=5,dx=0,y=65,dy=0,z=7,dz=0,tag=!dw_cutscene] run function \
+             hello-world:trap_fire_wire"
+        ),
+        "{detect}"
+    );
+    let pt = text(
+        &out,
+        &format!("packtest-datapack/data/{NS}/test/v06_trap_fire_wire.mcfunction"),
+    );
+    assert!(pt.contains("tp @a[tag=dw_t_trap_wire,limit=1] 5.5 65 7.5"), "{pt}");
+    assert!(pt.contains("function hello-world:trap_detect"), "{pt}");
+
+    match build("trap-hooks-only", false).1 {
+        Err(BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0917", "{message}");
+            assert!(message.contains("minecraft:tripwire"), "{message}");
+        }
+        Err(other) => panic!("expected DW0917, got {other:?}"),
+        Ok(_) => panic!("a tripwire trap with no string built"),
+    }
 }

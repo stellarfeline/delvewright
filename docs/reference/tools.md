@@ -637,8 +637,8 @@ the shape deletes whatever its copy omits, silently, on the way out.
 The part is as deep as the edit really goes, and for `anchor` that is **five
 fields of one anchor** rather than the anchor map: `pos`, `facing`, `region` and
 `block` say where the anchor is, `role` says what it is for, and re-annotating an
-anchor the piece already carries leaves the rest of it alone — the `dispenser`
-cell and `trigger_block` a trap's hardware lives on, the `resolves_to` the
+anchor the piece already carries leaves the rest of it alone — the
+`trigger_block` a trap's hardware lives on, the `resolves_to` the
 exporter resolved from the piece's own contract, and any anchor key this version
 does not model. Naming a `--pos` does supersede a `--region` and vice versa:
 where the anchor is, is one property written two ways. The role is not a sixth
@@ -698,7 +698,7 @@ claims `spdx: UNKNOWN` about an asset whose licence it has not established.
 those bytes (`DW0888`) and prints `byte-claim binding:` on every run — documents
 read, `.nbt` opened, and examined/denied per key of the class, zeroes included:
 `structure.data_version`, `walk_y`, `anchors.*.pos`, `anchors.*.region`,
-`anchors.*.dispenser`, `anchors.*.trigger_block`, `anchors.*.furniture`,
+`anchors.*.trigger_block`, `anchors.*.furniture`,
 `connectors[].opening`, `connectors[].socket` and `jigsaw-declared`.
 
 `audit` states what its **second door** did, on every run and in every case,

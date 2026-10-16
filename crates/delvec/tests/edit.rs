@@ -199,7 +199,7 @@ fn edited_build_runs_its_writes_as_the_world_build_and_hashes_the_script() {
     // ORDER, not mere presence (map-editor audit nit). The edits must land
     // BEFORE the relight fixtures (measured over the edited world) and every
     // entity/hardware setup step — that ordering is exactly what makes an edit
-    // over a trap's dispenser (`DW0352`) silently fatal. `setup_finish` runs a
+    // over a trap's hardware (`DW0352`) silently fatal. `setup_finish` runs a
     // tick after the world build's last step and writes none of its blocks.
     assert!(
         !setup_finish.contains("world_build") && !setup_finish.contains("world_edits"),
@@ -1055,9 +1055,9 @@ fn quests_with(extra: serde_json::Value) -> serde_json::Value {
 }
 
 /// A private prefab copy whose `hello-room.json` exposes an `anchor/trap` whose
-/// trigger cell is `[7, 1, 6]` and dispenser socket `[8, 1, 6]` — exactly the
-/// two cells the fixture's own `batch/hearth-nook` carves — with a pressure
-/// plate and a dispenser wired into them.
+/// trigger cell is `[7, 1, 6]` and an `anchor/trap-lever` disarm cell
+/// `[8, 1, 6]` — exactly the two cells the fixture's own `batch/hearth-nook`
+/// carves — with a pressure plate wired into the trigger cell.
 fn prefabs_with_trap(name: &str) -> PathBuf {
     use delvec::admit::structure::{PaletteEntry, Structure};
 
@@ -1066,29 +1066,13 @@ fn prefabs_with_trap(name: &str) -> PathBuf {
     let path = dir.join("hello-room.json");
     let mut meta: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    meta["anchors"]["anchor/trap"] =
-        serde_json::json!({ "pos": [7, 1, 6], "dispenser": [8, 1, 6] });
+    meta["anchors"]["anchor/trap"] = serde_json::json!({ "pos": [7, 1, 6] });
+    meta["anchors"]["anchor/trap-lever"] = serde_json::json!({ "pos": [8, 1, 6] });
     std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
-    // **The dispenser socket is hardware, so the fixture wires one.** A trap's
-    // `dispenser` is a claim about the piece's own bytes and `DW0888` holds it
-    // to them: a declaration over an empty cell is refused at validation, which
-    // would end this run one tier before the finding it is about.
     let nbt = dir.join("hello-room.nbt");
     let mut s = Structure::read(&std::fs::read(&nbt).unwrap()).unwrap();
-    s.set_cell(
-        [8, 1, 6],
-        PaletteEntry::simple("minecraft:dispenser"),
-        Some(delvec::schem::nbt::Nbt::Compound(
-            [(
-                "id".to_string(),
-                delvec::schem::nbt::Nbt::String("minecraft:dispenser".to_string()),
-            )]
-            .into_iter()
-            .collect(),
-        )),
-    );
-    // The trigger is hardware on the same terms (`DW0917`): the plate the
-    // `pressure-plate` trap names stands in its cell.
+    // The trigger is hardware (`DW0917`): the plate the `pressure-plate` trap
+    // names stands in its cell.
     s.set_cell(
         [7, 1, 6],
         PaletteEntry::simple("minecraft:stone_pressure_plate"),
@@ -1107,12 +1091,9 @@ fn combined(r: &Output) -> String {
 }
 
 /// **Finding 1 (`DW0352`).** The world build runs BEFORE `setup_finish`'s
-/// `trap_setup`, so a batch that carves a trap's trigger/dispenser cell lands
-/// first and the trap is then loaded into a block that is no longer there:
-/// vanilla's `item replace block … container.0` on a non-container fails with
-/// NO output, shipping a dead trap while every geometry proof stays green (the
-/// pre-fix binary emitted exactly this: `fill 7 65 6 8 65 6 minecraft:air`
-/// followed by `item replace block 8 65 6 container.0 …`, exit 0).
+/// `trap_setup`, so a batch that carves a trap's trigger or disarm cell lands
+/// first: the plate the party sees is gone, or the disarm affordance is
+/// summoned into the carve, while every geometry proof stays green.
 #[test]
 fn edit_over_trap_hardware_is_dw0352() {
     let dir = edits_copy("edits-trap");
@@ -1122,7 +1103,8 @@ fn edit_over_trap_hardware_is_dw0352() {
         quests_with(serde_json::json!({
             "traps": [ {
                 "id": "trap/dart", "at": "anchor/trap", "trigger": "pressure-plate",
-                "effect": { "dispense": { "item": "minecraft:arrow", "count": 8 } },
+                "payload": [ { "type": "damage-players", "amount": 2 } ],
+                "disarm": { "via": "anchor/trap-lever", "sets_flag": "flag/dart-off" },
                 "lethality": "harmful"
             } ]
         })),
@@ -1179,10 +1161,10 @@ fn edit_over_trap_hardware_is_dw0352() {
     ]);
     assert!(r.status.success(), "clear of the trap:\n{}", combined(&r));
     // …and the ordering the finding is about is pinned here: the trap hardware
-    // is loaded strictly AFTER the edits have run — they are the world build,
-    // and `setup_finish`, which loads the dispenser, is what its last step
-    // schedules — which is precisely why a colliding edit is silently fatal
-    // and must be a build error.
+    // is set up strictly AFTER the edits have run — they are the world build,
+    // and `setup_finish`, which summons the disarm affordance, is what its last
+    // step schedules — which is precisely why a colliding edit is silently
+    // fatal and must be a build error.
     let writes = world_build(&out);
     assert!(
         writes.iter().any(|l| l.ends_with("minecraft:air")),
@@ -1193,10 +1175,8 @@ fn edit_over_trap_hardware_is_dw0352() {
     )
     .unwrap();
     assert!(
-        finish
-            .lines()
-            .any(|l| l.starts_with("item replace block ") && l.contains("container.0")),
-        "trap dispenser loaded in setup_finish:\n{finish}"
+        finish.contains("dw_trapdis_dart"),
+        "trap disarm affordance summoned in setup_finish:\n{finish}"
     );
     assert!(
         !finish.contains("world_build"),

@@ -296,9 +296,7 @@ fn write_piece(out: &Path, spec: &Spec) {
 /// Anchor hygiene, proved per piece rather than discovered at campaign-build:
 /// every POINT anchor resolves to a standable cell (so `DW0316` / wave-spawn /
 /// bonfire placement can never fail on prefab geometry), every anchor id is a
-/// legal `anchor/<kebab>` (`DW0110`) or the one reserved `spawn` key, and every
-/// trap marker's dispenser really is a dispenser (`DW0352`'s hardware is only
-/// meaningful if it exists).
+/// legal `anchor/<kebab>` (`DW0110`) or the one reserved `spawn` key.
 fn assert_anchors_sane(spec: &Spec, g: &Grid) {
     for (name, a) in (spec.anchors)() {
         let legal = name == "spawn"
@@ -341,15 +339,6 @@ fn assert_anchors_sane(spec: &Spec, g: &Grid) {
                     g.name_at(p[0], p[1], p[2])
                 ),
             }
-        }
-        if let Some(d) = a.dispenser {
-            assert_eq!(
-                g.name_at(d[0], d[1], d[2]),
-                Some("minecraft:dispenser"),
-                "{}: trap anchor `{name}` declares a dispenser socket at {d:?} that is not a \
-                 dispenser — `item replace block … container.0` fails SILENTLY on a non-container",
-                spec.id
-            );
         }
         if let Some(r) = &a.region {
             for i in 0..3 {

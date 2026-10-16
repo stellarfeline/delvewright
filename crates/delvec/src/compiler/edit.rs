@@ -22,10 +22,10 @@
 //! 4. **Boundary safety** (`DW0322`, [`crate::compiler::nav::verify_boundary_safety`]):
 //!    no reachable walkable cell may border a void drop.
 //! 5. **Trap-hardware integrity** (`DW0352`): no batch write may land on a
-//!    trap's trigger / dispenser / disarm cell. `setup_finish` runs
-//!    `world_edits` *before* `trap_setup`, so such an edit silently kills the
-//!    trap at runtime (`item replace block … container.0` into a non-container
-//!    fails with no output) while every other proof stays green.
+//!    trap's trigger or disarm cell. `setup_finish` runs `world_edits`
+//!    *before* `trap_setup`, so such an edit replaces the block the party sees
+//!    springing the trap, or buries the disarm affordance `trap_setup` then
+//!    summons, while every other proof stays green.
 //!
 //! And two advisory (warning-tier) checks, reported but never fatal:
 //!
@@ -74,11 +74,10 @@ delvewright_dsl::dw_code! {
 
 delvewright_dsl::dw_code! {
     /// A stage-7 batch writes a block into a cell a trap's hardware occupies (its
-    /// trigger/hazard cell, its dispenser socket, or its disarm affordance cell).
-    /// `setup_finish` applies `world_edits` **before** `trap_setup`, so the edit
-    /// wins and the trap is loaded into a block that is no longer there — vanilla's
-    /// `item replace block … container.0` on a non-container fails with no output,
-    /// shipping a dead trap past every green proof. Build-tier (exit 3).
+    /// trigger/hazard cell or its disarm affordance cell). `setup_finish` applies
+    /// `world_edits` **before** `trap_setup`, so the edit wins: the trigger the
+    /// party sees is replaced, or the disarm affordance is summoned inside a
+    /// block, past every green proof. Build-tier (exit 3).
     pub const DW_EDIT_TRAP_HARDWARE: DwCode = DwCode::new("DW0352", ExitTier::Build);
 }
 
@@ -663,7 +662,7 @@ fn check_batch_invariants(
 ) -> Result<(), Failure> {
     // Trap-hardware integrity first: it is a *structural* clash the geometry
     // proofs below can never see (they model walkability and light, not whether
-    // a dispenser is still a dispenser).
+    // a trigger is still a trigger).
     check_trap_hardware(plan, bid, batch_writes)?;
     let geometry = crate::compiler::light::geometry_world(assembled);
     let relight = crate::compiler::light::relight_with(plan, assembled, &geometry);
@@ -778,9 +777,6 @@ fn trap_hardware<'p>(plan: &'p Plan) -> BTreeMap<[i32; 3], (&'p str, &'static st
     for t in &plan.traps {
         out.entry(t.trigger_cell)
             .or_insert((t.id.as_str(), "trigger/hazard"));
-        if let Some(d) = t.dispenser {
-            out.entry(d).or_insert((t.id.as_str(), "dispenser socket"));
-        }
         if let Some(dis) = &t.disarm {
             out.entry(dis.via_cell)
                 .or_insert((t.id.as_str(), "disarm affordance"));
@@ -791,12 +787,11 @@ fn trap_hardware<'p>(plan: &'p Plan) -> BTreeMap<[i32; 3], (&'p str, &'static st
 
 /// **Trap-hardware integrity** (`DW0352`, map-editor audit). The runtime order
 /// inside `setup_finish` is `world_edits` → … → `trap_setup`: an edit that
-/// filled or carved a trap's trigger, dispenser socket or disarm cell lands
-/// FIRST, and `trap_setup`'s `item replace block … container.0` then addresses
-/// a block that is no longer a container — which vanilla fails **silently**.
-/// The trap ships dead, its `DW0342` completability proof still green (that
-/// proof reasons about the *planned* hazard, not the surviving hardware). No
-/// geometry proof can see this, so it gets its own structural check.
+/// filled or carved a trap's trigger or disarm cell lands FIRST: the trigger
+/// the party sees is gone, or `trap_setup` summons the disarm affordance inside
+/// a block. The trap's `DW0342` completability proof stays green (that proof
+/// reasons about the *planned* hazard, not the surviving hardware). No geometry
+/// proof can see this, so it gets its own structural check.
 fn check_trap_hardware(
     plan: &Plan,
     bid: &str,
@@ -815,12 +810,11 @@ fn check_trap_hardware(
             message: format!(
                 "world-edits batch `{bid}` writes `{block}` at [{}, {}, {}] — that cell is trap \
                  `{trap}`'s {role}. `setup_finish` runs `world_edits` BEFORE `trap_setup`, so \
-                 this edit lands first and the trap is then wired into a block that is no \
-                 longer there: `item replace block … container.0` on a non-container fails \
-                 SILENTLY, and the delve ships a dead trap with every proof green (`DW0342` \
-                 proves the planned hazard, not the surviving hardware). Move the region off \
-                 the trap's trigger/dispenser/disarm cells, or re-anchor the trap; do NOT \
-                 assume the edit leaves the redstone intact",
+                 this edit lands first and replaces the trap's hardware: the trigger the \
+                 party sees, or the cell its disarm affordance is summoned into, and the \
+                 delve ships a broken trap with every proof green (`DW0342` proves the \
+                 planned hazard, not the surviving hardware). Move the region off the trap's \
+                 trigger and disarm cells, or re-anchor the trap",
                 cell[0], cell[1], cell[2]
             ),
         });
