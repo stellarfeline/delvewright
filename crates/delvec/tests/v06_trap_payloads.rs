@@ -820,3 +820,36 @@ fn a_collapse_under_a_hanging_lantern_is_dw1002() {
         "{msg}"
     );
 }
+
+/// **`DW0730` sends a dispenser to a `volley`.** The audit refuses a prefab
+/// carrying `minecraft:dispenser` and names the trap payload that fires arrows
+/// without one; this builds the trap it names, over a piece with no dispenser in
+/// its palette.
+#[test]
+fn a_dispenser_refused_by_the_audit_is_had_as_a_volley() {
+    use delvec::admit::allowlist::Allowlist;
+    use delvec::admit::audit::audit;
+    use delvec::admit::fixtures;
+    use delvec::admit::structure::PaletteEntry;
+    let mut s = fixtures::clean_room();
+    s.set_cell([1, 1, 1], PaletteEntry::simple("minecraft:dispenser"), None);
+    let (rep, _) = audit("route", &s, &Allowlist::default_building());
+    let refusal = rep
+        .findings
+        .iter()
+        .find(|f| f.code == "DW0730")
+        .expect("a dispenser is refused")
+        .message
+        .clone();
+    assert!(refusal.contains("`volley`"), "{refusal}");
+    build_payload(
+        "p-dispenser-route",
+        volley_trap(serde_json::json!({
+            "type": "volley",
+            "from_anchor": "anchor/gallery",
+            "kill_zone": zone_json()
+        })),
+        &[gallery(), killzone()],
+    )
+    .expect("the volley the refusal names builds");
+}

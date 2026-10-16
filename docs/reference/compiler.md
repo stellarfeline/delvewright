@@ -2341,6 +2341,16 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   base the schema declares, compares the command's verdict with `analyze` and,
   for a seatable pool, with the build's exposure check, and perturbs toward the
   disagreement shapes.
+- **`delvec prefab audit`'s `DW0730` names where a refused block is had instead.**
+  The refusal of a block the DSL has a first-class surface for says to take it out
+  of the prefab and use that surface: `minecraft:lever` is a trigger's or an
+  `interact` objective's `prop`; `note_block` and `jukebox` are a `play-sound`
+  effect; `piston` and `sticky_piston` are a `set-block` or `fill-region` effect;
+  `spawner` and `trial_spawner` are a `waves[]` entry fired by `spawn-wave`;
+  `dispenser` is a `traps[]` `volley` payload. Every other refused block says
+  that no DSL surface stands in for it. The table is `ROUTES` in
+  `crates/delvec/src/admit/allowlist.rs`; `tests/remedy_reachability.rs` and
+  `tests/v06_trap_payloads.rs` build each route.
 - **`delvec prefab planes <asset> [--write]`** measures a piece's own `walk_y`
   and, where it authors water, its own `waterline_y`, and declares them. Both are
   measurements of the bytes and every generator writes them by reading them back

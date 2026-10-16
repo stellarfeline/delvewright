@@ -4290,3 +4290,149 @@ fn dw1044_closing_the_way_round_builds() {
     assert_eq!(code, 0, "{after}");
     assert!(after.contains("1 entered by every walk"), "{after}");
 }
+
+// ---------------------------------------------------------------------------
+// DW0730 — a palette block the allowlist refuses, and the surface it names
+// ---------------------------------------------------------------------------
+//
+// The audit refuses a block and says where the delve has it instead: a `prop`
+// for a lever, an effect for a sound or a moving wall, a wave for a spawner. Each
+// row below is one routed block: the palette that carries it is refused with the
+// route in the message, and the campaign that takes the route builds. The
+// dispenser's route, a trap `volley`, builds in `tests/v06_trap_payloads.rs`,
+// where the trap fixture lives.
+
+/// The message `DW0730` gives a prefab whose one non-allowlisted cell is `id`.
+fn palette_refusal(id: &str) -> String {
+    use delvec::admit::allowlist::Allowlist;
+    use delvec::admit::audit::audit;
+    use delvec::admit::fixtures;
+    use delvec::admit::structure::PaletteEntry;
+    let mut s = fixtures::clean_room();
+    s.set_cell([1, 1, 1], PaletteEntry::simple(id), None);
+    let (rep, _) = audit("route", &s, &Allowlist::default_building());
+    rep.findings
+        .iter()
+        .find(|f| f.code == "DW0730")
+        .unwrap_or_else(|| panic!("{id} was not refused: {:?}", rep.findings))
+        .message
+        .clone()
+}
+
+/// Whether any file under `dir` holds `needle`.
+fn emitted_anywhere(dir: &Path, needle: &str) -> bool {
+    std::fs::read_dir(dir).unwrap().flatten().any(|e| {
+        let p = e.path();
+        if p.is_dir() {
+            emitted_anywhere(&p, needle)
+        } else {
+            std::fs::read(&p).is_ok_and(|b| String::from_utf8_lossy(&b).contains(needle))
+        }
+    })
+}
+
+/// The ferry with the tiller trigger edited by `edit`, built; the refusal for
+/// `id` must already name `route_word`, and the build must hold `emitted`.
+fn route_taken(
+    tag: &str,
+    id: &str,
+    route_word: &str,
+    emitted: &str,
+    edit: impl FnOnce(&mut serde_json::Value),
+) {
+    let refusal = palette_refusal(id);
+    assert!(
+        refusal.contains(route_word),
+        "the refusal of {id} must name `{route_word}`:\n{refusal}"
+    );
+    let prefabs = common::ferry::ferry_prefabs();
+    let camp = ferry(tag, edit);
+    let (s, t) = build(tag, &camp, &prefabs);
+    assert_eq!(
+        refused_with(s, &t),
+        None,
+        "the route for {id} must build:\n{t}"
+    );
+    let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("remedy-out-{tag}"));
+    assert!(
+        emitted_anywhere(&out, emitted),
+        "the route for {id} built, but nothing it emitted holds `{emitted}`"
+    );
+}
+
+#[test]
+fn dw0730_a_lever_is_had_as_a_prop() {
+    route_taken(
+        "route-lever",
+        "minecraft:lever",
+        "`prop`",
+        "minecraft:lever[",
+        |q| {
+            q["content"]["triggers"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "id": "trigger/lever", "at": "anchor/far-tiller", "on": {"on": "use"},
+                    "once": false,
+                    "prop": {"block": "minecraft:lever[face=floor,facing=north,powered=false]"},
+                    "effects": [{"type": "play-sound", "sound": "minecraft:block.note_block.harp"}]
+                }));
+        },
+    );
+}
+
+#[test]
+fn dw0730_a_note_block_or_jukebox_is_had_as_a_play_sound_effect() {
+    for (tag, id) in [
+        ("route-note", "minecraft:note_block"),
+        ("route-jukebox", "minecraft:jukebox"),
+    ] {
+        route_taken(tag, id, "`play-sound`", "note_block.harp", |q| {
+            tiller(q)["effects"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "type": "play-sound", "sound": "minecraft:block.note_block.harp"
+                }));
+        });
+    }
+}
+
+#[test]
+fn dw0730_a_piston_is_had_as_a_set_block_effect() {
+    for (tag, id) in [
+        ("route-piston", "minecraft:piston"),
+        ("route-sticky-piston", "minecraft:sticky_piston"),
+    ] {
+        route_taken(tag, id, "`set-block`", "setblock", |q| {
+            tiller(q)["effects"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "type": "set-block", "anchor": "anchor/far-deck", "block": "minecraft:stone"
+                }));
+        });
+    }
+}
+
+#[test]
+fn dw0730_a_spawner_is_had_as_a_wave() {
+    for (tag, id) in [
+        ("route-spawner", "minecraft:spawner"),
+        ("route-trial-spawner", "minecraft:trial_spawner"),
+    ] {
+        route_taken(tag, id, "`spawn-wave`", "minecraft:sheep", |q| {
+            q["content"]["waves"] = serde_json::json!([{
+                "id": "wave/ambush", "anchor": "anchor/far-landing",
+                "mobs": [{"entity": "minecraft:sheep", "count": 1, "name": "Startled Ewe"}]
+            }]);
+            tiller(q)["effects"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "type": "spawn-wave", "wave": "wave/ambush",
+                    "happening": {"verb": "arrives", "text": "The ewe bolts from the reeds."}
+                }));
+        });
+    }
+}

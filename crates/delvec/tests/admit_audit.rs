@@ -591,3 +591,46 @@ fn dirt_path_and_mycelium_pass_and_farmland_is_shown() {
         rep.findings
     );
 }
+
+/// **A refusal names where the block is had instead, or says there is no such
+/// place.** Every block with a row in `ROUTES` is refused with that row's text
+/// in the message; a block with none is refused with the sentence that says so.
+/// The campaign that takes each route builds in `tests/remedy_reachability.rs`.
+#[test]
+fn a_refused_block_names_its_route_or_says_it_has_none() {
+    use delvec::admit::allowlist::ROUTES;
+    use delvec::admit::structure::PaletteEntry;
+    let refusal = |id: &str| {
+        let mut s = fixtures::clean_room();
+        s.set_cell([1, 1, 1], PaletteEntry::simple(id), None);
+        let (rep, _) = audit("route", &s, &Allowlist::default_building());
+        rep.findings
+            .iter()
+            .find(|f| f.code == "DW0730")
+            .unwrap_or_else(|| panic!("{id} was not refused: {:?}", rep.findings))
+            .message
+            .clone()
+    };
+    let mut routed = 0;
+    for (ids, route) in ROUTES {
+        for id in *ids {
+            routed += 1;
+            let m = refusal(id);
+            assert!(
+                m.contains(route),
+                "{id}: the route is not in the message: {m}"
+            );
+            assert!(!m.contains("no DSL surface"), "{id}: {m}");
+        }
+    }
+    assert!(routed > 0, "no routed block was examined");
+    let lever = refusal("minecraft:lever");
+    assert!(
+        lever.contains("`prop`") && lever.contains("minecraft:lever[face=floor,facing=north"),
+        "{lever}"
+    );
+    for id in ["minecraft:tnt", "minecraft:observer", "minecraft:farmland"] {
+        let m = refusal(id);
+        assert!(m.contains("no DSL surface stands in for it"), "{id}: {m}");
+    }
+}

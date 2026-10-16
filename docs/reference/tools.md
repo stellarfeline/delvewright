@@ -603,7 +603,7 @@ minerals and ores, archaeology, and all six sculk blocks) that deliberately stil
 flags surprising blocks — redstone contraption parts (dispensers, droppers,
 pistons, observers, repeaters), tnt, note blocks — for review, and is overridable
 with `--allowlist <file>`
-(`{ "allow": [...], "allow_suffixes": [...] }`). The four sculk blocks that act
+(`{ "allow": [...], "allow_suffixes": [...] }`). A refusal names the DSL surface that has the block instead (a `prop` for a lever, an effect for a sound or a moving wall, a wave for a spawner, a trap `volley` for a dispenser) or says none does. The four sculk blocks that act
 at runtime — `sculk_sensor`, `calibrated_sculk_sensor`, `sculk_shrieker`,
 `sculk_catalyst` — are admitted by **state**, not by name (spec-0100): the audit
 judges every one with the one rest rule (`delvewright_dsl::blocks::sculk_rest`)
