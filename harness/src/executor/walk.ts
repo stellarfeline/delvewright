@@ -28,6 +28,7 @@ import {
   unstagedCrushBoxes,
 } from "../timed-gate.ts";
 import { delay, withTimeout, fmt } from "./connection.ts";
+import { POLL_MS } from "./clock.ts";
 import {
   VIBRATION_TAIL_TICKS,
   legLine,
@@ -36,7 +37,7 @@ import {
   type LegStart,
   type Vibration,
 } from "../sculk.ts";
-import { GameTimeStalledError, gameTicksBudgetMs } from "../game-time.ts";
+import { GameClockWatch } from "../game-time.ts";
 import { watchStops } from "../watch.ts";
 import { ControlTakenError } from "./cutscene.ts";
 import { type GateAssist, crossTimedGate } from "./timed-gate.ts";
@@ -817,18 +818,16 @@ export const methods = {
     let through: number | undefined;
     if (heard.missing.length > 0) {
       const purpose = `${label}: the sculk tail`;
-      const budgetMs = gameTicksBudgetMs(VIBRATION_TAIL_TICKS);
-      const deadline = Date.now() + budgetMs;
+      let watch: GameClockWatch | undefined;
       for (;;) {
         const reading = await this.readGameTime(purpose);
         heard = this.sculk.hear(vibrations, start, Date.now());
         end ??= reading.tick;
         through = reading.tick;
         if (heard.missing.length === 0 || reading.tick >= end + VIBRATION_TAIL_TICKS) break;
-        if (Date.now() >= deadline) {
-          throw new GameTimeStalledError(purpose, VIBRATION_TAIL_TICKS, reading.tick - end, budgetMs);
-        }
-        await delay(50);
+        watch ??= new GameClockWatch(purpose, end, VIBRATION_TAIL_TICKS);
+        watch.observe(reading.tick, performance.now());
+        await delay(POLL_MS);
       }
     }
     process.stderr.write(`${legLine(label, heard, start, through)}\n`);
