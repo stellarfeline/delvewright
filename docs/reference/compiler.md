@@ -3203,6 +3203,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   naming which of the three zeros it is: no respawn point, no hostile force, or
   both present and never contemporaneous. Without it a `DW0478` that made **zero
   comparisons** would pass and nothing would say so.
+  The staging gate's `bell-08` row binds `examined` (the respawn points the proof
+  covered, whatever the forces), not `pairs`: a campaign with respawn points and no
+  hostile force examined every point, made no comparison, and says so in `hostiles` and
+  `reason`; a proof that covered none of its declared points stays unbound.
 - `<out>/validation/press-bodies.json`: the `DW0426` proof's **binding ledger**
   (`compiler::pressable::PressLedger`). One row per `strike`/`use` trigger the
   proof resolved a body for — `trigger`, `click`, `anchor`, and WHICH body it
