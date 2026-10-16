@@ -1541,8 +1541,8 @@ fn v06_ocean_boundary_builds_byte_identical_and_wires_return() {
     );
 
     // The render layer must be TOLD the horizon, never guess it from blocks:
-    // an ocean-horizon delve's frames need Chunky's ambient water plane, and its
-    // height is the compiler's sea-level datum.
+    // an ocean-horizon delve's written worlds carry the generator's sea up to
+    // the compiler's sea-level datum.
     let rp: serde_json::Value = serde_json::from_slice(&a["render-plan.json"]).unwrap();
     assert_eq!(rp["horizon"]["kind"], "ocean", "render plan horizon: {rp}");
     assert_eq!(rp["horizon"]["sea_level"], 62);

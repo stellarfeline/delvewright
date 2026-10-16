@@ -190,7 +190,8 @@ delvec l10n-apply <dir> --lang <c> --table <f>
                                            # write the sidecar from an English → translation table
 delvec allocation <dir> [<place>|--all]    # the handed allocation for a site-plan place
 delvec detail   <dir> [<place>|--all]      # detail a place inside its allocation (spec-0058)
-delvec snapshot <dir> [framing] [-o f.png] # draft frame + scene manifest (§7)
+delvec frames <build-dir> [-o dir]         # every review frame of a build, drawn by Lumenwright (§7)
+delvec frames --campaign <dir> [framing]   # one frame of a campaign's load world (§7)
 delvec blocking-chart <dir> [-o dir]       # per-elevation cutaway floor plans (§7)
 delvec edit apply   <dir> [--batch f] [-o dir]  # replay edit script (+ candidate), persist on green (§7)
 delvec edit preview <dir> [--batch f] [-o dir]  # same replay + renders, never persists
@@ -703,14 +704,14 @@ from l10n (no stage-7 string is player-visible).
 
 | Element | Behavior |
 |---------|----------|
-| `batches[]` | Ordered `{id: batch/<kebab>, area, note?, edits[]}`. Batch ids are unique (`DW0111`), the seed-stream label and the snapshot name; `area` must be an area the campaign declares (`DW0112`) — a stage-1 `areas[]` entry, or `area/site` on a **site-plan** campaign, whose one place is the site the plan lays out and whose `areas[]` is required to be empty (`DW0839`). After EVERY batch the invariants re-prove (§4). |
+| `batches[]` | Ordered `{id: batch/<kebab>, area, note?, edits[]}`. Batch ids are unique (`DW0111`), the seed-stream label and the frame name; `area` must be an area the campaign declares (`DW0112`) — a stage-1 `areas[]` entry, or `area/site` on a **site-plan** campaign, whose one place is the site the plan lays out and whose `areas[]` is required to be empty (`DW0839`). After EVERY batch the invariants re-prove (§4). |
 | `select` | `{name: region/<kebab>, shape}` — defines a named region for later verbs **in the same batch** (strictly backward; dangling/forward = `DW0162`, duplicate = `DW0111`). Shapes: `box` (inclusive `min`/`max` in a declared frame), `surface-band` (`over` + `from..=to` offsets from each column's surface), `palette-match` (`within` + base-id `blocks`), `union`/`intersect` (`of`, ≥2), `subtract` (`base` − `remove`). |
 | Frames | `piece-local` (`piece` placement index + `prefab` drift-guard — mismatch is `DW0323`) or `anchor-relative` (a resolved anchor of the batch's area) — never raw world coordinates, so a script survives placement moves. |
 | `fill` / `replace` | Seeded palette-recipe write over a region (`replace` only rewrites cells whose base id is in `matching`). A recipe is weighted `blocks[]` (+ optional noise `scale`, default 0.35 blocks⁻¹) sampled by smooth value noise — picks cluster into strata/patches, never a uniform fill. Block ids validate against the pinned registry with optional verbatim blockstate suffix (`DW0193`); weights/scale finite > 0 (`DW0162`). |
 | `carve` | Clear a region to air. Sealing-aware by construction: the carved region re-enters relight + walkability + boundary proofs. |
 | `morph` | Surface reshape per region column: `raise{by,recipe}`, `lower{by}`, `smooth{passes,recipe}` (±1/pass relaxation toward the cardinal-neighbour mean). The region gives the footprint + where the surface is read; `raise`/`smooth` may add cells above the region top. |
 | `scatter` | Seeded dressing over a region's **standable** cells (air over an occupied cell): weighted `items[]` (blockstate suffixes allowed), per-candidate white-noise `density` gate in `(0, 1]` (dressing wants speckle, not the fill verbs' clustered patches), keep-clear `avoid[]` region envelopes (matched by `(x, z)` column), optional both-axes `spacing` rule and `limit` cap taken in descending noise order — the greenfield generator's spread idiom, ported. |
-| `plant` | Structural flora via the **lean-or-grow** canopy rules (ported from the island terrain generator): up to `count` trees on the region's highest-noise standable cells (both-axes `spacing`, default 4; trunks never on `avoid[]` columns). A canopy that would cover an `avoid` column leans one block directly away; if that still covers it, the tree grows tall instead — its whole ball arched 3 above the trunk's floor. **No leaf is ever sliced**; leaves write only into air, so near walls/ceilings the ball may extend past them — review via the batch snapshot. `tree: oak` (per-species rule sets, extensible). |
+| `plant` | Structural flora via the **lean-or-grow** canopy rules (ported from the island terrain generator): up to `count` trees on the region's highest-noise standable cells (both-axes `spacing`, default 4; trunks never on `avoid[]` columns). A canopy that would cover an `avoid` column leans one block directly away; if that still covers it, the tree grows tall instead — its whole ball arched 3 above the trunk's floor. **No leaf is ever sliced**; leaves write only into air, so near walls/ceilings the ball may extend past them — review via the batch frame. `tree: oak` (per-species rule sets, extensible). |
 | `fragment` | Stamp a **library prefab**'s non-air cells at a frame-resolved `at` (+ optional quarter-turn `rotation`) — semantically a `/place template` whose bytes the compiler models (non-air overwrites; authored air never erases). Only admitted library prefabs can be stamped, so provenance/license ride the prefab's own metadata (ADR-0013); an id outside the library is `DW0323`. Stamped cells keep their **full blockstate** (`assembled::structure_cells_stateful`; properties in sorted key order): the stamp's writes ARE the runtime `setblock` lines, so an authored `lantern[hanging=true]` stays a hanging lantern. **`rotation` turns POSITIONS only, and the compiler REFUSES rather than warns.** There is no rotate-aware blockstate rewriter, so a quarter-turned stamp would keep every `facing`/`axis`/`shape`/connection value unrotated and ship visibly deformed geometry — the silently-deformed-map class. A `rotation` other than `none` on a prefab carrying any **yaw-dependent** property (`facing` except `up`/`down`, `axis` except `y`, `shape`, `rotation`, `orientation`, `hinge`, `north`/`south`/`east`/`west`) is a build error (`DW0323`) naming the block, its prefab-local cell and the offending property; the prescription is to stamp unrotated or admit a pre-rotated prefab variant, never to hand-fix facings downstream. It is a **collision test, not a blanket ban**: prefabs whose every state is yaw-invariant (`hanging`, `half`, `waterlogged`, `open`, `lit`, `type`, `level`, `thickness`, `vertical_direction`, `axis=y`, `facing=up|down`) rotate correctly and stay allowed — a stone box with a hanging lantern and an upright log stamps fine at every quarter-turn. **No piece in the shipped library is one**, and that is a property of the library rather than of the rule: every emitted state names the connections it joins, so each carries `north`/`south`/`east`/`west` (or a `facing`, or an `axis`) that a quarter-turn moves. The accepting half of this test is therefore exercised against a piece built for it, not borrowed from the library — a check whose "provably-correct output is accepted" half has no case left is a blanket ban nobody can tell apart from a rule. |
 | `relight` | Run the spec-0010 fixture-placement pass over ONE region and **bake** the fixtures into the edit script's writes — authorial control of where fixtures land (the whole-area relight still re-proves after every batch). Fixture/target default to the area's declared `lighting`; `fixture` + `min_light` (1..=14) override, and are **required** when the area declares none (`DW0162`). An unlightable region is the area pass's own `DW0211`, batch-attributed; a region with no reachable walkable cell is `DW0323`. |
 | L2 massing verbs | `swap-piece` (replace a piece with a library prefab that re-mates every mated socket at its exact world pose, any rotation, overlap-checked), `insert-piece` (attach at a specific **unmated** socket — the targeted form of the solver's frontier attach), `remove-piece` (a **leaf** only — exactly one mated socket, never the entry; the neighbour's socket unmates and re-seals), `rewire-socket` (`sealed` **unmates the doorway pair** — a graph operation: both planes wall up and the DW0306 connectivity proof loses the edge; `open` clears an unmated socket's fill — deliberately without granting the proof an edge, conservative), `reseed-piece` (seeded weighted re-pick among the area pool's compatible members, current excluded — a reseed always changes the piece or errors). All carry the `piece` index + `prefab` drift guard. Applied at **plan** time (`compiler::massing`, inside `Plan::build` right after `solve_area`): seals are regenerated from the massaged mated flags (`seal_layout`), and anchors, gate reachability, waterline, assembly, relight, nav and the L3 replay all run over the massaged layout — the full assembly validation re-runs by construction. Massing verbs live in **massing-only** batches ordered before every detailing batch (`DW0162`); an inapplicable verb is `DW0324`. `resize-piece` from the spec's initial list is **excluded**: the library has no size-parameterized piece primitive to express it through (no-hack doctrine); `swap-piece` covers the different-sized-variant case. |
@@ -859,8 +860,8 @@ nothing analytic out there: everything out there was built.
 
 That difference is the design, not an implementation detail. A surround entering
 as a new `Ambient` variant would owe a new branch to gravity settling, the
-occupancy model, relight, the fluid model, boundary safety and the snapshot
-renderer, and each branch would be a second model of the same ground that could
+occupancy model, relight, the fluid model, boundary safety and the world
+writer, and each branch would be a second model of the same ground that could
 disagree with the first. Entering as **placed blocks** it owes none of them:
 every proof already knows how to read a block.
 
@@ -1248,7 +1249,7 @@ away again when the player leaves.
 | The pack | Each row adds `assets/minecraft/textures/<path>.png` (+ `.png.mcmeta`) to the `extra` map `resourcepack::build_pack` takes; the creator's bytes, never re-encoded. A campaign with one row and nothing else ships a pack of `pack.mcmeta` and that texture. |
 | The manifest | `textures/<id>.png` and `textures/<id>.png.mcmeta` are `inputs` (the loader reads `textures/` beside `l10n/`). `resource_pack_overrides_vanilla` (bool) stands beside `resource_pack_sha1` on every build that ships a pack: true exactly when an archive path starts `assets/minecraft/`, read off the paths the pack was built from (`textures::overrides_vanilla`). Every serving script reads it, and the staging gate holds it to the zip. |
 | Delivery | **Served, never installed** — every pack, whatever it carries (spec-0084 §11). See the `server.properties` record. |
-| What the creator is shown | Block textures through every review tool, the delve's pack layered above the jar: `delvec viewer --pack`, `delvec palette --pack`, `delvec render --pack`, `tools/creator/block-appearance.py --pack`, and `validation/chunky.sh --pack` (`-textures <pack>:<jar>`, the core's first-listed-wins order). Every other texture on a comparison sheet: `delvec textures <campaign> [-o review/textures]`, vanilla on the left and the override on the right, each nearest-neighbour to 256 px wide, a one-pixel separator, a chequered ground — written by a verb of its own because it reads the jar, which a build never does. `SKINS.md`'s **Textures** section: one line per row — id → vanilla path, scale and frames, the licence with its URL and attribution, which tools show it (*Chunky, viewer, palette* for `block/…`; *sheet only* otherwise), the sheet path, and *still* where it applies. |
+| What the creator is shown | Block textures through every review tool, the delve's pack layered above the jar: `delvec viewer --pack`, `delvec palette --pack`, `delvec render --pack`, `tools/creator/block-appearance.py --pack`, and every frame `delvec frames`, `delvec cameras` and `delvec panorama` draw (the build's own resource pack layered over the jar). Every other texture on a comparison sheet: `delvec textures <campaign> [-o review/textures]`, vanilla on the left and the override on the right, each nearest-neighbour to 256 px wide, a one-pixel separator, a chequered ground — written by a verb of its own because it reads the jar, which a build never does. `SKINS.md`'s **Textures** section: one line per row — id → vanilla path, scale and frames, the licence with its URL and attribution, which tools show it (*shown by every frame, the viewer and the palette* for `block/…`; *sheet only* otherwise), the sheet path, and *still* where it applies. |
 | Proof | `crates/delvec/tests/texture_overrides.rs` (the pack of one texture, byte identity, the manifest key and input, every refusal on its shape, an animation's sidecar, the sheet), `crates/delvec/tests/remedy_reachability.rs` (each refusal's named move admits the row), the gallery's `hall-stone` row and four probes. |
 
 #### Compiler chrome — the strings the compiler writes itself
@@ -1302,7 +1303,7 @@ list that emits an authored string outside a component fails the build with
 | `combat::actor_json` (an actor's `name`) | `validation/combat-plan.json` | The validation ladder's own artifact, read by the bot and by a maintainer. It reads the English through `plain`. |
 | `render_plan::npc_name` / `area_name_of` / `first_clause` / the NPC shot `expect` | `render-plan.json` | The reviewer/vision artifact. Its `expect` prose is read by a vision model against a rendered frame, in English, regardless of what the delve ships. |
 
-`delvec l10n-inventory`, `validate`, `analyze`, `snapshot` and `edit` never see a
+`delvec l10n-inventory`, `validate`, `analyze`, `frames --campaign` and `edit` never see a
 tag at all: tagging happens inside `build`, after validation and analysis, so
 every other subcommand reads the campaign exactly as authored.
 
@@ -1355,7 +1356,7 @@ Mechanism level (not full mcfunction). See `crates/delvec/src/compiler/emit/`, o
 | `despawn-npc` | `function <ns>:despawn_npc_<id>`: body + interaction hitbox leave unseen (§4 "A body the story removes is never seen to die"). One generated `v04_despawn_<id>` PackTest per NPC a `despawn-npc` names (each function is that NPC's own body, `DW0810`); when the NPC is **deferred** it runs its `spawn_npc_<id>` entrance right after `setup_finish`. It re-issues the NPC's own body summon with a fixed UUID, asserts 2 entities before and 0 after the real `despawn_npc_<id>`, then reads the body by UUID through its death (a selector never matches a dying body): not dying on the removal's tick, nor `UNSEEN_DELAY_TICKS - 1` ticks later, and at Y ≤ -127 on the first tick it is. |
 | `spawn-npc` | `function <ns>:spawn_npc_<npc>` — the generated entrance function, emitted once per NPC any `spawn-npc` names (deferred or not). Its two lines are the world-init summons, each independently guarded: body by `unless entity @e[tag=dw_npc,tag=dw_npc_<n>]`, hitbox by `unless entity @e[tag=dw_npc_<n>,tag=!dw_npc]` (both carry the id tag, so a single shared guard would let the body's own summon suppress the hitbox). The `npc_summons` PackTest fires each deferred NPC's entrance after `setup_finish` and asserts exactly one body. |
 | `move-npc` | Per-tick tp along A*-planned walkable waypoints (hitbox in lockstep), at cell **centres** with L-shaped vertical steps — see §4 "Entity placement". The route is **string-pulled** before it is resampled, so a body crosses open level ground in a straight line instead of tracing the four-connected grid; every rise, drop, stair edge and use-gate ends a straight run and is still rendered as a cardinal step — see §4 "A walked path goes straight where the ground allows". Every `tp` carries `<yaw> 0` — the **exact bearing of the segment that tick walks**; see §4 "A walked body faces where it is walking". **The ARRIVAL tick is the exception, and deliberately** — the walked body's arrival turn, one rule this verb shares with `move-actor`: see §4 "A walked body faces where it is walking". `on_arrive`: the driver's final-waypoint tick additionally runs `mv_arrive_<key>` (the bundle's effects), mirroring `ma_tick`/`ma_arrive_<key>` exactly; a bare move emits no hook. The arrive bundle runs with the **server** command source (the driver reached it through `schedule`), so its effects are split per-player / global — see §4 "A scheduled bundle has no `@s`". A later `move-npc` for the **same body** supersedes any walk still running for it — see §4 "One body, one live walk driver"; a body with only one planned walk carries none of that machinery (byte-identical). |
-| `cutscene` | Per player: save gamemode+pos → spectator → alternate `spectate` between two co-located dolly cameras each tick (skipping any player actively holding sneak — `predicate=!<ns>:sneak_held`, see §4 "The `spectate` bounce is sneak-gated") → restore. **Keyframe dolly (`compiler::camera`)**: each shot's waypoint polyline is arc-length parameterized (equal distance per time, not equal segments) with baked smoothstep ease-in/ease-out, then emitted as a tick-0 snap + a `tp` every *N* ticks with display-entity `teleport_duration:N` armed via `data merge` — the **client** tweens position and rotation linearly between keyframes (spike-measured: one position-sync packet per keyframe, rotation interpolates, the `spectate` bounce cannot reset an in-flight tween, and a same-tick merge+`tp` applies the OLD duration because position syncs flush before metadata — which is exactly why the snap and its cadence merge may share a tick). Cadence *N* = the widest of {10, 5, 4, 2, 1} whose rendered chords stay within 0.25 blocks (perpendicular) and 2° (aim) of the exact eased path; a single-waypoint or 1-tick shot is a static snap (cadence 0, no merge). Each shot with a successor resets `teleport_duration:0` on its last owned tick so the next snap is a hard cut, not a glide. Every keyframe `tp` carries an explicit `<yaw> <pitch>` — **Minecraft** entity rotation (`yaw = atan2(-dx, dz)`, 0 = +Z south; `pitch = atan2(-dy, hypot(dx,dz))`, + = down), *not* the render-plan/Chunky yaw convention — computed at emission from the camera's own position: at the shot's `look_at` subject if it has one, else along the eased path's direction of travel. Never the summon default (yaw 0 = south). Positions and rotations rounded to 3 decimals, `-0.0` collapsed to `0.0`, so emission is byte-stable. The bracket also arms the `dw_cutscene` state on every player and releases it on restore — see §4 "A cutscene is pure observation". Multi-shot: all shots share one `#t_<bare>` counter — shot *k* owns `[offset_k, offset_k+len_k]` and the next starts at `offset_k+len_k+1` (hard cut); one marker, one `gamemode spectator @a`, one camera pair, one restore. Both single-shot spellings emit identical bytes. `critical-path.json`'s `cutscene_seconds` covers every shot, to the tick `cs_end` runs (see `critical-path.json` in §5). Function key = `cs_<first anchor>_<seconds>_<waypoints>` (a pathless styled shot keys `cs_<style>_<subject>_…`), plus an 8-hex sha256 digest of the whole normalized shot list whenever the cutscene is not a bare single shot without `look_at`/`shot_style` (the key must be injective — two shots sharing a first waypoint must never collapse onto one function). Styled shots are expanded (`compiler::camera::expand_shot`) before keyframe planning; a moving subject's per-tick track comes from its sibling move's A* plan, aligned by effect-group/sequence timing. Deduplication stays DSL-content-keyed, so two byte-identical styled cutscenes in *different* move contexts plan from the first occurrence (a limitation of the content key; give the shots distinguishing content to split them). |
+| `cutscene` | Per player: save gamemode+pos → spectator → alternate `spectate` between two co-located dolly cameras each tick (skipping any player actively holding sneak — `predicate=!<ns>:sneak_held`, see §4 "The `spectate` bounce is sneak-gated") → restore. **Keyframe dolly (`compiler::camera`)**: each shot's waypoint polyline is arc-length parameterized (equal distance per time, not equal segments) with baked smoothstep ease-in/ease-out, then emitted as a tick-0 snap + a `tp` every *N* ticks with display-entity `teleport_duration:N` armed via `data merge` — the **client** tweens position and rotation linearly between keyframes (spike-measured: one position-sync packet per keyframe, rotation interpolates, the `spectate` bounce cannot reset an in-flight tween, and a same-tick merge+`tp` applies the OLD duration because position syncs flush before metadata — which is exactly why the snap and its cadence merge may share a tick). Cadence *N* = the widest of {10, 5, 4, 2, 1} whose rendered chords stay within 0.25 blocks (perpendicular) and 2° (aim) of the exact eased path; a single-waypoint or 1-tick shot is a static snap (cadence 0, no merge). Each shot with a successor resets `teleport_duration:0` on its last owned tick so the next snap is a hard cut, not a glide. Every keyframe `tp` carries an explicit `<yaw> <pitch>` — **Minecraft** entity rotation (`yaw = atan2(-dx, dz)`, 0 = +Z south; `pitch = atan2(-dy, hypot(dx,dz))`, + = down), the convention the render plan states its cameras in — computed at emission from the camera's own position: at the shot's `look_at` subject if it has one, else along the eased path's direction of travel. Never the summon default (yaw 0 = south). Positions and rotations rounded to 3 decimals, `-0.0` collapsed to `0.0`, so emission is byte-stable. The bracket also arms the `dw_cutscene` state on every player and releases it on restore — see §4 "A cutscene is pure observation". Multi-shot: all shots share one `#t_<bare>` counter — shot *k* owns `[offset_k, offset_k+len_k]` and the next starts at `offset_k+len_k+1` (hard cut); one marker, one `gamemode spectator @a`, one camera pair, one restore. Both single-shot spellings emit identical bytes. `critical-path.json`'s `cutscene_seconds` covers every shot, to the tick `cs_end` runs (see `critical-path.json` in §5). Function key = `cs_<first anchor>_<seconds>_<waypoints>` (a pathless styled shot keys `cs_<style>_<subject>_…`), plus an 8-hex sha256 digest of the whole normalized shot list whenever the cutscene is not a bare single shot without `look_at`/`shot_style` (the key must be injective — two shots sharing a first waypoint must never collapse onto one function). Styled shots are expanded (`compiler::camera::expand_shot`) before keyframe planning; a moving subject's per-tick track comes from its sibling move's A* plan, aligned by effect-group/sequence timing. Deduplication stays DSL-content-keyed, so two byte-identical styled cutscenes in *different* move contexts plan from the first occurrence (a limitation of the content key; give the shots distinguishing content to split them). |
 | `campaign-complete` | `dw.campaign` = 1 (dummy objective, **never on the sidebar** — a raw internal id must not surface to players; the sidebar is a currency's slot, spec-0076, and what stands there is a datum's display name); broadcast `[dw:complete <campaign_id> campaign]` (dark-gray bot channel, the harness's completion signal — §4 "The completion-marker channel"); title fanfare. |
 | objective lifecycle | **For an announced objective** (spec-0093: a `title` and a resolved `announcement` of `shown`) activation shows `title`+`hint`+`note_block.pling` once (flag `dw.ann_<obj>`, the `announce_<obj>` function and its `tick` line exist only for these); completion sets `dw.o_<obj>` = 1, immediately broadcasts the anchored marker `[dw:complete <campaign_id> obj/<id>]` (§4 "The completion-marker channel") whether or not the objective is announced, then — announced only — prints `Objective complete: <title>` and plays `experience_orb.pickup`. The two cues, and `campaign_complete`'s `ui.toast.challenge_complete`, are the engine's **quest cues** (`emit::quest::CUE_*`), each emitted by `cue_line` as `execute as @a at @s run playsound <cue> player @s` — every member of the party, at that member; the functions they run in carry the server's source, at the world spawn. `validation/cues.json` states them for the bot. The marker precedes the objective's effects deliberately: it timestamps *completion*, not the aftermath. **Marker cleanup:** completion despawns every entity the objective's activation summoned via the objective-scoped tag — `interact` hitbox + wayfinding marker (`dw_i_<obj>`), `reach` marker (`dw_r_<obj>`). Prop/affordance *blocks* (`interact.prop`, `collect` chest) are scenery and persist; `talk-to`/`kill` summon no per-objective marker. Gated on a resolved activation. |
 | `on_death` (spec-0031) | The campaign-wide death beat — **effect root R7**, at `/content/on_death`, one bundle per campaign. It rides the SAME detector `set-checkpoint` arms and adds no second one: `dw.deaths` (`deathCount`) is the only thing in the delve that notices a death, `cp_respawn_check` is the only function that reads it, and one `tick` line runs it per player. What it adds is a second **acknowledgement** of that one counter. `dw.death_ack` is deliberately withheld while a player is dead (the whole edge is held until they are alive again, so an unspent edge stays armed instead of burning on the corpse), which is exactly the window this beat wants, so the corpse side gets its own ack `dw.death_seen`: `execute if data entity @s {Health:0.0f} if score @s dw.deaths > @s dw.death_seen run function <ns>:on_death_fire`, then the matching `= @s dw.deaths` so it fires once per death rather than every tick of the death screen. The corpse side is emitted FIRST, in the order the player lives the two moments. `on_death_fire` is the bundle under **`Audience::Solo`** — the dying player's own, like `on_respawn` and `on_caught`; broadcasting one death to the party would duplicate their narration and their kit. A campaign declaring no death beat emits none of it (no branch, no function, no `dw.death_seen`) and a campaign with a death beat and no checkpoint arms `dw.deaths` and this branch alone — no `#cp` marker, no re-seat, no `dw.death_ack`. **The death POSITION needs no capture**: `emit::death_position_capture` is a named, deliberately empty seam ahead of the dispatch, because the corpse stands on the death position for every cause measured — void, fall, drowning, lava, a mob kill (`docs/notes/death-and-teleport-spike.md`) — so `execute at @s` inside the bundle is the death point. Tests: `v10_on_death.rs`. |
@@ -3056,15 +3057,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   campaign that declares a teleport and reports zero links states a fact, not a
   finding. **Emitted only for a campaign that declares a teleport**, so a file
   that exists and reports zero is a finding rather than an absence.
-- Every `snapshot` manifest carries a **`frame`** block: `targets_in_frame`,
-  `targets_out_of_frame`, and `featureless` (`null`, or the distinct-colour count
-  when the frame shows no scene at all). The binding rule applied to a picture —
-  a render that succeeds, writes a file and is a rectangle of flat background is
-  indistinguishable from one more shot taken to a directory listing, to a contact
-  sheet and to a reviewer skimming, and the only thing that separates a camera
-  aimed at the room from one aimed at a wall is the count. Judged by the arm that
-  DREW the frame (`view::detect::is_featureless`), so a consumer never computes a
-  second verdict on the same question. `tools/ci/check-gallery-render.py` reads these
+- Every frame manifest carries a **`frame`** block (§7): `targets_in_frame`,
+  `targets_out_of_frame`, and `featureless` (`null`, or the distinct-colour
+  count when the frame shows no scene at all), judged by the arm that DREW the
+  frame (`view::detect::is_featureless`), so a consumer never computes a second
+  verdict on the same question; `tools/ci/check-gallery-render.py` reads these
   back rather than re-deriving them.
 
 - `<out>/validation/effect-roots.json`: the **effect-root walk's own binding
@@ -3432,12 +3429,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   configuration the leg arrives under (`path_configurations`' `per_step`) holds
   differently from the load world, over the world as shipped
   (`view::beat::picture_base`), and `step` the latest step of `plan.critical_path`
-  before the leg's that carries an id (`null` when none does). A review frame
-  still renders the server save at load, and `delvec scene` says so on every run:
-  `review frames render the world at load; <k> of <m> POV shots stand in a
-  configuration other than load` (`k` counts the POV shots with `cells_moved`
-  above 0). `delvec snapshot --shot` reads one shot's camera and writes no plan,
-  so its in-memory plan carries no `after`.
+  before the leg's that carries an id (`null` when none does); its `world` is
+  that configuration's key, and its frame is drawn from that world. The shot
+  before a climb's take-hold looks where the climb lands, so it frames the climb
+  rather than the wall the climbable hangs on.
   Deterministic (route order → waypoint order; no RNG/clock) and appended after the
   overhead kinds. Emitted only when a
   walked critical leg exists.
@@ -3451,414 +3446,194 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   to an honest path tracer (exposure boosts cannot reveal a sealed cave — no
   light, only amplified noise — while real emitters render), so the stamp tells `delvec render` exactly which shots need its
   night-vision review emulation (below) and guarantees it touches no others.
-- **Every camera's eye cell is proven clear** (`DW0724`,
-  `crate::nav::verify_camera_eyes`). A camera whose eye cell holds a block
-  renders the inside of that block, which is a picture indistinguishable from a
-  picture of a featureless room. `render_plan::render_plan` is the only
-  constructor of a plan document and it takes the assembled world, so there is no
-  render plan that skipped the proof; every kind enters the shot list through one
-  `push` that records the eye from the same position it writes into the camera.
-  Six of the seven kinds place their camera at a fixed stand-off from a subject,
-  and such a camera whose own cell is occupied stands instead at the furthest
-  clear point on its own sight line (`crate::camera::stand_in_open_air`), stating
-  `camera.requested_pos` and `camera.standoff` on that shot. `pov` is never
-  moved — that eye IS the player's — so a `pov` violation stays a build error
-  against the derivation. The plan carries the proof's binding counts:
-  `"camera_eye_proof": {"cameras": N, "pulled_in": M}`. An `interior`
-  overview's eye stands three courses over the highest of: its piece's top, a
-  horizon's ground, the site's declared fill at the eye's column, and every
-  placement or site-plan place stacked over that column (its ceiling course and
-  roof, out to its eaves) — a place over another is a stack the overview looks
-  down into, never a block its eye stands inside.
+- **Every camera is proven clear in the world its frame stands in** (`DW0724`,
+  `crate::nav::verify_camera_eyes`; spec-0112 §7.4). A camera whose eye cell
+  holds a block draws the inside of that block, which is a picture
+  indistinguishable from a picture of a featureless room. `render_plan::render_plan`
+  is the only constructor of a plan document, and every kind enters the shot
+  list through one `push` that records the eye from the same position it writes
+  into the camera. Each shot names the world it stands in (`world`): the
+  configuration the critical path arrives under at its arrival — `at-load` for
+  the `spawn`, `interior`, `seam`, `npc`, `interact` and `gate` kinds, the leg's
+  arrival for a `pov`, the firing step's arrival for a `cutscene` — and its eye
+  is proven against that configuration's `World` (`Configuration::world`), one
+  per distinct arrival. Six kinds place their camera at a fixed stand-off from a
+  subject; such a camera whose own cell is occupied, **or whose sight line to its
+  subject crosses a block** past the subject's own cells, stands at the farthest
+  open point on that line (`crate::camera::stand_before`, which starts past a
+  subject that is itself a block — a gate a frame at load shows shut), stating
+  `camera.requested_pos` and `camera.standoff` on that shot: a frame drawn from
+  real geometry shows the block, so a spawn camera behind a wall would draw the
+  wall and an interior dollhouse eye over a roof would draw the roof. A gate one
+  cell thick on two axes is framed along the axis whose two sides are open in the
+  base world. `pov` and `cutscene` are never moved — a `pov` eye IS the player's,
+  a `cutscene` keyframe is what the datapack flies — so a violation stays a build
+  error naming the shot, the cell, the world key and the block there. A `pov` eye
+  stands 1.62 over a cell the walk proved standable in the same configuration,
+  and a cutscene keyframe is judged first by `DW0308` in the same world, so
+  neither is reached by a document; the shape is held by
+  `compiler::nav::view`'s unit tests. The plan carries the proof's binding
+  counts: `"camera_eye_proof": {"cameras": N, "pulled_in": M, "worlds": K}`. An
+  `interior` overview's eye stands three courses over the highest of: its
+  piece's top, a horizon's ground, the site's declared fill at the eye's column,
+  and every placement or site-plan place stacked over that column — and is then
+  stood before the roof that hides its subject.
 - **Every showcase camera photographs the scene** (`DW0724`, second shape;
   spec-0069). When the campaign has `design/cameras.json` (read by the loader,
   hashed into the manifest's inputs), `render_plan` proves each of its cameras
   after the plan's own: the lens cell is clear by the same `World::is_clear`, the
   lens lies within the world's build height (−64..320), and the ray along its
-  view meets the box the scene's chunk list is cut from
-  (`scene::loaded_extent`, widened to whole blocks), read back through the plan
-  just built. A showcase camera is not a plan shot — `delvec cameras` emits its
-  scene from the record — so nothing moves it: a violation refuses the build
-  naming the row, telling a hand camera to be placed again (`/trigger dw.cam`)
-  and an estimate to be moved, and never the geometry. A record its reader
-  refuses stops the build as `DW0721` (exit 3). The count is
-  `camera_eye_proof.showcase`, present only when the record is.
-- **`sky` fact** (`crate::render_plan::sky_fact`): **the hour and weather this
-  delve is played at**, stated for the render layer exactly as `horizon` is —
+  view meets the box the frame's chunk rectangle is cut from
+  (`render_plan::loaded_extent`, widened to whole blocks). A showcase camera is
+  not a plan shot — `delvec cameras` draws it from the record — so nothing moves
+  it: a violation refuses the build naming the row, telling a hand camera to be
+  placed again (`/trigger dw.cam`) and an estimate to be moved, and never the
+  geometry. A record its reader refuses stops the build as `DW0721` (exit 3).
+  The count is `camera_eye_proof.showcase`, present only when the record is.
+- **`sky` per shot, and the plan's `sky` fact** (`crate::render_plan::sky_fact`,
+  `compiler::view::review::Clock`; spec-0112 §7.6). The plan's top-level `sky`
+  is **the hour and weather this delve is played at** —
   `{"time": "dusk", "daytime_ticks": 12000, "weather": "rain"}`, the author's
-  spelling (the keyword, or the celestial object as written — no phase key,
-  because no consumer of the plan can act on one), the vanilla `daytime` value it sets, and the declared initial
-  `weather` keyword. Always present, because `world.json`'s `time` and `weather`
-  are required. It is the **declared initial** hour — what the world save
-  is written at, and therefore what every frame is of; a campaign that moves the
-  clock with `set-time` reaches other hours at play (`DW0890` holds the design's
-  rows equal to that whole reachable set), and a still frame has one sun and is
-  not evidence about the beats after the cut. The renderer derives the sun from the **ticks** and never
-  from the keyword, so a state vanilla does not name is worth as much as one it
-  does. The **weather** reaches a frame as the game's sky under that weather
-  (`scene::sky_of`, below): the pinned Chunky core draws no rain, but the light
-  the sky casts and the sky the lens sees are the client's under its weather
-  layer. The panorama and the review
-  frames take this sky; a showcase camera takes its picture's (§7 `delvec
-  cameras`).
-- **The Chunky sun** (`crate::view::scene::sun_at`, used by `delvec scene` **and**
-  `delvec panorama`): an altitude of `90° − α` on the western half of the arc and
-  `α − 270°` on the eastern half, and an azimuth of exactly east or exactly west,
-  where α is the pinned day timeline's `visual/sun_angle` at the plan's
-  `daytime_ticks` — two keyframes at 6000 (360 then 0) eased by `cubic_bezier
-  [0.362, 0.241, 0.638, 0.759]`, read from the vendored file (spec-0081 §4.3), the
-  same curve the celestial position table is derived from. minecraft.wiki's
-  closed form (*Daylight cycle* §Sky angle) and the game's pre-timeline
-  `DimensionType.timeOfDay` are kept as the second method in
-  `the_two_published_sun_angle_formulas_agree`: the two closed forms agree to
-  1e-9 at every tick, and the pinned track agrees with them to 0.056° (worst at
-  tick 11457). The sun rises in the east and stands overhead at noon, so one
-  angle fixes the whole position; the curve is not linear in ticks, which is the
-  term that makes vanilla's sunrise and sunset linger near the horizon. A camera
-  whose `sky.time` is celestial renders under the sun its position names; **the
-  pinned Chunky core draws no moon** (its sky package holds no moon), so a night
-  frame carries no phase and every `sky:` line whose moon is up says *moon not
-  drawn by the renderer* — the phase is confirmed in the game, never on a
-  render. Chunky's direction toward
-  the sun is `(cos az·cos alt, sin alt, sin az·cos alt)` (pinned core's
-  `Sun.initSun`) and nothing clamps the altitude, so `night`/`midnight` emit a sun
-  below the horizon and those frames render dark — which is what a night delve
-  looks like. **A plan with no `sky`, or a `sky` with no `weather`, is
-  `DW0721`**, in `scene`, `panorama` and `cameras` (`scene::plan_sky`), naming
-  the plan as written by an engine older than the running one: Chunky's own
-  default is a 60° midday sun under a clear sky, so emitting anyway would hand
-  back a noon frame of a midnight delve, or a clear frame of a rain delve, and
-  say nothing.
-- **The sky of a scene** (`crate::view::scene::sky_of`, spec-0079 §4): the one
-  writer of every `sky`, `sun` and `fog` key under `compiler::view`; the review
-  frames (`scene::scenes_from_plan`), the panorama and every showcase camera
-  (`camera::world_scene`) take their sky through it, and every scene carries
-  the whole block. Every scene's block is the **sky cell** of its tick and
-  weather (`scene::sky_cell`). **`clear`** is the pinned game's day, one
-  function for every hour,
-  with noon, the dusk and dawn ramps and the night plateau as points of it. The
-  game lights the world from the sky alone — a cell open to the sky is drawn at
-  the lightmap's sky colour whatever the sun's direction, and nothing casts a
-  shadow from the sun — so:
-
-  | Key | Value | Cited | Authored |
-  |---|---|---|---|
-  | the light the sky casts (`sky.color` and the cell's `sky_light`) | the lightmap's full-sky colour, decoded to linear: `L` | `assets/minecraft/shaders/core/lightmap.fsh` of the pinned client at sky light 15 with `SkyFactor` = `visual/sky_light_factor` and `SkyLightColor` = `visual/sky_light_color` (the two attributes `LightTexture` reads), `ambient_light` 0, the `gamma` option's default 0.5 as `BrightnessFactor`; the two tracks at the tick | decoding by `x^2.2` (`Scene.DEFAULT_GAMMA`, by arithmetic: `scene::to_linear`) and reading it as the radiance a top face is lit by — a Lambertian face under an open sky returns `albedo ×` the sky's cosine-weighted mean radiance, so the face shows at the shader's colour |
-  | `sky.mode SKYMAP_EQUIRECTANGULAR`, `sky.skymap`, `sky.skyMirrored false`, `sky.apparentSkyLight` 1 | what the lens sees: the game's own sky, as a 360 × 180 linear-float map `<scene>.sky.pfm` drawn for the scene's camera at its tick and weather (`sky_image::sky_map`) and written beside the scene by the scene writer from the scene's own `delvewrightSky` (`daytimeTicks`, and `weather` when it is not clear) and orientation (`sky_image::companion`) | the pinned client's drawing, off its bytecode through Mojang's mappings: the clear colour of `AtmosphericFogEnvironment.getBaseColor` (`visual/fog_color` × `#c0d8ff`, lerped toward the opaque `visual/sunrise_sunset_color` by the camera look's dot with the sun's side times the colour's alpha, then toward `visual/sky_color` × `#7ba4ff` by `1 − clamp(min(512/16, 12)/32, 0.25, 1)^0.25`); the sky disc of `SkyRenderer.buildSkyDisc` (an octagon at height 16, rim at 512, every 45° from −180°) in the sky colour with `sky.fsh`'s fog at `sky_end` = `min(12 × 16, 512)` on the distances interpolated from centre to rim; the sunrise fan of `buildSunriseFan` / `renderSunriseAndSunset` (centre `(0, 100, 0)`, 17 rim vertices `(sin a · 120, cos a · 120, −cos a · 40)`, turned `XP 90°` then `ZP 90°` or `270°` by the sun's side, depth scaled by the alpha, `TRANSLUCENT`); render distance 12 (`options.renderDistance`) and `visual/sky_fog_end_distance` 512 at their defaults; the core's unmirrored equirectangular lookup and its `.pfm` reader (linear, no gamma) | — |
-  | `sky.skyLight` | the multiplier that makes the map's light `L`: the largest `s ≤ 50` with the veil `R = L/s − Ē ≥ 0` in every channel, `Ē` the game's sky's cosine-weighted mean over the upper hemisphere; the map is the game's sky plus `R` | `Sky.MAX_INTENSITY` 50; the core lights the scene with the map the lens sees — `getSkyColorInterpolated` and `getSkyColorDiffuseSun` both read `getSkyDiffuseColorInner`, scaled by `apparentSkyLight` or `skyLight` | the least uniform veil that makes the light exact; the lens carries it |
-  | `fog.uniformDensity` 0, `fog.skyFogDensity` 0, `fog.color` | none: the client's sky fog is in the map | `visual/fog_color` × `#c0d8ff` as the colour no ray reads | — |
-  | `sun.intensity` 0, `sun.color` white | no light | nothing in the lightmap depends on the sun's direction | the core's sun is a directional light the game does not have |
-  | `sun.drawTexture` | the disc, drawn while any of it is above the horizon (altitude ≥ −4.29°) | the disc half-width, `celestial::SUN_DISC_HALF_CENTIDEG` | — |
-
-  The core lets the lens and the light be set apart only by magnitude, and
-  that was measured on the Treehouse Camp's `toward-the-sun` draft (400 × 225,
-  128 samples): with `skyLight` 0 the lens's sky stays (80, 78, 116) and the
-  ground goes from (19, 25, 16) to (0, 0, 0); with the map's red channel
-  zeroed the lens's sky goes to (0, 78, 116) and the ground to (0, 25, 16).
-  Colour tracks are read as the client reads them: each 8-bit channel
-  `a + floor(p × (b − a))` between keyframes (`ARGB.srgbLerp` → `Mth.lerpInt`,
-  the alpha with the rest) and multiplied as `ARGB.multiply` (`scene::day_rgb`,
-  `scene::day_argb`, `scene::multiply_rgb`). Every sine and cosine of the map
-  is `sky_image::det_sin`, a Taylor series in IEEE arithmetic, and the file is
-  raw little-endian `f32`: its bytes are a function of the tick and the
-  camera. **Not expressed:** the stars, the moon and the clouds (the map draws
-  none of them, and the core draws no moon), and the dark disc the client
-  draws under a camera below the world's horizon height. A face that looks at
-  open sky under the horizon — the sides of a block over the void — takes
-  light from the clear colour the map holds there, warm on the sun's side,
-  which the game does not cast: the light is exact on an open top face, not
-  on a face that sees the void. A place's declared
-  atmosphere (spec-0080) is not read: the scene is lit as the ground biome is.
-  The veil pales the lens's sky where the game's sky is far from the light's
-  hue: at noon the light is white and the sky blue, so the veil is the light's
-  yellow remainder and the lens sees a pale zenith; at the setting sun it is
-  small; at night, under a black sky, `skyLight` is 50 and the veil `L/50`.
-  Pinned by `the_clear_sky_is_the_timeline_at_its_tick` (the night plateau,
-  noon and the setting sun read back from the timeline's keyframes),
-  `the_sky_cell_has_no_seam_over_the_day` (under each weather, the largest change of the cell's
-  light between two adjacent ticks: 0.0005 `skyLight`, 0.0081
-  `sky.color.red`), `sky_image`'s tests (the fan on the sun's side, the clear
-  colour following the look, the light exact, the map byte-stable and moved by
-  the tick) and `every_scene_builder_writes_the_whole_block`. At the Treehouse
-  Camp's setting sun (tick 12782) the light is `sky.color` (0.357581,
-  0.357581, 1) at 0.374446, and the scenes' `skyLight` is 1.380618
-  (`from-the-glade`), 1.564742 (`north-east-aerial`), 1.490059
-  (`toward-the-sun`); at the night plateau the light is 0.209457 and
-  `skyLight` 50. Left to the renderer — the simulated sky and its default sun
-  at 1.25 — the setting sun draws a beam along the horizon over a
-  yellow-brown Preetham sky (the core clamps the sun to the horizon before it
-  shades the sky), where the game draws a dim, flat evening, blue-violet away
-  from the sun with an orange-red band toward it. spec-0079 criteria 4 and 5 —
-  byte identity with the base for a clear scene with the sun up, and "no
-  block keys" on it — do not hold: **a loosening of what those criteria
-  assert, replaced by the clear sky's own assertions above**. **`rain`** and **`thunder`** are
-  the same function under the client's **weather layer** (`scene::sky_attributes`,
-  `scene::WeatherLayer`): `WeatherAttributes` lays a `RAIN` and a `THUNDER` map
-  over the dimension, the biome and the day timeline in every level that
-  `canHaveWeather` (`EnvironmentAttributeSystem.addDefaultLayers`), and the
-  lightmap and the sky are drawn from the result. An attribute's value `v`
-  becomes `lerp(rain − thunder, v, RAIN(v))`, then `lerp(thunder, ·,
-  THUNDER(·))`; a `rain` delve stands at rain level 1 and thunder level 0, a
-  `thunder` delve at both 1 (`Level.getThunderLevel` is the thunder level
-  times the rain level), so each applies its own map whole. Read off the
-  pinned client's bytecode through Mojang's client mappings (`client.txt`
-  sha1 `031a68be…`), **cited** value by value:
-
-  | Attribute | `RAIN` | `THUNDER` | What reads it |
-  |---|---|---|---|
-  | `visual/sky_light_factor` | `alpha_blend` 0.24 at 0.3125 | `alpha_blend` 0.24 at 0.52734375 | the lightmap (`LightTexture`) |
-  | `visual/sky_light_color` | `alpha_blend` `#7a7aff` at 0.3125 | `alpha_blend` `#7a7aff` at 0.52734375 | the lightmap |
-  | `visual/sky_color` | `blend_to_gray` 0.6, 0.75 | `blend_to_gray` 0.24, 0.94 | the sky disc; the clear colour's sky term |
-  | `visual/fog_color` | `multiply` (0.5, 0.5, 0.6) | `multiply` (0.25, 0.25, 0.3) | the clear colour |
-  | `visual/sunrise_sunset_color` | `multiply` (0.5, 0.5, 0.6) | `multiply` (0.25, 0.25, 0.3) | the clear colour's tint; the fan |
-
-  `#7a7aff` is `Timelines.NIGHT_SKY_LIGHT_COLOR` (`ARGB.colorFromFloat(1,
-  0.48, 0.48, 1)`); a float `alpha_blend` is `Mth.lerp(alpha, v, value)`, a
-  colour one `ARGB.alphaBlend` (an opaque `#rrggbb` under an alpha of
-  `floor(alpha × 255)`), `blend_to_gray` the colour's `ARGB.greyscale` scaled
-  by the brightness and `srgbLerp`ed in by the factor, `multiply`
-  `ARGB.multiply`. The layer's cloud colour, star brightness and sky light
-  level reach nothing a scene carries. Two steps of the client's drawing read
-  the weather levels directly: the clear colour is lerped toward the sky
-  colour `AtmosphericFogEnvironment.applyWeatherDarken` scales by `(1 − 0.5r,
-  1 − 0.5r, 1 − 0.4r)` at rain level `r` and by `1 − 0.5t` at thunder level
-  `t` (the disc keeps the layer's sky colour), and the sun is drawn at the
-  alpha `1 − r` (`SkyRenderer.extractRenderState` → `renderSunMoonAndStars`).
-  So a rain or thunder scene carries the clear scene's keys, with the light
-  the lightmap's under the weather, the map the client's sky under it, the
-  marker `delvewrightSky.weather`, and `sun.drawTexture false`. At noon the
-  light falls from the clear 0.967729 to 0.743987 under rain and 0.593479
-  under thunder (peak channel, blue), at the setting sun from 0.374446 to
-  0.32354 and 0.287972, and on the night plateau, where the layer blends
-  toward the night's own factor and colour, it is the clear night's 0.209457
-  under every weather (to the float the client blends in). The arithmetic is
-  integer channels and the client's float where it is float
-  (`the_weather_is_the_clients_layer`, values worked by hand; the whole-map
-  gate holds the emitted map and light to its own Python port of the same
-  layer, `tools/ci/check-whole-map-render.py`). **Not expressed under
-  weather:** the rain itself and the clouds, which the core cannot draw, and
-  the client's **rain fog** — `AtmosphericFogEnvironment.setupFog` pulls the
-  environmental fog's start in by `160 m` and its end to `max(min(96, end),
-  end − 256 m)` (`end` 1024, the overworld's `visual/fog_end_distance`), `m`
-  the rain level × `clamp((sky light at the camera − 8) / 7, 0, 1)` × (1 in a
-  biome with precipitation, else 0.5), so a camera in the open in the
-  Glasshouse's `windswept_forest` sees a linear fog of `(d + 160) / 928` toward
-  the clear colour: 17% at the lens, 23% at 50 blocks. The pinned core's
-  uniform fog cannot carry it: its in-scatter is the light of the sun's
-  direction where the sun is unoccluded (`PathTracer` → `Fog.addGroundFog`),
-  and these scenes cast no sun light, whose direction is under the ground at
-  the setting sun and at night — the fog would only darken. **A recorded
-  debt**; rain and thunder scenes write `fog.uniformDensity` 0 like a clear
-  one. **No preset table is left**: every value a scene carries about its
-  sky has a formula in the pinned client, so the finite set a render chooses
-  from is the three weathers, each a function of the tick. Measured on the
-  standard level (`showcase-shots.md` §6), the seven showcase cameras of the
-  Glasshouse at exposure 1 —
-  content `demo/the-glasshouse` at `c45f340`, built by delvec 1.13.0 (manifest
-  `044b3edb…`), each camera stating its sky through the record, 400 × 225 at
-  128 samples (512 in `potting-room` and `stoke-hole`), denoised; *before* is
-  this branch's engine with the look table, *now* the weather layer (the
-  clear scenes are byte-identical between the two, so they were rendered
-  once). Mean luma, clipped (any channel at 254 or more) and crushed (Rec. 709
-  luma at 8 or less) read by Pillow and again from an ffmpeg decode, which
-  agree to 0.0000 over 112 frames; a patch is every pixel the camera's ray
-  meets on that face of a full cube of that block (plank top: oak and spruce
-  planks; grass top; stone face: the sides of stone, andesite, cobblestone and
-  stone bricks; a lit lantern's own box), its render luma pooled over the
-  frames that show it, pixel-weighted, beside the game's: the texture's
-  texels × the pinned client's lightmap at the face's own block and sky light
-  (both flooded over the same world) under the weather × `ClientLevel.getShade`:
-
-  | Sky | mean luma, avg of 7 (before / now) | clipped, worst | crushed, worst | grass top: game; render | stone face: game; render | plank top: game; render | lit lantern: game; render |
-  |---|---|---|---|---|---|---|---|
-  | clear, rising sun | 54.9 / 54.9 | 1.04% / 1.04% | 4.75% / 4.75% | 63.9; 47.0 / 47.0 | 44.9; 45.1 / 45.1 | 83.0; 50.5 / 50.5 | 93.8; 214.1 / 214.1 |
-  | clear, noon | 92.6 / 92.6 | 1.04% / 1.04% | 4.71% / 4.71% | 96.6; 90.5 / 90.5 | 50.9; 50.9 / 50.9 | 101.7; 51.4 / 51.4 | 93.8; 214.5 / 214.5 |
-  | clear, setting sun | 55.7 / 55.7 | 1.04% / 1.04% | 4.75% / 4.75% | 63.9; 47.0 / 47.0 | 44.9; 45.2 / 45.2 | 83.0; 50.8 / 50.8 | 93.8; 214.1 / 214.1 |
-  | clear, midnight | 38.5 / 38.5 | 1.04% / 1.04% | 4.73% / 4.73% | 55.6; 39.2 / 39.2 | 43.5; 43.8 / 43.8 | 79.6; 50.7 / 50.7 | 93.8; 214.9 / 214.9 |
-  | rain, noon | 64.4 / 69.5 | 1.04% / 1.04% | 4.76% / 4.74% | 87.1; 65.8 / 72.4 | 48.4; 47.6 / 48.7 | 93.9; 50.9 / 50.8 | 93.8; 214.5 / 214.2 |
-  | rain, setting sun | 37.0 / 48.4 | 1.03% / 1.03% | 4.72% / 4.71% | 61.3; 33.3 / 44.5 | 44.5; 42.4 / 44.7 | 81.9; 50.6 / 50.6 | 93.8; 215.0 / 214.2 |
-  | rain, midnight | 36.5 / 38.4 | 1.03% / 1.03% | 4.72% / 4.69% | 55.6; 33.2 / 39.5 | 43.5; 42.4 / 43.6 | 79.6; 50.2 / 50.8 | 93.8; 215.0 / 214.7 |
-  | thunder, noon | 56.3 / 54.6 | 1.04% / 1.04% | 4.71% / 4.69% | 77.4; 54.3 / 60.6 | 46.8; 46.0 / 47.2 | 88.9; 50.7 / 51.0 | 93.8; 214.3 / 214.2 |
-  | thunder, setting sun | 35.9 / 42.5 | 1.04% / 1.03% | 4.72% / 4.73% | 59.4; 32.4 / 42.8 | 44.1; 42.2 / 44.4 | 81.1; 50.6 / 50.6 | 93.8; 215.2 / 214.4 |
-  | thunder, midnight | 35.2 / 38.4 | 1.04% / 1.04% | 8.98% / 4.70% | 55.6; 31.2 / 39.2 | 43.5; 42.1 / 43.7 | 79.6; 50.4 / 50.4 | 93.8; 215.2 / 214.7 |
-
-  The lantern and the room-lit planks do not move with the sky, as the
-  game's do not. What the look table got wrong is read in the ratio of
-  render to game on a face the sky lights, which a correct sky holds at the
-  clear sky's ratio of the same hour (walls and trees hide sky the game's
-  light ignores, so the ratio is below 1 and the same under every weather):
-  grass top at the setting sun 0.74 clear against 0.54 / 0.55 under rain /
-  thunder before and 0.73 / 0.72 now, at midnight 0.70 against 0.60 / 0.56
-  before and 0.71 / 0.71 now; stone face 1.01 clear against 0.95 / 0.96 before
-  and 1.01 / 1.01 now at the setting sun. At noon the grass reads 0.94 clear and
-  0.83 / 0.78 now (0.76 / 0.70 before): the clear noon light saturates the
-  lightmap's clamp, which the curve's shoulder does not. The look table's
-  `below` cells, which a setting sun takes (its altitude is −0.0021°), lit
-  the sky at a tenth of the game's light; no frame under any sky clips more
-  than 1.04%, and that is the cellar's candles.
-
-  This replaces spec-0079 §4.3–4.4 — the look table keyed by a daylight class
-  read off the sun's altitude, its one cell judged by eye and five scaled by
-  authored rules — with the client's formula, and loosens what criterion 6
-  asserts, in those words: **a loosening** — the daylight class it asserts no
-  longer exists, and thunder is darker than rain in the light only where the
-  sky is lit (at noon and the setting sun; on the night plateau the light is
-  equal, as the game's is), and no denser in fog (the client's rain fog is the
-  same under both, and neither carries one); `the_weather_is_the_clients_layer`
-  asserts what replaces it. The binding line names no class. A night-vision
-  review emulation (`REVIEW_POLICY`) is a material override and independent
-  of the sky: a declared-dark room under rain gets both. The panorama's
-  bearing decides only which side is in shot; no face is in the sun's shadow,
-  and under a clear sky a bearing that looks into the sun puts its disc in
-  frame.
-- **The post-process** (`scene::POSTPROCESS`): every scene is written with
-  `TONEMAP3`, the pinned core's Hable filmic curve, with the settings derived
-  below, which rolls a radiance above the display's white off along a shoulder where
-  `GAMMA` cuts it at 1. Chosen by measurement over the five the core offers,
-  each at its default and re-exposed (`-snapshot`) from one accumulated draft
-  at exposure 1 under the clear cell — the Treehouse Camp's `from-the-glade`, `north-east-aerial`
-  and `lantern-night` at 400 × 225 and 128 samples, Pillow reader, sRGB:
-
-  | Post-process | clipped (any channel ≥ 254) | crushed (luma ≤ 8) | mean luma |
-  |---|---|---|---|
-  | `GAMMA` | 0.60 / 0.18 / 0.49% | 5.24 / 0.39 / 0.84% | 34.4 / 46.3 / 21.2 |
-  | `TONEMAP1` | 0.00 / 0.00 / 0.00% | 51.32 / 31.76 / 85.83% | 21.6 / 33.9 / 5.5 |
-  | `TONEMAP2` (ACES) | 0.38 / 0.02 / 0.11% | 25.70 / 3.69 / 38.35% | 28.6 / 42.4 / 13.6 |
-  | `TONEMAP3` (Hable) | 0.37 / 0.02 / 0.11% | 7.59 / 0.70 / 1.22% | 30.3 / 40.4 / 18.8 |
-  | `UE4_FILMIC` | 0.37 / 0.02 / 0.10% | 36.56 / 9.44 / 55.83% | 26.1 / 40.2 / 10.8 |
-
-  Hable is the one curve that compresses the highlights without sinking the
-  dim half of the frame. **Its settings** (`scene::tone_curve`, written as
-  `postprocessSettings`, the seven floats `HableToneMappingFilter` reads): at
-  its preset (`scene::HABLE_FILMIC_WORLDS`, the core's `FILMIC_WORLDS`) the
-  curve shows linear 0.18 at 0.393 where the game's transfer of a decoded
-  colour, `x^(1/2.2)`, shows 0.459. Every scene therefore carries the preset
-  read `k` times brighter — `A·k²`, `B·k` and `W/k` with `C`, `D`, `E`, `F`
-  unchanged, which is the curve `h(k·y)` with its white scale held — at the `k`
-  that holds `scene::MID_GREY` 0.18 at 0.18 before the core's display exponent
-  (`HableCurve::mid_grey_gain`, the positive root of the quadratic `h(y) = m /
-  whiteScale` is in `y`): `k` = 1.463761, settings 0.32138956, 0.7318806, 0.1,
-  0.2, 0.02, 0.3, 7.651521. **Derived**; the anchor is the 18% grey card
-  exposure is metered against, **cited**. **The exposure is derived with it**:
-  every scene is written at `scene::EXPOSURE`, 1.0, the one value at which
-  the sky's radiances are the lightmap's colours, this curve holds the
-  mid-grey and the lantern scale below is fitted; no camera, review shot or
-  panorama states its own, and a camera record that does is refused
-  (`DW1010`). A second derivation was measured
-  and not taken: the `k` that best fits the game's transfer, in least squares
-  with equal weight per display level, over the range a clear cell lights,
-  `(0, L^(1/2.2)]` for its light `L` (the place frames below hold 99.6–99.9% of
-  their channel values under `L`, the two frames toward the sun 89–91%), is 1.491390 at the setting sun, 1.391937 on
-  the night plateau and 1.932816 at noon — a function of the tick where the
-  mid-grey gain is one constant, and within 2% of it at the setting sun. On the
-  Treehouse Camp's twelve showcase frames, re-exposed from their accumulated
-  sample buffers (the raw buffer written by `-snapshot` with `outputMode PFM`,
-  the curve applied by a numpy port the core's own PNG reproduces bit for bit
-  at the preset; clipped is any channel at 254 or more, crushed Rec. 709 luma
-  at 8 or less, both of 1 440 000 pixels):
-
-  | Frame | clipped, preset → anchored | crushed, preset → anchored | mean luma, preset → anchored |
-  |---|---|---|---|
-  | whole camp (sunset, toward the sun) | 0.39 → 0.40% | 0.78 → 0.33% | 50.6 → 58.9 |
-  | the nine place frames (sunset) | 0.10–0.39 → 0.12–0.44% | 1.62–9.32 → 0.88–5.86% | 24.5–32.7 → 28.9–38.6 |
-  | Crown Lookout (sunset, toward the sun) | 0.37 → 0.38% | 0.98 → 0.50% | 45.7 → 53.4 |
-  | Lantern Night | 0.14 → 0.18% | 1.08 → 0.60% | 20.4 → 24.2 |
-
-  **The light is the game's on an open top face that sees the whole sky, and
-  a frame's darkness is mostly elsewhere.** The clear cell's radiances are the
-  lightmap's colours decoded, so at exposure 1 a top face under the whole sky
-  shows at the colour the game draws it. Measured on the same eleven sunset
-  frames by casting every pixel through its scene's camera into the world the
-  scene loads (5 075 588 pixels on full cubes of 29 single-texture block types,
-  albedo the texture's mean), with the game's sky and block light flooded over
-  the same world and the pinned client's lightmap (`lightmap.fsh`, the block
-  factor `LightTexture` adds 1.5 to) and directional shade (`ClientLevel.
-  getShade`: up 1.0, down 0.5, north and south 0.8, east and west 0.6): the game
-  model of those pixels reads a mean luma of 35.2–48.2 (five in-game
-  screenshots of the camp at that hour, other views: 41.4–47.9), the frames 18.5–28.1 at the preset and 20.9–31.8
-  under no curve at all. 92.6% of the linear shortfall is in pixels a lantern
-  lights in the game: its block light reaches 14 blocks flat, where the path
-  tracer's lantern is a small emitter whose light falls with distance, and
-  those pixels take 0.21 of the game's light. Where no lantern reaches, an
-  open top face takes 0.53 of the game's light — its cosine-weighted sky
-  visibility is 0.57 on average, the camp's trees and the valley's rim hiding
-  sky the game's sky light ignores — and the sides 0.67 (north and south) and
-  1.19 (east and west, which the game shades to 0.6). Those figures are at the
-  core's default emitter intensity; the lantern scale below answers them.
-- **The lantern light** (`scene::emitter_intensity`, `scene::LANTERN_LIGHT_SCALE`):
-  every scene is written with `emitterIntensity` 159.003, the core's default 13
-  (`Scene.DEFAULT_EMITTER_INTENSITY`, **cited**) times 12.2310, and leaves
-  emitter sampling at the core's `NONE`. The pinned core gives a scene three
-  controls over emitted light — this global intensity, a per-material
-  `emittance` and the emitter sampling strategy — and nothing that limits how
-  far an emitter reaches (`PathTracer` at the pin: emission = texel colour² ×
-  emittance × intensity; the lantern's emittance 1.0, `BlockPalette`). The
-  sampling strategies change the light, not only the noise: measured at the
-  lantern scale on Root Glade and Loom House (two independent runs each,
-  noise the standard deviation of their difference over √2, time the core's
-  `renderTime`), `ONE`, `ONE_BLOCK` and `ALL` cut noise² × time to 0.04–0.13,
-  0.05–0.11 and 0.36–0.37 of `NONE` and cut the emitted light to 0.527–0.538
-  of it, because at the pin the sampled estimate averages the emitters near a
-  point (`ONE` draws one of n without the factor n; `ALL` scales by π / n) and
-  takes the texel colour where the unsampled path takes its square. Chunky
-  users close the torch-light gap by raising the intensity by eye and pair it
-  with a denoiser ([`chunky-lighting-practice.md`](chunky-lighting-practice.md),
-  which compares every setting here with that practice). **A showcase frame is
-  denoised**: Open Image Denoise 2.5.1 (RT filter, HDR) over the raw sample
-  buffer, with the chunky-denoiser plugin's albedo and normal passes (16
-  samples each), the result written back as a core render dump so the core's
-  own `-snapshot` applies the scene's post-process. `validation/chunky.sh` runs
-  the step after every `-render`, with both tools pinned in `versions.toml
-  [render]` and installed by `validation/chunky-install.sh`
-  (`tools/lib/chunky_denoise.py`; `tools.md` §4a).
-  The scale is the one at which the mean display luma of lantern-lit pixels,
-  denoised, under the anchored curve, equals the game model's (**authored from
-  this measurement**): the twelve showcase frames at 400 × 225, each rendered
-  as a sky pass (emitters off, 256 spp) and an emitter pass (sky light 0, 1024
-  spp), whose sum at scale 1 matches a normal render within 1%; render(k) =
-  denoise(sky + k × emitters); over the 102 139 pixels on full cubes of
-  single-texture blocks with game block light 1–15, equal weight, bisection
-  gives 12.2310. Fitted on the noisy buffers it reads 15.04, because grain shown
-  through the curve reads darker than its mean. A night-vision emulation writes
-  its `emittance` as `0.05 × 13 / emitterIntensity` (0.004088), so its glow
-  stays calibrated. Rendered in full and denoised (1600 × 900, the published
-  frames' spp; method 1 the core's PNGs read by Pillow, method 2 the denoised
-  buffers through the numpy port of the curve — they agree):
-
-  | Frame | mean luma, anchored → lantern scale | crushed | clipped |
-  |---|---|---|---|
-  | whole camp | 58.9 → 62.6 | 0.32 → 0.04% | 0.40 → 0.48% |
-  | the eight place frames, Root Glade to Watch House | 28.9–38.6 → 36.7–47.1 | 0.88–5.87 → 0.02–1.63% | 0.12–0.21 → 0.28–0.67% |
-  | the climb | 31.8 → 53.6 | 4.97 → 0.16% | 0.44 → 0.79% |
-  | Crown Lookout | 53.4 → 57.9 | 0.51 → 0.15% | 0.38 → 0.50% |
-  | Lantern Night | 24.2 → 39.5 | 0.60 → 0.06% | 0.18 → 0.60% |
-
-  Grain, as the mean distance of a pixel's luma from its 5 × 5 median, is at
-  or under the anchored set's on every frame (1.16–2.52 against 1.81–3.46;
-  undenoised at the lantern scale 4.03–12.55). On the 3 637 398
-  full-resolution lantern-lit pixels the frames read 40.8 against the game
-  model's 46.1 (23.7 under the anchored curve alone; mean absolute error 16.0,
-  from 22.6), and per frame from 20 luma under (Loom House 41.5 against 61.5)
-  to 16 over (the climb 55.0 against 39.4); the 1 697 997 sky-only pixels read
-  38.7 against 35.7, because the core's lantern light has no 14-block edge.
-  **What is left**: the falloff's shape — near a lantern the render is brighter
-  than the game, far from it dimmer — which no control of the core expresses;
-  and the lantern itself, which reads 204 where the game draws its texture at
-  94: the core scales the lamp and the light it casts together, and the
-  control that would part them (an emittance map) is an open draft upstream,
-  not in the pinned core.
+  spelling (the keyword, or the celestial object as written), the vanilla
+  `daytime` value it sets, and the declared initial `weather` keyword; always
+  present, because `world.json`'s `time` and `weather` are required. **Every
+  shot carries its own `sky`**: the clock of the configuration it stands in —
+  the world's initial hour and weather, moved by every forced `set-time` and
+  `set-weather` the critical path fires before the shot's arrival
+  (`plan::collect_clock_events`), with `set_by` naming the step that set it
+  (`null` at the world's own clock). A frame of a leg after a cut to dusk is a
+  frame at dusk. A `set-time` or `set-weather` in a dialogue option, a trigger no
+  step is, or an optional quest is unforced and moves no shot's sky. The
+  renderer derives the sun from the **ticks** and never from the keyword, so a
+  state vanilla does not name is worth as much as one it does. `level.dat`'s
+  `DayTime` in each written world is the configuration's clock.
+- **The sky a frame is drawn under is the engine's** (`compiler::view::frames`,
+  spec-0112 §6.1 item 6): the renderer is handed every colour and direction and
+  draws its own of none. In quick mode the sky colour, the fog colour and the
+  lightmap's sky factor are `scene::sky_attributes(daytime, weather)` — the
+  pinned client's `visual/sky_color`, `visual/fog_color` and
+  `visual/sky_light_factor` at the tick under the weather layer, read off its
+  day timeline (spec-0081 §4.3) and `WeatherAttributes`' `RAIN`/`THUNDER` maps —
+  and the sun's direction is `frames::sun_direction` over `scene::sun_at`, the
+  pinned day timeline's `visual/sun_angle` eased as the client eases it (minecraft.wiki's
+  closed form and the game's pre-timeline `DimensionType.timeOfDay` are the
+  second method in `the_two_published_sun_angle_formulas_agree`, within 0.056°).
+  Under rain or thunder the sun is placed below the horizon, where the client
+  draws none. `crates/delvec/tests/review_frame_sky.rs` measures the same camera
+  at noon and midnight (mean luma 188.04 against 6.31 on the CPU backend) and
+  holds that the engine calls none of the renderer's own sky. In hq mode the sky
+  is a uniform radiance of the same sky colour and a sun of
+  `frames::HQ_SUN_IRRADIANCE` (1.5, **authored**) along the same direction,
+  drawn only while the sun is up; the hq exposure is
+  `frames::HQ_EXPOSURE` (1.0, **authored**) until the showcase standard level is
+  re-measured (spec-0112 phase 3). **What no frame shows is named**, in the
+  review record's `unchecked` (`review::UNCHECKED`: items and text displays, the
+  block entities the renderer has no model for, the weather in the air, the
+  clouds, hq-mode fog and the moon, a night-vision room's lightmap, a body's pose
+  at a tick and the party, a cutscene no critical step fires) and in each index
+  entry's own `unchecked` for what that frame's state makes apply. A plan
+  whose shot states no `world`, `sky` or `mode` is refused by `delvec frames`
+  (`DW0721`, `view::index::plan_shots`) naming the shot and the remedy, a
+  rebuild.
+- **The placements ledger** (`compiler::placed`, `<out>/validation/placed.json`;
+  spec-0112 §4). Every block, container item and body the datapack places
+  outside the templates, and every removal, is one row: `{fired, function,
+  object, command}`, `fired` one of `"setup"`, `{"id", "step"}` (the
+  `critical_path` index of the step whose completion, activation or trigger runs
+  it) or `{"unforced": <blame>}` (a beat nobody has to play, which no
+  configuration lays). The rows are read off the functions that place —
+  `setup_finish`; `activate_<obj>` (at the latest critical step its objective's
+  step causally follows, else setup); `complete_<obj>` and `complete_q_<quest>`
+  (at the objective's, or the quest's last objective's, step);
+  `trig_<trigger>` (at the trigger's step); `spawn_npc_`, `despawn_npc_`,
+  `spawn_actor_`, `despawn_actor_`, `asm_summon_`, `asm_despawn_` (at every step
+  an effect running it fires, `plan::firing_of`); and the `trap_` and `loop_`
+  functions (unforced) — every `summon`, `setblock` and `item replace block`
+  line (under an `execute … run` prefix too), every `kill @e[tag=…]` and every
+  unseen hand-off. **Each such line is written back from its row**
+  (`Placed::command`), so a line and its record cannot disagree; a body whose
+  position is no absolute number or whose compound does not read as SNBT is
+  named on the binding line, `placements ledger: <n> row(s) over <m> placing
+  line(s) …; <u> body row(s) no frame's world can hold as written`.
+  `tests/placed_ledger.rs` audits it over the gallery: every placing line of a
+  ledger function is one row and every row one line, and every other placing
+  function is named by its class (a region write — `seal_`, `collapse_`, `ws_`,
+  `tgate_`, `shortcut_`, the world build — laid by the configuration, or a body
+  present only once a player has played — a wave, an unleashed or re-stood
+  actor, a cutscene's stand-in, a volley, a dropped stake).
+- **The worlds the build writes** (`<out>/validation/worlds/<key>/`,
+  `compiler::view::review`; spec-0112 §5). One world per distinct
+  configuration the plan's shots stand in — `at-load` always, and
+  `after-<step>` (`/` as `-`, `-at-<n>` when two configurations follow one
+  step) — a configuration's identity being the cells its writes lay, the ledger
+  rows its arrival holds (`placed::rows_at`: every `setup` row and every row of a
+  step the arrival causally follows, in firing order, a removal deleting every
+  earlier body carrying its tag) and its clock. Each world holds `level.dat`
+  (gzip, mtime 0: `Data{DataVersion, LevelName, SpawnX/Y/Z, version, DayTime}`,
+  `DayTime` the configuration's clock), `region/r.<x>.<z>.mca` and
+  `entities/r.<x>.<z>.mca`, every chunk of the loaded extent
+  (`render_plan::loaded_extent`: the layout, a valley's landform, the plan
+  volumes) written whole. A chunk carries `DataVersion` (the pin's), `xPos`,
+  `zPos`, `yPos`, `Status: minecraft:full`, a section per height holding a
+  block or the generator's ground — `Y` a byte, `block_states{palette, data}`
+  and `biomes{palette, data}` with palettes in first-seen order, every state
+  completed with the pinned defaults of the properties it leaves out, indices at
+  `max(4, ⌈log2 n⌉)` bits for blocks and `max(1, ⌈log2 n⌉)` for biomes never
+  across a long — and **`BlockLight` and `SkyLight`** in every section: the two
+  terms of the light model (`light::LightArrays`) over the configuration's
+  blocks, block light from the emitters the configuration holds and sky light
+  seeded at 15, one nibble a cell in `y`-`z`-`x` order, low nibble first.
+  **`block_entities`** carries every template block entity whose cell still
+  holds the template's block (`assembled::template_block_entities`), with a
+  ledger item laid into its container's `Items`; the entity file carries every
+  ledger body the configuration holds — the summon's whole compound with `id`,
+  `Pos`, `Rotation` (`[yaw, 0]`), `Tags` and a `UUID` derived from its tags and
+  position. **A cell no build write reached holds the horizon generator's
+  block** (`world::Ground`): under `horizon: ocean` the stack
+  `plan::OCEAN_LAYERS` states once (bedrock at −64, stone to 54, water to 62);
+  under `void` and `valley` nothing. Which cells a write reached is
+  `assembled::Reached`, widened by the configuration's laid regions and the
+  ledger's blocks. Every region timestamp is zero, zlib at level 6, chunks in
+  index order: two builds write byte-identical worlds (ADR-0006,
+  `tests/review_frame_worlds.rs`). Every file is in `manifest.json`;
+  `validation/` ships in no image (`validation/Dockerfile.delve` copies nothing
+  under it). Per world one binding line, `world: <key> <chunks> chunk(s),
+  <cells> cell(s), <g> ground cell(s), <b> block entit(ies), <e> entit(ies),
+  light arrays over <chunks> chunk(s), sha256 <hash> -> validation/worlds/<key>,
+  written in <ms> ms`. The worlds are a classified verbatim binary output of
+  `DW0185`'s scan (`emit::text::is_verbatim_binary_output`): every string they
+  hold is a copy of a template's block-entity text or of a summon compound the
+  scan reads where the datapack emits it.
+- **The review record** (`<out>/validation/review-frames.json`;
+  spec-0112 §9): per world its key, chunk, cell, ground-cell, block-entity and
+  entity counts, the light arrays' cell count and sha256 and the world's sha256;
+  per shot its id, kind, world, mode, sky, frame size, what it `shows` and what
+  lies `out_of_frame` (`framing::resolve_targets` over the shot's own world, the
+  ledger's bodies included as kind `body`); the cutscenes framed and the
+  cutscenes no critical step fires, by name; `shots_digest`; and `unchecked`.
+  The build's binding line: `review frames: <m> shot(s) in <k> world(s) (<l> at
+  load, <a> after a step); <q> quick, <h> hq, <n> light frame(s) rendered quick;
+  <c> cutscene frame(s) of <s> shot(s) in <n> cutscene(s), <u> cutscene(s) no
+  critical step fires[: <where>]; cameras proven clear: <m> of <m> in their own
+  worlds`. A campaign with no cutscene prints `0 cutscene frame(s)`.
+- **Cutscene shots** (`render-plan.json`, spec-0112 §7.2): every cutscene a
+  critical step fires gets a frame where each shot starts and, for a shot whose
+  camera or aim moves, where it ends — `cutscene/<step id, / as ->/<n>/shot<i>/t<tick>`,
+  kind `cutscene`, its camera the keyframe pose with `fov` 70, `world` the
+  configuration the firing step arrives under, `after`, `step`, `shot`, `tick`,
+  `seconds` and an `expect` line — appended after the POV shots. A cutscene no
+  critical step fires gets no frame and is named on the review line; a branch's
+  cutscenes get none (spec-0112, debt).
 - **`horizon` fact** (`crate::render_plan::horizon_fact`): the world-generator
-  ambient the render layer cannot see. A `horizon: ocean` campaign (spec-0013)
-  ships a world save holding only the chunks its layout occupies — the sea around
-  the island belongs to the level generator — so a renderer loading that save
-  draws void past the shoreline unless it raises its own water plane, at exactly
-  the compiler's sea-level datum (anywhere else leaves a two-tone seam against the
-  authored block water). The plan therefore *states* it,
-  `{"kind": "ocean", "sea_level": 62}`, rather than leaving `delvec render` to
-  infer a generator setting from blocks. `horizon: void` (default/absent) emits
+  ambient a consumer of the plan cannot see. A `horizon: ocean` campaign
+  (spec-0013) ships no sea — the sea around the island belongs to the level
+  generator — and the worlds the build writes carry the generator's stack
+  wherever no write reached (above), so the plan *states* the generator,
+  `{"kind": "ocean", "sea_level": 62}`, rather than leaving a reader to infer a
+  generator setting from blocks. `horizon: void` (default/absent) emits
   **no key** (absent, not null), so every campaign that declares nothing keeps a
   byte-identical `render-plan.json`. A `valley` states the `extent` of the
-  landform it built: every scene loads it, and `delvec panorama` fits its frame
+  landform it built: every frame's world loads it, and `delvec panorama` fits its frame
   to `layout_aabb` (or to the anchors `--subject` names) and never to the
   landform, so the ground is the built place's setting and never what the frame
   is sized to.
@@ -3980,7 +3755,7 @@ wall's `none`/`low`/`tall` values travel with their side), crafter/jigsaw
 (`inner_left`, `outer_right`, …) is expressed relative to its own `facing` and
 is already correct once `facing` moves. Every occupancy classifier reads only
 rotation-invariant properties (`type`, `layers`, `open`, `waterlogged`,
-`bottom`), so the rotation moves nothing in nav, seating, relight, snapshots or
+`bottom`), so the rotation moves nothing in nav, seating, relight, frames or
 emission; the `DW0430` stair proof is the consumer of `facing`, and without the
 rotation it would report a false defect on every rotated piece.
 
@@ -4690,9 +4465,7 @@ synthetic constructor every unit-test world goes through; the two relight darkne
 surveys (`light::relight_over` and a `relight` verb's own — applying the premises
 would cut the reachable flood at a kill box and *shrink* the `DW0210` survey
 rather than sharpen it, and a pit that kills is a pit the player must be able to
-see before stepping into it); and `delvec snapshot`, where a camera is stood up
-against blocks and a reviewer framing a shot down into a lethal volume is looking
-at open air. `delvec blocking-chart` goes the other way: it re-derives
+see before stepping into it). `delvec blocking-chart` goes the other way: it re-derives
 `critical_path_routes`, so it carries the full set and draws the corridor the
 proof actually walks.
 
@@ -5155,7 +4928,7 @@ write, and no leg state restores it.
 
 `crate::edit` replays the optional stage-7 script over the assembled model
 (§1 pass 8) so **every** downstream consumer — relight, nav, wave seating,
-waypoint/POV export, `snapshot`/`blocking-chart`, emission — sees the edited
+waypoint/POV export, `frames --campaign`/`blocking-chart`, emission — sees the edited
 world. Invariants:
 
 - **Per-batch re-proofs.** After each batch the replay re-settles gravity
@@ -5182,7 +4955,7 @@ world. Invariants:
   pinned jar's measured `canSurvive` table (`delvewright_dsl::support`): a later
   batch that carved its support away, or a `scatter` that dropped flowers onto a
   non-soil block, leaves a block the server pops off as an item the first time a
-  shape update reaches it — the edit silently undone while every snapshot still
+  shape update reaches it — the edit silently undone while every frame still
   shows it. **Advisory** for decoration (aggregated per block, with a count, one
   example cell and what its rule asks); **error** when the popped block is a
   fixture the script's own `relight` verb placed, since that is a declared
@@ -5262,11 +5035,11 @@ world. Invariants:
   (the island/cave generators' primitive family, ported into `crate::edit`)
   seeded per script position; the double-build gate covers the edited fixture
   (`tests/edit.rs`).
-- **View mode.** `snapshot`/`blocking-chart` replay the script **without**
+- **View mode.** `frames --campaign`/`blocking-chart` replay the script **without**
   enforcing invariants (`edit::replay_view`) — a broken state must be
   viewable; only region-resolution failures (`DW0323`) stop a view.
 - **The loop** (`delvec edit apply|preview`, §7): full validation → replay
-  with invariants → one labelled snapshot + manifest per batch (framing the
+  with invariants → one labelled frame + manifest per batch (framing the
   batch's edited AABB over the final edited world) → **the whole build-tier
   proof set**. `apply --batch` appends a candidate batch and persists
   `world-edits.json` (canonical form) only when all of that is green; `preview`
@@ -5278,7 +5051,7 @@ world. Invariants:
   `move-npc`/`move-actor` routability, and the exported-route/POV self-checks.
   `edit` therefore runs `analyze` + `emit::build` (output discarded) before
   persisting, so a script `apply` accepts is a script `build` accepts; the build
-  costs about what the command's own snapshot render does, so a cheaper tier has
+  costs about what the command's own frames do, so a cheaper tier has
   no reason to exist.
 - **Atomic persist.** `world-edits.json` is written to a sibling `.tmp` and
   renamed into place: the artifact of record (ADR-0006) is never left truncated
@@ -5478,7 +5251,8 @@ this doc is current behavior).
 | Stage-1 `horizon` (ocean superflat), `boundary` (derived playable region + 1s return clock), `dw:region`/`dw:cp` mirrors, `DW0320`/`DW0321` (all v0.6) | spec-0013 |
 | Sound + art-title surface (`play-sound`, `narrate` `art`, `delve:art` font, `DW0326`/`DW0328`/`DW0335`) | spec-0014 (v0.6) |
 | Traps: stage-5 `traps[]`, `anchor/trap` dispenser fill + disarm emission, `tnt_explodes` seal, passable plate/tripwire model, `DW0340`/`DW0341`/`DW0342` (all v0.6) | spec-0011 |
-| Visual authoring loop: `delvec snapshot` + `delvec blocking-chart`, the voxel raycaster, scene manifest and cutaway floor plans (§7) | spec-0015 |
+| Visual authoring loop: `delvec frames --campaign` + `delvec blocking-chart`, the frame manifest and cutaway floor plans (§7) | spec-0015 |
+| Review frames drawn in-process by Lumenwright from the worlds the build writes, the placements ledger, cutscene frames, `DW1039`/`DW1040` (§4, §7) | spec-0112 |
 | Souls-mode timed gates: stage-5 `timed_gates[]`, the two-function schedule clock, `DW0377`/`DW0378` (≥20% of cycle) (v0.6) | spec-0016 §4 |
 | Hazard observability: every `timed-gate` span and `volley` kill zone needs a watch cell — standoff, pre-commit reachability, sightline (`DW0388`; error for a bonfire campaign, warning otherwise) | spec-0016 §4 addendum |
 | Timed-gate `disarm`: the hazard ladder's third rung — a jam lever that stops the clock with the gate resting open, permanently (`DW0377` structural, `DW0389` no re-arm, `DW0393` reachable while shut, `DW0420` visible) | spec-0016 §4 |
@@ -5608,206 +5382,161 @@ this doc is current behavior).
 
 ---
 
-## 7. Visual authoring loop (spec-0015)
+## 7. Visual authoring loop (spec-0015, spec-0112)
 
-A **view-only** tier of `delvec`: draft renders of the assembled world plus a
-structured description of the same frame, so an authoring agent can look at its
-own build mid-authoring instead of waiting on a full build + Chunky pass. Two
-commands — `snapshot` (a perspective viewport: what does it look like from here)
-and `blocking-chart` (orthographic cutaway plans: is there room). Both add no DW
-diagnostics, change no emission (build output is byte-identical), and never write
-a datapack.
+Every frame `delvec` draws is drawn **in-process by Lumenwright**
+(`stellarfeline/lumenwright`, a git dependency pinned by revision; `tools.md`
+§4a) with the pinned client jar's own textures and models, from a world the
+engine wrote: a review frame from the world its configuration stands in, a
+campaign frame from the campaign's load world assembled in the same process.
+`compiler::view::frames` is the one caller of the renderer: it opens a world,
+hands it the camera, the sky (above, §4 "The sky a frame is drawn under") and
+the mode, and returns the pixels with the renderer's own statistics.
 
-### `delvec snapshot`
+- **Modes.** `quick` — the lightmap the client draws, from the block and sky
+  light the written world carries — is every review frame's mode; `hq` — a
+  path-traced frame at `frames::REVIEW_HQ_SPP` (256) samples, or the camera's
+  own `spp` — is the showcase cameras' and the panorama's. A shot states its
+  mode in the plan (`render_plan::review_mode`); light-question shots (a
+  declared `lighting` or a `dark` stamp, a sky a step set, a weather that is not
+  clear) are counted on the binding line as drawn quick until the hq light
+  frames land (spec-0112 phase 2).
+- **Backends.** `--backend auto` (default) takes the GPU wgpu finds — Metal,
+  Vulkan, DX12 — and falls back to the CPU, saying so on the first line;
+  `--backend cpu|gpu` names one, and a named backend that is not available is
+  refused (`DW0723`). The CPU backend's pixels are a function of the inputs
+  alone at any `--threads` (`tests/frames.rs` draws one build at 1 and at 10
+  threads and compares every byte); a GPU frame is not byte-stable across
+  drivers, so nothing compares one.
+- **The jar** resolves `--textures`, then `$DELVEWRIGHT_CLIENT_JAR`, then
+  `~/.delvewright/client/minecraft-1.21.11.jar` (where Init I5 puts it); none
+  is `DW0723` naming I5. The jar is EULA-bound, never committed and never
+  fetched by an arm that draws; CI fetches it once per job through
+  `validation/client-jar-cache.sh`, sha256-checked against `versions.toml
+  [minecraft] client_jar_sha256`.
+
+### `delvec frames`
 
 ```
-delvec snapshot <campaign-dir>
-    [--camera x,y,z,yaw,pitch[,fov]]      # explicit eye
-    [--at <anchor> [--orbit <deg>] [--dist <n>]]   # frame a subject
-    [--shot <render-plan id>]             # reuse a planned camera
-    [-o out.png] [--labels]
-    [--width 960] [--height 540] [--timing] [--json]
+delvec frames <build-dir> [-o <dir>] [--shot <id>]... [--labels] [--size 1024]
+    [--backend auto|cpu|gpu] [--threads N] [--textures <jar>]
+delvec frames --campaign <campaign-dir> (--camera x,y,z,yaw,pitch[,fov] | --at <anchor>
+    [--orbit <deg>] [--dist <n>]) [-o out.png] [--labels] [--size 1024] [draw flags]
 ```
 
-Framing precedence (the first three are mutually exclusive, enforced by clap):
-`--camera` → `--at` → `--shot` → a default dollhouse overview of the whole
-layout. Details:
+**A build's frames.** Every shot of `<build-dir>/render-plan.json` (or the
+`--shot`s named), each drawn from `<build-dir>/validation/worlds/<key>/` —
+the world the shot names — under the shot's own sky and mode, into `-o`
+(default `<build-dir>/frames`, a derived artifact of the build:
+`outdir::DERIVED`): `<stem>.png` and `<stem>.manifest.json` per shot (the stem
+is the id with `/` as `_`) and `shot-index.json`. A shot naming a world the
+build directory does not hold is refused before anything is drawn (`DW0721`,
+naming the key and the remedy, a rebuild); so is a plan an older engine wrote
+(a shot with no `world`, `sky` or `mode`) and a `--shot` the plan lacks (the
+shots listed). **What a frame shows** is read off the build's review record
+(`validation/review-frames.json`, below), which `framing::resolve_targets` —
+the one sight rule — wrote over the shot's own world: the index and the
+manifests never re-derive it. The binding lines: first `renderer: lumenwright
+<rev>, backend <name> (<auto: fell back to cpu: why | named>)`, then `frames: <m>
+of <m> shot(s) rendered over <k> world(s) in <s> s, peak <MiB> MiB; per frame
+<min> / <median> / <max> s` and `shows: <t> object(s) in frame over <m>
+frame(s), <u> not drawn by the renderer (DW1039) in <f> frame(s); skies: <j> at
+the world's clock, <q> set by a step`. **`DW1039`** is printed once per frame
+whose `shows` holds a body (kind `body`) the renderer's own statistics for that
+frame put among the kinds it skipped or drew as a fallback box, naming each
+body, its kind, cell, facing, distance, the reason (`items`, `text displays`, or
+no model) and `judge_by`; the frame is right and the body is real, so it is a
+report and never a refusal ([`compiler::view::frameset`](delvec/compiler/view/frameset.md)).
 
-- **`--camera`** — `x,y,z` is the eye in world coordinates; `yaw`/`pitch` are
-  **Minecraft** degrees (`0` = south/+Z, `90` = west/−X, `180` north, `270`
-  east; pitch positive looks **down**), the same convention the v0.6 cutscene aim
-  uses. `fov` is optional (vertical, default `70`).
-- **`--at <anchor>`** — accepts a bare anchor name (`anchor/fire-pit`, matched in
-  the first declaring area) or `area:anchor` (`area/island:anchor/pen`) to
-  disambiguate; a gate anchor resolves to its region centre. `--orbit` is a
-  compass bearing in the same yaw sense (`0` = the camera stands due south of the
-  subject looking north, `90` due west looking east); `--dist` is blocks (default
-  `14`), with the eye raised `0.45 × dist`. **The eye is then pulled along its own
-  sight line until it stands in open air**, so `--at` frames an interior (a
-  cavern fire pit, an alcove) instead of rendering the inside of the mountain.
-  The walk is `compiler::camera::stand_in_open_air`, shared with the render
-  plan's own cameras: standing a camera up in open air is a property of a
-  camera, so there is one of it.
-- **`--shot <id>`** — reuses a `render-plan.json` camera by id (`interior/…`,
-  `npc/…`, `interact/…`, `gate/…`, `seam/…`, `pov/leg{L}/wp{W}`). The render plan
-  states cameras in its own Chunky yaw convention, so the bridge reads only its
-  `pos`/`look_at` world points and re-derives Minecraft yaw/pitch. `pov/…` ids
-  additionally compute the DW0311 critical-path routes; other ids do not.
-  An unknown id lists the available ones. The plan is derived against the same
-  edited assembled world this command rasterises, so a camera the plan stands up
-  out of the rock is stood up identically here — `--shot` frames what the built
-  plan states, never a second opinion about it.
+**A campaign frame** (`--campaign`): one quick frame of a campaign's load
+world, for placing things — the authoring loop's viewport. The campaign is
+parsed, placed and assembled in this process (no emission, no nav proofs:
+validation diagnostics are printed and never gate the frame, so a half-written
+campaign still draws), its load world written under the PNG's directory as
+`world/`, and drawn from the camera stated by hand: `--camera` in Minecraft
+degrees (`0` = south/+Z, `90` = west/−X; pitch positive looks **down**; `fov`
+vertical, default 70), or `--at <anchor>` (a bare anchor name or
+`area:anchor`) from `--dist` blocks (default 14) at compass bearing `--orbit`,
+the eye then pulled along its sight line into open air
+(`compiler::camera::stand_in_open_air`, the render plan's own walk). A
+campaign frame lays no datapack placement — its world is the templates, the
+assembly and the load configuration — and writes the PNG, its manifest and
+`world/`, nothing else.
 
-**Pipeline stages required** — parse → `Plan::build` (placement) → read the
-placed `.nbt` → `assembled::assembled_blocks`. That is all: no relight, no nav
-proofs, no emission. Validation diagnostics are printed but **never gate** the
-render (only an unparseable campaign, exit 1, or a placement failure, exit 3,
-stops it), because the loop exists precisely to look at builds that are not
-finished yet.
+**`--labels`** stamps every target's outline and name on the frame; it changes
+the frame and never the manifest.
 
-**Renderer** — a voxel DDA raycaster (`compiler::snapshot`) over a chunked
-flattening of the assembled block map. Shading is block-palette colour ×
-face brightness (top brightest, bottom darkest, the two horizontal axes
-distinct — the "ambient occlusion by face orientation") × a **grain** whose
-amplitude is the block's measured roughness × a block-edge relief darkening,
-then a distance fade toward the horizon. Background is a sky
-gradient; for an `ocean`-horizon campaign the world generator's sea plane is
-drawn analytically at `SEA_LEVEL` (a world-generation backdrop, never part of
-the voxel model, never occluding a manifest target).
-
-Three properties worth stating explicitly:
-
-- **There is no lighting model.** The raycaster sees geometry regardless of block
-  light, so a pitch-black cavern renders as legibly as a noon meadow — which is
-  exactly what makes this the right tier for reviewing dark areas. A frame that
-  looks fine here and black in Chunky has a *lighting* defect, not a geometry
-  one, and the two tiers separate that. Emissive blocks (glowstone, lantern,
-  campfire, torch, …) still render at full brightness so a fire pit reads as one.
-- **Only blocks exist.** Entities (NPC mannequins, scripted actors, item
-  displays) are not in the assembled model and are not drawn; their *posts* are
-  in the manifest and, with `--labels`, stamped on the frame.
-- **The colour is the pinned client jar's, and a block the pin does not have
-  renders magenta** (`255,0,255`, the same missing-texture key `delvec render`'s
-  fidelity gate scans for). `snapshot::block_color` reads
-  `crates/delvec/data/block-appearance-1.21.11.json` — every block of the pinned
-  registry at its default state, `minecraft:plains` tints, derived by
-  `compiler::view::blockcolor::Deriver` from the jar the GPU path textures with,
-  so the draft and the render hold one opinion about what a block looks like.
-  1161 of 1161 non-air blocks resolve; `crates/delvec/tests/preview_palette.rs`
-  enumerates the registry and reds on any that does not, and holds the table's
-  recorded `mc_version` to the engine's pin, so a pin bump that leaves the table
-  behind reds with no jar in hand. The jar is EULA-bound and never committed; the
-  derivation's output is, as for the shape-carrying property table and the font
-  metrics. `python3 tools/maintenance/refresh-block-appearance.py <jar>`
-  re-derives the table and proves every entry against that jar in the same run;
-  the file is never edited by hand. The derivation it runs is a `cargo` example
-  and not a `delvec` flag, because `delvec` is what an authoring session runs and
-  a creator never holds this file. Keyed by block id: the grid draws every cell
-  as a full cube, so a blockstate's own geometry has nowhere to go and
-  `oak_slab[type=top]` shades as `oak_slab`. **What varies inside a face is the
-  grain**, and the two halves of it are in different places. The PATTERN is this
-  renderer's: an FNV-1a hash of the world cell, the face and a 4×4 sub-cell, so
-  it belongs to the wall rather than to the camera and two runs give the same
-  bytes (ADR-0006). The AMPLITUDE is the block's measured `roughness` — the
-  standard deviation of its texture's brightness as a fraction of that texture's
-  mean — scaled so the drawn face's spread is the spread the texture has, which
-  is why smooth stone reads smooth and cobble reads rubbly. Without it a wall of
-  one material is one rectangle of one value whatever the material: a draft worth
-  as much as a paint swatch, and, for a dark stone, a frame the gallery render
-  gate reads as showing no scene at all. **The table holds one number and no
-  layout**, which is what lets it be committed while the jar cannot be: a
-  reduced rendition of an asset would not be (ADR-0013).
-  Magenta therefore means one of three
-  things: `jigsaw` or `structure_block` reached the model (the solver strips
-  both — the magenta is the alarm), a template carries an id 1.21.11 renamed
-  (`chain` → `iron_chain`), or a datapack block outside `minecraft:`. **The
-  fallback is never silent**: every surface that draws a grid prints `unpainted:
-  N of M block kind(s) …` on stderr naming every id
-  (`snapshot::unpainted_report`).
-
-**`--labels`** burns in: a coordinate lattice tinted onto every visible **top**
-face on a 16-block X/Z line (so it follows the terrain rather than an invented
-flat plane), `x,z` readouts at the ten nearest visible lattice intersections, an
-outline per in-frustum target (dim when occluded), and the target's name. Names
-are placed **visible-first** and nudged down to avoid overlap; an occluded name is
-stamped only where it lands clear on the first try. `--labels` changes the frame
-and never the manifest.
-
-**Output** — the PNG at `-o` (default `snapshot.png`) and a manifest sidecar at
-the same path with its extension replaced: `shot.png` → `shot.manifest.json`.
-
-### Scene manifest (`manifest_version: 2`)
+### The frame manifest (`manifest_version: 3`)
 
 ```json
 {
-  "manifest_version": 2,
-  "campaign_id": "nobodys-cave-island",
+  "manifest_version": 3,
+  "campaign_id": "gallery",
   "delvec": "<x.y.z>",
-  "image":  { "path": "shot.png", "width": 960, "height": 540 },
+  "renderer": "lumenwright <rev>",
+  "backend": "cpu",
+  "shot": "pov/leg4/wp0",
+  "image":  { "path": "pov_leg4_wp0.png", "width": 1024, "height": 1024 },
   "camera": { "pos": [x,y,z], "yaw": 0.0, "pitch": 25.7, "fov": 70.0,
               "convention": "minecraft degrees: yaw 0 = south (+Z) …" },
-  "world":  { "block_kinds": 48,
-              "bounds": { "min": [x,y,z], "max": [x,y,z] },
-              "sea_plane": 62 },
-  "pieces": [
-    { "area": "area/island", "index": 1, "prefab": "prefab/island-greenfield",
-      "origin": [0, 60, -30], "size": [16, 12, 16], "rotation": "none",
-      "box": { "min": [0, 60, -30], "max": [15, 71, -15] } }
-  ],
+  "world": "after-trigger-strike-the-sentinel",
+  "sky": { "time": "noon", "daytime_ticks": 6000, "weather": "clear", "set_by": null },
+  "mode": "quick",
   "targets": [
-    { "id": "anchor/fire-pit", "kind": "anchor", "area": "area/island",
-      "pos": [9, 69, -56],
+    { "id": "dw_npc_curator@10,67,5", "kind": "body", "body": "mannequin",
+      "facing": "south", "pos": [10, 67, 5],
       "screen_bbox": { "x": 466, "y": 264, "w": 28, "h": 36 },
       "occluded": false, "distance": 14.724 }
   ],
-  "out_of_frame": [ { "id": "anchor/pen", "kind": "anchor", "area": "…",
-                      "pos": [x,y,z] } ]
+  "out_of_frame": [ { "id": "anchor/pen", "kind": "anchor", "area": "…", "pos": [x,y,z] } ],
+  "undrawn": [],
+  "unchecked": [],
+  "renderer_stats": { "entities": { "rendered": {}, "fallback_boxes": {}, "skipped": {} },
+                      "block_entities": { "rendered": {}, "skipped": {}, "text_lines": 0, "glyphs": 0 } },
+  "frame": { "targets_in_frame": 1, "targets_out_of_frame": 1, "featureless": null }
 }
 ```
 
-- **`pieces`** is the **layout** half of the scene, beside the point/region
-  targets: every placed structure piece of the whole plan (not just the ones in
-  frame), in plan order — areas as the plan holds them, pieces entry-first
-  within each area. It carries exactly the inputs a `piece-local` edit frame
-  resolves against (`edit::resolve_frame_point`: `origin + rotation(local)`
-  against `area.pieces[index]`): the per-area `index` (the frame's `piece`
-  field), the `prefab` guard value, the `/place template` `origin` + `rotation`
-  token, the unrotated `size`, and the resulting inclusive `box`. Without it an
-  editor authoring a piece-local frame would back-solve the index and the
-  transform from the rendered geometry by hand.
+A campaign frame's manifest carries the layout half instead of `shot`, `sky`
+and `unchecked`: `world` is `{block_kinds, bounds, key: "at-load"}` and
+`pieces` lists every placed structure piece of the plan — `area`, the
+per-area `index` (the `piece` field of a `piece-local` edit frame), the
+`prefab` guard value, the `/place template` `origin` and `rotation`, the
+unrotated `size` and the inclusive `box` — the exact inputs
+`edit::resolve_frame_point` resolves against. `delvec cameras` and `delvec
+panorama` write a manifest beside every frame too (camera, world key and path,
+sky, mode, renderer, backend, `frame.featureless`; the panorama its chunk
+rectangle, its subject box and the share of the frame the box takes).
+
 - **Kinds**: `anchor` · `gate` · `npc-post` · `actor-post` · `interact` ·
-  `stealth-zone` · `trigger`. A point target carries `pos` (an inclusive cell);
-  a region target carries `box: {min,max}` (inclusive cells) — never both.
-  `gate` is the gate region, `stealth-zone` a `begin-stealth` zone box
-  (`stealth-<beat>/<anchor>`), `trigger` an `EnvTrigger` — a box of its `range`
-  for `approach`, the single interaction cell for `strike`/`use`/`step`.
-- **Deliberate duplication**: an `interact` objective's marker and the `anchor`
-  it binds to are the same cell under two ids. They are different *things* —
-  "the interact is occluded" and "the anchor is occluded" are different findings
-  — so no deduplication is applied.
+  `stealth-zone` · `trigger` · `body`. A point target carries `pos`; a region
+  target `box: {min,max}` (inclusive cells) — never both. A `body` is an entity
+  the frame's world holds from the placements ledger (an NPC, an actor, a
+  marker, an assembly's part), named `<its first tag that is no class
+  tag>@<cell>`, with its entity kind and facing; an entity that draws nothing
+  (an `interaction` hitbox, a `marker`, a display with nothing to display) is
+  no body.
 - **`screen_bbox`** is the projected inclusive cell box, clipped to the frame,
-  in whole pixels with the origin top-left. This is the vocabulary spec-0015
-  pillar 2 asks for: review feedback and edits address ids and boxes.
-- **`occluded`** = every one of nine sight lines (the box centre plus the corners
-  of a slightly inset box) meets a block that is **not part of the target**. Both
-  refinements matter: a marker often *is* a block (`anchor/fire-pit` names the
-  campfire), and a single centre ray grazing the rim of a platform would call the
-  thing standing on it hidden.
-- **`out_of_frame`** carries the same world-space fields, with no screen box, for
-  every known target outside the frustum. It is what makes "the subject is absent
-  entirely" machine-visible instead of something a reviewer has to notice.
-- **Ordering** is `(kind, area, id)`; floats are rounded to 3 decimals.
+  in whole pixels, origin top-left; **`occluded`** = every one of nine sight
+  lines (the box centre and the corners of a slightly inset box) meets a block
+  that is not part of the target (`framing::VoxelGrid::occluded_target`, the one
+  sight rule); **`out_of_frame`** carries every known target outside the frustum,
+  so "the subject is absent entirely" is machine-visible.
+- **`frame`** is the verdict of the arm that drew it: `targets_in_frame`,
+  `targets_out_of_frame` and `featureless` (`null`, or the distinct-colour count
+  when the frame shows no scene: `view::detect::is_featureless`).
+  `tools/ci/check-gallery-render.py` reads these back rather than re-deriving
+  them.
+- **Determinism (ADR-0006)**: targets are sorted `(kind, area, id)`, floats
+  rounded to 3 decimals, no clock in the manifest or the index, and no pixel
+  hash in either; the PNG encoder pins its DEFLATE level.
 
-**Determinism (ADR-0006)** — no RNG, clock, parallelism or hash-order iteration:
-the voxel palette comes from a `BTreeMap` walk, targets are sorted, and the PNG
-encoder (`compiler::png`) pins its DEFLATE level. Two runs on one input produce
-byte-identical PNG **and** manifest; `crates/delvec/tests/snapshot.rs` asserts
-both.
-
-**Performance** (measured, `nobodys-cave-island`, release build, macOS/M-series,
-single-threaded): assemble + voxel-grid flattening ≈ **30 ms**, a 960×540 frame
-with `--labels` + manifest ≈ **190 ms**. `--timing` prints both to stderr (never
-to the output, so it cannot affect byte-identity).
+**The shot index** (`shot-index.json`, `compiler::view::index`): `{campaign_id,
+count, shots[]}`, one entry per frame drawn, in plan order — `id`, `kind`,
+`leg`, `objective`, `image`, `expect`, `lighting`, `world`, `sky`, `mode`,
+`backend`, `renderer`, `shows`, `undrawn`, `out_of_frame`, `unchecked`, and a
+cutscene's `{step, shot, tick, seconds}`. It is the (image ↔ expect) pairing a
+reviewing agent reads first.
 
 ### `delvec blocking-chart`
 
@@ -5856,12 +5585,12 @@ bands, lowest first, bypassing the merge rule — coverage outranks tidiness.
 gives the cavern its own tight frame at its own larger scale, instead of a small
 drawing in a large field of void.
 
-**Overlays**, in order: terrain flat-shaded by [`snapshot::block_color`] and
+**Overlays**, in order: terrain flat-shaded by [`blocking::block_color`] and
 lightened with height within the cut (so a step reads as a step); a green wash on
 the band's walkable cells; the DW0311-proven critical-path walk corridor as an
 orange tint; then an outlined, labelled marker for every anchor, gate, NPC/actor
 post, interact marker, stealth zone and trigger region whose elevation range
-meets the cut. Labels use the same kind colours as `snapshot --labels` and the
+meets the cut. Labels use the same kind colours as `frames --labels` and the
 same deterministic placer; a label that cannot be fitted on the plan is dropped
 from the image but recorded in the index, never pushed off the edge. Routing is
 best-effort — a campaign whose critical path does not route yet charts without
@@ -5869,6 +5598,27 @@ the corridor tint rather than refusing to chart.
 
 Orientation is **+X right, +Z down (north up)**; each slice carries a title bar
 naming its area, band index, floor Y and cut range.
+
+**The colour is the pinned client jar's, and a block the pin does not have
+draws magenta** (`255,0,255`, the missing-texture key `delvec render`'s fidelity
+gate scans for). `blocking::block_color` reads
+`crates/delvec/data/block-appearance-1.21.11.json` — every block of the pinned
+registry at its default state, `minecraft:plains` tints, derived by
+`compiler::view::blockcolor::Deriver` from the jar the frames are drawn with,
+so the chart and the frame hold one opinion about what a block looks like.
+1161 of 1161 non-air blocks resolve; `crates/delvec/tests/preview_palette.rs`
+enumerates the registry and reds on any that does not, and holds the table's
+recorded `mc_version` to the engine's pin. The jar is EULA-bound and never
+committed; the derivation's output is, as for the shape-carrying property table
+and the font metrics. `python3 tools/maintenance/refresh-block-appearance.py
+<jar>` re-derives the table and proves every entry against that jar in the same
+run; the file is never edited by hand. **The table holds a few numbers and no
+layout** per block (its colour, coverage, roughness and model box), which is
+what lets it be committed while the jar cannot be (ADR-0013). Magenta means
+`jigsaw` or `structure_block` reached the model, a template carries an id the
+pin renamed (`chain` → `iron_chain`), or a datapack block outside `minecraft:`;
+the fallback is never silent: `unpainted: N of M block kind(s) …` on stderr names
+every id (`blocking::unpainted_report`).
 
 **Index** (`blocking-chart.json`, `chart_version: 1`):
 
@@ -5960,142 +5710,97 @@ equals load byte for byte (the remedy is to remove the field or name the first
 step after which a block moves that the path carries once; or the line says the
 path moves none).
 
-**The world the engine writes** (spec-0089 §5; `compiler::view::world`). One
+**The world a camera's frame is drawn from** (spec-0089 §5, spec-0112 §5). One
 world per distinct configuration a framed camera stands in, under
 `<out>/worlds/<key>/` — `at-load`, or `after-<step>` (`/` as `-`) with
-`-on-<branch slug>` for a branch — named in each scene by absolute path, since
-Chunky resolves it against the rendering process's working directory. It holds
-`level.dat` (gzip, mtime 0: `Data{DataVersion, LevelName, SpawnX/Y/Z,
-version}`, the spawn the campaign's start cell) and `region/r.<x>.<z>.mca`,
-nothing else: per chunk holding a cell, `DataVersion` (the pin's, 4671),
-`xPos`, `zPos`, `yPos` (−4), `Status: minecraft:full`, and a section for each
-section holding a cell — `Y` a byte, as the game writes it and the pinned core
-reads it (an int `Y` loads as an empty chunk) — with `block_states{palette,
-data}` and `biomes{palette, data}`, palettes in first-seen order over the
-section's own index order, every state completed with the pinned defaults of
-the properties it leaves out (what the game resolves them to on load), indices
-packed at `max(4, ⌈log2 n⌉)` bits for blocks and `max(1, ⌈log2 n⌉)` for biomes,
-never across a long, `data` absent for a one-entry palette. Biomes are the
-build's biome map (`horizon::biome_map`) sampled at each 4-cell's centre. Every
-region timestamp is zero, zlib at level 6, chunks in index order, sectors
-contiguous; two writes of one map are byte-identical, and each world's sha-256
-over its region files in name order is printed. **A cell no build write reached
-holds the horizon generator's block** (`world::Ground`), because the server's
-world is the generator's wherever the datapack writes nothing: under `horizon:
-ocean` the stack `plan::OCEAN_LAYERS` states once and `generator-settings` is
-built from (bedrock at −64, stone to 54, water to 62), laid in every written
-chunk's sections from −64 up; under `void` and `valley` nothing. Which cells a
-write reached is `assembled::Reached` (one bit per height per column over
-−64..63): a template's placed cells, its air included and its `structure_void`
-not; an area's mass and seals; the surround; every edit write; the picture
-base's cells; and the regions the world's own configuration lays
-(`Configuration::laid_regions`), air writes included. `<g>` on the binding line
-counts the cells the generator fills. No light arrays, heightmaps,
-entities, block entities or ticks. **`--world` is gone**: a showcase frame has
-one world source. The server save (`validation/world-save.sh`) is the
-instrument that checks the writer (`DW0955`, `tools/ci/check-written-world.py`),
-and stays the world source of `delvec scene` and `delvec panorama`. The check is
-bound to staging: `check-written-world.py --record` writes its verdict named by
-the build's manifest sha256, and `tools/creator/staging-gate.py` mints no
-admission token without a passing record of that build (`--written-world`).
+`-on-<branch slug>` for a branch — written through the one writer every frame
+world goes through (`view::review::WorldMaker`, `view::world::encode_world`;
+§4 "The worlds the build writes" states its bytes), with the placements
+ledger's rows the camera's arrival holds laid from the build's own
+`validation/placed.json`. **`--world` is gone**: a frame has one world source.
+The server save (`validation/world-save.sh`) is the instrument that checks the
+writer — cells (`DW0955`) and placed objects (`DW1040`), both in
+`tools/ci/check-written-world.py` — and the check is bound to staging:
+`check-written-world.py --record` writes both verdicts named by the build's
+manifest sha256, and `tools/creator/staging-gate.py` mints no admission token
+without a record of that build that passes both (`--written-world`).
 
 **`delvec written-world <campaign-dir> -o <world-dir>`** writes the load world
-alone — the configuration `view::beat::load_blocks` derives, the world a camera
-with no `after` stands in — from the campaign and `--prefabs`, with no
-`design.json` or `design/cameras.json` read, so a campaign built without a
-design gate (a demo level) has its written world. It assembles the campaign as
-`delvec cameras` does and writes through the same writer, so on a campaign whose
-record frames a camera at load its `level.dat` and region files are
-`<out>/worlds/at-load`'s byte for byte; `-o` is the world directory itself.
-Prints the `world: at-load …` line (chunks, cells, sha-256, absolute path) and
-the count of block-entity pictures drawn blank; `--json` prints the path. A
-campaign that does not plan exits 3 with its own refusal. It is the written half
-`check-written-world.py` reads, in CI and at the skill's step 10.
+alone: the build, run in memory, of which `validation/worlds/at-load` is
+written to `-o` — the same bytes `delvec build` writes there, because it is
+that world (`tests/review_frame_worlds.rs` compares every file). No
+`design.json` or `design/cameras.json` is read, so a campaign built without a
+design gate (a demo level) has its written world. Prints the `world: at-load …`
+line; `--json` prints the path. A campaign that does not build exits with its
+own refusal. It is the written half `check-written-world.py` reads, in CI and at
+the skill's step 10.
 
-**What a frame does not show, by name** (spec-0089 §6): entities (the pinned
-core draws none of the kinds the engine summons, from any world); block-entity
-content — a sign's text, a banner's pattern, a head's profile, a lectern's book,
-counted on the binding line from the blocks of those kinds the world holds; a
-`set-atmosphere` repaint by a beat (the biomes are the map at load, and the line
-says `biomes: at load`); the configuration's clock (the frame's sky is the
-picture's, spec-0079); a fluid's spread past the cells a `Flood` write lays; a
-write only an unforced root lays; **a `collapse`** — a collapse reaches the
+**What a frame does not show, by name** (spec-0089 §6, spec-0112 §11): the
+review record's `unchecked` list (§4 "The sky a frame is drawn under"); a
+`set-atmosphere` repaint by a beat (the biomes are the map at load, and the
+line says `biomes: at load`); a fluid's spread past the cells a `Flood` write
+lays; a write only an unforced root lays; **a `collapse`** — it reaches the
 route proofs as `DW0445`'s settled debris, not as a region write, so no
-configuration lays its debris or its `then_floor` and a frame after a collapse
-beat shows the ceiling standing; and a gated trap's trigger re-armed by a later
-beat (it is drawn as at load).
+configuration lays its debris; and a gated trap's trigger re-armed by a later
+beat (it is drawn as at load). A camera frame is of its picture's sky, not of
+the configuration's clock (`clock: as the picture` on its `after:` line).
 
-Emission writes one Chunky scene per camera (`<campaign>_camera_<name>.json`)
-against a build's `render-plan.json`: the camera verbatim, rounded to six
-decimals; the camera's sky (`scene::sky_of`, §4 above); the layout and its landform
-in the chunk list and Y clip; the ocean plane on an ocean horizon; no review
-emulation. `delvec panorama` emits through the same scene builder
-(`camera::world_scene`), so a solved camera and a stated one are one scene shape,
-and prints its solved camera as a record line. Refusals are `DW0721` (exit 2),
-before any file: a record that does not parse or carries an unknown key, an
-illegal name, two cameras of one name, an empty `answers` or one naming no row,
-a pitch outside −90..90, a field of view outside
-(0, 180), a zero frame or sample target, an empty record, a record for another
-campaign than the build, an `--only` name the record lacks, a `sky` with a
-member missing or a keyword outside the enums, **a stated `sky` equal to the
-answered row's** (a derivation typed where a judgement belongs; the remedy is to
-remove the field), an `after` its rules refuse (above), and a plan whose `sky`
-states no `weather`. A campaign that does not plan is refused with its own
-build code (exit 3), because the world is assembled from it. **Scene emission is
-also held to `DW0900`** (exit 2): a record leaving any approved image unanswered
-emits no scene, `--only` included, because the record is what is judged and a
-set with a hole in it is not a set. Every run prints how many approved images
-have a camera and names the rest.
+`delvec cameras` draws one frame per camera — hq at the camera's frame and
+samples as `<stem>.png`, `--draft` a quarter of the frame at 128 samples as
+`<stem>_draft.png`, `--preview` quick at half the frame as
+`<stem>_preview.png` — each with its manifest, from the world its camera stands
+in, under the camera's sky. `delvec panorama` draws the solved whole-map camera
+hq from the build's load world through the same call and prints its camera as a
+record line. Refusals are `DW0721` (exit 2), before any frame: a record that
+does not parse or carries an unknown key, an illegal name, two cameras of one
+name, an empty `answers` or one naming no row, a pitch outside −90..90, a field
+of view outside (0, 180), a zero frame or sample target, an empty record, a
+record for another campaign than the build, an `--only` name the record lacks,
+a `sky` with a member missing or a keyword outside the enums, **a stated `sky`
+equal to the answered row's** (the remedy is to remove the field), an `after`
+its rules refuse (above), and a plan whose `sky` states no `weather`. A
+campaign that does not plan is refused with its own build code (exit 3).
+**Drawing is held to `DW0900`** (exit 2): a record leaving any approved image
+unanswered draws no frame, `--only` included; `--preview` is exempt — it is the
+instrument that closes the hole, and prints the count it is closing. Every run
+prints how many approved images have a camera and names the rest.
 
-**Where each scene's sky comes from** (spec-0079 §5), one function, three callers:
+**Where each frame's sky comes from** (spec-0079 §5, spec-0112 §7.6):
 
-| Scene | `time`, `weather` from |
+| Frame | `time`, `weather` from |
 |---|---|
 | a showcase camera (`delvec cameras`) | the camera's `sky`, else the `design.json` row it `answers` |
 | the whole-map panorama (`delvec panorama`) | `render-plan.json`'s `sky` |
-| a review frame (`delvec scene`: POV, interior, seam, …) | `render-plan.json`'s `sky` |
+| a review frame (`delvec frames`) | the shot's own `sky`: its configuration's clock |
 
 A camera with no `sky` is a frame of its picture, so it takes its row's hour and
-weather, not the world's initial ones — `DW0890` holds every row's sky to a sky
-the party can be in. The record's sky rule (`camera::resolve_sky`) is asked by
-`delvec cameras` (and `--preview`), `delvec place-camera` and `delvec build`
-alike (`compiler::design::answered`, exit 3), one sentence wherever it is read.
-**Binding line**, printed by every `delvec cameras` run, refused or not, beside
-the `answers:` sentence: one line per camera this run frames — `sky: <name>
+weather — `DW0890` holds every row's sky to a sky the party can be in. The
+record's sky rule (`camera::resolve_sky`) is asked by `delvec cameras` (and
+`--preview`), `delvec place-camera` and `delvec build` alike
+(`compiler::design::answered`, exit 3). **Binding line**, printed by every
+`delvec cameras` run, refused or not: one line per camera — `sky: <name>
 <time>+<weather> <derived from <row> | stated> — <weather> sky at daytime
-<tick>: the game's sky as a map, its light … (the lightmap's, peak channel),
-sun …` — and `skies: D derived, S stated, over C
-camera(s)[ (R refused)]; weathers emitted: {…}`, whose set names the non-clear
-weathers. A record stating no sky prints `0
-stated`; a rain delve rendering clear prints the empty set. Beside them, per
-framed camera, `after: <name> at load` or `after: <name> after <step> (step <i>
-of <n> on <the critical path | branch `<id>`'s path>): <c> cells moved from load,
-<u> unforced write(s) not laid, <b> block entit(ies) omitted; biomes: at load;
-clock: as the picture` — `<c>` the cells whose block differs from the load
-world's (`Configuration::moved_from`); per written world, `world: <key> <chunks>
-chunk(s), <cells> cell(s), <g> ground cell(s), sha256 <hash> -> <dir>`; and `configurations: <k>
-written for <c> camera(s), <a> after a step, <l> at load`. A record with no
-`after` prints `0 after a step` and one world, `at-load`.
+<tick>: the client's sky colours, its light … (the lightmap's, peak channel),
+sun <drawn | not drawn>` — and `skies: D derived, S stated, over C camera(s)[ (R
+refused)]; weathers emitted: {…}`, whose set names the non-clear weathers.
+Beside them, per framed camera, `after: <name> at load` or `after: <name> after
+<step> (step <i> of <n> on <the critical path | branch `<id>`'s path>): <c>
+cells moved from load, <u> unforced write(s) not laid, <b> block entit(ies)
+omitted; biomes: at load; clock: as the picture`; per written world the
+`world:` line (§4); `configurations: <k> written for <c> camera(s), <a> after a
+step, <l> at load`; the renderer line; `drew|previewed <n> camera frame(s) for
+<s> of <t> stated camera(s) -> <dir> (<mode> in <s> s)`; and `lens: <k> of <n>
+camera(s) clear of every block by 0.25 block, <f> flagged` — a camera whose lens
+is inside or within `LENS_CLEARANCE` of a placed block is named, a report, since
+a pinhole camera has no near plane.
 
 `--bracket` appends, after each camera, the camera moved one field by one step
 each way (`dolly` along the heading, `truck` to the frame's right, `rise` up),
-skipping any candidate outside the legal ranges, and writes every emitted camera
+skipping any candidate outside the legal ranges, and writes every drawn camera
 to `candidates.json` in the record format; a moved candidate is `estimated`
-whatever its camera was. `--draft` divides the frame by 4 and
-caps samples at 128 under `<stem>_draft`. A candidate carries its camera's
-`after`, so it stands in its camera's world. `--preview` writes no scene: it
-assembles the world as `snapshot` does (it reads `--prefabs`) and rasterises each
-camera, in the configuration it stands in, at half its frame as `<stem>_preview.png`, byte-identical to `snapshot
---camera` with the same numbers, and names each camera whose lens is inside or
-within `LENS_CLEARANCE` (0.25 block) of a placed block, with a `lens:` binding
-line — a report, since the grid counts every block as a full cube. The material
-is the pinned jar's, off the same derivation the emitted scene is path-traced
-with, so what the preview says a wall is made of is what the render will say; a
-block the pin does not have is magenta and named on stderr (`unpainted:`, above).
-It draws any
-record its reader accepts and is never refused by `DW0900`: it is the instrument
-that closes the hole, and it prints the count it is closing. Byte-deterministic (ADR-0006): the same record,
-plan and options give the same scene, candidate and preview bytes.
+whatever its camera was, and carries its camera's `after`. Byte-deterministic on
+the CPU backend (ADR-0006): the same record, plan and options give the same
+frame, manifest and candidate bytes (`tests/post_beat_camera.rs`).
 
 ### `delvec place-camera` — the record's one writer
 
@@ -6136,17 +5841,18 @@ and write nothing.
 ### `delvec edit apply` / `delvec edit preview` (spec-0017)
 
 The map editor's write half, closing the loop with the read half above: edit
-verb → deterministic replay → snapshot. Both subcommands run full validation
+verb → deterministic replay → frame. Both subcommands run full validation
 (exit 1 on any error — unlike the view commands, an edit session must not
 build on a broken campaign), `Plan::build`, the checked replay (§4 "The map
-editor edit stage"), then render **one labelled snapshot + manifest per
-batch** into `-o` (default `edit-shots/`): the camera frames the batch's
+editor edit stage"), then draw **one labelled quick frame + manifest per
+batch** into `-o` (default `edit-shots/`) from the edited load world, written
+under `-o` as `world/`: the camera frames the batch's
 edited AABB over the final edited world, dollhouse-style, pulled into open
 air like `--at` (so an interior edit is viewed from inside its room). File
 names are the batch's kebab (`batch/dress-floor` → `dress-floor.png` +
 `dress-floor.manifest.json`).
 
-After the snapshots, both subcommands run the **entire build-tier proof set** —
+After the frames, both subcommands run the **entire build-tier proof set** —
 the DW02xx reachability analysis and `emit::build` itself, output discarded. The
 per-batch invariants are only a subset (they miss `DW0308` cutscene clipping,
 `DW0327` stealth zones, `DW0342` trap completability, `DW0312` wave seating,
@@ -6174,7 +5880,8 @@ must be a function of this repo:
 - `encode_rgba_stored` (uncompressed) — the `delve:art` font atlas, whose bytes
   are hashed into a shipped resource pack.
 - `encode_rgba` (DEFLATE at a pinned level, via the existing `flate2` dep) — the
-  snapshot renders, which are megapixel review artifacts.
+  frames, the blocking charts and the contact sheets, which are megapixel review
+  artifacts.
 
 ---
 

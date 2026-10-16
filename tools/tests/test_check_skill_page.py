@@ -971,20 +971,19 @@ def test_both_arms_bind_to_every_path_the_page_names(mod, tree, engine):
         assert judged > 0 and judged <= of
 
 
-def test_the_pin_arm_reds_when_the_pinned_tree_lacks_a_chunky_script(
+def test_the_pin_arm_reds_when_the_pinned_tree_lacks_a_named_script(
     mod, tree, engine, tmp_path
 ):
     """The property rule 21's second arm exists to hold, tested by removing it.
 
-    `validation/chunky.sh` is one of the two paths that paid for this arm: the
-    page names it, this tree carries it, and the tree at the OLD 40-hex pin did
-    not. The perturbation is a real git tree — built through a private index so
+        `validation/world-save.sh` is a path the page names and this tree
+    carries. The perturbation is a real git tree — built through a private index so
     this repository's own is untouched — with that one path removed, handed in
     as the object the pin resolves to. Only the PIN arm may red: the shipping
     tree still carries the file, which is exactly the state that used to be
     green.
     """
-    removed = "validation/chunky.sh"
+    removed = "validation/world-save.sh"
     assert removed in mod.shipping_tree()
     index = tmp_path / "perturbed.index"
     env = {**os.environ, "GIT_INDEX_FILE": str(index)}

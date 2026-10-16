@@ -5,8 +5,8 @@ established, or it says out loud that it is using a different one.** A creator's
 `Init` downloads the pinned release archive, verifies its checksum and puts
 `delvec` on `PATH` (ADR-0023). What the third end-to-end drill found is that the
 steps after `Init` each answered the question privately and silently, in opposite
-directions — `playtest-server.sh` ignored `PATH` and compiled the workspace,
-`render-shots.sh` took `PATH` unconditionally and never looked at its version.
+directions — one step ignored `PATH` and compiled the workspace, another took
+`PATH` unconditionally and never looked at its version.
 
 So the perturbations here are the two defective shapes themselves:
 
@@ -243,11 +243,11 @@ def test_an_unreadable_pin_refuses_rather_than_choosing(tmp_path: Path) -> None:
 def test_both_creator_steps_go_through_the_shared_rule(tmp_path: Path) -> None:
     """Not one script: the rule applied to the one script a drill walked is half a gate.
 
-    Both creator-facing steps that reach for `delvec` source the library and
-    neither keeps a private default. Read off the scripts, so a third private
-    resolver added later reds here.
+    Every creator-facing shell step that reaches for `delvec` sources the
+    library and keeps no private default. Read off the scripts, so a second
+    private resolver added later reds here.
     """
-    for rel in ("tools/creator/playtest-server.sh", "validation/render-shots.sh"):
+    for rel in ("tools/creator/playtest-server.sh",):
         src = (REPO / rel).read_text()
         assert "tools/lib/delvec-bin.sh" in src, rel
         assert "dw_resolve_delvec" in src, rel

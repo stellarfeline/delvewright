@@ -79,7 +79,8 @@ The only path from DSL to datapack (ADR-0001). Full behavior:
 | `metrics` | export the metrics standard — the numbers a level is built to (compiler.md §10) | — (`--json` puts the `DW0813` notice in the diagnostic shape) |
 | `l10n-inventory <dir>` | l10n key inventory as JSON, each row with its kind, speaker, situation and staleness (transcreation input) | `--lang` |
 | `l10n-apply <dir> --table <f>` | write the `--lang` sidecar from a table of canonical English → translation (spec-0071 §4) — **the verb a translating agent has instead of addressing positional keys**. Every inventory row whose English the table carries is written with its `source`; a row already translated from unchanged English is kept; a row translated with no `source` is kept and counted apart, since nothing can say whether it still matches. The sidecar is exactly the inventory, so an orphan row is impossible and an inserted effect renumbers the `fx.` keys under the tool rather than under the translator. Prints `N of M rows translated`, every English still missing, every table entry that matched no row, and every English two keys share — the one thing a table keyed by English cannot say, so the sidecar stays directly editable for those. Exit 1 when anything is missing or unmatched, the signal `fmt --check` gives; the bytes are written either way, in canonical form | `--lang`, `--table <file\|->` |
-| `snapshot <dir>` | one draft frame + scene manifest (spec-0015) | `--camera x,y,z,yaw,pitch[,fov]`, `--at <anchor>`, `--orbit <deg>`, `--dist <n>`, `--shot <id>`, `--labels`, `--width 960`, `--height 540`, `-o snapshot.png`, `--timing` |
+| `frames <build-dir>` | every review frame of a build, drawn in-process by Lumenwright from the world each shot stands in, with `shot-index.json` (spec-0112) | `-o <build-dir>/frames`, `--shot <id>`…, `--labels`, `--size 1024`, `--backend auto\|cpu\|gpu`, `--threads N`, `--textures <jar>` |
+| `frames --campaign <dir>` | one quick frame of a campaign's load world, assembled in-process, for placing things (spec-0015) | `--camera x,y,z,yaw,pitch[,fov]` \| `--at <anchor> [--orbit <deg>] [--dist <n>]`, `--labels`, `--size 1024`, `-o frame.png`, draw flags |
 | `blocking-chart <dir>` | per-elevation cutaway floor plans (spec-0015) | `-o blocking-chart`, `--timing` |
 | `edit apply <dir>` | replay the stage-7 edit script, persist a green candidate | `--batch <file>`, `-o edit-shots` |
 | `edit preview <dir>` | same replay + renders, never writes the campaign | `--batch <file>`, `-o edit-shots` |
@@ -90,17 +91,15 @@ The only path from DSL to datapack (ADR-0001). Full behavior:
 | `place-camera <campaign-dir>` | writes one row of `design/cameras.json`: a pose placed by hand in the game, an estimate, or a deletion (spec-0069) | `--name <row>` (required), `--answers <design.json row>`, `--report <camera-report.json> --slot <n> --fov <deg>` \| `--candidates <file> --pick <camera>` \| `--delete` |
 | `viewer <nbt\|dir\|manifest>…` | ONE self-contained interactive page: a camera the reviewer drives, every block drawn from the pinned version's own model | `-o page.html` (required), `--title`, `--textures <jar>`, `--pack <resourcepack.zip>` (a delve's pack above the jar, spec-0084 §5.1) |
 | `palette <nbt\|dir>…` | the derived per-blockstate colour/shape table | `-o palette.json` (required), `--biome minecraft:plains`, `--textures <jar>`, `--pack <resourcepack.zip>` |
-| `scene <build-dir>` | Chunky scene JSONs from `render-plan.json` | `-o <dir>` (required), `--world <build-dir>/world`, `--size 1024` |
-| `panorama <build-dir>` | an oblique exterior of the built place, fitted to a subject — the default release panorama | `-o <dir>` (required), `--world <build-dir>/world`, `--bearing se\|sw\|ne\|nw\|n\|e\|s\|w`, `--pitch 45`, `--fov 40`, `--subject layout\|anchor/<a>,…`, `--spp 300`, `--width 1600`, `--height 900` |
-| `cameras <build-dir>` | one Chunky scene per showcase camera the campaign states in `design/cameras.json` — the storybook and front-page pictures | `--campaign <dir>` (required), `-o <dir>` (required), `--world <build-dir>/world`, `--only <name>`…, `--bracket yaw=,pitch=,fov=,dolly=,truck=,rise=`, `--draft`, `--preview` |
+| `panorama <build-dir>` | an oblique exterior of the built place, fitted to a subject, drawn hq from the build's load world — the default release panorama | `-o <dir>` (required), `--bearing se\|sw\|ne\|nw\|n\|e\|s\|w`, `--pitch 45`, `--fov 40`, `--subject layout\|anchor/<a>,…`, `--spp 300`, `--width 1600`, `--height 900`, draw flags |
+| `cameras <build-dir>` | one frame per showcase camera the campaign states in `design/cameras.json`, each from the world it stands in — the storybook and front-page pictures | `--campaign <dir>` (required), `-o <dir>` (required), `--only <name>`…, `--bracket yaw=,pitch=,fov=,dolly=,truck=,rise=`, `--draft`, `--preview`, draw flags |
 | `contact-sheet <dir>` | many candidates, ONE page, for the owner to curate | `-o sheet.png` (required), `--scores`, `--shot ext-se`, `--columns N`, `--thumb 256`, `--title` |
-| `index <build-dir>` | image ↔ expect pairs for a reviewing agent | `-o shot-index.json` (required) |
 
-The last seven are the **CPU render surface** (ADR-0021 §1): the same
-`DW072x`/`DW079x` diagnostics and the same texture-resolution ladder as the GPU
-arms under `delvec render` (§4), and nothing here reaches a GPU or `nucleation`,
-so they run on a machine with no adapter. Deep behaviour for all of them, GPU
-and CPU together, is §4, because a reviewer uses them together.
+The view arms share the `DW072x`/`DW079x` diagnostics and the texture-resolution
+ladder with the GPU arms under `delvec render` (§4); the frame-drawing ones
+(`frames`, `panorama`, `cameras`) draw through Lumenwright (§4a) on the GPU or
+the CPU, so they run on a machine with no adapter. Deep behaviour for all of
+them is §4 and §4a, because a reviewer uses them together.
 
 Global flags on every subcommand: `--json`, `--prefabs <dir>` (default
 `campaigns/prefabs`), `--lang <code>` (default `en`), `--version`.
@@ -142,8 +141,7 @@ node's intent, note, class, stations, roofed or open) and the detail plan's
 record, or its named absence until step 9) and the whole's reference sheet; the
 frame's extent, the walk plane's piece-local `y`, its world position and the
 play space piece-local (`space`); every neighbour by side with its kind, floor
-and roof; the plan views that see the place, each with the `delvec snapshot
---camera` that frames it; the **ground** — the fill kind, the place's `base`
+and roof; the plan views that see the place, each with the `delvec frames --campaign --camera` that frames it; the **ground** — the fill kind, the place's `base`
 (`ground`, or `{"aloft": n}`: an aloft place is handed no fixed cells, no
 columns and no seam `ground_y`, and its bottom is its underside), the claim's bottom,
 the terrain along the perimeter with its min and max, every fixed ring cell with
@@ -823,9 +821,11 @@ that read them rather than globally, so `delvec build --help` does not grow a
 flag it has no use for:
 
 ```
-delvec scene <build-dir> -o <dir> [--world <build-dir>/world] [--size 1024]
-                                             # Chunky scene JSONs from render-plan.json
-delvec panorama <build-dir> -o <dir> [--world <build-dir>/world] [--bearing se|sw|ne|nw|n|e|s|w]
+delvec frames <build-dir> [-o <dir>] [--shot <id>]... [--labels] [--size 1024] [--backend auto|cpu|gpu]
+                                             # every review frame of a build, from the worlds it wrote (§4a)
+delvec frames --campaign <dir> (--camera x,y,z,yaw,pitch[,fov] | --at <anchor>) [-o frame.png]
+                                             # one frame of a campaign's load world
+delvec panorama <build-dir> -o <dir> [--bearing se|sw|ne|nw|n|e|s|w]
                 [--pitch 45] [--fov 40] [--subject layout|anchor/<a>,...] [--spp 300]
                 [--width 1600] [--height 900]
                                              # an oblique exterior of the built place
@@ -833,8 +833,7 @@ delvec cameras <build-dir> --campaign <dir> -o <dir> [--only <name>]...
                 [--bracket yaw=8,pitch=4,fov=10,dolly=6,truck=3,rise=3] [--draft | --preview]
                                              # the showcase cameras design/cameras.json states
 delvec written-world <campaign-dir> -o <world-dir>
-                                             # the load world, no camera record (DW0955's written half)
-delvec index <build-dir> -o <file>           # image <-> expect pairs for a reviewing agent
+                                             # the build's load world, alone (DW0955's written half)
 delvec contact-sheet <dir> -o <sheet.png> [--scores scores.json] [--shot ext-se]
                                              # [--columns N] [--thumb 256] [--title T]
                                              # many candidates, ONE page, for the owner to curate
@@ -854,12 +853,14 @@ own datapack when the build ships it — an atmosphere the pinned jar has never
 heard of — so its `effects` colour grass, foliage and water. One line on stderr
 names the biome and where its definition was read.
 
-**What a Chunky frame does with an atmosphere** is recorded in §4a: Chunky
-draws its own sky and has no table for a datapack biome.
+**What a frame does with an atmosphere**: a frame's sky is the frame's tick and
+weather (`compiler.md` §4), not a place's atmosphere, and the world's biomes are
+the map at load; the look of an atmosphere is confirmed in a client, on the demo
+level.
 
 The same derivation over the whole pinned block registry is what
-`crates/delvec/data/block-appearance-1.21.11.json` holds — the table the CPU
-draft rasteriser paints with ([`compiler.md`](compiler.md), `delvec snapshot`).
+`crates/delvec/data/block-appearance-1.21.11.json` holds — the table the
+blocking chart paints with ([`compiler.md`](compiler.md), `delvec blocking-chart`).
 It is reached through `tools/maintenance/refresh-block-appearance.py` and not
 through a flag here: `delvec` is what an authoring session runs, and
 regenerating a table this repository commits is not something a creator does.
@@ -1071,7 +1072,7 @@ Sheets are generation-time working material like renders and reference images:
 bytes. Two runs over the same inputs produce the same page byte for byte (CI
 asserts it) so a cell number means one thing.
 
-`panorama` is the default release panorama `render-shots.sh` emits. A picture a
+`panorama` is the default release panorama. A picture a
 creator chooses — the storybook hero, a room at its best — is a stated camera
 (`cameras`, §4a), and `panorama` prints its solved camera as a record line to
 start one from. **Its default subject is the placed areas**
@@ -1094,28 +1095,23 @@ corner (`se` default, `sw`, `ne`, `nw`) looks along the diagonal, a face (`n`,
 image plane are solved exactly so that every corner of the subject box lands in
 a frame of 40° vertical field of view and `--width`×`--height` (default
 1600×900), with 12% margin on the axis that binds, and the projected box is
-centred. Chunky's `fov` is the vertical field of view, so the horizontal limit
-scales with the aspect. Emission prints how much of the frame the subject box
+centred. `fov` is the vertical field of view, so the horizontal limit scales
+with the aspect. Emission prints how much of the frame the subject box
 covers (its projected bounding rectangle over the frame): a corner bearing at
 the default frame covers at least a third for the island, doune and all three
 gallery horizon points; a face bearing of a long strip of rooms covers less,
 because a strip seen square cannot fill a wide frame. The sun is the campaign's
-declared hour, so the bearing decides whether the lit side is in shot. One scene
-per bearing and pitch (`<campaign>_panorama_<bearing>_<pitch>.json`, with
-`_fov<n>` for a non-default field of view and `_anchors` for an anchor subject), so several
-coexist in one scene dir. On an ocean horizon the scene carries Chunky's ambient
-water plane at the compiler's sea level.
+declared hour, so the bearing decides whether the lit side is in shot. One frame
+per bearing and pitch (`<campaign>_panorama_<bearing>_<pitch>.png` and its
+`.manifest.json`, with `_fov<n>` for a non-default field of view and `_anchors`
+for an anchor subject), so several coexist in one directory. On an ocean
+horizon the world carries the generator's sea to the compiler's sea level.
 
-**What is grey in a frame is where the world ends, not sky.** At a pitch steeper
-than half the field of view no ray points above the horizon; a ray that leaves
-the loaded world samples the simulated sky, whose below-horizon value in the
-pinned core (`PreethamSky.calcIncidentLight` clamps the elevation to zero) is one
-flat haze colour. So the grey is the void past the layout on a void
-horizon, and past the landform on a valley — loading more chunks does not fill
-it (measured on doune: the save's chunks outside the landform are empty, and a
-64×64-chunk list renders the same share of grey as the landform's own). On
-doune at 1600×900 it is about a fifth of every frame that shows the whole
-castle.
+**Past the loaded world there is sky.** The written world holds the loaded
+extent's chunks — the layout, a valley's landform, the plan volumes — and a ray
+that leaves them draws the frame's sky; at a pitch steeper than half the field
+of view no ray points above the horizon, so what lies past the place is the
+sky's colour, not ground.
 
 ### `viewer` — the page the reviewer drives · agent builds it, owner decides from it
 
@@ -1277,163 +1273,97 @@ Two runs over the same input produce the same page byte for byte (ADR-0006).
 points at the thing being discussed.
 
 `palette` writes the derived per-blockstate colour and shape table on its own —
-the input the snapshot chart, the palette-selection tooling and the fidelity gate
-read.
+the input the blocking chart, the palette-selection tooling and the fidelity gate read.
 
-## 4a. Chunky — the official renderer (external process) · agent + human
+## 4a. Lumenwright — the renderer, in-process · agent + human
 
-Chunky (GPL-3.0) is the renderer for every Delvewright frame that has to look
-like Minecraft: whole-scene review shots, storybook scene illustrations, and the
-per-release whole-map panorama. It is **never linked or vendored** — `delvec render`
-writes scene JSON, and Chunky's core renders it as a separate program.
-Attribution: [`../ACKNOWLEDGEMENTS.md`](../ACKNOWLEDGEMENTS.md).
+Lumenwright (`stellarfeline/lumenwright`, MIT OR Apache-2.0) draws every
+Delvewright frame that has to look like Minecraft: the review frames of a build,
+the campaign viewport, the showcase cameras and the whole-map panorama. It is a
+**library inside `delvec`**: no second program, no JVM, no scene file, no
+install step. Attribution: [`../ACKNOWLEDGEMENTS.md`](../ACKNOWLEDGEMENTS.md).
 
-Install (once per machine):
+**The dependency and its pin.** `crates/delvec/Cargo.toml` names `lumenwright`
+by `git` and `rev` with `default-features = false, features = ["gpu"]`;
+`versions.toml [render] lumenwright_revision` holds the same revision and
+`validation/check-versions.sh` reds when the two differ. Its `glam` is reached
+as `lumenwright::glam`, so the engine holds no second copy. `delvec` reaches it
+through one module, `compiler::view::frames`: a frame request (world, chunk
+rectangle, jar, the build's resource pack, camera, sky, mode, backend, size)
+in, RGBA pixels and the renderer's own statistics out.
 
-```sh
-validation/chunky-install.sh --java-home <a JDK 17 home>
-```
+**Backends.** `--backend auto` (default) takes the GPU wgpu finds — Metal on
+macOS, Vulkan or DX12 elsewhere — and falls back to the CPU when there is
+none, saying so on the first line (`renderer: lumenwright <rev>, backend cpu
+(…) (auto: fell back to cpu: <why>)`). `--backend cpu` or `--backend gpu` names
+one; a named backend that is not available is `DW0723`. `--threads` sizes the
+CPU backend's pool (default every core); the CPU backend's pixels are the same
+at any count. A GPU frame is not byte-stable across drivers, so nothing
+compares one; every gate draws on the CPU.
 
-The pinned core is `chunky-core-2.5.0-SNAPSHOT.474.g156e2bb` (`versions.toml
-[render]`, bound to `scene::CHUNKY_CORE` by `validation/check-versions.sh`) —
-1.21.x needs a snapshot core; the stable line stops at 1.20.4.
+**The textures are the creator's own client jar**, never redistributed (ADR-0010,
+ADR-0023 §9). Every arm resolves `--textures`, then `$DELVEWRIGHT_CLIENT_JAR`,
+then `~/.delvewright/client/minecraft-1.21.11.jar`, where the skill's Init I5
+puts it; none is `DW0723` naming I5. No arm that draws ever downloads it. A CI
+job that draws fetches it once with `validation/client-jar-cache.sh` (below),
+checked on its bytes against `versions.toml [minecraft] client_jar_sha256`.
 
-**The launcher cannot install it by name, so the installer builds it.** The
-launcher's `--update` takes a release CHANNEL, whose record names only its newest
-build, and the update site's `lib/<name>.jar` path ignores the name it is given:
-asked for the pin it answered with `content-disposition:
-filename=chunky-core-2.5.0-SNAPSHOT.478.g527cb4a.jar` and that jar's bytes, which
-the launcher's own MD5 check then rejects against a record naming the pin
-(measured against `ChunkyLauncher.jar` sha256
-`045297fa3919f8988c60a4fbe95d7b79f24411678f2289fb718a6138ccedc331`).
-`validation/chunky-install.sh` clones `[render] chunky_source`, checks out
-`chunky_revision`, and runs Chunky's own Gradle wrapper (`:chunky:jar
-:chunky:copyExternalDependencies`, snapshot tag read off the pin's name) under the
-JDK `chunky_build_java` names — Gradle 8.0.2 at that revision refuses a newer JDK
-(`Unsupported class file major version 70` under 26). It installs into the Chunky
-home `tools/lib/chunky-home.sh` resolves, in Chunky's own layout: the core and its
-libraries in `lib/`, and `versions/<core>.json` naming them with their md5. The
-clone and the Gradle cache live in `--work` (default `~/.delvewright/chunky-build`),
-deleted after a verified install and kept after a failure. A home already holding
-the pin is a no-op.
+**What it draws, and from what.** A quick frame is the lightmap the client
+draws, from the `BlockLight` and `SkyLight` the written world carries; an hq
+frame is path-traced at the stated samples. The sky — colour, fog, the sun's
+direction, the lightmap's sky factor — is handed in from `scene::sky_attributes`
+and `scene::sun_at` at the frame's tick and weather (`compiler.md` §4): the
+renderer draws its own of none. Entities it has a model for (villagers,
+mannequins with their skins, the mobs the engine summons) are drawn; an item, an
+item display or a text display is not yet, and each frame says so by name
+(`DW1039`, `undrawn`). A sign's letters are drawn. The build's resource pack is
+layered over the jar, so a block texture a delve replaces is drawn as the delve
+draws it.
 
-**The pin is a content digest, not a name.** `tools/lib/chunky_core.py` digests a
-jar over its entries — each entry's sha256 by name, with `#` comment lines of a
-`.properties` entry removed, since the build stamps its date there — and
-`[render] chunky_core_content_sha256` holds the pin's. Measured two ways when it
-was recorded: the launcher-installed core and a source build at the revision
-differ in exactly one of 1276 entries, `Version.properties`' timestamp comment,
-and answer the same digest; `…478.g527cb4a` does not. The installer installs
-nothing a build at the revision produces unless it answers that digest.
+**The measured rate and the ceiling** (spec-0112 §12), on this development
+machine (Apple M-series, 10 cores; macOS), the instrument `delvec` built
+`--release` from this tree at {ENGINE_REV} with Lumenwright at
+`ed3f049cc496d5f1b7df9829bda1bcb443ad1d06`, wall and peak resident set read by
+`/usr/bin/time -l`, each run's first line naming its backend:
 
-**Render through `validation/chunky.sh`, never the launcher.** The launcher runs
-whichever core it chooses and has no flag that names one (measured: with the pin
-and a newer core installed together it chose the newer). `chunky.sh` holds the
-home to the pin — the core jar to the digest, every library the version record
-names to its md5 — and runs the core's own `Main-Class` on that classpath with
-`-Dchunky.home` set to the home it verified, printing the core it renders with.
-A home that does not hold the pin is refused, exit 2, naming the pin, the home,
-any other core there, and the installer; nothing is rendered.
+| Set | Backend | Frames | Wall | Peak resident | Per frame (median / max) | Ceiling |
+|---|---|---|---|---|---|---|
+{RATE_ROWS}
 
-**A render runs in the background.** Every JVM `chunky.sh` starts — the render, a snapshot, and the denoise step's raw-buffer snapshot and albedo and normal passes — carries `-Djava.awt.headless=true -Dapple.awt.UIElement=true`, so a render never takes the creator's focus or puts an icon in the macOS Dock (the core's texture loader asks AWT for a graphics environment, which on macOS otherwise starts a foreground Cocoa app); the pixels are unchanged — a `-snapshot` of one dump is byte-identical either way.
-
-**Every `-render` is denoised** (`tools/lib/chunky_denoise.py`; why: `compiler.md`
-§4, the lantern scale is fitted on denoised frames). `validation/chunky-install.sh`
-installs, after the core, the chunky-denoiser plugin and Open Image Denoise for
-this platform under `<home>/denoise/`, each only when its download answers its
-sha256 in `versions.toml [render]`. Open Image Denoise is the project's own
-archive on aarch64 and x86_64 macOS, x86_64 Linux and x64 Windows, and is
-built from its pinned source release on aarch64 Linux: the pinned oneTBB source
-first, then Open Image Denoise's CPU device with the RT filter's weights, with
-the pinned CMake, Ninja and ISPC, so the machine supplies only a C and C++
-compiler (`DELVEWRIGHT_BUILD_JOBS` caps the jobs). Measured in the validation
-base image on linux/arm64 with 6 jobs: 37 s for the whole install (32 s of
-build), 1.1 GiB of disk at the peak and 136 MiB kept (the source archive
-among it); its `oidnDenoise` and the macOS arm64 archive's, on one 256 × 192
-HDR input with albedo and normal, differ by at most 0.0054 in value (0.48%
-relative; at most one 8-bit level after a 2.2 gamma). With no compiler the
-install stops before any download and names the missing compilers; a platform
-with neither an archive nor a pinned source build is refused by name, and
-`chunky.sh` renders on neither. Before a `-render`, `chunky.sh` verifies
-that kit (exit 2, nothing rendered, when it does not answer the pins) and puts
-back `<scene>.dump.raw` if a previous render left one. After the core finishes
-it snapshots a PFM copy of the raw buffer, renders the plugin's albedo and
-normal passes (16 samples each) from the derived home `<home>/denoise/home`,
-ends that JVM once the core's "Render job finished." line and both maps exist —
-the plugin's update thread keeps it alive; the wait is bounded at 900 s and a
-timeout names what is missing — runs `oidnDenoise --hdr … --alb … --nrm …`
-(RT filter), keeps the raw dump as `<scene>.dump.raw` and writes the denoised
-buffer as `<scene>.dump` in the core's uncompressed dump format with the raw
-header's sample count and render time. The `-snapshot` that follows applies the
-scene's own post-process to it, so the core stays the one implementation of the
-tone curve. Work files: `<scene-dir>/<scene>.denoise/`. Measured on Root Glade
-and Loom House against set D (`compiler.md` §4): re-rendered through this route at the published 512 spp (6 threads) from a fresh emission over the same world, both frames match D in grain (mean |luma − 5×5 median| 2.24 and 2.52, equal to D to the printed digit) and mean luma (47.11 against 47.11; 42.26 against 42.22), with a mean per-pixel channel difference of 1.30 and 1.42 (99th percentile 8 of 255) — separate renders, so not equal pixel for pixel. A pinned archive digest changed by one hex digit makes `chunky-install.sh` refuse the download (exit 1, nothing installed) and `chunky.sh` refuse to render over the installed kit (exit 2)
-
-**A render reaches the scene's declared budget.** Chunky saves the `-target` it
-was run with into the scene, so a draft (`-target 64`) would leave 64 in the file
-and a later pass without `-target` would find its goal met and render nothing
-more. `chunky.sh` records the budget `delvec scene` wrote (`sppTarget`) in
-`<scene>.budget` (`tools/lib/chunky_budget.py`) the first time it renders the
-scene, and hands it as `-target` to any `-render` that names none; a `-target` the
-caller names is honoured. Emission deletes `<scene>.budget` with the other
-per-scene caches, so a re-emitted scene is judged by its new budget.
-
-**Textures come from the creator's own client jar** and are never redistributed:
-Chunky reads `~/.chunky/resources/minecraft.jar` (or `--textures <jar>`), the
-same EULA-gated jar `delvec render` resolves.
-
-**A delve that replaces a block texture is rendered in its own look** with
-`validation/chunky.sh --pack <build-dir>/resourcepack.zip …` (spec-0084 §5.1):
-the script passes the core's layered option, `-textures <pack>:<jar>`, and says
-so. The order is the core's — `LayeredResourcePacks.getFirstEntry` reads the
-first pack listed that holds an entry, and `ResourcePackLoader` appends its
-default jar after every pack named (read off the pinned core's bytecode) — so
-the delve's pack is listed first. Only block textures reach a Chunky frame: the
-pinned core draws no moon and no zombie or drowned, so those are checked on
-`delvec textures`' sheets.
-
-Render + extract. **The world comes first** — a build tree has none until a
-server has stamped it, and a scene over a missing world path-traces an empty sky
-at exit 0:
+The Armoury is content `demo/the-armoury` at `7ee698e9a19204f5c2deff290931dc7eb156e949`,
+whose documents declare `dsl_version` 0.49.0, newer than this engine's 0.41.0:
+it was rebuilt for the measurement on a scratch copy at 0.41.0 with the surface
+this engine lacks removed — item holders (the stands' and the frame's `holder`,
+the three `loot` rows they hold, a `collect`'s `holder` written as its
+`anchor`), give-item `slot`, program version 1.12.0 written as 1.10.0, and the
+`zh-cn` sidecar — 24 views in 2 worlds. A frame of a rack's sword on that copy
+shows an empty stand; the item is not drawn by this renderer revision either way.
 
 ```sh
-EULA=TRUE validation/world-save.sh <build-dir> --project dw-<id>   # writes <build-dir>/world
-validation/render-shots.sh <build-dir>                             # refuses without it
-validation/chunky.sh -scene-dir <build-dir>/shots/scenes -render <scene-name> -f
-validation/chunky.sh -scene-dir <build-dir>/shots/scenes -snapshot <scene-name> out.png
+delvec build <campaign> -o <out> --prefabs <dir>      # writes validation/worlds/<key>/ and review-frames.json
+delvec frames <out>                                   # every review frame -> <out>/frames/
+delvec frames <out> --shot pov/leg2/wp0 --labels      # one frame, its targets outlined
+delvec panorama <out> -o <dir>                        # the release panorama, hq
+delvec cameras <out> --campaign <campaign> -o <dir>   # the showcase cameras, hq
 ```
 
-`delvec scene` / `delvec panorama` are the components underneath. Chunky
-resolves a scene's world path against the **rendering process's working
-directory**, not against the scene directory, so both write `--world` as an
-absolute path; it defaults to `<build-dir>/world`, where `world-save.sh` writes
-the save, and a directory without `level.dat` and a region file is refused
-(`DW0721`, exit 2) before any scene is written.
+**The cross-check, objects.** `tools/ci/check-written-world.py` reads the
+engine's written load world and the server's save of the same build through
+`tools/lib/anvil.py` and compares, per cell inside the layout box, the blocks
+(`DW0955`), and, over both worlds whole, every block entity by cell and compound
+and every entity by kind, cell and tag set (`DW1040`); a difference in no named
+class reds, and both denominators are printed. `anvil.py`'s readers —
+`cells`, `light`, `light_arrays`, `block_entities`, `entities` — are the one
+parse rule every gate reads a world with (CLI: `light`, `light-census`,
+`cells`, `block-entities`, `entities`, `count-tagged-entities`).
 
-`<scene-name>` is the file stem, without `.json`. Every emitted file is named
-after the scene's own Chunky `name`, campaign-qualified — `hello-world_spawn`,
-`hello-world_pov_leg0_wp1`, `hello-world_panorama_se_45` — and that same stem names
-its caches and its rendered `.png`.
-
-### What the pinned core does with an atmosphere (spec-0080 §5.3)
-
-**Chunky draws its own sky, and an atmosphere's never reaches it.** Measured
-once, on the gallery hall under `atmosphere/frost-hall` (sky `#9fb8d8`, fog
-`#c8d4e0`, grass `#8fa8a0`): the gallery built at engine `feat/area-atmosphere`,
-its world stamped by `validation/world-save.sh` (4 region files), the scene
-`gallery_interior_hall_0` written by `validation/render-shots.sh` (emitted
-scene sha256 `e119cad3caffbb6f7ebb4b09e233bc7fd130717fc35a76ce086f2bc5007cf242`),
-rendered by `validation/chunky.sh` on `chunky-core-2.5.0-SNAPSHOT.474.g156e2bb`
-(content digest verified) at `-target 64` and snapshotted to a 1024×1024 frame,
-sha256 `87afb2ba40e3f3c29c19585c69109a43d9d76c85f0b57322249dcfa51bd17de8`. The
-frame shows the hall's stone shell under Chunky's own daylight gradient, not
-the atmosphere's sky colour: a scene's sky is the one spec-0079 keys by hour
-and weather, and the core reads nothing of a biome's environment attributes.
-What it does with the grass and foliage tint of a biome id it has no table for
-is **not measured by this frame** — the hall holds no tinted block — and stays
-open until a frame of a tinted block inside an atmosphere is rendered. The look
-of an atmosphere is confirmed in a client, on the demo level, never in a
-render.
+**`validation/client-jar-cache.sh [--cache <dir>] [--force]`** — the one live
+Mojang fetch of the pinned client jar per CI job: `versions.toml [minecraft]
+client_jar_url`, checked against `client_jar_sha256` and `client_jar_size`,
+retried a bounded number of times, a red naming the URL when Mojang is
+unreachable (the network, never a frame); idempotent over a cache whose bytes
+answer the pin. Prints the jar's path on its last line, which the job exports
+as `DELVEWRIGHT_CLIENT_JAR`.
 
 ### `cameras` — the showcase cameras · agent places them, owner judges the pictures
 
@@ -1465,15 +1395,15 @@ there is no second way to say where a showcase camera is.
 
 | Field | Meaning |
 |---|---|
-| `name` | lowercase letters, digits, `.`, `+`, `-`; the scene is `<campaign>_camera_<name>` |
+| `name` | lowercase letters, digits, `.`, `+`, `-`; the frame is `<campaign>_camera_<name>` |
 | `answers` | a `design.json` row name; a row the design does not have is refused |
 | `pos` | the lens, in world blocks — **not** a body's feet. Anywhere: in the air, above a courtyard, in a corner above head height, outside a window. Nothing asks whether a body could stand there |
 | `yaw`, `pitch` | Minecraft's own rotation, as the debug screen and `/tp x y z yaw pitch` speak it: yaw 0 south, 90 west, 180 north, 270 east, any value between; pitch positive looks down, −90..90 |
-| `fov` | vertical field of view, degrees (Chunky's `fov` and Minecraft's FOV setting are both vertical; measured below) |
+| `fov` | vertical field of view, degrees (Minecraft's FOV setting is vertical too) |
 | `source` | `estimated` (a tool's or an agent's camera) or `hand` (placed by a person in the running game). A `hand` row is final: `place-camera` refuses an estimate over it |
-| `width`, `height`, `spp` | the frame and the sample target (doune: 1600×900; 300 in daylight; a torch-lit room 4096 plus a BM3D pass, showcase only — [`showcase-shots.md`](showcase-shots.md) §3.8 has the measurement) |
-| `sky` | optional: `{"time": …, "weather": …}`, the sky the picture is taken under when it is **not** the sky of the row it answers. Absent, the camera renders under its row's `time` and `weather` — the game's own sky at that hour under that weather (`compiler.md` §4); stating the row's own sky is refused (`DW0721`) |
-| `after` | optional: `{"step": …, "path": …}`, the step the picture is taken **after** — an objective id (`obj/<id>`) or a trigger id (`trigger/<id>`) of the critical path, or, with `path`, of the branch it names. Absent, the camera pictures the world at load. The engine writes the world as the proofs hold it once that step is played (a door opened, a floor filled) and the scene loads it; a step the path does not carry, carries twice, or after which nothing moves is refused (`DW0721`) |
+| `width`, `height`, `spp` | the frame and the sample target of the hq frame (doune: 1600×900; 300 in daylight; [`showcase-shots.md`](showcase-shots.md) §3.8) |
+| `sky` | optional: `{"time": …, "weather": …}`, the sky the picture is taken under when it is **not** the sky of the row it answers. Absent, the camera is drawn under its row's `time` and `weather` — the game's own sky at that hour under that weather (`compiler.md` §4); stating the row's own sky is refused (`DW0721`) |
+| `after` | optional: `{"step": …, "path": …}`, the step the picture is taken **after** — an objective id (`obj/<id>`) or a trigger id (`trigger/<id>`) of the critical path, or, with `path`, of the branch it names. Absent, the camera pictures the world at load. The engine writes the world as the proofs hold it once that step is played (a door opened, a floor filled) and the frame is drawn from it; a step the path does not carry, carries twice, or after which nothing moves is refused (`DW0721`) |
 
 **There is no `exposure`.** Every frame is exposed at the engine's derived
 1.0 (`compiler.md` §4), and a camera carrying the field is refused with
@@ -1481,31 +1411,30 @@ there is no second way to say where a showcase camera is.
 designed ([`showcase-shots.md`](showcase-shots.md) §3.7).
 
 Everything else a frame needs comes from the build and is not restated: the
-layout and its landform in the chunk list, the ocean plane, and **the world the
-scene loads, which `delvec cameras` writes itself** — one per configuration a
-camera stands in, under `<out>/worlds/<key>/` (`at-load`, `after-<step>`),
-assembled from the campaign and `--prefabs`. No server boot is needed for a
-showcase frame, and the run prints, per camera, `after: <name> at load` or
-`after: <name> after <step> (…): <c> cells moved from load, …`, per world its
-chunks, cells and sha-256, and `configurations: <k> written for <c> camera(s),
-…`. A frame shows no entities (the pinned core draws none the engine summons),
-leaves a sign blank and a banner plain, and shows no `collapse` debris — the
-full list is `compiler.md` §7, `delvec cameras`. The sky comes from
-the picture (the camera's `sky`, else its row's), never from the world's initial
-hour, and `delvec cameras` prints the sky each camera is emitted under —
-`sky: <name> <time>+<weather> <derived from <row> | stated> — <weather> sky at daytime <tick>: …`
-— and `skies: D derived, S stated, over C camera(s); weathers emitted: {…}`.
-What the engine writes for each weather is `compiler.md` §4, *The sky of a scene* (the sky cell of a tick and a weather). A record for another campaign than the build, two cameras of one name, a
-pitch past vertical, a zero frame or sample target, and an empty record are
-refused (`DW0721`) before any scene is written. **Every approved image is
-answered, or nothing is emitted**: `delvec cameras` writes no scene while a row
-of `design.json` has no camera (`DW0900`, exit 2), `--only` included, and
-`delvec build` refuses the same record (exit 3) before it seats a piece.
-`delvec cameras --preview`, `delvec cameras` and `delvec place-camera` each
-print `answers: K of N approved image(s) in design.json have a camera` and name
-the rest, so the count moves while the cameras are being placed; `--preview` is
-never refused by that rule, because it is the instrument that closes the hole.
-A campaign that has placed no camera at all builds — its first build is what a
+loaded extent, and **the world the frame is drawn from, which `delvec cameras`
+writes itself** — one per configuration a camera stands in, under
+`<out>/worlds/<key>/` (`at-load`, `after-<step>`), assembled from the campaign
+and `--prefabs`, with the bodies and props the build's ledger places by then. No
+server boot is needed for a showcase frame, and the run prints, per camera,
+`after: <name> at load` or `after: <name> after <step> (…): <c> cells moved from
+load, …`, per world its `world:` line, and `configurations: <k> written for <c>
+camera(s), …`. What a frame does not show — an item, a text display, the rain in
+the air, a `collapse`'s debris — is `compiler.md` §7, `delvec cameras`. The sky
+comes from the picture (the camera's `sky`, else its row's), never from the
+world's initial hour, and `delvec cameras` prints the sky each camera is drawn
+under — `sky: <name> <time>+<weather> <derived from <row> | stated> — <weather>
+sky at daytime <tick>: …` — and `skies: D derived, S stated, over C camera(s);
+weathers emitted: {…}`. A record for another campaign than the build, two
+cameras of one name, a pitch past vertical, a zero frame or sample target, and an
+empty record are refused (`DW0721`) before any frame is drawn. **Every approved
+image is answered, or nothing is drawn**: `delvec cameras` draws no frame while a
+row of `design.json` has no camera (`DW0900`, exit 2), `--only` included, and
+`delvec build` refuses the same record (exit 3) before it seats a piece. `delvec
+cameras --preview`, `delvec cameras` and `delvec place-camera` each print
+`answers: K of N approved image(s) in design.json have a camera` and name the
+rest, so the count moves while the cameras are being placed; `--preview` is
+never refused by that rule, because it is the instrument that closes the hole. A
+campaign that has placed no camera at all builds — its first build is what a
 camera is estimated against — and is refused at the staging gate instead.
 
 **`delvec place-camera` writes this record** (`compiler.md` §7 has the rules). A
@@ -1519,7 +1448,7 @@ frame is to be taken under a sky other than its picture's (the declared sky
 leaves a room unreadable, [`showcase-shots.md`](showcase-shots.md) §2b), and
 say so in the frame's caption. `delvec build` proves every camera in the record (`DW0724`): its lens
 cell is clear, it is inside the build height, and it looks at something the
-scene loads.
+frame loads.
 
 **Placing a camera by hand** (spec-0069). The person is in the running game
 with the creator overlay (`tools/creator/playtest-server.sh up` stages it; the compose
@@ -1544,268 +1473,39 @@ never receives it, and Minecraft's FOV is vertical with *Normal* at 70
 4. `delvec place-camera <campaign> --name <row> --report camera-report.json
    --slot <n> --fov <their number> [--answers <design.json row>]`.
 5. `delvec cameras <build> --campaign <campaign> -o <dir> --preview --only <row>`
-   and show them the frame; on a yes, rebuild, emit `--draft --only <row>` —
-   which writes the world the scene loads — and render that one scene, then the
-   stated frame. A camera fired after the party has played a beat is written
+   and show them the frame; on a yes, rebuild, draw `--draft --only <row>`, then
+   the stated frame (`--only <row>`). A camera fired after the party has played a beat is written
    with `--after <step>`, the step the agent names: the overlay cannot read the
    quest state.
-
-**The pinned core renders a written world as the server's, measured**
-(spec-0089 criterion 5). The gallery built at this engine, its world saved once
-by `validation/world-save.sh --seed` (4 region files; 0 live fetches), and the
-written load world from `delvec cameras --draft --only hall-exterior` (6 chunks,
-9666 cells, region sha-256
-`e7ded43386b2a430cb1d249adda9f28c1a46bdd81dac1ee821a942c43ee64a4c`); one scene
-of camera `hall-exterior` (400×225, 128 samples, exposure 1.0) pointed at each,
-rendered by `validation/chunky.sh -render … -f -threads 8` on
-`chunky-core-2.5.0-SNAPSHOT.474.g156e2bb` (content digest verified), compared
-by luminance rms (`tools/spike-post-beat-camera/anvil_rig.py at 6573392e4818`, its `compare`). Four
-renders of the save and three of the written world:
-
-| Pairs | rms |
-|---|---|
-| save vs save (6 pairs, the noise floor) | 2.616 – 2.641 |
-| written vs written (3 pairs) | 2.623 – 2.645 |
-| save vs written (12 pairs) | 2.623 – 2.649, median 2.639 |
-
-First frames, sha-256: save `fd4b3563be7ea0d94274293c8e249438fda59338df5963071e5cc29a332ff9d7`,
-written `9440ae285b93e39ff87fc2d88c73518ef008eff71e2278faef783ae2c346c1af`.
-The cross pairs sit in the same band as the two floors, 0.004 above the highest
-floor pair at their own highest. The first written world, whose sections
-carried an int `Y`, rendered as an empty frame (rms 33.686): the core reads `Y`
-as a byte. A path-traced frame is not byte-reproducible; the hashes name the
-frames each reading was taken from.
-
-**Chunky's `fov` is vertical, measured.** Two scenes of one camera on the
-pinned core `chunky-core-2.5.0-SNAPSHOT.474.g156e2bb` (run from its jar
-directly, whose content digest `tools/lib/chunky_core.py digest` reads as
-`[render] chunky_core_content_sha256`), over the `cutscene-shots`
-fixture's world save: `pos` [5.5, 72, −12], yaw 0, pitch 20, `fov` 40, 64 spp,
-one at 400×200 and one at 400×400. If `fov` is vertical, the square frame is the
-wide frame's middle 200 columns at twice the scale; if horizontal, the wide
-frame is the square frame's middle 200 rows at the same scale. Luminance rms
-between the frames under each reading: **2.65 if vertical, 76.11 if
-horizontal** (each frame's own luminance standard deviation is about 45).
-Frames, sha-256: 400×200 `6eaeb5dd65d9802d431d166cbdcb025520406929fa479fdee8671f3ef271f62b`,
-400×400 `9a4c07db482af2eab416cfc3f575cec5cde0ccba5852447a320f3fcbcd581c62`.
-A path-traced frame is not byte-reproducible; the hashes name the frames this
-reading was taken from.
-
-**What each weather looks like, recorded**: the sky matrix of `compiler.md` §4 — the standard level's seven showcase cameras (`showcase-shots.md` §6) under clear, rain and thunder at noon, the setting sun and midnight, each frame's mean luma, clipped and crushed fractions and named patches beside the game's own values.
-
-**The clear cell** (`compiler.md` §4), recorded on the camera set that found
-it: the Treehouse Camp (content `demo/the-treehouse-camp` at `10ec44d`, its
-documents copied with `dsl_version` set to this engine's, built by the engine at
-`60afcf8a5` with `--prefabs` its own `prefabs/`), cameras `from-the-glade`,
-`north-east-aerial` (both `{"sun": "setting"}` + clear, tick 12782) and
-`lantern-night` (`{"moon": "high"}` + clear, tick 18000), each at its own pose
-and exposure (1.4, 1.0, 4.0), emitted by `delvec cameras --draft` (400 × 225,
-128 samples) and rendered by `validation/chunky.sh --pack <its
-resourcepack.zip> -render … -threads 3` on the pinned core. The two engines
-wrote byte-identical worlds (10 files); only the scenes differ. Before is the
-engine at `60afcf8a5` (no sky block on a clear scene with the sun up, the night
-cell on the dark plateau, `GAMMA`), after is the engine at `46584df58` (a
-solid clear cell, `TONEMAP3`). Clipped is any channel at 254 or more, crushed is Rec. 709 luma at
-8 or less, the sky hue is the median of the brightest half of the top fifth of
-the frame (Pillow, sRGB); the five in-game screenshots of the same camp at the
-same hour (5120 × 2880, converted from their embedded display profile to sRGB)
-measure clipped 0.00–0.01%, crushed 0.41–2.90%, mean luma 41.4–47.9:
-
-| Camera | Before: clipped / crushed / mean / sky hue | After: clipped / crushed / mean / sky hue |
-|---|---|---|
-| `from-the-glade` | 0.71% / 1.85% / 46.2 / 198° | 0.43% / 4.74% / 35.0 / 236° |
-| `north-east-aerial` | 5.66% / 0.33% / 61.6 / 46° | 0.02% / 0.72% / 40.4 / 221° |
-| `lantern-night` | 0.87% / 27.77% / 40.5 / black | 0.43% / 0.16% / 34.3 / 236° |
-
-Scenes (sha-256 as emitted), before → after: `from-the-glade`
-`56feab213065d769e5279063a0b22cac9d571654743a339c18882340aba36133` →
-`7493fe0b63febb8eba475f7e3c55e8216cc96aa36ce9b623fc4106db3ea51393`,
-`north-east-aerial`
-`9b98e1e8c6b58bf012087916e6e8d9b3db472ee0b1b4cb6fd11cf79bda07279c` →
-`010ed12b1cdc9fdab52b3abe758dea0fa3c841e02d660c6d494aa28d80223142`,
-`lantern-night`
-`12464247199b7027f50658a9c643e3b01acd1987bb04676cdb690289fd851b2f` →
-`9a10fdfb90ee1f63e71267791f27bfec98e1d2c4174c0fcadd84c18ee1800f07`. Frames,
-before → after: `a52607578d690adc0bfa57ee859e816b92556636754fd542af40ff9d0ced4a80`
-→ `aaa1d4b0ad7ceda8f7b16bc6bff97b6e3858051b1ab0a1d4020d0aa83b78beac`,
-`72e159f1b508535e863646d4371b18bd060e1a57a609bf393b0d64beed6c35de` →
-`8ee7c42ed64cc75a61df7eb234793c9a255f1af097a8e6d756a2c129a3b9132d`,
-`823876dddec5bf5f063a36d6bbf002b6e57149dbefd9d53c2c0402086e8a5fcc` →
-`5b3edef6f82295eee3be412bf7c79a91a2800d43b7afe576e266c222c319897a`. A second
-reader sharing nothing with the first (ffmpeg's decoder and luma weights,
-counted in plain Python) reads the same frames within 0.6 points of crushed and
-0.07 of clipped. The sky pixels are predicted exactly: at four sky points of the
-after frames the timeline's sky and fog colours, the core's `(1 − dy)²` sky fog
-and the post-process's formula give the rendered 8-bit pixel to the unit (the
-aerial's top centre, 4.5° up: (84, 93, 113) predicted and rendered). Before,
-the setting sun drew a yellow-brown sky and a beam along the horizon; after, a
-dim, flat, blue-violet evening with no shadow from the sun, as the game draws
-it. The orange band the game shows at the horizon on the sun's side is not in
-either (the core cannot draw it).
-
-**The clear sky as the game's own map**, recorded on the same build, the same
-copy of the documents and the same pinned core, with one camera added to the
-copy's record for the sun's side: `toward-the-sun` at (118, 96, 56), yaw 90
-(west), pitch 4, `fov` 70, exposure 1.0, answering the `setting` row. Three
-engines emitted the four cameras (400 × 225, 128 samples): the engine at
-`60afcf8a5` (the renderer's sky), the engine at `46584df58` (a solid clear
-cell) and the engine at `fad7d4e1a` (the game's sky as a map); the worlds they wrote are
-byte-identical. Sky hue (Pillow, sRGB; the median of a named patch):
-
-| Where | Her screenshots | `60afcf8a5` | `46584df58` | `fad7d4e1a` |
-|---|---|---|---|---|
-| toward the sun, the band 2–4° up | (183, 66, 40) 11° (shot 2) | (198, 190, 142) 51° | (82, 89, 112) 226° | (139, 83, 96) 346° |
-| toward the sun, upper sky | (82, 63, 82) 300° (shot 2) | (144, 153, 145) 127° | (74, 78, 108) 233° | (80, 78, 116) 243° |
-| away from the sun, upper sky | (53, 67, 100) 222°, (67, 62, 90) 251° (shots 1, 5) | (107, 125, 131) 195° (glade) | (83, 87, 122) 234° | (85, 86, 131) 239° |
-
-Clipped / crushed / mean luma at `fad7d4e1a`: `toward-the-sun` 0.17% / 3.15% /
-41.6, `from-the-glade` 0.43% / 4.66% / 35.0, `north-east-aerial` 0.03% /
-0.71% / 40.9, `lantern-night` 0.40% / 0.14% / 35.7 (the night at
-`46584df58`: 0.43% / 0.13% / 34.3). A second reader (ffmpeg's decoder and
-luma, plain-Python counts) agrees within 0.6 points of crushed. The sky
-pixels agree three ways at four rows of the `toward-the-sun` frame's centre
-column, 9° to 28° up: the map's own value there (bilinear, as the core reads
-it), the game's sky drawn by `tools/ci/check-whole-map-render.py`'s Python
-port plus the map's veil, and the rendered pixel, each through the
-post-process — (143, 84, 96) at 9.4° in all three, and within one unit at the
-other three rows. Scenes and maps (sha-256 as emitted) and frames:
-`toward-the-sun` scene
-`263d5c31114d77a12444b330f03ab777e5e560766ba30ff31e9124591c396b47`, map
-`aff5a788917cc3aff7207db18a12784a8aa3f14ec21c1142f6578ff7bcccbed4`, frame
-`02b4cb44bd2306f9eb7e863de480ec8666cc6aa45f7298c85d7fd13acc34ab00` (at
-`60afcf8a5`: `c8a0bd792c062aabc8ed9efeb8553c5b5defdb000f38e1f62977d74df02ed1e0`);
-`from-the-glade` map
-`038b60a4b0609a74fbf89b04fbea69bf4ec48b39ce157c0a8da7c5d705ce00dc`, frame
-`871128c7229cde0c600d3bc800f2664d03a9e8beffb0743c53b7d9925b5feed3`;
-`north-east-aerial` map
-`e3a5940486b6b615bcbf00b41f26535e43e2d7db094602530887378786451fbb`, frame
-`ff17a8016d369950b8df9a6962911859c1e3d9cf63a03bafa84885079c4a0b1c`;
-`lantern-night` map
-`daaef7867a15fbc5d9ac586ae641ef05f3fc9fdbfedf1609703dea28cba3379a`, frame
-`41f5310f97bbdaa1ffce4bcba7cb999044cda1ad09bc3124a31f40495580ef21`. Toward the
-sun the frame shows the sun's disc on the horizon under an orange-red band
-that fades through mauve to a blue-violet sky; away from it the sky is
-blue-violet; the light on the camp is the same dim, flat, blue-violet light
-in every direction.
-
-On the gallery's own cameras, the clear sky at two ramp ticks, by the engine at
-`fad7d4e1a`: the primary
-build (`--prefabs` from `tools/ci/gallery-prefabs.py`), `delvec cameras --draft
---only hall-exterior --only quay-after-dark`, rendered by `validation/chunky.sh
---pack <its resourcepack.zip> -render … -threads 4` on the pinned core.
-`hall-exterior` (`{"sun": "just-risen"}`, tick 23486, `skyLight` 1.300756):
-scene `b601d268da90f581c7763bbe2842c14c849bb1a7848d02dd5efff832cbd65f8f`, map
-`daea7450976792fa67b0153fa5ee2385c5261d3ec8b52f68d8f9cab30c061faf`, frame
-`bd76d487547e93a53da8fc9273b6e97a593bd9b4467e183f27a16e1eba51f44f`;
-`quay-after-dark` (`{"moon": "just-risen"}`, tick 12959, `skyLight` 1.662977):
-scene `7c4f42f048cd85336580a8416bc84289ffacfa3a9206744bd693b2961030f28d`, map
-`9c1839a61e32a6472c4e48d5f09c9da964eff98805a508d2789e56d8ab3de9ad`, frame
-`fb857aa55ba724de0d10ab4a1dae9ec472f19dc133c101068a87f6645014e00a`. The hall's
-top face is lit in the even blue-violet light under a blue-violet sky; the void
-under the gallery's boxes shows the clear colour below the horizon, warm on the
-sun's side, and the boxes' sides take light from it — the one place a clear
-scene's light is not the lightmap's (`compiler.md` §4).
 
 Finding a camera, cheapest first ([`showcase-shots.md`](showcase-shots.md) is the craft
 it applies):
 
-- **`--preview`** writes no scene: it assembles the world from `--campaign` and
-  `--prefabs` and draws each camera with the `snapshot` rasteriser, flat-lit, at
-  half its frame, as `<stem>_preview.png` — seconds for a whole record. The
-  preview of a record camera is byte-identical to `snapshot --camera` with the
-  same numbers (`crates/delvec/tests/snapshot.rs`). It is for placing: is the
-  camera in the room, is the point of interest in frame. **The material is the
-  pinned jar's**, off the same derivation the GPU render textures with, so the
-  draft reads as the stone it is built of; a block the pin does not have is drawn
-  magenta and named on stderr (`unpainted: …`). It also names every
+- **`--preview`** draws each camera quick, at half its frame, as
+  `<stem>_preview.png` with its manifest, from the world its camera stands in —
+  seconds for a whole record. The preview of a record camera is byte-identical
+  on the CPU backend to `delvec frames --campaign --camera` with the same numbers
+  in the same world (`crates/delvec/tests/frames.rs`). It is for placing: is the
+  camera in the room, is the point of interest in frame. It also names every
   camera whose lens is inside a block or within 0.25 block of one — a pinhole
   camera has no near plane, so such a frame shows the block's inside faces or a
   sliver of it across a corner — and prints `lens: N of M camera(s) clear`. A
   flag, not a refusal: the query counts a torch or a carpet as a full cube.
-- **`--bracket yaw=8,pitch=4,fov=10,dolly=6,truck=3,rise=3`** (any subset) emits,
-  after each camera, the camera moved one thing by one step each way — `dolly`
-  along the heading, `truck` to the frame's right, `rise` up — named
-  `<name>.<key><sign><step>`, and writes every emitted camera to
+- **`--bracket yaw=8,pitch=4,fov=10,dolly=6,truck=3,rise=3`** (any subset)
+  draws, after each camera, the camera moved one thing by one step each way —
+  `dolly` along the heading, `truck` to the frame's right, `rise` up — named
+  `<name>.<key><sign><step>`, and writes every drawn camera to
   `candidates.json` in the record format. `delvec contact-sheet` lays them on
   one page; the pick is copied into the record verbatim. A candidate past the
-  legal range is not emitted.
-- **`--draft`** emits each frame at a quarter of its width and height and 128
-  samples under `<stem>_draft`, so a draft never shares a scene name — or a
-  cache — with the frame. 16 samples is sparks on black in a torch-lit room; 128
-  reads walls, tables and hearth in about 20 s on a ten-core machine.
-- Then the stated frame: `validation/chunky.sh -scene-dir <out> -render
-  <campaign>_camera_<name> -f`. Chunky re-saves a scene it renders, so read the
-  record, not the scene file, for what was asked.
+  legal range is not drawn.
+- **`--draft`** draws each frame hq at a quarter of its width and height and 128
+  samples as `<stem>_draft.png`.
+- Then the stated frame: `delvec cameras <build> --campaign <campaign> -o <dir>
+  --only <name>`, hq at the record's frame and samples.
 
-Operational facts:
-
-1. **Chunky caches loaded chunks** in `<scene>.octree2` and `<scene>.dump` (plus
-   `.dump.backup`, `.emittergrid`) beside the scene — keyed on the scene's `name`
-   field, **not** its file name. Chunky treats `name` as the scene's identity: load
-   `foo.json` whose `name` is `bar` and it writes `bar.json` and `bar.*` caches
-   next to it, so a re-emitted `foo.json` never invalidates them and `-render bar`
-   silently serves the old scene. `delvec render` therefore emits every file under
-   its own scene name, which makes the two agree by construction. Re-rendering after a change
-   to `chunkList`, camera, sun or water settings **silently reuses the stale
-   cache** — no warning, wrong frame. This is automated away: any `delvec render`
-   scene or panorama emission deletes exactly those siblings for the scenes it
-   writes (`render::cache`). Hand-edit a scene JSON and you own the deletion:
-   Chunky's own `-reload-chunks` re-reads the world but does **not** reset the
-   accumulated `.dump`, so the new frame keeps averaging in the old samples.
-2. **Ocean-horizon delves need the water-world plane, and only the layout's
-   chunks.** The shipped world save holds only the chunks the layout occupies, so
-   the sea must come from Chunky (`waterWorldEnabled: true`, `waterWorldHeight:
-   62.875` = sea level 62 + the 0.875 block-water surface, with
-   `waterWorldHeightOffsetEnabled: false` — the default `true` would silently drop
-   the plane 0.125). `waterWorldClipEnabled` keeps the plane out of the loaded
-   chunks, so widening `chunkList` to the surrounding pure-ocean chunks only adds
-   more of the save's own block water beside it — and the two read at visibly
-   different tones, a seam across the emptiest part of the frame. Trimming to the
-   layout's chunks shrinks that seam to the layout's own chunk footprint (a small
-   layout inside a 16x16 chunk still shows the ring; a layout that fills its
-   chunks shows none). Emission handles all of it from the plan's `horizon` fact;
-   nothing to set by hand.
-3. **`Rendering: … (N of M)` counts samples per pixel against the target;
-   the other counters count pixels or rows.** On the pinned core a 128-sample
-   draft ends at `Rendering: 101.6% (130 of 128)` and a 1600 × 900 frame at a
-   1024 target reads `(750 of 1,024)` three quarters through; `Saving render
-   dump: (N of 90,000)` counts the pixels of a 400 × 225 frame and `Writing PNG:
-   (224 of 225)` its rows. The log carries every intermediate counter on one
-   carriage-returned line: read it with `tr '\r' '\n' < log | grep Rendering: |
-   tail -1`, never `tail` the raw file.
-4. **`-snapshot` re-exposes a finished render without rendering again.** Edit
-   the scene's `exposure`, then `validation/chunky.sh -scene-dir <dir> -snapshot
-   <scene> out.png` writes the frame from the accumulated `.dump` at the new
-   exposure: a candle-lit hall at 512 spp gave mean luma 31.5, 37.0 and 42.3 at
-   exposure 12, 24 and 40 from one render. Exposure is a post-process, so this
-   is how a measurement compares exposures without a second render. It never
-   chooses a showcase frame's exposure: the engine writes 1.0 into every scene
-   and a camera record cannot state one (`DW1010`).
-5. **`emitterSamplingStrategy` stays `NONE`.** On a candle-lit hall at 400 × 225
-   and 128 spp: `NONE` 35 s, `ONE` 47 s, `ALL` 20 min 59 s, and the three
-   frames carry the same sparks ([`showcase-shots.md`](showcase-shots.md)
-   §3.9). Sample count is the only lever.
-6. **The sky, the fog and the sun are scene keys a partial object may set.**
-   `sky` (`mode`, `color`, `skyLight`, `apparentSkyLight`, `gradient`), `fog`
-   (`mode` `UNIFORM`/`LAYERED`, `uniformDensity`, `skyFogDensity`, `color`,
-   `layers[]` of `y`/`breadth`/`density`) and `sun` (`intensity`, `color`,
-   `drawTexture`, `altitude`, `azimuth`) merge with Chunky's defaults on load,
-   and Chunky re-saves the whole object; an emitted scene writes all three
-   (`compiler.md` §4). Set them before the first render of a scene name, or delete
-   its `.dump` — a changed sky over an old dump averages into the old samples.
-   The values a picture is taken under are
-   [`showcase-shots.md`](showcase-shots.md) §2b.
-7. **`delvec snapshot --camera` with a negative first number needs `=`.**
-   `--camera -40,160,320,221,21,48` is parsed as an unknown flag and exits 2;
-   `--camera=-40,160,320,221,21,48` draws the frame.
-
-Speed doctrine: the core is **CPU-only** — the official OpenCL plugin is WIP and
-effectively unavailable on Apple Silicon, so there is no GPU path; do not wait for
-one. Go wide instead: one `validation/chunky.sh … -render` **process per
-scene**, run in parallel (give each `-threads <n>` so they do not all claim every
-core), and tier the sample budget with `-target` — ~64 for a draft you only need
-to judge framing on, ~300 for final art (`delvec panorama --spp`'s default),
-500 for the review scene set (`scene`'s `sppTarget`).
+`--camera` with a negative first number needs `=`: `--camera
+-40,160,320,221,21,48` is parsed as an unknown flag and exits 2;
+`--camera=-40,160,320,221,21,48` draws the frame.
 
 ## 5. `delvec harvest` — playtest note harvester (`crates/delvec/src/orchestrator`) · human
 
@@ -1857,7 +1557,7 @@ not a creator tool and does not live here.
 
 | Tool | Class | Invocation |
 |---|---|---|
-| `tools/creator/block-appearance.py` | agent | `python3 tools/creator/block-appearance.py (--id <block>... \| --near '#rrggbb' \| --list \| --screen \| --mix <spec> \| --program <p.json>) [--where EXPR]... [-n N] [--full-cube-only] [--exclude-tinted] [--technical] [--sheet [PATH]] [--seed N] [--jar <client.jar>] [--json]` — **what a block actually looks like, and what a palette made of them reads as**, measured from the pinned client jar. The palette step of [`prefab-procedure.md`](prefab-procedure.md) §2, and it is three steps, not one. **Query**: `--id` measures named blocks, `--near` ranks by colour, `--list` dumps the shelf — a block's name is not its appearance (`packed_mud` is orange), so a palette is queried, never recalled. **Screen**: `--screen` plus repeatable `--where` narrows by measured axes in the order given — `full_cube`, `not tinted`, `not gravity`, `L>=0.75` (Oklab lightness), `C_mean<0.02` (how coloured), `texture_range<=0.30` (how loud the pattern), `form=slab`, `family=minecraft:sandstone`. Constraints **eliminate, never score**; the cascade prints its survivor count at every step, and the worked screen takes 1146 blocks to 14. An unknown or malformed facet is refused, never ignored. **Measure the mix**: `--mix 'a=3,b=3,c=4'` (repeatable) or `--program p.json` (every `palette` role AND every inline `fill` material, in either frame — a `{"local": …}` paint is the same states, and the frame decides which world direction a property names rather than what the paint is made of) reports `chroma_mass`, `chromatic_area`, the **named** `loudest_member` with its area share, `dominant_hue`, and `void_area` — `minecraft:air` is a paint member like any other (it is the whole of decay in the grammar), so it is counted as area with no colour rather than dropped, and the mean is renormalised over the solid share. A mean colour is printed and is **never the verdict** — swapping half a sandstone mix for calcite and polished diorite moves the mean 13.5 RGB units while the chromatic area falls 60% → 30%. A member carries its block state, properties and all (`--mix 'deepslate[axis=y]=3,stone=1'`): the member separator is a comma **outside** a `[…]` property list and the weight separator an `=` outside one, so the paint an author wrote is the paint that is measured rather than a hand-stripped copy of it; an absent, non-numeric, non-positive or doubled weight is a refusal naming the member. Every report states its **binding count as `examined of declared`** — declared being the palette's own role count plus each inline fill, read off the document rather than off what the reader understood — and states it FIRST, before anything that can refuse. A declared paint this reader cannot read is named with its reason and **exits 2**: a skipped role is a red, never a smaller number. A zero binding is a FINDING. **Look**: `--sheet` writes a PNG to `.sheets/palette/` (gitignored) — each survivor tiled and labelled, each mix as its seeded weighted tiling, i.e. the wall at distance zero. No GPU, no Chunky, no world; byte-identical at one seed; a path inside the repo but outside `.sheets/palette` is refused before any measurement runs (ADR-0006/ADR-0013). Per-block JSON carries Oklab `L`, `L_p05`, `L_p95`, `L_sd`, `texture_range`, `C_mean`, `C_p90`, `C_max`, `hue`, plus `family`/`form` from the vendored classification table and the `gravity`/`technical`/`tinted` flags. Ids are checked against `crates/dsl/data/blocks-1.21.11.json`, and **a missing registry is a named refusal naming the fallback** (take role names from the corpus via `delvec grammar show`) rather than a traceback, because this tool is run from checkouts that do not carry `crates/`; technical blocks are kept off the shelf unless `--technical`, while an id asked for by name with `--id` is always measured. Jar resolution is `delvec render`'s: `--jar`, `$DELVEWRIGHT_CLIENT_JAR`, `~/.chunky/resources/minecraft.jar` — **without it the tool refuses**, because an answer given without the textures is the recollection it exists to remove. Stdlib only — no packages to install. What it cannot decide is stated on the artifact: whether a palette reads as its cultural referent, and role fitness (light emission is in no vanilla data branch, so a screen for "pale neutral wall" returns `pearlescent_froglight`) **`--pack <resourcepack.zip>`** reads a delve's pack above the jar (spec-0084 §5.1), so a block texture the delve replaces is measured as the delve draws it; the layering is said on stderr. |
+| `tools/creator/block-appearance.py` | agent | `python3 tools/creator/block-appearance.py (--id <block>... \| --near '#rrggbb' \| --list \| --screen \| --mix <spec> \| --program <p.json>) [--where EXPR]... [-n N] [--full-cube-only] [--exclude-tinted] [--technical] [--sheet [PATH]] [--seed N] [--jar <client.jar>] [--json]` — **what a block actually looks like, and what a palette made of them reads as**, measured from the pinned client jar. The palette step of [`prefab-procedure.md`](prefab-procedure.md) §2, and it is three steps, not one. **Query**: `--id` measures named blocks, `--near` ranks by colour, `--list` dumps the shelf — a block's name is not its appearance (`packed_mud` is orange), so a palette is queried, never recalled. **Screen**: `--screen` plus repeatable `--where` narrows by measured axes in the order given — `full_cube`, `not tinted`, `not gravity`, `L>=0.75` (Oklab lightness), `C_mean<0.02` (how coloured), `texture_range<=0.30` (how loud the pattern), `form=slab`, `family=minecraft:sandstone`. Constraints **eliminate, never score**; the cascade prints its survivor count at every step, and the worked screen takes 1146 blocks to 14. An unknown or malformed facet is refused, never ignored. **Measure the mix**: `--mix 'a=3,b=3,c=4'` (repeatable) or `--program p.json` (every `palette` role AND every inline `fill` material, in either frame — a `{"local": …}` paint is the same states, and the frame decides which world direction a property names rather than what the paint is made of) reports `chroma_mass`, `chromatic_area`, the **named** `loudest_member` with its area share, `dominant_hue`, and `void_area` — `minecraft:air` is a paint member like any other (it is the whole of decay in the grammar), so it is counted as area with no colour rather than dropped, and the mean is renormalised over the solid share. A mean colour is printed and is **never the verdict** — swapping half a sandstone mix for calcite and polished diorite moves the mean 13.5 RGB units while the chromatic area falls 60% → 30%. A member carries its block state, properties and all (`--mix 'deepslate[axis=y]=3,stone=1'`): the member separator is a comma **outside** a `[…]` property list and the weight separator an `=` outside one, so the paint an author wrote is the paint that is measured rather than a hand-stripped copy of it; an absent, non-numeric, non-positive or doubled weight is a refusal naming the member. Every report states its **binding count as `examined of declared`** — declared being the palette's own role count plus each inline fill, read off the document rather than off what the reader understood — and states it FIRST, before anything that can refuse. A declared paint this reader cannot read is named with its reason and **exits 2**: a skipped role is a red, never a smaller number. A zero binding is a FINDING. **Look**: `--sheet` writes a PNG to `.sheets/palette/` (gitignored) — each survivor tiled and labelled, each mix as its seeded weighted tiling, i.e. the wall at distance zero. No GPU, no renderer, no world; byte-identical at one seed; a path inside the repo but outside `.sheets/palette` is refused before any measurement runs (ADR-0006/ADR-0013). Per-block JSON carries Oklab `L`, `L_p05`, `L_p95`, `L_sd`, `texture_range`, `C_mean`, `C_p90`, `C_max`, `hue`, plus `family`/`form` from the vendored classification table and the `gravity`/`technical`/`tinted` flags. Ids are checked against `crates/dsl/data/blocks-1.21.11.json`, and **a missing registry is a named refusal naming the fallback** (take role names from the corpus via `delvec grammar show`) rather than a traceback, because this tool is run from checkouts that do not carry `crates/`; technical blocks are kept off the shelf unless `--technical`, while an id asked for by name with `--id` is always measured. Jar resolution is `delvec`'s: `--jar`, `$DELVEWRIGHT_CLIENT_JAR`, `~/.delvewright/client/minecraft-1.21.11.jar` — **without it the tool refuses**, because an answer given without the textures is the recollection it exists to remove. Stdlib only — no packages to install. What it cannot decide is stated on the artifact: whether a palette reads as its cultural referent, and role fitness (light emission is in no vanilla data branch, so a screen for "pale neutral wall" returns `pearlescent_froglight`) **`--pack <resourcepack.zip>`** reads a delve's pack above the jar (spec-0084 §5.1), so a block texture the delve replaces is measured as the delve draws it; the layering is said on stderr. |
 | `tools/creator/i18n-translate.py` | agent | **Which of the two: this tool calls an outside model (DeepSeek recommended for Chinese), `delvec l10n-apply` writes what you wrote yourself.** `python3 tools/creator/i18n-translate.py <campaign-dir> --lang <code> [--config f] [--delvec cmd] [--prefabs dir] [--batch-size n] [--dry-run] [--force] [--no-validate] [--reflect\|--no-reflect]` — external OpenAI-compatible API, generation-time only. It transcreates: each row is sent with its intent (`kind`, `speaker`, `situation` from `delvec l10n-inventory`), names first, under the target language's rules read from `game-writing.md`; every answer is fact-checked (placeholders, styled-span markers `[[<styles>|` and `]]` (spec-0096), digits, number words, one rendering per declared name, no shared rendering), a failing row goes back once with its failures named, and a row that still fails is refused, left out of the sidecar, named in the report, and exits 1. Stale rows are redone. `--reflect` runs the three-step translate → critique → revise pass, each step declaring the reply shape its own prompt asks for (steps 1 and 3 a JSON object, step 2 prose — one `response_format` for all three is the provider's `HTTP 400` and made `--reflect` unrunnable). Without `--delvec`/`$DELVEC` it runs the `delvec` on `PATH` that answers the pinned engine version and exits 2 naming what it found when none does; it never builds one. Every `delvec` call it makes carries `--prefabs` from the flag or `$DELVEWRIGHT_PREFABS`; neither (or a non-directory) exits 2 naming both, before any model call. The written sidecar goes through `delvec fmt`, so it is canonical when it lands and `delvec fmt --check` has nothing to say about it. A failing request reports the endpoint, the step, the status and the provider's own key-redacted explanation. Model ids rotate: ask `<base_url>/models` before a long run. See [`i18n.md`](i18n.md) |
 | `tools/creator/refimg.py` | human (advisory, at the design-alignment gate) | `python3 tools/creator/refimg.py (--prompt P | --prompt-file F) [--out stem] [--style-code HEX | --style-ref IMG ...] [--seed N] [--chain-from INTERACTION_ID] [--style-note TEXT] [--count N] [--rendering-speed TURBO|DEFAULT|QUALITY] [--aspect-ratio W:H] [--image-size SIZE] [--resolution WxH] [--dry-run]` — draws a **reference image**: concept art produced BEFORE any prefab exists, so the owner confirms the design against a picture rather than prose. **Not a render** — a render is a candidate prefab imaged by `delvec render`, later, at contact-sheet curation; two stages, two producers. Config is `[refimg]` in the gitignored `delvewright.local.toml` (convention block in `delvewright.toml`); the key never enters a file — `api_key_env` names an env var read at call time, one var per provider. Two providers, and **both hold a seed**: `gemini-native` (the Interactions API — anchors on reference images and on `--chain-from`, and sends `--seed` as `generation_config.seed`) and `ideogram-v3` (style-CODE anchor and a seed, but its generate response was measured NOT to return a code, so the code must be read off the web UI). A flag the configured provider cannot honour is **refused**, never silently dropped: `--seed` on a seedless provider exits 1 saying what that costs — a branch that no listed provider currently reaches, kept because the next provider may. The **frame** — the shape and size of the picture — obeys the same rule and is a **per-call** property, because a multi-view reference wants a different frame per view and a straight-down site plan is not 16:9. `--aspect-ratio` and `--image-size` (gemini-native) and `--resolution` (ideogram-v3) override `[refimg]` for one call; each provider declares its own frame vocabulary alongside its anchors, and is handed the other's only to refuse it, naming the flags it does take. The **resolved** frame — flag, else config, else default — is what goes on the wire AND into the sidecar, so a series is reproducible from the repository rather than from a config file nobody kept; all three keys are always written, `null` where the provider has no such vocabulary. **How many pictures a call draws is not always yours to say, and every one returned is billed.** `ideogram-v3` takes `--count` on the wire (`num_images`; an unset flag asks for exactly one, explicitly, rather than letting the service pick); `gemini-native`'s Interactions request has no image-count field in the SDK's generated types, so it decides for itself — one measured run of 48 calls got back one image 42 times, two once, five twice, and eleven once. `--count` on a provider without the field is **refused**, by the same rule as the anchors and the frame, because a flag that reads as a bound on what you will be billed for and is dropped on the floor is worse than no flag. The **first image always takes the name that was asked for** — `<stem>.jpg` — and any extra lands at `<stem>-1.jpg`, `<stem>-2.jpg`, with one line naming the count, the files, and the charge; a multi-return exits 0, because the requested picture exists. The sidecar carries the same fact as `images` (`returned`, and `written` by filename), so a later reader can tell a one-image call from an eleven-image one after the terminal is gone. A response carrying **no** image exits 1 naming `--out` and keeping the paid response. A **read or connect timeout is retried once** and then reported in a single line naming `--out`, the deadline and the fact that a timed-out call may still have been billed — never a raw `urllib` traceback, which named neither the prompt nor the output path; an unreachable host is named the same way and is not retried. `--dry-run` says, before anything is spent, how many images this provider may return. **Pass `--seed` on a reference series**: a seeded image is regenerable from its recorded inputs, and a series drawn without one cannot be reproduced from the repository at all. Absent config exits 2 saying what to add; **malformed config is a hard error** (an inline `api_key`, an unknown provider, a bad `rendering_speed`) so a typo can never silently downgrade the anchor. The provider name carries **capability**, not wire format: an OpenAI-compatible images endpoint without image input would accept a style-anchored request and *silently ignore* the anchor, shipping N unrelated pictures with no error — so only verified providers are listed (`ideogram-v3` and `gemini-native`) and anything else is refused. `--style-code` and `--style-ref` are mutually exclusive (provider constraint, enforced locally rather than discovered as a 4xx). The **full provider response is always written beside the image** as `<stem>.json`, together with the **request** that produced it — prompt, style note, seed, resolved frame, and the anchors by provenance (a reference image by path, a chained interaction by id). Oversized strings are elided from the RESPONSE, where they are image bytes and thought signatures; the request is kept verbatim, because a reference prompt runs to thousands of words and it is the field the record exists for. Output goes to `.refimg/` (gitignored), which is where a **draft** belongs; an **approved** reference is copied into the campaign it belongs to — `design/concept/` for one scene, `design/reference/` for a whole map — beside its sidecar, and committed with the campaign in the content repo, since an approval that lives only in a gitignored directory is bound to nothing and the next session authoring against it goes blind. Nothing here can move a delve's bytes (ADR-0006): no part of the toolchain places, reads or compiles a reference image |
 | `tools/creator/refscore.py` | human (advisory, at contact-sheet curation) | `python3 tools/creator/refscore.py (--sheet MANIFEST.json \| --images P...) [--reference IMG] [--prompt TEXT] [--backend stub\|open-clip\|vqascore] [--model M] [--device cpu\|cuda\|mps] [-o scores.json] [--dry-run]` — scores candidate **renders** against a **reference image**, to ORDER a contact sheet. **The score RANKS; it never GATES** (spec-0028 §3): this tool emits one score per candidate and no verdict of any kind — no threshold, no keep/reject — and `delvec contact-sheet` refuses (`DW0725`) any ordering that is not a permutation of the candidate set. Promoting the score to a gate needs its own owner-approved amendment backed by batch data. `--sheet` is the recommended input (the `.json` the sheet always writes beside its PNG), which makes `delvec render` the SINGLE discoverer of candidates so the ids cannot drift; a mismatch is not silent either — the sheet states its binding count and errors on zero (`DW0726`). Three backends: `stub` is a deterministic, offline, dependency-free hash of the file bytes — **not a similarity measure**, and it says so on every artifact it touches (the sheet paints "STUB SCORES" across its header); it exists to exercise the whole loop, and it is what CI runs. `open-clip` (MIT) is image↔image CLIP cosine and needs `--reference`; `vqascore` (Apache-2.0) is **text-conditioned** — it asks a VLM how well a render answers `--prompt` and never looks at the reference image, so it requires a prompt and **refuses** a `--reference` it would silently ignore. Both real backends pull PyTorch and multi-GB weights: they are **deliberately absent from CI**, nothing in this repo installs them, and they live in a creator's own virtualenv (`.refscore-venv/`, gitignored) — a missing dependency exits 4 naming the install line and **never falls back to the stub**, because a stub number that looks like a measurement is worse than no number. Config is `[refscore]` in the gitignored `delvewright.local.toml` (convention block in `delvewright.toml`); absent config with no `--backend` exits 2 saying what to add, malformed config is a hard error, and an inline `api_key` is refused outright (the listed backends run locally and need no key at all). Output goes to `.sheets/` (gitignored) — generation-time working material, never shipped, never in the content repo (ADR-0013), unable to move a delve's bytes (ADR-0006) |
@@ -1884,8 +1584,8 @@ A session runs one of these only to reproduce a red check locally.
 | `tools/ci/check-gallery-coverage.py` | CI | `python3 tools/ci/check-gallery-coverage.py --prefabs <generated> [--build-out <tree>] [--report x.json] [--index x.md]` — **every surface the DSL declares is written somewhere in the gallery** (spec-0039). The unit set comes solely from `delvec schema --stage all` of the delvec in the tree under test; the tool contains no parser of the DSL's Rust sources, because a second enumeration is a second authority and the two disagree exactly when it matters. A **surface unit** is every named schema property and every enum/tagged-union variant, recursively, across every stage the export holds — the seven numbered campaign stages and the four named map-pipeline documents — and across the non-stage records it binds beside them (`RECORD_EXPORTS`: today the showcase camera record, from `delvec schema --stage cameras`, bound against the path that export names under `x-delvewright-file`, `design/cameras.json`; its own units are stated on a `record cameras` line, enumerated / bound / refusal-proven / in neither state, with whether `Camera.sky` is bound); registry values (block/item/sound ids) are data and are never units, which needs no filter because the DSL models every registry id as a transparent string newtype. Each overlay and probe is materialised by `tools/ci/gallery_domain.py`, so the tree this gate validates is byte for byte the tree `gallery-baseline.py` compiles and `gallery-build.py` writes. The walk over the gallery's authored JSON is **schema-guided, never grep** — a string that merely spells a variant name binds nothing. Every unit is either **bound** in the primary+overlay domain, or **refusal-proven** by a committed probe under `gallery/probes/` that the engine rejects with the ledgered code — `delvec validate` first and, where that accepts the document, `delvec build`, because a rule needing resolved anchor cells has no verdict at the document level, and judging such a probe at `validate` alone reads as *the engine does not refuse this*: a false red, in the direction that reads as a finding about the engine. A campaign `validate` already refuses never reaches the build, and the phase that produced the verdict is named in `--index`; there is no third kind and no free-text exemption, which is what makes the escape hatch demand a machine-produced refusal the defect itself cannot supply. A probe may also declare **no unit**, and it is then a **refusal demonstration** rather than an exemption: some rules are about a COMBINATION of surfaces that are each perfectly writable — a campaign carrying both `areas[]` and a site plan is refused while every unit involved is bound — so there is nothing for such a probe to discharge, and demanding a unit would force it to claim one the domain already binds (which this tool refuses by name, correctly) or leave the rule with no committed artifact at all. It is held to the same two obligations as any other probe — refused, and refused with the code it names — and is counted on its own line, never folded into the refusal-proven total. Which kind a probe is follows from what it claims and is never a flag, and the choice buys an author nothing: the discharge is the ONLY thing an exemption adds, so emptying `units` can only move a unit back into the unaccounted list. Every probe names a `DW` code and a `why` — the reason `--index` renders beside it — and the tool refuses one that names neither, because a probe a creator cannot read has met half its obligation. **A probe is the primary plus a declared edit**: it ships no copy of any document the primary holds, and what it perturbs is a `patch` of JSON-pointer `add`/`remove`/`replace` edits in its own `probe.json`, applied by `tools/ci/gallery_domain.py` at materialisation. `probe_patch` refuses a declaration nobody could read — a verb outside the three, an edit naming no document, a path that is not a pointer — and the materialiser refuses one that does not APPLY, naming the probe, the document and the pointer; the two are separate because a bad `op` is an author typing and a stale pointer is the gallery having moved under a probe that was right when it was written. A probe that declares no edit and ships no document of its own is refused by name: it materialises the primary unchanged, so the day the primary is itself refused every such probe would pass the refused-with-its-own-code check for a reason none of them names. The contract lives in `probe_kind` / `assert_refused` / `probe_discharges` and the tests DRIVE those rather than restating them; the restatement is what drifted the last time it existed twice. Each overlay declares a non-empty `binds` set and the tool reds both ways — a unit it claims and does not bind, and a unit the primary already binds (a redundant overlay). `--build-out` carries the build's own `validation/*.json` binding ledgers into the report, including the `effect-roots.json` added with it, and **reds naming any ledger whose stated binding is zero** — the gallery declares everything, so a proof that examined nothing there has stopped reaching what the document plainly writes. `--index` writes the reader-facing map from every surface to the place it is written, and **nowhere** for anything in neither state. States its binding count every run — units enumerated / bound / refusal-proven, plus documents walked, plus the probe figures: probes examined, probes carrying a declared edit, JSON paths those edits touch, and documents of their own the probes ship; **enumerating zero units is a red**. Job `gallery coverage (every surface written or refused)`. Resolves its engine through `tools/lib/delvec_bin.py`, which NAMES the binary it found on every run and refuses one older than the compiler sources in the tree A `teleport-gate.json` whose `teleports.links` or `teleports.gathers` reads 0 is a zero binding (spec-0083 §8: the gallery binds one of each). `threshold-gate.json` states DW1044's judged count also as `examined`, so a gallery build in which no walk-fired trigger the path relies on was judged reds through the same `examined` rule; a critical path that performs a trigger with no `threshold-gate.json` beside it is a zero binding too. |
 | `tools/ci/gallery-prefabs.py` | CI + agent | `python3 tools/ci/gallery-prefabs.py --out <dir> [--skins gallery/skins] [--delvec …]` — **the gallery's prefab directory, by the two committed acts that make it**: the generator (`prefabs/gallery-generator`) for the hand-built pieces, the skins and the texture images (`gallery/textures/`, spec-0084), then `delvec detail --all` over the materialised site-plan point for the program-detailed place (spec-0058). It asserts that the row the verb writes equals the row `gallery/overlays/site-plan/detail-plan.json` commits — a committed row is what the program produces, never a hand edit — and states pieces generated, places detailed and rows compared; zero on any is a red. Every gallery tool's `--prefabs` is what this produces. Job `gallery pieces (generator output)`, which packs what it wrote with `tools/ci/gallery-pieces.py` and hands it to the other gallery jobs |
 | `tools/ci/gallery-pieces.py` | CI | `python3 tools/ci/gallery-pieces.py --out <archive.tar> [--repo DIR]` — **the gallery's pieces, handed down whole.** Packs every file in the checkout that git does not track — on a fresh runner after `gallery-prefabs.py`, exactly what generation wrote: `gallery-prefabs/` and the generated files inside `gallery/` — so no typed list of roots can go stale. Skips and counts build caches (any `target/` or `__pycache__/` segment); refuses a tracked file the generation modified and an archive of zero files. Job `gallery pieces (generator output)`, whose step hashes the archive into the job's `sha256` output; `.github/actions/gallery-pieces` refuses a download that does not hash to it and unpacks it for the coverage, views and baseline jobs. |
-| `tools/ci/check-gallery-render.py` | CI + agent | `python3 tools/ci/check-gallery-render.py --prefabs <generated> --build-out <tree> --frames <dir> [--write]` — **every declared view of the gallery is produced and shows something** (spec-0039 §7). CI rendered nothing before this. Four assertions, each one a fact a machine can check and a reviewer cannot, across thirty-odd frames: the committed view set (`gallery/render-plan.json`) equals the set the build emits, so a shot that VANISHES is a red naming it rather than a shorter directory listing (`DW0721` semantics); every declared view is produced or refused LOUDLY, never merely absent; every produced frame is non-featureless by `detect::is_featureless` — the engine's own answer, computed by the arm that drew the frame and read back from its manifest rather than recomputed here, because a second verdict on one question is a second authority; and every view manifest binds a non-zero target count (`DW0726` discipline), since a camera that framed nothing declared checks nothing by having been taken. Uses the **CPU arms only** (`delvec snapshot`) — no GPU, no client jar, no `nucleation` — so it runs on an ordinary runner. **No pixel is committed or compared**: renderer output is not covered by ADR-0006 across drivers, so the manifests are the machine truth and the frames go up as a CI artifact for eyes. `--write` regenerates the committed view set. States views declared / produced / refused / judged; **declaring zero views or judging zero frames is a red**. On its first run over the gallery it found two: a POV frame of two distinct colours, and one binding zero targets — both cameras standing on wall-adjacent anchors and looking at the wall. Job `gallery views (render plan, whole map, cameras)`. Resolves its engine through `tools/lib/delvec_bin.py`, which NAMES the binary it found on every run and refuses one older than the compiler sources in the tree |
-| `tools/ci/check-whole-map-render.py` | CI + agent | `python3 tools/ci/check-whole-map-render.py --prefabs <generated> [--delvec <bin>] [--work <dir>]` — **the storybook illustration path runs, on every horizon the engine can build**. `delvec scene` and `delvec panorama` turn the compiler's `render-plan.json` into Chunky scenes — the storybook shot and the whole-scene review renders — and nothing in this repository invoked either of them; `check-gallery-render.py` runs `snapshot`, and only on the primary gallery. What that cost, measured: the render layer's `Horizon` enum carried ONE variant while the compiler had been emitting a second for as long as the base existed, and `#[serde(tag = "kind")]` has no fallback, so both commands refused every valley campaign outright with `DW0721 … unknown variant `valley`, expected `ocean``. **The population comes from the engine, not from this file**: the horizon bases are read from `delvec schema --stage all` — the same single authority the coverage gate enumerates units from — and every one must be exercised by a gallery point declaring it, so a base with no point is a red naming the base and there is no list here to go stale. Per point and per arm: exit 0 with the refusal reported verbatim otherwise, at least one scene file emitted, **the frame contains the ground** — a scene's `chunkList` must cover the landform the horizon declares, because `layout_aabb` (the union of placed AREAS) alone loads none of the landform a terrain-building horizon puts around it — and **the panorama frames the built place**: read the way Chunky reads the scene (orientation in Chunky's basis, `fov` vertical, horizontal scaled by width/height, a projection sharing no code with the engine's solve), every corner of `layout_aabb` is inside the frame and their bounding rectangle covers at least a third of it. Both defects render successfully and produce a picture, which is why they need an assertion rather than an eye; the second reds the base engine that fitted the frame to the landform, on the valley point only (0.09). The arms refuse a build with no world save, so each build gets a stub save (`level.dat` and one region file) — the shape the arms check, which Chunky could not load. And on every point whose campaign carries a `design/cameras.json` (the gallery's record), `delvec cameras` runs and **every stated camera is its scene's camera**: position, vertical `fov`, frame and sample target are the record's, the exposure is the engine's derived 1.0, and the view direction read from the stored orientation in Chunky's basis is the direction Minecraft looks for the record's yaw and pitch, written from the game's convention and sharing nothing with the engine's conversion — perturbed by reading the yaw with the wrong sign, it reds all six gallery cameras — and **every camera is under its picture's sky**: its own `sky`, else its `design.json` row's `time` and `weather`, read from the two documents, with the **game's own sky of the scene's tick under its weather** (`compiler.md` §4): the scene's `delvewrightSky.daytimeTicks` held within 12 ticks of the tick its sun names by minecraft.wiki's closed form, and its `delvewrightSky.weather` naming the weather (absent under a clear sky); the fixed keys (`SKYMAP_EQUIRECTANGULAR`, `skyMirrored` false, `apparentSkyLight` 1, no fog, no sun light, the disc drawn while any of it is up and only under a clear sky); the map written beside the scene read as `PF` floats and held, on a 24 × 12 sample grid, to the gate's own Python port of the client's sky and its weather layer (`WeatherAttributes`' `RAIN` and `THUNDER` maps, the clear colour with its look-dependent sunrise tint lerped toward the sky colour `applyWeatherDarken` darkens, the octagonal sky disc with `sky.fsh`'s fog, the sunrise fan) plus ONE uniform non-negative veil, within 2e-3; and `skyLight` times the map's cosine-weighted mean over the upper hemisphere held to the lightmap's light under the weather (the shader ported, colours as `a + floor(p(b − a))`, Python's `**`) within 0.2%; the panorama and review scenes of each point are judged by the same rule against the plan's weather; over the domain the weathers reached must be `{clear, rain, thunder}` and the sun bands, read off each scene's sun altitude (20° and 0° thresholds), `{high, low, below}`, stated on a `camera skies:` line with the scenes judged tallied by weather and by where their tick falls (day plateau, ramp, night plateau) — measured on the gallery domain: 447 scenes over 24 camera and 423 panorama/review scenes (clear day plateau 87, clear ramp 354, rain ramp 3, thunder ramp 3); a domain with no judged scene is a red. Perturbed by emitting with the engine before the weather layer (the overcast block, no marker), it reds 6 findings — the gallery's six rain and thunder camera scenes. Every scene of every arm carries the anchored tone curve (`compiler.md` §4): `postprocess` `TONEMAP3` and seven `postprocessSettings` that, evaluated by the gate's own port of the core's Hable arithmetic, show linear 0.18 within 1e-4 of `0.18^(1/2.2)` and their white point at white, stated on a `tone:` line as scenes judged of scenes emitted — measured on the gallery domain: 447 of 447 (24 stated cameras, 423 panorama and review scenes); perturbed by writing the core's bare preset, it reds 447 findings; the core's bare preset (0.18 shown at 0.393), a missing key or another post-process is a red; every scene's `emitterIntensity` is held to the core's default 13 × the lantern scale 12.2310, and a night-vision emulation's `emittance` × intensity to 0.05 × 13 (`tools/tests/test_check_whole_map_render_tone.py`) — perturbing the scale by 1% reds 447 of 447 scenes, and the gallery holds one emulation whose glow the rule judges. States bases declared / points found / builds exercised / scene files judged / panoramas framed / stated cameras judged over camera records; **a base unaccounted for is a red, judging zero scenes is a red, and judging zero stated cameras is a red**. Job `gallery views (render plan, whole map, cameras)`. Resolves its engine through `tools/lib/delvec_bin.py`, which NAMES the binary it found on every run and refuses one older than the compiler sources in the tree |
+| `tools/ci/check-gallery-render.py` | CI + agent | `python3 tools/ci/check-gallery-render.py --prefabs <generated> --build-out <tree> --frames <dir> [--write] [--delvec <bin>]` — **every declared view of the gallery is produced, and shows something** (spec-0039 §7). The gallery commits the view set it declares (`gallery/render-plan.json`, regenerated with `--write`); a view that vanishes from the build, or one the build emits that the set does not declare, reds by name. One `delvec frames <build>` draws every shot on the CPU backend at 256 px (the manifests are judged, not the pixels) and every frame's manifest is read: a featureless frame and a frame binding zero targets are findings, since a camera that framed nothing declared checks nothing by having been taken. **No pixel is committed or compared.** States views declared, produced, refused and judged; zero of either is a red |
+| `tools/ci/check-whole-map-render.py` | CI + agent | `python3 tools/ci/check-whole-map-render.py --prefabs <generated> [--delvec <bin>] [--work <dir>]` — **the storybook illustration path runs, on every horizon the engine can build**. The population is the horizon bases `delvec schema --stage all` declares; each needs a gallery point declaring it, and a base with none reds by name. Per point: `delvec build`, `delvec panorama` (CPU, 160×90, 1 spp) and, where the point carries `design/cameras.json`, `delvec cameras --preview` (CPU), each judged from its frame manifest — the panorama's subject box projected through its Minecraft camera by a projection of the gate's own (every corner inside the frame, at least a third of it covered, the manifest's own `subject.span.fill` within 0.02 of that projection), the landform's chunks loaded, nothing featureless, every stated camera's pose, world and weather the record's, and every weather drawn over the domain. Every count is printed; zero panoramas or zero cameras is a red |
 | `tools/ci/check-gallery-post-beat.py` | CI (gallery views job) + agent | `python3 tools/ci/check-gallery-post-beat.py --delvec <bin> --prefabs <generated> --build-out <gallery build> --work <dir>` — **the gallery's showcase cameras stand where its record says** (spec-0089 §9). Runs `delvec cameras` over the gallery's own build — a cargo test cannot build the gallery — and asserts from the binding lines and the written worlds: exactly two worlds, `at-load` and `after-obj-clear-the-muster`, with `east-bay-after-the-muster` standing in the second at a positive `cells moved from load`; removing that camera's `after` (on a scratch copy of the gallery) moves its scene to `at-load` and the count to 0; moving it to `obj/take-the-bone` moves the world's hash and the count. Prints every run's `configurations:` line and each world's cells and sha-256 |
 | `tools/ci/check-written-world.py` | CI (tier 2 over the gallery primary; gallery bot over the site-plan point) + agent (**mandatory** at step 10, its record handed to the staging gate) | `python3 tools/ci/check-written-world.py <build-dir> <written-world> <server-save> [--record <file>]` — **the world the engine writes is the world the pinned server builds** (spec-0089 §5.4, `DW0955`). Reads the written load world (`delvec written-world <campaign> -o <dir>`, from the campaign and `--prefabs` alone with no camera record; the same world `delvec cameras` writes as `<out>/worlds/at-load`) and a `validation/world-save.sh` save of the same build through `tools/lib/anvil.py`, compares every cell inside `render-plan.json`'s `layout_aabb`, and prints the box, both worlds' non-air counts, the cells compared and every differing cell by state pair in its class — gravity, fluid, re-derived (a connection, stair shape or leaves distance the server re-derived), clock (a gate region a clock owns, `clocked` in `validation/gate-seal.json`) — each a measured count — plus random-tick (grass block or mycelium against dirt, turned by the server's random tick; and copper the server weathered — the same registry family, unwaxed as written, one or more stages further on, every property equal; a waxed block that changed or a stage going backwards is a finding). Reds `DW0955` on any differing cell in no class. It also reads every item entity in the save (`minecraft:item`, anywhere — `anvil.item_entities`) and counts them against the `summon minecraft:item` lines of the load's own functions (`setup`, the ground and world-build steps, `place_all`, `setup_finish`): a block the load wrote and the server did not keep lies on the ground as one and moves no cell, so an item entity beyond the declared ones reds `DW0955` with its item and position. `--record <file>` (outside the build tree) also writes the verdict as JSON — `verdict`, `manifest_sha256` of the build, the box, the compared count, each class's count, up to twelve model cells, and `item_entities` (entities, items, declared, by item, a sample) — on a red as on a green; it is what `tools/creator/staging-gate.py --written-world` admits on. Its perturbations live in `crates/delvec/tests/post_beat_camera.rs` (one cell moved reds; a settled gravel lands in the gravity class; a `structure_void` the server holds over the model's air reds, and its record says so) |
 | `tools/ci/gallery-baseline.py` | CI + agent | `python3 tools/ci/gallery-baseline.py --prefabs <generated> [--delvec BIN] [--base origin/main] [--compare REV] [--work .gallery-baseline] [--compare-target-dir DIR] [--write]` — the gallery's **emission baseline, computed in the run, and its expected-warnings ledger** (spec-0039 §5, ADR-0034). One invocation measures the whole domain (`gallery_domain.points()`: the primary in every declared language, plus each overlay in `en`) **twice, from source**: the head, with the handed `delvec` and prefab directory; and the comparison tree — `merge-base(--base, HEAD)`, or `HEAD^1` when HEAD is on `--base` (a push to `main`) — checked out into a worktree of its own under `--work` and built there by its own `cargo build --locked -p delvec --bin delvec` (into `--compare-target-dir`, default `<work>/target`, which CI caches), its own `tools/ci/gallery-prefabs.py`, and its own `gallery_domain.py`/`gallery_units.py` loaded from its own tree. Head contributes only the loop that runs each tree's own engine over each tree's own points. A measurement is per build the compiler's `manifest.json` and its warning rows, plus a header (commit, delvec and `dsl_version`, gallery source hash, generator-input hash, coverage counts). It writes `<work>/report/`: `delta.json` (every added/removed/changed emitted path by output class, every recorded-but-not-emitted manifest value that moved, the header pair, the verdict and the binding), `header.json`, `manifests.json` (the head's, naming the commit it measured — what `gallery-build.py` proves a tree against) and `manifests-compare.json`; and the summary to `$GITHUB_STEP_SUMMARY` when set. **Red**: a build fails on either side (never a fallback); the head's warning set differs from the committed `gallery/baseline/warnings.json` (counted, never set-compared); the delta is non-empty while `git diff --name-only <comparison>` reaches none of `EMISSION_INPUTS` (`crates/`, `gallery/`, `prefabs/gallery-generator/`, the root `Cargo.toml`/`Cargo.lock`/`rust-toolchain.toml`, `tools/ci/gallery_domain.py`, `tools/ci/gallery-prefabs.py` — deliberately not `versions.toml`, which the compiler never reads) — a **determinism finding** (ADR-0006); either side measures zero builds or zero emitted paths; a warning line it cannot parse. **Report** (exit 0): a non-empty delta on a change reaching an emission input — the reviewer reads it. The summary's first line says which the run is, and states builds per side, emitted paths per side and weighed, delta size, warning rows against the ledger's, and changed paths. `--write` measures the head only and writes `warnings.json`, refusing a write that would not move a byte. Nothing else under `gallery/baseline/` is committed, and `.gitignore` refuses the three documents that used to be. Resolves the head engine through `tools/lib/delvec_bin.py` |
@@ -2011,11 +1711,8 @@ it keeps one home rather than being copied into four.
 | `tools/lib/delvec_bin.py` | library (CI gates + creator) | Imported, never run. The repo's ONE resolver for **which `delvec` a tool runs**, and the refusal that keeps it current. Five tools in `tools/` derive their whole verdict from a built engine and each resolved one privately: the coverage gate searched `target/release/delvec` then `target/debug/delvec` and printed neither, and four others DEFAULTED to the release path. A reviewer's worktree carried a release binary nine days old, the coverage gate found it first, and it reported a false red about a schema field that had already landed — nothing errored, and the output named no instrument, so there was nothing in it to disagree with. That is the frozen-measurement rule with the instrument INSIDE the thing being measured: the unit set these gates judge against is *the compiler in this tree*, so a stale binary does not make the answer noisy, it makes the answer be about a tree that no longer exists. Two demands. The instrument is **named on every run**, on stderr: resolved path, its mtime, and the `--version` line the binary itself answered. And a binary **older than the tree** is a refusal, not a warning, with the one-command remedy printed. The staleness key is the newest mtime among `git ls-files -- crates Cargo.toml Cargo.lock` — tracked files rather than a walk, because `crates/delvec/src/render` carries its own `target/` whose fresh artifacts would make every run refuse forever, which is the cry-wolf direction that gets a gate disabled, and because git's ignore rule is not a hand-written exclusion list. Where git cannot answer, a walk skipping `target/` decides and the printed line says which method did. There is deliberately **no override**: an opt-out here would be secured by exactly the property the defect supplies — *I know my binary is fine* is what the reviewer with the nine-day-old binary also believed. `required=True` exists for a caller whose verdict is about WHICH engine built an artifact, where inferring one would answer a question nobody asked; no current tool passes it. It cannot red in CI: every caller checks out first and builds second, and `Swatinem/rust-cache` prunes the workspace's own artifacts before saving, so a restored cache never supplies the binary |
 | `tools/lib/parallel.py` | library (CI gates) | Imported, never run. The repo's ONE rule for running **independent engine invocations concurrently**: `ordered(fn, items)` runs `fn` over `items` on a thread pool of `jobs()` workers — `DELVEWRIGHT_JOBS` when set (`1` reproduces the serial walk), else the cores the process may use — and yields each item's outcome **in input order**, re-raising a task's exception at that item's place. A task runs the engine in directories named for its item and prints nothing; the caller reads the outcomes in order and prints exactly what its serial loop printed, so the first refusal, every line and the exit status are the serial run's. Used by `check-gallery-coverage.py` (probe runs), `gallery-baseline.py` (domain builds), `check-gallery-stageable.py` (point build + staging gate), `check-gallery-render.py` (snapshots) and `check-whole-map-render.py` (per-base build, cameras, scene, panorama). |
 | `tools/lib/delvec-bin.sh` | library (creator steps) | Sourced, never run. The repo's ONE resolver for **which `delvec` a SHELL step runs**, and the counterpart of `tools/lib/delvec_bin.py` rather than a copy of it — the two answer opposite questions and both are right. A creator's `Init` downloads the pinned release archive, verifies its checksum and puts `delvec` on `PATH` (ADR-0023); a later step that compiles its own ignores that binary, and one that takes `PATH` unchecked runs a `delvec` of any version. One rule covers every step: **a step uses the instrument the creator established, or it says out loud that it is using a different one.** Without `--delvec`, a `delvec` on `PATH` is used when its `--version` equals `versions.toml` `[engine].version`; otherwise the tree's `target/release/delvec` when IT answers the pin; otherwise a source build — and one line names the choice and its reason on every path, including the explicit one. The version equality is the whole guard rather than a nicety: 93 seconds of compiling is a cost, while a `PATH` binary of a DIFFERENT engine building a delve is a wrong artifact every downstream check then passes over. A registry it cannot read is a refusal, because choosing an engine without knowing which one is pinned is the state it exists to remove. **It deliberately does not reach the engine-side tools**: `validation/packtest-all.sh`, the `cargo run` rehearsal flows and the five Python gates behind `delvec_bin.py` judge a property of THIS tree's compiler, for which a released binary on `PATH` is the wrong instrument even at the same version, so their stricter rule stands. `tools/tests/test_delvec_bin_sh.py` holds both halves and reds when either script grows a private default again |
-| `tools/lib/chunky-home.sh` | library (creator steps) | Sourced, never run. The repo's ONE answer to **where Chunky keeps its cores**, resolved the way Chunky resolves it. Chunky is a Java program and reads `System.getProperty("user.home")` (`SettingsDirectory.getHomeDirectory` in the pinned core); a shell's `$HOME` is a different value, and on macOS `user.home` comes from the OS account record, so the two disagree whenever `$HOME` has been moved — measured on the first full end-to-end drill, where the check reading `$HOME` announced `NONE installed` while the pinned core sat in the real directory. `dw_resolve_chunky_home` sets `DW_CHUNKY_HOME` and `DW_CHUNKY_HOME_SOURCE`, in Chunky's own precedence as far as it is visible from a shell: `DELVEWRIGHT_CHUNKY_HOME` (standing for `-Dchunky.home`), else the JVM's `user.home` + `/.chunky`. Chunky's two intermediate cases — a portable install in the working or program directory — never apply to a render: `validation/chunky.sh` hands the resolved directory to Chunky as `-Dchunky.home`, its first rule, so the directory verified is the directory read. With no `java` on `PATH` the answer is `$HOME` and the SOURCE says `UNVERIFIED`, because an absence reported from a directory nobody confirmed the renderer reads is a statement about the script. `tools/tests/test_render_shots_chunky.py` plants a `.chunky` under a moved `$HOME` and holds that the resolver does not follow it |
-| `tools/lib/chunky_core.py` | library (+ CLI, creator steps) | `python3 tools/lib/chunky_core.py (digest <jar> \| verify --home H \| classpath --home H \| main-class --home H \| record --home H --libs DIR --timestamp ISO)` — the repo's ONE rule for **what the pinned Chunky core is and whether a Chunky home holds it**, used by `validation/chunky-install.sh`, `validation/chunky.sh` and `validation/render-shots.sh`. The pin is a **content digest** (`[render] chunky_core_content_sha256`): sha256 over each file entry's sha256 by name, with `#` comment lines removed from a `.properties` entry first, because a jar's own checksum records when it was zipped and the build stamps its date into `Version.properties`. A home holds the pin when `versions/<core>.json` exists, every library it names is in `lib/` at its recorded md5, and the core jar answers the digest; `verify`, `classpath` and `main-class` exit 0 then, 3 otherwise with the pin, the home, any other core there and the installer named, and 2 when the pin cannot be read. `record` refuses a built core that does not answer the digest and installs nothing. Stdlib only |
-| `tools/lib/chunky_denoise.py` | library (+ CLI, creator steps) | `python3 tools/lib/chunky_denoise.py (platform \| install --home H \| verify --home H \| oidn --home H \| denoise-home --home H \| restore \| prepare \| await-maps \| writeback …)` — **the render route's denoise step, one authority**: the host platform, the install and verification of the pinned chunky-denoiser plugin and Open Image Denoise archive (`versions.toml [render]`, by sha256; a platform with no pinned archive builds from the pinned source when one is pinned for it, and is otherwise refused, exit 4, named, as is a source build with no compiler), and the per-scene steps `validation/chunky.sh` runs after a `-render` (restore the raw dump, prepare the PFM and passes scene copies, wait — bounded, by the core's "Render job finished." line and both maps — and end the passes JVM, write the denoised buffer back as a core dump). Exit 3 when the home does not hold the pinned kit, naming `validation/chunky-install.sh`. Tests: `tools/tests/test_chunky_denoise.py`, `tools/tests/test_render_shots_chunky.py`. See §4a |
-| `tools/lib/anvil.py` | library (agent + CI) | Imported; its one command, `python3 tools/lib/anvil.py count-tagged-entities <world> <tag>`, prints how many entities in `<world>/entities/*.mca` carry `<tag>`, loaded chunk or not (`tools/creator/playtest-server.sh`'s NPC probe). **Anvil worlds read as the pinned Chunky core reads them — the one parse rule** for every tool that reads a world: `cells(world, box=None)` → `{(x, y, z): state}` over the non-air cells, `item_entities(world)` → every `minecraft:item` entity as `((x, y, z), item, count)`, `load_world`, `region_chunks`, `section_blocks`/`section_biomes`, and the NBT reader and writer, per minecraft.wiki's *Region file format* and *Chunk format*. `tools/ci/check-written-world.py`, the spec-0089 rig and `crates/delvec/tests/post_beat_camera.rs` (the writer's read-back) all read through it. Standard library only |
-| `tools/lib/versions.py` | library (CI gates) | Imported, never run. The repo's ONE reader of `versions.toml`, through `tomllib` — the standard library's implementation of the format the file is actually written in. It exists because two gates were matching regexes at the same key: a gate over a structured document owes its readers the format's own parse, and a private re-implementation of TOML is a second authority nobody would think to keep in step. `minecraft_version()` answers `[minecraft] version` — the pin `check-reference-versions.py` binds the compiler reference's `mc Z` and the crates.io pages to, and the one `check-storybook-version.py` binds the storybook marker's `Minecraft Java <Z>` to. A pin it cannot read raises `PinError` rather than defaulting: a gate that substitutes a value for a pin it could not find passes on a number nobody wrote down. `engine_version()` and `chunky_core()` answer `[engine] version` and `[render] chunky_core` for `tools/lib/delvec-bin.sh` and `validation/render-shots.sh`; `chunky_core_content_sha256()` and `chunky_revision()` answer the pin's content digest and source revision for `tools/lib/chunky_core.py` and `validation/chunky-install.sh`; `server_heap_max()` answers `[server] heap_max` for `tools/tests/test_server_heap.py` (shell reads it through `tools/lib/server-heap.sh`). A new key earns a function here rather than a regex at a call site. **Shell reads pins through the same door**: `python3 tools/lib/versions.py <section>.<key>` prints one pin and exits non-zero with the named reason otherwise, so a script does not grow the regex this module exists to remove. Not vendored into the content repository (`.github/pins.toml` there vendors `check-pins.py`, `check-stated-counts.py` and `lib/mdtable.py`, and no others) |
+| `tools/lib/anvil.py` | library (+ CLI, agent + CI) | `python3 tools/lib/anvil.py (count-tagged-entities <world> <tag> \| light <world> <x> <y> <z> \| light-census <world> \| cells <world> <x0> <y0> <z0> <x1> <y1> <z1> \| block-entities <world> \| entities <world>)` — **Anvil worlds read as the pinned server writes them, the one parse rule** for every tool that reads a world: `cells(world, box=None)` → `{(x, y, z): state}` over the non-air cells; `light(world, cell)` → `(block, sky)` from the section's nibble arrays (`None` where a section carries none); `light_arrays(world)`; `block_entities(world)` → `{cell: compound}`; `entities(world)` → every entity compound of `entities/r.*.mca`; `item_entities(world)`; `count_tagged_entities(world, tag)`. Read by `tools/ci/check-written-world.py` (cells, block entities, entities), `crates/delvec/tests/review_frame_worlds.rs` and `tools/creator/playtest-server.sh`'s NPC probe. Standard library only |
+| `tools/lib/versions.py` | library (CI gates) | Imported, never run. The repo's ONE reader of `versions.toml`, through `tomllib` — the standard library's implementation of the format the file is actually written in. It exists because two gates were matching regexes at the same key: a gate over a structured document owes its readers the format's own parse, and a private re-implementation of TOML is a second authority nobody would think to keep in step. `minecraft_version()` answers `[minecraft] version` — the pin `check-reference-versions.py` binds the compiler reference's `mc Z` and the crates.io pages to, and the one `check-storybook-version.py` binds the storybook marker's `Minecraft Java <Z>` to. A pin it cannot read raises `PinError` rather than defaulting: a gate that substitutes a value for a pin it could not find passes on a number nobody wrote down. `engine_version()` answers `[engine] version` for `tools/lib/delvec-bin.sh`; `server_heap_max()` answers `[server] heap_max` for `tools/tests/test_server_heap.py` (shell reads it through `tools/lib/server-heap.sh`). A new key earns a function here rather than a regex at a call site. **Shell reads pins through the same door**: `python3 tools/lib/versions.py <section>.<key>` prints one pin and exits non-zero with the named reason otherwise, so a script does not grow the regex this module exists to remove. Not vendored into the content repository (`.github/pins.toml` there vendors `check-pins.py`, `check-stated-counts.py` and `lib/mdtable.py`, and no others) |
 | `tools/lib/server-heap.sh` | library (agent + human) | Sourced, never run. The repo's ONE rule for a Minecraft server's heap. `dw_server_heap_max [build-dir]` prints the ceiling: the build's own statement, `heap-max` in `<build-dir>/server/resources.properties` (computed by the compiler for the delve's declared view distance at the player cap, spec-0091, never below the pin), or with no build in hand `versions.toml` `[server].heap_max` (through `tools/lib/versions.py`); `dw_server_heap_env [override] [build-dir]` prints the one `-e` value a host-side `docker run` of a bare server image carries — `MAX_MEMORY=<ceiling>` (the initial heap stays at itzg's 1G) or `MEMORY=<override>` — used by `tools/creator/playtest-server.sh` (which hands it the build). A server booted from the delve image or by the PackTest runner gets the same ceiling from `validation/world-settings-entrypoint.sh`, which is baked into the image and so cannot source this file. `dw_server_log_shows_oom <text>` / `dw_server_log_file_shows_oom <file>` are the one match for `java.lang.OutOfMemoryError`; `dw_server_oom_advice` is the one message; `dw_server_watch <pid> <log> <timeout> [poll]` waits for a server run and returns 10 on an OOM line, 11 past the timeout, 0 when the run ended by itself. `tools/tests/test_server_heap.py` enumerates every compose service and every `docker run` in tracked shell and workflows, fails any server start that takes neither this nor the entrypoint's default, fails a compose service that sets a heap of its own, and fails a second copy of the OOM match; it prints each binding. The pin is a constant, not derived from the build: one campaign is measured (vesperhold, 1G OOM, 4G clean), so a template-count formula would be invented; what IS derived from the build is the view distance's cost on top of it (`compiler::served`, fitted to `crates/delvec/tests/measured/view-distance.json`). On a host with little memory (the production Raspberry Pi) the ceiling is committed only as the delve grows into it, but a delve that does grow to it needs the ceiling plus the JVM's own memory free; a smaller host runs the image with `-e MEMORY=<size>` |
 | `tools/lib/playtest-image.sh` | library (human, through `playtest-server.sh`) | Sourced, never run. Everything that makes a playtest image's bytes: the image names and labels, `DW_PLAYTEST_INPUT_FILES` and `dw_playtest_inputs_key`, `dw_playtest_build_and_gate` (the campaign build and staging gate), `dw_playtest_make_image` (the delve image, the placement boot, the bake and the playtest image), `dw_playtest_place_argv`, `dw_playtest_bake_context`, and the failed placement's cleanup. The inputs key hashes this file, so an edit here rebuilds every campaign's image on its next `up`. |
 | `tools/lib/playtest-checkpoint.sh`, `tools/lib/playtest_checkpoint.py` | library (human, through `playtest-server.sh`) | The playtest checkpoints' live half (sourced: `dw_ckpt_save`, the flushed copy; `dw_ckpt_watch`, the watcher; `dw_ckpt_verify_restored`, the restore check; `dw_ckpt_root`) and file half (`python3 tools/lib/playtest_checkpoint.py quests|copy|digest|next-seq|write-meta|list|resolve`). Outside the playtest image's inputs key: nothing in them reaches the image. |
@@ -2032,7 +1729,7 @@ Named here because the inventory is of the tool surface, not of one directory.
 | `.claude/skills/delvewright/skills/new-delve/scripts/check-toolchain.py` (ships in the plugin) | agent (**mandatory**, Init I1b on every run, and I8) | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/check-toolchain.py" --mode "$DELVEWRIGHT_MODE" --engine "$DELVEWRIGHT_ENGINE"`, with the run's own I0/I1 values and never `env.sh`'s — **the toolchain on disk is the one the page beside it pins.** Compares `delvec --version` resolved through `~/.delvewright/env.sh` with the version `[engine].ref`'s tag states (dev mode: the checkout's `[engine].version`), the creator engine tree's `rev-parse HEAD` with the commit `[engine].ref` resolves to in that clone, and `env.sh`'s `DELVEWRIGHT_SKILL` / `DELVEWRIGHT_MODE` / `DELVEWRIGHT_ENGINE` with its own skill root and the run's I0 — `env.sh` read by sourcing it in `sh` with those variables cleared from the caller, so an inherited export cannot stand in for a missing line. Prints every comparison with both sides. Exit 0 agrees; 3 refuses and names the Init steps that repair it (I2, I3a or I3b, I4), in order; 4 no `env.sh`, the whole of Init; 2 unusable. Reuses `fetch-delvec.py`'s pin reader and version pattern. Tested by `tools/tests/test_check_toolchain.py`, which also runs `init.md`'s own I4 fence as the repair; held on the page by `check-skill-page.py` rule 19 |
 | `.claude/skills/delvewright/skills/new-delve/scripts/fetch-delvec.py` (ships in the plugin) | agent (**mandatory**, Init I3a) | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/fetch-delvec.py" --into ~/.delvewright/bin [--pin PIN] [--engine ENGINE]` — puts the pinned `delvec` release archive on the machine, checksum-verified against the release's `SHA256SUMS`, or refuses with an exit code that says why; [`init.md`](../../.claude/skills/delvewright/skills/new-delve/references/init.md) I3a holds what each code means |
 | `.claude/skills/delvewright/skills/new-delve/scripts/fetch-client-jar.py` (ships in the plugin) | agent (Init I5, on the user's choice to download) | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/fetch-client-jar.py" --engine "$DELVEWRIGHT_ENGINE" [--out OUT]` — downloads the client jar of the version the engine pins from Mojang and refuses on a sha1 mismatch; the jar is never redistributed |
-| `.claude/skills/delvewright/skills/new-delve/scripts/find-jdk.py` (ships in the plugin) | agent (Init I1; step 12's Chunky build) | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/find-jdk.py" [--minimum N \| --major N]` — prints the newest JDK 21+ already on the machine, or the exact major `--major` asks for (the Chunky build's `versions.toml [render] chunky_build_java`), or exits 1 having found none |
+| `.claude/skills/delvewright/skills/new-delve/scripts/find-jdk.py` (ships in the plugin) | agent (Init I1) | `"$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/find-jdk.py" [--minimum N \| --major N]` — prints the newest JDK 21+ already on the machine (the jar-reading checkers' Java), or the exact major `--major` asks for, or exits 1 having found none |
 | `.github/pins.toml` | record | the pin registry `check-pins.py` reads: one entry per pin, with its sites, its policy, and — for a judged pin — the upstream revision it was last reviewed against and the file whose job judges it; for a pin named by a version string, the checker that holds its sites equal (`bound_by`) and the key that checker reads it under (`bound_key`). The reason a pin is held lives here rather than in a comment beside the value, because nothing reads a comment, and a rotted pin and a deliberately frozen one are identical in a diff |
 | `.github/scripts/mecha_crosscheck.py` (not under `tools/`) | CI | `python3 .github/scripts/mecha_crosscheck.py [<datapack-dir>]` (default `out/datapack`, positional only) — ADR-0011's independent cross-check: re-parses every emitted `.mcfunction` line against the pinned 1.21.11 command tree with `mecha==0.104.1` + `beet` (installed by the job, never a repo dependency), so a line the compiler's own first-party validator accepted and mecha rejects is a bug in one of the two. Never the emission path. Finding zero `.mcfunction` files under the directory is a red, not a pass. Runs as the CI job `mecha cross-check (emitted mcfunction)` |
 | `.github/workflows/issue-kind.yml` + `.github/scripts/issue_kind.py` (not under `tools/`) | repository upkeep, never a gate | on `issues: opened`, and by hand through `workflow_dispatch` (`issue`, `dry_run` default true) — labels the issue `bug`, `idea` or `debt`: the prompt is built from `.github/issue-kinds.md`, the one definition of the kinds, and answered by the Copilot CLI through `actions/ai-inference` with the workflow's own token (`copilot-requests: write`, no secret; the model's job holds no issue write access). A label is applied only when the answer is exactly one kind name and the issue carries no kind yet; any other answer, or a failed call, writes one line to the job summary and fails the job. A dry run writes the answer beside the issue's current kind and labels nothing |
@@ -2073,9 +1770,7 @@ Shell entry points:
 | `validation/fresh-volumes.sh` | agent | `validation/fresh-volumes.sh --project <compose-project>` — tear ONE compose project down and **prove** its containers, volumes **and networks** are gone. The network is the third class and the one that only ever bites the creator: a runner is fresh every job, a workstation is not, and leaked `<project>_default` networks accumulate until Docker's address pool is exhausted — at which point a ladder fails with `all predefined address pools have been fully subnetted`, on whichever project happens to be running, reported as a test failure. `--project` is REQUIRED: no default, and `COMPOSE_PROJECT_NAME` is deliberately not honoured, because an invisible default's cost is somebody else's live world. The old daemon-wide `--all` is GONE — it matched `server-data$` across every project and force-removed the pinned `delvewright-*` names, i.e. an outage rather than a teardown. It additionally refuses a project whose container publishes host 25565 (an owner-facing session, human possibly inside). Run it before any re-run of the bot ladder — the entry scripts do it for you: `docker compose -p <proj> … down -v` silently leaves `<proj>_server-data` behind whenever an exited container of that project still holds it, and the stale volume carries the scoreboard, so the re-run starts with objectives already complete and the bot reports a **false CONTENT failure** (three misattributed red runs, island round 13) It reclaims a FOURTH class the earlier version left entirely: the images the project built. Both tags a ladder mints are project-scoped by design — `delvewright/delve:<project>` (an image tag is global to the daemon exactly as a container name is) and compose's own `<project>-bot:latest` — which is what makes them a per-project **leak** rather than one shared tag being rebuilt: nothing reuses them and nothing removed them. Selection is by the compose project label, which compose stamps into every image it BUILDS and never onto one it pulled, so the pinned toolserver digest and the itzg base can never be reached and the UNTAGGED half is reached — every rebuild leaves the previous build untagged and still labelled, and a name glob sees none of them. Removal is per TAG and that is the safety: a tag goes only if it is a name this ladder minted (`<project>-<service>:latest` with the service read off the image's own label, or `<repo>:<project>`); any other tag stays and keeps the image, which is what protects the shared `delvewright/delve:local` that `owner-play.yaml` publishes on 25565 and that carries whichever project's label built it last. An image any container holds, of any project, is exempt by id with the holder named. A survivor is NAMED with the daemon's own reason and does **not** red the teardown — a stale image cannot poison the next run the way a stale volume does, so reddening a ladder over disk hygiene would manufacture the false CONTENT failure this script exists to prevent. The closing line states its binding: images examined, removed, image-size (**not** disk — every delve image carries the whole itzg base and the daemon stores it once, so the sum counts it per image) and kept. **Build cache is not touched and says so**: cache records are content-addressed and global, so no project owns one and a per-project tool has no standing to prune it. The rule for what a project owns lives in `validation/lib/ladder-images.sh`, shared with the sweep below. |
 | `validation/reclaim-ladder-images.sh` | agent + human | `validation/reclaim-ladder-images.sh [--apply] [--project <name>]…` — the sweep for images that ladder projects left behind BEFORE the teardown reclaimed them, and the backstop for any that escape it. **Dry run is the default**; `--apply` removes. Four rungs decide, each demanding evidence a defect cannot supply, and none of them is age, quiet or a belief about who is running: the project holds no container, volume or network (checked live, per project, at the moment of the sweep — anything holding one is skipped with the class named, because it is mid-run); the project is named the way this repository's entry scripts name one and the image's compose service is one `validation/compose.yaml` itself declares, read from compose's own parse of that file rather than a maintained list (the daemon belongs to the creator, and unrelated software's compose projects live on it); every tag on the image is a name that ladder minted; and no container of any project holds the image. It prints what it would remove with the bytes, keeps and names anything it will not touch, and states its binding — projects examined, skipped as mid-run, images removed, kept. The byte figure is IMAGE SIZE, not disk, and `--apply` prints `docker system df` before and after as the disk measurement, whose failure mode is unrelated to the sum. Build cache is left alone: content-addressed and global, so no project owns one |
 | `validation/world-save.sh <build-dir> --project <id>` | agent + CI (**the world step of the visual tier**; the server half of `DW0955`) | `EULA=TRUE validation/world-save.sh <build-dir> --project dw-<id> [--timeout 600] [--seed <bootstrap cache>]` — **make the build's world exist.** `--seed` copies a `server-bootstrap-cache.sh` cache into the world volume first and holds the boot to having used it (`is already installed` in its log); tier 2 passes its one verified fetch. A showcase camera needs none of this — `delvec cameras` writes its own world — so the save is the review frames' and the panorama's world, and the instrument `tools/ci/check-written-world.py` checks the written world against. `delvec build` emits a datapack, not a world: a delve's geometry is stamped by the datapack's `place_all` over the first ticks of a server boot, so a build tree has no `level.dat` and no `region/` anywhere in it. This boots the SHIPPED delve image for that tree (`compose.yaml`'s `server` service, own compose project, no host port), waits for the datapack's own readiness signal — `#placed dw.sys` reaching 1, read over rcon through `tools/lib/rcon.sh`, never a log grep — flushes, stops, and copies `/data/<level-name>` to `<build-dir>/world/`. `--project` is REQUIRED for the same reason `bot-run.sh` requires it — it also names the delve image tag this run builds (`validation/lib/delve-image.sh`) — and the project is fresh-volumed before and after. States its binding as region files copied and their byte total; a copy with zero region files is a refusal, because that renders as exactly the empty sky the gate exists to prevent. **The world save is server-written and NOT byte-reproducible** (`level.dat` and every region file carry wall clock); nothing hashes it — the build manifest's `outputs` is an index over the compiler's in-memory emission map rather than a walk of the output directory, and `gallery-baseline.py` hashes `gallery/` + `crates/` and reads each build's `manifest.json`, never the build directory `world/` is a derived artifact of the build in the directory: the next `delvec build` into it removes it (`DW0967` in compiler.md §5), because it is the previous build's geometry. |
-| `validation/render-shots.sh <build-dir> [out-dir] [--delvec BIN]` | agent | turn a build output into the Chunky scene set + shot index (`delvec scene` + `panorama` + `index`), including the first-person POV shots and the default panorama (`<campaign>_panorama_se_45`). **REFUSES when `<build-dir>/world/` holds no world save** (no `level.dat`, or no region files), naming `world-save.sh` as the remedy and writing no scenes at all: a scene names the world Chunky loads, and Chunky renders a missing world as an empty sky at exit 0 with the reason buried in a Java stack trace — 279 plausible identical pictures of nothing, every command green. There is no opt-out; `world-save.sh` is the only producer of that directory. The emitted scenes name the world by ABSOLUTE path, because Chunky resolves a scene's world path against the rendering process's working directory and **not** against the scene directory (measured on the pinned core: one scene, one `-scene-dir`, loads from one CWD and reports `no world found` from another) — so the printed `ChunkyLauncher.jar` commands work from anywhere. The scene set is deterministic for a given build tree at a given path; the world path is the one machine-dependent field. **The engine is resolved by `tools/lib/delvec-bin.sh`** — it used to take whatever `delvec` `PATH` held, of any version, and say nothing — so a binary on `PATH` is used only when it IS this engine, and the choice is printed. **And it says whether the pinned renderer is installed**: the run ends with the `chunky home:` line and the verdict of `tools/lib/chunky_core.py verify` on that home — the same rule `validation/chunky.sh` refuses by — naming `validation/chunky-install.sh` when the home does not hold the pin. **That directory is resolved the way CHUNKY resolves it** (`tools/lib/chunky-home.sh`): from the JVM's `user.home`, and **not** from the shell's `$HOME` — on macOS `user.home` comes from the OS account record, so the two disagree the moment `$HOME` is moved. `DELVEWRIGHT_CHUNKY_HOME` states the directory outright. It reports and does not refuse, because it renders nothing: the refusal belongs to the step that renders The default `<build-dir>/shots` is a derived artifact: the next `delvec build` into the directory removes it with the build it was rendered from. |
-| `validation/chunky-install.sh [--java-home DIR] [--work DIR]` | agent (**step 12 of the page**) | installs the pinned Chunky core by name: clones `[render] chunky_source` at `chunky_revision`, builds it with Chunky's own Gradle wrapper under a JDK answering `chunky_build_java`, and installs the core, its libraries and `versions/<core>.json` into the Chunky home `tools/lib/chunky-home.sh` resolves — only when the built jar answers the pinned content digest (`tools/lib/chunky_core.py`). A home already holding the pin keeps its core. Then it installs the denoise kit (`tools/lib/chunky_denoise.py install`): the chunky-denoiser plugin and Open Image Denoise for this platform, each only when its download answers its `versions.toml [render]` sha256, under `<home>/denoise/`; a mismatch installs nothing (exit 1) and Open Image Denoise is built from its pinned source release on a platform its project ships no archive for (aarch64 Linux): the pinned oneTBB source, then Open Image Denoise's CPU device, with the pinned CMake, Ninja and ISPC; the machine supplies only a C and C++ compiler (no compiler, or a platform with neither an archive nor a pinned source build, exits 2 by name). A JDK of another major, or none, exits 2 naming the major and `--java-home` before anything is cloned; a failed clone, build or digest exits 1 and keeps the work directory, named. The work directory (default `~/.delvewright/chunky-build`) holds the clone and `GRADLE_USER_HOME`, and is deleted after a verified install. Needs `git` and the network. See §4a |
-| `validation/chunky.sh <Chunky arguments>` | agent (**every render**) | renders with the pinned Chunky core or refuses by name: `tools/lib/chunky_core.py classpath` holds the Chunky home to the pin, then the core's own `Main-Class` runs on the classpath its version record names with `-Dchunky.home` set to the home verified, and the first line names the core. A home that does not hold the pin exits 2 with the pin, the home, any other core and `validation/chunky-install.sh` named, and starts no JVM. Takes Chunky's own arguments (`-scene-dir`, `-render`, `-snapshot`, `-target`, `-threads`, `-f`). **Every `-render` is denoised**: the home must hold the pinned denoise kit or it exits 2 before rendering; after the render it takes the raw buffer, the plugin's albedo and normal passes and Open Image Denoise, keeps the raw dump as `<scene>.dump.raw` and writes the denoised one as `<scene>.dump` for the following `-snapshot` (`tools/lib/chunky_denoise.py`). See §4a `--pack <resourcepack.zip>` as the first argument layers a delve's pack above the client jar with the core's `-textures <pack>:<jar>` (first listed wins), so a replaced block texture renders in the delve's look (spec-0084 §5.1). |
+| `validation/client-jar-cache.sh [--cache <dir>] [--force]` | CI | the one verified live Mojang fetch of the pinned client jar per job (§4a): `[minecraft] client_jar_url`, checked against `client_jar_sha256`; prints the jar's path on its last line, which the job exports as `DELVEWRIGHT_CLIENT_JAR`; a red names the URL and is the network, never a frame |
 | `validation/playtest-note-flow.sh` | agent (run by hand; **no CI job calls it**) | `EULA=TRUE validation/playtest-note-flow.sh` — drives the whole spec-0006 note loop non-interactively and asserts the report. Runs in a per-invocation compose project (`dw-noteflow-$$`, override with `DW_COMPOSE_PROJECT`) on an ephemeral host port and its own delve image tag (`validation/lib/delve-image.sh`), so it needs no lock and can run beside `rehearsal-flow.sh`, which builds a different campaign |
 | `validation/rehearsal-flow.sh` | agent (run by hand; **no CI job calls it**) | `EULA=TRUE validation/rehearsal-flow.sh` — drives the whole spec-0019 calibration loop (`dw.aim`/`dw.faster`/`dw.mark`/`dw.done` → harvest → `delvec calibrate`) and asserts the patch resolves back to the cell the bot marked; in the same session places cameras by hand (spec-0069: `dw.cam` standing, sneaking, and out of the body after `dw.free`), holds `camera-report.json` to the bot's poses (eye within 0.001 block, rotation within 0.01°) and `dw.free`'s return to the place and rotation it left. Per-invocation compose project (`dw-rehearsal-$$`) on an ephemeral host port and its own delve image tag, like note-flow |
 | `validation/branch-runs.sh` | agent (**required for a branching campaign**) | `EULA=TRUE [DELVEWRIGHT_BRANCHES=…] validation/branch-runs.sh --project dw-<id> [--out <dir>]` (`--project`, or `DW_COMPOSE_PROJECT`, is REQUIRED) — spec-0025 §3 branch runs: walk every branch the tier selects, **each in its own fresh world** (party progress only moves forward, so a second branch needs a second world), and merge the per-branch run reports into `validation/run-out/<project>/branch-runs.json` — per branch: ran/skipped-with-reason/**INFRA-FAILED** and the result (an attempted branch whose compose run exited without writing any run report renders as an infra failure — a validation-infrastructure fault, distinct from a red run and from a tier skip; when that branch's server log holds `java.lang.OutOfMemoryError`, the row and the run's error line say so, through `tools/lib/server-heap.sh`). `--out` / `DW_RUN_OUT` relocates the merged + per-branch reports; the bot's own report is read from the compose mount, which is project-scoped too (`DW_BOT_OUT`, so two loops from one checkout cannot overwrite each other's reports) and FILED under the out dir. The branch set and the selection come from the build's `validation/branch-plan.json` via `harness/src/branch-select.ts`, i.e. the same code the run uses, so a tier can never select a branch the run then refuses. Isolation is by construction: own compose project, no pinned container name, no host port, its own delve image tag (`validation/lib/delve-image.sh`), teardown via `fresh-volumes.sh --project`. One critical-path run proves ONE storyline; this is what makes "provably completable" quantify over branches |

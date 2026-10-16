@@ -33,24 +33,12 @@ rule, and the rule's domain is the more useful thing for the number to say.
 `delvec render` exit codes: `0` ok · `2` input · `3` output · `4` fidelity-gate
 failure · `5` renderer/GPU · `10` internal.
 
-#### `delvec render` dark-shot REVIEW POLICY (night-vision emulation)
+#### A dark shot's frame (night vision)
 
-For shots stamped `{"profile": "dark", "mitigation": "night-vision"}` — and only
-those — `delvec scene` emits the Chunky scene with a review-only
-`materials` override: every non-light-emitting block of the build's shipped
-structure palettes (union over `datapack/data/*/structure/*.nbt`, sorted,
-deduped, state brackets stripped) gets a low uniform emittance
-(`scene::REVIEW_EMITTANCE` = 0.05), and the scene carries
-`"delvewrightReviewPolicy": "night-vision-emulated — review only"` (Chunky
-ignores unknown keys). `delvec index` marks the same shots with
-`review_policy` and passes the `lighting` stamp through. **This is an honest
-approximation, not ground truth**: faint uniform self-glow is the closest
-Chunky analogue of Minecraft night vision (which renders every block at full,
-flat brightness), where an exposure boost cannot recover a dark cavern; real
-emitters are deny-listed out of the override so a placed fixture
-still reads as a genuine glow. Legibility of geometry/layout in an emulated
-frame is reviewable; its *lighting* is not — the compiler's measured light
-model remains the only light-truth. Lit-stamped and unstamped shots are
-byte-untouched; a dark-stamped shot with no structure palette available is a
-`DW0721` error (a silently-black "reviewable" scene would re-blind the review).
-Deterministic throughout (`BTreeMap`-sorted override keys, sorted file walk).
+A shot stamped `{"profile": "dark", "mitigation": "night-vision"}` is drawn by
+`delvec frames` under the light its written world carries, without the
+night-vision effect, and its index entry and manifest name the lightmap under
+`unchecked` ("judge in game under night vision"): the pinned renderer draws no
+night-vision lightmap yet (spec-0112 phase 2). Its geometry is judged in a
+frame lit by the room's own fixtures; its legibility under night vision is
+judged in the game. Lit-stamped and unstamped shots carry no such line.
