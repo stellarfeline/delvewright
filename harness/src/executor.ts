@@ -38,7 +38,6 @@ import type { PulsePlan } from "./pulse.ts";
 import type { CueEvent, CueLedger } from "./cues.ts";
 import { type Waypoints } from "./waypoints.ts";
 import type { BotConfig } from "./executor/connection.ts";
-import { LOOP_CROSS_TIMEOUT_MS } from "./executor/loop.ts";
 import { ENTITY_SETTLE_TIMEOUT_MS } from "./executor/settle.ts";
 import type { StagedRemoval } from "./executor/staging.ts";
 import type { TriggerEcho } from "./executor/trigger.ts";
@@ -351,10 +350,6 @@ export class MineflayerExecutor implements StepExecutor {
   clockReads = 0;
   /** What the placement wait measured, once the world read placed. */
   placement: PlacementRecord | undefined;
-  /** spec-0086 §6: how long one loop crossing may take. Overridable
-   * (`DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS`) so a test can reach the give-up path
-   * without waiting out the production default. */
-  readonly loopCrossTimeoutMs: number;
   /**
    * The compiler's proven per-leg critical-path waypoints (keyed by
    * destination anchor). When a walked step's target has a leg here, `walkTo`
@@ -574,10 +569,6 @@ export class MineflayerExecutor implements StepExecutor {
     this.entitySettleTimeoutMs =
       Number.isInteger(settleParsed) && settleParsed >= 0 ? settleParsed : ENTITY_SETTLE_TIMEOUT_MS;
     this.placementTimeoutMs = placementTimeoutFromEnv(env);
-    const crossRaw = env["DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS"];
-    const crossParsed = crossRaw === undefined ? NaN : Number.parseInt(crossRaw, 10);
-    this.loopCrossTimeoutMs =
-      Number.isInteger(crossParsed) && crossParsed > 0 ? crossParsed : LOOP_CROSS_TIMEOUT_MS;
   }
 
   /** spec-0029 name-preference binding counters (see {@link NamePreference}). */

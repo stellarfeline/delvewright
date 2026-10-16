@@ -54,7 +54,8 @@ fn derivation_line(c: &Campaign) -> String {
 /// The gallery's site-plan point with every place a stand-in, so every bar is
 /// the derivation's to write. `tag` names the scratch copy.
 fn gallery_stand_ins(tag: &str) -> Campaign {
-    let dir = std::env::temp_dir().join(format!("dw-gated-connection-{tag}"));
+    let dir =
+        std::env::temp_dir().join(format!("dw-gated-connection-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     common::gallery_site_plan_at(&dir);
     let mut c = common::campaign_at(&dir);
@@ -212,7 +213,7 @@ fn changing_the_seed_moves_no_bar() {
 /// sets, and that beat opening the grating beside the hall's bars.
 fn gated_climb_fixture(tag: &str) -> Campaign {
     let src = common::repo_root().join("crates/delvec/tests/fixtures/blockout");
-    let dir = std::env::temp_dir().join(format!("dw-gated-climb-{tag}"));
+    let dir = std::env::temp_dir().join(format!("dw-gated-climb-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(&src, &dir);
     common::patch_file(&dir.join("site-plan.json"), |v| {

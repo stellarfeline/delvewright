@@ -16,9 +16,11 @@
 // It runs on a fresh world, before any beat (`validation/bot-run.sh` gives it a
 // session of its own), so every gate is as the world was built: shut. The bot
 // is put at each point by `/tp` — the probe's setup, never a mechanism the
-// stage credits — left still for a second, and read twice: its own position,
-// and the server's (`Pos[1]`, by `tellraw`). A body below the gate's course on
-// either reading fell through it.
+// stage credits — left still for 30 of the server's game ticks (a game-tick
+// wait, judged by the game clock and never by the wall clock), and read twice:
+// its own position, and the server's (`Pos[1]`, by `tellraw`, run in the tick
+// of a game-time reading so its reply is the reading's). A body below the
+// gate's course on either reading fell through it.
 //
 // Everything above `runHatchStand` is pure, and tested.
 
@@ -92,6 +94,21 @@ export async function loadHatchPlanForCriticalPath(criticalPathFile: string): Pr
 
 /** How far a reading may sit from the gate's feet height and still be on it. */
 export const STAND_TOLERANCE = 0.05;
+
+/** How many of the server's game ticks the body is left still before it is read. */
+export const SETTLE_TICKS = 30;
+
+/** The `tellraw` that reports the body's feet height, as the server holds it. */
+export const HATCH_POS_COMMAND = '/tellraw @s ["HATCHPOS ",{"nbt":"Pos[1]","entity":"@s"}]';
+
+/** The feet height a {@link HATCH_POS_COMMAND} reply carries, or `undefined` when no line does. */
+export function parseHatchPos(lines: readonly string[]): number | undefined {
+  for (const line of lines) {
+    const m = /^HATCHPOS (-?[\d.]+)d$/.exec(line);
+    if (m) return Number(m[1]);
+  }
+  return undefined;
+}
 
 /** One stand's two readings. */
 export interface StandReading {
@@ -167,22 +184,17 @@ export async function runHatchStand(criticalPathFile: string): Promise<number> {
     bot.on("death", () => {
       died = true;
     });
-    let serverY: number | undefined;
-    bot.on("messagestr", (msg: string) => {
-      const m = /^HATCHPOS (-?[\d.]+)d$/.exec(msg);
-      if (m) serverY = Number(m[1]);
-    });
     const failures: string[] = [];
     let stood = 0;
     for (const g of plan.gates) {
       for (const at of g.points) {
         died = false;
-        serverY = undefined;
+        const where = `hatch stand on ${g.anchor} at (${at[0]}, ${at[1]})`;
         bot.chat(tpCommand(at[0], g.feetY, at[1]));
         bot.clearControlStates();
-        await bot.waitForTicks(30);
-        bot.chat('/tellraw @s ["HATCHPOS ",{"nbt":"Pos[1]","entity":"@s"}]');
-        await bot.waitForTicks(10);
+        await executor.waitForGameTicks(SETTLE_TICKS, where);
+        const reading = await executor.readGameTime(`${where}: the server's position`, () => [HATCH_POS_COMMAND]);
+        const serverY = parseHatchPos(reading.lines);
         const r: StandReading = {
           anchor: g.anchor,
           at,
@@ -201,7 +213,7 @@ export async function runHatchStand(criticalPathFile: string): Promise<number> {
         else failures.push(why);
         if (died) {
           bot.respawn();
-          await bot.waitForTicks(40);
+          await executor.waitForGameTicks(40, `${where}: the respawn`);
         }
       }
     }
