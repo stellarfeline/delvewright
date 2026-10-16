@@ -421,6 +421,7 @@ impl<'a> Plan<'a> {
         // The branch's own seals and exercise writes (spec-0086 §5.3), in the
         // branch path's own step space.
         region_events.extend(cp.loops.events.iter().cloned());
+        region_events.extend(self.load_prop_events());
         let ancestors = compute_strict_ancestor_steps(
             self.campaign,
             &cp.firing.obj_step,
