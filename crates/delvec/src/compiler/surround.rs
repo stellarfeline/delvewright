@@ -1159,21 +1159,12 @@ pub fn generate_valley(
         {
             continue;
         }
-        // The gap floor stays bare, and the second reason is the one that
-        // decided it.
-        //
-        // The first is the recorded one — the region-margin walk is clean — and
-        // it turns out not to be the obstacle: every entry in `decor_table` is a
-        // THIN decoration, zero collision height, excluded by name from the
-        // flood below and from the assembled world's own step rule, so tufts
-        // would not touch the walk at all. What decided it is that **the draft
-        // renderer draws every non-air block as a full cube**, so a tuft in the
-        // near field is a solid green box: at this density the floor came back
-        // as a field of scattered boxes in every ground-level frame, which is a
-        // worse read than the lawn it was meant to break up and is the read a
-        // reviewer would be shown. Ground cover is not judgeable through this
-        // instrument, so it is not authored against it. The finding belongs to
-        // `delvec snapshot`.
+        // The gap floor stays bare. Every entry in `decor_table` is a THIN
+        // decoration, zero collision height, excluded by name from the flood
+        // below and from the assembled world's own step rule, so tufts would
+        // not touch the walk at all; whether ground cover on the gap reads
+        // better than the bare lawn is a question for a frame of it, and no
+        // frame has answered it.
         if zone == Zone::Gap {
             continue;
         }

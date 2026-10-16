@@ -2,18 +2,18 @@
 //! (spec-0007 / spec-0003, M3), mounted by the `delvec` binary (ADR-0023 §3).
 //!
 //! Three subcommands live here — `piece`, `batch` and `fidelity-gate` — because
-//! they are the three that mesh and rasterise through `nucleation`/`wgpu`. The
-//! CPU arms are top-level `delvec` subcommands (ADR-0021 §1): `delvec viewer`,
-//! `delvec scene`, `delvec panorama`, `delvec contact-sheet`, `delvec palette`,
-//! `delvec index`.
+//! they are the three that mesh and rasterise a prefab piece through
+//! `nucleation`. The other render arms are top-level `delvec` subcommands
+//! (ADR-0021 §1): `delvec frames`, `delvec cameras`, `delvec panorama`,
+//! `delvec viewer`, `delvec contact-sheet`, `delvec palette`.
 //!
 //! Exit codes (mirrors schem/compiler): `0` ok · `2` input/usage · `3` output ·
 //! `4` fidelity-gate failure (missing-texture placeholder detected) · `5`
 //! renderer/GPU/textures error · `≥10` internal.
 //!
 //! Textures (the 1.21.11 client jar, never committed — EULA) resolve from
-//! `--textures`, then `$DELVEWRIGHT_CLIENT_JAR`, then `~/.chunky/resources/
-//! minecraft.jar`.
+//! `--textures`, then `$DELVEWRIGHT_CLIENT_JAR`, then the location Init I5
+//! writes it to (`crate::compiler::view::cli::resolve_textures`).
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -36,8 +36,8 @@ use crate::render::view::View;
 /// `delvec render --size 640 piece x -o y` are the same call.
 #[derive(Clone, Args)]
 pub struct RenderArgs {
-    /// Resource pack for textures (the 1.21.11 client jar). Overrides the
-    /// `$DELVEWRIGHT_CLIENT_JAR` / `~/.chunky` fallbacks.
+    /// The pinned client jar. Overrides `$DELVEWRIGHT_CLIENT_JAR` and the
+    /// location Init I5 writes it to.
     #[arg(long, global = true)]
     pub textures: Option<String>,
     /// A delve's `resourcepack.zip`, layered above the textures (spec-0084

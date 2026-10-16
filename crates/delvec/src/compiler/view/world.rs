@@ -1,26 +1,36 @@
-//! **The world the engine writes** (spec-0089 §5): a block map written as an
-//! Anvil world a Chunky scene can name.
+//! **The world the engine writes** (spec-0089 §5, spec-0112 §5): a
+//! configuration written as an Anvil world a frame is drawn from.
 //!
-//! A Chunky scene names a world directory and nothing else will do, and the
-//! only other producer of one is a server boot (`validation/world-save.sh`),
-//! which stops at load by construction. So a showcase camera's world is written
-//! here, from the configuration's block map ([`crate::compiler::nav::Configuration::blocks`]):
-//! `level.dat` and `region/r.<x>.<z>.mca`, nothing else.
+//! A frame stands in a configuration, and the bytes of that configuration are
+//! the engine's — the model the proofs read ([`crate::compiler::nav::Configuration::blocks`]),
+//! never a server's save — so a frame that disagrees with a proof shows a
+//! defect of the model instead of hiding it, and two writes of one build agree.
+//! A server's save of the same build is the cross-check
+//! (`tools/ci/check-written-world.py`, `DW0955`), never the source.
 //!
-//! Per chunk holding at least one cell of the map: `DataVersion` (the pinned
-//! game's), `xPos`, `zPos`, `yPos`, `Status: minecraft:full`, and `sections[]`
-//! for the sections holding a cell, each with `Y`, `block_states{palette, data}`
-//! and `biomes{palette, data}`, packed by the minecraft.wiki *Chunk format*
-//! rules: indices at `max(4, ceil(log2 n))` bits for blocks and
-//! `ceil(log2 n)` for biomes, never across a long, `data` absent for a
-//! one-entry palette. Every region timestamp is zero, zlib at one fixed level,
-//! chunks in index order, sectors contiguous. No light arrays, heightmaps,
-//! entities, block entities or ticks: the pinned core lights a scene itself and
-//! draws none of the entities the engine summons (spec-0089 §2.2).
+//! What a written world holds: `level.dat` (`DataVersion`, `LevelName`, the
+//! spawn, `version`, and the configuration's clock as `DayTime`);
+//! `region/r.<x>.<z>.mca`, every chunk of the loaded extent and every chunk a
+//! cell stands in, each with `DataVersion` (the pinned game's), `xPos`, `zPos`,
+//! `yPos`, `Status: minecraft:full`, every section from the lowest to the
+//! highest any cell needs — `Y`, `block_states{palette, data}`,
+//! `biomes{palette, data}`, `BlockLight` and `SkyLight` — and the chunk's
+//! `block_entities`; and `entities/r.<x>.<z>.mca`, one entity chunk
+//! (`DataVersion`, `Position`, `Entities`) per chunk a body stands in. Packed
+//! by the minecraft.wiki *Chunk format* rules: indices at `max(4, ceil(log2
+//! n))` bits for blocks and `ceil(log2 n)` for biomes, never across a long,
+//! `data` absent for a one-entry palette; light at 4 bits a cell, `y`-`z`-`x`
+//! order, the even index in the low nibble. Every region timestamp is zero,
+//! zlib at one fixed level, chunks in index order, sectors contiguous.
+//!
+//! **The light** is the engine's one flood ([`crate::compiler::light::LightArrays`])
+//! over every written cell: block light from the emitters the configuration
+//! holds, sky light seeded at 15 — the two terms before the maximum the
+//! game's lightmap is drawn from.
 //!
 //! Deterministic (ADR-0006): no clock, a fixed compression level, palettes in
-//! first-seen order over the section's own index order, the NBT written by the
-//! writer here in a fixed key order rather than through a hash map.
+//! first-seen order over the section's own index order, every compound the
+//! writer builds in a fixed key order and every decoded one sorted by key.
 
 use std::collections::BTreeMap;
 use std::io::Write as _;

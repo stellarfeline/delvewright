@@ -162,7 +162,7 @@ fn max_opt(a: Option<u32>, b: Option<u32>) -> Option<u32> {
 /// The bundles a step's completion fires: an objective's own bundle and, when
 /// it is its quest's last objective, the quest's `on_complete`; a performed
 /// trigger's `effects`. Empty for every other step.
-fn completion_bundles<'a>(campaign: &'a Campaign, step: &Step) -> Vec<&'a [QuestEffect]> {
+pub(crate) fn completion_bundles<'a>(campaign: &'a Campaign, step: &Step) -> Vec<&'a [QuestEffect]> {
     let mut out: Vec<&'a [QuestEffect]> = Vec::new();
     let quests = &campaign.quests.content;
     if let Some(obj) = step.objective() {

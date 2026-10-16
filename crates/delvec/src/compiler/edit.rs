@@ -373,7 +373,7 @@ pub fn replay_taking(
     replay_with(plan, prefabs, structures, true, pristine)
 }
 
-/// [`replay`] for **view** commands (`delvec snapshot` / `blocking-chart`): the
+/// [`replay`] for **view** commands (`delvec frames --campaign` / `blocking-chart`): the
 /// edits are applied and gravity re-settles, but the invariant re-proofs are
 /// skipped — a view command must be able to SHOW a world state whose invariants
 /// fail (that is exactly what the author needs to look at). Region-resolution
@@ -859,7 +859,7 @@ fn gate_region_warnings(
                 "world-edits batch `{bid}` writes {} cell(s) (first [{}, {}, {}]) inside a \
                  `close-gate` region [{}, {}, {}]..[{}, {}, {}]. That region is filled solid \
                  when the gate closes and cleared to AIR when it opens, so one close/open \
-                 cycle erases the edit — the dressing you see in `delvec snapshot` is not what \
+                 cycle erases the edit — the dressing you see in `delvec frames --campaign` is not what \
                  players see after the beat fires. Move the edit outside the gate region, or \
                  keep it only if you are deliberately dressing the sealed state",
                 hits.len(),
@@ -1073,7 +1073,7 @@ fn used_region<'r>(
                 "world-edits batch `{bid}`: region `{name}` resolves to zero cells, so this \
                  edit would be a silent no-op — its palette-match/composition no longer \
                  matches the world it targeted. Re-check the region against a fresh \
-                 `delvec snapshot` and fix the select; do NOT leave a dead edit in the script"
+                 `delvec frames --campaign` and fix the select; do NOT leave a dead edit in the script"
             ),
         });
     }
@@ -1119,7 +1119,7 @@ fn resolve_shape(
                             "world-edits batch `{bid}`: piece {idx} of area `{}` is \
                              `{}`, not the frame's declared `{prefab}` — the solved layout \
                              has drifted since this edit was authored. Re-inspect the layout \
-                             (`delvec snapshot`) and re-target the frame; do NOT just delete \
+                             (`delvec frames --campaign`) and re-target the frame; do NOT just delete \
                              the prefab guard",
                             area.area_id, placed.prefab_id,
                         ));
@@ -1151,7 +1151,7 @@ fn resolve_shape(
                                 area.area_id,
                                 delvewright_dsl::Placement::of(plan.campaign).anchor_remedy(
                                     "use an anchor the area's placed prefab metadata declares \
-                                     (see the `delvec snapshot` manifest's target list)"
+                                     (see the `delvec frames --campaign` manifest's target list)"
                                 ),
                             ));
                         }
@@ -1932,7 +1932,7 @@ fn resolve_frame_point(
                 format!(
                     "world-edits batch `{bid}`: piece index {idx} is out of range — area `{}` \
                      placed {} piece(s) (0..={}). The layout this frame was authored against \
-                     has drifted; re-inspect it with `delvec snapshot` and update the frame, \
+                     has drifted; re-inspect it with `delvec frames --campaign` and update the frame, \
                      do NOT guess an index",
                     area.area_id,
                     area.pieces.len(),
@@ -1943,7 +1943,7 @@ fn resolve_frame_point(
                 return Err(format!(
                     "world-edits batch `{bid}`: piece {idx} of area `{}` is `{}`, not the \
                      frame's declared `{prefab}` — the solved layout has drifted since this \
-                     edit was authored. Re-inspect the layout (`delvec snapshot`) and \
+                     edit was authored. Re-inspect the layout (`delvec frames --campaign`) and \
                      re-target the frame; do NOT just delete the prefab guard",
                     area.area_id, placed.prefab_id,
                 ));
@@ -1966,7 +1966,7 @@ fn resolve_frame_point(
                         area.area_id,
                         delvewright_dsl::Placement::of(plan.campaign).anchor_remedy(
                             "use an anchor the area's placed prefab metadata declares (see the \
-                             `delvec snapshot` manifest's target list)"
+                             `delvec frames --campaign` manifest's target list)"
                         ),
                     ));
                 }

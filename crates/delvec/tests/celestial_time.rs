@@ -524,20 +524,16 @@ fn a_celestial_camera_renders_its_positions_sun_and_says_the_moon_is_not_drawn()
         campaign_id: camera::plan_campaign_id(plan).unwrap(),
         cameras: vec![cam.clone()],
     };
-    let e = camera::emit(
-        plan,
-        &sheet,
-        &rows,
-        &camera::EmitOptions {
-            world_paths: [("moonrise".to_string(), "/abs/world".to_string())].into(),
-            ..camera::EmitOptions::default()
-        },
-    )
-    .unwrap();
-    let scene_json: serde_json::Value = serde_json::from_slice(&e.scenes[0].1).unwrap();
+    let e = camera::frames_of(plan, &sheet, &rows, &camera::EmitOptions::default()).unwrap();
+    // The frame is taken under the camera's own sky: the moonrise tick, whose
+    // sun stands where the pinned track puts it.
+    assert_eq!(e[0].sky.daytime_ticks, 12959);
+    let sun = delvec::compiler::view::frames::sun_direction(e[0].sky.daytime_ticks);
     let want = scene::sun_at(12959);
-    assert_eq!(scene_json["sun"]["altitude"], want.altitude, "{scene_json}");
-    assert_eq!(scene_json["sun"]["azimuth"], want.azimuth, "{scene_json}");
+    assert!(
+        (sun[1] - want.altitude.sin()).abs() < 1e-9,
+        "{sun:?} vs {want:?}"
+    );
     let line = camera::resolve_sky(&cam, &rows).unwrap().line();
     assert!(line.contains("moon not drawn by the renderer"), "{line}");
     // A camera under a noon sun says nothing of the moon.

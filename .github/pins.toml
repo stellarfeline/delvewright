@@ -359,6 +359,17 @@ edited apart.
 """
 
 [[pin]]
+id = "client-jar-sha1"
+value = "ba2df812c2d12e0219c489c4cd9a5e1f0760f5bd"
+sites = ["versions.toml"]
+policy = "immutable"
+why = """
+The sha1 piston-meta publishes for the pinned 1.21.11 client jar, and the object
+id inside its download URL (versions.toml [minecraft] client_jar_url). Recorded
+beside the sha256 so the URL and the checksum cannot be edited apart.
+"""
+
+[[pin]]
 id = "fabric-api-jar"
 value = "c98467cbbaf4d197377266795ae015f4130d65b6"
 sites = ["validation/Dockerfile.toolserver", "versions.toml"]
@@ -384,117 +395,17 @@ red (versions.toml [render]).
 """
 
 [[pin]]
-id = "chunky-revision"
-value = "156e2bba2526fe4cf218243704b6f3e6d0281d1a"
-sites = ["versions.toml"]
+id = "lumenwright-revision"
+value = "ed3f049cc496d5f1b7df9829bda1bcb443ad1d06"
+sites = ["crates/delvec/Cargo.toml", "versions.toml"]
 policy = "immutable"
 why = """
-The chunky-dev/chunky commit `validation/chunky-install.sh` builds the pinned
-Chunky core from (versions.toml [render]). A third-party commit names fixed
-source; `validation/check-versions.sh` holds it to the `.g<sha7>` the core's name
-carries.
-"""
-
-[[pin]]
-id = "chunky-core-content"
-value = "6710920a30882d3e8a32121c8d97ce940a9f35539137ef91fff0e70256a809fc"
-sites = ["versions.toml"]
-policy = "immutable"
-why = """
-The content digest of the pinned Chunky core jar, by the rule in
-`tools/lib/chunky_core.py` (versions.toml [render]). It pins what the jar
-contains rather than its name or its zip bytes: the installer installs nothing
-that does not answer it, and `validation/chunky.sh` renders with nothing else.
-"""
-
-[[pin]]
-id = "chunky-denoiser-jar"
-value = "70157d9936b38b0a14efe6c8317b812e5c7c0429d7049d2e106e1b30093bc812"
-sites = ["versions.toml"]
-policy = "immutable"
-why = """
-sha256 of the chunky-denoiser v0.5.0-pre3 plugin jar the render route's albedo and normal passes run (versions.toml [render]); `tools/lib/chunky_denoise.py` installs nothing else and refuses a home whose jar does not answer it.
-"""
-
-[[pin]]
-id = "oidn-aarch64-apple-darwin"
-value = "98e0aca8e7ab69e9f4f0191582a500fd8b0d9085d68662f18ab6469e934a6efd"
-sites = ["versions.toml"]
-policy = "immutable"
-why = """
-sha256 of the Open Image Denoise 2.5.1 macOS arm64 archive (versions.toml [render]); the render route installs and runs nothing else on that platform.
-"""
-
-[[pin]]
-id = "oidn-x86_64-apple-darwin"
-value = "a4341639005a33ce0d944bd7c771ce34de1465be7eb3189b7c3b5b0064429832"
-sites = ["versions.toml"]
-policy = "immutable"
-why = """
-sha256 of the Open Image Denoise 2.5.1 macOS x86_64 archive (versions.toml [render]).
-"""
-
-[[pin]]
-id = "oidn-x86_64-unknown-linux-gnu"
-value = "743c3e2aff8c220d5d70fe6cb970fb3d36f2702d2693c61d1d148e404cf37cd6"
-sites = ["versions.toml"]
-policy = "immutable"
-why = """
-sha256 of the Open Image Denoise 2.5.1 Linux x86_64 archive (versions.toml [render]).
-"""
-
-[[pin]]
-id = "oidn-x86_64-pc-windows-msvc"
-value = "f11f91bc072a5e3a564515724cb72ab8fcfbc445c84a84c197ff9b16cc01396f"
-sites = ["versions.toml"]
-policy = "immutable"
-why = """
-sha256 of the Open Image Denoise 2.5.1 Windows x64 archive (versions.toml [render]).
-"""
-
-[[pin]]
-id = "oidn-source"
-value = "e71fd043a70f1cc80e301d1b90df6c1f536098c4dd94baa612742f6db3369c36"
-sites = ["versions.toml"]
-policy = "immutable"
-why = """
-sha256 of the Open Image Denoise 2.5.1 source release a platform with no prebuilt archive builds from (versions.toml [render]).
-"""
-
-[[pin]]
-id = "onetbb-source"
-value = "01598a46c1162c27253a0de0236f520fd8ee8166e9ebb84a4243574f88e6e50a"
-sites = ["versions.toml"]
-policy = "immutable"
-why = """
-sha256 of the oneTBB v2022.3.0 tag archive the Open Image Denoise source build builds first (versions.toml [render]).
-"""
-
-[[pin]]
-id = "cmake-aarch64-linux"
-value = "0ccecc2ba6b5ed4a97fbfd1f52136a9120262908185d8419c1ed2abb09199245"
-sites = ["versions.toml"]
-policy = "immutable"
-why = """
-sha256 of the CMake 4.3.5 Linux aarch64 archive the Open Image Denoise source build runs (versions.toml [render]).
-"""
-
-[[pin]]
-id = "ninja-aarch64-linux"
-value = "fd2cacc8050a7f12a16a2e48f9e06fca5c14fc4c2bee2babb67b58be17a607fc"
-sites = ["versions.toml"]
-policy = "immutable"
-why = """
-sha256 of the Ninja 1.13.2 Linux aarch64 archive the Open Image Denoise source build runs (versions.toml [render]).
-"""
-
-[[pin]]
-id = "ispc-aarch64-linux"
-value = "509399c399ec162d746889458a10cc13797a1aed1c0164b2bd3faddf7d023f13"
-sites = ["versions.toml"]
-policy = "immutable"
-why = """
-sha256 of the ISPC 1.30.0 Linux aarch64 archive the Open Image Denoise source build compiles its CPU kernels with (versions.toml [render]).
+The stellarfeline/lumenwright commit `delvec` links its renderer from, by git
+revision in development (spec-0112 §6.2, versions.toml [render]
+lumenwright_revision). A commit names fixed source; `validation/check-versions.sh`
+holds the manifest's `rev` and the revision every frame states equal to it.
+Moved by a reviewed edit, and retired for an exact registry version once
+Lumenwright is published.
 """
 
 # --- misode/mcmeta data dumps, from which generated tables are extracted ------
@@ -1077,9 +988,10 @@ sites = [
 ]
 policy = "immutable"
 why = """
-The sha256 of the pinned 1.21.11 client jar (versions.toml [render]
-textures_sha256). `tools/maintenance/derive-client-textures.py` refuses any
-other jar, the texture census a `world.textures[]` row is judged against
-states it in its header, and the spec-0084 rig refused any other jar when it
-measured. It moves only with ADR-0009's Minecraft pin.
+The sha256 of the pinned 1.21.11 client jar (versions.toml [minecraft]
+client_jar_sha256). `validation/client-jar-cache.sh` refuses any other bytes
+when it fetches the jar a CI job draws frames with,
+`tools/maintenance/derive-client-textures.py` refuses any other jar, and the
+texture census a `world.textures[]` row is judged against states it in its
+header. It moves only with ADR-0009's Minecraft pin.
 """

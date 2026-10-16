@@ -2045,8 +2045,12 @@ fn an_interior_overview_stands_over_a_place_stacked_over_its_eye() {
     plan.areas[0].pieces.push(upper);
     let world =
         delvec::compiler::nav::World::from_plan(&plan, &structures).with_extra_solid(&solid);
-    let (rp, _) = delvec::compiler::render_plan::render_plan(&plan, &prefabs, &[], &world, None)
-        .expect("every camera's eye is proven clear");
+    let frames = delvec::compiler::view::review::frame_worlds(&plan, &world);
+    let picture = delvec::compiler::blockstate::BlockMap::new();
+    let (rp, _) = delvec::compiler::render_plan::render_plan(
+        &plan, &prefabs, &[], &world, &frames, &picture,
+    )
+    .expect("every camera's eye is proven clear");
     let shot = rp["shots"]
         .as_array()
         .unwrap()

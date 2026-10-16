@@ -40,8 +40,10 @@
 //! featureless room. That is a fact about **a camera**, so it holds for every kind
 //! here and not just for the one that needed it first — `Shots::push` is the
 //! single door a shot enters through, and [`render_plan`] is the only constructor
-//! of a plan document, so it takes the assembled world and proves every eye
-//! before there is a document at all.
+//! of a plan document, so it takes the world and proves every eye before there
+//! is a document at all — each **in the world its frame stands in** (spec-0112
+//! §7.4): the configuration of the critical-path arrival the shot stands at,
+//! so an eye in a region shut on its leg is refused, naming the world.
 //!
 //! Six of the seven kinds place their camera at a fixed stand-off from the thing
 //! they frame, and a fixed offset into authored geometry lands inside a block
@@ -50,8 +52,8 @@
 //! inside a block, and every one of the 27 campaigns had at least one. So the
 //! stand-off is a *preference*, not a position: a camera whose own cell holds a
 //! block stands instead at the furthest clear point on its own sight line
-//! ([`crate::compiler::camera::stand_in_open_air`], the mechanism `delvec snapshot --at`
-//! already used and kept to itself), and says so (`camera.requested_pos` +
+//! ([`crate::compiler::camera::stand_in_open_air`], the walk `delvec frames
+//! --campaign --at` takes too), and says so (`camera.requested_pos` +
 //! `camera.standoff`), because a displaced camera is invisible in its own frame.
 //! It yields to that one fact and nothing else — an interior shot's eye is
 //! deliberately outside the room and is not pulled through the roof it is
@@ -79,33 +81,27 @@
 //!
 //! ## `horizon` (the render layer is told, never guesses)
 //!
-//! A campaign with `horizon: ocean` (spec-0013) ships a world save holding only
-//! the chunks its layout occupies — the sea around the island is the level
-//! generator's, and a renderer loading that save sees void past the shoreline.
-//! The plan therefore states the generator fact ([`horizon_fact`]:
-//! `{"kind": "ocean", "sea_level": 62}`) so `delvec render` can raise Chunky's
-//! ambient water plane at exactly the compiler's datum. `horizon: void` (the
-//! default) emits no key, keeping every existing plan byte-identical.
+//! The plan states the generator fact ([`horizon_fact`]: `{"kind": "ocean",
+//! "sea_level": 62}`, or a valley's extent) as a fact of the campaign. The
+//! review worlds carry the generator's own ground in every chunk they write
+//! (spec-0112 §5.3), and a valley's extent widens the box a frame loads
+//! ([`loaded_extent`]). `horizon: void` (the default) emits no key.
 //!
 //! ## `sky` (the declared hour reaches the renderer)
 //!
-//! `world.json` states the hour the delve is played at, `DW0890` holds the
-//! approved design's rows equal to the skies this world reaches, and step 12
-//! tells the creator to read the sky off the first frame. That chain used to end
-//! at a renderer nobody told: no scene carried a sun, so every frame — of a dusk
-//! delve, of a midnight one — came off Chunky's own default and showed midday
-//! blue. The guarantees all held and the thing they protect was never emitted.
-//!
-//! So the plan states the sky as a fact of the campaign, exactly as it states
-//! [`horizon_fact`]: `{"time": "dusk", "daytime_ticks": 12000, "weather":
-//! "rain"}` — the keyword an author wrote, the vanilla `daytime` tick it sets
-//! (the number the sun's position is a function of), and the declared initial
-//! weather. `delvec scene` and `delvec panorama` turn it into a Chunky sky
-//! ([`crate::compiler::view::scene::sky_of`]: the sun, and the sky and fog of
-//! the pinned game's day at the tick under the declared weather) and refuse a plan that omits the hour or the
-//! weather, so no frame can be taken under a default sun or a default clear sky
-//! again. A showcase camera takes its sky from the picture it answers instead
-//! (spec-0079 §5).
+//! `world.json` states the hour the delve is played at, and `DW0890` holds the
+//! approved design's rows equal to the skies this world reaches. The plan's
+//! top-level `sky` states the declared initial hour as a fact of the campaign:
+//! `{"time": "dusk", "daytime_ticks": 12000, "weather": "rain"}` — the keyword
+//! an author wrote, the vanilla `daytime` tick it sets (the number the sun's
+//! position is a function of), and the declared initial weather; the panorama
+//! is taken under it. Every shot states its own `sky` besides
+//! (`{time, daytime_ticks, weather, set_by}`): the clock of the configuration
+//! its frame stands in, the latest forced `set-time` and `set-weather` before
+//! it, else the world's ([`crate::compiler::view::review::Clock`]). `delvec
+//! frames` draws each frame under its shot's sky, and refuses a shot that
+//! states none. A showcase camera takes its sky from the picture it answers
+//! instead (spec-0079 §5).
 //!
 //! ## `lighting` stamp (declared-dark areas stay reviewable)
 //!
@@ -115,11 +111,10 @@
 //! only `mitigation: "night-vision"` declared → `{"profile": "dark",
 //! "mitigation": "night-vision"}`; both → lit profile plus the mitigation;
 //! neither → **no stamp key at all**, so campaigns without lighting declarations
-//! stay byte-identical. The stamp is pure metadata for the render layer: a
-//! declared-dark scene renders pure black in an honest path tracer (the first
-//! Chunky run proved exposure boosts cannot reveal a sealed cave — no light means
-//! amplified noise), so `delvec scene` uses the stamp to apply its
-//! documented night-vision review emulation to exactly those shots and no others.
+//! stay byte-identical. The stamp is metadata for the review: a frame of a
+//! declared-dark, night-vision room is drawn at the lightmap without the
+//! effect, and its index entry says to judge it in game under night vision
+//! (spec-0112 §11 item 5).
 
 use delvewright_dsl::{
     AreaMitigation, Campaign, Diagnostic, HorizonBase, LightingProfile, Objective,
@@ -671,6 +666,9 @@ struct Shot {
     /// is that arrival's ([`FrameWorlds::per_arrival`]), and its eye is proven
     /// in that arrival's own configuration.
     world: usize,
+    /// A stated rotation (Minecraft yaw, pitch), for a camera whose pose is
+    /// given rather than aimed at a point: a cutscene keyframe.
+    aim: Option<(f64, f64)>,
 }
 
 /// The shot list under construction, the eye cells the clear-eye proof owes a
@@ -729,7 +727,9 @@ impl<'c> Shots<'c> {
         // not a position. The distinction is a property of the kind, so it is read
         // off the kind here rather than chosen per shot.
         let requested = shot.eye;
-        let pov = shot.kind == "pov";
+        // A `cutscene` camera is a keyframe the datapack flies: never moved,
+        // like a POV eye — a keyframe inside a block is `DW0724` against it.
+        let pov = shot.kind == "pov" || shot.kind == "cutscene";
         let world = self.nav(shot.world);
         let eye = if pov || world.is_clear(eye_cell(requested)) {
             // The requested stand-off is honoured wherever it can be: an interior
@@ -740,7 +740,9 @@ impl<'c> Shots<'c> {
             // a block in the world the frame stands in.
             requested
         } else {
-            crate::compiler::camera::stand_in_open_air(
+            // The subject may itself be a block in this world — a gate a frame
+            // at load shows shut — so the camera stands before it.
+            crate::compiler::camera::stand_before(
                 |cell| !world.is_clear(cell),
                 shot.look_at,
                 requested,
@@ -752,6 +754,10 @@ impl<'c> Shots<'c> {
             self.pulled_in += 1;
         }
         let mut cam = camera(eye, shot.look_at, shot.fov.unwrap_or(DEFAULT_FOV_DEG));
+        if let Some((yaw, pitch)) = shot.aim {
+            cam["yaw"] = json!(round3(yaw));
+            cam["pitch"] = json!(round3(pitch));
+        }
         let cam_obj = cam.as_object_mut().expect("camera is a JSON object");
         if moved {
             // A displaced camera is invisible in its own frame, so the plan says
@@ -929,6 +935,7 @@ pub fn render_plan(
     plan: &Plan,
     prefabs: &PrefabRegistry,
     pov: &[PovShot],
+    cutscenes: &[crate::compiler::nav::CutsceneShotFrames],
     world: &World,
     frames: &FrameWorlds,
     picture: &crate::compiler::blockstate::BlockMap,
@@ -979,6 +986,7 @@ pub fn render_plan(
                 Value::String("area entry framed — no void gap at the floor".into()),
             ],
             stamped: false,
+            aim: None,
             world: at_load,
         });
     }
@@ -991,8 +999,7 @@ pub fn render_plan(
             let cy = min[1] as f64 + 1.0;
             let cz = (min[2] + max[2]) as f64 / 2.0 + 0.5;
             // Dollhouse overview: eye above a corner, aimed down at the interior
-            // centre. (Renderer strips the ceiling for the matching per-piece
-            // interior shot; the Chunky path places a true in-room camera.)
+            // centre.
             //
             // **Above the GROUND, not merely above the piece.** The offset is
             // from the piece and always was, and what changed under it is that
@@ -1042,6 +1049,7 @@ pub fn render_plan(
                 extra: vec![("prefab", json!(piece.prefab_id))],
                 expect,
                 stamped: true,
+                aim: None,
                 world: at_load,
             });
         }
@@ -1069,6 +1077,7 @@ pub fn render_plan(
                     Value::String("doorway opening is clear — passage traversable".into()),
                 ],
                 stamped: false,
+                aim: None,
                 world: at_load,
             });
         }
@@ -1122,6 +1131,7 @@ pub fn render_plan(
                 ),
             ],
             stamped: false,
+            aim: None,
             world: at_load,
         });
     }
@@ -1154,6 +1164,7 @@ pub fn render_plan(
             extra: vec![("objective", json!(obj_id))],
             expect,
             stamped: false,
+            aim: None,
             world: at_load,
         });
     }
@@ -1186,6 +1197,7 @@ pub fn render_plan(
                     ),
                 ],
                 stamped: false,
+                aim: None,
                 world: at_load,
             });
         }
@@ -1218,8 +1230,67 @@ pub fn render_plan(
             },
             expect,
             stamped: true,
+            aim: None,
             world: shot.step.min(frames.arrivals.len() - 1),
         });
+    }
+
+    // --- cutscene shots (spec-0112 §7.2): every cutscene a critical step
+    // fires, a frame at each shot's first tick and, for a moving shot, its last.
+    for cs in cutscenes {
+        let arrival = (cs.step + 1).min(frames.arrivals.len() - 1);
+        let step_id = plan
+            .critical_path
+            .get(cs.step)
+            .and_then(crate::compiler::view::beat::step_id)
+            .map(str::to_string);
+        let step_key = step_id
+            .clone()
+            .unwrap_or_else(|| format!("step-{}", cs.step + 1))
+            .replace('/', "-");
+        let wi = frames.per_arrival[arrival];
+        let cells = *moved
+            .entry(wi)
+            .or_insert_with(|| frames.worlds[wi].config.moved_from(&load));
+        let last = cs.keyframes.len().saturating_sub(1);
+        for (k, f) in cs.keyframes.iter().enumerate() {
+            let (y, p) = (f.yaw.to_radians(), f.pitch.to_radians());
+            let fwd = [-y.sin() * p.cos(), -p.sin(), y.cos() * p.cos()];
+            let look = [f.pos[0] + fwd[0] * 8.0, f.pos[1] + fwd[1] * 8.0, f.pos[2] + fwd[2] * 8.0];
+            let end = if k == 0 && last == 0 {
+                "the whole of a still shot"
+            } else if k == 0 {
+                "where the shot starts"
+            } else {
+                "where the shot ends"
+            };
+            out.push(Shot {
+                id: format!("cutscene/{step_key}/{}/shot{}/t{}", cs.n, cs.shot, f.tick),
+                kind: "cutscene",
+                area: String::new(),
+                eye: f.pos,
+                look_at: look,
+                fov: Some(POV_FOV_DEG),
+                extra: vec![
+                    ("step", json!(step_id)),
+                    ("cutscene", json!(cs.n)),
+                    ("shot", json!(cs.shot)),
+                    ("tick", json!(f.tick)),
+                    ("seconds", json!(round3(cs.seconds))),
+                    ("after", json!({ "step": step_id, "cells_moved": cells })),
+                ],
+                expect: vec![Value::String(format!(
+                    "cutscene {} of `{}`, shot {} at tick {}: {end}, as the party watches it",
+                    cs.n,
+                    step_id.as_deref().unwrap_or("its step"),
+                    cs.shot,
+                    f.tick
+                ))],
+                stamped: false,
+                world: arrival,
+                aim: Some((f.yaw, f.pitch)),
+            });
+        }
     }
 
     let proven_in = out.prove_eyes(picture)?;
@@ -1316,13 +1387,11 @@ pub fn render_plan(
 /// Always present: `world.json`'s `time` is required and has no default, which
 /// is the whole reason there is a single hour to state.
 ///
-/// It is the **declared initial** hour — the one the world save is written at
-/// and therefore the one every frame is of. A campaign whose story moves the
-/// clock with `set-time` reaches other hours at play, and `DW0890` holds the
-/// approved design's rows equal to that whole reachable set; a still frame has
-/// one sun and cannot be evidence about the beats after the cut. The plan states
-/// the hour it can keep rather than a set it cannot — and, for the same reason,
-/// the declared initial `weather`.
+/// It is the **declared initial** hour, the one the panorama is taken under.
+/// A campaign whose story moves the clock with `set-time` reaches other hours
+/// at play; each shot states the clock of its own frame
+/// ([`crate::compiler::view::review::Clock`]), and `DW0890` holds the approved
+/// design's rows equal to the whole reachable set.
 fn sky_fact(c: &Campaign) -> Value {
     let t = c.world.content.time;
     json!({
@@ -1335,14 +1404,10 @@ fn sky_fact(c: &Campaign) -> Value {
 /// The world-generator horizon (spec-0013) as the render layer needs it, or
 /// `None` for `horizon: void`.
 ///
-/// The renderer cannot see the level generator: the shipped world save only
-/// holds the chunks the layout occupies, so an ocean-horizon delve renders as an
-/// island floating in nothing unless Chunky is told to put its own ambient water
-/// plane under the frame — at exactly the compiler's sea-level datum, or the
-/// plane and the authored block water meet in a visible two-tone seam. That is a
-/// *fact of the campaign*, so the compiler states it (`{"kind": "ocean",
-/// "sea_level": 62}`) rather than leaving `delvec render` to infer it from
-/// blocks.
+/// The level generator is a *fact of the campaign*, so the compiler states it
+/// (`{"kind": "ocean", "sea_level": 62}`) rather than leaving a reader to infer
+/// it from blocks; a valley states the extent of the landform it built, which
+/// widens the box a frame loads ([`loaded_extent`]).
 ///
 /// A void horizon emits **no key at all** (not `null`), so every campaign that
 /// declares nothing keeps a byte-identical `render-plan.json`.
@@ -1395,10 +1460,9 @@ fn short(id: &str) -> String {
 ///   real fixtures for a path tracer to see);
 /// - only `mitigation` declared → `{"profile": "dark", "mitigation":
 ///   "night-vision"}` (the area is *meant* to be dark and the players are
-///   equipped — an honest render of it is black, so `delvec scene`
-///   applies its documented night-vision review emulation);
-/// - both declared → lit profile plus the mitigation (fixtures light the scene;
-///   no emulation needed or applied);
+///   equipped — a frame of it is drawn at the lightmap without the effect, and
+///   its index entry says to judge it in game under night vision);
+/// - both declared → lit profile plus the mitigation (fixtures light the scene);
 /// - neither → `None`: **no stamp key is emitted**, keeping campaigns without
 ///   lighting declarations byte-identical.
 fn area_lighting_stamp(c: &Campaign, area_id: &str) -> Option<Value> {
@@ -1476,7 +1540,7 @@ fn interact_anchors(c: &Campaign) -> Vec<(String, String, String, Option<String>
     out
 }
 
-/// Union world AABB across every placed area (for the Chunky `chunkList`).
+/// Union world AABB across every placed area: the plan's `layout_aabb`.
 /// **The box a frame of this build loads, and the world writer fills whole**
 /// (spec-0112 §5.3): the layout, and on a `valley` the landform the horizon
 /// built around it — the plan's `layout_aabb` widened by its `horizon.extent`,

@@ -601,6 +601,11 @@ pub fn build_with_warnings(
     // (`DW0897`) is sent to that line rather than told nobody can reach it.
     let mut watch_binding = prove_watchers(plan, &population)?;
 
+    // The configurations the critical path arrives under (spec-0112 §3): the
+    // worlds the review frames stand in, and the worlds a cutscene a critical
+    // step fires is flown through (`DW0308`).
+    let frame_worlds = crate::compiler::view::review::frame_worlds(plan, &world);
+
     // ---- the world block: every proof over the assembled world ----
     let WorldProofs {
         moves,
@@ -622,7 +627,7 @@ pub fn build_with_warnings(
         lethal_gate,
         loop_gate,
         firework_gate,
-        cutscene_shots_judged,
+        cutscene_proof,
         lightning_gate,
         stake_table,
         death_plan,
@@ -637,6 +642,7 @@ pub fn build_with_warnings(
         &mut out,
         &mut warnings,
         &mut pacing,
+        &frame_worlds,
     )?;
 
     // ---- `DW1025`: a body that holds its facing faces every approach ----
@@ -1040,11 +1046,11 @@ pub fn build_with_warnings(
     // Every shot stands in a world of the critical path's own configurations
     // (spec-0112 §3) and its eye is proven clear there; the worlds are written
     // under `validation/worlds/` beside the plan, with the review record.
-    let frame_worlds = crate::compiler::view::review::frame_worlds(plan, &world);
     let (render_plan_doc, camera_warnings) = crate::compiler::render_plan::render_plan(
         plan,
         prefabs,
         &pov_shots,
+        &cutscene_proof.frames,
         &world,
         &frame_worlds,
         &picture,
@@ -1075,7 +1081,7 @@ pub fn build_with_warnings(
             showcase_cameras: render_plan_doc["camera_eye_proof"]["showcase"]
                 .as_u64()
                 .unwrap_or(0) as usize,
-            cutscene_shots: cutscene_shots_judged,
+            cutscene_shots: cutscene_proof.judged,
         }
         .line()
     );
