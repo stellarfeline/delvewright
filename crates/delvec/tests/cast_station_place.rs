@@ -43,7 +43,7 @@ const NAME: &str = "anchor/keeper-stand";
 /// declares [`NAME`], `prefab/keep-room-small-a` does not. Nothing else about
 /// the two trees differs.
 fn fixture(tag: &str, annex_provides_the_name: bool) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("dw-cast-station-{tag}"));
+    let dir = std::env::temp_dir().join(format!("dw-cast-station-{}-{tag}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(
         &common::compiler_fixtures_dir().join("talkto-cast-pos"),

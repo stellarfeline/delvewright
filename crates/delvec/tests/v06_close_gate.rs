@@ -125,7 +125,10 @@ fn close_gate_with_declared_block_validates_clean() {
 /// `anchor/door` block stripped (the real content repo is read-only).
 #[test]
 fn close_gate_on_blockless_gate_is_dw0343() {
-    let tmp = std::env::temp_dir().join("dw-close-gate-noblock-prefabs");
+    let tmp = std::env::temp_dir().join(format!(
+        "dw-close-gate-noblock-prefabs-{}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&tmp);
     common::copy_dir_all(&common::prefabs_dir(), &tmp);
     // Strip the `block` from hello-room's `anchor/door` gate.

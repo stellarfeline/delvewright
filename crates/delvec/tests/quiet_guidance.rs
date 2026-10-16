@@ -55,7 +55,7 @@ fn variant_with(name: &str, mut quests: Value, mut dialogue: Value, extra: Value
         }
     }
     common::declare_dialogue_story(&mut dialogue);
-    let dst = std::env::temp_dir().join(format!("dw-quiet-{name}"));
+    let dst = std::env::temp_dir().join(format!("dw-quiet-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dst);
     let mut documents = json!({ "quests": quests, "dialogue": dialogue });
     for (k, v) in extra.as_object().unwrap() {
@@ -929,7 +929,10 @@ fn a_checkpoint_set_by_an_approach_trigger_builds_and_names_its_trigger() {
                 "happening": { "verb": "gains", "text": "The shrine keeps them." }
             }]
         }));
-    let dst = std::env::temp_dir().join("dw-quiet-trigger-checkpoint");
+    let dst = std::env::temp_dir().join(format!(
+        "dw-quiet-trigger-checkpoint-{}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&dst);
     common::materialize_from(&base, &json!({ "documents": { "quests": quests } }), &dst);
     common::copy_dir_all(&base.join("skins"), &dst.join("skins"));
