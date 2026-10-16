@@ -297,6 +297,69 @@ fn shielded_tick(ns: &str) -> Vec<String> {
     ]
 }
 
+/// Where [`fast_forward_walk`] left a walk.
+pub(super) enum Reached {
+    /// The driver ran its arrival tick: the last teleport, the watch hand-back
+    /// and the `on_arrive` bundle.
+    Arrival,
+    /// The walk's own arrival takes its body away, so the driver ran the tick
+    /// before it and stopped: the body stands on this waypoint, the arrival
+    /// never ran, and nothing of the walk is left scheduled or latched.
+    BeforeArrival([f64; 3]),
+}
+
+/// **The one way a generated PackTest fast-forwards a walk's driver.** Every
+/// template that jumps a `move-npc` / `move-actor` driver to a tick and reads
+/// the body afterwards drives it here.
+///
+/// The arrival tick runs the last teleport and then, in the same driver call,
+/// the walk's `on_arrive` ([`walk_on_arrive`]). When that bundle takes the
+/// walker out of the world ([`arrival_takes_the_body`]), no body of the walk
+/// stands anywhere after the arrival tick, so a read of it after that tick
+/// reads nothing by construction. Such a walk is driven to the tick before
+/// arrival instead, then its queued reschedule and its run latch are cleared,
+/// so the arrival bundle never runs into a sibling template. Every other walk
+/// is driven to its arrival tick, as the lines it always had.
+pub(super) fn fast_forward_walk(
+    plan: &Plan,
+    walker: Walker,
+    body: &str,
+    mark: &delvewright_dsl::Mark,
+    bare: &str,
+    waypoints: &[[f64; 3]],
+) -> (Vec<String>, Reached) {
+    let ns = &plan.namespace;
+    let total = waypoints.len().saturating_sub(1);
+    let (counter, latch, tick) = match walker {
+        Walker::Npc => (
+            format!("#mt_{bare}"),
+            format!("#mrun_{bare}"),
+            format!("mv_tick_{bare}"),
+        ),
+        Walker::Actor => (
+            format!("#at_{bare}"),
+            format!("#arun_{bare}"),
+            format!("ma_tick_{bare}"),
+        ),
+    };
+    let on_arrive = walk_on_arrive(plan.campaign, walker, body, mark);
+    if total > 0 && arrival_takes_the_body(on_arrive, walker, body) {
+        let b = vec![
+            format!("scoreboard players set {counter} dw.sys {}", total - 1),
+            format!("function {ns}:{tick}"),
+            format!("schedule clear {ns}:{tick}"),
+            format!("scoreboard players set {latch} dw.sys 0"),
+        ];
+        (b, Reached::BeforeArrival(waypoints[total - 1]))
+    } else {
+        let b = vec![
+            format!("scoreboard players set {counter} dw.sys {total}"),
+            format!("function {ns}:{tick}"),
+        ];
+        (b, Reached::Arrival)
+    }
+}
+
 /// The header lines shared by every generated PackTest (`# @dummy` + timeout).
 fn packtest_header(title: &str) -> Vec<String> {
     vec![

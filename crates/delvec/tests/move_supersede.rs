@@ -970,3 +970,47 @@ fn the_watch_yield_template_reads_the_body_before_its_arrival_takes_it_away() {
         "the template left the driver scheduled, and its arrival ran a tick later"
     );
 }
+
+/// The same rule reaches `move-actor`: a puppet whose one leg's `on_arrive` is
+/// `despawn-actor` of that puppet is read by `v06_move_actor` on the waypoint
+/// before arrival, and the arrival tick — the teleport to the endpoint and the
+/// bundle after it — never runs, inside the template or a tick later.
+#[test]
+fn the_move_actor_template_reads_the_puppet_before_its_arrival_takes_it_away() {
+    let quests = QUESTS_ONE_LEG.replacen(
+        r#"{ "type": "move-actor", "actor": "actor/walker", "to": { "anchor": "anchor/exit" } }"#,
+        r#"{ "type": "move-actor", "actor": "actor/walker", "to": { "anchor": "anchor/exit" },
+              "on_arrive": [ { "type": "despawn-actor", "actor": "actor/walker", "style": "vanish" } ] }"#,
+        1,
+    );
+    let out = build_with(quests);
+    let fns = driver_fns(&out, "ma_");
+    let path = "packtest-datapack/data/hello-world/test/v06_move_actor.mcfunction";
+    let template: Vec<String> = out
+        .iter()
+        .find(|(p, _)| p.as_str() == path)
+        .map(|(_, b)| String::from_utf8(b.clone()).unwrap())
+        .expect("the build emits `v06_move_actor`")
+        .lines()
+        .filter(|l| {
+            l.starts_with("scoreboard ") || l.starts_with("function ") || l.starts_with("schedule ")
+        })
+        .map(str::to_string)
+        .collect();
+    let driver = invoked_driver(&template, "ma_");
+    let end = endpoint(&fns, &driver);
+    let mut sim = Sim::new(fns);
+    sim.fns.insert("template".to_string(), template);
+    sim.call("template");
+    assert!(
+        sim.final_pos().is_some(),
+        "the template drove the leg: its driver teleported the puppet"
+    );
+    sim.run(5);
+    assert!(
+        !sim.tps.iter().any(|t| t.pos == end),
+        "`v06_move_actor` ran the leg's arrival tick, whose `despawn-actor` takes the puppet \
+         it then looks for: {:?}",
+        sim.tps.last()
+    );
+}

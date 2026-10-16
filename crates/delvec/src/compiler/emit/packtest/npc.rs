@@ -448,14 +448,12 @@ pub(super) fn emit_v04_packtests(
 
     // move-npc walks a collision-safe path that ends with the NPC at the target
     // anchor. The walk is a per-tick self-scheduling driver; to assert the
-    // endpoint in a single tick, fast-forward the tick counter to the final
-    // waypoint and run the driver once (the reschedule it queues is harmless in a
-    // PackTest). Uses the same MovePlan the emitter drove, so the asserted target
-    // is the path's real final waypoint.
+    // endpoint in a single tick, fast-forward the driver ([`fast_forward_walk`])
+    // and run it once. Uses the same MovePlan the emitter drove, so the asserted
+    // target is the path's real final waypoint.
     if let Some(m) = moves.first() {
         let safe = plan::safe_local(&m.npc);
         let bare = movenpc_bare(&m.npc, &m.to, &m.gate_key);
-        let total = m.ticks();
         let p = m.target;
         let mut b = packtest_header(&format!(
             "{}: move-npc walks to its target anchor",
@@ -470,51 +468,41 @@ pub(super) fn emit_v04_packtests(
             b.push(format!("kill @e[tag={}]", n.tag));
         }
         b.push(format!("function {ns}:setup_finish"));
-        // Jump the driver to its last tick, then execute the final waypoint tp.
         b.extend(walk_claim(
             Walker::Npc,
             &bare,
             &safe,
             supersedable_walkers(moves.iter().map(|m| m.npc.as_str())).contains(m.npc.as_str()),
         ));
-        if arrival_takes_the_body(c, m) {
-            // The walk's own `on_arrive` takes the body away on the arrival
-            // tick — the same tick, and the same function, as the last tp — so
-            // no body stands at the target after it by construction. Drive the
-            // walk to the tick before arrival instead: the body stands on that
-            // waypoint, within one tick's stride of the target cell. The
-            // reschedule the driver queues and its run latch are then cleared,
-            // so the arrival bundle never runs into a sibling template.
-            let w = m.waypoints[total - 1];
-            b.push(format!(
-                "scoreboard players set #mt_{bare} dw.sys {}",
-                total - 1
-            ));
-            b.push(format!("function {ns}:mv_tick_{bare}"));
-            b.push(format!("schedule clear {ns}:mv_tick_{bare}"));
-            b.push(format!("scoreboard players set #mrun_{bare} dw.sys 0"));
-            b.push(format!(
-                "execute store result score #npos_nmov dw.sys if entity @e[tag=dw_npc_{safe},x={},y={},z={},distance=..0.01]",
-                fmt_f64(w[0]),
-                fmt_f64(w[1]),
-                fmt_f64(w[2])
-            ));
-            b.push("assert score #npos_nmov dw.sys matches 1..".to_string());
-            b.push(format!(
-                "execute store result score #nnear_nmov dw.sys if entity @e[tag=dw_npc_{safe},x={},y={},z={},distance=..1]",
-                f64::from(p[0]) + 0.5,
-                p[1],
-                f64::from(p[2]) + 0.5
-            ));
-            b.push("assert score #nnear_nmov dw.sys matches 1..".to_string());
-        } else {
-            b.push(format!("scoreboard players set #mt_{bare} dw.sys {total}"));
-            b.push(format!("function {ns}:mv_tick_{bare}"));
-            b.push(format!(
-                "execute store result score #npos_nmov dw.sys if entity @e[tag=dw_npc_{safe},x={},dx=0,y={},dy=0,z={},dz=0]",
-                p[0], p[1], p[2]
-            ));
-            b.push("assert score #npos_nmov dw.sys matches 1..".to_string());
+        let (drive, reached) =
+            fast_forward_walk(plan, Walker::Npc, &m.npc, &m.to, &bare, &m.waypoints);
+        b.extend(drive);
+        match reached {
+            Reached::BeforeArrival(w) => {
+                // The body stands on the waypoint before arrival, within one
+                // tick's stride of the target cell.
+                b.push(format!(
+                    "execute store result score #npos_nmov dw.sys if entity @e[tag=dw_npc_{safe},x={},y={},z={},distance=..0.01]",
+                    fmt_f64(w[0]),
+                    fmt_f64(w[1]),
+                    fmt_f64(w[2])
+                ));
+                b.push("assert score #npos_nmov dw.sys matches 1..".to_string());
+                b.push(format!(
+                    "execute store result score #nnear_nmov dw.sys if entity @e[tag=dw_npc_{safe},x={},y={},z={},distance=..1]",
+                    f64::from(p[0]) + 0.5,
+                    p[1],
+                    f64::from(p[2]) + 0.5
+                ));
+                b.push("assert score #nnear_nmov dw.sys matches 1..".to_string());
+            }
+            Reached::Arrival => {
+                b.push(format!(
+                    "execute store result score #npos_nmov dw.sys if entity @e[tag=dw_npc_{safe},x={},dx=0,y={},dy=0,z={},dz=0]",
+                    p[0], p[1], p[2]
+                ));
+                b.push("assert score #npos_nmov dw.sys matches 1..".to_string());
+            }
         }
         write("v04_move", b);
     }
@@ -675,33 +663,6 @@ fn unseen_exit_samples(uuid: &str, key: &str) -> Vec<String> {
         format!("execute store result score {y} dw.sys run data get entity {uuid} Pos[1]"),
         format!("assert score {y} dw.sys matches ..{floor}"),
     ]
-}
-
-/// Whether the walk `m`'s own `on_arrive` takes its body away — a
-/// `despawn-npc` of the walker at any depth of the bundle the emitter lowers
-/// into `mv_arrive_<key>` (the first-seen `move-npc` for this body and mark, as
-/// `emit::npc` picks it).
-fn arrival_takes_the_body(
-    c: &delvewright_dsl::Campaign,
-    m: &crate::compiler::nav::MovePlan,
-) -> bool {
-    fn despawns(list: &[QuestEffect], npc: &str) -> bool {
-        list.iter().any(|e| {
-            matches!(&e.verb, Verb::DespawnNpc { npc: n } if n.as_str() == npc)
-                || e.nested_effect_lists_labeled()
-                    .into_iter()
-                    .any(|(_, _, inner)| despawns(inner, npc))
-        })
-    }
-    all_campaign_effects(c)
-        .into_iter()
-        .find_map(|e| match &e.verb {
-            Verb::MoveNpc {
-                npc, to, on_arrive, ..
-            } if npc.as_str() == m.npc && *to == m.to => Some(on_arrive.as_slice()),
-            _ => None,
-        })
-        .is_some_and(|on_arrive| despawns(on_arrive, &m.npc))
 }
 
 #[cfg(test)]
