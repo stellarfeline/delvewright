@@ -842,6 +842,69 @@ fn a_nested_ending_owes_its_templates_and_reads_its_whole_bundle() {
     }
 }
 
+/// The exported critical path carries only what one world shows. Two aftermath
+/// lines read a tally an ambient trigger also moves, which the mainline's replay
+/// cannot date; the path's terminal step lists the one its own story world (the
+/// *none* world: nothing elective performed, the tally at 0) fires, and every
+/// world path lists only its own.
+#[test]
+fn the_exported_path_carries_only_what_one_world_shows() {
+    let dir = reach_copy("one-world", |q| {
+        q["content"]["triggers"][0]["effects"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"type": "add-state", "state": "state/tally", "amount": 1}));
+        q["content"]["quests"][2]["on_complete"]
+            .as_array_mut()
+            .unwrap()
+            .extend([
+                json!({"type": "set-block", "anchor": "anchor/exit", "block": "minecraft:moss_block",
+                       "when": {"requires_state": [{"op": "at-least", "state": "state/tally", "value": 1}]}}),
+                json!({"type": "set-block", "anchor": "anchor/exit", "block": "minecraft:mud",
+                       "when": {"requires_state": [{"op": "at-most", "state": "state/tally", "value": 0}]}}),
+            ]);
+    });
+    let out = dir.with_extension("out");
+    let prefabs = common::prefabs_dir();
+    let (code, log) = delvec_run(&[
+        "build",
+        dir.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "{log}");
+    let read = |p: &str| -> Value {
+        serde_json::from_str(&std::fs::read_to_string(out.join(p)).unwrap()).unwrap()
+    };
+    let blocks = |path: &Value| -> Vec<String> {
+        path["steps"].as_array().unwrap().last().unwrap()["aftermath"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x["observable"]["block"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    assert_eq!(
+        blocks(&read("critical-path.json")),
+        vec!["minecraft:mud".to_string()],
+        "the mainline is the world that performs nothing: the tally stays at 0"
+    );
+    let plan = read("validation/branch-plan.json");
+    let rows = plan["branches"].as_array().unwrap();
+    assert!(rows.len() >= 2, "{plan}");
+    for row in rows {
+        let Some(file) = row["path"].as_str() else {
+            continue;
+        };
+        let b = blocks(&read(&format!("validation/{file}")));
+        assert_eq!(b.len(), 1, "{}: {b:?}", row["id"]);
+    }
+}
+
 /// Criterion 11: the binding line is printed on every validate, analyze and
 /// build, every count stated, zeroes included — here a campaign whose ending's
 /// scene carries no gate at all.

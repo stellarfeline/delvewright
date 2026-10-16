@@ -272,6 +272,22 @@ impl<'a> Flow<'a> {
         self.story.get_or_init(|| self.build_story(MAX_WORLDS))
     }
 
+    /// The story world the exported critical path walks: the first world that
+    /// performs no elective act and whose coherent run takes exactly the
+    /// mainline's steps ([`Self::playthrough`]), when there is one (§4.4: the
+    /// mainline is the *none* world). Its run dates what the mainline cannot —
+    /// an elective act's datum — so what the path can show is read off it.
+    pub fn mainline_story_world(&self) -> Option<usize> {
+        let main = self.playthrough();
+        let story = self.story();
+        (0..story.worlds.len()).find(|&k| {
+            let run = &story.runs[k];
+            story.worlds[k].performs.is_empty()
+                && run.incoherent.is_none()
+                && run.playthrough.steps == main.steps
+        })
+    }
+
     /// [`Self::story`] capped at `bound` worlds instead of [`MAX_WORLDS`] — the
     /// override a test drives the cap with; every refusal it causes names the
     /// bound it was given. Not cached.

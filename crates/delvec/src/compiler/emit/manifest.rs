@@ -257,14 +257,22 @@ pub(super) fn emit_critical_path(
     routes: &[crate::compiler::nav::LegRoute],
 ) -> Value {
     let en_route = crate::compiler::hold::en_route_holds(plan, &plan.critical_path, routes);
-    // What the exported path's own replay fires — the ending it reaches and
-    // the aftermath lines that play (spec-0108 §6.3).
+    // What one world shows after the exported path's ending (spec-0108 §6.3):
+    // the lines the mainline's own story world fires — that world dates what
+    // the mainline's replay cannot, an elective act's datum — and of those only
+    // the ones decided there. A line the replay opened on an undatable term
+    // fires in some worlds and not others, so no one world shows it.
     let flow = crate::compiler::flow::Flow::new(plan.campaign);
-    let fired: BTreeSet<String> = flow
-        .journal(&flow.playthrough())
-        .into_iter()
-        .flat_map(|j| j.fired)
-        .collect();
+    let fired: BTreeSet<String> = match flow.mainline_story_world() {
+        Some(k) => shown(&flow.story().runs[k].fired, &flow.story().runs[k].undecided),
+        None => {
+            let journal = flow.journal(&flow.playthrough());
+            let undecided: BTreeSet<String> =
+                journal.iter().flat_map(|j| j.undecided.clone()).collect();
+            let fired: BTreeSet<String> = journal.into_iter().flat_map(|j| j.fired).collect();
+            shown(&fired, &undecided)
+        }
+    };
     critical_path_json(
         plan,
         &plan.critical_path,
@@ -279,6 +287,12 @@ pub(super) fn emit_critical_path(
         actor_moves,
         &fired,
     )
+}
+
+/// The lines a run fires that one world shows: every fired pointer whose gate
+/// the run decided — `fired` without `undecided`.
+pub(super) fn shown(fired: &BTreeSet<String>, undecided: &BTreeSet<String>) -> BTreeSet<String> {
+    fired.difference(undecided).cloned().collect()
 }
 
 /// Serialize a step list in the `critical-path.json` contract (format 2).

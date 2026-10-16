@@ -2707,8 +2707,13 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   the last effect of it that changes the world (spec-0108).
 
   **`aftermath[]`** (spec-0108 §6.3): the terminal `assert-complete` step carries,
-  for each ending the path's own replay fires, every aftermath effect of its
-  scene that fires too — `{path, verb, observable}`, the observable being the
+  for each ending the path's own world fires, every aftermath effect of its
+  scene that fires there and whose gate that world decides — what one world
+  shows, never two. A world path reads its own story world's run; the exported
+  critical path reads the mainline's story world (the one that performs no
+  elective act and takes the mainline's steps, which dates an elective act's
+  datum), else the mainline replay; a line opened only on an undatable term is
+  left out. Each row is `{path, verb, observable}`, the observable being the
   ledger's (`block {first, last, block}`, `position {from {min, max}, to}`,
   `present`/`absent {tag | type}`, `destination`, `time {daytime}`, `weather
   {weather}`, `score {…}`) or what a player's own body shows (`health {amount}`

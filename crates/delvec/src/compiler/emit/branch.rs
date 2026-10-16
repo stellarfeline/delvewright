@@ -144,7 +144,7 @@ pub(super) fn branch_paths(
                 },
                 moves,
                 actor_moves,
-                &story.runs[w].fired,
+                &super::manifest::shown(&story.runs[w].fired, &story.runs[w].undecided),
             ),
         ));
     }
