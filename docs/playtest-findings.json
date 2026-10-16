@@ -3144,8 +3144,8 @@
       },
       "campaign": "the-stranding",
       "carrier": {
-        "kind": "artifact",
         "file": "endings.json",
+        "kind": "artifact",
         "path": "endings"
       },
       "finding": "an ending's text said the place was destroyed while the player stood afterwards unharmed in an intact world",
@@ -3174,8 +3174,8 @@
       },
       "campaign": "the-stranding",
       "carrier": {
-        "kind": "dw",
-        "code": "DW1029"
+        "code": "DW1029",
+        "kind": "dw"
       },
       "finding": "the ending depended only on the last dialogue choice and on nothing the player did before it",
       "general_form": "each ending reports how many of its inputs are set before the final scene (an advisory, never a refusal)",
