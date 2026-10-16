@@ -302,10 +302,27 @@ How a quest plan is shaped as a web rather than a chain, how an ending reads the
   remarking on players through a character; the keeper says what this place is
   and what just happened, in his own voice. **Authored**, from a playtest; no
   machine check reads it.
+- **L3 — A thing that opens pays off, or the player is told once, before the
+  first one, that it will not.** The practice elsewhere is to make scenery
+  containers un-interactable so the object carries the rule (**cited**: the
+  *Baldur's Gate 3* community wiki's container census, 39% interactable against
+  61% decorative), and to leave the player never asking whether a thing can be
+  used (**cited**: Chung's readability practice — *do you want the player to be
+  asking this question?* — and the standardised metrics the *Skin Deep* team
+  set so a player can tell at once what can be climbed, fitted through or
+  exited). A Minecraft barrel looks the same stocked or bare and every container
+  block opens, so where the object cannot carry the rule the arrival line does:
+  one sentence, in the campaign's voice, that says what this place's containers
+  hold, before the first one is in reach; it states the fact of the world
+  (`what is left in its barrels is salt and dust`), never the mechanism (`the
+  barrels are decoration`). The engine proves the line is shown first and is
+  true (spec-0105). **Authored**, from a playtest, on the two citations.
 
 ## Sources
 
+- bg3.wiki. *Container* (community wiki, CC BY-NC-SA; ideas and counts only, as in `docs/ACKNOWLEDGEMENTS.md`).
 - Callison-Burch, Fordyce, Koehn, Monz, Schroeder. (Meta-) Evaluation of Machine Translation. WMT 2007.
+- Chung, B. *Level Design: Readability*. blendogames.com.
 - Fextralife wikis: Dark Souls *Estus Flask*; Elden Ring *Flask of Crimson Tears*.
 - Game Accessibility Guidelines. *Use simple clear language*. gameaccessibilityguidelines.com.
 - Grice, H. P. Logic and Conversation (1975), as summarised in the Stanford Encyclopedia of Philosophy, *Implicature*.

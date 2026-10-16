@@ -315,6 +315,12 @@ const DEFAULT_EXACT: &[&str] = &[
     "minecraft:crafting_table",
     "minecraft:furnace",
     "minecraft:smoker",
+    // One of the twelve container kinds a `loot` fill reaches (spec-0105 §2.1):
+    // five slots — three bottles, an ingredient, blaze-powder fuel — with no
+    // `Command` or spawner NBT to inject. It brews only with fuel and an
+    // ingredient in it, so a stand the campaign furnishes is still until a
+    // player loads it, the terms a furnace and a smoker are admitted on.
+    "minecraft:brewing_stand",
     "minecraft:cauldron",
     "minecraft:water_cauldron",
     "minecraft:flower_pot",

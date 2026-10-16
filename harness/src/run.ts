@@ -8,6 +8,7 @@
 
 import { loadRepaintPlanForCriticalPath, repaintBindingLine } from "./repaint.ts";
 import { loadPulsePlanForCriticalPath, pulseBindingLine } from "./pulse.ts";
+import { loadContainerLedgerForCriticalPath } from "./containers.ts";
 import { cueBinding, cueBindingLine, loadCueLedgerForCriticalPath } from "./cues.ts";
 import { readFile } from "node:fs/promises";
 import nodePath from "node:path";
@@ -338,6 +339,19 @@ async function main(): Promise<number> {
   } else {
     process.stderr.write(`pulse plan: none in this build (no pulse)\n`);
   }
+  // spec-0105 §5.3: the arrival line the census ledger names. Absent → a build
+  // that predates the census, said out loud.
+  const containerLedger = await loadContainerLedgerForCriticalPath(pathArg);
+  if (containerLedger) {
+    executor.containerLedger = containerLedger;
+    process.stderr.write(
+      `container ledger: ${containerLedger.cells} container cell(s), ` +
+        `${containerLedger.decoration} scenery; notice ` +
+        `${containerLedger.notice ? `declared (${containerLedger.notice.style})` : "none"}\n`,
+    );
+  } else {
+    process.stderr.write(`container ledger: none in this build\n`);
+  }
   // The engine's quest cues, judged where each arrives. Absent → a build that
   // predates the ledger, said out loud.
   const cueLedger = await loadCueLedgerForCriticalPath(pathArg);
@@ -589,6 +603,13 @@ async function main(): Promise<number> {
     // at its silent one; a pulse with no station is reported, never passed.
     const pulseVerdicts = executor.pulseVerdicts();
     report.recordPulseStations(executor.pulseStations);
+    if (containerLedger) {
+      const v = executor.noticeVerdict;
+      if (v) report.recordContainerNotice(v);
+      process.stderr.write(
+        `container notice: ${v ? `${v.ok ? "ok" : "FAILED"} — ${v.detail}` : "NOT JUDGED — no class was selected, so the window never opened"}\n`,
+      );
+    }
     if (pulsePlan) {
       process.stderr.write(`${pulseBindingLine(pulsePlan, pulseVerdicts)}\n`);
     }

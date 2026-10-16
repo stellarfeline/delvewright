@@ -3,10 +3,11 @@
 //! over the verbs its effects carry at every effect root (status effects, the
 //! `sequence` nesting rule, a `carrier: "one"` give, `give-item` enchantments).
 
+use crate::blocks::MAX_CONTAINER_SLOTS;
 use crate::cutscene::check_cutscene_shape;
 use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
-use crate::loot::{MIN_CONTAINER_SLOTS, check_stack_count};
+use crate::loot::check_stack_count;
 use crate::registry::{AnchorRegistry, BlockRegistry, EffectRegistry, ItemRegistry};
 use crate::validate::{
     AnchorProviders, check_block_field, for_each_effect_deep, graph_has_cycle, produced_flags,
@@ -977,7 +978,7 @@ pub(crate) fn quest_reference_checks(
                     // does, and for the same reason: every stack past the last slot
                     // is dropped without a word.
                     let slots = 1usize + *fill_count as usize;
-                    if slots > MIN_CONTAINER_SLOTS {
+                    if slots > MAX_CONTAINER_SLOTS {
                         d.push(Diagnostic::error(
                             codes::LOOT_TOO_MANY_ITEMS,
                             "quests",
@@ -985,12 +986,12 @@ pub(crate) fn quest_reference_checks(
                             format!(
                                 "collect objective `{oid}` fills {slots} slots (its own stack \
                                  plus `fill_count` {fill_count}), more than the \
-                                 {MIN_CONTAINER_SLOTS} slots a vanilla chest or barrel has. \
+                                 {MAX_CONTAINER_SLOTS} slots of the largest vanilla container. \
                                  Slots are assigned positionally, so every stack past the \
-                                 {MIN_CONTAINER_SLOTS}th would be dropped silently. Lower \
+                                 {MAX_CONTAINER_SLOTS}th would be dropped silently. Lower \
                                  `fill_count` to at most {max} — a container that reads full \
                                  does not need to overflow.",
-                                max = MIN_CONTAINER_SLOTS - 1
+                                max = MAX_CONTAINER_SLOTS - 1
                             ),
                         ));
                     }

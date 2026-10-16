@@ -3129,6 +3129,29 @@
       "note": "Carried by DW1026 (compiler::presence, validation funnel): NPC and actor declarations that carry one visible name are one character; every story state of every configuration (the replay's journal, one effect list per tick, from world init) that leaves two of them in the world is refused. On this campaign's records it refuses the three Ivo Marrack skiff bodies spawned in one list (`obj/the-pillars`) and the four Sleeper NPCs on stage from world init.",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "contains": "minecraft:(chest|trapped_chest|barrel|[a-z_]*shulker_box|hopper|brewing_stand|dispenser|dropper|crafter|furnace|blast_furnace|smoker)\\b",
+        "glob": "programs/*.json",
+        "kind": "campaign"
+      },
+      "binding": {
+        "file": "containers.json",
+        "kind": "artifact",
+        "path": "cells"
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1018",
+        "kind": "dw"
+      },
+      "finding": "empty decorative containers stood in reach and cost the player time searching them",
+      "general_form": "every placed container is declared loot or decoration; a loot container is never empty; when any decoration container exists, the opening tells the player in the campaign's words",
+      "id": "str-14",
+      "note": "Carried by `DW1018` (spec-0105): every build takes a census of the container cells of the edited assembled world and attributes each to a `loot`, `collect` or `device` claim; a container nothing claims is scenery, and scenery with no `containers.decoration_notice` refuses the build. `DW1019` refuses an empty `loot` fill, and `DW1024` refuses a place mixing scenery with containers that matter or holding more than two scenery cells. The binding is the census's `cells` in `validation/containers.json`. Measured on this campaign at content `0d1f897` (its documents moved to the engine's dsl_version and the camera `exposure` fields DW1010 refuses removed, in a scratch copy): 19 container cells (16 barrels, 3 chests) in 8 places, 0 loot, 0 collect, 0 device, 19 decoration, no notice, so the build refuses with DW1018; two places (fish-market 5, net-lofts 4) are over the cap DW1024 holds next. The row applies where a detail program names a container block of the twelve kinds; a program that names none is a place the census finds no container in.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"

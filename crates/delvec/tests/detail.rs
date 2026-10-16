@@ -2692,3 +2692,73 @@ fn a_container_a_batch_stands_in_a_stand_in_is_judged_not_deferred() {
         "{err}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// A decoration notice across the blockout (DW1018 deferred with the fills)
+// ---------------------------------------------------------------------------
+
+/// The blockout fixture declaring `containers.decoration_notice`, and no
+/// container fill: whatever scenery the campaign has, its places' detail owes.
+fn notice_dir(root: &Path) -> PathBuf {
+    let src = root.join("src");
+    common::copy_dir_all(&blockout_dir(), &src);
+    common::patch_file(&src.join("quests.json"), |v| {
+        v["dsl_version"] = serde_json::json!(DSL_VERSION);
+        v["content"]["containers"] = serde_json::json!({
+            "decoration_notice": { "text": "The cells were emptied long ago." }
+        });
+    });
+    src
+}
+
+/// **Step 8 builds a campaign whose scenery only step 9 can stand.** On the
+/// blockout every place stands in its stand-in, so the census sees 0
+/// containers: the notice's "no scenery to speak for" arm is owed to the
+/// detail, exactly as a fill there is, and the binding line says so.
+#[test]
+fn a_blockout_build_defers_a_notice_its_places_owe_and_says_so() {
+    let tmp = tempdir("notice-deferred");
+    let src = notice_dir(&tmp);
+    let prefabs = tmp.join("prefabs");
+    std::fs::create_dir_all(&prefabs).unwrap();
+    let (code, err) = build_at(&src, &prefabs, &tmp.join("out"));
+    assert_eq!(code, Some(0), "{err}");
+    let line = err
+        .lines()
+        .find(|l| l.starts_with("container census:"))
+        .unwrap_or_else(|| panic!("no census line: {err}"));
+    let n = every_place().len();
+    assert!(
+        line.contains("0 container cell(s)") && line.contains("notice declared"),
+        "{line}"
+    );
+    assert!(
+        line.contains(&format!(
+            "{n} place(s) still stand in their stand-in, whose containers this build cannot see"
+        )),
+        "the deferral is counted against every place: {line}"
+    );
+    assert!(
+        line.contains("is judged (DW1018) by the build that details them"),
+        "{line}"
+    );
+}
+
+/// The detail is where the notice is judged: every place detailed, no
+/// container in any piece, and the notice speaks for nothing — `DW1018`.
+#[test]
+fn a_detailed_campaign_with_a_notice_and_no_container_is_dw1018() {
+    let tmp = tempdir("notice-detailed");
+    let src = notice_dir(&tmp);
+    let places = every_place();
+    let nodes: Vec<&str> = places.iter().map(String::as_str).collect();
+    let d = detailed_from(&src, &tmp, &nodes, &|_, _| None);
+    let (code, err) = build_at(&d.campaign, &d.prefabs, &tmp.join("out"));
+    assert_ne!(code, Some(0), "{err}");
+    assert!(err.contains("DW1018"), "{err}");
+    assert!(
+        err.contains("`containers.decoration_notice` is declared"),
+        "the notice arm, not the scenery arm: {err}"
+    );
+    assert!(!err.contains("still stand in their stand-in"), "{err}");
+}

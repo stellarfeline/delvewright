@@ -30,23 +30,78 @@ delvewright_dsl::dw_code! {
     const DW_COLLECT_NOT_A_CONTAINER: DwCode = DwCode::new("DW0438", ExitTier::Build);
 }
 
-/// The container blocks a `loot` fill accepts, with their slot counts.
-///
-/// Deliberately the *single-block, slot-addressable* inventories a box-garden
-/// delve furnishes rooms with. Excluded on purpose: `ender_chest` (per-player,
-/// not world state), `shulker_box` (a portable item), and the double chest,
-/// which is two block entities and would make `container.<n>` ambiguous about
-/// which half it addresses.
+/// The slot count of the container at a block state, or `None` when the block
+/// is not a container — read from the one container table,
+/// [`delvewright_dsl::blocks::CONTAINER_KINDS_1_21_11`] (spec-0105 §2.1: the
+/// twelve kinds that open an inventory screen, furnaces and smokers among
+/// them). A double chest is two block entities, each addressed by its own cell.
 pub fn container_slots(name: &str) -> Option<usize> {
-    match base_id(name) {
-        "minecraft:chest" | "minecraft:trapped_chest" | "minecraft:barrel" => Some(27),
-        _ => None,
-    }
+    delvewright_dsl::blocks::container_slots(name)
 }
 
-/// Whether `name` is a container a `loot` fill can target.
+/// Whether `name` is a container a `loot` fill or a `collect` can target.
 pub fn is_container(name: &str) -> bool {
     container_slots(name).is_some()
+}
+
+/// The brewing stand's block id: the one fill target whose block state draws
+/// what it holds.
+pub const BREWING_STAND: &str = "minecraft:brewing_stand";
+
+/// How many bottle slots the brewing stand has: `container.0`–`container.2`,
+/// each drawn as `has_bottle_<n>`.
+pub const BREWING_BOTTLE_SLOTS: usize = 3;
+
+/// **The block state a filled holder shows**
+/// (`docs/reference/delvec/compiler/containers.md`, "The state a holder
+/// shows"). In the pinned 1.21.11 server jar `BrewingStandBlockEntity.serverTick`
+/// sets `has_bottle_<n>` to `getPotionBits()[n]`, which is
+/// `!items[n].isEmpty()` for the three bottle slots. It does so on the stand's
+/// first tick and again whenever the bits change. So a stack in a bottle slot
+/// shows as a bottle, and an empty bottle slot shows none, whatever the piece
+/// wrote. No other fill target's block state is a function of its slots.
+///
+/// `filled` lists the slots a fill lands a stack in. Every bottle property of
+/// the stand is rewritten; its other properties (none at 1.21.11) are kept.
+/// `None` when `state` is not a brewing stand.
+pub fn shown_state(state: &str, filled: &[usize]) -> Option<String> {
+    let (name, props) = match state.split_once('[') {
+        Some((n, rest)) => (n, rest.trim_end_matches(']')),
+        None => (state, ""),
+    };
+    if base_id(name) != BREWING_STAND {
+        return None;
+    }
+    let mut kv: BTreeMap<&str, String> = props
+        .split(',')
+        .filter_map(|p| p.split_once('='))
+        .map(|(k, v)| (k, v.to_string()))
+        .collect();
+    let keys: Vec<String> = (0..BREWING_BOTTLE_SLOTS)
+        .map(|n| format!("has_bottle_{n}"))
+        .collect();
+    for (n, k) in keys.iter().enumerate() {
+        kv.insert(k.as_str(), filled.contains(&n).to_string());
+    }
+    let props: Vec<String> = kv.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    Some(format!("{name}[{}]", props.join(",")))
+}
+
+/// **Every brewing stand of `m` as the server shows it once `setup_finish`
+/// has filled it** ([`shown_state`]). Its bottles are the bottle slots a
+/// `loot` fill lands a stack in, and a stand no fill reaches shows none. A
+/// `loot` stack's index is its slot (`emit::loot::loot_setup`).
+pub fn show_contents(loot: &[LootPlan], m: &mut crate::compiler::blockstate::BlockMap) {
+    let mut filled: BTreeMap<[i32; 3], Vec<usize>> = BTreeMap::new();
+    for l in loot {
+        filled.entry(l.cell).or_default().extend(0..l.items.len());
+    }
+    for (cell, state) in m.iter_mut() {
+        let slots = filled.get(cell).map_or(&[][..], Vec::as_slice);
+        if let Some(shown) = shown_state(state.as_str(), slots) {
+            *state = crate::compiler::blockstate::BlockState::new(&shown);
+        }
+    }
 }
 
 /// **A container this campaign's assembled world really has, at an anchor a
@@ -213,7 +268,7 @@ fn container_remedy(available: &[ContainerAnchor], what: &str) -> String {
     format!(
         "**No anchor anywhere in this campaign's assembled world holds a container**, so there is \
          nothing to point {what} at and no edit to these campaign documents can create one. A \
-         chest, trapped chest or barrel is FURNITURE: a placed piece puts it there, exactly as a \
+         container — a chest, a barrel, a smoker, a brewing stand — is FURNITURE: a placed piece puts it there, exactly as a \
          piece places a trap's dispenser, and the campaign fills what the piece placed. The two \
          ways forward are both about the piece, and only the first is yours: bind one of this \
          campaign's areas to a piece that already carries a container, or have the piece you are \
@@ -440,6 +495,29 @@ impl ContainerBinding {
 mod tests {
     use super::*;
 
+    /// The brewing stand shows a bottle in each bottle slot a fill lands a
+    /// stack in and none elsewhere, whatever was written; slot 3 (the
+    /// ingredient) draws nothing; no other block is touched.
+    #[test]
+    fn a_brewing_stand_shows_the_bottle_slots_its_fill_lands_in() {
+        let one =
+            "minecraft:brewing_stand[has_bottle_0=true,has_bottle_1=false,has_bottle_2=false]";
+        assert_eq!(
+            shown_state(one, &[1, 2, 3]).as_deref(),
+            Some("minecraft:brewing_stand[has_bottle_0=false,has_bottle_1=true,has_bottle_2=true]")
+        );
+        assert_eq!(
+            shown_state("minecraft:brewing_stand", &[]).as_deref(),
+            Some(
+                "minecraft:brewing_stand[has_bottle_0=false,has_bottle_1=false,has_bottle_2=false]"
+            )
+        );
+        assert_eq!(
+            shown_state("minecraft:furnace[facing=north,lit=false]", &[0, 1]),
+            None
+        );
+    }
+
     #[test]
     fn the_three_accepted_containers_have_27_slots() {
         for id in [
@@ -602,17 +680,53 @@ mod tests {
         assert!(check_collect_containers(&BTreeMap::new(), &[], &[]).is_ok());
     }
 
+    /// spec-0105 §2.1: the container class is the table's twelve kinds — a
+    /// furnace-family container has three slots and a shulker box 27 — and the
+    /// blocks that hold items without an inventory screen are outside it.
     #[test]
-    fn non_containers_and_deliberate_exclusions_are_rejected() {
+    fn the_container_class_is_the_table() {
+        for (id, slots) in [
+            ("minecraft:furnace[facing=north,lit=false]", 3),
+            ("minecraft:smoker", 3),
+            ("minecraft:blast_furnace", 3),
+            ("minecraft:brewing_stand", 5),
+            ("minecraft:hopper", 5),
+            ("minecraft:dispenser", 9),
+            ("minecraft:shulker_box", 27),
+            ("minecraft:red_shulker_box", 27),
+        ] {
+            assert_eq!(container_slots(id), Some(slots), "{id}");
+        }
         for id in [
             "minecraft:stone",
             "minecraft:air",
             "minecraft:ender_chest",
-            "minecraft:shulker_box",
-            "minecraft:furnace",
+            "minecraft:decorated_pot",
+            "minecraft:lectern",
+            "minecraft:chiseled_bookshelf",
         ] {
-            assert!(!is_container(id), "{id} must not be fillable");
+            assert!(!is_container(id), "{id} is not a container");
         }
+    }
+
+    /// A smoker fill of three stacks builds; a fourth is refused naming the
+    /// real slot count (spec-0105 criterion 2).
+    #[test]
+    fn a_smoker_takes_three_stacks_and_refuses_four() {
+        let mut b = BTreeMap::new();
+        b.insert(
+            [1, 2, 3],
+            "minecraft:smoker[facing=north,lit=false]".to_string(),
+        );
+        let blocks = crate::compiler::blockstate::interned(b);
+        assert!(check_loot_containers(&blocks, &[mk("stores", [1, 2, 3], 3)], &[]).is_ok());
+        let e = check_loot_containers(&blocks, &[mk("stores", [1, 2, 3], 4)], &[]).unwrap_err();
+        assert_eq!(e.code, "DW0431");
+        assert!(e.message.contains("has 3 slots"), "{}", e.message);
+        assert!(check_collect_containers(&blocks, &[fill([1, 2, 3], 3)], &[]).is_ok());
+        let e = check_collect_containers(&blocks, &[fill([1, 2, 3], 4)], &[]).unwrap_err();
+        assert_eq!(e.code, "DW0438");
+        assert!(e.message.contains("has 3 slots"), "{}", e.message);
     }
 
     // --- what the refusal SAYS to do about it ------------------------------

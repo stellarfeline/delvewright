@@ -500,11 +500,11 @@ fn set_checkpoint_nested_in_sequence_binds_its_own_index() {
 
     // A distinct on_respawn hook makes this a distinct checkpoint (index 1).
     let nested_hook: Vec<QuestEffect> = vec![
-        Verb::Narrate {
+        Verb::Narrate(delvewright_dsl::Narration {
             text: "You steady yourself again, deeper in.".to_string(),
             style: None,
             sound: None,
-        }
+        })
         .into(),
     ];
     let nested: QuestEffect = Verb::Sequence {

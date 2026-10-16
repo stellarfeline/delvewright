@@ -1139,7 +1139,7 @@ fn note(
         // Every narrate channel is a prompt: chat, title, subtitle, actionbar and
         // art all put authored words in front of the party. The channel changes
         // where the words sit, never whether they have to be read.
-        Verb::Narrate { text, .. } => {
+        Verb::Narrate(delvewright_dsl::Narration { text, .. }) => {
             prompts.push(Prompt {
                 at,
                 ord: here,

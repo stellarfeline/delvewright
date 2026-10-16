@@ -370,7 +370,9 @@ fn the_walk_reaches_all_five_roots_in_the_fixed_order() {
     let roots: Vec<&str> = delvec::compiler::timeline::walk(&plan)
         .into_iter()
         .filter_map(|(e, _)| match &e.verb {
-            delvewright_dsl::Verb::Narrate { text, .. } => text.strip_prefix("root: "),
+            delvewright_dsl::Verb::Narrate(delvewright_dsl::Narration { text, .. }) => {
+                text.strip_prefix("root: ")
+            }
             _ => None,
         })
         .collect();

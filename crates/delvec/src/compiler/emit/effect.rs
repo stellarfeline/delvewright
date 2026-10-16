@@ -622,10 +622,8 @@ pub(super) fn emit_quest_effect(
             ));
         }
         // --- DSL v0.4 effects ---
-        Verb::Narrate {
-            text, style, sound, ..
-        } => {
-            emit_narrate(text, *style, sound.as_deref(), who, body);
+        Verb::Narrate(n) => {
+            emit_narrate(&n.text, n.style, n.sound.as_deref(), who, body);
         }
         Verb::SetBlock { anchor, block, .. } => {
             if let Some(pos) = anchor_point_any(plan, anchor.as_str()) {
