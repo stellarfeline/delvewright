@@ -837,3 +837,149 @@ fn every_template_owns_the_gate_it_asserts_on() {
          suite — a green that compared nothing is vacuous, not a pass"
     );
 }
+
+/// What a template's lines leave `#placed` at when each of them runs a real `tick`:
+/// the names of the templates (with the 1-based line) that run `tick` while the
+/// load is re-armed, and how many templates run `tick` after `setup` at all.
+///
+/// `setup` re-arms the load (`#placed` 0, or 3 with ground), so the next `tick`
+/// resumes the placement loop and, for a world with no build step, runs
+/// `setup_finish` inline. The batch server's world is already built: a template
+/// that ticks re-armed re-runs the whole load (every unguarded NPC summon,
+/// every holder and container refill) on the shared server, inside its own
+/// tick. The template's own helper functions (`data/<ns>/function/` of the
+/// suite datapack) are inlined, because a line does not stop belonging to the
+/// template when the emitter hoists it.
+fn ticks_with_the_load_re_armed(out: &BuildOutput) -> (Vec<String>, usize) {
+    let ns = out
+        .keys()
+        .find_map(|p| {
+            p.strip_prefix("packtest-datapack/data/")
+                .and_then(|r| r.split('/').next())
+        })
+        .expect("a generated PackTest tree")
+        .to_string();
+    let helper = |name: &str| -> Option<String> {
+        out.get(&format!(
+            "packtest-datapack/data/{ns}/function/{name}.mcfunction"
+        ))
+        .map(|b| String::from_utf8(b.clone()).unwrap())
+    };
+    let called = |line: &str, f: &str| {
+        let target = format!("function {ns}:{f}");
+        line == target || line.ends_with(&format!(" run {target}"))
+    };
+    fn walk(
+        body: &str,
+        placed: &mut u32,
+        ticks_after_setup: &mut bool,
+        ran_setup: &mut bool,
+        bad: &mut Option<usize>,
+        depth: usize,
+        ctx: &dyn Fn(&str) -> Step,
+    ) {
+        for (i, raw) in body.lines().enumerate() {
+            let line = raw.trim();
+            match ctx(line) {
+                Step::Setup => {
+                    *placed = 0;
+                    *ran_setup = true;
+                }
+                Step::Latch(v) => *placed = v,
+                Step::Tick => {
+                    if *ran_setup {
+                        *ticks_after_setup = true;
+                    }
+                    if *placed != 1 && bad.is_none() {
+                        *bad = Some(i + 1);
+                    }
+                }
+                Step::Helper(b) if depth < 8 => walk(
+                    &b,
+                    placed,
+                    ticks_after_setup,
+                    ran_setup,
+                    bad,
+                    depth + 1,
+                    ctx,
+                ),
+                _ => {}
+            }
+        }
+    }
+    let ctx = |line: &str| -> Step {
+        if called(line, "setup") {
+            return Step::Setup;
+        }
+        if called(line, "tick") {
+            return Step::Tick;
+        }
+        if let Some(v) = line
+            .strip_prefix("scoreboard players set #placed dw.sys ")
+            .and_then(|v| v.parse().ok())
+        {
+            return Step::Latch(v);
+        }
+        if let Some(name) = line
+            .rsplit_once(&format!("function {ns}:"))
+            .map(|(_, n)| n.split_whitespace().next().unwrap_or(""))
+            && let Some(b) = helper(name)
+        {
+            return Step::Helper(b);
+        }
+        Step::Other
+    };
+    let mut bad = Vec::new();
+    let mut bound = 0;
+    for (name, body) in templates(out) {
+        // The batch server holds a built world: every template starts settled.
+        let (mut placed, mut after, mut ran, mut hit) = (1, false, false, None);
+        walk(&body, &mut placed, &mut after, &mut ran, &mut hit, 0, &ctx);
+        bound += usize::from(after);
+        if let Some(line) = hit {
+            bad.push(format!("{name} line {line}"));
+        }
+    }
+    (bad, bound)
+}
+
+enum Step {
+    Setup,
+    Tick,
+    Latch(u32),
+    Helper(String),
+    Other,
+}
+
+/// **No template runs `tick` with the load re-armed.** A template that re-runs
+/// `setup` and then a real `tick` takes the settled setup (`settled_setup` in
+/// `emit/packtest.rs`), so its tick judges the effect it drove, not a reload of
+/// the world, and puts no second copy of any body on the shared server.
+///
+/// Swept over every fixture suite, with the binding — templates that tick after
+/// a `setup` — counted and required non-zero.
+#[test]
+fn no_template_ticks_with_the_load_re_armed() {
+    let mut bound_total = 0usize;
+    let mut bad_all = Vec::new();
+    for (suite, out) in suites() {
+        let (bad, bound) = ticks_with_the_load_re_armed(&out);
+        eprintln!(
+            "settled-load binding [{suite}]: {bound} template(s) tick after setup, {} re-armed",
+            bad.len()
+        );
+        bound_total += bound;
+        bad_all.extend(bad.into_iter().map(|b| format!("{suite}: {b}")));
+    }
+    assert!(
+        bound_total > 0,
+        "no template in any fixture suite ticks after setup — the rule bound nothing"
+    );
+    assert!(
+        bad_all.is_empty(),
+        "{} template(s) run `tick` with the load re-armed by `setup`; give each the \
+         settled setup (`settled_setup`):\n{}",
+        bad_all.len(),
+        bad_all.join("\n")
+    );
+}
