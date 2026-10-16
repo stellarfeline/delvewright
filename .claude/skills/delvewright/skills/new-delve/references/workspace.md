@@ -20,12 +20,16 @@ Build output goes beside them and is ignored by git there.
 
 ## Where a campaign lives
 
-**`campaigns/` is the only place a campaign lives, and a demo level is a
-campaign.** A level off the engine's `docs/demo-levels.md` queue — one mechanic
-in the spotlight, ten to twenty minutes, minimum cast — is authored through this
-page like any other and goes to `campaigns/<id>/`. It has to: a delve is what
+**`campaigns/` is the home of a campaign, and a demo level is a campaign.** A
+level off the engine's `docs/demo-levels.md` queue — one mechanic in the
+spotlight, ten to twenty minutes, minimum cast — is authored through this page
+like any other and goes to `campaigns/<id>/`. It has to: a delve is what
 somebody plays, and a campaign is the directory under `campaigns/` that carries
-`world.json`. **`demos/` is not a second home for one.** What lives there is a
+`world.json`. **A reference level lives whole in the content repository's
+`references` directory, under its own id** — its documents, its form, its
+prefabs and the record of how it is built — and is built with
+`--prefabs campaigns/references/<id>/prefabs`; the reference works page says
+which levels those are. **`demos/` is not a second home for a campaign.** What lives there is a
 demonstration of a *generation-time* surface — a grammar program, the piece it
 exports, its reports, its refusal transcripts — and it carries no campaign
 document because no delve is built from it. One place each, and no pointer file

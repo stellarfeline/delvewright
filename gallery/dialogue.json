@@ -262,6 +262,26 @@
         ],
         "npc": "npc/marshal",
         "root": "dlg/marshal-root"
+      },
+      {
+        "nodes": [
+          {
+            "id": "dlg/copyist-root",
+            "options": [
+              {
+                "happening": {
+                  "subject": "npc/copyist",
+                  "text": "They leave the copyist to her page.",
+                  "verb": "departs"
+                },
+                "label": "Leave her to it."
+              }
+            ],
+            "text": "\"Mind the ink.\" The pen does not stop, and neither does the page."
+          }
+        ],
+        "npc": "npc/copyist",
+        "root": "dlg/copyist-root"
       }
     ]
   },

@@ -38,7 +38,13 @@ pub(super) fn emit_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
     b.push(format!("kill @e[tag={tag}]"));
     b.push(format!(
         "fill {} {} {} {} {} {} minecraft:air replace {}",
-        from[0], from[1], from[2], to[0], to[1], to[2], s.block
+        from[0],
+        from[1],
+        from[2],
+        to[0],
+        to[1],
+        to[2],
+        replace_filter(&s.block)
     ));
     b.push("# An open gate is nothing to press: nothing armed.".to_string());
     b.push(count("seal_before"));
@@ -63,7 +69,13 @@ pub(super) fn emit_seal_packtest(plan: &Plan, out: &mut BuildOutput) {
     b.push("# Re-opening takes the answer down with the stone (no residue).".to_string());
     b.push(format!(
         "fill {} {} {} {} {} {} minecraft:air replace {}",
-        from[0], from[1], from[2], to[0], to[1], to[2], s.block
+        from[0],
+        from[1],
+        from[2],
+        to[0],
+        to[1],
+        to[2],
+        replace_filter(&s.block)
     ));
     b.push(format!("kill @e[tag={tag}]"));
     b.push(count("seal_after"));

@@ -122,7 +122,7 @@ use quest::*;
 use removal::*;
 use respawn::*;
 use routes::*;
-pub use seal::*;
+use seal::*;
 use sequence::*;
 pub use server::*;
 use shortcut::*;
@@ -640,7 +640,6 @@ pub fn build_with_warnings(
     // After the declaration proofs, so a body whose mark leaves its piece
     // (`DW0897`) is sent to that line rather than told nobody can reach it.
     let mut watch_binding = prove_watchers(plan, &population)?;
-    drop(population);
 
     // ---- the world block: every proof over the assembled world ----
     let WorldProofs {
@@ -680,6 +679,26 @@ pub fn build_with_warnings(
         &mut pacing,
     )?;
 
+    // ---- `DW1025`: a body that holds its facing faces every approach ----
+    //
+    // After the world block, because it reads the walks that leave a body
+    // where it stands (`moves`), over the watchers' population. The line prints
+    // before the verdict.
+    {
+        let (binding, findings) = crate::compiler::approach::check_held(plan, &population, &moves);
+        eprintln!("{}", binding.line());
+        if let Some((first, rest)) = findings.split_first() {
+            for extra in rest {
+                eprintln!("{} [error] build: {}", extra.code, extra.message);
+            }
+            return Err(BuildFailure::Diagnostic {
+                code: first.code,
+                message: first.message.clone(),
+            });
+        }
+    }
+    drop(population);
+
     // Every `spawn-wave` effect must resolve a spawn position, or its emitted
     // `function <ns>:spawn_<wave>` call would dangle to a never-emitted function and
     // the wave would silently never spawn (DW0310). Guards against the class of bug
@@ -718,17 +737,14 @@ pub fn build_with_warnings(
     // configuration the critical path passes, around its laid writes), after
     // the route proofs, so a climbable a forced leg needs is named by
     // `DW0991` first. The binding is printed whichever way it goes.
+    // Its refusal waits for the write-sequence arm below, so one refusal names
+    // every block either arm finds.
     let picture = crate::compiler::view::beat::picture_base(plan, assembled, &relight.placements);
-    {
+    let attached_refusal = {
         let attached = crate::compiler::attached::judge(plan, &world, &picture);
         eprintln!("{}", attached.line());
-        if let Some(message) = attached.refusal() {
-            return Err(BuildFailure::Diagnostic {
-                code: crate::compiler::attached::DW_BLOCK_DROPPED,
-                message,
-            });
-        }
-    }
+        attached.refusal()
+    };
 
     // ---- datapack ----
     put_json(
@@ -865,6 +881,27 @@ pub fn build_with_warnings(
         &asm_locks,
         &pulse_gate.rows,
     );
+    // DW1002's write arms over the FINAL function list, read off the shipped
+    // commands so what is judged is what is emitted: the load as the server
+    // runs it — `setup`, the ground, the templates, the world build,
+    // `setup_finish` — one write at a time, each changed cell and its
+    // neighbours judged as the write lands; then every write outside the load,
+    // at once, over the loaded world. Both bindings are printed whichever way
+    // it goes.
+    let mut refusals: Vec<String> = attached_refusal.into_iter().collect();
+    if assembles_world(plan) {
+        let writes = crate::compiler::attached::judge_writes(plan, structures, &functions);
+        eprintln!("{}", writes.sequence.line());
+        eprintln!("{}", writes.runtime.line());
+        refusals.extend(writes.sequence.refusal());
+        refusals.extend(writes.runtime.refusal());
+    }
+    if !refusals.is_empty() {
+        return Err(BuildFailure::Diagnostic {
+            code: crate::compiler::attached::DW_BLOCK_DROPPED,
+            message: refusals.join("\n"),
+        });
+    }
     // `DW0852` over the FINAL function list — after every emitter has had its say,
     // so a later pass that rewrote a judge cannot slip past a check that ran
     // earlier. The ledger is UNCONDITIONAL, on the `fluid-escape.json` terms and
@@ -1019,7 +1056,7 @@ pub fn build_with_warnings(
     // spec-0101 §5.4: the bot's watchers ride the record it already reads, and
     // the per-watcher record the PackTests stand on is stated beside it. Both
     // absent for a campaign that declares no watcher → byte-identical.
-    if watch_binding.declared() > 0 {
+    if watch_binding.watchers() > 0 {
         if let Some(obj) = cp.as_object_mut() {
             obj.insert(
                 "watchers".to_string(),
@@ -1157,7 +1194,18 @@ pub fn build_with_warnings(
     // A branch's scripted dialogue choices ride inside its own `talk-to` steps
     // (each carries the `/trigger` line of the option belonging to that branch),
     // which is the only player-legal way to actuate a server-driven dialog button.
-    for (slug, path) in branch_paths(plan, &moves, &actor_moves, &branch_takes, &path_legs)? {
+    for (slug, mut path) in branch_paths(plan, &moves, &actor_moves, &branch_takes, &path_legs)? {
+        // The watchers stand in every configuration's world, so a branch's run
+        // judges them as the critical path's does (spec-0101 §5.4), and the
+        // branch the critical path walks keeps its byte-identical file.
+        if watch_binding.watchers() > 0
+            && let Some(obj) = path.as_object_mut()
+        {
+            obj.insert(
+                "watchers".to_string(),
+                Value::Array(watch_binding.watcher_rows()),
+            );
+        }
         put_json(
             &mut out,
             &format!("validation/branch-path-{slug}.json"),
@@ -1299,6 +1347,10 @@ pub fn build_with_warnings(
     if pulse_gate.declared > 0 {
         put_json(&mut out, "validation/pulses.json", &pulse_gate.to_json());
     }
+    // The engine's quest cues and the objectives that owe them, so the bot
+    // judges where each one arrives. Every build plays the campaign cue, so
+    // every build writes the file.
+    put_json(&mut out, "validation/cues.json", &cue_ledger(plan));
     if let Some(gate) = firework_gate.as_ref().filter(|g| g.declared > 0) {
         put_json(&mut out, "validation/firework-gate.json", &gate.to_json());
     }

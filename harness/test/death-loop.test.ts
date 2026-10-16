@@ -18,6 +18,7 @@ import {
   deathLoopBinding,
   deathLoopBindingFailures,
   deathLoopStage,
+  deathLoopCoverage,
   datumsPromised,
   dropOf,
   entryCellOf,
@@ -1218,6 +1219,7 @@ function stageInput(over: Partial<Parameters<typeof deathLoopStage>[0]> = {}) {
     binding: deathLoopBinding(plan(), trials),
     trials,
     trialsFinished: trials.length,
+    volumes: plan().volumes.map((v) => v.id),
     ...over,
   };
 }
@@ -1281,7 +1283,7 @@ test("a finished stage is judged whole, and a disabled one carries its reason", 
     stage: "death-loop",
     ran: true,
     passed: true,
-    findings: [],
+    findings: ["[death-loop] exercised 1 of 1 declared lethal volume(s): lethal/the-drop"],
     failures: [],
   });
   const off = deathLoopStage(stageInput({ enabled: false }));
@@ -1422,6 +1424,7 @@ test("a staged volume shut at its trial is stated, counted apart, and exercises 
     binding,
     trials: [t],
     trialsFinished: 1,
+    volumes: plan.volumes.map((v) => v.id),
   });
   assert.equal(stage.passed, false, "a run that exercised none of its volumes is never a pass");
   assert.ok(
@@ -1541,4 +1544,29 @@ test("the lidded pit's rim, three courses up, is still found and walked to", asy
   assert.deepEqual(outcome.from, got[0]);
   assert.equal(outcome.result, "released");
   assert.equal(asked.length, 1, "the first rim cell reached is the way in");
+});
+
+test("the coverage line counts the volumes exercised over the volumes declared, and says where", () => {
+  const early = goodTrial();
+  early.at = "after step 1 (talk-to `obj/hear-the-curator`)";
+  const shut = openLethalTrial({ ...VOLUME, id: "lethal/lid" }, [8, 67, 5], []);
+  shut.notLiveAtTrial = "its gate reads `dw.f_lid_fell` for #party in 1, which does not hold";
+  shut.at = "after the critical path";
+  const c = deathLoopCoverage(["lethal/the-drop", "lethal/lid", "lethal/never"], [early, shut]);
+  assert.equal(c.exercised, 1);
+  assert.equal(c.declared, 3);
+  assert.deepEqual(c.untried, ["lethal/never"]);
+  assert.match(c.line, /exercised 1 of 3 declared lethal volume\(s\): lethal\/the-drop after step 1/);
+  assert.match(c.line, /not exercised: lethal\/lid after the critical path: not live/);
+  assert.match(c.line, /never tried: lethal\/never/);
+});
+
+test("a declared volume the stage never tried is a failure, never a silent skip", () => {
+  const row = deathLoopStage(stageInput({ volumes: ["lethal/the-drop", "lethal/elsewhere"] }));
+  assert.equal(row.passed, false);
+  assert.ok(
+    row.failures.some((f) => /lethal\/elsewhere is a declared lethal volume and the stage never tried it/.test(f)),
+    JSON.stringify(row.failures),
+  );
+  assert.match(row.findings[0]!, /exercised 1 of 2 declared lethal volume\(s\)/);
 });

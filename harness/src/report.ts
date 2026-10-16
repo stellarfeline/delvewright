@@ -159,6 +159,12 @@ export class RunReport {
   /** spec-0084 §11: what the server pushed and whether it is the build's pack. */
   private resourcePack: ResourcePackVerdict | undefined;
   /** spec-0101 §5.4: what the walk found about the record's watching bodies. */
+  private cueBinding:
+    | (import("./cues.ts").CueBinding & {
+        line: string;
+        verdicts: readonly import("./cues.ts").CueVerdict[];
+      })
+    | undefined;
   private watchBinding:
     | { inRecord: number; withinReach: number; asserted: number; judgements: number; line: string }
     | undefined;
@@ -311,6 +317,16 @@ export class RunReport {
     line: string;
   }): void {
     this.watchBinding = binding;
+  }
+
+  /** Where the engine's quest cues arrived, judged against the build's cue ledger. */
+  recordCues(
+    binding: import("./cues.ts").CueBinding & {
+      line: string;
+      verdicts: readonly import("./cues.ts").CueVerdict[];
+    },
+  ): void {
+    this.cueBinding = binding;
   }
 
   /** The resource pack the client was sent, judged against the build's manifest. */
@@ -599,6 +615,28 @@ export class RunReport {
             },
           }
         : {}),
+      cue_binding:
+        this.cueBinding === undefined
+          ? null
+          : {
+              objectives: this.cueBinding.objectives,
+              owed: this.cueBinding.owed,
+              arrived: this.cueBinding.arrived,
+              beyond_range: this.cueBinding.beyondRange,
+              unclaimed: this.cueBinding.unclaimed,
+              unclaimed_at_bot: this.cueBinding.unclaimedAtBot,
+              line: this.cueBinding.line,
+              verdicts: this.cueBinding.verdicts.map((v) => ({
+                kind: v.kind,
+                token: v.token,
+                sound: v.sound,
+                heard: v.heard && [...v.heard],
+                bot: v.bot && [...v.bot],
+                from_spawn: v.fromSpawn,
+                ok: v.ok,
+                detail: v.detail,
+              })),
+            },
       die_retry_binding:
         this.dieRetryBinding === undefined
           ? null

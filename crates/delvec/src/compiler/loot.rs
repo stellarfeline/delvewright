@@ -44,6 +44,66 @@ pub fn is_container(name: &str) -> bool {
     container_slots(name).is_some()
 }
 
+/// The brewing stand's block id: the one fill target whose block state draws
+/// what it holds.
+pub const BREWING_STAND: &str = "minecraft:brewing_stand";
+
+/// How many bottle slots the brewing stand has: `container.0`–`container.2`,
+/// each drawn as `has_bottle_<n>`.
+pub const BREWING_BOTTLE_SLOTS: usize = 3;
+
+/// **The block state a filled holder shows**
+/// (`docs/reference/delvec/compiler/containers.md`, "The state a holder
+/// shows"). In the pinned 1.21.11 server jar `BrewingStandBlockEntity.serverTick`
+/// sets `has_bottle_<n>` to `getPotionBits()[n]`, which is
+/// `!items[n].isEmpty()` for the three bottle slots. It does so on the stand's
+/// first tick and again whenever the bits change. So a stack in a bottle slot
+/// shows as a bottle, and an empty bottle slot shows none, whatever the piece
+/// wrote. No other fill target's block state is a function of its slots.
+///
+/// `filled` lists the slots a fill lands a stack in. Every bottle property of
+/// the stand is rewritten; its other properties (none at 1.21.11) are kept.
+/// `None` when `state` is not a brewing stand.
+pub fn shown_state(state: &str, filled: &[usize]) -> Option<String> {
+    let (name, props) = match state.split_once('[') {
+        Some((n, rest)) => (n, rest.trim_end_matches(']')),
+        None => (state, ""),
+    };
+    if base_id(name) != BREWING_STAND {
+        return None;
+    }
+    let mut kv: BTreeMap<&str, String> = props
+        .split(',')
+        .filter_map(|p| p.split_once('='))
+        .map(|(k, v)| (k, v.to_string()))
+        .collect();
+    let keys: Vec<String> = (0..BREWING_BOTTLE_SLOTS)
+        .map(|n| format!("has_bottle_{n}"))
+        .collect();
+    for (n, k) in keys.iter().enumerate() {
+        kv.insert(k.as_str(), filled.contains(&n).to_string());
+    }
+    let props: Vec<String> = kv.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    Some(format!("{name}[{}]", props.join(",")))
+}
+
+/// **Every brewing stand of `m` as the server shows it once `setup_finish`
+/// has filled it** ([`shown_state`]). Its bottles are the bottle slots a
+/// `loot` fill lands a stack in, and a stand no fill reaches shows none. A
+/// `loot` stack's index is its slot (`emit::loot::loot_setup`).
+pub fn show_contents(loot: &[LootPlan], m: &mut crate::compiler::blockstate::BlockMap) {
+    let mut filled: BTreeMap<[i32; 3], Vec<usize>> = BTreeMap::new();
+    for l in loot {
+        filled.entry(l.cell).or_default().extend(0..l.items.len());
+    }
+    for (cell, state) in m.iter_mut() {
+        let slots = filled.get(cell).map_or(&[][..], Vec::as_slice);
+        if let Some(shown) = shown_state(state.as_str(), slots) {
+            *state = crate::compiler::blockstate::BlockState::new(&shown);
+        }
+    }
+}
+
 /// **A container this campaign's assembled world really has, at an anchor a
 /// campaign document can name.**
 ///
@@ -434,6 +494,29 @@ impl ContainerBinding {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The brewing stand shows a bottle in each bottle slot a fill lands a
+    /// stack in and none elsewhere, whatever was written; slot 3 (the
+    /// ingredient) draws nothing; no other block is touched.
+    #[test]
+    fn a_brewing_stand_shows_the_bottle_slots_its_fill_lands_in() {
+        let one =
+            "minecraft:brewing_stand[has_bottle_0=true,has_bottle_1=false,has_bottle_2=false]";
+        assert_eq!(
+            shown_state(one, &[1, 2, 3]).as_deref(),
+            Some("minecraft:brewing_stand[has_bottle_0=false,has_bottle_1=true,has_bottle_2=true]")
+        );
+        assert_eq!(
+            shown_state("minecraft:brewing_stand", &[]).as_deref(),
+            Some(
+                "minecraft:brewing_stand[has_bottle_0=false,has_bottle_1=false,has_bottle_2=false]"
+            )
+        );
+        assert_eq!(
+            shown_state("minecraft:furnace[facing=north,lit=false]", &[0, 1]),
+            None
+        );
+    }
 
     #[test]
     fn the_three_accepted_containers_have_27_slots() {
