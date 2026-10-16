@@ -69,6 +69,17 @@ map-pipeline documents the primary cannot carry, since
 `DW0839` refuses a campaign holding both `areas[]` and a site plan). There is
 nothing for such a file to drift from. A file that SHADOWS a primary document is
 refused: that is the copy this exists to end.
+
+## A probe of an overlay point
+
+A refusal that only a map-pipeline campaign can reach — a gated connection's
+bar, its opener, its separation (spec-0107) — has no subject on the primary,
+which carries `areas[]` and no site plan. Such a probe names the overlay it
+perturbs in `probe.json`'s `point` (`"point": "site-plan"`): it is then that
+overlay point, materialised exactly as the overlay's own build is, plus its
+declared edit, whose `doc` names the point's document (`quests.json`, not
+`overlays/site-plan/quests.json`). Nothing is copied: the overlay's documents
+come from the overlay on every run, and the edit is the probe's whole content.
 """
 
 from __future__ import annotations
@@ -227,6 +238,26 @@ def patch_ops(point: Path | None) -> list[dict]:
     return ops
 
 
+def base_overlay(point: Path | None) -> Path | None:
+    """The overlay a probe perturbs (`probe.json`'s `point`), or `None`.
+
+    `None` for the primary, for an overlay and for a probe of the primary. A
+    `point` that names no overlay is a refusal naming it.
+    """
+    if point is None:
+        return None
+    manifest = Path(point) / "probe.json"
+    if not manifest.is_file():
+        return None
+    name = json.loads(manifest.read_text()).get("point")
+    if name is None:
+        return None
+    overlay = GALLERY / "overlays" / str(name)
+    if not isinstance(name, str) or not (overlay / "overlay.json").is_file():
+        raise PatchError(f"names `point: {name!r}`, which is not an overlay of the gallery")
+    return overlay
+
+
 def shadowed_documents(point: Path | None) -> list[str]:
     """Files a probe ships that the PRIMARY also holds — the copy shape, by name.
 
@@ -247,7 +278,8 @@ def shadowed_documents(point: Path | None) -> list[str]:
         if not f.is_file() or f.name in POINT_MANIFESTS:
             continue
         rel = f.relative_to(point)
-        if (GALLERY / rel).is_file():
+        base = base_overlay(point)
+        if (GALLERY / rel).is_file() or (base is not None and (base / rel).is_file()):
             out.append(str(rel))
     return out
 
@@ -346,6 +378,15 @@ def materialise(dest: Path, point: Path | None = None) -> int:
     for junk in NOT_CAMPAIGN:
         shutil.rmtree(dest / junk, ignore_errors=True)
     if point is not None:
+        base = base_overlay(point)
+        if base is not None:
+            for f in sorted(base.iterdir()):
+                if f.name in POINT_MANIFESTS:
+                    continue
+                if f.is_dir():
+                    shutil.copytree(f, dest / f.name, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(f, dest / f.name)
         shadowed = shadowed_documents(point)
         if shadowed:
             raise PatchError(
@@ -370,6 +411,11 @@ def materialise(dest: Path, point: Path | None = None) -> int:
             # document plus one declared edit, and nothing is a copy. Any other
             # path is a document of the primary, or a refusal.
             campaign_rel = _overlay_document(rel)
+            if campaign_rel is not None and base is not None:
+                raise PatchError(
+                    f"declares an edit to `{rel}` and is a probe of the `{base.name}` point, "
+                    "whose documents are already the point's: name the document itself"
+                )
             if campaign_rel is not None:
                 source = GALLERY / rel
                 if not source.is_file():

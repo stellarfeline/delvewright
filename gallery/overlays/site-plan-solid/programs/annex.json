@@ -10,8 +10,11 @@
       {
         "a": "room",
         "b": "exterior",
-        "class": "walk",
-        "via": "annex-chute-way"
+        "bar": {
+          "block": "bar",
+          "region": "seam-annex-chute"
+        },
+        "class": "barred"
       }
     ],
     "entry": "room",
@@ -23,6 +26,7 @@
   },
   "name": "gallery-annex",
   "palette": {
+    "bar": "minecraft:iron_bars[east=false,north=false,south=false,waterlogged=false,west=false]",
     "floor": "minecraft:polished_andesite",
     "lamp": "minecraft:sea_lantern",
     "lid": "minecraft:spruce_planks",
@@ -46,10 +50,13 @@
       {
         "body": {
           "body": {
-            "op": "void"
+            "material": {
+              "role": "bar"
+            },
+            "op": "fill"
           },
           "op": "claim",
-          "region": "annex-chute-way"
+          "region": "seam-annex-chute"
         },
         "weight": 1
       }

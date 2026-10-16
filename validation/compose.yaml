@@ -284,6 +284,10 @@ services:
       # (`#placed dw.sys` = 1) and the first join to settle before the run
       # fails (harness/src/placement.ts, default 300 s).
       DELVEWRIGHT_PLACEMENT_TIMEOUT_MS:
+      # Which session this is: unset for the critical path; `hatch-stand` for
+      # the session `bot-run.sh` starts on a fresh world when the build's
+      # gate-seal ledger names a shut floor gate (harness/src/hatch-stand.ts).
+      DELVEWRIGHT_STAGE:
     volumes:
       - ${DELVE_OUTPUT:-./delve-output}/critical-path.json:/delve/critical-path.json:ro
       - ${DELVE_OUTPUT:-./delve-output}/manifest.json:/delve/manifest.json:ro

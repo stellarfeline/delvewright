@@ -69,7 +69,17 @@ pub(in crate::compiler::nav) struct RegionState {
     /// (`None` = air), in region order — what [`RegionState::blocks_over`] lays
     /// over the assembled bytes to give this configuration's block map.
     pub(in crate::compiler::nav) laid: Vec<LaidWrite>,
+    /// For each cell in `solid` whose fill block does not cover its cell — iron
+    /// bars, a pane — that block's server footprint
+    /// ([`delvewright_dsl::blockshape::server_footprint`]). A world-load seal
+    /// carries the footprints its bytes hold ([`crate::compiler::assembled::GateSeal`]).
+    /// Absent = a full cube, as every fill was before footprints were read.
+    pub(in crate::compiler::nav) fill_footprints:
+        BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
 }
+
+/// One cell and the server footprint of the block it holds.
+type CellFootprint = ([i32; 3], delvewright_dsl::blockshape::Footprint16);
 
 /// One region a forced write lays, with the block its command writes (`None` =
 /// air) — what [`RegionState::blocks_over`] lays over the assembled bytes.
@@ -104,6 +114,7 @@ impl RegionState {
         let mut st = self.clone();
         st.solid.retain(|c| !cells.contains(c));
         st.unforced.retain(|c| !cells.contains(c));
+        st.fill_footprints.retain(|c, _| !cells.contains(c));
         st.cleared.extend(cells.iter().copied());
         st
     }
@@ -301,6 +312,13 @@ impl World {
         } else {
             Vec::new()
         };
+        // What each world-load seal's bytes hold, where a cell's block does not
+        // cover it: the seal is the block the world was built holding, and a
+        // floor of iron bars is not a floor a body stands on.
+        let seal_footprints: BTreeMap<([i32; 3], [i32; 3]), &[CellFootprint]> = self
+            .modelled_seals()
+            .map(|s| (s.region, s.open_footprints.as_slice()))
+            .collect();
         // The regions the walk has opened by the path's own order (see above).
         let path_ordered: BTreeSet<([i32; 3], [i32; 3])> = performed
             .map(|last| {
@@ -345,7 +363,7 @@ impl World {
                     RegionWrite::Clear | RegionWrite::Unseal => st.laid.push((region, None)),
                     RegionWrite::Fill | RegionWrite::Flood | RegionWrite::Pass => {
                         if block.is_some() {
-                            st.laid.push((region, block));
+                            st.laid.push((region, block.clone()));
                         }
                     }
                 }
@@ -360,6 +378,25 @@ impl World {
             // futures); `Clear`, `Unseal` and `Pass` never reach here unforced, because
             // `plan::collect_region_events` drops them — an unforced firing may make
             // a region impassable and may never make one passable.
+            if write == RegionWrite::Fill {
+                // The fill's footprint: the block the command lays, or — for a
+                // world-load seal, whose block the bytes hold — the bytes'.
+                match block.as_deref() {
+                    Some(b) => {
+                        let fp = delvewright_dsl::blockshape::server_footprint(b);
+                        if fp != delvewright_dsl::blockshape::FULL_FOOTPRINT {
+                            for c in crate::compiler::assembled::region_cells(region.0, region.1) {
+                                st.fill_footprints.insert(c, fp);
+                            }
+                        }
+                    }
+                    None => {
+                        for (c, fp) in seal_footprints.get(&region).copied().unwrap_or_default() {
+                            st.fill_footprints.insert(*c, *fp);
+                        }
+                    }
+                }
+            }
             let into = match write {
                 RegionWrite::Fill if !forced => {
                     st.unforced_regions.push((region, blame));

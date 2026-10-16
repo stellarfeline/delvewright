@@ -101,6 +101,7 @@ fn two_ledges(rise: i64) -> (World, [i32; 3], [i32; 3]) {
             lava: BTreeSet::new(),
             climb: Default::default(),
             unheld_climb: Default::default(),
+            footprints: Default::default(),
         },
         Premises::geometry_only(),
     );

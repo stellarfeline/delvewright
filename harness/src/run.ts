@@ -47,6 +47,7 @@ import {
   type StageName,
 } from "./report.ts";
 import { installCrashReporter } from "./crash.ts";
+import { runHatchStand } from "./hatch-stand.ts";
 import { CLIENT_WAIT_TIMEOUT_MS, SERVER_LOAD_TIMEOUT_TICKS } from "./client-loaded.ts";
 import { unreportedWindows } from "./load-window.ts";
 import { judgeResourcePack } from "./resource-pack.ts";
@@ -166,6 +167,12 @@ async function main(): Promise<number> {
   if (pathArg === undefined || pathArg.length === 0) {
     process.stderr.write("usage: node src/run.ts <path-to-critical-path.json>\n");
     return 1;
+  }
+
+  // The hatch stand runs in a session of its own, on a world no beat has
+  // touched (`validation/bot-run.sh` starts it): every floor gate shut.
+  if (process.env["DELVEWRIGHT_STAGE"] === "hatch-stand") {
+    return runHatchStand(pathArg);
   }
 
   const exported = await readFile(pathArg, "utf8");

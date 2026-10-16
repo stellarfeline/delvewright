@@ -866,6 +866,19 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
             // cell of ANOTHER exterior opening of the same space that itself
             // touches the room: a cell reached only through its own opening's
             // cells is still detached.
+            //
+            // **An opening shut by its own bar** (spec-0107 §6): a hole through
+            // a floor whose bar stands in the course above it — the grating over
+            // a ladder's hole — opens onto the room through the bar's cells, so
+            // a cell of the edge's own bar that touches the room is a hop the
+            // same as another opening's. The bar is the edge's; it is the shut
+            // state of this very hole.
+            let own_bar: BTreeSet<[i32; 3]> = edge
+                .bar
+                .as_ref()
+                .filter(|_| edge.class == "barred")
+                .map(|b| cells(&b.boxes))
+                .unwrap_or_default();
             let through_other: BTreeSet<[i32; 3]> = contract
                 .edges
                 .iter()
@@ -877,6 +890,7 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
                         && (e.a == *space || e.b == *space)
                 })
                 .flat_map(|(j, _)| ix.via_cells[j].iter().copied())
+                .chain(own_bar.iter().copied())
                 .filter(|c| !via.contains(c) && touches_room(c))
                 .collect();
             let detached: BTreeSet<[i32; 3]> = via

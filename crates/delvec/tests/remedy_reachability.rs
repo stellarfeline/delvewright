@@ -4664,4 +4664,135 @@ fn dw1036_removing_the_owned_key_passes_the_audit() {
     assert!(log.contains("DW1036") && log.contains("`Fixed`"), "{log}");
     let (code, log) = audit("plain", vec![]);
     assert_eq!(code, 0, "{log}");
+// DW1027, DW1028 — a gated connection (spec-0107 §8)
+// ---------------------------------------------------------------------------
+
+/// The blockout fixture copied, with `graph` and `quests` edited in place:
+/// five places, a gated walk the keeper's beat opens, and a drop the loft
+/// hands to the hall along a front.
+fn gated_fixture(
+    tag: &str,
+    graph: impl FnOnce(&mut serde_json::Value),
+    plan: impl FnOnce(&mut serde_json::Value),
+    quests: impl FnOnce(&mut serde_json::Value),
+) -> PathBuf {
+    let camp = site_plan_campaign(tag, "blockout", None, plan);
+    for (name, edit) in [
+        (
+            "layout-graph.json",
+            Box::new(graph) as Box<dyn FnOnce(&mut serde_json::Value)>,
+        ),
+        ("quests.json", Box::new(quests)),
+    ] {
+        common::patch_file(&camp.join(name), edit);
+    }
+    camp
+}
+
+fn gate_the_front(v: &mut serde_json::Value) {
+    for e in v["content"]["edges"].as_array_mut().unwrap() {
+        if e["id"] == "edge/loft-drop" {
+            e["gating"] = serde_json::json!({ "flags": ["flag/keeper-yields"] });
+        }
+    }
+}
+
+/// The fixture's front, `edge/loft-drop`, gated: refused `DW1027`, naming the
+/// connection.
+#[test]
+fn dw1027_a_gated_front_is_refused() {
+    let camp = gated_fixture("dw1027-front", gate_the_front, |_| {}, |_| {});
+    let (code, text) = validate(&camp);
+    assert_ne!(code, 0, "{text}");
+    assert!(
+        text.contains("DW1027 [error]") && text.contains("edge/loft-drop"),
+        "{text}"
+    );
+}
+
+/// **REMOVE the `gating`.** The front ungated is the fixture as shipped, which
+/// validates without `DW1027`.
+#[test]
+fn dw1027_removing_the_gating_from_the_front_reaches_another_verdict() {
+    let camp = gated_fixture("dw1027-ungated", |_| {}, |_| {}, |_| {});
+    let (_, text) = validate(&camp);
+    assert!(!text.contains("DW1027 [error]"), "{text}");
+}
+
+/// **GIVE the seam a standard `opening`.** The same gated drop through an arch
+/// in the loft's wall: the bar has somewhere to stand, and `DW1027` is gone.
+#[test]
+fn dw1027_giving_the_seam_an_opening_reaches_another_verdict() {
+    let camp = gated_fixture(
+        "dw1027-opening",
+        gate_the_front,
+        |v| {
+            for s in v["content"]["seams"].as_array_mut().unwrap() {
+                if s["edge"] == "edge/loft-drop" {
+                    let o = s.as_object_mut().unwrap();
+                    o.remove("contact");
+                    o.insert("opening".into(), serde_json::json!("arch"));
+                }
+            }
+        },
+        |_| {},
+    );
+    let (_, text) = validate(&camp);
+    assert!(!text.contains("DW1027 [error]"), "{text}");
+}
+
+/// The keeper's beat no longer opens the gated hall door: refused `DW1028`,
+/// naming the connection and its seam gate.
+fn the_opener_retargeted(v: &mut serde_json::Value) {
+    let text = v.to_string();
+    assert_eq!(
+        text.matches("\"anchor/seam-hall-cell\"").count(),
+        1,
+        "{text}"
+    );
+    *v = serde_json::from_str(&text.replace("\"anchor/seam-hall-cell\"", "\"anchor/node-cell\""))
+        .unwrap();
+}
+
+#[test]
+fn dw1028_a_gated_way_nothing_opens_is_refused() {
+    let camp = gated_fixture("dw1028-unopened", |_| {}, |_| {}, the_opener_retargeted);
+    let (code, text) = validate(&camp);
+    assert_ne!(code, 0, "{text}");
+    assert!(
+        text.contains("DW1028 [error]")
+            && text.contains("edge/hall-cell")
+            && text.contains("anchor/seam-hall-cell"),
+        "{text}"
+    );
+}
+
+/// **WRITE the opener.** The fixture as shipped: the keeper's beat opens
+/// `anchor/seam-hall-cell`, and `DW1028` is gone.
+#[test]
+fn dw1028_writing_the_opener_reaches_another_verdict() {
+    let camp = gated_fixture("dw1028-opener", |_| {}, |_| {}, |_| {});
+    let (_, text) = validate(&camp);
+    assert!(!text.contains("DW1028 [error]"), "{text}");
+}
+
+/// **REMOVE the `gating`.** The door ungated owes no opener; the beat's
+/// `open-gate` now names a region nothing synthesizes, which is a different
+/// refusal about a different document.
+#[test]
+fn dw1028_removing_the_gating_reaches_another_verdict() {
+    let camp = gated_fixture(
+        "dw1028-ungated",
+        |v| {
+            for e in v["content"]["edges"].as_array_mut().unwrap() {
+                if e["id"] == "edge/hall-cell" {
+                    e.as_object_mut().unwrap().remove("gating");
+                }
+            }
+        },
+        |_| {},
+        the_opener_retargeted,
+    );
+    let (_, text) = validate(&camp);
+    assert!(!text.contains("DW1028 [error]"), "{text}");
 }

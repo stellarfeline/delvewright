@@ -1,0 +1,13 @@
+{
+  "code": "DW1028",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/0/on_complete/4"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The near hall's completion no longer opens the bars across the annex chute: nothing in the campaign names `anchor/seam-annex-chute`, so the chute, gated on `quest/near-hall`, is built shut and stays shut forever — a wall carrying a claim about order. `DW1028` names the connection, the gate region an opener must address and both repairs. It declares no unit: `open-gate` is bound, and what must not compile is a gated way with no opener."
+}

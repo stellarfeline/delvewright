@@ -50,6 +50,86 @@ pub struct PlanBinding {
     pub contested_awarded: usize,
     /// The fill's kind, `solid` or `open` (spec-0098 §2b).
     pub fill: &'static str,
+    /// Connections the world builds shut ([`Edge::shuts`]) that carry a seam
+    /// here — what `DW1027` and `DW1028` examine (spec-0107 §8).
+    pub gated: usize,
+    /// Of those, connections whose seam is a front (`DW1027` refuses each).
+    pub gated_fronts: usize,
+    /// Of `gated`, connections an `open-gate` opens.
+    pub opened_by_effect: usize,
+    /// Of `gated`, connections no `open-gate` opens and a `shortcuts[]` entry
+    /// does.
+    pub opened_by_shortcut: usize,
+    /// Of `gated`, connections neither of those opens and a `timed_gates[]`
+    /// entry's clock does.
+    pub opened_by_clock: usize,
+    /// Of `gated`, connections nothing opens (`DW1028` refuses each).
+    pub opened_by_nothing: usize,
+}
+
+/// How a shut connection is opened, first match in this order — the partition
+/// [`PlanBinding`] counts and `DW1028` judges.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Opener {
+    Effect,
+    Shortcut,
+    Clock,
+    Nothing,
+}
+
+/// Every connection the world builds shut and carrying a seam in this plan, in
+/// graph order: its index, the edge, whether its seam is a front, and what
+/// opens it.
+fn gated_connections<'g>(
+    c: &Campaign,
+    plan: &SitePlanContent,
+    graph: &'g LayoutGraphContent,
+) -> Vec<(usize, &'g Edge, bool, Opener)> {
+    // Every gate region the campaign opens, however it opens it: an
+    // `open-gate` at any nesting depth, a `shortcut` whose far side lifts the
+    // bar, a timed gate's clock.
+    let mut by_effect: BTreeSet<&str> = BTreeSet::new();
+    crate::for_each_campaign_effect(c, &mut |_, _, eff| {
+        eff.visit_deep(&mut |e| {
+            if let Some(a) = e.open_gate_anchor() {
+                by_effect.insert(a.0.as_str());
+            }
+        });
+    });
+    let by_shortcut: BTreeSet<&str> = c
+        .quests
+        .content
+        .shortcuts
+        .iter()
+        .map(|s| s.gate.0.as_str())
+        .collect();
+    let by_clock: BTreeSet<&str> = c
+        .quests
+        .content
+        .timed_gates
+        .iter()
+        .map(|g| g.gate.0.as_str())
+        .collect();
+    graph
+        .edges
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.shuts())
+        .filter_map(|(i, e)| {
+            let seam = plan.seams.iter().find(|s| &s.edge == e.id())?;
+            let want = seam_anchor(e.id());
+            let opener = if by_effect.contains(want.as_str()) {
+                Opener::Effect
+            } else if by_shortcut.contains(want.as_str()) {
+                Opener::Shortcut
+            } else if by_clock.contains(want.as_str()) {
+                Opener::Clock
+            } else {
+                Opener::Nothing
+            };
+            Some((i, e, seam.contact.is_some(), opener))
+        })
+        .collect()
 }
 
 impl PlanBinding {
@@ -81,7 +161,19 @@ impl PlanBinding {
             }
             None => (0, 0, 0),
         };
+        let gated = c
+            .layout_graph
+            .as_ref()
+            .map(|g| gated_connections(c, plan, &g.content))
+            .unwrap_or_default();
+        let opened = |o: Opener| gated.iter().filter(|r| r.3 == o).count();
         PlanBinding {
+            gated: gated.len(),
+            gated_fronts: gated.iter().filter(|r| r.2).count(),
+            opened_by_effect: opened(Opener::Effect),
+            opened_by_shortcut: opened(Opener::Shortcut),
+            opened_by_clock: opened(Opener::Clock),
+            opened_by_nothing: opened(Opener::Nothing),
             pinned,
             derived,
             components,
@@ -119,7 +211,16 @@ impl PlanBinding {
             "site-plan binding: {b} box(es) ({p} pair(s) compared; {pn} pinned, {dv} derived, \
              in {cc} component(s); {r} roofed; {ca} shared claim cell(s) awarded), {s} seam(s) \
              ({st} stair, {sd} drop), {d} datum(s), {v} whole-owned volume(s), {i} \
-             identity(ies), {sl} sightline(s), {w} view(s); fill `{fill}`.",
+             identity(ies), {sl} sightline(s), {w} view(s); fill `{fill}`. DW1027 binding: {g} \
+             gated connection(s), {gf} of them fronts. DW1028 binding: {g} gated connection(s), \
+             {ge} opened by an `open-gate`, {gs} by a shortcut, {gc} by a clock, {gn} by \
+             nothing.",
+            g = self.gated,
+            gf = self.gated_fronts,
+            ge = self.opened_by_effect,
+            gs = self.opened_by_shortcut,
+            gc = self.opened_by_clock,
+            gn = self.opened_by_nothing,
             r = self.roofs,
             ca = self.contested_awarded,
             fill = if self.fill.is_empty() {
@@ -233,7 +334,7 @@ pub fn check(c: &Campaign, reads: &mut Reads, d: &mut Vec<Diagnostic>) {
         return;
     };
 
-    openers(c, graph, d);
+    openers(c, plan, graph, d);
     let (placed, packed) = resolve(plan, graph, &table, reads, d);
     agreement(plan, graph, &placed, d);
     region(plan, &placed, d);
@@ -276,55 +377,52 @@ fn one_authority(c: &Campaign, d: &mut Vec<Diagnostic>) {
     ));
 }
 
-/// `DW0818`'s **byte-side half** of the opener obligation, which round 3 could
-/// not write and named as this round's.
+/// **`DW1028`: a gated connection nothing opens** (spec-0107 §8.2).
 ///
-/// The graph half already stands in [`crate::layout`]: a `barred` edge must
-/// declare a `gating` that names a flag some effect really sets or a quest that
-/// really exists. That says the way is *meant* to open; it does not say anything
-/// in the campaign ever opens **this** way, because at stage 3 the region such
-/// an effect would target does not exist yet. It exists here: the derivation
-/// synthesizes [`seam_anchor`] over every `barred` seam's opening, so "something
-/// opens `seam/<edge>`" is finally a question with a subject.
+/// The graph half stands in [`crate::layout`]: `DW0818` holds a `gating` to a
+/// flag some effect really sets or a quest that really exists. That says the way
+/// is *meant* to open; it does not say anything in the campaign ever opens
+/// **this** way, because at stage 3 the region such an effect would target does
+/// not exist yet. It exists here: the derivation synthesizes [`seam_anchor`]
+/// over every shut seam's bar, so "something opens `anchor/seam-<edge>`" is a
+/// question with a subject — an `open-gate` at any nesting depth, a shortcut's
+/// gate, or a timed gate's clock.
 ///
-/// Raised under `DW0818` and against the layout graph, because the fault is the
-/// graph's claim rather than the plan's geometry — the plan did everything asked
-/// of it. Only reachable in a site-plan campaign, which is exactly the campaign
-/// in which the seam anchor exists to be named.
-fn openers(c: &Campaign, graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
-    // Every gate region the campaign opens, however it opens it: an `open-gate`
-    // at any nesting depth, or a `shortcut` whose far side lifts the bar.
-    let mut opened: BTreeSet<&str> = BTreeSet::new();
-    crate::for_each_campaign_effect(c, &mut |_, _, eff| {
-        eff.visit_deep(&mut |e| {
-            if let Some(a) = e.open_gate_anchor() {
-                opened.insert(a.0.as_str());
-            }
-        });
-    });
-    for s in &c.quests.content.shortcuts {
-        opened.insert(s.gate.0.as_str());
-    }
-
-    for (i, e) in graph.edges.iter().enumerate() {
-        let Edge::Barred { id, .. } = e else { continue };
-        let want = seam_anchor(id);
-        if opened.contains(want.as_str()) {
+/// Raised against the quest documents, the stage that owns the opener. Only
+/// reachable in a site-plan campaign, which is exactly the campaign in which the
+/// seam anchor exists to be named.
+fn openers(
+    c: &Campaign,
+    plan: &SitePlanContent,
+    graph: &LayoutGraphContent,
+    d: &mut Vec<Diagnostic>,
+) {
+    let unwritten = if c.quests.content.quests.is_empty() {
+        " Stage 5 declares no quests at all here, so nothing in it can open anything yet, and \
+         this line is that state rather than the finding: see `DW0150`, which names it. This \
+         clears when stage 5 is written."
+    } else {
+        ""
+    };
+    for (_, e, _, opener) in gated_connections(c, plan, graph) {
+        if opener != Opener::Nothing {
             continue;
         }
+        let want = seam_anchor(e.id());
+        let terms = e.gating().map(|g| g.words()).unwrap_or_default();
         d.push(Diagnostic::error(
-            crate::layout::DW_GRAPH_MISSION,
-            "layout-graph",
-            format!("/content/edges/{i}"),
+            DW_GATED_UNOPENED,
+            "quests",
+            "/content",
             format!(
-                "`{id}` is barred and nothing in this campaign opens it. The derivation seals \
-                 this seam's opening at world load and names the region `{want}`; for the way to \
-                 ever be passable some effect has to address that name — an `open-gate` on the \
-                 beat whose completion earns it, or a `shortcut` whose far side lifts the bar. \
-                 The graph's `gating` says what a body must HOLD to pass, which is a different \
-                 claim and is already checked: a way that is gated on a flag nobody spends is \
-                 still a wall. This is the half of the obligation that could only be written once \
-                 the region existed, so it is asked here rather than at stage 3."
+                "`{id}` (a `{class}`) is gated on {terms}, so the world builds it shut, and nothing \
+                 in this campaign opens it: no `open-gate`, `shortcuts[].gate` or \
+                 `timed_gates[].gate` names `{want}`. Shut from world load and shut forever, it is \
+                 a wall carrying a claim about order. Write the opener — an `open-gate` naming \
+                 `{want}` at the beat whose completion the gating names — or remove the `gating` \
+                 from `{id}` in the layout graph.{unwritten}",
+                id = e.id(),
+                class = e.class(),
             ),
         ));
     }

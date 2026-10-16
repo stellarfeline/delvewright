@@ -849,6 +849,7 @@ mod tests {
             rise: 0,
             stair_in: None,
             form: "a doorway".into(),
+            shut: false,
         }
     }
 

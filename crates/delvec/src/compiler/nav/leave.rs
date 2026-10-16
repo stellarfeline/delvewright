@@ -710,6 +710,7 @@ mod leave_tests {
             lava: [[3, 0, 3]].into_iter().collect(),
             climb: Default::default(),
             unheld_climb: Default::default(),
+            footprints: Default::default(),
         };
         let w = World::from_occupancy(occ, Premises::geometry_only());
         assert!(!w.body_moves([2, 1, 3]).contains(&[3, 0, 3]));
@@ -733,6 +734,7 @@ mod leave_tests {
             lava: [[3, 0, 3]].into_iter().collect(),
             climb: Default::default(),
             unheld_climb: Default::default(),
+            footprints: Default::default(),
         };
         let w = World::from_occupancy(occ, Premises::geometry_only());
         assert_eq!(w.fatal_step_off([2, 1, 3]), Some(([3, 1, 3], true)));

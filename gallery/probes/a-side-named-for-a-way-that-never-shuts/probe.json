@@ -1,0 +1,16 @@
+{
+  "code": "DW0818",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "add",
+      "path": "/content/edges/10/gating",
+      "value": {
+        "opens_from": "a"
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The exit arch given a side to open from and nothing to wait on: `gating: {\"opens_from\": \"a\"}`. A `gating` is what builds a way shut, and one that names no term is passable from world load, so the side names the opener of a door with no bar in it. `DW0818` refuses the empty gating where it is written and says the side was named for nothing. It declares no unit: `gating.opens_from` is bound on the overlay's doors."
+}
