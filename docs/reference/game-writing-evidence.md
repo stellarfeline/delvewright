@@ -343,6 +343,7 @@ completion effects perform — over the seed lexicon in that spec's appendix.
   rated a lie passed, nothing it rated true was refused. One rater, so this is an
   agreement between two readings by one person, not a consensus; §6 of
   game-writing.md is the cross-check protocol.
+- **The engine's own check.** `DW1045` as built (`compiler::telling::check_acts` over `crates/delvec/data/acts-en.json`), run by `delvec validate` over every objective of the same eleven `quests.json` restated in a hello-world copy (kind, title, the fields the acts derive from, and a `give-item` wherever the completion hands one): `act binding (DW1045): 117 of 117 English title(s) read against 127 objective(s); 0 head(s) the lexicon does not know; 10 untitled; 12 refused`, 7 objectives with a `give-item` completion. The 12 refused are the 12 of spec-0114 §1, each by quest and objective id; the hand reading and the engine agree on all 117. Over the gallery and its four quest-carrying overlays after the repair: 31 of 31 titles judged against 39 objectives, 0 refused.
 - **What it does not see.** *Climb the cellar ladder* (the-muster-loft) is a
   `reach-anchor` at the ladder's foot: the act agrees and the place does not.
   The place is spec-0114 §8's open question.
