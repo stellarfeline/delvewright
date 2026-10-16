@@ -49,12 +49,73 @@ export function parseGameTime(serial: number, lines: readonly string[]): number 
 }
 
 /**
- * The wall-time budget (ms) for the server to advance `ticks` game ticks: the
- * span at one tick a second, plus ten seconds. Running out of it is a named
- * failure ({@link GameTimeStalledError}), never a pass.
+ * The longest gap (ms) between two answered readings for the second to count as
+ * the server seen answering: the bot pauses 50ms between readings, and a reply
+ * bracket on a local server comes back in a few. A longer gap (the host stalled
+ * the server, the bot, or both) says nothing about whether the game clock runs.
  */
-export function gameTicksBudgetMs(ticks: number): number {
-  return Math.max(0, ticks) * 1_000 + 10_000;
+export const LIVE_REPLY_GAP_MS = 500;
+
+/**
+ * How long (ms) of answers seen at one game tick make the game clock stopped.
+ * A live game ticks at least once a second (vanilla refuses a `/tick rate`
+ * below 1), so answers that keep coming within {@link LIVE_REPLY_GAP_MS} of each
+ * other sit on one tick for about a second at most. Ten seconds of them is a
+ * game that is not ticking: frozen, or stepped by hand.
+ */
+export const STOPPED_CLOCK_MS = 10_000;
+
+/**
+ * **The judge of a game-tick wait: has the server's game clock stopped?**
+ *
+ * Fed every answered reading with the wall time its reply was taken in, it sums,
+ * since the last reading that showed another tick, only the gaps of at most
+ * {@link LIVE_REPLY_GAP_MS} between consecutive replies: the stretches in which
+ * the server was seen answering. When the sum reaches {@link STOPPED_CLOCK_MS}
+ * at one tick, it throws {@link GameTimeStoppedError}. A host stall, of the
+ * server or of the bot, is one long gap and adds nothing; a slow server answers
+ * late (a long gap) or at a later tick (the sum restarts). Wall time alone never
+ * fails a wait.
+ */
+export class GameClockWatch {
+  private readonly purpose: string;
+  private readonly from: number;
+  private readonly ticks: number;
+  private tick: number | undefined;
+  private lastAt = 0;
+  private liveMs = 0;
+  private liveReplies = 0;
+
+  /** A wait, for `purpose`, until the game time is `ticks` past `from`. */
+  constructor(purpose: string, from: number, ticks: number) {
+    this.purpose = purpose;
+    this.from = from;
+    this.ticks = ticks;
+  }
+
+  /** One answered reading: the game tick it showed, and the wall time (ms) its reply was taken in. */
+  observe(tick: number, answeredAt: number): void {
+    if (tick !== this.tick) {
+      this.tick = tick;
+      this.liveMs = 0;
+      this.liveReplies = 0;
+    } else {
+      const gap = answeredAt - this.lastAt;
+      if (gap >= 0 && gap <= LIVE_REPLY_GAP_MS) {
+        this.liveMs += gap;
+        this.liveReplies += 1;
+      }
+    }
+    this.lastAt = answeredAt;
+    if (this.liveMs >= STOPPED_CLOCK_MS) {
+      throw new GameTimeStoppedError(this.purpose, this.ticks, tick - this.from, tick, this.liveReplies, this.liveMs);
+    }
+  }
+
+  /** The answers seen at the current tick so far: how many, and over how many ms. */
+  get seen(): { readonly replies: number; readonly ms: number } {
+    return { replies: this.liveReplies, ms: this.liveMs };
+  }
 }
 
 /** The named failure: the server refused a game-time reading, or never answered it. */
@@ -67,13 +128,18 @@ export class GameTimeUnreadError extends Error {
   }
 }
 
-/** The named failure: the server's game time did not advance the span inside the budget. */
-export class GameTimeStalledError extends Error {
-  constructor(purpose: string, ticks: number, advanced: number, budgetMs: number) {
+/**
+ * The named failure: the server kept answering, and its game clock did not move
+ * ({@link GameClockWatch}).
+ */
+export class GameTimeStoppedError extends Error {
+  constructor(purpose: string, ticks: number, advanced: number, tick: number, replies: number, liveMs: number) {
     super(
-      `game time: ${purpose}: the server advanced ${advanced} of ${ticks} game tick(s) in ` +
-        `${budgetMs}ms (the budget is the span at one tick a second, plus 10s)`,
+      `game time: ${purpose}: the game clock stopped at tick ${tick}, ${advanced} of ${ticks} game ` +
+        `tick(s) in: the server answered ${replies} reading(s) over ${liveMs}ms, each within ` +
+        `${LIVE_REPLY_GAP_MS}ms of the one before, and none showed a later tick (stopped is ` +
+        `${STOPPED_CLOCK_MS}ms of such answers at one tick)`,
     );
-    this.name = "GameTimeStalledError";
+    this.name = "GameTimeStoppedError";
   }
 }

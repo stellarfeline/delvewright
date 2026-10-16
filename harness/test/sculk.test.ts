@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gameTicksBudgetMs, gameTimeCommands, parseGameTime } from "../src/game-time.ts";
+import { gameTimeCommands, parseGameTime } from "../src/game-time.ts";
 import { legStartCommands, parseLegStartBusy, SculkEar } from "../src/sculk.ts";
 
 test("a game-time reading stores the time, then speaks it under its serial", () => {
@@ -13,7 +13,6 @@ test("a game-time reading stores the time, then speaks it under its serial", () 
   assert.equal(parseGameTime(7, ["The time is 41230", "[dw:clock 7 41230]"]), 41230);
   assert.equal(parseGameTime(7, ["[dw:clock 6 41230]"]), undefined, "another reading's line is not this one's");
   assert.equal(parseGameTime(7, ["[dw:clock 7 ]"]), undefined);
-  assert.equal(gameTicksBudgetMs(60), 70_000);
 });
 
 test("a leg's start asks each predicted device once whether it is busy, and reads which are", () => {

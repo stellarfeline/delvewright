@@ -1,13 +1,7 @@
 // MineflayerExecutor: reading the server's game time, and waiting game ticks.
 
 import { isRejection } from "../rejection.ts";
-import {
-  GameTimeStalledError,
-  GameTimeUnreadError,
-  gameTicksBudgetMs,
-  gameTimeCommands,
-  parseGameTime,
-} from "../game-time.ts";
+import { GameClockWatch, GameTimeUnreadError, gameTimeCommands, parseGameTime } from "../game-time.ts";
 import { delay } from "./connection.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
@@ -25,7 +19,7 @@ export interface GameTimeReading {
 const READ_ATTEMPTS = 3;
 
 /** How long (ms) the wait pauses between one answered reading and the next. */
-const POLL_MS = 50;
+export const POLL_MS = 50;
 
 /** The executor's methods this file holds; `executor.ts` installs them on its prototype. */
 export const methods = {
@@ -64,8 +58,10 @@ export const methods = {
    * **Return once the server's game time has advanced `ticks` past `from`**
    * (a reading taken now when `from` is not given), and return the reading that
    * showed it. Everything the bot received before that reading's reply was
-   * sent at that tick or earlier. The wall budget is {@link gameTicksBudgetMs};
-   * running out of it fails ({@link GameTimeStalledError}), never passes.
+   * sent at that tick or earlier. It fails only when the game clock has
+   * stopped ({@link GameClockWatch}): the server keeps answering and its game
+   * time does not move. However long the host stalls, the wait never fails on
+   * wall time.
    */
   async waitForGameTicks(
     this: MineflayerExecutor,
@@ -74,12 +70,11 @@ export const methods = {
     from?: number,
   ): Promise<GameTimeReading> {
     const start = from ?? (await this.readGameTime(purpose)).tick;
-    const budgetMs = gameTicksBudgetMs(ticks);
-    const deadline = Date.now() + budgetMs;
+    const watch = new GameClockWatch(purpose, start, ticks);
     for (;;) {
       const now = await this.readGameTime(purpose);
       if (now.tick >= start + ticks) return now;
-      if (Date.now() >= deadline) throw new GameTimeStalledError(purpose, ticks, now.tick - start, budgetMs);
+      watch.observe(now.tick, Date.now());
       await delay(POLL_MS);
     }
   },

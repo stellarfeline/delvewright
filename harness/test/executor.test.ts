@@ -4,6 +4,7 @@ import { EventEmitter } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Bot } from "mineflayer";
 import { within } from "./bounded.ts";
+import { GameTimeStoppedError, STOPPED_CLOCK_MS } from "../src/game-time.ts";
 import { MineflayerExecutor, completionWindowMs, respawnLanded, type BotConfig } from "../src/executor.ts";
 import { BotDeathError } from "../src/death.ts";
 import type { AssertCompleteStep } from "../src/critical-path.ts";
@@ -5725,6 +5726,29 @@ function serve(bot: FakeBot): FakeGameServer {
   (bot as unknown as { chat: (m: string) => void }).chat = (m: string) => server.answer(m);
   return server;
 }
+
+test("a game-tick wait passes on a ticking clock and reds, named, on a frozen one that keeps answering", async () => {
+  const bot = new FakeBot();
+  const server = serve(bot);
+  const executor = attach(bot);
+  const passed = await within("waitForGameTicks(ticking)", executor.waitForGameTicks(2, "the watch line's tick"));
+  assert.ok(passed.tick >= 1_002, `passed at ${passed.tick}`);
+  // The perturbation toward a stopped server: the clock no longer moves, and
+  // every reading is still answered at once.
+  server.perReading = 0;
+  const t0 = Date.now();
+  await within(
+    "waitForGameTicks(frozen)",
+    assert.rejects(
+      () => executor.waitForGameTicks(2, "the watch line's tick"),
+      (err: unknown) =>
+        err instanceof GameTimeStoppedError &&
+        /the watch line's tick: the game clock stopped at tick \d+, 0 of 2 game tick\(s\) in/.test(err.message),
+    ),
+    STOPPED_CLOCK_MS + 20_000,
+  );
+  assert.ok(Date.now() - t0 >= STOPPED_CLOCK_MS, "it reds only after the window of answers");
+});
 
 test("a predicted shrieker whose 3007 is never heard fails the step; heard, it passes", async () => {
   const bot = new FakeBot();
