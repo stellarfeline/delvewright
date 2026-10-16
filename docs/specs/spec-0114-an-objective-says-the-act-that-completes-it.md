@@ -85,13 +85,15 @@ So: `reach-anchor` → `{reach}`; `talk-to` → `{talk}`; `kill` → `{kill}`; `
 
 `DW1045` names both ways out, and both must be reachable.
 
+**Which comes first — authored.** The verdict does not depend on the order; the order is the repair the message offers first. Where the title's head is a placing word — its only act is `give` (*lay*, *hang*, *put*, *place*, *set* and the rest of the `give` heads) — and the completion is not a `talk-to`, the message offers §6.2 first: an `interact` with `requires_item` and no `takes_item` gains `takes_item: true`, and any other kind is re-kinded to an `interact` that requires and takes the item. A placing word over a click that presents the item reads true to a player at the place, and is truer still when the item leaves the hand, so the completion is brought up to the text rather than the text brought down to the completion. Everywhere else §6.1 comes first.
+
 ### 6.1 Change the text to the act that completes it
 
 Re-head the title with a word of the completion's act set, in the campaign's voice. *Lay the roll in the loft* on a `reach-anchor` becomes *Climb to the loft with the roll*; *Climb up to Oru* on a `talk-to` becomes *Speak to Oru up the tree*; *Reach the counter* on a `talk-to` becomes *Hear the counter*. The message prints the completion's act set and three of its words. Always reachable: the lexicon has at least six heads per act.
 
 ### 6.2 Change the completion to the act the text names
 
-Re-kind the objective so the completion performs the stated act. *Speak the Ending* becomes a `talk-to`; *Get Under a Ram* becomes a `reach-anchor` under the ram; *Lay the roll in the loft* becomes an `interact` at a `prop` in the loft (a lectern, a chest) with `requires_item: minecraft:paper` and `takes_item: true` (§6.3); *Hang the lantern on the hook* keeps its kind and adds `takes_item: true`. Reachable for `reach`, `talk`, `kill`, `take`, `use`, `present` on the tree today; reachable for `give` once §6.3 lands; not reachable for the two shapes §6.4 records.
+Re-kind the objective so the completion performs the stated act. *Speak the Ending* becomes a `talk-to`; *Get Under a Ram* becomes a `reach-anchor` under the ram; *Lay the roll in the loft* becomes an `interact` at a `prop` in the loft (a lectern, a chest) with `requires_item: minecraft:paper` and `takes_item: true` (§6.3); *Hang the lantern on the hook* keeps its kind and adds `takes_item: true`, and that is the first repair its message offers, as it is for *Lay the roll in the loft*. Reachable for `reach`, `talk`, `kill`, `take`, `use`, `present` on the tree today; reachable for `give` once §6.3 lands; not reachable for the two shapes §6.4 records.
 
 ### 6.3 The capability this spec closes: an item laid at a place leaves the hand
 
@@ -112,7 +114,7 @@ Receiving a thing from a body is not a gap: a `give-item` in the objective's com
 
 ## 7. Diagnostics
 
-**`DW1045` — an objective's title names an act its completion does not perform** (`compiler::telling`; error; validation tier, exit 1). Quantifier: every objective of every quest, in the primary document, that carries a `title` whose head is in the lexicon. Path: the objective's `/content/quests/<q>/objectives/<o>/title`. Message: the title, its head word and the act(s) the lexicon gives it, the kind and fields the completion was derived from and the act(s) it performs, then the two remedies of §6 with the completion's act words named and, where the text's act is `give` or `present`, the field or the gap (§6.3, §6.4) that would make it true. Judged at `delvec validate`, where the line is written; nothing reaches the datapack. The binding line of §5 prints on every run.
+**`DW1045` — an objective's title names an act its completion does not perform** (`compiler::telling`; error; validation tier, exit 1). Quantifier: every objective of every quest, in the primary document, that carries a `title` whose head is in the lexicon. Path: the objective's `/content/quests/<q>/objectives/<o>/title`. Message: the title, its head word and the act(s) the lexicon gives it, the kind and fields the completion was derived from and the act(s) it performs, then the two remedies of §6, in the order §6 states, with the completion's act words named and, where the text's act is `give` or `present`, the field or the gap (§6.3, §6.4) that would make it true. Judged at `delvec validate`, where the line is written; nothing reaches the datapack. The binding line of §5 prints on every run.
 
 **`DW1046` — `takes_item` with nothing to take** (`compiler::promise` or wherever `DW0437`, its sibling rule for `missing_item_hint`, is declared; error; validation tier, exit 1). Path `…/objectives/<o>/takes_item`. Prescription: state `requires_item`, or drop `takes_item`.
 
