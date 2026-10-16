@@ -4664,6 +4664,9 @@ fn dw1036_removing_the_owned_key_passes_the_audit() {
     assert!(log.contains("DW1036") && log.contains("`Fixed`"), "{log}");
     let (code, log) = audit("plain", vec![]);
     assert_eq!(code, 0, "{log}");
+}
+
+// ---------------------------------------------------------------------------
 // DW1027, DW1028 — a gated connection (spec-0107 §8)
 // ---------------------------------------------------------------------------
 

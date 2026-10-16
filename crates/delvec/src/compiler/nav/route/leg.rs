@@ -782,7 +782,7 @@ fn keep_out_stance(
                 let seen = match *on {
                     "approach" | "step" => true,
                     _ if block.is_some() => sees_block(leg, c, *pos),
-                    _ => sees_body(leg, c, *pos),
+                    _ => sees_body(leg, c, &BodyBox::interaction(*pos)),
                 };
                 if !seen {
                     continue;
