@@ -269,8 +269,9 @@ pub enum Objective {
         ///
         /// A barrel of cheese that opens on one lonely wheel reads as a bug, and
         /// vanilla's notion of "full" is *occupied slots*, not stack size — so
-        /// this counts SLOTS: the objective's own stack lands in `container.0` and
-        /// each padding stack repeats it in `container.1`, `container.2`, … Slot
+        /// this counts SLOTS: the objective's own stack lands in `container.0` (or
+        /// the `container.<n>` [`Objective::Collect::slot`] names) and each
+        /// padding stack repeats it in the slots after it. Slot
         /// assignment is positional and total, the same determinism story `loot`
         /// tells (ADR-0006): no RNG, no loot tables, nothing to reseed.
         ///
