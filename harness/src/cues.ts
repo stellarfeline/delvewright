@@ -29,6 +29,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { CAMPAIGN_TOKEN } from "./markers.ts";
+import { bareSound, heardAt, SOUND_POS_TOLERANCE } from "./sound-heard.ts";
 
 type Vec3 = readonly [number, number, number];
 
@@ -127,18 +128,8 @@ export type CueEvent =
       readonly bot: Vec3 | null;
     };
 
-/**
- * How far (blocks, per axis) a cue may land from the bot. The packet carries
- * its position in eighths of a block and the bot may move a step between the
- * server playing the cue and the client reading it; a cue at the command source
- * misses by the distance from the spawn.
- */
-export const CUE_POS_TOLERANCE = 1.5;
-
 /** How close a packet's volume and pitch must be to the ledger's to be a cue. */
 const CUE_FLOAT_TOLERANCE = 0.01;
-
-const bare = (s: string): string => s.replace(/^minecraft:/, "");
 
 /** The verdict on one cue. */
 export interface CueVerdict {
@@ -171,10 +162,6 @@ function distance(a: Vec3, b: Vec3): number {
 
 const round8 = (v: Vec3): number[] => v.map((x) => Math.round(x * 8) / 8);
 
-function atBot(heard: Vec3, bot: Vec3 | null): boolean {
-  return bot !== null && heard.every((v, i) => Math.abs(v - bot[i]!) <= CUE_POS_TOLERANCE);
-}
-
 function fromSpawn(ledger: CueLedger, bot: Vec3 | null): number | null {
   if (!ledger.worldSpawn || !bot) return null;
   const s = ledger.worldSpawn;
@@ -186,7 +173,7 @@ function cueKindOf(ledger: CueLedger, e: CueEvent): CueKind | undefined {
   if (e.kind !== "sound") return undefined;
   if (Math.abs(e.volume - ledger.volume) > CUE_FLOAT_TOLERANCE) return undefined;
   if (Math.abs(e.pitch - ledger.pitch) > CUE_FLOAT_TOLERANCE) return undefined;
-  return KINDS.find((k) => bare(ledger.cues[k]) === bare(e.name));
+  return KINDS.find((k) => bareSound(ledger.cues[k]) === bareSound(e.name));
 }
 
 /** **Judge the event log against the ledger.** Pure: no bot state. */
@@ -256,7 +243,7 @@ function fmtSpawn(d: number | null): string {
 
 function verdictOf(ledger: CueLedger, kind: CueKind, token: string | null, e: CueEvent): CueVerdict {
   if (e.kind !== "sound") throw new Error("a cue verdict is of a sound");
-  const ok = atBot(e.pos, e.bot);
+  const ok = heardAt(e.pos, e.bot);
   const who = token === null ? `a ${kind} cue` : `${token}'s ${kind} cue`;
   const bot = JSON.stringify(e.bot && round8(e.bot));
   const d = fromSpawn(ledger, e.bot);
@@ -271,7 +258,7 @@ function verdictOf(ledger: CueLedger, kind: CueKind, token: string | null, e: Cu
     detail: ok
       ? `${who} ${e.name} arrived at ${JSON.stringify(round8(e.pos))}, the bot at ${bot} (${fmtSpawn(d)})`
       : `${who} ${e.name} arrived at ${JSON.stringify(round8(e.pos))}, NOT at the bot (${bot}, ` +
-        `tolerance ${CUE_POS_TOLERANCE}; ${fmtSpawn(d)})`,
+        `tolerance ${SOUND_POS_TOLERANCE}; ${fmtSpawn(d)})`,
   };
 }
 
