@@ -32,8 +32,14 @@ const TRANSPORT_JUMP_BLOCKS = 64;
  */
 const LOOP_DELTA_TOLERANCE = 1e-3;
 
-/** How far past the slab, in cells, the crossing walk aims along its axis. */
-const LOOP_GOAL_PAST = 2;
+/**
+ * The crossing walk aims at the slab's own cell, `cross`, never past it: the
+ * server reads a body's position once per tick, after every movement packet
+ * queued since the last, so a server that falls behind while the bot walks on
+ * sees the body jump from before the slab to beyond it, and the loop never
+ * holds it. A body that stops in the slab is moved whenever the server next
+ * ticks.
+ */
 
 /** The executor's methods this file holds; `executor.ts` installs them on its prototype. */
 export const methods = {
@@ -96,7 +102,7 @@ export const methods = {
 
   /**
    * **Exercise a loop** (spec-0086 §6): walk to the step's approach cell, set a
-   * walk goal past the slab, and wait for the server's forced move. The move
+   * walk goal in the slab, and wait for the server's forced move. The move
    * must be exactly the loop's offset — within {@link LOOP_DELTA_TOLERANCE} on
    * each axis, measured from the physics tick before — and on it the pathfinder
    * is stopped, so the stale goal does not walk the body into the slab again.
@@ -110,8 +116,7 @@ export const methods = {
     const label = `loop ${step.loop}`;
     const axis = step.offset.findIndex((c) => c !== 0);
     const dir = -Math.sign(step.offset[axis]!);
-    const goal: [number, number, number] = [step.cross[0], step.cross[1], step.cross[2]];
-    goal[axis] = goal[axis]! + dir * LOOP_GOAL_PAST;
+    const goal: Vec3Tuple = [step.cross[0], step.cross[1], step.cross[2]];
     await this.walkTo(step.pos, 1, `${label} — to its approach`);
     for (let seen = 0; seen < step.times; seen++) {
       if (seen > 0) {
@@ -142,8 +147,8 @@ export const methods = {
   },
 
   /**
-   * **One crossing of the slab** (spec-0086 §6): walk toward `goal`, past the
-   * slab, until the server's forced move arrives, and return the deltas seen.
+   * **One crossing of the slab** (spec-0086 §6): walk toward `goal`, the slab's
+   * cell, until the server's forced move arrives, and return the deltas seen.
    * Judged by {@link LoopCrossWatch}, in the server's game ticks
    * (`executor/clock.ts`): the step fails when the body has stood at or past the
    * slab's near face through {@link LOOP_MOVE_TICKS} game ticks with no move, when

@@ -5390,7 +5390,7 @@ test("the bounties a staged clear pays into a wagered purse are taken back befor
 });
 
 /**
- * spec-0086 §6: a loop's slab. The fake server answers a walk toward a goal past
+ * spec-0086 §6: a loop's slab. The fake server answers a walk toward a goal in
  * the slab the way the pinned server does: the body reaches the slab, the
  * physics tick reads it there, and a forced move by `answer` puts it back. A
  * walk to any other goal arrives.
@@ -5415,8 +5415,8 @@ class LoopFakeBot extends InteractFakeBot {
     goto: async (...args: unknown[]): Promise<void> => {
       const goal = args[0] as { x: number; y: number; z: number };
       this.calls.push(`goto(${goal.x},${goal.y},${goal.z})`);
-      if (goal.z > 22) {
-        // Across the slab at z = 22: the body enters it, and the server answers.
+      if (goal.z >= 22) {
+        // Into the slab at z = 22: the body enters it, and the server answers.
         this.entity.position = new FakeVec3(2.5, 67, 22.3);
         this.emit("physicsTick");
         if (this.answer) {
@@ -5452,8 +5452,8 @@ test("a loop step crosses, sees the exact offset, stops pathfinding, and repeats
   executor.useLoops([LOOP]);
   await within("executor.exerciseLoop(LOOP)", executor.exerciseLoop(LOOP));
   assert.equal(bot.moves, 2, "two moves seen");
-  // Every crossing aimed past the slab along z, and each move stopped the walk.
-  assert.equal(bot.calls.filter((c) => c === "goto(2,67,24)").length, 2, bot.calls.join(" "));
+  // Every crossing aimed at the slab's cell, and each move stopped the walk.
+  assert.equal(bot.calls.filter((c) => c === "goto(2,67,22)").length, 2, bot.calls.join(" "));
   assert.ok(bot.pathfinderStops >= 2, `${bot.pathfinderStops} stop(s)`);
   // …and the body is on the landing side, where the next leg begins.
   assert.ok(bot.entity.position.z < 22, `bot at z ${bot.entity.position.z}`);
@@ -5504,7 +5504,7 @@ test("a trip toward the slab that the pathfinder ends short of it is walked agai
   const across = bot.pathfinder.goto;
   bot.pathfinder.goto = async (...args: unknown[]): Promise<void> => {
     const goal = args[0] as { z: number };
-    if (goal.z > 22 && short > 0) {
+    if (goal.z >= 22 && short > 0) {
       short -= 1;
       bot.calls.push("goto(short)");
       return;
@@ -5524,7 +5524,7 @@ test("a walk toward the slab that keeps ending short without advancing fails, na
   const across = bot.pathfinder.goto;
   bot.pathfinder.goto = async (...args: unknown[]): Promise<void> => {
     const goal = args[0] as { z: number };
-    if (goal.z > 22) {
+    if (goal.z >= 22) {
       trips += 1;
       throw new Error("No path to the goal!");
     }

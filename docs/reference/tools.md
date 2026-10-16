@@ -2128,7 +2128,7 @@ own fired marker, `[dw:complete <campaign> trigger/<id>]`.
 **Loop steps (`MineflayerExecutor.exerciseLoop`).** A `loop` step in
 `critical-path.json` is a loop the forced route meets while it holds (see
 `docs/reference/compiler.md`, "`loop` steps"). The bot walks to `pos`, then
-`times` times walks through the slab at `cross` along the loop's axis and waits
+`times` times walks into the slab's cell `cross` (never past it) and waits
 for the forced move; each move's delta must equal `offset` to within 0.001 block
 per axis (`sameDelta`), measured from the physics tick before the move. The step
 fails naming the loop when the body stands at or past the slab's near face

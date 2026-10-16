@@ -269,7 +269,11 @@ reds).
 **A loop's crossing is judged by the move the loop owes, in game ticks.** A
 loop's tick line moves every body in its slab in the tick the server holds it
 there, so a `loop` step's crossing (`harness/src/loop-cross.ts`,
-`MineflayerExecutor.crossSlab`) has no wall-clock budget. The body's position is
+`MineflayerExecutor.crossSlab`) has no wall-clock budget. The crossing walk aims
+at the slab's own cell, never past it: the server reads a body's position once
+per tick, after every movement packet queued since the last, so a server that
+falls behind while the bot walks on sees the body jump from before the slab to
+beyond it, and the loop never holds it. The body's position is
 taken before each game-time reading is sent, so the server held the body there
 when it answered, and a move sent by then arrives before the answer. The
 crossing fails `LoopNotMovedError` when the body has stood at or past the slab's
