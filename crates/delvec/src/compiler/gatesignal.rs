@@ -31,13 +31,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use delvewright_dsl::blockshape::{redstone_conductor, redstone_reader, redstone_source};
-use delvewright_dsl::siteplan::{PlacedSeam, SitePlan, seam_anchor};
-use delvewright_dsl::{Campaign, DwCode, ExitTier};
+use delvewright_dsl::siteplan::{SitePlan, seam_anchor};
+use delvewright_dsl::{DwCode, ExitTier};
 use serde_json::{Value, json};
 
 use crate::compiler::blockstate::BlockMap;
 use crate::compiler::failure::Failure;
-use crate::compiler::sculk::{Write, neighbours, possible};
+use crate::compiler::plan::Plan;
+use crate::compiler::plan::ResolvedAnchor;
+use crate::compiler::sculk::{Write, neighbours, possible, runtime_writes};
 
 delvewright_dsl::dw_code! {
     /// `DW1047`: **a redstone signal can open a shut gate**. A cell of a shut
@@ -65,13 +67,15 @@ pub struct ShutGate {
 /// What [`prove`] examined.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GateSignalBinding {
-    /// Shut gates whose block reads a signal, judged.
+    /// Shut gates examined: every gate region of the world.
+    pub examined: usize,
+    /// Of which their block reads a signal, judged.
     pub gates: usize,
     /// Of which through a floor.
     pub floor_gates: usize,
     /// Their cells.
     pub cells: usize,
-    /// Shut gates whose block reads no signal (iron bars), not judged.
+    /// Of which their block reads no signal (iron bars), not judged.
     pub inert_gates: usize,
     /// Cells that may hold a signal source, examined.
     pub sources: usize,
@@ -89,9 +93,10 @@ impl GateSignalBinding {
             |d| format!("the nearest {d} block(s) from a judged cell"),
         );
         format!(
-            "DW1047 binding: {} shut gate(s) whose block reads a signal judged ({} through a \
-             floor, {} cell(s)); {} shut gate(s) whose block reads none not judged; {} signal \
+            "DW1047 binding: {} shut gate(s) examined; {} whose block reads a signal judged ({} \
+             through a floor, {} cell(s)), {} whose block reads none not judged; {} signal \
              source(s) examined ({} laid by a runtime write), {nearest}",
+            self.examined,
             self.gates,
             self.floor_gates,
             self.cells,
@@ -101,14 +106,16 @@ impl GateSignalBinding {
         )
     }
 
-    /// The ledger `validation/gate-signal.json`; `judged` cells are stated
-    /// also as `examined`, which the gallery's coverage gate refuses at 0.
+    /// The ledger `validation/gate-signal.json`; the gates examined are
+    /// stated as `gates_examined`, which the gallery's coverage gate refuses
+    /// at 0.
     pub fn to_json(&self) -> Value {
         json!({
+            "code": "DW1047",
+            "gates_examined": self.examined,
             "gates": self.gates,
             "floor_gates": self.floor_gates,
             "cells": self.cells,
-            "examined": self.cells,
             "inert_gates": self.inert_gates,
             "sources": self.sources,
             "sources_written": self.sources_written,
@@ -121,30 +128,46 @@ fn narrow(c: [i64; 3]) -> [i32; 3] {
     c.map(|v| i32::try_from(v).expect("a site cell fits a world coordinate"))
 }
 
-/// Every shut seam of a campaign's site plan, with the block it is shut with
-/// and its cells.
-pub fn shut_gates(c: &Campaign) -> Vec<ShutGate> {
-    let plan = SitePlan::of(c);
-    plan.seams
-        .iter()
-        .filter_map(|s: &PlacedSeam| {
-            let (lo, hi) = s.bar()?;
-            let mut cells = Vec::new();
-            for x in lo[0]..=hi[0] {
-                for y in lo[1]..=hi[1] {
-                    for z in lo[2]..=hi[2] {
-                        cells.push(narrow([x, y, z]));
-                    }
-                }
-            }
-            Some(ShutGate {
-                anchor: seam_anchor(&s.edge),
-                block: s.bar_block().to_string(),
-                floor: s.normal_axis == 1,
-                cells,
-            })
-        })
-        .collect()
+fn cells_between(a: [i32; 3], b: [i32; 3]) -> Vec<[i32; 3]> {
+    let lo = [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])];
+    let hi = [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])];
+    crate::compiler::assembled::region_cells(lo, hi).collect()
+}
+
+/// **Every shut gate of the built world**: each gate region the plan resolves
+/// (a prefab's declared gate, a derived seam's `anchor/seam-<edge>`, the
+/// region a `close-gate` or a timed gate fills), with its fill block, and
+/// every shut seam of the site plan the anchors do not already name. Sorted by
+/// anchor (ADR-0006).
+pub fn shut_gates(plan: &Plan) -> Vec<ShutGate> {
+    let site = SitePlan::of(plan.campaign);
+    let floor_of = |anchor: &str| {
+        site.seams
+            .iter()
+            .any(|s| s.normal_axis == 1 && s.bar().is_some() && seam_anchor(&s.edge) == anchor)
+    };
+    let mut out: BTreeMap<String, ShutGate> = BTreeMap::new();
+    for ((_, name), resolved) in plan.anchors.iter() {
+        if let ResolvedAnchor::Gate { from, to, block } = resolved {
+            out.entry(name.clone()).or_insert_with(|| ShutGate {
+                anchor: name.clone(),
+                block: block.clone(),
+                floor: floor_of(name),
+                cells: cells_between(*from, *to),
+            });
+        }
+    }
+    for s in &site.seams {
+        let Some((lo, hi)) = s.bar() else { continue };
+        let name = seam_anchor(&s.edge);
+        out.entry(name.clone()).or_insert_with(|| ShutGate {
+            anchor: name,
+            block: s.bar_block().to_string(),
+            floor: s.normal_axis == 1,
+            cells: cells_between(narrow(lo), narrow(hi)),
+        });
+    }
+    out.into_values().collect()
 }
 
 fn manhattan(a: [i32; 3], b: [i32; 3]) -> i64 {
@@ -164,6 +187,7 @@ pub fn prove(
     let mut b = GateSignalBinding::default();
     // Judged cell -> (gate anchor, the reading block there).
     let mut judged: BTreeMap<[i32; 3], (&str, String)> = BTreeMap::new();
+    b.examined = gates.len();
     for g in gates {
         let reads = redstone_reader(&g.block)
             || g.cells.iter().any(|c| {
@@ -270,14 +294,10 @@ pub fn prove(
     (b, first)
 }
 
-/// [`prove`] over a campaign's shut seams, the assembled world and every
+/// [`prove`] over every shut gate of the plan, the assembled world and every
 /// runtime write.
-pub fn check(
-    c: &Campaign,
-    blocks: &BlockMap,
-    writes: &[Write],
-) -> (GateSignalBinding, Option<Failure>) {
-    prove(&shut_gates(c), blocks, writes)
+pub fn check(plan: &Plan, blocks: &BlockMap) -> (GateSignalBinding, Option<Failure>) {
+    prove(&shut_gates(plan), blocks, &runtime_writes(plan))
 }
 
 #[cfg(test)]
