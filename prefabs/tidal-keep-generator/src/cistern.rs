@@ -621,7 +621,7 @@ pub fn anchors() -> Vec<(&'static str, AnchorJson)> {
         ("anchor/l3-secret", a_pos([22, U_WALK, 37], "north")),
         (
             "anchor/l3-trap-darts",
-            a_trap([EX_X0 + 1, dw, DART_Z], "north", DART_DISP, PLATE_BLOCK),
+            a_trap([EX_X0 + 1, dw, DART_Z], "north", PLATE_BLOCK),
         ),
         // spec-0022 traps v2: the gallery fires from the head of the shaft,
         // three treads ABOVE the plate, so the climber walks into the fire

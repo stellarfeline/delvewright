@@ -266,12 +266,6 @@ fn ns_item(id: &str) -> String {
 /// [`crate::for_each_campaign_effect`], which is
 /// [`crate::effects::for_each_effect_root`] underneath — the same eight roots
 /// emission lowers from, and the one `tools/ci/check-effect-roots.py` holds closed.
-///
-/// A trap's `dispense` payload is **not** a source, and the exclusion is about
-/// the object rather than about effort: a dispenser fires its stack at the party
-/// as a hazard. Being shot with a thing is not being handed it, and a campaign
-/// whose only supply of a required item is a trap firing it has a defect this
-/// check should name rather than excuse.
 fn class_blind_item_sources(c: &Campaign) -> BTreeSet<String> {
     let mut src: BTreeSet<String> = BTreeSet::new();
     let quests = &c.quests.content;

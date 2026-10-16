@@ -630,8 +630,6 @@ mod tests {
             trigger: TrapTrigger::PressurePlate,
             at_anchor: "anchor/trap".to_string(),
             trigger_cell: cell,
-            dispenser: None,
-            payload: None,
             payload_effects: Vec::new(),
             lethality: Lethality::Lethal,
             reset,

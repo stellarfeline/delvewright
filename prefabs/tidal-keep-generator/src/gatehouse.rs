@@ -500,7 +500,7 @@ pub fn anchors() -> Vec<(&'static str, AnchorJson)> {
         ),
         (
             "anchor/l1a-trap-boulder",
-            a_trap([14, plate_w, PLATE_Z], "north", DISP, PLATE_BLOCK),
+            a_trap([14, plate_w, PLATE_Z], "north", PLATE_BLOCK),
         ),
         // spec-0022 traps v2: the consequence is a command payload, so the run
         // needs a slot to fire FROM and a box to blanket. The slot is the vault

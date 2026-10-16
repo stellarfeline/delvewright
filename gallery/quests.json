@@ -3688,12 +3688,6 @@
           "sets_flag": "flag/plate-disarmed",
           "via": "anchor/plate-lever"
         },
-        "effect": {
-          "dispense": {
-            "count": 1,
-            "item": "minecraft:arrow"
-          }
-        },
         "id": "trap/plate",
         "lethality": "harmful",
         "payload": [

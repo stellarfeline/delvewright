@@ -45,8 +45,7 @@ fn clean_library_has_no_load_diagnostics() {
 /// into one prefab of a private copy of the library. Returns the copy.
 ///
 /// Two levels on purpose: both are places this document has actually grown
-/// (`waterline_y`, `spatial_contract`; `resolves_to`, `dispenser`,
-/// `trigger_block`), and a reader that tolerates one and refuses the other is
+/// (`waterline_y`, `spatial_contract`; `resolves_to`, `trigger_block`), and a reader that tolerates one and refuses the other is
 /// the same defect with a smaller blast radius.
 fn library_with_a_newer_key(tag: &str) -> std::path::PathBuf {
     let tmp = prefab_copy(tag);

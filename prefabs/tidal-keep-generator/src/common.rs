@@ -574,8 +574,6 @@ pub struct AnchorJson {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub block: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub dispenser: Option<[i32; 3]>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger_block: Option<String>,
 }
 #[derive(Serialize, Clone)]
@@ -676,14 +674,12 @@ pub fn a_region(from: [i32; 3], to: [i32; 3], block: &str) -> AnchorJson {
     }
 }
 /// A trap marker: `pos` is the trigger cell the compiler models as the hazard,
-/// `dispenser` the pre-wired (empty) dispenser socket it loads, `trigger_block`
-/// the plate blockstate a flag-gated trap must be able to restore verbatim
-/// (`DW0363`).
-pub fn a_trap(pos: [i32; 3], facing: &str, dispenser: [i32; 3], trigger_block: &str) -> AnchorJson {
+/// `trigger_block` the plate blockstate a flag-gated trap must be able to
+/// restore verbatim (`DW0363`).
+pub fn a_trap(pos: [i32; 3], facing: &str, trigger_block: &str) -> AnchorJson {
     AnchorJson {
         pos: Some(pos),
         facing: Some(facing.to_string()),
-        dispenser: Some(dispenser),
         trigger_block: Some(trigger_block.to_string()),
         ..Default::default()
     }

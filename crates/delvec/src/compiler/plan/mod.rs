@@ -570,10 +570,6 @@ impl<'a> Plan<'a> {
         // Advisory placement findings, in area order (`DW0498`, `crate::compiler::pool`).
         let mut warnings: Vec<Diagnostic> = Vec::new();
         let mut anchors = AnchorTable::default();
-        // v0.6 (spec-0011): the absolute dispenser socket cell for each `anchor/trap`
-        // marker that declares one, keyed like `anchors`. Empty for a campaign with no
-        // trap hardware.
-        let mut dispenser_cells: BTreeMap<(String, String), [i32; 3]> = BTreeMap::new();
         // Per-batch affected AABBs from L2 massing (spec-0017), for the
         // editor's per-batch snapshots. Empty without massing verbs.
         let mut massing_bounds: BTreeMap<String, ([i32; 3], [i32; 3])> = BTreeMap::new();
@@ -624,12 +620,6 @@ impl<'a> Plan<'a> {
                     anchors.declare(&area_id, name, am, || {
                         resolve_anchor(origin, meta, name, am)
                     })?;
-                    if let Some(dp) = am.dispenser {
-                        dispenser_cells.insert(
-                            (area_id.clone(), name.clone()),
-                            [origin[0] + dp[0], origin[1] + dp[1], origin[2] + dp[2]],
-                        );
-                    }
                 }
                 // Seal this piece's sockets through the SAME mechanism the pool
                 // path uses (`solver::seal_layout`), rather than skipping it.
@@ -781,11 +771,6 @@ impl<'a> Plan<'a> {
                         anchors.declare(&area_id, name, am, || {
                             resolve_piece_anchor(placed, meta, name, am)
                         })?;
-                        if let Some(dp) = am.dispenser {
-                            dispenser_cells
-                                .entry((area_id.clone(), name.clone()))
-                                .or_insert_with(|| solver::transform_point(placed, dp));
-                        }
                     }
                     pieces.push(PiecePlacement {
                         prefab_id: placed.prefab_id.clone(),
@@ -1009,7 +994,7 @@ impl<'a> Plan<'a> {
         let loop_spliced = cp.loops;
 
         // ---- v0.6 traps (spec-0011) ----
-        let traps = collect_traps(campaign, &anchors, &dispenser_cells);
+        let traps = collect_traps(campaign, &anchors);
 
         // ---- shortcut doors (spec-0016 §2) ----
         let shortcuts = collect_shortcuts(campaign, &anchors);

@@ -245,9 +245,6 @@ crate::dw_code! {
     /// anywhere in the campaign ever summons it — the NPC never enters the world,
     /// so its dialogue tree and any `talk-to` on it are unreachable content. The
     /// NPC-lifecycle dual of [`NPC_DESPAWNED_REF`] / `DW0195`.
-    ///
-    /// (0197/0198 were *reserved* by spec-0011's draft and released when that spec
-    /// renumbered to `DW0340`/`DW0341`; they were never emitted by any code.)
     pub const NPC_NEVER_SPAWNED: DwCode = DwCode::new("DW0197", ExitTier::Build);
 }
 

@@ -4,7 +4,7 @@ use super::*;
 
 /// `setup_finish` commands for container fills (spec-0021): give each declared
 /// container its contents with `item replace block … container.<slot>`, the same
-/// deterministic mechanism a trap dispenser and a `collect` chest already use —
+/// deterministic mechanism a `collect` chest already uses —
 /// no raw NBT, no loot tables, no RNG.
 ///
 /// **Slot assignment is positional**: the nth declared stack lands in

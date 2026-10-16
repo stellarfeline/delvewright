@@ -199,7 +199,7 @@ pub enum Objective {
         /// a `chest` / `trapped_chest` / `barrel` this collect fills instead of
         /// conjuring its own chest at [`Objective::Collect::anchor`].
         ///
-        /// Same division of labour a `loot` entry and a trap's dispenser already
+        /// Same division of labour a `loot` entry and a trap's trigger block already
         /// keep with the prefab: furniture belongs in the piece. A beach camp's
         /// barrel is scenery the player has been walking past since minute one —
         /// having the compiler `setblock` a *second*, floating chest beside it to
