@@ -32,14 +32,14 @@ async function must(command: string): Promise<void> {
 async function longestRun(ms: number): Promise<{ maxMs: number; readings: number }> {
   const first = await executor.readGameTime("the slow clock's sample");
   const watch = new GameClockWatch("the slow clock's sample", first.tick, Number.MAX_SAFE_INTEGER);
-  watch.observe(first.tick, Date.now());
+  watch.observe(first.tick, performance.now());
   let maxMs = 0;
   let readings = 1;
-  const end = Date.now() + ms;
-  while (Date.now() < end) {
+  const end = performance.now() + ms;
+  while (performance.now() < end) {
     await new Promise((r) => setTimeout(r, 50));
     const r = await executor.readGameTime("the slow clock's sample");
-    watch.observe(r.tick, Date.now());
+    watch.observe(r.tick, performance.now());
     readings += 1;
     maxMs = Math.max(maxMs, watch.seen.ms);
   }
@@ -57,18 +57,18 @@ try {
     `[clock] at /tick rate 1: ${slow.readings} reading(s) over 20000ms; the longest prompt-answer run at one tick ` +
       `was ${slow.maxMs}ms (stopped is ${STOPPED_CLOCK_MS}ms)\n`,
   );
-  const t0 = Date.now();
+  const t0 = performance.now();
   const passed = await executor.waitForGameTicks(5, "the slow clock's wait");
-  process.stdout.write(`[clock] at /tick rate 1: a 5-tick wait passed at tick ${passed.tick} in ${Date.now() - t0}ms\n`);
+  process.stdout.write(`[clock] at /tick rate 1: a 5-tick wait passed at tick ${passed.tick} in ${performance.now() - t0}ms\n`);
   await must("/tick rate 20");
 
   await must("/tick freeze");
-  const t1 = Date.now();
+  const t1 = performance.now();
   try {
     await executor.waitForGameTicks(2, "the frozen clock's wait");
     failures.push("a 2-tick wait passed on a frozen clock");
   } catch (err) {
-    process.stdout.write(`[clock] frozen: after ${Date.now() - t1}ms, ${(err as Error).name}: ${(err as Error).message}\n`);
+    process.stdout.write(`[clock] frozen: after ${performance.now() - t1}ms, ${(err as Error).name}: ${(err as Error).message}\n`);
     if (!(err instanceof GameTimeStoppedError)) failures.push(`the frozen wait failed otherwise: ${String(err)}`);
   }
 } catch (err) {

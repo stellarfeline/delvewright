@@ -826,7 +826,7 @@ export const methods = {
         through = reading.tick;
         if (heard.missing.length === 0 || reading.tick >= end + VIBRATION_TAIL_TICKS) break;
         watch ??= new GameClockWatch(purpose, end, VIBRATION_TAIL_TICKS);
-        watch.observe(reading.tick, Date.now());
+        watch.observe(reading.tick, performance.now());
         await delay(POLL_MS);
       }
     }

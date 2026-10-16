@@ -74,7 +74,7 @@ export const methods = {
     for (;;) {
       const now = await this.readGameTime(purpose);
       if (now.tick >= start + ticks) return now;
-      watch.observe(now.tick, Date.now());
+      watch.observe(now.tick, performance.now());
       await delay(POLL_MS);
     }
   },

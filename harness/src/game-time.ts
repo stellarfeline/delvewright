@@ -68,14 +68,16 @@ export const STOPPED_CLOCK_MS = 10_000;
 /**
  * **The judge of a game-tick wait: has the server's game clock stopped?**
  *
- * Fed every answered reading with the wall time its reply was taken in, it sums,
+ * Fed every answered reading with the time its reply was taken in, on a
+ * monotonic clock (`performance.now()`: a wall clock the host steps backward or
+ * forward would make or break a gap), it sums,
  * since the last reading that showed another tick, only the gaps of at most
  * {@link LIVE_REPLY_GAP_MS} between consecutive replies: the stretches in which
  * the server was seen answering. When the sum reaches {@link STOPPED_CLOCK_MS}
  * at one tick, it throws {@link GameTimeStoppedError}. A host stall, of the
  * server or of the bot, is one long gap and adds nothing; a slow server answers
- * late (a long gap) or at a later tick (the sum restarts). Wall time alone never
- * fails a wait.
+ * late (a long gap) or at a later tick (the sum restarts). Elapsed time alone
+ * never fails a wait.
  */
 export class GameClockWatch {
   private readonly purpose: string;
@@ -93,7 +95,7 @@ export class GameClockWatch {
     this.ticks = ticks;
   }
 
-  /** One answered reading: the game tick it showed, and the wall time (ms) its reply was taken in. */
+  /** One answered reading: the game tick it showed, and the monotonic time (ms) its reply was taken in. */
   observe(tick: number, answeredAt: number): void {
     if (tick !== this.tick) {
       this.tick = tick;

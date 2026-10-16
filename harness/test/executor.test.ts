@@ -5736,7 +5736,7 @@ test("a game-tick wait passes on a ticking clock and reds, named, on a frozen on
   // The perturbation toward a stopped server: the clock no longer moves, and
   // every reading is still answered at once.
   server.perReading = 0;
-  const t0 = Date.now();
+  const t0 = performance.now();
   await within(
     "waitForGameTicks(frozen)",
     assert.rejects(
@@ -5747,7 +5747,7 @@ test("a game-tick wait passes on a ticking clock and reds, named, on a frozen on
     ),
     STOPPED_CLOCK_MS + 20_000,
   );
-  assert.ok(Date.now() - t0 >= STOPPED_CLOCK_MS, "it reds only after the window of answers");
+  assert.ok(performance.now() - t0 >= STOPPED_CLOCK_MS, "it reds only after the window of answers");
 });
 
 test("a predicted shrieker whose 3007 is never heard fails the step; heard, it passes", async () => {

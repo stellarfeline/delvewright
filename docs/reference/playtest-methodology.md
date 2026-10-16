@@ -255,7 +255,8 @@ game ticks (the watch line's tick, a pulse station's stand, the sculk tail) has
 no wall-clock budget; it fails, `GameTimeStoppedError`, only when the server
 keeps answering and its game time does not move (`GameClockWatch`,
 `harness/src/game-time.ts`). The judge sums, since the last reading at another
-tick, only the gaps of at most 500ms between consecutive answered readings, and
+tick, only the gaps of at most 500ms between consecutive answered readings (on
+a monotonic clock, so a host that steps its wall clock makes no gap), and
 the clock is stopped when that sum reaches 10s at one tick. A live game ticks at
 least once a second (the pinned server refuses a `/tick rate` below 1), so prompt
 answers sit on one tick for about a second at most; a slow server answers late
