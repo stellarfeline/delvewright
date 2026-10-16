@@ -510,9 +510,10 @@ pub fn build_with_warnings(
             "validation/trap-binding.json",
             &trap_binding.ledger(),
         );
-        for verdict in [trap_cells.err(), step_cells.err(), trap_binding.finding()]
+        if let Some(verdict) = [trap_cells.err(), step_cells.err(), trap_binding.finding()]
             .into_iter()
             .flatten()
+            .next()
         {
             return Err(BuildFailure::Diagnostic {
                 code: verdict.code,
