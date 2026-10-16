@@ -238,15 +238,15 @@ pub fn document_sign_block<'a>(c: &'a Campaign, anchor: &str) -> Option<&'a str>
         }
     }
     crate::for_each_campaign_effect(c, &mut |_path, _site, e| match &e.verb {
-        Verb::SetBlock { anchor: a, block } if a.as_str() == anchor => {
-            if SignKind::of(block).is_some() {
-                found.get_or_insert(block.as_str());
-            }
+        Verb::SetBlock { anchor: a, block }
+            if a.as_str() == anchor && SignKind::of(block).is_some() =>
+        {
+            found.get_or_insert(block.as_str());
         }
-        Verb::FillRegion { region, block } if region.anchor.as_str() == anchor => {
-            if SignKind::of(block).is_some() {
-                found.get_or_insert(block.as_str());
-            }
+        Verb::FillRegion { region, block }
+            if region.anchor.as_str() == anchor && SignKind::of(block).is_some() =>
+        {
+            found.get_or_insert(block.as_str());
         }
         _ => {}
     });

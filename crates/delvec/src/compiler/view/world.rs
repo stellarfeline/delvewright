@@ -706,6 +706,7 @@ mod tests {
         assert_eq!(w.ground, 256 * 127 - 1 - 8, "{}", w.ground);
         let v = encode(
             &m,
+            &BlockEntities::new(),
             &|_| "minecraft:ocean".to_string(),
             [0, 71, 0],
             &Ground::void(),
@@ -722,8 +723,8 @@ mod tests {
             BlockState::new("minecraft:oak_stairs[facing=east,half=top]"),
         );
         let b = |_c: [i32; 3]| "minecraft:plains".to_string();
-        let a = encode(&m, &b, [0, 65, 0], &Ground::void());
-        let c = encode(&m, &b, [0, 65, 0], &Ground::void());
+        let a = encode(&m, &BlockEntities::new(), &b, [0, 65, 0], &Ground::void());
+        let c = encode(&m, &BlockEntities::new(), &b, [0, 65, 0], &Ground::void());
         assert_eq!(a, c);
         assert_eq!(a.chunks, 2);
         assert_eq!(a.cells, 2);

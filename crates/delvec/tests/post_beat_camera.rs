@@ -182,6 +182,7 @@ fn write(
     let dir = tmp(&format!("{tag}-{key}"));
     let w = world::write(
         blocks,
+        &world::BlockEntities::new(),
         &|_| "minecraft:plains".to_string(),
         [5, 65, 2],
         &world::Ground::void(),
@@ -405,11 +406,31 @@ fn the_writer_is_whole_and_deterministic() {
             "minecraft:desert".into()
         }
     };
-    let a = world::encode(blocks, &biome, [5, 65, 2], &world::Ground::void());
-    let b = world::encode(blocks, &biome, [5, 65, 2], &world::Ground::void());
+    let a = world::encode(
+        blocks,
+        &world::BlockEntities::new(),
+        &biome,
+        [5, 65, 2],
+        &world::Ground::void(),
+    );
+    let b = world::encode(
+        blocks,
+        &world::BlockEntities::new(),
+        &biome,
+        [5, 65, 2],
+        &world::Ground::void(),
+    );
     assert_eq!(a, b, "two writes of one map are byte-identical");
     let dir = tmp("c4-x");
-    let w = world::write(blocks, &biome, [5, 65, 2], &world::Ground::void(), &dir).unwrap();
+    let w = world::write(
+        blocks,
+        &world::BlockEntities::new(),
+        &biome,
+        [5, 65, 2],
+        &world::Ground::void(),
+        &dir,
+    )
+    .unwrap();
     assert_eq!(w, a, "the files written are the bytes encoded");
     let back = read_back(&dir);
     // Read back cell for cell equal, every state completed by the pinned
@@ -1098,6 +1119,7 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
     let moved = tmp("dw0955-moved");
     world::write(
         &blocks,
+        &world::BlockEntities::new(),
         &|_| "minecraft:plains".into(),
         [5, 65, 2],
         &world::Ground::void(),
@@ -1124,6 +1146,7 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
     let settled = tmp("dw0955-settled");
     world::write(
         &blocks,
+        &world::BlockEntities::new(),
         &|_| "minecraft:plains".into(),
         [5, 65, 2],
         &world::Ground::void(),
@@ -1159,6 +1182,7 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
     let (wa, wb) = (tmp("dw0955-turf-written"), tmp("dw0955-turf-server"));
     world::write(
         &grassed,
+        &world::BlockEntities::new(),
         &|_| "minecraft:plains".into(),
         [5, 65, 2],
         &world::Ground::void(),
@@ -1167,6 +1191,7 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
     .unwrap();
     world::write(
         &ticked,
+        &world::BlockEntities::new(),
         &|_| "minecraft:plains".into(),
         [5, 65, 2],
         &world::Ground::void(),
@@ -1190,6 +1215,7 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
     );
     world::write(
         &ticked,
+        &world::BlockEntities::new(),
         &|_| "minecraft:plains".into(),
         [5, 65, 2],
         &world::Ground::void(),
@@ -1219,6 +1245,7 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
     let voided = tmp("dw0955-voided");
     world::write(
         &blocks,
+        &world::BlockEntities::new(),
         &|_| "minecraft:plains".into(),
         [5, 65, 2],
         &world::Ground::void(),
