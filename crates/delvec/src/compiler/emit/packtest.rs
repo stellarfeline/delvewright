@@ -230,7 +230,7 @@ pub(super) fn emit_packtest(
     party::emit_carrier_one_packtests(plan, out);
 }
 
-pub(super) use party::{PartyBinding, party_binding};
+pub use party::{PartyBinding, party_binding};
 
 // ------------------------------------------- per-object watch claims (DW0811) --
 //
