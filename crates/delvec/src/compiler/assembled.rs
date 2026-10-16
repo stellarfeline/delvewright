@@ -705,7 +705,7 @@ const STRUCTURE_VOID: &str = "minecraft:structure_void";
 /// the template omits. The one reading [`placed_blocks`] and `DW1002`'s write
 /// sequence (`crate::compiler::attached`) both take.
 pub(crate) fn template_writes(
-    rotation: crate::compiler::solver::Rotation,
+    rotation: crate::compiler::rotation::Rotation,
     pos: [i32; 3],
     bytes: &[u8],
 ) -> Vec<([i32; 3], BlockState, Option<bool>)> {
