@@ -30,6 +30,7 @@ mod quest;
 mod seal;
 mod sequence;
 mod shortcut;
+mod sign;
 mod standin;
 mod teleport;
 mod timed_gate;
@@ -48,6 +49,8 @@ pub(super) struct Proved<'a> {
     pub(super) asm_locks: &'a crate::compiler::assembly::Locks,
     /// The watchers, as `watching::prove` judged them.
     pub(super) watch_binding: &'a crate::compiler::watching::WatchBinding,
+    /// Where each sign stands, as `sign::prove` found it (spec-0115).
+    pub(super) signs: &'a crate::compiler::sign::SignGate,
 }
 
 /// Emit the compiler-generated PackTest suite (spec-0003). PackTest (misode,
@@ -69,6 +72,7 @@ pub(super) fn emit_packtest(
     let Proved {
         asm_locks,
         watch_binding,
+        signs,
     } = *proved;
     let ns = &plan.namespace;
     put_json(
@@ -211,6 +215,9 @@ pub(super) fn emit_packtest(
     // reached transitively. Emits nothing for a campaign with no trigger.
     trigger::emit_env_trigger_packtests(plan, out);
     loot::emit_loot_packtest(plan, out);
+    // spec-0115: every sign says its words, and every beat re-letters it.
+    // Emits nothing for a campaign that declares no sign.
+    sign::emit_sign_packtests(plan, signs, out);
     actor::emit_actor_equipment_packtest(plan, out);
     // spec-0016 §6: the patrol NBT survives 1.21.11's strict codec, the lane
     // advances in march order, the squad is released to native AI at aggro range,
@@ -267,6 +274,7 @@ pub(super) fn watch_claims(plan: &Plan) -> Vec<crate::compiler::watch::Claim> {
     watch_claims.extend(trigger::env_trigger_watch_claims(plan));
     watch_claims.extend(dialogue::dialogue_mask_watch_claims(plan));
     watch_claims.extend(cast::cast_bark_watch_claims(plan));
+    watch_claims.extend(sign::sign_watch_claims(plan));
     watch_claims
 }
 

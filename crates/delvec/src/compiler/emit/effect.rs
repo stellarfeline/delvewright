@@ -630,7 +630,14 @@ pub(super) fn emit_quest_effect(
         Verb::SetBlock { anchor, block, .. } => {
             if let Some(pos) = anchor_point_any(plan, anchor.as_str()) {
                 body.push(format!("setblock {} {} {} {block}", pos[0], pos[1], pos[2]));
+                // spec-0115: a sign written into a lettered cell is lettered
+                // right after the write.
+                body.extend(after_write(plan, pos, pos, block));
             }
+        }
+        // spec-0115 §3.3: a beat re-letters a declared sign, whole faces.
+        Verb::LetterSign { sign, front, back } => {
+            emit_letter_sign(plan, sign.as_str(), front.as_ref(), back.as_ref(), body);
         }
         // --- DSL v0.10 region writes (spec-0031) ---
         // The general spelling of what `open-gate`/`close-gate` do to a gate
@@ -642,6 +649,8 @@ pub(super) fn emit_quest_effect(
                 && let Some(region) = plan.zone_box(zone)
             {
                 body.push(fill_region_command(region, block.unwrap_or(AIR), None));
+                // spec-0115: every lettered cell a sign fill covers.
+                body.extend(after_write(plan, region.0, region.1, block.unwrap_or(AIR)));
             }
         }
         // spec-0080 §3.3: a repaint is `fillbiome` over the volume — the

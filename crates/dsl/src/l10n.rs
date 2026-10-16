@@ -160,6 +160,19 @@ fn effect_strings(eff: &mut QuestEffect, keybase: &str, f: &mut dyn FnMut(&str, 
             sealed_hint: Some(h),
             ..
         } => f(&format!("{keybase}.sealed_hint"), h),
+        // spec-0115: a `letter-sign`'s lines, one row per non-blank line, keyed
+        // by face and line index. A blank line is not a row.
+        Verb::LetterSign { front, back, .. } => {
+            for (side, face) in [("front", front), ("back", back)] {
+                if let Some(face) = face.as_mut() {
+                    for (i, line) in face.lines.iter_mut().enumerate() {
+                        if !line.is_empty() {
+                            f(&format!("{keybase}.{side}.{i}"), line);
+                        }
+                    }
+                }
+            }
+        }
         _ => {}
     }
 }
@@ -484,6 +497,21 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             }
         }
     }
+    // Stage 5 — signs (spec-0115): each non-blank line of each face, keyed by
+    // the sign, the face and the line's index. A blank line is not a row.
+    for sg in &mut c.quests.content.signs {
+        let sl = local(sg.id.as_str()).to_string();
+        let back = sg.back.as_mut();
+        for (side, face) in [("front", Some(&mut sg.front)), ("back", back)] {
+            if let Some(face) = face {
+                for (i, line) in face.lines.iter_mut().enumerate() {
+                    if !line.is_empty() {
+                        f(&format!("sign.{sl}.{side}.{i}"), line);
+                    }
+                }
+            }
+        }
+    }
     // Stage 5 — lethal volumes (v0.10, spec-0031): the line the volume says as it
     // kills. As player-visible as a narrate, and read at the worst possible moment
     // to be reading a raw key, so it is inventoried like any other authored line.
@@ -641,6 +669,9 @@ pub enum TextKind {
     Prompt,
     /// Narration in chat, on screen or on the action bar.
     Narration,
+    /// A line on a sign: a few words read at a glance from a board, never a
+    /// sentence. Its situation states the face's character budget.
+    SignLine,
 }
 
 /// The [`TextKind`] of an inventory key, or `None` for a key the scheme does not
@@ -686,6 +717,13 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
             _ => return None,
         },
         "loot" if n == 5 && last == "name" => ItemName,
+        "sign" if n == 4 && matches!(segs[2], "front" | "back") => SignLine,
+        "fx" if n >= 3
+            && matches!(segs[n - 2], "front" | "back")
+            && last.parse::<usize>().is_ok() =>
+        {
+            SignLine
+        }
         "lethal" if n == 3 && last == "message" => Narration,
         "stake" if n == 3 && last == "collected" => Narration,
         "shop" => match (n, last) {
@@ -866,6 +904,7 @@ pub fn key_situations(c: &Campaign) -> BTreeMap<String, Vec<String>> {
                 }
             }
             ["dlg", np, nd, "opt", oi, field] => option_lines(np, nd, oi, &mut lines, field),
+            ["sign", ..] => sign_situation(c, &key, &mut lines),
             ["lethal", _, "message"] => {
                 lines.push("Shown to a player as this hazard kills them.".into())
             }
@@ -885,6 +924,9 @@ pub fn key_situations(c: &Campaign) -> BTreeMap<String, Vec<String>> {
                 }
             }
             ["fx", rest @ ..] => {
+                if key_kind(&key) == Some(TextKind::SignLine) {
+                    sign_situation(c, &key, &mut lines);
+                }
                 match rest {
                     ["trig", ..] => lines.push("Fires from a trigger placed in the world.".into()),
                     ["trap", ..] => lines.push("Fires from a trap.".into()),
@@ -1189,6 +1231,69 @@ fn effect_roots_mut(c: &mut Campaign) -> Vec<(&'static str, String, String, &mut
 /// [`play_sound_actor_refs`], so the consumer checks
 /// (`DW0326`/`DW0328`/`DW0330`/`DW0331`/`DW0335`) see exactly the strings the
 /// inventory demands a translation for.
+/// [`each_effect_ref`], for a sibling module that enumerates effect-borne
+/// strings by the same keys (`crate::sign::stated_faces`).
+pub(crate) fn each_effect_site<'a>(
+    c: &'a Campaign,
+    f: &mut dyn FnMut(&'static str, &str, &str, &'a QuestEffect),
+) {
+    each_effect_ref(c, f)
+}
+
+/// The situation of a sign line (spec-0115 §3.4): which line of which face it
+/// is, the face's other lines, and the budget in characters, derived from the
+/// kind of sign block the document puts at the anchor. A sign a piece's
+/// template places is read only by the build; its line is budgeted here at the
+/// narrower face, a hanging sign's, and the build judges it at its own.
+fn sign_situation(c: &Campaign, key: &str, out: &mut Vec<String>) {
+    let Some(line) = crate::sign::sign_lines(c)
+        .into_iter()
+        .find(|l| l.key == key)
+    else {
+        return;
+    };
+    let others: Vec<String> = line
+        .face
+        .iter()
+        .enumerate()
+        .filter(|(i, l)| *i != line.index && !l.is_empty())
+        .map(|(i, l)| format!("line {}: {l}", i + 1))
+        .collect();
+    out.push(format!(
+        "Line {} of {} on the {} face of a sign{}",
+        line.index + 1,
+        line.face.len(),
+        line.side.token(),
+        if others.is_empty() {
+            String::new()
+        } else {
+            format!("; the others read: {}", others.join(" / "))
+        }
+    ));
+    let anchor = c
+        .quests
+        .content
+        .signs
+        .iter()
+        .find(|s| s.id.as_str() == line.sign)
+        .map(|s| s.anchor.as_str());
+    let Some(anchor) = anchor else {
+        return;
+    };
+    match crate::sign::document_sign_block(c, anchor).and_then(crate::sign::SignKind::of) {
+        Some(kind) => out.push(format!(
+            "Budget: {} on a {} (it stands at `{anchor}`)",
+            kind.in_characters(),
+            kind.word()
+        )),
+        None => out.push(format!(
+            "Budget: {} (the sign at `{anchor}` is the piece's; budgeted as the narrower \
+             face, a hanging sign's, until the build reads which kind stands there)",
+            crate::sign::SignKind::Hanging.in_characters()
+        )),
+    }
+}
+
 fn each_effect_ref<'a>(
     c: &'a Campaign,
     f: &mut dyn FnMut(&'static str, &str, &str, &'a QuestEffect),

@@ -81,6 +81,13 @@ pub struct QuestsContent {
     ///.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub loot: Vec<Loot>,
+    /// Signs (spec-0115): the words on a sign block an anchor's cell holds or
+    /// comes to hold, on either face, in every declared language. Lettered
+    /// where the sign stands from load, and after every write that puts a sign
+    /// block into the cell; a `letter-sign` beat rewrites a face. Empty/absent =
+    /// nothing emitted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub signs: Vec<crate::Sign>,
     /// Runtime state data (DSL v0.10, spec-0031): named, scoped, integer-valued
     /// counters the campaign sets, adds to and clears at runtime, and compares
     /// against in any gate. A campaign that declares none emits none of it.

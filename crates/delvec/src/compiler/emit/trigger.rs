@@ -112,6 +112,9 @@ pub(super) fn env_trigger_setup(plan: &Plan, chrome: &delvewright_dsl::Chrome) -
                 "setblock {} {} {} {}",
                 p.pos[0], p.pos[1], p.pos[2], p.block
             ));
+            // spec-0115: a sign the prop puts in a lettered cell is lettered
+            // right after the write that places it.
+            out.extend(after_write(plan, p.pos, p.pos, &p.block));
         }
         // Same rule, one layer out: a click trigger anchored on a gate
         // the campaign SEALS rides that seal's own hitboxes — `seal_arm_<safe>`

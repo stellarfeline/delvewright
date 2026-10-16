@@ -162,6 +162,8 @@ pub fn validate_campaign_with(
     crate::ambush::ambush_checks(c, &mut d);
     crate::timed_gate::timed_gate_checks(c, anchors, &mut d);
     crate::loot::loot_checks(c, items, anchors, &mut d);
+    // spec-0115: the signs and the beats that re-letter them.
+    crate::sign::sign_checks(c, anchors, &mut d);
     crate::quest::check::give_item_enchantment_checks(c, &mut d);
     crate::wave::lane_checks(c, anchors, &mut d);
     crate::wave::difficulty_checks(c, &mut d);
@@ -601,6 +603,17 @@ pub(crate) fn for_each_trap_payload_deep(t: &crate::Trap, mut f: impl FnMut(Stri
 /// to `setblock` — vanilla validates the property names/values against the
 /// block's own state definition, so the compiler only guards the surface syntax.
 pub(crate) fn split_blockstate(block: &str) -> Result<&str, String> {
+    // spec-0115 §3.5: a block string is an id and a blockstate, never NBT.
+    // Words typed into a sign's block string would be raw NBT outside every
+    // l10n and fit gate, so the brace is refused wherever a block is typed.
+    if block.contains('{') {
+        return Err(format!(
+            "`{block}` carries NBT (`{{…}}`) — a block string is a block id and an optional \
+             `[key=value]` blockstate, nothing else. Words on a sign are a `signs[]` row at \
+             the sign's anchor (and a `letter-sign` beat to change them), which the engine \
+             translates and fits to the face; drop the `{{…}}`"
+        ));
+    }
     let Some(open) = block.find('[') else {
         return Ok(block);
     };

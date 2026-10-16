@@ -102,6 +102,15 @@ delvewright_dsl::dw_code! {
     pub const DW_OPTION_LABEL_SCROLLS: DwCode = DwCode::new("DW0331", ExitTier::Build);
 }
 
+delvewright_dsl::dw_code! {
+    /// `DW1048`: a sign's line, in the English source or a sidecar translation, is
+    /// wider than the sign's face draws (90 font px on a standing or wall sign, 60
+    /// on a hanging sign), or a declared face has no visible glyph on any line.
+    /// The client keeps the first wrapped segment of an over-wide line and drops
+    /// the rest, on every client at every window size (spec-0115 §2.3).
+    pub const DW_SIGN_LINE_UNFIT: DwCode = DwCode::new("DW1048", ExitTier::Build);
+}
+
 // ---------------------------------------------------------------------------
 // Screen geometry
 // ---------------------------------------------------------------------------
@@ -475,6 +484,108 @@ fn label_over_budget(stage: &str, path: String, text: &str) -> Option<Diagnostic
             percent_of(BUTTON_LABEL_BUDGET, width),
         ),
     ))
+}
+
+// ---------------------------------------------------------------------------
+// Sign lines (DW1048)
+// ---------------------------------------------------------------------------
+
+/// The rendered width of a sign line as authored, in font pixels: the
+/// `DW0331` measurement — the default font over its visible text, plus one
+/// pixel per bold character — which is what the client's `Font.width`
+/// compares with the face's line width.
+pub fn sign_line_width(text: &str) -> u32 {
+    default_font_width(&delvewright_dsl::textstyle::visible(text)) + bold_widening(text)
+}
+
+/// Check every sign line the campaign states — a `signs[]` row's faces and
+/// every `letter-sign`'s — in the English source **and** every declared
+/// sidecar against the face it is drawn on (`DW1048`), and refuse a declared
+/// face with no visible glyph on any line.
+///
+/// `kind_of` answers the kind of sign a row's cell holds, when it is known:
+/// the validation tier knows the kinds a document writes (a `prop`, a
+/// `set-block`, a `fill-region`), the build also knows the kinds a piece's
+/// template lays. A line on a sign whose kind is not known is not measured
+/// here; the build measures it.
+pub fn check_sign_lines(
+    c: &Campaign,
+    sidecars: &BTreeMap<String, L10nDoc>,
+    kind_of: &dyn Fn(&str) -> Option<delvewright_dsl::SignKind>,
+) -> Vec<Diagnostic> {
+    let mut d = Vec::new();
+    for (sign, side, face, _keybase, stage, path) in delvewright_dsl::stated_faces(c) {
+        let visible = face.lines.iter().any(|l| {
+            delvewright_dsl::textstyle::visible(&delvewright_dsl::l10n::plain(l))
+                .chars()
+                .any(|ch| !ch.is_whitespace())
+        });
+        if !visible {
+            d.push(Diagnostic::error(
+                DW_SIGN_LINE_UNFIT,
+                stage,
+                format!("{path}/lines"),
+                format!(
+                    "the {} face of sign `{sign}` declares {} line(s) and none of them shows a \
+                     glyph. A blank face is what a sign already shows, so declaring one says \
+                     nothing: write the words, or leave the face out (a `back` left out is \
+                     blank; a `letter-sign` that keeps a face states only the other)",
+                    side.token(),
+                    face.lines.len()
+                ),
+            ));
+        }
+    }
+    let lines = delvewright_dsl::sign_lines(c);
+    let mut over =
+        |lang: &str, stage: &str, path: String, l: &delvewright_dsl::SignLine, text: &str| {
+            let Some(kind) = kind_of(&l.sign) else {
+                return;
+            };
+            let width = sign_line_width(&delvewright_dsl::l10n::plain(text));
+            let budget = kind.budget();
+            if width <= budget {
+                return;
+            }
+            d.push(Diagnostic::error(
+            DW_SIGN_LINE_UNFIT,
+            stage,
+            path,
+            format!(
+                "line {} of the {} face of sign `{}` ({lang}) renders {width} font px wide, over \
+                 the {budget} px a {} draws a line in. The client keeps the line's first \
+                 wrapped segment and DROPS the rest, on every client at every window size, so \
+                 the sign would read half the line. Shorten it to about {} of its width, split \
+                 it over another line of the face, or stand a wider sign — a standing or wall \
+                 sign is 90 px where a hanging sign is 60. Line: `{text}`",
+                l.index + 1,
+                l.side.token(),
+                l.sign,
+                kind.word(),
+                percent_of(budget, width),
+            ),
+        ));
+        };
+    for l in &lines {
+        over("en", l.stage, l.path.clone(), l, &l.text);
+    }
+    for lang in &c.world.content.languages {
+        let Some(doc) = sidecars.get(lang) else {
+            continue; // absence is DW0180's job, not ours.
+        };
+        for l in &lines {
+            if let Some(t) = doc.content.get(&l.key) {
+                over(
+                    lang,
+                    "l10n",
+                    format!("l10n/{lang}.json#/content/{}", l.key),
+                    l,
+                    t,
+                );
+            }
+        }
+    }
+    d
 }
 
 #[cfg(test)]

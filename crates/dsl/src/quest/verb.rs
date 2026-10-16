@@ -157,6 +157,21 @@ pub enum Verb {
         /// Vanilla block id to place.
         block: String,
     },
+    /// **Re-letters a declared sign** (spec-0115 §3.3): from this beat on the
+    /// sign says what this effect states. A face given is written whole, never
+    /// as a diff; a face not given keeps its words. `sign` names a `signs[]`
+    /// row (`DW0112`); at least one face is given (`DW0100`); the beat must
+    /// fire where the cell holds a sign (`DW0431`).
+    LetterSign {
+        /// The sign (`signs[]` row) to re-letter.
+        sign: crate::SignId,
+        /// What the front face says from this beat.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        front: Option<crate::SignFace>,
+        /// What the back face says from this beat.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        back: Option<crate::SignFace>,
+    },
     /// **Fill a declared region with a block** at runtime (DSL v0.10, spec-0031).
     ///
     /// The general spelling of the capability `open-gate` / `close-gate` carried
@@ -981,6 +996,7 @@ impl Verb {
             Verb::SpawnWave { .. } => "spawn-wave",
             Verb::Narrate { .. } => "narrate",
             Verb::SetBlock { .. } => "set-block",
+            Verb::LetterSign { .. } => "letter-sign",
             Verb::FillRegion { .. } => "fill-region",
             Verb::ClearRegion { .. } => "clear-region",
             Verb::SetAtmosphere { .. } => "set-atmosphere",
@@ -1051,6 +1067,8 @@ impl Verb {
             | Verb::DropStake { .. }
             | Verb::SpawnWave { .. }
             | Verb::SetBlock { .. }
+            // spec-0115: a sign's words are a world fact.
+            | Verb::LetterSign { .. }
             | Verb::FillRegion { .. }
             | Verb::ClearRegion { .. }
             | Verb::OpenWay { .. }

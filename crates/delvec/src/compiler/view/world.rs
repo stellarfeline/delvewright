@@ -14,9 +14,11 @@
 //! rules: indices at `max(4, ceil(log2 n))` bits for blocks and
 //! `ceil(log2 n)` for biomes, never across a long, `data` absent for a
 //! one-entry palette. Every region timestamp is zero, zlib at one fixed level,
-//! chunks in index order, sectors contiguous. No light arrays, heightmaps,
-//! entities, block entities or ticks: the pinned core lights a scene itself and
-//! draws none of the entities the engine summons (spec-0089 §2.2).
+//! chunks in index order, sectors contiguous. A chunk holding a lettered sign
+//! carries its `block_entities` (spec-0115 §4.3); no other block entity, and
+//! no light arrays, heightmaps, entities or ticks: the pinned core lights a
+//! scene itself and draws none of the entities the engine summons (spec-0089
+//! §2.2).
 //!
 //! Deterministic (ADR-0006): no clock, a fixed compression level, palettes in
 //! first-seen order over the section's own index order, the NBT written by the
@@ -143,6 +145,97 @@ pub struct WrittenWorld {
 }
 
 // ---------------------------------------------------------------------- NBT
+
+/// **A block entity the written world lays** (spec-0115 §4.3): its id and its
+/// own keys. The chunk writes `id`, `x`, `y`, `z` first, as the game does,
+/// then these.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BlockEntity {
+    /// The block entity type (`minecraft:sign`, `minecraft:hanging_sign`).
+    pub id: String,
+    /// Its keys, in order.
+    pub data: Vec<(String, Nbt)>,
+}
+
+/// The cells of a world that carry a block entity, with what each carries.
+pub type BlockEntities = BTreeMap<[i32; 3], BlockEntity>;
+
+/// An NBT value a caller hands the writer: the subset a block entity needs.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Nbt {
+    /// `TAG_Byte`.
+    Byte(i8),
+    /// `TAG_Int`.
+    Int(i32),
+    /// `TAG_String`.
+    Str(String),
+    /// `TAG_List`. Every element one tag type: see [`Nbt::list`].
+    List(Vec<Nbt>),
+    /// `TAG_Compound`, its keys in order.
+    Compound(Vec<(String, Nbt)>),
+}
+
+impl Nbt {
+    /// A list, as the game writes one: when its elements are not all one tag
+    /// type, every element that is not a compound is wrapped as `{"": value}`
+    /// (the heterogeneous-list form the pinned game reads and writes).
+    pub fn list(items: Vec<Nbt>) -> Nbt {
+        let first = items.first().map(Nbt::kind);
+        if items.iter().all(|i| Some(i.kind()) == first) {
+            return Nbt::List(items);
+        }
+        Nbt::List(
+            items
+                .into_iter()
+                .map(|i| match i {
+                    Nbt::Compound(_) => i,
+                    other => Nbt::Compound(vec![(String::new(), other)]),
+                })
+                .collect(),
+        )
+    }
+
+    /// A JSON text component as NBT: an object a compound (its keys in the
+    /// object's order), an array a list, a string a string, a boolean a byte,
+    /// an integer an int.
+    pub fn of_json(v: &serde_json::Value) -> Nbt {
+        use serde_json::Value;
+        match v {
+            Value::Object(o) => Nbt::Compound(
+                o.iter()
+                    .map(|(k, v)| (k.clone(), Nbt::of_json(v)))
+                    .collect(),
+            ),
+            Value::Array(a) => Nbt::list(a.iter().map(Nbt::of_json).collect()),
+            Value::String(s) => Nbt::Str(s.clone()),
+            Value::Bool(b) => Nbt::Byte(i8::from(*b)),
+            Value::Number(n) => Nbt::Int(n.as_i64().unwrap_or(0) as i32),
+            Value::Null => Nbt::Str(String::new()),
+        }
+    }
+
+    fn kind(&self) -> u8 {
+        match self {
+            Nbt::Byte(_) => 1,
+            Nbt::Int(_) => 3,
+            Nbt::Str(_) => 8,
+            Nbt::List(_) => 9,
+            Nbt::Compound(_) => 10,
+        }
+    }
+
+    fn tag(&self) -> Tag {
+        match self {
+            Nbt::Byte(b) => Tag::Byte(*b),
+            Nbt::Int(i) => Tag::Int(*i),
+            Nbt::Str(s) => Tag::Str(s.clone()),
+            Nbt::List(l) => Tag::List(l.iter().map(Nbt::tag).collect()),
+            Nbt::Compound(c) => {
+                Tag::Compound(c.iter().map(|(k, v)| (k.clone(), v.tag())).collect())
+            }
+        }
+    }
+}
 
 /// The tags this writer emits — the subset a minimal world needs, written in
 /// the order they are pushed.
@@ -336,6 +429,7 @@ const AIR: &str = "minecraft:air";
 /// (coordinates 2 mod 4), the point vanilla's own reading never jitters off.
 pub fn encode(
     blocks: &BlockMap,
+    entities: &BlockEntities,
     biome: &dyn Fn([i32; 3]) -> String,
     spawn: [i32; 3],
     ground: &Ground,
@@ -401,14 +495,35 @@ pub fn encode(
                 ])
             })
             .collect();
-        let root = compound(vec![
+        let mut root_entries = vec![
             ("DataVersion", Tag::Int(DATA_VERSION)),
             ("xPos", Tag::Int(*cx)),
             ("zPos", Tag::Int(*cz)),
             ("yPos", Tag::Int(MIN_SECTION)),
             ("Status", Tag::Str("minecraft:full".to_string())),
             ("sections", Tag::List(secs)),
-        ]);
+        ];
+        // spec-0115 §4.3: the chunk's block entities, in cell order, each
+        // `id`, `x`, `y`, `z` and then its own keys — written only where the
+        // chunk has one, so a world that letters nothing is byte-identical.
+        let here: Vec<Tag> = entities
+            .iter()
+            .filter(|(c, _)| c[0].div_euclid(16) == *cx && c[2].div_euclid(16) == *cz)
+            .map(|(c, e)| {
+                let mut kv: Vec<(String, Tag)> = vec![
+                    ("id".to_string(), Tag::Str(e.id.clone())),
+                    ("x".to_string(), Tag::Int(c[0])),
+                    ("y".to_string(), Tag::Int(c[1])),
+                    ("z".to_string(), Tag::Int(c[2])),
+                ];
+                kv.extend(e.data.iter().map(|(k, v)| (k.clone(), v.tag())));
+                Tag::Compound(kv)
+            })
+            .collect();
+        if !here.is_empty() {
+            root_entries.push(("block_entities", Tag::List(here)));
+        }
+        let root = compound(root_entries);
         let mut z =
             flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::new(ZLIB_LEVEL));
         z.write_all(&nbt_root(root)).expect("zlib into memory");
@@ -489,12 +604,13 @@ fn level_dat(spawn: [i32; 3]) -> Vec<u8> {
 /// region file a later configuration does not hold.
 pub fn write(
     blocks: &BlockMap,
+    entities: &BlockEntities,
     biome: &dyn Fn([i32; 3]) -> String,
     spawn: [i32; 3],
     ground: &Ground,
     dir: &Path,
 ) -> std::io::Result<WrittenWorld> {
-    let w = encode(blocks, biome, spawn, ground);
+    let w = encode(blocks, entities, biome, spawn, ground);
     let region = dir.join("region");
     if region.is_dir() {
         for e in std::fs::read_dir(&region)? {
@@ -512,13 +628,17 @@ pub fn write(
 }
 
 /// How many cells of `blocks` hold a block whose picture the pinned core
-/// draws from block-entity NBT a block map does not carry — a sign's text, a
-/// banner's pattern, a head's profile, a lectern's book (spec-0089 §6.2). The
-/// written world draws each blank, and the binding line counts them, so the
-/// count is a measured zero on a campaign that places none.
-pub fn block_entities_omitted(blocks: &BlockMap) -> usize {
+/// draws from block-entity NBT the written world does not carry — an
+/// unlettered sign's text, a banner's pattern, a head's profile, a lectern's
+/// book (spec-0089 §6.2). A cell `entities` letters is not counted (spec-0115
+/// §4.3). The written world draws each counted cell blank, and the binding
+/// line counts them, so the count is a measured zero on a campaign that
+/// places none.
+pub fn block_entities_omitted(blocks: &BlockMap, entities: &BlockEntities) -> usize {
     blocks
-        .values()
+        .iter()
+        .filter(|(c, _)| !entities.contains_key(*c))
+        .map(|(_, s)| s)
         .filter(|s| {
             let id = s.as_str().split('[').next().unwrap_or("");
             let id = id.rsplit(':').next().unwrap_or(id);
@@ -575,7 +695,13 @@ mod tests {
         // to the build floor, everywhere no write reached.
         let mut m = BlockMap::new();
         m.insert([1, 70, 1], BlockState::new("minecraft:stone"));
-        let w = encode(&m, &|_| "minecraft:ocean".to_string(), [0, 71, 0], &g);
+        let w = encode(
+            &m,
+            &BlockEntities::new(),
+            &|_| "minecraft:ocean".to_string(),
+            [0, 71, 0],
+            &g,
+        );
         // 16x16 columns of 127 layers, less the three cells reached above.
         assert_eq!(w.ground, 256 * 127 - 1 - 8, "{}", w.ground);
         let v = encode(

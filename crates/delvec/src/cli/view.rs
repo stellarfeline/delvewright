@@ -233,16 +233,16 @@ pub(crate) fn load_stood(
     (Option<delvec::compiler::view::diag::Diagnostic>, u8),
 > {
     stood_over(campaign_dir, prefabs_dir, json, |plan, world, base| {
+        let load = delvec::compiler::view::beat::load_blocks(plan, world, base);
+        let entities = delvec::compiler::view::beat::load_entities(plan, &load);
         Ok(delvec::compiler::view::beat::Stands {
             stands: Vec::new(),
-            worlds: vec![(
-                delvec::compiler::view::beat::AT_LOAD.to_string(),
-                delvec::compiler::view::beat::load_blocks(plan, world, base),
-            )],
+            worlds: vec![(delvec::compiler::view::beat::AT_LOAD.to_string(), load)],
             laid: vec![(
                 delvec::compiler::view::beat::AT_LOAD.to_string(),
                 delvec::compiler::view::beat::load_laid(plan, world),
             )],
+            entities: vec![(delvec::compiler::view::beat::AT_LOAD.to_string(), entities)],
         })
     })
 }

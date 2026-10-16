@@ -184,6 +184,14 @@ pub struct Plan<'a> {
     /// it, so there are no approved image files to find. A run that has one
     /// attaches it with [`Plan::with_design_files`].
     pub design_files: crate::compiler::design::DesignFiles,
+    /// **The declared-language sidecars** (spec-0115), so the build can hold a
+    /// sign line the document cannot size — a sign a piece's template places —
+    /// to its face in every language (`DW1048`). Default is none: a plan built
+    /// from documents alone has no sidecar behind it, and a run that has them
+    /// attaches them with [`Plan::with_sidecars`].
+    pub sidecars: BTreeMap<String, delvewright_dsl::L10nDoc>,
+    /// Resolved signs (spec-0115), declaration-ordered: each row's cell.
+    pub signs: Vec<SignPlan>,
     /// What the ocean-datum invariant (`DW0344`) examined in this build, printed
     /// as its own line by [`crate::compiler::emit::build`]. `NOT_AN_OCEAN` for
     /// every world that declares another horizon.
@@ -551,7 +559,8 @@ impl<'a> Plan<'a> {
     pub fn relinked(&self, prefabs: &PrefabRegistry, takes: LinkTakes) -> Result<Self, PlanError> {
         Ok(
             Self::build_linked(self.campaign, prefabs, self.perturb.clone(), takes, false)?
-                .with_design_files(self.design_files.clone()),
+                .with_design_files(self.design_files.clone())
+                .with_sidecars(self.sidecars.clone()),
         )
     }
 
@@ -1017,6 +1026,9 @@ impl<'a> Plan<'a> {
         // ---- container fills (spec-0021) ----
         let loot = collect_loot(campaign, &anchors);
 
+        // ---- signs (spec-0115) ----
+        let signs = collect_signs(campaign, &anchors);
+
         // ---- lethal volumes (spec-0031) ----
         let lethal_volumes = collect_lethal_volumes(campaign, &anchors);
 
@@ -1256,6 +1268,8 @@ impl<'a> Plan<'a> {
             blockout,
             surround,
             design_files: crate::compiler::design::DesignFiles::default(),
+            sidecars: BTreeMap::new(),
+            signs,
             waterline,
             face_binding: binding,
         })
@@ -1271,6 +1285,13 @@ impl<'a> Plan<'a> {
     #[must_use]
     pub fn with_design_files(mut self, files: crate::compiler::design::DesignFiles) -> Self {
         self.design_files = files;
+        self
+    }
+
+    /// This plan, holding the campaign's declared-language sidecars (see
+    /// [`Plan::sidecars`]).
+    pub fn with_sidecars(mut self, sidecars: BTreeMap<String, delvewright_dsl::L10nDoc>) -> Self {
+        self.sidecars = sidecars;
         self
     }
 }

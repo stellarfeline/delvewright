@@ -113,3 +113,35 @@ pub(super) fn collect_loot(
         })
         .collect()
 }
+
+/// A resolved sign (spec-0115): the row and the world cell its anchor names.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SignPlan {
+    /// Sign id (`sign/<kebab>`).
+    pub id: String,
+    /// The anchor named by the declaration.
+    pub anchor: String,
+    /// The world cell the sign stands in.
+    pub cell: [i32; 3],
+}
+
+/// Resolve every stage-5 `signs` row to a world cell. An unresolvable anchor is
+/// skipped here and reported by the DSL tier (`DW0142`).
+pub(super) fn collect_signs(
+    campaign: &Campaign,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+) -> Vec<SignPlan> {
+    campaign
+        .quests
+        .content
+        .signs
+        .iter()
+        .filter_map(|s| {
+            Some(SignPlan {
+                id: s.id.as_str().to_string(),
+                anchor: s.anchor.as_str().to_string(),
+                cell: point_any(anchors, s.anchor.as_str())?,
+            })
+        })
+        .collect()
+}

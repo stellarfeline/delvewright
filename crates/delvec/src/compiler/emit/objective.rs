@@ -128,6 +128,9 @@ pub(super) fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec
                         "setblock {} {} {} {}",
                         pos[0], pos[1], pos[2], prop.block
                     ));
+                    // spec-0115: a sign prop in a lettered cell is lettered
+                    // right after the write that places it.
+                    cmds.extend(after_write(plan, pos, pos, &prop.block));
                 } else if o.marker_shown(&plan.campaign.quests.content.guidance) {
                     // Visible, glowing, adventure-safe marker so a human can find the
                     // interact target (M2 fix 3): an `item_display` has no collision,

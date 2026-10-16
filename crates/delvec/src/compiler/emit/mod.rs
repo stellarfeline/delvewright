@@ -76,6 +76,7 @@ mod seal;
 mod sequence;
 mod server;
 mod shortcut;
+pub(crate) mod sign;
 mod stake;
 mod state;
 mod stealth;
@@ -126,6 +127,7 @@ use seal::*;
 use sequence::*;
 pub use server::*;
 use shortcut::*;
+use sign::*;
 use stake::*;
 use state::*;
 pub use stealth::*;
@@ -492,6 +494,38 @@ pub fn build_with_warnings(
         )?;
     }
 
+    // ---- spec-0115: where each sign stands (`DW0431`) and what fits it (`DW1048`) ----
+    //
+    // Off the assembled world, beside the containers: a sign a piece's
+    // template lays is furniture on the same terms. The fit is judged here for
+    // every line, because a template's sign is the one kind no document states;
+    // the kinds a document states were judged at validation by the same
+    // function. The binding line prints whichever way it goes.
+    let sign_gate = {
+        let gate = crate::compiler::sign::prove(plan, &assembled.blocks).map_err(|e| {
+            BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            }
+        })?;
+        eprintln!("{}", crate::compiler::sign::binding_line(plan, &gate));
+        let kinds = crate::compiler::sign::kinds(&gate);
+        let unfit =
+            crate::compiler::textfit::check_sign_lines(plan.campaign, &plan.sidecars, &|id| {
+                kinds.get(id).copied()
+            });
+        if let Some(first) = unfit.first() {
+            for extra in &unfit[1..] {
+                eprintln!("{} [error] {}: {}", extra.code, extra.path, extra.message);
+            }
+            return Err(BuildFailure::Diagnostic {
+                code: crate::compiler::textfit::DW_SIGN_LINE_UNFIT,
+                message: format!("{}: {}", first.path, first.message),
+            });
+        }
+        gate
+    };
+
     // v0.4 navigation planning over the solved voxel grid (spec-0008 addendum):
     // collision-safe `move-npc` walked paths (DW0307) + cutscene air-corridor
     // checks (DW0308). Only built when the campaign uses those verbs, so v0.2/v0.3
@@ -840,6 +874,7 @@ pub fn build_with_warnings(
         stake_table.as_ref(),
         &asm_locks,
         &pulse_gate.rows,
+        &sign_gate,
     );
     // DW1002's write arms over the FINAL function list, read off the shipped
     // commands so what is judged is what is emitted: the load as the server
@@ -975,6 +1010,7 @@ pub fn build_with_warnings(
         &packtest::Proved {
             asm_locks: &asm_locks,
             watch_binding: &watch_binding,
+            signs: &sign_gate,
         },
     );
 
@@ -1292,6 +1328,15 @@ pub fn build_with_warnings(
     }
     // spec-0102 §5.1: one row per declared pulse, the stations the bot listens
     // at included. A campaign that declares none emits no file.
+    // spec-0115 §5.1: one row per declared sign, the cell, the block, the
+    // budget, the writes that place it and every line's measured width.
+    if !plan.signs.is_empty() || !plan.campaign.quests.content.signs.is_empty() {
+        put_json(
+            &mut out,
+            "validation/signs.json",
+            &crate::compiler::sign::ledger(plan, &sign_gate),
+        );
+    }
     if pulse_gate.declared > 0 {
         put_json(&mut out, "validation/pulses.json", &pulse_gate.to_json());
     }

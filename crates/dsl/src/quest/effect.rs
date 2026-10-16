@@ -387,6 +387,8 @@ impl QuestEffect {
             | Verb::Particle { .. }
             // spec-0092's `lightning`.
             | Verb::Lightning { .. }
+            // spec-0115's `letter-sign`.
+            | Verb::LetterSign { .. }
             | Verb::DropStake { .. } => None,
         }
     }

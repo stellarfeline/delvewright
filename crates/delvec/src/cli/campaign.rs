@@ -358,6 +358,28 @@ pub(super) fn validate_loaded(
             diags.extend(delvec::compiler::textfit::check_option_labels(
                 &campaign, &sidecars,
             ));
+            // A sign's line that overruns its face, and a declared face that
+            // says nothing (DW1048, spec-0115). Error tier: the face is the
+            // block's, fixed on every client. Judged here for every sign whose
+            // kind the documents state (a prop, a set-block, a fill-region);
+            // a sign a piece's template lays is judged by the build, which
+            // reads the kind off the assembled world, through this function.
+            diags.extend(delvec::compiler::textfit::check_sign_lines(
+                &campaign,
+                &sidecars,
+                &|id| {
+                    let anchor = campaign
+                        .quests
+                        .content
+                        .signs
+                        .iter()
+                        .find(|s| s.id.as_str() == id)?
+                        .anchor
+                        .clone();
+                    delvewright_dsl::document_sign_block(&campaign, anchor.as_str())
+                        .and_then(delvewright_dsl::SignKind::of)
+                },
+            ));
             // A dialogue option that asks a question leads to a line that can
             // answer it (DW0981), in the English source and every declared
             // sidecar. A document fact, refused where the option is written.
@@ -857,7 +879,10 @@ pub(crate) fn run_build(
             Plan::build_with(&campaign, &prefabs, p.clone())
         }
     };
-    let plan = match built.map(|p| p.with_design_files(loaded.design_files.clone())) {
+    let plan = match built.map(|p| {
+        p.with_design_files(loaded.design_files.clone())
+            .with_sidecars(sidecars.clone())
+    }) {
         Ok(p) => p,
         Err(e) => {
             // Advisories raised before the failure and explaining it (`DW0498`:

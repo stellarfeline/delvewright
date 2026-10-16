@@ -264,19 +264,31 @@ pub fn check_loot_containers(
     if bad.is_empty() {
         return Ok(());
     }
-    Err(Failure {
-        code: DW_LOOT_NOT_A_CONTAINER,
-        message: format!(
-            "{} `loot` declaration(s) do not resolve to a fillable container.\n{}\n\
-             A `loot` entry fills a container the PREFAB placed — it never places one, exactly \
+    Err(refuse_content_cell(
+        &bad,
+        format!(
+            "{} `loot` declaration(s) do not resolve to a fillable container.",
+            bad.len()
+        ),
+        format!(
+            "A `loot` entry fills a container the PREFAB placed — it never places one, exactly \
              as a trap never places its dispenser. `item replace block … container.<n>` against \
              a non-container fails SILENTLY, so this would have shipped as an empty wall where \
-             the stores should be. {remedy}",
-            bad.len(),
-            bad.join("\n"),
-            remedy = container_remedy(available, "the `loot` entry's `anchor`"),
+             the stores should be. {}",
+            container_remedy(available, "the `loot` entry's `anchor`"),
         ),
-    })
+    ))
+}
+
+/// **`DW0431`: content declared for a cell that does not hold the block it
+/// needs** — the one refusal both a `loot` fill and a sign (spec-0115 §6.2)
+/// raise: what was found, one line per offending declaration, then why it
+/// matters and what to do.
+pub(crate) fn refuse_content_cell(bad: &[String], what: String, remedy: String) -> Failure {
+    Failure {
+        code: DW_LOOT_NOT_A_CONTAINER,
+        message: format!("{what}\n{}\n{remedy}", bad.join("\n")),
+    }
 }
 
 /// Build-tier proof: every `collect` objective that **adopts** a container (DSL

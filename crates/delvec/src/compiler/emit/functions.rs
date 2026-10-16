@@ -20,6 +20,7 @@ pub(super) fn emit_functions(
     stake_table: Option<&crate::compiler::stake::StakeTable>,
     asm_locks: &crate::compiler::assembly::Locks,
     pulses: &[crate::compiler::pulse::PulseRow],
+    signs: &crate::compiler::sign::SignGate,
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -768,6 +769,10 @@ pub(super) fn emit_functions(
     // v0.4: summon the interaction entities strike/use environment triggers watch
     // (empty for a campaign with no triggers → byte-identical).
     setup.extend(env_trigger_setup(plan, chrome));
+    // spec-0115: letter each sign a piece's template lays. A sign a trigger's
+    // prop places is lettered by `env_trigger_setup` itself, after its write.
+    // Empty for a campaign that declares no sign → byte-identical.
+    setup.extend(sign_setup(plan, signs));
     // v0.6: fill each trap dispenser payload and summon disarm affordances
     // (spec-0011). Empty for a campaign with no traps → byte-identical.
     setup.extend(trap_setup(plan, trap_gates));
@@ -1290,6 +1295,8 @@ pub(super) fn emit_functions(
     fns.extend(emit_loop_functions(plan));
     // --- spec-0102 pulse functions ---
     fns.extend(emit_pulse_functions(plan, pulses));
+    // --- spec-0115 sign functions ---
+    fns.extend(emit_sign_functions(plan));
     // --- spec-0032 trade and recovery-stake functions ---
     fns.extend(emit_shop_functions(plan));
     fns.extend(emit_stake_functions(plan, stake_table));

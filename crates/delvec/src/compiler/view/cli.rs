@@ -1009,6 +1009,8 @@ struct WorldWritten {
     line: String,
     path: String,
     omitted: usize,
+    /// Lettered signs the world carries as block entities (spec-0115 §4.3).
+    lettered: usize,
 }
 
 /// **The one writer of a configuration's world** (spec-0089 §5): `blocks`
@@ -1028,9 +1030,16 @@ fn write_world(
     for (lo, hi) in stood.stands.laid_in(key) {
         ground.mark_box(*lo, *hi);
     }
-    let written =
-        crate::compiler::view::world::write(blocks, &*stood.biome, stood.spawn, &ground, dir)
-            .map_err(|e| Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", dir.display())))?;
+    let entities = stood.stands.entities_in(key);
+    let written = crate::compiler::view::world::write(
+        blocks,
+        &entities,
+        &*stood.biome,
+        stood.spawn,
+        &ground,
+        dir,
+    )
+    .map_err(|e| Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", dir.display())))?;
     let abs = std::path::absolute(dir)
         .map_err(|e| Diagnostic::error(DW_OUTPUT, format!("resolve {}: {e}", dir.display())))?
         .display()
@@ -1041,7 +1050,8 @@ fn write_world(
             written.chunks, written.cells, written.ground, written.sha256
         ),
         path: abs,
-        omitted: crate::compiler::view::world::block_entities_omitted(blocks),
+        omitted: crate::compiler::view::world::block_entities_omitted(blocks, &entities),
+        lettered: entities.len(),
     })
 }
 
@@ -1078,13 +1088,14 @@ pub fn run_written_world(
                 "world": w.path,
                 "key": key,
                 "block_entities_omitted": w.omitted,
+                "signs_lettered": w.lettered,
             })
         );
     }
     eprintln!("{}", w.line);
     eprintln!(
-        "block entities drawn blank: {} (sign, banner, head, lectern: the written world carries no block-entity NBT)",
-        w.omitted
+        "block entities: {} lettered sign(s) written; {} drawn blank (an unlettered sign, a banner, a head, a lectern: the written world carries no NBT for them)",
+        w.lettered, w.omitted
     );
     ExitCode::SUCCESS
 }

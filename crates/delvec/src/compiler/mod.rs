@@ -193,6 +193,7 @@ pub mod sculk;
 pub mod seating;
 pub mod seeding;
 pub mod served;
+pub mod sign;
 pub mod skinparts;
 pub mod snapshot;
 pub mod solver;

@@ -194,6 +194,12 @@ prefixed_id!(
     /// function, its latch holder, its PackTest templates and its ledger row.
     PulseId, "pulse");
 prefixed_id!(
+    /// Sign id: `sign/<kebab>` (stage-5 `signs` section, spec-0115). Unique
+    /// within the stage-5 sign namespace; it names the sign's l10n keys, its
+    /// PackTest template and its ledger row, and the handle a `letter-sign`
+    /// beat re-letters it by.
+    SignId, "sign");
+prefixed_id!(
     /// Shop id: `shop/<kebab>` (stage-5 `shops` section, DSL v0.10, spec-0032).
     /// Unique within the stage-5 shop namespace; it names the shop's interaction
     /// affordance, its dialog, its `/trigger` routing value and its l10n keys.

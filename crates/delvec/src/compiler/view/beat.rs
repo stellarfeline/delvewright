@@ -189,8 +189,13 @@ pub fn after_key(step: &str, slug: Option<&str>) -> String {
 /// An inclusive box of cells, `(min, max)`.
 pub type Region = ([i32; 3], [i32; 3]);
 
-/// A configuration's bytes and the regions its writes lay.
-pub type Laid = (BlockMap, Vec<Region>);
+/// A configuration's bytes, the regions its writes lay, and the block
+/// entities its written world carries (spec-0115 §4.3).
+pub type Laid = (
+    BlockMap,
+    Vec<Region>,
+    crate::compiler::view::world::BlockEntities,
+);
 
 /// What a set of cameras stands in: the load map, and per distinct key the
 /// configuration's bytes.
@@ -204,6 +209,9 @@ pub struct Stands {
     /// ([`crate::compiler::nav::Configuration::laid_regions`]): the writer
     /// holds the level generator's block out of them.
     pub laid: Vec<(String, Vec<Region>)>,
+    /// Per distinct key, the block entities its world carries: every
+    /// lettered sign standing in it (spec-0115 §4.3).
+    pub entities: Vec<(String, crate::compiler::view::world::BlockEntities)>,
 }
 
 impl Stands {
@@ -214,6 +222,16 @@ impl Stands {
             .iter()
             .find(|(k, _)| k == key)
             .map_or(&[], |(_, r)| r.as_slice())
+    }
+
+    /// The block entities world `key` carries (none for a key it does not
+    /// hold).
+    pub fn entities_in(&self, key: &str) -> crate::compiler::view::world::BlockEntities {
+        self.entities
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, e)| e.clone())
+            .unwrap_or_default()
     }
 }
 
@@ -418,8 +436,18 @@ pub fn stand(
             cells_moved: moved,
             unforced: cfg.unforced_writes(),
         },
-        Some((cfg.blocks(base), cfg.laid_regions())),
+        {
+            let blocks = cfg.blocks(base);
+            let entities = crate::compiler::sign::entities_at(plan, &blocks, &path.steps, i + 1);
+            Some((blocks, cfg.laid_regions(), entities))
+        },
     ))
+}
+
+/// The block entities the load world carries: every lettered sign standing
+/// at load, as declared (spec-0115 §4.3).
+pub fn load_entities(plan: &Plan, load: &BlockMap) -> crate::compiler::view::world::BlockEntities {
+    crate::compiler::sign::entities_at(plan, load, &plan.critical_path, 0)
 }
 
 /// Where every camera stands, and one block map per distinct key — the load
@@ -438,14 +466,22 @@ pub fn stands(
         stands: Vec::new(),
         worlds: Vec::new(),
         laid: Vec::new(),
+        entities: Vec::new(),
     };
     for cam in cameras {
         let mut branches = || cache.get_or_insert_with(|| branch_paths(plan)).clone();
         let (s, blocks) = stand(plan, world, base, &load, &critical, &mut branches, cam)?;
         if !out.worlds.iter().any(|(k, _)| *k == s.key) {
-            let (map, laid) = blocks.unwrap_or_else(|| (load.clone(), load_laid(plan, world)));
+            let (map, laid, entities) = blocks.unwrap_or_else(|| {
+                (
+                    load.clone(),
+                    load_laid(plan, world),
+                    load_entities(plan, &load),
+                )
+            });
             out.worlds.push((s.key.clone(), map));
             out.laid.push((s.key.clone(), laid));
+            out.entities.push((s.key.clone(), entities));
         }
         out.stands.push(s);
     }
