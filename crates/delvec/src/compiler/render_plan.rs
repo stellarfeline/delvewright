@@ -22,8 +22,10 @@
 //! Every shot states the world its frame stands in (`world`: `at-load`, or
 //! `after-<step>` — a key of `validation/worlds/`), the clock it is of (`sky`:
 //! `{time, daytime_ticks, weather, set_by}`) and the mode it is drawn in
-//! (`mode`: `quick` for every review kind). A POV shot stands in its leg's
-//! configuration, every other kind at load
+//! (`mode`: `quick` for every review kind). A frame stands in the
+//! configuration in which the player meets what it shows: a POV shot in its
+//! leg's, an `interact` shot in the arrival at its objective's step (at load
+//! when no critical-path step does the objective), every other kind at load
 //! ([`crate::compiler::view::review::frame_worlds`]).
 //!
 //! ## Determinism
@@ -1174,10 +1176,14 @@ pub fn render_plan(
         let base = centre(pos);
         let eye = [base[0] + 2.5, base[1] + 3.0, base[2] + 2.5];
         let look = [base[0], base[1] + 1.0, base[2]];
-        let mut expect = vec![
-            Value::String("glowing lantern marker visible at the interact anchor".into()),
-            Value::String("interaction hitbox present — objective is completable here".into()),
-        ];
+        // spec-0112 §3 item 3: the frame stands where the player meets the
+        // thing — the arrival at the objective's own critical-path step, whose
+        // configuration holds every placement its quest's activation made.
+        let step = plan.objective_steps.get(&obj_id).copied();
+        let world = step.map_or(at_load, |s| s.min(frames.arrivals.len() - 1));
+        let mut expect = find_objective(c, &obj_id)
+            .map(|o| interact_expect(c, o, step.is_some()))
+            .unwrap_or_default();
         if let Some(h) = hint {
             expect.push(Value::String(format!(
                 "matches objective hint: {}",
@@ -1195,7 +1201,7 @@ pub fn render_plan(
             expect,
             stamped: false,
             aim: None,
-            world: at_load,
+            world,
         });
     }
 
@@ -1562,6 +1568,50 @@ fn piece_is_lit(prefabs: &PrefabRegistry, prefab_id: &str) -> Option<bool> {
             .is_measurement()
             .then_some(matches!(profile, LightingProfile::Lit))
     })
+}
+
+/// **What an `interact` frame is asked to show, from what the objective is**:
+/// its `prop`'s block where it has one, the glowing lantern marker where it is
+/// marked and has none, and nothing at the anchor otherwise; the hitbox, or the
+/// prop a hand presses that stands in its place (spec-0093 §6.5). `on_path`
+/// is whether a critical-path step does the objective: when none does, the
+/// frame stands at load, before its quest has placed anything, and says so.
+fn interact_expect(c: &Campaign, o: &Objective, on_path: bool) -> Vec<Value> {
+    let mut out = Vec::new();
+    if !on_path {
+        out.push(Value::String(
+            "no critical-path step does this objective: the frame stands at load, before its \
+             quest places anything"
+                .into(),
+        ));
+    }
+    match o.prop() {
+        Some(p) if on_path => out.push(Value::String(format!(
+            "`{}` stands at the interact anchor — the thing the objective is done to",
+            p.block
+        ))),
+        Some(p) => out.push(Value::String(format!(
+            "`{}` is placed at the interact anchor when its quest activates — not in this frame",
+            p.block
+        ))),
+        None if o.marker_shown(&c.quests.content.guidance) => out.push(Value::String(
+            "glowing lantern marker visible at the interact anchor".into(),
+        )),
+        None => out.push(Value::String(
+            "no marker at the interact anchor (the objective is unmarked) — the place itself is \
+             what the player finds"
+                .into(),
+        )),
+    }
+    out.push(Value::String(
+        match crate::compiler::pressable::interact_block(o) {
+            Some(b) => format!(
+                "pressing the `{b}` completes the objective — no hitbox stands in front of it"
+            ),
+            None => "interaction hitbox present — objective is completable here".to_string(),
+        },
+    ));
+    out
 }
 
 /// `(objective_id, anchor, area, hint)` for every `interact` objective, in

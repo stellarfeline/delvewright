@@ -547,7 +547,11 @@ fn a_prop_objectives_interact_frame_stands_in_the_world_that_holds_the_prop() {
 
     // The world the frame stands in holds the prop at its cell.
     let w = out.join(format!("validation/worlds/{key}"));
-    let (x, y, z) = (cell[0].to_string(), cell[1].to_string(), cell[2].to_string());
+    let (x, y, z) = (
+        cell[0].to_string(),
+        cell[1].to_string(),
+        cell[2].to_string(),
+    );
     let got = anvil(&["cells", w.to_str().unwrap(), &x, &y, &z, &x, &y, &z]);
     let id = |s: &str| s.split('[').next().unwrap().to_string();
     assert_eq!(

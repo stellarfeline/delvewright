@@ -3454,8 +3454,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   list through one `push` that records the eye from the same position it writes
   into the camera. Each shot names the world it stands in (`world`): the
   configuration the critical path arrives under at its arrival — `at-load` for
-  the `spawn`, `interior`, `seam`, `npc`, `interact` and `gate` kinds, the leg's
-  arrival for a `pov`, the firing step's arrival for a `cutscene` — and its eye
+  the `spawn`, `interior`, `seam`, `npc` and `gate` kinds, the leg's arrival
+  for a `pov`, the firing step's arrival for a `cutscene`, the arrival at its
+  objective's own step for an `interact` (so a `prop` its quest's activation
+  places stands in its frame; `at-load`, said in its `expect`, when no
+  critical-path step does the objective) — and its eye
   is proven against that configuration's `World` (`Configuration::world`), one
   per distinct arrival. Six kinds place their camera at a fixed stand-off from a
   subject; such a camera whose own cell is occupied, **or whose sight line to its
