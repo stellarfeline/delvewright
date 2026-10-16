@@ -205,10 +205,7 @@ fn faces_of(base: &World, region: ([i32; 3], [i32; 3])) -> Option<Faces> {
 
 /// Whether a body in `c` is in water: afloat at its top or under it.
 fn wet(w: &World, c: [i32; 3]) -> bool {
-    matches!(
-        w.rest_kind(c),
-        Some(RestKind::Afloat | RestKind::Submerged)
-    )
+    matches!(w.rest_kind(c), Some(RestKind::Afloat | RestKind::Submerged))
 }
 
 /// An escape path: the cells it passes, and the edge of the reach graph that
@@ -335,7 +332,14 @@ fn path_words(w: &World, route: &Path, others: &[NamedGate]) -> String {
     let moves: Vec<([i32; 3], [i32; 3], &'static str, String)> = path
         .iter()
         .zip(&route.edges)
-        .map(|(&from, e)| (from, e.to, move_kind(w, from, e), movement_words(w, from, e)))
+        .map(|(&from, e)| {
+            (
+                from,
+                e.to,
+                move_kind(w, from, e),
+                movement_words(w, from, e),
+            )
+        })
         .collect();
     let mut kinds: Vec<(&'static str, usize)> = Vec::new();
     for (_, _, k, _) in &moves {
@@ -692,7 +696,9 @@ pub(super) fn verify_gates_separate(
         if !b.swims
             && let Some(wet) = escape(
                 w,
-                closures[*ci].as_ref().expect("a configuration that got round a gate keeps its closure"),
+                closures[*ci]
+                    .as_ref()
+                    .expect("a configuration that got round a gate keeps its closure"),
                 &b.near,
                 &b.far,
                 gates[b.gate].region,
