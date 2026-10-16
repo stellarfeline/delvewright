@@ -322,7 +322,11 @@ pub fn check_rest(blocks: &BlockMap, writes: &[Write]) -> (RestBinding, Option<F
 
 /// Every block a cell may hold: the as-placed one (air when the map holds
 /// none), then every block a runtime write may lay there.
-pub(crate) fn possible<'a>(blocks: &'a BlockMap, writes: &'a [Write], c: [i32; 3]) -> Vec<(&'a str, String)> {
+pub(crate) fn possible<'a>(
+    blocks: &'a BlockMap,
+    writes: &'a [Write],
+    c: [i32; 3],
+) -> Vec<(&'a str, String)> {
     let mut out = vec![(
         blocks.get(&c).map_or("minecraft:air", |s| s.as_str()),
         "in the world as placed".to_string(),

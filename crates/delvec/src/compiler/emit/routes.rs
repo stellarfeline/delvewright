@@ -533,7 +533,8 @@ pub(super) fn prove_world(
             // blocks and the plan, never a route. The line prints before the
             // verdict, zeroes included, and the ledger is written beside it.
             {
-                let (binding, refused) = crate::compiler::gatesignal::check(plan, blocks, &relight.placements);
+                let (binding, refused) =
+                    crate::compiler::gatesignal::check(plan, blocks, &relight.placements);
                 eprintln!("{}", binding.line());
                 put_json(out, "validation/gate-signal.json", &binding.to_json());
                 if let Some(f) = refused {
