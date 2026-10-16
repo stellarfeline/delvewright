@@ -2936,6 +2936,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   pass does.
   **Emitted only for a campaign that declares a volume**, so a file that exists
   and reports zero is a finding rather than an absence.
+- `<out>/validation/act-gate.json` (every English build; a `--lang` bake has swapped its titles out of the lexicon's language): the `DW1045` check's **binding ledger** (`compiler::telling::ActBinding`): `objectives`, `titled`, `judged` (also as `examined`), `unknown` (each `{path, title}`), `untitled`, `refused`. The gallery coverage gate reads it through the shared `examined` rule.
 - `<out>/validation/cues.json` (every build): the engine's quest cues for the
   bot — `cues {announce, complete, campaign}` (the sound events), the `volume`
   and `pitch` they play at (1, 1), their `range` (`pulse::BASE_RANGE` at that
