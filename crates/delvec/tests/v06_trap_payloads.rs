@@ -334,7 +334,14 @@ fn a_payload_trap_emits_edge_triggered_detection() {
         &[gallery(), killzone()],
     )
     .expect("builds");
-    let tick = fn_body(&out, "tick");
+    let main_tick = fn_body(&out, "tick");
+    assert!(
+        main_tick
+            .lines()
+            .any(|l| l.trim() == "function hello-world:trap_detect"),
+        "the tick must run the detection:\n{main_tick}"
+    );
+    let tick = fn_body(&out, "trap_detect");
     assert!(
         tick.contains(
             "execute unless score #trapfire_stair_volley dw.sys matches 1 if entity \
