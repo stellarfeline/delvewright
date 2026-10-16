@@ -9,7 +9,7 @@
 // in that window and, when the notice names a sound, that the sound arrived at
 // the bot's own position after the warp — where a player hears the arrival.
 //
-// The compiler states the text and the sound (`validation/containers.json`, its
+// The compiler states the text and the sound (`validation/holders.json`, its
 // `notice`); the harness derives nothing.
 //
 // Assertions and bookkeeping only — no game logic (CLAUDE.md).
@@ -19,7 +19,7 @@ import path from "node:path";
 import { bareSound, heardAt, SOUND_POS_TOLERANCE } from "./sound-heard.ts";
 
 /** Where the ledger sits, relative to the critical path's directory. */
-export const CONTAINER_LEDGER_SUBPATH = ["validation", "containers.json"] as const;
+export const CONTAINER_LEDGER_SUBPATH = ["validation", "holders.json"] as const;
 
 /** The notice as the compiler resolved it. */
 export interface Notice {
@@ -47,7 +47,7 @@ export class ContainerLedgerParseError extends Error {
 }
 
 function bad(detail: string): never {
-  throw new ContainerLedgerParseError(`containers.json ${detail}`);
+  throw new ContainerLedgerParseError(`holders.json ${detail}`);
 }
 
 const STYLES = new Set(["chat", "title", "subtitle", "art", "actionbar"]);

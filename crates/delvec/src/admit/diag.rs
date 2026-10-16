@@ -5,7 +5,7 @@
 //!
 //! | Code | Meaning |
 //! | --- | --- |
-//! | `DW0730` | audit: a palette block is not in the allowlist. |
+//! | `DW0730` | audit: a palette block, or a template entity's kind, is not in the allowlist. |
 //! | `DW0731` | audit: a hard-forbidden code-injection vector (command/structure block, NBT-bearing spawner, or embedded `Command`). |
 //! | `DW0732` | input error (unreadable/unparseable `.nbt` or metadata/JSON). |
 //! | `DW0733` | audit: a palette block state does not exist in the pinned Minecraft version, in a template claiming the pin's `DataVersion` (or later) — no datafix runs, the block loads as air. |
@@ -19,6 +19,7 @@
 //! | `DW0752` | lighting probe: the probe bound to ZERO player-reachable roofed cells. |
 //! | `DW0753` | `--write` cannot establish provenance: there is no prefab metadata to edit. |
 //! | `DW0760` | gallery emission / curation failure. |
+//! | `DW1036` | audit: a template's item holder carries a key the engine owns (spec-0111). |
 //!
 //! plus the spatial contract's second door, in the `DW078x` block spec-0036
 //! owns: `DW0782` (the contract disagrees with the blocks) and `DW0783` (the
@@ -34,6 +35,12 @@ delvewright_dsl::dw_code! {
 }
 delvewright_dsl::dw_code! {
     pub const DW_FORBIDDEN: &str = "DW0731";
+}
+delvewright_dsl::dw_code! {
+    /// (spec-0111 §6.2) A piece's item holder carries a key the engine owns —
+    /// the item, a lock flag, the drop chance, the slot locks, the tags or the
+    /// identity — rather than only what the holder looks like.
+    pub const DW_HOLDER_OWNED: &str = "DW1036";
 }
 delvewright_dsl::dw_code! {
     pub const DW_INPUT: &str = "DW0732";

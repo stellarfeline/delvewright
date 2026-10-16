@@ -43,7 +43,12 @@ pub(super) fn has_collect_objective(c: &delvewright_dsl::Campaign) -> bool {
 /// `reach` glowing end-rod marker. Empty for objectives with no prop (talk-to,
 /// kill) or an unresolvable anchor — both the `tick` activation driver and the
 /// `activate_<obj>` function key off this being non-empty, so they never diverge.
-pub(super) fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
+pub(super) fn activation_commands(
+    plan: &Plan,
+    holders: &[crate::compiler::holders::OwnedHolder],
+    area: &str,
+    o: &Objective,
+) -> Vec<String> {
     let mut cmds = Vec::new();
     match o {
         Objective::Collect {
@@ -63,17 +68,30 @@ pub(super) fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec
             if dropped_by.is_some() {
                 return cmds;
             }
+            // spec-0111 §3.4: an adopted holder ENTITY — a frame or a stand
+            // the piece carries — is filled by `item replace entity` in its
+            // first slot, a frame unfrozen to give it up; the engine summoned
+            // the body at `setup_finish`.
+            let stack = format!(
+                "{item}{} {count}",
+                item_component_tail(item, item_name.as_deref())
+            );
+            if let Some(lines) = collect_holder_activation(holders, id.as_str(), &stack) {
+                return lines;
+            }
             // v0.8: an ADOPTED container is prefab furniture standing
             // in the room already — fill it where it stands, place nothing. Absent
-            // `container`, the compiler keeps conjuring its own chest at the
+            // `holder`, the compiler keeps conjuring its own chest at the
             // anchor exactly as it always has. The adopted cell comes from
             // `plan.collect_fills`, the same resolution `DW0438` proved.
             let adopted = plan
                 .collect_fills
                 .iter()
-                .find(|f| f.objective_id == id.as_str())
-                .map(|f| f.cell);
-            let Some(pos) = adopted.or_else(|| plan.point(area, anchor.as_str())) else {
+                .find(|f| f.objective_id == id.as_str());
+            let Some(pos) = adopted
+                .map(|f| f.cell)
+                .or_else(|| plan.point(area, anchor.as_str()))
+            else {
                 return cmds;
             };
             if adopted.is_none() {
@@ -82,19 +100,28 @@ pub(super) fn activation_commands(plan: &Plan, area: &str, o: &Objective) -> Vec
                     pos[0], pos[1], pos[2]
                 ));
             }
-            // The objective's own stack lands in `container.0`; each padding stack
-            // repeats it in the slots after it, so the container READS full
-            // (vanilla fullness is occupied slots, not stack size). Positional and
-            // total — no RNG, nothing to reseed (ADR-0006). A campaign with
-            // neither a name nor padding emits the single pre-0.8 line, byte for
-            // byte.
-            let stack = format!(
-                "{item}{} {count}",
-                item_component_tail(item, item_name.as_deref())
+            // The objective's own stack lands in the slot the collect names
+            // (`container.0` when it names none); each padding stack repeats it
+            // in the slots after it, so the container READS full (vanilla
+            // fullness is occupied slots, not stack size). Positional and total
+            // — no RNG, nothing to reseed (ADR-0006). The adopted fill's slots
+            // are the holder class's one landing rule (spec-0111 §3.4).
+            let slots: Vec<String> = adopted.map_or_else(
+                || {
+                    (0..=*fill_count)
+                        .map(|n| format!("container.{n}"))
+                        .collect()
+                },
+                |f| {
+                    crate::compiler::holders::collect_slots(
+                        delvewright_dsl::holders::HolderFamily::Container,
+                        f,
+                    )
+                },
             );
-            for slot in 0..=*fill_count {
+            for slot in slots {
                 cmds.push(format!(
-                    "item replace block {} {} {} container.{slot} with {stack}",
+                    "item replace block {} {} {} {slot} with {stack}",
                     pos[0], pos[1], pos[2]
                 ));
             }

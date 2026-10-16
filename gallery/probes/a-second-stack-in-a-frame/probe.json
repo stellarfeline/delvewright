@@ -1,0 +1,21 @@
+{
+  "code": "DW0431",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/loot/3/items/0/slot"
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/loot/3/items/-",
+      "value": {
+        "count": 1,
+        "item": "minecraft:paper"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The glow frame's fill given a second stack, both positional. A frame holds one item, `contents`; the second stack has no slot to land in, and the fill is refused as a fill wider than its holder, exactly as a 28th stack in a chest is."
+}

@@ -2492,7 +2492,7 @@ fn heart_dir(root: &Path) -> PathBuf {
                 "item": "minecraft:heart_of_the_sea",
                 "count": 1,
                 "anchor": "anchor/heart",
-                "container": "anchor/heart",
+                "holder": "anchor/heart",
                 "title": "Take the heart",
                 "item_name": "The Heart",
                 "after": ["obj/enter-the-cell"],
@@ -2538,7 +2538,7 @@ fn a_blockout_build_defers_a_container_its_place_owes_and_counts_it() {
     assert_eq!(code, Some(0), "{err}");
     assert!(
         err.contains(
-            "container binding: 1 container fill(s) (0 loot, 1 adopting collect), 0 judged \
+            "holder binding: 1 fill(s) (0 loot, 1 adopting collect; by kind: none: 1), 0 judged \
              against the assembled world, 1 deferred"
         ),
         "the deferral is counted against its denominator: {err}"
@@ -2645,7 +2645,7 @@ fn a_blockout_build_defers_loot_its_place_owes_by_the_same_rule() {
     assert_eq!(code, Some(0), "{err}");
     assert!(
         err.contains(
-            "container binding: 2 container fill(s) (1 loot, 1 adopting collect), 0 judged \
+            "holder binding: 2 fill(s) (1 loot, 1 adopting collect; by kind: none: 2), 0 judged \
              against the assembled world, 2 deferred"
         ),
         "{err}"
@@ -2725,11 +2725,11 @@ fn a_blockout_build_defers_a_notice_its_places_owe_and_says_so() {
     assert_eq!(code, Some(0), "{err}");
     let line = err
         .lines()
-        .find(|l| l.starts_with("container census:"))
+        .find(|l| l.starts_with("holder census:"))
         .unwrap_or_else(|| panic!("no census line: {err}"));
     let n = every_place().len();
     assert!(
-        line.contains("0 container cell(s)") && line.contains("notice declared"),
+        line.contains("0 holder(s)") && line.contains("notice declared"),
         "{line}"
     );
     assert!(

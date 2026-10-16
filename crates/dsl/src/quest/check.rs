@@ -921,7 +921,7 @@ pub(crate) fn quest_reference_checks(
                     item,
                     count,
                     anchor,
-                    container,
+                    holder,
                     dropped_by,
                     fill_count,
                     ..
@@ -969,8 +969,8 @@ pub(crate) fn quest_reference_checks(
                     // v0.8: the adopted container's anchor must exist
                     // too. Whether its CELL really holds a chest/barrel needs the
                     // assembled world and is the build-tier `DW0438`.
-                    if let Some(cont) = container {
-                        anchor_resolves(&providers, set, cont, i, j, "container", d);
+                    if let Some(cont) = holder {
+                        anchor_resolves(&providers, set, cont, i, j, "holder", d);
                     }
                     // v0.8: the fill is positional — the required stack
                     // in `container.0` plus one padding stack per slot after it —

@@ -439,6 +439,16 @@ pub struct World {
     /// reported as the objectives it drowns rather than as a list of
     /// coordinates.
     pub(in crate::compiler::nav) objective_cells: Vec<(String, [i32; 3])>,
+    /// **Where the party stands to take from a holder entity** (spec-0111
+    /// §5.2): each `collect`-claimed holder's cell, paired with the stance cell
+    /// the stance pass chose for it ([`crate::compiler::holders::collect_stances`]).
+    /// A leg whose endpoint is that holder's cell ends at the stance
+    /// ([`World::snap_endpoint`]), never in the holder's body, which the block
+    /// model reads as air. A fact of the template bytes, set after the world is
+    /// built ([`World::with_holder_stances`]), for the reason `world_load_seals`
+    /// lives here and not on the plan. Empty on every campaign with no holder
+    /// collect, which keeps every route byte-identical.
+    pub(in crate::compiler::nav) holder_stances: BTreeMap<[i32; 3], [i32; 3]>,
 }
 
 /// The block-derived cell sets of a [`World`], as [`World::from_occupancy`]
@@ -751,6 +761,7 @@ impl World {
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            holder_stances: self.holder_stances.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1021,6 +1032,7 @@ impl World {
             base: premises.base,
             built: premises.built,
             objective_cells: premises.objective_cells,
+            holder_stances: BTreeMap::new(),
         }
     }
 
@@ -1046,6 +1058,14 @@ impl World {
     /// this (spec-0060 §10.7).
     pub fn base(&self) -> &'static str {
         self.base
+    }
+
+    /// This world with the stance each holder `collect` is taken from
+    /// ([`World::holder_stances`], spec-0111 §5.2): holder cell → stance cell.
+    #[must_use]
+    pub fn with_holder_stances(mut self, stances: BTreeMap<[i32; 3], [i32; 3]>) -> Self {
+        self.holder_stances = stances;
+        self
     }
 
     pub fn with_ambient(mut self, ambient: Ambient, built: Vec<BuiltPiece>) -> Self {
@@ -1118,6 +1138,7 @@ impl World {
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            holder_stances: self.holder_stances.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1167,6 +1188,7 @@ impl World {
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            holder_stances: self.holder_stances.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1228,6 +1250,7 @@ impl World {
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            holder_stances: self.holder_stances.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1287,6 +1310,7 @@ impl World {
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            holder_stances: self.holder_stances.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1393,6 +1417,7 @@ impl World {
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            holder_stances: self.holder_stances.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1472,6 +1497,7 @@ impl World {
             climb: self.climb.clone(),
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
+            holder_stances: self.holder_stances.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),

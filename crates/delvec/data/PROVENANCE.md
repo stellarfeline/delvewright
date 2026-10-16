@@ -579,6 +579,26 @@ not third-party reconstructions.
   `SimpleParticleType`; at 1.21.11, 115 types, 97 simple, 18 taking options —
   and refuses when that reading disagrees with the table in any id or answer.
 
+### The item-holder table, read from the jar and written in source
+
+`delvewright_dsl::holders` (spec-0111) holds the item-holder class's entity
+families — `minecraft:item_frame`, `minecraft:glow_item_frame`,
+`minecraft:armor_stand` — with each kind's scene keys, hitbox, slot
+vocabulary, the stand's click bands and filter bits, and the owned-key rules.
+It is not a vendored file: it was read from the pinned 1.21.11 dedicated
+server jar — the bundled `META-INF/versions/1.21.11/server-1.21.11.jar`,
+sha256 `ec47239a8de246335e1d54f6ac319bd35641778eb4b6a6da06372840d02fcebc`,
+from the dedicated-server download `versions.toml` pins — disassembled with
+`javap -c -p` and named through Mojang's official 1.21.11 server mappings
+(`server.txt`, sha1 `5621e9253f05fd57872bbe7f8ddf5f9a7d525955`): the save keys
+from `ItemFrame.readAdditionalSaveData`, `BlockAttachedEntity.readAdditionalSaveData`
+and `ArmorStand.readAdditionalSaveData`; the slot names from `SlotRanges`; the
+filter bits from `EquipmentSlot.<clinit>`; the bands from
+`ArmorStand.getClickedSlot`; the hitboxes from `EntityType.<clinit>`. Every
+entity id is held to the vendored `entities-1.21.11.json` by a test
+(`crates/delvec/tests/holder_table.rs`) that shares no configuration with that
+reading.
+
 ### What vanilla data does NOT provide (and what the compiler does about it)
 
 Mojang publishes no per-entity default attributes — mob base `max_health` and

@@ -1,0 +1,50 @@
+{
+  "code": "DW1037",
+  "patch": [
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/7/edits/-",
+      "value": {
+        "name": "region/stand-foot",
+        "shape": {
+          "frame": {
+            "anchor": "anchor/sword-stand",
+            "kind": "anchor-relative"
+          },
+          "kind": "box",
+          "max": [
+            0,
+            -1,
+            0
+          ],
+          "min": [
+            0,
+            -1,
+            0
+          ]
+        },
+        "verb": "select"
+      }
+    },
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/7/edits/-",
+      "value": {
+        "recipe": {
+          "blocks": [
+            {
+              "block": "minecraft:air",
+              "weight": 1.0
+            }
+          ]
+        },
+        "region": "region/stand-foot",
+        "verb": "fill"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The block the armour stand stands on, cleared to air by a stage-7 batch. The stand would drop the moment it is summoned, with the helmet and the sword the fill gave it; refused as the unsupported arm, naming the cell and what the game would do."
+}

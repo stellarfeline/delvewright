@@ -40,9 +40,18 @@ pub(super) fn emit_loot_packtests(
         // fill nor a shifted slot assignment can pass. Each score is this
         // test's own and is zeroed before it is stored, so a value another
         // template left on a shared holder can never answer for this one.
+        // A named stack's slot is its own (spec-0111 §3.3); an unnamed one's
+        // is its position.
+        let slot_of = |n: usize, it: &crate::compiler::plan::LootItemPlan| {
+            it.slot
+                .as_deref()
+                .and_then(delvewright_dsl::holders::container_index)
+                .unwrap_or(n)
+        };
+        let last = l.items.len() - 1;
         let checks = [
-            (0usize, &l.items[0]),
-            (l.items.len() - 1, l.items.last().unwrap()),
+            (slot_of(0, &l.items[0]), &l.items[0]),
+            (slot_of(last, &l.items[last]), &l.items[last]),
         ];
         for (n, (slot, it)) in checks.iter().enumerate() {
             let holder = format!("#loot_{short}_{n}");

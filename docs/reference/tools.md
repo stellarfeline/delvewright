@@ -2092,7 +2092,7 @@ Shell entry points:
 ## 8. Harness (`harness/`) · CI
 
 The mineflayer bot the `validate` profile runs, plus the spec-0006 note bot and
-the spec-0019 shot-calibration bot. It contains zero campaign logic — it reads `critical-path.json` and asserts.
+the spec-0019 shot-calibration bot. It contains zero campaign logic — it reads `critical-path.json` and asserts. A format-5 `collect` step with `holder` (spec-0111 §5.4) is taken as a player takes it: the bot walks to the step's `stance`, replaying the proven leg whose `to` is the step's cell (`walkTo`'s `legTo`), finds the frame or stand nearest the step's cell by kind (the client cannot read entity tags), and either hits a frame (`bot.attack`), asserts three ticks later — past the freeze, before the drop's pickup delay lets the objective complete and a carry move the bot away — that the frame still hangs there, picks the popped item up, and asserts no frame item entered its inventory, or clicks a stand with an empty hand at `click_height` through `bot.activateEntityAt` (mineflayer 4.37.1's `use_entity` with `mouse: 2`, which the server reads as `interact_at`; the swap only happens on that packet) — the step passing on the objective's own marker (`harness/src/executor/collect.ts`).
 
 ```
 npm --prefix harness run typecheck      # tsc --noEmit

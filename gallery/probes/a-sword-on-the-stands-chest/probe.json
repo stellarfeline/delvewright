@@ -1,0 +1,13 @@
+{
+  "code": "DW1035",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/loot/4/items/1/slot",
+      "value": "armor.chest"
+    }
+  ],
+  "units": [],
+  "why": "The armour stand's sword, moved from its hand to its chest slot. The pinned game puts a stack in `armor.chest` only when its `equippable` slot is `chest`, and a sword's is not, so `item replace entity … armor.chest` would be refused and the stand would stand there with an empty chest. Refused where the fill is written, naming the slot, the stack and the slots that take any stack. It declares no unit: `LootItem.slot` is bound in the gallery proper."
+}

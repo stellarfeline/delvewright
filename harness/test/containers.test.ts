@@ -141,7 +141,7 @@ test("the ledger loads from beside the critical path, and its absence is undefin
     const cp = path.join(dir, "critical-path.json");
     assert.equal(await loadContainerLedgerForCriticalPath(cp), undefined);
     await mkdir(path.join(dir, "validation"));
-    await writeFile(path.join(dir, "validation", "containers.json"), JSON.stringify(chatLedger));
+    await writeFile(path.join(dir, "validation", "holders.json"), JSON.stringify(chatLedger));
     const l = await loadContainerLedgerForCriticalPath(cp);
     assert.equal(l?.notice?.text, TEXT);
   } finally {

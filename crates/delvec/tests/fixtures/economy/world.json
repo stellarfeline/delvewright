@@ -16,6 +16,6 @@
     "title": "The Ember Toll",
     "weather": "clear"
   },
-  "dsl_version": "0.43.0",
+  "dsl_version": "0.49.0",
   "stage": "world"
 }

@@ -1,0 +1,222 @@
+{
+  "code": "DW1037",
+  "patch": [
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/7/edits/-",
+      "value": {
+        "name": "region/map-shell-0",
+        "shape": {
+          "frame": {
+            "anchor": "anchor/map-frame",
+            "kind": "anchor-relative"
+          },
+          "kind": "box",
+          "max": [
+            1,
+            1,
+            -1
+          ],
+          "min": [
+            -1,
+            -1,
+            -1
+          ]
+        },
+        "verb": "select"
+      }
+    },
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/7/edits/-",
+      "value": {
+        "recipe": {
+          "blocks": [
+            {
+              "block": "minecraft:stone",
+              "weight": 1.0
+            }
+          ]
+        },
+        "region": "region/map-shell-0",
+        "verb": "fill"
+      }
+    },
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/7/edits/-",
+      "value": {
+        "name": "region/map-shell-1",
+        "shape": {
+          "frame": {
+            "anchor": "anchor/map-frame",
+            "kind": "anchor-relative"
+          },
+          "kind": "box",
+          "max": [
+            0,
+            -1,
+            0
+          ],
+          "min": [
+            0,
+            -1,
+            0
+          ]
+        },
+        "verb": "select"
+      }
+    },
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/7/edits/-",
+      "value": {
+        "recipe": {
+          "blocks": [
+            {
+              "block": "minecraft:stone",
+              "weight": 1.0
+            }
+          ]
+        },
+        "region": "region/map-shell-1",
+        "verb": "fill"
+      }
+    },
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/7/edits/-",
+      "value": {
+        "name": "region/map-shell-2",
+        "shape": {
+          "frame": {
+            "anchor": "anchor/map-frame",
+            "kind": "anchor-relative"
+          },
+          "kind": "box",
+          "max": [
+            0,
+            1,
+            0
+          ],
+          "min": [
+            0,
+            1,
+            0
+          ]
+        },
+        "verb": "select"
+      }
+    },
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/7/edits/-",
+      "value": {
+        "recipe": {
+          "blocks": [
+            {
+              "block": "minecraft:stone",
+              "weight": 1.0
+            }
+          ]
+        },
+        "region": "region/map-shell-2",
+        "verb": "fill"
+      }
+    },
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/7/edits/-",
+      "value": {
+        "name": "region/map-shell-3",
+        "shape": {
+          "frame": {
+            "anchor": "anchor/map-frame",
+            "kind": "anchor-relative"
+          },
+          "kind": "box",
+          "max": [
+            -1,
+            0,
+            0
+          ],
+          "min": [
+            -1,
+            0,
+            0
+          ]
+        },
+        "verb": "select"
+      }
+    },
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/7/edits/-",
+      "value": {
+        "recipe": {
+          "blocks": [
+            {
+              "block": "minecraft:stone",
+              "weight": 1.0
+            }
+          ]
+        },
+        "region": "region/map-shell-3",
+        "verb": "fill"
+      }
+    },
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/7/edits/-",
+      "value": {
+        "name": "region/map-shell-4",
+        "shape": {
+          "frame": {
+            "anchor": "anchor/map-frame",
+            "kind": "anchor-relative"
+          },
+          "kind": "box",
+          "max": [
+            1,
+            0,
+            0
+          ],
+          "min": [
+            1,
+            0,
+            0
+          ]
+        },
+        "verb": "select"
+      }
+    },
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/7/edits/-",
+      "value": {
+        "recipe": {
+          "blocks": [
+            {
+              "block": "minecraft:stone",
+              "weight": 1.0
+            }
+          ]
+        },
+        "region": "region/map-shell-4",
+        "verb": "fill"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The glow frame on the reliquary wall walled in by a stage-7 batch: stone in front of it, under it, over it and beside it, so no standable cell the party can walk to sees its face within the entity reach, and the map the `loot` fill hangs there could never be taken. Refused as the unreachable arm. The spec named the generator's frame moved behind the reliquary wall; a probe is the primary plus a declared edit to a campaign document, so the same shape is written as a batch over the piece."
+}

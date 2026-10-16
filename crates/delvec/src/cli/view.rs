@@ -304,11 +304,23 @@ fn stood_over(
     for c in base.keys() {
         ground.mark(*c);
     }
+    let holders = delvec::compiler::holders::placed_holders(plan, &structures)
+        .iter()
+        .map(|h| {
+            let b = h.body_box();
+            [
+                (b.lo[0] + b.hi[0]) / 2.0,
+                (b.lo[1] + b.hi[1]) / 2.0,
+                (b.lo[2] + b.hi[2]) / 2.0,
+            ]
+        })
+        .collect();
     Ok(delvec::compiler::view::beat::Stood {
         stands,
         biome: Box::new(move |c| biomes.at(c).0.to_string()),
         spawn: plan.campaign_start().map_or([0, 64, 0], |(_, p)| p),
         ground,
+        holders,
     })
 }
 
@@ -442,8 +454,27 @@ pub(crate) fn run_cameras_preview(
     for g in grids.values() {
         snapshot::report_unpainted(g);
     }
-    for s in &stood.stands {
-        eprintln!("{}", s.line(0));
+    // spec-0111 §5.1: the holder entities each frame holds and does not draw.
+    let holder_centres: Vec<[f64; 3]> =
+        delvec::compiler::holders::placed_holders(plan, &structures)
+            .iter()
+            .map(|h| {
+                let b = h.body_box();
+                [
+                    (b.lo[0] + b.hi[0]) / 2.0,
+                    (b.lo[1] + b.hi[1]) / 2.0,
+                    (b.lo[2] + b.hi[2]) / 2.0,
+                ]
+            })
+            .collect();
+    for (cam, s) in cameras.iter().zip(&stood.stands) {
+        eprintln!(
+            "{}",
+            s.line(
+                0,
+                delvec::compiler::view::beat::holders_in_frame(cam, &holder_centres)
+            )
+        );
     }
     if let Err(e) = std::fs::create_dir_all(out) {
         eprintln!("internal error: mkdir {}: {e}", out.display());
