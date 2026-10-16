@@ -178,6 +178,11 @@ pub fn frame_worlds_with(
     ledger: Option<&crate::compiler::placed::Ledger>,
 ) -> FrameWorlds {
     let path = PathModel::critical(plan);
+    // Every clock a configuration holds is one the campaign can reach
+    // (`light::reachable_clocks`, the set `DW0890` holds the design to): two
+    // walks of one campaign's set-time and set-weather effects, which must agree.
+    let (reachable_times, reachable_weathers) = crate::compiler::light::reachable_clocks(plan.campaign);
+    let world_time = plan.campaign.world.content.time;
     let mut worlds: Vec<FrameWorld> = Vec::new();
     let mut per_arrival = Vec::new();
     let mut arrivals = Vec::new();
@@ -185,6 +190,14 @@ pub fn frame_worlds_with(
         let config = path.at(plan, world, s);
         arrivals.push(path.at(plan, world, s));
         let clock = Clock::at(plan, s);
+        let at = clock.time.clock(clock.site, world_time);
+        assert!(
+            reachable_times.iter().any(|(c, _)| *c == at)
+                && reachable_weathers.contains(&clock.weather),
+            "the clock arriving at step {s} ({at:?}, {:?}) is no clock the campaign reaches — the \
+             clock walk and `light::reachable_clocks` disagree",
+            clock.weather
+        );
         // One world per distinct BYTES and clock: two region states that lay
         // the same cells (one differs only in a write no configuration lays)
         // are one picture.
