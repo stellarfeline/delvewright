@@ -282,11 +282,16 @@ pub(super) fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     }
     // cp_respawn_fire (as @s): dispatch on the active checkpoint.
     let reseat = bonfire_reseat_lines(plan);
+    let rewave = wave_reseat_lines(plan);
     // A bonfire owes the respawning party the same scene reset a rest gives them
     // (spec-0016 §1), so it dispatches even with an empty `on_rest` when there
-    // are waves to re-seat. A plain `set-checkpoint` keeps the v0.6 rule exactly.
+    // are waves to re-seat. A plain `set-checkpoint` owes the `respawns_on_rest`
+    // waves alone: retry never chips a wave down across lives, whichever
+    // checkpoint the party comes back at.
     let dispatches = |c: &crate::compiler::plan::CheckpointPlan| {
-        !c.on_respawn.is_empty() || (c.rest && !reseat.is_empty())
+        !c.on_respawn.is_empty()
+            || (c.rest && !reseat.is_empty())
+            || (!c.rest && !rewave.is_empty())
     };
     // The re-seat runs FIRST and for every checkpoint: an `on_respawn` beat that
     // narrates "you wake at the mark" must be read by a player who is on it.
@@ -311,6 +316,13 @@ pub(super) fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
     // party_reseat: the bonfire scene reset's party half — every re-seat, once.
     if wipes && !reseat.is_empty() {
         fns.push(("party_reseat".to_string(), lines(&reseat)));
+    }
+    // party_reseat_waves: the half of it a plain checkpoint's respawn owes —
+    // every `respawns_on_rest` wave, once. The undefeated refresh of a billed
+    // elite/boss and of a hostile actor stays the fire's.
+    let plain_rewaves = wipes && !rewave.is_empty() && plan.checkpoints.iter().any(|c| !c.rest);
+    if plain_rewaves {
+        fns.push(("party_reseat_waves".to_string(), lines(&rewave)));
     }
     // cp_on_respawn_<idx> (as @s): the per-player scene-reset effects.
     for c in &plan.checkpoints {
@@ -364,6 +376,17 @@ pub(super) fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
                 body.push(format!("function {ns}:bonfire_flask"));
             }
         } else {
+            // **A death after a plain checkpoint re-seats the waves too**
+            // (spec-0016 §1): a partly beaten `respawns_on_rest` wave stands
+            // whole again, behind the same party-wipe latch a fire's respawn
+            // reads, and before the `on_respawn` bundle so its beats read the
+            // restored scene.
+            if plain_rewaves {
+                body.push(format!(
+                    "execute if entity @s[tag={WIPED}] if score {WIPE} dw.sys matches 1 run \
+                     function {ns}:party_reseat_waves"
+                ));
+            }
             body.extend(emit_effect_bundle(
                 plan,
                 &c.on_respawn,
@@ -404,17 +427,7 @@ pub(super) fn emit_checkpoint_functions(plan: &Plan) -> Vec<(String, String)> {
 /// the rest deletes it and stands a fresh one on its origin anchor.
 pub(super) fn bonfire_reseat_lines(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
-    let mut out: Vec<String> = plan
-        .reseat_waves()
-        .iter()
-        .map(|w| {
-            format!(
-                "execute if score {} dw.sys matches 1 run function {ns}:wave_reseat_{}",
-                wave_seated_holder(w.id.as_str()),
-                plan::safe_local(w.id.as_str())
-            )
-        })
-        .collect();
+    let mut out = wave_reseat_lines(plan);
     for w in plan.undefeated_reseat_waves() {
         out.push(format!(
             "execute if entity @e[tag={}] run function {ns}:wave_reseat_{}",
@@ -430,6 +443,23 @@ pub(super) fn bonfire_reseat_lines(plan: &Plan) -> Vec<String> {
         ));
     }
     out
+}
+
+/// The `respawns_on_rest` half of [`bonfire_reseat_lines`]: one line per wave,
+/// gated on the party having met it. A respawn at a plain `set-checkpoint` runs
+/// these and nothing else of the scene reset (spec-0016 §1).
+fn wave_reseat_lines(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    plan.reseat_waves()
+        .iter()
+        .map(|w| {
+            format!(
+                "execute if score {} dw.sys matches 1 run function {ns}:wave_reseat_{}",
+                wave_seated_holder(w.id.as_str()),
+                plan::safe_local(w.id.as_str())
+            )
+        })
+        .collect()
 }
 
 /// Per-tick bonfire **choice** dispatch (spec-0016 §1).

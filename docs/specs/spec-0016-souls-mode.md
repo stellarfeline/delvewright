@@ -19,8 +19,10 @@ interact at the checkpoint anchor (campfire prop affordance). Resting fires
 **`on_rest[]`** hooks (superset of today's `on_respawn`): reset scene state —
 re-arm `reset: rearm` traps, re-seat cleared waves (declared per wave:
 `respawns_on_rest: true`), restore deferred-NPC/actor postures. Death =
-respawn at last-rested bonfire with the same hooks. `on_respawn` remains for
-non-bonfire checkpoints (island-style). Proofs: bonfire placement inherits
+respawn at the active checkpoint: at the last-rested bonfire with the same
+hooks; at a plain `set-checkpoint` with its `on_respawn` and the
+`respawns_on_rest` re-seat (below). `on_respawn` remains for non-bonfire
+checkpoints (island-style). Proofs: bonfire placement inherits
 DW0316 (standable) + DW0315 (no stranding); a wave marked respawns_on_rest
 on the critical path re-runs its completability proof post-rest.
 
@@ -106,6 +108,20 @@ Proofs: the emitted gating is pinned by `souls_bonfire`
 (`a_respawn_resets_the_scene_only_after_a_party_wipe`,
 `a_rest_restores_every_living_player`); a live two-body run proves one death
 does not re-seat, both dead re-seats, and one rest re-seats and restores both.
+
+From the gallery bot's die-retry stage — a death after a plain checkpoint that
+follows the rest left a partly beaten wave exactly as the last life left it:
+
+- **Retry never chips a wave down across lives.** Every death-respawn re-seats
+  every `respawns_on_rest` wave, whatever checkpoint the party respawns at — a
+  bonfire or a plain `set-checkpoint` — behind the same party-wipe rule. A
+  re-seat is identical fresh mobs. Nothing else is re-seated at a plain
+  checkpoint: a stage boss and a wave that does not declare `respawns_on_rest`
+  never re-seat, and the undefeated refresh stays the fire's.
+
+Proofs: `souls_bonfire` (`a_death_after_a_plain_checkpoint_reseats_the_waves`)
+pins the plain checkpoint's wipe-gated `party_reseat_waves`; the gallery bot's
+die-retry stage asserts the wave whole at re-engagement after each death.
 
 ### 2. Shortcut doors ("the door does not open from this side")
 The pattern this section is built around: between two bonfires there are

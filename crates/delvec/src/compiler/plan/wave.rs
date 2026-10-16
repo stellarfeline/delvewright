@@ -55,8 +55,8 @@ pub fn wave_seats<'a>(
 pub use delvewright_dsl::wave_area;
 
 impl<'a> Plan<'a> {
-    /// The waves a bonfire rest / bonfire respawn re-seats (spec-0016 §1), in
-    /// content order. Empty unless the campaign declares BOTH a `bonfire` and at
+    /// The waves a bonfire rest and every death-respawn re-seat (spec-0016 §1),
+    /// in content order — a respawn at a plain `set-checkpoint` included. Empty unless the campaign declares BOTH a `bonfire` and at
     /// least one wave with `respawns_on_rest` — `DW0370` rejects the half that
     /// declares the field without a bonfire, so this is empty exactly for
     /// campaigns that use none of the surface (byte-identical emission).
