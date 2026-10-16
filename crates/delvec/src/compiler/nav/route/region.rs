@@ -97,6 +97,17 @@ impl RegionState {
             && self.lethal.is_empty()
     }
 
+    /// This state with `cells` opened: taken out of every fill and laid as a
+    /// clear — what pulling a shortcut's lever does to its door in this
+    /// configuration ([`World::in_shortcut_rounds`]).
+    pub(in crate::compiler::nav) fn with_opened(&self, cells: &BTreeSet<[i32; 3]>) -> RegionState {
+        let mut st = self.clone();
+        st.solid.retain(|c| !cells.contains(c));
+        st.unforced.retain(|c| !cells.contains(c));
+        st.cleared.extend(cells.iter().copied());
+        st
+    }
+
     /// This state with every holding loop released — the counterfactual a
     /// route failure is tested against to say a loop, and not the geometry,
     /// closed the leg (spec-0086 §5.1).
@@ -651,8 +662,13 @@ pub(in crate::compiler::nav) fn gate_blame(
 /// passability model beside this one is exactly what spec-0031 refused when it
 /// moved fill/clear out of the two verbs that held it privately.
 ///
+/// Within each configuration the reach opens shortcuts in rounds
+/// ([`World::in_shortcut_rounds`]): a player at the seat who walks to a
+/// shortcut's lever pulls it, so the far side of its door is somewhere the
+/// player can walk back to, although the completability model holds it shut.
+///
 /// A campaign with no runtime-written region has exactly one configuration and
-/// pays one flood fill for it. Deterministic (ADR-0006): iteration is over a slice
+/// pays one flood fill for it (one more per round that opens a shortcut). Deterministic (ADR-0006): iteration is over a slice
 /// in step order and over `BTreeSet` keys.
 pub fn reachable_under_every_quest_state(
     plan: &Plan,
@@ -674,12 +690,7 @@ pub fn reachable_under_every_quest_state(
         if seen.contains(&st) {
             continue;
         }
-        let w = if st.is_empty() {
-            None
-        } else {
-            Some(world.with_region_state(&st))
-        };
-        let r = w.as_ref().unwrap_or(world).walk_region(&[seat]);
+        let r = seat_reach(world, &st, &plan.shortcuts, seat);
         seen.push(st);
         acc = Some(match acc {
             None => r,
@@ -695,6 +706,29 @@ pub fn reachable_under_every_quest_state(
     )
 }
 
+/// Where a player walks from `seat` in one configuration `st` of `world`,
+/// pulling every shortcut lever the walk reaches ([`World::in_shortcut_rounds`]).
+/// A shortcut's door is opened in the configuration's own terms: its cells
+/// leave the state's fills and join its clears, so the seal the state pins is
+/// lifted by the state rather than cleared under it.
+pub(in crate::compiler::nav) fn seat_reach(
+    world: &World,
+    st: &RegionState,
+    shortcuts: &[crate::compiler::plan::ShortcutPlan],
+    seat: [i32; 3],
+) -> BTreeSet<[i32; 3]> {
+    let owned = (!st.is_empty()).then(|| world.with_region_state(st));
+    let open = |cells: &BTreeSet<[i32; 3]>| world.with_region_state(&st.with_opened(cells));
+    match owned
+        .as_ref()
+        .unwrap_or(world)
+        .in_shortcut_rounds::<std::convert::Infallible>(shortcuts, open, |w| {
+            std::ops::ControlFlow::Continue(w.walk_region(&[seat]))
+        }) {
+        std::ops::ControlFlow::Continue(r) => r,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -705,6 +739,50 @@ mod tests {
     use crate::compiler::plan::{RegionEvent, RegionWrite};
 
     use crate::compiler::nav::*;
+
+    // --- a seat's reach pulls a shortcut lever (DW0525) ----------------------
+
+    /// A shortcut over a 1-cell gate column at `(1, 65..66, 4)` opened from `unlock`.
+    fn door_at(unlock: [i32; 3]) -> crate::compiler::plan::ShortcutPlan {
+        let gate = ([1, 65, 4], [1, 66, 4]);
+        crate::compiler::plan::ShortcutPlan {
+            id: "shortcut/side-door".to_string(),
+            safe: "side_door".to_string(),
+            gate_anchor: "anchor/side-door".to_string(),
+            gate_region: gate,
+            gate_block: "minecraft:iron_bars".to_string(),
+            unlock_anchor: "anchor/side-lever".to_string(),
+            unlock,
+            on_unlock: Vec::new(),
+            sealed_side: crate::compiler::wrongside::derive(gate, unlock),
+        }
+    }
+
+    /// A room cut in two at z = 4 with one door, held shut from world-load the
+    /// way a shortcut's seal arrives (a forced fill at step 0), and a seat on
+    /// the far side. With the door's lever on the seat's side, a player walks
+    /// to it, pulls it and walks through, so the near side is somewhere the
+    /// seat gets back to; with no shortcut, or with the lever on the near side,
+    /// it is not.
+    #[test]
+    fn a_seat_reaches_through_a_shortcut_whose_lever_it_walks_to() {
+        let world = shortcut_world(12, 9, 65, 4, 1, None);
+        let seal = RegionEvent::forced(([1, 65, 4], [1, 66, 4]), RegionWrite::Fill, 0);
+        let st = world.region_state_at(&RegionEvents::from(vec![seal]), 1, &linear);
+        let (seat, near) = ([5, 65, 7], [5, 65, 1]);
+        let pulled = seat_reach(&world, &st, &[door_at([1, 65, 7])], seat);
+        assert!(
+            pulled.contains(&near),
+            "the lever beside the seat opens the door"
+        );
+        let held = seat_reach(&world, &st, &[], seat);
+        assert!(!held.contains(&near), "a shut door with no lever is a wall");
+        let behind = seat_reach(&world, &st, &[door_at([5, 65, 2])], seat);
+        assert!(
+            !behind.contains(&near),
+            "a lever behind the door is never reached"
+        );
+    }
 
     // --- close-gate completability (DSL v0.6) --------------------------------
 

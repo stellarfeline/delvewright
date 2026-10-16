@@ -537,6 +537,15 @@ pub(super) fn validate_loaded(
                 examined.push(nbind.line());
                 diags.extend(nd);
             }
+            // DW1026: one named character is one body — no story state of any
+            // configuration leaves two declarations that carry one name in the
+            // world at once. The same journal the replay proves, bound here for
+            // the same reason: every subcommand's validation goes through it.
+            {
+                let (pd, pbind) = delvec::compiler::presence::check(&campaign);
+                examined.push(pbind.line());
+                diags.extend(pd);
+            }
             // **`DW0890`: the approved hour is the built hour** (spec-0061).
             // Refused here rather than at the build, on `DW0855`'s precedent
             // and `DW0886`'s: the verdict is a fact about the documents and a

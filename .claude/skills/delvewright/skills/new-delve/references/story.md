@@ -33,14 +33,21 @@ and looping against them is the one way to spend an afternoon here.
     the fiction is a villager; anybody else in a delve — a guide, a keeper, a
     duke — reads as a placeholder in one. Budget the skin with the cast, not
     after it.
-  - **An NPC faces the way the party arrives.** An anchor's `facing` is where a
-    body standing on it looks, and the party comes from the road, the door, the
-    stair head — not from whatever is prettiest in the room. A greeter with their
-    back turned is the commonest first-draft defect there is. The engine holds
-    the other half: a walked body arrives facing its destination anchor's
-    declared facing, or, where none is declared, back down the path it walked.
-    A figure that should turn to follow the party declares `watch` (*Reference:
-    what a quest can do*, Bodies).
+  - **Decide, for every speaking character, whether the scene needs its gaze
+    NOT to follow the player.** Every NPC turns to watch the nearest player
+    within 8 blocks unless it says otherwise, and for most of a cast that is
+    right. But a body that turns to watch can break a scene's mood: a mourner
+    bent over a grave, a sentry who keeps his eyes on the far shore, a figure
+    so lost in the work at the bench that the party has to step into her
+    light. For each speaking character, decide; where the gaze must stay put,
+    declare it on that NPC, `"watch": "none"`, and stand the body where every
+    side the party can talk to it from is in front of it — a wall, a counter or
+    a rail at its back. Leaving `watch` out is a decision too: the body watches.
+  - **One named character is one body.** The engine checks a held facing from
+    every side the party can talk to the body from, a talk on the route at
+    every beat, and one name in every story state; each refusal names its move
+    (*Reference: when something goes red*, "walks up to its back", "lie behind
+    it" and "one person twice").
 - **Classes**: pre-provided gear, no grind. If the campaign places a bonfire,
   **every class kit must declare a flask** (`DW0476`) — see *Reference:
   authoring pitfalls*.
