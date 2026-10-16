@@ -280,6 +280,14 @@ pub(super) fn quest_completion_fns(
             }
 
             let mut body: Vec<String> = Vec::new();
+            // spec-0114 §6.3: an item laid at a place leaves the hand. The
+            // function runs `as` the player the tick's hand guard found holding
+            // the item, so `@s` is the one who presented it, and exactly one of
+            // it is taken at the moment of completion. First, so nothing the
+            // completion's effects do can stand between the click and the take.
+            if let Some(it) = o.taken_item() {
+                body.push(format!("clear @s {it} 1"));
+            }
             // The completing action advances the PARTY (spec-0018) — this single
             // write is what lets two players clear two arms of an AND-join in two
             // rooms and unlock the successor for both.

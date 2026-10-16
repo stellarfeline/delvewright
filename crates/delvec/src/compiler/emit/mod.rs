@@ -1295,6 +1295,19 @@ pub fn build_with_warnings(
     if pulse_gate.declared > 0 {
         put_json(&mut out, "validation/pulses.json", &pulse_gate.to_json());
     }
+    // spec-0114 §5: what the act check judged, so a build of a campaign that
+    // has titles and judged none reads as a zero binding. The English build
+    // only: a `--lang` bake has swapped its titles out of the language the
+    // lexicon reads.
+    if language.is_none() {
+        put_json(
+            &mut out,
+            "validation/act-gate.json",
+            &crate::compiler::telling::check_acts(plan.campaign)
+                .1
+                .to_json(),
+        );
+    }
     // The engine's quest cues and the objectives that owe them, so the bot
     // judges where each one arrives. Every build plays the campaign cue, so
     // every build writes the file.

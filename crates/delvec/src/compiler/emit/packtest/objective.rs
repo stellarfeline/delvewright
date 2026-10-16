@@ -404,6 +404,9 @@ pub(super) fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
     // held-vs-carried test below. Distinct from `first_interact`, which may be
     // ungated and would make that test vacuous.
     let mut first_interact_item = None;
+    // The first `interact` whose presented item leaves the hand (spec-0114
+    // §6.3) — the subject of the take's count assertion.
+    let mut first_interact_takes = None;
     let mut first_flag_gated = None;
     let mut first_forbid_gated = None;
     for q in &c.quests.content.quests {
@@ -430,6 +433,9 @@ pub(super) fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
                 Objective::Interact { .. } => {
                     if first_interact.is_none() {
                         first_interact = Some((qid, o));
+                    }
+                    if first_interact_takes.is_none() && o.taken_item().is_some() {
+                        first_interact_takes = Some((qid, o));
                     }
                     if first_interact_item.is_none()
                         && matches!(
@@ -623,15 +629,18 @@ pub(super) fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
         write("verb_collect", b);
     }
 
-    // interact: hold the required item, fire the trigger, tick, assert.
-    if let Some((qid, o)) = first_interact
-        && let Objective::Interact { id, .. } = o
-    {
-        let (pin, sel) = pin_dummy("dw_t_vint");
-        let mut b = packtest_header(&format!(
-            "{}: interact trigger + item -> complete",
-            artifact_title(c)
-        ));
+    // interact: hold the required item, fire the trigger, tick, assert. When
+    // the objective takes the item it is shown (spec-0114 §6.3), the test also
+    // asserts the presenting player holds exactly one fewer of it after the
+    // click — the perturbation only `takes_item` can move. The first interact
+    // is `verb_interact`; a later one that takes, when the first does not, is
+    // `verb_interact_takes`, so the take is proven wherever the campaign has one.
+    let interact_test = |qid: &str, o: &Objective, tag: &str, title: &str| -> Option<Vec<String>> {
+        let Objective::Interact { id, .. } = o else {
+            return None;
+        };
+        let (pin, sel) = pin_dummy(tag);
+        let mut b = packtest_header(&format!("{}: {title}", artifact_title(c)));
         b.push(format!("function {ns}:setup"));
         // Pin this test's own dummy (see `pin_dummy`) and drive/assert on it
         // alone — the old `@a`-wide preamble was the round-5 flag leak that
@@ -643,6 +652,17 @@ pub(super) fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             obj_score(id.as_str())
         ));
         b.extend(packtest_preamble(plan, qid, o, true, &sel));
+        // The take: a second stack of the item beside the one in the hand, so
+        // "exactly one fewer" is distinguishable from "all of them" for an item
+        // of any stack size. `clear … 0` counts without removing.
+        let taken = o.taken_item();
+        if let Some(it) = taken {
+            b.push(format!("item replace entity {sel} inventory.0 with {it}"));
+            b.push(format!(
+                "execute store result score #take_before dw.sys run clear {sel} {it} 0"
+            ));
+            b.push("assert score #take_before dw.sys matches 2".to_string());
+        }
         // spec-0093 §6.5: a block a hand presses has no hitbox and no chat
         // command; its press is the advancement, so the test GRANTS it — which
         // runs the reward as the dummy — and the reward is what sets the score.
@@ -663,6 +683,29 @@ pub(super) fn emit_verb_packtests(plan: &Plan, out: &mut BuildOutput) {
             plan::PARTY,
             obj_score(id.as_str())
         ));
+        if let Some(it) = taken {
+            b.push(format!(
+                "execute store result score #take_after dw.sys run clear {sel} {it} 0"
+            ));
+            b.push("assert score #take_after dw.sys matches 1".to_string());
+        }
+        Some(b)
+    };
+    if let Some((qid, o)) = first_interact_takes
+        && first_interact.is_some_and(|(_, f)| f.id() != o.id())
+        && let Some(b) = interact_test(
+            qid,
+            o,
+            "dw_t_vtake",
+            "interact takes one of the item it is shown",
+        )
+    {
+        write("verb_interact_takes", b);
+    }
+    if let Some((qid, o)) = first_interact
+        && let Objective::Interact { id, .. } = o
+        && let Some(b) = interact_test(qid, o, "dw_t_vint", "interact trigger + item -> complete")
+    {
         write("verb_interact", b);
 
         // A click that lands before its quest is armed is DISCARDED, and a real

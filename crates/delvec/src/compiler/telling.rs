@@ -1,6 +1,7 @@
 //! What the text tells the player: a question gets an answer (`DW0981`), a
-//! name reaches a line only after the player has been told it (`DW0982`), and a
-//! name tag marks a person, never one of a crowd (`DW0983`).
+//! name reaches a line only after the player has been told it (`DW0982`), a
+//! name tag marks a person, never one of a crowd (`DW0983`), and an objective's
+//! title says the act that completes it (`DW1045`, spec-0114).
 //!
 //! Both are `docs/reference/game-writing.md` rules made mechanical: §2 S1/S5 (the
 //! critical path is plain) for the first, §3 N1/N3 (introduce a name before you
@@ -61,7 +62,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use delvewright_dsl::l10n::{
     L10nDoc, TextKind, effect_string_sites, inventory, key_kind, local_id,
 };
-use delvewright_dsl::{Campaign, Diagnostic};
+use delvewright_dsl::{Act, Campaign, Diagnostic, acts_line};
 
 use crate::compiler::flow::Flow;
 use delvewright_dsl::{DwCode, ExitTier};
@@ -1086,4 +1087,301 @@ mod tests {
         assert_eq!(m.len(), 1);
         assert_eq!(m[0].0, 1);
     }
+}
+
+// ---------------------------------------------------------------------------
+// DW1045 — an objective says the act that completes it (spec-0114)
+// ---------------------------------------------------------------------------
+
+delvewright_dsl::dw_code! {
+    /// `DW1045`: an objective's title opens on a word naming an act its
+    /// completion does not perform.
+    pub const DW_ACT_UNTRUE: DwCode = DwCode::new("DW1045", ExitTier::Build);
+}
+
+/// The longest head phrase the lexicon may hold, in words (spec-0114 §3).
+pub const MAX_HEAD_WORDS: usize = 4;
+
+/// The committed English act lexicon (`crates/delvec/data/acts-en.json`): the
+/// one place a head phrase is written. Keys are act names, values the head
+/// phrases that state that act; a phrase whose object decides its act appears
+/// under every act it can take.
+pub const ACTS_EN: &str = include_str!("../../data/acts-en.json");
+
+/// The act lexicon, read once from [`ACTS_EN`].
+#[derive(Debug)]
+pub struct Lexicon {
+    /// Head phrase → the acts it states.
+    phrases: BTreeMap<String, BTreeSet<Act>>,
+    /// Act → its head phrases, sorted.
+    by_act: BTreeMap<Act, Vec<String>>,
+}
+
+impl Lexicon {
+    /// Parse a lexicon document. Every key must name an [`Act`] and every
+    /// phrase must be a lowercase phrase of at most [`MAX_HEAD_WORDS`] words.
+    pub fn parse(text: &str) -> Result<Lexicon, String> {
+        let raw: BTreeMap<String, Vec<String>> =
+            serde_json::from_str(text).map_err(|e| format!("not a lexicon: {e}"))?;
+        let mut phrases: BTreeMap<String, BTreeSet<Act>> = BTreeMap::new();
+        let mut by_act: BTreeMap<Act, Vec<String>> = BTreeMap::new();
+        for (k, list) in raw {
+            let act = Act::parse(&k).ok_or_else(|| format!("`{k}` is not an act"))?;
+            for p in list {
+                let words = title_words(&p);
+                if words.join(" ") != p || words.is_empty() || words.len() > MAX_HEAD_WORDS {
+                    return Err(format!(
+                        "`{p}` (under `{k}`) is not a lowercase phrase of 1–{MAX_HEAD_WORDS} words"
+                    ));
+                }
+                phrases.entry(p.clone()).or_default().insert(act);
+                by_act.entry(act).or_default().push(p);
+            }
+        }
+        for v in by_act.values_mut() {
+            v.sort();
+        }
+        Ok(Lexicon { phrases, by_act })
+    }
+
+    /// The committed English lexicon.
+    pub fn english() -> &'static Lexicon {
+        static LEX: std::sync::OnceLock<Lexicon> = std::sync::OnceLock::new();
+        LEX.get_or_init(|| Lexicon::parse(ACTS_EN).expect("acts-en.json is a valid lexicon"))
+    }
+
+    /// Every head phrase, with the acts it states.
+    pub fn phrases(&self) -> &BTreeMap<String, BTreeSet<Act>> {
+        &self.phrases
+    }
+
+    /// The **head** of a title (spec-0114 §3): the longest lexicon phrase, up
+    /// to [`MAX_HEAD_WORDS`] words, the title begins with, and the acts it
+    /// states. `None` when the title opens on no phrase the lexicon knows.
+    pub fn head(&self, title: &str) -> Option<(String, &BTreeSet<Act>)> {
+        let words = title_words(title);
+        (1..=MAX_HEAD_WORDS.min(words.len())).rev().find_map(|n| {
+            let key = words[..n].join(" ");
+            self.phrases.get(&key).map(|acts| (key, acts))
+        })
+    }
+
+    /// Up to `n` example heads for an act set: each act's own name first (every
+    /// act's name is one of its heads), then its one-word heads in order,
+    /// taken round-robin across the acts.
+    pub fn examples(&self, acts: &BTreeSet<Act>, n: usize) -> Vec<String> {
+        let mut queues: Vec<Vec<&String>> = acts
+            .iter()
+            .map(|a| {
+                let all = self.by_act.get(a).map(Vec::as_slice).unwrap_or(&[]);
+                let mut q: Vec<&String> = all.iter().filter(|p| p.as_str() == a.as_str()).collect();
+                q.extend(
+                    all.iter()
+                        .filter(|p| p.as_str() != a.as_str() && !p.contains(' ')),
+                );
+                q
+            })
+            .collect();
+        let mut out: Vec<String> = Vec::new();
+        let mut i = 0;
+        while out.len() < n && queues.iter().any(|q| i < q.len()) {
+            for q in queues.iter_mut() {
+                if let Some(p) = q.get(i)
+                    && out.len() < n
+                    && !out.contains(p)
+                {
+                    out.push((*p).clone());
+                }
+            }
+            i += 1;
+        }
+        out
+    }
+}
+
+/// A title as the head is read from it (spec-0114 §3): drawn as the player
+/// reads it (a styled span is its own text, a translation tag its English —
+/// `dsl::l10n::plain`), case-folded, every character
+/// outside letters, apostrophes and spaces read as a space, and split into
+/// words. A typographic apostrophe reads as `'`.
+pub fn title_words(title: &str) -> Vec<String> {
+    let drawn = delvewright_dsl::l10n::plain(title);
+    let folded: String = drawn
+        .chars()
+        .flat_map(char::to_lowercase)
+        .map(|ch| match ch {
+            '\u{2019}' => '\'',
+            c if c.is_alphabetic() || c == '\'' => c,
+            _ => ' ',
+        })
+        .collect();
+    folded.split_whitespace().map(str::to_string).collect()
+}
+
+/// What `DW1045` examined, zeroes included (spec-0114 §5).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ActBinding {
+    /// Objectives in the campaign.
+    pub objectives: usize,
+    /// Objectives carrying a non-blank English title.
+    pub titled: usize,
+    /// Titled objectives whose head the lexicon knows — the judged ones.
+    pub judged: usize,
+    /// Titled objectives whose head the lexicon does not know, by path and title.
+    pub unknown: Vec<(String, String)>,
+    /// Objectives with no title.
+    pub untitled: usize,
+    /// Judged titles refused.
+    pub refused: usize,
+}
+
+impl ActBinding {
+    /// The binding line `delvec validate` prints.
+    pub fn line(&self) -> String {
+        let mut s = format!(
+            "act binding (DW1045): {} of {} English title(s) read against {} objective(s); \
+             {} head(s) the lexicon does not know; {} untitled; {} refused",
+            self.judged,
+            self.titled,
+            self.objectives,
+            self.unknown.len(),
+            self.untitled,
+            self.refused
+        );
+        if !self.unknown.is_empty() {
+            let listed: Vec<String> = self
+                .unknown
+                .iter()
+                .map(|(p, t)| format!("\"{t}\" ({p})"))
+                .collect();
+            s.push_str(&format!(" — not known: {}", listed.join(", ")));
+        }
+        s
+    }
+
+    /// The ledger `validation/act-gate.json` carries. `examined` is the judged
+    /// count, so a build that judged no title reads as a zero binding.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "code": DW_ACT_UNTRUE.id(),
+            "objectives": self.objectives,
+            "titled": self.titled,
+            "judged": self.judged,
+            "examined": self.judged,
+            "unknown": self.unknown.iter().map(|(p, t)| serde_json::json!({"path": p, "title": t})).collect::<Vec<_>>(),
+            "untitled": self.untitled,
+            "refused": self.refused,
+        })
+    }
+}
+
+/// How the completion could be made to perform `act` instead (spec-0114 §6.2),
+/// or the gap that stops it (§6.4).
+fn completion_remedy(act: Act, o: &delvewright_dsl::Objective) -> String {
+    use delvewright_dsl::Objective as O;
+    let talk = matches!(o, O::TalkTo { .. });
+    match act {
+        Act::Reach => "make it a `reach-anchor` at the place the title names".into(),
+        Act::Talk => "make it a `talk-to` of the body the title names".into(),
+        Act::Kill => "make it a `kill` of the wave the title names".into(),
+        Act::Take => "make it a `collect` of the item, or hand the item with a `give-item` \
+                      in its `on_objective_complete`"
+            .into(),
+        Act::Use => "make it an `interact` at the thing the title names".into(),
+        Act::Present if talk => "showing a thing to a body is not a completion the engine has \
+                                 (spec-0114 §6.4: a dialogue option reads no hand)"
+            .into(),
+        Act::Present => "make it an `interact` at the thing with `requires_item` — the item \
+                         held in the hand when it is used"
+            .into(),
+        Act::Give if talk => "giving a thing to a body is not a completion the engine has \
+                              (spec-0114 §6.4: a dialogue option reads no hand and takes nothing)"
+            .into(),
+        Act::Give => match o {
+            O::Interact {
+                requires_item: Some(it),
+                takes_item: false,
+                ..
+            } => format!("add `takes_item: true`, so one `{it}` leaves the hand that presents it"),
+            _ => "make it an `interact` at the place, with a `prop`, the `requires_item` laid \
+                  there and `takes_item: true`, so one of it leaves the hand that presents it"
+                .into(),
+        },
+    }
+}
+
+/// `DW1045` over every objective of every quest, with what it examined.
+pub fn check_acts(c: &Campaign) -> (Vec<Diagnostic>, ActBinding) {
+    check_acts_with(c, Lexicon::english())
+}
+
+/// [`check_acts`] against a given lexicon.
+pub fn check_acts_with(c: &Campaign, lex: &Lexicon) -> (Vec<Diagnostic>, ActBinding) {
+    let mut bind = ActBinding::default();
+    let mut d = Vec::new();
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oi, o) in q.objectives.iter().enumerate() {
+            bind.objectives += 1;
+            let path = format!("/content/quests/{qi}/objectives/{oi}/title");
+            let Some(title) = o
+                .title()
+                .map(|t| delvewright_dsl::l10n::plain(t).into_owned())
+                .filter(|t| !t.trim().is_empty())
+            else {
+                bind.untitled += 1;
+                continue;
+            };
+            bind.titled += 1;
+            let Some((head, said)) = lex.head(&title) else {
+                bind.unknown.push((path, title));
+                continue;
+            };
+            bind.judged += 1;
+            let done = q.objective_acts(o);
+            if said.intersection(&done).next().is_some() {
+                continue;
+            }
+            bind.refused += 1;
+            let shape = q.objective_shape(o);
+            let words = lex.examples(&done, 3);
+            let retitle = format!(
+                "re-head the title with a word of what the completion performs ({}: {})",
+                acts_line(&done),
+                words
+                    .iter()
+                    .map(|w| format!("`{w}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            let recomplete: Vec<String> = said.iter().map(|a| completion_remedy(*a, o)).collect();
+            let recomplete = format!(
+                "change the completion to the act the title names: {}",
+                recomplete.join("; or ")
+            );
+            // spec-0114 §6: a placing word over anything but a conversation is
+            // repaired by bringing the completion up to the text first.
+            let placing = said.len() == 1
+                && said.contains(&Act::Give)
+                && !matches!(o, delvewright_dsl::Objective::TalkTo { .. });
+            let (first, second) = if placing {
+                (recomplete, retitle)
+            } else {
+                (retitle, recomplete)
+            };
+            d.push(Diagnostic::error(
+                DW_ACT_UNTRUE,
+                "quests",
+                path,
+                format!(
+                    "objective `{}` is titled \"{title}\": its head `{head}` → {}, and its \
+                     completion `{shape}` → {}, so the title tells the player to do something \
+                     the game does not reward (spec-0114). Either {first}; or {second}",
+                    o.id(),
+                    acts_line(said),
+                    acts_line(&done),
+                ),
+            ));
+        }
+    }
+    (d, bind)
 }

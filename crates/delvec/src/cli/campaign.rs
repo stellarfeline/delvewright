@@ -371,6 +371,14 @@ pub(super) fn validate_loaded(
                 examined.push(tbind.line());
                 diags.extend(td);
             }
+            // An objective's title says the act that completes it (DW1045,
+            // spec-0114): its head word is read against the acts the completion
+            // performs, with what it judged and the heads it does not know.
+            {
+                let (ad, abind) = delvec::compiler::telling::check_acts(&campaign);
+                examined.push(abind.line());
+                diags.extend(ad);
+            }
             // v0.6 `close-gate` gate-block declaration (DW0343): the fill block is
             // prefab metadata, so this compiler-side check runs here (validation
             // tier). No-op for a campaign that uses no `close-gate`.

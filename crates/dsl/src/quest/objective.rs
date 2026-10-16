@@ -338,6 +338,17 @@ pub enum Objective {
         /// stays quiet.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         missing_item_hint: Option<String>,
+        /// **The presented item leaves the hand** (spec-0114 §6.3): one of
+        /// [`Objective::Interact::requires_item`] is taken from the player who
+        /// presented it, at the moment the objective completes. Default `false`,
+        /// absent when false. Requires `requires_item` (`DW1046`).
+        ///
+        /// What makes *lay*, *hang* and *give* true of a click: the thing is laid
+        /// at the place and is no longer carried. The world showing it there
+        /// afterwards is the author's, composed from what exists (a `set-block` in
+        /// `on_objective_complete`), never a second mechanism here.
+        #[serde(default, skip_serializing_if = "is_false")]
+        takes_item: bool,
         /// Prop block that IS the interaction affordance (DSL v0.4, spec-0008
         /// §2): the compiler `setblock`s it at the anchor on activation (exactly
         /// as `collect` uses a real chest). Omitted = the glowing-lantern
@@ -374,7 +385,168 @@ pub enum Objective {
     },
 }
 
+/// **An act a player performs**, as the pinned game adjudicates it (spec-0114
+/// §4): the closed vocabulary an objective's completion is read in, and the one
+/// its title's head word is read against (`DW1045`).
+///
+/// Declared in the order of the spec's table; the order is the one every
+/// printed act set is written in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Act {
+    /// A body inside a volume at a place — the one **place** act.
+    Reach,
+    /// A dialogue option chosen on a body.
+    Talk,
+    /// A wave's counter at zero.
+    Kill,
+    /// The item in the player's inventory.
+    Take,
+    /// A thing at a place used: the hitbox, or the hand-pressed block.
+    Use,
+    /// The item held in the main hand at the thing when it is used.
+    Present,
+    /// One of the presented item leaves the player at the thing.
+    Give,
+}
+
+impl Act {
+    /// Every act, in declaration order.
+    pub const ALL: [Act; 7] = [
+        Act::Reach,
+        Act::Talk,
+        Act::Kill,
+        Act::Take,
+        Act::Use,
+        Act::Present,
+        Act::Give,
+    ];
+
+    /// The act's name as the lexicon and every message spell it.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Act::Reach => "reach",
+            Act::Talk => "talk",
+            Act::Kill => "kill",
+            Act::Take => "take",
+            Act::Use => "use",
+            Act::Present => "present",
+            Act::Give => "give",
+        }
+    }
+
+    /// The act a lexicon key names, if it names one.
+    pub fn parse(s: &str) -> Option<Act> {
+        Act::ALL.into_iter().find(|a| a.as_str() == s)
+    }
+}
+
+/// An act set written as the messages and the translator's situation write it:
+/// `use, present, give`.
+pub fn acts_line(acts: &std::collections::BTreeSet<Act>) -> String {
+    acts.iter()
+        .map(|a| a.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 impl Objective {
+    /// **The acts this objective's completion performs** (spec-0114 §4),
+    /// derived from its kind and the fields that shape what it completes on,
+    /// with `completion_effects` — the effects its quest fires when it
+    /// completes (`on_objective_complete[<id>]`) — read for a `give-item`,
+    /// which adds [`Act::Take`] to any kind. Nested effect lists (a `sequence`'s
+    /// steps) are read too: an item handed later in the same bundle is still
+    /// handed by this completion.
+    ///
+    /// `reach-anchor` → `{reach}`; `talk-to` → `{talk}`; `kill` → `{kill}`;
+    /// `collect` → `{take}`; `interact` → `{use}`, `+ present` with
+    /// `requires_item`, `+ give` with `takes_item` as well.
+    pub fn completion_acts(
+        &self,
+        completion_effects: &[crate::QuestEffect],
+    ) -> std::collections::BTreeSet<Act> {
+        let mut acts = std::collections::BTreeSet::new();
+        match self {
+            Objective::ReachAnchor { .. } => {
+                acts.insert(Act::Reach);
+            }
+            Objective::TalkTo { .. } => {
+                acts.insert(Act::Talk);
+            }
+            Objective::Kill { .. } => {
+                acts.insert(Act::Kill);
+            }
+            Objective::Collect { .. } => {
+                acts.insert(Act::Take);
+            }
+            Objective::Interact {
+                requires_item,
+                takes_item,
+                ..
+            } => {
+                acts.insert(Act::Use);
+                if requires_item.is_some() {
+                    acts.insert(Act::Present);
+                    if *takes_item {
+                        acts.insert(Act::Give);
+                    }
+                }
+            }
+        }
+        fn hands(effs: &[crate::QuestEffect]) -> bool {
+            effs.iter().any(|e| {
+                e.give_item().is_some()
+                    || e.nested_effect_lists_labeled()
+                        .into_iter()
+                        .any(|(_, _, list)| hands(list))
+            })
+        }
+        if hands(completion_effects) {
+            acts.insert(Act::Take);
+        }
+        acts
+    }
+
+    /// The kind and the fields the completion's acts are derived from, as
+    /// `DW1045` names them: `reach-anchor`, `interact + requires_item`,
+    /// `talk-to + give-item`, ….
+    pub fn completion_shape(&self, completion_effects: &[crate::QuestEffect]) -> String {
+        let mut s = self.kind().to_string();
+        if let Objective::Interact {
+            requires_item,
+            takes_item,
+            ..
+        } = self
+            && requires_item.is_some()
+        {
+            s.push_str(" + requires_item");
+            if *takes_item {
+                s.push_str(" + takes_item");
+            }
+        }
+        if self
+            .completion_acts(completion_effects)
+            .contains(&Act::Take)
+            && !matches!(self, Objective::Collect { .. })
+        {
+            s.push_str(" + give-item");
+        }
+        s
+    }
+
+    /// Whether this is an `interact` whose presented item leaves the hand
+    /// (spec-0114 §6.3), with the item it takes.
+    pub fn taken_item(&self) -> Option<&str> {
+        match self {
+            Objective::Interact {
+                requires_item: Some(it),
+                takes_item: true,
+                ..
+            } => Some(it),
+            _ => None,
+        }
+    }
+
     /// This objective's id.
     pub fn id(&self) -> &ObjectiveId {
         match self {
