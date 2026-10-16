@@ -327,20 +327,30 @@ fn settled_setup(ns: &str) -> [String; 2] {
 }
 
 /// **The one rule that settles a template's load**, applied to every template
-/// the suite ships: a template whose lines run `setup` and then, before any
-/// write of `#placed` of their own, `tick` or `setup_finish` (directly, or
-/// through one of the suite's own helper functions) takes the settled setup —
-/// the latch line of [`settled_setup`] straight after its `setup`.
+/// the suite ships: every `setup` a template runs is followed by the latch line
+/// of [`settled_setup`], unless the template states that it exercises the
+/// placement chain. The world the batch server holds is already built, and a
+/// template left re-armed hands the load to whatever ticks next: its own `tick`
+/// or `setup_finish` (directly, or through one of the suite's own helper
+/// functions), its own `await` (real ticks run while it waits), or, once it
+/// ends, the server's next real tick, which re-runs `place_all`, the build and
+/// `setup_finish` (every unguarded NPC summon, every holder and container
+/// refill) on the shared server, in front of whichever template runs next.
 ///
-/// Decided here, over the finished templates, so that no emitter decides it:
-/// whether a template's tick runs depends on what it drives (a flag-gate
-/// template ticks only for an interact objective), and a template written
-/// tomorrow is settled without its author knowing the rule. A template that
-/// means the reload writes `#placed` itself after `setup`, and is left as it
-/// declared. `tests/packtest_batch.rs`
-/// (`no_template_ticks_with_the_load_re_armed`) judges the shipped bytes.
+/// The statement is the template's own handling of `#placed` after its
+/// `setup`: a write of `#placed` of its own (the latch itself included), or an
+/// `await score #placed dw.sys matches 1` that lets the real chain run and
+/// waits for it to settle before anything else ticks. A template that states
+/// it is left as it declared, and is judged on where it leaves the load all the
+/// same.
+///
+/// Decided here, over the finished templates, so that no emitter decides it,
+/// and a template written tomorrow is settled without its author knowing the
+/// rule. `tests/packtest_batch.rs` (`no_template_ticks_with_the_load_re_armed`)
+/// judges the shipped bytes: no template ticks, awaits or ends re-armed.
 fn settle_loads(ns: &str, out: &mut BuildOutput) {
     let [setup, latch] = settled_setup(ns);
+    let awaits_settle = "await score #placed dw.sys matches 1";
     let helper_prefix = format!("packtest-datapack/data/{ns}/function/");
     let test_prefix = format!("packtest-datapack/data/{ns}/test/");
     let call = format!("function {ns}:");
@@ -406,15 +416,24 @@ fn settle_loads(ns: &str, out: &mut BuildOutput) {
         let mut settle: Vec<usize> = Vec::new();
         for (i, line) in body.iter().enumerate() {
             if *line == setup {
+                if let Some(at) = armed {
+                    settle.push(at);
+                }
                 armed = Some(i);
-            } else if line.starts_with("scoreboard players set #placed dw.sys ") {
+            } else if line.starts_with("scoreboard players set #placed dw.sys ")
+                || *line == awaits_settle
+            {
                 armed = None;
             } else if let Some(at) = armed
-                && runs_load(line)
+                && (line.starts_with("await ") || runs_load(line))
             {
                 settle.push(at);
                 armed = None;
             }
+        }
+        // The template's end: the next real tick is the server's.
+        if let Some(at) = armed {
+            settle.push(at);
         }
         if settle.is_empty() {
             continue;

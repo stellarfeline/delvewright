@@ -1926,6 +1926,20 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
   Each template is a single mcfunction and therefore atomic — nothing can
   interleave *within* it; these rules make the boundaries between templates
   order-free.
+- **Own load: every `setup` leaves the load settled.** `setup` re-arms the
+  placement chain (`#placed` 0, or 3 with ground), and the batch server's world
+  is already built. A template left re-armed hands the load to whatever ticks
+  next — its own `tick` or `setup_finish`, its own `await`, or, once it ends,
+  the server's next real tick — which re-runs `place_all`, the build and
+  `setup_finish` (every unguarded NPC summon, every holder and container refill)
+  on the shared server, in front of whichever template runs next. So every
+  `setup` a template runs is followed by the latch `scoreboard players set
+  #placed dw.sys 1` (`settle_loads`, the last pass of `emit_packtest`, over the
+  finished templates), unless the template states it exercises the chain: a
+  `#placed` write of its own after the `setup`, or `await score #placed dw.sys
+  matches 1`, which lets the real chain run and waits for it to settle.
+  `no_template_ticks_with_the_load_re_armed` reds a template that runs `tick`,
+  awaits, or ends with `#placed` not 1.
 - **Division of labour is not simulable with one dummy.** A single-dummy test of
   an AND-join proves only that one player can do both arms in sequence. The
   generated
