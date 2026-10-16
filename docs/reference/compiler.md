@@ -1127,7 +1127,7 @@ translation whose recorded `source` differs from the English the line reads now
 English against the old translation. `kind` (`dsl::key_kind`, from the key alone)
 is the class of text — `name`, `title`, `description`, `objective`, `refusal`,
 `dialogue`, `bark`, `option-label`, `button-tooltip`, `item-name`,
-`item-tooltip`, `prompt`, `narration` — and a CLI test over the gallery asserts
+`item-tooltip`, `prompt`, `narration`, `sign-line` — and a CLI test over the gallery asserts
 every row has one. `situation` (`dsl::key_situations`) is the campaign context the
 line is said in, derived from the stage documents: the quest goal and its
 `happening`, the objective and what completing it does, a cast placement's
