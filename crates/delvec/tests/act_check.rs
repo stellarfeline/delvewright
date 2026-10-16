@@ -93,6 +93,9 @@ fn agrees(o: Value) -> bool {
 
 const TITLE: &str = "/content/quests/0/objectives/0/title";
 
+/// A builder of one objective of one shape, from its title.
+type Shape = fn(&str) -> Value;
+
 /// Five objectives, one per kind, each titled with a head of its own act set:
 /// the run judges all five and refuses none.
 #[test]
@@ -121,7 +124,7 @@ fn one_objective_per_kind_titled_with_its_own_act_is_green() {
 /// act set — naming the title's path and no other.
 #[test]
 fn a_head_of_a_disjoint_act_is_refused_on_every_shape() {
-    let cases: Vec<(&str, fn(&str) -> Value, &str, &str)> = vec![
+    let cases: Vec<(&str, Shape, &str, &str)> = vec![
         ("talk-to", talk, "Hear the Keeper", "Climb up to the Keeper"),
         (
             "reach-anchor",
@@ -231,7 +234,7 @@ fn give_needs_takes_item() {
 /// and refuse on one outside it.
 #[test]
 fn object_decided_heads_pass_in_their_set_and_refuse_outside_it() {
-    let shape_for = |a: Act| -> fn(&str) -> Value {
+    let shape_for = |a: Act| -> Shape {
         match a {
             Act::Reach => reach,
             Act::Talk => talk,
