@@ -190,6 +190,7 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("Objective", "item_name", Inventoried),
     ("Objective", "missing_item_hint", Inventoried),
     ("Objective", "requires_item", Reference),
+    ("Objective", "slot", Machine),
     ("Objective", "title", Inventoried),
     ("Objective", "type", Machine),
     ("PaletteBlock", "block", Reference),
