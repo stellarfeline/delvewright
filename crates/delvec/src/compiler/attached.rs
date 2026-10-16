@@ -573,7 +573,8 @@ impl Sim<'_> {
 
 /// Every `place template` the build can run, keyed as the command names it
 /// (`<ns:id>` and the position): the structure file and the piece's rotation.
-pub type TemplateIndex = BTreeMap<(String, [i32; 3]), (String, crate::compiler::rotation::Rotation)>;
+pub type TemplateIndex =
+    BTreeMap<(String, [i32; 3]), (String, crate::compiler::rotation::Rotation)>;
 
 /// One block write a command lays: each cell it reaches with the state it
 /// leaves there, over the cells its filter admits.

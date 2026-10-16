@@ -838,17 +838,51 @@ mod tests {
         let seal = RegionEvent::forced(([1, 65, 4], [1, 66, 4]), RegionWrite::Fill, 0);
         let st = world.region_state_at(&RegionEvents::from(vec![seal]), 1, &linear);
         let (seat, near) = ([5, 65, 7], [5, 65, 1]);
-        let pulled = seat_reach(&world, &st, &[door_at([1, 65, 7])], |w| w.reachable_walkable(&[seat]));
+        let pulled = seat_reach(&world, &st, &[door_at([1, 65, 7])], |w| {
+            w.reachable_walkable(&[seat])
+        });
         assert!(
             pulled.contains(&near),
             "the lever beside the seat opens the door"
         );
         let held = seat_reach(&world, &st, &[], |w| w.reachable_walkable(&[seat]));
         assert!(!held.contains(&near), "a shut door with no lever is a wall");
-        let behind = seat_reach(&world, &st, &[door_at([5, 65, 2])], |w| w.reachable_walkable(&[seat]));
+        let behind = seat_reach(&world, &st, &[door_at([5, 65, 2])], |w| {
+            w.reachable_walkable(&[seat])
+        });
         assert!(
             !behind.contains(&near),
             "a lever behind the door is never reached"
+        );
+    }
+
+    /// The same room with the lever on the near side, behind the shut door, and
+    /// a carry (a link's volume on the seat's side whose landing is on the near
+    /// side). Walking alone never reaches the lever; a reach that carries does,
+    /// so the lever is pulled and the door's own cells join the reach. A seat's
+    /// reach is carried inside the shortcut rounds, not walked.
+    #[test]
+    fn a_seat_pulls_a_lever_it_is_carried_to() {
+        let world = shortcut_world(12, 9, 65, 4, 1, None);
+        let seal = RegionEvent::forced(([1, 65, 4], [1, 66, 4]), RegionWrite::Fill, 0);
+        let st = world.region_state_at(&RegionEvents::from(vec![seal]), 1, &linear);
+        let (seat, door) = ([5, 65, 7], [1, 65, 4]);
+        let (from, to) = ([8, 65, 7], [8, 65, 2]);
+        let carried = |w: &World| {
+            let mut r = w.reachable_walkable(&[seat]);
+            if r.contains(&from) {
+                r.extend(w.reachable_walkable(&[to]));
+            }
+            r
+        };
+        let lever = [door_at([5, 65, 2])];
+        let walked = seat_reach(&world, &st, &lever, |w| w.reachable_walkable(&[seat]));
+        assert!(!walked.contains(&door), "walking never reaches the lever");
+        let reach = seat_reach(&world, &st, &lever, carried);
+        assert!(reach.contains(&to), "the carry lands on the near side");
+        assert!(
+            reach.contains(&door),
+            "the lever the carry reaches opens the door"
         );
     }
 
