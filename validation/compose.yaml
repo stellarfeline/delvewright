@@ -277,9 +277,6 @@ services:
       DELVEWRIGHT_RETRY_ON_DEATH:
       DELVEWRIGHT_CUTSCENE_GRACE_MS:
       DELVEWRIGHT_ENTITY_SETTLE_TIMEOUT_MS:
-      # spec-0086: how long one crossing of a `loop` step may take before the
-      # step fails (executor.ts, default 20 s).
-      DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS:
       # How long after the spawn the world may take to read placed
       # (`#placed dw.sys` = 1) and the first join to settle before the run
       # fails (harness/src/placement.ts, default 300 s).

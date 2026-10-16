@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { Bot } from "mineflayer";
 import { within } from "./bounded.ts";
 import { GameTimeStoppedError, STOPPED_CLOCK_MS } from "../src/game-time.ts";
+import { LOOP_BARREN_TRIPS, LOOP_MOVE_TICKS, LoopNotMovedError, LoopWalkBarrenError } from "../src/loop-cross.ts";
 import { MineflayerExecutor, completionWindowMs, respawnLanded, type BotConfig } from "../src/executor.ts";
 import { BotDeathError } from "../src/death.ts";
 import type { AssertCompleteStep } from "../src/critical-path.ts";
@@ -5446,6 +5447,7 @@ const LOOP: LoopStep = {
 
 test("a loop step crosses, sees the exact offset, stops pathfinding, and repeats `times` times", async () => {
   const bot = new LoopFakeBot();
+  serve(bot);
   const executor = attach(bot);
   executor.useLoops([LOOP]);
   await within("executor.exerciseLoop(LOOP)", executor.exerciseLoop(LOOP));
@@ -5460,6 +5462,7 @@ test("a loop step crosses, sees the exact offset, stops pathfinding, and repeats
 test("a loop step fails naming the loop and the delta when the move is not the offset", async () => {
   const bot = new LoopFakeBot();
   bot.answer = [0, 0, -5];
+  serve(bot);
   const executor = attach(bot);
   await assert.rejects(
     within("executor.exerciseLoop(wrong delta)", executor.exerciseLoop(LOOP)),
@@ -5471,18 +5474,72 @@ test("a loop step fails naming the loop and the delta when the move is not the o
   );
 });
 
-test("a loop step fails naming the count reached when no move comes", async () => {
+test("a loop step fails naming the count reached when the body stands in the slab and no move comes", async () => {
+  // The perturbation toward a loop that never moves the body: the server
+  // answers every reading, its clock ticks, and the body stands in the slab.
   const bot = new LoopFakeBot();
   bot.answer = null;
-  const executor = attach(bot, { DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS: "200" });
+  const server = serve(bot);
+  const executor = attach(bot);
   await assert.rejects(
     within("executor.exerciseLoop(no move)", executor.exerciseLoop(LOOP)),
     (e: unknown) =>
-      e instanceof Error &&
+      e instanceof LoopNotMovedError &&
       e.message.includes("loop/gallery") &&
       e.message.includes("no forced move") &&
+      e.message.includes(`${LOOP_MOVE_TICKS} of ${LOOP_MOVE_TICKS} game ticks`) &&
       e.message.includes("0 of 2"),
   );
+  // Judged in the server's ticks: the stand spanned exactly the allowance.
+  assert.ok(server.readings.length > LOOP_MOVE_TICKS, `${server.readings.length} reading(s)`);
+});
+
+test("a trip toward the slab that the pathfinder ends short of it is walked again, and the crossing passes", async () => {
+  // mineflayer-pathfinder resolves a goto on an empty partial path — what its
+  // 40ms-per-tick A* returns when the host stalls the bot mid-search — so a
+  // trip can end with the body where it started. That says nothing of the loop.
+  const bot = new LoopFakeBot();
+  serve(bot);
+  let short = 2;
+  const across = bot.pathfinder.goto;
+  bot.pathfinder.goto = async (...args: unknown[]): Promise<void> => {
+    const goal = args[0] as { z: number };
+    if (goal.z > 22 && short > 0) {
+      short -= 1;
+      bot.calls.push("goto(short)");
+      return;
+    }
+    return across(...args);
+  };
+  const executor = attach(bot);
+  await within("executor.exerciseLoop(short trips)", executor.exerciseLoop(LOOP));
+  assert.equal(bot.moves, 2, "two moves seen");
+  assert.equal(bot.calls.filter((c) => c === "goto(short)").length, 2, bot.calls.join(" "));
+});
+
+test("a walk toward the slab that keeps ending short without advancing fails, named, after its count of trips", async () => {
+  const bot = new LoopFakeBot();
+  serve(bot);
+  let trips = 0;
+  const across = bot.pathfinder.goto;
+  bot.pathfinder.goto = async (...args: unknown[]): Promise<void> => {
+    const goal = args[0] as { z: number };
+    if (goal.z > 22) {
+      trips += 1;
+      throw new Error("No path to the goal!");
+    }
+    return across(...args);
+  };
+  const executor = attach(bot);
+  await assert.rejects(
+    within("executor.exerciseLoop(barren)", executor.exerciseLoop(LOOP)),
+    (e: unknown) =>
+      e instanceof LoopWalkBarrenError &&
+      e.message.includes("loop/gallery") &&
+      e.message.includes("No path to the goal!") &&
+      e.message.includes("0 of 2"),
+  );
+  assert.equal(trips, LOOP_BARREN_TRIPS);
 });
 
 test("a forced move equal to a loop's offset during a plain walk fails that walk naming the loop", async () => {
