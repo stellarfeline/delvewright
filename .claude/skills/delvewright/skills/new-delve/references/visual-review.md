@@ -111,7 +111,7 @@ the build did not write.
 ## What the set costs
 
 **Seconds to minutes for a whole set.** Measured on a ten-core development
-machine: {RATE_LINE} The frames' own binding lines state the set's wall time,
+machine: a 24-view demo level's set in 9 s on the CPU and 4 s on the GPU (Metal), its 1600 × 900 panorama in 45 s and 2 s, a 200-frame set in 68 s and 40 s. The frames' own binding lines state the set's wall time,
 peak memory and per-frame times on every run — read them rather than carrying a
 number off this page. Every shot is drawn, in route order in the index; a set
 you did not draw is reported as not drawn, per shot.

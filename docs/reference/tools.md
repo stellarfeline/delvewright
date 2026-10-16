@@ -79,7 +79,7 @@ The only path from DSL to datapack (ADR-0001). Full behavior:
 | `metrics` | export the metrics standard — the numbers a level is built to (compiler.md §10) | — (`--json` puts the `DW0813` notice in the diagnostic shape) |
 | `l10n-inventory <dir>` | l10n key inventory as JSON, each row with its kind, speaker, situation and staleness (transcreation input) | `--lang` |
 | `l10n-apply <dir> --table <f>` | write the `--lang` sidecar from a table of canonical English → translation (spec-0071 §4) — **the verb a translating agent has instead of addressing positional keys**. Every inventory row whose English the table carries is written with its `source`; a row already translated from unchanged English is kept; a row translated with no `source` is kept and counted apart, since nothing can say whether it still matches. The sidecar is exactly the inventory, so an orphan row is impossible and an inserted effect renumbers the `fx.` keys under the tool rather than under the translator. Prints `N of M rows translated`, every English still missing, every table entry that matched no row, and every English two keys share — the one thing a table keyed by English cannot say, so the sidecar stays directly editable for those. Exit 1 when anything is missing or unmatched, the signal `fmt --check` gives; the bytes are written either way, in canonical form | `--lang`, `--table <file\|->` |
-| `frames <build-dir>` | every review frame of a build, drawn in-process by Lumenwright from the world each shot stands in, with `shot-index.json` (spec-0112) | `-o <build-dir>/frames`, `--shot <id>`…, `--labels`, `--size 1024`, `--backend auto\|cpu\|gpu`, `--threads N`, `--textures <jar>` |
+| `frames <build-dir>` | every review frame of a build, drawn in-process by Lumenwright from the world each shot stands in, with `shot-index.json` (spec-0112) | `-o <build-dir>/frames`, `--shot <id>`…, `--labels`, `--size 1024`, `--backend auto\|cpu\|metal\|vulkan\|dx12`, `--threads N`, `--textures <jar>` |
 | `frames --campaign <dir>` | one quick frame of a campaign's load world, assembled in-process, for placing things (spec-0015) | `--camera x,y,z,yaw,pitch[,fov]` \| `--at <anchor> [--orbit <deg>] [--dist <n>]`, `--labels`, `--size 1024`, `-o frame.png`, draw flags |
 | `blocking-chart <dir>` | per-elevation cutaway floor plans (spec-0015) | `-o blocking-chart`, `--timing` |
 | `edit apply <dir>` | replay the stage-7 edit script, persist a green candidate | `--batch <file>`, `-o edit-shots` |
@@ -821,7 +821,7 @@ that read them rather than globally, so `delvec build --help` does not grow a
 flag it has no use for:
 
 ```
-delvec frames <build-dir> [-o <dir>] [--shot <id>]... [--labels] [--size 1024] [--backend auto|cpu|gpu]
+delvec frames <build-dir> [-o <dir>] [--shot <id>]... [--labels] [--size 1024] [--backend auto|cpu|metal|vulkan|dx12]
                                              # every review frame of a build, from the worlds it wrote (§4a)
 delvec frames --campaign <dir> (--camera x,y,z,yaw,pitch[,fov] | --at <anchor>) [-o frame.png]
                                              # one frame of a campaign's load world
@@ -1295,8 +1295,8 @@ in, RGBA pixels and the renderer's own statistics out.
 **Backends.** `--backend auto` (default) takes the GPU wgpu finds — Metal on
 macOS, Vulkan or DX12 elsewhere — and falls back to the CPU when there is
 none, saying so on the first line (`renderer: lumenwright <rev>, backend cpu
-(…) (auto: fell back to cpu: <why>)`). `--backend cpu` or `--backend gpu` names
-one; a named backend that is not available is `DW0723`. `--threads` sizes the
+(…) (auto: fell back to cpu: <why>)`). `--backend cpu`, `metal`, `vulkan` or `dx12`
+names one, and a named backend that is not available is `DW0723`. `--threads` sizes the
 CPU backend's pool (default every core); the CPU backend's pixels are the same
 at any count. A GPU frame is not byte-stable across drivers, so nothing
 compares one; every gate draws on the CPU.
@@ -1322,13 +1322,24 @@ draws it.
 
 **The measured rate and the ceiling** (spec-0112 §12), on this development
 machine (Apple M-series, 10 cores; macOS), the instrument `delvec` built
-`--release` from this tree at {ENGINE_REV} with Lumenwright at
+`--release` from this tree at `8150c02f9` with Lumenwright at
 `ed3f049cc496d5f1b7df9829bda1bcb443ad1d06`, wall and peak resident set read by
-`/usr/bin/time -l`, each run's first line naming its backend:
+`/usr/bin/time -l` (wall is its `real`, peak its maximum resident set size),
+each run's first line naming its backend, against the pinned client jar
+(sha256 `1473c948…`); every set is inside its ceiling:
 
 | Set | Backend | Frames | Wall | Peak resident | Per frame (median / max) | Ceiling |
 |---|---|---|---|---|---|---|
-{RATE_ROWS}
+| The Armoury's 24 review frames | CPU (10 threads) | 24 quick, 1024² | 9.43 s | 62.1 MB | 0.320 / 0.597 s | — |
+| The Armoury's panorama | CPU | 1 hq, 1600×900, 256 spp | 44.59 s | 52.0 MB | 44.48 s | — |
+| **The Armoury's set (views + panorama)** | **CPU** | 25 | **54.0 s** | **62.1 MB** | — | 60 s, 1 GiB, 2 s a quick frame |
+| The Armoury's 24 review frames | Metal (Apple M2 Pro) | 24 quick, 1024² | 4.40 s | 69.2 MB | 0.138 / 0.292 s | — |
+| The Armoury's panorama | Metal | 1 hq, 1600×900, 256 spp | 2.37 s | 116.6 MB | 2.29 s | — |
+| **The Armoury's set (views + panorama)** | **Metal** | 25 | **6.8 s** | **116.6 MB** | — | 60 s |
+| The gallery's review frames | CPU (10 threads) | 200 quick, 1024² | 67.82 s | 132.0 MB | 0.269 / 0.991 s | 120 s |
+| The gallery's review frames | Metal | 200 quick, 1024² | 39.58 s | 133.6 MB | 0.143 / 0.424 s | 120 s |
+| One gallery showcase camera (`hall-exterior`) | CPU | 1 hq, 1600×900, 300 spp | 26.99 s | 127.5 MB | 25.83 s | 10 min (at 256 spp) |
+| One gallery showcase camera (`hall-exterior`) | Metal | 1 hq, 1600×900, 300 spp | 2.92 s | 194.3 MB | 1.65 s | 60 s (at 256 spp) |
 
 The Armoury is content `demo/the-armoury` at `7ee698e9a19204f5c2deff290931dc7eb156e949`,
 whose documents declare `dsl_version` 0.49.0, newer than this engine's 0.41.0:

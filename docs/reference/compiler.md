@@ -5403,7 +5403,7 @@ the mode, and returns the pixels with the renderer's own statistics.
   frames land (spec-0112 phase 2).
 - **Backends.** `--backend auto` (default) takes the GPU wgpu finds — Metal,
   Vulkan, DX12 — and falls back to the CPU, saying so on the first line;
-  `--backend cpu|gpu` names one, and a named backend that is not available is
+  `--backend cpu|metal|vulkan|dx12` names one, and a named backend that is not available is
   refused (`DW0723`). The CPU backend's pixels are a function of the inputs
   alone at any `--threads` (`tests/frames.rs` draws one build at 1 and at 10
   threads and compares every byte); a GPU frame is not byte-stable across
@@ -5419,7 +5419,7 @@ the mode, and returns the pixels with the renderer's own statistics.
 
 ```
 delvec frames <build-dir> [-o <dir>] [--shot <id>]... [--labels] [--size 1024]
-    [--backend auto|cpu|gpu] [--threads N] [--textures <jar>]
+    [--backend auto|cpu|metal|vulkan|dx12] [--threads N] [--textures <jar>]
 delvec frames --campaign <campaign-dir> (--camera x,y,z,yaw,pitch[,fov] | --at <anchor>
     [--orbit <deg>] [--dist <n>]) [-o out.png] [--labels] [--size 1024] [draw flags]
 ```
