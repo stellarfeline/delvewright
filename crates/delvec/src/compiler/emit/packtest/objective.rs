@@ -980,8 +980,7 @@ pub(super) fn emit_verb_packtests(
             "{}: every NPC summon resolves to exactly one entity",
             artifact_title(c)
         ));
-        b.push(format!("function {ns}:setup"));
-        b.push("scoreboard players set #placed dw.sys 1".to_string());
+        b.extend(settled_setup(ns));
         for npc in &plan.npcs {
             b.push(format!("kill @e[tag={}]", npc.tag));
         }

@@ -305,6 +305,23 @@ fn shielded_tick(ns: &str) -> Vec<String> {
     ]
 }
 
+/// `setup`, re-run by a template, with the world's load latched closed after it.
+///
+/// `setup` re-arms the load: it sets `#placed` to 0 (or 3, for a campaign with
+/// ground), and the next `tick` resumes the placement loop. For a campaign whose
+/// world needs no build step, `place_verify` calls `setup_finish` directly, so
+/// that one `tick` runs the whole load: it re-summons every body and refills
+/// every holder and container, in the same tick as the template's own lines. A
+/// template that runs `tick` would then judge the load, not the effect it drove.
+/// The world the batch server holds is already built, so the template latches
+/// `#placed` at 1, the value `setup_finish` leaves.
+fn settled_setup(ns: &str) -> [String; 2] {
+    [
+        format!("function {ns}:setup"),
+        "scoreboard players set #placed dw.sys 1".to_string(),
+    ]
+}
+
 /// The header lines shared by every generated PackTest (`# @dummy` + timeout).
 fn packtest_header(title: &str) -> Vec<String> {
     vec![

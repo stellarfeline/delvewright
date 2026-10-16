@@ -6,7 +6,9 @@ use delvewright_dsl::holders::HolderFamily;
 /// drives the holder's own body and asserts what the engine owns about it —
 /// one body carries its tag, every slot a `loot` fill claims holds its item,
 /// and the flags are the ones §4.1 sets — and, on a frame, the §4.3 freeze:
-/// emptied, a `tick` later it is `Fixed` and `Invulnerable`. The test restores
+/// emptied, a `tick` later it is `Fixed` and `Invulnerable` — that `tick` run
+/// with the load latched (`settled_setup`), so it judges the frame this test
+/// emptied rather than a `setup_finish` that refills it. The test restores
 /// the frame's contents and flags as it found them, so it leaves the world as
 /// any sibling template expects it. A PackTest dummy performs no real attack
 /// or click; the take is the bot's.
@@ -21,7 +23,9 @@ pub(super) fn emit_holder_packtests(plan: &Plan, out: &mut BuildOutput, holders:
             "{title}: the `{}` `{id}` is summoned and filled as the engine owns it (spec-0111)",
             o.holder.kind.id
         ));
-        b.push(format!("function {ns}:setup"));
+        // Latched: the freeze below runs one `tick`, which must judge the
+        // frame this template emptied, not a load that refills it.
+        b.extend(settled_setup(ns));
         b.push(format!("function {ns}:{}", super::super::holder_fn(o)));
         b.push(format!("scoreboard players set #hn_{id} dw.sys 0"));
         b.push(format!(
