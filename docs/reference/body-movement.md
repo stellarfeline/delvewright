@@ -138,6 +138,14 @@ base `applyInput` for the player whose client this is.
   straight across a one-column gap without jumping (the lagged `onGround` plus the
   step-up onto the far block), and falls into a two-column gap; a walking body
   falls into either.
+- **Cited** `Entity.checkSupportingBlock`, `CollisionGetter.findSupportingBlock`,
+  `BlockCollisions.computeNext`: what a body rests on is read off its **exact** box —
+  the slab `(minX, minY − 1e-6, minZ)`–`(maxX, minY, maxZ)` under its feet, never
+  widened — and a block supports it only when its collision shape overlaps that
+  slab with positive volume (`AABB.intersects`, `Shapes.joinIsNotEmpty` with `AND`:
+  strict comparisons, so a face the box only touches is no support). The reach
+  graph credits a landing in exactly those cells (`landing_cells`), within the
+  collision tolerance above.
 
 ## 5. Jump
 
