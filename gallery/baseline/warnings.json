@@ -156,11 +156,6 @@
       "stage": "site-plan:"
     },
     {
-      "code": "DW0781",
-      "pointer": "/content/details",
-      "stage": "detail-plan"
-    },
-    {
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
@@ -336,11 +331,6 @@
       "code": "DW0813",
       "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
       "stage": "site-plan:"
-    },
-    {
-      "code": "DW0781",
-      "pointer": "/content/details",
-      "stage": "detail-plan"
     },
     {
       "code": "DW0353",
@@ -520,11 +510,6 @@
       "stage": "site-plan:"
     },
     {
-      "code": "DW0781",
-      "pointer": "/content/details",
-      "stage": "detail-plan"
-    },
-    {
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
@@ -700,11 +685,6 @@
       "code": "DW0813",
       "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
       "stage": "site-plan:"
-    },
-    {
-      "code": "DW0781",
-      "pointer": "/content/details",
-      "stage": "detail-plan"
     },
     {
       "code": "DW0353",
@@ -884,11 +864,6 @@
       "stage": "site-plan:"
     },
     {
-      "code": "DW0781",
-      "pointer": "/content/details",
-      "stage": "detail-plan"
-    },
-    {
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
       "stage": "world-edits"
@@ -941,11 +916,6 @@
       "stage": "site-plan:"
     },
     {
-      "code": "DW0781",
-      "pointer": "/content/details",
-      "stage": "detail-plan"
-    },
-    {
       "code": "DW0822",
       "pointer": "/content/boxes",
       "stage": "site-plan"
@@ -988,11 +958,6 @@
       "stage": "site-plan:"
     },
     {
-      "code": "DW0781",
-      "pointer": "/content/details",
-      "stage": "detail-plan"
-    },
-    {
       "code": "DW0822",
       "pointer": "/content/boxes",
       "stage": "site-plan"
@@ -1013,11 +978,6 @@
       "code": "DW0813",
       "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
       "stage": "site-plan:"
-    },
-    {
-      "code": "DW0781",
-      "pointer": "/content/details",
-      "stage": "detail-plan"
     }
   ],
   "void-horizon.en": [
@@ -1175,11 +1135,6 @@
       "code": "DW0813",
       "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
       "stage": "site-plan:"
-    },
-    {
-      "code": "DW0781",
-      "pointer": "/content/details",
-      "stage": "detail-plan"
     },
     {
       "code": "DW0353",
