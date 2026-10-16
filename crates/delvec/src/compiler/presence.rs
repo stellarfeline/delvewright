@@ -18,7 +18,7 @@
 //! # The story states
 //!
 //! Per configuration — the exported critical path and every realised branch's
-//! play order ([`Flow::playthrough`], [`Flow::playthrough_in`]) — the replay's own
+//! play order in its story world ([`Flow::playthrough`], [`Flow::story_playthrough`]) — the replay's own
 //! journal ([`Flow::journal`]) says which lifecycle lines each step fires, in
 //! order ([`crate::compiler::flow::JournalStep::fired_in_order`]). World init
 //! puts every non-deferred NPC on stage and no actor. Each step then applies the
@@ -224,7 +224,7 @@ pub fn check(c: &Campaign) -> (Vec<Diagnostic>, PresenceBinding) {
     let mut walks = vec![("the critical path".to_string(), main)];
     for r in crate::compiler::branch::realize(c) {
         if let Some(w) = r.world {
-            walks.push((format!("branch `{}`", r.branch.id), flow.playthrough_in(w)));
+            walks.push((format!("branch `{}`", r.branch.id), flow.story_playthrough(w)));
         }
     }
     bind.configurations = walks.len();
