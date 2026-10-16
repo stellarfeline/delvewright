@@ -838,3 +838,49 @@ fn a_collect_slot_is_judged_as_a_loot_slot_is() {
     }
 }
 
+/// spec-0111 §5.2: a holder entity's own cell, and the cell of every holder
+/// beside it, is no stance from which a holder is judged. The block model
+/// treats a stand as air, so before this the stance nearest a stand was the
+/// cell it stands in — the critical path ended inside the stand, and the walk
+/// went through the stand beside it.
+#[test]
+fn a_holders_own_cell_and_its_neighbours_are_no_stance() {
+    let dir = scratch("holders-stance-prefabs");
+    let beside = [STAND[0] - 1, STAND[1], STAND[2]];
+    let prefabs = holder_prefabs(
+        &dir.join("prefabs"),
+        vec![
+            stand_entity(),
+            holder_entity("minecraft:armor_stand", beside, false, &[]),
+        ],
+    );
+    let (code, log, out) = build_holders(
+        "holders-stance",
+        &prefabs,
+        sword_collect(serde_json::json!({"slot": "weapon.mainhand"})),
+        None,
+    );
+    assert_eq!(code, 0, "{log}");
+    let cp: serde_json::Value = serde_json::from_str(&read(&out, "critical-path.json")).unwrap();
+    let step = cp["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["objective"] == "obj/exit")
+        .unwrap();
+    let stance: Vec<i64> = serde_json::from_value(step["holder"]["stance"].clone())
+        .unwrap_or_else(|e| panic!("{e}: {step}"));
+    let pos: Vec<i64> = serde_json::from_value(step["pos"].clone()).unwrap();
+    // The two stands' world cells: the step's own cell is the sword stand's.
+    let off = [
+        pos[0] - i64::from(STAND[0]),
+        pos[1] - i64::from(STAND[1]),
+        pos[2] - i64::from(STAND[2]),
+    ];
+    let world = |c: [i32; 3]| -> Vec<i64> { (0..3).map(|i| i64::from(c[i]) + off[i]).collect() };
+    for cell in [STAND, beside] {
+        assert_ne!(stance, world(cell), "stance in a stand's cell: {step}");
+        let above = [cell[0], cell[1] + 1, cell[2]];
+        assert_ne!(stance, world(above), "stance on a stand's head: {step}");
+    }
+}

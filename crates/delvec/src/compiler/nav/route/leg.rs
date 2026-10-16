@@ -297,7 +297,8 @@ impl BodyBox {
 
     /// The cells the box overlaps — a ray may pass through them, since the
     /// body stands in them.
-    fn cells(&self) -> Vec<[i32; 3]> {
+    #[must_use]
+    pub fn cells(&self) -> Vec<[i32; 3]> {
         let lo = self.lo.map(|v| v.floor() as i32);
         let hi = self.hi.map(|v| (v - 1e-9).floor() as i32);
         let mut out = Vec::new();

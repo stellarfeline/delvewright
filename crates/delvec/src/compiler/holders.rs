@@ -1424,7 +1424,8 @@ pub struct Stance {
 /// a frame's support solid and its own cell clear, a stand's foot cell
 /// standable — and every filled holder has a standable, walk-reachable cell
 /// from whose eye its box is within `INTERACTION_REACH` along an unobstructed
-/// segment. Returns each holder's stance cells (in [`own_holders`] order) and
+/// segment, and in which a standing player's body shares no cell with any
+/// holder entity's body ([`holder_free`]). Returns each holder's stance cells (in [`own_holders`] order) and
 /// the `(unsupported, unreachable)` counts, or `DW1037` naming every holder
 /// that fails and the remedies at the piece.
 pub fn check_stance(
@@ -1433,6 +1434,10 @@ pub fn check_stance(
     reachable: &std::collections::BTreeSet<[i32; 3]>,
 ) -> (Vec<Stance>, (usize, usize), Result<(), Failure>) {
     let reach = crate::compiler::crosshair::INTERACTION_REACH;
+    let occupied: std::collections::BTreeSet<[i32; 3]> = owned
+        .iter()
+        .flat_map(|o| o.holder.body_box().cells())
+        .collect();
     let mut unsupported = Vec::new();
     let mut unreachable = Vec::new();
     let mut stances = Vec::new();
@@ -1472,6 +1477,9 @@ pub fn check_stance(
         }
         let cells = if o.is_filled() {
             crate::compiler::nav::stance_cells(world, &h.body_box(), reach, reachable)
+                .into_iter()
+                .filter(|c| holder_free(world, *c, &occupied))
+                .collect()
         } else {
             Vec::new()
         };
@@ -1520,6 +1528,24 @@ pub fn check_stance(
         ),
     };
     (stances, counts, Err(failure))
+}
+
+/// Whether a player standing in `c` keeps its body out of every holder
+/// entity's body cells `occupied` (spec-0111 §5.2). The block model reads a
+/// holder as air, so a stance search over blocks alone finds the cell a stand
+/// stands in as the stance nearest it: a stance inside the holder proves no
+/// separate line of sight, and the route to it walks through the stand beside
+/// it. The holder's own cells, and a neighbouring holder's, are no stance.
+fn holder_free(
+    world: &crate::compiler::nav::World,
+    c: [i32; 3],
+    occupied: &std::collections::BTreeSet<[i32; 3]>,
+) -> bool {
+    use delvewright_dsl::metrics::PLAYER_HEIGHT;
+    let feet = world.feet_y(c);
+    let lo = feet.floor() as i32;
+    let hi = (feet + PLAYER_HEIGHT - 1e-9).floor() as i32;
+    (lo..=hi).all(|y| !occupied.contains(&[c[0], y, c[2]]))
 }
 
 /// **`DW1038`** (spec-0111 §6.4): no runtime `set-block`, `fill-region` or
