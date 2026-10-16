@@ -31,7 +31,7 @@ This module's rows of a section whose prose is on the [`delvec::compiler::nav` p
 
 `build_critical_path` derives an inter-area transport map for whatever
 playthrough it is handed, so every branch already has one
-(`Plan::branch_critical_path`), and `validation/branch-path-<slug>.json`
+(`Plan::branch_critical_path`), and `validation/world-path-<k>.json`
 publishes it to the harness. Emission carries them too: the
 **exported** path's crossings are emitted unconditionally in the objective's
 `complete_<obj>` bundle, and every crossing that exists only on a BRANCH is

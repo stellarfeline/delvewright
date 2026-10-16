@@ -193,7 +193,7 @@ fn party_reads(fragment: &str) -> BTreeSet<String> {
 
 /// The function a line dispatches, if it names one in this campaign's namespace.
 /// `function #<ns>:<tag>` names a tag, not a function, and is skipped.
-fn dispatch_target(ns: &str, line: &str) -> Option<String> {
+pub(crate) fn dispatch_target(ns: &str, line: &str) -> Option<String> {
     let needle = format!("function {ns}:");
     let i = line.rfind(&needle)?;
     if line[..i].ends_with('#') {

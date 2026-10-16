@@ -941,28 +941,40 @@ pub(super) fn prove_world(
                 // thinning, same DW0314 standability self-check, same JSON
                 // shape — `waypoints_json`). Deterministic: branches enumerate
                 // in declaration-order (ADR-0006).
-                let realized = crate::compiler::branch::realize(plan.campaign);
-                if !realized.is_empty() {
+                // spec-0108 §4.3: the rows are story worlds, each walked in a
+                // world of its own — every world that exports a path gets its
+                // own proof and waypoints, keyed by its slug (`world-<k>`).
+                let rows: Vec<crate::compiler::branch::WorldRow> =
+                    if crate::compiler::branch::plans_worlds(plan.campaign) {
+                        crate::compiler::branch::world_rows(plan.campaign)
+                    } else {
+                        Vec::new()
+                    };
+                if !rows.is_empty() {
                     let flow = crate::compiler::flow::Flow::new(plan.campaign);
-                    for r in &realized {
-                        let Some(widx) = r.world else { continue };
+                    for row in rows.iter().filter(|w| w.no_path.is_none()) {
+                        let r = &row.realized;
+                        let widx = row.k;
+                        let who = row.label();
                         let label = |e: Failure| Failure {
                             code: e.code,
-                            message: format!("branch `{}`: {}", r.branch.id, e.message),
+                            message: format!("{who}: {}", e.message),
                         };
                         let branch_fail = |e: plan::PlanError| BuildFailure::Diagnostic {
                             code: e.failure.code,
-                            message: format!("branch `{}`: {}", r.branch.id, e.failure.message),
+                            message: format!("{who}: {}", e.failure.message),
                         };
                         let unlinked = plan
-                            .branch_critical_path(&flow, &flow.playthrough_in(widx))
+                            .branch_critical_path(&flow, &flow.story_playthrough(widx))
                             .map_err(branch_fail)?;
                         // The branch's own links (spec-0083 §6): taken over its
                         // own steps and gate model, then spliced into its path.
-                        let takes = if plan.links.is_empty() {
+                        let (unlinked_events, unlinked_ancestors) =
+                            plan.branch_gate_model(&unlinked);
+                        let takes = if plan.links.is_empty() && !unlinked_events.has_keep_out() {
                             plan::LinkTakes::default()
                         } else {
-                            let (region_events, ancestors) = plan.branch_gate_model(&unlinked);
+                            let (region_events, ancestors) = (unlinked_events, unlinked_ancestors);
                             let ancestor = |g: usize, s: usize| {
                                 g == 0 || ancestors.get(&s).is_some_and(|a| a.contains(&g))
                             };
@@ -981,7 +993,7 @@ pub(super) fn prove_world(
                         } else {
                             plan.branch_critical_path_linked(
                                 &flow,
-                                &flow.playthrough_in(widx),
+                                &flow.story_playthrough(widx),
                                 &takes,
                             )
                             .map_err(branch_fail)?

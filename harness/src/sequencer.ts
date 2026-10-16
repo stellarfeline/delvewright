@@ -17,6 +17,7 @@ import type {
   Step,
   TalkToStep,
   TriggerStep,
+  MockStep,
 } from "./critical-path.ts";
 import { landingCarrier } from "./critical-path.ts";
 import { BotDeathError } from "./death.ts";
@@ -52,6 +53,11 @@ export interface StepExecutor {
    * fakes keep compiling; a path carrying a `loop` step against an executor
    * without it is a hard failure, never a silent skip. */
   exerciseLoop?(step: LoopStep): Promise<void>;
+  /** Perform an act no step kind drives by its engine function (spec-0108 §6.5),
+   * asserting the state it changes. Proves no objective. Optional so existing
+   * fakes keep compiling; a path carrying a `mock` step against an executor
+   * without it is a hard failure, never a silent skip. */
+  mock?(step: MockStep): Promise<void>;
   assertComplete(step: AssertCompleteStep): Promise<void>;
   /**
    * Optional (gap 8): after a step whose completion teleports the player to
@@ -231,6 +237,14 @@ async function dispatch(executor: StepExecutor, step: Step): Promise<void> {
         );
       }
       return executor.exerciseLoop(step);
+    case "mock":
+      if (!executor.mock) {
+        throw new Error(
+          `critical path performs ${step.act} by mock but this executor cannot run a mock — ` +
+            `the world would walk on without the act that makes it this world`,
+        );
+      }
+      return executor.mock(step);
     case "assert-complete":
       return executor.assertComplete(step);
   }
@@ -259,7 +273,15 @@ export async function runSequence(
   const finalObjectiveIndex = (() => {
     for (let i = path.steps.length - 2; i >= 0; i--) {
       const action = path.steps[i]!.action;
-      if (action !== "rest" && action !== "trigger" && action !== "witness-strike" && action !== "loop") return i;
+      if (
+        action !== "rest" &&
+        action !== "trigger" &&
+        action !== "witness-strike" &&
+        action !== "loop" &&
+        action !== "mock"
+      ) {
+        return i;
+      }
     }
     return path.steps.length - 2;
   })();

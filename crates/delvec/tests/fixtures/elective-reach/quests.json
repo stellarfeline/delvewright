@@ -1,0 +1,157 @@
+{
+  "campaign_id": "hello-world",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greeting",
+            "doing": "keeping the door"
+          }
+        },
+        "happening": {
+          "text": "The party reaches the Keeper.",
+          "verb": "arrives"
+        },
+        "id": "quest/decide",
+        "objectives": [
+          {
+            "happening": {
+              "text": "The Keeper listens.",
+              "verb": "learns"
+            },
+            "id": "obj/decide",
+            "npc": "npc/keeper",
+            "type": "talk-to"
+          }
+        ],
+        "on_complete": [],
+        "trigger": {
+          "type": "campaign-start"
+        }
+      },
+      {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greeting",
+            "doing": "keeping the door"
+          }
+        },
+        "happening": {
+          "text": "quest/tally opens.",
+          "verb": "learns"
+        },
+        "id": "quest/tally",
+        "objectives": [
+          {
+            "anchor": "anchor/exit",
+            "happening": {
+              "text": "obj/count is reached.",
+              "verb": "arrives"
+            },
+            "id": "obj/count",
+            "radius": 2,
+            "requires_flags": [
+              "flag/rang"
+            ],
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "amount": 1,
+            "state": "state/tally",
+            "type": "add-state"
+          }
+        ],
+        "trigger": {
+          "quest": "quest/decide",
+          "type": "quest-complete"
+        }
+      },
+      {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greeting",
+            "doing": "keeping the door"
+          }
+        },
+        "happening": {
+          "text": "quest/end opens.",
+          "verb": "learns"
+        },
+        "id": "quest/end",
+        "objectives": [
+          {
+            "anchor": "anchor/exit",
+            "happening": {
+              "text": "obj/walk-out is reached.",
+              "verb": "arrives"
+            },
+            "id": "obj/walk-out",
+            "radius": 2,
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "ending": "ending/home",
+            "happening": {
+              "text": "Home.",
+              "verb": "survives"
+            },
+            "type": "campaign-complete"
+          },
+          {
+            "style": "chat",
+            "text": "Counted.",
+            "type": "narrate",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/tally",
+                  "value": 1
+                }
+              ]
+            }
+          }
+        ],
+        "trigger": {
+          "quest": "quest/decide",
+          "type": "quest-complete"
+        }
+      }
+    ],
+    "state": [
+      {
+        "id": "state/tally",
+        "scope": "party"
+      }
+    ],
+    "triggers": [
+      {
+        "at": "anchor/door",
+        "effects": [
+          {
+            "flag": "flag/rang",
+            "happening": {
+              "text": "The bell rings.",
+              "verb": "learns"
+            },
+            "type": "set-flag"
+          }
+        ],
+        "id": "trigger/bell",
+        "on": {
+          "on": "use"
+        }
+      }
+    ]
+  },
+  "dsl_version": "0.46.0",
+  "stage": "quests"
+}

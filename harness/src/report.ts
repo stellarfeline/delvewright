@@ -83,6 +83,8 @@ export interface BranchOutcome {
   readonly entryCommands: readonly string[];
   /** The endings the compiler proved fire on this branch. */
   readonly endings: readonly string[];
+  /** spec-0108 §6.5: `<act>: mocked: <kind>` per act the run performed by mock. */
+  readonly mocked?: readonly string[];
 }
 
 /** The ladder's labelled stages. */
@@ -138,6 +140,9 @@ export class RunReport {
   private readonly rests: PerformedRest[] = [];
   private readonly namedEntityDeaths: ClassifiedDeath[] = [];
   private branches: BranchOutcome[] | undefined;
+  /** spec-0108 §6.3: what the bot read of the world the ending left. */
+  private aftermath: import("./aftermath.ts").AftermathResult[] | undefined;
+  private mocks: import("./mock.ts").MockResult[] = [];
   private branchTier: string | undefined;
   private drivenBranch: string | undefined;
   /** Every walk into a lethal volume, and what the stage examined. */
@@ -195,6 +200,20 @@ export class RunReport {
     const row = this.stages.get(target);
     if (!row) throw new Error(`no ${target} row to append ${failures.length} failure(s) to`);
     this.stages.set(target, { ...row, failures: [...row.failures, ...failures] });
+  }
+
+  /** Record what the bot read of the world the ending left (spec-0108 §6.3). */
+  /**
+   * Record every act the run performed by mock (spec-0108 §6.5): the report
+   * says `mocked: <kind>` per act, with their count, so a mocked act is never
+   * read as one a player's hand drove.
+   */
+  recordMocks(results: readonly import("./mock.ts").MockResult[]): void {
+    this.mocks = [...results];
+  }
+
+  recordAftermath(results: readonly import("./aftermath.ts").AftermathResult[]): void {
+    this.aftermath = [...results];
   }
 
   recordHarnessCrash(crash: HarnessCrash): void {
@@ -390,6 +409,36 @@ export class RunReport {
                 chronicle: b.chronicle,
                 entry_commands: [...b.entryCommands],
                 endings: [...b.endings],
+                ...(b.mocked === undefined ? {} : { mocked: [...b.mocked], mocked_count: b.mocked.length }),
+              })),
+            },
+          };
+    // spec-0108 §6.3: present only when the path's ending leaves something to
+    // read, so a report of a path without one is byte-identical.
+    const aftermath =
+      this.aftermath === undefined || this.aftermath.length === 0
+        ? {}
+        : {
+            aftermath: this.aftermath.map((r) => ({
+              path: r.path,
+              verb: r.verb,
+              status: r.status,
+              detail: r.detail,
+            })),
+          };
+    // spec-0108 §6.5: present only when the path performed an act by mock.
+    const mocked =
+      this.mocks.length === 0
+        ? {}
+        : {
+            mocked: {
+              count: this.mocks.length,
+              acts: this.mocks.map((m) => ({
+                act: m.act,
+                mocked: m.kind,
+                function: m.function,
+                passed: m.passed,
+                detail: m.detail,
               })),
             },
           };
@@ -397,6 +446,8 @@ export class RunReport {
       version: 1,
       campaign_id: this.campaignId,
       ...branches,
+      ...aftermath,
+      ...mocked,
       // The difficulty the run was verified AT: spec-0023 §3 proves orchestration
       // end-to-end at the SHIPPED difficulty, so the number it ran under belongs
       // in the artifact next to the assists that made it survivable.

@@ -118,7 +118,7 @@ pub fn branch_paths(plan: &Plan) -> Vec<(String, Option<PathModel>)> {
         .map(|r| {
             let model = r.world.and_then(|w| {
                 let cp = plan
-                    .branch_critical_path(&flow, &flow.playthrough_in(w))
+                    .branch_critical_path(&flow, &flow.story_playthrough(w))
                     .ok()?;
                 let (events, ancestors) = plan.branch_gate_model(&cp);
                 Some(PathModel {

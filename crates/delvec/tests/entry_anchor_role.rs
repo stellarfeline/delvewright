@@ -224,7 +224,8 @@ fn build_with(prefabs_dir: &Path) -> Result<BuildOutput, BuildFailure> {
 /// The `transport` cell the bolt branch's crossing promises, read off the
 /// exported branch path — the artifact the harness actually walks.
 fn bolt_transport(out: &BuildOutput) -> Option<Value> {
-    let raw = out.get("validation/branch-path-bolt.json")?;
+    let file = common::world_file_of(out, "branch/bolt", "path");
+    let raw = out.get(&file)?;
     let doc: Value = serde_json::from_slice(raw).ok()?;
     doc["steps"]
         .as_array()?

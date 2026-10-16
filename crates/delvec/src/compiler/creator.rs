@@ -472,6 +472,14 @@ const CAMERA_TEST_Y: i32 = 300;
 /// recomputed on its tick, and the eye height follows the pose — and then does
 /// everything it asserts inside one tick, so no sibling in the batch can move
 /// the dummy between the stamp and the reading it is held to.
+///
+/// What it cannot fix from inside is a sibling that takes every body — a
+/// cutscene's start and return (`gamemode spectator @a`, `tp @a <mark>`).
+/// Measured with every template in one batch: the stamp read the dummy at
+/// another test's position (eye `2147483647,-56380,…`, yaw 0 pitch 0, `in`
+/// air) after the template's own `gamemode` and `tp`, red in 9 of 11 such
+/// runs. Such a sibling never shares its batch: it runs alone
+/// (`crate::compiler::solo`).
 pub fn packtests(ns: &str, title: &str, column: [i32; 2]) -> Vec<(String, String)> {
     let [cx, cz] = column;
     let at = |dx: f64, y: i32, dz: f64| {

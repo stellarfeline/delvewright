@@ -52,6 +52,7 @@ mod cutscene;
 mod dialogue;
 mod economy;
 mod effect;
+mod ending;
 mod equipment;
 mod firework;
 mod functions;
@@ -104,6 +105,7 @@ pub(crate) use cutscene::*;
 pub use dialogue::*;
 use economy::*;
 pub use effect::*;
+use ending::*;
 pub(crate) use equipment::*;
 use firework::*;
 use functions::*;
@@ -1174,6 +1176,13 @@ pub fn build_with_warnings(
         .line()
     );
 
+    // ---- a template that takes every body runs alone ----
+    // Read off the finished tree, after every emitter, so it reaches templates
+    // not yet written (`crate::compiler::solo`).
+    let solo = crate::compiler::solo::isolate(&plan.namespace, &mut out);
+    eprintln!("{}", solo.line());
+    put_json(&mut out, "validation/packtest-solo.json", &solo.to_json());
+
     // ---- the checks read off the finished tree ----
     check_finished_tree(
         plan,
@@ -1262,6 +1271,25 @@ pub fn build_with_warnings(
     // has not opted in. Emitted before the manifest so its hashes cover them,
     // exactly like `critical-path-waypoints.json`.
     out.extend(crate::compiler::branch::artifacts(plan.campaign));
+    // spec-0108 §6.1: the endings ledger — per ending its inputs and their
+    // writers, its aftermath and how each change is observed, the story worlds
+    // that reach it — validation metadata, listed in the manifest like the rest.
+    out.insert("validation/endings.json".to_string(), endings_ledger(plan));
+    // ...and every ending a world reaches with an observable aftermath owes its
+    // `ending_<slug>_<k>` template, wherever its `campaign-complete` stands.
+    let unproven = packtest::ending::unproven_endings(plan);
+    if !unproven.is_empty() {
+        return Err(BuildFailure::Diagnostic {
+            code: plan::DW_BUILD,
+            message: format!(
+                "internal invariant violation: {} ending world(s) fire an observable aftermath \
+                 and got no `ending_<slug>_<k>` PackTest: {}. The template generator does not \
+                 drive this scene's root. This is a compiler bug; stop and escalate",
+                unproven.len(),
+                unproven.join("; ")
+            ),
+        });
+    }
     // ...and, for the harness tier, one EXECUTABLE path per reachable branch:
     // `validation/branch-path-<branch>.json`, in the same `critical-path.json`
     // contract the bot has always consumed. The plan artifact above says WHICH
@@ -1271,6 +1299,30 @@ pub fn build_with_warnings(
     // which is the only player-legal way to actuate a server-driven dialog button.
     for (slug, mut path) in branch_paths(plan, &moves, &actor_moves, &branch_takes, &path_legs)? {
         annotate_holder_steps(&mut path, &holder_step_hints);
+        // spec-0108 §6.5: a mock runs exactly the engine's own function for its
+        // act's bundle — one this datapack ships, or the build is wrong.
+        for m in path["steps"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|s| s["action"] == "mock")
+        {
+            let f = m["function"].as_str().unwrap_or("");
+            let file = f
+                .split_once(':')
+                .map(|(ns, name)| format!("datapack/data/{ns}/function/{name}.mcfunction"));
+            if !file.is_some_and(|k| out.contains_key(&k)) {
+                return Err(BuildFailure::Diagnostic {
+                    code: plan::DW_BUILD,
+                    message: format!(
+                        "internal invariant violation: {slug}'s mock of `{}` runs `{f}`, which \
+                         this datapack does not ship — the act's bundle function and the mock \
+                         disagree on its name. This is a compiler bug; stop and escalate",
+                        m["act"].as_str().unwrap_or("?")
+                    ),
+                });
+            }
+        }
         // The watchers stand in every configuration's world, so a branch's run
         // judges them as the critical path's does (spec-0101 §5.4), and the
         // branch the critical path walks keeps its byte-identical file.
@@ -1284,7 +1336,7 @@ pub fn build_with_warnings(
         }
         put_json(
             &mut out,
-            &format!("validation/branch-path-{slug}.json"),
+            &format!("validation/{}.json", world_file(&slug, "path")),
             &path,
         );
     }
@@ -1295,7 +1347,7 @@ pub fn build_with_warnings(
     for (slug, wp) in &branch_waypoints {
         put_json(
             &mut out,
-            &format!("validation/branch-waypoints-{slug}.json"),
+            &format!("validation/{}.json", world_file(slug, "waypoints")),
             wp,
         );
     }

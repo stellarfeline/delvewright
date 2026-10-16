@@ -318,20 +318,31 @@ fn yield_template(
 ) -> Option<Vec<String>> {
     let ns = &plan.namespace;
     let safe = plan::safe_local(&w.id);
-    // (start function, latch, tick counter, tick function, total, claim)
-    let mut legs: Vec<(String, String, String, String, usize, Vec<String>)> = Vec::new();
+    // (start function, latch, walker, mark, bare, waypoints, claim)
+    #[allow(clippy::type_complexity)]
+    let mut legs: Vec<(
+        String,
+        String,
+        Walker,
+        &delvewright_dsl::Mark,
+        String,
+        &[[f64; 3]],
+        Vec<String>,
+    )> = Vec::new();
     match w.class {
         "npc" => {
             let guarded = supersedable_walkers(moves.iter().map(|m| m.npc.as_str()));
             for m in moves.iter().filter(|m| m.npc == w.id) {
                 let bare = movenpc_bare(&m.npc, &m.to, &m.gate_key);
+                let claim = walk_claim(Walker::Npc, &bare, &safe, guarded.contains(m.npc.as_str()));
                 legs.push((
                     movenpc_fn(&m.npc, &m.to, &m.gate_key),
                     format!("#mrun_{bare}"),
-                    format!("#mt_{bare}"),
-                    format!("mv_tick_{bare}"),
-                    m.ticks(),
-                    walk_claim(Walker::Npc, &bare, &safe, guarded.contains(m.npc.as_str())),
+                    Walker::Npc,
+                    &m.to,
+                    bare,
+                    &m.waypoints,
+                    claim,
                 ));
             }
         }
@@ -339,18 +350,20 @@ fn yield_template(
             let guarded = supersedable_walkers(actor_moves.iter().map(|m| m.actor.as_str()));
             for m in actor_moves.iter().filter(|m| m.actor == w.id) {
                 let bare = moveactor_bare(&m.actor, &m.to, &m.gate_key);
+                let claim = walk_claim(
+                    Walker::Actor,
+                    &bare,
+                    &safe,
+                    guarded.contains(m.actor.as_str()),
+                );
                 legs.push((
                     moveactor_fn(&m.actor, &m.to, &m.gate_key),
                     format!("#arun_{bare}"),
-                    format!("#at_{bare}"),
-                    format!("ma_tick_{bare}"),
-                    m.ticks(),
-                    walk_claim(
-                        Walker::Actor,
-                        &bare,
-                        &safe,
-                        guarded.contains(m.actor.as_str()),
-                    ),
+                    Walker::Actor,
+                    &m.to,
+                    bare,
+                    &m.waypoints,
+                    claim,
                 ));
             }
         }
@@ -358,33 +371,62 @@ fn yield_template(
     if legs.is_empty() {
         return None;
     }
-    let mut b = packtest_header(&format!(
-        "{}: `{}` yields its watch to each of its {} walk(s) — the start removes `{WATCH_TAG}`, \
-         the arrival tick restores it",
-        artifact_title(plan.campaign),
-        w.id,
-        legs.len()
-    ));
-    b.extend(summon_body(plan, w));
+    let mut body = summon_body(plan, w);
     let mut asserts = Vec::new();
-    for (i, (start, latch, counter, tick, total, claim)) in legs.into_iter().enumerate() {
+    // The legs whose own arrival takes the body away: read the tick before
+    // arrival, where the walk still holds the watch ([`fast_forward_walk`]).
+    let mut taken = Vec::new();
+    let n = legs.len();
+    for (i, (start, latch, walker, mark, bare, waypoints, claim)) in legs.into_iter().enumerate() {
         // A latch a sibling left armed would refuse the start.
-        b.push(format!("scoreboard players set {latch} dw.sys 0"));
-        b.extend(claim);
-        b.push(format!("function {ns}:{start}"));
-        b.push(format!(
+        body.push(format!("scoreboard players set {latch} dw.sys 0"));
+        body.extend(claim);
+        body.push(format!("function {ns}:{start}"));
+        body.push(format!(
             "execute store result score #wya_{k}_{i} dw.sys if entity @e[{},tag={WATCH_TAG}]",
             w.selector
         ));
-        b.push(format!("scoreboard players set {counter} dw.sys {total}"));
-        b.push(format!("function {ns}:{tick}"));
-        b.push(format!(
-            "execute store result score #wyp_{k}_{i} dw.sys if entity @e[{},tag={WATCH_TAG}]",
-            w.selector
-        ));
+        let (drive, reached) = fast_forward_walk(plan, walker, &w.id, mark, &bare, waypoints);
+        body.extend(drive);
         asserts.push(format!("assert score #wya_{k}_{i} dw.sys matches 0"));
-        asserts.push(format!("assert score #wyp_{k}_{i} dw.sys matches 1"));
+        match reached {
+            Reached::Arrival => {
+                body.push(format!(
+                    "execute store result score #wyp_{k}_{i} dw.sys if entity @e[{},tag={WATCH_TAG}]",
+                    w.selector
+                ));
+                asserts.push(format!("assert score #wyp_{k}_{i} dw.sys matches 1"));
+            }
+            Reached::BeforeArrival(_) => {
+                taken.push(i.to_string());
+                body.push(format!(
+                    "execute store result score #wyl_{k}_{i} dw.sys if entity @e[{}]",
+                    w.selector
+                ));
+                body.push(format!(
+                    "execute store result score #wyh_{k}_{i} dw.sys if entity @e[{},tag={WATCH_TAG}]",
+                    w.selector
+                ));
+                asserts.push(format!("assert score #wyl_{k}_{i} dw.sys matches 1"));
+                asserts.push(format!("assert score #wyh_{k}_{i} dw.sys matches 0"));
+            }
+        }
     }
+    let mut title = format!(
+        "{}: `{}` yields its watch to each of its {n} walk(s) — the start removes `{WATCH_TAG}`, \
+         the arrival tick restores it",
+        artifact_title(plan.campaign),
+        w.id,
+    );
+    if !taken.is_empty() {
+        title.push_str(&format!(
+            "; walk(s) {} take the body away on arrival, so each is read on the tick before, \
+             still yielded",
+            taken.join(", ")
+        ));
+    }
+    let mut b = packtest_header(&title);
+    b.append(&mut body);
     b.extend(restore_body(plan, w));
     b.extend(asserts);
     Some(b)

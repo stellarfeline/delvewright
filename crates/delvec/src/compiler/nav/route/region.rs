@@ -65,6 +65,10 @@ pub(in crate::compiler::nav) struct RegionState {
     /// The volumes behind `lethal`, as `(id, box)`, in declaration order, so a
     /// refusal can name the volume.
     pub(in crate::compiler::nav) lethal_regions: Vec<LethalRegion>,
+    /// The completion volumes a leg keeps out of (`DW0311`), as `(objective,
+    /// box)`: every `reach` armed on it and not yet due
+    /// ([`RegionEvents::keep_out_at`] of the leg's arrival step).
+    pub(in crate::compiler::nav) keep_out: Vec<LethalRegion>,
     /// Per region, the causally-latest **forced** write and the block it lays
     /// (`None` = air), in region order — what [`RegionState::blocks_over`] lays
     /// over the assembled bytes to give this configuration's block map.
@@ -105,6 +109,7 @@ impl RegionState {
             && self.unforced.is_empty()
             && self.held.is_empty()
             && self.lethal.is_empty()
+            && self.keep_out.is_empty()
     }
 
     /// This state with `cells` opened: taken out of every fill and laid as a
@@ -558,7 +563,9 @@ impl World {
         to_step: usize,
     ) -> RegionState {
         let fired = leg_fired(ancestor, from_step, to_step);
-        self.region_state_inner(region_events, to_step, &fired, Some(from_step), true)
+        let mut st = self.region_state_inner(region_events, to_step, &fired, Some(from_step), true);
+        st.keep_out = keep_out_of(region_events, to_step);
+        st
     }
 
     /// The same leg with the world-load gate seals lifted — see
@@ -571,7 +578,10 @@ impl World {
         to_step: usize,
     ) -> RegionState {
         let fired = leg_fired(ancestor, from_step, to_step);
-        self.region_state_without_world_load(region_events, to_step, &fired, Some(from_step))
+        let mut st =
+            self.region_state_without_world_load(region_events, to_step, &fired, Some(from_step));
+        st.keep_out = keep_out_of(region_events, to_step);
+        st
     }
 
     /// [`World::leg_region_state`] for a leg the player is asked to WALK — the
@@ -589,6 +599,16 @@ impl World {
     ) -> RegionState {
         self.leg_region_state(region_events, ancestor, from_step, to_step)
     }
+}
+
+/// The completion volumes a leg arriving at `step` keeps out of, as the
+/// world's `(objective, box)` rows.
+fn keep_out_of(region_events: &RegionEvents, step: usize) -> Vec<LethalRegion> {
+    region_events
+        .keep_out_at(step)
+        .iter()
+        .map(|k| (k.objective.clone(), k.bounds()))
+        .collect()
 }
 
 /// The "has the party fired step `g`" predicate for the walked leg

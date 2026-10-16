@@ -3131,6 +3131,60 @@
       "triage": "capability"
     },
     {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "campaign-complete"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "file": "endings.json",
+        "kind": "artifact",
+        "path": "endings"
+      },
+      "finding": "an ending's text said the place was destroyed while the player stood afterwards unharmed in an intact world",
+      "general_form": "the world after an ending agrees with what the ending says happened: an ending can change the world and the party's situation, and a check reports an ending that changes nothing it narrates",
+      "id": "str-12",
+      "note": "Carried by spec-0108's ending reading: `validation/endings.json` lists, per ending, every aftermath effect of its final scene (the effects whose verb changes the world, `Verb::changes_world`) with the observable a proof reads after the scene, and the binding line states `aftermath: N effect(s)` per ending beside its happening text — an ending that changes nothing reads `aftermath: 0 effect(s)`, which a reviewer reads against the ending's words; the engine never reads the prose (CLAUDE.md, a check confirms intent). A cutscene's `then` is how a finale changes the world after the camera returns; each aftermath effect is proven by a PackTest per (ending, world) (`ending_<slug>_<k>`) and read by the bot (`assert-complete.aftermath[]`). spec-0108 assigns this finding no DW code: the class is reported and proven, never refused from prose.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "quest-plan.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "forks_on"
+          ]
+        }
+      },
+      "binding": {
+        "file": "branch-plan.json",
+        "kind": "artifact",
+        "path": "branches"
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1029",
+        "kind": "dw"
+      },
+      "finding": "the ending depended only on the last dialogue choice and on nothing the player did before it",
+      "general_form": "each ending reports how many of its inputs are set before the final scene (an advisory, never a refusal)",
+      "id": "str-13",
+      "note": "Carried by spec-0108: every ending's inputs are the gates of its final scene, each dated and kinded (said, did, finished) and seeded or final-scene, printed per ending on every validate/analyze/build (`ending binding`) and in `validation/endings.json`; a campaign that declares `endings_read` on stage 4 is refused `DW1029` for an ending below either term, and every ending must be reached by a story world (`DW1030`). The doc comment on `dsl::quest::verb::CampaignComplete` now says the effect takes `when`. The skill's step-3 steer toward endings that read the run is held until the release that carries the surface is pinned (spec-0108, recorded debt).",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
       "applies_when": {
         "contains": "minecraft:(chest|trapped_chest|barrel|[a-z_]*shulker_box|hopper|brewing_stand|dispenser|dropper|crafter|furnace|blast_furnace|smoker)\\b",
         "glob": "programs/*.json",

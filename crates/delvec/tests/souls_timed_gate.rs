@@ -342,6 +342,8 @@ fn crush_false_is_inert() {
         "validation/critical-path-waypoints.json".to_string(),
         // The observer census counts the crush's guarded selector.
         "validation/observer-census.json".to_string(),
+        // The solo binding counts the templates it examined, the crush one among them.
+        "validation/packtest-solo.json".to_string(),
         "manifest.json".to_string(),
     ];
     for path in &differing {

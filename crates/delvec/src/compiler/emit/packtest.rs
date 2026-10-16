@@ -16,6 +16,7 @@ mod class;
 mod creator;
 mod dialogue;
 mod economy;
+pub(super) mod ending;
 mod healthbar;
 mod holders;
 mod lane;
@@ -150,6 +151,11 @@ pub(super) fn emit_packtest(
     // a campaign that declares no pulse.
     pulse::emit_pulse_packtests(plan, out);
     economy::emit_economy_packtests(plan, out);
+
+    // spec-0108 §6.2: per (ending, witness world), the world after the final
+    // scene holds every change its aftermath declares. Emits nothing for an
+    // ending no world reaches or whose scene changes nothing.
+    ending::emit_ending_packtests(plan, out);
 
     // spec-0031 teleport: the runtime half of TOTALITY, one template per teleport.
     teleport::emit_teleport_packtests(plan, out);
@@ -426,6 +432,69 @@ fn settle_loads(ns: &str, out: &mut BuildOutput) {
     }
 }
 
+/// Where [`fast_forward_walk`] left a walk.
+pub(super) enum Reached {
+    /// The driver ran its arrival tick: the last teleport, the watch hand-back
+    /// and the `on_arrive` bundle.
+    Arrival,
+    /// The walk's own arrival takes its body away, so the driver ran the tick
+    /// before it and stopped: the body stands on this waypoint, the arrival
+    /// never ran, and nothing of the walk is left scheduled or latched.
+    BeforeArrival([f64; 3]),
+}
+
+/// **The one way a generated PackTest fast-forwards a walk's driver.** Every
+/// template that jumps a `move-npc` / `move-actor` driver to a tick and reads
+/// the body afterwards drives it here.
+///
+/// The arrival tick runs the last teleport and then, in the same driver call,
+/// the walk's `on_arrive` ([`walk_on_arrive`]). When that bundle takes the
+/// walker out of the world ([`arrival_takes_the_body`]), no body of the walk
+/// stands anywhere after the arrival tick, so a read of it after that tick
+/// reads nothing by construction. Such a walk is driven to the tick before
+/// arrival instead, then its queued reschedule and its run latch are cleared,
+/// so the arrival bundle never runs into a sibling template. Every other walk
+/// is driven to its arrival tick, as the lines it always had.
+pub(super) fn fast_forward_walk(
+    plan: &Plan,
+    walker: Walker,
+    body: &str,
+    mark: &delvewright_dsl::Mark,
+    bare: &str,
+    waypoints: &[[f64; 3]],
+) -> (Vec<String>, Reached) {
+    let ns = &plan.namespace;
+    let total = waypoints.len().saturating_sub(1);
+    let (counter, latch, tick) = match walker {
+        Walker::Npc => (
+            format!("#mt_{bare}"),
+            format!("#mrun_{bare}"),
+            format!("mv_tick_{bare}"),
+        ),
+        Walker::Actor => (
+            format!("#at_{bare}"),
+            format!("#arun_{bare}"),
+            format!("ma_tick_{bare}"),
+        ),
+    };
+    let on_arrive = walk_on_arrive(plan.campaign, walker, body, mark);
+    if total > 0 && arrival_takes_the_body(on_arrive, walker, body) {
+        let b = vec![
+            format!("scoreboard players set {counter} dw.sys {}", total - 1),
+            format!("function {ns}:{tick}"),
+            format!("schedule clear {ns}:{tick}"),
+            format!("scoreboard players set {latch} dw.sys 0"),
+        ];
+        (b, Reached::BeforeArrival(waypoints[total - 1]))
+    } else {
+        let b = vec![
+            format!("scoreboard players set {counter} dw.sys {total}"),
+            format!("function {ns}:{tick}"),
+        ];
+        (b, Reached::Arrival)
+    }
+}
+
 /// The header lines shared by every generated PackTest (`# @dummy` + timeout).
 fn packtest_header(title: &str) -> Vec<String> {
     vec![
@@ -439,8 +508,9 @@ fn packtest_header(title: &str) -> Vec<String> {
 /// Pin a PackTest template's own dummy player: the pin line (`tag @p add …`)
 /// plus the selector that addresses that dummy — and only it — thereafter.
 ///
-/// PackTest runs the whole generated suite as ONE batch on one shared server:
-/// each `# @dummy` test spawns its OWN dummy, all dummies coexist, and every
+/// PackTest runs the generated suite on one shared server, fifty tests a batch
+/// (a solo template, `crate::compiler::solo`, alone in its own): each
+/// `# @dummy` test spawns its OWN dummy, all dummies of a batch coexist, and every
 /// test function executes over the same server tick(s), in an order the
 /// compiler does not control. Consequences for template authorship — the hard
 /// rule is **every generated test is interleaving-independent: own dummy, own

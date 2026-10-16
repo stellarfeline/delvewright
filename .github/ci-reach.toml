@@ -128,7 +128,7 @@ inputs = [
   { glob = "Cargo.toml", why = "the publish-gate tests copy the root manifest into their scratch tree" },
   { glob = "prefabs/**", why = "`test_check_generator_preservation.py`; `test_check_source_dupes.py`; `test_staging_gate.py` reads generator invariants as carriers" },
   { glob = "gallery/**", why = "the gallery tests (`test_gallery_coverage.py`, `test_gallery_domain.py`, `test_gallery_not_shippable.py`, `test_check_gallery_stageable.py`) read the gallery campaign" },
-  { glob = "harness/**", why = "`test_check_source_dupes.py` scans the harness; `test_staging_gate.py` reads harness carriers" },
+  { glob = "harness/**", why = "`test_check_source_dupes.py` scans the harness; `test_staging_gate.py` reads harness carriers; `test_block_state_parse.py` reads the shared block-state fixture under `harness/test/fixtures/`" },
   { glob = "validation/**", why = "`test_reclaim_ladder_images.py`, `test_render_shots_*.py`, `test_delvec_bin_sh.py`, `test_mutex_lock_dir_default.py` and `test_staging_gate.py` run or read scripts under `validation/`" },
   { glob = "docs/reference/compiler.md", why = "`test_check_dw_codes.py` and `test_staging_gate.py` read the DW catalogue through `tools/lib/dwcatalog.py`; the publish-gate tests copy it as a version site" },
   { glob = "docs/reference/delvec/**", why = "the DW catalogue's `delvec` module pages, which `test_check_dw_codes.py` and `test_staging_gate.py` read through `tools/lib/dwcatalog.py`" },

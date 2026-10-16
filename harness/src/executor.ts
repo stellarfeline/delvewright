@@ -11,7 +11,7 @@
 // NPC first (realism + reach mechanics that some dialogs gate on).
 
 import type { Bot } from "mineflayer";
-import type { Vec3Tuple } from "./critical-path.ts";
+import type { KeepOut, Vec3Tuple } from "./critical-path.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError } from "./death.ts";
 import { NavigationOwner } from "./navigation.ts";
@@ -55,6 +55,7 @@ import { methods as climbMethods } from "./executor/climb.ts";
 import { methods as cutsceneMethods } from "./executor/cutscene.ts";
 import { methods as transportMethods } from "./executor/transport.ts";
 import { methods as loopMethods } from "./executor/loop.ts";
+import { methods as mockMethods } from "./executor/mock.ts";
 import { methods as sustainMethods } from "./executor/sustain.ts";
 import { methods as deathMethods } from "./executor/death.ts";
 import { methods as repaintMethods } from "./executor/repaint.ts";
@@ -155,6 +156,12 @@ export class MineflayerExecutor implements StepExecutor {
    * marching through hollow remaining steps.
    */
   campaignCompleteAtStep: number | undefined;
+  /** Where the bot stood when the campaign-completion marker arrived (spec-0108 §6.3). */
+  campaignStoodAt: [number, number, number] | undefined;
+  /** What the bot read of the world the ending left (spec-0108 §6.3). */
+  aftermathResults: import("./aftermath.ts").AftermathResult[] = [];
+  /** Every act this run performed by mock (spec-0108 §6.5), in path order. */
+  mockResults: import("./mock.ts").MockResult[] = [];
   /** The step index currently executing, for marker attribution. */
   currentStep = -1;
   /**
@@ -164,6 +171,13 @@ export class MineflayerExecutor implements StepExecutor {
    * control taken ({@link awaitControlEnRoute}).
    */
   stepCutsceneAllowanceS: number | undefined;
+  /**
+   * The completion oracle of the walk under way ({@link stepSettled} over the
+   * step it serves), or `undefined` outside a walk or for a walk that serves no
+   * objective. Read where a walk gets control back from a cutscene
+   * ({@link runGoto}): a step already settled is not walked again.
+   */
+  walkSettled: (() => string | undefined) | undefined;
   stepLabel = "";
   /**
    * gap 7 (death): set once when the bot dies; long waits race against it so a death
@@ -290,6 +304,13 @@ export class MineflayerExecutor implements StepExecutor {
    * every compile-time proof green.
    */
   lethalBoxes: readonly Box[] = [];
+  /**
+   * The completion volumes the step under way keeps out of (its `keep_out`):
+   * every walk the step makes prices the cells they reach as it prices a lethal
+   * volume's, so a walk does not complete an armed objective out of turn. Set
+   * by `beforeStep`.
+   */
+  stepKeepOut: readonly KeepOut[] = [];
   /** The regions of the volumes live from world-load — always excluded. */
   unstagedBoxes: readonly Box[] = [];
   /**
@@ -608,6 +629,7 @@ type Methods = typeof connectionMethods &
   typeof cutsceneMethods &
   typeof transportMethods &
   typeof loopMethods &
+  typeof mockMethods &
   typeof sustainMethods &
   typeof deathMethods &
   typeof repaintMethods &
@@ -629,4 +651,4 @@ type Methods = typeof connectionMethods &
   typeof placementMethods &
   typeof clockMethods;
 export interface MineflayerExecutor extends Methods {}
-for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, pulseMethods, cueMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods]) Object.assign(MineflayerExecutor.prototype, methods);
+for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, mockMethods, sustainMethods, deathMethods, repaintMethods, pulseMethods, cueMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods]) Object.assign(MineflayerExecutor.prototype, methods);
