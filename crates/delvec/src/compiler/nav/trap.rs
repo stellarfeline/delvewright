@@ -599,6 +599,29 @@ mod tests {
     use crate::compiler::plan::{RegionEvent, RegionWrite};
     use delvewright_dsl::{Lethality, TrapReset, TrapTrigger};
 
+    // --- collapse debris, judged by its landed block (spec-0022, DW0445) ---
+
+    /// A two-high pile in one column and a one-high pile in another: every cell
+    /// of stone debris walls; a carpet paved over the tops walls neither top,
+    /// and a light block that falls walls nothing.
+    #[test]
+    fn collapse_debris_walls_only_where_its_landed_block_collides() {
+        let g = CollapseGeometry {
+            region: ([0, 70, 0], [1, 71, 0]),
+            drops: vec![[0, 70, 0], [0, 71, 0], [1, 70, 0]],
+            debris: vec![[0, 65, 0], [0, 66, 0], [1, 65, 0]],
+            max_fall: 5,
+        };
+        let all: BTreeSet<[i32; 3]> = g.debris.iter().copied().collect();
+        assert_eq!(g.walls("minecraft:gravel", None), all);
+        assert_eq!(
+            g.walls("minecraft:gravel", Some("minecraft:white_carpet")),
+            BTreeSet::from([[0, 65, 0]]),
+            "each column's top holds the carpet the paving sets"
+        );
+        assert!(g.walls("minecraft:light", None).is_empty());
+    }
+
     // --- volley cadence (spec-0022, DW0918) ---
 
     /// A kill zone five cells deep down a one-wide hall at x=0 (z=3..=7). The
