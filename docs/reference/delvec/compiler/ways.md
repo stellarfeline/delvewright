@@ -39,7 +39,7 @@ graph, rooted at the `entry` space it declares, `vision` edges excluded and a
 reachability walk takes, because the claim being consumed is the piece's claim.
 Two consequences follow and both are stated rather than discovered — a space a
 neighbour could reach through a mated exterior face is not counted as reached
-(seams are the face contract's business, `DW0780`, and spec-0042 keeps ways off
+(seams are the site plan's business, `DW0836`, and spec-0042 keeps ways off
 them), and a `barred` edge is traversed (its bar is opened through the anchor
 surface, which this pass does not model). Both make the red rarer, never commoner.
 

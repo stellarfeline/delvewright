@@ -3170,10 +3170,8 @@ does not itself model:
   `north`), the edge's class, and the opening it leaves there. Derived from the
   edges and the blocks at export and written down, so that **assembly asks the
   metadata rather than reopening the `.nbt`** — which is what `delvec` does with
-  it: two placed pieces whose declared faces do not answer each other are
-  refused (`DW0780`), naming both areas, both prefabs and both faces. That
-  refusal is the one no single-piece gate can reach, because each piece is
-  correct and the pair is not.
+  it: a detailed place answers the faces its row declares (`DW0844`), and a site
+  plan cuts and proves its seams over the built bytes (`DW0836`).
 - **A contingent edge carries `way`**: `{opens, region, boxes, role?, block}` —
   the sign, the name content addresses, the resolved cells, the palette role the
   author wrote and the block state that role resolved to. `block` is the full
@@ -3350,8 +3348,8 @@ differs by orientation, not merely a state), after which the three convert.
 **Which faces a piece leaves open — the face contract, and the vocabulary that
 does not declare it.** The face contract exists: a program's `exterior` edges
 (§2d) are exported as `spatial_contract.faces`, each naming the side of the
-piece it opens on, and two placed pieces whose declared faces do not answer each
-other are refused at assembly (`DW0780`, §6). The §5b vocabulary declares no
+piece it opens on, and a detailed place answers the faces its row declares
+(`DW0844`). The §5b vocabulary declares no
 spatial contract, so `far_side_bar` beside a `tee_passage` — a piece opening a
 face onto a sibling box — mates by convention: a zone that composes them trusts
 module prose, and a rule that changed which face it opened would break its

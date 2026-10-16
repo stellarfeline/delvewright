@@ -292,13 +292,6 @@ pub struct Plan<'a> {
     /// [`crate::compiler::assembled::placed_blocks`] through that iterator, and the
     /// biome paint in [`crate::compiler::emit`].
     pub surround: Option<SurroundPlan>,
-    /// **What the piece-mating check examined** (`DW0780`/`DW0781`), emitted as
-    /// `validation/piece-mating.json`.
-    ///
-    /// Carried out of `build` rather than recomputed at emission, because it is
-    /// a verdict about the placement this `Plan` IS — recomputing it would be a
-    /// second walk that could answer differently from the one that refused.
-    pub face_binding: crate::compiler::faces::FaceBinding,
 }
 
 /// Errors that stop planning (map to build failure, exit 3). Carries a stable
@@ -475,7 +468,7 @@ impl<'a> Plan<'a> {
         prefabs: &PrefabRegistry,
         perturb: Perturb,
     ) -> Result<Self, PlanError> {
-        Self::build_linked(campaign, prefabs, perturb, LinkTakes::default(), true)
+        Self::build_linked(campaign, prefabs, perturb, LinkTakes::default())
     }
 
     /// **This plan with the route proof's link decisions in its path**
@@ -491,7 +484,7 @@ impl<'a> Plan<'a> {
     /// decided over them.
     pub fn relinked(&self, prefabs: &PrefabRegistry, takes: LinkTakes) -> Result<Self, PlanError> {
         Ok(
-            Self::build_linked(self.campaign, prefabs, self.perturb.clone(), takes, false)?
+            Self::build_linked(self.campaign, prefabs, self.perturb.clone(), takes)?
                 .with_design_files(self.design_files.clone()),
         )
     }
@@ -501,7 +494,6 @@ impl<'a> Plan<'a> {
         prefabs: &PrefabRegistry,
         perturb: Perturb,
         link_takes: LinkTakes,
-        announce: bool,
     ) -> Result<Self, PlanError> {
         let namespace = campaign.world.campaign_id.as_str().to_string();
         let seed = campaign.world.content.seed;
@@ -602,9 +594,8 @@ impl<'a> Plan<'a> {
 
         // ---- ocean waterline invariant (DW0344) ----
         //
-        // Bound here and nowhere else, on the same reasoning as the mating check
-        // below: every campaign build goes through `Plan::build`. The binding
-        // count comes back with the verdict and is PRINTED by the build, because
+        // Bound here and nowhere else: every campaign build goes through
+        // `Plan::build`. The binding count comes back with the verdict and is PRINTED by the build, because
         // a check keyed off an optional metadata field goes quiet rather than red
         // when the field disappears. What stops that quiet from reading as a pass
         // is no longer a report about the emptiness: it is that a piece standing
@@ -613,32 +604,6 @@ impl<'a> Plan<'a> {
         // of the water — a discharge taken from geometry, which the missing
         // declaration cannot fake.
         let waterline = check_ocean_waterline(campaign, &areas, prefabs);
-
-        // ---- the pieces fit together (DW0780/DW0781, ADR-0020) ----
-        //
-        // Bound here and nowhere else: every campaign build goes through
-        // `Plan::build`, so a world whose pieces contradict each other at the
-        // faces they share cannot be compiled, packaged or shipped. There is no
-        // flag and no separate command to remember.
-        let binding = crate::compiler::faces::check(&areas, prefabs).map_err(|e| {
-            let mut w = warnings.clone();
-            w.extend(e.warnings.clone());
-            PlanError::new(e.failure.code, e.failure.message).with_warnings(w)
-        })?;
-        let placed = crate::compiler::faces::placed_pieces(&areas);
-        // Printed on every plan, found anything or not: the count this check
-        // owes its reader is a fraction of the PLACEMENT, and stating it only
-        // when it was zero is what let a build read `0 with a spatial contract`
-        // as an unremarkable advisory line rather than as a check that examined
-        // nothing.
-        // A relinked plan is the same placement measured a second time; its
-        // binding line was printed by the first build and is not printed twice.
-        if announce {
-            eprintln!("{}", binding.line(placed));
-        }
-        if let Some(finding) = binding.finding(placed, campaign.site_plan.is_some()) {
-            warnings.push(finding);
-        }
 
         // ---- classes ----
         let classes = campaign
@@ -956,7 +921,6 @@ impl<'a> Plan<'a> {
             surround,
             design_files: crate::compiler::design::DesignFiles::default(),
             waterline,
-            face_binding: binding,
         })
     }
 

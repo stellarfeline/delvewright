@@ -275,8 +275,7 @@ fn every_shipped_prefab_is_allowlisted_as_the_game_will_load_it() {
 /// were examined, how many the door **refused**, and how many actually declare a
 /// contract. That last is the door's own binding count, and it is currently
 /// ZERO over the whole library — every shipped piece predates the contract, so
-/// the second door is judging nothing here yet, and the compiler's `DW0781`
-/// says the same thing about the same corpus from the placement side. Printed
+/// the second door is judging nothing here yet. Printed
 /// rather than asserted, because requiring a contract of every prefab is a
 /// version-adoption decision and not this gate's to make; asserted the moment a
 /// piece has one, which is what the adoption round will turn this into.

@@ -3099,17 +3099,6 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 - `<out>/validation/chain-length.json`: the `DW0984` **binding ledger** (`compiler::chain`). `limit` (the pinned default of `max_command_sequence_length`), `step_budget`, `examined` (shipped functions measured, every datapack of the tree), `counted_loops`, `steps` (the world-build steps the delve's datapack ships), `longest` (`function`, `chain`), `refused` (empty on any build that wrote the file) and the `quantifier` the counts hold under: per executing source. The build prints `chain binding: …` before the verdict.
 - `<out>/validation/observer-census.json`: the `DW0926` **binding ledger** (`compiler::observer`, spec-0077 §5). `functions_read`, `positional_player_selectors`, `exclude_observation_tag`, `allowed` (one row per `observer::ALLOWED` site: its count and its reason) and `unguarded` (0 on every build that ships, since one unguarded selector refuses it). Emitted on every build: a cutscene viewer carries the tag in any campaign, and a declared `world.respawn_wait` adds a second state that does.
 - `<out>/validation/placement-gate.json`: the `DW0864` **binding ledger** (`compiler::edit`). One row per `scatter`/`plant` verb the build replayed — its batch, its index in that batch, what it `declared` (a `plant` count, or `null` where the verb states only a density), what it `delivered`, the `domain` of cells the author's region selected, and how many of those the verb could `act on` at all (`usable`). Rows are written whether or not any of them is short, because a rule that speaks only when it fires reads exactly like a rule that never looked. `binding` carries `verbs`, `scatter`, `plant`, `short`, `domain_cells` and `delivered`, every one of them derived from the rows rather than written beside them. Absent for a campaign with no edit script.
-- `<out>/validation/piece-mating.json`: the `DW0780`/`DW0781` **binding ledger**
-  (`compiler::faces`). What the piece-mating check examined, over the denominator
-  the placement itself supplies: `placed` pieces, how many are `touching` another
-  piece, `examined` abutting pairs, `judged` pairs (pairs a declared face
-  crosses — equal to `examined` on any build that succeeded, since a shortfall is
-  a `DW0780` refusal), `faces_declared` and `faces_bound`, and the pieces judged
-  `by_contract`. `allocated` says the world's
-  ways were allocated by a site plan, which is why its zero is a zero. `examined`
-  counts pairs and not declarations deliberately: a ledger keyed on declarations
-  reads a library that declares nothing as an honest zero.
-  Written on every build.
 - `<out>/validation/piece-exposure.json`: the `DW0885` **binding ledger**
   (`compiler::burial`). What the piece-exposure check examined, over a
   denominator taken from the placement and the bytes rather than from the
@@ -3862,7 +3851,7 @@ for a single-file prefab, one per tile at its manifest offset for a zone — and
 `plan::PiecePlacement` carries them as `templates: Vec<PlacedTemplate>`, already
 resolved to world positions. Above that line a piece is one piece: one entry in
 `AreaPlacement::pieces`, at the whole zone's `size`, with one rotation, one set of
-seals, one row in the face-mating check. Below it, everything that
+seals. Below it, everything that
 touches blocks loops over templates and never asks how many there were:
 
 - `place_all` emits **one `place template` per template**, at
@@ -3882,7 +3871,7 @@ A single-template prefab emits one template, at the piece's own position.
 it.** `PiecePlacement::size` stays the zone's — tiling is absorbed below that
 line — so `bbox()` is the whole building, and everything that asks *where does
 the content end* gets the same answer for a tiled zone as for a single-template
-one: the `forceload` span, the piece AABB `DW0780` compares, massing's
+one: the `forceload` span, the piece AABB, massing's
 footprint, and `nav::built_volume`, which is what `DW0318` asks whether a fluid
 cell is inside. That last one is the load-bearing agreement between two features,
 and it is invisible from either: had the extent become
@@ -5362,7 +5351,7 @@ the grouping — it decides order, never whether a line prints.
 **A message states its finding; this catalog holds the reasoning.** Where an
 advisory's message would otherwise be several paragraphs explaining why it
 refuses nothing, the message is one line with its numbers and the essay is the
-row on its module's page. `DW0813`, `DW0822` and `DW0781` are written that way.
+row on its module's page. `DW0813` and `DW0822` are written that way.
 
 **A secondary whose premise is an already-reported primary does not print N
 times.** Either the findings are one diagnostic naming all of them (`DW0842` at a

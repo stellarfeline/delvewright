@@ -162,11 +162,6 @@ fn the_subject_of_a_code_is_declared_beside_it() {
         Subject::Campaign,
         "`DW0822` is a measurement of THIS graph's critical path"
     );
-    assert_eq!(
-        delvec::compiler::faces::DW_FACE_UNBOUND.subject(),
-        Subject::Campaign,
-        "`DW0781` counts THIS world's pieces and faces"
-    );
     // The default is the campaign, so a code that says nothing about its subject
     // is addressed to the author — the safe direction.
     assert_eq!(Subject::default(), Subject::Campaign);

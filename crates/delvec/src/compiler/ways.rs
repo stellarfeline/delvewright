@@ -36,8 +36,8 @@
 //! Two consequences, both stated rather than discovered:
 //!
 //! * a space a neighbouring piece could reach through a mated exterior face is
-//!   NOT counted as reached, because seams are the face contract's business
-//!   (`crate::compiler::faces`, `DW0780`) and spec-0042 keeps ways off them entirely;
+//!   NOT counted as reached, because seams are the site plan's business
+//!   (`DW0836`) and spec-0042 keeps ways off them entirely;
 //! * a `barred` edge is traversed. Its bar is a contract region a `shortcut` or
 //!   an `open-gate` opens through the anchor surface, which this module does not
 //!   model — and modelling it here would red every campaign that has ever placed

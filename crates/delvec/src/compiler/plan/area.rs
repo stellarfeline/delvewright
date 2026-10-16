@@ -94,8 +94,7 @@ pub struct PiecePlacement {
     /// **A piece is one piece however many files it ships as.** Tiling is a
     /// packaging fact about a file format, so it is absorbed here, at the one
     /// place a `.nbt` filename is reachable from: everything above this — the
-    /// area's anchors, its seals, the face-contract mating check, the pool
-    /// draw, massing — sees the piece the author bound, at its size, with its
+    /// area's anchors, its seals, massing — sees the piece the author bound, at its size, with its
     /// rotation. Everything below it emits one `/place template` per entry and
     /// never asks how many there were.
     pub templates: Vec<PlacedTemplate>,

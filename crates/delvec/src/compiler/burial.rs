@@ -12,8 +12,8 @@
 //! sky above — laid a cave piece on the shore and buried none of it. What
 //! shipped was a fifty-two cell stone-and-grass slab standing in open air over
 //! the beach, with the party walking underneath it. Every other check was
-//! green and correct: the sockets mated (`DW0780`), the piece's own envelope and
-//! closure held (`DW0782`), the waterline met the sea (`DW0344`). Each of them
+//! green and correct: the piece's own envelope and closure held (`DW0782`), the
+//! waterline met the sea (`DW0344`). Each of them
 //! judges a piece against itself or against its neighbour. None of them asks the
 //! question the render answered two hours later, which is whether the world the
 //! piece was placed in is the world it was built for.
@@ -76,7 +76,7 @@
 //!   with nothing outside the placed geometry.
 //! * **Place something against it.** Available under every horizon: a face whose
 //!   outward cells fall inside another placed piece's box is buried by that
-//!   piece, which is also the arrangement `DW0780` then holds to a face contract.
+//!   piece, and the seam between the two is the site plan's (`DW0836`).
 //! * **Declare the side shown.** Available under every horizon, and the only
 //!   move for a piece that really is meant to be looked at. It is a claim about
 //!   the PIECE, made in the prefab document, so it changes what that piece is in
@@ -286,8 +286,8 @@ fn moves(horizon: &str) -> String {
     };
     format!(
         "{bury}; (2) PLACE something against it — a face whose outward cells fall inside another \
-         placed piece's box is buried by that piece, and the two then answer to each other's face \
-         contract (`DW0780`); (3) DECLARE the side shown — add it to `shown_faces` in the prefab \
+         placed piece's box is buried by that piece, and the seam between the two is the site \
+         plan's to cut (`DW0836`); (3) DECLARE the side shown — add it to `shown_faces` in the prefab \
          document, which is the piece saying this side is finished exterior surface. Do not \
          declare a side the piece was built to have covered: the slab stays in the sky and the \
          only thing that changes is that nothing says so"
@@ -553,7 +553,7 @@ fn covered(
     }
     if pieces.iter().any(|p| p.holds(c)) {
         // Inside another piece's box: whatever is in there is that piece's
-        // business, and the seam between the two is `DW0780`'s.
+        // business, and the seam between the two is the site plan's (`DW0836`).
         return true;
     }
     ambient_buries(ambient, c)
