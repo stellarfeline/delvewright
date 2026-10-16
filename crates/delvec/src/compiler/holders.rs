@@ -287,7 +287,7 @@ pub fn entity_vocabulary(kind: &delvewright_dsl::holders::EntityHolderKind) -> V
 }
 
 /// The stand's vocabulary in spec-0111 §3.3's order — the order a reader
-/// meets it in, and the order `collect` takes its first slot from.
+/// meets it in.
 pub const STAND_VOCABULARY: [&str; 6] = [
     "armor.head",
     "armor.chest",
@@ -799,7 +799,7 @@ pub fn claims_of(plan: &Plan, blocks: &BlockMap, entities: &[PlacedHolder]) -> V
             id: f.objective_id.clone(),
             cell: f.cell,
             placed: None,
-            slots: family.map_or_else(Vec::new, |(fam, _)| collect_slots(fam, f.slots)),
+            slots: family.map_or_else(Vec::new, |(fam, _)| collect_slots(fam, f)),
         });
     }
     let c = plan.campaign;
@@ -1229,20 +1229,18 @@ pub fn entities_at(entities: &[PlacedHolder], cell: [i32; 3]) -> Vec<&PlacedHold
     entities.iter().filter(|e| e.cell == cell).collect()
 }
 
-/// The slot each stack of a `loot` fill lands in on a holder of `family`: its
-/// named `slot`, else positional — `container.<n>` on a container, `contents`
-/// on a frame. A stand's unnamed stack lands nowhere (`DW1035`), so it maps to
-/// no slot here.
+/// **The slot each stack of a fill lands in** on a holder of `family` — the one
+/// landing rule of the holder class (spec-0111 §3.3, §3.4), for a `loot` fill
+/// and an adopting `collect` alike: a stack's named slot, else positional —
+/// `container.<n>` on a container, `contents` on a frame. A stand's unnamed
+/// stack lands nowhere (`DW1035`), so it maps to no slot here.
 #[must_use]
-pub fn loot_slots(
-    family: HolderFamily,
-    items: &[crate::compiler::plan::LootItemPlan],
-) -> Vec<String> {
-    items
+pub fn landing_slots(family: HolderFamily, named: &[Option<&str>]) -> Vec<String> {
+    named
         .iter()
         .enumerate()
-        .filter_map(|(n, it)| match (&it.slot, family) {
-            (Some(s), _) => Some(s.clone()),
+        .filter_map(|(n, s)| match (s, family) {
+            (Some(s), _) => Some((*s).to_string()),
             (None, HolderFamily::Container) => Some(format!("container.{n}")),
             (None, HolderFamily::Frame) => Some(delvewright_dsl::holders::FRAME_SLOT.to_string()),
             (None, HolderFamily::Stand) => None,
@@ -1250,17 +1248,27 @@ pub fn loot_slots(
         .collect()
 }
 
-/// The slots a `collect` adopting a holder of `family` fills (spec-0111 §3.4):
-/// the objective's stack in the holder's first slot, and on a container its
-/// padding in the `container.<n>` slots after it. `slots` is the stack plus its
-/// padding.
+/// [`landing_slots`] over a `loot` fill's stacks.
 #[must_use]
-pub fn collect_slots(family: HolderFamily, slots: usize) -> Vec<String> {
-    match family {
-        HolderFamily::Container => (0..slots).map(|n| format!("container.{n}")).collect(),
-        HolderFamily::Frame => vec![delvewright_dsl::holders::FRAME_SLOT.to_string()],
-        HolderFamily::Stand => vec![STAND_VOCABULARY[0].to_string()],
-    }
+pub fn loot_slots(
+    family: HolderFamily,
+    items: &[crate::compiler::plan::LootItemPlan],
+) -> Vec<String> {
+    let named: Vec<Option<&str>> = items.iter().map(|it| it.slot.as_deref()).collect();
+    landing_slots(family, &named)
+}
+
+/// [`landing_slots`] over an adopting `collect`'s stacks (spec-0111 §3.4): the
+/// objective's stack in the slot it names — positional when it names none —
+/// and on a container its padding in the `container.<n>` slots after it.
+#[must_use]
+pub fn collect_slots(
+    family: HolderFamily,
+    fill: &crate::compiler::plan::CollectFillPlan,
+) -> Vec<String> {
+    let named = fill.stack_slots();
+    let named: Vec<Option<&str>> = named.iter().map(Option::as_deref).collect();
+    landing_slots(family, &named)
 }
 
 /// One filled slot of an entity holder: what lands there and who put it.
@@ -1388,7 +1396,9 @@ pub fn own_holders(plan: &Plan, entities: &[PlacedHolder]) -> Vec<OwnedHolder> {
         o.id = crate::compiler::plan::safe_local(&f.anchor);
         o.anchor = Some(f.anchor.clone());
         o.collect = Some(f.objective_id.clone());
-        for slot in collect_slots(fam, 1) {
+        // The objective's own stack: its slot, never its padding (a holder
+        // entity has none to pad, `DW1035`).
+        if let Some(slot) = collect_slots(fam, f).into_iter().next() {
             o.fills.push(EntityFill { slot, stack: None });
         }
     }
@@ -1571,6 +1581,38 @@ pub fn check_runtime_edits(plan: &Plan, owned: &[OwnedHolder]) -> Result<usize, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// spec-0111 §3.4: a `collect` lands its stack in the slot it names, by
+    /// the one landing rule a `loot` fill uses — on a container its padding
+    /// follows the named slot, on a stand the named slot alone, and a stand
+    /// collect naming none lands nowhere (`DW1035` refuses it first).
+    #[test]
+    fn a_collect_lands_in_the_slot_it_names() {
+        let fill = |slot: Option<&str>, slots: usize| crate::compiler::plan::CollectFillPlan {
+            objective_id: "obj/take".to_string(),
+            anchor: "anchor/case".to_string(),
+            cell: [0, 0, 0],
+            slots,
+            slot: slot.map(str::to_string),
+        };
+        assert_eq!(
+            collect_slots(HolderFamily::Container, &fill(Some("container.11"), 3)),
+            ["container.11", "container.12", "container.13"]
+        );
+        assert_eq!(
+            collect_slots(HolderFamily::Container, &fill(None, 2)),
+            ["container.0", "container.1"]
+        );
+        assert_eq!(
+            collect_slots(HolderFamily::Stand, &fill(Some("weapon.mainhand"), 1)),
+            ["weapon.mainhand"]
+        );
+        assert_eq!(
+            collect_slots(HolderFamily::Frame, &fill(None, 1)),
+            [delvewright_dsl::holders::FRAME_SLOT]
+        );
+        assert!(collect_slots(HolderFamily::Stand, &fill(None, 1)).is_empty());
+    }
 
     fn model(cells: &[([i32; 3], &str)]) -> BlockMap {
         let mut b = BTreeMap::new();

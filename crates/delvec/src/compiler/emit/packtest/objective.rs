@@ -206,7 +206,11 @@ enum ActivationFixture {
     Entities { tag: String, count: usize },
     /// The objective's stack in a container slot: the collect path summons
     /// nothing and fills a block instead.
-    ContainerSlot { pos: [i32; 3], item: String },
+    ContainerSlot {
+        pos: [i32; 3],
+        slot: String,
+        item: String,
+    },
     /// The objective's prop block alone (spec-0093 §6.5): a block vanilla
     /// reports the use of summons nothing — the block is the whole affordance.
     Block { pos: [i32; 3], block: String },
@@ -267,7 +271,8 @@ fn activation_fixture(cmds: &[String]) -> Option<ActivationFixture> {
                 .to_string(),
         });
     }
-    // `item replace block <x> <y> <z> container.<n> with <item>[…] <count>`
+    // `item replace block <x> <y> <z> <slot> with <item>[…] <count>` — the first
+    // fill, the objective's own stack in the slot it lands in.
     let fill = cmds.iter().find(|c| c.starts_with("item replace block "))?;
     let f: Vec<&str> = fill.split_whitespace().collect();
     let pos = [
@@ -286,7 +291,8 @@ fn activation_fixture(cmds: &[String]) -> Option<ActivationFixture> {
         .map(|(id, _)| id)
         .unwrap_or(stack)
         .to_string();
-    Some(ActivationFixture::ContainerSlot { pos, item })
+    let slot = (*f.get(6)?).to_string();
+    Some(ActivationFixture::ContainerSlot { pos, slot, item })
 }
 
 /// Every objective's own activation body really materialises THAT objective's
@@ -339,24 +345,24 @@ pub(super) fn emit_objective_activation_packtests(
                     // Remove exactly what this template caused, and nothing else.
                     b.push(format!("kill @e[tag={tag},limit={count}]"));
                 }
-                ActivationFixture::ContainerSlot { pos, item } => {
+                ActivationFixture::ContainerSlot { pos, slot, item } => {
                     let (x, y, z) = (pos[0], pos[1], pos[2]);
                     // Empty the objective's own slot first, so the after-read is a
                     // fact about this activation rather than about whatever stood
                     // in the container already. The activation refills it, which
                     // is also the cleanup.
                     b.push(format!(
-                        "item replace block {x} {y} {z} container.0 with minecraft:air"
+                        "item replace block {x} {y} {z} {slot} with minecraft:air"
                     ));
                     b.push(format!(
                         "execute store success score #fx0_{safe} dw.sys if items block {x} {y} {z} \
-                         container.0 {item}"
+                         {slot} {item}"
                     ));
                     b.push(format!("assert score #fx0_{safe} dw.sys matches 0"));
                     b.push(format!("function {ns}:activate_o_{safe}"));
                     b.push(format!(
                         "execute store success score #fx1_{safe} dw.sys if items block {x} {y} {z} \
-                         container.0 {item}"
+                         {slot} {item}"
                     ));
                     b.push(format!("assert score #fx1_{safe} dw.sys matches 1"));
                 }
@@ -1096,9 +1102,12 @@ pub(super) fn emit_verb_packtests(
         // template, and this objective's own activation is guarded once per world
         // by `#act_<obj>`, so the fill is not re-run on a second call. Clearing
         // makes the count assertion below a statement about THIS activation.
-        for slot in 0..=*fill_count {
+        for slot in crate::compiler::holders::collect_slots(
+            delvewright_dsl::holders::HolderFamily::Container,
+            fill,
+        ) {
             b.push(format!(
-                "item replace block {} {} {} container.{slot} with minecraft:air",
+                "item replace block {} {} {} {slot} with minecraft:air",
                 cell[0], cell[1], cell[2]
             ));
         }

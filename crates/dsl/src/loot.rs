@@ -183,17 +183,7 @@ fn check_fill_slots(
             continue;
         };
         let at = format!("{path}/items/{k}/slot");
-        if !crate::holders::in_some_vocabulary(slot) {
-            d.push(Diagnostic::error(
-                DW_HOLDER_SLOT,
-                "quests",
-                at,
-                format!(
-                    "{what} puts `{}` in slot `{slot}`, which no holder has. {}",
-                    it.item,
-                    holder_vocabulary_text()
-                ),
-            ));
+        if !check_stack_slot(what, &at, &it.item, slot, items, d) {
             continue;
         }
         if let Some(prev) = seen.insert(slot, k) {
@@ -209,40 +199,108 @@ fn check_fill_slots(
                     holder_vocabulary_text()
                 ),
             ));
-            continue;
         }
-        if let Some(stand) = crate::holders::stand_slot(slot)
-            && let crate::holders::SlotAccepts::Equippable(want) = stand.accepts
-        {
-            let fits = match items.equippable(&it.item) {
-                crate::equipment::EquippableFact::Unknown => true,
-                crate::equipment::EquippableFact::Plain => false,
-                crate::equipment::EquippableFact::Equippable(e) => {
-                    e.slot == want
-                        && (e.allowed_entities.is_empty()
-                            || crate::equipment::admitted(
-                                "minecraft:armor_stand",
-                                &e.allowed_entities,
-                            ))
-                }
+    }
+}
+
+/// `DW1035`'s document arm over ONE stack and the slot it names — the one
+/// validation every fill of the holder class runs, a `loot` stack's and a
+/// `collect`'s alike (spec-0111 §3.3, §3.4): the slot is in some family's
+/// vocabulary, and an armour slot holds only a stack the game puts there.
+/// Returns whether the slot is in the vocabulary (a slot outside it is judged
+/// no further).
+fn check_stack_slot(
+    what: &str,
+    at: &str,
+    item: &str,
+    slot: &str,
+    items: &dyn ItemRegistry,
+    d: &mut Vec<Diagnostic>,
+) -> bool {
+    if !crate::holders::in_some_vocabulary(slot) {
+        d.push(Diagnostic::error(
+            DW_HOLDER_SLOT,
+            "quests",
+            at.to_string(),
+            format!(
+                "{what} puts `{item}` in slot `{slot}`, which no holder has. {}",
+                holder_vocabulary_text()
+            ),
+        ));
+        return false;
+    }
+    if let Some(stand) = crate::holders::stand_slot(slot)
+        && let crate::holders::SlotAccepts::Equippable(want) = stand.accepts
+    {
+        let fits = match items.equippable(item) {
+            crate::equipment::EquippableFact::Unknown => true,
+            crate::equipment::EquippableFact::Plain => false,
+            crate::equipment::EquippableFact::Equippable(e) => {
+                e.slot == want
+                    && (e.allowed_entities.is_empty()
+                        || crate::equipment::admitted("minecraft:armor_stand", &e.allowed_entities))
+            }
+        };
+        if !fits {
+            d.push(Diagnostic::error(
+                DW_HOLDER_SLOT,
+                "quests",
+                at.to_string(),
+                format!(
+                    "{what} puts `{item}` in `{slot}`, but the pinned game puts a stack in \
+                     `{slot}` only when its `equippable` slot is `{want}`, and `{item}`'s is not \
+                     — `item replace entity … {slot}` would be refused and the stand would \
+                     stand empty there. Put it in a slot that takes any stack, or choose an \
+                     item made for that slot. {}",
+                    holder_vocabulary_text()
+                ),
+            ));
+        }
+    }
+    true
+}
+
+/// `DW1035` over every `collect`'s `slot` (spec-0111 §3.4): the slot passes the
+/// one stack validation [`check_stack_slot`] a `loot` stack passes, and only a
+/// collect that adopts a `holder` names one — the compiler's own chest and an
+/// item that drops from a wave have no slot the author chooses.
+pub(crate) fn collect_slot_checks(c: &Campaign, items: &dyn ItemRegistry, d: &mut Vec<Diagnostic>) {
+    for (i, q) in c.quests.content.quests.iter().enumerate() {
+        for (j, o) in q.objectives.iter().enumerate() {
+            let crate::Objective::Collect {
+                id,
+                item,
+                slot: Some(slot),
+                holder,
+                dropped_by,
+                ..
+            } = o
+            else {
+                continue;
             };
-            if !fits {
+            let what = format!("collect objective `{id}`");
+            let at = format!("/content/quests/{i}/objectives/{j}/slot");
+            if holder.is_none() {
+                let source = if dropped_by.is_some() {
+                    "its item drops from a wave (`dropped_by`), so it lands on the ground"
+                } else {
+                    "it conjures the compiler's own chest at `anchor`, whose one slot the \
+                     compiler fills"
+                };
                 d.push(Diagnostic::error(
                     DW_HOLDER_SLOT,
                     "quests",
                     at,
                     format!(
-                        "{what} puts `{}` in `{slot}`, but the pinned game puts a stack in \
-                         `{slot}` only when its `equippable` slot is `{want}`, and `{}`'s is not \
-                         — `item replace entity … {slot}` would be refused and the stand would \
-                         stand empty there. Put it in a slot that takes any stack, or choose an \
-                         item made for that slot. {}",
-                        it.item,
-                        it.item,
+                        "{what} names slot `{slot}` but adopts no `holder`: {source}. A `slot` \
+                         names where the item lands in the holder a collect adopts. Name the \
+                         holder the piece places with `holder`, or delete `slot`. {}",
                         holder_vocabulary_text()
                     ),
                 ));
+                continue;
             }
+            check_stack_slot(&what, &at, item, slot, items, d);
         }
     }
 }

@@ -261,16 +261,14 @@ fn found_at<'a>(
     }
 }
 
-/// The fault of one `loot` fill against what stands at its cell, or `None`.
-/// The second half says whether it is a slot-vocabulary fault the build tier
-/// raises under `DW1035` (a stand fill with an unnamed stack).
-fn loot_fault(l: &LootPlan, found: &Found<'_>) -> Option<(String, bool)> {
-    let c = l.cell;
-    let at = format!(
-        "loot `{}` -> anchor `{}` at [{}, {}, {}]",
-        l.id, l.anchor, c[0], c[1], c[2]
-    );
-    let named: Vec<&str> = l.items.iter().filter_map(|i| i.slot.as_deref()).collect();
+/// The fault of one fill against what stands at its cell, or `None` — the one
+/// build-tier slot proof every fill of the holder class runs, a `loot` fill's
+/// and an adopting `collect`'s alike (spec-0111 §3.3, §3.4). `at` names the
+/// fill; `slots` is the slot each of its stacks names, in fill order. The
+/// second half says whether it is a slot-vocabulary fault the build tier
+/// raises under `DW1035` (a stand stack that names no slot).
+fn fill_fault(at: &str, slots: &[Option<&str>], found: &Found<'_>) -> Option<(String, bool)> {
+    let named: Vec<&str> = slots.iter().filter_map(|s| *s).collect();
     match found {
         Found::Nothing(block) => Some((
             format!("  {at} holds `{}`, not a holder", base_id(block)),
@@ -278,7 +276,8 @@ fn loot_fault(l: &LootPlan, found: &Found<'_>) -> Option<(String, bool)> {
         )),
         Found::Ambiguous(many) => Some((
             format!(
-                "  {at} holds {} holder entities ({}), so the fill names none of them; a cell a                  fill names holds one holder",
+                "  {at} holds {} holder entities ({}), so the fill names none of them; a cell a \
+                 fill names holds one holder",
                 many.len(),
                 many.iter()
                     .map(|h| h.kind.id)
@@ -287,27 +286,28 @@ fn loot_fault(l: &LootPlan, found: &Found<'_>) -> Option<(String, bool)> {
             ),
             false,
         )),
-        Found::Container(block, slots) => {
+        Found::Container(block, n) => {
             if let Some(bad) = named
                 .iter()
-                .find(|s| !HolderFamily::Container.has_slot(s, *slots))
+                .find(|s| !HolderFamily::Container.has_slot(s, *n))
             {
                 return Some((
                     format!(
-                        "  {at} names slot `{bad}`, but the holder there is a `{}` — a container,                          whose slots are {}, {slots} of them",
+                        "  {at} names slot `{bad}`, but the holder there is a `{}` — a container, \
+                         whose slots are {}, {n} of them",
                         base_id(block),
                         HolderFamily::Container.vocabulary()
                     ),
                     false,
                 ));
             }
-            (named.is_empty() && l.items.len() > *slots).then(|| {
+            (named.is_empty() && slots.len() > *n).then(|| {
                 (
                     format!(
-                        "  {at} declares {} stacks but `{}` has {} slots",
-                        l.items.len(),
+                        "  {at} fills {} slots but `{}` has {} slots",
+                        slots.len(),
                         base_id(block),
-                        slots
+                        n
                     ),
                     false,
                 )
@@ -318,7 +318,8 @@ fn loot_fault(l: &LootPlan, found: &Found<'_>) -> Option<(String, bool)> {
             if let Some(bad) = named.iter().find(|s| !fam.has_slot(s, 0)) {
                 return Some((
                     format!(
-                        "  {at} names slot `{bad}`, but the holder there is a `{}` — a {}, whose                          slots are {}",
+                        "  {at} names slot `{bad}`, but the holder there is a `{}` — a {}, whose \
+                         slots are {}",
                         h.kind.id,
                         fam.name(),
                         fam.vocabulary()
@@ -327,18 +328,19 @@ fn loot_fault(l: &LootPlan, found: &Found<'_>) -> Option<(String, bool)> {
                 ));
             }
             match fam {
-                HolderFamily::Stand if named.len() < l.items.len() => Some((
+                HolderFamily::Stand if named.len() < slots.len() => Some((
                     format!(
-                        "  {at} fills the `{}` with a stack that names no `slot`; a stand's slots                          have no order, so every stack names one: {}",
+                        "  {at} fills the `{}` with a stack that names no `slot`; a stand's slots \
+                         have no order, so every stack names one: {}",
                         h.kind.id,
                         fam.vocabulary()
                     ),
                     true,
                 )),
-                HolderFamily::Frame if l.items.len() > 1 => Some((
+                HolderFamily::Frame if slots.len() > 1 => Some((
                     format!(
-                        "  {at} declares {} stacks but the `{}` has 1 slot (`contents`)",
-                        l.items.len(),
+                        "  {at} fills {} slots but the `{}` has 1 slot (`contents`)",
+                        slots.len(),
                         h.kind.id
                     ),
                     false,
@@ -347,6 +349,17 @@ fn loot_fault(l: &LootPlan, found: &Found<'_>) -> Option<(String, bool)> {
             }
         }
     }
+}
+
+/// [`fill_fault`] over one `loot` fill.
+fn loot_fault(l: &LootPlan, found: &Found<'_>) -> Option<(String, bool)> {
+    let c = l.cell;
+    let at = format!(
+        "loot `{}` -> anchor `{}` at [{}, {}, {}]",
+        l.id, l.anchor, c[0], c[1], c[2]
+    );
+    let slots: Vec<Option<&str>> = l.items.iter().map(|i| i.slot.as_deref()).collect();
+    fill_fault(&at, &slots, found)
 }
 
 /// Build-tier proof: every `loot` anchor resolves to a cell that really holds a
@@ -418,37 +431,48 @@ pub fn check_collect_containers(
 ) -> Result<(), Failure> {
     let mut bad: Vec<String> = Vec::new();
     let mut padding: Vec<String> = Vec::new();
+    let mut slot_faults: Vec<String> = Vec::new();
     for f in fills {
         let c = f.cell;
         let at = format!(
             "collect `{}` -> holder anchor `{}` at [{}, {}, {}]",
             f.objective_id, f.anchor, c[0], c[1], c[2]
         );
-        match found_at(blocks, entities, c) {
-            Found::Nothing(block) => {
-                bad.push(format!("  {at} holds `{}`, not a holder", base_id(block)));
-            }
-            Found::Ambiguous(many) => bad.push(format!(
-                "  {at} holds {} holder entities, so the collect names none of them",
-                many.len()
-            )),
-            Found::Container(block, slots) if f.slots > slots => bad.push(format!(
-                "  {at} fills {} slots but `{}` has {} slots",
-                f.slots,
-                base_id(block),
-                slots
-            )),
-            Found::Container(..) => {}
-            Found::Entity(h) if f.slots > 1 => padding.push(format!(
+        let found = found_at(blocks, entities, c);
+        if let Found::Entity(h) = &found
+            && f.slots > 1
+        {
+            padding.push(format!(
                 "  {at} pads its stack with {} more (`fill_count`), but the holder there is a \
                  `{}` — a {}, whose slots are {}: it has no `container.<n>` slot to pad",
                 f.slots - 1,
                 h.kind.id,
                 h.kind.family.name(),
                 h.kind.family.vocabulary()
-            )),
-            Found::Entity(_) => {}
+            ));
+            continue;
         }
+        let stack_slots = f.stack_slots();
+        let slots: Vec<Option<&str>> = stack_slots.iter().map(Option::as_deref).collect();
+        if let Some((fault, vocab)) = fill_fault(&at, &slots, &found) {
+            if vocab {
+                slot_faults.push(fault);
+            } else {
+                bad.push(fault);
+            }
+        }
+    }
+    if bad.is_empty() && !slot_faults.is_empty() {
+        return Err(Failure {
+            code: delvewright_dsl::loot::DW_HOLDER_SLOT,
+            message: format!(
+                "{} `collect` objective(s) leave the item's slot to be guessed on a holder that \
+                 has no order.\n{}\n  Name the slot with the collect's `slot`. {}",
+                slot_faults.len(),
+                slot_faults.join("\n"),
+                delvewright_dsl::loot::holder_vocabulary_text()
+            ),
+        });
     }
     if bad.is_empty() && !padding.is_empty() {
         return Err(Failure {
@@ -707,6 +731,7 @@ mod tests {
             anchor: "anchor/beach-barrel".to_string(),
             cell,
             slots,
+            slot: None,
         }
     }
 
@@ -946,6 +971,7 @@ mod tests {
                 anchor: "anchor/nowhere".to_string(),
                 cell: [0, 0, 0],
                 slots: 1,
+                slot: None,
             }],
         );
         // Three anchors, two containers: the stone one is not one.

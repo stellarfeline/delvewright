@@ -702,3 +702,139 @@ fn the_audit_judges_a_templates_entities() {
         "{log}"
     );
 }
+
+/// A `collect` objective on the second step of hello-world that adopts the
+/// stand at `anchor/rack`, with `extra` fields merged over it.
+fn sword_collect(extra: serde_json::Value) -> impl FnOnce(&mut serde_json::Value) {
+    move |c| {
+        let mut o = serde_json::json!({
+            "type": "collect", "id": "obj/exit", "item": "minecraft:iron_sword", "count": 1,
+            "anchor": "anchor/exit", "holder": "anchor/rack", "after": ["obj/talk"],
+            "title": "Take the sword", "item_name": "Post Sword",
+            "happening": {"text": "the party takes the sword", "verb": "gains"}
+        });
+        for (k, v) in extra.as_object().unwrap() {
+            o[k] = v.clone();
+        }
+        c["quests"][0]["objectives"][1] = o;
+    }
+}
+
+/// spec-0111 §3.4: a `collect` adopting a stand names the slot its item goes
+/// in — the sword stands in the stand's hand, the activation fills that slot,
+/// the stand shows its arms and lets only that slot be taken, and the bot is
+/// told to click the hand.
+#[test]
+fn a_collect_puts_its_item_in_the_slot_it_names() {
+    let dir = scratch("holders-slot-prefabs");
+    let prefabs = holder_prefabs(&dir.join("prefabs"), vec![stand_entity()]);
+    let (code, log, out) = build_holders(
+        "holders-slot",
+        &prefabs,
+        sword_collect(serde_json::json!({"slot": "weapon.mainhand"})),
+        None,
+    );
+    assert_eq!(code, 0, "{log}");
+    let act = read(
+        &out,
+        "datapack/data/hello-world/function/activate_o_exit.mcfunction",
+    );
+    assert!(
+        act.contains(
+            "item replace entity @e[tag=dw_holder_rack,limit=1] weapon.mainhand with \
+             minecraft:iron_sword"
+        ),
+        "{act}"
+    );
+    assert!(!act.contains("armor.head"), "{act}");
+    let rack = read(
+        &out,
+        "datapack/data/hello-world/function/holder_rack.mcfunction",
+    );
+    let bits = delvewright_dsl::holders::disabled_slots(&["weapon.mainhand"]);
+    assert!(
+        rack.contains(&format!(
+            "ShowArms:1b,Marker:0b,Invulnerable:1b,DisabledSlots:{bits}"
+        )),
+        "{rack}"
+    );
+    let cp: serde_json::Value = serde_json::from_str(&read(&out, "critical-path.json")).unwrap();
+    let step = cp["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["objective"] == "obj/exit")
+        .unwrap();
+    assert_eq!(step["holder"]["kind"], "armor-stand", "{step}");
+    assert_eq!(step["holder"]["slot"], "weapon.mainhand", "{step}");
+    assert!(step["holder"]["click_height"].is_number(), "{step}");
+}
+
+/// spec-0111 §3.4 with §3.3's rule: a stand's slots have no order, so a
+/// `collect` adopting one names its slot (`DW1035` at the build, where the
+/// family is known), exactly as a `loot` stack on a stand does; a slot the
+/// stand does not have is `DW0438`.
+#[test]
+fn a_collect_on_a_stand_names_a_slot_the_stand_has() {
+    let dir = scratch("holders-slot-refused-prefabs");
+    let prefabs = holder_prefabs(&dir.join("prefabs"), vec![stand_entity()]);
+    for (tag, extra, want) in [
+        ("holders-slot-none", serde_json::json!({}), "DW1035"),
+        (
+            "holders-slot-frame-word",
+            serde_json::json!({"slot": "contents"}),
+            "DW0438",
+        ),
+    ] {
+        let (code, log, _) = build_holders(tag, &prefabs, sword_collect(extra), None);
+        assert_eq!(code, 3, "{tag}: {log}");
+        assert!(log.contains(want), "{tag}: {log}");
+    }
+}
+
+/// spec-0111 §3.4: a `collect`'s `slot` passes the one validation a `loot`
+/// stack's does — a sword in `armor.chest` is `DW1035` naming the slot — and
+/// only a collect that adopts a `holder` names one.
+#[test]
+fn a_collect_slot_is_judged_as_a_loot_slot_is() {
+    let dir = scratch("holders-slot-validate-prefabs");
+    let prefabs = holder_prefabs(&dir.join("prefabs"), vec![stand_entity()]);
+    for (tag, extra, said_too) in [
+        (
+            "holders-slot-chest",
+            serde_json::json!({"slot": "armor.chest"}),
+            "armor.chest",
+        ),
+        (
+            "holders-slot-no-holder",
+            serde_json::json!({"slot": "weapon.mainhand", "holder": null}),
+            "adopts no `holder`",
+        ),
+        (
+            "holders-slot-unknown",
+            serde_json::json!({"slot": "weapon.belt"}),
+            "which no holder has",
+        ),
+    ] {
+        let camp = scratch(tag).join("camp");
+        common::copy_dir_all(&common::hello_world_dir(), &camp);
+        common::patch_file(&camp.join("quests.json"), |q| {
+            sword_collect(extra)(&mut q["content"]);
+            let o = &mut q["content"]["quests"][0]["objectives"][1];
+            if o["holder"].is_null() {
+                o.as_object_mut().unwrap().remove("holder");
+            }
+        });
+        let o = delvec(&[
+            "validate",
+            camp.to_str().unwrap(),
+            "--prefabs",
+            prefabs.to_str().unwrap(),
+        ]);
+        let log = said(&o);
+        assert_ne!(o.status.code(), Some(0), "{tag}: {log}");
+        assert!(log.contains("DW1035"), "{tag}: {log}");
+        assert!(log.contains(said_too), "{tag}: {log}");
+    }
+}
+

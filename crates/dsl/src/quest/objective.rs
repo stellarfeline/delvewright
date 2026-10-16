@@ -204,18 +204,30 @@ pub enum Objective {
         /// Same division of labour a `loot` entry and a trap's dispenser already
         /// keep with the prefab: furniture belongs in the piece. The holder's
         /// kind, its flags and its tag are the engine's derivations from the
-        /// piece; nothing about them is typed here. The objective's item lands
-        /// in the holder's first slot — `container.0`, a frame's `contents`, a
-        /// stand's `armor.head` (the first of its vocabulary, and a slot that
-        /// takes any stack). A `holder` whose cell holds no holder
-        /// is a build error (`DW0438`), never a silent fill into a wall; padding
-        /// (`fill_count`) on a frame or a stand is `DW1035`, because neither has
-        /// a `container.<n>` slot to pad.
+        /// piece; nothing about them is typed here. Where in the holder the
+        /// objective's item lands is [`Objective::Collect::slot`]. A `holder`
+        /// whose cell holds no holder is a build error (`DW0438`), never a
+        /// silent fill into a wall; padding (`fill_count`) on a frame or a
+        /// stand is `DW1035`, because neither has a `container.<n>` slot to pad.
         ///
         /// The critical-path step's position follows the holder, and no chest
         /// is placed at `anchor` when it is set.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         holder: Option<AnchorId>,
+        /// **The slot of the adopted holder the objective's item lands in**
+        /// (DSL v0.49, spec-0111 §3.4), in the holder class's one vocabulary —
+        /// the same words, and the same validation, as a `loot` stack's
+        /// [`crate::LootItem::slot`]: `container.<n>` on a container (padding
+        /// follows in `container.<n+1>`, …), `contents` on an item frame,
+        /// `armor.head`, `armor.chest`, `armor.legs`, `armor.feet`,
+        /// `weapon.mainhand` or `weapon.offhand` on an armour stand. Omitted, the
+        /// item lands positionally — `container.0`, a frame's `contents` — and
+        /// on a stand it is `DW1035`, because which hand or head a thing sits in
+        /// is the author's judgement. Only a collect with a `holder` has a slot
+        /// to name (`DW1035` otherwise); a slot the holder at the anchor lacks
+        /// is `DW0438`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        slot: Option<String>,
         /// **The item comes off a body, not out of a box**: the wave whose
         /// declared `drops[]` yield
         /// this objective's item. No container is placed — not the compiler's own
@@ -564,6 +576,15 @@ impl Objective {
     pub fn collect_holder(&self) -> Option<&AnchorId> {
         match self {
             Objective::Collect { holder, .. } => holder.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// The slot a `collect`'s item lands in in its adopted holder (DSL v0.49,
+    /// spec-0111 §3.4), if it names one.
+    pub fn collect_slot(&self) -> Option<&str> {
+        match self {
+            Objective::Collect { slot, .. } => slot.as_deref(),
             _ => None,
         }
     }

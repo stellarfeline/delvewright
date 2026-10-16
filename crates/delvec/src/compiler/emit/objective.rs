@@ -87,9 +87,11 @@ pub(super) fn activation_commands(
             let adopted = plan
                 .collect_fills
                 .iter()
-                .find(|f| f.objective_id == id.as_str())
-                .map(|f| f.cell);
-            let Some(pos) = adopted.or_else(|| plan.point(area, anchor.as_str())) else {
+                .find(|f| f.objective_id == id.as_str());
+            let Some(pos) = adopted
+                .map(|f| f.cell)
+                .or_else(|| plan.point(area, anchor.as_str()))
+            else {
                 return cmds;
             };
             if adopted.is_none() {
@@ -98,15 +100,28 @@ pub(super) fn activation_commands(
                     pos[0], pos[1], pos[2]
                 ));
             }
-            // The objective's own stack lands in `container.0`; each padding stack
-            // repeats it in the slots after it, so the container READS full
-            // (vanilla fullness is occupied slots, not stack size). Positional and
-            // total — no RNG, nothing to reseed (ADR-0006). A campaign with
-            // neither a name nor padding emits the single pre-0.8 line, byte for
-            // byte.
-            for slot in 0..=*fill_count {
+            // The objective's own stack lands in the slot the collect names
+            // (`container.0` when it names none); each padding stack repeats it
+            // in the slots after it, so the container READS full (vanilla
+            // fullness is occupied slots, not stack size). Positional and total
+            // — no RNG, nothing to reseed (ADR-0006). The adopted fill's slots
+            // are the holder class's one landing rule (spec-0111 §3.4).
+            let slots: Vec<String> = adopted.map_or_else(
+                || {
+                    (0..=*fill_count)
+                        .map(|n| format!("container.{n}"))
+                        .collect()
+                },
+                |f| {
+                    crate::compiler::holders::collect_slots(
+                        delvewright_dsl::holders::HolderFamily::Container,
+                        f,
+                    )
+                },
+            );
+            for slot in slots {
                 cmds.push(format!(
-                    "item replace block {} {} {} container.{slot} with {stack}",
+                    "item replace block {} {} {} {slot} with {stack}",
                     pos[0], pos[1], pos[2]
                 ));
             }

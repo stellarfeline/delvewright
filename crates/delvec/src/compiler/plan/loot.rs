@@ -57,6 +57,32 @@ pub struct CollectFillPlan {
     /// How many slots the fill occupies: the objective's own stack plus
     /// `fill_count` padding stacks.
     pub slots: usize,
+    /// The slot the objective's stack lands in, when the collect names one
+    /// (`slot`, spec-0111 §3.4).
+    pub slot: Option<String>,
+}
+
+impl CollectFillPlan {
+    /// The slot each of the fill's stacks names, in fill order — the
+    /// objective's stack, then its padding — in the shape a `loot` fill's
+    /// stacks name theirs, so one proof and one landing rule serve both doors
+    /// (spec-0111 §3.3, §3.4). A named `container.<n>` carries its padding into
+    /// `container.<n+1>`, …; any other named slot is the stack's alone, its
+    /// padding unnamed; an unnamed fill is positional throughout.
+    #[must_use]
+    pub fn stack_slots(&self) -> Vec<Option<String>> {
+        let start = self
+            .slot
+            .as_deref()
+            .and_then(delvewright_dsl::holders::container_index);
+        (0..self.slots)
+            .map(|k| match (start, &self.slot) {
+                (Some(n), _) => Some(format!("container.{}", n + k)),
+                (None, Some(s)) if k == 0 => Some(s.clone()),
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 /// Resolve every `collect` objective's adopted `holder` (spec-0111) to a world
@@ -80,6 +106,7 @@ pub(super) fn collect_collect_fills(
                 anchor: cont.as_str().to_string(),
                 cell,
                 slots: 1 + o.collect_fill_count() as usize,
+                slot: o.collect_slot().map(str::to_string),
             });
         }
     }
