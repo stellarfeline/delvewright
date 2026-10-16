@@ -10,6 +10,7 @@ import {
   LoopNotMovedError,
   LoopWalkBarrenError,
   pastFace,
+  serverMove,
 } from "../src/loop-cross.ts";
 import type { Vec3Tuple } from "../src/critical-path.ts";
 
@@ -95,4 +96,26 @@ test("a stalled host adds nothing to a walk's stall, and a body that advances re
     if (i % (LOOP_WALK_STALL_MS / 50 - 1) === 0) z += 2 * LOOP_ADVANCE_BLOCKS;
     w.reading(i, [517.5, 65, Math.min(z, 73.9)], next());
   }
+});
+
+test("a position packet relative on every axis states its move as its coordinates, in both flag shapes", () => {
+  // The spike's packet for `tp @s ~ ~ ~-12` (tools/spike-seamless-loop/ at 2278c55877e2).
+  const flags = { _value: 255, x: true, y: true, z: true, yaw: true, pitch: true, dx: true, dy: true, dz: true };
+  assert.deepEqual(serverMove({ x: 0, y: 0, z: -12, flags }), { relative: true, delta: [0, 0, -12] });
+  assert.deepEqual(serverMove({ x: 0, y: 0, z: -6, flags: 7 }), { relative: true, delta: [0, 0, -6] });
+});
+
+test("a position packet absolute on any axis is a move to a place, naming the axes it set", () => {
+  assert.deepEqual(serverMove({ x: 517.5, y: 65, z: 68.5, flags: { x: false, y: false, z: false } }), {
+    relative: false,
+    to: [517.5, 65, 68.5],
+    absolute: ["x", "y", "z"],
+  });
+  assert.deepEqual(serverMove({ x: 0, y: 65, z: 0, flags: 5 }), { relative: false, to: [0, 65, 0], absolute: ["y"] });
+});
+
+test("what is not a position packet states no move", () => {
+  assert.equal(serverMove(undefined), undefined);
+  assert.equal(serverMove({ x: 0, y: 0 }), undefined);
+  assert.equal(serverMove({ x: 0, y: 0, z: -6 }), undefined);
 });

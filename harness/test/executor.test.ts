@@ -5397,6 +5397,16 @@ test("the bounties a staged clear pays into a wagered purse are taken back befor
  */
 class LoopFakeBot extends InteractFakeBot {
   answer: [number, number, number] | null = [0, 0, -6];
+  /**
+   * Whether the pathfinder recentres the body between the physics tick that
+   * read it in the slab and the move's arrival: mineflayer-pathfinder's
+   * `fullStop` (2.4.5, `index.js`) writes `position.z = floor(z) + 0.5` when the
+   * body is more than 0.2 block off its cell's centre, with no physics tick.
+   */
+  recentre = false;
+  /** The packet's flags: relative on every axis, as a loop's `tp @s ~dx ~dy ~dz` sends. */
+  flags: Record<string, boolean> | number = { x: true, y: true, z: true, yaw: true, pitch: true };
+  _client = new EventEmitter();
   moves = 0;
   constructor() {
     super();
@@ -5417,12 +5427,24 @@ class LoopFakeBot extends InteractFakeBot {
       this.calls.push(`goto(${goal.x},${goal.y},${goal.z})`);
       if (goal.z >= 22) {
         // Into the slab at z = 22: the body enters it, and the server answers.
-        this.entity.position = new FakeVec3(2.5, 67, 22.3);
+        this.entity.position = new FakeVec3(2.5, 67, 22.178);
         this.emit("physicsTick");
         if (this.answer) {
+          // The server runs the `tp` from the position it holds; mineflayer
+          // applies the packet's relative axes to wherever the body is when it
+          // lands (lib/plugins/physics.js).
           const [dx, dy, dz] = this.answer;
-          const p = this.entity.position;
-          this.entity.position = new FakeVec3(p.x + dx, p.y + dy, p.z + dz);
+          if (this.recentre) {
+            const p = this.entity.position;
+            this.entity.position = new FakeVec3(p.x, p.y, Math.floor(p.z) + 0.5);
+          }
+          const packet = { x: dx, y: dy, z: dz, flags: this.flags };
+          this._client.emit("position", packet);
+          const q = this.entity.position;
+          this.entity.position =
+            typeof this.flags === "number" || this.flags.z
+              ? new FakeVec3(q.x + dx, q.y + dy, q.z + dz)
+              : new FakeVec3(dx, dy, dz);
           this.moves += 1;
           this.emit("forcedMove");
         }
@@ -5457,6 +5479,36 @@ test("a loop step crosses, sees the exact offset, stops pathfinding, and repeats
   assert.ok(bot.pathfinderStops >= 2, `${bot.pathfinderStops} stop(s)`);
   // …and the body is on the landing side, where the next leg begins.
   assert.ok(bot.entity.position.z < 22, `bot at z ${bot.entity.position.z}`);
+});
+
+test("a loop's move is the packet's, so the pathfinder recentring the body before it lands is not read as part of it", async () => {
+  // The gallery bot's red at loop/the-hall-that-runs-on: the body read in the
+  // slab at z 74.178 by the physics tick, recentred to 74.5 by the pathfinder's
+  // stop, then moved by the packet's -6. Measured from the physics tick, that
+  // is a move by -5.678.
+  const bot = new LoopFakeBot();
+  bot.recentre = true;
+  serve(bot);
+  const executor = attach(bot);
+  executor.useLoops([LOOP]);
+  await within("executor.exerciseLoop(recentred)", executor.exerciseLoop(LOOP));
+  assert.equal(bot.moves, 2, "two moves seen");
+});
+
+test("a loop step fails naming the move when the server set the body to a place rather than moving it by a delta", async () => {
+  const bot = new LoopFakeBot();
+  bot.flags = { x: false, y: false, z: false };
+  bot.answer = [2.5, 67, 16.5];
+  serve(bot);
+  const executor = attach(bot);
+  await assert.rejects(
+    within("executor.exerciseLoop(absolute)", executor.exerciseLoop(LOOP)),
+    (e: unknown) =>
+      e instanceof Error &&
+      e.message.includes("loop/gallery") &&
+      e.message.includes("to [2.500, 67.000, 16.500] (absolute on x, y, z") &&
+      e.message.includes("0 of 2"),
+  );
 });
 
 test("a loop step fails naming the loop and the delta when the move is not the offset", async () => {

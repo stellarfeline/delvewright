@@ -2782,8 +2782,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `positions_of` walks `pos`, then marks the landing `transport_before`, so the
   leg after the step begins at the landing — one enumeration of visited
   positions for every consumer. The bot walks to `pos`, walks into `cross`,
-  and requires the jump to equal `offset` to within 0.001 block per axis on every
-  crossing; it fails the step when the body stands in the slab through 20 game
+  and requires the jump, as its position packet states it, to equal `offset` to
+  within 0.001 block per axis on every crossing; it fails the step when the body stands in the slab through 20 game
   ticks unmoved (`harness/src/loop-cross.ts`) and, outside a `loop`
   step, when any walk is moved by the offset of a loop the path exercises. It carries no
   `objective`.
