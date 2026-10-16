@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { CriticalPathParseError, parseCriticalPath } from "../src/critical-path.ts";
 import {
   aftermathFailures,
+  blockReading,
   observeAftermath,
   type AftermathEntry,
   type WorldReading,
@@ -174,4 +175,29 @@ test("weather, health and effects are read off the bot's own state", () => {
     ok.map((r) => r.status),
     ["observed", "observed", "observed", "failed"],
   );
+});
+
+test("a stated block state is judged property by property against what the bot reads", () => {
+  const candles = "minecraft:white_candle[candles=3,lit=true,waterlogged=false]";
+  const row: AftermathEntry = {
+    path: "/content/quests/3/on_complete/3/then/4",
+    verb: "fill-region",
+    observable: { kind: "block", first: [8199, 65, 8195], last: [8203, 65, 8195], block: candles },
+  };
+  const reading = (props: Record<string, unknown>) =>
+    keptWorld({ blockAt: () => blockReading({ name: "white_candle", getProperties: () => props }) });
+  const lit = observeAftermath([row], reading({ candles: 3, lit: true, waterlogged: false }));
+  assert.equal(lit[0]?.status, "observed", lit[0]?.detail);
+  const fewer = observeAftermath([row], reading({ candles: 1, lit: true, waterlogged: false }));
+  assert.equal(fewer[0]?.status, "failed", fewer[0]?.detail);
+  // A property the statement leaves out takes the block's default and is not judged.
+  const stairs: AftermathEntry = {
+    path: "/x",
+    verb: "set-block",
+    observable: { kind: "block", first: [0, 0, 0], last: [0, 0, 0], block: "minecraft:oak_stairs[facing=east]" },
+  };
+  const full = keptWorld({
+    blockAt: () => "minecraft:oak_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]",
+  });
+  assert.equal(observeAftermath([stairs], full)[0]?.status, "observed");
 });

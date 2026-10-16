@@ -11,6 +11,7 @@
 // value and destination is read off the compiler's artifact. What the harness
 // owns is the reading.
 
+import { blockStateSatisfies, readBlockState } from "./block-state.ts";
 import { bodyInVolume } from "./death-loop.ts";
 
 /** What one aftermath effect left to look at, as the compiler exported it. */
@@ -43,7 +44,11 @@ export interface AftermathEntry {
 
 /** What the bot can read of the world after the ending. */
 export interface WorldReading {
-  /** The block name at a cell (`minecraft:stone`), or `undefined` when unloaded. */
+  /**
+   * The block state at a cell, name and properties
+   * (`minecraft:white_candle[candles=3,lit=true,waterlogged=false]`), or
+   * `undefined` when unloaded.
+   */
   blockAt(pos: Vec3): string | undefined;
   /** The bot's own position. */
   readonly position: Vec3;
@@ -71,6 +76,18 @@ const fmt = (p: Vec3): string => `[${p.map((n) => Math.round(n * 100) / 100).joi
 
 const strip = (id: string): string => id.replace(/^minecraft:/, "");
 
+/**
+ * A block as the bot reads it, in the text a stated block is judged against:
+ * its name and every property mineflayer reports (`white_candle` with
+ * `{candles: 3, lit: true, …}` → `minecraft:white_candle[candles=3,lit=true,…]`).
+ */
+export function blockReading(b: {
+  readonly name: string;
+  getProperties(): Record<string, unknown>;
+}): string {
+  return readBlockState(b.name, b.getProperties());
+}
+
 /** Read every aftermath effect against the world. Pure: the bot supplies the reading. */
 export function observeAftermath(
   entries: readonly AftermathEntry[],
@@ -96,7 +113,7 @@ export function observeAftermath(
           if (got === undefined) {
             return row("not_observable", `${e.verb}: the cell ${fmt(at)} is not loaded`);
           }
-          if (strip(got) !== strip(b.block)) misses.push(`${fmt(at)} is ${got}`);
+          if (!blockStateSatisfies(b.block, got)) misses.push(`${fmt(at)} is ${got}`);
         }
         return misses.length === 0
           ? row("observed", `${b.block} at ${fmt(b.first)} and ${fmt(b.last)}`)

@@ -16,6 +16,7 @@
 // climbable — and nothing else, which is why a weeping, twisting or cave vine is
 // refused here rather than attempted.
 
+import { parseBlockState } from "../block-state.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 import { climbDirection, supportCell, type Climb, type GoalSpec } from "../waypoints.ts";
 import { delay, fmt } from "./connection.ts";
@@ -46,8 +47,7 @@ export const CLIENT_CLIMBABLE = ["minecraft:ladder", "minecraft:vine"] as const;
 
 /** Whether the bot's client physics climbs `block` (a block state). */
 export function clientClimbs(block: string): boolean {
-  const id = block.split("[")[0]!;
-  return (CLIENT_CLIMBABLE as readonly string[]).includes(id);
+  return (CLIENT_CLIMBABLE as readonly string[]).includes(parseBlockState(block).name);
 }
 
 export const methods = {

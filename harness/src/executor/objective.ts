@@ -1,7 +1,7 @@
 // MineflayerExecutor: objective markers: observing them, awaiting them, the campaign's completion.
 
 import type { AssertCompleteStep } from "../critical-path.ts";
-import { aftermathFailures, observeAftermath } from "../aftermath.ts";
+import { aftermathFailures, blockReading, observeAftermath } from "../aftermath.ts";
 import { CAMPAIGN_TOKEN, markerLine, parseCompletionMarker } from "../markers.ts";
 import { delay, fmt } from "./connection.ts";
 import { SCORE_POLL_MS } from "./score.ts";
@@ -177,7 +177,7 @@ export const methods = {
         // The cell, reached from the bot's own position the way every other
         // block read in this harness reaches it.
         const b = bot.blockAt(p.offset(pos[0] - p.x, pos[1] - p.y, pos[2] - p.z));
-        return b ? `minecraft:${b.name}` : undefined;
+        return b ? blockReading(b) : undefined;
       },
       position: [p.x, p.y, p.z],
       stoodAt: this.campaignStoodAt,
