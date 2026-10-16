@@ -146,9 +146,11 @@ fn judge_before_showing(input: &Path, json: bool) -> Result<(), (Diagnostic, u8)
         d.print(json);
     }
     eprintln!("{}", enclosure.line(id));
-    // The light verdict's one escape is a COUNT off these same bytes, never a
-    // word in the document — see `showing::LightVerdict::of`.
-    let light = showing::LightVerdict::of([(id, meta.as_ref(), enclosure.standable)]);
+    // The light verdict's two escapes are a COUNT off these same bytes and a
+    // place kind derived from the campaigns, never a word in the piece's own
+    // document — see `showing::LightVerdict::of`.
+    let light =
+        showing::LightVerdict::of([(id, meta.as_ref(), meta_path.as_path(), enclosure.standable)]);
     eprintln!("{}", light.line());
     match light.finding() {
         Some(d) => Err((d, exit::INPUT)),

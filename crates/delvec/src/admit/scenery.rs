@@ -38,7 +38,6 @@ use delvewright_dsl::layout::LayoutGraphContent;
 use delvewright_dsl::{Envelope, NodeId};
 
 use crate::compiler::load::{DETAIL_PLAN_FILE, LAYOUT_GRAPH_FILE};
-use crate::schem::prefab::PrefabMeta;
 
 /// **Whether `node` is scenery in `graph`** (spec-0098 §14): a place the graph
 /// names with `reached: false`, built to be seen and never entered. A node the
@@ -47,7 +46,9 @@ use crate::schem::prefab::PrefabMeta;
 /// The one rule every judge of a piece reads the place's kind through:
 /// `delvec detail` seals the piece's contract on it before writing, and
 /// [`place_kind`] derives the audit's kind through it, so the writer and the
-/// audit cannot judge one piece two ways.
+/// audit cannot judge one piece two ways. The showing gate (`DW0894`) reads the
+/// same [`place_kind`] to show an unmeasured scenery piece, so the writer that
+/// leaves scenery unprobed and the gate that judges it agree as well.
 #[must_use]
 pub fn is_scenery(graph: &LayoutGraphContent, node: &NodeId) -> bool {
     graph.nodes.iter().any(|n| &n.id == node && !n.reached)
@@ -141,24 +142,27 @@ impl PlaceKind {
 }
 
 /// Derive the place kind of the piece whose declaration document is
-/// `meta_path` (a single template's `.json`, or a tile set's manifest).
-pub fn place_kind(meta_path: &Path, meta: &PrefabMeta) -> PlaceKind {
+/// `meta_path` (a single template's `.json`, or a tile set's manifest) and
+/// whose `prefab_id` is `prefab_id`.
+///
+/// The id is the only thing read from the document, and it is a name, never a
+/// claim: it says which `detail-plan` rows to look for, and every way a wrong
+/// one could be written lands on the strict judgement.
+pub fn place_kind(meta_path: &Path, prefab_id: &str) -> PlaceKind {
     let strict = |why: String| PlaceKind {
         not_consulted: Some(why),
         ..PlaceKind::default()
     };
-    let Some(stem) = meta.prefab_id.strip_prefix("prefab/") else {
+    let Some(stem) = prefab_id.strip_prefix("prefab/") else {
         return strict(format!(
-            "the document's `prefab_id` {:?} is not a `prefab/<stem>` id",
-            meta.prefab_id
+            "the document's `prefab_id` {prefab_id:?} is not a `prefab/<stem>` id"
         ));
     };
     let file_stem = meta_path.file_stem().and_then(|s| s.to_str());
     if file_stem != Some(stem) {
         return strict(format!(
-            "the document's file name does not carry its `prefab_id` `{}`, so it is not the \
-             piece a campaign resolves for that id",
-            meta.prefab_id
+            "the document's file name does not carry its `prefab_id` `{prefab_id}`, so it is \
+             not the piece a campaign resolves for that id"
         ));
     }
     let library = match meta_path.parent() {
@@ -212,7 +216,7 @@ pub fn place_kind(meta_path: &Path, meta: &PrefabMeta) -> PlaceKind {
             .content
             .details
             .iter()
-            .filter(|d| d.piece.as_str() == meta.prefab_id)
+            .filter(|d| d.piece.as_str() == prefab_id)
             .collect();
         if rows.is_empty() {
             continue;

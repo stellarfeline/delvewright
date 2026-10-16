@@ -48,9 +48,11 @@
 //! what that trait exists for.
 
 use std::collections::BTreeSet;
+use std::path::Path;
 
 use delvewright_dsl::blockshape;
 
+use crate::admit::scenery;
 use crate::compiler::view::diag::Diagnostic;
 use crate::compiler::view::meta::PrefabMeta;
 use crate::compiler::view::nbt::Structure;
@@ -153,9 +155,15 @@ pub struct LightVerdict {
     /// there is no floor for a measurement to be about. Counted and never
     /// refused — and measured off the bytes, never read from the document.
     pub no_player_space: usize,
-    /// The ones that do not carry a measurement and do have floor, by piece id,
-    /// with what they declare instead.
-    pub unmeasured: Vec<(String, &'static str)>,
+    /// Of those, the ones that carry none, have floor, and are **scenery**: every
+    /// campaign that places the piece places it at a `reached: false` node. By
+    /// piece id, with its standable-cell count and the place-kind evidence line.
+    /// Counted and never refused — and derived from the campaigns, never read
+    /// from the piece's own document.
+    pub scenery: Vec<(String, usize, String)>,
+    /// The ones that do not carry a measurement, have floor, and are not
+    /// scenery, by piece id, with what they declare instead.
+    pub unmeasured: Vec<(String, String)>,
 }
 
 /// Why a piece counts as unmeasured, in the words the refusal prints.
@@ -179,54 +187,106 @@ fn unmeasured_reason(meta: Option<&PrefabMeta>) -> Option<&'static str> {
 impl LightVerdict {
     /// Judge the pieces a run is about to draw, in the order it will draw them.
     ///
-    /// `standable` is how many cells of that piece a body can stand in **at
-    /// all**, taken from its own bytes by the survey that runs beside this one.
+    /// Each piece is `(id, document, document path, standable)`: `standable` is
+    /// how many cells of that piece a body can stand in **at all**, taken from
+    /// its own bytes by the survey that runs beside this one, and the document
+    /// path is where its place kind is derived from.
     ///
-    /// # The one thing that is not refused, and why it cannot be forged
+    /// # The two things that are not refused, and why neither can be forged
     ///
-    /// A piece with nowhere in it to stand has no floor to be dark: there is
-    /// nothing for a measurement to be about, and `unmeasured` is the true
-    /// answer rather than a missing one. Five of the rule library's 36 programs
-    /// are that — `idiom-arguments`, `idiom-erosion`, `idiom-mirror`,
+    /// **Nowhere to stand.** A piece with nowhere in it to stand has no floor to
+    /// be dark: there is nothing for a measurement to be about, and `unmeasured`
+    /// is the true answer rather than a missing one. Five of the rule library's
+    /// 36 programs are that — `idiom-arguments`, `idiom-erosion`, `idiom-mirror`,
     /// `idiom-repetition`, `negated-guard`, demonstrations of an IR construct
     /// rather than buildings — and every one of them reports `standable_cells: 0`.
+    /// The escape is a count the engine takes from the blocks at the moment of
+    /// showing, not a field, a flag or a word in the document.
     ///
-    /// **This is an escape the defect cannot supply.** It is not a field, a flag
-    /// or a word in the document; it is a count the engine takes from the blocks
-    /// at the moment of showing. The defect this gate exists to catch is a dark
-    /// ROOM, and a room has floor by definition — a piece that could pass through
-    /// here has no cell a player could ever be dark in.
+    /// **Scenery.** A place a campaign declares `reached: false` is built to be
+    /// seen and never entered — a tree's crown over a treehouse — and the build
+    /// proves no body gets into it (`DW0816`, `DW0837`). Its leaf tops are
+    /// standable and nobody stands on them, so it owes no play light, and
+    /// `delvec detail` does not probe it: the `unmeasured` it carries is the
+    /// writer's own honest answer. The kind is derived by
+    /// [`crate::admit::scenery::place_kind`] — the one rule `delvec detail` seals
+    /// on and `delvec prefab audit` judges by — from the layout graph of every
+    /// campaign whose `detail-plan` places the piece, never from the piece's own
+    /// document: a piece no campaign places, or one any campaign places at a
+    /// reached node, is judged strictly.
     ///
-    /// A sealed crypt is deliberately NOT in it: it has floor, so it is refused
-    /// until somebody measures it, which is `DW0752`'s "socket it first, then
-    /// probe it" and not a reason to show it unmeasured.
+    /// The defect this gate exists to catch is a dark ROOM somebody will walk
+    /// into, and neither escape can hold one: a room has floor, and a reached
+    /// room is not scenery. A sealed crypt is deliberately in neither: it has
+    /// floor and it is reached, so it is refused until somebody measures it,
+    /// which is `DW0752`'s "socket it first, then probe it".
     pub fn of<'a>(
-        pieces: impl IntoIterator<Item = (&'a str, Option<&'a PrefabMeta>, usize)>,
+        pieces: impl IntoIterator<Item = (&'a str, Option<&'a PrefabMeta>, &'a Path, usize)>,
     ) -> Self {
         let mut v = LightVerdict {
             examined: 0,
             measured: 0,
             no_player_space: 0,
+            scenery: Vec::new(),
             unmeasured: Vec::new(),
         };
-        for (id, meta, standable) in pieces {
+        for (id, meta, meta_path, standable) in pieces {
             v.examined += 1;
-            match unmeasured_reason(meta) {
-                None => v.measured += 1,
-                Some(_) if standable == 0 => v.no_player_space += 1,
-                Some(why) => v.unmeasured.push((id.to_string(), why)),
+            let Some(why) = unmeasured_reason(meta) else {
+                v.measured += 1;
+                continue;
+            };
+            if standable == 0 {
+                v.no_player_space += 1;
+                continue;
+            }
+            // Asked only of a piece that would otherwise be refused: the
+            // derivation reads every campaign beside the library.
+            let kind = meta
+                .and_then(|m| m.prefab_id.as_deref())
+                .map(|pid| scenery::place_kind(meta_path, pid));
+            match kind {
+                Some(kind) if kind.sealed => {
+                    v.scenery.push((id.to_string(), standable, kind.line()));
+                }
+                Some(kind) => v
+                    .unmeasured
+                    .push((id.to_string(), format!("{why}; {}", kind.line()))),
+                None => v.unmeasured.push((id.to_string(), why.to_string())),
             }
         }
         v
     }
 
+    /// Standable cells of the scenery pieces shown unmeasured, summed.
+    pub fn scenery_cells(&self) -> usize {
+        self.scenery.iter().map(|(_, n, _)| n).sum()
+    }
+
     /// The binding line, printed on every run including a clean one.
     pub fn line(&self) -> String {
+        let scenery = if self.scenery.is_empty() {
+            String::new()
+        } else {
+            format!(
+                ": {}",
+                self.scenery
+                    .iter()
+                    .map(|(id, n, kind)| format!("`{id}` ({n} standable cell(s); {kind})"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
         format!(
             "light measurement: {} of {} piece(s) about to be shown carry a measured lighting \
              profile ({} carr(y/ies) none and have nowhere in them to stand, so there is no floor \
-             to measure)",
-            self.measured, self.examined, self.no_player_space
+             to measure; {} carr(y/ies) none and are scenery, built to be seen and never \
+             entered, with {} standable cell(s) no body stands in and none owed light{scenery})",
+            self.measured,
+            self.examined,
+            self.no_player_space,
+            self.scenery.len(),
+            self.scenery_cells(),
         )
     }
 
@@ -243,20 +303,24 @@ impl LightVerdict {
         Some(Diagnostic::error(
             DW_UNMEASURED_LIGHT,
             format!(
-                "{} of {} piece(s) about to be shown have never had their light measured: {}. \
-                 Nothing between an unmeasured piece and a person's eye refuses it, and a picture \
-                 is the one medium darkness does not show in — the renderer lights every frame \
-                 for the camera and not for the body. The grammar's `unmeasured` is honest (it \
-                 places blocks, not photons) and the only two things that measure light are this \
-                 command's absence of one and the compiler's assembled-world survey (`DW0210`), \
-                 which quantifies over the areas of a CAMPAIGN: a piece that enters no campaign \
-                 meets neither. A piece the grammar produces is measured where it is produced, so \
-                 this is a piece that came from somewhere else, or from an expansion older than \
-                 that rule: re-expand it, or measure it over its own bytes with `delvec prefab \
-                 lighting <piece> --write`, which floods it at both ends of the sky table, writes \
-                 the profile and the binding it was taken over, and reports the DISTRIBUTION of \
-                 dark cells rather than the darkest one (`DW0751`). A `dark` result is not a bar \
-                 to showing the piece; not knowing is",
+                "{} of {} piece(s) about to be shown have floor in them and have never had their \
+                 light measured: {}. Nothing between an unmeasured piece and a person's eye \
+                 refuses it, and a picture is the one medium darkness does not show in — the \
+                 renderer lights every frame for the camera and not for the body. The only two \
+                 things that measure light are the piece light probe and the compiler's \
+                 assembled-world survey (`DW0210`), which quantifies over the areas of a \
+                 CAMPAIGN: a piece that enters no campaign meets only the first. A piece the \
+                 grammar produces is measured where it is produced, unless the probe bound to \
+                 nothing — floor with no ground-level way in, which is measured through its seams \
+                 once it is socketed (`delvec detail`, `DW0752`). Anything else came from \
+                 somewhere else, or from an expansion older than that rule: re-expand it, or \
+                 measure it over its own bytes with `delvec prefab lighting <piece> --write`, \
+                 which floods it at both ends of the sky table, writes the profile and the \
+                 binding it was taken over, and reports the DISTRIBUTION of dark cells rather \
+                 than the darkest one (`DW0751`). A `dark` result is not a bar to showing the \
+                 piece; not knowing is. A piece is shown unmeasured only with nowhere in it to \
+                 stand, or as scenery: every campaign whose `detail-plan` places it places it at \
+                 a `reached: false` node",
                 self.unmeasured.len(),
                 self.examined,
                 named.join(", ")
@@ -549,10 +613,10 @@ mod tests {
         // Every one of them has floor: the escape below is a count off the
         // bytes, and a piece with floor cannot reach it.
         let v = LightVerdict::of([
-            ("measured", Some(&lit()), 40),
-            ("declared-unmeasured", Some(&m), 40),
-            ("no-lighting-block", Some(&none), 40),
-            ("no-document", None, 40),
+            ("measured", Some(&lit()), Path::new(""), 40),
+            ("declared-unmeasured", Some(&m), Path::new(""), 40),
+            ("no-lighting-block", Some(&none), Path::new(""), 40),
+            ("no-document", None, Path::new(""), 40),
         ]);
         assert_eq!((v.examined, v.measured, v.no_player_space), (4, 1, 0));
         let d = v.finding().expect("three unmeasured pieces refuse");
@@ -572,7 +636,7 @@ mod tests {
     fn a_measured_dark_piece_is_shown() {
         let mut dark = lit();
         dark.lighting.as_mut().unwrap().profile = LightingProfile::Dark;
-        let v = LightVerdict::of([("dark-crypt", Some(&dark), 40)]);
+        let v = LightVerdict::of([("dark-crypt", Some(&dark), Path::new(""), 40)]);
         assert_eq!((v.examined, v.measured), (1, 1));
         assert!(v.finding().is_none());
         assert!(!v.is_refusal());
@@ -598,7 +662,7 @@ mod tests {
     #[test]
     fn nowhere_to_stand_is_shown_and_one_cell_of_floor_is_not() {
         let none = PrefabMeta::default();
-        let empty = LightVerdict::of([("idiom-mirror", Some(&none), 0)]);
+        let empty = LightVerdict::of([("idiom-mirror", Some(&none), Path::new(""), 0)]);
         assert_eq!((empty.examined, empty.no_player_space), (1, 1));
         assert!(empty.finding().is_none(), "nothing to be dark in");
         assert!(!empty.is_refusal());
@@ -610,13 +674,38 @@ mod tests {
             empty.line()
         );
 
-        let floored = LightVerdict::of([("idiom-mirror", Some(&none), 1)]);
+        let floored = LightVerdict::of([("idiom-mirror", Some(&none), Path::new(""), 1)]);
         assert_eq!(floored.no_player_space, 0);
         assert!(
             floored.is_refusal(),
             "one cell a body can stand in is one cell it can be dark in"
         );
         assert_eq!(floored.finding().unwrap().code, "DW0894");
+    }
+
+    /// **A piece's own document cannot make it scenery.** The scenery escape is
+    /// derived from the campaigns that place the piece, so a document that names
+    /// itself and has no campaign beside it is judged strictly — refused, with
+    /// the place-kind evidence in the reason — and the scenery count stays zero.
+    #[test]
+    fn a_piece_no_campaign_places_is_not_scenery() {
+        let mut m = unmeasured();
+        m.prefab_id = Some("prefab/hearth-crown".into());
+        let v = LightVerdict::of([("hearth-crown", Some(&m), Path::new(""), 631)]);
+        assert!(v.scenery.is_empty());
+        assert_eq!(v.scenery_cells(), 0);
+        let d = v.finding().expect("no campaign says it is scenery");
+        assert_eq!(d.code, "DW0894");
+        assert!(
+            d.message.contains("place kind: reached (strict)"),
+            "{}",
+            d.message
+        );
+        assert!(
+            v.line().contains("0 carr(y/ies) none and are scenery"),
+            "{}",
+            v.line()
+        );
     }
 
     /// **The stairwell cut one course short, at the smallest scale that shows

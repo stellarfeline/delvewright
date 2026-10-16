@@ -1635,13 +1635,14 @@ fn run_viewer(inputs: &[PathBuf], out: &Path, title: Option<&str>, vopts: &ViewO
             )
         );
     }
-    // The light verdict's one escape is a COUNT off these same bytes, never a
-    // word in the document — see `LightVerdict::of`.
+    // The light verdict's two escapes are a COUNT off these same bytes and a
+    // place kind derived from the campaigns, never a word in the piece's own
+    // document — see `LightVerdict::of`.
     let light = showing::LightVerdict::of(
         models
             .iter()
             .zip(&surveys)
-            .map(|(m, e)| (m.id(), m.meta(), e.standable)),
+            .map(|(m, e)| (m.id(), m.meta(), m.meta_path(), e.standable)),
     );
     if let Some(d) = light.finding() {
         d.print(vopts.json);
