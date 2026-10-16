@@ -52,6 +52,17 @@ delvewright_dsl::dw_code! {
     /// one home.
     pub const DW_CAMERA_STEP_WORLD: DwCode = DwCode::new("DW0955", ExitTier::Build);
 }
+delvewright_dsl::dw_code! {
+    /// `DW1040`: **the objects the engine writes are not the objects the pinned
+    /// server places** (spec-0112 §8.2). Raised by
+    /// `tools/ci/check-written-world.py`, which compares every block entity of
+    /// the written load world by cell and compound, and every entity by kind,
+    /// cell and tag set, against a `validation/world-save.sh` save of the same
+    /// build, and reds on a difference no named class (the server's own
+    /// bookkeeping keys, a re-rolled loot table, a body present only once a
+    /// player has played) explains — declared beside the writer, as `DW0955`.
+    pub const DW_WRITTEN_OBJECTS: DwCode = DwCode::new("DW1040", ExitTier::Build);
+}
 
 /// The `DataVersion` a written chunk carries: the pinned game's (ADR-0009).
 pub const DATA_VERSION: i32 = delvewright_dsl::blocks::PIN_DATA_VERSION;

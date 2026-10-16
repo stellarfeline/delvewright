@@ -474,9 +474,15 @@ pub fn body_targets(rows: &[&crate::compiler::placed::Placed]) -> Vec<BodyTarget
         "dw_npc",
         "dw_marker",
     ];
-    let mut out = Vec::new();
+    // An entity the game draws nothing for is no body a frame can show: a
+    // hitbox (`interaction`) and a `marker` carry a body's tags, not its looks.
+    let invisible = ["minecraft:interaction", "minecraft:marker"];
+    let mut out: Vec<BodyTarget> = Vec::new();
     for r in rows {
         let Some(e) = r.entity_record() else { continue };
+        if invisible.contains(&e.kind.as_str()) {
+            continue;
+        }
         let id = e
             .tags
             .iter()
@@ -495,13 +501,16 @@ pub fn body_targets(rows: &[&crate::compiler::placed::Placed]) -> Vec<BodyTarget
             2 => "north",
             _ => "east",
         };
+        let mut name = format!("{id}@{},{},{}", cell[0], cell[1], cell[2]);
+        let same = out
+            .iter()
+            .filter(|b| b.target.id.starts_with(&name))
+            .count();
+        if same > 0 {
+            name = format!("{name}#{}", same + 1);
+        }
         out.push(BodyTarget {
-            target: crate::compiler::framing::Target::point(
-                format!("{id}@{},{},{}", cell[0], cell[1], cell[2]),
-                "body",
-                String::new(),
-                cell,
-            ),
+            target: crate::compiler::framing::Target::point(name, "body", String::new(), cell),
             kind: e
                 .kind
                 .strip_prefix("minecraft:")
@@ -586,16 +595,28 @@ pub struct Review {
 /// `validation/review-frames.json` beside them: per world its counts and
 /// hashes, per shot its world, mode, sky and what it shows
 /// ([`crate::compiler::framing::resolve_targets`] over the shot's own world).
+/// What a build's review set is made of beyond its plan and picture: the
+/// worlds its frames stand in, the placements ledger they lay, and the
+/// cutscene proof whose shots are framed.
+pub struct ReviewOf<'a> {
+    pub frames: &'a FrameWorlds,
+    pub ledger: &'a crate::compiler::placed::Ledger,
+    pub cutscenes: &'a crate::compiler::nav::CutsceneProof,
+}
+
 pub fn write_review(
     plan: &Plan,
     picture: &BlockMap,
     maker: &WorldMaker,
-    frames: &FrameWorlds,
-    ledger: &crate::compiler::placed::Ledger,
-    cutscenes: &crate::compiler::nav::CutsceneProof,
+    of: ReviewOf<'_>,
     doc: &Value,
     out: &mut BTreeMap<String, Vec<u8>>,
 ) -> Review {
+    let ReviewOf {
+        frames,
+        ledger,
+        cutscenes,
+    } = of;
     let shots = doc["shots"].as_array().cloned().unwrap_or_default();
     // The worlds asked: the load world, then every key a shot names, in
     // first-asked order.

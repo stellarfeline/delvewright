@@ -186,9 +186,9 @@ pub(crate) fn run_frames_campaign(
     );
     let mut doc = doc;
     doc["renderer"] = serde_json::json!(delvec::compiler::view::frames::renderer());
-    doc["backend"] = serde_json::json!(drawn.backend);
+    doc["backend"] = serde_json::json!(drawn.backend_name());
     doc["mode"] = serde_json::json!("quick");
-    doc["world"] = serde_json::json!(delvec::compiler::view::beat::AT_LOAD);
+    doc["world"]["key"] = serde_json::json!(delvec::compiler::view::beat::AT_LOAD);
     doc["undrawn"] = serde_json::json!(gone);
     doc["renderer_stats"] = drawn.stats.to_json();
     let manifest_path = manifest_path_for(&png_path);

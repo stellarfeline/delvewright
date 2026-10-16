@@ -42,23 +42,6 @@ pub(crate) fn anchor_offset_point(plan: &Plan, anchor: &str, offset: [i32; 3]) -
     ]
 }
 
-/// Validate every cutscene camera dolly (per shot: a multi-shot cutscene
-/// hard-cuts between shots, so only the within-shot dolly is a corridor the
-/// camera actually flies):
-///
-/// - **`DW0308` (authored polyline)**: the waypoint polyline passes only
-///   through non-solid blocks (cameras fly but must not clip a solid). Names
-///   the offending shot, segment and clipping block.
-/// - **`DW0308` (rendered chords)**: the client draws straight chords between
-///   the emitted keyframes ([`crate::compiler::camera::plan_shot`] — the tween is
-///   client-side and linear, spike-measured), which can cut a corner of the
-///   authored polyline by up to [`crate::compiler::camera::CHORD_POS_TOLERANCE`]. The
-///   chord polyline is what actually ships, so it is ray-checked too.
-/// - **`DW0347` (angular budget)**: the shot's peak aim rate must stay within
-///   [`crate::compiler::camera::MAX_AIM_DEG_PER_TICK`]. An over-budget pan is a
-///   provably nauseating shot — an error, not a warning: the fix (more camera
-///   distance, a longer shot, or a hard cut between two shots) is always
-///   available, and a red check is information (CLAUDE.md debug doctrine).
 /// One cutscene shot as its frames are drawn (spec-0112 §7.2): the firing step,
 /// the cutscene's index among that step's, the shot's index, its length, and
 /// the keyframe poses at the ticks a frame is drawn at — tick 0, and the last
@@ -82,6 +65,27 @@ pub struct CutsceneProof {
     pub unfired: Vec<String>,
 }
 
+/// Validate every cutscene camera dolly (per shot: a multi-shot cutscene
+/// hard-cuts between shots, so only the within-shot dolly is a corridor the
+/// camera actually flies):
+///
+/// - **`DW0308` (authored polyline)**: the waypoint polyline passes only
+///   through non-solid blocks (cameras fly but must not clip a solid). Names
+///   the offending shot, segment and clipping block.
+/// - **`DW0308` (rendered chords)**: the client draws straight chords between
+///   the emitted keyframes ([`crate::compiler::camera::plan_shot`] — the tween is
+///   client-side and linear, spike-measured), which can cut a corner of the
+///   authored polyline by up to [`crate::compiler::camera::CHORD_POS_TOLERANCE`]. The
+///   chord polyline is what actually ships, so it is ray-checked too.
+/// - **`DW0347` (angular budget)**: the shot's peak aim rate must stay within
+///   [`crate::compiler::camera::MAX_AIM_DEG_PER_TICK`]. An over-budget pan is a
+///   provably nauseating shot — an error, not a warning: the fix (more camera
+///   distance, a longer shot, or a hard cut between two shots) is always
+///   available, and a red check is information (CLAUDE.md debug doctrine).
+///
+/// Each shot is judged in the configuration the step that fires it arrives
+/// under (spec-0112 §7.4), and every shot a critical step fires is returned
+/// with its keyframes for the review frames.
 pub fn check_cutscenes(
     plan: &Plan,
     world: &World,

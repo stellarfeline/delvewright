@@ -142,9 +142,26 @@ fn the_output_is_the_same_at_every_thread_count() {
             );
         }
         assert_eq!(
-            String::from_utf8_lossy(&built[0].2),
-            String::from_utf8_lossy(stderr),
+            without_wall_time(&String::from_utf8_lossy(&built[0].2)),
+            without_wall_time(&String::from_utf8_lossy(stderr)),
             "the same diagnostics at 1 and {name} thread(s)"
         );
     }
+}
+
+/// A diagnostic stream with each written world's wall time (`written in <n>
+/// ms`, spec-0112 §9) taken out: the time the writer took is a measurement of
+/// the machine, the one part of a binding line no thread count decides. Every
+/// other byte is compared, and the count of lines stripped is asserted equal
+/// by the comparison itself.
+fn without_wall_time(text: &str) -> String {
+    text.lines()
+        .map(|l| match l.rfind(", written in ") {
+            Some(i) if l.ends_with(" ms") && l.starts_with("world: ") => {
+                format!("{}, written in <ms>", &l[..i])
+            }
+            _ => l.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }

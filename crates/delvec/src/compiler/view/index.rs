@@ -246,10 +246,22 @@ mod tests {
         let (id, shots) = plan_shots(POV).unwrap();
         assert_eq!(id, "hello-world");
         assert!(!shots.is_empty());
-        let pov = shots.iter().find(|s| s.kind == "pov").expect("a pov shot");
-        assert_eq!(pov.objective.as_deref(), Some("obj/exit"));
-        assert_eq!(pov.mode, Mode::Quick);
-        assert_eq!(pov.world, "at-load");
+        // hello-world's first leg walks at load; its second, to the exit,
+        // stands in the world the talk's completion arrives under.
+        let first = shots.iter().find(|s| s.kind == "pov").expect("a pov shot");
+        assert_eq!(first.objective.as_deref(), Some("obj/talk"));
+        assert_eq!(first.world, "at-load");
+        let exit = shots
+            .iter()
+            .find(|s| s.kind == "pov" && s.objective.as_deref() == Some("obj/exit"))
+            .expect("a pov shot on the exit's leg");
+        assert_eq!(exit.world, "after-obj-talk");
+        assert!(shots.iter().all(|s| s.mode == Mode::Quick));
+        assert!(
+            shots
+                .iter()
+                .all(|s| s.sky_json["daytime_ticks"].is_number())
+        );
     }
 
     #[test]

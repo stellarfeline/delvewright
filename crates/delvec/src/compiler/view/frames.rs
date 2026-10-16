@@ -287,6 +287,17 @@ pub struct Drawn {
 }
 
 impl Drawn {
+    /// The backend's name without the renderer's parenthetical (`cpu`, not
+    /// `cpu (10 threads)`): what a manifest and the index record, so the bytes
+    /// of a frame's record do not move with the thread count that drew it.
+    pub fn backend_name(&self) -> String {
+        self.backend
+            .split(" (")
+            .next()
+            .unwrap_or(&self.backend)
+            .to_string()
+    }
+
     /// The frame's total time, seconds.
     pub fn seconds(&self) -> f64 {
         self.timings.iter().map(|(_, s)| s).sum()
@@ -451,9 +462,14 @@ mod tests {
         let dawn = sun_direction(0);
         let noon = sun_direction(6000);
         let dusk = sun_direction(12000);
+        // The game's day starts with the sun already a little up in the east
+        // (its celestial angle eases, so tick 0 is about 12° of altitude) and
+        // tick 12000 has it the same height in the west.
         assert!(noon[1] > 0.99, "{noon:?}");
-        assert!(dawn[0] > 0.9 && dawn[1].abs() < 0.1, "{dawn:?}");
-        assert!(dusk[0] < -0.9 && dusk[1].abs() < 0.1, "{dusk:?}");
+        assert!(dawn[0] > 0.9 && dawn[1] > 0.0 && dawn[1] < 0.3, "{dawn:?}");
+        assert!(dusk[0] < -0.9 && dusk[1] > 0.0 && dusk[1] < 0.3, "{dusk:?}");
+        let midnight = sun_direction(18000);
+        assert!(midnight[1] < -0.99, "{midnight:?}");
     }
 
     #[test]

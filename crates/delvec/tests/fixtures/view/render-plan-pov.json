@@ -1,15 +1,20 @@
 {
-  "camera_convention": "yaw/pitch degrees; yaw=atan2(-dz,dx) (0=+X,90=-Z); pitch=atan2(-dy,horiz) (+down)",
+  "camera_convention": "minecraft degrees: yaw=atan2(-dx,dz) (0=south +Z, 90=west -X); pitch=atan2(-dy,horiz) (+down); fov vertical",
+  "camera_eye_proof": {
+    "cameras": 11,
+    "pulled_in": 2,
+    "worlds": 2
+  },
   "campaign_id": "hello-world",
   "layout_aabb": {
     "max": [
-      11,
+      10,
       69,
-      13
+      10
     ],
     "min": [
       0,
-      63,
+      64,
       0
     ]
   },
@@ -17,26 +22,364 @@
     {
       "area": "area/keep",
       "camera": {
+        "fov": 70.0,
         "look_at": [
           5.5,
-          67.0,
-          6.5
+          66.0,
+          4.5
         ],
         "pitch": 15.945,
         "pos": [
           5.5,
-          69.0,
-          13.5
+          68.0,
+          -2.5
+        ],
+        "yaw": -0.0
+      },
+      "expect": [
+        "spawn point clear — player can stand, not suffocating or falling",
+        "area entry framed — no void gap at the floor"
+      ],
+      "id": "spawn",
+      "kind": "spawn",
+      "mode": "quick",
+      "sky": {
+        "daytime_ticks": 6000,
+        "set_by": null,
+        "time": "noon",
+        "weather": "clear"
+      },
+      "world": "at-load"
+    },
+    {
+      "area": "area/keep",
+      "camera": {
+        "fov": 70.0,
+        "look_at": [
+          5.5,
+          65.0,
+          5.5
+        ],
+        "pitch": 35.264,
+        "pos": [
+          -1.5,
+          72.0,
+          -1.5
+        ],
+        "yaw": -45.0
+      },
+      "expect": [
+        "room interior assembled — walls, floor and ceiling intact",
+        "no floating or clipped blocks at piece bounds",
+        "room declared lit — no dark frame"
+      ],
+      "id": "interior/keep/0",
+      "kind": "interior",
+      "mode": "quick",
+      "prefab": "prefab/hello-room",
+      "sky": {
+        "daytime_ticks": 6000,
+        "set_by": null,
+        "time": "noon",
+        "weather": "clear"
+      },
+      "world": "at-load"
+    },
+    {
+      "area": "area/keep",
+      "camera": {
+        "fov": 70.0,
+        "look_at": [
+          5.5,
+          66.0,
+          4.5
+        ],
+        "pitch": 8.531,
+        "pos": [
+          5.5,
+          66.519,
+          1.039
+        ],
+        "requested_pos": [
+          5.5,
+          66.6,
+          0.5
+        ],
+        "standoff": "pulled-in — the requested stand-off is inside geometry; the camera stands at the furthest clear point on its own sight line",
+        "yaw": -0.0
+      },
+      "expect": [
+        "NPC named \"The Keeper\" faces the camera",
+        "NPC name tag renders as readable text — not literal JSON/SNBT",
+        "NPC stands on the floor — not floating, sunk, or clipping a wall"
+      ],
+      "id": "npc/keeper",
+      "kind": "npc",
+      "mode": "quick",
+      "npc": "npc/keeper",
+      "sky": {
+        "daytime_ticks": 6000,
+        "set_by": null,
+        "time": "noon",
+        "weather": "clear"
+      },
+      "world": "at-load"
+    },
+    {
+      "area": "area/keep",
+      "camera": {
+        "fov": 70.0,
+        "look_at": [
+          5.0,
+          67.0,
+          6.5
+        ],
+        "pitch": 14.036,
+        "pos": [
+          5.0,
+          67.849,
+          9.895
+        ],
+        "requested_pos": [
+          5.0,
+          68.0,
+          10.5
+        ],
+        "standoff": "pulled-in — the requested stand-off is inside geometry; the camera stands at the furthest clear point on its own sight line",
+        "yaw": -180.0
+      },
+      "expect": [
+        "gate of minecraft:iron_bars spans the opening — no gaps when closed",
+        "gate approach clear from this side — passage blocked until opened"
+      ],
+      "id": "gate/keep/door/a",
+      "kind": "gate",
+      "mode": "quick",
+      "sky": {
+        "daytime_ticks": 6000,
+        "set_by": null,
+        "time": "noon",
+        "weather": "clear"
+      },
+      "world": "at-load"
+    },
+    {
+      "area": "area/keep",
+      "camera": {
+        "fov": 70.0,
+        "look_at": [
+          5.0,
+          67.0,
+          6.5
+        ],
+        "pitch": 14.036,
+        "pos": [
+          5.0,
+          68.0,
+          2.5
+        ],
+        "yaw": -0.0
+      },
+      "expect": [
+        "gate of minecraft:iron_bars spans the opening — no gaps when closed",
+        "gate approach clear from this side — passage blocked until opened"
+      ],
+      "id": "gate/keep/door/b",
+      "kind": "gate",
+      "mode": "quick",
+      "sky": {
+        "daytime_ticks": 6000,
+        "set_by": null,
+        "time": "noon",
+        "weather": "clear"
+      },
+      "world": "at-load"
+    },
+    {
+      "after": {
+        "cells_moved": 0,
+        "step": null
+      },
+      "area": "area/keep",
+      "camera": {
+        "fov": 70.0,
+        "look_at": [
+          4.5,
+          66.62,
+          2.5
+        ],
+        "pitch": -0.0,
+        "pos": [
+          5.5,
+          66.62,
+          2.5
         ],
         "yaw": 90.0
       },
       "expect": [
-        "spawn point clear — player can stand"
+        "First-person view walking west in The Keep toward The Keeper — the path ahead should be open.",
+        "camera at standing eye height (1.62) — a first-person view, not overhead or orbit",
+        "the way ahead is open — no wall or block clipping the near camera"
       ],
-      "id": "spawn",
-      "kind": "spawn"
+      "id": "pov/leg0/wp0",
+      "kind": "pov",
+      "leg": 0,
+      "mode": "quick",
+      "objective": "obj/talk",
+      "sky": {
+        "daytime_ticks": 6000,
+        "set_by": null,
+        "time": "noon",
+        "weather": "clear"
+      },
+      "standing_cell": [
+        5,
+        65,
+        2
+      ],
+      "waypoint": 0,
+      "world": "at-load"
     },
     {
+      "after": {
+        "cells_moved": 0,
+        "step": null
+      },
+      "area": "area/keep",
+      "camera": {
+        "fov": 70.0,
+        "look_at": [
+          4.5,
+          66.62,
+          3.5
+        ],
+        "pitch": -0.0,
+        "pos": [
+          4.5,
+          66.62,
+          2.5
+        ],
+        "yaw": -0.0
+      },
+      "expect": [
+        "First-person view walking south in The Keep toward The Keeper — the path ahead should be open.",
+        "camera at standing eye height (1.62) — a first-person view, not overhead or orbit",
+        "the way ahead is open — no wall or block clipping the near camera"
+      ],
+      "id": "pov/leg0/wp1",
+      "kind": "pov",
+      "leg": 0,
+      "mode": "quick",
+      "objective": "obj/talk",
+      "sky": {
+        "daytime_ticks": 6000,
+        "set_by": null,
+        "time": "noon",
+        "weather": "clear"
+      },
+      "standing_cell": [
+        4,
+        65,
+        2
+      ],
+      "waypoint": 1,
+      "world": "at-load"
+    },
+    {
+      "after": {
+        "cells_moved": 0,
+        "step": null
+      },
+      "area": "area/keep",
+      "camera": {
+        "fov": 70.0,
+        "look_at": [
+          4.5,
+          66.62,
+          4.5
+        ],
+        "pitch": -0.0,
+        "pos": [
+          4.5,
+          66.62,
+          3.5
+        ],
+        "yaw": -0.0
+      },
+      "expect": [
+        "First-person view walking south in The Keep toward The Keeper — the path ahead should be open.",
+        "camera at standing eye height (1.62) — a first-person view, not overhead or orbit",
+        "the way ahead is open — no wall or block clipping the near camera"
+      ],
+      "id": "pov/leg0/wp2",
+      "kind": "pov",
+      "leg": 0,
+      "mode": "quick",
+      "objective": "obj/talk",
+      "sky": {
+        "daytime_ticks": 6000,
+        "set_by": null,
+        "time": "noon",
+        "weather": "clear"
+      },
+      "standing_cell": [
+        4,
+        65,
+        3
+      ],
+      "waypoint": 2,
+      "world": "at-load"
+    },
+    {
+      "after": {
+        "cells_moved": 0,
+        "step": null
+      },
+      "area": "area/keep",
+      "camera": {
+        "fov": 70.0,
+        "look_at": [
+          8.5,
+          66.0,
+          4.5
+        ],
+        "pitch": 8.811,
+        "pos": [
+          4.5,
+          66.62,
+          4.5
+        ],
+        "yaw": -90.0
+      },
+      "expect": [
+        "First-person view arriving at The Keeper in The Keep — the objective should be ahead in frame.",
+        "camera at standing eye height (1.62) — a first-person view, not overhead or orbit",
+        "the way ahead is open — no wall or block clipping the near camera"
+      ],
+      "id": "pov/leg0/wp3",
+      "kind": "pov",
+      "leg": 0,
+      "mode": "quick",
+      "objective": "obj/talk",
+      "sky": {
+        "daytime_ticks": 6000,
+        "set_by": null,
+        "time": "noon",
+        "weather": "clear"
+      },
+      "standing_cell": [
+        4,
+        65,
+        4
+      ],
+      "waypoint": 3,
+      "world": "at-load"
+    },
+    {
+      "after": {
+        "cells_moved": 6,
+        "step": "obj/talk"
+      },
       "area": "area/keep",
       "camera": {
         "fov": 70.0,
@@ -51,23 +394,82 @@
           66.62,
           4.5
         ],
-        "yaw": -90.0
+        "yaw": -0.0
       },
       "expect": [
         "First-person view walking south in The Keep toward the exit — the path ahead should be open.",
-        "camera at standing eye height (1.62) — a first-person view, not overhead or orbit"
+        "camera at standing eye height (1.62) — a first-person view, not overhead or orbit",
+        "the way ahead is open — no wall or block clipping the near camera"
       ],
-      "id": "pov/leg0/wp0",
+      "id": "pov/leg1/wp0",
       "kind": "pov",
-      "leg": 0,
+      "leg": 1,
+      "mode": "quick",
       "objective": "obj/exit",
+      "sky": {
+        "daytime_ticks": 6000,
+        "set_by": null,
+        "time": "noon",
+        "weather": "clear"
+      },
       "standing_cell": [
         5,
         65,
         4
       ],
-      "waypoint": 0
+      "waypoint": 0,
+      "world": "after-obj-talk"
+    },
+    {
+      "after": {
+        "cells_moved": 6,
+        "step": "obj/talk"
+      },
+      "area": "area/keep",
+      "camera": {
+        "fov": 70.0,
+        "look_at": [
+          5.5,
+          66.0,
+          12.5
+        ],
+        "pitch": 8.811,
+        "pos": [
+          5.5,
+          66.62,
+          8.5
+        ],
+        "yaw": -0.0
+      },
+      "expect": [
+        "First-person view arriving at the exit in The Keep — the objective is in the cell the player stands in, so it is under the frame and not in it; the view looks south along the way the player walked in.",
+        "camera at standing eye height (1.62) — a first-person view, not overhead or orbit",
+        "the way ahead is open — no wall or block clipping the near camera"
+      ],
+      "id": "pov/leg1/wp1",
+      "kind": "pov",
+      "leg": 1,
+      "mode": "quick",
+      "objective": "obj/exit",
+      "sky": {
+        "daytime_ticks": 6000,
+        "set_by": null,
+        "time": "noon",
+        "weather": "clear"
+      },
+      "standing_cell": [
+        5,
+        65,
+        8
+      ],
+      "waypoint": 1,
+      "world": "after-obj-talk"
     }
   ],
-  "version": "0.4.0"
+  "sky": {
+    "daytime_ticks": 6000,
+    "time": "noon",
+    "weather": "clear"
+  },
+  "version": "0.41.0"
 }

@@ -502,7 +502,7 @@ pub fn run_frames(build_dir: &Path, opts: &FramesOptions, json: bool) -> ExitCod
             "campaign_id": campaign_id,
             "delvec": crate::compiler::DELVEC_VERSION,
             "renderer": frames::renderer(),
-            "backend": drawn.backend,
+            "backend": drawn.backend_name(),
             "shot": shot.id,
             "image": { "path": image, "width": drawn.width, "height": drawn.height },
             "camera": {
@@ -552,7 +552,7 @@ pub fn run_frames(build_dir: &Path, opts: &FramesOptions, json: bool) -> ExitCod
             world: shot.world.clone(),
             sky: shot.sky_json.clone(),
             mode: shot.mode.keyword(),
-            backend: drawn.backend.clone(),
+            backend: drawn.backend_name(),
             renderer: frames::renderer(),
             shows,
             undrawn: gone,

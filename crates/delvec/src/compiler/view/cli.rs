@@ -513,8 +513,10 @@ pub fn resolve_textures(textures: Option<&str>) -> Result<String, Diagnostic> {
     if let Some(home) = client_jar_home() {
         candidates.push(home.display().to_string());
     }
+    // A path that exists: the jar, or (for the viewer and the palette) a
+    // resource pack directory standing in for it.
     for c in &candidates {
-        if Path::new(c).is_file() {
+        if Path::new(c).exists() {
             return Ok(c.clone());
         }
     }
@@ -633,6 +635,56 @@ fn run_panorama(
         return fail(d, json, exit::OUTPUT);
     }
     let (smin, smax) = pano.subject;
+    // The frame's manifest: its camera, the world, the chunks loaded, the
+    // subject box it was fitted to and the share of the frame that box takes —
+    // what `check-whole-map-render.py` reads the framing from.
+    let manifest = serde_json::json!({
+        "manifest_version": 3,
+        "delvec": crate::compiler::DELVEC_VERSION,
+        "renderer": crate::compiler::view::frames::renderer(),
+        "backend": drawn.backend_name(),
+        "kind": "panorama",
+        "image": {
+            "path": format!("{}.png", pano.stem),
+            "width": drawn.width,
+            "height": drawn.height,
+        },
+        "camera": {
+            "pos": pano.frame.pos,
+            "yaw": pano.frame.yaw_deg,
+            "pitch": pano.frame.pitch_deg,
+            "fov": pano.frame.fov_deg,
+            "convention": "minecraft degrees: yaw 0 = south (+Z), 90 = west (-X); \
+                           pitch positive looks down; fov is vertical",
+        },
+        "world": crate::compiler::view::beat::AT_LOAD,
+        "chunks": { "min": pano.chunks.0, "max": pano.chunks.1 },
+        "sky": {
+            "daytime_ticks": pano.sky.daytime_ticks,
+            "weather": pano.sky.weather.keyword(),
+        },
+        "mode": "hq",
+        "spp": pano.frame.spp,
+        "subject": {
+            "box": { "min": smin, "max": smax },
+            "span": {
+                "width": crate::compiler::framing::round3(pano.span.width),
+                "height": crate::compiler::framing::round3(pano.span.height),
+                "fill": crate::compiler::framing::round3(pano.span.fill()),
+            },
+        },
+        "renderer_stats": drawn.stats.to_json(),
+    });
+    let mut mbytes = serde_json::to_vec_pretty(&manifest).expect("a manifest serializes");
+    mbytes.push(b'\n');
+    let mpath = out.join(format!("{}.manifest.json", pano.stem));
+    if let Err(e) = std::fs::write(&mpath, mbytes) {
+        return fail(
+            Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", mpath.display())),
+            json,
+            exit::OUTPUT,
+        );
+    }
     eprintln!(
         "drew panorama {} ({}x{}, {} spp, hq) in {:.2} s -> {}",
         pano.stem,
@@ -1235,6 +1287,47 @@ pub fn run_cameras(
         if let Err(d) = frameset::write_png(&out.join(&file), &drawn) {
             return fail(d, json, exit::OUTPUT);
         }
+        // The frame's manifest: what it is of, in the frame's own words —
+        // the camera, the world it stands in (by key, relative to `-o`), the
+        // sky, the mode and the renderer — so a frame is never a picture
+        // nobody can say the inputs of.
+        let manifest = serde_json::json!({
+            "manifest_version": 3,
+            "campaign_id": sheet.campaign_id,
+            "delvec": crate::compiler::DELVEC_VERSION,
+            "renderer": crate::compiler::view::frames::renderer(),
+            "backend": drawn.backend_name(),
+            "camera": {
+                "name": f.camera.name,
+                "pos": f.frame.pos,
+                "yaw": f.frame.yaw_deg,
+                "pitch": f.frame.pitch_deg,
+                "fov": f.frame.fov_deg,
+                "convention": "minecraft degrees: yaw 0 = south (+Z), 90 = west (-X); \
+                               pitch positive looks down; fov is vertical",
+            },
+            "image": { "path": file, "width": drawn.width, "height": drawn.height },
+            "world": {
+                "key": stand.key,
+                "path": format!("worlds/{}", stand.key),
+            },
+            "sky": {
+                "daytime_ticks": f.sky.daytime_ticks,
+                "weather": f.sky.weather.keyword(),
+            },
+            "mode": mode.keyword(),
+            "renderer_stats": drawn.stats.to_json(),
+        });
+        let mut mbytes = serde_json::to_vec_pretty(&manifest).expect("a manifest serializes");
+        mbytes.push(b'\n');
+        let mpath = out.join(file.replace(".png", ".manifest.json"));
+        if let Err(e) = std::fs::write(&mpath, mbytes) {
+            return fail(
+                Diagnostic::error(DW_OUTPUT, format!("write {}: {e}", mpath.display())),
+                json,
+                exit::OUTPUT,
+            );
+        }
     }
     if opts.bracket.is_some() {
         let path = out.join(camera::CANDIDATES_FILE);
@@ -1253,8 +1346,9 @@ pub fn run_cameras(
         opts.only.len()
     };
     eprintln!(
-        "drew {} camera frame(s) for {stated} of {} stated camera(s) -> {} ({}{} in {seconds:.2} \
+        "{} {} camera frame(s) for {stated} of {} stated camera(s) -> {} ({}{} in {seconds:.2} \
          s){}",
+        if preview { "previewed" } else { "drew" },
         frames.len(),
         sheet.cameras.len(),
         out.display(),

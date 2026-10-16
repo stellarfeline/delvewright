@@ -1094,9 +1094,11 @@ pub fn build_with_warnings(
         plan,
         &picture,
         &maker,
-        &frame_worlds,
-        &ledger,
-        &cutscene_proof,
+        crate::compiler::view::review::ReviewOf {
+            frames: &frame_worlds,
+            ledger: &ledger,
+            cutscenes: &cutscene_proof,
+        },
         &render_plan_doc,
         &mut out,
     );

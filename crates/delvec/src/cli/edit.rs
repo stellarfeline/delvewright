@@ -332,7 +332,7 @@ pub(crate) fn run_edit(
             },
         );
         doc["renderer"] = serde_json::json!(delvec::compiler::view::frames::renderer());
-        doc["backend"] = serde_json::json!(drawn.backend);
+        doc["backend"] = serde_json::json!(drawn.backend_name());
         let mut manifest_bytes = match serde_json::to_vec_pretty(&doc) {
             Ok(b) => b,
             Err(e) => {

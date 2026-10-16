@@ -524,7 +524,7 @@ pub struct Target {
     /// trigger id), or `<beat>/<zone-anchor>` for a stealth zone.
     pub id: String,
     /// Kind tag: `anchor` · `gate` · `npc-post` · `actor-post` · `interact` ·
-    /// `stealth-zone` · `trigger`.
+    /// `stealth-zone` · `trigger` · `body` (an entity a frame's world holds).
     pub kind: &'static str,
     /// Owning area id (empty when the thing is not area-scoped).
     pub area: String,
@@ -849,12 +849,6 @@ fn resolve_any_area(plan: &Plan, anchor: &str) -> Option<(String, [i32; 3])> {
 fn local_of(id: &str) -> &str {
     id.rsplit('/').next().unwrap_or(id)
 }
-
-// ---------------------------------------------------------------------------
-// Frame rendering
-// ---------------------------------------------------------------------------
-
-/// Per-face brightness multipliers, indexed by `axis * 2 + (sign < 0) as usize`.
 
 // ---------------------------------------------------------------------------
 // Screen-space geometry + the manifest

@@ -1178,7 +1178,27 @@ pub fn render_plan(
             continue;
         };
         let ctr = region_centre(*from, *to);
-        let axis = thin_axis(*from, *to).unwrap_or(2);
+        // A gate one cell thick on two axes (a single doorway) is passed along
+        // the one whose two sides are open in the base world, where the gate
+        // itself stands open; the first thin axis otherwise.
+        let open_beside = |a: usize| {
+            [1.0f64, -1.0].iter().all(|s| {
+                let mut c = [ctr[0], ctr[1] - 0.5, ctr[2]];
+                c[a] += s * 2.0;
+                out.base.is_clear([
+                    c[0].floor() as i32,
+                    c[1].floor() as i32,
+                    c[2].floor() as i32,
+                ])
+            })
+        };
+        let thin: Vec<usize> = (0..3).filter(|&a| from[a] == to[a]).collect();
+        let axis = thin
+            .iter()
+            .copied()
+            .find(|&a| a != 1 && open_beside(a))
+            .or_else(|| thin.first().copied())
+            .unwrap_or(2);
         for (side, sign) in [("a", 1.0f64), ("b", -1.0f64)] {
             let mut off = [0.0, 0.0, 0.0];
             off[axis] = sign * 4.0;

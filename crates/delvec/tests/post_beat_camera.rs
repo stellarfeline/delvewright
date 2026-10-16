@@ -574,6 +574,10 @@ fn cameras(build: &Path, camp: &Path, out: &Path, extra: &[&str]) -> (i32, Strin
         camp.to_str().unwrap(),
         "-o",
         out.to_str().unwrap(),
+        // Every frame here is drawn on the CPU backend, whose bytes are a
+        // function of the inputs alone.
+        "--backend",
+        "cpu",
     ];
     args.extend_from_slice(extra);
     run(&args)
@@ -631,22 +635,11 @@ fn cameras_print_where_every_camera_stands() {
         "{log}"
     );
     assert!(log.contains("world: after-obj-talk "), "{log}");
-    let door = json(&scenes.join("hello-world_camera_door.json"));
-    assert!(
-        door["world"]["path"]
-            .as_str()
-            .unwrap()
-            .ends_with("worlds/after-obj-talk"),
-        "{door}"
-    );
-    let hero = json(&scenes.join("hello-world_camera_hero.json"));
-    assert!(
-        hero["world"]["path"]
-            .as_str()
-            .unwrap()
-            .ends_with("worlds/at-load"),
-        "{hero}"
-    );
+    let door = json(&scenes.join("hello-world_camera_door.manifest.json"));
+    assert_eq!(door["world"]["key"], "after-obj-talk", "{door}");
+    assert_eq!(door["world"]["path"], "worlds/after-obj-talk", "{door}");
+    let hero = json(&scenes.join("hello-world_camera_hero.manifest.json"));
+    assert_eq!(hero["world"]["key"], "at-load", "{hero}");
     // The six cells are the door's, read back from the two written worlds.
     let load = read_back(&scenes.join("worlds/at-load"));
     let after = read_back(&scenes.join("worlds/after-obj-talk"));
@@ -660,20 +653,11 @@ fn cameras_print_where_every_camera_stands() {
     assert_eq!(moved.len(), 6, "{moved:?}");
 }
 
-/// **Criterion 7 — byte identity across the pin.** Two runs over one record,
-/// plan and prefabs write byte-identical scenes and worlds; and a camera with
-/// no `after` writes the scene the engine wrote before this change for the same
-/// record, but for `world.path` (`tests/fixtures/post-beat-camera/
-/// base-scene-hero.json`, emitted by the engine at the merge base, its path
-/// masked) and for the keys the clear cell and the post-process own — `sky`,
-/// `fog`, the sun's `intensity`, `color` and `drawTexture`, `postprocess`, its
-/// `postprocessSettings`, the `emitterIntensity` the lantern scale owns and the
-/// sky map's `delvewrightSky` marker
-/// (`compiler.md` §4), which the fixture predates. **A loosening of what this
-/// criterion asserts**: those keys are compared here to nothing; the clear
-/// cell's own tests and the view goldens hold them.
+/// **Criterion 7 — byte identity.** Two runs over one record, plan and
+/// prefabs draw byte-identical frames and manifests and write byte-identical
+/// worlds.
 #[test]
-fn a_scene_is_the_scene_it_was_but_for_its_world() {
+fn a_camera_frame_is_the_same_bytes_twice() {
     let camp = hello("c7", &[("hero", None)]);
     let out = built("c7", &camp);
     let mut runs = Vec::new();
@@ -681,50 +665,14 @@ fn a_scene_is_the_scene_it_was_but_for_its_world() {
         let scenes = tmp(&format!("c7-{r}"));
         let (code, log) = cameras(&out, &camp, &scenes, &[]);
         assert_eq!(code, 0, "{log}");
-        let mut scene = json(&scenes.join("hello-world_camera_hero.json"));
-        assert!(
-            scene["world"]["path"]
-                .as_str()
-                .unwrap()
-                .ends_with(&format!("post-beat-c7-{r}/worlds/at-load"))
-        );
-        scene["world"]["path"] = serde_json::json!("<masked>");
         runs.push((
-            scene,
+            std::fs::read(scenes.join("hello-world_camera_hero.png")).unwrap(),
+            std::fs::read(scenes.join("hello-world_camera_hero.manifest.json")).unwrap(),
             std::fs::read(scenes.join("worlds/at-load/level.dat")).unwrap(),
             std::fs::read(scenes.join("worlds/at-load/region/r.0.0.mca")).unwrap(),
         ));
     }
     assert_eq!(runs[0], runs[1], "two runs, one set of bytes");
-    let mut base = json(
-        &common::repo_root()
-            .join("crates/delvec/tests/fixtures/post-beat-camera/base-scene-hero.json"),
-    );
-    base["world"]["path"] = serde_json::json!("<masked>");
-    let unsky = |v: &mut serde_json::Value| {
-        let o = v.as_object_mut().unwrap();
-        for k in [
-            "sky",
-            "fog",
-            "postprocess",
-            "postprocessSettings",
-            "emitterIntensity",
-            "delvewrightSky",
-        ] {
-            o.remove(k);
-        }
-        let sun = o["sun"].as_object_mut().unwrap();
-        for k in ["intensity", "color", "drawTexture"] {
-            sun.remove(k);
-        }
-    };
-    let mut scene = runs[0].0.clone();
-    unsky(&mut scene);
-    unsky(&mut base);
-    assert_eq!(
-        scene, base,
-        "the scene moved by more than its world and its sky"
-    );
 }
 
 /// **Criterion 1 — the surface.** `delvec schema cameras` exports `after`;
@@ -804,8 +752,7 @@ fn the_record_carries_after_through_every_writer() {
 
 /// **Criterion 10 — the plan states each shot's configuration.** Every POV
 /// shot carries `after: {step, cells_moved}`; the legs walked once the door is
-/// open stand in its configuration; `delvec scene` prints the limit with the
-/// two counts the plan states.
+/// open stand in its configuration, and the build wrote that world.
 #[test]
 fn the_plan_states_where_every_review_frame_stands() {
     let camp = hello("c10", &[("hero", None)]);
@@ -840,22 +787,19 @@ fn the_plan_states_where_every_review_frame_stands() {
         }
     }
     assert!(moved > 0 && moved < pov.len(), "{moved} of {}", pov.len());
-    let world = out.join("world");
-    std::fs::create_dir_all(world.join("region")).unwrap();
-    std::fs::write(world.join("level.dat"), b"stub").unwrap();
-    std::fs::write(world.join("region/r.0.0.mca"), b"stub").unwrap();
-    let (code, log) = run(&[
-        "scene",
-        out.to_str().unwrap(),
-        "-o",
-        tmp("c10-scenes").to_str().unwrap(),
-    ]);
-    assert_eq!(code, 0, "{log}");
-    let want = format!(
-        "review frames render the world at load; {moved} of {} POV shots stand in a configuration other than load",
-        pov.len()
-    );
-    assert!(log.contains(&want), "`{want}` in:\n{log}");
+    // A shot that stands after a step that moved cells stands in that step's
+    // world; a shot at load stands in the load world.
+    for s in &pov {
+        let at_load = s["after"]["cells_moved"] == 0;
+        assert_eq!(s["world"] == "at-load", at_load, "{s}");
+        assert!(
+            out.join("validation/worlds")
+                .join(s["world"].as_str().unwrap())
+                .join("level.dat")
+                .is_file(),
+            "the build wrote the world the shot names: {s}"
+        );
+    }
 }
 
 /// `delvec written-world <campaign> -o <dir>`: the load world, no camera record.
