@@ -115,6 +115,16 @@ def test_a_tag_moved_on_one_body_reds_dw1040_naming_it(ww, tmp_path):
     assert summary["differing"] == 2  # the written one missing, the server's one unwritten
 
 
+def test_the_same_tags_in_the_servers_order_are_the_same_body(ww, tmp_path):
+    # The pinned server saves a body's tags in its own order (observed on the
+    # gallery's site-plan save: `dw_watch` written last, saved first).
+    a = world(tmp_path, "w", [keeper(tags=("dw_npc", "dw_npc_keeper", "dw_watch"))], [])
+    b = world(tmp_path, "s", [keeper(tags=("dw_watch", "dw_npc_keeper", "dw_npc"))], [])
+    code, lines, summary = ww.objects(a, b)
+    assert code == 0, lines
+    assert summary["verdict"] == "pass"
+
+
 def test_a_uuid_the_server_assigned_lands_in_bookkeeping(ww, tmp_path):
     a = world(tmp_path, "w", [keeper(uuid=(1, 2, 3, 4))], [])
     b = world(tmp_path, "s", [keeper(uuid=(9, 9, 9, 9))], [])

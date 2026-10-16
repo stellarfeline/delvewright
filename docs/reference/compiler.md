@@ -3542,8 +3542,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `critical_path` index of the step whose completion, activation or trigger runs
   it) or `{"unforced": <blame>}` (a beat nobody has to play, which no
   configuration lays). The rows are read off the functions that place —
-  `setup_finish`; `activate_<obj>` (at the latest critical step its objective's
-  step causally follows, else setup); `complete_<obj>` and `complete_q_<quest>`
+  `setup_finish` and `ws_arm_<shortcut>` (a shortcut gate's wrong-side
+  hitboxes, armed at world init); `activate_<obj>` (at the latest critical step
+  its objective's step causally follows, else at the `select-class` step — a
+  campaign-start quest is armed by the party's first class pick, never at world
+  load); `shortcut_open_<shortcut>` (unforced); `complete_<obj>` and `complete_q_<quest>`
   (at the objective's, or the quest's last objective's, step);
   `trig_<trigger>` (at the trigger's step); `spawn_npc_`, `despawn_npc_`,
   `spawn_actor_`, `despawn_actor_`, `asm_summon_`, `asm_despawn_` (at every step
@@ -3557,7 +3560,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   line(s) …; <u> body row(s) no frame's world can hold as written`.
   `tests/placed_ledger.rs` audits it over the gallery: every placing line of a
   ledger function is one row and every row one line, and every other placing
-  function is named by its class (a region write — `seal_`, `collapse_`, `ws_`,
+  function is named by its class (a region write — `seal_`, `collapse_`,
   `tgate_`, `shortcut_`, the world build — laid by the configuration, or a body
   present only once a player has played — a wave, an unleashed or re-stood
   actor, a cutscene's stand-in, a volley, a dropped stake).

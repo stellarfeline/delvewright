@@ -67,7 +67,8 @@ objects, never an allowlist — or it reds as `DW1040`, naming the object:
 
 - **bookkeeping** — a key the server writes for itself: `UUID`, `Motion`,
   `Fire`, `Air`, `OnGround`, `PortalCooldown`, `Health`, `Attributes`,
-  `Brain`, `Rotation`'s second component, and any key the server's save holds
+  `Brain`, `Rotation`'s second component, the order of `Tags` (the server
+  saves a body's tags as a set, in its own order), and any key the server's save holds
   that the written compound does not state (the server's own default for that
   kind). A key the written compound states and the save lacks, or holds at
   another value, is in no class.
@@ -349,6 +350,12 @@ def _compound_diff(written: dict, server: dict, skip: set[str]) -> tuple[list[st
     for k, v in sorted(written.items()):
         if k in skip:
             continue
+        # The server holds an entity's tags as a set and saves them in its
+        # own order (the gallery's save writes `dw_watch` first where the
+        # summon wrote it last): a tag list is compared as a set.
+        if k == "Tags" and isinstance(v, list) and isinstance(server.get(k), list):
+            if sorted(map(str, v)) == sorted(map(str, server[k])):
+                continue
         if k == "Rotation" and isinstance(v, list) and isinstance(server.get(k), list):
             if v and server[k] and _same(v[0], server[k][0]):
                 continue

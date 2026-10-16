@@ -40,13 +40,14 @@ const LEDGER: &[&str] = &[
     "trig_",
     "trap_",
     "loop_",
+    "ws_arm_",
+    "shortcut_open_",
 ];
 
 /// A placing function the ledger does not read, by class and prefix.
 const REGION: &[&str] = &[
     "seal_",
     "collapse_",
-    "ws_",
     "tgate_",
     "shortcut_",
     "world_build",

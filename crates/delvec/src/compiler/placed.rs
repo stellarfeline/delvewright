@@ -539,6 +539,17 @@ fn firings_of(plan: &crate::compiler::plan::Plan, name: &str) -> Option<Vec<Firi
             )),
         }]);
     }
+    if name.starts_with("ws_arm_") {
+        // A shortcut gate's wrong-side hitboxes: armed at world init, its one
+        // call site `setup_finish` (`emit::shortcut`).
+        return Some(vec![Firing::Setup]);
+    }
+    if name.starts_with("shortcut_open_") {
+        return Some(vec![Firing::Unforced(
+            "a shortcut's opening, which fires only if the party opens it from its far side"
+                .to_string(),
+        )]);
+    }
     if name.starts_with("trap_") {
         return Some(vec![Firing::Unforced(
             "a trap's state or payload, which fires when a player springs it".to_string(),
@@ -594,8 +605,10 @@ fn firings_of(plan: &crate::compiler::plan::Plan, name: &str) -> Option<Vec<Firi
 }
 
 /// The step an objective's activation fires at: the latest critical step its
-/// own step causally follows, or setup when it follows none (its quest is
-/// active from the start).
+/// own step causally follows; when it follows none, its quest is a
+/// campaign-start quest, which the party's first class pick arms
+/// (`emit::class`'s `class_apply_`), so it fires at the `select-class` step —
+/// never at world load, where the pinned server's save holds no such body.
 pub fn activation_firing(plan: &crate::compiler::plan::Plan, objective: &str) -> Firing {
     let Some(s) = plan.objective_steps.get(objective) else {
         return Firing::Unforced(format!(
@@ -608,7 +621,11 @@ pub fn activation_firing(plan: &crate::compiler::plan::Plan, objective: &str) ->
         .and_then(|a| a.iter().copied().filter(|a| a < s).max())
     {
         Some(a) => Firing::Step(a),
-        None => Firing::Setup,
+        None => plan
+            .critical_path
+            .iter()
+            .position(|st| matches!(st, crate::compiler::plan::Step::SelectClass { .. }))
+            .map_or(Firing::Setup, Firing::Step),
     }
 }
 
