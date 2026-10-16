@@ -33,7 +33,6 @@ pub fn doorway_campaign(camp: &Path, on: Value, at: &str, edits: Option<Vec<Valu
                 "campaign_id": "hello-world",
                 "content": { "batches": [{
                     "id": "batch/the-wall",
-                    "area": "area/keep",
                     "note": "The keep's inner wall, opened or closed beside its doorway.",
                     "edits": edits
                 }] },
