@@ -904,3 +904,151 @@ fn a_holders_own_cell_and_its_neighbours_are_no_stance() {
         }
     }
 }
+
+/// The functions a line runs in the same tick, read the way the game runs them:
+/// a bare `function` call, and an `execute if score … run function` whose every
+/// condition is a `#placed` / `#init` score this walk tracks (evaluated) or a
+/// `#placeok` chunk count (taken as met: the batch server has the world
+/// loaded). A `schedule` runs on a later tick and is not followed; a call under
+/// any other condition is not followed.
+fn run_inline(
+    fdir: &Path,
+    ns: &str,
+    lines: &[String],
+    st: &mut std::collections::BTreeMap<String, i64>,
+    ran: &mut Vec<String>,
+) {
+    let prefix = format!("function {ns}:");
+    let run_prefix = format!(" run function {ns}:");
+    for l in lines.iter().map(|l| l.trim()) {
+        if l.is_empty() || l.starts_with('#') {
+            continue;
+        }
+        if let Some(rest) = l.strip_prefix("scoreboard players set ") {
+            let w: Vec<&str> = rest.split_whitespace().collect();
+            if let [holder @ ("#placed" | "#init"), "dw.sys", v] = w[..] {
+                st.insert(holder.to_string(), v.parse().unwrap());
+            }
+            continue;
+        }
+        let target = if let Some(t) = l.strip_prefix(&prefix) {
+            Some(t)
+        } else if let Some((head, t)) = l.split_once(&run_prefix) {
+            let words: Vec<&str> = head.split_whitespace().collect();
+            let mut ok = words.first() == Some(&"execute");
+            let mut i = 1;
+            while ok && i < words.len() {
+                match &words[i..] {
+                    ["if", "score", h, "dw.sys", "matches", v, ..] => {
+                        ok = match *h {
+                            "#placed" | "#init" => st.get(*h).copied() == v.parse().ok(),
+                            "#placeok" => true,
+                            _ => false,
+                        };
+                        i += 6;
+                    }
+                    _ => ok = false,
+                }
+            }
+            ok.then_some(t)
+        } else {
+            None
+        };
+        if let Some(t) = target {
+            let name = t.split_whitespace().next().unwrap().to_string();
+            let p = fdir.join(format!("{name}.mcfunction"));
+            if ran.len() > 256 || !p.is_file() {
+                continue;
+            }
+            ran.push(name);
+            let body: Vec<String> = std::fs::read_to_string(&p)
+                .unwrap()
+                .lines()
+                .map(str::to_string)
+                .collect();
+            run_inline(fdir, ns, &body, st, ran);
+        }
+    }
+}
+
+/// spec-0111 §4.3, the freeze test judged after its own emptying, under the
+/// load chain this build emits. A campaign whose world needs no build step
+/// (`place_verify` calls `setup_finish` directly — the hello-world fixture, and
+/// any campaign whose blockout mass now goes down before its templates) runs
+/// its whole load inside one `tick` once `setup` re-arms `#placed`. The
+/// generated `holder_frame` runs `setup` and then one `tick` after emptying the
+/// frame; that tick must not reach `setup_finish` (which refills the frame), or
+/// the freeze line reads a full frame and the template reds on a frame the
+/// engine froze correctly.
+#[test]
+fn a_frame_freeze_is_judged_after_its_own_emptying() {
+    let dir = scratch("holders-freeze-prefabs");
+    let prefabs = holder_prefabs(&dir.join("prefabs"), vec![frame_entity()]);
+    let (code, log, out) = build_holders(
+        "holders-freeze",
+        &prefabs,
+        |c| {
+            c["loot"] = serde_json::json!([
+                {"id": "loot/map", "anchor": "anchor/frame",
+                 "items": [{"item": "minecraft:map", "slot": "contents"}]}
+            ]);
+        },
+        None,
+    );
+    assert_eq!(code, 0, "{log}");
+    let fdir = out.join("datapack/data/hello-world/function");
+    // The shape that exposes the defect: no world-build step between the
+    // placement and `setup_finish`. Should the fixture gain one, this test
+    // binds nothing; it says so here rather than passing.
+    let verify = read(
+        &out,
+        "datapack/data/hello-world/function/place_verify.mcfunction",
+    );
+    assert!(
+        verify
+            .lines()
+            .last()
+            .is_some_and(|l| l.ends_with("run function hello-world:setup_finish")),
+        "the fixture has a world-build step, so this test binds nothing: {verify}"
+    );
+    let test = read(
+        &out,
+        "packtest-datapack/data/hello-world/test/holder_frame.mcfunction",
+    );
+    let lines: Vec<String> = test.lines().map(str::to_string).collect();
+    let empty = lines
+        .iter()
+        .position(|l| l.starts_with("item replace entity") && l.ends_with("with minecraft:air"))
+        .unwrap_or_else(|| panic!("the template never empties the frame: {test}"));
+    let tick = empty
+        + lines[empty..]
+            .iter()
+            .position(|l| l == "function hello-world:tick")
+            .unwrap_or_else(|| panic!("no tick after the emptying: {test}"));
+    assert!(
+        lines[tick..]
+            .iter()
+            .any(|l| l.contains("Fixed:1b,Invulnerable:1b")),
+        "{test}"
+    );
+    // The world's own load converged before any template runs.
+    let mut st =
+        std::collections::BTreeMap::from([("#placed".to_string(), 1), ("#init".to_string(), 1)]);
+    let mut ran = Vec::new();
+    run_inline(&fdir, "hello-world", &lines[..tick], &mut st, &mut ran);
+    let mut in_tick = Vec::new();
+    run_inline(
+        &fdir,
+        "hello-world",
+        &lines[tick..=tick],
+        &mut st,
+        &mut in_tick,
+    );
+    for refill in ["setup_finish", "holder_frame"] {
+        assert!(
+            !in_tick.iter().any(|n| n == refill),
+            "the tick after the emptying runs `{refill}`, refilling the frame before the \
+             freeze line reads it: {in_tick:?}\n{test}"
+        );
+    }
+}
