@@ -3265,6 +3265,27 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   written, committed and diffed and never judged. Zero on a campaign declaring
   none of the claimed mechanic is honest; zero on the gallery, which declares
   everything, is the finding.
+- `<out>/validation/trap-binding.json` and the stderr line `trap binding:`
+  (`compiler::trap_trigger::TrapBinding`), written by **every** campaign: a
+  campaign that declares no trap ships zeroes, which pass with their count
+  stated. `traps` (the denominator), `by_trigger` (all three kinds listed,
+  used or not), `payload_effects` (top-level effects per verb tag), `disarms`,
+  `examined` = the trigger cells `DW0917` read off the assembled world,
+  `steps` / `steps_judged` (the `step` half of `DW0917`), `hardware_cells`
+  (trigger and disarm cells `DW0352` guards), `edit_batches` and `edit_writes`
+  (the world-edits batches `DW0352` ran over and the cells they wrote). The line
+  prints before the verdict. `examined` below `traps` is refused as `DW0917`
+  (internal-invariant violation: the check was handed a smaller list than the
+  plan holds). `tools/ci/check-gallery-coverage.py` reds on `examined: 0`; the
+  gallery declares all three trigger kinds.
+- `<out>/validation/trap-fire.json` and the stderr line `trap-fire binding:`
+  (`compiler::trap_trigger::TrapFireBinding`): the `DW0811` trap-fire claim read
+  on its own, because the aggregate `watch-claims.json` sums every mechanic.
+  `traps`, `tests_emitted` (fire PackTests found in the emitted suite),
+  `bodies_judged` and `bodies_driven` (the claim's `trap_fire_` bodies and those
+  the suite calls), `examined` = `bodies_judged`. A declared trap with no fire
+  PackTest, or a body the claim did not see, is refused as `DW0811`
+  (internal-invariant violation).
 - `<out>/validation/combat-plan.json` (spec-0023): the bot ladder's encounter
   table. A top-level `fights` block states the **binding count for the whole
   spec-0023 pass** — `waves`, `actors`, `total`, `unbound`, `reason`

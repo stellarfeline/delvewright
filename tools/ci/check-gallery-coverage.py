@@ -827,6 +827,25 @@ def read_build_ledgers(out: Path) -> tuple[dict, list[str]]:
             for k in ("links", "gathers"):
                 if teleports.get(k) == 0:
                     zeroes.append(f"{f.name}: `teleports.{k}` is 0")
+        # The gallery declares a trap of every trigger kind, so a trap ledger
+        # that counts none of one kind, or whose fire half emitted no PackTest
+        # for a declared trap, is a check that stopped reaching what the
+        # document writes.
+        if f.name == "trap-binding.json":
+            by_kind = doc.get("by_trigger") or {}
+            for kind in ("pressure-plate", "tripwire", "trapped-chest"):
+                if by_kind.get(kind, 0) == 0:
+                    zeroes.append(f"{f.name}: `by_trigger.{kind}` is 0")
+            if doc.get("traps") != doc.get("examined"):
+                zeroes.append(
+                    f"{f.name}: {doc.get('examined')} trigger cell(s) judged of "
+                    f"{doc.get('traps')} trap(s) declared"
+                )
+        if f.name == "trap-fire.json" and doc.get("tests_emitted") != doc.get("traps"):
+            zeroes.append(
+                f"{f.name}: {doc.get('tests_emitted')} fire PackTest(s) emitted for "
+                f"{doc.get('traps')} declared trap(s)"
+            )
         # spec-0086 §8: the gallery binds a loop on its critical path, so a loop
         # ledger reading zero loops, zero eyes, zero visible cells or no exercise
         # step is a proof that stopped reaching what the document writes.
@@ -844,6 +863,12 @@ def read_build_ledgers(out: Path) -> tuple[dict, list[str]]:
         # being emitted, or a measure that stopped seeing it.
         if f.name == "chain-length.json" and not doc.get("steps"):
             zeroes.append(f"{f.name}: `steps` is 0")
+    # …and a trap check that wrote no ledger is a build whose trap proofs were
+    # never stated, whatever they judged.
+    # (judged only beside the claim ledger the same proof pass writes)
+    for name in ("trap-binding.json", "trap-fire.json"):
+        if name not in ledgers and "watch-claims.json" in ledgers:
+            zeroes.append(f"{name}: absent — the trap checks stated no binding")
     # …and a path that exercises a loop with no loop ledger beside it is a build
     # that crossed a slab nothing judged.
     path = out / "critical-path.json"

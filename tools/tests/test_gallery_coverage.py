@@ -622,3 +622,38 @@ def test_a_threshold_ledger_that_judges_no_trigger_is_a_zero_binding(tmp_path):
     ledger.unlink()
     zeroes = mod.read_build_ledgers(out)[1]
     assert len(zeroes) == 1 and zeroes[0].startswith("threshold-gate.json: absent"), zeroes
+
+
+def test_a_trap_ledger_that_binds_nothing_is_a_zero_binding(tmp_path):
+    """The gallery declares a trap of every trigger kind: a kind counted zero,
+    a trap whose cell was never judged, a trap with no fire PackTest and a
+    missing ledger each red."""
+    mod = _load_checker()
+    out = tmp_path / "out"
+    (out / "validation").mkdir(parents=True)
+    (out / "validation" / "watch-claims.json").write_text(json.dumps({"examined": 1}))
+    world = out / "validation" / "trap-binding.json"
+    fire = out / "validation" / "trap-fire.json"
+    good = {
+        "examined": 3,
+        "traps": 3,
+        "by_trigger": {"pressure-plate": 1, "tripwire": 1, "trapped-chest": 1},
+    }
+    world.write_text(json.dumps(good))
+    fire.write_text(json.dumps({"examined": 3, "traps": 3, "tests_emitted": 3}))
+    assert mod.read_build_ledgers(out)[1] == []
+    world.write_text(json.dumps({**good, "by_trigger": {**good["by_trigger"], "tripwire": 0}}))
+    assert mod.read_build_ledgers(out)[1] == ["trap-binding.json: `by_trigger.tripwire` is 0"]
+    world.write_text(json.dumps({**good, "examined": 2}))
+    assert mod.read_build_ledgers(out)[1] == [
+        "trap-binding.json: 2 trigger cell(s) judged of 3 trap(s) declared"
+    ]
+    world.write_text(json.dumps(good))
+    fire.write_text(json.dumps({"examined": 3, "traps": 3, "tests_emitted": 2}))
+    assert mod.read_build_ledgers(out)[1] == [
+        "trap-fire.json: 2 fire PackTest(s) emitted for 3 declared trap(s)"
+    ]
+    fire.unlink()
+    assert mod.read_build_ledgers(out)[1] == [
+        "trap-fire.json: absent — the trap checks stated no binding"
+    ]

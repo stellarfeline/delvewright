@@ -612,6 +612,47 @@ fn a_trapped_chest_trap_with_no_chest_is_dw0917() {
     build_trap_world("trap-with-chest", trap, None, true).expect("the placed chest builds");
 }
 
+/// Every trap-judging check states what it bound to, for each trigger kind: the
+/// world half (`validation/trap-binding.json`) and the fire half
+/// (`validation/trap-fire.json`) both read the declared trap, and neither is
+/// zero.
+#[test]
+fn each_trigger_kind_is_counted_by_the_trap_binding_ledgers() {
+    for kind in ["pressure-plate", "tripwire", "trapped-chest"] {
+        let trap = serde_json::json!({
+            "id": "trap/counted",
+            "at": "anchor/trap",
+            "trigger": kind,
+            "payload": [ { "type": "damage-players", "amount": 2 } ],
+            "lethality": "harmful",
+            "disarm": { "via": "anchor/lever", "sets_flag": "flag/counted-off" }
+        });
+        let out = build_trap_world(&format!("trap-binding-{kind}"), trap, None, true)
+            .unwrap_or_else(|e| panic!("{kind}: {e:?}"));
+        let world: serde_json::Value =
+            serde_json::from_str(&text(&out, "validation/trap-binding.json")).unwrap();
+        assert_eq!(world["examined"], 1, "{kind}: {world}");
+        assert_eq!(world["traps"], 1, "{kind}");
+        for k in ["pressure-plate", "tripwire", "trapped-chest"] {
+            assert_eq!(
+                world["by_trigger"][k],
+                u64::from(k == kind),
+                "{kind}: by_trigger[{k}]"
+            );
+        }
+        assert_eq!(world["payload_effects"]["damage-players"], 1, "{kind}");
+        assert_eq!(world["disarms"], 1, "{kind}");
+        assert_eq!(world["hardware_cells"], 2, "{kind}: trigger + disarm cell");
+        let fire: serde_json::Value =
+            serde_json::from_str(&text(&out, "validation/trap-fire.json")).unwrap();
+        assert_eq!(fire["traps"], 1, "{kind}");
+        assert_eq!(fire["tests_emitted"], 1, "{kind}");
+        assert_eq!(fire["bodies_judged"], 1, "{kind}");
+        assert_eq!(fire["bodies_driven"], 1, "{kind}");
+        assert_eq!(fire["examined"], 1, "{kind}");
+    }
+}
+
 /// The hello room with a tripwire strung across the trap's row, wall to wall:
 /// a hook against each wall, facing into the room, and the string between them
 /// passing over the trap cell. `wire` false leaves the hooks and takes the

@@ -280,6 +280,9 @@ pub struct EditReplay {
     /// only when it fires reads exactly like a rule that never looked, which is
     /// the vacuity this finding's general form exists to end.
     pub placements: Vec<Placement>,
+    /// Batches `DW0352` (trap-hardware integrity) was run over, and the cells
+    /// those batches wrote: the denominator of the trap binding line.
+    pub trap_hardware_judged: (usize, usize),
 }
 
 /// One placement verb's declared-versus-delivered row (`DW0864`).
@@ -413,6 +416,7 @@ fn replay_with(
     // cells a `relight` verb placed (those are declared lighting, error tier).
     let mut support_watch: BTreeMap<[i32; 3], String> = BTreeMap::new();
     let mut fixture_cells: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut hardware_judged: (usize, usize) = (0, 0);
 
     for batch in &env.content.batches {
         let bid = batch.id.as_str();
@@ -622,6 +626,8 @@ fn replay_with(
         // (spec-0017). Each failure names the batch.
         if enforce {
             check_batch_invariants(plan, &assembled, bid, &batch_writes)?;
+            hardware_judged.0 += 1;
+            hardware_judged.1 += batch_writes.len();
             check_support(
                 &assembled,
                 bid,
@@ -647,6 +653,7 @@ fn replay_with(
         batches,
         warnings,
         placements,
+        trap_hardware_judged: hardware_judged,
     }))
 }
 
@@ -772,7 +779,7 @@ fn check_batch_invariants(
 /// Every cell whose **block** a trap's hardware depends on, mapped to
 /// `(trap id, role)`. Content order (`plan.traps`) decides ties, so the message
 /// a colliding edit gets is deterministic.
-fn trap_hardware<'p>(plan: &'p Plan) -> BTreeMap<[i32; 3], (&'p str, &'static str)> {
+pub(crate) fn trap_hardware<'p>(plan: &'p Plan) -> BTreeMap<[i32; 3], (&'p str, &'static str)> {
     let mut out: BTreeMap<[i32; 3], (&'p str, &'static str)> = BTreeMap::new();
     for t in &plan.traps {
         out.entry(t.trigger_cell)
