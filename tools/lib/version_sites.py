@@ -286,13 +286,7 @@ ROWS: dict[str, list[dict[str, object]]] = {
 # an entry is never a licence for the whole file. A statement the file no longer
 # contains is reported, which is how an entry keyed to a number is retired when
 # the number moves on.
-COUNTEREXAMPLES: dict[str, dict[str, object]] = {
-    "docs/specs/spec-0106-a-region-holds-a-whole-site.md": {
-        "statements": ["`dsl_version` **{v}** for the implementation", "`dsl_version` is {v} and"],
-        "reason": "the spec's record of the number it allocated; a spec is a historical record "
-        "and a bump must not move it",
-    },
-}
+COUNTEREXAMPLES: dict[str, dict[str, object]] = {}
 
 # Decision records, outside the sweep's population as a CLASS. A spec or an ADR
 # records the number its surface was allocated, or the number it does not move;
