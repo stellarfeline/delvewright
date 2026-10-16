@@ -592,6 +592,13 @@ pub struct GateSeal {
     /// `replace`-filtered to the declared block. `0` is the healthy case. See
     /// `docs/reference/compiler.md` for the stated limitation this number exposes.
     pub foreign: usize,
+    /// Every blocked cell whose block does not cover its cell, with that block's
+    /// server footprint ([`delvewright_dsl::blockshape::server_footprint`]) —
+    /// iron bars, a pane. Measured from the bytes, as `blocked` is, so the seal
+    /// the route model lays is the block the world holds: a floor of bars is
+    /// read as the posts a body falls between, never as a full cube. Empty for
+    /// a seal of blocks that cover their cells.
+    pub open_footprints: Vec<([i32; 3], delvewright_dsl::blockshape::Footprint16)>,
 }
 
 impl GateSeal {
@@ -650,6 +657,7 @@ pub(crate) fn measure_gate_seals(
         };
         let declared = base_id(block);
         let (mut cells, mut blocked, mut foreign) = (0usize, 0usize, 0usize);
+        let mut open_footprints = Vec::new();
         for cell in region_cells(*from, *to) {
             cells += 1;
             let Some(name) = blocks.get(&cell) else {
@@ -662,6 +670,10 @@ pub(crate) fn measure_gate_seals(
             if base_id(name) != declared {
                 foreign += 1;
             }
+            let fp = delvewright_dsl::blockshape::server_footprint(name);
+            if fp != delvewright_dsl::blockshape::FULL_FOOTPRINT {
+                open_footprints.push((cell, fp));
+            }
         }
         out.push(GateSeal {
             area: area.clone(),
@@ -670,6 +682,7 @@ pub(crate) fn measure_gate_seals(
             cells,
             blocked,
             foreign,
+            open_footprints,
         });
     }
     out
@@ -1255,6 +1268,13 @@ pub struct Occupancy {
     /// name it (`DW0991`) rather than report an unroutable leg over a ladder the
     /// author can see in the piece.
     pub unheld_climb: BTreeMap<[i32; 3], String>,
+    /// For each `solid` cell whose block does **not** cover its cell, the
+    /// block's server footprint ([`delvewright_dsl::blockshape::server_footprint`]):
+    /// the posts of iron bars, a pane, a chain, a lantern. Not a collision class
+    /// and a subset of `solid`: the cell still stops a body walking into it, and
+    /// whether a body over it is held or falls between its boxes is the nav
+    /// model's to judge from these and the cells around them.
+    pub footprints: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
 }
 
 /// **What keeps one climbable where it is** (spec-0099 §3.2), as the cells its
@@ -1510,6 +1530,11 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
     let mut lava_sources: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut partial: BTreeMap<[i32; 3], u8> = BTreeMap::new();
     let mut waterloggable: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut footprints: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16> =
+        BTreeMap::new();
+    // One footprint lookup per distinct block state, not per cell.
+    let mut footprint_of: BTreeMap<String, Option<delvewright_dsl::blockshape::Footprint16>> =
+        BTreeMap::new();
     for (cell, name) in blocks {
         if is_waterloggable(name) {
             waterloggable.insert(*cell);
@@ -1570,6 +1595,13 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
                 if let Collision::PartialFloor(h) = class {
                     partial.insert(*cell, h);
                 }
+                let fp = footprint_of.entry(name.to_string()).or_insert_with(|| {
+                    let fp = delvewright_dsl::blockshape::server_footprint(name);
+                    (fp != delvewright_dsl::blockshape::FULL_FOOTPRINT).then_some(fp)
+                });
+                if let Some(fp) = fp {
+                    footprints.insert(*cell, *fp);
+                }
             }
         }
     }
@@ -1597,6 +1629,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
         lava,
         climb,
         unheld_climb,
+        footprints,
     }
 }
 

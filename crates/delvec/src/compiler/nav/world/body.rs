@@ -548,7 +548,11 @@ impl World {
         }
         fp.cols.iter().all(|&[dx, dz]| {
             let base = [c[0] + dx, c[1], c[2] + dz];
-            self.is_solid([base[0], base[1] - 1, base[2]])
+            let support = [base[0], base[1] - 1, base[2]];
+            // A floor is a block that HOLDS the body: a sieve — bars laid
+            // through a floor, a pane — is a block a body falls between.
+            self.is_solid(support)
+                && !self.is_sieve(support)
                 && (0..fp.height).all(|dy| !self.is_occupied([base[0], base[1] + dy, base[2]]))
         })
     }
@@ -818,7 +822,7 @@ impl World {
             }
             let arrests = |y: i32| {
                 let cell = [side[0], y, side[2]];
-                self.is_occupied(cell) || self.use_gates.contains(&cell)
+                (self.is_occupied(cell) && !self.is_sieve(cell)) || self.use_gates.contains(&cell)
             };
             if arrests(c[1] - 1) {
                 continue; // level ground beside: a walk, not a drop
@@ -843,7 +847,7 @@ impl World {
         let fp = Footprint::player();
         let arrests = |y: i32| {
             let cell = [x, y, z];
-            self.is_occupied(cell) || self.use_gates.contains(&cell)
+            (self.is_occupied(cell) && !self.is_sieve(cell)) || self.use_gates.contains(&cell)
         };
         let mut feet = feet;
         loop {
@@ -947,7 +951,8 @@ impl World {
             if catch == Some(cell) {
                 return catch;
             }
-            if self.is_occupied(cell) {
+            // A falling body passes a sieve: it drops between the posts.
+            if self.is_occupied(cell) && !self.is_sieve(cell) {
                 if self.is_water_surface(cell) {
                     return Some(cell);
                 }
