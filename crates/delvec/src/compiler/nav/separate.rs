@@ -896,8 +896,44 @@ mod separate_tests {
         let (_, verdict) = judge(&base, &shut);
         let err = verdict.expect_err("the low wall end is a way round");
         assert_eq!(err.code.id(), "DW1011");
-        assert!(err.message.contains("jumping x1"), "{}", err.message);
-        assert!(err.message.contains("falling"), "{}", err.message);
+        // Over the reach graph the way down off the wall top is flown as a
+        // jump down (the graph's edge for it), not a fall: two jumps, the first
+        // off the crate, over the wall top.
+        assert!(err.message.contains("jumping x2"), "{}", err.message);
+        assert!(
+            err.message
+                .contains("it leaves the walked ground at [0, 2, 8] by a sprint jump"),
+            "{}",
+            err.message
+        );
+        assert!(err.message.contains("[0, 3, 10]"), "{}", err.message);
+    }
+
+    /// The crate stands one column east of the low wall end's axis, so the only
+    /// way onto the wall top is a jump off it to the south-west: a launch no
+    /// cardinal gap jump makes, which the reach graph flies at its facing
+    /// (spec-0113 §4.3). The gate is got round, and the witness names the jump.
+    #[test]
+    fn a_body_jumps_a_diagonal_onto_the_low_wall_dw1011() {
+        let build = |shut: bool| {
+            let (mut solid, _) = walled_yards(shut);
+            for y in 3..=4 {
+                solid.remove(&[0, y, 10]);
+            }
+            solid.insert([1, 1, 8]);
+            World::from_solid_cells(solid)
+        };
+        let (base, shut) = (build(false), build(true));
+        let (b, verdict) = judge(&base, &shut);
+        let err = verdict.expect_err("the diagonal jump onto the low wall is a way round");
+        assert_eq!(err.code.id(), "DW1011");
+        assert!(
+            err.message
+                .contains("it leaves the walked ground at [1, 2, 8] by a sprint jump south-west"),
+            "{}",
+            err.message
+        );
+        assert_eq!(b.bypassed, 1);
     }
 
     #[test]
