@@ -1530,6 +1530,37 @@ pub fn check_stance(
     (stances, counts, Err(failure))
 }
 
+impl Stance {
+    /// The stance cell nearest `cell` (squared distance, then cell order) —
+    /// the one a holder `collect`'s leg ends at and its critical-path step
+    /// names.
+    #[must_use]
+    pub fn nearest(&self, cell: [i32; 3]) -> Option<[i32; 3]> {
+        self.cells
+            .iter()
+            .min_by_key(|s| {
+                let d: i64 = (0..3).map(|i| i64::from(s[i] - cell[i]).pow(2)).sum();
+                (d, **s)
+            })
+            .copied()
+    }
+}
+
+/// **Where each holder `collect` is taken from** (spec-0111 §5.2): the holder's
+/// cell paired with its [`Stance::nearest`] cell, for every holder a `collect`
+/// claims and the stance pass found a stance for — what
+/// [`crate::compiler::nav::World::with_holder_stances`] ends the leg at, and
+/// what the critical-path step carries as `holder.stance`.
+#[must_use]
+pub fn collect_stances(owned: &[OwnedHolder], stances: &[Stance]) -> BTreeMap<[i32; 3], [i32; 3]> {
+    owned
+        .iter()
+        .zip(stances)
+        .filter(|(o, _)| o.collect.is_some())
+        .filter_map(|(o, st)| st.nearest(o.holder.cell).map(|s| (o.holder.cell, s)))
+        .collect()
+}
+
 /// Whether a player standing in `c` keeps its body out of every holder
 /// entity's body cells `occupied` (spec-0111 §5.2). The block model reads a
 /// holder as air, so a stance search over blocks alone finds the cell a stand

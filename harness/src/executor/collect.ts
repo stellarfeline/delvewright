@@ -149,10 +149,17 @@ export const methods = {
     holder: CollectHolder,
   ): Promise<void> {
     const bot = this.requireBot();
-    await this.walkTo(holder.stance ?? step.pos, holder.stance ? 0 : 2, `${holder.kind} ${step.item}`, step.sneak, {
-      objective: step.objective,
-      transport: step.transport,
-    });
+    // The proven leg ends at the stance (the compiler snaps a holder's leg
+    // there) and is named by the holder's cell, the step's `pos`.
+    await this.walkTo(
+      holder.stance ?? step.pos,
+      holder.stance ? 0 : 2,
+      `${holder.kind} ${step.item}`,
+      step.sneak,
+      { objective: step.objective, transport: step.transport },
+      undefined,
+      step.pos,
+    );
     const body = holderAt(bot, holder, step.pos);
     if (!body) {
       throw new Error(

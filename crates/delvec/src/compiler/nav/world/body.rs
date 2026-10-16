@@ -475,11 +475,19 @@ impl World {
     /// take the nearest OTHER standable cell. Flooded cells are already
     /// excluded (they are not standable), so a shore NPC never resolves onto a
     /// water-tongue cell.
+    ///
+    /// For a holder entity a `collect` takes from (spec-0111 §5.2), the anchor is
+    /// the holder's own cell, which the block model reads as air: the endpoint is
+    /// the stance the stance pass chose ([`World::holder_stances`]), so the leg
+    /// ends where the party stands to take, never inside the holder.
     pub(in crate::compiler::nav) fn snap_endpoint(
         &self,
         c: [i32; 3],
         off_cell: bool,
     ) -> Option<[i32; 3]> {
+        if let Some(stance) = self.holder_stances.get(&c) {
+            return Some(*stance);
+        }
         if off_cell {
             self.snap_in_bounds(c, SNAP_RADIUS, &|n| n != c)
         } else {

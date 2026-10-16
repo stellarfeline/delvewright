@@ -628,6 +628,13 @@ pub fn build_with_warnings(
             );
             (census, stances)
         };
+    // A leg that ends at a holder `collect` ends at the stance the pass chose
+    // (spec-0111 §5.2), never inside the holder the block model reads as air:
+    // every route proof, waypoint and the critical-path step read one stance.
+    let world = world.with_holder_stances(crate::compiler::holders::collect_stances(
+        &owned_holders,
+        &holder_stances,
+    ));
 
     // What the camera reads in each carried place (spec-0080 §2.2): its fog
     // and sky are the client's blend over the 4-cells within `BLEND_REACH`, so

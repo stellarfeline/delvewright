@@ -883,4 +883,24 @@ fn a_holders_own_cell_and_its_neighbours_are_no_stance() {
         let above = [cell[0], cell[1] + 1, cell[2]];
         assert_ne!(stance, world(above), "stance on a stand's head: {step}");
     }
+    // The proven leg ends at that stance, so the bot replays the leg it walks:
+    // the leg the holder's cell names (its `to`, the step's `pos`) has the
+    // stance for its last cell, and no leg's route ends inside the stand.
+    let wp: serde_json::Value =
+        serde_json::from_str(&read(&out, "validation/critical-path-waypoints.json")).unwrap();
+    let legs = wp["legs"].as_array().unwrap();
+    let leg = legs
+        .iter()
+        .find(|l| l["to"] == step["pos"])
+        .unwrap_or_else(|| panic!("no leg to the holder's cell: {wp}"));
+    let last: Vec<i64> =
+        serde_json::from_value(leg["waypoints"].as_array().unwrap().last().unwrap().clone())
+            .unwrap();
+    assert_eq!(last, stance, "the holder's leg ends at the stance: {wp}");
+    for l in legs {
+        for c in l["waypoints"].as_array().unwrap() {
+            let c: Vec<i64> = serde_json::from_value(c.clone()).unwrap();
+            assert_ne!(c, world(STAND), "a route crosses the stand's cell: {wp}");
+        }
+    }
 }

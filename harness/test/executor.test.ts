@@ -1947,6 +1947,43 @@ test("a straight proven run longer than the client sees is walked in hops of its
   assert.ok(Math.abs(Math.floor(end.z) - 140) <= 1, `the walk ends at its destination: z ${end.z}`);
 });
 
+test("a walk to a holder's stance replays the leg the holder's cell names, and consumes it", async () => {
+  // spec-0111 §5.2: a holder collect's proven leg is named by the holder's cell
+  // (the step's `pos`) and ends at the stance beside it; the bot walks to the
+  // stance and must replay and consume that leg, or every leg after it falls
+  // out of lockstep.
+  const bot = new HeldRadiusBot();
+  bot.entity.position = new FakeVec3(5.5, 65, 4.5);
+  const executor = attach(bot);
+  executor.useCampaign("hello-world");
+  executor.useWaypoints(
+    parseWaypoints({
+      version: "0.49.0",
+      campaign_id: "hello-world",
+      legs: [
+        {
+          from: [5, 65, 4],
+          to: [8, 65, 2],
+          waypoints: [
+            [5, 65, 4],
+            [5, 65, 1],
+            [8, 65, 1],
+          ],
+        },
+      ],
+    }),
+  );
+  await within(
+    "executor.walkTo(stance)",
+    executor.walkTo([8, 65, 1], 0, "armor-stand minecraft:iron_sword", false, undefined, undefined, [8, 65, 2]),
+  );
+  assert.equal(executor.legCursor, 1, "the holder's leg is consumed");
+  for (const [x, , z] of bot.goals) {
+    assert.ok(!(x === 8 && z === 2), `no hop into the stand's cell: ${bot.goals.join(" ")}`);
+  }
+  assert.deepEqual(bot.goals.at(-1), [8, 65, 1], "the walk ends at the stance");
+});
+
 test("the hop bound is inside the radius the engine's floor view distance serves", () => {
   // `delvewright_dsl::viewdistance::FLOOR` is 10 chunks (160 blocks). The goal of
   // a hop that starts at a chunk's far edge is MAX_HOP_BLOCKS + 15 blocks from

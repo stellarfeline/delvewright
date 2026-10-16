@@ -244,12 +244,7 @@ pub(super) fn holder_steps(
         else {
             continue;
         };
-        let c = o.holder.cell;
-        let stance = st
-            .cells
-            .iter()
-            .min_by_key(|s| (0..3).map(|i| i64::from(s[i] - c[i]).pow(2)).sum::<i64>())
-            .copied();
+        let stance = st.nearest(o.holder.cell);
         let mut v = json!({
             "kind": o.holder.kind.token,
             "slot": slot,

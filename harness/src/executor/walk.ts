@@ -484,6 +484,7 @@ export const methods = {
     sneak = false,
     completion?: StepCompletion,
     explicitWaypoints?: readonly Vec3Tuple[],
+    legTo?: Vec3Tuple,
   ): Promise<void> {
     this.requireBot();
     // A range of exactly 0 is a block goal: a link's stand cell, which the bot
@@ -500,7 +501,7 @@ export const methods = {
       await this.refreshStagedExclusion();
       const watch = !this.controlTaken();
       try {
-        await this.walkLeg(pos, r, label, sneak, completion, explicitWaypoints);
+        await this.walkLeg(pos, r, label, sneak, completion, explicitWaypoints, legTo);
         // A cutscene that took the body as the walk ended (the goal read as
         // reached from wherever the camera held it) is waited out, and the walk
         // is made again from where it returns the bot, before anything is done
@@ -510,7 +511,7 @@ export const methods = {
             throw new Error(`${label}: control was taken by a cutscene ${n} times at the goal`);
           }
           await this.awaitControlEnRoute(label);
-          await this.walkLeg(pos, r, label, sneak, completion, explicitWaypoints);
+          await this.walkLeg(pos, r, label, sneak, completion, explicitWaypoints, legTo);
         }
       } catch (err) {
         const fault = this.takeLoopFault();
@@ -534,6 +535,7 @@ export const methods = {
     sneak: boolean,
     completion: StepCompletion | undefined,
     explicitWaypoints: readonly Vec3Tuple[] | undefined,
+    legTo?: Vec3Tuple,
   ): Promise<void> {
     const bot = this.requireBot();
     const movements = new Movements(bot);
@@ -593,10 +595,14 @@ export const methods = {
         // the proven cells itself; it consumes no leg.
         legWaypoints = explicitWaypoints;
       } else if (this.waypoints) {
+        // A proven leg is named by the critical position it walks to; a walk
+        // whose goal is not that position (a holder's stance, spec-0111 §5.2,
+        // where the leg's last cell is the stance and its `to` the holder)
+        // names the leg it walks with `legTo`.
         const match = nextLegWaypoints(
           this.waypoints.legs,
           this.legCursor,
-          [pos[0], pos[1], pos[2]],
+          legTo ?? [pos[0], pos[1], pos[2]],
           this.feetCell(),
         );
         legWaypoints = match.waypoints;

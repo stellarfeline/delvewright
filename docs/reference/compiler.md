@@ -2499,7 +2499,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `ArmorStand.getClickedSlot` band takes that slot from a stand (absent on a
   frame, which is hit), and the stance cell nearest the holder the stance pass
   proved in reach and in sight — never a cell in which the player's body
-  shares a cell with a holder entity's body. At format 2 every
+  shares a cell with a holder entity's body. The proven leg to that step
+  ends at the stance and keeps the holder's cell as its `to`. At format 2 every
   objective-bearing step (`talk-to`/`reach`/`kill`/`collect`/`interact`) carries
   `objective`: the `obj/<id>` that step must prove, and the harness passes the step
   only when **that** objective's anchored completion marker arrives (position
