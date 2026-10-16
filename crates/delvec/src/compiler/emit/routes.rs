@@ -634,6 +634,18 @@ pub(super) fn prove_world(
                 eprintln!("{}", route_binding.line());
                 route_verdict?;
                 legs_carried = route_binding.carried;
+                // DW1044: a trigger the path performs to pay a flag a later
+                // step reads is one every walk to that step enters — after
+                // DW0311, because it asks for walks over the legs DW0311 proved.
+                let (threshold_binding, threshold_verdict) =
+                    crate::compiler::nav::check_threshold_triggers(plan, world);
+                eprintln!("{}", threshold_binding.line());
+                threshold_verdict?;
+                put_json(
+                    out,
+                    "validation/threshold-gate.json",
+                    &threshold_binding.to_json(),
+                );
                 // v0.6 checkpoint no-stranding + placement proofs (spec-0012,
                 // DW0315/DW0316) and stealth-zone standable/reachable proofs
                 // (spec-0014, DW0327), re-rooting DW0311 reachability at each beat.
@@ -649,6 +661,19 @@ pub(super) fn prove_world(
                 eprintln!("{}", leave_binding.line());
                 leave_verdict?;
                 put_json(out, "validation/leave-proof.json", &leave_binding.to_json());
+                // DW1011: a shut gate separates its two sides — no walk, fall,
+                // jump or swim gets a body from its near face to its far one.
+                // Over the same configurations DW0921 judges; the binding is
+                // printed before the verdict is taken.
+                let (separation, separation_verdict) =
+                    crate::compiler::nav::check_gates_separate(plan, world);
+                eprintln!("{}", separation.line());
+                separation_verdict?;
+                put_json(
+                    out,
+                    "validation/separation-proof.json",
+                    &separation.to_json(),
+                );
                 // DW0924: a body a `kill` objective waits on cannot get to a
                 // place it survives and the party cannot strike it from. After
                 // DW0921 because it reads the same playable region and a party
@@ -974,6 +999,25 @@ pub(super) fn prove_world(
                             ));
                         }
                         path_legs.push((r.branch.slug.clone(), cp.steps.clone(), branch_routes));
+                    }
+                }
+                // `DW1025`: a body the party talks to faces the party as they
+                // walk up, or watches them. Here, because it reads every
+                // configuration's walked legs (`path_legs`, complete only once
+                // the branches are routed) and the walks that leave a body
+                // where it is talked to. The line prints before the verdict.
+                {
+                    let (binding, findings) =
+                        crate::compiler::approach::check(plan, &path_legs, &m);
+                    eprintln!("{}", binding.line());
+                    if let Some((first, rest)) = findings.split_first() {
+                        for extra in rest {
+                            eprintln!("{} [error] build: {}", extra.code, extra.message);
+                        }
+                        return Err(BuildFailure::Diagnostic {
+                            code: first.code,
+                            message: first.message.clone(),
+                        });
                     }
                 }
                 (m, am)

@@ -22,7 +22,7 @@
 //! **that trigger is pressable from no angle at all** — and one box would have
 //! covered one of the doorway's six cells even if it were.
 //!
-//! `close-gate` had solved this privately (shell cells + `SEAL_MARGIN`); nothing
+//! `close-gate` had solved this privately (shell cells + `CLICK_MARGIN`); nothing
 //! else could reach that machinery. These tests pin the general form.
 
 mod common;
@@ -189,11 +189,12 @@ fn a_plain_region_anchor_also_gets_a_region_body() {
     );
 }
 
-/// A trigger anchored on a point in open air is **unchanged** — the ordinary
-/// `1.0f x 2.0f` body. Every campaign that only ever anchored triggers in the air
-/// emits byte-identically.
+/// A trigger anchored on a point gets the standard press column — one block
+/// across, two tall, standing in the point's cell — built by the one click-box
+/// rule (`compiler::clickbox`): every face one margin past the block grid, so the
+/// sign its `prop` places (or any block in either cell) never ties the pick.
 #[test]
-fn a_point_anchor_is_untouched() {
+fn a_point_anchor_is_the_standard_column() {
     let mut c = fixture();
     c.quests.content.shortcuts.clear();
     c.quests.content.triggers = vec![
@@ -207,8 +208,8 @@ fn a_point_anchor_is_untouched() {
     let out = try_build(&c).expect("builds");
     assert_eq!(
         bodies(&out, "dw_trig_at_the_exit"),
-        vec![(5.5, 65.0, 8.5, 1.0, 2.0)],
-        "the point body is exactly what it always was"
+        vec![(5.5, 64.99, 8.5, 1.02, 2.02)],
+        "the point body is the column bracketing its cell and the one above"
     );
 }
 

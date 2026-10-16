@@ -279,7 +279,13 @@ fn turn_template(plan: &Plan, w: &Watcher, k: usize, cell: [i32; 3], yaw: f64) -
     ));
     b.push("scoreboard players set #cs_live dw.sys 1".to_string());
     b.push(format!("tag @s add {FREE_TAG}"));
-    b.extend(shielded_tick(ns));
+    // The shield covers this template's own dummy alone: every other player
+    // wears `dw_cutscene` for the template's length (above), which every
+    // harmful content line already excludes, and a write to a sibling's dummy
+    // is what makes a template depend on the batch's interleaving.
+    b.push("effect give @s minecraft:resistance 1 4 true".to_string());
+    b.push(format!("function {ns}:tick"));
+    b.push("effect clear @s minecraft:resistance".to_string());
     b.push(format!("tag @s remove {FREE_TAG}"));
     b.push(format!(
         "scoreboard players operation #cs_live dw.sys = #wcl_{k} dw.sys"
