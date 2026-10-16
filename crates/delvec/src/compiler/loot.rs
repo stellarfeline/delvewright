@@ -500,16 +500,22 @@ mod tests {
     /// ingredient) draws nothing; no other block is touched.
     #[test]
     fn a_brewing_stand_shows_the_bottle_slots_its_fill_lands_in() {
-        let one = "minecraft:brewing_stand[has_bottle_0=true,has_bottle_1=false,has_bottle_2=false]";
+        let one =
+            "minecraft:brewing_stand[has_bottle_0=true,has_bottle_1=false,has_bottle_2=false]";
         assert_eq!(
             shown_state(one, &[1, 2, 3]).as_deref(),
             Some("minecraft:brewing_stand[has_bottle_0=false,has_bottle_1=true,has_bottle_2=true]")
         );
         assert_eq!(
             shown_state("minecraft:brewing_stand", &[]).as_deref(),
-            Some("minecraft:brewing_stand[has_bottle_0=false,has_bottle_1=false,has_bottle_2=false]")
+            Some(
+                "minecraft:brewing_stand[has_bottle_0=false,has_bottle_1=false,has_bottle_2=false]"
+            )
         );
-        assert_eq!(shown_state("minecraft:furnace[facing=north,lit=false]", &[0, 1]), None);
+        assert_eq!(
+            shown_state("minecraft:furnace[facing=north,lit=false]", &[0, 1]),
+            None
+        );
     }
 
     #[test]
