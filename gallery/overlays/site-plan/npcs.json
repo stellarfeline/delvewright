@@ -25,6 +25,10 @@
         "skin": {
           "model": "slim",
           "texture_id": "curator"
+        },
+        "watch": {
+          "who": "nearest",
+          "within": 4
         }
       },
       {
@@ -49,7 +53,11 @@
           "motivation": "Trade for whatever the hall's visitors are carrying.",
           "speech_style": "Brisk, transactional, never impolite."
         },
-        "role": "flavor"
+        "role": "flavor",
+        "watch": {
+          "who": "nearest",
+          "within": 4
+        }
       },
       {
         "anchor": "anchor/node-loft",

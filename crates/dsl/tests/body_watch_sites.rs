@@ -16,7 +16,14 @@ use serde_json::{Value, json};
 
 /// Every `(schema class, $ref target)` pair whose `properties.watch` exists,
 /// across every stage schema, and every `$defs` name a `watch` resolves to.
-fn watch_declarations() -> (BTreeSet<String>, BTreeSet<String>, Value) {
+#[allow(clippy::type_complexity)]
+fn watch_declarations() -> (
+    BTreeSet<String>,
+    BTreeSet<String>,
+    Value,
+    BTreeSet<(String, String)>,
+) {
+    let mut wrappers = BTreeSet::new();
     let mut classes = BTreeSet::new();
     let mut targets = BTreeSet::new();
     let mut def = Value::Null;
@@ -43,18 +50,49 @@ fn watch_declarations() -> (BTreeSet<String>, BTreeSet<String>, Value) {
                 .map(|r| r.trim_start_matches("#/$defs/").to_string())
                 .collect();
             assert_eq!(refs.len(), 1, "`{name}.watch` names one definition: {w}");
-            if let Some(t) = defs.get(&refs[0]) {
+            // An NPC's `watch` is `NpcWatch`: the shared watch, or the keyword
+            // `"none"` its default makes meaningful. Followed one hop to the
+            // watch it wraps, so the shared type is still what both classes
+            // name.
+            let mut target = refs[0].clone();
+            if let Some(branches) = defs
+                .get(&target)
+                .and_then(|t| t.get("anyOf"))
+                .and_then(Value::as_array)
+            {
+                let wrapped: Vec<String> = branches
+                    .iter()
+                    .filter_map(|v| v.get("$ref").and_then(Value::as_str))
+                    .map(|r| r.trim_start_matches("#/$defs/").to_string())
+                    .filter(|r| {
+                        defs.get(r)
+                            .and_then(|d| d.get("properties"))
+                            .is_some_and(|p| p.get("who").is_some())
+                    })
+                    .collect();
+                assert_eq!(wrapped.len(), 1, "`{target}` wraps one watch: {branches:?}");
+                wrappers.insert((name.clone(), target.clone()));
+                target = wrapped[0].clone();
+            }
+            if let Some(t) = defs.get(&target) {
                 def = t.clone();
             }
-            targets.extend(refs);
+            targets.insert(target);
         }
     }
-    (classes, targets, def)
+    (classes, targets, def, wrappers)
 }
 
 #[test]
 fn watch_is_one_type_on_both_body_classes_and_nowhere_else() {
-    let (classes, targets, def) = watch_declarations();
+    let (classes, targets, def, wrappers) = watch_declarations();
+    // Only the NPC wraps it: the default watch, and so its `"none"`, belong to
+    // the body a player can talk to.
+    assert_eq!(
+        wrappers,
+        BTreeSet::from([("Npc".to_string(), "NpcWatch".to_string())]),
+        "only an NPC's watch admits `none`"
+    );
     let expected: BTreeSet<String> = BodyRef::ALL_CLASSES.iter().map(|s| s.to_string()).collect();
     println!(
         "watch binding: {} schema class(es) declare `watch` ({classes:?}), resolving to {targets:?}",

@@ -1272,8 +1272,13 @@ fn the_poll_the_move_and_the_answer_are_emitted_in_order() {
     let answer = run.text(&format!(
         "datapack/data/{ns}/function/loop_gallery_cross.mcfunction"
     ));
+    // The one `@s` it may hold is each listener bound by `as @a at @s`, the
+    // form a sound takes to play where each player stands.
     assert!(
-        !answer.contains("@s"),
+        answer
+            .lines()
+            .filter(|l| l.contains("@s"))
+            .all(|l| l.contains("as @a at @s run ")),
         "the answer addresses no body: {answer}"
     );
 

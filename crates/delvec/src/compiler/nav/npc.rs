@@ -25,6 +25,10 @@ pub struct MovePlan {
     pub to: delvewright_dsl::Mark,
     /// The integer target cell (feet), for the arrival assertion.
     pub target: [i32; 3],
+    /// The destination mark's own cell, before the endpoint snap: the cell the
+    /// cast ledger's station and a `talk-to` step's `pos` name for a body this
+    /// walk left there ([`crate::compiler::approach`] matches on it).
+    pub mark_cell: [i32; 3],
     /// The A* **cell** path this leg walks, start to target inclusive — the route
     /// before [`resample`] turns it into per-tick positions. Kept because the
     /// per-tick positions answer *where the body is* while a traversal proof
@@ -350,6 +354,7 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
             npc: npc.as_str().to_string(),
             to: to.clone(),
             target,
+            mark_cell: anchor_pos,
             cells,
             waypoints,
             yaws,

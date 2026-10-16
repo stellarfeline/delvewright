@@ -262,6 +262,9 @@ is drawn first: `references/map-reference.md`. How many places the map has is
 `references/partitioning.md`'s question: build as one region until the brief
 passes the verified ceiling of one (Vesperhold: 172 × 104 × 292, 42 places, 144
 named spots, about an hour), then divide where the design already has an edge.
+Before the brief is written, find the nearest reference work for the kind of map
+this is (a giant, an organic interior, a large single box, several levels
+joined): `references/reference-works.md`.
 Every destination is built to read as what it is: `docs/reference/game-writing.md` L1.
 
 ## 3. The story documents — `npcs`, `classes`, `quest-plan`
@@ -339,6 +342,9 @@ step 8. **Produces**: `detail-plan.json`, one place at a time. **Read**:
 `references/detail.md`; a piece the library does not have is
 `references/new-pieces.md`; a row that binds a piece the shipped library holds
 takes the library through `references/the-shipped-library.md`.
+Before a form, a statue, an organic interior or a single large box is authored,
+start from the nearest reference work and meet its level of detail:
+`references/reference-works.md`.
 
 ## 10. The machine ladder
 
@@ -401,6 +407,7 @@ reference means the file listed here.
 | `references/partitioning.md` | how many places a map has: one region until a signal says divide, and where | step 2 |
 | `references/workspace.md` | the campaign directory and every document in it | step 1 |
 | `references/map-reference.md` | drawing the map's own reference views | step 2 |
+| `references/reference-works.md` | the finished levels to start from, by kind of map, and how one is added | steps 2, 9 |
 | `references/story.md` | npcs, classes, the quest plan, and where step 3 ends | step 3 |
 | `references/design-gate.md` | the walkthrough, the approval, `design.json` | step 4 |
 | `references/content.md` | quests and dialogue, and the codes that clear here | step 5 |

@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::serde_fields::{is_false, is_zero3};
-use crate::{AnchorId, BodyTraversal, BodyWatch, NpcId};
+use crate::{AnchorId, BodyTraversal, NpcId, NpcWatch};
 
 #[cfg(doc)]
 use crate::{EncounterTier, Mark, Verb};
@@ -62,12 +62,15 @@ pub struct Npc {
     /// reach the error tier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub traversal: Option<BodyTraversal>,
-    /// Turn to face a player in reach (spec-0101) — the same [`BodyWatch`] a
-    /// stage-5 [`crate::Actor`] carries, because facing belongs to the body.
-    /// Absent = the body faces its anchor's facing until a walk turns it,
-    /// byte-identical.
+    /// Turn to face a player in reach (spec-0101): the same
+    /// [`crate::BodyWatch`] a stage-5 [`crate::Actor`] carries, because facing
+    /// belongs to the body, or `"none"` ([`NpcWatch`]). Absent = the default:
+    /// an NPC a player can talk to watches the nearest player within
+    /// [`crate::DEFAULT_WATCH_WITHIN`] blocks. `"none"` = the body holds its
+    /// anchor's facing, judged from every cell within interaction reach
+    /// (`DW1025`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub watch: Option<BodyWatch>,
+    pub watch: Option<NpcWatch>,
 }
 
 /// A mannequin NPC's player-model skin (DSL v0.4). The skin PNG is sourced from

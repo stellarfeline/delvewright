@@ -705,3 +705,165 @@ fn dw0818_a_carry_with_an_empty_gating() {
     });
     assert!(validate(Some(g)).contains(&"DW0818".to_string()));
 }
+
+// ---------------------------------------------------------------------------
+// Every producer the flow model counts is credited where it happens
+// ---------------------------------------------------------------------------
+
+/// The green map with the vault's barred door opened by a **lever** instead of
+/// the quest: the door demands `flag/lever-pulled`, and the lever is a station
+/// `anchor/lever` of `lever_place`. `producer` is spliced into the quests
+/// document's content beside its quests, and sets `flag/lever-pulled` at
+/// `anchor/lever`.
+fn lever_campaign(lever_place: usize, producer: &str) -> RawCampaign {
+    let graph = graph_with(|v| {
+        edges(v)[1]["gating"] = json!({ "flags": ["flag/lever-pulled"] });
+        nodes(v)[lever_place]["stations"] = json!([{ "anchor": "anchor/lever", "kind": "point" }]);
+    });
+    let mut quests: Value =
+        serde_json::from_str(&common::valid_raw().quests).expect("quests parse");
+    let extra: Value = serde_json::from_str(producer).expect("the producer parses");
+    for (k, val) in extra.as_object().expect("an object of content keys") {
+        quests["content"][k] = val.clone();
+    }
+    RawCampaign {
+        quests: serde_json::to_string(&quests).expect("re-serialize"),
+        ..campaign(Some(graph), Some(BRIEF.to_string()))
+    }
+}
+
+fn reachability_of(raw: &RawCampaign) -> Vec<String> {
+    let c = delvewright_dsl::parse_campaign(raw).expect("the fixture parses");
+    delvewright_dsl::layout::reachability(&c)
+        .into_iter()
+        .map(|d| d.code)
+        .collect()
+}
+
+const LEVER_TRIGGER: &str = r#"{ "triggers": [
+  { "id": "trigger/lever", "at": "anchor/lever", "on": { "on": "use" }, "once": true,
+    "prop": { "block": "minecraft:lever" },
+    "effects": [ { "type": "set-flag", "flag": "flag/lever-pulled" } ] } ] }"#;
+
+const LEVER_TIMED_GATE: &str = r#"{ "timed_gates": [
+  { "id": "timed/portcullis", "gate": "anchor/door", "open_ticks": 40, "closed_ticks": 40,
+    "disarm": { "via": "anchor/lever", "sets_flag": "flag/lever-pulled" } } ] }"#;
+
+/// Places, by index into the green map's `nodes`.
+const HALL: usize = 1;
+const VAULT: usize = 3;
+
+/// **A trigger's `set-flag` opens a way.** The lever stands in `hall`, on the
+/// near side of the door it opens, and the critical path walks past it: every
+/// place is reached and the path holds. Before the graph read the flow model's
+/// producer table this was `DW0816` (the vault unreached) and `DW0817` (the
+/// door step), because only objective-bound flags were ever credited.
+#[test]
+fn dw0816_a_trigger_on_the_near_side_opens_the_door() {
+    let got = reachability_of(&lever_campaign(HALL, LEVER_TRIGGER));
+    assert!(got.is_empty(), "{got:?}");
+}
+
+/// **The perturbation: put the lever behind the door it opens.** The identical
+/// campaign with the station moved into `vault` — the trigger is still a
+/// producer, but no body reaches it before the door, so the refusal stands.
+#[test]
+fn dw0816_a_trigger_behind_its_own_door_still_refuses() {
+    let got = reachability_of(&lever_campaign(VAULT, LEVER_TRIGGER));
+    assert!(got.contains(&"DW0816".to_string()), "{got:?}");
+    assert!(got.contains(&"DW0817".to_string()), "{got:?}");
+}
+
+/// The same pair for a field producer the table carries rather than an effect
+/// list: a timed gate's `disarm.sets_flag`, disarmed at the lever.
+#[test]
+fn dw0816_a_timed_gate_disarm_is_credited_where_it_is_disarmed() {
+    let got = reachability_of(&lever_campaign(HALL, LEVER_TIMED_GATE));
+    assert!(got.is_empty(), "{got:?}");
+    let got = reachability_of(&lever_campaign(VAULT, LEVER_TIMED_GATE));
+    assert!(got.contains(&"DW0816".to_string()), "{got:?}");
+}
+
+/// **A producer's own gate is honoured.** The lever only works once
+/// `flag/oiled` is set, and nothing sets it: the lever is a producer whose
+/// chain cannot fire, so the door stays shut.
+#[test]
+fn dw0816_a_trigger_whose_own_gate_is_never_met_opens_nothing() {
+    let gated = LEVER_TRIGGER.replace(
+        r#""once": true,"#,
+        r#""once": true, "requires_flags": ["flag/oiled"],"#,
+    );
+    assert_ne!(gated, LEVER_TRIGGER, "the replacement matched");
+    let got = reachability_of(&lever_campaign(HALL, &gated));
+    assert!(got.contains(&"DW0816".to_string()), "{got:?}");
+}
+
+/// The gallery's site-plan overlay, read the way `site_plan_edit_script.rs`
+/// reads it: the primary with every document the overlay replaces taken from
+/// the overlay. `quests` may be patched before it is parsed.
+fn gallery_site_plan(patch_quests: impl Fn(&mut Value)) -> delvewright_dsl::Campaign {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap()
+        .join("gallery");
+    let overlay = root.join("overlays/site-plan");
+    let read = |name: &str| -> String {
+        let from = if overlay.join(name).is_file() {
+            overlay.join(name)
+        } else {
+            root.join(name)
+        };
+        std::fs::read_to_string(from).unwrap()
+    };
+    let mut quests: Value = serde_json::from_str(&read("quests.json")).unwrap();
+    patch_quests(&mut quests);
+    let raw = RawCampaign {
+        world: read("world.json"),
+        npcs: read("npcs.json"),
+        classes: read("classes.json"),
+        quest_plan: read("quest-plan.json"),
+        quests: serde_json::to_string(&quests).unwrap(),
+        dialogue: read("dialogue.json"),
+        world_edits: Some(read("world-edits.json")),
+        geometry_brief: Some(read("geometry-brief.json")),
+        layout_graph: Some(read("layout-graph.json")),
+        site_plan: Some(read("site-plan.json")),
+        detail_plan: Some(read("detail-plan.json")),
+        design: Some(read("design.json")),
+    };
+    delvewright_dsl::parse_campaign(&raw).expect("the gallery's site-plan point parses")
+}
+
+/// **The gallery element.** The site-plan overlay's east door is a barred way
+/// gated on `flag/east-door-drawn`, which only `shortcut/east-door`'s
+/// `on_unlock` sets, pulled at `anchor/unlock-east-door` on the far hall's side.
+/// The graph credits that row at the far hall, so the closure holds the flag;
+/// take the `set-flag` out of the shortcut and it does not.
+#[test]
+fn the_gallery_east_door_is_opened_by_its_shortcut_unlock() {
+    use delvewright_dsl::layout::{Closure, Grant, Grants};
+    let flag = Grant::Flag("flag/east-door-drawn".to_string());
+    let c = gallery_site_plan(|_| {});
+    let graph = &c.layout_graph.as_ref().unwrap().content;
+    assert_eq!(
+        graph
+            .place_of("anchor/unlock-east-door")
+            .map(|n| n.0.as_str()),
+        Some("node/far-hall")
+    );
+    let closure = Closure::run(graph, &Grants::of(&c, graph));
+    assert!(closure.obtained.contains(&flag), "{:?}", closure.obtained);
+
+    let c = gallery_site_plan(|q| {
+        let unlock = q["content"]["shortcuts"][0]["on_unlock"]
+            .as_array_mut()
+            .unwrap();
+        let before = unlock.len();
+        unlock.retain(|e| e["type"] != "set-flag");
+        assert_eq!(unlock.len(), before - 1, "exactly the one set-flag removed");
+    });
+    let graph = &c.layout_graph.as_ref().unwrap().content;
+    let closure = Closure::run(graph, &Grants::of(&c, graph));
+    assert!(!closure.obtained.contains(&flag), "{:?}", closure.obtained);
+}

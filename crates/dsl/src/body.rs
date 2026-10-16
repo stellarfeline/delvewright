@@ -115,6 +115,61 @@ pub struct BodyWatch {
     pub within: std::num::NonZeroU32,
 }
 
+/// The reach, in blocks, of the watch a body a player can talk to carries when
+/// it declares none: every stage-2 NPC whose dialogue tree exists watches the
+/// nearest player within this many blocks unless its `watch` says otherwise
+/// ([`NpcWatch`]).
+///
+/// **Cited**: the game's own look-at-a-player behaviour, `LookAtPlayerGoal`,
+/// is constructed with a look distance of `8.0F` at 22 of the 37 three-argument
+/// sites in the pinned 1.21.11 server jar (inner jar sha256 `ec47239a…fcebc`,
+/// read with `javap -c` under the pinned mappings, sha1 `5621e925…5955`) —
+/// the distance at which a vanilla mob most often turns to look at a player.
+/// It is the same reach the gallery's own watcher (`npc/warden`) declares, and
+/// well beyond the interaction reach (3 blocks), so the body is turned to the
+/// party before they come close enough to talk.
+pub const DEFAULT_WATCH_WITHIN: u32 = 8;
+
+/// **A stage-2 NPC's `watch`** (spec-0101): a [`BodyWatch`], or the keyword
+/// `"none"`.
+///
+/// A body a player can talk to watches the nearest player by default
+/// ([`DEFAULT_WATCH_WITHIN`]), because a character that keeps its back to the
+/// person talking to it reads wrong. A scene whose mood needs a body that does
+/// not turn declares `"none"`: the body holds its anchor's facing (and each
+/// walk's arrival turn), and the compiler judges that facing from every cell a
+/// player can stand on within interaction reach of it (`DW1025`).
+///
+/// The keyword belongs to the NPC class alone because the default does: a
+/// stage-5 actor is never talked to and never watches unless it declares a
+/// [`BodyWatch`], so the actor's `watch` is the bare [`BodyWatch`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum NpcWatch {
+    /// Watch as declared.
+    Watches(BodyWatch),
+    /// `"none"`: never turn to a player; hold the declared facing.
+    Holds(WatchNone),
+}
+
+impl NpcWatch {
+    /// The declared watch, if this is one.
+    pub fn watch(&self) -> Option<&BodyWatch> {
+        match self {
+            NpcWatch::Watches(w) => Some(w),
+            NpcWatch::Holds(_) => None,
+        }
+    }
+}
+
+/// The keyword form of [`NpcWatch`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum WatchNone {
+    /// The body never turns to a player.
+    None,
+}
+
 /// Whom a watching body faces ([`BodyWatch::who`]): the bare keyword
 /// `"nearest"`, or a class filter. Untagged, and each variant's payload is its
 /// own type, so a mistyped key fails the schema instead of matching the wrong
@@ -321,11 +376,22 @@ impl<'a> BodyRef<'a> {
         }
     }
 
-    /// This body's watch declaration (spec-0101), if it carries one.
+    /// This body's declared watch (spec-0101), if it declares one. An NPC's
+    /// `"none"` and an NPC's default watch are not declarations of a watch:
+    /// [`body_watch_sites`] is where the default is resolved.
     pub fn watch(self) -> Option<&'a BodyWatch> {
         match self {
-            BodyRef::Npc(n) => n.watch.as_ref(),
+            BodyRef::Npc(n) => n.watch.as_ref().and_then(NpcWatch::watch),
             BodyRef::Actor(a) => a.watch.as_ref(),
+        }
+    }
+
+    /// Whether this body declares that it never turns to a player
+    /// (`"watch": "none"`, an NPC's alone — see [`NpcWatch`]).
+    pub fn holds_its_facing(self) -> bool {
+        match self {
+            BodyRef::Npc(n) => matches!(n.watch, Some(NpcWatch::Holds(_))),
+            BodyRef::Actor(_) => false,
         }
     }
 
@@ -446,32 +512,69 @@ pub fn body_skin_sites(c: &crate::envelope::Campaign) -> Vec<BodySkinSite<'_>> {
         .collect()
 }
 
-/// A body that carries a [`BodyWatch`] declaration, with the JSON pointer at it.
+/// A body that watches (spec-0101), by declaration or by default, with the
+/// JSON pointer at its `watch` field.
 #[derive(Clone, Debug)]
 pub struct BodyWatchSite<'a> {
     /// Which object class declared it, and the object itself.
     pub body: BodyRef<'a>,
-    /// JSON pointer at the `watch` field, for a diagnostic path.
+    /// JSON pointer at the `watch` field (where it is, or where it would be
+    /// written), for a diagnostic path.
     pub path: String,
-    /// The declaration.
-    pub watch: &'a BodyWatch,
+    /// The watch: the declaration, or the default.
+    pub watch: BodyWatch,
+    /// `true` when the body declares this watch; `false` when it is the
+    /// default a body a player can talk to carries ([`DEFAULT_WATCH_WITHIN`]).
+    pub declared: bool,
 }
 
-/// Every body in the campaign that DECLARES a watch, in stage order (spec-0101).
+/// The watch a body carries when it declares none: `nearest` within
+/// [`DEFAULT_WATCH_WITHIN`] for a stage-2 NPC a player can talk to (one whose
+/// stage-6 dialogue tree exists), nothing for any other body.
+pub fn default_watch(c: &crate::envelope::Campaign, body: BodyRef<'_>) -> Option<BodyWatch> {
+    match body {
+        BodyRef::Npc(n)
+            if n.watch.is_none() && c.dialogue.content.tree_for(n.id.as_str()).is_some() =>
+        {
+            Some(BodyWatch {
+                who: WatchWho::Nearest(WatchNearest::Nearest),
+                within: std::num::NonZeroU32::new(DEFAULT_WATCH_WITHIN)
+                    .expect("the default reach is not zero"),
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Every body in the campaign that WATCHES, in stage order (spec-0101): each
+/// body that declares a watch, and each stage-2 NPC a player can talk to that
+/// declares no `watch` at all ([`default_watch`]). An NPC declaring `"none"`
+/// is not here.
 ///
 /// The one enumeration of the watchers, shared by the class refusal
-/// (`DW0996`), the drawability proof (`DW0997`), the emitter (`watch_tick`, the
-/// summon tag, the walk-driver yield), the generated PackTests and the bot's
-/// record — a filter over [`body_sites`], so a third body class is a compile
-/// error at every consumer until it says what it does with a watch.
+/// (`DW0996`), the drawability proof (`DW0997`, which judges declarations
+/// only), the emitter (`watch_tick`, the summon tag, the walk-driver yield),
+/// the generated PackTests and the bot's record — a filter over
+/// [`body_sites`], so a third body class is a compile error at every consumer
+/// until it says what it does with a watch.
 pub fn body_watch_sites(c: &crate::envelope::Campaign) -> Vec<BodyWatchSite<'_>> {
     body_sites(c)
         .into_iter()
         .filter_map(|s| {
-            s.body.watch().map(|w| BodyWatchSite {
+            let path = format!("{}/watch", s.path);
+            if let Some(w) = s.body.watch() {
+                return Some(BodyWatchSite {
+                    body: s.body,
+                    path,
+                    watch: w.clone(),
+                    declared: true,
+                });
+            }
+            default_watch(c, s.body).map(|w| BodyWatchSite {
                 body: s.body,
-                path: format!("{}/watch", s.path),
+                path,
                 watch: w,
+                declared: false,
             })
         })
         .collect()

@@ -261,9 +261,12 @@ fn play_sound_and_art_emitted() {
         all.contains("playsound minecraft:ui.toast.challenge_complete master @a"),
         "anchor play-sound emitted with positioned targets"
     );
+    // A `players` sound plays at each member of the party, to that member.
     assert!(
-        all.contains("playsound minecraft:entity.experience_orb.pickup master @a"),
-        "players play-sound emitted"
+        all.contains(
+            "execute as @a at @s run playsound minecraft:entity.experience_orb.pickup master @s"
+        ),
+        "players play-sound emitted at each listener"
     );
     assert!(
         all.contains("delve:art"),

@@ -4,6 +4,7 @@ import { EventEmitter } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Bot } from "mineflayer";
 import { within } from "./bounded.ts";
+import { GameTimeStoppedError, STOPPED_CLOCK_MS } from "../src/game-time.ts";
 import { MineflayerExecutor, completionWindowMs, respawnLanded, type BotConfig } from "../src/executor.ts";
 import { BotDeathError } from "../src/death.ts";
 import type { AssertCompleteStep } from "../src/critical-path.ts";
@@ -1542,6 +1543,21 @@ class InteractFakeBot extends FakeBot {
     },
   };
   setControlState(): void {}
+  /**
+   * A flat floor: stone below y = 64, air from it up. The crosshair's pick ray
+   * meets blocks as the client's does, so a fake that answers stone everywhere
+   * would bury every eye and every target in rock.
+   */
+  override blockAt(pos?: { x: number; y: number; z: number }): {
+    name: string;
+    boundingBox: string;
+    shapes: number[][];
+  } | null {
+    if (!this.chunkLoaded) return null;
+    return pos !== undefined && Math.floor(pos.y) < 64
+      ? { name: "stone", boundingBox: "block", shapes: [[0, 0, 0, 1, 1, 1]] }
+      : { name: "air", boundingBox: "empty", shapes: [] };
+  }
   async equip(item: { name: string }, destination: string): Promise<void> {
     this.calls.push(`equip(${item.name},${destination})`);
   }
@@ -3493,8 +3509,8 @@ class BonfireFakeBot extends CombatFakeBot {
   /** The affordance is an entity like any other, so it lives in `entities`.
    * Re-published after every re-seat: a bonfire is rested at, never used up.
    *
-   * The dimensions are the real ones — the compiler summons every affordance as
-   * `minecraft:interaction` with `width:1.0f,height:2.0f` — because the crosshair
+   * The dimensions are a real box's — a `minecraft:interaction` one block across
+   * and two tall on its cell — because the crosshair
    * acquisition that now guards `rest` is ray-vs-hitbox: a stub with no box is a
    * body the ray cannot meet, and a fake that cannot be aimed at proves nothing
    * about a fire that can. */
@@ -4734,6 +4750,70 @@ test("a strike trigger step ATTACKS the target's hitbox and passes on the fired 
   );
 });
 
+/**
+ * A trigger whose prop is a full cube standing in the box's own cell, with an
+ * authored block over it in the head cell — the shape that made a prop take many
+ * presses before one registered. The crosshair's ray meets blocks now, so the
+ * box only wins where it is strictly nearer than both.
+ */
+class PropTriggerFakeBot extends TriggerFakeBot {
+  override blockAt(pos?: { x: number; y: number; z: number }): {
+    name: string;
+    boundingBox: string;
+    shapes: number[][];
+  } | null {
+    if (
+      pos !== undefined &&
+      Math.floor(pos.x) === 1 &&
+      Math.floor(pos.z) === 0 &&
+      (Math.floor(pos.y) === 64 || Math.floor(pos.y) === 65)
+    ) {
+      return { name: "barrel", boundingBox: "block", shapes: [[0, 0, 0, 1, 1, 1]] };
+    }
+    return super.blockAt(pos);
+  }
+  /** The box as the server describes it: a `0 x 0` type, its size in entity data. */
+  sized(width: number, height: number, floor: number): void {
+    const metadata: unknown[] = [];
+    metadata[8] = width;
+    metadata[9] = height;
+    this.entities[77] = {
+      id: 77,
+      name: "interaction",
+      width: 0,
+      height: 0,
+      metadata,
+      position: new FakeVec3(1.5, floor, 0.5),
+    };
+  }
+}
+
+test("a flush box over a full prop is never acquired: the block takes every click", async () => {
+  const bot = new PropTriggerFakeBot();
+  bot.watches = "interaction";
+  bot.sized(1.0, 2.0, 64);
+  const executor = attach(bot);
+  executor.useCampaign("vesperhold");
+  await assert.rejects(
+    executor.fireTrigger({ ...STRIKE_STEP, on: "use" }),
+    /block barrel at \[1, 6[45], 0\][\s\S]*strictly nearer/,
+  );
+  assert.ok(!bot.calls.includes("activateEntity(77)"), "nothing was clicked");
+});
+
+test("the rule's box, one margin past the prop's faces, is acquired and clicked", async () => {
+  const bot = new PropTriggerFakeBot();
+  bot.watches = "interaction";
+  bot.sized(1.02, 2.02, 63.99);
+  const executor = attach(bot);
+  executor.useCampaign("vesperhold");
+  await within(
+    "executor.fireTrigger({ ...STRIKE_STEP, on: \"use\" })",
+    executor.fireTrigger({ ...STRIKE_STEP, on: "use" }),
+  );
+  assert.ok(bot.calls.includes("activateEntity(77)"), `${bot.calls.join(", ")}`);
+});
+
 test("a use trigger step RIGHT-CLICKS the hitbox instead of hitting it", async () => {
   const bot = new TriggerFakeBot();
   bot.watches = "interaction";
@@ -5646,6 +5726,29 @@ function serve(bot: FakeBot): FakeGameServer {
   (bot as unknown as { chat: (m: string) => void }).chat = (m: string) => server.answer(m);
   return server;
 }
+
+test("a game-tick wait passes on a ticking clock and reds, named, on a frozen one that keeps answering", async () => {
+  const bot = new FakeBot();
+  const server = serve(bot);
+  const executor = attach(bot);
+  const passed = await within("waitForGameTicks(ticking)", executor.waitForGameTicks(2, "the watch line's tick"));
+  assert.ok(passed.tick >= 1_002, `passed at ${passed.tick}`);
+  // The perturbation toward a stopped server: the clock no longer moves, and
+  // every reading is still answered at once.
+  server.perReading = 0;
+  const t0 = performance.now();
+  await within(
+    "waitForGameTicks(frozen)",
+    assert.rejects(
+      () => executor.waitForGameTicks(2, "the watch line's tick"),
+      (err: unknown) =>
+        err instanceof GameTimeStoppedError &&
+        /the watch line's tick: the game clock stopped at tick \d+, 0 of 2 game tick\(s\) in/.test(err.message),
+    ),
+    STOPPED_CLOCK_MS + 20_000,
+  );
+  assert.ok(performance.now() - t0 >= STOPPED_CLOCK_MS, "it reds only after the window of answers");
+});
 
 test("a predicted shrieker whose 3007 is never heard fails the step; heard, it passes", async () => {
   const bot = new FakeBot();

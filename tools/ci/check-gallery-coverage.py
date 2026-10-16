@@ -857,12 +857,22 @@ def read_build_ledgers(out: Path) -> tuple[dict, list[str]]:
     # …and a path that exercises a loop with no loop ledger beside it is a build
     # that crossed a slab nothing judged.
     path = out / "critical-path.json"
-    if path.is_file() and "loop-gate.json" not in ledgers:
-        steps = json.loads(path.read_text()).get("steps") or []
+    steps = (json.loads(path.read_text()).get("steps") or []) if path.is_file() else []
+    if "loop-gate.json" not in ledgers:
         if any(isinstance(st, dict) and st.get("action") == "loop" for st in steps):
             zeroes.append(
                 "loop-gate.json: absent beside a critical path that exercises a loop — the "
                 "slab it crosses was never judged"
+            )
+    # …and a path that performs a trigger with no DW1044 ledger beside it is a
+    # build whose walked-past proof was never written. Its zero — no trigger
+    # judged — is the generic `examined` row above: `threshold-gate.json` states
+    # `judged` also as `examined`.
+    if "threshold-gate.json" not in ledgers:
+        if any(isinstance(st, dict) and st.get("action") == "trigger" for st in steps):
+            zeroes.append(
+                "threshold-gate.json: absent beside a critical path that performs a trigger — "
+                "no walk to the step that needs one was judged (DW1044)"
             )
     return ledgers, zeroes
 

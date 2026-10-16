@@ -23,7 +23,7 @@ use delvec::compiler::registry::{
 /// A private, mutable copy of the prefab library (the real content repo is
 /// read-only for tests).
 fn prefab_copy(tag: &str) -> std::path::PathBuf {
-    let tmp = std::env::temp_dir().join(format!("dw-registry-load-{tag}"));
+    let tmp = std::env::temp_dir().join(format!("dw-registry-load-{}-{tag}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     common::copy_dir_all(&common::prefabs_dir(), &tmp);
     tmp
@@ -246,7 +246,8 @@ fn syntax_garbage_and_a_stray_document_yield_dw0346() {
 #[test]
 fn a_campaign_builds_against_a_library_one_key_newer_than_this_delvec() {
     let tmp = library_with_a_newer_key("cli");
-    let out_dir = std::env::temp_dir().join("dw-registry-load-cli-out");
+    let out_dir =
+        std::env::temp_dir().join(format!("dw-registry-load-cli-out-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&out_dir);
 
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))

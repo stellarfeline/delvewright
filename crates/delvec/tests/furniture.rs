@@ -132,7 +132,9 @@ fn hall_meta(s: &Structure, table: Table, declared: bool) -> serde_json::Value {
             "block": "minecraft:iron_bars"
         },
         "anchor/exit": { "pos": EXIT },
-        "anchor/table-top": { "pos": TABLE_TOP_CELL, "facing": "south" },
+        // Faces west, toward the door the party comes in by: a body posted here is
+        // talked to, and one facing away from the approach is `DW1025`.
+        "anchor/table-top": { "pos": TABLE_TOP_CELL, "facing": "west" },
         "anchor/porter": { "pos": [3, 1, 4], "facing": "south" },
     });
     if declared {

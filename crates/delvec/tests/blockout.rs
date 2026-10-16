@@ -1464,7 +1464,7 @@ fn variant(
     edit: impl FnOnce(&mut serde_json::Value),
     heightmap: Option<&dyn Fn(i64, i64) -> i64>,
 ) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("dw-place-shell-{tag}"));
+    let dir = std::env::temp_dir().join(format!("dw-place-shell-{}-{tag}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(&fixture_dir(), &dir);
     if let Some(h) = heightmap {
@@ -1884,7 +1884,10 @@ fn the_ring_is_the_terrain_and_a_door_stands_on_its_sill() {
 /// `tag`: the materialisation deletes and regenerates its directory, so two
 /// tests sharing one would delete each other's generator output mid-write.
 fn gallery_site_plan(tag: &str) -> Campaign {
-    let dir = std::env::temp_dir().join(format!("dw-place-shell-gallery-site-plan-{tag}"));
+    let dir = std::env::temp_dir().join(format!(
+        "dw-place-shell-gallery-site-plan-{}-{tag}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     common::gallery_site_plan_at(&dir);
     common::campaign_at(&dir)
@@ -2571,5 +2574,90 @@ fn an_interior_overview_stands_over_a_hung_place_over_its_eye() {
     assert!(
         pos(&cam, 1) > lid as f64,
         "the eye is over the hung canopy's lid (y {lid}): {cam}"
+    );
+}
+
+/// **The ground goes down before any template** (`DW1002`'s write-sequence
+/// arm): the derived mass is written by the ground steps, gated on its chunks
+/// and run before `place_all`, in the order the compile-time model applies it
+/// (`assembled::placed_blocks`) — never by the world build, after the
+/// templates, where a template's falling block placed over the mass's air
+/// falls and a later write turns it into an item.
+#[test]
+fn the_mass_is_written_before_any_template() {
+    use delvec::compiler::commands::CommandTree;
+    use delvec::compiler::emit;
+    let c = campaign();
+    let reg = prefabs();
+    let plan = Plan::build(&c, &reg).expect("the blockout fixture plans");
+    let mass: Vec<String> = plan
+        .areas
+        .iter()
+        .flat_map(|a| a.mass.iter())
+        .map(|m| {
+            format!(
+                "fill {} {} {} {} {} {} {}",
+                m.from[0], m.from[1], m.from[2], m.to[0], m.to[1], m.to[2], m.block
+            )
+        })
+        .collect();
+    assert!(!mass.is_empty(), "the fixture derives a mass");
+    let structures = common::plan_structures_with_trap_triggers(&plan, &common::prefabs_dir());
+    let out = emit::build(
+        &plan,
+        &BTreeMap::new(),
+        &structures,
+        &CommandTree::v1_21_11(),
+        &reg,
+        None,
+        &BTreeMap::new(),
+    )
+    .expect("the blockout fixture builds");
+    let ns = &plan.namespace;
+    let body = |name: &str| -> String {
+        out.get(&format!("datapack/data/{ns}/function/{name}.mcfunction"))
+            .map(|b| String::from_utf8(b.clone()).unwrap())
+            .unwrap_or_default()
+    };
+    // Every ground step's lines, in order.
+    let mut ground: Vec<String> = Vec::new();
+    let mut k = 0;
+    loop {
+        let b = body(&delvec::compiler::chain::ground_step_fn(k));
+        if b.is_empty() {
+            break;
+        }
+        ground.extend(
+            b.lines()
+                .filter(|l| l.starts_with("fill "))
+                .map(str::to_string),
+        );
+        k += 1;
+    }
+    assert_eq!(
+        ground, mass,
+        "the ground steps write the mass, whole and in order"
+    );
+    assert!(body("setup").contains("scoreboard players set #placed dw.sys 3"));
+    let tick = body("tick");
+    let verify = tick.find(&format!(
+        "run function {ns}:{}",
+        delvec::compiler::chain::GROUND_VERIFY_FN
+    ));
+    let place = tick.find(&format!("run function {ns}:place_all"));
+    assert!(
+        matches!((verify, place), (Some(v), Some(p)) if v < p),
+        "the tick gates the ground before the placement:\n{tick}"
+    );
+    let last = body(&delvec::compiler::chain::ground_step_fn(k - 1));
+    assert!(
+        last.trim_end()
+            .ends_with("scoreboard players set #placed dw.sys 0"),
+        "the last ground step starts the placement:\n{last}"
+    );
+    let build = body("world_build");
+    assert!(
+        mass.iter().all(|m| !build.contains(m.as_str())),
+        "the world build writes none of the mass"
     );
 }

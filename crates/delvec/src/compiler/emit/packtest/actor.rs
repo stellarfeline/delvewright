@@ -399,7 +399,13 @@ pub(super) fn emit_v06_actor_packtests(
         for (from, to, block) in &sealed {
             b.push(format!(
                 "fill {} {} {} {} {} {} minecraft:air replace {}",
-                from[0], from[1], from[2], to[0], to[1], to[2], block
+                from[0],
+                from[1],
+                from[2],
+                to[0],
+                to[1],
+                to[2],
+                replace_filter(block)
             ));
         }
         write("v06_arrive_handoff", b);

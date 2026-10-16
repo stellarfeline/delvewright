@@ -968,7 +968,9 @@ pub fn check_danger_is_visible(
                      refuses it: no cell of the keep-out may be floor the party walks unless the \
                      block under or in it is one of `shown_by`. Lower the volume so its \
                      keep-out's top course lies UNDER the floor (a pit's volume sits at the \
-                     pit's bottom, on an anchor at the pit's bottom); draw its `extent` in so \
+                     pit's bottom, on an anchor at the pit's bottom — in a detailed place, a \
+                     layout-graph station nothing else names, bound to the piece's anchor \
+                     there, which may stand in a `no_body` region); draw its `extent` in so \
                      the keep-out stops one cell short of the floor; or author one of the \
                      blocks vanilla hurts a body with under those cells and declare it in \
                      `shown_by`. Do NOT repair this by marking the floor unwalkable — the \

@@ -93,6 +93,9 @@ pub struct Watcher {
     pub class_tag: Option<String>,
     /// The JSON pointer at the declaration.
     pub path: String,
+    /// `true` when the body declares its watch; `false` for the default a body
+    /// a player can talk to carries (`dsl::DEFAULT_WATCH_WITHIN`).
+    pub declared: bool,
 }
 
 impl Watcher {
@@ -191,13 +194,14 @@ pub fn npc_home(plan: &Plan, npc: &delvewright_dsl::Npc) -> ([i32; 3], i32) {
     }
 }
 
-/// Every watching body, in stage order, resolved. A body whose anchor does not
+/// Every watching body, in stage order, resolved — each declared watch and each
+/// default one (`dsl::body_watch_sites`). A body whose anchor does not
 /// resolve is skipped (`DW0325`/`DW0345` own dangling references); a class
 /// watch naming an undeclared class is skipped (`DW0996` refused it).
 pub fn watchers(plan: &Plan) -> Vec<Watcher> {
     let mut out = Vec::new();
     for site in delvewright_dsl::body_watch_sites(plan.campaign) {
-        let w = site.watch;
+        let w = &site.watch;
         let class_tag = match w.who.class() {
             None => None,
             Some(c) => match plan.classes.iter().find(|k| k.class_id == c.as_str()) {
@@ -242,6 +246,7 @@ pub fn watchers(plan: &Plan) -> Vec<Watcher> {
             within: w.within.get(),
             class_tag,
             path: site.path.clone(),
+            declared: site.declared,
         });
     }
     out
@@ -335,9 +340,14 @@ pub struct WatchBinding {
 }
 
 impl WatchBinding {
-    /// Watchers declared.
-    pub fn declared(&self) -> usize {
+    /// Watchers, declared and default.
+    pub fn watchers(&self) -> usize {
         self.records.len()
+    }
+
+    /// Watchers that carry the default watch of a body a player can talk to.
+    pub fn by_default(&self) -> usize {
+        self.records.iter().filter(|r| !r.watcher.declared).count()
     }
 
     /// Watchers some walked cell can draw.
@@ -345,9 +355,22 @@ impl WatchBinding {
         self.records.iter().filter(|r| r.drawable()).count()
     }
 
-    /// Watchers refused (`DW0997`).
+    /// Declared watchers no walked cell can draw (`DW0997`). A default watch
+    /// nobody can draw is not a declaration, and is counted in
+    /// [`Self::undrawn_defaults`] instead.
     pub fn refused(&self) -> usize {
-        self.declared() - self.drawable()
+        self.records
+            .iter()
+            .filter(|r| r.watcher.declared && !r.drawable())
+            .count()
+    }
+
+    /// Default watchers no walked cell can draw: emitted, never refused.
+    pub fn undrawn_defaults(&self) -> usize {
+        self.records
+            .iter()
+            .filter(|r| !r.watcher.declared && !r.drawable())
+            .count()
     }
 
     /// Drawable watchers no drawable cell turns by the observable margin.
@@ -361,11 +384,15 @@ impl WatchBinding {
     /// The binding line every build prints, zeroes included.
     pub fn line(&self) -> String {
         format!(
-            "watch binding: {} watcher(s) declared, over {} walked cell(s), {} drawable, {} refused, {} unobservable",
-            self.declared(),
+            "watch binding: {} watcher(s) ({} declared, {} by default), over {} walked cell(s), \
+             {} drawable, {} refused, {} default(s) nobody can draw, {} unobservable",
+            self.watchers(),
+            self.watchers() - self.by_default(),
+            self.by_default(),
             self.population,
             self.drawable(),
             self.refused(),
+            self.undrawn_defaults(),
             self.unobservable()
         )
     }
@@ -429,7 +456,10 @@ impl WatchBinding {
     pub fn to_json(&self) -> Value {
         json!({
             "binding": {
-                "declared": self.declared(),
+                "watchers": self.watchers(),
+                "declared": self.watchers() - self.by_default(),
+                "by_default": self.by_default(),
+                "undrawn_defaults": self.undrawn_defaults(),
                 "population": self.population,
                 "drawable": self.drawable(),
                 "refused": self.refused(),
@@ -482,7 +512,7 @@ pub fn prove(plan: &Plan, population: &BTreeSet<[i32; 3]>) -> (WatchBinding, Vec
                 test = Some((cell, yaw, turn));
             }
         }
-        if drawable_cells == 0 {
+        if drawable_cells == 0 && w.declared {
             let near = match nearest {
                 Some((c, d)) => format!(
                     "the nearest walked cell is [{}, {}, {}], {d:.2} blocks from its feet — \
@@ -518,7 +548,7 @@ pub fn prove(plan: &Plan, population: &BTreeSet<[i32; 3]>) -> (WatchBinding, Vec
 }
 
 /// Whether `cell` lies inside any declared killing volume.
-fn in_lethal_volume(plan: &Plan, cell: [i32; 3]) -> bool {
+pub(crate) fn in_lethal_volume(plan: &Plan, cell: [i32; 3]) -> bool {
     plan.lethal_volumes.iter().any(|v| {
         let (lo, hi) = v.region;
         (0..3).all(|i| cell[i] >= lo[i].min(hi[i]) && cell[i] <= lo[i].max(hi[i]))
@@ -548,6 +578,42 @@ mod tests {
         assert!((pitch(-1.0, 1.0) - 45.0).abs() < 1e-4);
         assert_eq!(x_rotation_range(0.0, 1.0), "-1.00..1.00");
         assert_eq!(x_rotation_range(-26.565_051, 1.0), "-27.57..-25.57");
+    }
+
+    fn record(declared: bool, drawable_cells: usize) -> WatchRecord {
+        WatchRecord {
+            watcher: Watcher {
+                id: "npc/x".into(),
+                class: "npc",
+                tag: "dw_npc_x".into(),
+                selector: "tag=dw_npc_x,tag=dw_npc".into(),
+                cell: [0, 64, 0],
+                feet: [0.5, 64.0, 0.5],
+                home_yaw: 0.0,
+                who: "nearest".into(),
+                within: 8,
+                class_tag: None,
+                path: "/content/npcs/0/watch".into(),
+                declared,
+            },
+            drawable_cells,
+            nearest: None,
+            test: None,
+            stands: vec![[0.5, 64.0, 0.5]],
+        }
+    }
+
+    #[test]
+    fn only_a_declared_watch_nobody_can_draw_is_refused() {
+        let b = WatchBinding {
+            population: 1,
+            records: vec![record(true, 0), record(false, 0), record(false, 3)],
+        };
+        assert_eq!(b.watchers(), 3);
+        assert_eq!(b.by_default(), 2);
+        assert_eq!(b.refused(), 1);
+        assert_eq!(b.undrawn_defaults(), 1);
+        assert_eq!(b.drawable(), 1);
     }
 
     #[test]

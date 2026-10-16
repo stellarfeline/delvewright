@@ -1,0 +1,44 @@
+{
+  "code": "DW1011",
+  "patch": [
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/-",
+      "value": {
+        "edits": [
+          {
+            "name": "region/closet-front",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                10,
+                5,
+                13
+              ],
+              "min": [
+                9,
+                3,
+                13
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "region": "region/closet-front",
+            "verb": "carve"
+          }
+        ],
+        "id": "batch/open-the-closet",
+        "note": "The front wall of the middle clocked door's closet, taken out after the piece is placed."
+      }
+    }
+  ],
+  "units": [],
+  "why": "A story gate the party walks round. The hall's dividing wall holds the story gate, `anchor/gate-main`, which the first quest opens and the second seals behind the party, and three doors on clocks, each open for part of every cycle from world load. Each clocked door opens into a closed closet on the near side, so a clocked door joins the far hall to its closet and to nothing else, and the story gate is the one way between the two halves. This edit carves the front wall out of the middle door's closet. Now a body walks from the near hall into the closet and through the clocked door whenever it is open, and reaches the far hall while the story gate is still shut, out of story order. The build refuses it naming the story gate, the configuration, the near-face and far-face cells and the walk round. It declares no unit: whether a shut gate separates its two sides depends on the geometry around the gate, not on a DSL field."
+}

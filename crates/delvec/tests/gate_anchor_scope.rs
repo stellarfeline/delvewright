@@ -240,7 +240,7 @@ fn with_prefabs<T>(
     f: impl FnOnce(&std::path::Path),
     then: impl FnOnce(&PrefabRegistry) -> T,
 ) -> T {
-    let tmp = std::env::temp_dir().join(format!("dw-gate-scope-{tag}"));
+    let tmp = std::env::temp_dir().join(format!("dw-gate-scope-{}-{tag}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     common::copy_dir_all(&common::prefabs_dir(), &tmp);
     f(&tmp);

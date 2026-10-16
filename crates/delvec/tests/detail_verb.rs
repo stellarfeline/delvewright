@@ -37,7 +37,7 @@ fn code(out: &Output) -> i32 {
 }
 
 fn tempdir(name: &str) -> PathBuf {
-    let p = std::env::temp_dir().join(format!("dw-detail-verb-{name}"));
+    let p = std::env::temp_dir().join(format!("dw-detail-verb-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
     p

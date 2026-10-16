@@ -417,8 +417,13 @@ fn critical_path_shape_and_commands() {
         "datapack/data/hello-world/function/campaign_complete.mcfunction",
     );
     assert!(complete.contains("scoreboard players set #party dw.campaign 1"));
+    // `@s` appears only as each member inside `execute as @a at @s`: the cue
+    // plays at every member of the party, to that member.
     assert!(
-        !complete.contains("@s"),
+        complete
+            .lines()
+            .filter(|l| l.contains("@s"))
+            .all(|l| l.starts_with("execute as @a at @s run ")),
         "campaign completion addresses the party, never one player: {complete}"
     );
     assert!(complete.contains("[dw:complete hello-world campaign]"));

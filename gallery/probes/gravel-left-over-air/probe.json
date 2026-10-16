@@ -1,0 +1,52 @@
+{
+  "code": "DW1002",
+  "patch": [
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/-",
+      "value": {
+        "edits": [
+          {
+            "name": "region/loose-gravel",
+            "shape": {
+              "frame": {
+                "kind": "piece-local",
+                "piece": 0,
+                "prefab": "prefab/gallery-hall"
+              },
+              "kind": "box",
+              "max": [
+                16,
+                4,
+                12
+              ],
+              "min": [
+                16,
+                4,
+                12
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:gravel",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/loose-gravel",
+            "verb": "fill"
+          }
+        ],
+        "id": "batch/leave-gravel-over-air",
+        "note": "A block of gravel in the near hall, three blocks over its floor."
+      }
+    }
+  ],
+  "units": [],
+  "why": "A block the load writes and the server does not keep where it is written. Gravel falls when the cell under it is one the pinned jar's `FallingBlock.isFree` calls free, and here the cell under it is air when the world build that writes it has run; the model settles it onto the floor, so the world the load ends in holds it there and the load arm finds nothing, but the server lets it fall as an entity, and any write that lands under a falling block turns it into an item on the ground (The Stranding's street gravel, 347 item entities). The build refuses it, naming the gravel's cell, the write that put it there and the air under it. It declares no unit: which block falls is the pinned game's rule over blocks a piece or an edit already writes, and states no DSL surface."
+}

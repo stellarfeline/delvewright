@@ -1807,7 +1807,7 @@ fn build_into(d: &Detailed, out: &Path) -> BTreeMap<String, Vec<u8>> {
 /// A scratch directory of this test's own, removed and recreated so a rerun
 /// never inherits the last run's files.
 fn tempdir(name: &str) -> PathBuf {
-    let p = std::env::temp_dir().join(format!("dw-detail-{name}"));
+    let p = std::env::temp_dir().join(format!("dw-detail-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
     p

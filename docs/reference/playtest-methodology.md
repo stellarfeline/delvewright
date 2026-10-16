@@ -250,6 +250,22 @@ never stood for by wall time: a server that falls behind stretches the game's
 spans, and one that catches up shrinks them. A predicted event not heard fails
 the step.
 
+**A game-tick wait fails only on a stopped clock.** Every wait for the server's
+game ticks (the watch line's tick, a pulse station's stand, the sculk tail) has
+no wall-clock budget; it fails, `GameTimeStoppedError`, only when the server
+keeps answering and its game time does not move (`GameClockWatch`,
+`harness/src/game-time.ts`). The judge sums, since the last reading at another
+tick, only the gaps of at most 500ms between consecutive answered readings (on
+a monotonic clock, so a host that steps its wall clock makes no gap), and
+the clock is stopped when that sum reaches 10s at one tick. A live game ticks at
+least once a second (the pinned server refuses a `/tick rate` below 1), so prompt
+answers sit on one tick for about a second at most; a slow server answers late
+or at a later tick; a host stall, of the server or the bot, is one long gap and
+adds nothing. A server that answers nothing fails the reading itself,
+`GameTimeUnreadError`. `harness/probe/clock-stopped.ts` drives the wait on a
+live server at the slowest legal rate (it passes) and under `/tick freeze` (it
+reds).
+
 **The binding count.** Every walk whose leg carries vibrations prints
 `[sculk] <walk>: N sensor(s) predicted, N heard; M shrieker(s) predicted, M heard (leg start at game tick T, B predicted device(s) busy then[; heard through game tick U])`.
 At the end of every run, passed or failed, `[sculk] darkness D, warden W`
@@ -428,7 +444,7 @@ the class is HERE and nothing this build carries would catch the defect again.
 | Verdict | What it means | Its real instance |
 |---|---|---|
 | `NO-GENERAL-FORM` | the instance was fixed, the class never built | rule 2's `DW0489`, eleven rounds late |
-| `MISSING-CHECK` | the ledger names a check this engine no longer has (absent from source, undocumented, or asserted by no test), or a stage document the COMPILER read that this gate holds no parsed copy of | four rows in the ledger's own first run named invariants that did not exist under those names |
+| `MISSING-CHECK` | the ledger names a check the engine that built this tree does not have (a `dw` code absent from the building engine's registry as its `manifest.json` `dw_codes` states it, or absent from source, undocumented, or asserted by no test), or a stage document the COMPILER read that this gate holds no parsed copy of | four rows in the ledger's own first run named invariants that did not exist under those names |
 | `UNBOUND` | the check matched zero objects, and objects that could have carried the defect are there — or nobody has measured whether they are | rule 1's coverage ledger, nineteen rounds |
 | `NO-SOURCE` | the campaign has no stage JSON, so nothing can be measured | a campaign directory holding design records and no stage documents |
 

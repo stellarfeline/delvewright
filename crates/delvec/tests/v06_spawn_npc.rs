@@ -147,7 +147,7 @@ fn deferred_npc_leaves_world_init_and_spawns_on_effect() {
 
     let setup = file(&out, SETUP_FINISH).expect("setup_finish emitted");
     assert!(
-        !setup.contains("Tags:[\"dw_npc\",\"dw_npc_keeper\"]"),
+        !setup.contains("Tags:[\"dw_npc\",\"dw_npc_keeper\""),
         "a deferred NPC must NOT be summoned at world init:\n{setup}"
     );
     assert!(
@@ -158,7 +158,7 @@ fn deferred_npc_leaves_world_init_and_spawns_on_effect() {
     let spawn = file(&out, SPAWN_NPC).expect("spawn_npc_keeper emitted for a deferred NPC");
     assert!(
         spawn.contains("summon minecraft:villager")
-            && spawn.contains("Tags:[\"dw_npc\",\"dw_npc_keeper\"]"),
+            && spawn.contains("Tags:[\"dw_npc\",\"dw_npc_keeper\""),
         "spawn-npc must summon the NPC body:\n{spawn}"
     );
     assert!(
@@ -210,7 +210,7 @@ fn non_deferred_npc_summoned_at_init_still_gets_a_called_entrance() {
     let setup = file(&out, SETUP_FINISH).expect("setup_finish emitted");
     assert!(
         setup.contains("summon minecraft:villager")
-            && setup.contains("Tags:[\"dw_npc\",\"dw_npc_keeper\"]"),
+            && setup.contains("Tags:[\"dw_npc\",\"dw_npc_keeper\""),
         "a normal NPC is still summoned at world init:\n{setup}"
     );
     let spawn = file(&out, SPAWN_NPC)

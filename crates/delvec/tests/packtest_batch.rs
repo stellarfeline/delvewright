@@ -251,6 +251,14 @@ fn is_runtime_holder(h: &str) -> bool {
         // same reason it surfaced now: with one template driving one class it was
         // unshared by accident.
         || h.starts_with("#kit_")
+        // The live-cutscene count. The pack's cutscene functions own it; a
+        // `watch_<body>` template saves it into its own `#wcl_<k>`, holds it at
+        // 1 across one real `tick` and puts it back, all inside one atomic
+        // function, and asserts only on its own suffixed holders. Same reading as
+        // the census answers above, and it surfaced the same way: with one
+        // watcher per suite it was unshared by accident, and a talkable NPC
+        // watching by default made two.
+        || h == "#cs_live"
 }
 
 /// Root cause of the round-6 island flake (`v06_spawn_idempotent` expected 1,

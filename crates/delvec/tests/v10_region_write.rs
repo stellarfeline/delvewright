@@ -24,7 +24,7 @@ fn hw(name: &str) -> String {
 
 /// A private copy of the prefab library with one extra `hello-room` point anchor.
 fn prefabs_with_anchor(name: &str, anchor: &str, pos: [i32; 3]) -> PathBuf {
-    let dir = std::env::temp_dir().join(name);
+    let dir = std::env::temp_dir().join(format!("{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(&common::prefabs_dir(), &dir);
     let path = dir.join("hello-room.json");

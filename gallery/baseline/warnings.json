@@ -1,4 +1,21 @@
 {
+  "carcass.en": [
+    {
+      "code": "DW0822",
+      "pointer": "/content/critical_path",
+      "stage": "layout-graph"
+    },
+    {
+      "code": "DW0813",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "layout-graph:"
+    },
+    {
+      "code": "DW0781",
+      "pointer": "/areas",
+      "stage": "world"
+    }
+  ],
   "easy.en": [
     {
       "code": "DW0527",
@@ -142,7 +159,7 @@
     },
     {
       "code": "DW0351",
-      "pointer": "/content/quests/0/on_complete/4",
+      "pointer": "/content/quests/0/on_complete/3",
       "stage": "quests"
     },
     {
@@ -151,14 +168,19 @@
       "stage": "quests"
     },
     {
-      "code": "DW0813",
-      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
-      "stage": "site-plan:"
+      "code": "DW0889",
+      "pointer": "/content/areas/area/annex",
+      "stage": "world"
     },
     {
-      "code": "DW0781",
-      "pointer": "/content/details",
-      "stage": "detail-plan"
+      "code": "DW0813",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "layout-graph:"
+    },
+    {
+      "code": "DW0498",
+      "pointer": "/content/areas/1",
+      "stage": "world"
     },
     {
       "code": "DW0353",
@@ -166,9 +188,9 @@
       "stage": "world-edits"
     },
     {
-      "code": "DW0822",
-      "pointer": "/content/boxes",
-      "stage": "site-plan"
+      "code": "DW0995",
+      "pointer": "pulse binding",
+      "stage": "build"
     },
     {
       "code": "DW0453",
@@ -324,7 +346,7 @@
     },
     {
       "code": "DW0351",
-      "pointer": "/content/quests/0/on_complete/4",
+      "pointer": "/content/quests/0/on_complete/3",
       "stage": "quests"
     },
     {
@@ -333,14 +355,19 @@
       "stage": "quests"
     },
     {
-      "code": "DW0813",
-      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
-      "stage": "site-plan:"
+      "code": "DW0889",
+      "pointer": "/content/areas/area/annex",
+      "stage": "world"
     },
     {
-      "code": "DW0781",
-      "pointer": "/content/details",
-      "stage": "detail-plan"
+      "code": "DW0813",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "layout-graph:"
+    },
+    {
+      "code": "DW0498",
+      "pointer": "/content/areas/1",
+      "stage": "world"
     },
     {
       "code": "DW0353",
@@ -348,9 +375,9 @@
       "stage": "world-edits"
     },
     {
-      "code": "DW0822",
-      "pointer": "/content/boxes",
-      "stage": "site-plan"
+      "code": "DW0995",
+      "pointer": "pulse binding",
+      "stage": "build"
     },
     {
       "code": "DW0453",
@@ -506,7 +533,7 @@
     },
     {
       "code": "DW0351",
-      "pointer": "/content/quests/0/on_complete/4",
+      "pointer": "/content/quests/0/on_complete/3",
       "stage": "quests"
     },
     {
@@ -515,14 +542,19 @@
       "stage": "quests"
     },
     {
-      "code": "DW0813",
-      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
-      "stage": "site-plan:"
+      "code": "DW0889",
+      "pointer": "/content/areas/area/annex",
+      "stage": "world"
     },
     {
-      "code": "DW0781",
-      "pointer": "/content/details",
-      "stage": "detail-plan"
+      "code": "DW0813",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "layout-graph:"
+    },
+    {
+      "code": "DW0498",
+      "pointer": "/content/areas/1",
+      "stage": "world"
     },
     {
       "code": "DW0353",
@@ -530,9 +562,9 @@
       "stage": "world-edits"
     },
     {
-      "code": "DW0822",
-      "pointer": "/content/boxes",
-      "stage": "site-plan"
+      "code": "DW0995",
+      "pointer": "pulse binding",
+      "stage": "build"
     },
     {
       "code": "DW0453",
@@ -688,7 +720,7 @@
     },
     {
       "code": "DW0351",
-      "pointer": "/content/quests/0/on_complete/4",
+      "pointer": "/content/quests/0/on_complete/3",
       "stage": "quests"
     },
     {
@@ -697,14 +729,19 @@
       "stage": "quests"
     },
     {
-      "code": "DW0813",
-      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
-      "stage": "site-plan:"
+      "code": "DW0889",
+      "pointer": "/content/areas/area/annex",
+      "stage": "world"
     },
     {
-      "code": "DW0781",
-      "pointer": "/content/details",
-      "stage": "detail-plan"
+      "code": "DW0813",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "layout-graph:"
+    },
+    {
+      "code": "DW0498",
+      "pointer": "/content/areas/1",
+      "stage": "world"
     },
     {
       "code": "DW0353",
@@ -712,9 +749,9 @@
       "stage": "world-edits"
     },
     {
-      "code": "DW0822",
-      "pointer": "/content/boxes",
-      "stage": "site-plan"
+      "code": "DW0995",
+      "pointer": "pulse binding",
+      "stage": "build"
     },
     {
       "code": "DW0453",
@@ -870,7 +907,7 @@
     },
     {
       "code": "DW0351",
-      "pointer": "/content/quests/0/on_complete/4",
+      "pointer": "/content/quests/0/on_complete/3",
       "stage": "quests"
     },
     {
@@ -879,14 +916,19 @@
       "stage": "quests"
     },
     {
-      "code": "DW0813",
-      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
-      "stage": "site-plan:"
+      "code": "DW0889",
+      "pointer": "/content/areas/area/annex",
+      "stage": "world"
     },
     {
-      "code": "DW0781",
-      "pointer": "/content/details",
-      "stage": "detail-plan"
+      "code": "DW0813",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "layout-graph:"
+    },
+    {
+      "code": "DW0498",
+      "pointer": "/content/areas/1",
+      "stage": "world"
     },
     {
       "code": "DW0353",
@@ -894,9 +936,9 @@
       "stage": "world-edits"
     },
     {
-      "code": "DW0822",
-      "pointer": "/content/boxes",
-      "stage": "site-plan"
+      "code": "DW0995",
+      "pointer": "pulse binding",
+      "stage": "build"
     },
     {
       "code": "DW0453",
@@ -942,8 +984,8 @@
     },
     {
       "code": "DW0781",
-      "pointer": "/content/details",
-      "stage": "detail-plan"
+      "pointer": "/areas",
+      "stage": "world"
     },
     {
       "code": "DW0822",
@@ -989,8 +1031,8 @@
     },
     {
       "code": "DW0781",
-      "pointer": "/content/details",
-      "stage": "detail-plan"
+      "pointer": "/areas",
+      "stage": "world"
     },
     {
       "code": "DW0822",
@@ -1012,12 +1054,12 @@
     {
       "code": "DW0813",
       "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
-      "stage": "site-plan:"
+      "stage": "layout-graph:"
     },
     {
       "code": "DW0781",
-      "pointer": "/content/details",
-      "stage": "detail-plan"
+      "pointer": "/areas",
+      "stage": "world"
     }
   ],
   "void-horizon.en": [
@@ -1163,7 +1205,7 @@
     },
     {
       "code": "DW0351",
-      "pointer": "/content/quests/0/on_complete/4",
+      "pointer": "/content/quests/0/on_complete/3",
       "stage": "quests"
     },
     {
@@ -1172,14 +1214,19 @@
       "stage": "quests"
     },
     {
-      "code": "DW0813",
-      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
-      "stage": "site-plan:"
+      "code": "DW0889",
+      "pointer": "/content/areas/area/annex",
+      "stage": "world"
     },
     {
-      "code": "DW0781",
-      "pointer": "/content/details",
-      "stage": "detail-plan"
+      "code": "DW0813",
+      "pointer": "1 of the 1 building metric(s) this run read are provisional — the metrics gym has not walked them",
+      "stage": "layout-graph:"
+    },
+    {
+      "code": "DW0498",
+      "pointer": "/content/areas/1",
+      "stage": "world"
     },
     {
       "code": "DW0353",
@@ -1187,9 +1234,9 @@
       "stage": "world-edits"
     },
     {
-      "code": "DW0822",
-      "pointer": "/content/boxes",
-      "stage": "site-plan"
+      "code": "DW0995",
+      "pointer": "pulse binding",
+      "stage": "build"
     },
     {
       "code": "DW0453",

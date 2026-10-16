@@ -39,7 +39,7 @@ fn hw(name: &str) -> String {
 /// than one overwriting the other — which is what lets the fixture state "the forced
 /// beat takes the floor, the optional beat puts one cell of it back".
 fn prefabs_with_doorway_anchors(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(name);
+    let dir = std::env::temp_dir().join(format!("{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(&common::prefabs_dir(), &dir);
     let path = dir.join("hello-room.json");

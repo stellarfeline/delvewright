@@ -78,7 +78,7 @@
               "kind": "box",
               "max": [
                 8,
-                2,
+                1,
                 6
               ],
               "min": [
@@ -143,7 +143,7 @@
           }
         ],
         "id": "batch/hearth-nook",
-        "note": "Carve a second doorway through the inner wall and dress a pad by the exit (fixture: carve + anchor-relative frame + surface-band + fill)."
+        "note": "Carve a low nook through the foot of the inner wall, too low for a body to pass, and dress a pad by the exit (fixture: carve + anchor-relative frame + surface-band + fill)."
       },
       {
         "edits": [
@@ -416,12 +416,12 @@
               "max": [
                 8,
                 2,
-                6
+                5
               ],
               "min": [
                 7,
                 1,
-                6
+                5
               ]
             },
             "verb": "select"
@@ -434,7 +434,7 @@
           }
         ],
         "id": "batch/lamplight",
-        "note": "Bake a torch into the carved nook (fixture: explicit region relight with overrides)."
+        "note": "Bake a torch onto the floor in front of the carved nook (fixture: explicit region relight with overrides)."
       }
     ]
   },

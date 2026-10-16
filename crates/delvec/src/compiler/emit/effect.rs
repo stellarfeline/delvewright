@@ -321,13 +321,30 @@ pub(super) fn fill_region_command(
 ) -> String {
     let (from, to) = region;
     let filter = match only {
-        Some(o) => format!(" replace {o}"),
+        Some(o) => format!(" replace {}", replace_filter(o)),
         None => String::new(),
     };
     format!(
         "fill {} {} {} {} {} {} {block}{filter}",
         from[0], from[1], from[2], to[0], to[1], to[2]
     )
+}
+
+/// **The `replace` filter that clears a gate's block in any of its states.**
+///
+/// A gate declares a block, and the placed world holds that block in whatever
+/// state its neighbours gave it: iron bars set into a wall connect east and west,
+/// a door has a half and a hinge. The gate-seal ledger counts every state of the
+/// declared block as the gate's own (`assembled::measure_gate_seals` compares base
+/// ids), so the clear must match every state too: a vanilla block predicate with
+/// no state list matches any state. Copying a declared state into the filter
+/// would leave every cell in another state standing after the gate opened.
+/// Every `fill … replace <gate block>` the compiler emits takes its filter here.
+pub(super) fn replace_filter(block: &str) -> &str {
+    match block.find(['[', '{']) {
+        Some(at) => &block[..at],
+        None => block,
+    }
 }
 
 /// The block a cleared region is written with. Named because three verbs share it.
@@ -413,6 +430,22 @@ pub(super) fn emit_quest_effect(
     let who = narrowed.as_str();
     match &eff.verb {
         Verb::OpenGate { anchor, .. } => {
+            // A gate a `shortcut` owns is opened by unlocking the shortcut: the
+            // latch, the clear, the spent lever, the door's voice and the
+            // `on_unlock` beat, all in the one function that owns them. A bare
+            // clear would leave the lever glowing and the latch unset, so a
+            // later press would announce an unbarring that already happened.
+            if let Some(sc) = plan
+                .shortcuts
+                .iter()
+                .find(|sc| sc.gate_anchor == anchor.as_str())
+            {
+                body.push(format!(
+                    "execute unless score #sc_{id} dw.sys matches 1 run function {ns}:shortcut_open_{id}",
+                    id = sc.safe
+                ));
+                return;
+            }
             // Find the gate anchor across areas (first match).
             for ((_, name), resolved) in &plan.anchors {
                 if name == anchor.as_str()
@@ -708,8 +741,10 @@ pub(super) fn emit_quest_effect(
                 let v = ent_xyz(bf.pos);
                 let i = bf.index;
                 body.push(format!(
-                    "execute unless entity @e[tag=dw_bonfire_{i}] run summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_bonfire_{i}\"]}}",
-                    v[0], v[1], v[2]
+                    "execute unless entity @e[tag=dw_bonfire_{i}] run {}",
+                    crate::compiler::clickbox::ClickBox::column(bf.pos, 2).summon(&format!(
+                        "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_bonfire_{i}\"]"
+                    ))
                 ));
                 // …and the visible hardware, under the same absence guard so a
                 // re-fired beat never stacks a second one. A rest point the
@@ -892,9 +927,9 @@ pub(super) fn effect_give_command(
 /// (spec-0018: `@a` for a party beat, `@s` inside a solo `on_respawn`/`on_caught`
 /// bundle). An `at: anchor` sound carries absolute coordinates, so every listener
 /// hears it in the same place; the default `players` target is
-/// listener-relative and, when a volume/pitch is declared (which forces an
-/// explicit position), is emitted through `execute as <who> at @s run … ~ ~ ~` so
-/// `~ ~ ~` resolves at each listener rather than at the command's own position.
+/// listener-relative and is always emitted through `execute as <who> at @s run
+/// playsound … @s`, so it sounds at each listener rather than at the command's
+/// own position (the world spawn, for a tick- or setup-run function).
 /// `at: actor` never reaches emission — no position resolves for a live actor,
 /// so it is rejected at validate-time (`DW0335`).
 pub(super) fn emit_play_sound(
@@ -944,7 +979,7 @@ pub(super) fn emit_play_sound(
         Some(SoundAt::Actor { .. }) => return, // unsupported: DW0335 at validate-time
         _ => None,                             // `players` (default): player-relative
     };
-    let listener_relative = pos.is_none() && (volume.is_some() || pitch.is_some());
+    let listener_relative = pos.is_none();
     let mut cmd = format!(
         "playsound {sound} master {}",
         if listener_relative { "@s" } else { who }
@@ -959,9 +994,10 @@ pub(super) fn emit_play_sound(
             }
         }
     }
-    if listener_relative && who != "@s" {
-        // `~ ~ ~` is the COMMAND's position, not the listener's — rebind so each
-        // party member hears it at their own feet.
+    if listener_relative {
+        // A positionless or `~ ~ ~` sound plays at the COMMAND's position, not
+        // the listener's — rebind so each listener hears it at their own feet.
+        // `@s` too: a solo bundle runs `as` its player, never `at` them.
         cmd = format!("execute as {who} at @s run {cmd}");
     }
     body.push(cmd);
@@ -1090,9 +1126,13 @@ pub(super) fn emit_damage_players(
 
 /// Emit a `narrate` line in its channel (DSL v0.4). `chat` = `tellraw`; `title`
 /// / `subtitle` = the vanilla `title` command (a subtitle is paired with a blank
-/// title so it renders on its own). An optional sound plays alongside. `who` is
-/// the audience selector (spec-0018): the story is told to the whole party
-/// (`@a`), except inside a solo `on_respawn`/`on_caught` bundle (`@s`).
+/// title so it renders on its own). An optional sound plays alongside, at each
+/// listener: a `playsound` with no position plays at the command source, which
+/// for a tick- or setup-run function is the world spawn, so the line is played
+/// `at` every member of the audience to `@s` — heard where the player stands,
+/// by construction. `who` is the audience selector (spec-0018): the story is
+/// told to the whole party (`@a`), except inside a solo `on_respawn`/`on_caught`
+/// bundle (`@s`).
 pub(super) fn emit_narrate(
     text: &str,
     style: Option<delvewright_dsl::NarrateStyle>,
@@ -1124,7 +1164,9 @@ pub(super) fn emit_narrate(
         NarrateStyle::Actionbar => body.push(format!("title {who} actionbar {comp}")),
     }
     if let Some(s) = sound {
-        body.push(format!("playsound {s} player {who}"));
+        body.push(format!(
+            "execute as {who} at @s run playsound {s} player @s"
+        ));
     }
 }
 
@@ -1194,5 +1236,42 @@ pub(super) fn push_effect_deep_audience<'a>(
                 push_effect_deep_audience(x, a, out);
             }
         }
+    }
+}
+
+/// The gate clear's `replace` filter matches every state of the declared block.
+#[cfg(test)]
+mod replace_filter_tests {
+    use super::*;
+
+    /// A gate declaring a block with a state list is cleared in every state the
+    /// placed world holds it in: the filter is the block's base id, which is how
+    /// the gate-seal ledger counts the gate's own cells.
+    #[test]
+    fn a_gate_declared_with_a_state_is_cleared_in_every_state() {
+        assert_eq!(
+            fill_region_command(
+                ([0, 64, 0], [1, 65, 0]),
+                AIR,
+                Some("minecraft:iron_bars[east=true,west=true]")
+            ),
+            "fill 0 64 0 1 65 0 minecraft:air replace minecraft:iron_bars"
+        );
+        assert_eq!(
+            replace_filter(
+                "minecraft:iron_door[facing=north,half=lower,hinge=left,open=false,powered=false]"
+            ),
+            "minecraft:iron_door"
+        );
+        assert_eq!(replace_filter("minecraft:iron_bars"), "minecraft:iron_bars");
+        // A close is not filtered: it lays the declared block, state and all.
+        assert_eq!(
+            fill_region_command(
+                ([0, 64, 0], [0, 64, 0]),
+                "minecraft:oak_fence[east=true]",
+                None
+            ),
+            "fill 0 64 0 0 64 0 minecraft:oak_fence[east=true]"
+        );
     }
 }

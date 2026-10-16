@@ -518,7 +518,8 @@ fn a_click_trigger_on_the_gate_rides_the_seal() {
 /// already answers for.
 #[test]
 fn dw0422_a_second_affordance_inside_the_seal() {
-    let tmp = std::env::temp_dir().join("dw-seal-collision-prefabs");
+    let tmp =
+        std::env::temp_dir().join(format!("dw-seal-collision-prefabs-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     common::copy_dir_all(&common::prefabs_dir(), &tmp);
     let hello = tmp.join("hello-room.json");
