@@ -2130,7 +2130,7 @@ own fired marker, `[dw:complete <campaign> trigger/<id>]`.
 `docs/reference/compiler.md`, "`loop` steps"). The bot walks to `pos`, then
 `times` times walks into the slab's cell `cross` (never past it) and waits
 for the forced move; each move's delta must equal `offset` to within 0.001 block
-per axis (`sameDelta`), measured from the physics tick before the move. The step
+per axis (`sameDelta`), read from the clientbound position packet that made it (`serverMove`): relative on every axis, its coordinates are the move the server computed from the position it held in the tick it ran the `tp`, and a packet absolute on any axis is never a loop's move. The client's own position is never subtracted: mineflayer-pathfinder's `fullStop` recentres the body (`position.z = floor(z) + 0.5` when more than 0.2 block off centre) between the physics tick that reads it and the packet's arrival, with no physics tick of its own. The step
 fails naming the loop when the body stands at or past the slab's near face
 through 20 game ticks with no move, or when the walk toward the slab keeps ending
 short of it, or holds its trip while server and bot answer, without advancing

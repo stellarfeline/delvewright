@@ -328,11 +328,15 @@ export const methods = {
     // the pathfinder so any path/goal computed in the old area is dropped rather than
     // fought or resumed across the void (the "No path to the goal!" / "Path was
     // stopped" race documented in the nobodys-cave gap-8 field notes).
-    bot.on("forcedMove", () => this.onForcedMove());
-    bot.on("physicsTick", () => {
-      const p = bot.entity?.position;
-      if (p) this.tickPos = { x: p.x, y: p.y, z: p.z };
+    // spec-0086 §6: the position packet itself, before mineflayer applies it and
+    // emits `forcedMove`: its flags say which axes the server moved relatively.
+    const posClient = (bot as unknown as {
+      _client?: { prependListener?: (e: string, f: (p: unknown) => void) => void };
+    })._client;
+    posClient?.prependListener?.("position", (packet: unknown) => {
+      this.lastPositionPacket = packet;
     });
+    bot.on("forcedMove", () => this.onForcedMove());
     // spec-0100 §4.7: the sculk family's ear, from connect — a sensor click is a
     // block update, a shriek a `world_event` 3007, and a darkness effect or a
     // warden fails the run.
