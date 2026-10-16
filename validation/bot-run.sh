@@ -26,6 +26,13 @@
 # DELVEWRIGHT_DIE_RETRY, DELVEWRIGHT_BRANCHES, …) — see docs/reference/tools.md.
 # For a campaign with branches use `branch-runs.sh`, which is this loop once per
 # branch, each in its own fresh world.
+#
+# When the build's `validation/gate-seal.json` names a shut floor gate (a gate
+# with a `stand`: a hatch, the cover over a ladder's hole), a second session
+# follows on a fresh world: the hatch stand (`harness/src/hatch-stand.ts`), a
+# body put on every point of every such gate before any beat, which must stay
+# on it. ON by the build's own ledger, never by a flag; `--only-hatch-stand`
+# runs that session alone, for reproducing a fall.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 
@@ -33,6 +40,7 @@ usage() {
   cat >&2 <<'USAGE'
 usage: EULA=TRUE validation/bot-run.sh --project <compose-project>
                                        [--output <build-tree>] [--run-out <dir>]
+                                       [--only-hatch-stand]
 
   --project  REQUIRED. The compose project this ladder owns (e.g. dw-worker-7).
              Distinct per concurrent ladder; there is no default, because a
@@ -40,6 +48,8 @@ usage: EULA=TRUE validation/bot-run.sh --project <compose-project>
   --output   Build tree to boot, relative to validation/ (default ./delve-output).
   --run-out  Where the bot writes its run report: relative to validation/,
              or an absolute path. (default ./run-out/<project>).
+  --only-hatch-stand
+             Run only the hatch-stand session, not the critical path.
 USAGE
   exit 2
 }
@@ -47,11 +57,13 @@ USAGE
 project=""
 output="${DELVE_OUTPUT:-./delve-output}"
 run_out=""
+only_hatch=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --project|-p) [ $# -ge 2 ] || usage; project="$2"; shift 2 ;;
     --output|-o)  [ $# -ge 2 ] || usage; output="$2";  shift 2 ;;
     --run-out)    [ $# -ge 2 ] || usage; run_out="$2"; shift 2 ;;
+    --only-hatch-stand) only_hatch=1; shift ;;
     -h|--help) usage ;;
     *) echo "bot-run: unknown argument '$1'" >&2; usage ;;
   esac
@@ -106,25 +118,55 @@ echo "==> bot ladder: project '$project', build tree '$output'"
 # delve (three misattributed red runs, island round 13).
 "$here/fresh-volumes.sh" --project "$project"
 
-set +e
-"${COMPOSE[@]}" up --build --abort-on-container-exit --exit-code-from bot
-rc=$?
-# A server that ran out of heap takes the bot down with it (`socketClosed`
-# before spawn), and the bot's exit says nothing about why. The server's own
-# log does; read it before teardown removes the container.
-server_log="$("${COMPOSE[@]}" logs --no-color server 2>&1)"
-set -e
-if dw_server_log_shows_oom "$server_log"; then
-  echo "::error:: bot ladder in '$project': $(dw_server_oom_advice)" >&2
-  [ "$rc" -ne 0 ] || rc=1
+# One session: compose up on the fresh world, the bot's exit as its verdict.
+session() {
+  local src
+  set +e
+  "${COMPOSE[@]}" up --build --abort-on-container-exit --exit-code-from bot
+  src=$?
+  # A server that ran out of heap takes the bot down with it (`socketClosed`
+  # before spawn), and the bot's exit says nothing about why. The server's own
+  # log does; read it before teardown removes the container.
+  server_log="$("${COMPOSE[@]}" logs --no-color server 2>&1)"
+  set -e
+  if dw_server_log_shows_oom "$server_log"; then
+    echo "::error:: bot ladder in '$project': $(dw_server_oom_advice)" >&2
+    [ "$src" -ne 0 ] || src=1
+  fi
+  return "$src"
+}
+
+rc=0
+if [ "$only_hatch" -eq 0 ]; then
+  session || rc=$?
+  report="$run_abs/run-report.json"
+  if [ -f "$report" ]; then
+    echo "==> run report: $report"
+  else
+    echo "==> NO run report at $report — the server or bot never produced a result," >&2
+    echo "    which is a validation-infrastructure fault, not a verdict on the delve." >&2
+  fi
 fi
 
-report="$run_abs/run-report.json"
-if [ -f "$report" ]; then
-  echo "==> run report: $report"
-else
-  echo "==> NO run report at $report — the server or bot never produced a result," >&2
-  echo "    which is a validation-infrastructure fault, not a verdict on the delve." >&2
+case "$output" in
+  /*) output_abs="$output" ;;
+  *)  output_abs="$here/${output#./}" ;;
+esac
+ledger="$output_abs/validation/gate-seal.json"
+if [ -f "$ledger" ] && python3 -c 'import json,sys; sys.exit(0 if any(g.get("sealed") and g.get("stand") for g in json.load(open(sys.argv[1]))["gates"]) else 1)' "$ledger"; then
+  echo "==> hatch stand: the build names a shut floor gate — a fresh world, a body on every one"
+  "$here/fresh-volumes.sh" --project "$project"
+  export DELVEWRIGHT_STAGE=hatch-stand
+  hrc=0
+  session || hrc=$?
+  unset DELVEWRIGHT_STAGE
+  if [ "$hrc" -ne 0 ]; then
+    echo "::error:: hatch stand FAILED in project '$project' (exit $hrc)" >&2
+    [ "$rc" -ne 0 ] || rc="$hrc"
+  fi
+elif [ "$only_hatch" -eq 1 ]; then
+  echo "::error:: --only-hatch-stand, but $ledger names no shut floor gate" >&2
+  rc=1
 fi
 
 echo "==> bot ladder: tearing down project '$project'"
