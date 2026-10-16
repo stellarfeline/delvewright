@@ -82,7 +82,7 @@ fn build_dir(dir: &std::path::Path) -> BuildOutput {
 /// must equal "quest active, objective pending, datum <= 5 and <= 9".
 #[test]
 fn dialogue_mask_drives_one_datum_read_by_option_and_objective_jointly() {
-    let dir = std::env::temp_dir().join("dw-v04-mask-joint-datum");
+    let dir = std::env::temp_dir().join(format!("dw-v04-mask-joint-datum-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(&fixture_dir(), &dir);
     common::patch_file(&dir.join("quests.json"), |q| {

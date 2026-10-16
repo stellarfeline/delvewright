@@ -5,9 +5,21 @@
 // mineflayer bot supplies (a block lookup, an entity, controls, a physics tick),
 // so what the pathfinder does here is what it does on a server — minus the
 // server's own corrections, which a walk on flat ground does not draw.
+//
+// The library keeps time by `performance.now()`: its A* stops a search after
+// 40ms of compute in one tick (`tickTimeout`) and resumes it the next, and its
+// steering re-plans a path when 3.5s pass with no node reached. A real bot's
+// ticks are 50ms apart; the sim runs them back to back, so on the wall clock a
+// host stall anywhere in a search splits it into a partial path the library
+// then walks differently, and the same walk ends somewhere else. So while the
+// library runs for a sim bot it reads that bot's own clock: 50ms per tick,
+// still within one. A search is never split, a re-plan comes after exactly 70
+// ticks without a node, and a walk is the same walk on every host and in every
+// order.
 
 import { createRequire } from "node:module";
 import { EventEmitter } from "node:events";
+import { performance } from "node:perf_hooks";
 import registryFor from "prismarine-registry";
 
 const requireCjs = createRequire(import.meta.url);
@@ -44,6 +56,14 @@ export type Cells = Map<string, string>;
 
 export const cellKey = (x: number, y: number, z: number): string => `${x},${y},${z}`;
 
+/** A game tick, in the milliseconds the library's clock reads. */
+export const SIM_TICK_MS = 50;
+
+/** The sim bot the library is running for, whose clock `performance.now()` reads. */
+let running: SimBot | undefined;
+const wallNow = performance.now.bind(performance);
+performance.now = (): number => (running === undefined ? wallNow() : running.clockMs);
+
 /** The part of a mineflayer bot the pathfinder and the client physics read. */
 export class SimBot extends EventEmitter {
   readonly version = SIM_VERSION;
@@ -67,6 +87,8 @@ export class SimBot extends EventEmitter {
   readonly physics: ReturnType<typeof physicsLib.Physics>;
   readonly world: { getBlock(p: V3): unknown };
   readonly cells: Cells;
+  /** This bot's clock: {@link SIM_TICK_MS} per tick, still within one. */
+  clockMs = 0;
   pathfinder!: {
     setMovements(m: unknown): void;
     setGoal(g: unknown): void;
@@ -126,12 +148,26 @@ export class SimBot extends EventEmitter {
     return this.look(Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz)));
   }
 
-  /** One game tick: the pathfinder steers, then the client physics moves the body. */
+  /** Run `f` with the library reading this bot's clock. */
+  run<T>(f: () => T): T {
+    const outer = running;
+    running = this;
+    try {
+      return f();
+    } finally {
+      running = outer;
+    }
+  }
+
+  /** One game tick: the clock moves, the pathfinder steers, then the client physics moves the body. */
   tick(): void {
-    this.emit("physicsTick");
-    const state = new physicsLib.PlayerState(this, { ...this.controlState });
-    this.physics.simulatePlayer(state, this.world);
-    state.apply(this);
+    this.clockMs += SIM_TICK_MS;
+    this.run(() => {
+      this.emit("physicsTick");
+      const state = new physicsLib.PlayerState(this, { ...this.controlState });
+      this.physics.simulatePlayer(state, this.world);
+      state.apply(this);
+    });
   }
 }
 
@@ -146,13 +182,15 @@ export function simBot(
   prepare: (bot: SimBot) => void = () => {},
 ): SimBot {
   const bot = new SimBot(cells, start);
-  pathfinder(bot);
-  prepare(bot);
-  const movements = new Movements(bot);
-  movements["canDig"] = false;
-  movements["allow1by1towers"] = false;
-  movements["canOpenDoors"] = true;
-  bot.pathfinder.setMovements(movements);
+  bot.run(() => {
+    pathfinder(bot);
+    prepare(bot);
+    const movements = new Movements(bot);
+    movements["canDig"] = false;
+    movements["allow1by1towers"] = false;
+    movements["canOpenDoors"] = true;
+    bot.pathfinder.setMovements(movements);
+  });
   return bot;
 }
 
@@ -175,11 +213,11 @@ export function simWalk(
     reached = true;
   };
   bot.once("goal_reached", onReached);
-  bot.pathfinder.setGoal(new goals.GoalNear(goal[0], goal[1], goal[2], range));
+  bot.run(() => bot.pathfinder.setGoal(new goals.GoalNear(goal[0], goal[1], goal[2], range)));
   let t = 0;
   for (; t < ticks && !reached; t++) bot.tick();
   bot.off("goal_reached", onReached);
-  bot.pathfinder.setGoal(null);
+  bot.run(() => bot.pathfinder.setGoal(null));
   const p = bot.entity.position;
   return { reached, at: [p.x, p.y, p.z], ticks: t };
 }

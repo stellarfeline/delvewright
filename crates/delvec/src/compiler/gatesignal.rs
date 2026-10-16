@@ -415,4 +415,41 @@ mod tests {
         assert!(f.is_none());
         assert_eq!((b.gates, b.inert_gates, b.cells), (0, 1, 0));
     }
+
+    /// **`DW0730` and `DW1047` are a pair.** The palette audit's route for a
+    /// lever is a `prop` the compiler places, and it quotes the block it places;
+    /// that block, laid beside a hatch, is a source this proof judges, so the
+    /// route the audit prescribes cannot open a shut gate unjudged. No block a
+    /// shut gate is built from is routed: the audit never tells a prefab to take
+    /// a gate's own block out.
+    #[test]
+    fn the_lever_dw0730_routes_to_is_a_source_dw1047_judges() {
+        use crate::admit::allowlist::{ROUTES, route_for};
+        let route = route_for("minecraft:lever").expect("DW0730 routes the lever");
+        let quoted = route
+            .split("\"block\": \"")
+            .nth(1)
+            .and_then(|r| r.split('"').next())
+            .expect("the lever's route quotes the block it places");
+        assert_eq!(quoted, LEVER, "the route quotes {quoted}");
+
+        let (gates, mut m) = floor_with_hatch();
+        m.insert([5, 11, 4], BlockState::new(quoted));
+        let (b, f) = prove(&gates, &m, &[]);
+        assert_eq!(f.expect("refused").code.id(), "DW1047");
+        assert_eq!(b.sources, 1);
+
+        let gate_blocks = [BAR, HATCH, delvewright_dsl::siteplan::SEAM_COVER];
+        let mut routed = 0;
+        for (ids, _) in ROUTES {
+            for id in *ids {
+                routed += 1;
+                for g in gate_blocks {
+                    let base = g.split('[').next().unwrap();
+                    assert_ne!(*id, base, "DW0730 routes {base}, a shut gate's block");
+                }
+            }
+        }
+        assert_eq!(routed, 8, "routed blocks counted: {routed}");
+    }
 }

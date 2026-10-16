@@ -1,6 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hatchBindingLine, judgeStand, parseHatchPlan, tpCommand, type StandReading } from "../src/hatch-stand.ts";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  HATCH_POS_COMMAND,
+  hatchBindingLine,
+  judgeStand,
+  parseHatchPlan,
+  parseHatchPos,
+  tpCommand,
+  type StandReading,
+} from "../src/hatch-stand.ts";
 
 const ledger = {
   gates_examined: 3,
@@ -65,4 +76,30 @@ test("a stand point between two cells is not moved onto a cell centre", () => {
   // `/tp @s 21 64 22` puts the feet at (21.5, 22.5): the game centres a bare integer.
   assert.equal(tpCommand(21, 64, 22), "/tp @s 21.0000 64.0000 22.0000");
   assert.equal(tpCommand(18.5, 64.1875, 24.5), "/tp @s 18.5000 64.1875 24.5000");
+});
+
+test("the server's feet height is read from the reading's own reply", () => {
+  assert.equal(parseHatchPos(["[dw-time 3 1200]", "HATCHPOS 64.0d"]), 64);
+  assert.equal(parseHatchPos(["HATCHPOS -12.5d"]), -12.5);
+  assert.equal(parseHatchPos(["[dw-time 3 1200]"]), undefined);
+  assert.match(HATCH_POS_COMMAND, /^\/tellraw @s \["HATCHPOS ",\{"nbt":"Pos\[1\]","entity":"@s"\}\]$/);
+});
+
+// Every wait for the server's game ticks is judged by the game clock
+// (`GameClockWatch`); mineflayer's `bot.waitForTicks` counts the client's own
+// physics ticks, which the host's wall clock drives.
+test("no harness source waits on the client's ticks", () => {
+  const src = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src");
+  const files: string[] = [];
+  const walk = (d: string): void => {
+    for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name.endsWith(".ts")) files.push(p);
+    }
+  };
+  walk(src);
+  assert.ok(files.length > 0, "the scan bound no source file");
+  const offenders = files.filter((f) => /\.waitForTicks\(/.test(readFileSync(f, "utf8")));
+  assert.deepEqual(offenders, [], `${files.length} file(s) scanned`);
 });
