@@ -164,6 +164,12 @@ impl CommandTree {
                 reason,
             });
         }
+        if let Some(reason) = sound_position_error(&tokens) {
+            return Err(CommandError {
+                line: line.to_string(),
+                reason,
+            });
+        }
         let mut too_long = None;
         if self.matches(&self.root, &tokens, &loose, 0, &mut too_long) {
             Ok(())
@@ -580,6 +586,45 @@ fn forceload_area_error(tokens: &[String]) -> Option<String> {
     None
 }
 
+/// A `playsound` whose position the line does not state: no position, or a
+/// relative or local one (`~`, `^`), with no `execute … at` / `positioned`
+/// before it on the line.
+///
+/// Not a bound the server keeps: the line runs, and plays the sound at the
+/// command source. Every function the compiler emits runs from the server's
+/// source (the tick, setup, a schedule) or `as` a player without `at`, and that
+/// source stands at the world spawn — so the sound reaches a player within its
+/// range of the spawn there, and a player beyond it not at all. The emitter owes
+/// a sound that plays where its listener is, on the line itself: `execute as
+/// <who> at @s run playsound … @s`, or an explicit position for a sound that
+/// stands at a mark. A `$(name)` macro coordinate counts as stated.
+///
+/// The `at` / `positioned` test reads the tokens before `playsound` on the
+/// line: a token that is exactly one of the two words. An argument spelled
+/// that way would satisfy it; the compiler emits no such argument.
+fn sound_position_error(tokens: &[String]) -> Option<String> {
+    for (k, tok) in tokens.iter().enumerate() {
+        if tok != "playsound" || !(k == 0 || tokens[k - 1] == "run") {
+            continue;
+        }
+        let positioned = tokens[..k].iter().any(|t| t == "at" || t == "positioned");
+        let stated = tokens
+            .get(k + 4..k + 7)
+            .is_some_and(|p| p.iter().all(|t| !t.starts_with('~') && !t.starts_with('^')));
+        if !positioned && !stated {
+            return Some(
+                "a `playsound` with no stated position and no `execute … at`/`positioned` \
+                 before it plays at the command source, which for every function the \
+                 compiler emits is the world spawn: a player beyond the sound's range of \
+                 the spawn never hears it. Emit `execute as <who> at @s run playsound … @s`, \
+                 or name the position"
+                    .to_string(),
+            );
+        }
+    }
+    None
+}
+
 /// Token arity of an argument parser.
 enum Arity {
     Fixed(usize),
@@ -694,6 +739,39 @@ mod tests {
 
     fn tree() -> CommandTree {
         CommandTree::v1_21_11()
+    }
+
+    /// A sound plays where its listener is, stated on the line: under
+    /// `execute … at`/`positioned`, or at an explicit position. A positionless
+    /// or relative one plays at the command source, the world spawn.
+    #[test]
+    fn a_playsound_states_where_it_plays() {
+        let t = tree();
+        for ok in [
+            "execute as @a at @s run playsound minecraft:block.note_block.pling player @s",
+            "execute as @s at @s run playsound minecraft:block.barrel.close master @s ~ ~ ~ 0.5",
+            "execute at @s run playsound minecraft:block.chain.hit player @s ~ ~ ~ 0.6 1",
+            "execute as @a at @s rotated ~ 0 positioned ^0 ^0 ^-3 run playsound minecraft:entity.warden.nearby_closest master @s ~ ~ ~",
+            "playsound minecraft:entity.warden.heartbeat master @a[x=0,y=60,z=0,dx=9,dy=9,dz=9] 5.5 66.5 9.5 2 1",
+            "execute if score #party dw.f_x matches 1 run playsound minecraft:block.bell.use master @a 12 64 -3",
+            "$playsound minecraft:block.bell.use master @a $(x) $(y) $(z)",
+        ] {
+            assert_eq!(t.validate_line(ok), Ok(()), "{ok}");
+        }
+        for bad in [
+            "playsound minecraft:block.note_block.pling player @a",
+            "playsound minecraft:block.chain.hit player @s ~ ~ ~ 0.6 1",
+            "execute as @a run playsound minecraft:entity.experience_orb.pickup player @s",
+            "execute if score #party dw.f_x matches 1 run playsound minecraft:block.bell.use master @a ~ ~1 ~",
+            "execute as @a run playsound minecraft:block.bell.use master @s ^ ^ ^1",
+        ] {
+            let err = t.validate_line(bad).unwrap_err();
+            assert!(
+                err.reason.contains("plays at the command source"),
+                "{bad}: {}",
+                err.reason
+            );
+        }
     }
 
     #[test]

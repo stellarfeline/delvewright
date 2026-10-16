@@ -641,6 +641,11 @@ pub(super) fn prove_world(
                     crate::compiler::nav::check_threshold_triggers(plan, world);
                 eprintln!("{}", threshold_binding.line());
                 threshold_verdict?;
+                put_json(
+                    out,
+                    "validation/threshold-gate.json",
+                    &threshold_binding.to_json(),
+                );
                 // v0.6 checkpoint no-stranding + placement proofs (spec-0012,
                 // DW0315/DW0316) and stealth-zone standable/reachable proofs
                 // (spec-0014, DW0327), re-rooting DW0311 reachability at each beat.

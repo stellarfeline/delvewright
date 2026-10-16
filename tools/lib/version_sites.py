@@ -286,22 +286,23 @@ ROWS: dict[str, list[dict[str, object]]] = {
 # an entry is never a licence for the whole file. A statement the file no longer
 # contains is reported, which is how an entry keyed to a number is retired when
 # the number moves on.
-COUNTEREXAMPLES: dict[str, dict[str, object]] = {
-    "docs/specs/spec-0107-a-gated-connection-is-built-shut.md": {
-        "statements": [
-            "`dsl_version` **{v}**",
-            "A graph at {v} carrying `class: barred`",
-            "below {v} carrying `opens_from`",
-            "the layout graph at `dsl_version` {v}",
-            "One `dsl_version` step to {v}.",
-        ],
-        "reason": (
-            "the spec is the decision record of the number it was handed for the "
-            "surface it moves — the layout graph's shape at that step — so a later "
-            "bump must not move it"
-        ),
-    },
-}
+COUNTEREXAMPLES: dict[str, dict[str, object]] = {}
+
+# Decision records, outside the sweep's population as a CLASS. A spec or an ADR
+# records the number its surface was allocated, or the number it does not move;
+# that is history (CLAUDE.md, Methodology: specs and ADRs are historical decision
+# records), not a site, and a bump never edits it. Before this was a class every
+# such record needed a `COUNTEREXAMPLES` statement keyed to the number, and that
+# statement then put the record into every scratch tree the publish-gate tests
+# build, so each one also needed a hand-written reach row. This tuple is the one
+# list of regions the sweep skips: the binding line prints how many tracked files
+# it skipped and how many of them state the number, and a row or a counter-example
+# that names a file inside it is refused, because it would bind to nothing.
+RECORDS: tuple[str, ...] = ("docs/specs/", "docs/adr/")
+
+
+def _is_record(rel: str) -> bool:
+    return rel.startswith(RECORDS)
 
 
 def files_named() -> list[str]:
@@ -509,17 +510,34 @@ def _classify(root: Path, rel: str, text: str, version: str, by_path: dict[str, 
     )
 
 
-def sweep(root: Path, version: str) -> tuple[int, int, dict[str, list[str]], list[str]]:
+def _states(root: Path, rel: str, version: str) -> bool:
+    p = root / rel
+    if p.is_symlink() or not p.is_file():
+        return False
+    try:
+        return version in p.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return False
+
+
+def sweep(
+    root: Path, version: str
+) -> tuple[int, tuple[int, int], int, dict[str, list[str]], list[str]]:
     """Every tracked file that states `version`, sorted into shapes.
 
-    Returns (population, carriers, shape -> files, findings).
+    Returns (population, (records skipped, of which state the number), carriers,
+    shape -> files, findings). `population` counts the files examined, which is
+    every tracked file outside `RECORDS`.
     """
-    population = _tracked_text(root)
-    if not population:
+    tracked = _tracked_text(root)
+    if not tracked:
         raise SystemExit(
             "version-sites: git tracks NO files at all. This sweep examined nothing, "
             "which is a vacuous pass rather than a pass."
         )
+    records = [rel for rel in tracked if _is_record(rel)]
+    population = [rel for rel in tracked if not _is_record(rel)]
+    skipped = (len(records), sum(_states(root, rel, version) for rel in records))
     by_path: dict[str, list[dict]] = {}
     for row in ROWS["dsl"]:
         by_path.setdefault(str(row["path"]), []).append(row)
@@ -544,7 +562,17 @@ def sweep(root: Path, version: str) -> tuple[int, int, dict[str, list[str]], lis
         else:
             shapes.setdefault(f"{shape} — {why}" if shape == "counter-example" else shape, []).append(rel)
 
+    named = {str(r["path"]) for rows in ROWS.values() for r in rows}
+    for rel in sorted(named | set(COUNTEREXAMPLES)):
+        if _is_record(rel):
+            findings.append(
+                f"  {rel!r} is named by a row or by COUNTEREXAMPLES and sits under "
+                f"{', '.join(RECORDS)}, which the sweep skips as decision records — "
+                "the entry binds to nothing; remove it"
+            )
     for rel in sorted(COUNTEREXAMPLES):
+        if _is_record(rel):
+            continue
         if rel not in population:
             findings.append(
                 f"  COUNTEREXAMPLES names {rel!r}, which git does not track — remove it "
@@ -562,7 +590,7 @@ def sweep(root: Path, version: str) -> tuple[int, int, dict[str, list[str]], lis
             "authority. The sweep examined the whole tree and matched nothing, which is "
             "the measurement failing, not a clean tree."
         )
-    return len(population), carriers, shapes, findings
+    return len(population), skipped, carriers, shapes, findings
 
 
 HAND = ("authority", "hand-edited")
@@ -571,7 +599,7 @@ HAND = ("authority", "hand-edited")
 def blast_radius(root: Path) -> tuple[list[str], dict[str, list[str]]]:
     """The files a person edits to move the number, and everything a tool rewrites."""
     version = _declared(root)["dsl"]
-    _, _, shapes, _ = sweep(root, version)
+    _, _, _, shapes, _ = sweep(root, version)
     hand = sorted({f for s in HAND for f in shapes.get(s, [])})
     return hand, shapes
 
@@ -613,7 +641,7 @@ def verify(root: Path) -> int:
         print(f"  Fix the rows in {__file__}.", file=sys.stderr)
         return 1
 
-    population, carriers, shapes, sweep_findings = sweep(root, declared["dsl"])
+    population, skipped, carriers, shapes, sweep_findings = sweep(root, declared["dsl"])
     if sweep_findings:
         print(
             f"version-sites: a file states the `dsl_version` `{declared['dsl']}` and is "
@@ -644,6 +672,10 @@ def verify(root: Path) -> int:
     print(
         f"version-sites sweep: {carriers} of {population} tracked file(s) state "
         f"`{declared['dsl']}`; every one is accounted:"
+    )
+    print(
+        f"    skipped as decision records ({', '.join(RECORDS)}): {skipped[0]} tracked "
+        f"file(s), {skipped[1]} of which state `{declared['dsl']}` — a record, never a site"
     )
     for shape in sorted(shapes):
         files = sorted(shapes[shape])
