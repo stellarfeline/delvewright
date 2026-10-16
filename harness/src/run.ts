@@ -8,6 +8,7 @@
 
 import { loadRepaintPlanForCriticalPath, repaintBindingLine } from "./repaint.ts";
 import { loadPulsePlanForCriticalPath, pulseBindingLine } from "./pulse.ts";
+import { cueBinding, cueBindingLine, loadCueLedgerForCriticalPath } from "./cues.ts";
 import { readFile } from "node:fs/promises";
 import nodePath from "node:path";
 import { parseCriticalPathJson } from "./critical-path.ts";
@@ -337,6 +338,18 @@ async function main(): Promise<number> {
   } else {
     process.stderr.write(`pulse plan: none in this build (no pulse)\n`);
   }
+  // The engine's quest cues, judged where each arrives. Absent → a build that
+  // predates the ledger, said out loud.
+  const cueLedger = await loadCueLedgerForCriticalPath(pathArg);
+  if (cueLedger) {
+    executor.useCueLedger(cueLedger);
+    process.stderr.write(
+      `cue ledger: ${cueLedger.objectives.length} announced objective(s) owe a completion cue; ` +
+        `world spawn ${JSON.stringify(cueLedger.worldSpawn)}, range ${cueLedger.range}\n`,
+    );
+  } else {
+    process.stderr.write(`cue ledger: none in this build\n`);
+  }
   const combatPlan = await loadCombatPlanForCriticalPath(pathArg);
   const dieRetry = combatPlan !== undefined && dieRetryFromEnv();
   const report = new RunReport(criticalPath.campaignId, combatPlan?.difficulty ?? "unknown");
@@ -583,6 +596,17 @@ async function main(): Promise<number> {
       ...v.failures,
       ...(pathFailure === undefined ? v.unreached : []),
     ]);
+    // Every quest cue the run heard, and every one a marker owed, arrived at
+    // the bot's own position.
+    const cues = executor.cueJudgement();
+    const cueFailures = cues ? [...cues.failures] : [];
+    if (cueLedger && cues) {
+      const b = cueBinding(cueLedger, cues);
+      const line = cueBindingLine(cueLedger, b);
+      process.stderr.write(`${line}\n`);
+      for (const f of cueFailures) process.stderr.write(`[cue] FAIL ${f}\n`);
+      report.recordCues({ ...b, line, verdicts: [...cues.owed, ...cues.unclaimed] });
+    }
     report.stage({
       stage: "critical-path",
       ran: true,
@@ -591,7 +615,8 @@ async function main(): Promise<number> {
         musterFailures.length === 0 &&
         repaintFailures.length === 0 &&
         watchFailures.length === 0 &&
-        pulseFailures.length === 0,
+        pulseFailures.length === 0 &&
+        cueFailures.length === 0,
       findings: report.musterFindings(),
       failures: [
         ...(pathFailure === undefined ? [] : [describe(pathFailure)]),
@@ -599,6 +624,7 @@ async function main(): Promise<number> {
         ...repaintFailures,
         ...watchFailures,
         ...pulseFailures,
+        ...cueFailures,
       ],
     });
     // The death loop. Recorded whether it ran or not, and a stage that
