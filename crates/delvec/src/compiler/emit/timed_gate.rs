@@ -31,10 +31,12 @@ pub(super) fn timed_gate_setup(plan: &Plan) -> Vec<String> {
             continue;
         };
         let v = ent_xyz(dis.via_cell);
-        out.push(format!(
-            "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_tgdis_{}\"]}}",
-            v[0], v[1], v[2], g.safe
-        ));
+        out.push(
+            crate::compiler::clickbox::ClickBox::column(dis.via_cell, 2).summon(&format!(
+                "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_tgdis_{}\"]",
+                g.safe
+            )),
+        );
         out.push(affordance_hardware(
             v,
             &format!("dw_tgdis_{}", g.safe),
@@ -120,7 +122,13 @@ pub(super) fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
                 // is the opposite of a disarm.
                 format!(
                     "fill {} {} {} {} {} {} minecraft:air replace {}",
-                    from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
+                    from[0],
+                    from[1],
+                    from[2],
+                    to[0],
+                    to[1],
+                    to[2],
+                    replace_filter(&g.gate_block)
                 ),
                 guarded(format!(
                     "schedule function {ns}:tgate_close_{id} {}t",
@@ -193,7 +201,13 @@ pub(super) fn emit_timed_gate_disarm_functions(plan: &Plan) -> Vec<(String, Stri
             ),
             format!(
                 "fill {} {} {} {} {} {} minecraft:air replace {}",
-                from[0], from[1], from[2], to[0], to[1], to[2], g.gate_block
+                from[0],
+                from[1],
+                from[2],
+                to[0],
+                to[1],
+                to[2],
+                replace_filter(&g.gate_block)
             ),
             format!(
                 "kill @e[tag={}]",

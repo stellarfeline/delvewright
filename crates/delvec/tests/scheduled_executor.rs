@@ -353,8 +353,8 @@ fn arrive_bundle_splits_party_fact_and_player_facing_effects() {
     // audience — one question, asked once, for the whole party.
     assert!(
         lines.contains(
-            &"execute unless score #party dw.f_late matches 1 run playsound \
-              minecraft:block.note_block.pling master @a"
+            &"execute unless score #party dw.f_late matches 1 as @a at @s run playsound \
+              minecraft:block.note_block.pling master @s"
         ),
         "a gated player-facing effect reads `unless score #party …`:\n{arrive}"
     );
@@ -367,9 +367,14 @@ fn arrive_bundle_splits_party_fact_and_player_facing_effects() {
         lines.contains(&"execute if score #party dw.f_arrived matches 1 run time set day"),
         "a gated global effect reads the same party score:\n{arrive}"
     );
-    // Nothing in a scheduled bundle may name `@s` — the executor is not there.
+    // Nothing in a scheduled bundle may name an executor's `@s` — there is
+    // none. The one `@s` it may hold is each member bound by `as @a at @s`,
+    // the form a sound takes to play where each listener stands.
     assert!(
-        !arrive.contains("@s"),
+        lines
+            .iter()
+            .filter(|l| l.contains("@s"))
+            .all(|l| l.contains(" as @a at @s run ")),
         "a scheduled bundle addresses no `@s`:\n{arrive}"
     );
     // The nested sequence is a global timeline: one call, not one per player.

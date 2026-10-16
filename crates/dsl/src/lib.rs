@@ -69,6 +69,7 @@ pub mod onkill;
 pub mod perception;
 pub mod placement;
 pub mod prefab;
+pub mod producers;
 pub mod pulse;
 pub mod quest;
 pub mod quest_plan;

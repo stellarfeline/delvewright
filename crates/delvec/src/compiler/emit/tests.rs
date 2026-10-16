@@ -407,3 +407,45 @@ fn actor_lifecycle_verbs_are_no_ops_when_the_body_is_already_gone() {
         "re-cage is idempotent and works from nothing: {spawn}"
     );
 }
+
+/// A `narrate` sound is played `at` each listener, never at the command source:
+/// a positionless `playsound` from a tick- or setup-run function sounds at the
+/// world spawn, where a player elsewhere hears nothing.
+#[test]
+fn a_narrate_sound_plays_at_each_listener() {
+    for who in ["@a", "@s"] {
+        let mut body = Vec::new();
+        effect::emit_narrate(
+            "hi",
+            None,
+            Some("minecraft:block.barrel.close"),
+            who,
+            &mut body,
+        );
+        assert_eq!(
+            body[1],
+            format!("execute as {who} at @s run playsound minecraft:block.barrel.close player @s")
+        );
+        assert_eq!(body.len(), 2, "{body:?}");
+    }
+}
+
+/// The engine's quest cues play at every member of the party, to that member,
+/// and the line states it: the command tree refuses the positionless form.
+#[test]
+fn a_quest_cue_plays_at_each_member_of_the_party() {
+    let tree = CommandTree::v1_21_11();
+    for cue in [CUE_ANNOUNCE, CUE_COMPLETE, CUE_CAMPAIGN] {
+        let line = cue_line(cue);
+        assert_eq!(
+            line,
+            format!("execute as @a at @s run playsound {cue} player @s")
+        );
+        assert_eq!(tree.validate_line(&line), Ok(()), "{line}");
+        assert!(
+            tree.validate_line(&format!("playsound {cue} player @a"))
+                .is_err(),
+            "the positionless form of {cue} must be refused"
+        );
+    }
+}

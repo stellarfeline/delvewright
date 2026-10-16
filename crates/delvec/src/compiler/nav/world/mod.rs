@@ -650,6 +650,17 @@ impl World {
             .filter(|s| s.sealed() && !self.clocked_gates.contains(&s.region))
     }
 
+    /// **Every gate the world resolves**, open or shut at world-load, each with
+    /// whether a clock owns its region (spec-0016 §4) — the population `DW1011`
+    /// enumerates, in `(area, anchor)` order.
+    pub(in crate::compiler::nav) fn every_gate(
+        &self,
+    ) -> impl Iterator<Item = (&crate::compiler::assembled::GateSeal, bool)> {
+        self.world_load_seals
+            .iter()
+            .map(|s| (s, self.clocked_gates.contains(&s.region)))
+    }
+
     /// Whether any gate is modelled shut — the cheap guard that keeps a campaign
     /// with no sealed gate on exactly its old routing.
     pub(in crate::compiler::nav) fn has_world_load_seals(&self) -> bool {

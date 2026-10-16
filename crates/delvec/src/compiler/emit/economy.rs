@@ -80,8 +80,10 @@ pub(super) fn shop_setup(plan: &Plan) -> Vec<String> {
         let v = ent_xyz(pos);
         let tag = format!("dw_shop_{i}");
         out.push(format!(
-            "execute unless entity @e[tag={tag}] run summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{tag}\"]}}",
-            v[0], v[1], v[2]
+            "execute unless entity @e[tag={tag}] run {}",
+            crate::compiler::clickbox::ClickBox::column(pos, 2).summon(&format!(
+                "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{tag}\"]"
+            ))
         ));
         let hw = crate::compiler::affordance::hardware_tag(&tag);
         out.push(format!(

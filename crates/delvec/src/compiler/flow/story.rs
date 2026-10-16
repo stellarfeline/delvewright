@@ -552,7 +552,7 @@ impl<'a> Flow<'a> {
             }
         }
         delvewright_dsl::for_each_effect_root(c, &mut |site, list| {
-            let Some(id) = crate::compiler::ending::act_of_owner(c, &site.owner, &site.path) else {
+            let Some(id) = crate::compiler::ending::act_of_owner(&site.owner, &site.path) else {
                 return;
             };
             let (kind, undrivable, requires, forbids, state, is_forced): ActShape =
@@ -722,7 +722,7 @@ impl<'a> Flow<'a> {
             let dated = match &site.owner {
                 delvewright_dsl::EffectRootOwner::ObjectiveComplete { .. }
                 | delvewright_dsl::EffectRootOwner::QuestComplete { .. } => true,
-                other => crate::compiler::ending::act_of_owner(c, other, &site.path)
+                other => crate::compiler::ending::act_of_owner(other, &site.path)
                     .is_some_and(|a| electives.contains(&a)),
             };
             collect_undated_writes(list, !dated, &mut still);

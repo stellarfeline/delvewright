@@ -117,6 +117,25 @@ impl World {
         goal: [i32; 3],
         fp: &Footprint,
     ) -> Option<Vec<[i32; 3]>> {
+        self.find_path_avoiding(start, goal, fp, &|_| false)
+    }
+
+    /// [`World::find_path_fp`] over the same walk graph with the cells `avoid`
+    /// names withheld — the one router, asked which walks exist that never
+    /// enter a set of cells. `avoid` holding `start` or `goal` finds nothing.
+    /// The threshold proof (`DW1044`) asks it for a walk round a trigger's
+    /// firing volume; it reads reachability here and nowhere else, so it moves
+    /// with every other consumer of [`World::neighbors_fp`].
+    pub(in crate::compiler::nav) fn find_path_avoiding(
+        &self,
+        start: [i32; 3],
+        goal: [i32; 3],
+        fp: &Footprint,
+        avoid: &dyn Fn([i32; 3]) -> bool,
+    ) -> Option<Vec<[i32; 3]>> {
+        if avoid(start) || avoid(goal) {
+            return None;
+        }
         if start == goal {
             return self.standable_fp(start, fp).then(|| vec![start]);
         }
@@ -147,6 +166,9 @@ impl World {
             }
             let here = self.feet_16_fp(cur, fp);
             for n in self.neighbors_fp(cur, fp) {
+                if avoid(n) {
+                    continue;
+                }
                 let tentative = g + step_cost_16(here, self.feet_16_fp(n, fp));
                 if tentative < *g_score.get(&n).unwrap_or(&u32::MAX) {
                     came_from.insert(n, cur);

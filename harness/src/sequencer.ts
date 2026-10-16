@@ -105,6 +105,14 @@ export interface StepExecutor {
    */
   beforeStep?(step: Step): Promise<void>;
   /**
+   * Optional: anything the run owes at the boundary AFTER step `index` has
+   * completed and before the next step begins — the death loop's trial of
+   * every lethal volume that is live and reachable from here. Outside every
+   * step's retry loop: a death it scripts is its own, never a step's. Not
+   * called once the campaign's completion is due.
+   */
+  afterStep?(index: number, step: Step): Promise<void>;
+  /**
    * Optional (AUDIT-P0): assert the campaign has NOT completed yet. Called after
    * every step that still has an objective step ahead of it. Campaign completion
    * belongs to the last objective step; arriving earlier means the remaining steps
@@ -336,6 +344,13 @@ export async function runSequence(
           }
           continue; // retry the same step once
         }
+        throw new StepExecutionError(i, step.action, cause);
+      }
+    }
+    if (i < completionDueIndex && executor.afterStep) {
+      try {
+        await executor.afterStep(i, step);
+      } catch (cause) {
         throw new StepExecutionError(i, step.action, cause);
       }
     }

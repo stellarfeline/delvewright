@@ -303,3 +303,86 @@ fn a_campaign_that_opens_its_gate_emits_the_same_datapack() {
         "the open is a replace-filtered clear: {text}"
     );
 }
+
+/// **Objectives one talk opens together.** `obj/talk` opens three siblings at
+/// once — `obj/pull` (the lever: a stand at the spawn, on the near side of the
+/// bars), `obj/look` (the keeper's stand, also near) and `obj/exit` (behind the
+/// bars) — and none is `after` another. `pull` is spliced into
+/// `on_objective_complete["obj/pull"]` and `look` into `["obj/look"]`.
+///
+/// The path walks them in document order, `talk → pull → look → exit`, so the
+/// leg into `obj/exit` starts at `obj/look`: the lever the walk pulled two steps
+/// earlier is an ancestor of neither end of that leg, only earlier in the walk.
+fn quests_doc_siblings(pull: &str, look: &str) -> String {
+    common::at_dsl_version(&format!(
+        r#"{{
+  "dsl_version": "%dsl_version%",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {{
+    "quests": [
+      {{
+        "id": "quest/open-the-door",
+        "trigger": {{ "type": "campaign-start" }},
+        "objectives": [
+          {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
+          {{ "type": "reach-anchor", "id": "obj/pull", "anchor": "spawn",
+             "radius": 1, "after": ["obj/talk"] }},
+          {{ "type": "reach-anchor", "id": "obj/look", "anchor": "anchor/keeper-stand",
+             "radius": 2, "after": ["obj/talk"] }},
+          {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
+             "radius": 2, "after": ["obj/talk"] }}
+        ],
+        "on_objective_complete": {{
+          "obj/pull": [ {pull} ],
+          "obj/look": [ {look} ]
+        }},
+        "on_complete": []
+      }}
+    ]
+  }}
+}}"#
+    ))
+}
+
+const OPEN_DOOR: &str = r#"{ "type": "open-gate", "anchor": "anchor/door" }"#;
+const CLOSE_DOOR: &str =
+    r#"{ "type": "close-gate", "anchor": "anchor/door", "sealed_hint": "The bars hold." }"#;
+const NOTHING: &str = r#"{ "type": "set-flag", "flag": "flag/noted" }"#;
+
+/// **The green.** A sibling the proven walk performs before the gated leg opens
+/// the gate for it: the walk pulls the lever at step 2 and walks to the exit
+/// after step 3, so the door is open. Before the opener was read from the
+/// path's order this was `DW0317`, naming step 2 as "after this leg".
+#[test]
+fn a_sibling_the_walk_performs_first_opens_the_gate_for_the_leg() {
+    let p = prefabs();
+    let c = validated(&quests_doc_siblings(OPEN_DOOR, NOTHING), &p);
+    build(&c, &p).expect("the walk pulls the lever before it walks through the door");
+}
+
+/// **The perturbation: take the opener off the path.** The identical campaign
+/// with the lever's `open-gate` replaced by a `set-flag` — nothing the path
+/// performs opens the door, and the refusal stands.
+#[test]
+fn the_same_siblings_with_no_opener_on_the_path_are_dw0317() {
+    let p = prefabs();
+    let c = validated(&quests_doc_siblings(NOTHING, NOTHING), &p);
+    let err = build(&c, &p).expect_err("nothing the path performs opens the door");
+    assert!(err.contains("DW0317"), "{err}");
+    assert!(err.contains("anchor/door"), "{err}");
+}
+
+/// **A seal the walk performs after the opener still shuts the door.** The
+/// path's order is read whole for a region it opens: `obj/look` closes the
+/// door again one step after the lever opens it, so the party finds it shut.
+#[test]
+fn a_sibling_that_shuts_the_door_after_the_lever_keeps_the_refusal() {
+    let p = prefabs();
+    let c = validated(&quests_doc_siblings(OPEN_DOOR, CLOSE_DOOR), &p);
+    let err = build(&c, &p).expect_err("the walk shut the door again before the leg");
+    // The door is shut by a seal now, not by the world it was built in, so the
+    // refusal is the sealed-leg one rather than `DW0317`.
+    assert!(err.contains("DW0311"), "{err}");
+    assert!(err.contains("`close-gate` has sealed"), "{err}");
+}

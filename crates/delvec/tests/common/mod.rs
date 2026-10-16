@@ -14,6 +14,7 @@ pub mod pinned;
 pub mod sculpt;
 pub mod source_scan;
 pub mod station4;
+pub mod threshold;
 
 /// The six stage filenames (matching `delvec::compiler::load::STAGE_FILES`).
 pub const STAGE_FILES: [&str; 6] = [

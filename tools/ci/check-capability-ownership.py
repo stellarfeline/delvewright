@@ -92,6 +92,14 @@ from lib.rust_source import VISIBILITY  # noqa: E402
 # Keyed by the ENCLOSING FUNCTION, which survives the line moving. The value is
 # the DSL construct that owns the body and why it is not an `EnvTrigger`.
 INTERACTION_SITES = {
+    "clickbox::summon": (
+        "THE SHAPE, not a verb. `compiler::clickbox::ClickBox::summon` writes the "
+        "one `summon minecraft:interaction` every compiler-placed click box is "
+        "built by — each face near the block grid pushed one margin past it, so "
+        "the box is strictly nearer than any block it stands in (`DW1013`). It "
+        "answers no click and owns no reply; every caller is its own site in "
+        "this ledger, keyed by the caller's function."
+    ),
     "env_trigger_setup": (
         "THE GENERAL CONSTRUCT. `EnvTrigger {at, on: strike|use, effects}` — the "
         "DSL's first-class 'player clicked a thing here, run effects'. Every other "
@@ -219,6 +227,12 @@ INTERACTION_SITES = {
 }
 
 INTERACTION_SUMMON = re.compile(r'"(?:execute [^"]*run )?summon minecraft:interaction ')
+# A call to the one click-box rule (`compiler::clickbox::ClickBox`) summons a body
+# exactly as a literal does: the caller is the site, the rule only shapes it.
+CLICK_BOX_CALL = re.compile(r"ClickBox::(?:column|sized)\(")
+# The rule's own literal, keyed apart from any caller: it is where every
+# compiler-placed box is written, and owns no verb.
+CLICK_BOX_RULE = ("crates/delvec/src/compiler/clickbox.rs", "summon")
 FN_DEF = re.compile(rf"^\s*{VISIBILITY}fn\s+([a-z0-9_]+)")
 TEST_MOD = re.compile(r"^\s*mod tests\b")
 
@@ -633,8 +647,12 @@ def check_interactions(root):
                 cur = m.group(1)
             # `starts_with("summon minecraft:interaction ")` inspects a command
             # someone else emitted — it is a reader, not a second body.
+            rel = str(path.relative_to(root))
             if INTERACTION_SUMMON.search(line) and "starts_with" not in line:
-                found[cur].append(f"{path.relative_to(root)}:{i + 1}")
+                key = "clickbox::summon" if (rel, cur) == CLICK_BOX_RULE else cur
+                found[key].append(f"{rel}:{i + 1}")
+            elif CLICK_BOX_CALL.search(line):
+                found[cur].append(f"{rel}:{i + 1}")
     for fn, sites in sorted(found.items()):
         if fn not in INTERACTION_SITES:
             fails.append(
