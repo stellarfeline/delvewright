@@ -194,12 +194,16 @@ def test_the_sweep_states_its_binding_with_a_denominator() -> None:
     assert r.returncode == 0, r.stderr
     v = _dsl_version()
     assert f"tracked file(s) state `{v}`" in r.stdout
-    population, carriers, shapes, findings = version_sites.sweep(REPO, v)
+    population, skipped, carriers, shapes, findings = version_sites.sweep(REPO, v)
     assert not findings
     assert 0 < carriers < population, (carriers, population)
     # Not vacuous in the other direction either: the sweep must actually be
     # reaching the campaign documents, which are the population that grew.
     assert carriers > 100, carriers
+    # The skipped region is stated and is not empty: a prefix that matched no
+    # tracked file would be an exclusion auditing nothing.
+    assert skipped[0] > 0, skipped
+    assert f"skipped as decision records ({', '.join(version_sites.RECORDS)}): {skipped[0]} tracked" in r.stdout
 
 
 def test_a_hand_typed_literal_in_a_rust_test_reds(scratch: Path) -> None:
@@ -293,3 +297,53 @@ def test_a_counter_example_excuses_its_statements_and_nothing_else(scratch: Path
     r = run("verify", root=scratch)
     assert r.returncode == 1, r.stdout
     assert rel in r.stderr
+
+
+# --- decision records are history, not sites --------------------------------
+#
+# A spec or ADR records the number its surface was allocated, or the number it
+# does not move. Each such record used to red the sweep until a hand-written
+# allowlist entry (and with it a hand-written reach row) was added. The pair
+# below is the class boundary: a record stating the number passes, the same
+# sentence one directory over still reds.
+
+
+@pytest.mark.parametrize("rel", ["docs/specs/spec-9999-planted.md", "docs/adr/9999-planted.md"])
+def test_a_decision_record_stating_the_number_passes(scratch: Path, rel: str) -> None:
+    planted = scratch / rel
+    planted.parent.mkdir(parents=True, exist_ok=True)
+    planted.write_text(f"**Numbers**: `dsl_version` {_dsl_version()} is not moved.\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(scratch), "add", "-A"], check=True)
+    r = run("verify", root=scratch)
+    assert r.returncode == 0, r.stderr
+    assert "1 of which state" in r.stdout, r.stdout
+
+
+def test_a_reference_page_stating_the_number_still_reds(scratch: Path) -> None:
+    planted = scratch / "docs/reference/planted.md"
+    planted.parent.mkdir(parents=True, exist_ok=True)
+    planted.write_text(f"**Numbers**: `dsl_version` {_dsl_version()} is not moved.\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(scratch), "add", "-A"], check=True)
+    r = run("verify", root=scratch)
+    assert r.returncode == 1, r.stdout
+    assert "docs/reference/planted.md" in r.stderr
+    assert "none of the three legitimate shapes" in r.stderr
+
+
+def test_a_counter_example_inside_the_records_is_refused(scratch: Path) -> None:
+    """A second hatch over the class is the defect: an entry there binds to nothing."""
+    rel = "docs/specs/spec-9999-planted.md"
+    planted = scratch / rel
+    planted.parent.mkdir(parents=True, exist_ok=True)
+    planted.write_text(f"instrument {_dsl_version()}\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(scratch), "add", "-A"], check=True)
+    r = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; sys.path.insert(0, %r); import version_sites as m;"
+         "m.COUNTEREXAMPLES[%r] = {'statements': ['instrument {v}'], 'reason': 'a record'};"
+         "raise SystemExit(m.verify(__import__('pathlib').Path(%r)))"
+         % (str(SITES.parent), rel, str(scratch))],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 1, r.stdout
+    assert rel in r.stderr and "binds to nothing" in r.stderr
