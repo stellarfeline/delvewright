@@ -1149,3 +1149,77 @@ fn a_rest_restores_every_living_player() {
         "no restore of the resting player alone remains:\n{pick}"
     );
 }
+
+/// **A death after a plain checkpoint re-seats the waves too** (spec-0016 §1:
+/// retry never chips a wave down across lives). The fixture is given a plain
+/// `set-checkpoint` that fires after the bonfire is armed, so once the party
+/// passes it, it is the checkpoint a death respawns at. A partly beaten
+/// `respawns_on_rest` wave must stand whole again after that death, exactly as
+/// after a death at the fire — behind the same party-wipe latch — and the
+/// undefeated refresh of a billed boss or a hostile actor stays the fire's.
+#[test]
+fn a_death_after_a_plain_checkpoint_reseats_the_waves() {
+    let mut campaign = fixture_campaign();
+    let quest = campaign
+        .quests
+        .content
+        .quests
+        .iter_mut()
+        .find(|q| q.id.as_str() == "quest/trial")
+        .expect("the fixture's trial quest");
+    let (_, beat) = quest
+        .on_objective_complete
+        .iter_mut()
+        .find(|(o, _)| o.as_str() == "obj/door")
+        .expect("the beat after the bonfire is armed");
+    beat.push(
+        serde_json::from_value(serde_json::json!({
+            "type": "set-checkpoint",
+            "anchor": "anchor/objective"
+        }))
+        .expect("set-checkpoint parses"),
+    );
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let plain = plan
+        .checkpoints
+        .iter()
+        .find(|c| !c.rest)
+        .expect("the plain checkpoint is collected")
+        .index;
+    let out = build_campaign(&campaign);
+
+    let fire = fn_body(&out, "cp_respawn_fire");
+    let dispatch = format!(
+        "execute if score #cp dw.sys matches {plain} run function {NS}:cp_on_respawn_{plain}"
+    );
+    assert!(
+        fire.lines().any(|l| l == dispatch),
+        "a respawn at the plain checkpoint must dispatch its re-seat — today it re-seats \
+         nothing and a partly beaten `wave/guards` stays as it was:\n{fire}"
+    );
+    let on_respawn = fn_body(&out, &format!("cp_on_respawn_{plain}"));
+    assert_eq!(
+        on_respawn.lines().collect::<Vec<_>>(),
+        vec![
+            format!(
+                "execute if entity @s[tag=dw_wiped] if score #wipe dw.sys matches 1 run function \
+                 {NS}:party_reseat_waves"
+            )
+            .as_str()
+        ],
+        "the re-seat runs only for a body dead at a wipe, once per wipe:\n{on_respawn}"
+    );
+    let waves = fn_body(&out, "party_reseat_waves");
+    assert_eq!(
+        waves.lines().collect::<Vec<_>>(),
+        vec![
+            format!(
+                "execute if score #wseat_guards dw.sys matches 1 run function \
+                 {NS}:wave_reseat_guards"
+            )
+            .as_str()
+        ],
+        "every `respawns_on_rest` wave and nothing else:\n{waves}"
+    );
+}
