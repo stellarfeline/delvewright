@@ -147,9 +147,10 @@ export const methods = {
    * Judged by {@link LoopCrossWatch}, in the server's game ticks
    * (`executor/clock.ts`): the step fails when the body has stood at or past the
    * slab's near face through {@link LOOP_MOVE_TICKS} game ticks with no move, when
-   * the walk keeps ending short of the slab without advancing, or when the game
-   * clock stops ({@link GameClockWatch}). A trip that ends short is walked
-   * again. No wall-clock budget: a slow or stalled host stretches or stops the
+   * the walk keeps ending short of the slab without advancing or holds its trip,
+   * live, without advancing, or when the game clock stops ({@link GameClockWatch}).
+   * A trip that ends short is walked again. No wall-clock budget: a slow or
+   * stalled host stretches or stops the
    * ticks, and never fails the crossing.
    */
   async crossSlab(
@@ -200,9 +201,10 @@ export const methods = {
         const reading = await this.readGameTime(purpose);
         if (this.death) throw this.death;
         if (moved()) break;
+        const answeredAt = performance.now();
         clock ??= new GameClockWatch(purpose, reading.tick, LOOP_MOVE_TICKS);
-        clock.observe(reading.tick, performance.now());
-        watch.reading(reading.tick, at);
+        clock.observe(reading.tick, answeredAt);
+        watch.reading(reading.tick, at, answeredAt);
         await delay(POLL_MS);
       }
     } finally {

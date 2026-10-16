@@ -275,7 +275,9 @@ when it answered, and a move sent by then arrives before the answer. The
 crossing fails `LoopNotMovedError` when the body has stood at or past the slab's
 near face through 20 game ticks with no forced move; `LoopWalkBarrenError` when
 8 trips toward the slab in a row ended short of it without taking the body
-0.1 block further along the loop's axis; and `GameTimeStoppedError` on a stopped
+0.1 block further along the loop's axis; `LoopWalkStalledError` when, short of
+the slab, 20s of live answers (summed as `GameClockWatch` sums them) pass with
+the body not advancing 0.1 block; and `GameTimeStoppedError` on a stopped
 clock. A trip that ends short is walked again: the pinned pathfinder resolves a
 trip on an empty partial path, which its 40ms-per-tick search returns when the
 host stalls the bot mid-search, so a trip ended short says nothing about the

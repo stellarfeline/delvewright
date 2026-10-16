@@ -2133,7 +2133,8 @@ for the forced move; each move's delta must equal `offset` to within 0.001 block
 per axis (`sameDelta`), measured from the physics tick before the move. The step
 fails naming the loop when the body stands at or past the slab's near face
 through 20 game ticks with no move, or when the walk toward the slab keeps ending
-short of it without advancing (`harness/src/loop-cross.ts`; judged in game
+short of it, or holds its trip while server and bot answer, without advancing
+(`harness/src/loop-cross.ts`; judged in game
 ticks, never wall time, see `docs/reference/playtest-methodology.md`), and any other step fails when
 a walk is moved by the offset of a loop the path exercises, outside that loop's
 step (the loop was expected to have stood down). The leg after the step starts from the landing,
