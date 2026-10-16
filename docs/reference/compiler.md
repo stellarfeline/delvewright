@@ -2771,10 +2771,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   are credited to the path as forced. The step is in `plan.critical_path`:
   `positions_of` walks `pos`, then marks the landing `transport_before`, so the
   leg after the step begins at the landing — one enumeration of visited
-  positions for every consumer. The bot walks to `pos`, walks through `cross`,
+  positions for every consumer. The bot walks to `pos`, walks into `cross`,
   and requires the jump to equal `offset` to within 0.001 block per axis on every
-  crossing; it fails the step when a crossing times out
-  (`DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS`, default 20 s) and, outside a `loop`
+  crossing; it fails the step when the body stands in the slab through 20 game
+  ticks unmoved (`harness/src/loop-cross.ts`) and, outside a `loop`
   step, when any walk is moved by the offset of a loop the path exercises. It carries no
   `objective`.
 - `<out>/validation/critical-path-waypoints.json`: the DW0311-proven per-leg route
