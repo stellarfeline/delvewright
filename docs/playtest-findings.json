@@ -2997,6 +2997,140 @@
       "triage": "capability"
     },
     {
+      "binding": {
+        "files": [
+          "layout-graph.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "class": "barred"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1011",
+        "kind": "dw"
+      },
+      "finding": "the party reached scenes behind a shut barred door, out of story order, by entering the sea and swimming around it",
+      "general_form": "the far side of every barred edge or gate is unreachable from its near side while the gate is shut, by walking, falling, jumping or swimming",
+      "id": "str-01",
+      "note": "Carried by `DW1011` (`compiler::nav::separate`): per quest configuration, every gate the world resolves and every barred edge's seam gate is held to it: while the gate is shut, a body at its near face reaches its far face by no walk, fall, jump or swim (`World::body_moves`). Route proofs keep refusing water (spec-0038 §5); this is a separation proof. The binding counts barred edges in the layout graph.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "interact"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1013",
+        "kind": "dw"
+      },
+      "finding": "an interact prop took many right-clicks before one registered: the click target's box coincides with the prop block's faces, so the crosshair resolves to the block",
+      "general_form": "every click target an objective or trigger summons wins the client's pick from every cell the party can click it from: its box protrudes past the faces of the block it stands in",
+      "id": "str-02",
+      "note": "Carried by `DW1013` (`compiler::clickbox`): every click box the compiler places at a cell is built by one rule, `ClickBox`, which pushes each face lying within 0.01 block of the block grid 0.01 past it (an `interact` objective's box is `width:1.02f,height:2.02f` with its floor 0.01 below the cell), and the build reads every `summon minecraft:interaction` it ships and refuses a fixture-class box at absolute coordinates with any face within 0.001 block of the grid. NPC dialogue hitboxes (borne, moved with the body) and stake markers (runtime position) are counted and not judged. The harness pick ray (`harness/src/crosshair.ts`) clips blocks first and keeps an entity only when strictly nearer, and reads an interaction's size from its entity data. The binding counts the campaign's `interact` objectives; the build's `validation/click-box.json` states how many placed boxes were judged.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "any_of": [
+            {
+              "eq": {
+                "type": "clear-region"
+              }
+            },
+            {
+              "eq": {
+                "type": "set-block"
+              }
+            },
+            {
+              "eq": {
+                "type": "fill-region"
+              }
+            }
+          ]
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1002",
+        "kind": "dw"
+      },
+      "finding": "blocks lay on the ground as dropped items near the start, and a lantern hung askew",
+      "general_form": "no block the build or any effect writes pops off as an item in any configuration, and the written-world record counts item entities as a defect",
+      "id": "str-20",
+      "note": "Carried by `DW1002` (`compiler::attached`), whose three arms judge every block write: the load world; the write sequence, the load as the server runs it read off the shipped functions, each write laid in turn and every block the pinned jar asks as it lands judged (a falling block by the jar's `FallingBlock.isFree` once its function has run); and the runtime writes, every block-writing line outside the load, conditional or not, laid at once over the loaded world, so every configuration a path, a branch or an unforced beat can reach. The Stranding's drops were 347 gravel item entities holding 610 gravel in the played image's placed world (`delvewright/playtest:25ad5b95…`): each street template's gravel surface stood on the blockout mass, which the datapack wrote in the world build after `place_all` while the model wrote it first, so the gravel was set over air on every placement retry and fell, and the mass written under the falling blocks turned them into items. The played build carried no `DW1002` (delvec 1.12.0). The ground now goes down before any template (`world_ground` steps gated by `ground_verify`); the sequence arm refused that build's order with 308 falling gravel blocks and holds all 308 after the fix. `tools/ci/check-written-world.py` counts the save's item entities against the load's `summon minecraft:item` lines and reds `DW0955` on the excess (347 against 0 on the played save). The lantern near the start is held in the state its piece wrote (`lantern[hanging=true]` under spruce planks beside the post at [267, 98, 9], kept in the played save): a hanging lantern beside a post, not a drop. On The Stranding read by this engine (a scratch copy carried to this engine's `dsl_version`), `DW1002` refuses 37 blocks: a candle on a chest in the coyle house (load), and 26 dead bushes and 9 lanterns whose support a tide-out `fill … minecraft:air` takes in some configuration (runtime) — content repairs. The binding counts the effects that write blocks after load.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "npcs.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "npc/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1025",
+        "kind": "dw"
+      },
+      "finding": "characters stood with their backs to the player as the player walked up to talk",
+      "general_form": "a body the party talks to watches the party by default; a body declared to hold its facing (`watch: \"none\"`) faces every cell the party can talk to it from, and one that watches only a class faces the party's approach at the moment the talk is owed",
+      "id": "str-15",
+      "note": "Carried by DW1025 (compiler::approach, build tier) in two shapes. Every NPC a player can talk to watches the nearest player within 8 blocks unless it declares otherwise (`dsl::DEFAULT_WATCH_WITHIN`, resolved by `dsl::body_watch_sites`). On a walked route, at every talk-to step of every configuration, a body whose watch does not reach the approach (a class watch, or a short declared `within`) is judged by the yaw it holds against the party's last walked cell before it comes into talking reach. A body declaring `watch: \"none\"` is judged at every stance it holds (home summon, each walk's arrival) against every cell of the walked population from which a player can talk to it; any cell more than 90 degrees behind is refused. The skill's story guidance asks the author to decide, per speaking character, whether its gaze must not follow the player and to declare it. Recurring across campaigns.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "npcs.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "npc/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1026",
+        "kind": "dw"
+      },
+      "finding": "two bodies of one named character were visible at the same time",
+      "general_form": "one named character is never present as more than one entity at the same time, anywhere in the world, in any story state",
+      "id": "str-16",
+      "note": "Carried by DW1026 (compiler::presence, validation funnel): NPC and actor declarations that carry one visible name are one character; every story state of every configuration (the replay's journal, one effect list per tick, from world init) that leaves two of them in the world is refused. On this campaign's records it refuses the three Ivo Marrack skiff bodies spawned in one list (`obj/the-pillars`) and the four Sleeper NPCs on stage from world init.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
       "applies_when": {
         "contains": "minecraft:(chest|trapped_chest|barrel|[a-z_]*shulker_box|hopper|brewing_stand|dispenser|dropper|crafter|furnace|blast_furnace|smoker)\\b",
         "glob": "programs/*.json",

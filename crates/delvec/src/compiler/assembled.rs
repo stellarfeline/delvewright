@@ -697,6 +697,38 @@ struct Placed {
 /// The block a template holds where it places nothing.
 const STRUCTURE_VOID: &str = "minecraft:structure_void";
 
+/// **The cells one `/place template <pos> <rotation>` writes**, in the world:
+/// each with its rotated state and, for a fence gate, whether it stands open.
+/// A template's air is written (it carves what stood there); a template's
+/// `structure_void` is a cell the game does not place (spec-0098 §7), so it is
+/// not in the list — whatever stood there shows through, exactly as at a cell
+/// the template omits. The one reading [`placed_blocks`] and `DW1002`'s write
+/// sequence (`crate::compiler::attached`) both take.
+pub(crate) fn template_writes(
+    rotation: crate::compiler::solver::Rotation,
+    pos: [i32; 3],
+    bytes: &[u8],
+) -> Vec<([i32; 3], BlockState, Option<bool>)> {
+    // Blockstate-preserving read: waterlogging, slab halves and snow-layer
+    // counts are block STATE, and the fluid/step models are wrong without
+    // them. Every classifier matches on [`base_id`]. Each distinct state is
+    // rotated once per template.
+    let mut rotated: BTreeMap<BlockState, BlockState> = BTreeMap::new();
+    structure_cells_placed(bytes)
+        .into_iter()
+        .filter(|(_, name, _)| base_id(name) != STRUCTURE_VOID)
+        .map(|(local, name, open)| {
+            // Vanilla rotates blockstates as well as positions during
+            // `/place template … <rotation>` — see [`rotate_state`].
+            let name = *rotated
+                .entry(name)
+                .or_insert_with(|| BlockState::new(&rotate_state(&name, rotation)));
+            let t = rotation.transform(local);
+            ([pos[0] + t[0], pos[1] + t[1], pos[2] + t[2]], name, open)
+        })
+        .collect()
+}
+
 fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed {
     let mut blocks: BlockMap = BTreeMap::new();
     let mut open_gates: BTreeSet<[i32; 3]> = BTreeSet::new();
@@ -738,40 +770,10 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
                 let Some(bytes) = structures.get(&template.structure_file) else {
                     return Vec::new();
                 };
-                // Blockstate-preserving read: waterlogging, slab halves and
-                // snow-layer counts are block STATE, and the fluid/step models
-                // below are wrong without them. Every classifier matches on
-                // [`base_id`].
-                // Each distinct state is rotated once per template.
-                let mut rotated: BTreeMap<BlockState, BlockState> = BTreeMap::new();
-                structure_cells_placed(bytes)
-                    .into_iter()
-                    .map(|(local, name, open)| {
-                        // Vanilla rotates blockstates as well as positions during
-                        // `/place template … <rotation>` — see [`rotate_state`].
-                        let name = *rotated.entry(name).or_insert_with(|| {
-                            BlockState::new(&rotate_state(&name, piece.rotation))
-                        });
-                        let t = piece.rotation.transform(local);
-                        let cell = [
-                            template.pos[0] + t[0],
-                            template.pos[1] + t[1],
-                            template.pos[2] + t[2],
-                        ];
-                        (cell, name, open)
-                    })
-                    .collect::<Vec<_>>()
+                template_writes(piece.rotation, template.pos, bytes)
             },
             |cells| {
                 for (cell, name, open) in cells {
-                    // A template's `structure_void` is a cell the game does
-                    // not place (spec-0098 §7): whatever stood there shows
-                    // through, exactly as at a cell the template omits.
-                    // Writing it as a block would model a voided cell as
-                    // passable while the server keeps the wall under it.
-                    if base_id(&name) == STRUCTURE_VOID {
-                        continue;
-                    }
                     reached.mark(cell);
                     // A template's air is placed too, and carves what stood
                     // there — the mass under it, an earlier template's block.

@@ -700,6 +700,12 @@ this section is what they are *for* and the traps in each.
   (stage 5) turns it, every tick, to face the nearest player within `within`
   blocks of its feet — its eyes to theirs, body and head together; `"who":
   {"class": "class/<id>"}` watches only the nearest player who took that class.
+  **An NPC watches by default**: one that declares no `watch` turns to the
+  nearest player within 8 blocks, because a player can talk to every NPC. An
+  NPC whose scene needs it not to turn declares `"watch": "none"` and holds its
+  anchor's facing (and each walk's arrival turn); the build then checks that
+  facing from every cell a player can talk to it from. An actor never watches
+  unless it declares a watch, and has no `"none"`.
   With nobody in reach it keeps its last look; while a `move-npc` or
   `move-actor` walks it, the walk owns its facing and the watch resumes on
   arrival. On an actor it turns the puppet, never the unleashed body. Both

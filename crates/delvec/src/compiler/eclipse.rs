@@ -39,8 +39,11 @@
 //!   at the very same anchor later, and a soft-lock that starts at minute 30 is
 //!   still a soft-lock.
 //! * **Affordance.** Every right-click target the compiler summons is a
-//!   `minecraft:interaction` with `width:1.0f,height:2.0f` at a cell centre, so
-//!   its box is *exactly* the anchor cell's column, two blocks tall. Five
+//!   `minecraft:interaction` standing on its anchor cell's column, two blocks
+//!   tall, measured here as that column (`1.0 × 2.0`). The emitted box is the
+//!   column one click-box margin larger on every face
+//!   ([`crate::compiler::clickbox`]); the margin exists to beat the blocks in
+//!   the column and never decides which cells a body or another box shares. Five
 //!   sources, one shape: `interact` objectives, `use`/`strike` env triggers,
 //!   `bonfire` rest affordances, `shortcut` unlock affordances, and trap /
 //!   `timed-gate` `disarm` affordances.
@@ -136,7 +139,7 @@ delvewright_dsl::dw_code! {
     /// examined zero objects on any campaign whose only pressable thing was a door.
     /// And the contest is tested against the **cell**, not the emitted `1.02f` box:
     /// the protrusion exists to beat the block the body stands in, and
-    /// `emit::SEAL_MARGIN`'s own contract is that a hundredth of a block never reaches
+    /// `clickbox::CLICK_MARGIN`'s own contract is that a hundredth of a block never reaches
     /// into a neighbouring cell's affordances.
     pub const DW_SEAL_HITBOX_COLLISION: DwCode = DwCode::new("DW0422", ExitTier::Build);
 }
@@ -186,11 +189,12 @@ delvewright_dsl::dw_code! {
     pub const DW_AFFORDANCE_CONTEST: DwCode = DwCode::new("DW0878", ExitTier::Build);
 }
 
-/// Every affordance the compiler summons is `minecraft:interaction` with
-/// `width:1.0f` — exactly one cell across, centred on the cell.
+/// Every affordance the compiler summons stands on one cell's column — one cell
+/// across, centred on the cell (the emitted box adds the click-box margin,
+/// which these proofs do not measure; see the module docs).
 const AFFORDANCE_WIDTH: f64 = 1.0;
 
-/// …and `height:2.0f`, rising from the cell floor.
+/// …and two cells tall, rising from the cell floor.
 const AFFORDANCE_HEIGHT: f64 = 2.0;
 
 /// The horizontal clearance below which a neighbouring body is close enough to
@@ -216,7 +220,7 @@ struct Body {
     path: String,
 }
 
-/// The size every compiler-summoned press affordance has: `1.0 × 2.0`.
+/// The column every compiler-summoned press affordance stands on: `1.0 × 2.0`.
 pub(crate) const AFFORDANCE_SIZE: (f64, f64) = (AFFORDANCE_WIDTH, AFFORDANCE_HEIGHT);
 
 /// An interaction affordance: one `minecraft:interaction` entity at a cell.
@@ -670,14 +674,14 @@ pub fn check_body_eclipse(plan: &Plan) -> Result<Vec<Diagnostic>, Failure> {
 }
 
 /// The box one seal-answer hitbox occupies: its cell, grown by
-/// [`crate::compiler::emit::SEAL_MARGIN`] on every side so the entity is strictly nearer
+/// [`crate::compiler::clickbox::CLICK_MARGIN`] on every side so the entity is strictly nearer
 /// the player than the sealed block it stands in (an exactly-coincident box loses
 /// the client's ray-pick to the block, and the seal answers with silence).
 fn seal_box(cell: [i32; 3]) -> [Span; 3] {
     // **The cell, not the emitted box.** The shipped entity is one
-    // `SEAL_MARGIN` larger on every face, and that protrusion exists for exactly
+    // `CLICK_MARGIN` larger on every face, and that protrusion exists for exactly
     // one purpose: to be strictly nearer the eye than the BLOCK it stands in, so
-    // the press reaches the entity instead of the wall. `SEAL_MARGIN`'s own doc
+    // the press reaches the entity instead of the wall. `CLICK_MARGIN`'s own doc
     // states the other half of that contract — *a hundredth of a block never
     // reaches into a neighbouring cell's own affordances*.
     //
@@ -884,7 +888,7 @@ fn affordance_contest_error(a: &Affordance, b: &Affordance) -> Failure {
         code: DW_AFFORDANCE_CONTEST,
         message: format!(
             "the {} `{}` at anchor `{}` and the {} `{}` at anchor `{}` both stand at {:?}. Each \
-             summons its own `minecraft:interaction` box, `1.0 × 2.0` at that cell's centre, so \
+             summons its own `minecraft:interaction` box on that cell's column, the same size, so \
              the two boxes are COINCIDENT: a player's entity-pick ray enters both at exactly the \
              same distance and the client resolves the tie by entity iteration order. Which of \
              the two answers a click is therefore not decidable from the campaign at all — one of \
@@ -1002,7 +1006,7 @@ fn eclipse_error(b: &Body, a: &Affordance, w: f64, h: f64) -> Failure {
         code: DW_BODY_ECLIPSE,
         message: format!(
             "{} stands at `{}` {:?} and ECLIPSES the {} `{}`'s affordance at `{}` {:?}: the body's \
-             hitbox overlaps the interaction entity's own 1.0 × 2.0 box, so a player's crosshair \
+             hitbox overlaps the interaction entity's own column, so a player's crosshair \
              ray-picks the invulnerable body and the affordance can never be clicked — the \
              interaction is unreachable and, if it is required, the delve soft-locks there. \
              Prescription: move the {}'s anchor, or move the interaction's anchor, so the two are \
@@ -1132,9 +1136,9 @@ mod press_hitbox_tests {
     /// **The cell-not-box correction, as geometry.** A press body and an
     /// affordance in the SAME cell are an exact ray-pick tie — that is `DW0422`.
     /// Two in *adjoining* cells are not, and must not be reported: the shipped
-    /// entity is one `SEAL_MARGIN` larger on every face, and that centimetre
+    /// entity is one `CLICK_MARGIN` larger on every face, and that centimetre
     /// exists to beat the block it stands in, never to claim the neighbour's
-    /// space (`emit::SEAL_MARGIN`'s own contract).
+    /// space (`clickbox::CLICK_MARGIN`'s own contract).
     ///
     /// Both directions are asserted, because a check that can only fail in the
     /// direction that never happens is the fourth way to be vacuous.

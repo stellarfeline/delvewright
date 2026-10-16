@@ -5,6 +5,7 @@ use super::*;
 use crate::compiler::failure::Failure;
 use crate::compiler::plan::Plan;
 use std::collections::BTreeSet;
+use std::ops::ControlFlow;
 
 /// Prove every `shortcut` door (spec-0016 §2) is a real shortcut.
 ///
@@ -94,6 +95,60 @@ fn verify_shortcuts(
         }
     }
     Ok(())
+}
+
+impl World {
+    /// A reach that a body widens by opening every shortcut whose lever it
+    /// stands at: `reach` is run over this world, then again over `open(cells)`,
+    /// the world with the gate cells of every shortcut whose unlock (snapped to
+    /// its stand cell on this world) the last answer holds opened, in rounds
+    /// until no further lever is reached, since a door one lever opens can lead
+    /// to the next lever. The completability model holds every shortcut shut; a
+    /// question about where a player can get to asks this instead, because a
+    /// lever is something a player pulls.
+    ///
+    /// `reach` answers [`ControlFlow::Break`] to stop early with a verdict, or
+    /// [`ControlFlow::Continue`] with the cells it reached; the last round's
+    /// cells are returned as `Continue`. Deterministic (ADR-0006): shortcuts in
+    /// declaration order, cells in `BTreeSet` order.
+    pub(in crate::compiler::nav) fn in_shortcut_rounds<B>(
+        &self,
+        shortcuts: &[crate::compiler::plan::ShortcutPlan],
+        open: impl Fn(&BTreeSet<[i32; 3]>) -> World,
+        mut reach: impl FnMut(&World) -> ControlFlow<B, BTreeSet<[i32; 3]>>,
+    ) -> ControlFlow<B, BTreeSet<[i32; 3]>> {
+        let levers: Vec<Option<[i32; 3]>> = shortcuts
+            .iter()
+            .map(|s| self.snap_standable(s.unlock, SNAP_RADIUS))
+            .collect();
+        let mut opened: BTreeSet<usize> = BTreeSet::new();
+        loop {
+            let owned;
+            let w: &World = if opened.is_empty() {
+                self
+            } else {
+                let cells: BTreeSet<[i32; 3]> = opened
+                    .iter()
+                    .flat_map(|&i| {
+                        let (lo, hi) = shortcuts[i].gate_region;
+                        crate::compiler::assembled::region_cells(lo, hi)
+                    })
+                    .collect();
+                owned = open(&cells);
+                &owned
+            };
+            let seen = reach(w)?;
+            let before = opened.len();
+            for (i, lever) in levers.iter().enumerate() {
+                if lever.is_some_and(|l| seen.contains(&l)) {
+                    opened.insert(i);
+                }
+            }
+            if opened.len() == before {
+                return ControlFlow::Continue(seen);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

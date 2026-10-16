@@ -84,7 +84,30 @@
         "role": "quest-giver",
         "traversal": {
           "locomotion": "climber"
+        },
+        "watch": {
+          "who": "nearest",
+          "within": 4
         }
+      },
+      {
+        "anchor": "anchor/usher",
+        "area": "area/hall",
+        "base_entity": "minecraft:villager",
+        "id": "npc/copyist",
+        "name": "The Copyist",
+        "offset": [
+          0,
+          0,
+          -4
+        ],
+        "persona": {
+          "archetype": "copyist at the wall desk",
+          "motivation": "Finish the page before the light goes.",
+          "speech_style": "Murmured, without looking up."
+        },
+        "role": "flavor",
+        "watch": "none"
       }
     ]
   },
