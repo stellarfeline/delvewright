@@ -12,6 +12,7 @@
 
 import type { Bot } from "mineflayer";
 import type { Vec3Tuple } from "./critical-path.ts";
+import type { ServerMove } from "./loop-cross.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError } from "./death.ts";
 import { NavigationOwner } from "./navigation.ts";
@@ -320,20 +321,13 @@ export class MineflayerExecutor implements StepExecutor {
    * pathfinder so a path computed in the old area cannot survive the jump.
    */
   lastForcedPos: { x: number; y: number; z: number } | undefined;
-  /**
-   * spec-0086 §6: where the bot stood at the last physics tick — the position a
-   * server-forced move's delta is measured from. mineflayer applies the position
-   * packet between ticks and then emits `forcedMove`, so this is the position the
-   * move started from.
-   */
-  tickPos: { x: number; y: number; z: number } | undefined;
   /** The last clientbound `position` packet, raw, taken before mineflayer applied it. */
   lastPositionPacket: unknown;
   /** The loops the path exercises, by id → offset (spec-0086 §6). A forced move
    * during a plain walk whose delta is one of these fails that walk. */
   loopOffsets = new Map<string, Vec3Tuple>();
-  /** While a loop step crosses: every forced move's delta, in order. */
-  loopWatch: { deltas: Vec3Tuple[] } | undefined;
+  /** While a loop step crosses: every forced move, as its position packet stated it, in order. */
+  loopWatch: { moves: Array<ServerMove | undefined> } | undefined;
   /** A forced move during a plain walk that equals a loop's offset: the proof
    * and the game disagree about the loop's gate. Thrown by the walk it ended. */
   loopFault: Error | undefined;

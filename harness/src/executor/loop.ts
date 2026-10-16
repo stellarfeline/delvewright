@@ -5,7 +5,7 @@ import { delay, fmt } from "./connection.ts";
 import { POLL_MS } from "./clock.ts";
 import { goals } from "./walk.ts";
 import { GameClockWatch } from "../game-time.ts";
-import { LOOP_MOVE_TICKS, LoopCrossWatch } from "../loop-cross.ts";
+import { LOOP_MOVE_TICKS, LoopCrossWatch, serverMove, type ServerMove } from "../loop-cross.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
 /**
@@ -20,6 +20,15 @@ import type { MineflayerExecutor } from "../executor.ts";
 /** spec-0086 §6: whether a forced move's delta is a loop's offset. */
 function sameDelta(delta: Vec3Tuple, offset: Vec3Tuple): boolean {
   return delta.every((c, i) => Math.abs(c - offset[i]!) <= LOOP_DELTA_TOLERANCE);
+}
+
+/** A server move as a failure names it: its delta, or where it set the body and on which axes. */
+function fmtMove(move: ServerMove | undefined): string {
+  const f = (v: Vec3Tuple): string => `[${v.map((c) => c.toFixed(3)).join(", ")}]`;
+  if (!move) return "with no position packet read";
+  return move.relative
+    ? `by ${f(move.delta)}`
+    : `to ${f(move.to)} (absolute on ${move.absolute.join(", ")}, so a move to a place, not by a delta)`;
 }
 
 const TRANSPORT_JUMP_BLOCKS = 64;
@@ -51,35 +60,28 @@ export const methods = {
   onForcedMove(this: MineflayerExecutor): void {
     const bot = this.bot;
     const p = bot?.entity?.position;
+    // spec-0086 §6: the move as the server stated it, from the packet that
+    // caused this event; taken once, so a later event never reads it again.
+    const move = serverMove(this.lastPositionPacket);
+    this.lastPositionPacket = undefined;
     if (!p) return;
     const now = { x: p.x, y: p.y, z: p.z };
     const prev = this.lastForcedPos;
     this.lastForcedPos = now;
-    // spec-0086 §6: the move's delta from the last physics tick.
-    const from = this.tickPos;
-    if (from) {
-      const delta: Vec3Tuple = [now.x - from.x, now.y - from.y, now.z - from.z];
-      if (this.loopWatch) {
-        process.stderr.write(
-          `[loop-diag] forced move: tick delta [${delta.map((c) => c.toFixed(4)).join(", ")}] ` +
-            `from [${[from.x, from.y, from.z].map((c) => c.toFixed(4)).join(", ")}], packet ` +
-            `${JSON.stringify(this.lastPositionPacket)}\n`,
-        );
-        this.loopWatch.deltas.push(delta);
-      } else {
-        for (const [id, offset] of this.loopOffsets) {
-          if (sameDelta(delta, offset)) {
-            this.loopFault = new Error(
-              `a forced move by [${delta.map((c) => c.toFixed(3)).join(", ")}] during a plain ` +
-                `walk is loop ${id}'s offset — the loop held where the compiler proved it ` +
-                `released, so the proof's configuration and the game disagree about its gate`,
-            );
-            this.stopPathfinding();
-            break;
-          }
+    if (this.loopWatch) {
+      this.loopWatch.moves.push(move);
+    } else if (move?.relative) {
+      for (const [id, offset] of this.loopOffsets) {
+        if (sameDelta(move.delta, offset)) {
+          this.loopFault = new Error(
+            `a forced move by ${fmtMove(move)} during a plain ` +
+              `walk is loop ${id}'s offset — the loop held where the compiler proved it ` +
+              `released, so the proof's configuration and the game disagree about its gate`,
+          );
+          this.stopPathfinding();
+          break;
         }
       }
-      this.tickPos = now;
     }
     if (prev && Math.hypot(now.x - prev.x, now.z - prev.z) >= TRANSPORT_JUMP_BLOCKS) {
       this.stopPathfinding();
@@ -109,7 +111,8 @@ export const methods = {
    * **Exercise a loop** (spec-0086 §6): walk to the step's approach cell, set a
    * walk goal in the slab, and wait for the server's forced move. The move
    * must be exactly the loop's offset — within {@link LOOP_DELTA_TOLERANCE} on
-   * each axis, measured from the physics tick before — and on it the pathfinder
+   * each axis, as the server's position packet states it ({@link serverMove}),
+   * never measured against a position the client sampled — and on it the pathfinder
    * is stopped, so the stale goal does not walk the body into the slab again.
    * Repeated until `times` moves are seen. A forced move with any other delta
    * fails the step naming the loop, the delta seen and the count reached, and so
@@ -129,21 +132,21 @@ export const methods = {
           step.pos,
         ]);
       }
-      this.loopWatch = { deltas: [] };
-      let deltas: Vec3Tuple[];
+      this.loopWatch = { moves: [] };
+      let moves: Array<ServerMove | undefined>;
       try {
-        deltas = await this.crossSlab(step, label, goal, axis, dir, seen);
+        moves = await this.crossSlab(step, label, goal, axis, dir, seen);
       } finally {
         this.loopWatch = undefined;
       }
-      const delta = deltas[0]!;
-      if (!sameDelta(delta, step.offset)) {
+      const move = moves[0];
+      if (!move?.relative || !sameDelta(move.delta, step.offset)) {
         throw new Error(
-          `${label}: a forced move by [${delta.map((c) => c.toFixed(3)).join(", ")}] is not ` +
-            `the loop's offset [${step.offset.join(", ")}]; ${seen} of ${step.times} move(s) ` +
-            `seen before it`,
+          `${label}: a forced move ${fmtMove(move)} is not the loop's relative move by ` +
+            `[${step.offset.join(", ")}]; ${seen} of ${step.times} move(s) seen before it`,
         );
       }
+      const delta = move.delta;
       process.stderr.write(
         `[loop] ${step.loop}: move ${seen + 1} of ${step.times} by ` +
           `[${delta.map((c) => c.toFixed(3)).join(", ")}], bot now at ${fmt(bot.entity.position)}\n`,
@@ -171,13 +174,13 @@ export const methods = {
     axis: number,
     dir: number,
     seen: number,
-  ): Promise<Vec3Tuple[]> {
+  ): Promise<Array<ServerMove | undefined>> {
     const bot = this.requireBot();
     const here = (): Vec3Tuple => {
       const p = bot.entity.position;
       return [p.x, p.y, p.z];
     };
-    const moved = (): boolean => (this.loopWatch?.deltas.length ?? 0) > 0;
+    const moved = (): boolean => (this.loopWatch?.moves.length ?? 0) > 0;
     const watch = new LoopCrossWatch(label, step.cross, axis, dir, seen, step.times);
     const purpose = `${label}, crossing ${seen + 1} of ${step.times}`;
     let clock: GameClockWatch | undefined;
@@ -223,6 +226,6 @@ export const methods = {
       trip = undefined;
       await t;
     }
-    return this.loopWatch?.deltas ?? [];
+    return this.loopWatch?.moves ?? [];
   },
 };

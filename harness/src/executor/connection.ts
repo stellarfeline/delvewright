@@ -337,10 +337,6 @@ export const methods = {
       this.lastPositionPacket = packet;
     });
     bot.on("forcedMove", () => this.onForcedMove());
-    bot.on("physicsTick", () => {
-      const p = bot.entity?.position;
-      if (p) this.tickPos = { x: p.x, y: p.y, z: p.z };
-    });
     // spec-0100 §4.7: the sculk family's ear, from connect — a sensor click is a
     // block update, a shriek a `world_event` 3007, and a darkness effect or a
     // warden fails the run.

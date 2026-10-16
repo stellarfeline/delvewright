@@ -64,6 +64,42 @@ export function pastFace(at: Vec3Tuple, cross: Vec3Tuple, axis: number, dir: num
   return dir > 0 ? at[axis]! - cross[axis]! : cross[axis]! + 1 - at[axis]!;
 }
 
+/**
+ * **A server-forced move, as the server stated it** (spec-0086 §6): read from
+ * the clientbound `position` packet that caused it. A loop's `tp @s ~dx ~dy ~dz`
+ * reaches the client as a packet relative on every axis whose coordinates ARE
+ * the move: the server computed them from the position it held for the body in
+ * the tick it ran the `tp`. So the move is never measured against a position
+ * the client sampled, which the body's own walking keeps changing between the
+ * server's tick and the packet's arrival. A packet absolute on any axis is a
+ * move to a place, not by a delta, and is never a loop's: `to` carries the
+ * packet's coordinates and `absolute` the axes it set outright.
+ */
+export type ServerMove =
+  | { readonly relative: true; readonly delta: Vec3Tuple }
+  | { readonly relative: false; readonly to: Vec3Tuple; readonly absolute: readonly string[] };
+
+/**
+ * The move a clientbound `position` packet states, or `undefined` for a value
+ * that is not one. mineflayer's two flag shapes are both read: the 1.21.3+
+ * bitflags object (`flags.x` true = relative) and the older bitmask (bit 0 x,
+ * bit 1 y, bit 2 z), the same rule `mineflayer/lib/plugins/physics.js` applies.
+ */
+export function serverMove(packet: unknown): ServerMove | undefined {
+  const p = packet as { x?: unknown; y?: unknown; z?: unknown; flags?: unknown } | null | undefined;
+  if (!p || typeof p.x !== "number" || typeof p.y !== "number" || typeof p.z !== "number") return undefined;
+  const xyz: Vec3Tuple = [p.x, p.y, p.z];
+  const f = p.flags;
+  let rel: [boolean, boolean, boolean];
+  if (typeof f === "number") rel = [(f & 1) !== 0, (f & 2) !== 0, (f & 4) !== 0];
+  else if (f && typeof f === "object") {
+    const o = f as Record<string, unknown>;
+    rel = [o.x === true, o.y === true, o.z === true];
+  } else return undefined;
+  if (rel.every(Boolean)) return { relative: true, delta: xyz };
+  return { relative: false, to: xyz, absolute: (["x", "y", "z"] as const).filter((_, i) => !rel[i]) };
+}
+
 /** The named failure: the body stood in the slab and the loop did not move it. */
 export class LoopNotMovedError extends Error {
   constructor(label: string, since: number, tick: number, at: Vec3Tuple, seen: number, times: number) {
