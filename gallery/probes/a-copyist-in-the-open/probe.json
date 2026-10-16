@@ -1,0 +1,57 @@
+{
+  "code": "DW1025",
+  "patch": [
+    {
+      "doc": "npcs.json",
+      "op": "replace",
+      "path": "/content/npcs/4/offset",
+      "value": [
+        0,
+        0,
+        -3
+      ]
+    },
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/cast/npc~1copyist/at/offset",
+      "value": [
+        0,
+        0,
+        -3
+      ]
+    },
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/1/cast/npc~1copyist/at/offset",
+      "value": [
+        0,
+        0,
+        -3
+      ]
+    },
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/2/cast/npc~1copyist/at/offset",
+      "value": [
+        0,
+        0,
+        -3
+      ]
+    },
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/3/cast/npc~1copyist/at/offset",
+      "value": [
+        0,
+        0,
+        -3
+      ]
+    }
+  ],
+  "units": [],
+  "why": "The copyist declares `watch: \"none\"`, so she holds the usher's south facing; one block off the north wall, the cells a player can reach between her back and the wall lie behind her, and she is judged from every one of them, though no step of the route ever talks to her. It declares no unit: a body may hold its facing and may stand anywhere, and what the engine refuses is a held body some cell a player can talk to it from lies behind. Before this refusal a talk on the route was the only approach judged, and a body nobody's route reaches was never judged at all."
+}

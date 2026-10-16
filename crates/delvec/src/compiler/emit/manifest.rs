@@ -2,6 +2,20 @@
 
 use super::*;
 
+/// **The DW codes the engine that wrote this manifest carries**: every code its
+/// registry declares, sorted, once each. A ledger row's `dw` carrier is judged
+/// against the engine that BUILT a tree (`tools/creator/staging-gate.py`), and
+/// `delvec_version` cannot answer that — every unreleased revision states the
+/// same version — so the build states the set itself. A function of the
+/// binary, never of the checkout or the clock.
+pub(super) fn dw_codes() -> Vec<&'static str> {
+    let codes: BTreeSet<&'static str> = delvewright_dsl::diagnostic::declared()
+        .iter()
+        .map(|d| d.code)
+        .collect();
+    codes.into_iter().collect()
+}
+
 /// The scheduled tail (ticks) between firing `effs` and a `campaign-complete`
 /// nested anywhere inside it — `None` when the bundle reaches none.
 ///
@@ -472,6 +486,7 @@ pub(super) fn emit_manifest(
         "campaign_id": plan.namespace,
         "delvec_version": DELVEC_VERSION,
         "dsl_version": plan.campaign.world.dsl_version,
+        "dw_codes": dw_codes(),
         "mc_version": MC_VERSION,
         "inputs": inputs,
         "outputs": outputs

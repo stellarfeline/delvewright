@@ -241,11 +241,12 @@ pub(super) fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) 
         // to catch is an interaction with nothing to look at — not the case here.
         if !t.payload_effects.is_empty() && t.trigger == delvewright_dsl::TrapTrigger::TrappedChest
         {
-            let v = ent_xyz(t.trigger_cell);
-            out.push(format!(
-                "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_trapfire_{}\"]}}",
-                v[0], v[1], v[2], t.safe
-            ));
+            out.push(
+                crate::compiler::clickbox::ClickBox::column(t.trigger_cell, 2).summon(&format!(
+                    "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_trapfire_{}\"]",
+                    t.safe
+                )),
+            );
         }
         // Summon the disarm interaction affordance (a right-click target) and
         // the visible hardware that makes it findable. The prefab may ALSO dress
@@ -254,10 +255,12 @@ pub(super) fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) 
         // (the drowned-bell class, `DW0420`).
         if let Some(dis) = &t.disarm {
             let v = ent_xyz(dis.via_cell);
-            out.push(format!(
-                "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_trapdis_{}\"]}}",
-                v[0], v[1], v[2], t.safe
-            ));
+            out.push(
+                crate::compiler::clickbox::ClickBox::column(dis.via_cell, 2).summon(&format!(
+                    "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_trapdis_{}\"]",
+                    t.safe
+                )),
+            );
             out.push(affordance_hardware(
                 v,
                 &format!("dw_trapdis_{}", t.safe),

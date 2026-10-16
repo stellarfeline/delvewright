@@ -261,13 +261,14 @@ not third-party reconstructions.
   by a combination the single-neighbour reading misses, and 1,101
   neighbourhoods where a held state was still dropped by a second, killing
   condition. The bases table carries the CENTER/RIGID faces some rule asks
-  (`isFaceSturdy` with `SupportType.CENTER`/`RIGID`) and the air, solid and
-  still-water flags, each column its own collapse: 4,602 rows.
+  (`isFaceSturdy` with `SupportType.CENTER`/`RIGID`) and the air, solid,
+  still-water and falls-into (`FallingBlock.isFree`) flags, each column its own
+  collapse: 4,602 rows.
   **Why it exists**: a block the build writes and the server drops — a wall
   torch on a glass pane, a lantern hung under air — was seen only by the
   staging-time written-world comparison (`DW0955`). Consumed by
-  `delvewright_dsl::support`, which `DW1002`, the relight pass's fixture rule
-  and `DW0354` judge by. Cross-checked against a sample of the Minecraft Wiki's
+  `delvewright_dsl::support`, which `DW1002` (its write arms read the falls-into
+  flag too), the relight pass's fixture rule and `DW0354` judge by. Cross-checked against a sample of the Minecraft Wiki's
   placement statements (`crates/dsl/tests/support_wiki.rs`, 57 assertions; one
   disagreement, settled for the jar and written there).
   **Reproduce it**: `python3 tools/maintenance/dump-support.py [--check]
@@ -664,7 +665,7 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `faces-1.21.11.tsv` | `ba718f855a73609ebd15f9ede83b43fec9f2bc1db2f53de0ba10ad8289ce8ad4` |
 | `redstone-1.21.11.tsv` | `8a2ca8673d01d420125e1bb0b288533d72d5847d0f69a7f51286593f6bc6d496` |
 | `support-1.21.11.tsv` | `c70c0fab67a9c236b7df85f7107a667f4c56f9142f3c1300f7ead807ca45cd4b` |
-| `support-bases-1.21.11.tsv` | `30785b0ed7f96aab5159618a2a0f621255d8c6918d39db946a023bc1d5b7dfc2` |
+| `support-bases-1.21.11.tsv` | `c6769b88424488fe1b82888989f4d291890efe786381571eec406afc576a53d4` |
 | `particles-1.21.11.json` | `a64121b11f5fe66ea4a03a16d655cd09dfe590e5434ea142688078b780b027c7` |
 
 ## Not committed

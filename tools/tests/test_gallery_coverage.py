@@ -600,3 +600,25 @@ def test_a_loop_ledger_that_binds_nothing_is_a_zero_binding(tmp_path):
     (out / "critical-path.json").write_text(json.dumps({"steps": [{"action": "loop"}]}))
     zeroes = mod.read_build_ledgers(out)[1]
     assert len(zeroes) == 1 and zeroes[0].startswith("loop-gate.json: absent"), zeroes
+
+
+def test_a_threshold_ledger_that_judges_no_trigger_is_a_zero_binding(tmp_path):
+    """DW1044 on the gallery: the gallery declares a walk-fired trigger its
+    critical path relies on, so a `threshold-gate.json` judging none is a proof
+    that stopped reaching what the gallery writes — read through the shared
+    `examined` rule — as is a path that performs a trigger with no ledger beside
+    it."""
+    mod = _load_checker()
+    out = tmp_path / "build"
+    (out / "validation").mkdir(parents=True)
+    row = {"code": "DW1044", "performed": 7, "judged": 1, "examined": 1, "entered": 1,
+           "no_debt": 5, "by_hand": 1, "carried": 0}
+    ledger = out / "validation" / "threshold-gate.json"
+    ledger.write_text(json.dumps(row))
+    (out / "critical-path.json").write_text(json.dumps({"steps": [{"action": "trigger"}]}))
+    assert mod.read_build_ledgers(out)[1] == []
+    ledger.write_text(json.dumps({**row, "judged": 0, "examined": 0, "entered": 0, "no_debt": 6}))
+    assert mod.read_build_ledgers(out)[1] == ["threshold-gate.json: `examined` is 0"]
+    ledger.unlink()
+    zeroes = mod.read_build_ledgers(out)[1]
+    assert len(zeroes) == 1 and zeroes[0].startswith("threshold-gate.json: absent"), zeroes

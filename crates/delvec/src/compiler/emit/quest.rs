@@ -22,6 +22,58 @@ pub(super) fn campaign_outro(c: &delvewright_dsl::Campaign) -> String {
         .unwrap_or_else(|| c.world.content.title.clone())
 }
 
+/// The engine's own quest cues, the three sounds no campaign writes: the
+/// "new objective" cue an announced objective plays when it activates, the
+/// cue it plays when it completes, and the campaign-complete fanfare. Each is
+/// played to the whole party at the playsound defaults (volume 1, pitch 1), and
+/// [`cue_ledger`] states them for the bot.
+pub(super) const CUE_ANNOUNCE: &str = "minecraft:block.note_block.pling";
+/// See [`CUE_ANNOUNCE`].
+pub(super) const CUE_COMPLETE: &str = "minecraft:entity.experience_orb.pickup";
+/// See [`CUE_ANNOUNCE`].
+pub(super) const CUE_CAMPAIGN: &str = "minecraft:ui.toast.challenge_complete";
+
+/// The one line a quest cue is played by: at every member of the party, to
+/// that member. The functions a cue runs in carry the server's command source
+/// (tick-run, or `execute as` with no `at`), whose position is the world spawn,
+/// so a positionless `playsound … @a` would sound there.
+pub(super) fn cue_line(sound: &str) -> String {
+    format!("execute as @a at @s run playsound {sound} player @s")
+}
+
+/// `validation/cues.json`: the quest cues this build plays and the objectives
+/// that owe them, for the bot to judge where each one arrives. `objectives` are
+/// the announced objectives (spec-0093), in declaration order: each plays
+/// [`CUE_ANNOUNCE`] when it activates and [`CUE_COMPLETE`] when it completes.
+/// `world_spawn` is the command source a positionless sound would play at;
+/// `range` is how far a sound at `volume` carries (`pulse::BASE_RANGE`).
+pub(super) fn cue_ledger(plan: &Plan) -> Value {
+    let c = plan.campaign;
+    let guidance = &c.quests.content.guidance;
+    let objectives: Vec<&str> = c
+        .quests
+        .content
+        .quests
+        .iter()
+        .flat_map(|q| q.objectives.iter())
+        .filter(|o| o.announced(guidance))
+        .map(|o| o.id().as_str())
+        .collect();
+    let volume = 1.0_f64;
+    json!({
+        "world_spawn": super::world::campaign_spawn(plan),
+        "volume": volume,
+        "pitch": 1.0,
+        "range": crate::compiler::pulse::BASE_RANGE * volume.max(1.0),
+        "cues": {
+            "announce": CUE_ANNOUNCE,
+            "complete": CUE_COMPLETE,
+            "campaign": CUE_CAMPAIGN,
+        },
+        "objectives": objectives,
+    })
+}
+
 /// The `dw.sys` fake player holding the live online-player count, recomputed each
 /// tick — the lobby gate's only input (spec-0018 `world.min_players`). Emitted
 /// only for a campaign that declares `min_players >= 2`.
@@ -219,7 +271,7 @@ pub(super) fn quest_completion_fns(
                         tr_with(hint, &[("color", json!("gray")), ("italic", json!(true))])
                     ));
                 }
-                ann.push("playsound minecraft:block.note_block.pling player @a".to_string());
+                ann.push(cue_line(CUE_ANNOUNCE));
                 ann.push(format!(
                     "scoreboard players set {} {} 1",
                     plan::PARTY,
@@ -273,7 +325,7 @@ pub(super) fn quest_completion_fns(
                         ],
                     )
                 ));
-                body.push("playsound minecraft:entity.experience_orb.pickup player @a".to_string());
+                body.push(cue_line(CUE_COMPLETE));
             }
             // Objective-marker lifecycle: despawn every ENTITY this
             // objective's activation summoned, so a completed interact/reach
@@ -453,7 +505,7 @@ pub(super) fn campaign_complete_fns(
         "title @a subtitle {}",
         tr_with(title, &[("color", json!("yellow"))])
     ));
-    cc.push("playsound minecraft:ui.toast.challenge_complete player @a".to_string());
+    cc.push(cue_line(CUE_CAMPAIGN));
     // Machine-readable completion marker for the validation bot. The bot reads
     // `dw.campaign` from the sidebar per the amended contract, BUT mineflayer
     // 4.37.x cannot parse 1.21.11 scoreboard score packets (verified live: no

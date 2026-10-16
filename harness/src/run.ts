@@ -9,6 +9,7 @@
 import { loadRepaintPlanForCriticalPath, repaintBindingLine } from "./repaint.ts";
 import { loadPulsePlanForCriticalPath, pulseBindingLine } from "./pulse.ts";
 import { loadContainerLedgerForCriticalPath } from "./containers.ts";
+import { cueBinding, cueBindingLine, loadCueLedgerForCriticalPath } from "./cues.ts";
 import { readFile } from "node:fs/promises";
 import nodePath from "node:path";
 import { parseCriticalPathJson } from "./critical-path.ts";
@@ -32,6 +33,7 @@ import {
 import {
   deathLoopBinding,
   deathLoopStage,
+  deathLoopCoverage,
   loadDeathPlanForCriticalPath,
 } from "./death-loop.ts";
 import {
@@ -350,6 +352,18 @@ async function main(): Promise<number> {
   } else {
     process.stderr.write(`container ledger: none in this build\n`);
   }
+  // The engine's quest cues, judged where each arrives. Absent → a build that
+  // predates the ledger, said out loud.
+  const cueLedger = await loadCueLedgerForCriticalPath(pathArg);
+  if (cueLedger) {
+    executor.useCueLedger(cueLedger);
+    process.stderr.write(
+      `cue ledger: ${cueLedger.objectives.length} announced objective(s) owe a completion cue; ` +
+        `world spawn ${JSON.stringify(cueLedger.worldSpawn)}, range ${cueLedger.range}\n`,
+    );
+  } else {
+    process.stderr.write(`cue ledger: none in this build\n`);
+  }
   const combatPlan = await loadCombatPlanForCriticalPath(pathArg);
   const dieRetry = combatPlan !== undefined && dieRetryFromEnv();
   const report = new RunReport(criticalPath.campaignId, combatPlan?.difficulty ?? "unknown");
@@ -445,16 +459,19 @@ async function main(): Promise<number> {
           }
           // From here the executor is the authority on which stage a crash is in.
           crashStage = "critical-path";
+          // Each lethal volume is tried at the earliest step boundary from
+          // which it is live and reachable; whatever no boundary admits is
+          // tried after the path.
+          if (deathLoop) executor.armDeathLoopOnPath();
           await runSequence(criticalPath, executor, {
             retryOnDeath: retryOnDeathFromEnv(),
           });
           pathProven = true;
           // The watch binding counts the proven path's walks only.
           executor.watchLedger().armed = false;
-          // Only after the path is proven. The death loop deliberately
-          // kills the player, so running it earlier would leave every later step
-          // walking out of a grave — and a delve whose critical path is broken
-          // has a bigger finding than its recovery stake.
+          // The volumes no step boundary admitted, after the path is proven.
+          // A trial at a boundary recovers the bot and walks it back to where
+          // the path left off, so no later step walks out of a grave.
           if (deathLoop) await executor.runDeathLoop();
         })(),
         budgetMs,
@@ -600,6 +617,17 @@ async function main(): Promise<number> {
       ...v.failures,
       ...(pathFailure === undefined ? v.unreached : []),
     ]);
+    // Every quest cue the run heard, and every one a marker owed, arrived at
+    // the bot's own position.
+    const cues = executor.cueJudgement();
+    const cueFailures = cues ? [...cues.failures] : [];
+    if (cueLedger && cues) {
+      const b = cueBinding(cueLedger, cues);
+      const line = cueBindingLine(cueLedger, b);
+      process.stderr.write(`${line}\n`);
+      for (const f of cueFailures) process.stderr.write(`[cue] FAIL ${f}\n`);
+      report.recordCues({ ...b, line, verdicts: [...cues.owed, ...cues.unclaimed] });
+    }
     report.stage({
       stage: "critical-path",
       ran: true,
@@ -608,7 +636,8 @@ async function main(): Promise<number> {
         musterFailures.length === 0 &&
         repaintFailures.length === 0 &&
         watchFailures.length === 0 &&
-        pulseFailures.length === 0,
+        pulseFailures.length === 0 &&
+        cueFailures.length === 0,
       findings: report.musterFindings(),
       failures: [
         ...(pathFailure === undefined ? [] : [describe(pathFailure)]),
@@ -616,6 +645,7 @@ async function main(): Promise<number> {
         ...repaintFailures,
         ...watchFailures,
         ...pulseFailures,
+        ...cueFailures,
       ],
     });
     // The death loop. Recorded whether it ran or not, and a stage that
@@ -643,7 +673,13 @@ async function main(): Promise<number> {
       binding: deathBinding,
       trials: lethalTrials,
       trialsFinished: executor.deathLoopTrialsFinished(),
+      volumes: deathPlan?.volumes.map((v) => v.id) ?? [],
     });
+    if (deathPlan && deathLoop) {
+      process.stderr.write(
+        `${deathLoopCoverage(deathPlan.volumes.map((v) => v.id), lethalTrials).line}\n`,
+      );
+    }
     if (deathBinding) report.recordDeathLoop(deathBinding, lethalTrials);
     report.stage(deathStage);
     report.recordDieRetryBinding(retryBinding);

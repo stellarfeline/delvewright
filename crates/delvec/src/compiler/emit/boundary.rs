@@ -295,7 +295,9 @@ pub(super) fn boundary_fns(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec
     let ret = vec![
         "$tp @s $(x) $(y) $(z)".to_string(),
         format!("title @s actionbar {msg}"),
-        format!("playsound {BOUNDARY_SOUND} player @s ~ ~ ~ 0.6 1"),
+        // `at @s`, after the teleport: the function runs `as` the player with
+        // the tick's source position, the world spawn.
+        format!("execute at @s run playsound {BOUNDARY_SOUND} player @s ~ ~ ~ 0.6 1"),
     ];
 
     vec![

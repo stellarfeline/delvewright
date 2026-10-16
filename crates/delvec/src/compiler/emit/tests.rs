@@ -429,3 +429,23 @@ fn a_narrate_sound_plays_at_each_listener() {
         assert_eq!(body.len(), 2, "{body:?}");
     }
 }
+
+/// The engine's quest cues play at every member of the party, to that member,
+/// and the line states it: the command tree refuses the positionless form.
+#[test]
+fn a_quest_cue_plays_at_each_member_of_the_party() {
+    let tree = CommandTree::v1_21_11();
+    for cue in [CUE_ANNOUNCE, CUE_COMPLETE, CUE_CAMPAIGN] {
+        let line = cue_line(cue);
+        assert_eq!(
+            line,
+            format!("execute as @a at @s run playsound {cue} player @s")
+        );
+        assert_eq!(tree.validate_line(&line), Ok(()), "{line}");
+        assert!(
+            tree.validate_line(&format!("playsound {cue} player @a"))
+                .is_err(),
+            "the positionless form of {cue} must be refused"
+        );
+    }
+}

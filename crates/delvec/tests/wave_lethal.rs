@@ -205,6 +205,13 @@ fn a_gate_authored_open_is_the_as_built_reach() {
 #[test]
 fn a_kill_objective_wave_is_judged_for_reach() {
     let mut quests: serde_json::Value = serde_json::from_str(&quests(false)).unwrap();
+    // The side door the edits carve beside the keep's gate is a way round it,
+    // so here the gate is no story gate: nothing opens it, and the party takes
+    // the side door (`DW1011` refuses a gate the story opens with a way round).
+    quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+        .as_array_mut()
+        .expect("obj/talk carries effects")
+        .retain(|e| e["type"] != "open-gate");
     quests["content"]["quests"][0]["objectives"]
         .as_array_mut()
         .unwrap()
