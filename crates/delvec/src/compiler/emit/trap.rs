@@ -218,6 +218,16 @@ pub(super) fn trap_gate_fns(
     out
 }
 
+/// The `summon` of a trapped-chest trap's detection hitbox, tagged
+/// `dw_trapfire_<trap>`: the one spelling `trap_setup` and the fire PackTest
+/// share.
+pub(super) fn trapped_chest_hitbox(t: &plan::TrapPlan) -> String {
+    crate::compiler::clickbox::ClickBox::column(t.trigger_cell, 2).summon(&format!(
+        "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_trapfire_{}\"]",
+        t.safe
+    ))
+}
+
 /// `setup_finish` commands for traps (spec-0011): summon a trapped chest's
 /// detection hitbox and the disarm affordance's interaction entity, and seed
 /// the gated traps' hardware. Empty for a campaign with no traps.
@@ -235,12 +245,7 @@ pub(super) fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) 
         // the trap's trigger block. The invisible-lever failure that rule exists
         // to catch is an interaction with nothing to look at — not the case here.
         if t.trigger == delvewright_dsl::TrapTrigger::TrappedChest {
-            out.push(
-                crate::compiler::clickbox::ClickBox::column(t.trigger_cell, 2).summon(&format!(
-                    "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_trapfire_{}\"]",
-                    t.safe
-                )),
-            );
+            out.push(trapped_chest_hitbox(t));
         }
         // Summon the disarm interaction affordance (a right-click target) and
         // the visible hardware that makes it findable. The prefab may ALSO dress
@@ -651,6 +656,14 @@ pub(super) fn trap_fire_tick(plan: &Plan) -> Vec<String> {
         let guard = trap_fire_guard(t);
         match t.trigger {
             delvewright_dsl::TrapTrigger::TrappedChest => {
+                // Every open writes its own record and the pass consumes it, so a
+                // `rearm` chest is re-armed at the head of each pass. Clearing it
+                // after the record is consumed, as a plate is cleared once its
+                // cell empties, would clear it in the very pass that fired it and
+                // leave nothing to read that the trap fired.
+                if matches!(t.reset, delvewright_dsl::TrapReset::Rearm) {
+                    out.push(format!("scoreboard players set #trapfire_{id} dw.sys 0"));
+                }
                 out.push(format!(
                     "execute unless score #trapfire_{id} dw.sys matches 1 {guard}if entity \
                      @e[tag=dw_trapfire_{id},nbt={{interaction:{{}}}}] run function \
@@ -659,12 +672,6 @@ pub(super) fn trap_fire_tick(plan: &Plan) -> Vec<String> {
                 out.push(format!(
                     "execute as @e[tag=dw_trapfire_{id}] run data remove entity @s interaction"
                 ));
-                if matches!(t.reset, delvewright_dsl::TrapReset::Rearm) {
-                    out.push(format!(
-                        "execute unless entity @e[tag=dw_trapfire_{id},nbt={{interaction:{{}}}}] \
-                         run scoreboard players set #trapfire_{id} dw.sys 0"
-                    ));
-                }
             }
             delvewright_dsl::TrapTrigger::PressurePlate
             | delvewright_dsl::TrapTrigger::Tripwire => {

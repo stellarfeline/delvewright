@@ -248,6 +248,17 @@ fn trap_disarm_and_fire_emit_end_to_end() {
         ),
         "the detection must stand down once the trap is disarmed:\n{detect}"
     );
+    // A `rearm` chest re-arms at the head of the pass, so the pass that fires it
+    // leaves the latch set for a reader.
+    assert_eq!(
+        detect.lines().next().map(str::trim),
+        Some("scoreboard players set #trapfire_dart_hall dw.sys 0"),
+        "{detect}"
+    );
+    assert!(
+        !detect.contains("unless entity @e[tag=dw_trapfire_dart_hall"),
+        "{detect}"
+    );
     let tick = text(
         &out,
         &format!("datapack/data/{NS}/function/tick.mcfunction"),

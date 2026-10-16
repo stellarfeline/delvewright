@@ -8,7 +8,8 @@ use super::*;
 /// the campaign arms it in (its gate open, its disarm unthrown), the trigger is
 /// sprung the way a player springs it — the dummy stood on a plate's or
 /// tripwire's cell, an interaction record written on a trapped chest's hitbox
-/// — and the REAL `trap_detect` runs: the latch must be set again. Only the
+/// (summoned by the emitter's own spelling where `setup_finish` has not yet
+/// placed it) — and the REAL `trap_detect` runs: the latch must be set again. Only the
 /// positive half is asserted: the detection reads every player, and on a
 /// shared batch server another template's dummy may stand anywhere.
 ///
@@ -57,6 +58,13 @@ pub(super) fn emit_trap_fire_packtests(plan: &Plan, out: &mut BuildOutput) {
                 ));
             }
             delvewright_dsl::TrapTrigger::TrappedChest => {
+                // `setup` schedules the `setup_finish` that summons the hitbox,
+                // so a template's tick 0 may not have it yet: summon it, by the
+                // emitter's own spelling, only where it is absent.
+                b.push(format!(
+                    "execute unless entity @e[tag=dw_trapfire_{id}] run {}",
+                    trapped_chest_hitbox(t)
+                ));
                 b.push(format!(
                     "data modify entity @e[tag=dw_trapfire_{id},limit=1] interaction set value \
                      {{player:[I;0,0,0,0],timestamp:1L}}"
