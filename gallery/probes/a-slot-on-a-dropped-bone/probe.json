@@ -1,0 +1,13 @@
+{
+  "code": "DW1035",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/1/objectives/2/slot",
+      "value": "weapon.mainhand"
+    }
+  ],
+  "units": [],
+  "why": "The muster's bone, which drops from the wave and is picked up off the flagstones, given a `slot` as if it stood in a stand's hand. A `slot` names where a collect's item lands in the holder it adopts; this collect adopts no `holder` — its item lands on the ground — so there is no slot for the author to choose, and the slot is refused rather than silently ignored. It declares no unit: `Collect.slot` is written by the gallery proper, on the emeralds in the case."
+}
