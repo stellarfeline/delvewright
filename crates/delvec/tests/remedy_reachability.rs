@@ -3875,7 +3875,7 @@ fn hello_room_facing(tag: &str, facing: &str) -> PathBuf {
 #[test]
 fn dw1025_declaring_the_watch_it_names_turns_the_keeper_to_the_party() {
     let dir = hello_room_facing("dw1025", "east");
-    let camp = campaign("dw1025", None);
+    let camp = campaign("dw1025", None, &dir);
     edit_doc(&camp, "npcs.json", |v| {
         v["content"]["npcs"][0]["watch"] =
             serde_json::json!({ "who": { "class": "class/wanderer" }, "within": 3 });
@@ -3898,8 +3898,8 @@ fn dw1025_declaring_the_watch_it_names_turns_the_keeper_to_the_party() {
 
 /// hello-world with the keeper holding its facing (`watch: "none"`), at
 /// `offset` from its stand (the cast's mark with it).
-fn held_keeper(tag: &str, offset: [i32; 3]) -> PathBuf {
-    let camp = campaign(tag, None);
+fn held_keeper(tag: &str, offset: [i32; 3], prefabs: &Path) -> PathBuf {
+    let camp = campaign(tag, None, prefabs);
     edit_doc(&camp, "npcs.json", |v| {
         v["content"]["npcs"][0]["watch"] = serde_json::json!("none");
         if offset != [0, 0, 0] {
@@ -3921,8 +3921,8 @@ fn held_keeper(tag: &str, offset: [i32; 3]) -> PathBuf {
 /// default.
 #[test]
 fn dw1025_removing_the_held_declaration_lets_the_keeper_watch() {
-    let camp = held_keeper("dw1025-held", [0, 0, 0]);
     let dir = common::prefabs_dir();
+    let camp = held_keeper("dw1025-held", [0, 0, 0], &dir);
     let (code, before) = build("dw1025-held-before", &camp, &dir);
     assert_eq!(code, 3, "{before}");
     assert!(
@@ -3948,7 +3948,7 @@ fn dw1025_removing_the_held_declaration_lets_the_keeper_watch() {
 #[test]
 fn dw1025_an_offset_against_the_wall_answers_a_held_keeper_in_the_open() {
     let dir = hello_room_facing("dw1025-offset", "south");
-    let camp = held_keeper("dw1025-offset", [0, 0, 0]);
+    let camp = held_keeper("dw1025-offset", [0, 0, 0], &dir);
     let (code, before) = build("dw1025-offset-before", &camp, &dir);
     assert_eq!(code, 3, "{before}");
     assert!(
@@ -3956,7 +3956,7 @@ fn dw1025_an_offset_against_the_wall_answers_a_held_keeper_in_the_open() {
             && before.contains("set its `offset` from `anchor/keeper-stand`"),
         "the message names the move:\n{before}"
     );
-    let camp = held_keeper("dw1025-offset-moved", [0, 0, -3]);
+    let camp = held_keeper("dw1025-offset-moved", [0, 0, -3], &dir);
     let (code, after) = build("dw1025-offset-after", &camp, &dir);
     assert_eq!(code, 0, "{after}");
     assert!(after.contains("0 stance(s) refused"), "{after}");
@@ -3966,8 +3966,8 @@ fn dw1025_an_offset_against_the_wall_answers_a_held_keeper_in_the_open() {
 /// facing it, the keeper is told the one facing that faces every cell.
 #[test]
 fn dw1025_declaring_the_named_facing_answers_a_held_keeper() {
-    let camp = held_keeper("dw1025-facing", [0, 0, -3]);
     let wall = hello_room_facing("dw1025-facing-north", "north");
+    let camp = held_keeper("dw1025-facing", [0, 0, -3], &wall);
     let (code, before) = build("dw1025-facing-before", &camp, &wall);
     assert_eq!(code, 3, "{before}");
     assert!(
@@ -3975,6 +3975,7 @@ fn dw1025_declaring_the_named_facing_answers_a_held_keeper() {
         "the message names the move:\n{before}"
     );
     let room = hello_room_facing("dw1025-facing-south", "south");
+    let camp = held_keeper("dw1025-facing-south", [0, 0, -3], &room);
     let (code, after) = build("dw1025-facing-after", &camp, &room);
     assert_eq!(code, 0, "{after}");
     assert!(after.contains("0 stance(s) refused"), "{after}");
@@ -3987,7 +3988,7 @@ fn dw1025_declaring_the_named_facing_answers_a_held_keeper() {
 /// hello-world with a deferred second NPC carrying `name`, spawned when the
 /// keeper is talked to.
 fn two_keepers(tag: &str, name: &str) -> PathBuf {
-    let camp = campaign(tag, None);
+    let camp = campaign(tag, None, &common::prefabs_dir());
     edit_doc(&camp, "npcs.json", |v| {
         let mut n = v["content"]["npcs"][0].clone();
         n["id"] = serde_json::json!("npc/keeper-later");
