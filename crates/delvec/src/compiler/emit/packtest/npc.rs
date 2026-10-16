@@ -677,26 +677,6 @@ fn unseen_exit_samples(uuid: &str, key: &str) -> Vec<String> {
     ]
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The watched body's UUID reaches the command in the form vanilla prints it
-    /// and the NBT in the form vanilla stores it — the same 128 bits.
-    #[test]
-    fn watched_uuid_forms_agree() {
-        let u = PT_WATCHED_UUID;
-        assert_eq!(uuid_hyphenated(u), "44570000-756e-7365-656e-000000000001");
-        assert_eq!(uuid_nbt(u), "[I;1146552320,1970172773,1701707776,1]");
-        assert_eq!(
-            with_uuid("summon minecraft:villager 1 2 3 {NoAI:1b}", u).as_deref(),
-            Some(
-                "summon minecraft:villager 1 2 3 {UUID:[I;1146552320,1970172773,1701707776,1],NoAI:1b}"
-            )
-        );
-    }
-}
-
 /// Whether the walk `m`'s own `on_arrive` takes its body away — a
 /// `despawn-npc` of the walker at any depth of the bundle the emitter lowers
 /// into `mv_arrive_<key>` (the first-seen `move-npc` for this body and mark, as
@@ -722,4 +702,24 @@ fn arrival_takes_the_body(
             _ => None,
         })
         .is_some_and(|on_arrive| despawns(on_arrive, &m.npc))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The watched body's UUID reaches the command in the form vanilla prints it
+    /// and the NBT in the form vanilla stores it — the same 128 bits.
+    #[test]
+    fn watched_uuid_forms_agree() {
+        let u = PT_WATCHED_UUID;
+        assert_eq!(uuid_hyphenated(u), "44570000-756e-7365-656e-000000000001");
+        assert_eq!(uuid_nbt(u), "[I;1146552320,1970172773,1701707776,1]");
+        assert_eq!(
+            with_uuid("summon minecraft:villager 1 2 3 {NoAI:1b}", u).as_deref(),
+            Some(
+                "summon minecraft:villager 1 2 3 {UUID:[I;1146552320,1970172773,1701707776,1],NoAI:1b}"
+            )
+        );
+    }
 }
