@@ -1958,7 +1958,7 @@ test("a walk to a holder's stance replays the leg the holder's cell names, and c
   executor.useCampaign("hello-world");
   executor.useWaypoints(
     parseWaypoints({
-      version: "0.49.0",
+      version: "0.0.0-fixture",
       campaign_id: "hello-world",
       legs: [
         {
