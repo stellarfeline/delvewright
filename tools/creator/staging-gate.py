@@ -1600,9 +1600,10 @@ def build_fingerprint(build: pathlib.Path) -> str | None:
 #   whose `build.manifest_sha256` the harness stamps. Refused when absent, for
 #   another build, a harness crash, without a `critical-path` stage that ran and
 #   passed, or with any stage that ran red.
-# - `--written-world`: `tools/ci/check-written-world.py --record` (`DW0955`),
-#   the world the pinned server built compared cell by cell with the world the
-#   engine writes. Refused when absent, for another build, or not a pass.
+# - `--written-world`: `tools/ci/check-written-world.py --record` (`DW0955`,
+#   `DW1040`), the world the pinned server built compared cell by cell and
+#   object by object with the world the engine writes. Refused when absent, for
+#   another build, without the object comparison, or not a pass on both.
 #
 # Neither is reachable by `--stage-anyway`: that override admits classes the
 # ledger cannot cover; a red critical path is a build a bot already failed,
@@ -1686,7 +1687,24 @@ def proof_refusals(
                 f"written world (DW0955): {written_world} compares another build (manifest "
                 f"{(sha or 'none')[:12]}…, this tree {short}…)"
             )
-        if doc.get("verdict") != "pass":
+        objs = doc.get("objects") if isinstance(doc.get("objects"), dict) else None
+        if objs is None:
+            reasons.append(
+                f"written world (DW1040): {written_world} carries no placed-object comparison — "
+                "a record of the cells alone is half the comparison; record it again with this "
+                "tree's tools/ci/check-written-world.py"
+            )
+        elif objs.get("verdict") != "pass":
+            first = (objs.get("sample") or ["?"])[0]
+            reasons.append(
+                f"written world (DW1040): {objs.get('differing', '?')} placed object(s) differ in "
+                f"no class; first: {first}"
+            )
+        cells_red = doc.get("cells_verdict", doc.get("verdict")) != "pass"
+        items_red = (doc.get("item_entities") or {}).get("entities", 0) > (
+            doc.get("item_entities") or {}
+        ).get("declared", 0)
+        if doc.get("verdict") != "pass" and (cells_red or items_red):
             sample = doc.get("model_sample") or []
             first = (
                 f"; first {sample[0].get('cell')}: written {sample[0].get('written')} / server "
@@ -1712,6 +1730,7 @@ def proof_refusals(
             "record_sha256": hashlib.sha256(written_world.read_bytes()).hexdigest(),
             "compared": doc.get("compared"),
             "model": classes.get("model"),
+            "objects": (objs or {}).get("differing"),
         }
     return reasons, proven
 

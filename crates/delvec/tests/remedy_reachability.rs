@@ -4290,3 +4290,40 @@ fn dw1044_closing_the_way_round_builds() {
     assert_eq!(code, 0, "{after}");
     assert!(after.contains("1 entered by every walk"), "{after}");
 }
+
+/// hello-world whose exit re-shuts the door and fires a dolly along `x = 5`
+/// from `from` to `to` (offsets from `anchor/exit`).
+fn dolly_campaign(tag: &str, from: [i32; 3], to: [i32; 3]) -> PathBuf {
+    let camp = campaign(tag, None);
+    common::patch_file(&camp.join("quests.json"), |v| {
+        v["content"]["quests"][0]["on_objective_complete"]["obj/exit"] = serde_json::json!([
+            {"type": "close-gate", "anchor": "anchor/door",
+             "sealed_hint": "The bars hold.",
+             "happening": {"verb": "seals", "text": "the door shuts behind the party"}},
+            {"type": "cutscene", "shots": [{"path": [
+                {"anchor": "anchor/exit", "offset": from},
+                {"anchor": "anchor/exit", "offset": to}
+            ], "seconds": 2}]}
+        ]);
+    });
+    camp
+}
+
+/// **`DW0308` in its firing step's world** (spec-0112 §7.4): a dolly the exit
+/// fires across the door it shuts is refused naming the world; moving the
+/// waypoint `offset` the message names off the door's side reaches a
+/// different verdict — the build.
+#[test]
+fn dw0308_moving_the_waypoint_off_the_shut_gate_builds() {
+    let pf = common::prefabs_dir();
+    let through = dolly_campaign("dw0308-through", [0, 2, -4], [0, 2, 0]);
+    let (code, out) = build("dw0308-through", &through, &pf);
+    assert_eq!(code, 3, "{out}");
+    assert!(
+        out.contains("DW0308") && out.contains("in world `after-obj-exit`"),
+        "{out}"
+    );
+    let moved = dolly_campaign("dw0308-moved", [0, 2, 0], [1, 2, 0]);
+    let (code, out) = build("dw0308-moved", &moved, &pf);
+    assert_eq!(code, 0, "the move the message names did not build:\n{out}");
+}
