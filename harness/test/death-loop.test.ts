@@ -101,8 +101,8 @@ function planDoc(): Record<string, unknown> {
     ],
     placement: {
       seats: [
-        { cp: -1, label: "the campaign's entry spawn", cell: [5, 65, 2] },
-        { cp: 0, label: "checkpoint anchor `anchor/keeper-stand`", cell: [5, 65, 4] },
+        { cp: -1, label: "the campaign's entry spawn", cell: [5, 65, 2], in_force_after: -1 },
+        { cp: 0, label: "checkpoint anchor `anchor/keeper-stand`", cell: [5, 65, 4], in_force_after: 0 },
       ],
       regions: [
         {
@@ -125,12 +125,14 @@ function planDoc(): Record<string, unknown> {
         { seat: 1, region: 1, anchor: [4, 65, 5] },
       ],
     },
+    crush_gates: [],
     binding: {
       lethal_volumes: 1,
       on_death_effects: 1,
       stakes: 1,
       respawn_seats: 2,
       placement_rows: 4,
+      crush_gates: 0,
       unbound: false,
       reason: null,
     },
@@ -1569,4 +1571,28 @@ test("a declared volume the stage never tried is a failure, never a silent skip"
     JSON.stringify(row.failures),
   );
   assert.match(row.findings[0]!, /exercised 1 of 2 declared lethal volume\(s\)/);
+});
+
+test("a crush gate row parses, and a binding that miscounts crush gates is refused", () => {
+  const doc = planDoc();
+  doc["crush_gates"] = [
+    {
+      id: "timed-gate/first-paddle",
+      region: { lo: [0, 64, 33], hi: [2, 66, 33] },
+      open_ticks: 80,
+      closed_ticks: 40,
+      phase: 0,
+      approaches: [{ mouth: [0, 64, 32], stand: [0, 64, 33] }],
+      crossed_at: 1,
+      gate: { terms: [] },
+    },
+  ];
+  (doc["binding"] as Record<string, unknown>)["crush_gates"] = 1;
+  const p = parseDeathPlan(doc);
+  assert.equal(p.crushGates.length, 1);
+  assert.equal(p.crushGates[0]!.crossedAt, 1);
+  assert.deepEqual(p.crushGates[0]!.approaches[0]!.stand, [0, 64, 33]);
+  assert.equal(p.seats[0]!.inForceAfter, -1);
+  (doc["binding"] as Record<string, unknown>)["crush_gates"] = 0;
+  assert.throws(() => parseDeathPlan(doc), DeathPlanParseError);
 });

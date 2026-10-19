@@ -29,6 +29,7 @@ import {
 import { type MusterBody, type MusterSummary, type MusterVerdict } from "./muster.ts";
 import { ReplyBrackets } from "./command-reply.ts";
 import { type Box, type DeathPlan, type LethalTrial } from "./death-loop.ts";
+import type { CrushTrial } from "./crush-death.ts";
 import { type ClientLoadedState } from "./client-loaded.ts";
 import type { ResourcePackState } from "./resource-pack.ts";
 import { type LoadWindowTracer } from "./load-window.ts";
@@ -62,6 +63,7 @@ import { methods as pulseMethods } from "./executor/pulse.ts";
 import { methods as cueMethods } from "./executor/cue.ts";
 import { methods as scoreMethods } from "./executor/score.ts";
 import { methods as lethalMethods } from "./executor/lethal.ts";
+import { methods as crushMethods } from "./executor/crush.ts";
 import { methods as stakeMethods } from "./executor/stake.ts";
 import { methods as waveMethods } from "./executor/wave.ts";
 import { methods as dieRetryMethods } from "./executor/die-retry.ts";
@@ -303,6 +305,17 @@ export class MineflayerExecutor implements StepExecutor {
   deathLoopOnPath = false;
   /** The declared volumes a trial has been opened for, at a boundary or after the path. */
   readonly deathLoopTried = new Set<string>();
+  /** Every walk into a crush gate's closing cells this run made. */
+  readonly crushTrials: CrushTrial[] = [];
+  /** The declared crush gates a trial has been opened for. */
+  readonly crushTried = new Set<string>();
+  /** Whether crush gates are tried at the critical path's step boundaries. */
+  crushOnPath = false;
+  /**
+   * The span of the crush gate whose mouth the crush stage is walking to: walled
+   * cell for cell on that walk instead of widened (`executor/walk.ts`).
+   */
+  crushApproachRegion: Box | undefined;
   /** Serial number of the last gate term asked — see {@link askTerm}. */
   gateAsks = 0;
   /**
@@ -596,6 +609,7 @@ type Methods = typeof connectionMethods &
   typeof cueMethods &
   typeof scoreMethods &
   typeof lethalMethods &
+  typeof crushMethods &
   typeof stakeMethods &
   typeof waveMethods &
   typeof dieRetryMethods &
@@ -610,4 +624,4 @@ type Methods = typeof connectionMethods &
   typeof placementMethods &
   typeof clockMethods;
 export interface MineflayerExecutor extends Methods {}
-for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, pulseMethods, cueMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods]) Object.assign(MineflayerExecutor.prototype, methods);
+for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, pulseMethods, cueMethods, scoreMethods, lethalMethods, crushMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods]) Object.assign(MineflayerExecutor.prototype, methods);

@@ -721,17 +721,6 @@ pub(super) fn prove_world(
                 // death regions — a volume that strands the party is a worse
                 // finding, and it should be reported first.
                 stake_table = crate::compiler::stake::build(plan, world, campaign_spawn(plan))?;
-                // …and the contract the bot tier needs to prove any of it at
-                // runtime. Built here, from the SAME table the proofs above ran
-                // on, because a PackTest fake player is permanently undamageable
-                // (measured 2026-08-03 and 2026-08-09) and so the whole death loop
-                // is the mineflayer tier's claim to make.
-                death_plan = crate::compiler::deathplan::build(
-                    plan,
-                    world,
-                    campaign_spawn(plan),
-                    stake_table.as_ref(),
-                );
                 crate::compiler::nav::check_stealth_zones(plan, world)?;
                 // …and the onset-survivability proof on top of them (DW0355): a
                 // punishing beat must be escapable in `grace_ticks` from where the
@@ -805,6 +794,17 @@ pub(super) fn prove_world(
                 // or walls — the water-flow / post-nav-mutation divergence class —
                 // failing the build loudly (DW0314) instead of stranding the bot.
                 crate::compiler::nav::verify_exported_routes(world, &routes)?;
+                // …and the contract the bot tier needs to prove the death loop at
+                // runtime: built from the SAME placement table the stake proofs
+                // above ran on, and from these proven routes, which say at which
+                // step each crush gate is first crossed.
+                death_plan = crate::compiler::deathplan::build(
+                    plan,
+                    world,
+                    campaign_spawn(plan),
+                    stake_table.as_ref(),
+                    &routes,
+                );
                 // spec-0065 §4.3: what the furniture exclusion bound, over the
                 // same world and the same legs the proofs above walked. Printed
                 // on every build that walks, zeroes included.
