@@ -5273,7 +5273,8 @@ world. Invariants:
     anywhere" test would pass. Requiring the climb-out cell to be in the
     *reachable* walk region is what makes it a return, not just a landing.
 - **Gate-region collision (`DW0353`, advisory).** A world-edit inside a region a
-  runtime write fills — a `close-gate`'s gate region, or a `fill-region`'s box — is
+  runtime write fills — a `close-gate`'s gate region, a `fill-region`'s box, a
+  `set-block`'s cell, a laid way, a trigger's or an objective's prop — is
   overwritten with that write's block when it fires (a solid, or water/lava) and
   cleared to **air** when its dual does,
   so one cycle erases it. It reads `plan.region_events`, so every region-writing
