@@ -279,6 +279,12 @@ pub(super) fn validate_loaded(
             examined.push(
                 delvewright_dsl::textstyle::InlineStyleBinding::of(&campaign, &sidecars).line(),
             );
+            // DW1049: a direction in a player-facing English line names what the
+            // player sees, never a compass point.
+            diags.extend(delvewright_dsl::compass::validate_compass_directions(
+                &campaign,
+            ));
+            examined.push(delvewright_dsl::compass::CompassBinding::of(&campaign).line());
             // The compiler's own chrome namespace is reserved as well (DW0186):
             // `delvewright.*` keys are the engine's on-screen strings, shipped
             // translated with the compiler, and a sidecar row under that prefix

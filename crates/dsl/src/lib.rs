@@ -32,6 +32,7 @@ pub mod celestial;
 pub mod chrome;
 pub mod class;
 pub mod color;
+pub mod compass;
 pub mod cutscene;
 pub mod design;
 pub mod detailplan;
