@@ -145,3 +145,16 @@ fn dw1050_a_successor_quest_that_casts_the_npc_passes() {
         "{diags:#?}"
     );
 }
+
+/// Retiring the beat is not saying what comes after: a `forbids` term on the
+/// refused placement itself only hands right-click back to an earlier clause
+/// (here the opening beat), so it does not pass.
+#[test]
+fn dw1050_forbidding_the_flag_on_the_beat_alone_does_not_pass() {
+    let (mut q, mut d) = load();
+    completer_sets_flag(&mut d);
+    q["content"]["quests"][1]["cast"]["npc/keeper"]["forbids_flags"] =
+        json!(["flag/farewell-said"]);
+    let (diags, _) = run(&q, &d);
+    assert!(diags.iter().any(|d| d.code == "DW1050"), "{diags:#?}");
+}

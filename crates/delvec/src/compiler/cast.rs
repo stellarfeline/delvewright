@@ -671,8 +671,8 @@ fn state_writes<'a>(effs: &'a [delvewright_dsl::QuestEffect], out: &mut BTreeSet
 /// For each clause whose scene's tree completes objective `O` (of quest `Q`), the
 /// clause passes when either holds:
 ///
-/// * a placement of the same NPC ranked at or after it in the ledger is gated on
-///   a flag or datum the completion writes — a `set-flag` on an option that
+/// * a placement of the same NPC ranked after it in the ledger requires a flag,
+///   or compares a datum, that the completion writes — a `set-flag` on an option that
 ///   completes `O`, or a flag or datum written by `Q`'s `on_objective_complete[O]`
 ///   or `on_complete` (the one flag producer table, [`delvewright_dsl::producers::flag_producers`]);
 /// * a quest started by `Q`'s completion casts the NPC.
@@ -710,7 +710,10 @@ pub fn check_outlived_scenes(c: &Campaign) -> (Vec<Diagnostic>, OutlivedBinding)
                 continue;
             }
             bind.with_completer += 1;
-            let later = &cast.by_quest[ci..];
+            // Only a clause ranked AFTER this one can replace it: the ladder's
+            // later clause wins. A `forbids` term on this clause itself would only
+            // hand the right-click back to whatever earlier clause still holds.
+            let later = &cast.by_quest[ci + 1..];
             let mut unreplaced: Vec<(&str, &str)> = Vec::new();
             for obj in &completes {
                 let Some(owner) = c
@@ -775,7 +778,6 @@ pub fn check_outlived_scenes(c: &Campaign) -> (Vec<Diagnostic>, OutlivedBinding)
                 let gated = later.iter().any(|l| {
                     l.requires_flags
                         .iter()
-                        .chain(&l.forbids_flags)
                         .any(|f| flags.contains(f.as_str()))
                         || l.requires_state
                             .iter()
@@ -810,13 +812,13 @@ pub fn check_outlived_scenes(c: &Campaign) -> (Vec<Diagnostic>, OutlivedBinding)
                     format!(
                         "npc `{npc}`'s scene in quest `{}` (placement {}) opens `{root}`, whose \
                          tree completes objective `{obj}`; once `{obj}` completes nothing replaces \
-                         that scene — no placement of `{npc}` at or after it is gated on a flag or \
+                         that scene — no placement of `{npc}` after it requires a flag or compares a \
                          datum the completion writes, and no quest started by `{oq}` completing \
                          casts `{npc}` — so for the rest of the delve right-click re-opens the \
                          finished beat: its completing button hidden, everything leading to it \
                          offered again. Declare what `{npc}` offers after: set a flag on the \
                          option that completes `{obj}` (or in its `on_objective_complete`) and add \
-                         a placement of `{npc}` to quest `{}`'s `cast` gated on it — a `barks` \
+                         a placement of `{npc}` to quest `{}`'s `cast` requiring it — a `barks` \
                          pool, another root, or `{root}` itself if repeating the beat is what you \
                          intend — or cast `{npc}` in a quest that starts when `{oq}` completes",
                         cl.quest, cl.placement, cl.quest
