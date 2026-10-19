@@ -56,7 +56,7 @@ languages are delivered as sidecars.
    translated` and every English still missing; exit 1 until none is.
    Keep every `[[<styles>|…]]` span of the English: its opener byte for byte,
    its text transcreated, placed where your line puts that phrase.
-   A direction stays relative to the player's body or a landmark in every language: add no compass point the English does not give (`DW1049` reads the English only).
+   A direction stays relative to the player's body or a landmark in every language: add no compass point the English does not give.
    Write each line from its `kind`, speaker and `situation` with the English as
    the fact source — `$DELVEWRIGHT_ENGINE/docs/reference/game-writing.md` §4 for
    Chinese — honour each NPC's `persona.speech_style`, and cover the inventory
