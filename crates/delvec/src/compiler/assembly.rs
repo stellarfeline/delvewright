@@ -1797,11 +1797,13 @@ impl AssemblyBinding {
 }
 
 /// **Judge every assembly in the build** and return what was examined beside
-/// the refusals. `population` is the walked population `P`; `reaches` is as
-/// for [`judge`].
+/// the refusals. `population` is the walked population `P`; `walked` is the
+/// part of it the walk relation reaches (spec-0113 §4.5), where the bot is
+/// sent to stand spared; `reaches` is as for [`judge`].
 pub fn check(
     plan: &Plan<'_>,
     population: &BTreeSet<[i32; 3]>,
+    walked: &BTreeSet<[i32; 3]>,
     reaches: &Reaches<'_>,
 ) -> (AssemblyBinding, Vec<Failure>) {
     let within = |c: [i32; 3]| population.contains(&c);
@@ -1833,7 +1835,7 @@ pub fn check(
         }
         if let Some((arming, _)) = &s.strikes {
             b.spared
-                .push((s.id.to_string(), spared_cell(population, *arming)));
+                .push((s.id.to_string(), spared_cell(walked, *arming)));
         }
         failures.extend(f);
     }
@@ -1842,15 +1844,17 @@ pub fn check(
 }
 
 /// A standable cell outside the arming region's keep-out — no body standing
-/// in it can be selected — as near the region as the population has one (by
-/// the larger of the x and z gaps), then in cell order.
-fn spared_cell(population: &BTreeSet<[i32; 3]>, arming: CellBox) -> Option<[i32; 3]> {
+/// in it can be selected — as near the region as `walked` has one (by the
+/// larger of the x and z gaps), then in cell order. The bot walks to it on
+/// cue, so it is drawn from the walk relation's cells, never from a place
+/// only a leap reaches.
+fn spared_cell(walked: &BTreeSet<[i32; 3]>, arming: CellBox) -> Option<[i32; 3]> {
     let keep = keep_out_box(Body::PLAYER, arming.0, arming.1);
     let gap = |c: [i32; 3]| {
         let d = |i: usize| (arming.0[i] - c[i]).max(c[i] - arming.1[i]).max(0);
         d(0).max(d(2))
     };
-    population
+    walked
         .iter()
         .copied()
         .filter(|c| !in_box(*c, keep))
