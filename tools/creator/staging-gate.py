@@ -1052,10 +1052,9 @@ def carrier_exists(carrier: dict, eng: Engine, subj: Subject) -> tuple[bool, str
     kind = carrier.get("kind")
     if kind == "dw":
         # One code, or a list when the class the binding counts is judged by
-        # one rule per member kind (`bell-06`: a timed gate by DW0378, a volley
-        # by DW0918, one body model). Every code must exist: a list is carried
-        # only while every member of it is, so losing either check reds the row
-        # on a campaign whose binding counts the other.
+        # one rule per member kind. Every code must exist: a list is carried
+        # only while every member of it is, so losing any check reds the row
+        # on a campaign whose binding counts that member.
         codes = dw_codes(carrier)
         if not codes:
             return False, "a `dw` carrier names no code"
