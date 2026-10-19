@@ -5678,8 +5678,9 @@ layout. Details:
   written by this `delvec`. The render plan states cameras in its own Chunky yaw
   convention, so the bridge reads only its `pos`/`look_at` world points and
   re-derives Minecraft yaw/pitch. An unknown id lists the available ones.
-  `tests/render_plan_agreement.rs` holds every shot of the gallery primary's and
-  keep-vertical's plans to the camera the snapshot frames.
+  `tests/render_plan_agreement.rs` holds the gallery primary's and
+  keep-vertical's plans to the cameras the snapshot frames, over every leg's
+  last POV shot and every other kind's first.
 
 **Pipeline stages required** — parse → `Plan::build` (placement) → read the
 placed `.nbt` → `assembled::assembled_blocks`. That is all: no relight, no nav

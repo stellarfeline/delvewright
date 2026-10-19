@@ -2,12 +2,20 @@
 //! the render plan `delvec build` emits (`render-plan.json`), derived over the
 //! build's final world. `delvec snapshot --shot` is its other consumer, and it
 //! reads that plan from the build (`--build`) rather than deriving one of its
-//! own. This holds the two to one answer: every shot the build plans is one the
-//! snapshot frames, from the plan's own camera, on the gallery primary (whose
+//! own. This holds the two to one answer on the gallery primary (whose
 //! critical path is the longest any campaign here walks) and on the
-//! keep-vertical fixture. A snapshot that re-derived the plan over a world of
-//! its own numbered the gallery's later legs differently and refused 21 of the
-//! build's shots.
+//! keep-vertical fixture: a shot the build plans is one the snapshot frames,
+//! from the plan's own camera.
+//!
+//! A snapshot assembles the world it draws, which on the gallery takes tens of
+//! seconds a frame, so the snapshot is asked for a cover of the plan rather
+//! than all of it: every leg's last POV shot (a leg whose waypoints a second
+//! derivation numbered differently ends elsewhere, or is gone) and the first
+//! shot of every other kind. The count asked is printed beside the count
+//! planned. Asked of every shot, the snapshot that re-derived the plan over a
+//! world of its own refused 21 of the gallery's 185 and framed 6 from other
+//! cameras; asked of this cover, it refuses the last shot of each of legs 19 to
+//! 24.
 
 mod common;
 
@@ -52,7 +60,8 @@ fn agree(name: &str, campaign: &Path, prefabs: &Path) -> (usize, Vec<(String, St
     let out = build(campaign, prefabs);
     let plan: serde_json::Value =
         serde_json::from_slice(&std::fs::read(out.join("render-plan.json")).unwrap()).unwrap();
-    let shots: Vec<serde_json::Value> = plan["shots"].as_array().cloned().unwrap_or_default();
+    let planned: Vec<serde_json::Value> = plan["shots"].as_array().cloned().unwrap_or_default();
+    let shots = cover(&planned);
     let frames = campaign.with_extension("frames");
     let _ = std::fs::remove_dir_all(&frames);
     std::fs::create_dir_all(&frames).unwrap();
@@ -98,11 +107,44 @@ fn agree(name: &str, campaign: &Path, prefabs: &Path) -> (usize, Vec<(String, St
         }
     }
     eprintln!(
-        "render-plan agreement: {name}: {} shot(s) the build plans, {same} framed from the \
-         plan's camera, {refused} refused by the snapshot, {differ} framed from another",
+        "render-plan agreement: {name}: {} shot(s) the build plans, {} asked of the snapshot \
+         (every leg's last POV shot, every other kind's first), {same} framed from the plan's \
+         camera, {refused} refused, {differ} framed from another",
+        planned.len(),
         shots.len()
     );
     (shots.len(), bad)
+}
+
+/// Every leg's last POV shot, and the first shot of every other kind, in the
+/// plan's order.
+fn cover(planned: &[serde_json::Value]) -> Vec<serde_json::Value> {
+    let mut last: std::collections::BTreeMap<String, (u64, serde_json::Value)> =
+        std::collections::BTreeMap::new();
+    let mut first: std::collections::BTreeMap<String, serde_json::Value> =
+        std::collections::BTreeMap::new();
+    for shot in planned {
+        let id = shot["id"].as_str().expect("a shot id");
+        let mut parts = id.split('/');
+        let kind = parts.next().unwrap_or("").to_string();
+        if kind == "pov" {
+            let leg = parts.next().unwrap_or("").to_string();
+            let wp: u64 = parts
+                .next()
+                .and_then(|w| w.strip_prefix("wp"))
+                .and_then(|w| w.parse().ok())
+                .expect("a POV id names its waypoint");
+            if last.get(&leg).is_none_or(|(w, _)| wp > *w) {
+                last.insert(leg, (wp, shot.clone()));
+            }
+        } else {
+            first.entry(kind).or_insert_with(|| shot.clone());
+        }
+    }
+    last.into_values()
+        .map(|(_, s)| s)
+        .chain(first.into_values())
+        .collect()
 }
 
 fn ask(
@@ -160,25 +202,22 @@ fn ask(
 }
 
 #[test]
-fn every_shot_the_build_plans_is_the_shot_the_snapshot_frames() {
+fn a_shot_the_build_plans_is_the_shot_the_snapshot_frames() {
     let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join("render-plan-agreement");
     let gallery = root.join("gallery");
     let gallery_prefabs = common::gallery_primary_at(&gallery);
     let keep = root.join("keep-vertical");
     let _ = std::fs::remove_dir_all(&keep);
     common::copy_dir_all(&common::keep_vertical_dir(), &keep);
-    let mut planned = 0;
+    let mut asked = 0;
     let mut bad = Vec::new();
     for (name, campaign, prefabs) in [
         ("the gallery primary", &gallery, gallery_prefabs.clone()),
         ("keep-vertical", &keep, common::prefabs_dir()),
     ] {
         let (n, b) = agree(name, campaign, &prefabs);
-        assert!(
-            n > 0,
-            "{name}: the build plans no shot, so nothing was compared"
-        );
-        planned += n;
+        assert!(n > 0, "{name}: no shot was asked, so nothing was compared");
+        asked += n;
         bad.extend(
             b.into_iter()
                 .map(|(id, why)| format!("{name}: {id}: {why}")),
@@ -186,7 +225,7 @@ fn every_shot_the_build_plans_is_the_shot_the_snapshot_frames() {
     }
     assert!(
         bad.is_empty(),
-        "of {planned} planned shot(s), {} are not framed from the plan's camera:\n{}",
+        "of {asked} shot(s) asked of the snapshot, {} are not framed from the plan's camera:\n{}",
         bad.len(),
         bad.join("\n")
     );
