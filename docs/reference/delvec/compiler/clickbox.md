@@ -15,7 +15,7 @@ The client's crosshair takes an entity only when its box is strictly nearer the 
 | click trigger on a gate region (`Body::Region`), each shell cell | column, 1 tall | `{width:1.02f,height:1.02f,…}` |
 | `close-gate` seal answer, each shell cell | column, 1 tall | same |
 | sealed shortcut door, each sealed-side approach cell | column, 1 tall | same |
-| shortcut unlock, bonfire, shop, trap disarm, trapped-chest trigger, timed-gate disarm | column, 2 tall | `{width:1.02f,height:2.02f,…}` |
+| shortcut unlock, bonfire, shop, trap disarm, timed-gate disarm | column, 2 tall | `{width:1.02f,height:2.02f,…}` |
 | assembly hitbox | declared size, faces near the grid pushed past it | e.g. 1.5 × 2.5 on a cell floor → `{width:1.5f,height:2.51f}` at `Y-0.01` |
 
 Not built by the rule: an NPC's dialogue hitbox (borne by the NPC's body, which stands in air and moves it by `tp`) and a recovery stake's marker (summoned at a runtime position, `~ ~ ~`).

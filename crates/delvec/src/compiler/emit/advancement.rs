@@ -132,6 +132,9 @@ pub(super) fn emit_advancements(
         ));
     }
 
+    // spec-0022: a trapped chest's open, reported by vanilla at its cell.
+    advs.extend(trap_open_advancements(plan));
+
     // one interaction advancement per NPC
     for npc in &plan.npcs {
         advs.push((

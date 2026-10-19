@@ -7,11 +7,15 @@ use super::*;
 /// `#trapfire_<id>`. Then the latch is cleared, the trap is put in the state
 /// the campaign arms it in (its gate open, its disarm unthrown), the trigger is
 /// sprung the way a player springs it — the dummy stood on a plate's or
-/// tripwire's cell, an interaction record written on a trapped chest's hitbox
-/// (summoned by the emitter's own spelling where `setup_finish` has not yet
-/// placed it) — and the REAL `trap_detect` runs: the latch must be set again. Only the
-/// positive half is asserted: the detection reads every player, and on a
-/// shared batch server another template's dummy may stand anywhere.
+/// tripwire's cell, a trapped chest's `trap_open_<id>` advancement granted to
+/// the dummy, exactly as vanilla grants it when the chest is opened — and the
+/// REAL `trap_detect` runs: the latch must be set again. Only the positive half
+/// is asserted: the detection reads every player, and on a shared batch server
+/// another template's dummy may stand anywhere.
+///
+/// A trapped chest is also a chest: after it has fired, its cell still holds
+/// the chest and no `minecraft:interaction` box stands in that cell to take the
+/// click from it, so every later open reaches the chest's own inventory.
 ///
 /// Every trap and not an exemplar, because each carries its own cell, kind,
 /// gate and payload; the claim registered by [`trap_fire_watch_claims`] holds
@@ -58,22 +62,27 @@ pub(super) fn emit_trap_fire_packtests(plan: &Plan, out: &mut BuildOutput) {
                 ));
             }
             delvewright_dsl::TrapTrigger::TrappedChest => {
-                // `setup` schedules the `setup_finish` that summons the hitbox,
-                // so a template's tick 0 may not have it yet: summon it, by the
-                // emitter's own spelling, only where it is absent.
-                if let Some(summon) = trapped_chest_hitbox(plan, t) {
-                    b.push(format!(
-                        "execute unless entity @e[tag=dw_trapfire_{id}] run {summon}"
-                    ));
-                }
                 b.push(format!(
-                    "data modify entity @e[tag=dw_trapfire_{id},limit=1] interaction set value \
-                     {{player:[I;0,0,0,0],timestamp:1L}}"
+                    "execute as {sel} run advancement grant @s only {ns}:trap_open_{id}"
                 ));
             }
         }
         b.push(format!("function {ns}:{TRAP_DETECT_FN}"));
         b.push(format!("assert score #trapfire_{id} dw.sys matches 1"));
+        if t.trigger == delvewright_dsl::TrapTrigger::TrappedChest {
+            // Fired, the chest is still a chest the hand reaches: the block is in
+            // its cell and nothing clickable shares that cell.
+            b.push(format!(
+                "assert block {} {} {} minecraft:trapped_chest",
+                c[0], c[1], c[2]
+            ));
+            b.push(format!(
+                "execute store result score #trapbox_{id} dw.sys if entity \
+                 @e[type=minecraft:interaction,x={},y={},z={},dx=0,dy=0,dz=0]",
+                c[0], c[1], c[2]
+            ));
+            b.push(format!("assert score #trapbox_{id} dw.sys matches 0"));
+        }
         out.insert(
             format!("packtest-datapack/data/{ns}/test/v06_trap_fire_{id}.mcfunction"),
             lines(&b).into_bytes(),

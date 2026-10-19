@@ -497,7 +497,8 @@ this section is what they are *for* and the traps in each.
 - **`at` is an ORDINARY POINT ANCHOR, and its cell holds the trigger block.**
   The compiler owns the detection tick for a command payload: a plate or a
   tripwire is a position test on that anchor's cell, and a trapped chest is the
-  same interaction-entity `use` a disarm lever rides. The block the `trigger`
+  chest's own open: it opens like any chest on every click, and the first open
+  (every open, for `rearm`) fires the payload. The block the `trigger`
   names — a `*_pressure_plate`, a `minecraft:tripwire`, a
   `minecraft:trapped_chest` — is the piece's, standing in that cell: the party
   has to see what springs, and the build refuses a trap whose cell holds

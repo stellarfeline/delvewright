@@ -5,13 +5,13 @@
 //! a trapped chest — and the prefab places it, exactly as it places a `loot`
 //! container. The compiler never places a trigger. What
 //! it emits at the trigger cell is detection: a position test for a plate or a
-//! tripwire, an invisible `minecraft:interaction` hitbox for a trapped chest.
-//! Neither needs the block to exist, so a trap whose cell holds air still
-//! compiles, still passes its completability proofs (they reason about the
-//! planned hazard) and still fires — on a cell that shows the player nothing.
-//! A trapped-chest trap ships as a click on empty air; a plate trap ships as an
-//! invisible hazard. The direction of that gap is the dangerous one: it let a
-//! broken trap ship, it could never turn a proof red.
+//! tripwire, the chest's own open (`default_block_use` at its cell) for a
+//! trapped chest. A position test does not need the block to exist, so a plate
+//! trap whose cell holds air still compiles, still passes its completability
+//! proofs (they reason about the planned hazard) and still fires — an invisible
+//! hazard; a trapped-chest trap over air compiles and never fires at all. Either
+//! way the proofs stay green over a trap the player cannot see, the direction
+//! that lets a broken trap ship.
 //!
 //! So the question is asked of the assembled world (the edited one when a
 //! stage-7 script exists, since a batch may be what places the chest), in the

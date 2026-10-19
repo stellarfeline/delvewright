@@ -204,9 +204,42 @@ fn trap_disarm_and_fire_emit_end_to_end() {
         setup_finish.contains("dw_trapdis_dart_hall"),
         "disarm affordance summon missing:\n{setup_finish}"
     );
+    // The chest is the whole body: no click box stands in its cell to take the
+    // click from it, so it opens on every click, before the trap fires and after.
     assert!(
-        setup_finish.contains("dw_trapfire_dart_hall"),
-        "the trapped chest's detection hitbox is missing:\n{setup_finish}"
+        !out.values()
+            .any(|bytes| String::from_utf8_lossy(bytes).contains("dw_trapfire_")),
+        "nothing may summon a box over the trapped chest:\n{setup_finish}"
+    );
+    let adv = text(
+        &out,
+        &format!("datapack/data/{NS}/advancement/trap_open_dart_hall.json"),
+    );
+    let adv: serde_json::Value = serde_json::from_str(&adv).unwrap();
+    assert_eq!(
+        adv["criteria"]["open"]["trigger"], "minecraft:default_block_use",
+        "{adv}"
+    );
+    assert_eq!(
+        adv["criteria"]["open"]["conditions"]["location"][0]["predicate"]["block"]["blocks"][0],
+        "minecraft:trapped_chest",
+        "{adv}"
+    );
+    assert_eq!(
+        adv["rewards"]["function"], "hello-world:trap_open_dart_hall",
+        "{adv}"
+    );
+    let open = text(
+        &out,
+        &format!("datapack/data/{NS}/function/trap_open_dart_hall.mcfunction"),
+    );
+    assert_eq!(
+        open.lines().map(str::trim).collect::<Vec<_>>(),
+        [
+            "advancement revoke @s only hello-world:trap_open_dart_hall",
+            "scoreboard players set #trapopen_dart_hall dw.sys 1",
+        ],
+        "{open}"
     );
     assert!(
         !setup_finish.contains("item replace block"),
@@ -244,7 +277,7 @@ fn trap_disarm_and_fire_emit_end_to_end() {
     assert!(
         detect.contains(
             "execute unless score #trapfire_dart_hall dw.sys matches 1 unless score \
-             #trapdis_dart_hall dw.sys matches 1 if entity"
+             #trapdis_dart_hall dw.sys matches 1 if score #trapopen_dart_hall dw.sys matches 1"
         ),
         "the detection must stand down once the trap is disarmed:\n{detect}"
     );
@@ -256,8 +289,10 @@ fn trap_disarm_and_fire_emit_end_to_end() {
         "{detect}"
     );
     assert!(
-        !detect.contains("unless entity @e[tag=dw_trapfire_dart_hall"),
-        "{detect}"
+        detect
+            .lines()
+            .any(|l| l.trim() == "scoreboard players set #trapopen_dart_hall dw.sys 0"),
+        "the pass consumes the open it read:\n{detect}"
     );
     let tick = text(
         &out,
@@ -277,15 +312,58 @@ fn trap_disarm_and_fire_emit_end_to_end() {
     for expected in [
         "function hello-world:trap_fire_dart_hall",
         "scoreboard players set #trapdis_dart_hall dw.sys 0",
-        "data modify entity @e[tag=dw_trapfire_dart_hall,limit=1] interaction set value",
+        "run advancement grant @s only hello-world:trap_open_dart_hall",
         "function hello-world:trap_detect",
         "assert score #trapfire_dart_hall dw.sys matches 1",
+        "minecraft:trapped_chest",
+        "assert score #trapbox_dart_hall dw.sys matches 0",
     ] {
         assert!(
             pt.contains(expected),
             "the fire PackTest lacks `{expected}`:\n{pt}"
         );
     }
+
+    // The chest's cell, as the PackTest asserts it, holds no interaction box
+    // from any emitter: every box `setup_finish` summons is read for the
+    // cells its AABB covers.
+    let chest: Vec<i32> = pt
+        .lines()
+        .find_map(|l| {
+            l.trim()
+                .strip_prefix("assert block ")?
+                .strip_suffix(" minecraft:trapped_chest")
+                .map(|xyz| xyz.split(' ').map(|v| v.parse().unwrap()).collect())
+        })
+        .expect("the PackTest asserts the chest's cell");
+    let nbt_f = |l: &str, key: &str| -> f64 {
+        let at = l.find(&format!("{key}:")).unwrap() + key.len() + 1;
+        l[at..].split('f').next().unwrap().parse().unwrap()
+    };
+    let mut boxes = 0;
+    for l in setup_finish.lines().map(str::trim) {
+        let Some(rest) = l.strip_prefix("summon minecraft:interaction ") else {
+            continue;
+        };
+        boxes += 1;
+        let p: Vec<f64> = rest
+            .split(' ')
+            .take(3)
+            .map(|v| v.parse().unwrap())
+            .collect();
+        let (w, h) = (nbt_f(l, "width"), nbt_f(l, "height"));
+        let covers = |axis: usize, lo: f64, hi: f64| {
+            let (c0, c1) = (f64::from(chest[axis]), f64::from(chest[axis]) + 1.0);
+            lo < c1 && hi > c0
+        };
+        assert!(
+            !(covers(0, p[0] - w / 2.0, p[0] + w / 2.0)
+                && covers(1, p[1], p[1] + h)
+                && covers(2, p[2] - w / 2.0, p[2] + w / 2.0)),
+            "an interaction box stands in the trapped chest's cell {chest:?}: {l}"
+        );
+    }
+    assert!(boxes > 0, "the scan read no box at all:\n{setup_finish}");
 
     // Every emitted trap command validates against the vendored 1.21.11 Brigadier
     // tree (the ADR-0011 cross-check CI also runs via mecha).
