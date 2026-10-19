@@ -5,7 +5,7 @@ use super::*;
 /// `after: [obj/a, obj/b]` is the DSL's AND primitive (spec-0018 adds no new
 /// stage-5 syntax), and under party progression it is exactly the shape two
 /// players split between two rooms.
-fn and_joins(c: &delvewright_dsl::Campaign) -> Vec<(&str, &Objective)> {
+pub(super) fn and_joins(c: &delvewright_dsl::Campaign) -> Vec<(&str, &Objective)> {
     let mut out = Vec::new();
     for q in &c.quests.content.quests {
         for o in &q.objectives {
@@ -177,11 +177,16 @@ pub(super) fn emit_party_join_packtests(plan: &Plan, out: &mut BuildOutput) {
         for m in 1..n {
             b.push(format!("dummy {} leave", name(m)));
         }
-        out.insert(
-            format!("packtest-datapack/data/{ns}/test/party_join_{jsafe}.mcfunction"),
-            lines(&b).into_bytes(),
-        );
+        out.insert(party_join_template_path(ns, jid), lines(&b).into_bytes());
     }
+}
+
+/// Where the division-of-labour template for the AND-join `jid` lives.
+pub(super) fn party_join_template_path(ns: &str, jid: &str) -> String {
+    format!(
+        "packtest-datapack/data/{ns}/test/party_join_{}.mcfunction",
+        plan::safe_local(jid)
+    )
 }
 
 /// The stage-5 objective with this id, across every quest.
