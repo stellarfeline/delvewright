@@ -143,3 +143,21 @@ test("a declared crush gate no trial walked is red, and so is an empty walk", ()
   assert.ok(row.failures.some((f) => f.includes("a is a declared crush gate")));
   assert.ok(row.failures.some((f) => f.includes("ZERO of 2")));
 });
+
+test("a crush trial taken before the path failed is still judged", () => {
+  const gs = [gate("a", 1), gate("b", 2)];
+  const spared = openCrushTrial(gs[0]!, 0, "after step 0");
+  spared.enteredRegion = true;
+  const row = crushStage({
+    enabled: true,
+    disabledReason: "",
+    pathProven: false,
+    interruption: undefined,
+    plan: plan(gs),
+    trials: [spared],
+  });
+  assert.equal(row.ran, true);
+  assert.equal(row.passed, false);
+  assert.match(row.failures[0]!, /did NOT die/);
+  assert.ok(!row.failures.some((f) => f.includes("b is a declared crush gate")));
+});

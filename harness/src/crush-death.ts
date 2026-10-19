@@ -195,15 +195,20 @@ export function crushStage(i: CrushStageInput): StageResult {
     return { stage: "crush-death", ran: false, passed: false, findings: [i.disabledReason], failures: [] };
   }
   if (!i.pathProven) {
+    // A trial is a whole observation the moment it ends: the body stood in the
+    // span on the closing tick and died or did not. Those are judged; coverage
+    // is not, because the path's failure ended the run before every gate's turn.
+    const failures = i.trials.flatMap((t) => crushTrialFailures(t));
     return {
       stage: "crush-death",
-      ran: false,
+      ran: i.trials.length > 0,
       passed: false,
       findings: [
-        `the critical path failed, so the crush deaths were never finished — ${i.trials.length} ` +
-          `trial(s) ran before it did and are not judged`,
+        `the critical path failed, so the crush stage did not finish: ${i.trials.length} of ` +
+          `${i.plan.crushGates.length} declared crush gate(s) were tried before it did, and each ` +
+          `trial is judged; the gates not reached are not`,
       ],
-      failures: [],
+      failures,
     };
   }
   const b = crushBinding(i.plan, i.trials);
