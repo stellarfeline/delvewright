@@ -3,12 +3,10 @@
 //!
 //! # Why this artifact has to exist at all
 //!
-//! A PackTest fake player is permanently undamageable — measured independently on
-//! 2026-08-03 and again on 2026-08-09 — so that tier **cannot witness a player
-//! death**. Every runtime claim about the death loop therefore belongs to the
-//! mineflayer tier, which drives a real client that can really die, and a real
-//! client needs to be *told what the campaign promised* before it can say whether
-//! the promise was kept. `combat-plan.json` is the same idea for fighting; this is
+//! What follows a death — the respawn seat, the forfeit, the walk back, the
+//! recovery — is observed by the mineflayer tier, which drives a real client
+//! through it, and a real client needs to be *told what the campaign promised*
+//! before it can say whether the promise was kept. `combat-plan.json` is the same idea for fighting; this is
 //! the same idea for dying.
 //!
 //! # What it carries, and what it deliberately does not
@@ -38,7 +36,7 @@ use delvewright_dsl::Verb;
 use delvewright_dsl::{Campaign, QuestEffect};
 use serde_json::{Value, json};
 
-use crate::compiler::nav::World;
+use crate::compiler::nav::{LegRoute, World};
 use crate::compiler::plan::{GateTerm, Plan};
 use crate::compiler::stake::StakeTable;
 
@@ -71,7 +69,14 @@ use crate::compiler::stake::StakeTable;
 /// stage is impassable to the bot only while its gate reads open, and is entered
 /// by the death loop only when it does; a v3 bot reading a v4 plan would avoid a
 /// pit the proof crossed before the beat, and enter one that was not yet live.
-pub const DEATH_PLAN_FORMAT_VERSION: u32 = 4;
+///
+/// Version 5 adds `crush_gates[]` — every `crush: true` timed gate, with its
+/// clock, the sides a body can be caught from, the gate that keeps it live and
+/// the exported step whose leg first crosses it — and gives every respawn seat
+/// `in_force_after`, the exported step after which it is the seat a death
+/// returns to. A v4 bot reading a v5 plan would walk none of the crush deaths
+/// the plan promises, and report the respawn half as unexamined in silence.
+pub const DEATH_PLAN_FORMAT_VERSION: u32 = 5;
 
 /// What the bot tier will be able to examine — counted at build time, so a reader
 /// of the artifact alone can tell an empty contract from a proven one.
@@ -87,6 +92,8 @@ pub struct DeathPlanGate {
     pub seats: usize,
     /// Rows of the placement table — one per (seat, death region) pair.
     pub rows: usize,
+    /// `crush: true` timed gates: places a body can be killed by a closing edge.
+    pub crush_gates: usize,
 }
 
 impl DeathPlanGate {
@@ -132,6 +139,7 @@ impl DeathPlanGate {
             "stakes": self.stakes,
             "respawn_seats": self.seats,
             "placement_rows": self.rows,
+            "crush_gates": self.crush_gates,
             "unbound": self.unbound(),
             "reason": self.reason(),
         })
@@ -273,6 +281,80 @@ fn currency(c: &Campaign, state_id: &str) -> Value {
     })
 }
 
+/// **The exported step after which seat `cp` is where a death returns the
+/// party** — the bot tier's key for "the checkpoint that governs a death here".
+///
+/// `-1` for the entry spawn (in force from the start). A plain `set-checkpoint`
+/// is in force once the step that fires it completes; a bonfire once the party
+/// rests at it, which the exported path does in the `rest` step spliced straight
+/// after the beat that arms it ([`Plan::exported_step`]). `null` for a
+/// checkpoint a trigger sets: it moves on the party's own act, at no step the
+/// path can name, so the bot accepts it as in force whenever it is met.
+fn in_force_after(plan: &Plan, cp: i32) -> Value {
+    if cp < 0 {
+        return json!(-1);
+    }
+    match plan.checkpoints.iter().find(|k| k.index as i32 == cp) {
+        Some(k) if k.trigger.is_some() => Value::Null,
+        Some(k) => {
+            let after = plan.exported_step(k.fire_step) + usize::from(k.rest);
+            json!(after)
+        }
+        None => Value::Null,
+    }
+}
+
+/// **Every `crush: true` timed gate, as the bot tier walks its death.**
+///
+/// Each row carries the region a closing edge judges, the clock, the sides a
+/// body can be caught from ([`crate::compiler::nav::gate_approaches`]), the gate
+/// that keeps the closing edge live (a disarm's flag, unset), and `crossed_at`:
+/// the exported index of the first critical-path step whose proven leg crosses
+/// the gate, `null` when no proven leg does. Declaration order (ADR-0006).
+fn crush_gates(plan: &Plan, world: &World, routes: &[LegRoute]) -> Vec<Value> {
+    plan.timed_gates
+        .iter()
+        .filter(|g| g.crush)
+        .map(|g| {
+            let region = crate::compiler::waypoints::normalized_region(g.gate_region);
+            let approaches: Vec<Value> = crate::compiler::nav::gate_approaches(world, region)
+                .iter()
+                .map(|a| json!({ "mouth": a.mouth, "stand": a.stand }))
+                .collect();
+            let crossed_at = routes
+                .iter()
+                .find(|leg| crate::compiler::waypoints::leg_crosses_gate(&leg.cells, region))
+                .map(|leg| plan.exported_step(leg.to_step));
+            // A disarm stops the clock for good, so the closing edge is live only
+            // while the disarm's flag is unset — the declaration, never the
+            // engine's jam bookkeeping.
+            let terms: Vec<Value> = g
+                .disarm
+                .iter()
+                .map(|d| {
+                    term_json(&GateTerm {
+                        objective: crate::compiler::plan::flag_score(&d.sets_flag),
+                        party: true,
+                        min: Some(1),
+                        max: None,
+                        negate: true,
+                    })
+                })
+                .collect();
+            json!({
+                "id": g.id,
+                "region": boxed(region.0, region.1),
+                "open_ticks": g.open_ticks,
+                "closed_ticks": g.closed_ticks,
+                "phase": g.phase,
+                "approaches": approaches,
+                "crossed_at": crossed_at,
+                "gate": { "terms": terms },
+            })
+        })
+        .collect()
+}
+
 /// Build the artifact for a campaign that has a death loop to prove.
 ///
 /// Returns `None` — no file, no byte moved — for a campaign that declares no
@@ -289,11 +371,17 @@ pub fn build(
     world: &World,
     entry: Option<[i32; 3]>,
     table: Option<&StakeTable>,
+    routes: &[LegRoute],
 ) -> Option<Value> {
     let c = plan.campaign;
     let on_death = plan.on_death();
     let stakes = &c.quests.content.stakes;
-    if plan.lethal_volumes.is_empty() && on_death.is_empty() && stakes.is_empty() {
+    let crush = crush_gates(plan, world, routes);
+    if plan.lethal_volumes.is_empty()
+        && on_death.is_empty()
+        && stakes.is_empty()
+        && crush.is_empty()
+    {
         return None;
     }
 
@@ -385,7 +473,14 @@ pub fn build(
     };
     let seats: Vec<Value> = seats_src
         .iter()
-        .map(|s| json!({ "cp": s.cp, "label": s.label, "cell": s.cell }))
+        .map(|s| {
+            json!({
+                "cp": s.cp,
+                "label": s.label,
+                "cell": s.cell,
+                "in_force_after": in_force_after(plan, s.cp),
+            })
+        })
         .collect();
 
     // The regions and rows. A region carries the lethal volume's id when it IS one,
@@ -436,6 +531,7 @@ pub fn build(
         stakes: stakes.len(),
         seats: seats.len(),
         rows: rows.len(),
+        crush_gates: crush.len(),
     };
 
     Some(json!({
@@ -446,6 +542,7 @@ pub fn build(
         "on_death": { "effects": deep.len(), "drops_stake": drops },
         "stakes": stakes_json,
         "placement": { "seats": seats, "regions": regions, "rows": rows },
+        "crush_gates": crush,
         "binding": gate.to_json(),
     }))
 }
@@ -464,6 +561,7 @@ mod tests {
             stakes: 1,
             seats: 2,
             rows: 4,
+            crush_gates: 0,
         };
         assert!(g.unbound());
         let why = g.reason().expect("an unbound gate owes a reason");
@@ -491,6 +589,7 @@ mod tests {
             stakes: 1,
             seats: 2,
             rows: 4,
+            crush_gates: 0,
         };
         assert!(!g.unbound());
         assert_eq!(g.reason(), None);
