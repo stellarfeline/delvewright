@@ -82,6 +82,10 @@
                   {
                     "objective": "obj/parley",
                     "type": "complete-objective"
+                  },
+                  {
+                    "flag": "flag/parley-done",
+                    "type": "set-flag"
                   }
                 ],
                 "happening": {
@@ -101,6 +105,10 @@
                   {
                     "objective": "obj/parley",
                     "type": "complete-objective"
+                  },
+                  {
+                    "flag": "flag/parley-done",
+                    "type": "set-flag"
                   }
                 ],
                 "happening": {

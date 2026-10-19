@@ -841,8 +841,12 @@ fn missing(stage: &str, path: String, what: String) -> Diagnostic {
 /// "Forks" is decided, not guessed: the flag must be **read** by a cast
 /// placement, a story-node effect (or a bundle containing one), an objective or
 /// an environment trigger that stages one, AND it must be set in some enumerated
-/// world and not in another. A flag every playthrough sets is ordinary
-/// sequencing and is never reported.
+/// world and not in another **that agrees with it on every declared fork flag**.
+/// A flag every playthrough sets is ordinary sequencing and is never reported,
+/// and neither is one whose presence the declared forks already decide: a flag
+/// set only by a beat one declared branch plays (`DW1050`'s remedy on such a
+/// beat — its completion sets the flag its after-scene requires) splits nothing
+/// the branch points do not already own.
 fn check_undeclared_forks(c: &Campaign, flow: &Flow<'_>, d: &mut Vec<Diagnostic>) {
     let declared: BTreeSet<String> = c
         .quest_plan
@@ -905,9 +909,19 @@ fn check_undeclared_forks(c: &Campaign, flow: &Flow<'_>, d: &mut Vec<Diagnostic>
         if declared.contains(&flag) {
             continue;
         }
-        let some = worlds.iter().any(|w| w.contains(&flag));
-        let none = worlds.iter().any(|w| !w.contains(&flag));
-        if !(some && none) {
+        // Worlds grouped by what the declared forks say of them; the flag forks
+        // the story undeclared only where one group holds it both ways.
+        let mut by_fork: BTreeMap<Vec<bool>, (bool, bool)> = BTreeMap::new();
+        for w in &worlds {
+            let key: Vec<bool> = declared.iter().map(|f| w.contains(f)).collect();
+            let seen = by_fork.entry(key).or_default();
+            if w.contains(&flag) {
+                seen.0 = true;
+            } else {
+                seen.1 = true;
+            }
+        }
+        if !by_fork.values().any(|(some, none)| *some && *none) {
             continue;
         }
         let where_ = sites.iter().cloned().collect::<Vec<_>>().join(", ");

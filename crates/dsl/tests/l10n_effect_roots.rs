@@ -92,13 +92,17 @@ fn dialogue_doc() -> String {
             effects[0]["type"], "complete-objective",
             "the option this test hangs the checkpoint on has moved"
         );
-        effects.push(serde_json::json!({
-            "type": "set-checkpoint",
-            "anchor": "anchor/exit",
-            "on_respawn": [
-                { "type": "narrate", "style": "title", "text": RESPAWN_NARRATE_EN }
-            ]
-        }));
+        // Second in the list, so its key is position 1 whatever follows it.
+        effects.insert(
+            1,
+            serde_json::json!({
+                "type": "set-checkpoint",
+                "anchor": "anchor/exit",
+                "on_respawn": [
+                    { "type": "narrate", "style": "title", "text": RESPAWN_NARRATE_EN }
+                ]
+            }),
+        );
     })
 }
 

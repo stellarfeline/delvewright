@@ -4,11 +4,28 @@
     "quests": [
       {
         "cast": {
-          "npc/keeper": {
-            "at": "anchor/keeper-stand",
-            "dialogue": "dlg/greeting",
-            "doing": "keeping to anchor/keeper-stand"
-          }
+          "npc/keeper": [
+            {
+              "at": "anchor/keeper-stand",
+              "dialogue": "dlg/greeting",
+              "doing": "keeping to anchor/keeper-stand",
+              "forbids_flags": [
+                "flag/muster-done"
+              ]
+            },
+            {
+              "at": "anchor/keeper-stand",
+              "dialogue": {
+                "barks": [
+                  "There is nothing more to say. Go on."
+                ]
+              },
+              "doing": "done with the beat the party has finished",
+              "requires_flags": [
+                "flag/muster-done"
+              ]
+            }
+          ]
         },
         "happening": {
           "text": "the party takes on quest/hold-the-yard",

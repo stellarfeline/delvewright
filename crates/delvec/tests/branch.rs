@@ -248,6 +248,30 @@ fn undeclared_fork_is_dw0480() {
     assert!(d.message.contains("UNDECLARED"), "{}", d.message);
 }
 
+/// A flag only the hold branch's beat sets (`flag/watch-done`, which the hold
+/// quest's after-scene requires — `DW1050`'s remedy) is owned by the declared
+/// branch point: the green fixture is clean. Take the declaration away and the
+/// same flag is an undeclared split again, named by `DW0480`.
+#[test]
+fn a_flag_the_declared_forks_decide_is_owned_by_them() {
+    assert!(
+        !codes(&green()).contains(&"DW0480".to_string()),
+        "the hold beat's flag is decided by the declared fork"
+    );
+    let c = campaign_with(|plan, _, _| {
+        plan["content"]
+            .as_object_mut()
+            .unwrap()
+            .remove("branch_points");
+    });
+    assert!(
+        branch::check_branches(&c)
+            .iter()
+            .any(|d| d.code == "DW0480" && d.message.contains("flag/watch-done")),
+        "with no branch point declared, the hold beat's flag splits the story undeclared"
+    );
+}
+
 /// A flag every playthrough sets is ordinary sequencing, not a fork — declaring
 /// it nowhere raises nothing.
 #[test]

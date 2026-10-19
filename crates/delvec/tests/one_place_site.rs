@@ -91,7 +91,11 @@ fn campaign(dir: &Path) {
     });
     common::patch_file(&dir.join("quests.json"), |v| {
         let q = &mut v["content"]["quests"][0];
-        q["cast"]["npc/keeper"]["at"] = serde_json::json!("anchor/node-house");
+        common::set_cast(
+            &mut q["cast"]["npc/keeper"],
+            "at",
+            serde_json::json!("anchor/node-house"),
+        );
         q["objectives"][1]["anchor"] = serde_json::json!("anchor/hearth");
         q["objectives"][2]["anchor"] = serde_json::json!("anchor/bench");
         let ask = q["on_objective_complete"]["obj/ask"]

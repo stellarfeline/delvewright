@@ -101,6 +101,9 @@
               "at": "anchor/keeper-stand",
               "dialogue": "dlg/hold",
               "doing": "still at his post, the gate open behind him",
+              "forbids_flags": [
+                "flag/parley-done"
+              ],
               "requires_flags": [
                 "flag/wait"
               ]
@@ -109,8 +112,37 @@
               "at": "anchor/exit",
               "dialogue": "dlg/bolt",
               "doing": "waiting past the lifted gate, already half on the road",
+              "forbids_flags": [
+                "flag/parley-done"
+              ],
               "requires_flags": [
                 "flag/flee"
+              ]
+            },
+            {
+              "at": "anchor/keeper-stand",
+              "dialogue": {
+                "barks": [
+                  "There is nothing more to say. Go on."
+                ]
+              },
+              "doing": "done with the beat the party has finished",
+              "requires_flags": [
+                "flag/parley-done",
+                "flag/wait"
+              ]
+            },
+            {
+              "at": "anchor/exit",
+              "dialogue": {
+                "barks": [
+                  "There is nothing more to say. Go on."
+                ]
+              },
+              "doing": "done with the beat the party has finished",
+              "requires_flags": [
+                "flag/flee",
+                "flag/parley-done"
               ]
             }
           ]

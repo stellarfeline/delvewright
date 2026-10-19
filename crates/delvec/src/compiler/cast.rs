@@ -101,6 +101,13 @@ delvewright_dsl::dw_code! {
     pub const DW_CAST_DEAD_CLAUSE: DwCode = DwCode::new("DW0846", ExitTier::Build);
 }
 
+delvewright_dsl::dw_code! {
+    /// A cast clause whose tree completes an objective and that nothing replaces
+    /// once the objective completes, so right-click re-opens the finished beat for
+    /// the rest of the delve (see [`check_outlived_scenes`]).
+    pub const DW_CAST_OUTLIVED: DwCode = DwCode::new("DW1050", ExitTier::Build);
+}
+
 /// What an NPC's right-click does during one scene.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SceneAction {
@@ -602,6 +609,239 @@ fn check_talk_answerable(c: &Campaign, order: &[String]) -> Vec<Diagnostic> {
         }
     }
     diags
+}
+
+// ---------------------------------------------------------------------------
+// A scene that outlives its beat is refused (DW1050)
+// ---------------------------------------------------------------------------
+
+/// What [`check_outlived_scenes`] examined, zeroes included.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct OutlivedBinding {
+    /// Cast clauses judged (every clause of every NPC's resolved ledger).
+    pub judged: usize,
+    /// Of those, clauses whose scene opens a tree that completes an objective.
+    pub with_completer: usize,
+    /// Of those, clauses refused.
+    pub refused: usize,
+}
+
+impl OutlivedBinding {
+    /// The line every run prints.
+    pub fn line(&self) -> String {
+        format!(
+            "outlived-scene binding (DW1050): {} cast clause(s) judged, {} of them opening a tree \
+             that completes an objective; {} refused",
+            self.judged, self.with_completer, self.refused
+        )
+    }
+}
+
+/// Every datum an effect list writes, descending nested lists except the
+/// reaction bundles [`delvewright_dsl::producers::flag_producers`] does not descend either
+/// (`on_respawn` / `on_rest` / `on_caught`), so "what the completion writes"
+/// means the same thing for flags and for state.
+fn state_writes<'a>(effs: &'a [delvewright_dsl::QuestEffect], out: &mut BTreeSet<&'a str>) {
+    use delvewright_dsl::Verb;
+    for e in effs {
+        if let Some((id, _)) = e.writes_state() {
+            out.insert(id.as_str());
+        }
+        match &e.verb {
+            Verb::SetCheckpoint { .. } | Verb::Bonfire { .. } | Verb::BeginStealth { .. } => {}
+            _ => {
+                for list in e.nested_effect_lists() {
+                    state_writes(list, out);
+                }
+            }
+        }
+    }
+}
+
+/// **A scene that outlives its beat is refused** (`DW1050`).
+///
+/// `dw.qa_<quest>` reads "has begun" and is never cleared, so a cast clause keeps
+/// governing until a later one replaces it. A scene whose tree completes an
+/// objective is the beat itself: once the objective completes, the completing
+/// button is hidden (the objective-state axis), but everything leading to it is
+/// offered again. Where nothing replaces the scene, the NPC re-opens the finished
+/// beat for the rest of the delve — the keeper who offered to reckon a house she
+/// had already reckoned.
+///
+/// For each clause whose scene's tree completes objective `O` (of quest `Q`), the
+/// clause passes when either holds:
+///
+/// * a placement of the same NPC ranked after it in the ledger requires a flag,
+///   or compares a datum, that the completion writes — a `set-flag` on an option that
+///   completes `O`, or a flag or datum written by `Q`'s `on_objective_complete[O]`
+///   or `on_complete` (the one flag producer table, [`delvewright_dsl::producers::flag_producers`]);
+/// * a quest started by `Q`'s completion casts the NPC.
+///
+/// A clause that a later clause of another quest already begun by then (`Q`, or
+/// one ranked before it) overrides is not what governs after `O`; that later
+/// clause is judged in its own right.
+///
+/// A check confirms intent; it never restricts: repeating the beat is legal, and
+/// is declared by a placement under that gate naming the same root.
+pub fn check_outlived_scenes(c: &Campaign) -> (Vec<Diagnostic>, OutlivedBinding) {
+    use delvewright_dsl::producers::{ProducerSite, flag_producers};
+
+    let mut diags = Vec::new();
+    let mut bind = OutlivedBinding::default();
+    let casts = npc_casts(c);
+    let producers = flag_producers(c);
+    let order = quest_dag_order(c);
+
+    for (npc, cast) in &casts {
+        let tree = c.dialogue.content.tree_for(npc);
+        for (ci, cl) in cast.by_quest.iter().enumerate() {
+            bind.judged += 1;
+            let Some(tree) = tree else { continue };
+            let Some(SceneAction::Root(root)) = cast
+                .scenes
+                .iter()
+                .find(|s| s.index == cl.scene)
+                .map(|s| &s.action)
+            else {
+                continue;
+            };
+            let completes = tree.completes_from(&[root.as_str()]);
+            if completes.is_empty() {
+                continue;
+            }
+            bind.with_completer += 1;
+            // Only a clause ranked AFTER this one can replace it: the ladder's
+            // later clause wins. A `forbids` term on this clause itself would only
+            // hand the right-click back to whatever earlier clause still holds.
+            let later = &cast.by_quest[ci + 1..];
+            let mut unreplaced: Vec<(&str, &str)> = Vec::new();
+            for obj in &completes {
+                let Some(owner) = c
+                    .quests
+                    .content
+                    .quests
+                    .iter()
+                    .find(|q| q.objectives.iter().any(|o| o.id().as_str() == *obj))
+                else {
+                    continue; // a dangling objective is the dialogue check's finding
+                };
+                let oq = owner.id.as_str();
+                // A later clause of another quest that has begun by the time `obj`
+                // completes (`oq` or one ranked before it) overrides this one, so
+                // what governs after `obj` is that clause's question, judged there.
+                let rank_oq = order.iter().position(|q| q == oq);
+                let overridden = later.iter().any(|l| {
+                    l.quest != cl.quest
+                        && order
+                            .iter()
+                            .position(|q| *q == l.quest)
+                            .zip(rank_oq)
+                            .is_some_and(|(r, ro)| r <= ro)
+                });
+                if overridden {
+                    continue;
+                }
+                // What the completion writes.
+                let mut flags: BTreeSet<&str> = BTreeSet::new();
+                for node in &tree.nodes {
+                    for opt in &node.options {
+                        let completes_it = opt.effects.iter().any(|e| {
+                            matches!(e, delvewright_dsl::DialogueEffect::CompleteObjective { objective } if objective.as_str() == *obj)
+                        });
+                        if completes_it {
+                            flags.extend(
+                                opt.effects
+                                    .iter()
+                                    .filter_map(|e| e.set_flag())
+                                    .map(|f| f.as_str()),
+                            );
+                        }
+                    }
+                }
+                for p in &producers {
+                    let hit = match p.site {
+                        ProducerSite::ObjectiveComplete { quest, objective } => {
+                            quest == oq && objective == *obj
+                        }
+                        ProducerSite::QuestComplete { quest } => quest == oq,
+                        ProducerSite::Ambient { .. } => false,
+                    };
+                    if hit {
+                        flags.insert(p.flag);
+                    }
+                }
+                let mut data: BTreeSet<&str> = BTreeSet::new();
+                if let Some((_, effs)) = owner
+                    .on_objective_complete
+                    .iter()
+                    .find(|(k, _)| k.as_str() == *obj)
+                {
+                    state_writes(effs, &mut data);
+                }
+                state_writes(&owner.on_complete, &mut data);
+
+                // A clause that itself requires what the completion writes can
+                // only govern once `obj` is done: it is the after-scene, a
+                // declaration (repeating the beat included), not the beat.
+                let own_after = cl.requires_flags.iter().any(|f| flags.contains(f.as_str()))
+                    || cl
+                        .requires_state
+                        .iter()
+                        .any(|s| data.contains(s.state.as_str()));
+                if own_after {
+                    continue;
+                }
+                let gated = later.iter().any(|l| {
+                    l.requires_flags.iter().any(|f| flags.contains(f.as_str()))
+                        || l.requires_state
+                            .iter()
+                            .any(|s| data.contains(s.state.as_str()))
+                });
+                let succeeded = c.quests.content.quests.iter().any(|q| {
+                    matches!(&q.trigger, delvewright_dsl::Trigger::QuestComplete { quest } if quest.as_str() == oq)
+                        && q.cast.iter().any(|(k, _)| k.as_str() == npc.as_str())
+                });
+                if !gated && !succeeded {
+                    unreplaced.push((obj, oq));
+                }
+            }
+            if unreplaced.is_empty() {
+                continue;
+            }
+            bind.refused += 1;
+            let qi = quest_index(c, &cl.quest);
+            let entry_len = quest(c, &cl.quest)
+                .and_then(|q| q.cast.iter().find(|(k, _)| k.as_str() == npc.as_str()))
+                .map_or(1, |(_, e)| e.placements().len());
+            let path = if entry_len > 1 {
+                format!("/content/quests/{qi}/cast/{npc}/{}", cl.placement)
+            } else {
+                format!("/content/quests/{qi}/cast/{npc}")
+            };
+            for (obj, oq) in unreplaced {
+                diags.push(Diagnostic::error(
+                    DW_CAST_OUTLIVED,
+                    "quests",
+                    path.clone(),
+                    format!(
+                        "npc `{npc}`'s scene in quest `{}` (placement {}) opens `{root}`, whose \
+                         tree completes objective `{obj}`; once `{obj}` completes nothing replaces \
+                         that scene — no placement of `{npc}` after it requires a flag or compares a \
+                         datum the completion writes, and no quest started by `{oq}` completing \
+                         casts `{npc}` — so for the rest of the delve right-click re-opens the \
+                         finished beat: its completing button hidden, everything leading to it \
+                         offered again. Declare what `{npc}` offers after: set a flag on the \
+                         option that completes `{obj}` (or in its `on_objective_complete`) and add \
+                         a placement of `{npc}` to quest `{}`'s `cast` requiring it — a `barks` \
+                         pool, another root, or `{root}` itself if repeating the beat is what you \
+                         intend — or cast `{npc}` in a quest that starts when `{oq}` completes",
+                        cl.quest, cl.placement, cl.quest
+                    ),
+                ));
+            }
+        }
+    }
+    (diags, bind)
 }
 
 // ---------------------------------------------------------------------------

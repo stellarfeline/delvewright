@@ -480,10 +480,16 @@ fn a_body_is_posted_on_furniture_and_never_walked_onto_it() {
     let posted = campaign(
         |npcs| npcs["content"]["npcs"][0]["anchor"] = serde_json::json!("anchor/table-top"),
         |quests| {
-            quests["content"]["quests"][0]["cast"]["npc/keeper"]["at"] =
-                serde_json::json!("anchor/table-top");
-            quests["content"]["quests"][0]["cast"]["npc/keeper"]["doing"] =
-                serde_json::json!("keeping to anchor/table-top");
+            common::set_cast(
+                &mut quests["content"]["quests"][0]["cast"]["npc/keeper"],
+                "at",
+                serde_json::json!("anchor/table-top"),
+            );
+            common::set_cast(
+                &mut quests["content"]["quests"][0]["cast"]["npc/keeper"],
+                "doing",
+                serde_json::json!("keeping to anchor/table-top"),
+            );
         },
     );
     let plan = Plan::build(&posted, &prefabs).unwrap();

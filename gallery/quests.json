@@ -1641,6 +1641,25 @@
               "requires_flags": [
                 "flag/skipped-the-label"
               ]
+            },
+            {
+              "at": {
+                "anchor": "anchor/muster",
+                "offset": [
+                  1,
+                  0,
+                  0
+                ]
+              },
+              "dialogue": {
+                "barks": [
+                  "\"Answer taken. Fall in or clear the line.\""
+                ]
+              },
+              "doing": "holding the muster line, the party's answer taken",
+              "requires_flags": [
+                "flag/marshal-answered"
+              ]
             }
           ],
           "npc/warden": {

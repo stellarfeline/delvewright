@@ -4,11 +4,25 @@
     "quests": [
       {
         "cast": {
-          "npc/carcass-keeper": {
-            "at": "anchor/flat",
-            "dialogue": "dlg/carcass-greeting",
-            "doing": "standing on the mud beside the body"
-          }
+          "npc/carcass-keeper": [
+            {
+              "at": "anchor/flat",
+              "dialogue": "dlg/carcass-greeting",
+              "doing": "standing on the mud beside the body"
+            },
+            {
+              "at": "anchor/flat",
+              "dialogue": {
+                "barks": [
+                  "The way in is on this side. The stair is round the far flank."
+                ]
+              },
+              "doing": "standing on the mud beside the body, the way in already told",
+              "requires_flags": [
+                "flag/carcass-asked"
+              ]
+            }
+          ]
         },
         "happening": {
           "text": "the party takes on quest/walk-the-carcass",

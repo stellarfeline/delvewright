@@ -24,8 +24,17 @@
                   {
                     "objective": "obj/ask-the-keeper",
                     "type": "complete-objective"
+                  },
+                  {
+                    "flag": "flag/carcass-asked",
+                    "type": "set-flag"
                   }
                 ],
+                "happening": {
+                  "subject": "npc/carcass-keeper",
+                  "text": "The keeper tells the party the way into the body and the stair up its flank.",
+                  "verb": "learns"
+                },
                 "label": "I will walk it, then."
               }
             ],

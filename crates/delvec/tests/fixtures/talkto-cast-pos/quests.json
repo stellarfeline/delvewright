@@ -56,11 +56,28 @@
       },
       {
         "cast": {
-          "npc/keeper": {
-            "at": "anchor/exit",
-            "dialogue": "dlg/farewell",
-            "doing": "waiting on the far side of the lifted gate, holding the road open"
-          }
+          "npc/keeper": [
+            {
+              "at": "anchor/exit",
+              "dialogue": "dlg/farewell",
+              "doing": "waiting on the far side of the lifted gate, holding the road open",
+              "forbids_flags": [
+                "flag/farewell-done"
+              ]
+            },
+            {
+              "at": "anchor/exit",
+              "dialogue": {
+                "barks": [
+                  "There is nothing more to say. Go on."
+                ]
+              },
+              "doing": "done with the beat the party has finished",
+              "requires_flags": [
+                "flag/farewell-done"
+              ]
+            }
+          ]
         },
         "happening": {
           "text": "the party takes on quest/farewell",

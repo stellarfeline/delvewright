@@ -1,0 +1,12 @@
+{
+  "code": "DW1050",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/1/cast/npc~1marshal/2"
+    }
+  ],
+  "units": [],
+  "why": "The far hall's last beat is the party's answer to the Marshal, and the gallery's own cast follows it with a placement requiring `flag/marshal-answered`, the flag both answering options set: once the answer is given, right-click is one closing bark. This variant takes that placement away and nothing else. Nothing later replaces the Marshal's scene then — the far hall is the last quest, and no other placement of hers requires what the answer writes — so for the rest of the delve her right-click re-opens the muster call she has already been answered on: the answering button hidden by the objective-state axis, the call itself offered again. It declares no unit: the bark, the flag and the placement list are all written by the primary, and nothing here is an unwritable surface, only a scene left to outlive its beat. The placement-1 branch (`dlg/marshal-skipped`) carries no gate of its own on the flag, which is the point: retiring a scene is not saying what comes after it, and only a placement after it that requires what the completion writes does."
+}

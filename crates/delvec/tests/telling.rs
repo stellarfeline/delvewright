@@ -438,6 +438,12 @@ fn a_button_is_on_screen_only_once_its_objective_is_pending() {
             "after": ["obj/exit"],
             "happening": { "text": "the party completes obj/report", "verb": "learns" }
         }));
+    // The keeper keeps offering the greeting for the whole quest: the button
+    // this test watches is on that scene, so hello-world's after-scene (the
+    // bark once `obj/talk` is done) is not this test's subject.
+    let mut beat = quests["content"]["quests"][0]["cast"]["npc/keeper"][0].clone();
+    beat.as_object_mut().unwrap().remove("forbids_flags");
+    quests["content"]["quests"][0]["cast"]["npc/keeper"] = beat;
     let mut d = hw("dialogue.json");
     d["content"]["dialogues"][0]["nodes"][0]["options"]
         .as_array_mut()

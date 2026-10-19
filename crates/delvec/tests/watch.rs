@@ -351,8 +351,11 @@ fn a_campaign_whose_bodies_watch_nobody_emits_none_of_it() {
         d["content"]["npcs"][0]["offset"] = json!([0, 0, -3]);
     });
     r.quests = common::patch_doc(&r.quests, |d| {
-        d["content"]["quests"][0]["cast"]["npc/keeper"]["at"] =
-            json!({ "anchor": "anchor/keeper-stand", "offset": [0, 0, -3] });
+        common::set_cast(
+            &mut d["content"]["quests"][0]["cast"]["npc/keeper"],
+            "at",
+            json!({ "anchor": "anchor/keeper-stand", "offset": [0, 0, -3] }),
+        );
         common::objective_effects(d, 0, "obj/talk").retain(|e| e["type"] != "move-npc");
     });
     let c = parse_campaign(&r).expect("campaign parses");

@@ -16,8 +16,16 @@
                   {
                     "objective": "obj/muster",
                     "type": "complete-objective"
+                  },
+                  {
+                    "flag": "flag/muster-done",
+                    "type": "set-flag"
                   }
                 ],
+                "happening": {
+                  "text": "The party is done with what npc/keeper asked.",
+                  "verb": "learns"
+                },
                 "label": "Call them out."
               }
             ],

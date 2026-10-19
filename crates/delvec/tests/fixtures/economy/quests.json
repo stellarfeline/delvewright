@@ -32,7 +32,22 @@
             {
               "at": "anchor/keeper-stand",
               "dialogue": "dlg/greeting",
-              "doing": "standing well back from the broken edge, one hand on the bar"
+              "doing": "standing well back from the broken edge, one hand on the bar",
+              "forbids_flags": [
+                "flag/talk-done"
+              ]
+            },
+            {
+              "at": "anchor/keeper-stand",
+              "dialogue": {
+                "barks": [
+                  "There is nothing more to say. Go on."
+                ]
+              },
+              "doing": "done with the beat the party has finished",
+              "requires_flags": [
+                "flag/talk-done"
+              ]
             }
           ]
         },

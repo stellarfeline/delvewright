@@ -118,11 +118,25 @@
             "dialogue": "dlg/factor-root",
             "doing": "minding the counter in the side gallery"
           },
-          "npc/marshal": {
-            "at": "anchor/node-loft",
-            "dialogue": "dlg/marshal-root",
-            "doing": "looking down on the far hall from the loft"
-          },
+          "npc/marshal": [
+            {
+              "at": "anchor/node-loft",
+              "dialogue": "dlg/marshal-root",
+              "doing": "looking down on the far hall from the loft"
+            },
+            {
+              "at": "anchor/node-loft",
+              "dialogue": {
+                "barks": [
+                  "You have seen it whole. Go down and walk it."
+                ]
+              },
+              "doing": "looking down on the far hall, the view already shown",
+              "requires_flags": [
+                "flag/loft-shown"
+              ]
+            }
+          ],
           "npc/warden": {
             "at": "anchor/node-far-hall",
             "dialogue": "dlg/warden-root",

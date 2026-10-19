@@ -1,6 +1,7 @@
 {
   "campaign_id": "gallery-rock",
   "content": {
+    "cast.far-hall.marshal.1.bark.0": "整座厅你们已经看过了。下去走一遍吧。",
     "class.wanderer.blurb": "带一把剑、一双靴、一份面包。",
     "class.wanderer.kit.0.name": "陈列之刃",
     "class.wanderer.kit.3.name": "馆长的药剂",
@@ -48,6 +49,7 @@
   "kind": "l10n",
   "lang": "zh-cn",
   "source": {
+    "cast.far-hall.marshal.1.bark.0": "You have seen it whole. Go down and walk it.",
     "class.wanderer.blurb": "Carries the blade, the boots and the bread.",
     "class.wanderer.kit.0.name": "Gallery Blade",
     "class.wanderer.kit.3.name": "Curator's Draught",

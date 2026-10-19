@@ -223,6 +223,10 @@
               {
                 "effects": [
                   {
+                    "flag": "flag/marshal-answered",
+                    "type": "set-flag"
+                  },
+                  {
                     "objective": "obj/answer-the-marshal",
                     "type": "complete-objective"
                   }
@@ -243,6 +247,10 @@
             "options": [
               {
                 "effects": [
+                  {
+                    "flag": "flag/marshal-answered",
+                    "type": "set-flag"
+                  },
                   {
                     "objective": "obj/answer-the-marshal",
                     "type": "complete-objective"

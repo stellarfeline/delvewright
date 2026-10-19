@@ -189,6 +189,7 @@ this section is what they are *for* and the traps in each.
     silence it by shuffling spellings.
   - Omitting a live NPC is `DW0460`: an unaccounted NPC is how a crew member
     ends up standing forgotten in an alcove while the player escapes.
+  - **Say what an NPC offers after the beat it completes**: when its scene's tree completes an objective and no later quest casts it (the finale, above all), have the completing option set a flag and add a placement gated on it — a `barks` closing line, a new root, or the same root if repeating the beat is the intent. Without one, right-click re-opens the finished beat for the rest of the delve.
 - **Post-fork casts are per branch, every quest.** After a fork opens, an NPC
   whose situation differs by branch declares a **list** of placements, each
   gated by the flags of the branch it belongs to — in *every* later quest, not
