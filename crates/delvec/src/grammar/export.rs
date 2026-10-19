@@ -89,7 +89,7 @@ pub const GENERATOR: &str = "crates/delvec/src/grammar";
 ///
 /// * the engine grew a **static** light measurement over a piece's own bytes
 ///   ([`crate::admit::light::probe`], the compiler's block+sky flood), which is
-///   what `delvec prefab lighting` runs and what `DW0751` reports. Running it
+///   what `delvec prefab lighting` runs. Running it
 ///   here is not a fabricated measurement — it is the same measurement, taken
 ///   where the bytes are made. The `method` line says in full that it is a static
 ///   estimate and not a live server probe, exactly as the command's does;
@@ -852,7 +852,7 @@ fn package(
 /// sky it is taken under is the piece's own claim
 /// ([`crate::admit::light::SkyClaim`], read off the spatial contract this same
 /// export writes). Nothing about the measurement is this module's: it is the
-/// figure `delvec prefab lighting` prints and `DW0751` grades, taken here so that
+/// figure `delvec prefab lighting` prints, taken here so that
 /// no piece has to be measured by hand after every expansion.
 ///
 /// Deterministic (ADR-0006): a fold over `BTreeMap` floods with no clock, no RNG

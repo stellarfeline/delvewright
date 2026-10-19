@@ -15,7 +15,6 @@
 //! | `DW0740` | catalog card: schema/field validation failure. |
 //! | `DW0741` | catalog card: license not in the ADR-0013 allowlist (NC/ND/unknown reject). |
 //! | `DW0750` | admission tooling (socket/anchor/lighting) failure. |
-//! | `DW0751` | lighting probe: a `dark` interior was measured. |
 //! | `DW0752` | lighting probe: the probe bound to ZERO player-reachable roofed cells. |
 //! | `DW0753` | `--write` cannot establish provenance: there is no prefab metadata to edit. |
 //! | `DW0760` | gallery emission / curation failure. |
@@ -50,9 +49,6 @@ delvewright_dsl::dw_code! {
 pub const DW_LICENSE: &str = delvewright_dsl::codes::LICENSE_REFUSED.id();
 delvewright_dsl::dw_code! {
     pub const DW_TOOLING: &str = "DW0750";
-}
-delvewright_dsl::dw_code! {
-    pub const DW_DARK: &str = "DW0751";
 }
 delvewright_dsl::dw_code! {
     pub const DW_UNBOUND: &str = "DW0752";

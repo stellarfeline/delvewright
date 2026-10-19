@@ -427,8 +427,9 @@ these three rules, whichever route makes the piece
   block no neighbour holds (`DW1002`), so a lever or a torch hung on a pane is
   moved to a face that holds it.
 
-A piece the `lighting` block calls dark is repaired by re-arranging these
-sources or adding more of them, never by another kind of light.
+Darkness is found once the piece is seated, on the whole world and on each
+region (`DW0210`), never on the piece alone; it is repaired by re-arranging
+these sources or adding more of them, never by another kind of light.
 
 ## What the grammar cannot express
 
@@ -494,5 +495,3 @@ order, and replace steps 3–4 above for that piece; steps 1, 2, 5 and 6 still a
    (every standing anchor reached from grade), the `pockets:` line (`0 place(s)`,
    or the run is refused `DW0952` naming each place and the way in), `walk_y`
    (the ground's top + 1) and `shown_faces`. Fix the form, never the output.
-6. **Measure its light**: `delvec --prefabs "$DELVEWRIGHT_PREFABS" prefab lighting "$DELVEWRIGHT_PREFABS/<id>.nbt"`
-   — read the dark-cell distribution against the sky the campaign reaches.

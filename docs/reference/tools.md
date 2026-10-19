@@ -652,12 +652,14 @@ grade. The flood is the compiler's own (`delvec::compiler::light`) — block
 light and sky light, the same model `DW0210`/`DW0211` measure the assembled world
 with.
 
-**The verdict is a distribution, not a minimum.** `dark_cells` gives
+**The measurement is a distribution, not a minimum.** `dark_cells` gives
 `cells_by_light` (how many measured cells sit at each level below
 `dark_threshold`), `cells` (their total) and `fraction` (of `measured_cells`),
-and `DW0751` says all three. `measured_min_light` and `darkest_cell` are still
-there and are still what the profile is taken from — they are where to start
-looking, not how much room is dark.
+in the machine report. `measured_min_light` and `darkest_cell` are still there
+and are still what the profile is taken from. The command measures and writes;
+it raises no diagnostic about how dark a piece is: light is checked on the whole
+world and on each region (`DW0210`), never on a prefab. The one refusal it makes
+is `DW0752`, a probe that bound zero cells.
 
 **Which sky the piece stands under is the piece's own claim, read off its
 `spatial_contract`.** A piece that declares no contract, or one declaring any

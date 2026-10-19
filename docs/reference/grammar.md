@@ -3147,7 +3147,7 @@ does not itself model:
   `delvec prefab socket` appends to it.
 - **`lighting` is measured, over the bytes the export just froze.** The probe is
   the compiler's own block+sky flood — the figure `delvec prefab lighting` prints
-  and `DW0751` grades — run at the moment of production, under the sky the
+  — run at the moment of production, under the sky the
   piece's own spatial contract claims. The `method` line states the binding it
   was taken over, the sky it was taken at, and that it is a static estimate and
   not a live server probe. Deterministic like everything else here: the same
