@@ -566,7 +566,15 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
                             { "label": "What am I looking for?", "next": "dlg/what" },
                             {
                                 "label": "Understood.",
-                                "effects": [{ "objective": "obj/hear-the-brief", "type": "complete-objective" }],
+                                "effects": [
+                                    { "flag": "flag/briefed", "type": "set-flag" },
+                                    { "objective": "obj/hear-the-brief", "type": "complete-objective" },
+                                ],
+                                "happening": {
+                                    "subject": "npc/invigilator",
+                                    "verb": "learns",
+                                    "text": "The party takes the brief and sets off down the bays.",
+                                },
                             },
                         ],
                     },
@@ -595,11 +603,21 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
                     "verb": "arrives",
                     "text": "The party arrives at the first bay.",
                 },
-                "cast": { "npc/invigilator": {
-                    "at": format!("anchor/node-{}", slug(&entry_node)),
-                    "dialogue": "dlg/greeting",
-                    "doing": "standing in the first bay with a rule in her hand",
-                }},
+                // DW1050: once the brief is heard she says so, rather than
+                // briefing the party again.
+                "cast": { "npc/invigilator": [
+                    {
+                        "at": format!("anchor/node-{}", slug(&entry_node)),
+                        "dialogue": "dlg/greeting",
+                        "doing": "standing in the first bay with a rule in her hand",
+                    },
+                    {
+                        "at": format!("anchor/node-{}", slug(&entry_node)),
+                        "dialogue": { "barks": ["You have the brief. Walk the bays."] },
+                        "doing": "waiting in the first bay while the party walks",
+                        "requires_flags": ["flag/briefed"],
+                    },
+                ]},
                 "objectives": [
                     {
                         "id": "obj/hear-the-brief",

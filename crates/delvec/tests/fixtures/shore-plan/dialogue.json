@@ -14,12 +14,12 @@
               {
                 "effects": [
                   {
-                    "flag": "flag/ask-done",
-                    "type": "set-flag"
-                  },
-                  {
                     "objective": "obj/ask",
                     "type": "complete-objective"
+                  },
+                  {
+                    "flag": "flag/ask-done",
+                    "type": "set-flag"
                   }
                 ],
                 "happening": {

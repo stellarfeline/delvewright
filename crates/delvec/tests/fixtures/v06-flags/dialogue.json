@@ -14,12 +14,12 @@
               {
                 "effects": [
                   {
-                    "flag": "flag/talk-done",
-                    "type": "set-flag"
-                  },
-                  {
                     "objective": "obj/talk",
                     "type": "complete-objective"
+                  },
+                  {
+                    "flag": "flag/talk-done",
+                    "type": "set-flag"
                   }
                 ],
                 "happening": {

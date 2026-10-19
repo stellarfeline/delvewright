@@ -479,6 +479,38 @@ pub fn declare_story(
                 .collect()
         })
         .unwrap_or_default();
+    // The flags an NPC's tree sets on an option that completes an objective: a
+    // synthesized cast entry follows its root with a placement requiring them,
+    // so the scene does not outlive its beat (`DW1050`).
+    let done_flags: std::collections::BTreeMap<String, Vec<String>> =
+        dialogue["content"]["dialogues"]
+            .as_array()
+            .map(|trees| {
+                trees
+                    .iter()
+                    .filter_map(|t| {
+                        let mut flags: Vec<String> = Vec::new();
+                        for n in t["nodes"].as_array()? {
+                            for o in n["options"].as_array().into_iter().flatten() {
+                                let effs = o["effects"].as_array();
+                                let effs = effs.map(|e| e.as_slice()).unwrap_or(&[]);
+                                if effs.iter().any(|e| e["type"] == "complete-objective") {
+                                    flags.extend(
+                                        effs.iter()
+                                            .filter(|e| e["type"] == "set-flag")
+                                            .filter_map(|e| e["flag"].as_str().map(str::to_string)),
+                                    );
+                                }
+                            }
+                        }
+                        flags.sort();
+                        flags.dedup();
+                        (!flags.is_empty())
+                            .then(|| (t["npc"].as_str().unwrap_or("").to_string(), flags))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
     let bodies: Vec<(String, String)> = npcs["content"]["npcs"]
         .as_array()
         .map(|ns| {
@@ -537,11 +569,23 @@ pub fn declare_story(
                 }
                 for (npc, anchor) in &bodies {
                     if q["cast"].get(npc).is_none() {
-                        q["cast"][npc] = serde_json::json!({
+                        let scene = serde_json::json!({
                             "at": anchor,
                             "doing": format!("keeping to {anchor}"),
                             "dialogue": roots.get(npc).cloned().unwrap_or_else(|| "none".to_string()),
                         });
+                        q["cast"][npc] = match done_flags.get(npc) {
+                            None => scene,
+                            Some(flags) => serde_json::json!([
+                                scene,
+                                {
+                                    "at": anchor,
+                                    "doing": format!("keeping to {anchor}, the beat done"),
+                                    "dialogue": { "barks": ["There is nothing more to say. Go on."] },
+                                    "requires_flags": flags,
+                                },
+                            ]),
+                        };
                     }
                 }
             }
@@ -1314,4 +1358,19 @@ pub fn plan_structures_with_trap_triggers(
         }
     }
     out
+}
+
+/// Set `field` on every placement of one NPC's cast entry, flat or a list: a
+/// body's station is stated once per placement, and a test that moves the body
+/// moves every placement that stations it.
+pub fn set_cast(entry: &mut serde_json::Value, field: &str, value: serde_json::Value) {
+    match entry {
+        serde_json::Value::Array(ps) => {
+            assert!(!ps.is_empty(), "a cast list with no placement");
+            for p in ps {
+                p[field] = value.clone();
+            }
+        }
+        _ => entry[field] = value,
+    }
 }

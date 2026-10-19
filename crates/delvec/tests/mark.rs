@@ -315,7 +315,11 @@ fn a_destination_mark_inside_a_wall_snaps_as_a_destination_does() {
 fn keeper_at_offset_cast(at: Value) -> Campaign {
     campaign_with(|npcs, quests| {
         npcs["content"]["npcs"][0]["offset"] = json!([1, 0, 0]);
-        quests["content"]["quests"][0]["cast"]["npc/keeper"]["at"] = at;
+        common::set_cast(
+            &mut quests["content"]["quests"][0]["cast"]["npc/keeper"],
+            "at",
+            at,
+        );
     })
 }
 
@@ -386,8 +390,11 @@ fn a_cast_row_naming_the_bare_anchor_of_a_body_at_an_offset_is_dw0461() {
 fn keeper_at(offset: [i32; 3]) -> Campaign {
     campaign_with(|npcs, quests| {
         npcs["content"]["npcs"][0]["offset"] = json!(offset);
-        quests["content"]["quests"][0]["cast"]["npc/keeper"]["at"] =
-            json!({ "anchor": "anchor/keeper-stand", "offset": offset });
+        common::set_cast(
+            &mut quests["content"]["quests"][0]["cast"]["npc/keeper"],
+            "at",
+            json!({ "anchor": "anchor/keeper-stand", "offset": offset }),
+        );
     })
 }
 

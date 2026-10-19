@@ -83,8 +83,11 @@ fn campaign_at(offset: [i32; 3], npcs: impl FnOnce(&mut Value)) -> Campaign {
         quest_plan: read_hw("quest-plan.json"),
         quests: common::patch_doc(&read_hw("quests.json"), |q| {
             if offset != [0, 0, 0] {
-                q["content"]["quests"][0]["cast"]["npc/keeper"]["at"] =
-                    json!({ "anchor": "anchor/keeper-stand", "offset": offset });
+                common::set_cast(
+                    &mut q["content"]["quests"][0]["cast"]["npc/keeper"],
+                    "at",
+                    json!({ "anchor": "anchor/keeper-stand", "offset": offset }),
+                );
             }
         }),
         dialogue: read_hw("dialogue.json"),

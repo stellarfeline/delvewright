@@ -71,12 +71,12 @@
               {
                 "effects": [
                   {
-                    "flag": "flag/watch-done",
-                    "type": "set-flag"
-                  },
-                  {
                     "objective": "obj/watch",
                     "type": "complete-objective"
+                  },
+                  {
+                    "flag": "flag/watch-done",
+                    "type": "set-flag"
                   }
                 ],
                 "happening": {

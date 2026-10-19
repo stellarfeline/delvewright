@@ -1864,7 +1864,11 @@ fn beach_camp_campaign(name: &str, ocean: bool) -> std::path::PathBuf {
         d["content"]["npcs"][0]["anchor"] = serde_json::json!("anchor/crew-a");
     });
     edit("quests.json", &|d| {
-        d["content"]["quests"][0]["cast"]["npc/keeper"]["at"] = serde_json::json!("anchor/crew-a");
+        common::set_cast(
+            &mut d["content"]["quests"][0]["cast"]["npc/keeper"],
+            "at",
+            serde_json::json!("anchor/crew-a"),
+        );
         d["content"]["quests"][0]["objectives"][1]["anchor"] =
             serde_json::json!("anchor/camp-fire");
         d["content"]["quests"][0]

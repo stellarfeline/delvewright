@@ -1624,7 +1624,11 @@ fn pit_campaign(tag: &str, bound: &str, extent: [i32; 3]) -> (PathBuf, PathBuf) 
     });
     common::patch_file(&dir.join("quests.json"), |v| {
         let q = &mut v["content"]["quests"][0];
-        q["cast"]["npc/keeper"]["at"] = serde_json::json!("anchor/node-house");
+        common::set_cast(
+            &mut q["cast"]["npc/keeper"],
+            "at",
+            serde_json::json!("anchor/node-house"),
+        );
         q["objectives"][1]["anchor"] = serde_json::json!("anchor/hearth");
         q["objectives"][2]["anchor"] = serde_json::json!("anchor/bench");
         q["on_objective_complete"]["obj/ask"]
@@ -4066,8 +4070,11 @@ fn held_keeper(tag: &str, offset: [i32; 3]) -> PathBuf {
     });
     if offset != [0, 0, 0] {
         edit_doc(&camp, "quests.json", |v| {
-            v["content"]["quests"][0]["cast"]["npc/keeper"]["at"] =
-                serde_json::json!({ "anchor": "anchor/keeper-stand", "offset": offset });
+            common::set_cast(
+                &mut v["content"]["quests"][0]["cast"]["npc/keeper"],
+                "at",
+                serde_json::json!({ "anchor": "anchor/keeper-stand", "offset": offset }),
+            );
         });
     }
     camp

@@ -14,12 +14,12 @@
               {
                 "effects": [
                   {
-                    "flag": "flag/muster-done",
-                    "type": "set-flag"
-                  },
-                  {
                     "objective": "obj/muster",
                     "type": "complete-objective"
+                  },
+                  {
+                    "flag": "flag/muster-done",
+                    "type": "set-flag"
                   }
                 ],
                 "happening": {
