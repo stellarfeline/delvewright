@@ -155,8 +155,9 @@ fn the_graph_declines_are_enumerated() {
         // over a box.
         ("compiler/blockout.rs", ".walk_region(", 1),
         // `DW0937`: the critical path performs the strike, so the question is
-        // whether the party walks on cue to a cell it strikes from (§4.5).
-        ("compiler/emit/proofs.rs", ".walk_region(", 1),
+        // whether the party walks on cue to a cell it strikes from (§4.5);
+        // and the bot's spared stand beside it, a cell it walks to on cue.
+        ("compiler/emit/proofs.rs", ".walk_region(", 2),
         // `DW0920`: where the party is walked to engage a fight in water.
         ("compiler/engage.rs", ".walk_region(", 1),
         // `DW0315`/`DW0316`: checkpoints and respawns (§4.5).
