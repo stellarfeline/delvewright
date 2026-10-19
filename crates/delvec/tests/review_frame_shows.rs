@@ -2,9 +2,9 @@
 //! (spec-0112 §7.5, §8.1; criteria 12, 13 and 17, and criterion 4's mannequin).
 //!
 //! The fixture is the gallery's primary: its curator is a mannequin, and its
-//! marked `reach` objectives stand a lantern marker (an `item_display`) in
+//! marked `reach` objectives stand an end-rod marker (an `item_display`) in
 //! frame on the legs to them — a holder the pinned renderer draws, with its
-//! lantern, so it leaves `undrawn` (criterion 17).
+//! end rod, so it leaves `undrawn` (criterion 17).
 
 mod common;
 
@@ -24,7 +24,7 @@ fn json(p: &Path) -> serde_json::Value {
     serde_json::from_slice(&std::fs::read(p).unwrap()).unwrap()
 }
 
-/// The objective whose lantern marker the report is asked about.
+/// The objective whose end-rod marker the report is asked about.
 const MARKED: &str = "obj/board-the-ferry";
 const MARKER: &str = "dw_r_board_the_ferry";
 
@@ -126,8 +126,8 @@ fn a_holder_the_renderer_draws_leaves_undrawn_and_the_curator_is_drawn() {
     );
 
     // Criterion 17: a frame on the leg to the marked objective with its
-    // lantern marker in sight lists nothing undrawn, and the renderer's own
-    // statistics for that frame count the item display and its lantern drawn.
+    // end-rod marker in sight lists nothing undrawn, and the renderer's own
+    // statistics for that frame count the item display and its end rod drawn.
     let seen = marker_frames(&index)
         .into_iter()
         .find(|s| {
@@ -155,7 +155,7 @@ fn a_holder_the_renderer_draws_leaves_undrawn_and_the_curator_is_drawn() {
     );
     assert!(ents["skipped"].get("item_display").is_none(), "{ents}");
     assert!(
-        ents["items_rendered"]["lantern"].as_u64().unwrap_or(0) >= 1,
+        ents["items_rendered"]["end_rod"].as_u64().unwrap_or(0) >= 1,
         "{ents}"
     );
     assert_eq!(ents["items_skipped"], serde_json::json!({}), "{ents}");
