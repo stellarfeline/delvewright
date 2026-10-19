@@ -8,11 +8,25 @@
     "quests": [
       {
         "cast": {
-          "npc/bank-warden": {
-            "at": "anchor/bank-court",
-            "dialogue": "dlg/bank-greeting",
-            "doing": "standing in the middle of the court"
-          }
+          "npc/bank-warden": [
+            {
+              "at": "anchor/bank-court",
+              "dialogue": "dlg/bank-greeting",
+              "doing": "standing in the middle of the court"
+            },
+            {
+              "at": "anchor/bank-court",
+              "dialogue": {
+                "barks": [
+                  "Walk it to the wall. The wall is as far as it goes."
+                ]
+              },
+              "doing": "standing in the middle of the court, the bank already explained",
+              "requires_flags": [
+                "flag/bank-asked"
+              ]
+            }
+          ]
         },
         "happening": {
           "text": "the party takes on quest/walk-the-bank",

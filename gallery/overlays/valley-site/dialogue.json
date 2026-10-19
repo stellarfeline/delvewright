@@ -24,8 +24,17 @@
                   {
                     "objective": "obj/ask-the-warden",
                     "type": "complete-objective"
+                  },
+                  {
+                    "flag": "flag/bank-asked",
+                    "type": "set-flag"
                   }
                 ],
+                "happening": {
+                  "subject": "npc/bank-warden",
+                  "text": "The warden tells the party the wall is the edge of what was built.",
+                  "verb": "learns"
+                },
                 "label": "I will walk it, then."
               }
             ],

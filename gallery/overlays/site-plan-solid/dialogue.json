@@ -79,8 +79,17 @@
                   {
                     "objective": "obj/climb-the-loft",
                     "type": "complete-objective"
+                  },
+                  {
+                    "flag": "flag/loft-shown",
+                    "type": "set-flag"
                   }
                 ],
+                "happening": {
+                  "subject": "npc/marshal",
+                  "text": "The Marshal shows the party the whole hall from the loft.",
+                  "verb": "learns"
+                },
                 "label": "Show me."
               }
             ],

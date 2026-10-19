@@ -199,6 +199,7 @@ holding them at once.
 | `a-piece-the-library-does-not-hold` | `DW0856` | `validate` | binding the hall to a piece whose name is one letter wrong |
 | `a-gate-two-areas-provide` | `DW0857` | `validate` | binding the annex to the hall's own piece, so both areas provide one gate anchor |
 | `a-question-nobody-answers` | `DW0858` | `validate` | asking the party to talk to somebody the same quest declares silent |
+| `a-muster-call-that-never-ends` | `DW1050` | `validate` | leaving the Marshal's answered muster call as her scene for the rest of the delve |
 | `a-piece-that-is-not-its-frame` | `DW0843` | `validate` | seating a piece that does not fill the box the map gave it |
 | `a-horizon-with-no-map` | `DW0855` | `validate` | declaring a horizon with nothing for it to ring |
 | `a-clock-nobody-explained` | `DW0860` | `validate` | arming a stealth clock that bites before its own instruction can be read |
