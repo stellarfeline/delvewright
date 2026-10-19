@@ -415,6 +415,15 @@ pub(super) fn validate_loaded(
             // effect history. Error tier, except the staleness lint (DW0467),
             // which warns.
             diags.extend(delvec::compiler::cast::check_cast(&campaign));
+            // DW1050: a scene whose tree completes an objective, and that nothing
+            // replaces once it does, re-opens the finished beat for the rest of
+            // the delve. Read off the documents alone, beside the ledger it
+            // judges; the binding line states what it examined.
+            {
+                let (od, obind) = delvec::compiler::cast::check_outlived_scenes(&campaign);
+                examined.push(obind.line());
+                diags.extend(od);
+            }
             // `DW0884`: a cast row whose anchor name BOTH the beat's area and
             // the npc's own area answer to. The same finding `DW0461`'s place
             // arm refuses at the build tier from the seated pieces, refused here

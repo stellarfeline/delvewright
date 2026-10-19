@@ -1,0 +1,59 @@
+{
+  "campaign_id": "talk-after-end",
+  "content": {
+    "dialogues": [
+      {
+        "nodes": [
+          {
+            "id": "dlg/greeting",
+            "options": [
+              {
+                "effects": [
+                  {
+                    "objective": "obj/ask",
+                    "type": "complete-objective"
+                  }
+                ],
+                "label": "Lift the gate, please."
+              },
+              {
+                "label": "What waits beyond it?",
+                "next": "dlg/farewell"
+              }
+            ],
+            "text": "Halt, traveler. The inner door stays shut."
+          },
+          {
+            "id": "dlg/farewell",
+            "options": [
+              {
+                "label": "Go on.",
+                "next": "dlg/last-word"
+              }
+            ],
+            "text": "The road is yours. Do not look back."
+          },
+          {
+            "id": "dlg/last-word",
+            "text": "Then go, and the gate is shut behind you.",
+            "options": [
+              {
+                "label": "Thank you, Keeper.",
+                "effects": [
+                  {
+                    "objective": "obj/farewell",
+                    "type": "complete-objective"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "npc": "npc/keeper",
+        "root": "dlg/greeting"
+      }
+    ]
+  },
+  "dsl_version": "0.41.0",
+  "stage": "dialogue"
+}
