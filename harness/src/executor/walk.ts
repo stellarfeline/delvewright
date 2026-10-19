@@ -7,7 +7,7 @@ import pathfinderPkg from "mineflayer-pathfinder";
 import type { ReachStep, Transport, Vec3Tuple } from "../critical-path.ts";
 import { insideCompletion, reachGoal } from "../critical-path.ts";
 import { BotDeathError } from "../death.ts";
-import { lethalStepCost } from "../death-loop.ts";
+import { lethalStepCost, sameBox, spanStepCost } from "../death-loop.ts";
 import { allowNonCollidingEntities, configureLeg, describeStuckNeighbours } from "../movement.ts";
 import {
   nextLegWaypoints,
@@ -638,9 +638,19 @@ export const methods = {
         // between two proven cells meets the closing edge blind, which is how a
         // gallery walk to the east bay died at the inner door. A walk that binds
         // the gate stages it at its proven mouth instead.
-        const unstaged = unstagedCrushBoxes(declaredGates, walkGates);
+        // The crush stage's walk to a gate's mouth (`executor/crush.ts`) ends ON
+        // the mouth, a cell that gate's widened keep-out refuses: that one gate is
+        // walled cell for cell instead, which keeps the walk out of its span and
+        // lets it stand where the window is waited for.
+        const mouthOf = this.crushApproachRegion;
+        const unstaged = unstagedCrushBoxes(declaredGates, walkGates).filter(
+          (b) => mouthOf === undefined || !sameBox(b, mouthOf),
+        );
         if (unstaged.length > 0) {
           movements.exclusionAreasStep.push((block): number => lethalStepCost(block, unstaged));
+        }
+        if (mouthOf !== undefined) {
+          movements.exclusionAreasStep.push((block): number => spanStepCost(block, mouthOf));
         }
         // Stated binding count, once per walk, for every campaign that declares a
         // gate at all: how many of the declared gates bind this walk, which they
