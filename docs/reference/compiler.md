@@ -5643,7 +5643,7 @@ a datapack.
 delvec snapshot <campaign-dir>
     [--camera x,y,z,yaw,pitch[,fov]]      # explicit eye
     [--at <anchor> [--orbit <deg>] [--dist <n>]]   # frame a subject
-    [--shot <render-plan id>]             # reuse a planned camera
+    [--shot <render-plan id> --build <build-dir>]   # reuse a planned camera
     [-o out.png] [--labels]
     [--width 960] [--height 540] [--timing] [--json]
 ```
@@ -5667,22 +5667,27 @@ layout. Details:
   The walk is `compiler::camera::stand_in_open_air`, shared with the render
   plan's own cameras: standing a camera up in open air is a property of a
   camera, so there is one of it.
-- **`--shot <id>`** — reuses a `render-plan.json` camera by id (`interior/…`,
-  `npc/…`, `interact/…`, `gate/…`, `seam/…`, `pov/leg{L}/wp{W}`). The render plan
-  states cameras in its own Chunky yaw convention, so the bridge reads only its
-  `pos`/`look_at` world points and re-derives Minecraft yaw/pitch. `pov/…` ids
-  additionally compute the DW0311 critical-path routes; other ids do not.
-  An unknown id lists the available ones. The plan is derived against the same
-  edited assembled world this command rasterises, so a camera the plan stands up
-  out of the rock is stood up identically here — `--shot` frames what the built
-  plan states, never a second opinion about it.
+- **`--shot <id>`** (requires **`--build <dir>`**) — reuses a camera of the
+  `render-plan.json` that `delvec build` emitted into `<dir>`, by id
+  (`interior/…`, `npc/…`, `interact/…`, `gate/…`, `seam/…`,
+  `pov/leg{L}/wp{W}`). Which cameras a campaign has is answered once, by the
+  build, over its final world (relight fixtures standing, every premise applied,
+  the links taken), and this reads that answer; it derives no plan of its own.
+  The build is refused unless it is of this campaign as it stands — every input
+  its `manifest.json` records hashes to the file in `<campaign-dir>` — and was
+  written by this `delvec`. The render plan states cameras in its own Chunky yaw
+  convention, so the bridge reads only its `pos`/`look_at` world points and
+  re-derives Minecraft yaw/pitch. An unknown id lists the available ones.
+  `tests/render_plan_agreement.rs` holds every shot of the gallery primary's and
+  keep-vertical's plans to the camera the snapshot frames.
 
 **Pipeline stages required** — parse → `Plan::build` (placement) → read the
 placed `.nbt` → `assembled::assembled_blocks`. That is all: no relight, no nav
 proofs, no emission. Validation diagnostics are printed but **never gate** the
 render (only an unparseable campaign, exit 1, or a placement failure, exit 3,
 stops it), because the loop exists precisely to look at builds that are not
-finished yet.
+finished yet. `--shot` is the one framing that needs a finished build: it reads
+that build's plan.
 
 **Renderer** — a voxel DDA raycaster (`compiler::snapshot`) over a chunked
 flattening of the assembled block map. Shading is block-palette colour ×

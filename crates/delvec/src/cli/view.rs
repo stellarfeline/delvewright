@@ -19,6 +19,8 @@ pub(crate) struct SnapshotArgs<'a> {
     pub(crate) orbit: f64,
     pub(crate) dist: Option<f64>,
     pub(crate) shot: Option<&'a str>,
+    /// The `delvec build` output of this campaign `--shot` reads its camera from.
+    pub(crate) build: Option<&'a Path>,
     pub(crate) out: &'a Path,
     pub(crate) labels: bool,
     pub(crate) width: u32,
@@ -79,25 +81,12 @@ pub(crate) fn run_snapshot(
         Ok(a) => a,
         Err(code) => return ExitCode::from(code),
     };
-    // The occupancy view of the same assembled model the grid rasterises: the
-    // render plan's cameras are stood up and proven against it (`DW0724`), so a
-    // `--shot` here frames exactly what the built plan states.
-    //
-    // Geometry alone (`nav::Premises::geometry_only`): a camera is stood up
-    // against BLOCKS — the question is whether the eye is inside one — and a
-    // reviewer framing a shot down into a declared lethal volume is looking at
-    // open air, not at a wall. The campaign's premises are about what a body may
-    // walk through, which is not what this command asks.
-    let world = delvec::compiler::nav::World::from_occupancy(
-        delvec::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
-        delvec::compiler::nav::Premises::geometry_only(),
-    );
     let blocks = assembled.blocks;
     let grid = snapshot::VoxelGrid::build(&blocks);
     snapshot::report_unpainted(&grid);
     let assembled_ms = started.elapsed().as_secs_f64() * 1000.0;
 
-    let cam = match resolve_camera(&plan, &prefabs, &grid, &world, &args) {
+    let cam = match resolve_camera(&plan, &grid, campaign_dir, &args) {
         Ok(c) => c,
         Err(msg) => {
             eprintln!("error: {msg}");
@@ -571,9 +560,8 @@ fn load_for_view(
 /// rejects combining the first three.
 fn resolve_camera(
     plan: &Plan,
-    prefabs: &PrefabRegistry,
     grid: &delvec::compiler::snapshot::VoxelGrid,
-    world: &delvec::compiler::nav::World,
+    campaign_dir: &Path,
     args: &SnapshotArgs<'_>,
 ) -> Result<delvec::compiler::snapshot::Camera, String> {
     use delvec::compiler::snapshot::{Camera, DEFAULT_FOV, DEFAULT_ORBIT_DIST};
@@ -630,7 +618,14 @@ fn resolve_camera(
     }
 
     if let Some(id) = args.shot {
-        return camera_from_shot(plan, prefabs, world, id);
+        let Some(build) = args.build else {
+            return Err(
+                "--shot reads its camera from a build: pass `--build <dir>`, the \
+                        `delvec build` output of this campaign"
+                    .to_string(),
+            );
+        };
+        return camera_from_shot(build, campaign_dir, id);
     }
 
     // Default: a dollhouse overview of the whole layout from the south-east,
@@ -708,41 +703,72 @@ fn resolve_subject(plan: &Plan, subject: &str) -> Result<[i32; 3], String> {
     }
 }
 
-/// Reuse a `render-plan.json` shot's camera by id.
+/// Reuse a `render-plan.json` shot's camera by id, read from the render plan
+/// `delvec build` emitted for this campaign.
 ///
-/// The render plan states cameras as `pos` + `look_at` world coordinates (its own
-/// yaw convention differs from Minecraft's — see `snapshot`'s module note), so
-/// the bridge reads those two points and re-derives Minecraft yaw/pitch. `pov/…`
-/// ids additionally need the DW0311 critical-path routes, so those are computed
-/// only when a POV shot is actually asked for.
+/// Which cameras a campaign has is answered once, by the build: a `pov/…` shot
+/// stands on the critical path the build proved over its final world (the
+/// relight fixtures standing, every premise applied, the links taken), and its
+/// eye is proven clear there (`DW0724`). Re-deriving the plan here would be a
+/// second answer over a different world, and it was: it numbered the legs
+/// differently and refused the build's own shots. So this reads the build's
+/// plan, after checking that the build is of this campaign as it stands — every
+/// input `manifest.json` records hashes to the file in `campaign_dir` — and was
+/// written by this engine.
+///
+/// The render plan states cameras as `pos` + `look_at` world coordinates (its
+/// own yaw convention differs from Minecraft's — see `snapshot`'s module note),
+/// so the bridge reads those two points and re-derives Minecraft yaw/pitch.
 fn camera_from_shot(
-    plan: &Plan,
-    prefabs: &PrefabRegistry,
-    world: &delvec::compiler::nav::World,
+    build_dir: &Path,
+    campaign_dir: &Path,
     id: &str,
 ) -> Result<delvec::compiler::snapshot::Camera, String> {
-    use delvec::compiler::render_plan;
     use delvec::compiler::snapshot::{Camera, DEFAULT_FOV};
+    use sha2::{Digest, Sha256};
 
-    // The path the build reads: the links the route proof takes spliced in
-    // (spec-0083), so a `pov/…` id names the leg the build's own render plan
-    // named.
-    let relinked = delvec::compiler::nav::with_links_taken(plan, prefabs, world)
-        .map_err(|f| format!("{}: {}", f.code, f.message))?;
-    let plan = relinked.as_ref().unwrap_or(plan);
-    let pov = if id.starts_with("pov/") {
-        let routes = delvec::compiler::nav::critical_path_routes(plan, world);
-        render_plan::pov_shots(plan, &routes)
-    } else {
-        Vec::new()
+    let read_json = |name: &str| -> Result<serde_json::Value, String> {
+        let path = build_dir.join(name);
+        let bytes = std::fs::read(&path).map_err(|e| {
+            format!(
+                "--build `{}` has no `{name}` ({e}): pass the `delvec build` output of this \
+                 campaign",
+                build_dir.display()
+            )
+        })?;
+        serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display()))
     };
-    // The same world the snapshot itself rasterises (the EDITED assembled model),
-    // so the camera this returns is the camera the plan states: a shot pulled in
-    // out of the rock is pulled in by the same walk here, and a `DW0724` refusal
-    // here is one `delvec build` would raise too.
-    let doc = render_plan::render_plan(plan, prefabs, &pov, world, None)
-        .map_err(|e| format!("{}: {}", e.code, e.message))?
-        .0;
+    let manifest = read_json("manifest.json")?;
+    let built_by = manifest["delvec_version"].as_str().unwrap_or("");
+    if built_by != delvec::compiler::DELVEC_VERSION {
+        return Err(format!(
+            "--build `{}` was written by delvec {built_by:?}, not this delvec {}: rebuild it",
+            build_dir.display(),
+            delvec::compiler::DELVEC_VERSION
+        ));
+    }
+    let inputs = manifest["inputs"].as_object().cloned().unwrap_or_default();
+    if inputs.is_empty() {
+        return Err(format!(
+            "--build `{}`'s manifest records no input, so nothing says it is a build of `{}`",
+            build_dir.display(),
+            campaign_dir.display()
+        ));
+    }
+    for (rel, sha) in &inputs {
+        let now = std::fs::read(campaign_dir.join(rel))
+            .map(|b| format!("{:x}", Sha256::digest(&b)))
+            .unwrap_or_default();
+        if Some(now.as_str()) != sha.as_str() {
+            return Err(format!(
+                "--build `{}` is not a build of `{}` as it stands: `{rel}` differs from the file \
+                 the build read. Rebuild with `delvec build`",
+                build_dir.display(),
+                campaign_dir.display()
+            ));
+        }
+    }
+    let doc = read_json("render-plan.json")?;
     let shots = doc["shots"].as_array().cloned().unwrap_or_default();
     let Some(shot) = shots.iter().find(|s| s["id"].as_str() == Some(id)) else {
         let mut ids: Vec<&str> = shots.iter().filter_map(|s| s["id"].as_str()).collect();
