@@ -342,6 +342,9 @@ fn crush_false_is_inert() {
         "validation/critical-path-waypoints.json".to_string(),
         // The observer census counts the crush's guarded selector.
         "validation/observer-census.json".to_string(),
+        // The party ledger states its `party_join` count over every template
+        // in the suite, and the crush PackTest is one more template.
+        "validation/party-division.json".to_string(),
         "manifest.json".to_string(),
     ];
     for path in &differing {
