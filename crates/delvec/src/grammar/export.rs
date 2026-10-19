@@ -98,13 +98,12 @@ pub const GENERATOR: &str = "crates/delvec/src/grammar";
 ///   so a zone exported to be looked at, reviewed and iterated on met no
 ///   measurement at all.
 ///
-/// **The pair this closes.** `DW0894` refuses to show a piece nobody measured and
-/// prescribes `delvec prefab lighting --write`; an export rewrites the whole
-/// document, so the next `expand` reset the field the command had just written.
-/// Measured on the tree this landed on: write, expand, read back, and `lighting`
-/// was `{"profile": "unmeasured"}` again. Two actions, each undoing the other,
-/// one prescribing what the other refuses — so the remedy moves to where the
-/// bytes are produced and the showing gate keeps only the check.
+/// **Why the measurement is taken where the bytes are made.** An export rewrites
+/// the whole document, so a profile `delvec prefab lighting --write` wrote would
+/// be reset by the next `expand`; measuring here makes the two agree. The figure
+/// is a fact derived from the blocks, never a check: light is judged on the
+/// whole world and on each region, and its one reader here is the render plan's
+/// reviewer instruction for a placed piece (`compiler::render_plan`).
 ///
 /// **Not the other repair.** Preserving an already-written profile across an
 /// expansion is the shape `shown_faces` correctly took, and light is not the same
@@ -867,8 +866,7 @@ fn package(
 /// **A probe that bound to nothing writes no profile.** With no cell to stand in
 /// there is no floor to be dark and no measurement to state, and inventing one
 /// would be the default the field exists to refuse — the same rule `walk_y` below
-/// already follows, and the same one `DW0752` states for the command. The showing
-/// gate does not take the document's word for that: it asks the bytes.
+/// already follows, and the same one `DW0752` states for the command.
 fn measured_lighting(expansion: &Expansion) -> LightingMetadata {
     let sky = crate::admit::light::SkyClaim::of(contract_metadata(expansion).as_ref());
     let probe = crate::admit::light::probe(

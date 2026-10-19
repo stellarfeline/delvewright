@@ -1,47 +1,28 @@
-//! **What has to be true of a piece before a person is asked to look at it.**
+//! **What is said about a piece before a person is asked to look at it.**
 //!
 //! A prefab meets a reviewer's eye through exactly three arms — `delvec viewer`,
-//! `delvec render piece` and `delvec render batch` — and until this module ran,
-//! all three drew whatever bytes they were handed and said nothing about them.
-//! Two things a person cannot see from a picture were therefore never said, and
-//! both had already shipped a building:
+//! `delvec render piece` and `delvec render batch` — and each says one thing a
+//! person cannot see from a picture before it draws: **how much of the floor no
+//! body can reach.** A roofed room with no way into it renders identically to
+//! one with a door, and reads as finished. That is `DW0895`, and it is a report
+//! rather than a refusal because the engine cannot tell *unreachable* from *not
+//! meant to be reached* — a parapet is standable and nobody walks it, a sealed
+//! crypt is floor on purpose — and a gate that cannot draw that distinction is
+//! one an author learns to route around. What it CAN do is say how much, where,
+//! and **which step it was turned back at**.
 //!
-//! * **nobody had measured the light.** A grammar export declares
-//!   `"lighting": {"profile": "unmeasured"}`, which is the *true* statement the
-//!   grammar can make — it places blocks, not photons — and the two things in
-//!   this engine that measure light are a command somebody has to type
-//!   (`delvec prefab lighting`) and the compiler's assembled-world survey, which
-//!   quantifies over the areas of a campaign (`DW0210`). A piece that enters no
-//!   campaign meets neither. One did: it was exported, rendered to a page, and
-//!   walked into by a person who found a room they could not see in, with 1498
-//!   of its 8972 walkable cells below light 3 and 984 of them at light 0. That is
-//!   `DW0894`, and it is a refusal here because a picture is exactly the medium
-//!   in which darkness does not show: the renderer lights every frame for the
-//!   camera, not for the body.
+//! Light is not said here. Light is checked on the whole world and on each
+//! region, never on a prefab: whether a surface is walked, and so owed light, is
+//! decided by the place a piece is seated in and by where a body can reach.
 //!
-//! * **nobody had counted the floor no body can reach.** A roofed room with no
-//!   way into it renders identically to one with a door, and reads as finished.
-//!   That is `DW0895`, and it is a report rather than a refusal because the
-//!   engine cannot tell *unreachable* from *not meant to be reached* — a parapet
-//!   is standable and nobody walks it, a sealed crypt is floor on purpose — and a
-//!   gate that cannot draw that distinction is one an author learns to route
-//!   around. What it CAN do is say how much, where, and **which step it was
-//!   turned back at**.
-//!
-//! # Why the two are one gate and one event
-//!
-//! Neither is a fact about rendering; both are facts about the piece. What makes
-//! this the place to say them is that showing a piece to a person is the moment
-//! the piece stops being a file and becomes something somebody is going to
-//! believe. Both are computed from the piece's own bytes, before textures are
-//! resolved and before a GPU is asked for — a refusal owed to a reviewer is worth
-//! nothing after twenty-eight frames have been written.
+//! The survey is computed from the piece's own bytes, before textures are
+//! resolved and before a GPU is asked for — a report owed to a reviewer is
+//! worth nothing after twenty-eight frames have been written.
 //!
 //! # Nothing here is a second opinion
 //!
 //! The walk, the standability rule and the roof test are
-//! [`crate::schem::nav`]'s, the same ones `delvec prefab lighting` and the
-//! grammar back end ask; the step rule under them is
+//! [`crate::schem::nav`]'s; the step rule under them is
 //! [`delvewright_dsl::metrics::step_allowed`]; the passability vocabulary is
 //! [`delvewright_dsl::blockshape`]. The only thing this module writes for itself
 //! is the [`Voxels`] adapter over the renderer's own parsed structure, which is
@@ -52,17 +33,8 @@ use std::collections::BTreeSet;
 use delvewright_dsl::blockshape;
 
 use crate::compiler::view::diag::Diagnostic;
-use crate::compiler::view::meta::PrefabMeta;
 use crate::compiler::view::nbt::Structure;
 use crate::schem::nav::{self, RefusedStep, StepRefusal, Voxels};
-
-delvewright_dsl::dw_code! {
-    /// **`DW0894`: the piece about to be shown carries no measurement of its own
-    /// light.** An `unmeasured` profile — or no `lighting` block at all — is refused
-    /// here, because the alternative is what happened: a person is handed a picture
-    /// of a building nothing has ever measured, and pictures do not show darkness.
-    pub const DW_UNMEASURED_LIGHT: &str = "DW0894";
-}
 
 delvewright_dsl::dw_code! {
     /// **`DW0895`: floor under a roof that no body can walk to, and the step the
@@ -133,140 +105,6 @@ impl Voxels for Cells<'_> {
         self.name(support)
             .and_then(blockshape::floor_top_16)
             .map_or(delvewright_dsl::metrics::FULL_16, i64::from)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// `DW0894` — somebody measured the light
-// ---------------------------------------------------------------------------
-
-/// What the light half examined and what it found. The counts are stated whether
-/// or not anything was wrong: a gate whose binding is not printed cannot be told
-/// from one that matched nothing.
-#[derive(Debug, Clone)]
-pub struct LightVerdict {
-    /// Pieces about to be shown — the denominator.
-    pub examined: usize,
-    /// Of those, how many carry a measured profile.
-    pub measured: usize,
-    /// Of those, how many carry none and have **nowhere in them to stand**, so
-    /// there is no floor for a measurement to be about. Counted and never
-    /// refused — and measured off the bytes, never read from the document.
-    pub no_player_space: usize,
-    /// The ones that do not carry a measurement and do have floor, by piece id,
-    /// with what they declare instead.
-    pub unmeasured: Vec<(String, &'static str)>,
-}
-
-/// Why a piece counts as unmeasured, in the words the refusal prints.
-fn unmeasured_reason(meta: Option<&PrefabMeta>) -> Option<&'static str> {
-    match meta {
-        // No document at all beside the bytes. Not the same claim as an
-        // `unmeasured` profile, and the remedy differs, so it says which.
-        None => Some("there is no prefab document beside these bytes at all"),
-        Some(m) => match &m.lighting {
-            None => Some("its prefab document declares no `lighting` block"),
-            Some(l) => match l.profile {
-                delvewright_dsl::registry::LightingProfile::Unmeasured => {
-                    Some("its prefab document declares `\"profile\": \"unmeasured\"`")
-                }
-                _ => None,
-            },
-        },
-    }
-}
-
-impl LightVerdict {
-    /// Judge the pieces a run is about to draw, in the order it will draw them.
-    ///
-    /// `standable` is how many cells of that piece a body can stand in **at
-    /// all**, taken from its own bytes by the survey that runs beside this one.
-    ///
-    /// # The one thing that is not refused, and why it cannot be forged
-    ///
-    /// A piece with nowhere in it to stand has no floor to be dark: there is
-    /// nothing for a measurement to be about, and `unmeasured` is the true
-    /// answer rather than a missing one. Five of the rule library's 36 programs
-    /// are that — `idiom-arguments`, `idiom-erosion`, `idiom-mirror`,
-    /// `idiom-repetition`, `negated-guard`, demonstrations of an IR construct
-    /// rather than buildings — and every one of them reports `standable_cells: 0`.
-    ///
-    /// **This is an escape the defect cannot supply.** It is not a field, a flag
-    /// or a word in the document; it is a count the engine takes from the blocks
-    /// at the moment of showing. The defect this gate exists to catch is a dark
-    /// ROOM, and a room has floor by definition — a piece that could pass through
-    /// here has no cell a player could ever be dark in.
-    ///
-    /// A sealed crypt is deliberately NOT in it: it has floor, so it is refused
-    /// until somebody measures it, which is `DW0752`'s "socket it first, then
-    /// probe it" and not a reason to show it unmeasured.
-    pub fn of<'a>(
-        pieces: impl IntoIterator<Item = (&'a str, Option<&'a PrefabMeta>, usize)>,
-    ) -> Self {
-        let mut v = LightVerdict {
-            examined: 0,
-            measured: 0,
-            no_player_space: 0,
-            unmeasured: Vec::new(),
-        };
-        for (id, meta, standable) in pieces {
-            v.examined += 1;
-            match unmeasured_reason(meta) {
-                None => v.measured += 1,
-                Some(_) if standable == 0 => v.no_player_space += 1,
-                Some(why) => v.unmeasured.push((id.to_string(), why)),
-            }
-        }
-        v
-    }
-
-    /// The binding line, printed on every run including a clean one.
-    pub fn line(&self) -> String {
-        format!(
-            "light measurement: {} of {} piece(s) about to be shown carry a measured lighting \
-             profile ({} carr(y/ies) none and have nowhere in them to stand, so there is no floor \
-             to measure)",
-            self.measured, self.examined, self.no_player_space
-        )
-    }
-
-    /// The refusal, when anything is unmeasured.
-    pub fn finding(&self) -> Option<Diagnostic> {
-        if self.unmeasured.is_empty() {
-            return None;
-        }
-        let named: Vec<String> = self
-            .unmeasured
-            .iter()
-            .map(|(id, why)| format!("`{id}` ({why})"))
-            .collect();
-        Some(Diagnostic::error(
-            DW_UNMEASURED_LIGHT,
-            format!(
-                "{} of {} piece(s) about to be shown have never had their light measured: {}. \
-                 Nothing between an unmeasured piece and a person's eye refuses it, and a picture \
-                 is the one medium darkness does not show in — the renderer lights every frame \
-                 for the camera and not for the body. The grammar's `unmeasured` is honest (it \
-                 places blocks, not photons) and the only two things that measure light are this \
-                 command's absence of one and the compiler's assembled-world survey (`DW0210`), \
-                 which quantifies over the areas of a CAMPAIGN: a piece that enters no campaign \
-                 meets neither. A piece the grammar produces is measured where it is produced, so \
-                 this is a piece that came from somewhere else, or from an expansion older than \
-                 that rule: re-expand it, or measure it over its own bytes with `delvec prefab \
-                 lighting <piece> --write`, which floods it at both ends of the sky table, writes \
-                 the profile and the binding it was taken over, and reports the DISTRIBUTION of \
-                 dark cells rather than the darkest one (`DW0751`). A `dark` result is not a bar \
-                 to showing the piece; not knowing is",
-                self.unmeasured.len(),
-                self.examined,
-                named.join(", ")
-            ),
-        ))
-    }
-
-    /// True when this refuses the run.
-    pub fn is_refusal(&self) -> bool {
-        !self.unmeasured.is_empty()
     }
 }
 
@@ -518,106 +356,6 @@ impl Enclosure {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use delvewright_dsl::registry::{Lighting, LightingProfile};
-
-    fn lit() -> PrefabMeta {
-        PrefabMeta {
-            lighting: Some(Lighting {
-                profile: LightingProfile::Lit,
-                measured_min_light: Some(8),
-                measured: Some(String::new()),
-                rationale: None,
-                method: Some("test".into()),
-            }),
-            ..PrefabMeta::default()
-        }
-    }
-
-    fn unmeasured() -> PrefabMeta {
-        PrefabMeta {
-            lighting: Some(Lighting::unmeasured()),
-            ..PrefabMeta::default()
-        }
-    }
-
-    /// The three ways a piece can be unmeasured are three different sentences,
-    /// because they have three different remedies — and all three refuse.
-    #[test]
-    fn every_shape_of_not_knowing_is_refused_and_says_which() {
-        let m = unmeasured();
-        let none = PrefabMeta::default();
-        // Every one of them has floor: the escape below is a count off the
-        // bytes, and a piece with floor cannot reach it.
-        let v = LightVerdict::of([
-            ("measured", Some(&lit()), 40),
-            ("declared-unmeasured", Some(&m), 40),
-            ("no-lighting-block", Some(&none), 40),
-            ("no-document", None, 40),
-        ]);
-        assert_eq!((v.examined, v.measured, v.no_player_space), (4, 1, 0));
-        let d = v.finding().expect("three unmeasured pieces refuse");
-        assert_eq!(d.code, "DW0894");
-        assert!(d.is_error());
-        assert!(d.message.contains("`declared-unmeasured`"), "{}", d.message);
-        assert!(d.message.contains("declares `\"profile\": \"unmeasured\"`"));
-        assert!(d.message.contains("declares no `lighting` block"));
-        assert!(d.message.contains("no prefab document beside these bytes"));
-        assert!(v.line().contains("1 of 4 piece(s)"), "{}", v.line());
-    }
-
-    /// A measured `dark` profile is not a bar to showing the piece. The rule is
-    /// *somebody measured it*, and the severity of `dark` is `DW0751`'s question,
-    /// not this one's — a check that refused `dark` here would be deciding it.
-    #[test]
-    fn a_measured_dark_piece_is_shown() {
-        let mut dark = lit();
-        dark.lighting.as_mut().unwrap().profile = LightingProfile::Dark;
-        let v = LightVerdict::of([("dark-crypt", Some(&dark), 40)]);
-        assert_eq!((v.examined, v.measured), (1, 1));
-        assert!(v.finding().is_none());
-        assert!(!v.is_refusal());
-    }
-
-    /// A run that shows nothing states a zero rather than printing nothing: a
-    /// gate whose binding is not written down cannot be told from one that
-    /// matched nothing.
-    #[test]
-    fn a_binding_of_zero_is_stated() {
-        let v = LightVerdict::of([]);
-        assert!(v.line().contains("0 of 0 piece(s)"), "{}", v.line());
-        assert!(v.finding().is_none());
-    }
-
-    /// **The one escape, and the thing it demands that the defect cannot
-    /// produce.** A piece with nowhere in it to stand has no floor to be dark, so
-    /// `unmeasured` is the true answer there and showing it is not a risk. The
-    /// escape is a COUNT taken from the bytes at the moment of showing, never a
-    /// field, a flag or a word in the document — the perturbation is the one that
-    /// matters: give the same undocumented piece a single standable cell and it
-    /// is refused.
-    #[test]
-    fn nowhere_to_stand_is_shown_and_one_cell_of_floor_is_not() {
-        let none = PrefabMeta::default();
-        let empty = LightVerdict::of([("idiom-mirror", Some(&none), 0)]);
-        assert_eq!((empty.examined, empty.no_player_space), (1, 1));
-        assert!(empty.finding().is_none(), "nothing to be dark in");
-        assert!(!empty.is_refusal());
-        assert!(
-            empty
-                .line()
-                .contains("1 carr(y/ies) none and have nowhere in them to stand"),
-            "the escape is counted where a reader sees it: {}",
-            empty.line()
-        );
-
-        let floored = LightVerdict::of([("idiom-mirror", Some(&none), 1)]);
-        assert_eq!(floored.no_player_space, 0);
-        assert!(
-            floored.is_refusal(),
-            "one cell a body can stand in is one cell it can be dark in"
-        );
-        assert_eq!(floored.finding().unwrap().code, "DW0894");
-    }
 
     /// **The stairwell cut one course short, at the smallest scale that shows
     /// it.** A 7×8×7 hall: ground at `y=0`, a 3×3 dais one block up in the

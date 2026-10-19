@@ -865,14 +865,10 @@ through a flag here: `delvec` is what an authoring session runs, and
 regenerating a table this repository commits is not something a creator does.
 
 **Every arm that puts a piece in front of an eye — `viewer`, `render piece`,
-`render batch` — says two things about it first.** `DW0894` refuses a piece with
-floor in it whose light nobody has ever measured (`"profile": "unmeasured"`, no
-`lighting` block, or no document beside the bytes); `delvec grammar expand`
-measures what it produces, so the move for anything else is `delvec prefab
-lighting <piece> --write`. A measured `dark` is shown, and so is a piece with
-nowhere in them to stand. `DW0895` reports the roofed floor no
-body can walk to, the pockets it forms and the step the walk was refused at. Both
-are asked before the client jar is opened.
+`render batch` — says one thing about it first.** `DW0895` reports the roofed
+floor no body can walk to, the pockets it forms and the step the walk was
+refused at, before the client jar is opened. No arm asks about light: light is
+checked on the whole world and on each region, never on a prefab.
 
 **Every eye-level frame an arm shows is measured for blindness** (`DW0893`,
 `compiler::view::sight`): 32×32 rays through the frame, counting first hits that

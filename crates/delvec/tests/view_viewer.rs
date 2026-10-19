@@ -138,26 +138,16 @@ fn pack_for(dir: &Path, nbt: &Path, omit: &[&str]) -> PathBuf {
     root
 }
 
-/// A prefab document beside `nbt` carrying a MEASURED lighting profile and
-/// nothing else.
+/// A prefab document beside `nbt` declaring no anchors and nothing else.
 ///
-/// Every arm that shows a piece refuses one whose light nobody has measured
-/// (`DW0894`), so a fixture whose subject is something else has to say that much
-/// about itself. It declares no anchors on purpose: "no anchors" and "no
-/// document" were the same fixture before that rule existed, and they are two
+/// It declares no anchors on purpose: "no anchors" and "no document" are two
 /// different claims.
-fn measured_sidecar(nbt: &Path) {
+fn anchorless_sidecar(nbt: &Path) {
     std::fs::write(
         nbt.with_extension("json"),
         serde_json::to_string_pretty(&serde_json::json!({
             "prefab_id": "prefab/fixture",
             "anchors": {},
-            "lighting": {
-                "profile": "lit",
-                "measured_min_light": 15,
-                "measured": "",
-                "method": "test fixture: declared, not probed",
-            },
         }))
         .unwrap(),
     )
@@ -422,7 +412,7 @@ fn under_specified_prefab(dir: &Path) -> PathBuf {
     };
     let path = dir.join("under-specified.nbt");
     std::fs::write(&path, bytes).unwrap();
-    measured_sidecar(&path);
+    anchorless_sidecar(&path);
     path
 }
 
@@ -501,13 +491,12 @@ fn the_run_states_what_each_check_examined() {
 fn a_prefab_with_no_anchors_still_renders_and_reports_zero_binding() {
     let src = prefab("keep-alcove.nbt");
     let dir = tmp("no-anchors");
-    // Copy the `.nbt` and give it a document that declares a measured light and
-    // no anchors. Copying it with NO document at all is a different fixture and
-    // a different rule: that shape is `DW0894`, and the test below is the one
-    // that owns it.
+    // Copy the `.nbt` and give it a document that declares no anchors. Copying
+    // it with NO document at all is a different fixture, and the test below
+    // that shows a piece with no light measurement owns it.
     let bare = dir.join("bare.nbt");
     std::fs::copy(&src, &bare).unwrap();
-    measured_sidecar(&bare);
+    anchorless_sidecar(&bare);
     let pack = pack_for(&dir, &bare, &[]);
     let out = dir.join("page.html");
 
@@ -869,24 +858,18 @@ fn ci_runs_every_javascript_test_beside_this_one() {
 }
 
 // ---------------------------------------------------------------------------
-// `DW0894` / `DW0895` — what is said about a piece before anybody looks at it
+// `DW0895` — what is said about a piece before anybody looks at it
 // ---------------------------------------------------------------------------
 
-/// **A piece nobody has measured the light of is not drawn.**
-///
-/// The defect: a building the grammar exported went in front of a person while
-/// its own document said `"profile": "unmeasured"` — the true thing the grammar
-/// can say, since it places blocks and not photons — and nothing between that
-/// and the eye refused it. It was 1498 walkable cells below light 3, 984 of them
-/// at light 0, and it was found by walking into a dark room.
-///
-/// Both shapes of not knowing are asserted here, because they have two remedies
-/// and the message says which: a document declaring `unmeasured`, and no
-/// document at all.
+/// **A piece is drawn whatever its document says about light.** Light is
+/// checked on the whole world and on each region, never on a prefab, so no arm
+/// that shows a piece asks for a light measurement: a document declaring
+/// `"profile": "unmeasured"`, a measured `dark` one and no document at all are
+/// each drawn, exit 0, and no light line is printed.
 #[test]
-fn a_piece_whose_light_nobody_measured_is_not_shown() {
+fn a_piece_is_shown_whatever_its_document_says_about_light() {
     let src = prefab("keep-alcove.nbt");
-    let dir = tmp("unmeasured");
+    let dir = tmp("no-light-gate");
     let pack = pack_for(&dir, &src, &[]);
 
     let declared = dir.join("declared.nbt");
@@ -897,62 +880,35 @@ fn a_piece_whose_light_nobody_measured_is_not_shown() {
     )
     .unwrap();
 
-    let undocumented = dir.join("undocumented.nbt");
-    std::fs::copy(&src, &undocumented).unwrap();
-
-    for (nbt, probe) in [
-        (&declared, "declares `\"profile\": \"unmeasured\"`"),
-        (
-            &undocumented,
-            "no prefab document beside these bytes at all",
-        ),
-    ] {
-        let out = dir.join("page.html");
-        let _ = std::fs::remove_file(&out);
-        let r = viewer(nbt, &out, &pack);
-        let stderr = String::from_utf8_lossy(&r.stderr);
-        assert_eq!(r.status.code(), Some(2), "{stderr}");
-        assert!(stderr.contains("DW0894"), "{stderr}");
-        assert!(stderr.contains(probe), "the remedy is named: {stderr}");
-        assert!(
-            !out.exists(),
-            "no page is written for a piece nobody measured"
-        );
-    }
-}
-
-/// A **measured** `dark` piece is shown. The rule is that somebody measured it;
-/// whether `dark` should itself refuse is `DW0751`'s question, and a check that
-/// refused it here would be deciding one it was not asked.
-#[test]
-fn a_measured_dark_piece_is_still_drawn() {
-    let src = prefab("keep-alcove.nbt");
-    let dir = tmp("measured-dark");
-    let pack = pack_for(&dir, &src, &[]);
-    let nbt = dir.join("crypt.nbt");
-    std::fs::copy(&src, &nbt).unwrap();
+    let dark = dir.join("crypt.nbt");
+    std::fs::copy(&src, &dark).unwrap();
     std::fs::write(
-        nbt.with_extension("json"),
+        dark.with_extension("json"),
         r#"{ "prefab_id": "prefab/crypt", "anchors": {},
              "lighting": { "profile": "dark", "measured_min_light": 0, "measured": "",
                            "method": "test fixture: declared, not probed" } }"#,
     )
     .unwrap();
-    let out = dir.join("page.html");
-    let r = viewer(&nbt, &out, &pack);
-    let stderr = String::from_utf8_lossy(&r.stderr);
-    assert_eq!(r.status.code(), Some(0), "{stderr}");
-    assert!(!stderr.contains("DW0894"), "{stderr}");
-    assert!(
-        stderr.contains("light measurement: 1 of 1 piece(s)"),
-        "{stderr}"
-    );
+
+    let undocumented = dir.join("undocumented.nbt");
+    std::fs::copy(&src, &undocumented).unwrap();
+
+    for nbt in [&declared, &dark, &undocumented] {
+        let out = dir.join("page.html");
+        let _ = std::fs::remove_file(&out);
+        let r = viewer(nbt, &out, &pack);
+        let stderr = String::from_utf8_lossy(&r.stderr);
+        assert_eq!(r.status.code(), Some(0), "{}: {stderr}", nbt.display());
+        assert!(out.exists(), "{}: the page is written", nbt.display());
+        assert!(!stderr.contains("light measurement"), "{stderr}");
+    }
 }
 
-/// Both bindings are stated on every run, a clean one included: a gate whose
-/// binding is not written down cannot be told from one that matched nothing.
+/// The enclosure binding is stated on every run, a clean one included: a gate
+/// whose binding is not written down cannot be told from one that matched
+/// nothing.
 #[test]
-fn the_showing_gate_states_both_of_its_bindings() {
+fn the_showing_gate_states_its_binding() {
     let nbt = prefab("keep-gate-room.nbt");
     let dir = tmp("showing-binding");
     let pack = pack_for(&dir, &nbt, &[]);
@@ -960,10 +916,6 @@ fn the_showing_gate_states_both_of_its_bindings() {
     let r = viewer(&nbt, &out, &pack);
     let stderr = String::from_utf8_lossy(&r.stderr);
     assert_eq!(r.status.code(), Some(0), "{stderr}");
-    assert!(
-        stderr.contains("light measurement: 1 of 1 piece(s) about to be shown carry a measured"),
-        "{stderr}"
-    );
     for probe in [
         "enclosure: `keep-gate-room`",
         "standable cell(s) reachable on foot from",
@@ -1031,30 +983,25 @@ fn a_blind_point_of_view_is_reported_and_the_page_offers_the_room() {
     }
 }
 
-/// **The GPU arms judge the piece before they look for a renderer.**
+/// **The GPU arms survey the piece before they look for a renderer.**
 ///
 /// `delvec render piece` and `delvec render batch` resolve textures and
-/// initialise a GPU before they draw, and the showing gate used to sit after
-/// both — so on a machine with no client jar a creator was told *I could not
-/// find your textures*, which is true and useless, instead of *this piece was
-/// never measured*. The ordering is the whole value of the refusal: after the
-/// pack it costs a GPU init, and after the frames it costs a directory of PNGs
-/// the reviewer has to be told to ignore.
+/// initialise a GPU before they draw; what is said about the piece is said
+/// first, so on a machine with no client jar the enclosure line is still
+/// printed, and a piece with no light measurement is not refused — the arms
+/// exit 5 on the missing textures and nothing earlier.
 ///
 /// Asserted by pointing both arms at a deliberately absent texture path. No GPU
-/// and no client jar are needed to run this, which is the point: if the gate ever
-/// slides back behind `resolve_textures`, the exit code changes from `2`
-/// (`DW0894`) to `5` (renderer/textures) and this reddens.
+/// and no client jar are needed to run this.
 #[test]
-fn the_render_arms_refuse_an_unmeasured_piece_before_they_resolve_textures() {
+fn the_render_arms_survey_a_piece_before_they_resolve_textures() {
     let src = prefab("keep-alcove.nbt");
     let dir = tmp("render-order");
     let nbt = dir.join("unmeasured.nbt");
     std::fs::copy(&src, &nbt).unwrap();
     // A whole document, because `batch` walks every `.json` in the directory to
     // find the tile-set manifests: one with neither `structure` nor
-    // `structure_set` is refused as unreadable metadata before this gate is
-    // reached, which would make the assertion below pass for the wrong reason.
+    // `structure_set` is refused as unreadable metadata.
     let size = delvec::compiler::view::nbt::parse_structure(&nbt)
         .expect("the fixture parses")
         .size;
@@ -1081,16 +1028,10 @@ fn the_render_arms_refuse_an_unmeasured_piece_before_they_resolve_textures() {
         vec!["batch", dir.to_str().unwrap()],
     ] {
         let arm = args[0].to_string();
-        // **Every fallback closed, or this test only discriminates on a machine
-        // with no client jar.** `resolve_textures` tries `--textures`, then
-        // `$DELVEWRIGHT_CLIENT_JAR`, then `$HOME/.chunky/resources/minecraft.jar`
-        // — so on a developer's own machine it succeeds whatever `--textures`
-        // says, the run reaches the gate either way, and the assertion below
-        // passes for both orderings. Measured: with the gate deliberately moved
-        // behind `resolve_textures`, this test stayed green here and would have
-        // reddened only in CI. Pointing all three at the same absent path makes
-        // the ordering the only thing that decides the exit code, on every
-        // machine.
+        // **Every fallback closed**: `resolve_textures` tries `--textures`, then
+        // `$DELVEWRIGHT_CLIENT_JAR`, then `$HOME/.chunky/resources/minecraft.jar`,
+        // so all three point at the same absent path and the run cannot render
+        // on any machine.
         let r = Command::new(BIN)
             .arg("render")
             .arg("--textures")
@@ -1105,14 +1046,19 @@ fn the_render_arms_refuse_an_unmeasured_piece_before_they_resolve_textures() {
         let stderr = String::from_utf8_lossy(&r.stderr);
         assert_eq!(
             r.status.code(),
-            Some(2),
-            "`render {arm}` must refuse on the piece (exit 2), not on the missing \
-             textures (exit 5): {stderr}"
+            Some(5),
+            "`render {arm}` reaches the missing textures (exit 5): {stderr}"
         );
-        assert!(stderr.contains("DW0894"), "`render {arm}`: {stderr}");
+        assert!(stderr.contains("DW0723"), "`render {arm}`: {stderr}");
         assert!(
-            !stderr.contains("DW0723"),
-            "`render {arm}` looked for a renderer before judging the piece: {stderr}"
+            stderr.contains("enclosure: `unmeasured`"),
+            "`render {arm}` surveyed the piece before looking for a renderer: {stderr}"
+        );
+        let survey = stderr.find("enclosure: `unmeasured`").unwrap();
+        let textures = stderr.find("DW0723").unwrap();
+        assert!(
+            survey < textures,
+            "`render {arm}`: the survey is said before the renderer is looked for: {stderr}"
         );
     }
 }
