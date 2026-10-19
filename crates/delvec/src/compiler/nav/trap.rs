@@ -449,6 +449,33 @@ pub struct CollapseGeometry {
     pub max_fall: i32,
 }
 
+impl CollapseGeometry {
+    /// **The debris cells a body cannot pass once the collapse has landed**:
+    /// each column's top cell holds `then_floor` when one is authored (the
+    /// paving `setblock` replaces it), every other debris cell the falling
+    /// block. A cell whose block a body passes through
+    /// ([`delvewright_dsl::blockshape::passes_body`], the pinned collision
+    /// table) walls nothing and floors nothing, so it is not sealed.
+    pub fn walls(&self, falling_block: &str, then_floor: Option<&str>) -> BTreeSet<[i32; 3]> {
+        let mut tops: BTreeMap<[i32; 2], i32> = BTreeMap::new();
+        for d in &self.debris {
+            let e = tops.entry([d[0], d[2]]).or_insert(d[1]);
+            *e = (*e).max(d[1]);
+        }
+        self.debris
+            .iter()
+            .copied()
+            .filter(|d| {
+                let block = match then_floor {
+                    Some(f) if tops.get(&[d[0], d[2]]) == Some(&d[1]) => f,
+                    _ => falling_block,
+                };
+                !delvewright_dsl::blockshape::passes_body(block)
+            })
+            .collect()
+    }
+}
+
 /// Plan a collapse and settle its debris deterministically (spec-0022).
 ///
 /// Settling reuses the assembled model's rule — a falling block comes to rest on
@@ -533,17 +560,17 @@ const MAX_COLLAPSE_FALL: i32 = 64;
 /// completability proof must hold in is the world after the collapse, not
 /// before. This is the same pessimism the `shortcut` seal applies (a shortcut is
 /// proven never-taken; a trap is proven always-sprung), and it is deliberately
-/// conservative in one direction: the debris is added as solid geometry while
+/// conservative in one direction: the debris is added as solid geometry
+/// ([`CollapseGeometry::walls`]: every landed cell a body cannot pass) while
 /// the deleted region is left in place, so the proof can only ever be stricter
 /// than the real post-collapse world, never laxer.
 pub fn check_collapses(
     plan: &Plan,
     world: &World,
-    collapses: &[(String, CollapseGeometry)],
+    collapses: &[(String, BTreeSet<[i32; 3]>)],
 ) -> Result<(), Failure> {
-    for (label, g) in collapses {
-        let debris: BTreeSet<[i32; 3]> = g.debris.iter().copied().collect();
-        let collapsed = world.with_sealed(&debris);
+    for (label, walls) in collapses {
+        let collapsed = world.with_sealed(walls);
         if let Err(e) = check_critical_path(plan, &collapsed) {
             return Err(Failure {
                 code: DW_COLLAPSE_BURIES_PATH,
@@ -571,6 +598,29 @@ mod tests {
     use crate::compiler::plan::TrapDisarmPlan;
     use crate::compiler::plan::{RegionEvent, RegionWrite};
     use delvewright_dsl::{Lethality, TrapReset, TrapTrigger};
+
+    // --- collapse debris, judged by its landed block (spec-0022, DW0445) ---
+
+    /// A two-high pile in one column and a one-high pile in another: every cell
+    /// of stone debris walls; a carpet paved over the tops walls neither top,
+    /// and a light block that falls walls nothing.
+    #[test]
+    fn collapse_debris_walls_only_where_its_landed_block_collides() {
+        let g = CollapseGeometry {
+            region: ([0, 70, 0], [1, 71, 0]),
+            drops: vec![[0, 70, 0], [0, 71, 0], [1, 70, 0]],
+            debris: vec![[0, 65, 0], [0, 66, 0], [1, 65, 0]],
+            max_fall: 5,
+        };
+        let all: BTreeSet<[i32; 3]> = g.debris.iter().copied().collect();
+        assert_eq!(g.walls("minecraft:gravel", None), all);
+        assert_eq!(
+            g.walls("minecraft:gravel", Some("minecraft:white_carpet")),
+            BTreeSet::from([[0, 65, 0]]),
+            "each column's top holds the carpet the paving sets"
+        );
+        assert!(g.walls("minecraft:light", None).is_empty());
+    }
 
     // --- volley cadence (spec-0022, DW0918) ---
 

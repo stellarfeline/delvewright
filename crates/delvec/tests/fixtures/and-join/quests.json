@@ -127,6 +127,13 @@
             {
               "flag": "flag/north-drawn",
               "type": "set-flag"
+            },
+            {
+              "carrier": "one",
+              "count": 1,
+              "item": "minecraft:trial_key",
+              "name": "North Ward Key",
+              "type": "give-item"
             }
           ],
           "obj/ward-south": [

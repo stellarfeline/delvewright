@@ -501,7 +501,7 @@ flag only optional content produces is `DW0868`. The closure is
 | Effect `set-flag{flag}` | Sets `dw.f_<flag>` (per-player). | 0.3 |
 | Effect `narrate{text,style?,sound?}` | chat/title/subtitle/**art**/**actionbar**; `text` → l10n; `sound` validated (`DW0326`); `art` = the `delve:art` pixel-banner font, glyph-checked (`DW0328`), width-checked (`DW0330`); **`actionbar`** = the reply strip above the hotbar, the channel every compiler-written reply already used, not width-checked (vanilla neither wraps nor truncates it, and a reply is a fragment rather than a banner). | 0.4 / art 0.6 / actionbar 0.11 |
 | Trigger `audience: party\|presser` | Who a trigger's bundle addresses. `party` (default) is polled on the tick with no executor and addresses `@a`. `presser` is dispatched by a `minecraft:player_interacted_with_entity` advancement and runs **as the player who right-clicked**, so `@s` is the presser — which also makes a `player`-scoped `requires_state` legal there (`DW0503` asks the site, not the root class). A `presser` **`step`** is polled `as` each player in the plate's cell, so `@s` is the player who stepped on (see *A step names its actor*). Vanilla names the player for a right-click and a step only, so `presser` on a `strike` / `strike-npc` / `strike-assembly` / `approach` is `DW0427`. | 0.11 |
-| Effect `set-block{anchor,block}` | `setblock` at anchor; base block id validated (`DW0193`). `block` accepts a verbatim blockstate suffix `id[key=value,…]`. | 0.4 / state 0.6 |
+| Effect `set-block{anchor,block}` | `setblock` at anchor; base block id validated (`DW0193`). `block` accepts a verbatim blockstate suffix `id[key=value,…]`. A runtime write in the one region model (`plan::effect_writes`): the one-cell box at the anchor's cell (a gate's `from` corner when the anchor is a gate), concluded from its block exactly as a `fill-region` is — a block a body collides with walls the cell and floors the one above from the DAG point the effect fires at (a critical path that must cross it afterwards fails `DW0311`), a block with no collision box is a pass, air a clear, a fluid a flood — and dated, forced or unforced, by the same `plan::firing_of`. | 0.4 / state 0.6 |
 | Effect `fill-region{region,block}` | **Fill a declared region with a block at runtime** (spec-0031). `region` is the existing anchor-centred box (`anchor ± extent`, the same `StealthZone` a `begin-stealth` zone, a `damage-players` `in` filter, a `collapse` ceiling and a `lethal_volumes[]` region use, resolved through the one `Plan::zone_box`); `block` is registry-checked with the same `DW0193` `set-block` gets. Emission is one unfiltered `fill <lo> <hi> <block>`. This is the **general spelling** of the capability `open-gate`/`close-gate` carried privately: those two are this operation with the box and the block read off a prefab gate anchor instead of authored, `set-block` is the one-cell case at a point anchor, and `open-way` is the same operation with all three read off a placed piece's contract. All of them lower through `emit::fill_region_command` and are modelled by one completability rule (`plan::RegionEvent`), so a fourth consumer inherits the proof instead of re-deriving it. Completability: from the DAG point the effect fires at, the cells become what the **block** makes them — **solid** for a block that is a full cube, exactly as a `close-gate` seal is (a critical path that must cross afterwards fails `DW0311`), and **flooded** for `minecraft:water` / `minecraft:lava` (`assembled::is_fluid`): impassable, and never floor, because nothing stands on a fluid. A fill carries no `replace` filter, so a fluid fill over floor takes the floor away; a forced leg that needed that footing is `DW0544`. **Whose firing it is also counts**: a fill fired from a root the party can skip — a trap payload, a shop offer, a death bundle, a shortcut's far side — still SEALS the region (the proof must survive it) but does not lay footing the forced path may stand on, because the same block that walls a doorway floors the cell above it and only the first reading is conservative. A forced leg whose only footing comes from such a fill is `DW0546`. | 0.10 |
 | Effect `clear-region{region}` | **Clear a declared region to air at runtime** (spec-0031) — the physical dual of `fill-region`, and the general spelling of what `open-gate` does to a gate anchor's box. Emission is the same `fill` with `minecraft:air` and, unlike `open-gate`, **no `replace` filter**: an author's clear empties the box rather than scrubbing one block id out of it. Completability: the cells are **passable** from the DAG point the effect fires at — the half no gate could ever exercise, because the assembled model already holds every gate cell open unconditionally. Two limits are stated rather than discovered. (1) A cleared cell the model already floods stays impassable: clearing a block does not remove water, it lets the water in. A clear that *opens* a dry box into adjacent water is not modelled — re-deriving the flood needs the block map the collision view does not carry — so that campaign's route proof is optimistic there, and a runtime `fill-region` of a fluid is a second way to put water next to such a clear. (2) A clear never removes cells another proof has forced solid (`nav::World::pinned`): a `collapse`'s debris, an ambush's occupied cells, a timed gate's shut span. Clearing a region says the blocks the campaign put there are gone, not that another proof's hazard never happened. | 0.10 |
 | Effect `open-way{piece,way}` | **Open a placed piece's contingent way at runtime** (spec-0042). A piece's spatial contract may declare a traversal edge whose crossability depends on a named region — `laid` (empty as built, opening fills it with the way's block) or `cleared` (built in that block, opening voids it). The prefab checker proves, on the bytes as shipped, that the edge is severed and that applying the delta joins it; this verb is what applies it. **It carries no region, no block and no direction**: all three are read from the carrying piece's exported `spatial_contract.edges[].way`, so the effect and the building cannot disagree about what a way is — two authorities plus an equality check is the defect the shape avoids, not a variant of the fix. `piece` is a prefab id and must name exactly one PLACED way: a piece placed twice puts two breaks in the world at different coordinates, and a reference matching none or several is `DW0547`. Emission is one unfiltered `fill <lo> <hi> <block>` per box of the way (air for a `cleared` one), through the same `emit::fill_region_command` `fill-region` / `close-gate` / `set-block` lower through. Completability: the way is **shut until this fires**, and from that DAG point the cells are what the block makes them — the same one `plan::RegionEvent` rule, fed from prefab metadata instead of an authored box, so the forced-footing rule (`DW0546`) applies unchanged rather than being restated. Required content standing beyond a way no forced opening precedes is `DW0548`; every staged way's disposition is enumerated in `validation/ways.json` and a way the placed world declares but cannot stage is `DW0549`. | 0.12 |
@@ -1934,6 +1934,7 @@ CI-enforced over every fixture family by `tests/packtest_batch.rs`):
   them — and then has the LAST member, never the one who cleared the first arm,
   complete the successor. n = the join's arm count, raised to `world.min_players`
   and capped at 4 (the party maximum); arms are handed out round-robin.
+- **One carrier, two players.** `give @a` and `give @s` are one command to a party of one, so a `carrier: "one"` give is judged by a `party_carrier_<obj>` template per objective whose completion bundle hands one at its top level with no `when`/`in`: it spawns a second member, has `@s` run the real `complete_<obj>`, counts each member's copies with `clear <who> <item> 0`, and asserts the completing player holds every copy and the other none. A carrier give anywhere else is counted in `party-division.json` as not judged.
 - **`assert` does not abort the template, and the log names the LAST failing
   line.** Measured while proving a seal by mutation: a
   template with two failing asserts reported only the second, and flipping the
@@ -3223,6 +3224,10 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   naming which of the three zeros it is: no respawn point, no hostile force, or
   both present and never contemporaneous. Without it a `DW0478` that made **zero
   comparisons** would pass and nothing would say so.
+  The staging gate's `bell-08` row binds `examined` (the respawn points the proof
+  covered, whatever the forces), not `pairs`: a campaign with respawn points and no
+  hostile force examined every point, made no comparison, and says so in `hostiles` and
+  `reason`; a proof that covered none of its declared points stays unbound.
 - `<out>/validation/press-bodies.json`: the `DW0426` proof's **binding ledger**
   (`compiler::pressable::PressLedger`). One row per `strike`/`use` trigger the
   proof resolved a body for — `trigger`, `click`, `anchor`, and WHICH body it
@@ -3246,6 +3251,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   (`compiler::nav::ThresholdBinding`): the binding line's counts — `performed`,
   `judged` (also as `examined`), `entered`, `no_debt`, `by_hand`, `carried`.
   Written on every build that passes the proof, zeroes included.
+- `<out>/validation/party-division.json`: the party-division checks' **binding ledger** (`compiler::emit::PartyBinding`, spec-0018), counted off the emitted suite and printed as the `party binding (spec-0018):` line: `objectives`, `and_joins` and `and_joins_bound` (a `party_join_<obj>` template is in the suite), `party_join_templates` of `templates`, `gives` (every `give-item` at every root and depth), `carrier_one`, `carrier_one_judged` (asserted by a `party_carrier_<obj>` template), `carrier_one_enveloped` (top level of an objective's completion, under `when`/`in`) and `carrier_one_elsewhere` (any other site), `min_players`, and `division` (`null` for a party of one; else the analyzer's join and each agent's arms). `unbound: true` when a join or a judgeable give has no template. Written on every build, zeroes included.
 - `<out>/validation/separation-proof.json`: the `DW1011` proof's **binding
   ledger** (`compiler::nav::SeparationBinding`): `gates` (every gate anchor the
   world resolves), `barred_edges` and `barred_bound` (the layout graph's barred
@@ -4966,11 +4972,23 @@ causally-latest write **among the leg-objective's DAG ancestors** is a fill (not
 reopened by a later `open-gate` or `clear-region`), and **cleared** iff that write is
 a `clear-region`.
 
-Five verbs produce those writes and none of them owns the rule — `close-gate` /
+Six verbs produce those writes and none of them owns the rule — `close-gate` /
 `open-gate` (a box and a block off a prefab gate anchor), `fill-region` /
-`clear-region` (an authored box), `open-way` (the cells, the block and the
-direction off a placed piece's exported contract, spec-0042), plus a
-`shortcut`'s world-load seal. What each
+`clear-region` (an authored box), `set-block` (the one cell at a point anchor),
+`open-way` (the cells, the block and the direction off a placed piece's exported
+contract, spec-0042), all read through one resolution (`plan::effect_writes`,
+which the sculk proofs' every-block list and the loop's tiling read too) — plus a
+`shortcut`'s world-load seal, every trigger's `prop` (forced at step 0: the
+datapack sets it at load, `Plan::load_prop_events`), and the prop an objective
+places when it activates (a conjured `collect` chest, an `interact` `prop`, from
+the one list the activation function reads, `plan::activation_prop`). Activation
+has no step of its own, so an activation prop that collides is sealed from load
+**unforced** (it walls, and lays no footing a leg may stand on before it exists)
+and forced from the step the path completes its objective. A gated trap's
+trigger toggle (`trap_gate_on`/`_off`) is not carried: it writes the trigger's
+authored block or air, and every block a gate is admitted over passes a body and
+floors nothing by the pinned collision table (pinned by a test over every block
+of the registry). What each
 leaves behind is read off the command it emits (`plan::RegionWrite`), which is why
 an `open-gate` is a third case and not a synonym for a clear: it is
 `replace`-filtered to the gate's own block, so it removes nothing the model believed
@@ -5281,7 +5299,8 @@ world. Invariants:
     anywhere" test would pass. Requiring the climb-out cell to be in the
     *reachable* walk region is what makes it a return, not just a landing.
 - **Gate-region collision (`DW0353`, advisory).** A world-edit inside a region a
-  runtime write fills — a `close-gate`'s gate region, or a `fill-region`'s box — is
+  runtime write fills — a `close-gate`'s gate region, a `fill-region`'s box, a
+  `set-block`'s cell, a laid way, a trigger's or an objective's prop — is
   overwritten with that write's block when it fires (a solid, or water/lava) and
   cleared to **air** when its dual does,
   so one cycle erases it. It reads `plan.region_events`, so every region-writing
@@ -6050,7 +6069,8 @@ counted on the binding line from the blocks of those kinds the world holds; a
 says `biomes: at load`); the configuration's clock (the frame's sky is the
 picture's, spec-0079); a fluid's spread past the cells a `Flood` write lays; a
 write only an unforced root lays; **a `collapse`** — a collapse reaches the
-route proofs as `DW0445`'s settled debris, not as a region write, so no
+route proofs as `DW0445`'s settled debris (sealed where its landed block — the
+falling block, or `then_floor` on a column's top — collides), not as a region write, so no
 configuration lays its debris or its `then_floor` and a frame after a collapse
 beat shows the ceiling standing; and a gated trap's trigger re-armed by a later
 beat (it is drawn as at load).

@@ -344,6 +344,9 @@ fn crush_false_is_inert() {
         "validation/observer-census.json".to_string(),
         // A crush gate is a death the bot tier walks, so it enters the death plan.
         "validation/death-plan.json".to_string(),
+        // The party ledger states its `party_join` count over every template
+        // in the suite, and the crush PackTest is one more template.
+        "validation/party-division.json".to_string(),
         "manifest.json".to_string(),
     ];
     for path in &differing {

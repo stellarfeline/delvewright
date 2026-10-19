@@ -844,6 +844,13 @@ def read_build_ledgers(out: Path) -> tuple[dict, list[str]]:
         # being emitted, or a measure that stopped seeing it.
         if f.name == "chain-length.json" and not doc.get("steps"):
             zeroes.append(f"{f.name}: `steps` is 0")
+        # spec-0018: the gallery declares an AND-join and a `carrier: one` give,
+        # so a party ledger binding neither a `party_join` template nor a
+        # two-player carrier template is a check that stopped reaching them.
+        if f.name == "party-division.json":
+            for k in ("and_joins_bound", "carrier_one_judged"):
+                if not doc.get(k):
+                    zeroes.append(f"{f.name}: `{k}` is 0")
     # …and a path that exercises a loop with no loop ledger beside it is a build
     # that crossed a slab nothing judged.
     path = out / "critical-path.json"
@@ -854,6 +861,13 @@ def read_build_ledgers(out: Path) -> tuple[dict, list[str]]:
                 "loop-gate.json: absent beside a critical path that exercises a loop — the "
                 "slab it crosses was never judged"
             )
+    # …and a build that emitted a PackTest suite with no party ledger beside it
+    # stated nothing about the AND-joins and carriers that suite was owed.
+    if "party-division.json" not in ledgers and (out / "packtest-datapack").is_dir():
+        zeroes.append(
+            "party-division.json: absent beside a PackTest suite — the party-division "
+            "checks stated no binding"
+        )
     # …and a path that performs a trigger with no DW1044 ledger beside it is a
     # build whose walked-past proof was never written. Its zero — no trigger
     # judged — is the generic `examined` row above: `threshold-gate.json` states
