@@ -1,0 +1,19 @@
+{
+  "code": "DW1049",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/objectives/3/hint",
+      "value": "The Factor keeps the counter on the east side of the near hall."
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "replace",
+      "path": "/source/obj.near-hall.reach-the-counter.hint",
+      "value": "The Factor keeps the counter on the east side of the near hall."
+    }
+  ],
+  "units": [],
+  "why": "The counter's hint with the hall's compass side in it. Minecraft shows no compass, so a player told `the east side` cannot tell which side that is; the engine refuses the line at the document, naming its key and the word, and asks for a place said from the player's own body or from a landmark they can see. It declares no unit: the word lives inside a string the schema already declares, and what the engine refuses is the direction the line gives."
+}

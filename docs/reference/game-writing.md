@@ -28,7 +28,7 @@ any game, however oblique its story.
   behind you), never by a compass point: Minecraft shows no compass, so
   `north` leaves the player guessing. `Hold the Warden's Key to the iron-bound
   door past the broken bell.` not `The keyhole is old and large.`, and not
-  `the door at the west end of the walk`. The landmark rule is **authored**.
+  `the door at the west end of the walk`. The landmark rule is **authored**; the compass half is refused in every player-facing English line by `DW1049` ([dsl/compass.md](dsl/compass.md)).
   **Cited:** Microsoft Writing Style Guide, *Top 10 tips* ("start each statement
   with a verb", "get to the point fast"); Game Accessibility Guidelines, *Use
   simple clear language* (basic level; about 14% of US/UK adults read below an
