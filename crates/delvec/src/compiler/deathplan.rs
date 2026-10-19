@@ -3,12 +3,10 @@
 //!
 //! # Why this artifact has to exist at all
 //!
-//! A PackTest fake player is permanently undamageable — measured independently on
-//! 2026-08-03 and again on 2026-08-09 — so that tier **cannot witness a player
-//! death**. Every runtime claim about the death loop therefore belongs to the
-//! mineflayer tier, which drives a real client that can really die, and a real
-//! client needs to be *told what the campaign promised* before it can say whether
-//! the promise was kept. `combat-plan.json` is the same idea for fighting; this is
+//! What follows a death — the respawn seat, the forfeit, the walk back, the
+//! recovery — is observed by the mineflayer tier, which drives a real client
+//! through it, and a real client needs to be *told what the campaign promised*
+//! before it can say whether the promise was kept. `combat-plan.json` is the same idea for fighting; this is
 //! the same idea for dying.
 //!
 //! # What it carries, and what it deliberately does not
