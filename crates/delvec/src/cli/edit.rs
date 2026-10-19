@@ -77,6 +77,26 @@ pub(crate) enum EditAction {
 /// discarded) before anything is persisted; measured cost is ~0.3 s on the
 /// largest content campaign against a fraction of a second a frame, so there is no
 /// reason for a cheaper tier to exist.
+/// What one batch's frame shows: the targets in and out of it by the one sight
+/// rule ([`delvec::compiler::framing::resolve_targets`]), and the manifest's
+/// entries its labels are stamped from.
+#[allow(clippy::type_complexity)]
+pub(crate) fn batch_frame<'a>(
+    grid: &delvec::compiler::framing::VoxelGrid,
+    cam: &delvec::compiler::framing::Camera,
+    (width, height): (u32, u32),
+    targets: &'a [delvec::compiler::framing::Target],
+) -> (
+    Vec<delvec::compiler::framing::ResolvedTarget<'a>>,
+    Vec<&'a delvec::compiler::framing::Target>,
+    Vec<serde_json::Value>,
+) {
+    let (inside, outside) =
+        delvec::compiler::framing::resolve_targets(grid, cam, width, height, targets);
+    let shows = inside.iter().map(|r| r.entry()).collect();
+    (inside, outside, shows)
+}
+
 pub(crate) fn run_edit(
     campaign_dir: &Path,
     prefabs_dir: &Path,
@@ -291,19 +311,8 @@ pub(crate) fn run_edit(
                 return ExitCode::from(delvec::compiler::view::diag::exit::RENDER);
             }
         };
-        let (inside, outside) =
-            framing::resolve_targets(&grid, &cam, drawn.width, drawn.height, &targets);
-        let shows: Vec<serde_json::Value> = inside
-            .iter()
-            .map(|r| {
-                let mut v = framing::target_json(r.target);
-                v["screen_bbox"] = serde_json::json!({
-                    "x": r.bbox.x, "y": r.bbox.y, "w": r.bbox.w, "h": r.bbox.h,
-                });
-                v["occluded"] = serde_json::json!(r.occluded);
-                v
-            })
-            .collect();
+        let (inside, outside, shows) =
+            batch_frame(&grid, &cam, (drawn.width, drawn.height), &targets);
         let mut rgba = drawn.rgba.clone();
         delvec::compiler::view::frameset::stamp_labels(
             &mut rgba,

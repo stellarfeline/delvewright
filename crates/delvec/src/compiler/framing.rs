@@ -21,7 +21,63 @@
 //! A target is occluded when all nine of its probe points
 //! ([`Target::probe_points`]) are hidden by a block that is not the target's
 //! own ([`VoxelGrid::occluded_target`]). [`resolve_targets`] is the one place a
-//! target is put on a frame.
+//! target is put on a frame, and the one public entry point to the question
+//! "is this target inside this camera's frame, and hidden there". Its building
+//! blocks are private to this module — the ray walk ([`VoxelGrid::cast`] and its
+//! `Hit`), the probe points, the projection ([`Camera::project`], `ray`), the
+//! screen box — and a [`ResolvedTarget`]'s fields are private, so no other
+//! module can assemble or state a second answer. Every consumer is held to this
+//! one by the agreement test `every_consumer_of_the_sight_rule_agrees_with_it`
+//! (`crates/delvec/src/cli/sight_agreement.rs`).
+//!
+//! The entry point, asked from outside the crate:
+//!
+//! ```
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let grid = VoxelGrid::build(&Default::default());
+//! let cam = Camera::looking_at([0.5, 0.5, -4.0], [0.5, 0.5, 0.5], 70.0);
+//! let t = [Target::point("t".into(), "anchor", String::new(), [0, 0, 0])];
+//! let (inside, outside) = resolve_targets(&grid, &cam, 64, 64, &t);
+//! assert!(outside.is_empty() && !inside[0].occluded());
+//! ```
+//!
+//! and each building block refused, the same code with one call changed:
+//!
+//! ```compile_fail,E0624
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let grid = VoxelGrid::build(&Default::default());
+//! let t = Target::point("t".into(), "anchor", String::new(), [0, 0, 0]);
+//! grid.occluded_target([0.5, 0.5, -4.0], &t);
+//! ```
+//!
+//! ```compile_fail,E0624
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let grid = VoxelGrid::build(&Default::default());
+//! grid.cast([0.5, 0.5, -4.0], [0.0, 0.0, 1.0], 8.0);
+//! ```
+//!
+//! ```compile_fail,E0624
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let t = Target::point("t".into(), "anchor", String::new(), [0, 0, 0]);
+//! t.probe_points();
+//! ```
+//!
+//! ```compile_fail,E0624
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let cam = Camera::looking_at([0.5, 0.5, -4.0], [0.5, 0.5, 0.5], 70.0);
+//! cam.project(64, 64, [0.5, 0.5, 0.5]);
+//! ```
+//!
+//! ```compile_fail,E0603
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets, screen_box};
+//! ```
+//!
+//! ```compile_fail,E0451
+//! use delvec::compiler::framing::{ResolvedTarget, Target};
+//! let t = Target::point("t".into(), "anchor", String::new(), [0, 0, 0]);
+//! let bbox = delvec::compiler::raster::ScreenBox { x: 0, y: 0, w: 1, h: 1 };
+//! let _ = ResolvedTarget { target: &t, bbox, occluded: false, distance: 1.0 };
+//! ```
 //!
 //! ## Determinism (ADR-0006)
 //!
@@ -177,21 +233,24 @@ impl VoxelGrid {
     }
 }
 
-/// One ray intersection.
+/// One ray intersection. Private to this module: a ray walk is a building
+/// block of the sight rule, and a module that could cast one could assemble a
+/// second answer to whether a target is hidden.
 #[derive(Debug, Clone, Copy)]
-pub struct Hit {
+#[allow(dead_code)] // `block`, `sign` and `uv` are read by this module's tests only.
+struct Hit {
     /// The cell the ray entered.
-    pub cell: [i32; 3],
+    cell: [i32; 3],
     /// Palette index of the block there.
-    pub block: u16,
+    block: u16,
     /// Which axis the ray crossed to enter (`0`=X, `1`=Y, `2`=Z).
-    pub axis: usize,
+    axis: usize,
     /// Sign of the entered face's normal along `axis` (+1 or −1).
-    pub sign: i32,
+    sign: i32,
     /// Distance from the ray origin, in blocks.
-    pub t: f64,
+    t: f64,
     /// Where on the entered face the ray landed, both coordinates in `0.0..1.0`.
-    pub uv: [f64; 2],
+    uv: [f64; 2],
 }
 
 /// The in-face coordinates (both in `0.0..1.0`) of a hit point on a face whose
@@ -211,7 +270,7 @@ impl VoxelGrid {
     ///
     /// `dir` must be normalised. The traversal is exact integer-cell stepping —
     /// no sampling, so a one-block-thick wall can never be missed.
-    pub fn cast(&self, origin: [f64; 3], dir: [f64; 3], max_t: f64) -> Option<Hit> {
+    fn cast(&self, origin: [f64; 3], dir: [f64; 3], max_t: f64) -> Option<Hit> {
         let (lo, hi) = self.bounds?;
         // Skip the empty space before the model's AABB: for a camera far outside
         // a small build this is the difference between stepping 500 cells of void
@@ -343,7 +402,8 @@ impl VoxelGrid {
 
     /// Whether the straight segment from `from` to `to` meets any block before
     /// reaching `to`.
-    pub fn blocked(&self, from: [f64; 3], to: [f64; 3]) -> bool {
+    #[cfg(test)]
+    fn blocked(&self, from: [f64; 3], to: [f64; 3]) -> bool {
         let d = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
         let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
         if len < 1e-9 {
@@ -368,7 +428,7 @@ impl VoxelGrid {
     ///   samples ([`Target::probe_points`]) make the answer "can *any part* of it
     ///   be seen", which is what a reviewer means by visible — and nine rays per
     ///   target is a few hundred cell probes.
-    pub fn occluded_target(&self, from: [f64; 3], t: &Target) -> bool {
+    fn occluded_target(&self, from: [f64; 3], t: &Target) -> bool {
         t.probe_points()
             .into_iter()
             .all(|to| self.sight_line_blocked(from, to, t))
@@ -445,7 +505,7 @@ impl Camera {
     }
 
     /// The normalised ray direction through pixel centre `(px, py)`.
-    pub fn ray(&self, width: u32, height: u32, px: u32, py: u32) -> [f64; 3] {
+    fn ray(&self, width: u32, height: u32, px: u32, py: u32) -> [f64; 3] {
         let (f, r, u) = self.basis();
         let aspect = width as f64 / height as f64;
         let ty = (self.fov.to_radians() * 0.5).tan();
@@ -461,7 +521,7 @@ impl Camera {
 
     /// Project a world point to pixel coordinates plus camera-space depth.
     /// `None` when the point is at or behind the eye plane.
-    pub fn project(&self, width: u32, height: u32, p: [f64; 3]) -> Option<([f64; 2], f64)> {
+    fn project(&self, width: u32, height: u32, p: [f64; 3]) -> Option<([f64; 2], f64)> {
         let (f, r, u) = self.basis();
         let c = [p[0] - self.pos[0], p[1] - self.pos[1], p[2] - self.pos[2]];
         let z = dot(c, f);
@@ -566,7 +626,7 @@ impl Target {
     }
 
     /// The eight world-space corners of the box.
-    pub fn corners(&self) -> [[f64; 3]; 8] {
+    fn corners(&self) -> [[f64; 3]; 8] {
         let lo = [self.min[0] as f64, self.min[1] as f64, self.min[2] as f64];
         let hi = [
             self.max[0] as f64 + 1.0,
@@ -588,7 +648,7 @@ impl Target {
     /// inset by [`PROBE_INSET`] on every side (clamped so a 1-cell target still
     /// yields eight distinct interior points). See [`VoxelGrid::occluded_target`]
     /// for why one centre ray is not enough.
-    pub fn probe_points(&self) -> [[f64; 3]; 9] {
+    fn probe_points(&self) -> [[f64; 3]; 9] {
         let c = self.centre();
         let half = [
             ((self.max[0] - self.min[0] + 1) as f64 / 2.0 - PROBE_INSET).max(0.2),
@@ -856,7 +916,7 @@ fn local_of(id: &str) -> &str {
 
 /// Project a target's box to a clipped screen bbox, or `None` when it is wholly
 /// behind the camera or wholly off-frame (i.e. outside the frustum).
-pub fn screen_box(cam: &Camera, w: u32, h: u32, t: &Target) -> Option<ScreenBox> {
+fn screen_box(cam: &Camera, w: u32, h: u32, t: &Target) -> Option<ScreenBox> {
     let mut lo = [f64::INFINITY; 2];
     let mut hi = [f64::NEG_INFINITY; 2];
     let mut any_front = false;
@@ -887,18 +947,56 @@ pub fn screen_box(cam: &Camera, w: u32, h: u32, t: &Target) -> Option<ScreenBox>
     })
 }
 
-/// A target resolved against one camera: its screen footprint and whether the
-/// straight line from the eye to its centre is blocked.
+/// A target resolved against one camera: its screen footprint and whether it
+/// is hidden. Its fields are private, so the one way to hold one is to ask
+/// [`resolve_targets`]: no other module can state an answer of its own.
 #[derive(Debug, Clone)]
 pub struct ResolvedTarget<'a> {
     /// The target itself.
-    pub target: &'a Target,
+    target: &'a Target,
     /// Screen-space bbox in pixels.
-    pub bbox: ScreenBox,
-    /// Whether geometry stands between the camera and the target centre.
-    pub occluded: bool,
+    bbox: ScreenBox,
+    /// Whether every probe line from the eye meets a block that is not the
+    /// target's own ([`VoxelGrid::occluded_target`]).
+    occluded: bool,
     /// Eye→centre distance in blocks.
-    pub distance: f64,
+    distance: f64,
+}
+
+impl<'a> ResolvedTarget<'a> {
+    /// The target itself.
+    pub fn target(&self) -> &'a Target {
+        self.target
+    }
+
+    /// Screen-space bbox in pixels.
+    pub fn bbox(&self) -> ScreenBox {
+        self.bbox
+    }
+
+    /// Whether the target is hidden from the eye (the one sight rule).
+    pub fn occluded(&self) -> bool {
+        self.occluded
+    }
+
+    /// Eye→centre distance in blocks.
+    pub fn distance(&self) -> f64 {
+        self.distance
+    }
+
+    /// The entry every surface lists an in-frame target as: the world-space
+    /// half ([`target_json`]) plus `screen_bbox`, `occluded` and `distance`.
+    /// One writer, so the manifest's `targets` and a shot's `shows` cannot
+    /// state the answer two ways.
+    pub fn entry(&self) -> Value {
+        let mut v = target_json(self.target);
+        v["screen_bbox"] = json!({
+            "x": self.bbox.x, "y": self.bbox.y, "w": self.bbox.w, "h": self.bbox.h,
+        });
+        v["occluded"] = json!(self.occluded);
+        v["distance"] = json!(round3(self.distance));
+        v
+    }
 }
 
 /// Resolve every target against a camera, returning `(in frustum, out of frame
@@ -933,6 +1031,37 @@ pub fn resolve_targets<'a>(
         }
     }
     (inside, outside)
+}
+
+/// How many of the `samples`² rays through the pixel centres of a square frame
+/// taken by `cam` first meet, within `reach` blocks, a face turned toward the
+/// camera — its normal within `acos(across_cos)` of the view axis — or start
+/// inside a block. The measurement `DW0893` reads
+/// ([`crate::compiler::view::sight::Sight`]): how much of a frame is a near
+/// surface across the view. It names no target, so it is no answer to whether
+/// one is hidden; that is [`resolve_targets`]'s alone.
+pub fn near_surface_rays(
+    grid: &VoxelGrid,
+    cam: &Camera,
+    samples: u32,
+    reach: f64,
+    across_cos: f64,
+) -> u32 {
+    let (forward, _, _) = cam.basis();
+    let mut near = 0u32;
+    for py in 0..samples {
+        for px in 0..samples {
+            let dir = cam.ray(samples, samples, px, py);
+            let Some(hit) = grid.cast(cam.pos, dir, reach) else {
+                continue;
+            };
+            // A ray that starts inside a block is all block.
+            if hit.t <= 0.0 || forward[hit.axis].abs() >= across_cos {
+                near += 1;
+            }
+        }
+    }
+    near
 }
 
 /// What the manifest describes about the world, as opposed to the camera and the
@@ -1019,15 +1148,7 @@ pub fn manifest(
             "rotation": p.rotation,
             "box": { "min": p.min, "max": p.max },
         })).collect::<Vec<_>>(),
-        "targets": inside.iter().map(|r| {
-            let mut v = target_json(r.target);
-            v["screen_bbox"] = json!({
-                "x": r.bbox.x, "y": r.bbox.y, "w": r.bbox.w, "h": r.bbox.h,
-            });
-            v["occluded"] = json!(r.occluded);
-            v["distance"] = json!(round3(r.distance));
-            v
-        }).collect::<Vec<_>>(),
+        "targets": inside.iter().map(ResolvedTarget::entry).collect::<Vec<_>>(),
         "out_of_frame": outside.iter().map(|t| target_json(t)).collect::<Vec<_>>(),
         // What this frame is worth to a reviewer, judged by the arm that drew
         // it. Two numbers, and both are the CLAUDE.md binding rule applied to a

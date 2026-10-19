@@ -73,14 +73,13 @@
 //!   a feature of the space and is crossed: a hall's louvre over its hearth is a
 //!   hole in a roof, not the edge of the hall, while a gatehouse passage between
 //!   a bridge and a courtyard is as long as either, and
-
-//! * the anchor's own eye point stays in sight.
+//! * the anchor's own eye cell stays in sight, by the one sight rule
+//!   ([`anchor_in_sight`], [`crate::compiler::framing::resolve_targets`]).
 //!
 //! A door on the axis between two rooms under the same cover is not a boundary
 //! this walk can see, so the camera can stand in the next room looking at the
 //! anchor through the door; the manifest's standing cell and stop reason are how
 //! a reader tells.
-//! * the anchor's own eye point stays in sight.
 //!
 //! The camera stands at the **furthest** such column: the far side of the space
 //! the anchor stands in, looking at it. That is the framing an interior is shot
@@ -90,7 +89,7 @@
 
 use delvewright_dsl::metrics::PLAYER_EYE_HEIGHT;
 
-use crate::compiler::framing::{Camera, VoxelGrid};
+use crate::compiler::framing::{self, Camera, Target, VoxelGrid};
 use crate::compiler::view::blockcolor;
 use crate::compiler::view::diag::Diagnostic;
 use crate::compiler::view::nbt::Structure;
@@ -181,21 +180,8 @@ impl Sight {
     /// Measure the frame `cam` takes of `grid`, square, over
     /// [`SIGHT_SAMPLES`]² rays.
     pub fn measure(grid: &VoxelGrid, cam: &Camera) -> Sight {
-        let (forward, _, _) = cam.basis();
         let n = SIGHT_SAMPLES;
-        let mut near = 0u32;
-        for py in 0..n {
-            for px in 0..n {
-                let dir = cam.ray(n, n, px, py);
-                let Some(hit) = grid.cast(cam.pos, dir, ARM_REACH_BLOCKS) else {
-                    continue;
-                };
-                // A ray that starts inside a block is all block.
-                if hit.t <= 0.0 || forward[hit.axis].abs() >= ACROSS_COS {
-                    near += 1;
-                }
-            }
-        }
+        let near = framing::near_surface_rays(grid, cam, n, ARM_REACH_BLOCKS, ACROSS_COS);
         Sight { rays: n * n, near }
     }
 
@@ -225,7 +211,7 @@ pub enum Stop {
     /// A body fits in the next column back, but its eye cell holds a block the
     /// camera would render from inside.
     EyeCellOccupied,
-    /// From the next column back, the anchor's own eye point is out of sight.
+    /// From the next column back, the anchor's own eye cell is out of sight.
     AnchorOutOfSight,
 }
 
@@ -277,6 +263,28 @@ fn stands(cells: &Cells<'_>, grid: &VoxelGrid, c: [i32; 3]) -> bool {
     nav::standable(cells, c) && !grid.solid([c[0], c[1] + 1, c[2]])
 }
 
+/// Whether a camera at `eye` sees the eye cell of a body standing in `start`:
+/// the one sight rule ([`framing::resolve_targets`]) asked of a camera aimed at
+/// that cell, which is clear wherever [`stand_back`] starts.
+pub fn anchor_in_sight(grid: &VoxelGrid, eye: [f64; 3], start: [i32; 3]) -> bool {
+    let cell = [start[0], start[1] + 1, start[2]];
+    let target = Target::point("anchor-eye".into(), "anchor", String::new(), cell);
+    let aim = [
+        f64::from(cell[0]) + 0.5,
+        f64::from(cell[1]) + 0.5,
+        f64::from(cell[2]) + 0.5,
+    ];
+    let cam = Camera::looking_at(eye, aim, EYE_FOV_DEG);
+    let (inside, _) = framing::resolve_targets(
+        grid,
+        &cam,
+        SIGHT_SAMPLES,
+        SIGHT_SAMPLES,
+        std::slice::from_ref(&target),
+    );
+    inside.first().is_some_and(|r| !r.occluded())
+}
+
 /// Stand a camera back along `step` from `anchor` — see the module note.
 ///
 /// `None` when no cell within one course of the anchor holds a standing body:
@@ -291,7 +299,6 @@ pub fn stand_back(
     let start = [[x, y, z], [x, y + 1, z], [x, y - 1, z]]
         .into_iter()
         .find(|&c| stands(cells, grid, c))?;
-    let anchor_eye = eye_of(start);
 
     // Every column a body could stand the camera on, in order, and why the line
     // of them ends.
@@ -309,7 +316,7 @@ pub fn stand_back(
         if grid.solid([next[0], next[1] + 1, next[2]]) {
             break Stop::EyeCellOccupied;
         }
-        if grid.blocked(eye_of(next), anchor_eye) {
+        if !anchor_in_sight(grid, eye_of(next), start) {
             break Stop::AnchorOutOfSight;
         }
         line.push(next);

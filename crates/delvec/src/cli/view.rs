@@ -5,12 +5,43 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use delvec::compiler::framing;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 
 use crate::EXIT_INTERNAL;
 use crate::cli::campaign::{read_structures, validate_stage};
 use crate::cli::report::{print_build_error, print_diags, write_file};
+
+/// What a `frames --campaign` frame shows: the targets in and out of its frame
+/// by the one sight rule ([`framing::resolve_targets`]), and the `shows` its
+/// labels are stamped from — each entry the manifest's, with the body a post
+/// names (`body`).
+#[allow(clippy::type_complexity)]
+pub(crate) fn snapshot_frame<'a>(
+    grid: &framing::VoxelGrid,
+    cam: &framing::Camera,
+    (width, height): (u32, u32),
+    targets: &'a [framing::Target],
+    body: &dyn Fn(&framing::Target) -> Option<String>,
+) -> (
+    Vec<framing::ResolvedTarget<'a>>,
+    Vec<&'a framing::Target>,
+    Vec<serde_json::Value>,
+) {
+    let (inside, outside) = framing::resolve_targets(grid, cam, width, height, targets);
+    let shows = inside
+        .iter()
+        .map(|r| {
+            let mut v = r.entry();
+            if let Some(b) = body(r.target()) {
+                v["body"] = serde_json::json!(b);
+            }
+            v
+        })
+        .collect();
+    (inside, outside, shows)
+}
 
 /// The `frames --campaign` arguments, bundled so the dispatcher stays legible.
 pub(crate) struct FramesCampaignArgs<'a> {
@@ -43,7 +74,6 @@ pub(crate) fn run_frames_campaign(
     args: FramesCampaignArgs<'_>,
     json: bool,
 ) -> ExitCode {
-    use delvec::compiler::framing;
     use delvec::compiler::view::frameset;
 
     let (campaign, prefabs) = match load_for_view(campaign_dir, prefabs_dir, json) {
@@ -141,23 +171,10 @@ pub(crate) fn run_frames_campaign(
     };
     eprintln!("{}", frameset::renderer_line(&drawn, args.draw.backend));
     let targets = framing::collect_targets(&plan);
-    let (inside, outside) =
-        framing::resolve_targets(&grid, &cam, drawn.width, drawn.height, &targets);
-    let shows: Vec<serde_json::Value> = inside
-        .iter()
-        .map(|r| {
-            let mut v = framing::target_json(r.target);
-            if let Some(body) = framing::body_of(&plan, r.target) {
-                v["body"] = serde_json::json!(body);
-            }
-            v["screen_bbox"] = serde_json::json!({
-                "x": r.bbox.x, "y": r.bbox.y, "w": r.bbox.w, "h": r.bbox.h,
-            });
-            v["occluded"] = serde_json::json!(r.occluded);
-            v["distance"] = serde_json::json!(framing::round3(r.distance));
-            v
-        })
-        .collect();
+    let (inside, outside, shows) =
+        snapshot_frame(&grid, &cam, (drawn.width, drawn.height), &targets, &|t| {
+            framing::body_of(&plan, t)
+        });
     let gone = frameset::undrawn(&shows, &drawn.stats);
     let mut rgba = drawn.rgba.clone();
     if args.labels {

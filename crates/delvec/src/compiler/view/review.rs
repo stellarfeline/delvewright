@@ -594,23 +594,35 @@ pub fn shot_camera(shot: &Value) -> Option<crate::compiler::framing::Camera> {
 }
 
 /// One target as a shot's `shows` lists it: the manifest's entry, which the
-/// frame copies verbatim.
-fn shown(
-    _plan: &Plan,
-    r: &crate::compiler::framing::ResolvedTarget<'_>,
-    bodies: &[BodyTarget],
-) -> Value {
-    let mut v = crate::compiler::framing::target_json(r.target);
-    if let Some(b) = bodies.iter().find(|b| b.target == *r.target) {
+/// frame copies verbatim, with the body's kind and facing where it is one.
+fn shown(r: &crate::compiler::framing::ResolvedTarget<'_>, bodies: &[BodyTarget]) -> Value {
+    let mut v = r.entry();
+    if let Some(b) = bodies.iter().find(|b| b.target == *r.target()) {
         v["body"] = json!(b.kind);
         v["facing"] = json!(b.facing);
     }
-    v["screen_bbox"] = json!({
-        "x": r.bbox.x, "y": r.bbox.y, "w": r.bbox.w, "h": r.bbox.h,
-    });
-    v["occluded"] = json!(r.occluded);
-    v["distance"] = json!(crate::compiler::framing::round3(r.distance));
     v
+}
+
+/// What one shot shows (spec-0112 §7.5): its `shows` and `out_of_frame`, by
+/// the one sight rule ([`crate::compiler::framing::resolve_targets`]) over the
+/// grid of the world it stands in.
+pub fn frame_row(
+    grid: &crate::compiler::framing::VoxelGrid,
+    cam: &crate::compiler::framing::Camera,
+    size: u32,
+    targets: &[crate::compiler::framing::Target],
+    bodies: &[BodyTarget],
+) -> (Vec<Value>, Vec<Value>) {
+    let (inside, outside) =
+        crate::compiler::framing::resolve_targets(grid, cam, size, size, targets);
+    (
+        inside.iter().map(|r| shown(r, bodies)).collect(),
+        outside
+            .iter()
+            .map(|t| crate::compiler::framing::target_json(t))
+            .collect(),
+    )
 }
 
 /// What [`write_review`] made: the binding lines it owes the build's output.
@@ -688,8 +700,7 @@ pub fn write_review(
                 continue;
             }
             let Some(cam) = shot_camera(s) else { continue };
-            let (inside, outside) =
-                crate::compiler::framing::resolve_targets(&grid, &cam, size, size, &targets);
+            let (shows, out_of_frame) = frame_row(&grid, &cam, size, &targets, &bodies);
             shot_rows.insert(
                 i,
                 json!({
@@ -698,11 +709,8 @@ pub fn write_review(
                     "mode": s["mode"],
                     "sky": s["sky"],
                     "size": size,
-                    "shows": inside.iter().map(|r| shown(plan, r, &bodies)).collect::<Vec<_>>(),
-                    "out_of_frame": outside
-                        .iter()
-                        .map(|t| crate::compiler::framing::target_json(t))
-                        .collect::<Vec<_>>(),
+                    "shows": shows,
+                    "out_of_frame": out_of_frame,
                 }),
             );
         }
