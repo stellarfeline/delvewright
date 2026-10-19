@@ -3548,26 +3548,25 @@ mod tests {
         );
     }
 
-    /// A yard with a platform one course high along its north side, walled
-    /// three high all round. A body jumps up onto the platform and drops off
-    /// it, so the platform's top is in the reach graph's population; no walk
-    /// climbs a full course, so it is not in the walk relation's region. The
+    /// A walled yard, and north of it, across a moat two wide and three deep,
+    /// a platform at the yard's own level. A body sprint-jumps the moat both
+    /// ways, so the platform is in the reach graph's population; no walk
+    /// crosses a gap, so it is not in the walk relation's region (the walk
+    /// only drops into the moat, a pocket the population leaves out). The
     /// arming region stands on the platform: the population's nearest spared
-    /// cell is a platform top, and the walk's is on the yard floor.
+    /// cell is on the platform, and the walk's is on the yard floor.
     #[test]
     fn the_spared_stand_is_never_a_cell_only_a_leap_reaches() {
         let mut solid = BTreeSet::new();
         for x in -1..=9 {
             for z in -1..=11 {
-                solid.insert([x, 0, z]);
                 let rim = x == -1 || x == 9 || z == -1 || z == 11;
-                for y in 1..=3 {
-                    if rim {
+                let moat = !rim && (3..=4).contains(&z);
+                solid.insert([x, if moat { -3 } else { 0 }, z]);
+                if rim {
+                    for y in -2..=3 {
                         solid.insert([x, y, z]);
                     }
-                }
-                if !rim && z <= 4 {
-                    solid.insert([x, 1, z]);
                 }
             }
         }
@@ -3577,12 +3576,12 @@ mod tests {
         let walk = world.walk_region(&[root]);
         let leap_only: BTreeSet<[i32; 3]> = population.difference(&walk).copied().collect();
         assert!(
-            leap_only.contains(&[2, 2, 0]),
-            "the platform top is not in the population only: {} leap-only cell(s)",
+            leap_only.contains(&[2, 1, 0]),
+            "the platform is not in the population only: {} leap-only cell(s)",
             leap_only.len()
         );
         assert!(walk.contains(&[0, 1, 5]), "the yard floor is not walked");
-        let arming: CellBox = ([4, 2, 1], [4, 2, 1]);
+        let arming: CellBox = ([4, 1, 1], [4, 1, 1]);
         let spared = spared_cell(&population, &walk, arming).expect("a spared stand");
         assert!(
             !leap_only.contains(&spared),
