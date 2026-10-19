@@ -218,14 +218,20 @@ pub(super) fn trap_gate_fns(
     out
 }
 
-/// The `summon` of a trapped-chest trap's detection hitbox, tagged
-/// `dw_trapfire_<trap>`: the one spelling `trap_setup` and the fire PackTest
-/// share.
-pub(super) fn trapped_chest_hitbox(t: &plan::TrapPlan) -> String {
-    crate::compiler::clickbox::ClickBox::column(t.trigger_cell, 2).summon(&format!(
-        "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_trapfire_{}\"]",
-        t.safe
-    ))
+/// The `summon` of a trapped-chest trap's detection hitbox, read off
+/// [`trap_setup`]'s own output: the one spelling the fire PackTest shares with
+/// `setup_finish`. `None` for a trap that is not a trapped chest. The gate
+/// hardware only adds the gate seed, which carries no hitbox, so none is read.
+pub(super) fn trapped_chest_hitbox(plan: &Plan, t: &plan::TrapPlan) -> Option<String> {
+    let tag = format!("\"{}\"]", trap_fire_tag(t));
+    trap_setup(plan, &BTreeMap::new())
+        .into_iter()
+        .find(|c| c.starts_with("summon minecraft:interaction ") && c.contains(&tag))
+}
+
+/// The tag a trapped-chest trap's detection hitbox wears.
+pub(super) fn trap_fire_tag(t: &plan::TrapPlan) -> String {
+    format!("dw_trapfire_{}", t.safe)
 }
 
 /// `setup_finish` commands for traps (spec-0011): summon a trapped chest's
@@ -245,7 +251,14 @@ pub(super) fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) 
         // the trap's trigger block. The invisible-lever failure that rule exists
         // to catch is an interaction with nothing to look at — not the case here.
         if t.trigger == delvewright_dsl::TrapTrigger::TrappedChest {
-            out.push(trapped_chest_hitbox(t));
+            // The general click box (`DW1013`), the one every `use` trigger
+            // and `interact` objective is built by: the cell and the one above.
+            out.push(
+                crate::compiler::clickbox::ClickBox::column(t.trigger_cell, 2).summon(&format!(
+                    "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{}\"]",
+                    trap_fire_tag(t)
+                )),
+            );
         }
         // Summon the disarm interaction affordance (a right-click target) and
         // the visible hardware that makes it findable. The prefab may ALSO dress

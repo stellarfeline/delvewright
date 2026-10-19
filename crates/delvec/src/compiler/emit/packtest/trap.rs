@@ -61,10 +61,11 @@ pub(super) fn emit_trap_fire_packtests(plan: &Plan, out: &mut BuildOutput) {
                 // `setup` schedules the `setup_finish` that summons the hitbox,
                 // so a template's tick 0 may not have it yet: summon it, by the
                 // emitter's own spelling, only where it is absent.
-                b.push(format!(
-                    "execute unless entity @e[tag=dw_trapfire_{id}] run {}",
-                    trapped_chest_hitbox(t)
-                ));
+                if let Some(summon) = trapped_chest_hitbox(plan, t) {
+                    b.push(format!(
+                        "execute unless entity @e[tag=dw_trapfire_{id}] run {summon}"
+                    ));
+                }
                 b.push(format!(
                     "data modify entity @e[tag=dw_trapfire_{id},limit=1] interaction set value \
                      {{player:[I;0,0,0,0],timestamp:1L}}"
