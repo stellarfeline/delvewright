@@ -36,7 +36,7 @@ const DEATH_PLAN_SUBPATH = ["validation", "death-plan.json"] as const;
  * one is REFUSED rather than half-read: a bot that silently ignores a field it
  * does not know reports a green over assertions it never made.
  */
-export const SUPPORTED_DEATH_PLAN_FORMAT = 4;
+export const SUPPORTED_DEATH_PLAN_FORMAT = 5;
 
 /** An inclusive world-space box. */
 export interface Box {
@@ -249,6 +249,36 @@ export interface Seat {
   readonly cp: number;
   readonly label: string;
   readonly cell: Vec3Tuple;
+  /**
+   * The exported critical-path step after which this seat is where a death
+   * returns the party (`-1` for the entry spawn); `null` for a checkpoint a
+   * trigger sets, which moves on the party's own act at no step the path names.
+   */
+  readonly inForceAfter: number | null;
+}
+
+/** One side a body can be caught from: wait at `mouth`, stand in `stand`. */
+export interface GateApproach {
+  readonly mouth: Vec3Tuple;
+  readonly stand: Vec3Tuple;
+}
+
+/**
+ * **A `crush: true` timed gate** (format 5): a place whose closing edge kills a
+ * body standing in it. The region is the one the closing tick's selector judges.
+ */
+export interface CrushGate {
+  readonly id: string;
+  readonly region: Box;
+  readonly openTicks: number;
+  readonly closedTicks: number;
+  readonly phase: number;
+  /** The sides a body can step in from, in the compiler's order. */
+  readonly approaches: readonly GateApproach[];
+  /** The exported step whose proven leg first crosses the gate, if one does. */
+  readonly crossedAt: number | undefined;
+  /** What keeps the closing edge live (a disarm's flag, unset); empty = always. */
+  readonly gate: StakeGate;
 }
 
 /** One death region of the placement table. */
@@ -275,6 +305,7 @@ export interface DeathPlanBinding {
   readonly stakes: number;
   readonly seats: number;
   readonly rows: number;
+  readonly crushGates: number;
   readonly unbound: boolean;
   readonly reason: string | undefined;
 }
@@ -291,6 +322,7 @@ export interface DeathPlan {
   readonly seats: readonly Seat[];
   readonly regions: readonly DeathRegion[];
   readonly rows: readonly PlacementRow[];
+  readonly crushGates: readonly CrushGate[];
   readonly binding: DeathPlanBinding;
 }
 
@@ -434,6 +466,7 @@ function parseBinding(v: unknown, pointer: string): DeathPlanBinding {
     stakes: n("stakes"),
     seats: n("respawn_seats"),
     rows: n("placement_rows"),
+    crushGates: n("crush_gates"),
     unbound,
     reason: optionalString(v["reason"], `${pointer}/reason`),
   };
@@ -598,10 +631,19 @@ export function parseDeathPlan(raw: unknown): DeathPlan {
   const seats = seatsRaw.map((s, i): Seat => {
     const p = `/placement/seats/${i}`;
     if (!isRecord(s)) throw new DeathPlanParseError(p, "expected an object");
+    const after = s["in_force_after"];
+    if (after !== null && !Number.isInteger(after)) {
+      throw new DeathPlanParseError(
+        `${p}/in_force_after`,
+        "expected an integer step index or null — a seat with no answer here is one the " +
+          "bot cannot say governs a death",
+      );
+    }
     return {
       cp: requireInteger(s["cp"], `${p}/cp`),
       label: requireString(s["label"], `${p}/label`),
       cell: requireCell(s["cell"], `${p}/cell`),
+      inForceAfter: after as number | null,
     };
   });
   const regions = regionsRaw.map((r, i): DeathRegion => {
@@ -628,6 +670,45 @@ export function parseDeathPlan(raw: unknown): DeathPlan {
     };
   });
 
+  const crushRaw = raw["crush_gates"];
+  if (!Array.isArray(crushRaw)) throw new DeathPlanParseError("/crush_gates", "expected an array");
+  const crushGates = crushRaw.map((g, i): CrushGate => {
+    const p = `/crush_gates/${i}`;
+    if (!isRecord(g)) throw new DeathPlanParseError(p, "expected an object");
+    const approachesRaw = g["approaches"];
+    if (!Array.isArray(approachesRaw)) {
+      throw new DeathPlanParseError(`${p}/approaches`, "expected an array");
+    }
+    const crossed = g["crossed_at"];
+    if (crossed !== null && !Number.isInteger(crossed)) {
+      throw new DeathPlanParseError(`${p}/crossed_at`, "expected an integer step index or null");
+    }
+    return {
+      id: requireString(g["id"], `${p}/id`),
+      region: requireBox(g["region"], `${p}/region`),
+      openTicks: requireInteger(g["open_ticks"], `${p}/open_ticks`),
+      closedTicks: requireInteger(g["closed_ticks"], `${p}/closed_ticks`),
+      phase: requireInteger(g["phase"], `${p}/phase`),
+      approaches: approachesRaw.map((a, k): GateApproach => {
+        const ap = `${p}/approaches/${k}`;
+        if (!isRecord(a)) throw new DeathPlanParseError(ap, "expected an object");
+        return {
+          mouth: requireCell(a["mouth"], `${ap}/mouth`),
+          stand: requireCell(a["stand"], `${ap}/stand`),
+        };
+      }),
+      crossedAt: crossed === null ? undefined : (crossed as number),
+      gate: parseVolumeGate(g["gate"], `${p}/gate`),
+    };
+  });
+  const binding = parseBinding(raw["binding"], "/binding");
+  if (binding.crushGates !== crushGates.length) {
+    throw new DeathPlanParseError(
+      "/binding/crush_gates",
+      `states ${binding.crushGates} crush gate(s) and the plan lists ${crushGates.length}`,
+    );
+  }
+
   return {
     version,
     formatVersion,
@@ -639,7 +720,8 @@ export function parseDeathPlan(raw: unknown): DeathPlan {
     seats,
     regions,
     rows,
-    binding: parseBinding(raw["binding"], "/binding"),
+    crushGates,
+    binding,
   };
 }
 

@@ -229,9 +229,13 @@ export const methods = {
    */
   async afterStep(this: MineflayerExecutor, index: number, done: Step): Promise<void> {
     const plan = this.deathPlan;
-    if (!this.deathLoopOnPath || plan === undefined || plan.binding.unbound) return;
-    const pending = plan.volumes.filter((v) => !this.deathLoopTried.has(v.id));
-    if (pending.length === 0) return;
+    if (plan === undefined) return;
+    const volumesOn = this.deathLoopOnPath && !plan.binding.unbound;
+    const pending = volumesOn ? plan.volumes.filter((v) => !this.deathLoopTried.has(v.id)) : [];
+    // The crush gates due here: each is tried at this boundary only if one of
+    // its mouths can be reached from where the path left the bot.
+    const crushDue = this.crushGatesDue(index);
+    if (pending.length === 0 && crushDue.length === 0) return;
     const due: DeathPlan["volumes"][number][] = [];
     for (const v of pending) {
       if (volumeIsStaged(v)) {
@@ -243,17 +247,19 @@ export const methods = {
       }
       if (this.reachableFromHere(nearLip(plan, v.id) ?? v.region.lo)) due.push(v);
     }
-    if (due.length === 0) return;
+    if (due.length === 0 && crushDue.length === 0) return;
     const step =
       "objective" in done && typeof done.objective === "string"
         ? `${done.action} \`${done.objective}\``
         : done.action;
     const here = this.feetCell();
-    process.stderr.write(
-      `[death-loop] after step ${index} (${step}): ${due.map((v) => v.id).join(", ")} live and ` +
-        `reachable from [${(here ?? []).join(", ")}] — trying ${due.length === 1 ? "it" : "them"} here
+    if (due.length > 0) {
+      process.stderr.write(
+        `[death-loop] after step ${index} (${step}): ${due.map((v) => v.id).join(", ")} live and ` +
+          `reachable from [${(here ?? []).join(", ")}] — trying ${due.length === 1 ? "it" : "them"} here
 `,
-    );
+      );
+    }
     const watch = this.watchLedger();
     const armed = watch.armed;
     watch.armed = false;
@@ -285,6 +291,17 @@ export const methods = {
     try {
       for (const v of due) await this.triedAt(plan, v, `after step ${index} (${step})`);
       if (this.death !== undefined) await this.recoverFromDeath();
+      const crushBefore = this.crushTrials.length;
+      if (crushDue.length > 0) {
+        this.stageNow = "crush-death";
+        for (const g of crushDue) {
+          await this.crushTrial(plan, g, index, `after step ${index} (${step})`, false);
+          if (this.death !== undefined) await this.recoverFromDeath();
+        }
+        this.stageNow = "death-loop";
+      }
+      // Nothing was entered here: no walk back is owed.
+      const entered = due.length > 0 || this.crushTrials.length > crushBefore;
       for (const [objective, value] of ledgers) {
         if (value === undefined || this.myScore(objective) === value) continue;
         const refusal = await this.refusalOf(
@@ -302,7 +319,7 @@ export const methods = {
         });
         if (value !== null) await this.settledScore(objective, value);
       }
-      if (here !== undefined) {
+      if (here !== undefined && entered) {
         const back = await this.walkPastReseated(
           `death-loop return to the critical path after step ${index}`,
           here,

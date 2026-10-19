@@ -101,8 +101,8 @@ function planDoc(): Record<string, unknown> {
     ],
     placement: {
       seats: [
-        { cp: -1, label: "the campaign's entry spawn", cell: [5, 65, 2] },
-        { cp: 0, label: "checkpoint anchor `anchor/keeper-stand`", cell: [5, 65, 4] },
+        { cp: -1, label: "the campaign's entry spawn", cell: [5, 65, 2], in_force_after: -1 },
+        { cp: 0, label: "checkpoint anchor `anchor/keeper-stand`", cell: [5, 65, 4], in_force_after: 0 },
       ],
       regions: [
         {
@@ -125,12 +125,14 @@ function planDoc(): Record<string, unknown> {
         { seat: 1, region: 1, anchor: [4, 65, 5] },
       ],
     },
+    crush_gates: [],
     binding: {
       lethal_volumes: 1,
       on_death_effects: 1,
       stakes: 1,
       respawn_seats: 2,
       placement_rows: 4,
+      crush_gates: 0,
       unbound: false,
       reason: null,
     },

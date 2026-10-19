@@ -342,6 +342,8 @@ fn crush_false_is_inert() {
         "validation/critical-path-waypoints.json".to_string(),
         // The observer census counts the crush's guarded selector.
         "validation/observer-census.json".to_string(),
+        // A crush gate is a death the bot tier walks, so it enters the death plan.
+        "validation/death-plan.json".to_string(),
         "manifest.json".to_string(),
     ];
     for path in &differing {
@@ -421,12 +423,12 @@ fn crush_is_region_scoped_lethal_and_precedes_the_seal() {
     );
 }
 
-/// The generated crush PackTest asserts **scoping**, live, on real geometry:
-/// the emitted selector holds the player standing in the gate and releases them
-/// two blocks clear of it. It cannot assert death — PackTest fake players are
-/// immune to `/damage` (measured on the pinned toolserver) — so lethality is
-/// pinned by `crush_is_region_scoped_lethal_and_precedes_the_seal` above and was
-/// verified end-to-end against a real mineflayer client.
+/// The generated crush PackTest asserts **scoping and the kill**, live, on real
+/// geometry: the emitted selector holds the player standing in the gate and
+/// releases them two blocks clear of it, a closing tick spares the body clear of
+/// the region, and a closing tick with the body standing in it leaves it dead.
+/// The kill is judged after the dummy's spawn protection, which is what refuses
+/// `/damage` to a fresh PackTest dummy.
 #[test]
 fn crush_runtime_scoping_is_packtested() {
     let out = build_with_crush(true);
@@ -455,5 +457,99 @@ fn crush_runtime_scoping_is_packtested() {
     assert!(
         !t.contains("if entity @a["),
         "the assertion binds @s so a sibling test's dummy is never counted: {t}"
+    );
+    // The kill: after the spawn protection, a body clear of the region is spared
+    // and a body standing in it is dead after the closing tick.
+    let lines: Vec<&str> = t.lines().collect();
+    let at = |needle: &str| {
+        lines
+            .iter()
+            .position(|l| l.contains(needle))
+            .unwrap_or_else(|| panic!("`{needle}` in the template: {t}"))
+    };
+    let wait = at("await delay 80t");
+    let spared = at("assert score #cr_spared_inner_door dw.sys matches 1..");
+    let dead = at("assert score #cr_hp_inner_door dw.sys matches ..0");
+    assert!(
+        wait < spared && spared < dead,
+        "wait, spare, kill — in that order: {t}"
+    );
+    let closes: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| **l == format!("function {NS}:tgate_close_inner_door"))
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(closes.len(), 2, "one spared close, one lethal close: {t}");
+    assert!(
+        closes[1] < dead && closes[1] > spared,
+        "the kill is read after its close: {t}"
+    );
+    assert!(
+        lines[closes[1] - 1].starts_with("tp @s ") && lines[closes[1] - 1].contains(" 6.5"),
+        "the lethal close finds the dummy standing in the region: {t}"
+    );
+    assert!(
+        t.contains("# @timeout 180"),
+        "the template's budget outlasts its own wait: {t}"
+    );
+}
+
+/// **A crush gate is in the death plan the bot reads**, with the clock, the
+/// sides a body can be caught from, and the step whose leg first crosses it; and
+/// every respawn seat says after which exported step it is in force.
+#[test]
+fn a_crush_gate_enters_the_death_plan() {
+    let off = build_with_crush(false);
+    let on = build_with_crush(true);
+    let plan_of = |out: &BuildOutput| {
+        out.get("validation/death-plan.json")
+            .map(|b| serde_json::from_slice::<serde_json::Value>(b).expect("valid JSON"))
+    };
+    assert!(
+        plan_of(&off).is_none(),
+        "a gate that does not crush puts nothing in a death plan this fixture otherwise lacks"
+    );
+    let v = plan_of(&on).expect("a crush gate makes a death plan");
+    assert_eq!(v["format_version"], serde_json::json!(5));
+    let gates = v["crush_gates"].as_array().expect("crush_gates");
+    assert_eq!(gates.len(), 1, "{v:#}");
+    let g = &gates[0];
+    assert_eq!(g["id"], serde_json::json!("timed-gate/inner-door"));
+    assert_eq!(
+        g["region"],
+        serde_json::json!({ "lo": [4, 65, 6], "hi": [5, 67, 6] })
+    );
+    let approaches = g["approaches"].as_array().expect("approaches");
+    assert!(
+        !approaches.is_empty(),
+        "a body can be caught from some side: {g:#}"
+    );
+    for a in approaches {
+        let stand = a["stand"].as_array().unwrap();
+        let mouth = a["mouth"].as_array().unwrap();
+        assert_eq!(
+            stand[2],
+            serde_json::json!(6),
+            "the stand cell is in the region: {a}"
+        );
+        assert_ne!(
+            mouth[2],
+            serde_json::json!(6),
+            "the mouth is outside it: {a}"
+        );
+    }
+    assert!(
+        g["crossed_at"].is_u64(),
+        "the fixture's route crosses its gate: {g:#}"
+    );
+    assert_eq!(v["binding"]["crush_gates"], serde_json::json!(1));
+    let seats = v["placement"]["seats"].as_array().unwrap();
+    assert!(
+        seats
+            .iter()
+            .any(|s| s["cp"] == serde_json::json!(-1)
+                && s["in_force_after"] == serde_json::json!(-1)),
+        "the entry seat is in force from the start: {seats:?}"
     );
 }
