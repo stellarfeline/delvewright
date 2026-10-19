@@ -263,10 +263,18 @@ pub fn undrawn(shows: &[Value], stats: &frames::Stats) -> Vec<Value> {
             if !stats.undrew(body) {
                 return None;
             }
-            let reason = match body {
-                "item_display" | "item" | "item_frame" | "glow_item_frame" => "items",
-                "text_display" => "text displays",
-                _ => "no model in the renderer",
+            let reason = if frames::HOLDS_ITEMS.contains(&body) && !stats.items_skipped.is_empty() {
+                format!(
+                    "an item the renderer cannot draw in this frame: {}",
+                    stats
+                        .items_skipped
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            } else {
+                "no model in the renderer".to_string()
             };
             let judge_by = if s["occluded"].as_bool().unwrap_or(false) {
                 "in game: a block stands between it and this camera"

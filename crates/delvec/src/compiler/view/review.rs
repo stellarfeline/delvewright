@@ -812,9 +812,7 @@ pub fn light_question(shot: &Value) -> bool {
 }
 
 /// What no review frame shows, by name (spec-0112 §11).
-pub const UNCHECKED: [&str; 7] = [
-    "items: dropped items, item frames' content, item displays, held items and equipment",
-    "text displays",
+pub const UNCHECKED: [&str; 5] = [
     "beds, shulker boxes, the conduit, open lids, a ringing bell, italic or obfuscated sign text",
     "the weather in the air, clouds, hq-mode fog and the moon",
     "a night-vision room's lightmap: judge in game under night vision",

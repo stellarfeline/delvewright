@@ -396,7 +396,7 @@ red (versions.toml [render]).
 
 [[pin]]
 id = "lumenwright-revision"
-value = "ed3f049cc496d5f1b7df9829bda1bcb443ad1d06"
+value = "4b658a737112add5dbe43b3f6b454ec0658d3ece"
 sites = ["crates/delvec/Cargo.toml", "versions.toml"]
 policy = "immutable"
 why = """

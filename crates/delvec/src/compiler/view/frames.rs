@@ -53,7 +53,11 @@ use crate::compiler::view::scene;
 /// lumenwright_revision` and `crates/delvec/Cargo.toml` pin it — written on
 /// every frame manifest and on the first line of every run, so a frame's
 /// provenance is readable without the frame.
-pub const RENDERER_REVISION: &str = "ed3f049cc496d5f1b7df9829bda1bcb443ad1d06";
+pub const RENDERER_REVISION: &str = "4b658a737112add5dbe43b3f6b454ec0658d3ece";
+
+/// The client's *Mipmap Levels* option at its default, the texture filtering
+/// a player who has not changed it sees.
+pub const CLIENT_MIPMAP_LEVELS: u32 = 4;
 
 /// The renderer, in words: `lumenwright <revision>`.
 pub fn renderer() -> String {
@@ -227,8 +231,14 @@ pub struct Stats {
     pub entities_rendered: std::collections::BTreeMap<String, usize>,
     /// Entity kinds drawn as a box (never under the engine's policy).
     pub entities_boxed: std::collections::BTreeMap<String, usize>,
-    /// Entity kinds the renderer has no model for, not drawn.
+    /// Entity kinds the renderer drew nothing of: a kind it has no model for,
+    /// or a dropped item or item display whose item it cannot draw.
     pub entities_skipped: std::collections::BTreeMap<String, usize>,
+    /// Item stacks drawn (dropped, displayed, framed, held or worn), by short
+    /// item id.
+    pub items_rendered: std::collections::BTreeMap<String, usize>,
+    /// Item stacks the renderer could not draw, by short item id.
+    pub items_skipped: std::collections::BTreeMap<String, usize>,
     /// Block-entity kinds drawn.
     pub block_entities_rendered: std::collections::BTreeMap<String, usize>,
     /// Block-entity kinds not drawn.
@@ -246,9 +256,12 @@ impl Stats {
         self.entities_rendered.contains_key(kind)
     }
 
-    /// Whether the renderer skipped (or boxed) bodies of `kind` in this frame.
+    /// Whether the renderer skipped (or boxed) bodies of `kind` in this frame,
+    /// or `kind` holds items and an item stack in this frame was not drawn.
     pub fn undrew(&self, kind: &str) -> bool {
-        self.entities_skipped.contains_key(kind) || self.entities_boxed.contains_key(kind)
+        self.entities_skipped.contains_key(kind)
+            || self.entities_boxed.contains_key(kind)
+            || (HOLDS_ITEMS.contains(&kind) && !self.items_skipped.is_empty())
     }
 
     /// The statistics as the frame manifest writes them.
@@ -258,6 +271,8 @@ impl Stats {
                 "rendered": self.entities_rendered,
                 "fallback_boxes": self.entities_boxed,
                 "skipped": self.entities_skipped,
+                "items_rendered": self.items_rendered,
+                "items_skipped": self.items_skipped,
             },
             "block_entities": {
                 "rendered": self.block_entities_rendered,
@@ -268,6 +283,19 @@ impl Stats {
         })
     }
 }
+
+/// The entity kinds (short ids) that carry item stacks the renderer draws as
+/// items: a dropped item, an item display, a frame's content, a held or worn
+/// stack. Its statistics count items by item id, not by holder, so a stack it
+/// could not draw is a doubt on every holder in the frame.
+pub const HOLDS_ITEMS: [&str; 6] = [
+    "item",
+    "item_display",
+    "item_frame",
+    "glow_item_frame",
+    "armor_stand",
+    "mannequin",
+];
 
 /// A drawn frame.
 pub struct Drawn {
@@ -392,6 +420,7 @@ pub fn draw(req: &FrameRequest<'_>, opened: Option<&OpenedWorld>) -> Result<Draw
             draw_distance: draw_distance(req.camera.pos, req.chunks),
             brightness: scene::DEFAULT_BRIGHTNESS as f32,
             smooth: true,
+            mipmap_levels: CLIENT_MIPMAP_LEVELS,
         },
         hq,
         sky: Sky::Stated(StatedSky {
@@ -426,6 +455,8 @@ pub fn draw(req: &FrameRequest<'_>, opened: Option<&OpenedWorld>) -> Result<Draw
             entities_rendered: short(&r.entity_stats.rendered),
             entities_boxed: short(&r.entity_stats.fallback_boxes),
             entities_skipped: short(&r.entity_stats.skipped),
+            items_rendered: short(&r.entity_stats.items_rendered),
+            items_skipped: short(&r.entity_stats.items_skipped),
             block_entities_rendered: short(&r.block_entity_stats.rendered),
             block_entities_skipped: short(&r.block_entity_stats.skipped),
             text_lines: r.block_entity_stats.text_lines,

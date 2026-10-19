@@ -128,7 +128,8 @@ shot wanted, which is worth a look while you are there.
 **Read each frame's index entry before its picture**: `shows` (every target in
 frame, with its screen box, distance and whether a block hides it — the bodies
 the world holds among them, as kind `body`), `undrawn` (the bodies in frame the
-renderer did not draw — an item display, a text display — each with its reason
+renderer did not draw — a kind it has no model for, a holder of an item it cannot
+draw — each with its reason
 and how to judge it instead; `DW1039` on stderr), and `unchecked` (what no frame
 can show). A frame whose `shows` holds no NPC where one should stand is a
 finding; an `undrawn` marker is not — it is real and the renderer has no model

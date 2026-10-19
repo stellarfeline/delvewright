@@ -110,7 +110,7 @@ blake3 = { version = "1", features = ["pure"] }
 # `gpu` adds the Metal, Vulkan and DX12 backends through wgpu, which the
 # engine's lock already holds; no C build script is reached with this feature
 # set. `glam` is used through `lumenwright::glam`.
-lumenwright = { git = "https://github.com/stellarfeline/lumenwright", rev = "ed3f049cc496d5f1b7df9829bda1bcb443ad1d06", default-features = false, features = ["gpu"] }
+lumenwright = { git = "https://github.com/stellarfeline/lumenwright", rev = "4b658a737112add5dbe43b3f6b454ec0658d3ece", default-features = false, features = ["gpu"] }
 
 # The thread pool a CPU frame runs on (`delvec frames --threads`): the same
 # rayon Lumenwright draws with, so a frame's thread count is the caller's to

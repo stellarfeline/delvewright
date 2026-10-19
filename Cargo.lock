@@ -1310,7 +1310,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 [[package]]
 name = "lumenwright"
 version = "0.1.0"
-source = "git+https://github.com/stellarfeline/lumenwright?rev=ed3f049cc496d5f1b7df9829bda1bcb443ad1d06#ed3f049cc496d5f1b7df9829bda1bcb443ad1d06"
+source = "git+https://github.com/stellarfeline/lumenwright?rev=4b658a737112add5dbe43b3f6b454ec0658d3ece#4b658a737112add5dbe43b3f6b454ec0658d3ece"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -1332,7 +1332,7 @@ dependencies = [
 [[package]]
 name = "lumenwright-kernel"
 version = "0.1.0"
-source = "git+https://github.com/stellarfeline/lumenwright?rev=ed3f049cc496d5f1b7df9829bda1bcb443ad1d06#ed3f049cc496d5f1b7df9829bda1bcb443ad1d06"
+source = "git+https://github.com/stellarfeline/lumenwright?rev=4b658a737112add5dbe43b3f6b454ec0658d3ece#4b658a737112add5dbe43b3f6b454ec0658d3ece"
 dependencies = [
  "bytemuck",
 ]
@@ -1462,7 +1462,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3006,7 +3006,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
