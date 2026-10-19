@@ -21,6 +21,13 @@ import type { TimedGate } from "../waypoints.ts";
 import { delay } from "./connection.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
+/**
+ * How near the mouth the walk to it must end. The walk's navigator keeps out of
+ * every cell a crush gate's selector can reach, the mouth's neighbours included,
+ * so a range of one can leave no admissible cell at a narrow doorway.
+ */
+const MOUTH_RANGE = 2;
+
 /** Re-aim cadence while the bot keeps its feet in the closing cells. */
 const HOLD_TICK_MS = 50;
 
@@ -130,18 +137,23 @@ export const methods = {
         return;
       }
     }
-    // The mouth is asked for with every crush region costed like a lethal
-    // volume, so the probe never answers "reachable" by a walk through a gate.
-    const saved = this.lethalBoxes;
-    this.lethalBoxes = [...saved, ...plan.crushGates.map((g) => g.region)];
-    const approach = (() => {
-      try {
-        return gate.approaches.find((a) => this.reachableFromHere(a.mouth));
-      } finally {
-        this.lethalBoxes = saved;
-      }
-    })();
-    if (approach === undefined && !mustRun) return;
+    // The mouth is asked for with every crush region's own cells refused, so the
+    // probe never answers "reachable" by a walk through a gate; the walk itself
+    // ends within {@link MOUTH_RANGE} of the mouth, and the window wait's raw
+    // stance takes the last steps onto it.
+    const walls = plan.crushGates.map((g) => g.region);
+    const probes = gate.approaches.map((a) => ({
+      a,
+      ok: this.reachableFromHere(a.mouth, MOUTH_RANGE, walls),
+    }));
+    const approach = probes.find((p) => p.ok)?.a;
+    if (approach === undefined && !mustRun) {
+      process.stderr.write(
+        `[crush] ${gate.id} ${at}: no mouth reachable from ` +
+          `[${(this.feetCell() ?? []).join(", ")}] — left for a later boundary\n`,
+      );
+      return;
+    }
     this.crushTried.add(gate.id);
     const trial = openCrushTrial(gate, boundary, at);
     this.crushTrials.push(trial);
@@ -152,8 +164,9 @@ export const methods = {
       trial.abandoned =
         gate.approaches.length === 0
           ? "the build lists no side a body can step into the gate from"
-          : `none of its ${gate.approaches.length} mouth(s) can be reached from ` +
-            `[${(this.feetCell() ?? []).join(", ")}]`;
+          : `none of its ${gate.approaches.length} mouth(s) ` +
+            `(${gate.approaches.map((a) => `[${a.mouth.join(", ")}]`).join(", ")}) can be ` +
+            `reached from [${(this.feetCell() ?? []).join(", ")}]`;
       return;
     }
     trial.approach = approach;
@@ -167,6 +180,8 @@ export const methods = {
       `crush approach to ${gate.id}`,
       approach.mouth,
       "the gate mouth",
+      undefined,
+      MOUTH_RANGE,
     );
     if (this.deathSeq !== deathsBefore) {
       trial.abandoned = `the bot died on the walk to the mouth, at ${

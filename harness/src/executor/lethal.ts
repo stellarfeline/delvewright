@@ -14,6 +14,7 @@ import {
   volumeGateVerdict,
   volumeIsStaged,
   lethalStepCost,
+  LETHAL_STEP_COST,
   nearLip,
   openLethalTrial,
   seatAtRespawn,
@@ -346,15 +347,29 @@ export const methods = {
    * digging, doors opened, non-colliding entities passable, lethal volumes
    * excluded). Asked, never walked.
    */
-  reachableFromHere(this: MineflayerExecutor, dest: Vec3Tuple): boolean {
+  reachableFromHere(
+    this: MineflayerExecutor,
+    dest: Vec3Tuple,
+    range = 1,
+    walls: readonly Box[] = [],
+  ): boolean {
     const bot = this.requireBot();
     const movements = new Movements(bot);
     configureLeg(bot, movements, false);
     allowNonCollidingEntities(movements);
     this.applyLethalExclusion(movements);
+    // `walls`: boxes whose own cells the probe may not step in (a crush gate's
+    // span), refused cell for cell rather than widened by a body's reach.
+    if (walls.length > 0) {
+      movements.exclusionAreasStep.push((block): number => {
+        const p = block?.position;
+        if (p === undefined || p === null) return 0;
+        return walls.some((w) => inBox([p.x, p.y, p.z], w)) ? LETHAL_STEP_COST : 0;
+      });
+    }
     const result = bot.pathfinder.getPathTo(
       movements,
-      new goals.GoalNear(dest[0], dest[1], dest[2], 1),
+      new goals.GoalNear(dest[0], dest[1], dest[2], range),
       REACH_PROBE_MS,
     );
     return result.status === "success";
@@ -384,6 +399,7 @@ export const methods = {
     dest: Vec3Tuple | undefined,
     destName: string,
     purse?: { readonly plan: DeathPlan; readonly trial: LethalTrial },
+    range = 1,
   ): Promise<{ readonly kind: "staging" | "walk"; readonly why: string } | undefined> {
     const deaths = this.deathSeq;
     const ledger = new Map(
@@ -403,7 +419,7 @@ export const methods = {
     }
     if (this.deathSeq !== deaths || dest === undefined) return undefined;
     try {
-      await this.walkTo(dest, 1, label);
+      await this.walkTo(dest, range, label);
     } catch (err) {
       if (!(err instanceof BotDeathError)) {
         return {
