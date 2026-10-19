@@ -3157,9 +3157,6 @@
             "type": "reach-anchor"
           },
           {
-            "after": [
-              "obj/look-in-the-east-bay"
-            ],
             "anchor": "anchor/west-bay",
             "happening": {
               "subject": "anchor/west-bay",
@@ -3173,6 +3170,7 @@
           },
           {
             "after": [
+              "obj/look-in-the-east-bay",
               "obj/look-in-the-west-bay"
             ],
             "anchor": "anchor/west-pit",
@@ -3209,6 +3207,14 @@
                   "flag/hall-sealed"
                 ]
               }
+            }
+          ],
+          "obj/look-in-the-west-bay": [
+            {
+              "carrier": "one",
+              "count": 1,
+              "item": "minecraft:trial_key",
+              "type": "give-item"
             }
           ]
         },
