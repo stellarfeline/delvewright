@@ -42,7 +42,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use delvewright_dsl::blockshape::{
     bare_id, redstone_conductor, redstone_reader, redstone_source, state_value,
 };
-use delvewright_dsl::{DwCode, ExitTier, Verb};
+use delvewright_dsl::{DwCode, ExitTier};
 
 use crate::compiler::blockstate::BlockMap;
 use crate::compiler::failure::Failure;
@@ -180,46 +180,25 @@ impl Write {
     }
 }
 
-/// **Every block a runtime write may lay, and where** — the `fill-region`,
-/// `set-block` and `close-gate` effects at every root and depth, every laid
-/// write the region model carries (a way, a shortcut seal), and both phases of
-/// every timed gate. Sorted and deduplicated (ADR-0006). Clears lay air, which
-/// no rule here reads, so they are not carried.
+/// **Every block a runtime write may lay, and where** — every effect that lays
+/// a block, at every root and depth, read through the one resolution the
+/// region model takes ([`crate::compiler::plan::effect_writes`]: a
+/// `fill-region`, a `set-block`, a `close-gate`, a laid way), every laid write
+/// the region model carries (a shortcut seal, a prop), and both phases of every
+/// timed gate. Sorted and deduplicated (ADR-0006). Clears lay air, which no
+/// rule here reads, so they are not carried.
 pub fn runtime_writes(plan: &Plan) -> Vec<Write> {
     let mut out: BTreeSet<Write> = BTreeSet::new();
     crate::compiler::plan::for_each_gate_effect(plan.campaign, &mut |site, e| {
-        let label = format!("`{}` at `{}`", e.verb.tag(), site.path);
-        match &e.verb {
-            Verb::FillRegion { region, block, .. } => {
-                if let Some(r) = plan.zone_box(region) {
-                    out.insert(Write {
-                        region: r,
-                        block: block.clone(),
-                        label,
-                    });
-                }
+        for (region, _, block) in crate::compiler::plan::effect_writes(e, &plan.anchors, &plan.ways)
+        {
+            if let Some(block) = block {
+                out.insert(Write {
+                    region,
+                    block,
+                    label: format!("`{}` at `{}`", e.verb.tag(), site.path),
+                });
             }
-            Verb::SetBlock { anchor, block, .. } => {
-                if let Some(p) = plan.point_any(anchor.as_str()) {
-                    out.insert(Write {
-                        region: (p, p),
-                        block: block.clone(),
-                        label,
-                    });
-                }
-            }
-            Verb::CloseGate { anchor, .. } => {
-                if let Some((from, to, block)) =
-                    crate::compiler::plan::gate_region_block_any(&plan.anchors, anchor.as_str())
-                {
-                    out.insert(Write {
-                        region: (from, to),
-                        block,
-                        label,
-                    });
-                }
-            }
-            _ => {}
         }
     });
     for ev in plan.region_events.iter() {

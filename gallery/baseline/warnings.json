@@ -188,6 +188,11 @@
       "stage": "world-edits"
     },
     {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/lay-the-barrier",
+      "stage": "world-edits"
+    },
+    {
       "code": "DW0995",
       "pointer": "pulse binding",
       "stage": "build"
@@ -372,6 +377,11 @@
     {
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
+      "stage": "world-edits"
+    },
+    {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/lay-the-barrier",
       "stage": "world-edits"
     },
     {
@@ -562,6 +572,11 @@
       "stage": "world-edits"
     },
     {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/lay-the-barrier",
+      "stage": "world-edits"
+    },
+    {
       "code": "DW0995",
       "pointer": "pulse binding",
       "stage": "build"
@@ -749,6 +764,11 @@
       "stage": "world-edits"
     },
     {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/lay-the-barrier",
+      "stage": "world-edits"
+    },
+    {
       "code": "DW0995",
       "pointer": "pulse binding",
       "stage": "build"
@@ -933,6 +953,11 @@
     {
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
+      "stage": "world-edits"
+    },
+    {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/lay-the-barrier",
       "stage": "world-edits"
     },
     {
@@ -1231,6 +1256,11 @@
     {
       "code": "DW0353",
       "pointer": "/content/batches/batch/dress-the-floor",
+      "stage": "world-edits"
+    },
+    {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/lay-the-barrier",
       "stage": "world-edits"
     },
     {
