@@ -1,130 +1,12 @@
 //! The trap proofs: a lethal trap on the forced path can be discharged
-//! (`DW0342`), a volley's cadence is a timing read (`DW0918`), a volley
-//! blankets its zone, and a collapse does not bury the path (`DW0442`,
-//! `DW0444`, `DW0445`, `DW0446`).
+//! (`DW0342`), a volley blankets its zone, and a collapse does not bury the
+//! path (`DW0442`, `DW0444`, `DW0445`, `DW0446`).
 
 use super::*;
 use crate::compiler::failure::Failure;
 use crate::compiler::plan::{Plan, TrapPlan};
 use delvewright_dsl::{Lethality, TrapReset};
 use std::collections::{BTreeMap, BTreeSet};
-
-/// Prove a `volley`'s cadence is a timing read — [`DW_VOLLEY_COIN_FLIP`]
-/// (`DW0918`).
-///
-/// **What must be readable is the way out.** spec-0022 defines a volley as
-/// saturation: every standable cell of the kill zone is fired on every salvo, so
-/// "escaping means LEAVING the zone, a decision, not a lucky strafe". A volley is
-/// finite and does not loop, so a body outside the zone is never forced through
-/// it — the chain ends, and a `rearm` trap fires again only when someone steps on
-/// its trigger. The one body a volley can trap is the one inside the zone when a
-/// salvo lands (the party's own step on a pressure plate fires salvo 0 the same
-/// tick), and the decision spec-0022 promises it is to walk out before the next
-/// salvo. So the route judged is the **escape**: from the standable kill-zone
-/// cell whose walk out is longest, the moves to the nearest standable cell
-/// outside the zone, by the same router and step rule every route proof uses.
-///
-/// The window is the interval between two salvos. The body sets off `p` ticks
-/// after a salvo and is clear iff it stands outside when the next one is
-/// summoned, so this is [`timing_read`] with `open_ticks = interval` and nothing
-/// shut: the admitting phases must cover [`TIMING_READ_MIN_ADMIT_PERCENT`] of the
-/// interval — a reaction window the player can read, not a sprint that has to
-/// start on the frame the plate clicks. Projectile flight is not credited as
-/// extra time (the proof never grants a share it does not have).
-///
-/// A volley with `salvos: 1` has no cadence — no next salvo exists to escape —
-/// and is not judged: its single salvo is the trap's consequence, the way a
-/// `collapse` is, and whether it can be watched before it is triggered is
-/// `DW0388`'s question. A zone with no standable cell is `DW0444`'s. A standable
-/// zone cell from which no standable cell outside the zone can be reached at all
-/// is the limit of this rule — no phase admits an escape — and is refused.
-pub fn check_volley_cadence(
-    world: &World,
-    region: ([i32; 3], [i32; 3]),
-    salvos: u32,
-    interval: u32,
-    label: &str,
-) -> Result<(), Failure> {
-    if salvos < 2 {
-        return Ok(());
-    }
-    let zone: BTreeSet<[i32; 3]> =
-        crate::compiler::assembled::region_cells(region.0, region.1).collect();
-    let cells: Vec<[i32; 3]> = zone
-        .iter()
-        .copied()
-        .filter(|c| world.is_standable(*c))
-        .collect();
-    // Every way out passes through a first cell outside the zone, and that cell
-    // is a step-rule neighbour of a zone cell — so these are all the exits.
-    let exits: BTreeSet<[i32; 3]> = cells
-        .iter()
-        .flat_map(|c| world.neighbors(*c))
-        .filter(|n| !zone.contains(n))
-        .collect();
-    // The worst cell: the longest shortest walk out. Ties keep the first cell in
-    // ascending order (ADR-0006).
-    let mut worst: Option<([i32; 3], Option<u32>)> = None;
-    for &cell in &cells {
-        let out = exits
-            .iter()
-            .filter_map(|&e| world.find_path(cell, e))
-            .map(|path| path.len().saturating_sub(1) as u32)
-            .min();
-        let worse = match (&worst, out) {
-            (None, _) => true,
-            (Some((_, Some(_))), None) => true,
-            (Some((_, Some(w))), Some(m)) => m > *w,
-            (Some((_, None)), _) => false,
-        };
-        if worse {
-            worst = Some((cell, out));
-        }
-    }
-    let Some((cell, moves)) = worst else {
-        return Ok(()); // no standable cell — DW0444's business
-    };
-    let Some(moves) = moves else {
-        return Err(Failure {
-            code: DW_VOLLEY_COIN_FLIP,
-            message: format!(
-                "{label}: a player standing on kill-zone cell [{}, {}, {}] cannot walk out of \
-                 the zone at all — no standable cell outside it is reachable — so every one of \
-                 the {salvos} salvos lands on them and no timing of theirs changes that. A \
-                 volley's counterplay is LEAVING the zone (spec-0022); give the zone an exit \
-                 a body can step onto, or shrink `kill_zone` to the floor that has one — never \
-                 lower the floor of the proof.",
-                cell[0], cell[1], cell[2]
-            ),
-        });
-    };
-    let read = timing_read(moves, interval, 0);
-    if read.is_coin_flip() {
-        let TimingRead {
-            moves,
-            cross_ticks,
-            admits,
-            cycle,
-            percent,
-        } = read;
-        return Err(Failure {
-            code: DW_VOLLEY_COIN_FLIP,
-            message: format!(
-                "{label} is a coin flip, not a timing read: from kill-zone cell [{}, {}, {}] \
-                 the walk out of the zone takes {cross_ticks} ticks ({moves} blocks at \
-                 {SPRINT_TICKS_PER_BLOCK} t/block), so only {admits} of its {cycle}-tick salvo \
-                 interval ({percent}%) admit a player who sets off then — under the \
-                 {TIMING_READ_MIN_ADMIT_PERCENT}% floor every timed hazard is held to \
-                 (spec-0016 §4). A volley's counterplay is LEAVING the zone (spec-0022); an \
-                 interval shorter than the walk out takes that decision away. Lengthen \
-                 `interval`, or shrink `kill_zone` so no cell is deep inside it — never lower \
-                 the floor.",
-                cell[0], cell[1], cell[2]
-            ),
-        });
-    }
-    Ok(())
-}
 
 /// Prove every **lethal** trap on the forced critical path is discharged (DSL
 /// v0.6, spec-0011) — [`DW_TRAP_LETHAL_UNAVOIDABLE`] (`DW0342`). Death is
@@ -620,56 +502,6 @@ mod tests {
             "each column's top holds the carpet the paving sets"
         );
         assert!(g.walls("minecraft:light", None).is_empty());
-    }
-
-    // --- volley cadence (spec-0022, DW0918) ---
-
-    /// A kill zone five cells deep down a one-wide hall at x=0 (z=3..=7). The
-    /// middle cell is 3 blocks from the floor outside either end, so the walk out
-    /// costs 12 ticks at the sprint model.
-    fn volley_hall() -> (World, ([i32; 3], [i32; 3])) {
-        (carved(&run_z(0, 0, 12)), ([0, WY, 3], [0, WY, 7]))
-    }
-
-    /// 15 ticks between salvos against a 12-tick walk out: 4 of 15 phases (26%)
-    /// admit an escape. A readable cadence.
-    #[test]
-    fn volley_whose_interval_admits_the_walk_out_is_readable() {
-        let (world, zone) = volley_hall();
-        check_volley_cadence(&world, zone, 3, 15, "volley")
-            .expect("4 of 15 phases admit the walk out: a timing read");
-    }
-
-    /// The same zone with 13 ticks between salvos: 2 of 13 phases (15%) admit the
-    /// walk out — under the floor. `DW0918`, naming the cell it judged.
-    #[test]
-    fn volley_whose_interval_barely_admits_the_walk_out_is_dw0918() {
-        let (world, zone) = volley_hall();
-        let err = check_volley_cadence(&world, zone, 3, 13, "volley")
-            .expect_err("15% of the interval is a coin flip");
-        assert_eq!(err.code, DW_VOLLEY_COIN_FLIP); // DW0918
-        assert!(err.message.contains("coin flip"), "{}", err.message);
-        assert!(err.message.contains("[0, 65, 5]"), "{}", err.message);
-        assert!(err.message.contains("2 of its 13-tick"), "{}", err.message);
-    }
-
-    /// One salvo has no cadence: there is no next salvo to walk out ahead of, so
-    /// even an interval no escape fits in is not judged.
-    #[test]
-    fn a_single_salvo_volley_has_no_cadence_to_judge() {
-        let (world, zone) = volley_hall();
-        check_volley_cadence(&world, zone, 1, 1, "volley").expect("salvos: 1 is not judged");
-    }
-
-    /// A zone that fills a sealed chamber has no way out at all: every salvo lands
-    /// and no timing changes that — the limit of the same rule.
-    #[test]
-    fn a_volley_zone_with_no_way_out_is_dw0918() {
-        let world = carved(&run_z(0, 0, 4));
-        let err = check_volley_cadence(&world, ([0, WY, 0], [0, WY, 4]), 3, 200, "volley")
-            .expect_err("no exit admits no phase");
-        assert_eq!(err.code, DW_VOLLEY_COIN_FLIP); // DW0918
-        assert!(err.message.contains("cannot walk out"), "{}", err.message);
     }
 
     /// A minimal lethal trap for the proof tests.

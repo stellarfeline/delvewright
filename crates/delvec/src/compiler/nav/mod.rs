@@ -252,16 +252,6 @@ delvewright_dsl::dw_code! {
     pub const DW_TIMED_GATE_COIN_FLIP: DwCode = DwCode::new("DW0378", ExitTier::Build);
 }
 delvewright_dsl::dw_code! {
-    /// `DW0918`: a `volley` (spec-0022) whose cadence is a coin flip rather than a
-    /// timing read — a player standing anywhere in the kill zone when a salvo lands
-    /// cannot leave the zone before the next salvo in at least **20% of the
-    /// interval**. The volley's counterplay is LEAVING the zone (spec-0022: "a
-    /// decision, not a lucky strafe"); an interval too short for the walk out makes
-    /// that decision unavailable. The same body model and floor as
-    /// [`DW_TIMED_GATE_COIN_FLIP`] (`DW0378`), through the one [`timing_read`].
-    pub const DW_VOLLEY_COIN_FLIP: DwCode = DwCode::new("DW0918", ExitTier::Build);
-}
-delvewright_dsl::dw_code! {
     /// `DW0388`: a **timed hazard** (spec-0016 §4 addendum) the player cannot
     /// observe before committing to it — no standable cell exists that is clear of
     /// the hazard's lethal span, reachable without entering it, and has line of
