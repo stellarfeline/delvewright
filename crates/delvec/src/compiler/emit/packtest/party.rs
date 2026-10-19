@@ -136,7 +136,7 @@ pub struct PartyBinding {
     pub min_players: usize,
     /// The analyzer's division for `min_players >= 2`: the join and each
     /// agent's arms. `None` for a party of one, which owes no division.
-    pub division: Option<Result<(String, Vec<Vec<String>>), String>>,
+    pub division: Option<Result<crate::compiler::flow::Division, String>>,
 }
 
 impl PartyBinding {
@@ -155,7 +155,7 @@ impl PartyBinding {
                 "`min_players: {}` owes no division (a party of one is the single-agent proof)",
                 self.min_players
             ),
-            Some(Ok((join, agents))) => format!(
+            Some(Ok(crate::compiler::flow::Division { join, agents })) => format!(
                 "`min_players: {}` divided over `{join}` ({})",
                 self.min_players,
                 agents
@@ -190,7 +190,7 @@ impl PartyBinding {
     pub fn to_json(&self) -> serde_json::Value {
         let division = match &self.division {
             None => serde_json::Value::Null,
-            Some(Ok((join, agents))) => json!({ "join": join, "agents": agents }),
+            Some(Ok(d)) => json!({ "join": d.join, "agents": d.agents }),
             Some(Err(why)) => json!({ "refused": why }),
         };
         let mut doc = json!({
@@ -300,7 +300,6 @@ pub fn party_binding(plan: &Plan, out: &BuildOutput) -> PartyBinding {
         let flow = crate::compiler::flow::Flow::new(c);
         b.division = Some(
             flow.divide(&flow.playthrough(), b.min_players)
-                .map(|d| (d.join, d.agents))
                 .map_err(|f| f.message()),
         );
     }
