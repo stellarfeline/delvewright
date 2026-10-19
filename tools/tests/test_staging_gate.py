@@ -1663,45 +1663,36 @@ def quests_content(tmp_path, where, content):
     return d
 
 
-def test_the_live_timing_read_row_binds_a_volley_with_a_cadence(gate, tmp_path):
-    """`bell-06`'s class is every hazard on a repeating clock the party must
-    read: a `timed-gate`, judged by DW0378, and a `volley` that fires more than
-    once, judged by DW0918 — one body model, one row. A volley campaign read
-    UNBOUND while the carrier judged gates only; it now binds. A volley with
-    `salvos: 1` has no cadence, and a campaign whose only volley is one reads
-    INAPPLICABLE. Driven both ways, through the verdicts."""
+def test_the_live_timing_read_row_binds_timed_gates_only(gate, tmp_path):
+    """`bell-06`'s class is a `timed-gate`, judged by DW0378. A volley is not in
+    it: whether a body can dodge a hazard is the designer's call, so a campaign
+    whose only repeating hazard is a volley reads INAPPLICABLE. Driven both
+    ways, through the verdicts."""
     row = live_rows(gate, {"bell-06"})["bell-06"]
-    assert gate.dw_codes(row["carrier"]) == ["DW0378", "DW0918"]
+    assert gate.dw_codes(row["carrier"]) == ["DW0378"]
     build = make_build(tmp_path)
-
-    def volley(**extra):
-        return dict(
-            {
-                "type": "volley",
-                "from_anchor": "anchor/battery",
-                "kill_zone": {"anchor": "anchor/rampart", "extent": [3, 1, 3]},
-            },
-            **extra,
-        )
-
-    def trap(payload):
-        return {
-            "traps": [
-                {
-                    "id": "trap/rampart-volley",
-                    "at": "anchor/plate",
-                    "trigger": "pressure-plate",
-                    "payload": payload,
-                }
-            ]
-        }
-
+    volley = {
+        "type": "volley",
+        "from_anchor": "anchor/battery",
+        "kill_zone": {"anchor": "anchor/rampart", "extent": [3, 1, 3]},
+        "salvos": 3,
+        "interval": 15,
+    }
     camps = {
-        # vesperhold's own volley: pressure plate, 3 salvos every 15 ticks.
-        "salvos-3": quests_content(tmp_path, "s3", trap([volley(salvos=3, interval=15)])),
-        # `salvos` omitted defaults to 3 — the `has_any` precondition missed it.
-        "default": quests_content(tmp_path, "sd", trap([volley()])),
-        "salvos-1": quests_content(tmp_path, "s1", trap([volley(salvos=1)])),
+        "volley": quests_content(
+            tmp_path,
+            "v",
+            {
+                "traps": [
+                    {
+                        "id": "trap/rampart-volley",
+                        "at": "anchor/plate",
+                        "trigger": "pressure-plate",
+                        "payload": [volley],
+                    }
+                ]
+            },
+        ),
         "gate": quests_content(
             tmp_path,
             "g",
@@ -1717,9 +1708,7 @@ def test_the_live_timing_read_row_binds_a_volley_with_a_cadence(gate, tmp_path):
         for k, d in camps.items()
     }
     assert verdicts == {
-        "salvos-3": ("BOUND", 1),
-        "default": ("BOUND", 1),
-        "salvos-1": ("INAPPLICABLE", 0),
+        "volley": ("INAPPLICABLE", 0),
         "gate": ("BOUND", 1),
         "neither": ("INAPPLICABLE", 0),
     }, verdicts
