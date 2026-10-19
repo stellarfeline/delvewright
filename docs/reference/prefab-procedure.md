@@ -450,20 +450,12 @@ delvec render piece out/<id>.nbt   -o shots/ --size 640   # one structure templa
 delvec render piece out/<id>.json  -o shots/ --size 640   # a zone that shipped as a tile set
 ```
 
-**Two things are said about the piece before a single frame is planned, because
-neither is visible in a picture** (`DW0894` / `DW0895`, `compiler.md` §5). The
-first is a refusal: a piece **with floor in it** whose document declares
-`"profile": "unmeasured"`, or declares no `lighting` block, or has no document at
-all, is not drawn — the renderer lights every frame for the camera and not for
-the body, so a picture is the one medium darkness does not show in. An expansion
-measures its own light (§6), so this is a piece from somewhere else, or from an
-expansion older than that rule: re-expand it, or run `delvec prefab lighting
-<piece> --write` (§7) and render again. A measured `dark` is fine, not knowing is
-not; a piece with nowhere in it to stand is shown and counted, because there is
-no floor for a measurement to be about.
-The second is a report: how much of the piece's roofed floor no body can walk to,
+**One thing is said about the piece before a single frame is planned, because
+it is not visible in a picture** (`DW0895`, `compiler.md` §5). Light is not
+judged here: it is checked on the whole world and on each region, never on a
+prefab. The report says how much of the piece's roofed floor no body can walk to,
 which pockets it forms, and — where the walk was turned back by the step rule —
-the cell to open. The same two run on `delvec viewer`.
+the cell to open. The same report runs on `delvec viewer`.
 
 Which of the two the expand wrote is a fact about the region (§6); pass whichever
 file is there. The manifest reassembles the tiles first, so every camera below —
@@ -772,8 +764,10 @@ as 8) and `minecraft:jigsaw` joins the audited palette. Both are the marker bein
 counted, not a blocked door, and the verdict stays `pass`.
 
 `lighting --write` is a **static** estimate, not a live probe; it says so in the
-metadata it writes. A piece it calls `dark` is dark because the program placed
-no light — the grammar cannot warn you, so this step is where you find out.
+metadata it writes. It measures and records; it judges nothing. Light is checked
+on the whole world and on each region once the piece is seated (`DW0210`), never
+on a prefab, because whether a surface is walked is decided by the place it is
+seated in.
 
 The minimum is taken over the **floor a body can walk to from a ground-level
 entrance**, and the report states how many cells that was, out of how many are
@@ -784,20 +778,19 @@ lantern reaches and no player ever stands in.
 **Which sky the piece is measured under is read off its own `spatial_contract`.**
 A piece declaring no contract, or one declaring any space `open` or `open_top`,
 is measured standing in open air, so sky light reaches under a roof from the
-side — which is why an open-air piece grades like any other, and why a `dark`
-verdict on a colonnade is about the hour rather than about the openings. There
+side — which is why an open-air piece measures like any other, and why a `dark`
+profile on a colonnade is about the hour rather than about the openings. There
 the profile is taken at a clear night, the darkest sky the engine models, and the
-daylight minimum is printed beside it: "black at night, lit by day" is the
-sentence to act on, and `dark` alone is not.
+daylight minimum is printed beside it.
 
 A piece whose contract declares **every** space `enclosed` is measured with no
 sky at all, and both figures are that one. That is the piece a `detail-plan` row
 binds: it stands inside the box a site plan gave it, under a roof the whole owns,
 and never meets the sky — so a `lit` taken off the night sky floor would be true
-of nowhere it can stand, and `DW0210` would say so at the first build. Such a
-piece with no emitter in it reads `dark` here, which is the number to act on:
-put light in the program. The report names the sky it used and why, in
-`assumed_sky`, and the written `method` says it again.
+of nowhere it can stand. Such a piece with no emitter in it reads `dark` here;
+the build's `DW0210` is what judges it, in the place it is seated. The report
+names the sky it used and why, in `assumed_sky`, and the written `method` says
+it again.
 
 A binding of zero is `DW0752` and fails the step — carve the
 sockets before probing a piece whose only way in is one. `--write` without metadata beside the

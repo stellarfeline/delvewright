@@ -55,22 +55,14 @@ fn socket_out_of_bounds_is_dw0750_exit1() {
     assert!(stderr.contains("DW0750"), "expected DW0750: {stderr}");
 }
 
-/// `DW0751`: the lighting probe's dark-interior advisory — measured, printed,
-/// but does not fail the command (spec-0010: advisory only, no longer gates).
-///
-/// **It reports the DISTRIBUTION of dark cells, not the darkest one.** One cell
-/// at light 0 in the lee of a pillar and a room where every cell is at light 0
-/// have the same minimum, and they are a detail and a room nobody can see in.
-/// The repair is to re-arrange the room or raise the density of what already
-/// lights it, and neither is a decision a reader can take from one number — so
-/// the advisory says how much of the walkable floor is dark, at which levels,
-/// and as what fraction. The darkest cell stays, as the place to start.
-///
-/// Every figure in the sentence is cross-checked against the machine report the
-/// same run printed: a message and a measurement that can drift apart are two
-/// authorities for one fact.
+/// **A dark room is measured and judged by nobody here.** Light is checked on
+/// the whole world and on each region, never on a prefab, so `prefab lighting`
+/// over a dark room exits 0 and raises no diagnostic. What it still owes is the
+/// measurement: the machine report carries the DISTRIBUTION of dark cells, not
+/// only the darkest one — how many at each level below the threshold, their
+/// total and their fraction of the binding.
 #[test]
-fn lighting_dark_room_is_dw0751_advisory_exit0() {
+fn lighting_a_dark_room_measures_it_and_raises_nothing() {
     let dir = tmp("dark-room");
     let nbt = dir.join("dark.nbt");
     std::fs::write(&nbt, fixtures::dark_room().write()).unwrap();
@@ -78,10 +70,13 @@ fn lighting_dark_room_is_dw0751_advisory_exit0() {
     let out = prefab().args(["lighting"]).arg(&nbt).output().unwrap();
     assert!(
         out.status.success(),
-        "the dark advisory must not fail the command: {out:?}"
+        "a dark measurement does not fail the command: {out:?}"
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("DW0751"), "expected DW0751: {stderr}");
+    assert!(
+        !stderr.contains("[warning]") && !stderr.contains("[error]"),
+        "a measurement of one prefab raises no diagnostic: {stderr}"
+    );
 
     let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let dark = &report["dark_cells"];
@@ -106,26 +101,6 @@ fn lighting_dark_room_is_dw0751_advisory_exit0() {
             "the distribution counts the levels BELOW the threshold: {report}"
         );
     }
-
-    // ...and the sentence says the same numbers.
-    assert!(
-        stderr.contains(&format!("{cells} of {measured} floor cell(s)")),
-        "the advisory states how much of the floor is dark: {stderr}"
-    );
-    assert!(
-        stderr.contains(&format!("below light {threshold}")),
-        "the threshold stays in the message: {stderr}"
-    );
-    for (level, count) in by_light {
-        assert!(
-            stderr.contains(&format!("{} at light {level}", count.as_u64().unwrap())),
-            "every level of the distribution is named: {stderr}"
-        );
-    }
-    assert!(
-        stderr.contains("darkest at "),
-        "the darkest cell stays, as the place to start: {stderr}"
-    );
 }
 
 /// A gallery run into `out`, with one clean candidate.

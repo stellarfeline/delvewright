@@ -230,16 +230,11 @@ this needs are subcommands of the one binary Init I3 installed.
    delvec --prefabs "$DELVEWRIGHT_PREFABS" render piece out/<id>.nbt -o shots/
    ```
 
-   **The expand already measured this piece's light** and wrote the profile with
-   the binding it was taken over — you do not run a probe by hand after an
-   expansion. Read the `lighting` block: a `dark` piece renders, and it is telling
-   you the room needs a light where the delve reaches night. This step refuses
-   only a piece with floor in it that nobody measured (`DW0894`), which means it
-   came from somewhere other than an expansion; `delvec --prefabs
-   "$DELVEWRIGHT_PREFABS" prefab lighting <piece> --write` is the same
-   measurement through the other door. Read the `DW0895` line too: it reports the
-   roofed floor no body can walk to and the step the walk was refused at — a room
-   with a ceiling and no way in renders exactly like a room with a door.
+   This step does not judge light: light is checked on the whole world and on
+   each region once the piece is seated, never on a prefab. Read the `DW0895`
+   line: it reports the roofed floor no body can walk to and the step the walk
+   was refused at — a room with a ceiling and no way in renders exactly like a
+   room with a door.
 
    and compare against the scene description from 1 above. The gates prove it is
    buildable and walkable; they
@@ -432,8 +427,9 @@ these three rules, whichever route makes the piece
   block no neighbour holds (`DW1002`), so a lever or a torch hung on a pane is
   moved to a face that holds it.
 
-A piece the `lighting` block calls dark is repaired by re-arranging these
-sources or adding more of them, never by another kind of light.
+Darkness is found once the piece is seated, on the whole world and on each
+region (`DW0210`), never on the piece alone; it is repaired by re-arranging
+these sources or adding more of them, never by another kind of light.
 
 ## What the grammar cannot express
 
@@ -499,5 +495,3 @@ order, and replace steps 3–4 above for that piece; steps 1, 2, 5 and 6 still a
    (every standing anchor reached from grade), the `pockets:` line (`0 place(s)`,
    or the run is refused `DW0952` naming each place and the way in), `walk_y`
    (the ground's top + 1) and `shown_faces`. Fix the form, never the output.
-6. **Measure its light**: `delvec --prefabs "$DELVEWRIGHT_PREFABS" prefab lighting "$DELVEWRIGHT_PREFABS/<id>.nbt"`
-   — read the dark-cell distribution against the sky the campaign reaches.

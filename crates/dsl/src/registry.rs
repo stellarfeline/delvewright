@@ -309,11 +309,6 @@ pub trait AnchorRegistry {
         None
     }
 
-    /// The declared lighting for a prefab, if known.
-    fn lighting_for(&self, _prefab: &PrefabId) -> Option<Lighting> {
-        None
-    }
-
     /// What the library holds for a rig id (`rig/<name>`, spec-0082 §3.1).
     ///
     /// The default is [`RigLookup::Unknown`](crate::rig::RigLookup::Unknown) —
