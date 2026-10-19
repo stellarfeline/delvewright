@@ -41,38 +41,53 @@
 //! assert!(outside.is_empty() && !inside[0].occluded());
 //! ```
 //!
-//! and each building block refused, the same code with one call changed:
+//! and each building block refused, the same code with one call changed. Stable
+//! rustdoc does not check a `compile_fail` error code, so each refusal is bound
+//! by perturbation instead: the item made `pub` (the ray walk with its `Hit`)
+//! turns its doctest red.
 //!
-//! ```compile_fail,E0624
+//! ```compile_fail
 //! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
 //! let grid = VoxelGrid::build(&Default::default());
 //! let t = Target::point("t".into(), "anchor", String::new(), [0, 0, 0]);
 //! grid.occluded_target([0.5, 0.5, -4.0], &t);
 //! ```
 //!
-//! ```compile_fail,E0624
+//! ```compile_fail
 //! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
 //! let grid = VoxelGrid::build(&Default::default());
 //! grid.cast([0.5, 0.5, -4.0], [0.0, 0.0, 1.0], 8.0);
 //! ```
 //!
-//! ```compile_fail,E0624
+//! ```compile_fail
 //! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
 //! let t = Target::point("t".into(), "anchor", String::new(), [0, 0, 0]);
 //! t.probe_points();
 //! ```
 //!
-//! ```compile_fail,E0624
+//! ```compile_fail
 //! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
 //! let cam = Camera::looking_at([0.5, 0.5, -4.0], [0.5, 0.5, 0.5], 70.0);
 //! cam.project(64, 64, [0.5, 0.5, 0.5]);
 //! ```
 //!
-//! ```compile_fail,E0603
+//! ```compile_fail
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let cam = Camera::looking_at([0.5, 0.5, -4.0], [0.5, 0.5, 0.5], 70.0);
+//! cam.ray(64, 64, 32, 32);
+//! ```
+//!
+//! ```compile_fail
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let t = Target::point("t".into(), "anchor", String::new(), [0, 0, 0]);
+//! t.corners();
+//! ```
+//!
+//! ```compile_fail
 //! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets, screen_box};
 //! ```
 //!
-//! ```compile_fail,E0451
+//! ```compile_fail
 //! use delvec::compiler::framing::{ResolvedTarget, Target};
 //! let t = Target::point("t".into(), "anchor", String::new(), [0, 0, 0]);
 //! let bbox = delvec::compiler::raster::ScreenBox { x: 0, y: 0, w: 1, h: 1 };
