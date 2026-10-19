@@ -191,13 +191,15 @@ const MUST_WALK_SENSOR: [i32; 3] = [17, 0, 3];
 /// **The sealed catalyst** (spec-0100 §3.7, `DW1001`): a sculk catalyst set
 /// into the solid stone over the near hall's roof, three courses above it,
 /// west of the long gallery. The places a body can stand nearest it (the reach
-/// graph's, spec-0113) are the near hall's floor eight courses down and three
-/// south (`distSqr` 73), a rafter of the near hall seven columns east, five
-/// courses down and one south (75), and the roof of the vestibule closing the
-/// clocked door at `x` 19..20, which a body reaches from the rafters (78) — so
-/// it can hear no death, and the build states the nearest body cell. One column
-/// further east it is `DW1001` by that vestibule roof.
-const SEALED_CATALYST: [i32; 3] = [16, 10, 6];
+/// graph's, spec-0113) are a rafter of the near hall seven columns east and
+/// five courses down (`distSqr` 74), the near hall's floor eight courses down
+/// and four south (80), and the roof of the vestibule closing the clocked door
+/// at `x` 19..20, which a body reaches from the rafters (93) — so it can hear
+/// no death, and the build states the nearest body cell. The probe that hangs
+/// a lever on a pane under the roof makes the pane's top a perch, seven south
+/// and five down (74), and is refused for the lever alone. One cell south the
+/// perch is within earshot (61), and that probe is `DW1001`.
+const SEALED_CATALYST: [i32; 3] = [16, 10, 5];
 
 /// The block state of [`SEALED_CATALYST`].
 const SEALED_CATALYST_STATE: &[(&str, &str)] = &[("bloom", "false")];
