@@ -35,7 +35,7 @@ function gate(id: string, crossedAt: number | undefined): CrushGate {
 
 function plan(gates: CrushGate[]): DeathPlan {
   return {
-    version: "0.41.0",
+    version: "fixture",
     formatVersion: 5,
     campaignId: "t",
     volumes: [],
