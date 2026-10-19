@@ -780,6 +780,17 @@ pub fn check_outlived_scenes(c: &Campaign) -> (Vec<Diagnostic>, OutlivedBinding)
                 }
                 state_writes(&owner.on_complete, &mut data);
 
+                // A clause that itself requires what the completion writes can
+                // only govern once `obj` is done: it is the after-scene, a
+                // declaration (repeating the beat included), not the beat.
+                let own_after = cl.requires_flags.iter().any(|f| flags.contains(f.as_str()))
+                    || cl
+                        .requires_state
+                        .iter()
+                        .any(|s| data.contains(s.state.as_str()));
+                if own_after {
+                    continue;
+                }
                 let gated = later.iter().any(|l| {
                     l.requires_flags.iter().any(|f| flags.contains(f.as_str()))
                         || l.requires_state

@@ -337,9 +337,11 @@ fn dw0461(c: &Campaign) -> Vec<String> {
 fn a_cast_row_naming_the_bare_anchor_of_a_body_at_an_offset_is_dw0461() {
     let bare = keeper_at_offset_cast(json!("anchor/keeper-stand"));
     let found = dw0461(&bare);
+    // hello-world's keeper entry has two placements (the beat and its
+    // after-scene), and the test spells `at` on both: each is refused.
     assert_eq!(
         found.len(),
-        1,
+        2,
         "the bare anchor is not where the body stands: {found:#?}"
     );
     assert!(
@@ -436,10 +438,11 @@ fn an_offset_leaving_the_piece_is_dw0897_at_build() {
         "the message names the anchor: {}",
         f.message
     );
-    // The body and the cast row that spells its mark both leave the piece.
-    assert_eq!(binding.refused, 2, "{binding:?}");
+    // The body and both cast rows that spell its mark (hello-world's keeper:
+    // the beat and its after-scene) leave the piece.
+    assert_eq!(binding.refused, 3, "{binding:?}");
     assert_eq!(binding.offset_bodies, 1, "{binding:?}");
-    assert_eq!(binding.cast_marks, 1, "{binding:?}");
+    assert_eq!(binding.cast_marks, 2, "{binding:?}");
 
     match build(&c, &prefabs) {
         Err(BuildFailure::Diagnostic { code, .. }) => assert_eq!(code, DW_MARK_LEAVES_PIECE),

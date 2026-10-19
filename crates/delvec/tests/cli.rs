@@ -546,9 +546,27 @@ fn incoherent_critical_path_exits_2_with_dw0204() {
             }
         }
     }
+    // …and every dialogue option's gate, so the Keeper's watch (and the flag
+    // its after-scene requires, DW1050) is reached on every playthrough too.
+    let mut dialogue: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            common::compiler_fixtures_dir().join("branch-endings/dialogue.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    for tree in dialogue["content"]["dialogues"].as_array_mut().unwrap() {
+        for node in tree["nodes"].as_array_mut().unwrap() {
+            for opt in node["options"].as_array_mut().into_iter().flatten() {
+                let o = opt.as_object_mut().unwrap();
+                o.remove("requires_flags");
+                o.remove("forbids_flags");
+            }
+        }
+    }
     common::materialize_from(
         &common::compiler_fixtures_dir().join("branch-endings"),
-        &serde_json::json!({ "documents": { "quests": quests } }),
+        &serde_json::json!({ "documents": { "quests": quests, "dialogue": dialogue } }),
         &camp,
     );
     // With no gate left there is no fork, so the declared branch point goes too.
