@@ -31,6 +31,7 @@ import type {
 import type { MusterVerdict } from "./muster.ts";
 import type { StagedRemoval } from "./executor.ts";
 import type { DeathLoopBinding, LethalTrial } from "./death-loop.ts";
+import type { CrushBinding, CrushTrial } from "./crush-death.ts";
 import type { ClassifiedDeath } from "./teardown.ts";
 import { loadWindowSummary, type LoadWindowRecord } from "./load-window.ts";
 import type { NamePreference } from "./executor.ts";
@@ -86,7 +87,13 @@ export interface BranchOutcome {
 }
 
 /** The ladder's labelled stages. */
-export const STAGES = ["branch-run", "critical-path", "die-retry", "death-loop"] as const;
+export const STAGES = [
+  "branch-run",
+  "critical-path",
+  "die-retry",
+  "death-loop",
+  "crush-death",
+] as const;
 export type StageName = (typeof STAGES)[number];
 
 /**
@@ -141,6 +148,8 @@ export class RunReport {
   /** Every walk into a lethal volume, and what the stage examined. */
   private readonly lethalTrials: LethalTrial[] = [];
   private deathLoopBinding: DeathLoopBinding | undefined;
+  private crushBinding: CrushBinding | undefined;
+  private readonly crushTrials: CrushTrial[] = [];
   /** What the die-retry stage examined — recorded on EVERY run, zero included. */
   private dieRetryBinding: DieRetryBinding | undefined;
   /** Set only when the harness itself died; `null` in the artifact otherwise. */
@@ -263,6 +272,15 @@ export class RunReport {
    * examined nothing must be legible as such from the artifact alone rather than
    * inferred from an empty trial list.
    */
+  /**
+   * Record what the crush stage walked: every declared crush gate's death, the
+   * denominator beside it, and each trial's respawn against the governing seat.
+   */
+  recordCrush(binding: CrushBinding, trials: readonly CrushTrial[]): void {
+    this.crushBinding = binding;
+    this.crushTrials.push(...trials);
+  }
+
   recordDeathLoop(binding: DeathLoopBinding, trials: readonly LethalTrial[]): void {
     this.deathLoopBinding = binding;
     this.lethalTrials.push(...trials);
@@ -518,6 +536,35 @@ export class RunReport {
       // The binding is stated first and always, including all zeros: a stage that
       // entered no volume examined nothing, and rule 1 makes that a finding rather
       // than a pass.
+      // The crush deaths walked, over the crush gates the build declares.
+      crush_deaths: {
+        binding:
+          this.crushBinding === undefined
+            ? null
+            : {
+                declared: this.crushBinding.declared,
+                entered: this.crushBinding.entered,
+                deaths_walked: this.crushBinding.deathsWalked,
+                respawns_at_governing: this.crushBinding.respawnsAtGoverning,
+                not_live: this.crushBinding.notLive,
+              },
+        trials: this.crushTrials.map((t) => ({
+          gate: t.gate,
+          at: t.at,
+          mouth: t.approach?.mouth ?? null,
+          stand: t.approach?.stand ?? null,
+          entered_region: t.enteredRegion,
+          died: t.died,
+          death_pos: t.deathPos ?? null,
+          credited: t.credited,
+          respawn_pos: t.respawnPos ?? null,
+          respawn_seat: t.respawnSeat ?? null,
+          expected_seats: [...t.expectedSeats],
+          respawned_at_governing: t.respawnedAtGoverning,
+          not_live_at_trial: t.notLiveAtTrial ?? null,
+          abandoned: t.abandoned ?? null,
+        })),
+      },
       death_loop: {
         binding:
           this.deathLoopBinding === undefined

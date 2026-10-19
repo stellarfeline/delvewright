@@ -255,7 +255,7 @@ fn timed_gate_json(g: &TimedGatePlan, (min, max): ([i32; 3], [i32; 3])) -> Value
 /// Normalize a gate region's inclusive corners to `(min, max)` componentwise, so the
 /// exported contract is a canonical bounding box regardless of which corner the
 /// anchor declared first.
-fn normalized_region((a, b): ([i32; 3], [i32; 3])) -> ([i32; 3], [i32; 3]) {
+pub(crate) fn normalized_region((a, b): ([i32; 3], [i32; 3])) -> ([i32; 3], [i32; 3]) {
     let mut min = [0; 3];
     let mut max = [0; 3];
     for i in 0..3 {
@@ -279,7 +279,7 @@ fn normalized_region((a, b): ([i32; 3], [i32; 3])) -> ([i32; 3], [i32; 3]) {
 /// what licenses the harness to retry a failed leg, and a blanket retry on legs the
 /// gate cannot block would mask real navigation regressions — the mark must mean
 /// "this gate can stop this walk", nothing looser.
-fn leg_crosses_gate(cells: &[[i32; 3]], region: ([i32; 3], [i32; 3])) -> bool {
+pub(crate) fn leg_crosses_gate(cells: &[[i32; 3]], region: ([i32; 3], [i32; 3])) -> bool {
     cells.iter().any(|c| occupies_gate(*c, region))
 }
 

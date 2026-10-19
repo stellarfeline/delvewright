@@ -190,38 +190,27 @@ fn emit_timed_gate_disarm_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &m
     );
 }
 
+/// Ticks a freshly spawned PackTest dummy refuses `/damage`: vanilla's player
+/// spawn invulnerability. Measured on the pinned toolserver: a dummy damaged
+/// 1000 `minecraft:generic` at tick 59 keeps 20 health, at tick 61 it is dead.
+const DUMMY_SPAWN_PROTECTION_TICKS: u32 = 60;
+
 /// spec-0016 §4 addendum PackTest: a `crush: true` gate's closing edge selects
-/// **exactly** the players standing in its region.
+/// **exactly** the players standing in its region, and **kills** the one that
+/// stands there.
 ///
-/// ## Why this asserts scoping rather than death
+/// The template waits out the dummy's spawn protection
+/// ([`DUMMY_SPAWN_PROTECTION_TICKS`]), then drives the real clock in one tick:
+/// the selector holds the dummy in the gate and releases it two blocks clear; a
+/// closing tick with the dummy clear leaves it alive; and a closing tick with the
+/// dummy standing in the region leaves it dead (`Health` 0). The respawn after
+/// that death is the bot tier's to walk (`validation/death-plan.json`).
 ///
-/// The obvious test — put a dummy in the gate, shut it, assert a corpse — cannot
-/// be written. **PackTest fake players are immune to `/damage`** (measured live
-/// on the pinned toolserver, 2026-08-03: a `# @dummy` reports
-/// `playerGameType: 0` (survival), yet `damage @s 1000 minecraft:generic` leaves
-/// `Health` at exactly 20.0, and an explicit `gamemode survival @s` first does
-/// not change that). A lethality assertion against a dummy is therefore
-/// permanently red no matter how correct the engine is. This is the same
-/// limitation that already pushed the `damage-players` PackTest onto a zombie
-/// dummy — and a zombie cannot stand in here, because the crush selects `@a`.
-///
-/// So the runtime rung proves the half it genuinely can, and the other halves are
-/// proven where they can be proven honestly:
-///
-/// * **scoping** (here, live, on real assembled geometry) — the emitted selector
-///   contains the player when they stand in the gate and excludes them when they
-///   step clear. The selector string is the *same* one `tgate_close_<id>` runs.
-/// * **lethality + ordering** — compiler unit tests assert the exact
-///   `execute as @a[…] run damage @s 1000 minecraft:generic` and that it precedes
-///   the `fill`.
-/// * **end-to-end death** — verified live against a real mineflayer client on
-///   pinned 1.21.11: parked two blocks clear of the region a player survives 30 s
-///   of repeated closing ticks at full health, and one closing tick with the same
-///   player standing inside kills them.
-///
-/// The test binds `@s`, not `@a`, on purpose: PackTest runs the whole suite in
-/// ONE shared world, so a sibling template's dummy standing in the same fixture
-/// cell would otherwise be counted. Emits nothing unless the gate opts in, so a
+/// The test binds `@s`, not `@a`: PackTest runs the whole suite in ONE shared
+/// world, so a sibling template's dummy standing in the same fixture cell would
+/// otherwise be counted. The jam score is pinned AFTER the wait as well as
+/// before it, because `souls_timed_gate_disarm` may jam the shared gate while
+/// this template waits. Emits nothing unless the gate opts in, so a
 /// non-crushing campaign's PackTest suite is byte-identical.
 fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mut BuildOutput) {
     if !g.crush {
@@ -238,38 +227,61 @@ fn emit_timed_gate_crush_packtest(plan: &Plan, g: &plan::TimedGatePlan, out: &mu
     // the same tick as the teleport so no fall or suffocation can confound it.
     let clear_x = from[0].max(to[0]) + 2;
 
+    let wait = DUMMY_SPAWN_PROTECTION_TICKS + 20;
     let mut b = packtest_header(&format!(
-        "{title}: timed gate `{}` judges exactly the players in its region (spec-0016 §4)",
+        "{title}: timed gate `{}` kills exactly the players in its region (spec-0016 §4)",
         g.id
     ));
+    // The wait below is longer than the shared header's budget.
+    b[2] = format!("# @timeout {}", wait + 100);
     b.push(format!("function {ns}:setup"));
     // Un-jam first, for the same reason the base template does: a jam left by
     // `souls_timed_gate_disarm` swallows the `tgate_close_` this test crushes
     // with, and the crush that never happens reads as a lethality failure.
     pin_tgdis(&mut b, g);
-    // Open first: a mistimed crossing leaves the player standing in an open
-    // gateway, which is the position the judgement must catch.
-    b.push(format!("function {ns}:tgate_open_{id}"));
-    b.push(format!(
+    // The dummy is spawn-protected; a kill judged before that ends judges the
+    // protection, not the gate.
+    b.push(format!("await delay {wait}t"));
+    pin_tgdis(&mut b, g);
+    let tp_inside = format!(
         "tp @s {} {} {}",
         fmt_f64(inside[0]),
         fmt_f64(inside[1]),
         fmt_f64(inside[2])
-    ));
-    b.push(format!(
-        "execute store success score #cr_in_{id} dw.sys if entity @s[{selector}]"
-    ));
-    b.push(format!("assert score #cr_in_{id} dw.sys matches 1"));
-    b.push(format!(
+    );
+    let tp_clear = format!(
         "tp @s {} {} {}",
         fmt_f64(f64::from(clear_x) + 0.5),
         fmt_f64(inside[1]),
         fmt_f64(inside[2])
+    );
+    // Open first: a mistimed crossing leaves the player standing in an open
+    // gateway, which is the position the judgement must catch.
+    b.push(format!("function {ns}:tgate_open_{id}"));
+    b.push(tp_inside.clone());
+    b.push(format!(
+        "execute store success score #cr_in_{id} dw.sys if entity @s[{selector}]"
     ));
+    b.push(format!("assert score #cr_in_{id} dw.sys matches 1"));
+    b.push(tp_clear);
     b.push(format!(
         "execute store success score #cr_out_{id} dw.sys if entity @s[{selector}]"
     ));
     b.push(format!("assert score #cr_out_{id} dw.sys matches 0"));
+    // A closing tick with the body clear of the region spares it.
+    b.push(format!("function {ns}:tgate_close_{id}"));
+    b.push(format!(
+        "execute store result score #cr_spared_{id} dw.sys run data get entity @s Health"
+    ));
+    b.push(format!("assert score #cr_spared_{id} dw.sys matches 1.."));
+    // A closing tick with the body standing in the region kills it.
+    b.push(format!("function {ns}:tgate_open_{id}"));
+    b.push(tp_inside);
+    b.push(format!("function {ns}:tgate_close_{id}"));
+    b.push(format!(
+        "execute store result score #cr_hp_{id} dw.sys run data get entity @s Health"
+    ));
+    b.push(format!("assert score #cr_hp_{id} dw.sys matches ..0"));
     out.insert(
         format!("packtest-datapack/data/{ns}/test/souls_timed_gate_crush_{id}.mcfunction"),
         lines(&b).into_bytes(),
