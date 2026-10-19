@@ -170,39 +170,6 @@ fn a_body_the_renderer_does_not_draw_is_reported_and_one_it_draws_is_not() {
     assert_eq!(same["undrawn"], serde_json::json!([]), "{same}");
 }
 
-/// Criterion 12: one sight rule — one `fn occluded_target`, in
-/// `compiler::framing`, and the index's `shows` read off the build's review
-/// record, which `framing::resolve_targets` wrote.
-#[test]
-fn one_sight_rule() {
-    let src = common::repo_root().join("crates/delvec/src");
-    let mut defs = Vec::new();
-    let mut stack = vec![src.clone()];
-    while let Some(d) = stack.pop() {
-        for e in std::fs::read_dir(&d).unwrap() {
-            let p = e.unwrap().path();
-            if p.is_dir() {
-                stack.push(p);
-            } else if p.extension().is_some_and(|x| x == "rs") {
-                let text = std::fs::read_to_string(&p).unwrap();
-                for l in text.lines() {
-                    if l.contains("fn occluded_target") {
-                        defs.push(p.strip_prefix(&src).unwrap().display().to_string());
-                    }
-                }
-            }
-        }
-    }
-    assert_eq!(defs, ["compiler/framing.rs"], "{defs:?}");
-    let review = std::fs::read_to_string(src.join("compiler/view/review.rs")).unwrap();
-    assert!(review.contains("framing::resolve_targets("));
-    let frameset = std::fs::read_to_string(src.join("compiler/view/frameset.rs")).unwrap();
-    assert!(
-        !frameset.contains("resolve_targets(") && !frameset.contains("occluded_target("),
-        "the index re-derives what a frame shows"
-    );
-}
-
 /// A campaign with no body the renderer cannot draw prints the measured zero:
 /// hello-world with its exit unmarked, so the keeper is its one body.
 #[test]

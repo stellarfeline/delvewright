@@ -934,8 +934,9 @@ a stated camera on the assembled world (`delvec cameras`, §4a), which no walk
 constrains. It
 keeps the anchor's facing and field of view and stands the body **back along the
 facing** to the far side of the space: one column at a time behind the anchor,
-while a body can stand there (one course of step), the anchor's eye stays in
-sight, and the column is under the anchor's cover — a stretch under the other
+while a body can stand there (one course of step), the anchor's eye cell stays
+in sight by the one sight rule (`framing::resolve_targets`, the rule every frame
+manifest's `occluded` is), and the column is under the anchor's cover — a stretch under the other
 cover is crossed only when the walk comes back out of it and it is shorter than
 the anchor's own cover already crossed (a louvre over a hearth, not a gatehouse
 passage). An eye shot answers *what does a body on the anchor see*; a guide who

@@ -5525,8 +5525,12 @@ rectangle, its subject box and the share of the frame the box takes).
 - **`screen_bbox`** is the projected inclusive cell box, clipped to the frame,
   in whole pixels, origin top-left; **`occluded`** = every one of nine sight
   lines (the box centre and the corners of a slightly inset box) meets a block
-  that is not part of the target (`framing::VoxelGrid::occluded_target`, the one
-  sight rule); **`out_of_frame`** carries every known target outside the frustum,
+  that is not part of the target (the one sight rule: `framing::resolve_targets`
+  is its one public entry point, its building blocks are private to
+  `compiler::framing`, and `every_consumer_of_the_sight_rule_agrees_with_it` in
+  `crates/delvec/src/cli/sight_agreement.rs` asks its consumers — the manifest,
+  `frames --campaign`'s and `edit`'s labels, the review rows, the room camera's
+  stand-back — the same seeded cases); **`out_of_frame`** carries every known target outside the frustum,
   so "the subject is absent entirely" is machine-visible.
 - **`frame`** is the verdict of the arm that drew it: `targets_in_frame`,
   `targets_out_of_frame` and `featureless` (`null`, or the distinct-colour count
