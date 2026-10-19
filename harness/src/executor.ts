@@ -311,6 +311,11 @@ export class MineflayerExecutor implements StepExecutor {
   readonly crushTried = new Set<string>();
   /** Whether crush gates are tried at the critical path's step boundaries. */
   crushOnPath = false;
+  /**
+   * The span of the crush gate whose mouth the crush stage is walking to: walled
+   * cell for cell on that walk instead of widened (`executor/walk.ts`).
+   */
+  crushApproachRegion: Box | undefined;
   /** Serial number of the last gate term asked — see {@link askTerm}. */
   gateAsks = 0;
   /**

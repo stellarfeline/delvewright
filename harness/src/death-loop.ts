@@ -1089,6 +1089,22 @@ export function lethalStepCost(
   return boxes.some((b) => volumeReachesCell(cell, b)) ? LETHAL_STEP_COST : 0;
 }
 
+/** Whether two boxes are the same box. */
+export function sameBox(a: Box, b: Box): boolean {
+  return [0, 1, 2].every((i) => a.lo[i] === b.lo[i] && a.hi[i] === b.hi[i]);
+}
+
+/**
+ * The exclusion cost of stepping on `block` when `box`'s own cells are a wall:
+ * {@link LETHAL_STEP_COST} inside it, 0 elsewhere — the span itself, never
+ * widened by a body's reach (that is {@link lethalStepCost}).
+ */
+export function spanStepCost(block: PathfinderCell | null | undefined, box: Box): number {
+  const p = block?.position;
+  if (p === undefined || p === null) return 0;
+  return inBox([p.x, p.y, p.z], box) ? LETHAL_STEP_COST : 0;
+}
+
 /** Every cell of an inclusive box, in a fixed order. */
 export function boxCells(box: Box): Vec3Tuple[] {
   const out: Vec3Tuple[] = [];

@@ -21,13 +21,6 @@ import type { TimedGate } from "../waypoints.ts";
 import { delay } from "./connection.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
-/**
- * How near the mouth the walk to it must end. The walk's navigator keeps out of
- * every cell a crush gate's selector can reach, the mouth's neighbours included,
- * so a range of one can leave no admissible cell at a narrow doorway.
- */
-const MOUTH_RANGE = 2;
-
 /** Re-aim cadence while the bot keeps its feet in the closing cells. */
 const HOLD_TICK_MS = 50;
 
@@ -137,16 +130,15 @@ export const methods = {
         return;
       }
     }
-    // The mouth is asked for with every crush region's own cells refused, so the
-    // probe never answers "reachable" by a walk through a gate; the walk itself
-    // ends within {@link MOUTH_RANGE} of the mouth, and the window wait's raw
-    // stance takes the last steps onto it.
-    const walls = plan.crushGates.map((g) => g.region);
-    const probes = gate.approaches.map((a) => ({
-      a,
-      ok: this.reachableFromHere(a.mouth, MOUTH_RANGE, walls),
-    }));
-    const approach = probes.find((p) => p.ok)?.a;
+    // The mouth itself is the goal, asked the way the walk to it will go: this
+    // gate's span walled cell for cell, every other crush gate kept out of as an
+    // unbound walk keeps out of it. A nearby goal is not the mouth: on the
+    // gallery the inner door's near mouth is a sealed vestibule, and a cell two
+    // away from it lies on the other side of its wall.
+    const others = plan.crushGates.filter((g) => g.id !== gate.id).map((g) => g.region);
+    const approach = gate.approaches.find((a) =>
+      this.reachableFromHere(a.mouth, 0, [gate.region], others),
+    );
     if (approach === undefined && !mustRun) {
       process.stderr.write(
         `[crush] ${gate.id} ${at}: no mouth reachable from ` +
@@ -176,13 +168,20 @@ export const methods = {
         `to ${trial.expectedSeats.join(" or ")}\n`,
     );
     const deathsBefore = this.deathSeq;
-    const fault = await this.walkPastReseated(
-      `crush approach to ${gate.id}`,
-      approach.mouth,
-      "the gate mouth",
-      undefined,
-      MOUTH_RANGE,
-    );
+    this.crushApproachRegion = gate.region;
+    const fault = await (async () => {
+      try {
+        return await this.walkPastReseated(
+          `crush approach to ${gate.id}`,
+          approach.mouth,
+          "the gate mouth",
+          undefined,
+          0,
+        );
+      } finally {
+        this.crushApproachRegion = undefined;
+      }
+    })();
     if (this.deathSeq !== deathsBefore) {
       trial.abandoned = `the bot died on the walk to the mouth, at ${
         this.lastDeath?.position ? `[${this.lastDeath.position.join(", ")}]` : "?"

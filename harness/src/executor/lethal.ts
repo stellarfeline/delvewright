@@ -14,7 +14,7 @@ import {
   volumeGateVerdict,
   volumeIsStaged,
   lethalStepCost,
-  LETHAL_STEP_COST,
+  spanStepCost,
   nearLip,
   openLethalTrial,
   seatAtRespawn,
@@ -352,20 +352,23 @@ export const methods = {
     dest: Vec3Tuple,
     range = 1,
     walls: readonly Box[] = [],
+    kept: readonly Box[] = [],
   ): boolean {
     const bot = this.requireBot();
     const movements = new Movements(bot);
     configureLeg(bot, movements, false);
     allowNonCollidingEntities(movements);
     this.applyLethalExclusion(movements);
-    // `walls`: boxes whose own cells the probe may not step in (a crush gate's
-    // span), refused cell for cell rather than widened by a body's reach.
+    // `walls`: boxes whose own cells the probe may not step in (the span of the
+    // crush gate whose mouth is the goal); `kept`: boxes kept out of as the walk
+    // keeps out of a crush gate it does not bind, widened by a body's reach.
     if (walls.length > 0) {
-      movements.exclusionAreasStep.push((block): number => {
-        const p = block?.position;
-        if (p === undefined || p === null) return 0;
-        return walls.some((w) => inBox([p.x, p.y, p.z], w)) ? LETHAL_STEP_COST : 0;
-      });
+      movements.exclusionAreasStep.push((block): number =>
+        walls.reduce((n, w) => n + spanStepCost(block, w), 0),
+      );
+    }
+    if (kept.length > 0) {
+      movements.exclusionAreasStep.push((block): number => lethalStepCost(block, kept));
     }
     const result = bot.pathfinder.getPathTo(
       movements,
