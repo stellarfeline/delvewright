@@ -622,3 +622,27 @@ def test_a_threshold_ledger_that_judges_no_trigger_is_a_zero_binding(tmp_path):
     ledger.unlink()
     zeroes = mod.read_build_ledgers(out)[1]
     assert len(zeroes) == 1 and zeroes[0].startswith("threshold-gate.json: absent"), zeroes
+
+
+def test_a_party_ledger_that_binds_no_join_or_carrier_is_a_zero_binding(tmp_path):
+    """spec-0018 on the gallery: the gallery declares an AND-join and a
+    `carrier: one` give, so a `party-division.json` binding no `party_join`
+    template or no two-player carrier template is a zero, as is a suite with no
+    party ledger beside it."""
+    mod = _load_checker()
+    out = tmp_path / "build"
+    (out / "validation").mkdir(parents=True)
+    row = {"objectives": 19, "and_joins": 1, "and_joins_bound": 1, "carrier_one": 1,
+           "carrier_one_judged": 1, "min_players": 1}
+    ledger = out / "validation" / "party-division.json"
+    ledger.write_text(json.dumps(row))
+    assert mod.read_build_ledgers(out)[1] == []
+    ledger.write_text(json.dumps({**row, "and_joins_bound": 0}))
+    assert mod.read_build_ledgers(out)[1] == ["party-division.json: `and_joins_bound` is 0"]
+    ledger.write_text(json.dumps({**row, "carrier_one_judged": 0}))
+    assert mod.read_build_ledgers(out)[1] == ["party-division.json: `carrier_one_judged` is 0"]
+    ledger.unlink()
+    assert mod.read_build_ledgers(out)[1] == []
+    (out / "packtest-datapack").mkdir()
+    zeroes = mod.read_build_ledgers(out)[1]
+    assert len(zeroes) == 1 and zeroes[0].startswith("party-division.json: absent"), zeroes

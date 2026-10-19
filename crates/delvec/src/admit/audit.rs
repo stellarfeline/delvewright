@@ -53,7 +53,7 @@ const HARD_FORBID_BE: &[&str] = &[
     "structure_block",
 ];
 
-use crate::admit::allowlist::Allowlist;
+use crate::admit::allowlist::{Allowlist, route_for};
 use crate::admit::diag::{DW_ALLOWLIST, DW_FORBIDDEN, DW_UNKNOWN_BLOCK, Diagnostic};
 use crate::admit::structure::Structure;
 
@@ -569,11 +569,19 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
                 Diagnostic::error(
                     DW_ALLOWLIST,
                     format!(
-                        "block `{}`{via} is not in the palette allowlist — swap it for an \
-                         allowlisted block, or, if the prefab genuinely needs it, propose adding \
-                         it to the allowlist under review. Do NOT bypass the allowlist to admit \
-                         the asset",
-                        judged.judged
+                        "block `{}`{via} is not in the palette allowlist — {}. If the prefab \
+                         genuinely needs the block as geometry, propose adding it to the \
+                         allowlist under review. Do NOT bypass the allowlist to admit the asset",
+                        judged.judged,
+                        match route_for(judged.judged) {
+                            Some(route) => format!(
+                                "the DSL has a surface for it, so take the block out of the \
+                                 prefab and {route}"
+                            ),
+                            None => "no DSL surface stands in for it, so swap it for an \
+                                     allowlisted block"
+                                .to_string(),
+                        }
                     ),
                 )
                 .at(b.pos),

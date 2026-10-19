@@ -150,10 +150,88 @@ impl RegionWrite {
     }
 }
 
-/// One resolved region write: the inclusive world box, and what the write leaves
-/// in it. A verb resolves to a LIST of these, because a way is a region of as
-/// many boxes as its contract gave it and each is written by its own `fill`.
-type ResolvedWrite = (([i32; 3], [i32; 3]), RegionWrite, Option<String>);
+/// One resolved region write: the inclusive world box, what the write leaves in
+/// it, and the block its command lays (`None` for air: a clear or an unseal). A
+/// verb resolves to a LIST of these, because a way is a region of as many boxes
+/// as its contract gave it and each is written by its own `fill`.
+pub(crate) type ResolvedWrite = (([i32; 3], [i32; 3]), RegionWrite, Option<String>);
+
+/// **What one effect writes into the world, resolved** — the one reading of
+/// "this effect lays that block in that box" every model of runtime writes
+/// takes: the region model ([`collect_region_events`]), the sculk proofs'
+/// every-block-at-once list (`sculk::runtime_writes`) and the loop's tiling
+/// (`r#loop`). Empty for an effect that writes no block, and for one whose
+/// anchor, box or way does not resolve (`DW0142`/`DW0343`/`DW0360`/`DW0547`'s
+/// finding, raised elsewhere).
+///
+/// Five spellings of one write, none of which owns it. A gate (`close-gate`,
+/// `open-gate`) names a prefab gate anchor and takes that anchor's box, its
+/// block and its `replace`-filtered clear; a `fill-region` / `clear-region`
+/// names its own anchor-centred box; a `set-block` is the one-cell case at a
+/// point anchor; an `open-way` names a placed piece's exported way and takes
+/// its cells, its block and its direction from the piece's metadata. What each
+/// leaves is read off its block ([`RegionWrite::of_block`]), never off the verb.
+pub(crate) fn effect_writes(
+    e: &QuestEffect,
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    ways: &crate::compiler::ways::WayStaging,
+) -> Vec<ResolvedWrite> {
+    let laid = |b: &str| {
+        let write = RegionWrite::of_block(b);
+        let block = (write != RegionWrite::Clear).then(|| b.to_string());
+        (write, block)
+    };
+    if let Some((anchor, fills)) = e.gate_region_write() {
+        return gate_region_block_any(anchors, anchor.as_str())
+            .map(|(from, to, gate_block)| {
+                vec![if fills {
+                    (
+                        (from, to),
+                        RegionWrite::of_block(&gate_block),
+                        Some(gate_block),
+                    )
+                } else {
+                    ((from, to), RegionWrite::Unseal, None)
+                }]
+            })
+            .unwrap_or_default();
+    }
+    if let Some((zone, block)) = e.region_write() {
+        return zone_box_in(anchors, zone)
+            .map(|r| {
+                vec![match block {
+                    Some(b) => (r, RegionWrite::of_block(b), Some(b.to_string())),
+                    None => (r, RegionWrite::Clear, None),
+                }]
+            })
+            .unwrap_or_default();
+    }
+    if let Some((anchor, block)) = e.set_block() {
+        // The emitter's own resolution (`anchor_point_any`): the first anchor of
+        // that name, a gate's `from` corner when it names a gate.
+        return point_any_in(anchors, anchor.as_str())
+            .map(|p| {
+                let (write, block) = laid(block);
+                vec![((p, p), write, block)]
+            })
+            .unwrap_or_default();
+    }
+    if let Some((piece, name)) = e.way_write() {
+        return ways
+            .resolve(piece.as_str(), name)
+            .map(|w| {
+                let (write, block) = match w.sign {
+                    crate::compiler::ways::Sign::Laid => {
+                        (RegionWrite::of_block(&w.block), Some(w.block.clone()))
+                    }
+                    crate::compiler::ways::Sign::Cleared => (RegionWrite::Clear, None),
+                };
+                w.boxes.iter().map(|b| (*b, write, block.clone())).collect()
+            })
+            .unwrap_or_default();
+    }
+    Vec::new()
+}
 
 #[derive(Clone, Debug)]
 pub struct RegionEvent {
@@ -529,55 +607,8 @@ pub(in crate::compiler::plan) fn collect_region_events(
             ),
         };
         let (fire_step, forced) = firing_of(site, path, &optional);
-        // The three spellings of one write. A gate names a prefab gate anchor and
-        // takes that anchor's box and its `replace`-filtered clear; a
-        // `fill-region`/`clear-region` names its own anchor-centred box and clears
-        // it outright; an `open-way` names a placed piece's exported way and takes
-        // its cells, its block and its direction from the piece's metadata. None
-        // of the three owns the model.
-        //
-        // A list rather than one box, because a way is a region with as many
-        // boxes as the contract gave it, and each is written by its own `fill`.
-        let resolved: Vec<ResolvedWrite> =
-            match (e.gate_region_write(), e.region_write(), e.way_write()) {
-                (Some((anchor, fills)), _, _) => gate_region_block_any(anchors, anchor.as_str())
-                    .map(|(from, to, gate_block)| {
-                        vec![if fills {
-                            (
-                                (from, to),
-                                RegionWrite::of_block(&gate_block),
-                                Some(gate_block),
-                            )
-                        } else {
-                            ((from, to), RegionWrite::Unseal, None)
-                        }]
-                    })
-                    .unwrap_or_default(),
-                (_, Some((zone, block)), _) => zone_box_in(anchors, zone)
-                    .map(|r| {
-                        vec![match block {
-                            Some(b) => (r, RegionWrite::of_block(b), Some(b.to_string())),
-                            None => (r, RegionWrite::Clear, None),
-                        }]
-                    })
-                    .unwrap_or_default(),
-                // An unresolvable way reference is `DW0547`'s finding, raised by
-                // `crate::compiler::ways` before this model is consulted; here it simply
-                // contributes nothing, exactly as a dangling anchor does.
-                (_, _, Some((piece, name))) => ways
-                    .resolve(piece.as_str(), name)
-                    .map(|w| {
-                        let (write, laid) = match w.sign {
-                            crate::compiler::ways::Sign::Laid => {
-                                (RegionWrite::of_block(&w.block), Some(w.block.clone()))
-                            }
-                            crate::compiler::ways::Sign::Cleared => (RegionWrite::Clear, None),
-                        };
-                        w.boxes.iter().map(|b| (*b, write, laid.clone())).collect()
-                    })
-                    .unwrap_or_default(),
-                _ => return,
-            };
+        // The one reading of what this effect writes ([`effect_writes`]).
+        let resolved = effect_writes(e, anchors, ways);
         if resolved.is_empty() {
             return; // an unresolvable anchor is DW0142/DW0343/DW0360's finding
         }
@@ -609,7 +640,90 @@ pub(in crate::compiler::plan) fn collect_region_events(
             });
         }
     });
+    // The props an objective places when it ACTIVATES (gap 13): a conjured
+    // `collect` chest, an `interact` prop. A runtime write like any other, read
+    // off the same one place the emitter reads it ([`activation_prop`]).
+    //
+    // Activation has no step of its own: the objective is placed the tick its
+    // gate first holds, which is some point before it completes and after load.
+    // So the prop is registered the way a write whose firing is uncertain is:
+    // sealed from load (unforced — it walls, and lays no footing a leg may
+    // stand on before it exists), and forced from the step the path completes
+    // the objective at (it is certainly there by then, wall and floor).
+    for q in &campaign.quests.content.quests {
+        let area = campaign
+            .quest_plan
+            .content
+            .quests
+            .iter()
+            .find(|p| p.id.as_str() == q.id.as_str())
+            .map_or("", |p| p.area.as_str());
+        for o in &q.objectives {
+            let Some((cell, block)) = activation_prop(anchors, area, o) else {
+                continue;
+            };
+            let write = RegionWrite::of_block(&block);
+            let region = (cell, cell);
+            if write.closes() {
+                out.push(
+                    RegionEvent::unforced(
+                        region,
+                        write,
+                        0,
+                        format!(
+                            "the `{block}` objective `{}` places when it activates, a point no \
+                             critical-path step dates",
+                            o.id()
+                        ),
+                    )
+                    .laying(&block),
+                );
+            }
+            if let Some(&step) = path.obj_step.get(o.id().as_str()) {
+                out.push(RegionEvent::forced(region, write, step).laying(&block));
+            }
+        }
+    }
     out
+}
+
+/// **The block an objective places when it activates, and where** (gap 13):
+/// a `collect` conjures a `minecraft:chest` at its anchor unless it adopts a
+/// container already in the world or its item is dropped by a fight; an
+/// `interact` places its `prop` at its anchor. `None` for every other
+/// objective and for an anchor that is not a point in the quest's area.
+///
+/// The one list: the activation function the datapack runs
+/// (`emit::objective::activation_commands`) and the region model
+/// ([`collect_region_events`]) both read it, so the block the model walls a
+/// leg with is the block the server places.
+pub(crate) fn activation_prop(
+    anchors: &BTreeMap<(String, String), ResolvedAnchor>,
+    area: &str,
+    o: &Objective,
+) -> Option<([i32; 3], String)> {
+    let point = |anchor: &str| match anchors.get(&(area.to_string(), anchor.to_string())) {
+        Some(ResolvedAnchor::Point { pos, .. }) => Some(*pos),
+        _ => None,
+    };
+    match o {
+        Objective::Collect {
+            anchor, dropped_by, ..
+        } => {
+            if dropped_by.is_some()
+                || o.collect_container()
+                    .is_some_and(|c| point_any_in(anchors, c.as_str()).is_some())
+            {
+                return None;
+            }
+            point(anchor.as_str()).map(|p| (p, "minecraft:chest".to_string()))
+        }
+        Objective::Interact { anchor, .. } => {
+            let prop = o.prop()?;
+            point(anchor.as_str()).map(|p| (p, prop.block.clone()))
+        }
+        _ => None,
+    }
 }
 
 /// **Every flag write and datum the region model reads off one path**
@@ -890,4 +1004,31 @@ pub(crate) fn collect_way_openings(
         });
     });
     out
+}
+
+impl Plan<'_> {
+    /// **The props the datapack sets at load, as region writes** — every
+    /// trigger's `prop` ([`crate::compiler::pressable::trigger_props`], the list
+    /// `setup_finish` writes), forced at step 0: nobody plays a beat for a lever
+    /// to stand where the world was shipped with it. What each leaves is read
+    /// off its block ([`RegionWrite::of_block`]), so a lever or a button is a
+    /// pass and a chiselled block is a wall.
+    ///
+    /// Added to every path's events ([`Plan::build`],
+    /// [`Plan::branch_gate_model`]) once the plan exists, because the list is the
+    /// plan's: the synthesized press answers join the author's triggers there.
+    pub(crate) fn load_prop_events(&self) -> Vec<RegionEvent> {
+        crate::compiler::pressable::trigger_props(self)
+            .into_iter()
+            .map(|(_, p)| {
+                let write = RegionWrite::of_block(&p.block);
+                let ev = RegionEvent::forced((p.pos, p.pos), write, 0);
+                if write == RegionWrite::Clear {
+                    ev
+                } else {
+                    ev.laying(&p.block)
+                }
+            })
+            .collect()
+    }
 }

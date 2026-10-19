@@ -18,7 +18,7 @@ use delvec::compiler::registry::PrefabRegistry;
 const BIN: &str = env!("CARGO_BIN_EXE_delvec");
 
 fn tempdir(name: &str) -> PathBuf {
-    let p = std::env::temp_dir().join(format!("dw-one-place-{name}"));
+    let p = std::env::temp_dir().join(format!("dw-one-place-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
     p

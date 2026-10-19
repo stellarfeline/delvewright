@@ -24,7 +24,7 @@ fn hw(name: &str) -> String {
 
 /// A private copy of the prefab library with one extra `hello-room` point anchor.
 fn prefabs_with_anchor(name: &str, anchor: &str, pos: [i32; 3]) -> PathBuf {
-    let dir = std::env::temp_dir().join(name);
+    let dir = std::env::temp_dir().join(format!("{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(&common::prefabs_dir(), &dir);
     let path = dir.join("hello-room.json");
@@ -633,4 +633,181 @@ fn a_critical_path_over_a_runtime_laid_step_builds() {
         "the exported route must actually stand on the laid step: {waypoints:#}"
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// --- `set-block`: the one-cell write, in the same one model ----------------
+
+/// The four cells of the only doorway a body's height takes — feet and head,
+/// west and east (local `[4..5, 1..2, 6]` → world `[4..5, 65..66, 6]`) — as
+/// `(anchor, local cell, world cell)`. Four `set-block`s there leave a body no
+/// way through: a feet-cell block alone is a step a body climbs onto, under
+/// the doorway's third cell.
+const DOORWAY_BODY: [(&str, [i32; 3], [i32; 3]); 4] = [
+    ("anchor/feet-west", [4, 1, 6], [4, 65, 6]),
+    ("anchor/feet-east", [5, 1, 6], [5, 65, 6]),
+    ("anchor/head-west", [4, 2, 6], [4, 66, 6]),
+    ("anchor/head-east", [5, 2, 6], [5, 66, 6]),
+];
+
+/// A private copy of the prefab library with a point anchor on each cell of
+/// [`DOORWAY_BODY`].
+fn prefabs_with_doorway_body(name: &str) -> PathBuf {
+    let (first, pos, _) = DOORWAY_BODY[0];
+    let dir = prefabs_with_anchor(name, first, pos);
+    let path = dir.join("hello-room.json");
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    for (anchor, pos, _) in &DOORWAY_BODY[1..] {
+        meta["anchors"][anchor] = serde_json::json!({ "pos": pos });
+    }
+    std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+    dir
+}
+
+/// `hello-world` whose `obj/talk` bundle, after opening the doorway, sets
+/// `block` on every cell of [`DOORWAY_BODY`], feet first — on the leg to the
+/// exit the party must still walk.
+fn doorway_set_with(tag: &str, block: &str) -> (Campaign, PathBuf) {
+    let dir = prefabs_with_doorway_body(&format!("dw-set-block-{tag}"));
+    let effects: String = DOORWAY_BODY
+        .iter()
+        .map(|(anchor, _, _)| {
+            format!(r#", {{ "type": "set-block", "anchor": "{anchor}", "block": "{block}" }}"#)
+        })
+        .collect();
+    let c = parse_hw(&quests_doc(&effects));
+    (c, dir)
+}
+
+/// **A `set-block` that walls the critical path after its beat is refused**
+/// (`DW0311`): stone set on the doorway's feet and head cells by the beat
+/// that opens it leave the leg to the exit no way through. Before a
+/// `set-block` entered the region model, every proof routed through the stone
+/// and the build shipped a delve whose own beat made it impassable.
+#[test]
+fn a_set_block_that_walls_the_critical_path_is_dw0311() {
+    let (c, dir) = doorway_set_with("stone", "minecraft:stone");
+    let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    for (_, _, cell) in DOORWAY_BODY {
+        assert!(
+            plan.region_events
+                .iter()
+                .any(|e| e.write == RegionWrite::Fill
+                    && e.is_forced()
+                    && e.block() == Some("minecraft:stone")
+                    && e.region == (cell, cell)),
+            "the set-block at {cell:?} reaches the model as a forced Fill laying stone"
+        );
+    }
+    match try_build(&c, &dir) {
+        Err(emit::BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0311", "wrong code: {message}");
+        }
+        other => panic!("a set-block wall over the only doorway must be refused: {other:?}"),
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// **The same `set-block`s of a block a body passes through build**: a
+/// `minecraft:light` on each cell (no collision box in the pinned collision
+/// table, and held by nothing, so it stands wherever it is set) reaches the
+/// model as a Pass and leaves the leg walkable — same anchors, same beat, only
+/// the block differs. The datapack still sets all four.
+#[test]
+fn a_set_block_of_a_non_colliding_block_in_the_same_place_builds() {
+    let (c, dir) = doorway_set_with("light", "minecraft:light");
+    let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    assert_eq!(
+        plan.region_events
+            .iter()
+            .filter(|e| e.write == RegionWrite::Pass && e.block() == Some("minecraft:light"))
+            .count(),
+        DOORWAY_BODY.len(),
+        "every set-block reaches the model as a Pass"
+    );
+    let out = try_build(&c, &dir).expect("light blocks in the doorway leave it walkable");
+    let functions = all_functions(&out);
+    for (_, _, [x, y, z]) in DOORWAY_BODY {
+        let line = format!("setblock {x} {y} {z} minecraft:light");
+        assert!(functions.contains(&line), "the datapack sets `{line}`");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// **An objective's activation prop is a runtime write in the same model**: an
+/// `interact` whose `prop` is stone is sealed from load without footing (it
+/// is placed when the objective activates, which no step dates) and forced
+/// from the step the path completes it at, laying the block the datapack's
+/// activation function sets.
+#[test]
+fn an_activation_prop_enters_the_region_model() {
+    let dir = prefabs_with_shelf("dw-activation-prop");
+    let doc = quests_doc("").replace(
+        r#"{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },"#,
+        r#"{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
+          { "type": "interact", "id": "obj/press", "anchor": "anchor/shelf",
+            "prop": { "block": "minecraft:stone" }, "after": ["obj/talk"] },"#,
+    );
+    assert!(
+        doc.contains("obj/press"),
+        "the interact objective was spliced in"
+    );
+    let c = parse_hw(&doc);
+    let prefabs = PrefabRegistry::load_dir(&dir).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let cell = [1, 68, 1];
+    let at: Vec<_> = plan
+        .region_events
+        .iter()
+        .filter(|e| e.region == (cell, cell) && e.block() == Some("minecraft:stone"))
+        .collect();
+    assert!(
+        at.iter()
+            .any(|e| !e.is_forced() && e.fire_step == 0 && e.write == RegionWrite::Fill),
+        "sealed, unforced, from load: {at:?}"
+    );
+    let step = plan.objective_steps["obj/press"];
+    assert!(
+        at.iter()
+            .any(|e| e.is_forced() && e.fire_step == step && e.write == RegionWrite::Fill),
+        "forced from its own step {step}: {at:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// **A gated trap's trigger toggle writes nothing a body meets**: the
+/// datapack's `trap_gate_on` / `trap_gate_off` set the trigger cell to its
+/// authored block or to air, and a gate is admitted only over the blocks
+/// `is_passable_trap_trigger` accepts. Judged by collision, over every block of
+/// the pinned registry: each one it accepts passes a body and floors nothing,
+/// so neither state of the toggle can change a walk, and the region model does
+/// not carry it.
+#[test]
+fn every_gatable_trap_trigger_block_is_one_a_body_passes() {
+    use delvewright_dsl::blocks::BlockRegistry;
+    use delvewright_dsl::blockshape::{
+        collision_class, is_passable_trap_trigger, passes_body, supports_body,
+    };
+    let accepted: Vec<&str> = BlockRegistry::v1_21_11()
+        .ids()
+        .filter(|id| is_passable_trap_trigger(id))
+        .collect();
+    assert!(
+        accepted.len() > 2,
+        "the rule binds the plates and the tripwire: {accepted:?}"
+    );
+    for id in &accepted {
+        assert!(
+            passes_body(id) && !supports_body(id),
+            "`{id}` is a gatable trap trigger but collides: {:?}",
+            collision_class(id)
+        );
+    }
+    eprintln!(
+        "gatable trap triggers: {} block(s) of {} in the registry judged by collision",
+        accepted.len(),
+        BlockRegistry::v1_21_11().len()
+    );
 }

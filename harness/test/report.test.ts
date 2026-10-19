@@ -90,7 +90,14 @@ test("the ladder's labelled stages: spec-0023's two, framed by spec-0025's branc
   // are about — a passed critical path means something different on each branch.
   // `death-loop` comes last because it deliberately kills the player:
   // it is the one stage that must not run until everything else is proven.
-  assert.deepEqual([...STAGES], ["branch-run", "critical-path", "die-retry", "death-loop"]);
+  // `crush-death` follows it: its last trials also run after the proven path.
+  assert.deepEqual([...STAGES], [
+    "branch-run",
+    "critical-path",
+    "die-retry",
+    "death-loop",
+    "crush-death",
+  ]);
 });
 
 test("a report for a build with no branches carries no branches section at all", () => {

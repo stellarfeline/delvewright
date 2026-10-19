@@ -102,11 +102,9 @@ fn activation_lines(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
             let Some(pos) = adopted.or_else(|| plan.point(area, anchor.as_str())) else {
                 return cmds;
             };
-            if adopted.is_none() {
-                cmds.push(format!(
-                    "setblock {} {} {} minecraft:chest",
-                    pos[0], pos[1], pos[2]
-                ));
+            // The conjured chest, from the one list the region model reads.
+            if let Some((p, block)) = plan::activation_prop(&plan.anchors, area, o) {
+                cmds.push(format!("setblock {} {} {} {block}", p[0], p[1], p[2]));
             }
             // The objective's own stack lands in `container.0`; each padding stack
             // repeats it in the slots after it, so the container READS full
@@ -130,11 +128,11 @@ fn activation_lines(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
                 // spec-0093 §6.5: a prop a hand presses IS the thing. The block
                 // is placed and nothing else: no hitbox, no marker — vanilla's
                 // `default_block_use` at this cell completes the objective.
-                if let Some(block) = crate::compiler::pressable::interact_block(o) {
-                    cmds.push(format!(
-                        "setblock {} {} {} {}",
-                        pos[0], pos[1], pos[2], block
-                    ));
+                let prop = plan::activation_prop(&plan.anchors, area, o);
+                if crate::compiler::pressable::interact_block(o).is_some() {
+                    if let Some((p, block)) = &prop {
+                        cmds.push(format!("setblock {} {} {} {block}", p[0], p[1], p[2]));
+                    }
                     return cmds;
                 }
                 let e = ent_xyz(pos);
@@ -147,13 +145,10 @@ fn activation_lines(plan: &Plan, area: &str, o: &Objective) -> Vec<String> {
                         interact_entity_tag(id.as_str())
                     )),
                 );
-                if let Some(prop) = o.prop() {
+                if let Some((p, block)) = &prop {
                     // v0.4: the prop block IS the affordance (spec-0008 §2) — place
                     // it at the anchor. No hologram marker: the block is visible.
-                    cmds.push(format!(
-                        "setblock {} {} {} {}",
-                        pos[0], pos[1], pos[2], prop.block
-                    ));
+                    cmds.push(format!("setblock {} {} {} {block}", p[0], p[1], p[2]));
                 } else if o.marker_shown(&plan.campaign.quests.content.guidance) {
                     // Visible, glowing, adventure-safe marker so a human can find the
                     // interact target (M2 fix 3): an `item_display` has no collision,

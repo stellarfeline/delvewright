@@ -449,10 +449,15 @@ pub(super) fn plan_payload_verbs(
         }
     }
     // A trap is proven in its SPRUNG state (see `check_collapses`).
-    let labelled: Vec<(String, crate::compiler::nav::CollapseGeometry)> = out
+    let labelled: Vec<(String, std::collections::BTreeSet<[i32; 3]>)> = out
         .collapses
         .iter()
-        .map(|c| (format!("collapse `{}`", c.key), c.geom.clone()))
+        .map(|c| {
+            (
+                format!("collapse `{}`", c.key),
+                c.geom.walls(&c.falling_block, c.then_floor.as_deref()),
+            )
+        })
         .collect();
     crate::compiler::nav::check_collapses(plan, world, &labelled)?;
     Ok(out)

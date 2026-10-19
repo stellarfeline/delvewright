@@ -2789,3 +2789,73 @@ def test_coverage_only_judges_the_ledger_and_mints_nothing(gate, tmp_path):
     proc = _run_gate(base + ["--coverage-only", "--admit", str(tmp_path / "t.json")])
     assert proc.returncode == 2, proc.stderr
     assert not (tmp_path / "t.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# `bell-08` binds the respawn points the proof examined, not the pairs it made
+# ---------------------------------------------------------------------------
+
+
+def respawn_ledger(*, examined, pairs, hostiles=()):
+    return {
+        "code": "DW0478",
+        "examined": examined,
+        "hostiles": list(hostiles),
+        "pairs": pairs,
+        "unbound": pairs == 0,
+    }
+
+
+def bell08_verdict(gate, tmp_path, *, declared, ledger):
+    row = live_rows(gate, {"bell-08"})["bell-08"]
+    camp = make_campaign(tmp_path, objectives=[{"type": "set-checkpoint"}] * declared)
+    build = make_build(tmp_path, validation={"respawn-safety.json": ledger})
+    return gate.adjudicate(row, engine_of(gate), gate.Subject(camp, build))
+
+
+def test_respawn_points_with_no_hostile_force_are_examined_and_stage(gate, tmp_path):
+    """Three respawn points, no hostile force: the proof covered all three and
+    made no comparison because there is nothing to compare against. A declaration
+    of zero forces is legitimate; the gate states the count and does not refuse."""
+    v = bell08_verdict(
+        gate, tmp_path, declared=3, ledger=respawn_ledger(examined=3, pairs=0)
+    )
+    assert v["verdict"] == "BOUND", v
+    assert v["binding"] == 3
+    assert "respawn-safety.json:examined = 3" in v["detail"]
+
+
+def test_a_proof_that_covered_none_of_the_declared_points_stays_unbound(gate, tmp_path):
+    """The campaign declares three respawn points and the proof examined none:
+    the row's own population went unexamined. Planted by the artifact, which is
+    the only thing a defect in the proof can write."""
+    v = bell08_verdict(
+        gate,
+        tmp_path,
+        declared=3,
+        ledger=respawn_ledger(examined=0, pairs=0, hostiles=["wave/a"]),
+    )
+    assert v["verdict"] == "UNBOUND", v
+    assert v["binding"] == 0
+    assert v["precondition"] == 3
+
+
+def test_the_examined_respawn_points_bind_whatever_the_pairs_are(gate, tmp_path):
+    """The existing island shape: points and forces compared."""
+    v = bell08_verdict(
+        gate,
+        tmp_path,
+        declared=3,
+        ledger=respawn_ledger(examined=3, pairs=8, hostiles=["a", "b"]),
+    )
+    assert (v["verdict"], v["binding"]) == ("BOUND", 3), v
+
+
+def test_no_respawn_point_declared_is_inapplicable(gate, tmp_path):
+    v = bell08_verdict(
+        gate,
+        tmp_path,
+        declared=0,
+        ledger=respawn_ledger(examined=0, pairs=0),
+    )
+    assert v["verdict"] == "INAPPLICABLE", v

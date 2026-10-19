@@ -65,6 +65,7 @@ mod npc;
 mod objective;
 mod onkill;
 mod packtest;
+pub use packtest::{PartyBinding, party_binding};
 mod piece;
 mod proofs;
 mod pulse;
@@ -1010,6 +1011,11 @@ pub fn build_with_warnings(
             watch_binding: &watch_binding,
         },
     );
+    // spec-0018 criterion 1: the party-division checks state what they bound,
+    // counted off the suite just emitted.
+    let party = packtest::party_binding(plan, &out);
+    eprintln!("{}", party.line());
+    put_json(&mut out, "validation/party-division.json", &party.to_json());
 
     // ---- creator overlay (playtest-only; spec-0006) ----
     // A self-contained module (crate::compiler::creator). Its `.mcfunction`s are plain

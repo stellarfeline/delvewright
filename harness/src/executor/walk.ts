@@ -7,7 +7,7 @@ import pathfinderPkg from "mineflayer-pathfinder";
 import type { ReachStep, Transport, Vec3Tuple } from "../critical-path.ts";
 import { insideCompletion, reachGoal } from "../critical-path.ts";
 import { BotDeathError } from "../death.ts";
-import { lethalStepCost } from "../death-loop.ts";
+import { lethalStepCost, sameBox, spanStepCost } from "../death-loop.ts";
 import { allowNonCollidingEntities, configureLeg, describeStuckNeighbours } from "../movement.ts";
 import {
   nextLegWaypoints,
@@ -28,6 +28,7 @@ import {
   unstagedCrushBoxes,
 } from "../timed-gate.ts";
 import { delay, withTimeout, fmt } from "./connection.ts";
+import { POLL_MS } from "./clock.ts";
 import {
   VIBRATION_TAIL_TICKS,
   legLine,
@@ -36,7 +37,7 @@ import {
   type LegStart,
   type Vibration,
 } from "../sculk.ts";
-import { GameTimeStalledError, gameTicksBudgetMs } from "../game-time.ts";
+import { GameClockWatch } from "../game-time.ts";
 import { watchStops } from "../watch.ts";
 import { ControlTakenError } from "./cutscene.ts";
 import { type GateAssist, crossTimedGate } from "./timed-gate.ts";
@@ -637,9 +638,19 @@ export const methods = {
         // between two proven cells meets the closing edge blind, which is how a
         // gallery walk to the east bay died at the inner door. A walk that binds
         // the gate stages it at its proven mouth instead.
-        const unstaged = unstagedCrushBoxes(declaredGates, walkGates);
+        // The crush stage's walk to a gate's mouth (`executor/crush.ts`) ends ON
+        // the mouth, a cell that gate's widened keep-out refuses: that one gate is
+        // walled cell for cell instead, which keeps the walk out of its span and
+        // lets it stand where the window is waited for.
+        const mouthOf = this.crushApproachRegion;
+        const unstaged = unstagedCrushBoxes(declaredGates, walkGates).filter(
+          (b) => mouthOf === undefined || !sameBox(b, mouthOf),
+        );
         if (unstaged.length > 0) {
           movements.exclusionAreasStep.push((block): number => lethalStepCost(block, unstaged));
+        }
+        if (mouthOf !== undefined) {
+          movements.exclusionAreasStep.push((block): number => spanStepCost(block, mouthOf));
         }
         // Stated binding count, once per walk, for every campaign that declares a
         // gate at all: how many of the declared gates bind this walk, which they
@@ -817,18 +828,16 @@ export const methods = {
     let through: number | undefined;
     if (heard.missing.length > 0) {
       const purpose = `${label}: the sculk tail`;
-      const budgetMs = gameTicksBudgetMs(VIBRATION_TAIL_TICKS);
-      const deadline = Date.now() + budgetMs;
+      let watch: GameClockWatch | undefined;
       for (;;) {
         const reading = await this.readGameTime(purpose);
         heard = this.sculk.hear(vibrations, start, Date.now());
         end ??= reading.tick;
         through = reading.tick;
         if (heard.missing.length === 0 || reading.tick >= end + VIBRATION_TAIL_TICKS) break;
-        if (Date.now() >= deadline) {
-          throw new GameTimeStalledError(purpose, VIBRATION_TAIL_TICKS, reading.tick - end, budgetMs);
-        }
-        await delay(50);
+        watch ??= new GameClockWatch(purpose, end, VIBRATION_TAIL_TICKS);
+        watch.observe(reading.tick, performance.now());
+        await delay(POLL_MS);
       }
     }
     process.stderr.write(`${legLine(label, heard, start, through)}\n`);

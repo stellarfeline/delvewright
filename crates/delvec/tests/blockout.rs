@@ -1464,7 +1464,7 @@ fn variant(
     edit: impl FnOnce(&mut serde_json::Value),
     heightmap: Option<&dyn Fn(i64, i64) -> i64>,
 ) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("dw-place-shell-{tag}"));
+    let dir = std::env::temp_dir().join(format!("dw-place-shell-{}-{tag}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(&fixture_dir(), &dir);
     if let Some(h) = heightmap {
@@ -1884,7 +1884,10 @@ fn the_ring_is_the_terrain_and_a_door_stands_on_its_sill() {
 /// `tag`: the materialisation deletes and regenerates its directory, so two
 /// tests sharing one would delete each other's generator output mid-write.
 fn gallery_site_plan(tag: &str) -> Campaign {
-    let dir = std::env::temp_dir().join(format!("dw-place-shell-gallery-site-plan-{tag}"));
+    let dir = std::env::temp_dir().join(format!(
+        "dw-place-shell-gallery-site-plan-{}-{tag}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     common::gallery_site_plan_at(&dir);
     common::campaign_at(&dir)

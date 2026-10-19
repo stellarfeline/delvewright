@@ -11,7 +11,7 @@ This module's rows of a section whose prose is on the [`delvec::compiler::contin
 
 | Code | Meaning |
 |------|---------|
-| `DW0353` | A world-edits batch writes inside a `close-gate` region (spec-0017). The gameplay seal fills that region solid and `open-gate` clears it to **air**, so one close/open cycle erases the edit — the dressing `delvec frames --campaign` shows is not what players see after the beat fires. Advisory (exit 0), `compiler::edit`, one finding per colliding gate region: dressing the *sealed* state is a legitimate authorial intent, so this reports rather than rejects. |
+| `DW0353` | A world-edits batch writes inside a region a runtime write lays its own block in (spec-0017; every region the region model reads: a `close-gate`, a `fill-region`, a `set-block`, a laid way, a trigger's or an objective's prop), so the write replaces the edit, and a gate's `open-gate` clears it to **air** — the dressing `delvec frames --campaign` shows is not what players see once the write lands. Advisory (exit 0), `compiler::edit`, one finding per colliding region: dressing the *sealed* state is a legitimate authorial intent, so this reports rather than rejects. |
 
 ### DW03xx — build / solver / nav (`compiler`; error; exit 3, `stage:"build"`)
 

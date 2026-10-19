@@ -250,6 +250,44 @@ never stood for by wall time: a server that falls behind stretches the game's
 spans, and one that catches up shrinks them. A predicted event not heard fails
 the step.
 
+**A game-tick wait fails only on a stopped clock.** Every wait for the server's
+game ticks (the watch line's tick, a pulse station's stand, the sculk tail) has
+no wall-clock budget; it fails, `GameTimeStoppedError`, only when the server
+keeps answering and its game time does not move (`GameClockWatch`,
+`harness/src/game-time.ts`). The judge sums, since the last reading at another
+tick, only the gaps of at most 500ms between consecutive answered readings (on
+a monotonic clock, so a host that steps its wall clock makes no gap), and
+the clock is stopped when that sum reaches 10s at one tick. A live game ticks at
+least once a second (the pinned server refuses a `/tick rate` below 1), so prompt
+answers sit on one tick for about a second at most; a slow server answers late
+or at a later tick; a host stall, of the server or the bot, is one long gap and
+adds nothing. A server that answers nothing fails the reading itself,
+`GameTimeUnreadError`. `harness/probe/clock-stopped.ts` drives the wait on a
+live server at the slowest legal rate (it passes) and under `/tick freeze` (it
+reds).
+
+**A loop's crossing is judged by the move the loop owes, in game ticks.** A
+loop's tick line moves every body in its slab in the tick the server holds it
+there, so a `loop` step's crossing (`harness/src/loop-cross.ts`,
+`MineflayerExecutor.crossSlab`) has no wall-clock budget. The crossing walk aims
+at the slab's own cell, never past it: the server reads a body's position once
+per tick, after every movement packet queued since the last, so a server that
+falls behind while the bot walks on sees the body jump from before the slab to
+beyond it, and the loop never holds it. The body's position is
+taken before each game-time reading is sent, so the server held the body there
+when it answered, and a move sent by then arrives before the answer. The
+crossing fails `LoopNotMovedError` when the body has stood at or past the slab's
+near face through 20 game ticks with no forced move; `LoopWalkBarrenError` when
+8 trips toward the slab in a row ended short of it without taking the body
+0.1 block further along the loop's axis; `LoopWalkStalledError` when, short of
+the slab, 20s of live answers (summed as `GameClockWatch` sums them) pass with
+the body not advancing 0.1 block; and `GameTimeStoppedError` on a stopped
+clock. A trip that ends short is walked again: the pinned pathfinder resolves a
+trip on an empty partial path, which its 40ms-per-tick search returns when the
+host stalls the bot mid-search, so a trip ended short says nothing about the
+loop. A slow server stretches the 20 ticks and a stalled host stops them;
+neither fails a crossing.
+
 **The binding count.** Every walk whose leg carries vibrations prints
 `[sculk] <walk>: N sensor(s) predicted, N heard; M shrieker(s) predicted, M heard (leg start at game tick T, B predicted device(s) busy then[; heard through game tick U])`.
 At the end of every run, passed or failed, `[sculk] darkness D, warden W`

@@ -35,6 +35,7 @@ import {
   deathLoopCoverage,
   loadDeathPlanForCriticalPath,
 } from "./death-loop.ts";
+import { crushBinding, crushLine, crushStage } from "./crush-death.ts";
 import {
   RunReport,
   redRunMessage,
@@ -300,13 +301,17 @@ async function main(): Promise<number> {
   // not an inference. What rule 1 requires is that the zero is REPORTED, which is
   // what the finding below does.
   const deathLoop = deathPlan !== undefined && !deathPlan.binding.unbound && deathLoopFromEnv();
+  // The crush deaths: ON whenever the plan declares a crush gate, whatever the
+  // volume half binds — a crush gate kills with or without an `on_death`.
+  const crush = deathPlan !== undefined && deathPlan.crushGates.length > 0 && deathLoopFromEnv();
   if (deathPlan) {
     executor.useDeathPlan(deathPlan);
     const b = deathPlan.binding;
     process.stderr.write(
       `death plan: ${b.volumes} lethal volume(s), ${b.onDeathEffects} on_death effect(s), ` +
         `${b.stakes} stake(s), ${b.seats} respawn seat(s), ${b.rows} placement row(s); ` +
-        `death-loop stage ${deathLoop ? "ON" : "SKIPPED"}\n`,
+        `death-loop stage ${deathLoop ? "ON" : "SKIPPED"}; ${deathPlan.crushGates.length} crush ` +
+        `gate(s), crush-death stage ${crush ? "ON" : "SKIPPED"}\n`,
     );
     if (b.unbound) {
       // playtest-methodology rule 1, at the earliest possible moment: a contract
@@ -449,6 +454,7 @@ async function main(): Promise<number> {
           // which it is live and reachable; whatever no boundary admits is
           // tried after the path.
           if (deathLoop) executor.armDeathLoopOnPath();
+          if (crush) executor.armCrushOnPath();
           await runSequence(criticalPath, executor, {
             retryOnDeath: retryOnDeathFromEnv(),
           });
@@ -459,6 +465,8 @@ async function main(): Promise<number> {
           // A trial at a boundary recovers the bot and walks it back to where
           // the path left off, so no later step walks out of a grave.
           if (deathLoop) await executor.runDeathLoop();
+          // The crush gates no step boundary walked, from where the path ended.
+          if (crush) await executor.runCrushDeaths(criticalPath.steps.length - 1);
         })(),
         budgetMs,
       );
@@ -661,6 +669,26 @@ async function main(): Promise<number> {
     }
     if (deathBinding) report.recordDeathLoop(deathBinding, lethalTrials);
     report.stage(deathStage);
+    // The crush deaths, over the crush gates the build declares.
+    const crushTrials = executor.crushTrialsMade();
+    if (deathPlan && deathPlan.crushGates.length > 0) {
+      const b = crushBinding(deathPlan, crushTrials);
+      process.stderr.write(`${crushLine(b)}\n`);
+      report.recordCrush(b, crushTrials);
+    }
+    report.stage(
+      crushStage({
+        enabled: crush,
+        disabledReason:
+          deathPlan === undefined || deathPlan.crushGates.length === 0
+            ? "this build declares no crush gate, so there is no crush death to walk"
+            : "skipped via DELVEWRIGHT_DEATH_LOOP=0",
+        pathProven,
+        interruption: pathProven && failure !== undefined ? describe(failure) : undefined,
+        plan: deathPlan,
+        trials: crushTrials,
+      }),
+    );
     report.recordDieRetryBinding(retryBinding);
     report.stage({
       stage: "die-retry",

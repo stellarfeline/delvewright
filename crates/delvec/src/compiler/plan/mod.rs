@@ -1216,7 +1216,7 @@ impl<'a> Plan<'a> {
             }
         }
 
-        Ok(Self {
+        let mut plan = Self {
             campaign,
             namespace,
             seed,
@@ -1263,7 +1263,12 @@ impl<'a> Plan<'a> {
             design_files: crate::compiler::design::DesignFiles::default(),
             waterline,
             face_binding: binding,
-        })
+        };
+        // The props the datapack sets at load, which only the finished plan can
+        // list ([`Plan::load_prop_events`]).
+        let props = plan.load_prop_events();
+        plan.region_events.extend(props);
+        Ok(plan)
     }
 
     /// Attach the approved reference images the campaign directory holds

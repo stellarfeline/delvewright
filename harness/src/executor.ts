@@ -12,6 +12,7 @@
 
 import type { Bot } from "mineflayer";
 import type { Vec3Tuple } from "./critical-path.ts";
+import type { ServerMove } from "./loop-cross.ts";
 import type { StepExecutor } from "./sequencer.ts";
 import { BotDeathError } from "./death.ts";
 import { NavigationOwner } from "./navigation.ts";
@@ -28,6 +29,7 @@ import {
 import { type MusterBody, type MusterSummary, type MusterVerdict } from "./muster.ts";
 import { ReplyBrackets } from "./command-reply.ts";
 import { type Box, type DeathPlan, type LethalTrial } from "./death-loop.ts";
+import type { CrushTrial } from "./crush-death.ts";
 import { type ClientLoadedState } from "./client-loaded.ts";
 import type { ResourcePackState } from "./resource-pack.ts";
 import { type LoadWindowTracer } from "./load-window.ts";
@@ -38,7 +40,6 @@ import type { PulsePlan } from "./pulse.ts";
 import type { CueEvent, CueLedger } from "./cues.ts";
 import { type Waypoints } from "./waypoints.ts";
 import type { BotConfig } from "./executor/connection.ts";
-import { LOOP_CROSS_TIMEOUT_MS } from "./executor/loop.ts";
 import { ENTITY_SETTLE_TIMEOUT_MS } from "./executor/settle.ts";
 import type { StagedRemoval } from "./executor/staging.ts";
 import type { TriggerEcho } from "./executor/trigger.ts";
@@ -62,6 +63,7 @@ import { methods as pulseMethods } from "./executor/pulse.ts";
 import { methods as cueMethods } from "./executor/cue.ts";
 import { methods as scoreMethods } from "./executor/score.ts";
 import { methods as lethalMethods } from "./executor/lethal.ts";
+import { methods as crushMethods } from "./executor/crush.ts";
 import { methods as stakeMethods } from "./executor/stake.ts";
 import { methods as waveMethods } from "./executor/wave.ts";
 import { methods as dieRetryMethods } from "./executor/die-retry.ts";
@@ -303,6 +305,17 @@ export class MineflayerExecutor implements StepExecutor {
   deathLoopOnPath = false;
   /** The declared volumes a trial has been opened for, at a boundary or after the path. */
   readonly deathLoopTried = new Set<string>();
+  /** Every walk into a crush gate's closing cells this run made. */
+  readonly crushTrials: CrushTrial[] = [];
+  /** The declared crush gates a trial has been opened for. */
+  readonly crushTried = new Set<string>();
+  /** Whether crush gates are tried at the critical path's step boundaries. */
+  crushOnPath = false;
+  /**
+   * The span of the crush gate whose mouth the crush stage is walking to: walled
+   * cell for cell on that walk instead of widened (`executor/walk.ts`).
+   */
+  crushApproachRegion: Box | undefined;
   /** Serial number of the last gate term asked — see {@link askTerm}. */
   gateAsks = 0;
   /**
@@ -321,18 +334,13 @@ export class MineflayerExecutor implements StepExecutor {
    * pathfinder so a path computed in the old area cannot survive the jump.
    */
   lastForcedPos: { x: number; y: number; z: number } | undefined;
-  /**
-   * spec-0086 §6: where the bot stood at the last physics tick — the position a
-   * server-forced move's delta is measured from. mineflayer applies the position
-   * packet between ticks and then emits `forcedMove`, so this is the position the
-   * move started from.
-   */
-  tickPos: { x: number; y: number; z: number } | undefined;
+  /** The last clientbound `position` packet, raw, taken before mineflayer applied it. */
+  lastPositionPacket: unknown;
   /** The loops the path exercises, by id → offset (spec-0086 §6). A forced move
    * during a plain walk whose delta is one of these fails that walk. */
   loopOffsets = new Map<string, Vec3Tuple>();
-  /** While a loop step crosses: every forced move's delta, in order. */
-  loopWatch: { deltas: Vec3Tuple[] } | undefined;
+  /** While a loop step crosses: every forced move, as its position packet stated it, in order. */
+  loopWatch: { moves: Array<ServerMove | undefined> } | undefined;
   /** A forced move during a plain walk that equals a loop's offset: the proof
    * and the game disagree about the loop's gate. Thrown by the walk it ended. */
   loopFault: Error | undefined;
@@ -351,10 +359,6 @@ export class MineflayerExecutor implements StepExecutor {
   clockReads = 0;
   /** What the placement wait measured, once the world read placed. */
   placement: PlacementRecord | undefined;
-  /** spec-0086 §6: how long one loop crossing may take. Overridable
-   * (`DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS`) so a test can reach the give-up path
-   * without waiting out the production default. */
-  readonly loopCrossTimeoutMs: number;
   /**
    * The compiler's proven per-leg critical-path waypoints (keyed by
    * destination anchor). When a walked step's target has a leg here, `walkTo`
@@ -574,10 +578,6 @@ export class MineflayerExecutor implements StepExecutor {
     this.entitySettleTimeoutMs =
       Number.isInteger(settleParsed) && settleParsed >= 0 ? settleParsed : ENTITY_SETTLE_TIMEOUT_MS;
     this.placementTimeoutMs = placementTimeoutFromEnv(env);
-    const crossRaw = env["DELVEWRIGHT_LOOP_CROSS_TIMEOUT_MS"];
-    const crossParsed = crossRaw === undefined ? NaN : Number.parseInt(crossRaw, 10);
-    this.loopCrossTimeoutMs =
-      Number.isInteger(crossParsed) && crossParsed > 0 ? crossParsed : LOOP_CROSS_TIMEOUT_MS;
   }
 
   /** spec-0029 name-preference binding counters (see {@link NamePreference}). */
@@ -609,6 +609,7 @@ type Methods = typeof connectionMethods &
   typeof cueMethods &
   typeof scoreMethods &
   typeof lethalMethods &
+  typeof crushMethods &
   typeof stakeMethods &
   typeof waveMethods &
   typeof dieRetryMethods &
@@ -623,4 +624,4 @@ type Methods = typeof connectionMethods &
   typeof placementMethods &
   typeof clockMethods;
 export interface MineflayerExecutor extends Methods {}
-for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, pulseMethods, cueMethods, scoreMethods, lethalMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods]) Object.assign(MineflayerExecutor.prototype, methods);
+for (const methods of [connectionMethods, chatMethods, objectiveMethods, triggerMethods, interactMethods, classMethods, talkMethods, walkMethods, timedGateMethods, climbMethods, cutsceneMethods, transportMethods, loopMethods, sustainMethods, deathMethods, repaintMethods, pulseMethods, cueMethods, scoreMethods, lethalMethods, crushMethods, stakeMethods, waveMethods, dieRetryMethods, stagingMethods, musterMethods, restMethods, witnessMethods, watchMethods, crosshairMethods, collectMethods, settleMethods, placementMethods, clockMethods]) Object.assign(MineflayerExecutor.prototype, methods);
