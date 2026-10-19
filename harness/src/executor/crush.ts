@@ -50,6 +50,39 @@ function asTimedGate(g: CrushGate): TimedGate {
 
 /** The executor's methods this file holds; `executor.ts` installs them on its prototype. */
 export const methods = {
+  /**
+   * Out of a gate's span after a closing edge spared the body: wait for the
+   * gate to read open, then drive raw onto `mouth` until the feet are clear.
+   */
+  async leaveSpan(this: MineflayerExecutor, tg: TimedGate, mouth: Vec3Tuple): Promise<void> {
+    const bot = this.requireBot();
+    const feet = this.feetCell();
+    if (feet === undefined || !insideGate(feet, tg)) return;
+    await this.waitForGateWindow([tg]);
+    const deadline = Date.now() + cycleMs(tg);
+    try {
+      while (Date.now() < deadline) {
+        const now = this.feetCell();
+        if (now !== undefined && !insideGate(now, tg)) break;
+        const p = bot.entity.position;
+        try {
+          await bot.lookAt(p.offset(mouth[0] + 0.5 - p.x, 0, mouth[2] + 0.5 - p.z), true);
+        } catch {
+          // best effort
+        }
+        bot.setControlState("forward", true);
+        await delay(HOLD_TICK_MS);
+      }
+    } finally {
+      bot.clearControlStates();
+    }
+    const out = this.feetCell();
+    process.stderr.write(
+      `[crush] ${tg.id}: ${out !== undefined && !insideGate(out, tg) ? "stepped back out onto" : "could NOT step back out onto"} ` +
+        `the mouth [${mouth.join(", ")}]\n`,
+    );
+  },
+
   /** Every crush trial this run made, and what it observed. */
   crushTrialsMade(this: MineflayerExecutor): readonly CrushTrial[] {
     return this.crushTrials;
@@ -228,6 +261,10 @@ export const methods = {
       process.stderr.write(
         `[crush] ${gate.id}: ${trial.enteredRegion ? "stood in the closing cells and is alive" : "never got into the closing cells"}\n`,
       );
+      // A body the closing edge spared is shut inside the fill. It waits for the
+      // next window and steps back out onto the mouth, so the path goes on from
+      // ground it was proven from and the stage reports the crush that failed.
+      await this.leaveSpan(tg, approach.mouth);
       return;
     }
     const pos = (this.death ?? this.lastDeath)?.position;
