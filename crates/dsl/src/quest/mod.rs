@@ -49,8 +49,8 @@ pub struct QuestsContent {
     pub actors: Vec<Actor>,
     /// Traps (DSL v0.6, spec-0011; command payloads spec-0022): environmental
     /// hazards, each at one point anchor an area's prefab provides. Each says
-    /// what springs the trap, what it then does (a command `payload`, a legacy
-    /// dispenser `effect`, or both), how dangerous it is, how it is disarmed and
+    /// what springs the trap, what it then does (a command `payload`), how
+    /// dangerous it is, how it is disarmed and
     /// whether it re-arms. Empty/absent in pre-0.6 campaigns, so a v0.5-or-earlier campaign that declares none stays
     /// byte-identical.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

@@ -2,6 +2,11 @@
 
 use super::*;
 
+/// The function holding every trap's per-tick detection clauses, which the
+/// tick calls and the generated PackTest drives. Not `trap_fire_`-prefixed: that
+/// prefix is the per-trap family, keyed by trap id.
+pub(super) const TRAP_DETECT_FN: &str = "trap_detect";
+
 /// The content key naming a spec-0022 trap-payload verb's generated function.
 /// FNV-1a over the **verb's** `Debug` rendering, so two identical `volley`s share
 /// one function body. The guard is not part of it: emission wraps the call, never
@@ -213,41 +218,63 @@ pub(super) fn trap_gate_fns(
     out
 }
 
-/// `setup_finish` commands for traps (spec-0011): fill each `dispense` trap's
-/// prefab dispenser with its static payload (`item replace block … container.0`,
-/// the same deterministic mechanism as a `collect` chest — no raw NBT), and summon
-/// the disarm affordance's interaction entity. The trap's *harm* needs no command:
-/// the plate/tripwire/trapped-chest → dispenser redstone is already in the prefab.
-/// Empty for a campaign with no traps → byte-identical.
+/// A trapped-chest trap's open, as vanilla reports it: the
+/// `minecraft:default_block_use` criterion at the chest's own cell (the one
+/// [`block_use_criterion`] every block-bound press and `interact` is dispatched
+/// by). Vanilla raises it whenever a block's empty-hand use consumes the click,
+/// and a chest's always does, opening its menu — so the open IS the trigger and
+/// nothing stands in the cell to take the click from the chest. Named
+/// `trap_open_<safe>`, advancement and reward function alike.
+pub(super) fn trap_open_advancements(plan: &Plan) -> Vec<(String, Value)> {
+    let ns = &plan.namespace;
+    trap_opens(plan)
+        .map(|t| {
+            (
+                format!("trap_open_{}", t.safe),
+                json!({
+                    "criteria": {
+                        "open": block_use_criterion("minecraft:trapped_chest", t.trigger_cell)
+                    },
+                    "rewards": { "function": format!("{ns}:trap_open_{}", t.safe) }
+                }),
+            )
+        })
+        .collect()
+}
+
+/// The traps whose trigger is a trapped chest's open: every `trapped-chest`
+/// trap with a payload for the detection to fire.
+fn trap_opens<'p>(plan: &'p Plan) -> impl Iterator<Item = &'p plan::TrapPlan> {
+    plan.traps.iter().filter(|t| {
+        t.trigger == delvewright_dsl::TrapTrigger::TrappedChest && !t.payload_effects.is_empty()
+    })
+}
+
+/// The reward of `trap_open_<safe>`: revoke the grant, so every open is
+/// reported, and record the open in `#trapopen_<safe>` for the detection pass
+/// to read and clear. The chest's menu is vanilla's and opens either way.
+fn trap_open_fns(plan: &Plan) -> Vec<(String, String)> {
+    let ns = &plan.namespace;
+    trap_opens(plan)
+        .map(|t| {
+            (
+                format!("trap_open_{}", t.safe),
+                lines(&[
+                    format!("advancement revoke @s only {ns}:trap_open_{}", t.safe),
+                    format!("scoreboard players set #trapopen_{} dw.sys 1", t.safe),
+                ]),
+            )
+        })
+        .collect()
+}
+
+/// `setup_finish` commands for traps (spec-0011): summon the disarm
+/// affordance's interaction entity, and seed the gated traps' hardware. A
+/// trapped chest summons nothing: its open is reported by vanilla
+/// ([`trap_open_advancements`]). Empty for a campaign with no traps.
 pub(super) fn trap_setup(plan: &Plan, gate_hardware: &BTreeMap<String, String>) -> Vec<String> {
     let mut out = Vec::new();
     for t in &plan.traps {
-        // Fill the pre-wired dispenser with the declared payload.
-        if let (Some(disp), Some((item, count))) = (t.dispenser, &t.payload) {
-            out.push(format!(
-                "item replace block {} {} {} container.0 with {item} {count}",
-                disp[0], disp[1], disp[2]
-            ));
-        }
-        // spec-0022: a `trapped-chest` trigger with a command payload needs a
-        // detection surface, and the only player-distinct one vanilla offers is
-        // the v0.4 interaction entity (`use`) — the SAME primitive the disarm
-        // affordance already uses. Reading the chest's redstone output would be
-        // block-power polling, which spec-0011 excluded as folklore.
-        //
-        // No `affordance_hardware` accompanies this one (cf. `DW0420` below):
-        // the trapped chest IS the visible hardware, authored in the prefab as
-        // the trap's trigger block. The invisible-lever failure that rule exists
-        // to catch is an interaction with nothing to look at — not the case here.
-        if !t.payload_effects.is_empty() && t.trigger == delvewright_dsl::TrapTrigger::TrappedChest
-        {
-            out.push(
-                crate::compiler::clickbox::ClickBox::column(t.trigger_cell, 2).summon(&format!(
-                    "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_trapfire_{}\"]",
-                    t.safe
-                )),
-            );
-        }
         // Summon the disarm interaction affordance (a right-click target) and
         // the visible hardware that makes it findable. The prefab may ALSO dress
         // the cell, but the compiler no longer depends on that: an invisible
@@ -292,9 +319,14 @@ pub(super) fn trap_tick(plan: &Plan) -> Vec<String> {
     //
     // Detection reuses the two primitives already in the compiler and adds none:
     // a plate/tripwire is a POSITION test on the trigger cell (the `reach-anchor`
-    // idiom), a trapped chest is the v0.4 interaction `use`. Neither reads block
-    // power — that would be the polling hack spec-0011 excluded.
-    out.extend(trap_fire_tick(plan));
+    // idiom), a trapped chest is its open as vanilla reports it
+    // (`default_block_use`, [`trap_open_advancements`]). Neither reads block
+    // power — that would be the polling hack spec-0011 excluded. The clauses
+    // live in their own function so the generated PackTest runs exactly what
+    // the tick runs.
+    if !trap_fire_tick(plan).is_empty() {
+        out.push(format!("function {ns}:{TRAP_DETECT_FN}"));
+    }
     for t in &plan.traps {
         if t.disarm.is_none() {
             continue;
@@ -316,10 +348,9 @@ pub(super) fn trap_tick(plan: &Plan) -> Vec<String> {
 }
 
 /// Disarm functions (`trap_disarm_<id>`) for disarmable traps (spec-0011). Firing
-/// once (`#trapdis_<id>` sentinel): set the disarm flag party-wide (so
-/// `requires_flags` reads elsewhere see it) and **empty the dispenser** — the
-/// modeled, global disarm that actually stops a redstone-native dispense trap for
-/// everyone. Empty for a campaign with no disarmable traps.
+/// once (`#trapdis_<id>` sentinel, which the fire guard reads): set the disarm
+/// flag party-wide (so `requires_flags` reads elsewhere see it) and retire the
+/// affordance's visible hardware. Empty for a campaign with no disarmable traps.
 pub(super) fn trap_fns(
     plan: &Plan,
     gate_hardware: &BTreeMap<String, String>,
@@ -337,14 +368,6 @@ pub(super) fn trap_fns(
             plan::PARTY,
             plan::flag_score(&dis.sets_flag)
         ));
-        if let Some(disp) = t.dispenser {
-            // Empty the dispenser to an empty stack list — the modeled, global disarm
-            // that actually stops a redstone-native dispense trap (no ammo → no fire).
-            body.push(format!(
-                "data modify block {} {} {} Items set value []",
-                disp[0], disp[1], disp[2]
-            ));
-        }
         // The lever has been thrown: the disarm affordance is spent, so its
         // visible hardware retires with it. The ONE function allowed to do this
         // — `DW0421` fails the build if any other machinery reaches it.
@@ -355,6 +378,11 @@ pub(super) fn trap_fns(
         out.push((format!("trap_disarm_{id}"), lines(&body)));
     }
     out.extend(trap_payload_fns(plan));
+    out.extend(trap_open_fns(plan));
+    let detect = trap_fire_tick(plan);
+    if !detect.is_empty() {
+        out.push((TRAP_DETECT_FN.to_string(), lines(&detect)));
+    }
     out.extend(trap_gate_fns(plan, gate_hardware));
     let gate_tick = trap_gate_tick(plan);
     if !gate_tick.is_empty() {
@@ -620,10 +648,9 @@ pub(super) fn collapse_fns(plan: &Plan, payloads: &PayloadPlans) -> Vec<(String,
 /// flag gate (when the trap declares one) and the disarm latch (when it has a
 /// disarm affordance).
 ///
-/// The disarm latch is load-bearing in a way it was not for a redstone trap:
-/// emptying a dispenser stopped a `dispense` trap for everyone, but a command
-/// payload has no ammunition to remove, so "disarmed" has to be read at fire
-/// time or the affordance would be decorative.
+/// The disarm latch is load-bearing: a command payload has no ammunition to
+/// remove, so "disarmed" has to be read at fire time or the affordance would be
+/// decorative.
 pub(super) fn trap_fire_guard(t: &plan::TrapPlan) -> String {
     let mut g = String::new();
     if trap_is_gated(t) {
@@ -646,8 +673,8 @@ pub(super) fn trap_fire_guard(t: &plan::TrapPlan) -> String {
 /// (the plate pops back up); a `once` trap never clears it, which is exactly the
 /// survivability discharge `DW0342` reasons about.
 ///
-/// A trap with no command payload emits nothing here, so every spec-0011
-/// campaign stays byte-identical.
+/// The body of [`TRAP_DETECT_FN`], which the tick calls; empty for a campaign
+/// with no traps.
 pub(super) fn trap_fire_tick(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
@@ -659,20 +686,19 @@ pub(super) fn trap_fire_tick(plan: &Plan) -> Vec<String> {
         let guard = trap_fire_guard(t);
         match t.trigger {
             delvewright_dsl::TrapTrigger::TrappedChest => {
-                out.push(format!(
-                    "execute unless score #trapfire_{id} dw.sys matches 1 {guard}if entity \
-                     @e[tag=dw_trapfire_{id},nbt={{interaction:{{}}}}] run function \
-                     {ns}:trap_fire_{id}"
-                ));
-                out.push(format!(
-                    "execute as @e[tag=dw_trapfire_{id}] run data remove entity @s interaction"
-                ));
+                // Every open sets `#trapopen_` and the pass consumes it, so a
+                // `rearm` chest is re-armed at the head of each pass. Clearing it
+                // after the record is consumed, as a plate is cleared once its
+                // cell empties, would clear it in the very pass that fired it and
+                // leave nothing to read that the trap fired.
                 if matches!(t.reset, delvewright_dsl::TrapReset::Rearm) {
-                    out.push(format!(
-                        "execute unless entity @e[tag=dw_trapfire_{id},nbt={{interaction:{{}}}}] \
-                         run scoreboard players set #trapfire_{id} dw.sys 0"
-                    ));
+                    out.push(format!("scoreboard players set #trapfire_{id} dw.sys 0"));
                 }
+                out.push(format!(
+                    "execute unless score #trapfire_{id} dw.sys matches 1 {guard}if score \
+                     #trapopen_{id} dw.sys matches 1 run function {ns}:trap_fire_{id}"
+                ));
+                out.push(format!("scoreboard players set #trapopen_{id} dw.sys 0"));
             }
             delvewright_dsl::TrapTrigger::PressurePlate
             | delvewright_dsl::TrapTrigger::Tripwire => {

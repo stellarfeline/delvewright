@@ -79,7 +79,7 @@ can say anything back** — the seal.
 | 7 | `shortcuts[].unlock` — interaction half private; `on_unlock` already uses the general effect vocabulary. | `emit.rs:4749` | `EnvTrigger{on:use}` | L |
 | 8 | `bonfire` — private body **and** a private two-option dialog with its own strings, instead of the stage-6 dialogue machinery. | `emit.rs:4040`, `emit.rs:5382` | `DialogueNode`/`DialogueOption` | L |
 | 9 | `Objective::Interact` — own affordance and own `missing_item_hint` refusal reply. The activation-gated body is legitimate; the *reply* need not be private. | `emit.rs:8479`, `emit.rs:2234` | `narrate` | L |
-| 10 | Trapped-chest fire body. | `emit.rs:7548` | `EnvTrigger` | L |
+| 10 | **CLOSED.** ~~Trapped-chest fire body.~~ The chest summons no body: its open is vanilla's `default_block_use` at the chest's cell (`emit::trap_open_advancements`, through `block_use_criterion`, the block-bound press every `use` trigger and `interact` on a hand-pressed prop takes), so no box stands over the chest to take its click. | `emit::trap_open_advancements` | `block_use_criterion` | closed |
 
 **Consequence of S2, measured.** Ten of the twelve handlers answer a press with
 **silence**, and no author-facing field exists in which to say otherwise
@@ -275,7 +275,7 @@ binding**, because a gate that matched nothing is vacuous, not a pass.
 
 | Check | Binds today |
 |---|---|
-| A — every `summon minecraft:interaction`, or call to the click-box rule (`ClickBox::column`/`sized`), keyed by enclosing fn | 15 sites |
+| A — every `summon minecraft:interaction`, or call to the click-box rule (`ClickBox::column`/`sized`), keyed by enclosing fn | 14 sites |
 | B — every compiler-baked player-facing English string | 3 constants (spec-0029 moved two behind `dsl::chrome`) |
 | C — DSL structs declared separately with an identical field set | 2 groups (the camera position types are one `Mark` at spec-0066; `HorizonSpec`/`ResolvedHorizon` joined at spec-0026: one class in its two states, `Option<T>` on the wire and `T` once resolved, which the check cannot see because it compares field names) |
 | D — cross-cutting modifier absent from some variants of a tagged enum | 3 (enum, field) pairs (the gate's three fields left the ledger when the effect's guard became one `Guard` under `when`, carried by every verb; `QuestEffect.happening` left it at spec-0031 — see finding 12, which is still open) |

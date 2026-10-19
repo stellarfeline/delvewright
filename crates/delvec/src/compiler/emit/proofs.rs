@@ -510,6 +510,23 @@ pub(super) fn check_finished_tree(
         &claim_binding.to_json(&breaches),
     );
 
+    // The trap-fire claim's own binding: the aggregate above counts every
+    // mechanic, so a trap family that stopped binding would hide in the sum.
+    let trap_claim = watch_claims
+        .iter()
+        .find(|c| c.mechanic == "trap-fire")
+        .expect("the trap-fire claim is registered for every campaign");
+    let trap_fire =
+        crate::compiler::trap_trigger::TrapFireBinding::measure(ns, &plan.traps, out, trap_claim);
+    eprintln!("{}", trap_fire.line());
+    put_json(out, "validation/trap-fire.json", &trap_fire.ledger());
+    if let Some(message) = trap_fire.finding() {
+        return Err(BuildFailure::Diagnostic {
+            code: crate::compiler::watch::DW_CLAIM_NOT_DISCHARGED,
+            message,
+        });
+    }
+
     if let Some(d) = crate::compiler::watch::claim_finding(&claim_binding, &breaches) {
         return Err(BuildFailure::Diagnostic {
             code: crate::compiler::watch::DW_CLAIM_NOT_DISCHARGED,

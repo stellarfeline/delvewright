@@ -14,18 +14,12 @@ pub struct TrapPlan {
     /// The declared trigger kind (informs the hazard model + PackTest).
     pub trigger: TrapTrigger,
     /// The `anchor/trap` marker this trap sits on — the key into prefab metadata
-    /// for its hardware declarations (`dispenser`, `trigger_block`).
+    /// for its hardware declaration (`trigger_block`).
     pub at_anchor: String,
     /// The resolved absolute trigger/hazard cell (the trap's `at` anchor cell).
     pub trigger_cell: [i32; 3],
-    /// The resolved absolute dispenser socket cell (from the `at` anchor's
-    /// `dispenser` metadata), or `None` if the prefab exposes none.
-    pub dispenser: Option<[i32; 3]>,
-    /// The dispense payload `(item, count)` this trap loads, if any.
-    pub payload: Option<(String, u32)>,
     /// The spec-0022 **command payload**: the ordered effect bundle the trigger
-    /// fires. Empty for a pure spec-0011 redstone trap, which is what keeps such
-    /// a campaign's output byte-identical.
+    /// fires. Never empty in a validated campaign (`DW0440`).
     pub payload_effects: Vec<QuestEffect>,
     /// How dangerous the trap is.
     pub lethality: Lethality,
@@ -56,18 +50,12 @@ pub struct TrapDisarmPlan {
 pub(super) fn collect_traps(
     campaign: &Campaign,
     anchors: &BTreeMap<(String, String), ResolvedAnchor>,
-    dispenser_cells: &BTreeMap<(String, String), [i32; 3]>,
 ) -> Vec<TrapPlan> {
     let mut out = Vec::new();
     for t in &campaign.quests.content.traps {
         let Some(trigger_cell) = point_any(anchors, t.at.as_str()) else {
             continue;
         };
-        let dispenser = dispenser_cells
-            .iter()
-            .find(|((_, name), _)| name == t.at.as_str())
-            .map(|(_, cell)| *cell);
-        let payload = t.dispense().map(|(item, count)| (item.to_string(), count));
         let payload_effects = t.payload.clone();
         let disarm = t.disarm.as_ref().and_then(|dis| {
             point_any(anchors, dis.via.as_str()).map(|via_cell| TrapDisarmPlan {
@@ -82,8 +70,6 @@ pub(super) fn collect_traps(
             trigger: t.trigger,
             at_anchor: t.at.as_str().to_string(),
             trigger_cell,
-            dispenser,
-            payload,
             payload_effects,
             lethality: t.lethality,
             reset: t.reset,

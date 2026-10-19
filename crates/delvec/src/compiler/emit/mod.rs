@@ -415,13 +415,6 @@ pub fn build_with_warnings(
     // container is, so it is proven off the same assembled (or edited) world, in
     // the same pass, rather than by a second model that could disagree with this
     // one about what is in the room.
-    let has_steps = plan
-        .campaign
-        .quests
-        .content
-        .triggers
-        .iter()
-        .any(|t| matches!(t.on, delvewright_dsl::TriggerOn::Step));
     // A fill whose cell lies in a place still standing in its stand-in is owed by
     // that place's detail: judged by the build that details it, counted here.
     let (judged_loot, judged_fills, containers) = crate::compiler::loot::split_owed_by_detail(
@@ -431,11 +424,7 @@ pub fn build_with_warnings(
         &plan.collect_fills,
     );
     eprintln!("{}", containers.line());
-    if !plan.loot.is_empty()
-        || !plan.collect_fills.is_empty()
-        || !plan.traps.is_empty()
-        || has_steps
-    {
+    if !plan.loot.is_empty() || !plan.collect_fills.is_empty() {
         let blocks = &assembled.blocks;
         // What the world actually HAS, computed once and handed to both proofs.
         // A refusal that tells an author to point at "an anchor whose cell
@@ -460,14 +449,14 @@ pub fn build_with_warnings(
                 code: e.code,
                 message: e.message,
             })?;
-        // DW0917: a trap's trigger is prefab hardware on the same terms as a
-        // container, so it is proven off the same block map.
-        crate::compiler::trap_trigger::check_trap_triggers(blocks, &plan.traps, &plan.anchors)
-            .map_err(|e| BuildFailure::Diagnostic {
-                code: e.code,
-                message: e.message,
-            })?;
-        // DW0917's `step` half: a step trigger's plate is the same hardware.
+    }
+
+    // DW0917: a trap's trigger is prefab hardware on the same terms as a
+    // container, so it is proven off the same block map — and, like every proof,
+    // it states what it bound to, whether or not the campaign declares a trap.
+    // DW0917's `step` half: a step trigger's plate is the same hardware.
+    {
+        let blocks = &assembled.blocks;
         let steps: Vec<crate::compiler::trap_trigger::StepCell<'_>> = plan
             .campaign
             .quests
@@ -484,12 +473,53 @@ pub fn build_with_warnings(
                 })
             })
             .collect();
-        crate::compiler::trap_trigger::check_step_triggers(blocks, &steps, &plan.anchors).map_err(
-            |e| BuildFailure::Diagnostic {
-                code: e.code,
-                message: e.message,
-            },
-        )?;
+        let (hardware_cells, edit_batches, edit_writes) = (
+            crate::compiler::edit::trap_hardware(plan).len(),
+            edit_replay
+                .as_ref()
+                .map_or(0, |er| er.trap_hardware_judged.0),
+            edit_replay
+                .as_ref()
+                .map_or(0, |er| er.trap_hardware_judged.1),
+        );
+        let mut trap_binding = crate::compiler::trap_trigger::TrapBinding::declared(
+            &plan.traps,
+            plan.campaign
+                .quests
+                .content
+                .triggers
+                .iter()
+                .filter(|t| matches!(t.on, delvewright_dsl::TriggerOn::Step))
+                .count(),
+            hardware_cells,
+            edit_batches,
+            edit_writes,
+        );
+        let trap_cells =
+            crate::compiler::trap_trigger::check_trap_triggers(blocks, &plan.traps, &plan.anchors);
+        let step_cells =
+            crate::compiler::trap_trigger::check_step_triggers(blocks, &steps, &plan.anchors);
+        trap_binding.judged(
+            *trap_cells.as_ref().unwrap_or(&0),
+            *step_cells.as_ref().unwrap_or(&0),
+        );
+        // The line prints before the verdict, so a refusal carries its denominator.
+        eprintln!("{}", trap_binding.line());
+        put_json(
+            &mut out,
+            "validation/trap-binding.json",
+            &trap_binding.ledger(),
+        );
+        if let Some(verdict) = [trap_cells.err(), step_cells.err(), trap_binding.finding()]
+            .into_iter()
+            .flatten()
+            .next()
+        {
+            return Err(BuildFailure::Diagnostic {
+                code: verdict.code,
+                message: verdict.message,
+            });
+        }
     }
 
     // v0.4 navigation planning over the solved voxel grid (spec-0008 addendum):

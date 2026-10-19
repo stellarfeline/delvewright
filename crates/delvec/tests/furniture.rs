@@ -297,7 +297,7 @@ fn an_honest_furniture_declaration_is_examined_and_borne_out() {
     let s = hall(Table::Gap);
     let v = judge(&meta_of(hall_meta(&s, Table::Gap, true)), &s);
     assert!(furniture_denials(&v).is_empty(), "{:?}", v.denied);
-    assert_eq!(ClaimKey::ALL.len(), 10, "the class holds ten keys");
+    assert_eq!(ClaimKey::ALL.len(), 9, "the class holds nine keys");
     assert_eq!(
         v.binding.per_key.get("anchors.*.furniture"),
         Some(&(2, 0)),

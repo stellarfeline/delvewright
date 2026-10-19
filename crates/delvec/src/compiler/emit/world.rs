@@ -50,8 +50,7 @@ pub(super) fn sealing_commands(
     // Traps (DSL v0.6, spec-0011) exclude TNT as a payload — no gamerule separates
     // explosion *block* damage from *entity* damage, so a TNT trap would deform the
     // sealed jigsaw world and poison every downstream proof. `tnt_explodes false` is
-    // the defense-in-depth seal against a stray primed-TNT source (e.g. a dispenser
-    // loaded with TNT the schema forbids anyway).
+    // the defense-in-depth seal against a stray primed-TNT source.
     cmds.push("gamerule tnt_explodes false".to_string());
     // Weather is emitted for the declared state, whatever it is (spec-0010, and
     // spec-0061 which made the declaration mandatory). The rule is unchanged —

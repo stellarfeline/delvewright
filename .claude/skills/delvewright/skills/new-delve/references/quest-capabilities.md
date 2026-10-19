@@ -497,12 +497,14 @@ this section is what they are *for* and the traps in each.
 - **`at` is an ORDINARY POINT ANCHOR, and its cell holds the trigger block.**
   The compiler owns the detection tick for a command payload: a plate or a
   tripwire is a position test on that anchor's cell, and a trapped chest is the
-  same interaction-entity `use` a disarm lever rides. The block the `trigger`
+  chest's own open: it opens like any chest on every click, and the first open
+  (every open, for `rearm`) fires the payload. The block the `trigger`
   names — a `*_pressure_plate`, a `minecraft:tripwire`, a
   `minecraft:trapped_chest` — is the piece's, standing in that cell: the party
   has to see what springs, and the build refuses a trap whose cell holds
   anything else, a plain chest included. Place it with the piece (a detail
   program, an edit batch, or a piece of your own); never a runtime `set-block`.
+  `prefab audit` admits all three, and a tripwire's hooks beside the string.
   So any anchor carrying a `pos` that some area's prefab provides, with the
   trigger block in its cell, will hold a trap — and on a site-plan
   campaign that is `anchor/node-<place>`, which is exactly what a derived map
@@ -512,17 +514,16 @@ this section is what they are *for* and the traps in each.
   marker" — the refusal's remedy line and the schema's own field description
   both say it — as saying *that anchor does not resolve*, and answer it with an
   anchor that does. **No shipped piece declares an `anchor/trap`**, or any
-  anchor carrying `dispenser` or `trigger_block` metadata — so the piece that
+  anchor carrying `trigger_block` metadata — so the piece that
   reading asks for does not exist here, and a command payload never wanted one:
   it wants the trigger block in an ordinary anchor's cell.
-- **Two things do want hardware in the piece, and neither of them is the
-  payload.** The dispenser `effect: {dispense: {…}}` fills a dispenser socket
-  the prefab pre-wired, so it needs that metadata; and a trap carrying a gate
+- **One thing does want hardware in the piece, and it is not the payload.**
+  A trap has no dispenser: an arrow trap is a `volley`. A trap carrying a gate
   (`requires_flags` / `forbids_flags` / `requires_state`) is gated *physically* —
   the compiler takes the trigger block out of the world while the gate is shut
   and puts it back verbatim — so it needs the anchor's declared `trigger_block`,
   and a `trapped-chest` can never be gated because removal would destroy its
-  inventory (`DW0363`). Against this library neither is authorable at all. Write
+  inventory (`DW0363`). Against this library that is not authorable. Write
   an ungated `payload` trap, and gate the story beat that arms it instead.
 - **A place that kills is DECLARED, never faked with the art.** A cliff whose
   fall must be fatal, a lava pit, an acid pool, an out-of-bounds plane: all one

@@ -1,81 +1,104 @@
 use super::*;
 
-/// v0.6 trap PackTests (spec-0011). A fake player in a 0-player void does not tick
-/// entities (the primed-TNT fuse and falling-sand freeze — see the spec's Findings),
-/// so a plate → dispenser fire cannot be simulated headlessly; runtime firing
-/// coverage is a GameTest concern. What is deterministically checkable in a plain
-/// mcfunction — and what these assert — is the compiler's own contract: after
-/// `setup`, the trap dispenser holds exactly the declared payload; after the disarm
-/// function runs, the payload is gone (the modeled global disarm) and the disarm
-/// flag is set. This is the machine-checkable half of acceptance criteria 3 & 4;
-/// the plate-fires-and-hits half is the PackTest/GameTest layer the spec records as
-/// entity-tick-limited.
-pub(super) fn emit_trap_packtests(plan: &Plan, out: &mut BuildOutput) {
+/// One PackTest per trap: **every** trap fires, both by its own body and
+/// through the detection the tick runs.
+///
+/// The trap's `trap_fire_<id>` body is driven first, directly, and must latch
+/// `#trapfire_<id>`. Then the latch is cleared, the trap is put in the state
+/// the campaign arms it in (its gate open, its disarm unthrown), the trigger is
+/// sprung the way a player springs it — the dummy stood on a plate's or
+/// tripwire's cell, a trapped chest's `trap_open_<id>` advancement granted to
+/// the dummy, exactly as vanilla grants it when the chest is opened — and the
+/// REAL `trap_detect` runs: the latch must be set again. Only the positive half
+/// is asserted: the detection reads every player, and on a shared batch server
+/// another template's dummy may stand anywhere.
+///
+/// A trapped chest is also a chest: after it has fired, its cell still holds
+/// the chest and no `minecraft:interaction` box stands in that cell to take the
+/// click from it, so every later open reaches the chest's own inventory.
+///
+/// Every trap and not an exemplar, because each carries its own cell, kind,
+/// gate and payload; the claim registered by [`trap_fire_watch_claims`] holds
+/// the loop to the authored list.
+pub(super) fn emit_trap_fire_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
-
-    // Pick the first trap that has both a dispenser payload and a disarm — it
-    // exercises both the fill and the empty in one test. Else the first payload trap.
-    let dispense_trap = plan
-        .traps
-        .iter()
-        .find(|t| t.dispenser.is_some() && t.payload.is_some());
-    let Some(t) = dispense_trap else {
-        return;
-    };
-    let disp = t.dispenser.expect("filtered on Some");
-    let (item, count) = t.payload.as_ref().expect("filtered on Some");
-    let dis = t.disarm.as_ref();
-
-    let mut b = packtest_header(&format!(
-        "{title}: trap `{}` loads its dispenser payload; disarm empties it (spec-0011)",
-        t.id
-    ));
-    b.push(format!("function {ns}:setup"));
-    // A 0-player void does not tick entities, so a plate→dispenser fire cannot be
-    // simulated here (spec-0011 Findings). Instead place the dispenser and load it
-    // with the exact payload the compiler fills, then assert slot 0 is occupied —
-    // the machine-checkable "payload lands" contract.
-    b.push(format!(
-        "setblock {} {} {} minecraft:dispenser",
-        disp[0], disp[1], disp[2]
-    ));
-    b.push(format!(
-        "item replace block {} {} {} container.0 with {item} {count}",
-        disp[0], disp[1], disp[2]
-    ));
-    b.push(format!(
-        "execute store success score #tload_trap dw.sys if data block {} {} {} Items[0]",
-        disp[0], disp[1], disp[2]
-    ));
-    b.push("assert score #tload_trap dw.sys matches 1".to_string());
-    if let Some(dis) = dis {
-        // Run the REAL emitted disarm and assert the dispenser is now empty (no ammo
-        // → cannot fire) and the disarm flag is set — the trap is provably off.
-        // spec-0018: a disarm is a party fact (one lever, everyone's trap off), so
-        // the baseline and the assert read `#party`. Cleared first: "never set" is
-        // not 0 on the shared-batch server.
-        b.push(format!(
-            "scoreboard players set {} {} 0",
-            plan::PARTY,
-            plan::flag_score(&dis.sets_flag)
+    let party = plan::PARTY;
+    for t in &plan.traps {
+        let id = &t.safe;
+        let (pin, sel) = pin_dummy(&format!("dw_t_trap_{id}"));
+        let mut b = packtest_header(&format!(
+            "{title}: trap `{}` ({}) fires its payload, by its body and when its trigger is sprung",
+            t.id,
+            t.trigger.kind()
         ));
-        b.push(format!("function {ns}:trap_disarm_{}", t.safe));
-        b.push(format!(
-            "execute store success score #tempty_trap dw.sys if data block {} {} {} Items[0]",
-            disp[0], disp[1], disp[2]
-        ));
-        b.push("assert score #tempty_trap dw.sys matches 0".to_string());
-        b.push(format!(
-            "assert score {} {} matches 1",
-            plan::PARTY,
-            plan::flag_score(&dis.sets_flag)
-        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        // "Never set" is not 0 on the shared-batch server.
+        b.push(format!("scoreboard players set #trapfire_{id} dw.sys 0"));
+        b.push(format!("function {ns}:trap_fire_{id}"));
+        b.push(format!("assert score #trapfire_{id} dw.sys matches 1"));
+        b.push(format!("scoreboard players set #trapfire_{id} dw.sys 0"));
+        if trap_is_gated(t) {
+            b.extend(packtest_gate_drive(plan, trap_gate_of(plan, t), true));
+            b.push(format!("function {ns}:trap_gate_tick"));
+        }
+        if let Some(dis) = &t.disarm {
+            b.push(format!("scoreboard players set #trapdis_{id} dw.sys 0"));
+            b.push(format!(
+                "scoreboard players set {party} {} 0",
+                plan::flag_score(&dis.sets_flag)
+            ));
+        }
+        let c = t.trigger_cell;
+        match t.trigger {
+            delvewright_dsl::TrapTrigger::PressurePlate
+            | delvewright_dsl::TrapTrigger::Tripwire => {
+                b.push(format!(
+                    "tp {sel} {} {} {}",
+                    f64::from(c[0]) + 0.5,
+                    c[1],
+                    f64::from(c[2]) + 0.5
+                ));
+            }
+            delvewright_dsl::TrapTrigger::TrappedChest => {
+                b.push(format!(
+                    "execute as {sel} run advancement grant @s only {ns}:trap_open_{id}"
+                ));
+            }
+        }
+        b.push(format!("function {ns}:{TRAP_DETECT_FN}"));
+        b.push(format!("assert score #trapfire_{id} dw.sys matches 1"));
+        if t.trigger == delvewright_dsl::TrapTrigger::TrappedChest {
+            // Fired, the chest is still a chest the hand reaches: the block is in
+            // its cell and nothing clickable shares that cell.
+            b.push(format!(
+                "assert block {} {} {} minecraft:trapped_chest",
+                c[0], c[1], c[2]
+            ));
+            b.push(format!(
+                "execute store result score #trapbox_{id} dw.sys if entity \
+                 @e[type=minecraft:interaction,x={},y={},z={},dx=0,dy=0,dz=0]",
+                c[0], c[1], c[2]
+            ));
+            b.push(format!("assert score #trapbox_{id} dw.sys matches 0"));
+        }
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/v06_trap_fire_{id}.mcfunction"),
+            lines(&b).into_bytes(),
+        );
     }
-    out.insert(
-        format!("packtest-datapack/data/{ns}/test/v06_trap.mcfunction"),
-        lines(&b).into_bytes(),
-    );
+}
+
+/// The trap-fire claim (`DW0811`): `trap_fire_` over **every** declared trap,
+/// read off the plan's own trap list, so a template loop that stopped at the
+/// first trap would still declare them all.
+pub(super) fn trap_fire_watch_claims(plan: &Plan) -> Vec<crate::compiler::watch::Claim> {
+    vec![crate::compiler::watch::Claim {
+        mechanic: "trap-fire",
+        families: vec!["trap_fire_".to_string()],
+        declared: plan.traps.iter().map(|t| t.safe.clone()).collect(),
+    }]
 }
 
 /// spec-0022 PackTests: the **saturation contract** and the collapse, asserted

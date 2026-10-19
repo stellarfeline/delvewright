@@ -12,25 +12,19 @@ use crate::EnvTrigger;
 /// environmental hazard at one cell of a placed piece.
 ///
 /// **What the prefab has to provide is one point anchor with the trigger block
-/// in its cell, and for most traps that is all.** [`Trap::at`] names the
-/// trigger/hazard cell; the piece places the plate, tripwire or trapped chest
-/// there (`DW0917`); the compiler models it as a hazard for the completability
-/// proofs (`DW0342`) and, for a disarmable trap, emits the disarm affordance. A
-/// [`payload`](Trap::payload) trap needs nothing else: **the compiler owns the
-/// detection**, emitting a per-tick, edge-latched `execute … if entity @a[<cell>]` and running the authored effect
-/// bundle from it.
+/// in its cell.** [`Trap::at`] names the trigger/hazard cell; the piece places
+/// the plate, tripwire or trapped chest there (`DW0917`); the compiler models it
+/// as a hazard for the completability proofs (`DW0342`) and, for a disarmable
+/// trap, emits the disarm affordance. **The compiler owns the detection and the
+/// consequence**: it emits a per-tick, edge-latched `execute … if entity
+/// @a[<cell>]` and runs the authored [`payload`](Trap::payload) from it, so
+/// redstone keeps exactly one job, the visible trigger (spec-0022), and a piece
+/// carries no dispenser or wiring.
 ///
-/// Two things a piece must pre-wire, each for one case and neither for the
-/// common one:
-///
-/// * the legacy [`effect`](Trap::effect) — a `dispense` payload the prefab's own
-///   redstone fires — needs the anchor's `dispenser` socket cell, which the
-///   compiler fills. That is the case "harm is redstone-native" (spec-0011) was
-///   written about, and the only one in which no detection is emitted.
-/// * a **flag-gated** trap ([`requires_flags`](Trap::requires_flags) /
-///   [`forbids_flags`](Trap::forbids_flags)) needs the anchor's `trigger_block`,
-///   because gating removes the trigger block from the world while the gate is
-///   shut and puts it back verbatim (`DW0363`).
+/// A **flag-gated** trap ([`requires_flags`](Trap::requires_flags) /
+/// [`forbids_flags`](Trap::forbids_flags)) additionally needs the anchor's
+/// `trigger_block`, because gating removes the trigger block from the world
+/// while the gate is shut and puts it back verbatim (`DW0363`).
 ///
 /// Player-vs-mob distinguishing matters in a sealed box-garden with controlled
 /// mobs, so `trapped-chest` (opened by a player) is called out as the only
@@ -47,20 +41,12 @@ pub struct Trap {
     /// to provide: detection is the compiler's, the block is the piece's
     /// (`DW0917`).
     ///
-    /// The anchor additionally needs a `dispenser` socket for a legacy
-    /// [`effect`](Trap::effect) trap, and a `trigger_block` for a flag-gated one
+    /// The anchor additionally needs a `trigger_block` for a flag-gated trap
     /// (`DW0363`). `anchor/trap` is the name the shipped pieces use, and a name
     /// is all it is.
     pub at: AnchorId,
-    /// What springs the trap (all redstone-native).
+    /// What springs the trap: the block the party sees and steps on or opens.
     pub trigger: TrapTrigger,
-    /// The **legacy** redstone consequence (spec-0011): a static dispenser
-    /// payload the prefab's own wiring fires. Superseded by [`Trap::payload`]
-    /// (spec-0022) — redstone now keeps only the trigger — but kept meaningful
-    /// so existing campaigns build unchanged. Optional since spec-0022; a trap
-    /// must declare `effect`, `payload`, or both (`DW0440`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub effect: Option<TrapEffect>,
     /// The **command payload** (spec-0022): an ordered effect list in the same
     /// vocabulary quests use, run when the trigger fires. This is where a trap's
     /// consequence lives now — the compiler owns the detection tick and the
@@ -70,8 +56,7 @@ pub struct Trap {
     /// `volley` and `collapse` (spec-0022's trap verbs) join `damage-players`,
     /// `play-sound`, `narrate`, `set-flag` and `spawn-wave`.
     ///
-    /// Empty = a pure spec-0011 redstone trap, which emits exactly what it
-    /// emitted before (byte-identical).
+    /// A trap with an empty payload does nothing and is refused (`DW0440`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub payload: Vec<QuestEffect>,
     /// How dangerous the trap is. A `lethal` trap on the forced critical path
@@ -80,8 +65,8 @@ pub struct Trap {
     #[serde(default)]
     pub lethality: Lethality,
     /// Optional disarm affordance (quest-coupling): an anchor the player acts on to
-    /// turn the trap off — setting a flag and emptying the dispenser — before the
-    /// trap cell is forced.
+    /// turn the trap off — setting a flag the fire guard reads — before the trap
+    /// cell is forced.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disarm: Option<TrapDisarm>,
     /// Whether the trap re-arms after firing. `once` = single-shot (fires, then
@@ -105,14 +90,6 @@ pub struct Trap {
 }
 
 impl Trap {
-    /// `(item, count)` if this trap declares a legacy `dispense` effect.
-    pub fn dispense(&self) -> Option<(&str, u32)> {
-        match &self.effect {
-            Some(TrapEffect::Dispense { item, count }) => Some((item.as_str(), *count)),
-            None => None,
-        }
-    }
-
     /// Whether this trap is `lethal` (carries the `DW0342` obligation on the
     /// forced critical path).
     pub fn is_lethal(&self) -> bool {
@@ -120,10 +97,10 @@ impl Trap {
     }
 }
 
-/// The mechanism that springs a [`Trap`] (DSL v0.6, spec-0011). All three are
-/// redstone-native — the hardware fires without any command — so the compiler
-/// emits no detection for them; it only models the trigger cell as a hazard and
-/// fills the dispenser payload. (`approach`, the compiler-detected v0.4 primitive,
+/// The mechanism that springs a [`Trap`] (DSL v0.6, spec-0011): the visible
+/// block the piece places at the trap's cell. The compiler detects it — a
+/// position test on a plate's or tripwire's cell, an interaction hitbox over a
+/// trapped chest — and models the cell as a hazard. (`approach`, the compiler-detected v0.4 primitive,
 /// is deliberately *not* a trap trigger: it is already fully expressible as an
 /// [`EnvTrigger`], so admitting it here would only duplicate that surface.)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -203,26 +180,6 @@ pub fn fires_on_step(block: &str) -> bool {
     stepped_blocks().contains(&id.as_str())
 }
 
-/// What a [`Trap`] does when sprung (DSL v0.6, spec-0011). Externally tagged so a
-/// future effect adds a variant; a non-`dispense` key (e.g. `tnt`,
-/// `release-falling-block`, `crusher`) is an unknown variant → `DW0100`, keeping
-/// block-destroying and unmodeled effects out of the schema by construction
-/// (spec-0011 non-goals — no hardware the compiler cannot model reaches a world).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub enum TrapEffect {
-    /// Load the prefab's pre-wired dispenser with `count` of `item` (arrows, tipped
-    /// arrows, splash potions). The redstone fires it; terrain is untouched
-    /// (spec-0011 "primary lethal"). The item is round-tripped into the dispenser
-    /// `Items` NBT — a deterministic, static payload.
-    Dispense {
-        /// Vanilla item id (validated against the pinned 1.21.11 registry, `DW0341`).
-        item: String,
-        /// How many to load into the dispenser stack.
-        count: u32,
-    },
-}
-
 /// How dangerous a [`Trap`] is (DSL v0.6, spec-0011). Only `lethal` carries the
 /// forced-critical-path completability obligation (`DW0342`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -253,8 +210,8 @@ pub enum TrapReset {
 
 /// A [`Trap`]'s disarm affordance (DSL v0.6, spec-0011): the player acts on the
 /// `via` anchor (an interaction the compiler emits, reusing the v0.4 interaction
-/// entity) to turn the trap off — setting `sets_flag` and emptying the dispenser —
-/// before the trap cell is forced. Discharges the `DW0342` obligation when the
+/// entity) to turn the trap off — setting `sets_flag`, which the trap's fire
+/// guard reads — before the trap cell is forced. Discharges the `DW0342` obligation when the
 /// affordance is reachable ahead of the trap without crossing it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -275,7 +232,6 @@ use std::collections::BTreeSet;
 use crate::Verb;
 use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
-use crate::loot::check_stack_count;
 use crate::registry::{
     AnchorRegistry, BlockRegistry, EntityRegistry, ItemRegistry, VendoredBlockRegistry,
 };
@@ -293,15 +249,8 @@ crate::dw_code! {
 }
 
 crate::dw_code! {
-    /// (v0.6) A trap dispense-payload item id is not in the pinned 1.21.11 registry
-    /// (spec-0011; mirrors `DW0143`). Validation-tier (exit 1). Renumbered off the
-    /// spec's stale reserved number (0198 — since taken).
-    pub const TRAP_PAYLOAD_UNKNOWN: DwCode = DwCode::new("DW0341", ExitTier::Build);
-}
-
-crate::dw_code! {
-    /// (spec-0022) A trap declares **no consequence at all**: neither the legacy
-    /// redstone `effect` nor a command `payload`. A trap that does nothing is
+    /// (spec-0022) A trap declares **no consequence at all**: its command
+    /// `payload` is empty. A trap that does nothing is
     /// mute hardware the completability proofs would nonetheless reason about,
     /// so it is a content mistake, not a no-op. Validation-tier (exit 1).
     pub const TRAP_NO_CONSEQUENCE: DwCode = DwCode::new("DW0440", ExitTier::Build);
@@ -329,8 +278,7 @@ crate::dw_code! {
 /// command `payload` needs that cell and nothing else of the piece, because the
 /// compiler emits the detection. Structural failures are `DW0340` (a
 /// malformed/duplicate id, an `at`/`disarm.via` no area's prefab provides, or a
-/// `disarm.via` colliding with the trap's own trigger anchor); a dispense
-/// payload item unknown to the pinned registry is `DW0341`. A trap's
+/// `disarm.via` colliding with the trap's own trigger anchor). A trap's
 /// `requires_flags` resolves against the declared-flag set like a trigger's
 /// (`DW0172`). The completability obligation for a *lethal* trap is discharged
 /// later by the compiler nav proof (`DW0342`).
@@ -401,9 +349,7 @@ pub(crate) fn trap_checks(
                          that anchor is called (names come from prefab metadata; do NOT invent \
                          one). A `payload` trap needs nothing of the piece but that one cell and \
                          the trigger block standing in it (`DW0917`) — the compiler emits the \
-                         detection; only a legacy `dispense` effect \
-                         needs the anchor's `dispenser` socket, and only a flag-gated trap \
-                         needs its `trigger_block`"
+                         detection; only a flag-gated trap needs its `trigger_block`"
                     ),
                 ),
             ));
@@ -448,11 +394,10 @@ pub(crate) fn trap_checks(
                 ));
             }
         }
-        // spec-0022: a trap must actually DO something. Neither the legacy
-        // redstone `effect` nor a command `payload` means mute hardware that
-        // the completability proofs would still reason about — a content
-        // mistake, never a deliberate no-op.
-        if t.effect.is_none() && t.payload.is_empty() {
+        // spec-0022: a trap must actually DO something. An empty `payload`
+        // means mute hardware that the completability proofs would still
+        // reason about — a content mistake, never a deliberate no-op.
+        if t.payload.is_empty() {
             d.push(Diagnostic::error(
                 TRAP_NO_CONSEQUENCE,
                 "quests",
@@ -595,30 +540,6 @@ pub(crate) fn trap_checks(
                 ));
             }
         });
-        if let Some((item, count)) = t.dispense() {
-            if !items.contains(item) {
-                d.push(Diagnostic::error(
-                    TRAP_PAYLOAD_UNKNOWN,
-                    "quests",
-                    format!("/content/traps/{i}/effect/dispense/item"),
-                    format!(
-                        "trap dispense payload item `{item}` is not in the pinned 1.21.11 item \
-                         registry — use a valid namespaced item id (e.g. `minecraft:arrow`)"
-                    ),
-                ));
-            }
-            // The dispenser payload is the same single-slot `item replace …
-            // container.0` fill a `loot` entry is, so it carries the same silent
-            // over-cap failure (`DW0436`) — a splash potion caps at 1.
-            check_stack_count(
-                item,
-                count,
-                &format!("trap `{}` dispense payload", t.id),
-                format!("/content/traps/{i}/effect/dispense/count"),
-                items,
-                d,
-            );
-        }
         for (m, f) in t.requires_flags.iter().enumerate() {
             if !flags.contains(f.as_str()) {
                 d.push(Diagnostic::error(

@@ -27,7 +27,7 @@
 //! itself vacuous about the anchor block. A step that owns "`anchors`" is
 //! licensed by that phrasing to do anything it likes inside `anchors` — and
 //! `anchor` did: re-annotating an anchor that already existed replaced the whole
-//! object, deleting the dispenser cell and trigger block the prefab had wired at
+//! object, deleting the trigger block the prefab had wired at
 //! it, the contract element the exporter had resolved it into, and any key this
 //! version of the tool has never heard of. Every one of those is a property of
 //! the anchor and none of them is something the operator typed.
@@ -94,7 +94,6 @@ const AT_RISK: &[&[&str]] = &[
     &["spatial_contract"],
     &["from_the_future"],
     &["anchors", HARDWARE_ANCHOR, "resolves_to"],
-    &["anchors", HARDWARE_ANCHOR, "dispenser"],
     &["anchors", HARDWARE_ANCHOR, "trigger_block"],
     &["anchors", HARDWARE_ANCHOR, "acoustics"],
 ];
@@ -143,7 +142,6 @@ fn exported_piece(tag: &str) -> (PathBuf, PathBuf) {
         .unwrap_or_else(|| panic!("the export must declare `{HARDWARE_ANCHOR}`"))
         .as_object_mut()
         .unwrap();
-    anchor.insert("dispenser".to_string(), serde_json::json!([3, 2, 4]));
     anchor.insert(
         "trigger_block".to_string(),
         serde_json::json!("minecraft:oak_pressure_plate[powered=false]"),

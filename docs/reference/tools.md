@@ -598,7 +598,8 @@ conversion strip uses, so the two cannot drift. The **palette allowlist**
 (`DW0730`) is a broad default vanilla building-and-decoration set
 (`crates/delvec/src/admit/allowlist.rs`: stone, wood, glass and copper families, inert
 flora, furniture and job-site blocks — anvils in every damage stage included —,
-the trap trigger blocks (pressure plates, buttons, the trapped chest), decorative
+the trap trigger blocks (pressure plates, buttons, the trapped chest, the
+tripwire string and its hooks), decorative
 minerals and ores, archaeology, and all six sculk blocks) that deliberately still
 flags surprising blocks — redstone contraption parts (dispensers, droppers,
 pistons, observers, repeaters), tnt, note blocks — for review, and is overridable
@@ -636,8 +637,8 @@ the shape deletes whatever its copy omits, silently, on the way out.
 The part is as deep as the edit really goes, and for `anchor` that is **five
 fields of one anchor** rather than the anchor map: `pos`, `facing`, `region` and
 `block` say where the anchor is, `role` says what it is for, and re-annotating an
-anchor the piece already carries leaves the rest of it alone — the `dispenser`
-cell and `trigger_block` a trap's hardware lives on, the `resolves_to` the
+anchor the piece already carries leaves the rest of it alone — the
+`trigger_block` a trap's hardware lives on, the `resolves_to` the
 exporter resolved from the piece's own contract, and any anchor key this version
 does not model. Naming a `--pos` does supersede a `--region` and vice versa:
 where the anchor is, is one property written two ways. The role is not a sixth
@@ -697,7 +698,7 @@ claims `spdx: UNKNOWN` about an asset whose licence it has not established.
 those bytes (`DW0888`) and prints `byte-claim binding:` on every run — documents
 read, `.nbt` opened, and examined/denied per key of the class, zeroes included:
 `structure.data_version`, `walk_y`, `anchors.*.pos`, `anchors.*.region`,
-`anchors.*.dispenser`, `anchors.*.trigger_block`, `anchors.*.furniture`,
+`anchors.*.trigger_block`, `anchors.*.furniture`,
 `connectors[].opening`, `connectors[].socket` and `jigsaw-declared`.
 
 `audit` states what its **second door** did, on every run and in every case,

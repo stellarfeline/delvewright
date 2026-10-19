@@ -422,6 +422,55 @@ fn an_anvil_and_a_trapped_chest_pass_the_default_allowlist() {
     assert!(rep.findings.iter().any(|f| f.code == "DW0730"));
 }
 
+/// **A tripwire and its hooks are building material.**
+///
+/// The tripwire string is the block a `tripwire` trap's trigger cell must hold
+/// (`DW0917`) and one of the two blocks a `step` trigger fires on; its hooks are
+/// what a builder strings it between. Both were refused (`DW0730`) by omission,
+/// so a piece that could pass admission could not carry the trigger its own
+/// trap declared. They are signal sources, the class of the plates, buttons and
+/// trapped chest already on the list, not contraption parts.
+#[test]
+fn a_tripwire_and_its_hooks_pass_the_default_allowlist() {
+    use delvec::admit::structure::PaletteEntry;
+    let wire = [
+        ("attached", "true"),
+        ("disarmed", "false"),
+        ("east", "true"),
+        ("north", "false"),
+        ("powered", "false"),
+        ("south", "false"),
+        ("west", "true"),
+    ];
+    let hook = |facing| {
+        PaletteEntry::with_props(
+            "minecraft:tripwire_hook",
+            &[
+                ("attached", "true"),
+                ("facing", facing),
+                ("powered", "false"),
+            ],
+        )
+    };
+    let mut s = fixtures::clean_room();
+    s.set_cell([1, 1, 1], hook("east"), None);
+    s.set_cell(
+        [2, 1, 1],
+        PaletteEntry::with_props("minecraft:tripwire", &wire),
+        None,
+    );
+    s.set_cell([3, 1, 1], hook("west"), None);
+    let (rep, _) = audit("tripwire", &s, &Allowlist::default_building());
+    assert!(rep.is_pass(), "{:?}", rep.findings);
+    for id in ["minecraft:tripwire", "minecraft:tripwire_hook"] {
+        assert!(
+            rep.palette.iter().any(|b| b == id),
+            "{id} was not examined: {:?}",
+            rep.palette
+        );
+    }
+}
+
 /// **The sculk family passes at rest** (spec-0100 §3.1, acceptance criterion
 /// 3): a piece carrying all six sculk blocks in their rest states is admitted
 /// with no `DW0730`, and the same piece with one state off rest is refused by

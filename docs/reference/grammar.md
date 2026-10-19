@@ -3269,7 +3269,7 @@ page is the automatic part: nothing drives "expand N seed-varied candidates →
 `mark` declares point anchors, and what they are FOR (`role`, §2b — a marked
 program's `entry` reaches the exported metadata and is what makes a generated
 zone a place a party can arrive in). What it does not declare is a **trap**
-anchor's pre-wired hardware (`dispenser`, `trigger_block`), which is expressible
+anchor's pre-wired hardware (`trigger_block`), which is expressible
 in prefab metadata but not by a rule — that needs its own declaration, not a
 widened `mark`. A rule can name a *region* (§2d), and a `barred` edge's bar
 region is the cells a campaign's `shortcut` / `close-gate` / `lift` addresses;

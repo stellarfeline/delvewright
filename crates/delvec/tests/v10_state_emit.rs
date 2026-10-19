@@ -84,7 +84,6 @@ fn patched_prefabs() -> PathBuf {
             "anchor/trap".to_string(),
             serde_json::json!({
                 "pos": [5, 1, 7],
-                "dispenser": [4, 1, 7],
                 "trigger_block": "minecraft:stone_pressure_plate"
             }),
         );

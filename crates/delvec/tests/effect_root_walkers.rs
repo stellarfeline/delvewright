@@ -153,7 +153,7 @@ fn json_effects(src: &str) -> Vec<QuestEffect> {
 // fixture plumbing
 // ---------------------------------------------------------------------------
 
-/// A prefab tree with an `anchor/trap` (a dispenser-backed trigger cell) added to
+/// A prefab tree with an `anchor/trap` (a trigger cell) added to
 /// `hello-room`, which root 4 needs and the fixture does not otherwise have.
 /// The trap stands at `[5, 1, 7]`, one cell past the doorway: the door is a gate
 /// region the compiler clears, so a trigger inside it is erased (`DW0917`), and
@@ -190,7 +190,7 @@ fn prefabs_with_trap() -> PathBuf {
             .unwrap();
         anchors.insert(
             "anchor/trap".to_string(),
-            serde_json::json!({ "pos": [5, 1, 7], "dispenser": [4, 1, 7] }),
+            serde_json::json!({ "pos": [5, 1, 7] }),
         );
         // …and a place for the shop probe to stand that nothing else claims.
         // `hello-room` offers four anchors and every one of them is already

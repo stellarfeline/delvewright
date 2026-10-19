@@ -232,9 +232,6 @@ fn every_key_of_the_class_is_held_to_the_bytes() {
         ("anchors.*.pos=1/1", |doc| {
             doc["anchors"]["anchor/stand"]["pos"] = serde_json::json!([99, 1, 1])
         }),
-        ("anchors.*.dispenser=1/1", |doc| {
-            doc["anchors"]["anchor/stand"]["dispenser"] = serde_json::json!([3, 1, 3])
-        }),
         ("anchors.*.trigger_block=1/1", |doc| {
             doc["anchors"]["anchor/stand"]["trigger_block"] =
                 serde_json::json!("minecraft:stone_pressure_plate")

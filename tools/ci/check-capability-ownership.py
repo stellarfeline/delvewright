@@ -170,12 +170,14 @@ INTERACTION_SITES = {
         "clear a gate. Shape 2."
     ),
     "trap_setup": (
-        "OPEN FINDING, two bodies in one function. `dw_trapfire_` detects the trap "
-        "firing; `dw_trapdis_` is `traps[].disarm.via`, a private "
+        "OPEN FINDING. `dw_trapdis_` is `traps[].disarm.via`, a private "
         "interaction-plus-set-flag that `EnvTrigger {on: use, effects: [set-flag]}` "
         "expresses exactly. Note `traps[].payload` (spec-0022) already replaced this "
         "trap's private CONSEQUENCE machinery with the general effect vocabulary — "
-        "the disarm affordance is the half that was not lifted. Shape 2."
+        "the disarm affordance is the half that was not lifted. Shape 2. The "
+        "trapped chest's own body is gone: its open is vanilla's "
+        "`default_block_use` at the chest's cell, the block-bound press every "
+        "`use` trigger and `interact` on a hand-pressed prop is dispatched by."
     ),
     "timed_gate_setup": (
         "OPEN FINDING. `timed_gates[].disarm.via` — a SECOND copy of the private "

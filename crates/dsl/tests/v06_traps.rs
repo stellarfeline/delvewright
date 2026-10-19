@@ -1,13 +1,14 @@
 //! DSL v0.6 traps (spec-0011): the stage-5 `traps[]` surface validates under
 //! `0.6.0`. A trap whose `at`/`disarm.via`
 //! anchor no prefab provides (or a duplicate/malformed id) is `DW0340`; a
-//! `dispense` payload item outside the pinned registry is `DW0341`.
+//! trap carries its consequence as a command `payload`, and has no other
+//! consequence field.
 //!
 //! Built on the hello-world casting/plan/dialogue with a v0.6 `quests` document
 //! (additive `traps` field), so the rest is untouched. `check_campaign` injects
 //! the vendored anchor registry, which knows hello-room's anchors (`spawn`,
 //! `anchor/keeper-stand`, `anchor/door`, `anchor/exit`) — the DSL layer checks
-//! anchor *names* only; the dispenser socket + completability proof are the
+//! anchor *names* only; the trigger block + completability proof are the
 //! compiler's job (`DW0342`), covered in the compiler crate.
 
 mod common;
@@ -57,12 +58,12 @@ fn campaign_with_traps(traps: &str) -> RawCampaign {
     }
 }
 
-/// A well-formed dart trap bound to a provided anchor with an in-registry payload.
+/// A well-formed dart trap bound to a provided anchor with a command payload.
 const VALID_TRAP: &str = r#"{
   "id": "trap/dart-hall",
   "at": "anchor/exit",
   "trigger": "trapped-chest",
-  "effect": { "dispense": { "item": "minecraft:torch", "count": 8 } },
+  "payload": [ { "type": "damage-players", "amount": 2 } ],
   "lethality": "harmful"
 }"#;
 
@@ -94,7 +95,7 @@ fn v06_trap_disarm_collides_with_trigger_is_dw0340() {
       "id": "trap/dart-hall",
       "at": "anchor/exit",
       "trigger": "pressure-plate",
-      "effect": { "dispense": { "item": "minecraft:torch", "count": 8 } },
+      "payload": [ { "type": "damage-players", "amount": 2 } ],
       "lethality": "lethal",
       "disarm": { "via": "anchor/exit", "sets_flag": "flag/darts-off" }
     }"#;
@@ -105,32 +106,23 @@ fn v06_trap_disarm_collides_with_trigger_is_dw0340() {
     );
 }
 
-/// A dispense payload item outside the pinned 1.21.11 registry is `DW0341`.
+/// A trap has no `effect` field: its consequence is its command `payload`
+/// (spec-0022), and redstone keeps only the trigger. An `effect` key, a
+/// dispenser load or a TNT charge alike, is an unknown field -> `DW0100`.
 #[test]
-fn v06_trap_unknown_payload_is_dw0341() {
-    let trap = VALID_TRAP.replacen("minecraft:torch", "minecraft:definitely-not-an-item", 1);
-    let diags = check_campaign(&campaign_with_traps(&trap));
-    assert!(
-        diags.iter().any(|d| d.code == "DW0341"),
-        "an unknown dispense payload item must be DW0341: {diags:#?}"
-    );
-}
-
-/// A non-`dispense` effect key (e.g. TNT) is an unknown enum variant -> `DW0100`,
-/// keeping block-destroying/unmodeled effects out of the schema (spec-0011).
-#[test]
-fn v06_trap_tnt_effect_is_rejected() {
+fn v06_trap_effect_field_is_rejected() {
     let trap = r#"{
-      "id": "trap/boom",
+      "id": "trap/dart-hall",
       "at": "anchor/exit",
       "trigger": "pressure-plate",
-      "effect": { "tnt": { "power": 4 } },
-      "lethality": "lethal"
+      "effect": { "dispense": { "item": "minecraft:arrow", "count": 8 } },
+      "payload": [ { "type": "damage-players", "amount": 2 } ],
+      "lethality": "harmful"
     }"#;
     let diags = check_campaign(&campaign_with_traps(trap));
     assert!(
         diags.iter().any(|d| d.code == "DW0100"),
-        "a non-dispense trap effect (tnt) must be rejected as an unknown variant (DW0100): {diags:#?}"
+        "a trap `effect` field must be rejected as unknown (DW0100): {diags:#?}"
     );
 }
 
@@ -168,7 +160,7 @@ fn a_disarm_flag_can_gate_the_rest_of_the_campaign() {
       "id": "trap/dart-hall",
       "at": "anchor/door",
       "trigger": "trapped-chest",
-      "effect": { "dispense": { "item": "minecraft:torch", "count": 8 } },
+      "payload": [ { "type": "damage-players", "amount": 2 } ],
       "lethality": "harmful",
       "disarm": { "via": "anchor/exit", "sets_flag": "flag/darts-off" }
     }"#;

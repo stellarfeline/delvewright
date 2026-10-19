@@ -921,7 +921,6 @@ fn populations_campaign() -> PathBuf {
         q["content"]["traps"] = json!([{
             "id": "trap/drop", "at": "anchor/far-landing", "trigger": "pressure-plate",
             "lethality": "harmful", "reset": "rearm",
-            "effect": {"dispense": {"count": 1, "item": "minecraft:arrow"}},
             "payload": [{"type": "teleport",
                          "from": {"anchor": "anchor/far-landing", "extent": [0, 0, 0]},
                          "to": {"anchor": "anchor/far-deck"}}]

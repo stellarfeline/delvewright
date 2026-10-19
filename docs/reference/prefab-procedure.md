@@ -672,7 +672,7 @@ after `socket`, which changes what a body can stand on, and before the second
 `audit`, which holds the `waterline_y` it wrote to the piece's own bytes
 (`DW0887`) and everything else the document claims about them to the same bytes
 (`DW0888`): the walk plane a body stands on, every anchor's cell and range, a
-trap anchor's dispenser socket and trigger block, and every connector's opening —
+trap anchor's trigger block, and every connector's opening —
 a socket declared over a cell the piece never opened is refused here rather than
 mating a corridor into a wall. What it prints is a measurement with its denominator: a walk plane
 dragged one course down by a single stray standable cell reads as `1 cell(s)
@@ -873,7 +873,7 @@ use.
 | `spatial_contract` | no | The piece's declared spaces, out-of-walk regions, edges and faces (ADR-0020). |
 
 An **anchor** is `{pos?, facing?, role?, region?, block?, resolves_to?,
-dispenser?, trigger_block?, note?}` — one object class covering a point, a gate
+trigger_block?, note?}` — one object class covering a point, a gate
 region and a trap's pre-wired hardware, each writing only the keys it means.
 `note` is one line of prose about the place, for whoever opens the document; no
 reader acts on it, and a piece that says what each of its anchors is for can be
@@ -976,8 +976,8 @@ document has deletes the rest on the way out, silently, while every test it has
 passes.
 
 The depth matters as much as the breadth. A step that owned "`anchors`" would be
-licensed to replace an anchor whole, which deletes the `dispenser` cell and
-`trigger_block` a trap's hardware lives on, the `resolves_to` the exporter
+licensed to replace an anchor whole, which deletes the `trigger_block` a
+trap's hardware lives on, the `resolves_to` the exporter
 derived from the piece's own contract, and any anchor key the tool does not
 model — none of which the operator typed and all of which is the anchor's.
 `crates/delvec/tests/prefab_metadata_preservation.rs` holds every step to the paths it
@@ -1000,7 +1000,7 @@ a subcommand it has never been told about.
 
 Capture is at those same two levels — the document root and each anchor — which
 are where this document has grown every time (`waterline_y`, `spatial_contract`;
-`resolves_to`, `dispenser`, `trigger_block`). A key added *inside* a connector,
+`resolves_to`, `trigger_block`). A key added *inside* a connector,
 a licence block or a spatial contract is accepted and ignored, not preserved.
 
 **The `lighting` block is the one exception, and it is a known cost.** Its type
