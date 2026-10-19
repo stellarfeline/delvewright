@@ -1315,9 +1315,12 @@ frame is path-traced at the stated samples. The sky — colour, fog, the sun's
 direction, the lightmap's sky factor — is handed in from `scene::sky_attributes`
 and `scene::sun_at` at the frame's tick and weather (`compiler.md` §4): the
 renderer draws its own of none. Entities it has a model for (villagers,
-mannequins with their skins, the mobs the engine summons) are drawn; an item, an
-item display or a text display is not yet, and each frame says so by name
-(`DW1039`, `undrawn`). A sign's letters are drawn. The build's resource pack is
+mannequins with their skins, the mobs the engine summons) are drawn, and so are
+items — dropped, displayed, framed, held and worn — and text displays; a body
+the renderer has no model for, or a holder whose item it cannot draw, is named
+by each frame (`DW1039`, `undrawn`). A sign's letters are drawn. Block textures
+are read through the client's mip chains at its default *Mipmap Levels*, 4
+(`frames::CLIENT_MIPMAP_LEVELS`). The build's resource pack is
 layered over the jar, so a block texture a delve replaces is drawn as the delve
 draws it.
 

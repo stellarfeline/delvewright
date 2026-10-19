@@ -3566,7 +3566,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   drawn only while the sun is up; the hq exposure is
   `frames::HQ_EXPOSURE` (1.0, **authored**) until the showcase standard level is
   re-measured (spec-0112 phase 3). **What no frame shows is named**, in the
-  review record's `unchecked` (`review::UNCHECKED`: items and text displays, the
+  review record's `unchecked` (`review::UNCHECKED`: the
   block entities the renderer has no model for, the weather in the air, the
   clouds, hq-mode fog and the moon, a night-vision room's lightmap, a body's pose
   at a tick and the party, a cutscene no critical step fires) and in each index
@@ -5498,9 +5498,11 @@ of <m> shot(s) rendered over <k> world(s) in <s> s, peak <MiB> MiB; per frame
 frame(s), <u> not drawn by the renderer (DW1039) in <f> frame(s); skies: <j> at
 the world's clock, <q> set by a step`. **`DW1039`** is printed once per frame
 whose `shows` holds a body (kind `body`) the renderer's own statistics for that
-frame put among the kinds it skipped or drew as a fallback box, naming each
-body, its kind, cell, facing, distance, the reason (`items`, `text displays`, or
-no model) and `judge_by`; the frame is right and the body is real, so it is a
+frame put among the kinds it skipped or drew as a fallback box — or, for a
+body that holds items (`frames::HOLDS_ITEMS`), a frame in which the renderer
+counted an item stack it could not draw — naming each body, its kind, cell,
+facing, distance, the reason (the items it could not draw, or no model in the
+renderer) and `judge_by`; the frame is right and the body is real, so it is a
 report and never a refusal ([`compiler::view::frameset`](delvec/compiler/view/frameset.md)).
 
 **A campaign frame** (`--campaign`): one quick frame of a campaign's load
@@ -5546,7 +5548,8 @@ the frame and never the manifest.
   "out_of_frame": [ { "id": "anchor/pen", "kind": "anchor", "area": "…", "pos": [x,y,z] } ],
   "undrawn": [],
   "unchecked": [],
-  "renderer_stats": { "entities": { "rendered": {}, "fallback_boxes": {}, "skipped": {} },
+  "renderer_stats": { "entities": { "rendered": {}, "fallback_boxes": {}, "skipped": {},
+                                    "items_rendered": {}, "items_skipped": {} },
                       "block_entities": { "rendered": {}, "skipped": {}, "text_lines": 0, "glyphs": 0 } },
   "frame": { "targets_in_frame": 1, "targets_out_of_frame": 1, "featureless": null }
 }
