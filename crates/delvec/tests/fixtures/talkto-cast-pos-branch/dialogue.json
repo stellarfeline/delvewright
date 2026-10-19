@@ -80,6 +80,10 @@
               {
                 "effects": [
                   {
+                    "flag": "flag/parley-done",
+                    "type": "set-flag"
+                  },
+                  {
                     "objective": "obj/parley",
                     "type": "complete-objective"
                   }
@@ -98,6 +102,10 @@
             "options": [
               {
                 "effects": [
+                  {
+                    "flag": "flag/parley-done",
+                    "type": "set-flag"
+                  },
                   {
                     "objective": "obj/parley",
                     "type": "complete-objective"

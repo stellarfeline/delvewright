@@ -35,18 +35,18 @@
           },
           {
             "id": "dlg/last-word",
-            "text": "Then go, and the gate is shut behind you.",
             "options": [
               {
-                "label": "Thank you, Keeper.",
                 "effects": [
                   {
                     "objective": "obj/farewell",
                     "type": "complete-objective"
                   }
-                ]
+                ],
+                "label": "Thank you, Keeper."
               }
-            ]
+            ],
+            "text": "Then go, and the gate is shut behind you."
           }
         ],
         "npc": "npc/keeper",

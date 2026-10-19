@@ -173,6 +173,9 @@
               "at": "anchor/keeper-stand",
               "dialogue": "dlg/watch",
               "doing": "standing the last hour of the watch with you",
+              "forbids_flags": [
+                "flag/watch-done"
+              ],
               "requires_flags": [
                 "flag/wait"
               ]
@@ -187,6 +190,19 @@
               "doing": "alone at the door you left him at",
               "requires_flags": [
                 "flag/flee"
+              ]
+            },
+            {
+              "at": "anchor/keeper-stand",
+              "dialogue": {
+                "barks": [
+                  "There is nothing more to say. Go on."
+                ]
+              },
+              "doing": "done with the beat the party has finished",
+              "requires_flags": [
+                "flag/wait",
+                "flag/watch-done"
               ]
             }
           ]

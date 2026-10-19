@@ -71,10 +71,18 @@
               {
                 "effects": [
                   {
+                    "flag": "flag/watch-done",
+                    "type": "set-flag"
+                  },
+                  {
                     "objective": "obj/watch",
                     "type": "complete-objective"
                   }
                 ],
+                "happening": {
+                  "text": "The party is done with what npc/keeper asked.",
+                  "verb": "learns"
+                },
                 "label": "Open it."
               }
             ],

@@ -4,11 +4,28 @@
     "quests": [
       {
         "cast": {
-          "npc/keeper": {
-            "at": "anchor/node-hall",
-            "dialogue": "dlg/greeting",
-            "doing": "standing in the middle of the hall with his back to the cell door"
-          }
+          "npc/keeper": [
+            {
+              "at": "anchor/node-hall",
+              "dialogue": "dlg/greeting",
+              "doing": "standing in the middle of the hall with his back to the cell door",
+              "forbids_flags": [
+                "flag/ask-done"
+              ]
+            },
+            {
+              "at": "anchor/node-hall",
+              "dialogue": {
+                "barks": [
+                  "There is nothing more to say. Go on."
+                ]
+              },
+              "doing": "done with the beat the party has finished",
+              "requires_flags": [
+                "flag/ask-done"
+              ]
+            }
+          ]
         },
         "happening": {
           "subject": "npc/keeper",

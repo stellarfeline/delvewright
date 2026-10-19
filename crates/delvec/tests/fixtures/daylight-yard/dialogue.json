@@ -14,10 +14,18 @@
               {
                 "effects": [
                   {
+                    "flag": "flag/muster-done",
+                    "type": "set-flag"
+                  },
+                  {
                     "objective": "obj/muster",
                     "type": "complete-objective"
                   }
                 ],
+                "happening": {
+                  "text": "The party is done with what npc/keeper asked.",
+                  "verb": "learns"
+                },
                 "label": "Call them out."
               }
             ],
