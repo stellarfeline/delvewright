@@ -3085,9 +3085,14 @@ function functionsCalled(bot: CombatFakeBot): string[] {
     .map((c) => c.slice("chat(/function ".length, -1).split(":").pop()!);
 }
 
-/** Let the executor's damage handler finish reading and staging. */
-async function settleStaging(): Promise<void> {
-  await delay(2_000);
+/**
+ * Let the executor's damage handler finish reading and staging: wait for the
+ * staging acts it has started, never for a stretch of wall time. A handler
+ * registers its task in the tick the damage event is emitted, so an empty set
+ * means nothing was started and nothing is pending.
+ */
+async function settleStaging(executor: MineflayerExecutor): Promise<void> {
+  while (executor.stagingTasks.size > 0) await Promise.allSettled([...executor.stagingTasks]);
 }
 
 test("a body of a wave the run has not read yet is read where it stands, then removed", async () => {
@@ -3103,7 +3108,7 @@ test("a body of a wave the run has not read yet is read where it stands, then re
   executor.useCombatPlan(combatPlan(2, true), false);
   const [attacker] = bot.waveIds();
   bot.emit("entityHurt", bot.entity, bot.entities[attacker!]);
-  await within("settleStaging()", settleStaging());
+  await within("settleStaging(executor)", settleStaging(executor));
 
   assert.deepEqual(bot.stagedBlows, [attacker], "the body that hit the bot was removed");
   const muster = bot.calls.findIndex((c) => c.includes(":wave_muster_"));
@@ -3234,7 +3239,7 @@ test("a removed body's blows are refunded — its own, named ones only, rounded 
   bot.emit("entityHurt", bot.entity, bot.entities[attacker!]);
   bot.health = 9; // an 11-point blow
   bot.emit("health");
-  await within("settleStaging()", settleStaging());
+  await within("settleStaging(executor)", settleStaging(executor));
 
   assert.deepEqual(bot.stagedBlows, [attacker]);
   const effects = bot.calls.filter((c) => c.startsWith("chat(/effect "));
@@ -3254,7 +3259,7 @@ test("a removed body's blows are refunded — its own, named ones only, rounded 
   // A drop the server named no body for — a fall, a lethal volume — is never refunded.
   bot.health = 3;
   bot.emit("health");
-  await within("settleStaging()", settleStaging());
+  await within("settleStaging(executor)", settleStaging(executor));
   assert.equal(bot.calls.filter((c) => c.startsWith("chat(/effect ")).length, 2, "no refund was added");
 });
 
@@ -3270,7 +3275,7 @@ test("which wave a body is of is the server's tag, not a radius around the ancho
   executor.useCombatPlan(combatPlan(2, true), false);
   const [attacker] = bot.waveIds();
   bot.emit("entityHurt", bot.entity, bot.entities[attacker!]);
-  await within("settleStaging()", settleStaging());
+  await within("settleStaging(executor)", settleStaging(executor));
   await within("executor.kill({ ...KILL_STEP, count: 2 })", executor.kill({ ...KILL_STEP, count: 2 }));
 
   const verdict = executor.waveMusters().get("wave/gate-assault")!;
