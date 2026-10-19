@@ -730,7 +730,7 @@ pub fn check_outlived_scenes(c: &Campaign) -> (Vec<Diagnostic>, OutlivedBinding)
                 // completes (`oq` or one ranked before it) overrides this one, so
                 // what governs after `obj` is that clause's question, judged there.
                 let rank_oq = order.iter().position(|q| q == oq);
-                let overridden = cast.by_quest[ci + 1..].iter().any(|l| {
+                let overridden = later.iter().any(|l| {
                     l.quest != cl.quest
                         && order
                             .iter()
@@ -749,7 +749,12 @@ pub fn check_outlived_scenes(c: &Campaign) -> (Vec<Diagnostic>, OutlivedBinding)
                             matches!(e, delvewright_dsl::DialogueEffect::CompleteObjective { objective } if objective.as_str() == *obj)
                         });
                         if completes_it {
-                            flags.extend(opt.effects.iter().filter_map(|e| e.set_flag()).map(|f| f.as_str()));
+                            flags.extend(
+                                opt.effects
+                                    .iter()
+                                    .filter_map(|e| e.set_flag())
+                                    .map(|f| f.as_str()),
+                            );
                         }
                     }
                 }
@@ -776,9 +781,7 @@ pub fn check_outlived_scenes(c: &Campaign) -> (Vec<Diagnostic>, OutlivedBinding)
                 state_writes(&owner.on_complete, &mut data);
 
                 let gated = later.iter().any(|l| {
-                    l.requires_flags
-                        .iter()
-                        .any(|f| flags.contains(f.as_str()))
+                    l.requires_flags.iter().any(|f| flags.contains(f.as_str()))
                         || l.requires_state
                             .iter()
                             .any(|s| data.contains(s.state.as_str()))

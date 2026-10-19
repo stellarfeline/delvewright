@@ -45,7 +45,10 @@ fn completer_sets_flag(dialogue: &mut Value) {
     last["options"][0]["effects"]
         .as_array_mut()
         .unwrap()
-        .insert(0, json!({ "type": "set-flag", "flag": "flag/farewell-said" }));
+        .insert(
+            0,
+            json!({ "type": "set-flag", "flag": "flag/farewell-said" }),
+        );
 }
 
 /// `quest/farewell`'s keeper entry becomes `[the beat, unless said; after, once said]`.
@@ -72,10 +75,18 @@ fn dw1050_the_last_beat_that_nothing_replaces_is_refused() {
     let hits: Vec<_> = diags.iter().filter(|d| d.code == "DW1050").collect();
     assert_eq!(hits.len(), 1, "{diags:#?}");
     let m = &hits[0].message;
-    for s in ["npc/keeper", "quest/farewell", "dlg/farewell", "obj/farewell"] {
+    for s in [
+        "npc/keeper",
+        "quest/farewell",
+        "dlg/farewell",
+        "obj/farewell",
+    ] {
         assert!(m.contains(s), "message must name `{s}`: {m}");
     }
-    assert!(!m.contains("obj/ask"), "the replaced opening beat is not refused: {m}");
+    assert!(
+        !m.contains("obj/ask"),
+        "the replaced opening beat is not refused: {m}"
+    );
     assert_eq!(hits[0].path, "/content/quests/1/cast/npc/keeper");
     assert_eq!(
         bind,
@@ -85,7 +96,11 @@ fn dw1050_the_last_beat_that_nothing_replaces_is_refused() {
             refused: 1
         }
     );
-    assert!(bind.line().contains("2 cast clause(s) judged"), "{}", bind.line());
+    assert!(
+        bind.line().contains("2 cast clause(s) judged"),
+        "{}",
+        bind.line()
+    );
 }
 
 /// The remedy: a placement after the beat, gated on a flag the completing option
