@@ -1,6 +1,6 @@
 # spec-0116: A direction names what the player sees — a compass point in player-facing text is refused
 
-- **Status**: Proposed
+- **Status**: Approved
 - **Ground**: written against engine `b24550dcf` (`origin/main`), read only — `each_string`, `inventory`, `TextKind` and `key_kind` in `crates/dsl/src/l10n.rs`; `SURFACE` in `crates/dsl/tests/l10n_surface.rs`; `validate_inline_styles` in `crates/dsl/src/textstyle.rs` and its call site in `crates/delvec/src/cli/campaign.rs`; `docs/reference/game-writing.md` F1.
 - **What it is for**: a hint read in a playtest — *Marra's house is the last on the north side of the street* — could not be acted on: Minecraft shows no compass, and a player does not know where north is. `game-writing.md` F1 already says a place is named by a landmark the player can see and a position relative to it or to the player, never by a compass point; nothing enforced it. This spec makes the engine refuse the compass half.
 - **Numbers**: spec `0116`, one diagnostic, `DW1049`. No DSL surface changes, so no `dsl_version` step.
