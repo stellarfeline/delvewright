@@ -47,14 +47,12 @@ pub(super) fn prove_assemblies(
             .filter(|p| !crate::compiler::nav::returned_from(returned, *p))
             .any(|p| crate::compiler::strand::eye_reaches_box(ground, p, lo, hi))
     };
-    // The spared stand is a cell the bot walks to on cue: the population's
-    // cells the walk relation reaches from where the party is put (spec-0113
-    // §4.5), never a place only a leap reaches.
+    // The spared stand is a cell the bot walks to on cue: drawn only from the
+    // walk relation's region from where the party is put (spec-0113 §4.5),
+    // never a place only a leap reaches.
     let open = world.without_exclusions();
     let walk = open.walk_region(&crate::compiler::lethal::put_at_roots(plan, entry));
-    let walked: std::collections::BTreeSet<[i32; 3]> =
-        population.intersection(&walk).copied().collect();
-    let (binding, findings) = crate::compiler::assembly::check(plan, population, &walked, &reaches);
+    let (binding, findings) = crate::compiler::assembly::check(plan, population, &walk, &reaches);
     eprintln!("{}", binding.line());
     eprintln!("{}", binding.cost_line());
     if let Some((first, rest)) = findings.split_first() {
