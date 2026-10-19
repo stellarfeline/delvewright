@@ -54,8 +54,7 @@
 //!   printing the same number twice.
 //!
 //! Both numbers, the sky each was taken at, and *why that was the sky* go into the
-//! printed report, the `DW0751` message and the `method` line written into the
-//! metadata. A light level with no sky written beside it cannot be read
+//! printed report and the `method` line written into the metadata. A light level with no sky written beside it cannot be read
 //! afterwards.
 //!
 //! # What the minimum is taken over, and why it is not the region box

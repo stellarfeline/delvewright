@@ -45,17 +45,13 @@ fn piece_without_textures_is_dw0723_exit5() {
     // No --textures, and an empty HOME so `~/.chunky/resources/minecraft.jar`
     // cannot exist; DELVEWRIGHT_CLIENT_JAR is stripped too.
     //
-    // **The input is a real, measured library piece**, and it has to be. This
-    // test used to pass `nonexistent.nbt` on the reading that texture resolution
-    // happens before the input is ever opened. That order moved: the arm now
-    // judges the piece — measured light, and the roofed floor nothing can reach
-    // (`DW0894`/`DW0895`) — before it goes looking for a client jar, for the
-    // same reason the `--view` test below gives for parsing specs first. A
-    // creator who typed the wrong filename, or handed over a piece nobody
-    // measured, is owed that answer and not *I could not find your textures*.
-    // So the piece is one that passes both, and what is left for this test to
-    // assert is exactly what it always asserted: with no textures anywhere, the
-    // arm exits 5 on `DW0723`.
+    // **The input is a real library piece**, and it has to be. The arm reads
+    // the piece and surveys its roofed floor (`DW0895`) before it goes looking
+    // for a client jar, for the same reason the `--view` test below gives for
+    // parsing specs first: a creator who typed the wrong filename is owed that
+    // answer and not *I could not find your textures*. So the piece is one that
+    // reads, and what is left for this test to assert is: with no textures
+    // anywhere, the arm exits 5 on `DW0723`.
     let nbt = prefab("keep-gate-room.nbt");
     let empty_home = tmp("piece-no-textures-home");
     let out = tmp("piece-no-textures-out");
@@ -74,7 +70,7 @@ fn piece_without_textures_is_dw0723_exit5() {
     assert!(stderr.contains("DW0723"), "expected DW0723: {stderr}");
     // ...and it got past the piece, which is what makes the assertion above
     // about textures rather than about the piece.
-    assert!(!stderr.contains("DW0894"), "{stderr}");
+    assert!(stderr.contains("enclosure: `keep-gate-room`"), "{stderr}");
 }
 
 /// A malformed `--view` is a usage error, and it is worth nothing to discover it

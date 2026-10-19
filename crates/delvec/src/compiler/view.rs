@@ -25,10 +25,9 @@
 //! - [`blockcolor`] — blockstate → colour and shape, derived from the client jar,
 //!   which is also what `palette` prints.
 //!
-//! - [`showing`] — what has to be true of a piece before a person is asked to
-//!   look at it: somebody measured its light (`DW0894`), and how much of its
-//!   roofed floor no body can reach (`DW0895`). Bound at every arm that puts a
-//!   piece in front of an eye.
+//! - [`showing`] — what is said about a piece before a person is asked to look
+//!   at it: how much of its roofed floor no body can reach (`DW0895`). Bound at
+//!   every arm that puts a piece in front of an eye.
 //! - [`sight`] — whether an eye-level frame shows a room or a surface at arm's
 //!   length (`DW0893`), and where a body stands back along an anchor's facing so
 //!   the frame shows the room it stands in.
