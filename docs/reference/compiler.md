@@ -5701,7 +5701,7 @@ this doc is current behavior).
 ## 7. Visual authoring loop (spec-0015, spec-0112)
 
 Every frame `delvec` draws is drawn **in-process by Lumenwright**
-(`stellarfeline/lumenwright`, a git dependency pinned by revision; `tools.md`
+(`stellarfeline/lumenwright`, a crates.io dependency pinned by exact version; `tools.md`
 §4a) with the pinned client jar's own textures and models, from a world the
 engine wrote: a review frame from the world its configuration stands in, a
 campaign frame from the campaign's load world assembled in the same process.
@@ -5791,7 +5791,7 @@ the frame and never the manifest.
   "manifest_version": 3,
   "campaign_id": "gallery",
   "delvec": "<x.y.z>",
-  "renderer": "lumenwright <rev>",
+  "renderer": "lumenwright <version>",
   "backend": "cpu",
   "shot": "pov/leg4/wp0",
   "image":  { "path": "pov_leg4_wp0.png", "width": 1024, "height": 1024 },

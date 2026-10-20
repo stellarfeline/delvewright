@@ -1285,10 +1285,13 @@ the campaign viewport, the showcase cameras and the whole-map panorama. It is a
 **library inside `delvec`**: no second program, no JVM, no scene file, no
 install step. Attribution: [`../ACKNOWLEDGEMENTS.md`](../ACKNOWLEDGEMENTS.md).
 
-**The dependency and its pin.** `crates/delvec/Cargo.toml` names `lumenwright`
-by `git` and `rev` with `default-features = false, features = ["gpu"]`;
-`versions.toml [render] lumenwright_revision` holds the same revision and
-`validation/check-versions.sh` reds when the two differ. Its `glam` is reached
+**The dependency and its pin.** `crates/delvec/Cargo.toml` takes `lumenwright`
+from crates.io by exact version (`version = "=<x.y.z>"`) with
+`default-features = false, features = ["gpu"]`, as ADR-0023 §5 takes
+Nucleation; `versions.toml [render] lumenwright_version` holds the same version,
+`frames::RENDERER_VERSION` states it on every frame, and
+`validation/check-versions.sh` reds when any of the three differ or the
+dependency is named by `git` or `path`. Its `glam` is reached
 as `lumenwright::glam`, so the engine holds no second copy. `delvec` reaches it
 through one module, `compiler::view::frames`: a frame request (world, chunk
 rectangle, jar, the build's resource pack, camera, sky, mode, backend, size)
@@ -1296,7 +1299,7 @@ in, RGBA pixels and the renderer's own statistics out.
 
 **Backends.** `--backend auto` (default) takes the GPU wgpu finds — Metal on
 macOS, Vulkan or DX12 elsewhere — and falls back to the CPU when there is
-none, saying so on the first line (`renderer: lumenwright <rev>, backend cpu
+none, saying so on the first line (`renderer: lumenwright <version>, backend cpu
 (…) (auto: fell back to cpu: <why>)`). `--backend cpu`, `metal`, `vulkan` or `dx12`
 names one, and a named backend that is not available is `DW0723`. `--threads` sizes the
 CPU backend's pool (default every core); the CPU backend's pixels are the same

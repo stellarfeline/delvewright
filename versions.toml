@@ -332,15 +332,13 @@ nucleation_license = "MIT"
 
 # Lumenwright (GPL-3.0-or-later) — the renderer every review frame, showcase
 # camera and panorama is drawn by, linked into `delvec` as a library and called
-# in-process (spec-0112 §6). In development it is a git dependency by exact
-# revision, and this is that revision: `validation/check-versions.sh` holds the
-# manifest's `rev` and `frames::RENDERER_REVISION` equal to it, so the revision
-# a frame names is the one that drew it. Moved by a reviewed edit. At release it
-# becomes a registry dependency by `=` version, which needs `lumenwright` and
-# `lumenwright-kernel` on crates.io first.
-# Consumed by: crates/delvec/Cargo.toml (`lumenwright = { git, rev }`),
+# in-process (spec-0112 §6), from crates.io at exactly this version (ADR-0023
+# §5, as Nucleation): `validation/check-versions.sh` holds the manifest's `=`
+# requirement and `frames::RENDERER_VERSION` equal to it, so the version a
+# frame names is the one that drew it. Moved by a reviewed edit.
+# Consumed by: crates/delvec/Cargo.toml (`lumenwright = { version = "=…" }`),
 # crates/delvec/src/compiler/view/frames.rs + docs/reference/tools.md §4a.
-lumenwright_revision = "4b658a737112add5dbe43b3f6b454ec0658d3ece"
+lumenwright_version = "0.1.0"
 lumenwright_license = "GPL-3.0-or-later"
 
 # deepslate (MIT) — the rendering core of the prefab review page

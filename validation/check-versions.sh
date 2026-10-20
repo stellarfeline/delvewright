@@ -51,7 +51,7 @@ emit("MINEFLAYER",        d["harness"]["mineflayer"])
 emit("CONTENT_REPO",      d["content"]["repo"])   # spec-0007 pinned content repo
 emit("CONTENT_SHA",       d["content"]["sha"])
 emit("NUCLEATION_VERSION", d["render"]["nucleation_version"])   # spec-0007 render layer
-emit("LUMENWRIGHT_REVISION", d["render"]["lumenwright_revision"])
+emit("LUMENWRIGHT_VERSION", d["render"]["lumenwright_version"])
 emit("LUMENWRIGHT_LICENSE",  d["render"]["lumenwright_license"])
 emit("DEEPSLATE_VERSION", d["render"]["deepslate_version"])
 emit("GL_MATRIX_VERSION", d["render"]["gl_matrix_version"])
@@ -193,15 +193,16 @@ else
   fail "$DEEPSLATE_BUNDLE missing (the review page has no renderer to embed)"
 fi
 
-# Lumenwright draws every frame, linked as a library (spec-0112 §6.2): in
-# development by git revision, and that revision is ONE number — the
-# manifest's `rev`, the pin here, and the revision the binary states on every
-# frame (`frames::RENDERER_REVISION`). A path dependency, or a branch, names no
-# revision at all, so the manifest is parsed rather than grepped.
-if [[ $LUMENWRIGHT_REVISION =~ ^[0-9a-f]{40}$ ]]; then
-  pass "render.lumenwright_revision is a full 40-hex commit ($LUMENWRIGHT_REVISION)"
+# Lumenwright draws every frame, linked as a library (spec-0112 §6.2), from
+# crates.io at EXACTLY this version (ADR-0023 §5, as Nucleation), and that
+# version is ONE number — the manifest's `=` requirement, the pin here, and the
+# version the binary states on every frame (`frames::RENDERER_VERSION`). A git,
+# path or ranged requirement names no single published source, so the
+# manifest is parsed rather than grepped.
+if [[ $LUMENWRIGHT_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  pass "render.lumenwright_version is an exact semver ($LUMENWRIGHT_VERSION)"
 else
-  fail "render.lumenwright_revision '$LUMENWRIGHT_REVISION' is not a full 40-hex commit"
+  fail "render.lumenwright_version '$LUMENWRIGHT_VERSION' is not an exact x.y.z version"
 fi
 if [ -f "$DELVEC_CARGO" ]; then
   LW_DEP="$(python3 - "$DELVEC_CARGO" <<'PY'
@@ -211,19 +212,19 @@ dep = tomllib.load(open(sys.argv[1], "rb")).get("dependencies", {}).get("lumenwr
 if not isinstance(dep, dict):
     print("absent")
 else:
-    keys = sorted(dep)
-    print(dep.get("git", "") + " " + str(dep.get("rev", "")) + " " + str(dep.get("default-features", "")) + " " + ",".join(dep.get("features", [])) + " " + ("path" if "path" in dep else "nopath"))
+    source = "git" if "git" in dep else ("path" if "path" in dep else "registry")
+    print(str(dep.get("version", "-")) + " " + str(dep.get("default-features", "")) + " " + ",".join(dep.get("features", [])) + " " + source)
 PY
 )"
-  read -r LW_GIT LW_REV LW_DEFAULTS LW_FEATURES LW_PATH <<<"$LW_DEP"
+  read -r LW_REQ LW_DEFAULTS LW_FEATURES LW_SOURCE <<<"$LW_DEP"
   if [ "$LW_DEP" = "absent" ]; then
     fail "crates/delvec/Cargo.toml declares no \`lumenwright\` dependency table"
-  elif [ "$LW_PATH" = "path" ]; then
-    fail "crates/delvec/Cargo.toml names lumenwright by \`path\`: a path builds whatever that checkout holds; name it by \`git\` and \`rev\`"
-  elif [ "$LW_GIT" = "https://github.com/stellarfeline/lumenwright" ] && [ "$LW_REV" = "$LUMENWRIGHT_REVISION" ]; then
-    pass "lumenwright rev -> crates/delvec/Cargo.toml ($LW_REV)"
+  elif [ "$LW_SOURCE" != "registry" ]; then
+    fail "crates/delvec/Cargo.toml names lumenwright by \`$LW_SOURCE\`: a crate with a git or path dependency cannot be published; name it by \`version = \"=$LUMENWRIGHT_VERSION\"\`"
+  elif [ "$LW_REQ" = "=$LUMENWRIGHT_VERSION" ]; then
+    pass "lumenwright =version -> crates/delvec/Cargo.toml ($LW_REQ)"
   else
-    fail "crates/delvec/Cargo.toml names lumenwright at git '$LW_GIT' rev '$LW_REV', not render.lumenwright_revision '$LUMENWRIGHT_REVISION'"
+    fail "crates/delvec/Cargo.toml requires lumenwright '$LW_REQ', not render.lumenwright_version '=$LUMENWRIGHT_VERSION'"
   fi
   if [ "$LW_DEFAULTS" = "False" ] && [ "$LW_FEATURES" = "gpu" ]; then
     pass "lumenwright is taken with default-features = false, features = [\"gpu\"]"
@@ -234,10 +235,10 @@ else
   fail "crates/delvec/Cargo.toml missing (cannot verify the lumenwright pin)"
 fi
 FRAMES_RS="$ROOT/crates/delvec/src/compiler/view/frames.rs"
-if [ -f "$FRAMES_RS" ] && grep -qF "pub const RENDERER_REVISION: &str = \"$LUMENWRIGHT_REVISION\";" "$FRAMES_RS"; then
-  pass "frames::RENDERER_REVISION == render.lumenwright_revision"
+if [ -f "$FRAMES_RS" ] && grep -qF "pub const RENDERER_VERSION: &str = \"$LUMENWRIGHT_VERSION\";" "$FRAMES_RS"; then
+  pass "frames::RENDERER_VERSION == render.lumenwright_version"
 else
-  fail "frames::RENDERER_REVISION in crates/delvec/src/compiler/view/frames.rs does not state render.lumenwright_revision '$LUMENWRIGHT_REVISION' — every frame would name a renderer versions.toml does not pin"
+  fail "frames::RENDERER_VERSION in crates/delvec/src/compiler/view/frames.rs does not state render.lumenwright_version '$LUMENWRIGHT_VERSION' — every frame would name a renderer versions.toml does not pin"
 fi
 if [ "$LUMENWRIGHT_LICENSE" = "GPL-3.0-or-later" ]; then
   pass "render.lumenwright_license is GPL-3.0-or-later"

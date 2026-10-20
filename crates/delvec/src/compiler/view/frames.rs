@@ -49,19 +49,19 @@ use crate::compiler::framing::Camera;
 use crate::compiler::view::diag::{DW_INPUT, DW_RENDER, Diagnostic};
 use crate::compiler::view::scene;
 
-/// The Lumenwright revision this binary links, as `versions.toml [render]
-/// lumenwright_revision` and `crates/delvec/Cargo.toml` pin it — written on
+/// The Lumenwright version this binary links, as `versions.toml [render]
+/// lumenwright_version` and `crates/delvec/Cargo.toml` pin it — written on
 /// every frame manifest and on the first line of every run, so a frame's
 /// provenance is readable without the frame.
-pub const RENDERER_REVISION: &str = "4b658a737112add5dbe43b3f6b454ec0658d3ece";
+pub const RENDERER_VERSION: &str = "0.1.0";
 
 /// The client's *Mipmap Levels* option at its default, the texture filtering
 /// a player who has not changed it sees.
 pub const CLIENT_MIPMAP_LEVELS: u32 = 4;
 
-/// The renderer, in words: `lumenwright <revision>`.
+/// The renderer, in words: `lumenwright <version>`.
 pub fn renderer() -> String {
-    format!("lumenwright {RENDERER_REVISION}")
+    format!("lumenwright {RENDERER_VERSION}")
 }
 
 /// The review frame's size, square, in pixels.
