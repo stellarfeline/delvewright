@@ -126,8 +126,7 @@ this section is what they are *for* and the traps in each.
      **Few shipped pieces stand an anchor on a container**, and an anchor's
      name is no evidence of one: **two pieces declare an anchor literally named
      `anchor/chest` whose cell is air** (`cave-room-small`, `keep-room-small-a`)
-     — the obvious thing to reach for, and it is `DW0438` every time. In
-     `pool/stone-keep` there is no piece that can carry a `container` at all.
+     — the obvious thing to reach for, and it is `DW0438` every time.
      Check rather than assume; the library moves.
   2. **`dropped_by: <wave>`** — the item comes off a body instead of out of a
      box. The compiler places no container and PROVES the chain: that the wave

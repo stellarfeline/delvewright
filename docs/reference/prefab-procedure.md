@@ -736,7 +736,13 @@ The door judges the piece sealed exactly when its writer did: the place kind is
 derived from the layout graph of every campaign under the library's sibling
 `campaigns/` whose `detail-plan` places the piece (by `prefab_id`, the document's
 file name corroborating it), sealed only when at least one does and every one
-places it at a `reached: false` node. The piece's own document is never asked;
+places it at a `reached: false` node. A piece some campaign places elsewhere is
+judged reached. A piece no campaign places is judged **unseated**, a bare piece:
+whether a body enters it or stands in it is the place's question, so no way in is
+demanded or forbidden, and an entry or floor obligation that binds nothing is
+stated rather than refused; floor it has is still owed a declaration. A campaign
+whose `detail-plan.json` or `layout-graph.json` does not parse under this engine
+places nothing and is named as unread. The piece's own document is never asked;
 the first contract enumeration line states the kind and the rows it came from,
 and the report's `contract.owners` / `contract.sealed` carry its binding.
 A door that did not open is `DW0783` and never a silence: it names what it

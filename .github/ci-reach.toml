@@ -53,6 +53,7 @@ inputs = [
   { glob = "tools/ci/gallery_domain.py", why = "`determinism-subject.sh --subject gallery` materialises the gallery primary with it, and `gallery-prefabs.py` imports it" },
   { glob = "tools/lib/delvec_bin.py", why = "`gallery-prefabs.py`, which the gallery determinism subject runs, resolves its `delvec` through it" },
   { glob = "tools/ci/tree-digest.py", why = "`determinism-subject.sh` runs it to write the digest" },
+  { glob = "tools/ci/test-library.sh", why = "`crates/delvec/tests/common/pinned.rs` runs it to lay the engine's test pools over the pinned library" },
   { glob = "tools/creator/refscore.py", why = "`crates/delvec/tests/view_sheet.rs` runs it" },
   { glob = "tools/creator/skin/tests/fixtures/**", why = "`crates/delvec/tests/skin_parts.rs` judges every committed skin golden against the model its cast sheet names" },
   { glob = "tools/ci/check-dw-codes.py", why = "`crates/delvec/tests/codes.rs` runs it against the built binary's `delvec codes`" },
@@ -242,6 +243,7 @@ inputs = [
   { glob = "tools/ci/check-written-world.py", why = "the gallery's written-world cross-check (`DW0955`) runs after its world save" },
   { glob = "tools/lib/anvil.py", why = "`check-written-world.py` reads both worlds through it" },
   { glob = "tools/lib/rcon.sh", why = "`validation/world-save.sh` polls the placement sentinel through it" },
+  { glob = "tools/ci/test-library.sh", why = "assembles the test library the keep-trial, souls-bonfire and souls-td-lanes passes build from" },
 ]
 
 [[group]]
