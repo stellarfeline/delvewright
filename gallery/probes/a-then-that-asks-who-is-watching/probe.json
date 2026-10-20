@@ -1,0 +1,17 @@
+{
+  "code": "DW0503",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/1/on_complete/7/then/-",
+      "value": {
+        "amount": 1,
+        "state": "state/tokens",
+        "type": "add-state"
+      }
+    }
+  ],
+  "units": [],
+  "why": "The far hall's closing cutscene gains, in its `then`, a write to `state/tokens`, which is `player`-scoped. A `then` runs from `cs_end_<bare>`, which the cutscene's scheduled driver calls with the server command source (spec-0108 §3.6): there is no acting player whose datum this would be, so the write would reach nobody. `DW0503` refuses it, reading the seam from `nested_effect_dispatch` as it does for an `on_arrive`. It declares no unit: `then` is bound by the primary's closing cutscene."
+}

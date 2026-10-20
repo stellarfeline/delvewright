@@ -949,7 +949,12 @@ impl Grants {
         // (quest, objective) -> the rows its completion fires.
         let mut on_objective: BTreeMap<(&str, &str), Vec<ProducerRow>> = BTreeMap::new();
         let mut on_quest: BTreeMap<&str, Vec<ProducerRow>> = BTreeMap::new();
-        for p in crate::producers::flag_producers(c) {
+        // A story-only row (an `on_kill`) is credited by no place: no kill is
+        // forced, and the graph is not a story world.
+        for p in crate::producers::flag_producers(c)
+            .into_iter()
+            .filter(|p| !p.story_only)
+        {
             let row = (flags_of(&p.requires), Grant::Flag(p.flag.to_string()));
             match p.site {
                 crate::producers::ProducerSite::ObjectiveComplete { quest, objective } => {

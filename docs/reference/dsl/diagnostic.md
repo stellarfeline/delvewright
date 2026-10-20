@@ -146,8 +146,9 @@ like `critical-path-waypoints.json` — **never** part of the shipped datapack.
   option index is resolved against **the tree of the NPC the step's own
   `talk-to` names** — the same ordinal in another NPC's tree is a different
   option of a different speaker.
-- **`validation/branch-path-<branch>.json`** — one branch's **executable** path,
-  emitted per reachable branch, in the ordinary `critical-path.json` contract
+- **`validation/world-path-<k>.json`** — one story world's **executable** path
+  (spec-0108: the plan's rows are worlds), emitted per world with a path, in the
+  ordinary `critical-path.json` contract
   (`format_version` 2, the same steps, the same `transport`/`sneak`/
   `cutscene_seconds` markers, the same spliced bonfire `rest` steps). Built by
   the *same* `plan::build_critical_path` the exported path is built by, driven by
@@ -166,9 +167,9 @@ like `critical-path-waypoints.json` — **never** part of the shipped datapack.
   branch-only crossing as a flag-gated `teleport` in that objective's
   `complete_<obj>` bundle (`DW0494` above). Not emitted for an
   unreachable branch — there is no world that plays it, and `DW0482` has already
-  failed the build. Each reachable branch also gets its own
-  `validation/branch-waypoints-<branch>.json` ("World / build output" above), whose legs
-  follow the branch path's own step order.
+  failed the build. Each world with a path also gets its own
+  `validation/world-waypoints-<k>.json` ("World / build output" above), whose legs
+  follow the world path's own step order.
 
 **A branch path is NAV-proven as well as FLOW-proven.** `DW0204`'s replay and the
 `DW048x` proofs judge a branch's *story*: its steps are ordered, its gates
@@ -178,7 +179,7 @@ reachable branch path is routed over the assembled world under the branch's own
 causal gate seals, so a route that crosses a gate only a *sibling* branch opens
 is refused at build. `validation/branch-runs.sh` plays each branch on the
 dynamic layer.
-- **`validation/branch-chronicle-<branch>.md`** — the 流水账: every reachable
+- **`validation/world-chronicle-<k>.md`** — the 流水账, one per story world: every reachable
   node's `happening` line in the order the compiled graph plays them, readable
   start to ending, followed by the undated ambient beats and the endings reached.
   The dated account carries four kinds of line — `quest`, `objective`, `choice`

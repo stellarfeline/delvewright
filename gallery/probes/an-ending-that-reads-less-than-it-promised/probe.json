@@ -1,0 +1,13 @@
+{
+  "code": "DW1029",
+  "patch": [
+    {
+      "doc": "quest-plan.json",
+      "op": "replace",
+      "path": "/content/endings_read/at_least",
+      "value": 6
+    }
+  ],
+  "units": [],
+  "why": "The campaign's declaration that every ending reads at least three seeded inputs is raised to six — one more than the five seeded inputs each of the far hall's endings reads (`flag/hall-open`, `state/labels-read`, `flag/read-the-label`, `flag/saw-the-reliquary`, `state/hearth-struck`; `flag/hall-sealed` is written in the final scene itself). `DW1029` refuses each ending, naming the term, the declared number, the count and every input with its kind and where it is written. It declares no unit: `endings_read.at_least` and `deeds_at_least` are bound by the primary's declaration, which both endings meet."
+}

@@ -1852,7 +1852,7 @@
             },
             "id": "obj/reach-the-end",
             "marker": "hidden",
-            "radius": 2,
+            "radius": 1,
             "requires_flags": [
               "flag/muster-cleared"
             ],
@@ -1990,13 +1990,22 @@
             "type": "set-checkpoint"
           },
           {
-            "ending": "The hall is read end to end.",
+            "ending": "ending/the-hall-remembers",
             "happening": {
               "subject": "anchor/exit",
-              "text": "The hall goes quiet behind them.",
+              "text": "The hall goes quiet behind them, and the struck hearth still holds its warmth.",
               "verb": "survives"
             },
-            "type": "campaign-complete"
+            "type": "campaign-complete",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/hearth-struck",
+                  "value": 1
+                }
+              ]
+            }
           },
           {
             "happening": {
@@ -2018,6 +2027,104 @@
                 }
               ]
             }
+          },
+          {
+            "ending": "ending/the-hall-forgets",
+            "happening": {
+              "subject": "anchor/exit",
+              "text": "The hall goes quiet behind them, cold as the hearth nobody struck.",
+              "verb": "survives"
+            },
+            "type": "campaign-complete",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/hearth-struck",
+                  "value": 0
+                }
+              ]
+            }
+          },
+          {
+            "style": "chat",
+            "text": "The curator's label stays with you: you read it end to end.",
+            "type": "narrate",
+            "when": {
+              "requires_flags": [
+                "flag/read-the-label"
+              ]
+            }
+          },
+          {
+            "style": "chat",
+            "text": "Somewhere behind you the reliquary keeps what you saw in it.",
+            "type": "narrate",
+            "when": {
+              "requires_flags": [
+                "flag/saw-the-reliquary"
+              ]
+            }
+          },
+          {
+            "look_at": {
+              "anchor": "anchor/exit"
+            },
+            "party": "present",
+            "path": [
+              {
+                "anchor": "anchor/exit",
+                "offset": [
+                  0,
+                  3,
+                  -3
+                ]
+              },
+              {
+                "anchor": "anchor/exit",
+                "offset": [
+                  0,
+                  3,
+                  -6
+                ]
+              }
+            ],
+            "seconds": 2,
+            "then": [
+              {
+                "from": {
+                  "anchor": "anchor/exit",
+                  "extent": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                "to": {
+                  "anchor": "anchor/hearth"
+                },
+                "type": "teleport"
+              },
+              {
+                "block": "minecraft:moss_carpet",
+                "region": {
+                  "anchor": "anchor/exit",
+                  "extent": [
+                    1,
+                    0,
+                    1
+                  ]
+                },
+                "type": "fill-region"
+              },
+              {
+                "time": {
+                  "sun": "setting"
+                },
+                "type": "set-time"
+              }
+            ],
+            "type": "cutscene"
           }
         ],
         "on_objective_complete": {
@@ -3737,6 +3844,11 @@
         "initial": 0,
         "note": "How many of the north wall's valves the party has turned in order. Only the three valve triggers write it, a valve out of turn puts it back to 0, and the counter waits on 3: a numeric gate only presses move, whose order the plan finds (DW0985 when none opens it).",
         "scope": "party"
+      },
+      {
+        "id": "state/hearth-struck",
+        "note": "Whether anybody struck the hearth before the far hall closed: the deed the two endings divide on.",
+        "scope": "party"
       }
     ],
     "timed_gates": [
@@ -3935,10 +4047,16 @@
                 }
               ]
             }
+          },
+          {
+            "amount": 1,
+            "state": "state/hearth-struck",
+            "type": "add-state"
           }
         ],
         "forbids_flags": [
-          "flag/hall-sealed"
+          "flag/hall-sealed",
+          "flag/muster-cleared"
         ],
         "id": "trigger/strike-the-hearth",
         "on": {

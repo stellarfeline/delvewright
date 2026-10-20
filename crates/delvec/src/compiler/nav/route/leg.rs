@@ -295,6 +295,18 @@ impl BodyBox {
         }
     }
 
+    /// The `1 x 1 x 1` box of the block in cell `m` — what a used block is
+    /// sighted as ([`sees_body`] over it is the one sight rule for a block and
+    /// a body alike).
+    #[must_use]
+    pub fn block(m: [i32; 3]) -> BodyBox {
+        let [x, y, z] = m.map(f64::from);
+        BodyBox {
+            lo: [x, y, z],
+            hi: [x + 1.0, y + 1.0, z + 1.0],
+        }
+    }
+
     /// The cells the box overlaps — a ray may pass through them, since the
     /// body stands in them.
     #[must_use]
@@ -690,6 +702,140 @@ fn performed_link(
     Ok(None)
 }
 
+/// **Where the party stands to perform trigger step `step` without completing
+/// anything out of turn** (`DW0311`): `Some(cell)` when the step keeps out of a
+/// completion volume within a reach of its target, `None` when it keeps out of
+/// none there (the walk then ends where it always has), and a refusal when no
+/// cell outside every such volume performs it.
+///
+/// A candidate is a cell a body stands in on this leg's world — which already
+/// keeps it outside every volume by the selector's hitbox rule
+/// ([`World::standable_fp`]) — from which the step completes
+/// ([`Step::completes_from`]), with the target in sight for a press or a click
+/// ([`sees_body`] over the block or the interaction body), that no body on the path stands in (an NPC's
+/// station, the target itself), and that the leg's start walks to. The one
+/// nearest the target wins, then the shorter walk, then cell order (ADR-0006).
+/// A trigger that already has its stand (a link, or a stance this proof chose
+/// on an earlier pass) is left as it is.
+fn keep_out_stance(
+    world: &World,
+    from: &VisitedPos,
+    step: usize,
+    region_events: &RegionEvents,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+    carries: &Carries<'_>,
+) -> Result<Option<[i32; 3]>, Failure> {
+    use crate::compiler::crosshair::{BLOCK_INTERACTION_REACH, INTERACTION_REACH};
+    let Some(
+        s @ Step::Trigger {
+            trigger_id,
+            on,
+            pos,
+            range,
+            block,
+            stand: None,
+            ..
+        },
+    ) = carries.steps.get(step)
+    else {
+        return Ok(None);
+    };
+    let keep = region_events.keep_out_at(step);
+    let reach = match (*on, range) {
+        ("approach", Some(r)) => f64::from(*r),
+        ("step", _) => crate::compiler::plan::STEP_REACH,
+        _ if block.is_some() => BLOCK_INTERACTION_REACH,
+        _ => INTERACTION_REACH,
+    };
+    let r = reach.ceil() as i32 + 1;
+    let near: Vec<&crate::compiler::reach::KeepOut> = keep
+        .iter()
+        .filter(|k| {
+            let (lo, hi) = k.bounds();
+            (0..3).all(|i| lo[i] - r <= pos[i] && pos[i] <= hi[i] + r)
+        })
+        .collect();
+    if near.is_empty() {
+        return Ok(None);
+    }
+    let st = world.walked_leg_region_state(region_events, ancestor, from.src_step, step);
+    let owned;
+    let leg: &World = if st.is_empty() {
+        world
+    } else {
+        owned = world.with_region_state(&st);
+        &owned
+    };
+    let Some(start) = leg.snap_endpoint(from.pos, false) else {
+        // The leg's own start does not stand: the walk proof refuses that leg in
+        // its own words.
+        return Ok(None);
+    };
+    // The cells a body stands in on this path — every NPC's station a
+    // `talk-to` walks to, and the trigger's own target. The world model holds
+    // no entity, and a stance on one is a cell the party cannot get into.
+    let bodies: BTreeSet<[i32; 3]> = carries
+        .steps
+        .iter()
+        .filter_map(|x| match x {
+            Step::TalkTo { pos, .. } => Some(*pos),
+            _ => None,
+        })
+        .chain(std::iter::once(*pos))
+        .collect();
+    let mut best: Option<(i64, usize, [i32; 3])> = None;
+    for x in pos[0] - r..=pos[0] + r {
+        for y in pos[1] - r..=pos[1] + r {
+            for z in pos[2] - r..=pos[2] + r {
+                let c = [x, y, z];
+                if !leg.is_standable(c) || !s.completes_from(c) || bodies.contains(&c) {
+                    continue;
+                }
+                let seen = match *on {
+                    "approach" | "step" => true,
+                    _ if block.is_some() => sees_body(leg, c, &BodyBox::block(*pos)),
+                    _ => sees_body(leg, c, &BodyBox::interaction(*pos)),
+                };
+                if !seen {
+                    continue;
+                }
+                let d2: i64 = (0..3).map(|i| i64::from(c[i] - pos[i]).pow(2)).sum();
+                if best.is_some_and(|(bd, _, _)| bd < d2) {
+                    continue;
+                }
+                let Some(route) = leg.find_path(start, c) else {
+                    continue;
+                };
+                let key = (d2, route.len(), c);
+                if best.is_none_or(|b| key < b) {
+                    best = Some(key);
+                }
+            }
+        }
+    }
+    match best {
+        Some((_, _, c)) => Ok(Some(c)),
+        None => Err(Failure {
+            code: DW_CRITICAL_UNROUTABLE,
+            message: format!(
+                "critical path: trigger `{trigger_id}` at {pos:?} is performed beside the \
+                 completion volume of {names}, armed while the party performs it and due only \
+                 later on the path, and no cell the party can walk to performs it from outside \
+                 that volume — whoever presses it completes the armed objective out of turn, so \
+                 the path the proof walks is not the path the party plays. Move the trigger or \
+                 the armed objective's anchor apart, shrink the objective's `radius`, or arm it \
+                 after the trigger is performed; do NOT reorder the path to dodge the proof.",
+                names = names_of(
+                    &near
+                        .iter()
+                        .map(|k| k.objective.as_str())
+                        .collect::<Vec<_>>()
+                ),
+            ),
+        }),
+    }
+}
+
 /// The message for a leg no walk and no link carries (spec-0083 §3.1, §3.4):
 /// under `DW0311` a gather over the leg's start is named with the remedy that
 /// makes it a link; under any code of the leg family, every link considered on
@@ -844,6 +990,27 @@ pub(in crate::compiler::nav) fn route_with_links(
                     by_link: true,
                     by_loop: false,
                 };
+                continue;
+            }
+            Ok(None) => {}
+        }
+        // A trigger performed beside the completion volume of an objective that
+        // is armed and not yet due: the party performs it from a cell outside
+        // every such volume, chosen here and handed to the bot as its stand.
+        match keep_out_stance(world, &cur, next.src_step, region_events, ancestor, carries) {
+            Err(e) => {
+                result = Err(e);
+                break;
+            }
+            Ok(Some(cell)) => {
+                let stood = VisitedPos { pos: cell, ..*next };
+                if let Err(e) = judge_leg(world, &[cur, stood], region_events, ancestor) {
+                    result = Err(e);
+                    break;
+                }
+                b.walked += 1;
+                takes.stood.insert(next.src_step, cell);
+                cur = stood;
                 continue;
             }
             Ok(None) => {}
@@ -1175,9 +1342,51 @@ fn judge_leg(
                 ),
             })
         };
+        // The keep-out counterfactual: this leg with the completion volumes of
+        // the objectives armed on it lifted. A leg that routes there and nowhere
+        // else can be walked only by completing one of them out of turn, and the
+        // answer names which. Built only for a leg that keeps out of any.
+        let unkept_owned;
+        let unkept: Option<&World> = if leg_world.has_keep_out() {
+            unkept_owned = leg_world.without_keep_out();
+            Some(&unkept_owned)
+        } else {
+            None
+        };
+        let keep_out_failure = |cells: &[[i32; 3]], what: &str| -> Failure {
+            let names = names_of(
+                &leg_world
+                    .keep_out_over(cells)
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+            );
+            Failure {
+                code: DW_CRITICAL_UNROUTABLE,
+                message: format!(
+                    "critical path: {what} lies inside the completion volume of {names}, armed \
+                     while the party walks this leg and due only later on the path — a body \
+                     there completes it out of turn, so the path the proof walks is not the \
+                     path the party plays. Move the anchor of this step or of the armed \
+                     objective so a body can get to this step without entering that volume, \
+                     arm the objective later, or shrink its `radius`; do NOT reorder the path \
+                     to dodge the proof."
+                ),
+            }
+        };
+        let keep_out_snap_err = |at: [i32; 3], talk_to: bool| -> Option<Failure> {
+            let cell = unkept?.snap_endpoint(at, talk_to)?;
+            Some(keep_out_failure(
+                &[cell],
+                &format!("the only footing within {SNAP_RADIUS} blocks of visited anchor {at:?}"),
+            ))
+        };
         let start = match leg_world.snap_endpoint(from, false) {
             Some(c) => c,
             None => {
+                if let Some(e) = keep_out_snap_err(from, false) {
+                    return Err(e);
+                }
                 if let Some(e) = lethal_snap_err(from, false) {
                     return Err(e);
                 }
@@ -1205,6 +1414,9 @@ fn judge_leg(
         let goal = match leg_world.snap_endpoint(to, pair[1].talk_to) {
             Some(c) => c,
             None => {
+                if let Some(e) = keep_out_snap_err(to, pair[1].talk_to) {
+                    return Err(e);
+                }
                 if let Some(e) = lethal_snap_err(to, pair[1].talk_to) {
                     return Err(e);
                 }
@@ -1231,6 +1443,19 @@ fn judge_leg(
             }
         };
         if leg_world.find_path(start, goal).is_none() {
+            // An armed objective first: the most specific answer there is — the
+            // geometry and every premise carry the party, and only the order
+            // the path walks its objectives in does not.
+            if let Some(free) = unkept
+                && let Some(cells) = free.find_path(start, goal)
+            {
+                return Err(keep_out_failure(
+                    &cells,
+                    &format!(
+                        "the only route from {from:?} (floor {start:?}) to {to:?} (floor {goal:?})"
+                    ),
+                ));
+            }
             // A holding loop first (spec-0086 §5.1): when the leg routes with the
             // slab released and not with it held, the corridor is endless for
             // this party here, and the remedy is a release, never a walk.

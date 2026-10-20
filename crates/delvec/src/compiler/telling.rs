@@ -679,7 +679,10 @@ pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
     walks.push(("the critical path".to_string(), main));
     for r in crate::compiler::branch::realize(c) {
         if let Some(w) = r.world {
-            walks.push((format!("branch `{}`", r.branch.id), flow.playthrough_in(w)));
+            walks.push((
+                format!("branch `{}`", r.branch.id),
+                flow.story_playthrough(w),
+            ));
         }
     }
 
@@ -917,7 +920,7 @@ fn states_of(
     pt: &crate::compiler::flow::Playthrough,
     casts: &BTreeMap<String, crate::compiler::cast::NpcCast>,
 ) -> Vec<State> {
-    let mut w = flow.walk();
+    let mut w = flow.walk_for(pt);
     let mut out = Vec::new();
     let mut done: BTreeSet<String> = BTreeSet::new();
     let mut fired: BTreeSet<String> = BTreeSet::new();

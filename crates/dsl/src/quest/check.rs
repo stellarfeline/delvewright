@@ -1184,7 +1184,8 @@ pub(crate) fn quest_prop_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mu
     }
 }
 
-/// `DW0110` over the expanded quests' ids and their objectives' ids.
+/// `DW0110` over the expanded quests' ids, their objectives' ids, and every
+/// `campaign-complete`'s `ending` (spec-0108 §3.1).
 pub(crate) fn quest_id_syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
     for (i, q) in c.quests.content.quests.iter().enumerate() {
         crate::ids::id_syntax!(d, q.id, "quests", format!("/content/quests/{i}/id"));
@@ -1197,6 +1198,16 @@ pub(crate) fn quest_id_syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
             );
         }
     }
+    // spec-0108 §3.1: an ending is an id, `ending/<kebab>`, wherever its
+    // `campaign-complete` stands — every root, any nesting depth.
+    crate::effects::for_each_campaign_effect(c, &mut |path, _site, eff| {
+        if let crate::Verb::CampaignComplete {
+            ending: Some(ending),
+        } = &eff.verb
+        {
+            crate::ids::id_syntax!(d, ending, "quests", format!("{path}/ending"));
+        }
+    });
 }
 
 /// `DW0111` over the expanded quests' ids, and over the objective ids.

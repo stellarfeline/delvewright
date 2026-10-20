@@ -185,8 +185,8 @@ fn waypoints_follow_the_cast_positions() {
 #[test]
 fn each_branch_path_carries_its_own_cast_position() {
     let out = build("talkto-cast-pos-branch");
-    let hold = json(&out, "validation/branch-path-hold.json");
-    let bolt = json(&out, "validation/branch-path-bolt.json");
+    let hold = json(&out, &common::world_file_of(&out, "branch/hold", "path"));
+    let bolt = json(&out, &common::world_file_of(&out, "branch/bolt", "path"));
 
     let stand = anchor_cell("talkto-cast-pos-branch", "anchor/keeper-stand");
     let exit = anchor_cell("talkto-cast-pos-branch", "anchor/exit");
@@ -217,9 +217,9 @@ fn each_branch_path_carries_its_own_cast_position() {
 #[test]
 fn branch_waypoints_follow_each_branch_cast_positions() {
     let out = build("talkto-cast-pos-branch");
-    for slug in ["hold", "bolt"] {
-        let cp = json(&out, &format!("validation/branch-path-{slug}.json"));
-        let wp = json(&out, &format!("validation/branch-waypoints-{slug}.json"));
+    for slug in ["branch/hold", "branch/bolt"] {
+        let cp = json(&out, &common::world_file_of(&out, slug, "path"));
+        let wp = json(&out, &common::world_file_of(&out, slug, "waypoints"));
         let positions = all_positions(&cp);
         for to in &leg_destinations(&wp) {
             assert!(
@@ -229,7 +229,10 @@ fn branch_waypoints_follow_each_branch_cast_positions() {
             );
         }
     }
-    let bolt_wp = json(&out, "validation/branch-waypoints-bolt.json");
+    let bolt_wp = json(
+        &out,
+        &common::world_file_of(&out, "branch/bolt", "waypoints"),
+    );
     assert!(
         leg_destinations(&bolt_wp).contains(&anchor_cell("talkto-cast-pos-branch", "anchor/exit")),
         "the bolt branch walks out to the road it cast the Keeper onto"

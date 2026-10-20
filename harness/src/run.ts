@@ -54,6 +54,7 @@ import { unreportedWindows } from "./load-window.ts";
 import { judgeResourcePack } from "./resource-pack.ts";
 import {
   assertEntryChoicesOnPath,
+  assertEntryDeedsOnPath,
   branchTierFromEnv,
   drivenBranchFromEnv,
   loadBranchPlanForCriticalPath,
@@ -219,6 +220,23 @@ async function main(): Promise<number> {
   if (driven && entryCommands.length > 0) {
     process.stderr.write(`scripted branch choice(s): ${entryCommands.join(" ; ")}\n`);
   }
+  // spec-0108 §6.4: a world is its participation too — the path must perform
+  // every entry deed, so a run cannot claim a deed world while walking the
+  // extreme.
+  const entryDeeds = driven
+    ? assertEntryDeedsOnPath(
+        driven,
+        criticalPath.steps as readonly {
+          action: string;
+          trigger?: string;
+          objective?: string;
+          act?: string;
+        }[],
+      )
+    : [];
+  if (driven && entryDeeds.length > 0) {
+    process.stderr.write(`entry deed(s) on the path: ${entryDeeds.join(" ; ")}\n`);
+  }
 
   // If the compiler's proven waypoint artifact accompanies the
   // path being walked, the executor navigates each walked leg through it
@@ -228,7 +246,7 @@ async function main(): Promise<number> {
   // The artifact's legs are consumed in LOCKSTEP with the walked positions of
   // the path being walked, so each path gets ITS OWN artifact: the exported path
   // its `critical-path-waypoints.json`, a driven branch its
-  // `branch-waypoints-<slug>.json`, whose legs follow that branch's
+  // `world-waypoints-<k>.json`, whose legs follow that world's
   // own step sequence. The critical-path artifact is never replayed on a branch
   // — its legs are position-ordered for a different sequence, and the wrong legs
   // would strand the bot while looking like a content fault.
@@ -573,6 +591,8 @@ async function main(): Promise<number> {
     // spec-0029: the name-preference binding, always recorded — including a zero.
     report.recordNamePreference(executor.namePreference());
     report.recordRests(executor.performedRests());
+    report.recordAftermath(executor.aftermathResults);
+    report.recordMocks(executor.mockResults);
     report.recordLoadWindows(executor.loadWindows());
     for (const w of executor.loadWindows()) {
       process.stderr.write(
@@ -788,6 +808,7 @@ async function main(): Promise<number> {
             chronicle: b.chronicle,
             entryCommands,
             endings: b.endings,
+            mocked: executor.mockResults.map((m) => `${m.act}: mocked: ${m.kind}`),
           };
         }
         const skipped = selection.skipped.find((s) => s.branch === b.id);

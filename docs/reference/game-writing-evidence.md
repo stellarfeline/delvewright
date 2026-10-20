@@ -173,7 +173,7 @@ here is built.
 ### Dangling-reference check
 
 1. **Order.** Use the compiler's play order, not a re-derivation: `Flow::journal`
-   (the order `validation/branch-chronicle-*.md` prints and `Flow::replay`
+   (the order `validation/world-chronicle-*.md` prints and `Flow::replay`
    proves), per reachable branch. Every l10n key has a JSON pointer into its stage
    document; join each key to the first journal step whose quest, objective,
    effect or dialogue choice owns that pointer. Positional strings (a

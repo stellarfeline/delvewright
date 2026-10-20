@@ -485,7 +485,7 @@ fn a_collect_adopting_a_frame_fills_it_at_activation_and_tells_the_bot() {
     );
     assert!(frame.contains("Fixed:1b,Invulnerable:1b"), "{frame}");
     let cp: serde_json::Value = serde_json::from_str(&read(&out, "critical-path.json")).unwrap();
-    assert_eq!(cp["format_version"], 5);
+    assert_eq!(cp["format_version"], delvec::compiler::plan::CRITICAL_PATH_FORMAT_VERSION);
     let step = cp["steps"]
         .as_array()
         .unwrap()

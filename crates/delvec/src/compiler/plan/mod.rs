@@ -504,12 +504,17 @@ pub struct LinkTakes {
     /// trigger is a link the party stands in: `(link index, stand cell)`. A
     /// performed trigger that carries, carries.
     pub performed: BTreeMap<usize, (usize, [i32; 3])>,
+    /// A `trigger` step the path already performs (unlinked step index) that is
+    /// no link, performed from a cell the route proof chose outside every
+    /// completion volume the step keeps out of (`DW0311`): its `stand`.
+    pub stood: BTreeMap<usize, [i32; 3]>,
 }
 
 impl LinkTakes {
-    /// Whether the path takes no link at all.
+    /// Whether the route proof decided nothing about the path: no link taken
+    /// and no stance chosen.
     pub fn is_empty(&self) -> bool {
-        self.spliced.is_empty() && self.performed.is_empty()
+        self.spliced.is_empty() && self.performed.is_empty() && self.stood.is_empty()
     }
 }
 

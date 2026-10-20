@@ -4945,3 +4945,105 @@ fn dw1036_removing_the_owned_key_passes_the_audit() {
     let (code, log) = audit("plain", vec![]);
     assert_eq!(code, 0, "{log}");
 }
+
+// ---------------------------------------------------------------------------
+// spec-0108 — an ending reads the run
+// ---------------------------------------------------------------------------
+
+/// `tests/fixtures/elective-reach`, copied: one ending (`ending/home`) whose
+/// final scene's epilogue line reads `state/tally`, which the optional tally
+/// quest writes; the tally quest waits on `flag/rang`, which only the elective
+/// bell sets.
+fn ending_campaign(tag: &str) -> PathBuf {
+    let camp = tmp(&format!("ending-{tag}"));
+    common::copy_dir_all(
+        &common::repo_root().join("crates/delvec/tests/fixtures/elective-reach"),
+        &camp,
+    );
+    camp
+}
+
+/// **GATE A LINE OF THE FINAL SCENE ON A FLAG OR DATUM A DEED IN ANOTHER QUEST
+/// WRITES.** `DW1029`'s first move. The campaign declares every ending reads two
+/// seeded inputs; `ending/home` reads one (`state/tally`). Adding an epilogue
+/// line gated on `flag/rang` — the bell's flag, a deed outside the host quest —
+/// makes it two, and the declaration holds. Measured on the fixture: declared,
+/// `analyze` exits 1 (the validation funnel's refusal) with `DW1029` and no
+/// other error; moved, exit 0.
+#[test]
+fn dw1029_gating_an_epilogue_line_on_a_deed_meets_the_declaration() {
+    let dir = common::prefabs_dir();
+    let camp = ending_campaign("dw1029");
+    edit_doc(&camp, "quest-plan.json", |v| {
+        v["content"]["endings_read"] = serde_json::json!({"at_least": 2});
+    });
+    let (code, before) = analyze(&camp, &dir);
+    assert_eq!(code, 1, "{before}");
+    assert!(
+        before.contains("DW1029") && before.contains("reads 1 seeded input(s)"),
+        "{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        v["content"]["quests"][2]["on_complete"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "type": "narrate", "style": "chat", "text": "The bell still hums.",
+                "when": {"requires_flags": ["flag/rang"]}
+            }));
+    });
+    let (code, after) = analyze(&camp, &dir);
+    assert!(!after.contains("DW1029"), "{after}");
+    assert_eq!(code, 0, "the epilogue line meets the declaration:\n{after}");
+}
+
+/// **LOOSEN THE INTERVAL.** `DW1030`'s second move. A second ending needs the
+/// tally at least 5; its only writer is one optional quest, so no world leaves
+/// it above 1 and no world reaches the ending. Loosened to at least 1, the world
+/// that performs the tally quest reaches it. Measured on the fixture: at 5,
+/// `analyze` exits 1 with `DW1030` naming the subset-sum reason, and `DW0482`
+/// beside it — the world realizing `branch/rang` performs the tally quest and,
+/// with the first ending kept for a tally of 0, ends nowhere; at 1, exit 0 and
+/// neither.
+#[test]
+fn dw1030_loosening_the_interval_lets_a_world_reach_the_ending() {
+    let dir = common::prefabs_dir();
+    let camp = ending_campaign("dw1030");
+    let gate = |v: i32| {
+        serde_json::json!({"requires_state": [
+            {"state": "state/tally", "op": "at-least", "value": v}
+        ]})
+    };
+    edit_doc(&camp, "quests.json", |v| {
+        let scene = v["content"]["quests"][2]["on_complete"]
+            .as_array_mut()
+            .unwrap();
+        scene[0]["when"] = serde_json::json!({"requires_state": [
+            {"state": "state/tally", "op": "at-most", "value": 0}
+        ]});
+        scene.push(serde_json::json!({
+            "type": "campaign-complete", "ending": "ending/counted",
+            "happening": {"text": "Counted.", "verb": "survives"},
+            "when": gate(5)
+        }));
+    });
+    let (code, before) = analyze(&camp, &dir);
+    assert_eq!(code, 1, "{before}");
+    assert!(
+        before.contains("DW1030") && before.contains("`ending/counted`"),
+        "{before}"
+    );
+    assert!(
+        before.contains("no subset of elective amounts reaches it"),
+        "{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        v["content"]["quests"][2]["on_complete"][2]["when"] = gate(1);
+    });
+    let (code, after) = analyze(&camp, &dir);
+    assert!(
+        !after.contains("DW1030") && !after.contains("DW0482"),
+        "{after}"
+    );
+    assert_eq!(code, 0, "the loosened interval is reached:\n{after}");
+}

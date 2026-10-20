@@ -2,6 +2,8 @@
 
 import type { InteractStep, Vec3Tuple } from "../critical-path.ts";
 import { presentAndTrigger, presentItem } from "../held-item.ts";
+import { parseBlockState, readBlockState } from "../block-state.ts";
+import { FACE_NORMALS, pressFace } from "../press-face.ts";
 import type { Item } from "prismarine-item";
 import { delay, fmt } from "./connection.ts";
 import { EFFECT_SETTLE_MS } from "./objective.ts";
@@ -54,8 +56,8 @@ export const methods = {
     const bot = this.requireBot();
     const here = bot.entity.position;
     const block = bot.blockAt(here.offset(pos[0] - here.x, pos[1] - here.y, pos[2] - here.z));
-    const want = (expected.split("[")[0] ?? expected).replace(/^minecraft:/, "");
-    if (!block || block.name !== want) {
+    const want = parseBlockState(expected).name;
+    if (!block || parseBlockState(block.name).name !== want) {
       throw new Error(
         `${label}: expected the block \`${expected}\` at [${pos.join(", ")}] to press, found ` +
           `${block ? `\`${block.name}\`` : "no block (chunk unloaded?)"} — the act is the block's ` +
@@ -63,25 +65,18 @@ export const methods = {
       );
     }
     const eye = bot.entity.position.offset(0, bot.entity.height, 0);
-    // The face the bot is looking at, not the top: a bell rings only on a hit to
-    // its side along its own axis, and a lever or a button takes any face — so the
-    // horizontal face turned toward the bot is the one a player would click, and
-    // the cursor sits at that face's middle.
-    const dx = eye.x - (pos[0] + 0.5);
-    const dz = eye.z - (pos[2] + 0.5);
-    const face =
-      Math.abs(dx) >= Math.abs(dz)
-        ? here.offset(Math.sign(dx) - here.x, -here.y, -here.z)
-        : here.offset(-here.x, -here.y, Math.sign(dz) - here.z);
-    const cursor = here.offset(
-      0.5 + face.x * 0.5 - here.x,
-      0.5 - here.y,
-      0.5 + face.z * 0.5 - here.z,
-    );
-    await bot.lookAt(block.position.offset(0.5 + face.x * 0.5, 0.5, 0.5 + face.z * 0.5), true);
+    // The face a player would click: of the faces the block performs its use
+    // on (a bell rings only on some sides, `pressFace`), the one turned toward
+    // the bot — a horizontal face even from straight below — with the cursor at
+    // that face's middle.
+    const state = readBlockState(block.name, block.getProperties());
+    const side = pressFace(state, eye.x - (pos[0] + 0.5), eye.z - (pos[2] + 0.5));
+    const [nx, nz] = FACE_NORMALS[side];
+    const face = here.offset(nx - here.x, -here.y, nz - here.z);
+    const cursor = here.offset(0.5 + nx * 0.5 - here.x, 0.5 - here.y, 0.5 + nz * 0.5 - here.z);
+    await bot.lookAt(block.position.offset(0.5 + nx * 0.5, 0.5, 0.5 + nz * 0.5), true);
     process.stderr.write(
-      `[press] ${label}: right-clicking the ${block.name} at [${pos.join(", ")}] on its ` +
-        `${face.x !== 0 ? (face.x > 0 ? "east" : "west") : face.z > 0 ? "south" : "north"} ` +
+      `[press] ${label}: right-clicking the ${state} at [${pos.join(", ")}] on its ${side} ` +
         `face from ${fmt(eye)}\n`,
     );
     await bot.activateBlock(block, face, cursor);

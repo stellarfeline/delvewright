@@ -519,6 +519,17 @@ pub(super) fn validate_loaded(
                 examined.push(bbind.line());
                 diags.extend(bd);
             }
+            // spec-0108: an ending reads the run. What each ending's final scene
+            // reads, where each input is written, which story worlds reach each
+            // ending and what each scene leaves changed — `DW1029` against the
+            // campaign's own `endings_read`, `DW1030` per ending no world
+            // reaches. Bound in the one funnel, the binding line printed on
+            // every run, zeroes included.
+            {
+                let (ed, ebind) = delvec::compiler::ending::check_bound(&campaign);
+                examined.extend(ebind.lines());
+                diags.extend(ed);
+            }
             // spec-0031 (DSL v0.10): a numeric gate is judged against the writes
             // the path performs before it (DW0879). The reachability model walks
             // objectives and flags; the arithmetic a `requires_state` compares

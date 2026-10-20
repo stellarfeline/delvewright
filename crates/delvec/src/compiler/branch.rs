@@ -240,6 +240,20 @@ pub struct RealizedBranch {
     pub completed: BTreeSet<String>,
 }
 
+/// The elective acts the story world `pt` walks does not perform, by id —
+/// empty for a playthrough that is no story world's.
+fn skipped_acts(flow: &Flow<'_>, pt: &crate::compiler::flow::Playthrough) -> BTreeSet<String> {
+    let Some(ctx) = &pt.story else {
+        return BTreeSet::new();
+    };
+    flow.story()
+        .electives
+        .iter()
+        .map(|e| e.id.clone())
+        .filter(|id| !ctx.performs.contains(id))
+        .collect()
+}
+
 /// Realize every enumerated branch against the flow model.
 pub fn realize(c: &Campaign) -> Vec<RealizedBranch> {
     let flow = Flow::new(c);
@@ -250,8 +264,11 @@ pub fn realize(c: &Campaign) -> Vec<RealizedBranch> {
 }
 
 fn realize_one(c: &Campaign, flow: &Flow<'_>, branch: EnumeratedBranch) -> RealizedBranch {
-    let world = (0..flow.world_count()).find(|&i| {
-        let f = flow.world_flags(i);
+    // Story worlds in canonical order (spec-0108 §4.2): per selection the
+    // *all* world first, so a branch every world of its selection realizes keeps
+    // today's world and path.
+    let world = (0..flow.story_count()).find(|&i| {
+        let f = flow.story_flags(i);
         branch.set.iter().all(|x| f.contains(x)) && !branch.unset.iter().any(|x| f.contains(x))
     });
     let Some(w) = world else {
@@ -265,9 +282,9 @@ fn realize_one(c: &Campaign, flow: &Flow<'_>, branch: EnumeratedBranch) -> Reali
             completed: BTreeSet::new(),
         };
     };
-    let pt = flow.playthrough_in(w);
+    let pt = flow.story_playthrough(w);
     let journal = flow.journal(&pt);
-    let (chronicle, endings) = chronicle_of(c, &journal);
+    let (chronicle, endings) = chronicle_of(c, &journal, &skipped_acts(flow, &pt));
     let entry_choices = entry_choices(c, &pt, &branch.set);
     RealizedBranch {
         branch,
@@ -276,7 +293,7 @@ fn realize_one(c: &Campaign, flow: &Flow<'_>, branch: EnumeratedBranch) -> Reali
         entry_choices,
         chronicle,
         endings,
-        completed: flow.world_completed(w),
+        completed: flow.story_completed(w),
     }
 }
 
@@ -357,8 +374,19 @@ fn talk_to_npc<'a>(c: &'a Campaign, obj: &str) -> Option<&'a str> {
 /// The SKELETON — which nodes appear, in what order — is derived machine truth:
 /// it is exactly the order [`Flow::journal`] replays, which is exactly the order
 /// [`Flow::replay`] proves. Only the flesh (each line's `text`) is authored.
-fn chronicle_of(c: &Campaign, journal: &[JournalStep]) -> (Vec<ChronicleLine>, Vec<String>) {
+///
+/// `skipped` are the elective acts the story world does not perform (empty
+/// outside one). An elective ambient act the world performs as an entry deed is
+/// dated where it is performed — a `deed` line in front of that step — and one
+/// it skips has no line at all; neither is listed among the undated ambient
+/// beats, which keep every other trigger and trap beat.
+fn chronicle_of(
+    c: &Campaign,
+    journal: &[JournalStep],
+    skipped: &BTreeSet<String>,
+) -> (Vec<ChronicleLine>, Vec<String>) {
     let mut w = Chronicler::new(c);
+    w.not_ambient = skipped.clone();
     for step in journal {
         w.push_step(step);
     }
@@ -380,6 +408,9 @@ struct Chronicler<'c> {
     endings: Vec<String>,
     /// The quests whose own line has been written.
     announced: BTreeSet<&'c str>,
+    /// The acts never listed among the ambient beats: the elective acts the
+    /// story world skips, and every act it dated as a `deed`.
+    not_ambient: BTreeSet<String>,
 }
 
 impl<'c> Chronicler<'c> {
@@ -399,6 +430,7 @@ impl<'c> Chronicler<'c> {
             written: 0,
             endings: Vec::new(),
             announced: BTreeSet::new(),
+            not_ambient: BTreeSet::new(),
         }
     }
 
@@ -422,6 +454,27 @@ impl<'c> Chronicler<'c> {
 
     fn push_step(&mut self, step: &JournalStep) {
         let c = self.c;
+        // A story world's entry deeds land in front of the step they are
+        // performed at (spec-0108 §4.1): each fired effect of the act's bundle
+        // that declares a `happening` is a dated `deed` line.
+        if !step.deeds.is_empty() {
+            let mut by_path: BTreeMap<String, &QuestEffect> = BTreeMap::new();
+            for_each_campaign_effect(c, &mut |path, _, eff| {
+                by_path.insert(path.to_string(), eff);
+            });
+            for (act, fired) in &step.deeds {
+                self.not_ambient.insert(act.clone());
+                for path in fired {
+                    let Some(eff) = by_path.get(path) else {
+                        continue;
+                    };
+                    if let Some(h) = eff.happening.as_ref() {
+                        let subject = eff.happening_subject().map(|s| s.id.to_string());
+                        self.push("deed", path.clone(), h, subject);
+                    }
+                }
+            }
+        }
         let Some(q) = c
             .quests
             .content
@@ -521,8 +574,14 @@ impl<'c> Chronicler<'c> {
         // deliberately does not order them against it.
         let lines = &mut self.lines;
         let written = &mut self.written;
+        let not_ambient = &self.not_ambient;
         for_each_campaign_effect(self.c, &mut |path, site, eff| {
-            if !matches!(site, EffectSite::Trigger { .. } | EffectSite::Trap { .. }) {
+            let act = match site {
+                EffectSite::Trigger { trigger } => trigger,
+                EffectSite::Trap { trap } => trap,
+                _ => return,
+            };
+            if not_ambient.contains(act.as_str()) {
                 return;
             }
             if let Some(h) = eff.happening.as_ref() {
@@ -898,8 +957,11 @@ fn check_undeclared_forks(c: &Campaign, flow: &Flow<'_>, d: &mut Vec<Diagnostic>
         }
     }
 
-    let worlds: Vec<BTreeSet<String>> = (0..flow.world_count())
-        .map(|i| flow.world_flags(i))
+    // Every story world (spec-0108 §4.4): a flag only elective acts write is
+    // set in the *all* world and not in the *none* world, so a deed-made fork is
+    // a fork here too.
+    let worlds: Vec<BTreeSet<String>> = (0..flow.story_count())
+        .map(|i| flow.story_flags(i))
         .collect();
     for (flag, sites) in readers {
         if declared.contains(&flag) {
@@ -945,9 +1007,9 @@ fn check_leakage(c: &Campaign, flow: &Flow<'_>, r: &RealizedBranch, d: &mut Vec<
     if r.world.is_some() {
         return;
     }
-    let candidates: Vec<usize> = (0..flow.world_count())
+    let candidates: Vec<usize> = (0..flow.story_count())
         .filter(|&i| {
-            let f = flow.world_flags(i);
+            let f = flow.story_flags(i);
             r.branch.set.iter().all(|x| f.contains(x))
         })
         .collect();
@@ -957,7 +1019,7 @@ fn check_leakage(c: &Campaign, flow: &Flow<'_>, r: &RealizedBranch, d: &mut Vec<
     }
     let mut leaked: BTreeSet<String> = BTreeSet::new();
     for i in candidates {
-        let f = flow.world_flags(i);
+        let f = flow.story_flags(i);
         for x in &r.branch.unset {
             if f.contains(x) {
                 leaked.insert(x.clone());
@@ -981,8 +1043,8 @@ fn check_leakage(c: &Campaign, flow: &Flow<'_>, r: &RealizedBranch, d: &mut Vec<
             join(&r.branch.unset),
             join(&leaked),
             if producers.is_empty() {
-                "no `set-flag` found — the flag is ambient (an environment trigger or a trap \
-                 disarm), which fires on every branch by construction"
+                "no `set-flag` found — the flag is a disarm's `sets_flag`, an act a world \
+                 performs or skips"
                     .to_string()
             } else {
                 format!("set by {}", producers.join(", "))
@@ -1113,7 +1175,7 @@ fn check_cast_continuity(
     d: &mut Vec<Diagnostic>,
 ) {
     let Some(w) = r.world else { return };
-    let pt = flow.playthrough_in(w);
+    let pt = flow.story_playthrough(w);
     let journal = flow.journal(&pt);
     // Flag state when each quest's first objective is attempted.
     let mut at_open: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
@@ -1499,7 +1561,8 @@ fn search_orders(
     let Some(w) = r.world else {
         return (Vec::new(), stats);
     };
-    let steps = flow.playthrough_in(w).steps;
+    let pt = flow.story_playthrough(w);
+    let steps = pt.steps.clone();
     let beats: Vec<Vec<(HappeningVerb, String)>> =
         steps.iter().map(|s| possible_beats(c, s)).collect();
     let carried: BTreeSet<String> = beats
@@ -1527,7 +1590,7 @@ fn search_orders(
         hit: false,
     };
     search.explore(&OrderNode {
-        walk: flow.walk(),
+        walk: flow.walk_for(&pt),
         ch: Chronicler::new(c),
         tracker: ClashTracker::default(),
         order: Vec::new(),
@@ -1598,12 +1661,13 @@ pub fn clashes_by_search_and_by_enumeration(c: &Campaign) -> (BTreeSet<String>, 
         for (x, _) in search_orders(c, &flow, &r, MAX_ORDER_STATES).0 {
             searched.insert(named(&id, x.key()));
         }
-        let steps = flow.playthrough_in(w).steps;
+        let pt = flow.story_playthrough(w);
+        let steps = pt.steps.clone();
         let mut all = BTreeSet::new();
         every(
             &steps,
             &OrderNode {
-                walk: flow.walk(),
+                walk: flow.walk_for(&pt),
                 ch: Chronicler::new(c),
                 tracker: ClashTracker::default(),
                 order: Vec::new(),
@@ -2025,71 +2089,332 @@ pub fn verb_name(v: HappeningVerb) -> &'static str {
 // artifacts
 // ---------------------------------------------------------------------------
 
-/// The spec-0025 validation artifacts: `validation/branch-plan.json` and one
-/// `validation/branch-chronicle-<branch>.md` per enumerated branch.
+/// One story world as the branch plan exports it (spec-0108 §4.3): the
+/// harness walks it in a world of its own, exactly as it walked a branch.
+#[derive(Clone, Debug)]
+pub struct WorldRow {
+    /// Its canonical index — `world/<k>`.
+    pub k: usize,
+    /// The world realized as a branch would be: its flags and its run.
+    pub realized: RealizedBranch,
+    /// The declared branches whose assignment its flags realize.
+    pub branches: Vec<String>,
+    /// The elective acts it performs and skips, by id.
+    pub performs: Vec<String>,
+    /// The elective acts it skips, by id.
+    pub skips: Vec<String>,
+    /// Per final-scene input: the class this world leaves it in.
+    pub inputs: Vec<(String, String)>,
+    /// Its entry deeds: `(act, the path step index it is performed in front of)`.
+    pub entry_deeds: Vec<(String, usize)>,
+    /// Why it exports no executable path, when it does not.
+    pub no_path: Option<String>,
+    /// Its dialogue selection: today's world index, and the flags each chosen
+    /// alternative sets.
+    pub selection: (usize, Vec<Vec<String>>),
+}
+
+impl WorldRow {
+    /// The file slug: `world-<k>`.
+    pub fn slug(&self) -> String {
+        format!("world-{}", self.k)
+    }
+
+    /// How a message names this world: by the declared branches it realizes,
+    /// with its id — `branch `branch/bolt` (world/1)` — or by its id alone.
+    pub fn label(&self) -> String {
+        if self.branches.is_empty() {
+            format!("world/{}", self.k)
+        } else {
+            let names: Vec<String> = self.branches.iter().map(|b| format!("`{b}`")).collect();
+            format!("branch {} (world/{})", names.join(", "), self.k)
+        }
+    }
+}
+
+/// Every story world, as a row of the branch plan (spec-0108 §4.3).
+///
+/// A world exports an executable path when its run is coherent, fires an
+/// ending, and every entry deed is one the harness can perform; otherwise its
+/// row names why not (§6.4).
+pub fn world_rows(c: &Campaign) -> Vec<WorldRow> {
+    let flow = Flow::new(c);
+    let story = flow.story();
+    let scenes = &story.scenes;
+    let branches = enumerate(c);
+    let ending_ids: BTreeMap<&str, &str> = scenes
+        .endings
+        .iter()
+        .map(|e| (e.path.as_str(), e.id.as_str()))
+        .collect();
+    let undrivable: BTreeMap<&str, &str> = story
+        .electives
+        .iter()
+        .filter_map(|e| e.undrivable.map(|r| (e.id.as_str(), r)))
+        .collect();
+    let mut out = Vec::new();
+    for (k, w) in story.worlds.iter().enumerate() {
+        let run = &story.runs[k];
+        let pt = &run.playthrough;
+        let journal = flow.journal(pt);
+        let (chronicle, _) = chronicle_of(c, &journal, &skipped_acts(&flow, pt));
+        let fired: Vec<String> = scenes
+            .endings
+            .iter()
+            .filter(|e| run.fired.contains(&e.path))
+            .filter_map(|e| ending_ids.get(e.path.as_str()).map(|s| s.to_string()))
+            .collect();
+        let selection_flags: BTreeSet<String> = flow
+            .selection_flags(w.selection)
+            .into_iter()
+            .flatten()
+            .collect();
+        let entry = entry_choices(c, pt, &selection_flags);
+        let realizes: Vec<String> = branches
+            .iter()
+            .filter(|b| {
+                b.set.iter().all(|x| run.flags.contains(x))
+                    && !b.unset.iter().any(|x| run.flags.contains(x))
+            })
+            .map(|b| b.id.clone())
+            .collect();
+        let forks: BTreeSet<String> = c
+            .quest_plan
+            .content
+            .branch_points
+            .iter()
+            .flat_map(|bp| bp.forks_on.iter().map(|f| f.as_str().to_string()))
+            .chain(scenes.scenes.iter().flat_map(|s| {
+                s.inputs.iter().filter_map(|k| match k {
+                    crate::compiler::ending::InputKey::Flag(f) => Some(f.clone()),
+                    crate::compiler::ending::InputKey::Datum(_) => None,
+                })
+            }))
+            .collect();
+        let set: BTreeSet<String> = forks
+            .iter()
+            .filter(|f| run.flags.contains(*f))
+            .cloned()
+            .collect();
+        let unset: BTreeSet<String> = forks.difference(&set).cloned().collect();
+        let mut inputs = Vec::new();
+        for scene in &scenes.scenes {
+            let Some(snap) = run.scene_at.get(&scene.path) else {
+                continue;
+            };
+            for key in &scene.inputs {
+                let class = match key {
+                    crate::compiler::ending::InputKey::Flag(f) => if snap.flags.contains(f) {
+                        "set"
+                    } else {
+                        "unset"
+                    }
+                    .to_string(),
+                    crate::compiler::ending::InputKey::Datum(d) => {
+                        match snap.data.get(d).copied().flatten() {
+                            Some(v) => scenes
+                                .datum_classes(d)
+                                .into_iter()
+                                .find(|i| i.contains(v))
+                                .map(|i| i.words())
+                                .unwrap_or_else(|| v.to_string()),
+                            None => "undatable".to_string(),
+                        }
+                    }
+                };
+                let row = (key.id().to_string(), class);
+                if !inputs.contains(&row) {
+                    inputs.push(row);
+                }
+            }
+        }
+        let deeds: Vec<(String, usize)> = pt
+            .story
+            .as_ref()
+            .map(|ctx| ctx.deeds.iter().map(|(i, a)| (a.clone(), *i)).collect())
+            .unwrap_or_default();
+        // spec-0108 §6.5: an act no step kind drives is performed by mock — the
+        // engine's own bundle function, asserted by the terms it changes. A
+        // world still exports no path when its act has no such function, or
+        // changes nothing the replay reads (a mock of it would assert nothing).
+        let mocks = if deeds
+            .iter()
+            .any(|(a, _)| undrivable.contains_key(a.as_str()))
+        {
+            crate::compiler::plan::path_mocks(c, &flow, pt)
+        } else {
+            Vec::new()
+        };
+        let needs: Vec<String> = deeds
+            .iter()
+            .filter_map(|(a, _)| {
+                let r = undrivable.get(a.as_str())?;
+                let mock = mocks.iter().find_map(|(_, m)| match m {
+                    crate::compiler::plan::Step::Mock { act, after, .. } if act == a => Some(after),
+                    _ => None,
+                });
+                match mock {
+                    Some(after) if !after.is_empty() => None,
+                    Some(_) => Some(format!(
+                        "`{a}`: {r}, and performing it changes no flag or datum the replay \
+                         can name, so a mock of it would assert nothing"
+                    )),
+                    None => Some(format!(
+                        "`{a}`: {r}, and its bundle has no engine function to mock it by"
+                    )),
+                }
+            })
+            .collect();
+        let no_path = if let Some(why) = &run.incoherent {
+            Some(format!(
+                "unreachable: its run is not one a player can walk — {why}"
+            ))
+        } else if fired.is_empty() {
+            Some("unreachable: its run fires no ending".to_string())
+        } else if !needs.is_empty() {
+            Some(format!(
+                "its witness needs an act the harness can neither drive nor mock — {}",
+                needs.join("; ")
+            ))
+        } else {
+            None
+        };
+        let electives: Vec<String> = story.electives.iter().map(|e| e.id.clone()).collect();
+        let realized = RealizedBranch {
+            branch: EnumeratedBranch {
+                id: format!("world/{k}"),
+                slug: format!("world-{k}"),
+                selection: BTreeMap::new(),
+                set,
+                unset,
+                leads_to: Vec::new(),
+                opens_at: Vec::new(),
+            },
+            world: Some(k),
+            path: pt.steps.clone(),
+            entry_choices: entry,
+            chronicle,
+            endings: fired,
+            completed: run.completed.clone(),
+        };
+        out.push(WorldRow {
+            k,
+            realized,
+            branches: realizes,
+            performs: w.performs.iter().cloned().collect(),
+            skips: electives
+                .into_iter()
+                .filter(|e| !w.performs.contains(e))
+                .collect(),
+            inputs,
+            entry_deeds: deeds,
+            no_path,
+            selection: (w.selection, flow.selection_flags(w.selection)),
+        });
+    }
+    out
+}
+
+/// Whether the campaign exports a branch plan at all: it declares a branch
+/// point, or some elective act writes what an ending reads — the worlds then
+/// differ in an ending's reading, and each is a run.
+pub fn plans_worlds(c: &Campaign) -> bool {
+    if !c.quest_plan.content.branch_points.is_empty() {
+        return true;
+    }
+    let flow = Flow::new(c);
+    !flow.story().relevant.is_empty()
+}
+
+/// The spec-0025/spec-0108 validation artifacts: `validation/branch-plan.json`,
+/// one row per story world (§4.3), and one `validation/world-chronicle-<k>.md`
+/// per world.
 ///
 /// Validation metadata only — never part of the shipped datapack, listed in the
 /// manifest exactly like `critical-path-waypoints.json`. Empty for a campaign
-/// that declares no branch points, so nothing changes for anybody who has not
-/// opted in.
+/// that declares no branch point and whose story worlds are its dialogue
+/// selections, so nothing changes for anybody who has not opted in.
 pub fn artifacts(c: &Campaign) -> BTreeMap<String, Vec<u8>> {
     let mut out = BTreeMap::new();
-    let branches = realize(c);
-    if branches.is_empty() {
+    if !plans_worlds(c) {
         return out;
     }
+    let rows = world_rows(c);
+    let realized: BTreeSet<String> = rows.iter().flat_map(|r| r.branches.clone()).collect();
+    let unrealized: Vec<String> = enumerate(c)
+        .into_iter()
+        .map(|b| b.id)
+        .filter(|id| !realized.contains(id))
+        .collect();
     let plan = serde_json::json!({
         "version": c.quest_plan.dsl_version,
         "campaign_id": c.quest_plan.campaign_id.as_str(),
-        "branches": branches.iter().map(|r| serde_json::json!({
-            "id": r.branch.id,
-            "chronicle": format!("branch-chronicle-{}.md", r.branch.slug),
-            // The EXECUTABLE path the harness walks for this branch, in the
-            // `critical-path.json` contract (emitted by `emit::branch_paths`).
-            // `null` for an unreachable branch: there is no world that plays it,
-            // so the harness reports it skipped — named, never silently absent.
-            "path": if r.world.is_some() {
-                serde_json::Value::String(format!("branch-path-{}.json", r.branch.slug))
-            } else {
-                serde_json::Value::Null
-            },
-            "selection": r.branch.selection,
-            "flags": {
-                "set": r.branch.set.iter().collect::<Vec<_>>(),
-                "unset": r.branch.unset.iter().collect::<Vec<_>>(),
-            },
-            "opens_at": r.branch.opens_at,
-            "leads_to": r.branch.leads_to,
-            "reachable": r.world.is_some(),
-            "entry_choices": r.entry_choices.iter().map(|e| serde_json::json!({
-                "npc": e.npc,
-                "option": e.option,
-                // The chat line the option's dialog button runs. A dialog button is
-                // client-rendered and unclickable by a bot, so this is the
-                // player-legal actuation the harness sends — and what it asserts the
-                // branch path really contains, so a "branch run" that never made the
-                // branching choice cannot pass as one.
-                "command": e.command,
-            })).collect::<Vec<_>>(),
-            "endings": r.endings,
-            "critical_path": r.path.iter().map(|s| {
-                let mut o = serde_json::Map::new();
-                o.insert("quest".into(), s.quest.clone().into());
-                o.insert("objective".into(), s.objective.clone().into());
-                if let Some(n) = s.talk_option {
-                    o.insert("talk_option".into(), n.into());
-                }
-                serde_json::Value::Object(o)
-            }).collect::<Vec<_>>(),
-        })).collect::<Vec<_>>(),
+        "branches": rows.iter().map(|w| {
+            let r = &w.realized;
+            serde_json::json!({
+                "id": r.branch.id,
+                "branches": w.branches,
+                "chronicle": format!("world-chronicle-{}.md", w.k),
+                // The EXECUTABLE path the harness walks for this world, in the
+                // `critical-path.json` contract (emitted by `emit::branch_paths`).
+                // `null`, with the reason, for a world the harness cannot walk:
+                // named, never silently absent.
+                "path": if w.no_path.is_none() {
+                    serde_json::Value::String(format!("world-path-{}.json", w.k))
+                } else {
+                    serde_json::Value::Null
+                },
+                "path_reason": w.no_path,
+                "selection": {"index": w.selection.0, "alternatives": w.selection.1},
+                "flags": {
+                    "set": r.branch.set.iter().collect::<Vec<_>>(),
+                    "unset": r.branch.unset.iter().collect::<Vec<_>>(),
+                },
+                "participation": {
+                    "performs": w.performs,
+                    "skips": w.skips,
+                },
+                "inputs": w.inputs.iter().map(|(k, c)| serde_json::json!({"key": k, "class": c})).collect::<Vec<_>>(),
+                "reachable": w.no_path.as_deref().is_none_or(|r| !r.starts_with("unreachable")),
+                "entry_choices": r.entry_choices.iter().map(|e| serde_json::json!({
+                    "npc": e.npc,
+                    "option": e.option,
+                    // The chat line the option's dialog button runs. A dialog button is
+                    // client-rendered and unclickable by a bot, so this is the
+                    // player-legal actuation the harness sends — and what it asserts the
+                    // world path really contains, so a run that never made the choice
+                    // cannot pass as one.
+                    "command": e.command,
+                })).collect::<Vec<_>>(),
+                // The elective acts the world performs on its path, each in front
+                // of the step its run performed it at — what the harness asserts the
+                // path really does, so a run cannot claim a deed world while walking
+                // the extreme.
+                "entry_deeds": w.entry_deeds.iter().map(|(act, at)| serde_json::json!({
+                    "act": act,
+                    "before_step": at,
+                })).collect::<Vec<_>>(),
+                "endings": r.endings,
+                "critical_path": r.path.iter().map(|s| {
+                    let mut o = serde_json::Map::new();
+                    o.insert("quest".into(), s.quest.clone().into());
+                    o.insert("objective".into(), s.objective.clone().into());
+                    if let Some(n) = s.talk_option {
+                        o.insert("talk_option".into(), n.into());
+                    }
+                    serde_json::Value::Object(o)
+                }).collect::<Vec<_>>(),
+            })
+        }).collect::<Vec<_>>(),
+        "branches_unrealized": unrealized,
     });
     let mut bytes = serde_json::to_vec_pretty(&plan).expect("branch plan serializes");
     bytes.push(b'\n');
     out.insert("validation/branch-plan.json".to_string(), bytes);
-    for r in &branches {
+    for w in &rows {
         out.insert(
-            format!("validation/branch-chronicle-{}.md", r.branch.slug),
-            chronicle_markdown(c, r).into_bytes(),
+            format!("validation/world-chronicle-{}.md", w.k),
+            chronicle_markdown(c, &w.realized).into_bytes(),
         );
     }
     out
@@ -2099,7 +2424,12 @@ pub fn artifacts(c: &Campaign) -> BTreeMap<String, Vec<u8>> {
 /// first beat to ending, readable end to end against the campaign's DESIGN.md.
 fn chronicle_markdown(c: &Campaign, r: &RealizedBranch) -> String {
     let mut s = String::new();
-    s.push_str(&format!("# Branch chronicle — `{}`\n\n", r.branch.id));
+    let what = if r.branch.id.starts_with("world/") {
+        "World"
+    } else {
+        "Branch"
+    };
+    s.push_str(&format!("# {what} chronicle — `{}`\n\n", r.branch.id));
     s.push_str(&format!(
         "Campaign: `{}`\n\n",
         c.quest_plan.campaign_id.as_str()

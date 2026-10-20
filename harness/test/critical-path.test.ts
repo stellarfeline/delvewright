@@ -192,7 +192,7 @@ test("rejects an unknown action with the closed enum in the message", () => {
     (err: unknown) =>
       err instanceof CriticalPathParseError &&
       err.pointer === "/steps/1/action" &&
-      /select-class, talk-to, reach, kill, collect, interact, rest, trigger, witness-strike, loop, assert-complete/.test(err.message),
+      /select-class, talk-to, reach, kill, collect, interact, rest, trigger, witness-strike, loop, mock, assert-complete/.test(err.message),
   );
 });
 
@@ -888,13 +888,57 @@ test("a carrying trigger step parses its stand cell and its transport", () => {
 test("a carrying trigger names both where to stand and where it lands", () => {
   const base = { action: "trigger", trigger: "trigger/t", on: "use", anchor: "anchor/a", pos: [0, 64, 0] };
   for (const [bad, pointer] of [
-    [{ ...base, stand: [1, 64, 0] }, "/steps/2/transport"],
+    // A stand with no landing is a stance outside a keep-out volume, and only that.
+    [{ ...base, stand: [1, 64, 0] }, "/steps/2/stand"],
     [{ ...base, transport: [20, 64, 0] }, "/steps/2/stand"],
   ] as const) {
     assert.throws(
       () => parseCriticalPath(withStep(bad as Record<string, unknown>)),
       (e: unknown) => e instanceof CriticalPathParseError && e.pointer === pointer,
       JSON.stringify(bad),
+    );
+  }
+});
+
+// --- a step performed beside an armed completion volume -------------------------
+
+test("a trigger beside an armed volume parses its keep-out and the stand outside it", () => {
+  const step = parseCriticalPath(
+    withStep({
+      action: "trigger",
+      trigger: "trigger/bell",
+      on: "use",
+      anchor: "anchor/exit",
+      block: "minecraft:bell[attachment=floor,facing=north]",
+      pos: [5, 65, 8],
+      stand: [4, 65, 4],
+      keep_out: [{ objective: "obj/walk-out", lo: [3, 63, 6], hi: [7, 67, 10] }],
+    }),
+  ).steps[2];
+  assert.deepEqual(step, {
+    action: "trigger",
+    trigger: "trigger/bell",
+    on: "use",
+    anchor: "anchor/exit",
+    block: "minecraft:bell[attachment=floor,facing=north]",
+    pos: [5, 65, 8],
+    stand: [4, 65, 4],
+    keepOut: [{ objective: "obj/walk-out", lo: [3, 63, 6], hi: [7, 67, 10] }],
+  });
+});
+
+test("a keep-out row is a named objective over a well-formed box", () => {
+  const base = { action: "trigger", trigger: "trigger/t", on: "use", anchor: "anchor/a", pos: [0, 64, 0] };
+  for (const [keep, pointer] of [
+    [[], "/steps/2/keep_out"],
+    [[{ objective: "walk-out", lo: [0, 0, 0], hi: [1, 1, 1] }], "/steps/2/keep_out/0/objective"],
+    [[{ objective: "obj/w", lo: [2, 0, 0], hi: [1, 1, 1] }], "/steps/2/keep_out/0"],
+    [[{ objective: "obj/w", lo: [0, 0, 0], hi: [1, 1, 1], radius: 2 }], "/steps/2/keep_out/0/radius"],
+  ] as const) {
+    assert.throws(
+      () => parseCriticalPath(withStep({ ...base, keep_out: keep } as Record<string, unknown>)),
+      (e: unknown) => e instanceof CriticalPathParseError && e.pointer === pointer,
+      JSON.stringify(keep),
     );
   }
 });
@@ -1143,6 +1187,38 @@ test("a stand with no click height, an unknown kind or an unknown key is refused
     assert.throws(
       () => parseCriticalPath(withCollect(holder)),
       (err: unknown) => err instanceof CriticalPathParseError && err.pointer.startsWith(pointer),
+    );
+  }
+});
+
+// --- spec-0108 §6.5: an act no step kind drives, performed by mock ----------------
+
+const candle = {
+  action: "mock",
+  act: "shop/stall/offer-0",
+  kind: "shop-offer",
+  function: "hello-world:shop_pick_0_0",
+  before: [{ objective: "dw.f_candle", holder: "#party", min: 1, max: 1, negate: true }],
+  after: [{ objective: "dw.f_candle", holder: "#party", min: 1, max: 1, negate: false }],
+};
+
+test("a mock step parses its act, its function and the terms it changes", () => {
+  const step = parseCriticalPath(withStep(candle)).steps[2];
+  assert.deepEqual(step, candle);
+});
+
+test("a mock that asserts nothing, or asserts a different set before and after, is refused", () => {
+  for (const [bad, pointer] of [
+    [{ ...candle, after: [] }, "/steps/2/after"],
+    [{ ...candle, before: [] }, "/steps/2/before"],
+    [{ ...candle, function: "shop_pick_0_0" }, "/steps/2/function"],
+    [{ ...candle, after: [{ objective: "dw.f_candle", holder: "#party", min: null, max: null, negate: false }] }, "/steps/2/after/0"],
+    [{ ...candle, pos: [0, 64, 0] }, "/steps/2/pos"],
+  ] as const) {
+    assert.throws(
+      () => parseCriticalPath(withStep(bad as Record<string, unknown>)),
+      (e: unknown) => e instanceof CriticalPathParseError && e.pointer === pointer,
+      JSON.stringify(bad),
     );
   }
 });

@@ -340,6 +340,14 @@ pub struct World {
     /// difference between `DW0510` and a `DW0311` that sends the author to fix a
     /// prefab that was never wrong.
     lethal_regions: Vec<LethalRegion>,
+    /// The **completion volumes this leg keeps out of** (`DW0311`): each `reach`
+    /// objective armed while the party walks the leg and not yet due, as
+    /// `(objective, box)`. A body may not stand where the objective's selector
+    /// would reach it — the hitbox rule a lethal volume is read by — because a
+    /// body there completes the objective out of the order the path walks it in.
+    /// Not solid and not occupied: a view and a click pass through it. Empty for
+    /// every world but a leg's ([`World::with_region_state`]).
+    pub(in crate::compiler::nav) keep_out: Vec<LethalRegion>,
     /// The declared volumes **live from a story stage** (spec-0088), in
     /// declaration order — absent from `lethal` and `lethal_regions`, because
     /// whether one is there is a fact about a point in the quest DAG and not
@@ -794,6 +802,7 @@ impl World {
             floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            keep_out: self.keep_out.clone(),
             staged_lethal: self.staged_lethal.clone(),
             loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
@@ -939,6 +948,43 @@ impl World {
     /// cells to `lethal`. `lethal` stays the declared cells, because that is
     /// what `lethal_cells()` reports as the proof's binding count and what
     /// `is_lethal` answers about.
+    /// Whether a body of this footprint in `c` meets a volume this leg keeps out
+    /// of ([`World::keep_out`]), by the rule a lethal volume is met by.
+    fn meets_keep_out_fp(&self, c: [i32; 3], fp: &Footprint) -> bool {
+        self.keep_out
+            .iter()
+            .any(|(_, (lo, hi))| self.body_can_meet_volume(c, fp, *lo, *hi))
+    }
+
+    /// The armed objectives whose completion volumes a body standing on any of
+    /// `cells` would meet — who to name for a leg that routes only when the
+    /// keep-out is lifted. In the order the leg holds them.
+    pub(in crate::compiler::nav) fn keep_out_over(&self, cells: &[[i32; 3]]) -> Vec<String> {
+        let fp = Footprint::player();
+        self.keep_out
+            .iter()
+            .filter(|(_, (lo, hi))| {
+                cells
+                    .iter()
+                    .any(|c| self.body_can_meet_volume(*c, &fp, *lo, *hi))
+            })
+            .map(|(id, _)| id.clone())
+            .collect()
+    }
+
+    /// Whether this leg keeps out of any completion volume at all.
+    pub(in crate::compiler::nav) fn has_keep_out(&self) -> bool {
+        !self.keep_out.is_empty()
+    }
+
+    /// This world with every keep-out volume lifted — the counterfactual that
+    /// names an armed objective as what closed a leg.
+    pub(in crate::compiler::nav) fn without_keep_out(&self) -> World {
+        let mut w = self.clone_world();
+        w.keep_out = Vec::new();
+        w
+    }
+
     fn meets_lethal_fp(&self, c: [i32; 3], fp: &Footprint) -> bool {
         if self.lethal_regions.is_empty() {
             return false;
@@ -1110,6 +1156,7 @@ impl World {
                 .flat_map(|(_, (lo, hi))| crate::compiler::assembled::region_cells(*lo, *hi))
                 .collect(),
             lethal_regions: premises.lethal_regions,
+            keep_out: Vec::new(),
             staged_lethal: premises.staged_lethal,
             loop_slabs: premises.loop_slabs,
             furniture: premises
@@ -1252,6 +1299,7 @@ impl World {
             floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            keep_out: self.keep_out.clone(),
             staged_lethal: self.staged_lethal.clone(),
             loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
@@ -1309,6 +1357,7 @@ impl World {
             floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            keep_out: self.keep_out.clone(),
             staged_lethal: self.staged_lethal.clone(),
             loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
@@ -1373,6 +1422,7 @@ impl World {
             floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            keep_out: self.keep_out.clone(),
             staged_lethal: self.staged_lethal.clone(),
             loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
@@ -1435,6 +1485,7 @@ impl World {
             floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            keep_out: self.keep_out.clone(),
             staged_lethal: self.staged_lethal.clone(),
             loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
@@ -1492,6 +1543,13 @@ impl World {
             .with_unforced(&walled)
             .with_flooded(&st.flooded, &st.flood_regions)
             .with_staged_lethal(&st.lethal, &st.lethal_regions)
+            .with_keep_out(&st.keep_out)
+    }
+
+    /// This world keeping out of `regions` ([`World::keep_out`]).
+    fn with_keep_out(mut self, regions: &[LethalRegion]) -> World {
+        self.keep_out.extend(regions.iter().cloned());
+        self
     }
 
     /// This world with the staged lethal volumes a configuration may hold live
@@ -1543,6 +1601,7 @@ impl World {
             floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            keep_out: self.keep_out.clone(),
             staged_lethal: self.staged_lethal.clone(),
             loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
@@ -1624,6 +1683,7 @@ impl World {
             floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            keep_out: self.keep_out.clone(),
             staged_lethal: self.staged_lethal.clone(),
             loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
