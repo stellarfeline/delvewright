@@ -423,7 +423,7 @@ def check_generators_are_wired() -> tuple[list[str], int]:
     generator, `gallery/prefab-generator`), is a PACKAGE and owes membership; the
     subset of those carrying a `src/main.rs` are the GENERATORS and owe the double
     run as well. Each is named by its path from the repository root, which is how
-    the job's loop names it too. The shared rule crate is a library: it must
+    the job's loop resolves it too. The shared rule crate is a library: it must
     be built and tested, and there is nothing to run twice. Asking "which of
     these is a binary" of the disk, rather than keeping a list of names here, is
     what stops a new generator arriving as a library by omission.
@@ -480,7 +480,13 @@ def check_generators_are_wired() -> tuple[list[str], int]:
     loops = list(re.finditer(r"for g in ([^;]+?); do", body, re.S))
     lists = {"`prefabs/Cargo.toml` members": (members, packages)}
     for i, m in enumerate(loops):
-        names = set(re.findall(r"[\w./-]+", m.group(1).replace("\\\n", " ")))
+        # Each entry is spelled as the workspace's `members` spell it — relative
+        # to `prefabs/`, `../gallery/prefab-generator` included — and compared
+        # by the repo-relative path it names.
+        names = {
+            normalised("prefabs/" + n)
+            for n in re.findall(r"[\w./-]+", m.group(1).replace("\\\n", " "))
+        }
         lists[f"`for g in` loop #{i + 1}"] = (names, generators)
 
     for label, (names, want) in lists.items():

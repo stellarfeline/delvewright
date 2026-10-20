@@ -346,11 +346,9 @@ class Engine:
         # stacked on a tread, an unsupported gravity floor), and those live with
         # the generators, not with the compiler.
         if self._rust_text is None:
-            self._rust_text = (
-                self._read_all(REPO_ROOT / "crates", "*.rs")
-                + self._read_all(REPO_ROOT / "prefabs", "*.rs")
-                + self._read_all(REPO_ROOT / "gallery" / "prefab-generator", "*.rs")
-            )
+            self._rust_text = self._read_all(
+                REPO_ROOT / "crates", "*.rs"
+            ) + self._read_all(REPO_ROOT / "prefabs", "*.rs")
         return self._rust_text
 
     @property
@@ -1083,7 +1081,7 @@ def carrier_exists(carrier: dict, eng: Engine, subj: Subject) -> tuple[bool, str
         # exists is a promise nobody keeps, so the name is checked, not assumed.
         name = carrier["test"]
         if not re.search(rf"\bfn\s+{re.escape(name)}\s*\(", eng.rust_text):
-            return False, f"no `fn {name}(` anywhere in crates/, prefabs/ or gallery/prefab-generator/"
+            return False, f"no `fn {name}(` anywhere in crates/ or prefabs/"
         return True, ""
     if kind == "tool":
         # A check script, named relative to `tools/` and therefore carrying the

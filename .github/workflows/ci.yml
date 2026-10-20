@@ -564,16 +564,15 @@ jobs:
       - name: run every generator twice — invariants hold, output is identical
         run: |
           set -euo pipefail
-          for g in prefabs/generator prefabs/cave-generator gallery/prefab-generator \
-                   prefabs/hello-room-generator prefabs/island-generator \
-                   prefabs/island-terrain-generator prefabs/rig-generator; do
+          for g in generator cave-generator ../gallery/prefab-generator hello-room-generator \
+                   island-generator island-terrain-generator rig-generator; do
             echo "::group::$g"
-            d="/tmp/${g//\//-}"
+            d="/tmp/${g##*/}"
             rm -rf "$d-a" "$d-b"
             mkdir -p "$d-a" "$d-b"
-            cargo run --locked --release --manifest-path "$g/Cargo.toml" \
+            cargo run --locked --release --manifest-path "prefabs/$g/Cargo.toml" \
               -- "$d-a" > /dev/null
-            cargo run --locked --release --manifest-path "$g/Cargo.toml" \
+            cargo run --locked --release --manifest-path "prefabs/$g/Cargo.toml" \
               -- "$d-b" > /dev/null
             diff -r "$d-a" "$d-b"
             echo "::endgroup::"
