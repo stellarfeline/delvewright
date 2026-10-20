@@ -338,10 +338,17 @@ pub fn completed_on_landing(walked: &[Step], transports: &[Option<[i32; 3]>], i:
 ///   handed a path without it would have to fall back to a literal set of entity
 ///   names, which is the compiler's knowledge written down where it cannot be
 ///   right.
+/// * `5` — a `collect` that takes from an item frame or an armour stand
+///   (spec-0111) carries `holder: {kind, slot, click_height, stance}`: which
+///   act takes the item (a hit on a frame, a click at `click_height` on a
+///   stand), which slot it is in, and a cell the stance pass proved in reach
+///   and in sight. A format change for `4`'s reason: a bot handed such a step
+///   without it would have to guess the act, which is the compiler's knowledge
+///   written where it cannot be right.
 ///
 /// The harness **requires** the current version: an older `critical-path.json`
 /// (which it cannot verify) is rejected rather than run hollow.
-pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 4;
+pub const CRITICAL_PATH_FORMAT_VERSION: u32 = 5;
 
 impl<'a> Plan<'a> {
     /// The EXECUTABLE critical path of one enumerated branch (spec-0025 §3).
@@ -1063,7 +1070,7 @@ pub(super) fn build_critical_path(
                     item,
                     count,
                     anchor,
-                    container,
+                    holder: container,
                     dropped_by,
                     ..
                 } => {

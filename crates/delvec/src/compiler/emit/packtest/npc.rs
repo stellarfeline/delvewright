@@ -235,8 +235,7 @@ pub(super) fn emit_v04_packtests(
             "{}: despawn-npc `{npc}` removes body + hitbox, unseen",
             artifact_title(c)
         ));
-        b.push(format!("function {ns}:setup"));
-        b.push("scoreboard players set #placed dw.sys 1".to_string());
+        b.extend(settled_setup(ns));
         // Clear EVERY planned NPC tag, not just the target's: `setup_finish`'s
         // summons are unguarded, and on the shared-batch server the world init
         // (and any sibling test) has already run it — re-running it over live
@@ -308,8 +307,7 @@ pub(super) fn emit_v04_packtests(
             artifact_title(c),
             trigger.id.as_str()
         ));
-        b.push(format!("function {ns}:setup"));
-        b.push("scoreboard players set #placed dw.sys 1".to_string());
+        b.extend(settled_setup(ns));
         // Clear EVERY planned NPC tag before re-running `setup_finish`: its
         // summons are unguarded, and the world init (and any sibling test) has
         // already run it on the shared-batch server — duplicated hitboxes would
@@ -402,8 +400,7 @@ pub(super) fn emit_v04_packtests(
             "{}: attack-then-talk — NPC `{npc_id}`'s hitbox is the only click target at its anchor",
             artifact_title(c)
         ));
-        b.push(format!("function {ns}:setup"));
-        b.push("scoreboard players set #placed dw.sys 1".to_string());
+        b.extend(settled_setup(ns));
         for n in &plan.npcs {
             b.push(format!("kill @e[tag={}]", n.tag));
         }
@@ -461,8 +458,7 @@ pub(super) fn emit_v04_packtests(
             "{}: move-npc walks to its target anchor",
             artifact_title(c)
         ));
-        b.push(format!("function {ns}:setup"));
-        b.push("scoreboard players set #placed dw.sys 1".to_string());
+        b.extend(settled_setup(ns));
         // Clear EVERY planned NPC tag before re-running the unguarded
         // `setup_finish` (see `v04_despawn`/`npc_summons`): a duplicated walker
         // would leave a stray body behind at the start cell.

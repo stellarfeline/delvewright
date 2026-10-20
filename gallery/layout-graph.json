@@ -96,6 +96,11 @@
         "node": "node/near-hall",
         "objective": "obj/back-in-the-hall",
         "quest": "quest/far-hall"
+      },
+      {
+        "node": "node/near-hall",
+        "objective": "obj/take-the-seal",
+        "quest": "quest/near-hall"
       }
     ],
     "critical_path": [
@@ -339,6 +344,6 @@
       }
     ]
   },
-  "dsl_version": "0.43.0",
+  "dsl_version": "0.49.0",
   "stage": "layout-graph"
 }

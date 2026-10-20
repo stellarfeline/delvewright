@@ -527,7 +527,7 @@ pub fn declare_story(
                             o["hint"] = serde_json::json!("The wave comes to you here.");
                         }
                     }
-                    if kind == "collect" && o.get("container").is_some() {
+                    if kind == "collect" && o.get("holder").is_some() {
                         if o.get("title").is_none() {
                             o["title"] = serde_json::json!(format!("Collect: {oid}"));
                         }
@@ -1377,4 +1377,78 @@ pub fn container_campaign(
         .unwrap();
     }
     dst.to_path_buf()
+}
+
+// ---------------------------------------------------------------------------
+// spec-0111: hello-room carrying item holders
+// ---------------------------------------------------------------------------
+
+/// One template entity: `id` at local `cell`, with `extra` keys in its `nbt`.
+pub fn holder_entity(
+    id: &str,
+    cell: [i32; 3],
+    frame: bool,
+    extra: &[(&str, delvec::admit::Nbt)],
+) -> delvec::admit::Nbt {
+    let mut nbt = std::collections::BTreeMap::new();
+    nbt.insert("id".to_string(), delvec::admit::Nbt::String(id.to_string()));
+    for (k, v) in extra {
+        nbt.insert((*k).to_string(), v.clone());
+    }
+    let mut c = std::collections::BTreeMap::new();
+    let y = f64::from(cell[1]) + if frame { 0.5 } else { 0.0 };
+    c.insert(
+        "pos".to_string(),
+        delvec::admit::Nbt::List(vec![
+            delvec::admit::Nbt::Double(f64::from(cell[0]) + 0.5),
+            delvec::admit::Nbt::Double(y),
+            delvec::admit::Nbt::Double(f64::from(cell[2]) + 0.5),
+        ]),
+    );
+    c.insert(
+        "blockPos".to_string(),
+        delvec::admit::Nbt::List(cell.iter().map(|v| delvec::admit::Nbt::Int(*v)).collect()),
+    );
+    c.insert("nbt".to_string(), delvec::admit::Nbt::Compound(nbt));
+    delvec::admit::Nbt::Compound(c)
+}
+
+/// The west-wall frame (facing east, hung on the wall at x = 0) and the stand
+/// on the floor of hello-room, as local cells.
+pub const FRAME: [i32; 3] = [1, 2, 2];
+pub const STAND: [i32; 3] = [8, 1, 2];
+
+/// A private copy of the pinned library whose hello-room carries `entities`,
+/// with `anchor/frame` and `anchor/rack` declared at the frame's and the
+/// stand's cells.
+pub fn holder_prefabs(dst: &Path, entities: Vec<delvec::admit::Nbt>) -> PathBuf {
+    let _ = std::fs::remove_dir_all(dst);
+    copy_dir_all(&prefabs_dir(), dst);
+    let nbt = dst.join("hello-room.nbt");
+    let mut s = delvec::admit::structure::Structure::read(&std::fs::read(&nbt).unwrap()).unwrap();
+    s.entities = entities;
+    std::fs::write(&nbt, s.write()).unwrap();
+    patch_file(&dst.join("hello-room.json"), |m| {
+        m["anchors"]["anchor/frame"] = serde_json::json!({"pos": FRAME, "facing": "east"});
+        m["anchors"]["anchor/rack"] = serde_json::json!({"pos": STAND, "facing": "south"});
+    });
+    dst.to_path_buf()
+}
+
+pub fn frame_entity() -> delvec::admit::Nbt {
+    holder_entity(
+        "minecraft:glow_item_frame",
+        FRAME,
+        true,
+        &[("Facing", delvec::admit::Nbt::Byte(5))],
+    )
+}
+
+pub fn stand_entity() -> delvec::admit::Nbt {
+    holder_entity(
+        "minecraft:armor_stand",
+        STAND,
+        false,
+        &[("ShowArms", delvec::admit::Nbt::Byte(0))],
+    )
 }

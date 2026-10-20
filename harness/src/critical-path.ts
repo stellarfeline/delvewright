@@ -56,9 +56,16 @@ import type { Watcher } from "./watch.ts";
  *   harness — IS the defect, because it is right only for the campaigns whose
  *   author happened to pick those bodies.
  *
+ * * `5` — a `collect` that takes from an item frame or an armour stand
+ *   (spec-0111) carries `holder: {kind, slot, click_height, stance}`: the act
+ *   that takes the item — a hit on a frame, a click at `click_height` on a
+ *   stand — the slot it is in, and a cell the compiler proved in reach and in
+ *   sight. Required in both directions for `4`'s reason: a bot that guessed the
+ *   act would be the compiler's knowledge written where it cannot be right.
+ *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 4;
+export const CRITICAL_PATH_FORMAT_VERSION = 5;
 
 /** The closed set of critical-path step actions (spec-0002 / spec-0001 enum). */
 export const STEP_ACTIONS = [
@@ -193,8 +200,25 @@ export interface KillStep extends PresentationMarkers {
 }
 
 /**
+ * The holder entity a `collect` takes from (spec-0111 §5.4, format 5): its
+ * census `kind`, the `slot` the stack is in, the click height that takes it
+ * from a stand (absent on a frame, which is hit), and a cell the compiler
+ * proved within reach of it and in sight.
+ */
+export interface CollectHolder {
+  readonly kind: "item-frame" | "glow-item-frame" | "armor-stand";
+  readonly slot: string;
+  readonly clickHeight?: number;
+  readonly stance?: Vec3Tuple;
+}
+
+/** The holder kinds a format-5 `collect` may name. */
+export const HOLDER_KINDS = ["item-frame", "glow-item-frame", "armor-stand"] as const;
+
+/**
  * Collect `count` of `item` from a chest at `pos` (v0.3) — or, when
- * `droppedBy` is set, off the ground the named wave died on (v0.9).
+ * `droppedBy` is set, off the ground the named wave died on (v0.9), or, when
+ * `holder` is set, off the frame or stand standing at `pos` (spec-0111).
  */
 export interface CollectStep extends PresentationMarkers {
   readonly action: "collect";
@@ -210,6 +234,8 @@ export interface CollectStep extends PresentationMarkers {
    * a block that is not there.
    */
   readonly droppedBy?: string;
+  /** The holder entity the item is taken from (spec-0111, format 5). */
+  readonly holder?: CollectHolder;
   /** Cross-area teleport destination on completion, if any (gap 8). */
   readonly transport?: Transport;
 }
@@ -734,6 +760,36 @@ function requireScoreboard(
   };
 }
 
+/**
+ * A format-5 `collect` step's `holder` (spec-0111 §5.4). A stand names the
+ * height to click; a frame, which is hit, names none.
+ */
+function parseHolder(value: unknown, pointer: string): CollectHolder {
+  if (!isRecord(value)) {
+    fail(pointer, `must be an object, got ${describe(value)}`);
+  }
+  rejectUnknownKeys(value, ["kind", "slot", "click_height", "stance"], pointer);
+  const kind = requireString(value, "kind", pointer);
+  if (!(HOLDER_KINDS as readonly string[]).includes(kind)) {
+    fail(`${pointer}/kind`, `must be one of ${HOLDER_KINDS.join(", ")}, got ${JSON.stringify(kind)}`);
+  }
+  const slot = requireString(value, "slot", pointer);
+  const click = value["click_height"];
+  if (click !== undefined && (typeof click !== "number" || !Number.isFinite(click))) {
+    fail(`${pointer}/click_height`, `must be a finite number, got ${describe(click)}`);
+  }
+  if (kind === "armor-stand" && click === undefined) {
+    fail(`${pointer}/click_height`, "is required on an armour stand: which band a click lands in is the compiler's knowledge");
+  }
+  const stance = value["stance"] === undefined ? undefined : requireVec3(value, "stance", pointer);
+  return {
+    kind: kind as CollectHolder["kind"],
+    slot,
+    ...(click === undefined ? {} : { clickHeight: click as number }),
+    ...(stance === undefined ? {} : { stance }),
+  };
+}
+
 function rejectUnknownKeys(
   obj: Record<string, unknown>,
   allowed: readonly string[],
@@ -848,6 +904,7 @@ function parseStep(value: unknown, pointer: string): Step {
           "count",
           "pos",
           "dropped_by",
+          "holder",
           "transport",
           "sneak",
           "cutscene_seconds",
@@ -859,6 +916,7 @@ function parseStep(value: unknown, pointer: string): Step {
       if (droppedBy !== undefined && typeof droppedBy !== "string") {
         fail(`${pointer}/dropped_by`, `must be a string, got ${describe(droppedBy)}`);
       }
+      const holder = obj["holder"] === undefined ? undefined : parseHolder(obj["holder"], `${pointer}/holder`);
       return {
         action: "collect",
         objective: requireObjectiveId(obj, pointer),
@@ -866,6 +924,7 @@ function parseStep(value: unknown, pointer: string): Step {
         count: requireInteger(obj, "count", pointer),
         pos: requirePos(obj, pointer),
         ...(droppedBy === undefined ? {} : { droppedBy }),
+        ...(holder === undefined ? {} : { holder }),
         ...transportFields(obj, pointer),
         ...presentationFields(obj, pointer),
       };

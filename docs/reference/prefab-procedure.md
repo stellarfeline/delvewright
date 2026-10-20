@@ -601,6 +601,19 @@ Each of these was established by running it, except the two marked otherwise:
   banner. Anything with a payload is bound by the *campaign* against an anchor
   (spec-0021), never by the piece. So the piece must **declare an anchor** for
   every such thing.
+- **Entities: item holders, saying what they look like, and nothing else**
+  (spec-0111 §3.1). A template's `entities` may carry an item frame, a glow
+  item frame or an armour stand — a grammar program places one with `holder`
+  on a `mark` (`grammar.md` §2b), a hand-written generator writes it and calls
+  `invariants::assert_entities_are_holders` — with only its scene properties: a
+  frame's `Facing`, `ItemRotation`, `Invisible`; a stand's `Rotation`, `Pose`,
+  `Small`, `ShowArms`, `NoBasePlate`, `Invisible`. Its item, lock flags, slot
+  locks and tags are the engine's (`DW1036`), any other entity kind is
+  `DW0730`, and the build ships the template with no entity at all: it summons
+  every holder itself. The holder's cell carries an anchor, which a `loot`
+  entry or a `collect`'s `holder` fills. A frame hangs on the solid block
+  behind its face; a stand stands on a solid block with two clear cells over
+  it (`DW1037`).
 - **No jigsaw connectors.** The export emits none. A grammar prefab is usable as
   a single-`prefab` area as it stands; for a `prefab_pool` a socket is carved
   afterwards (§7).

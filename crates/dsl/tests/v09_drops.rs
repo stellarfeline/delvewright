@@ -187,18 +187,18 @@ fn drop_gated_collect_must_be_sourced() {
     );
 }
 
-/// A `dropped_by` collect that also adopts a `container` is `DW0492`: the item
+/// A `dropped_by` collect that also adopts a `holder` is `DW0492`: the item
 /// comes off a body or out of a box, never both.
 #[test]
-fn drop_gated_collect_cannot_also_adopt_a_container() {
+fn drop_gated_collect_cannot_also_adopt_a_holder() {
     let bad = QUESTS_V09.replacen(
         "\"dropped_by\": \"wave/gate-boss\",",
-        "\"dropped_by\": \"wave/gate-boss\", \"container\": \"anchor/keeper-stand\",",
+        "\"dropped_by\": \"wave/gate-boss\", \"holder\": \"anchor/keeper-stand\",",
         1,
     );
     assert!(
         codes(&bad).iter().any(|c| c == "DW0492"),
-        "container + dropped_by must be DW0492: {:#?}",
+        "holder + dropped_by must be DW0492: {:#?}",
         codes(&bad)
     );
 }

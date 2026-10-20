@@ -111,8 +111,7 @@ fn summon_body(plan: &Plan, w: &Watcher) -> Vec<String> {
     let mut b = Vec::new();
     match w.class {
         "npc" => {
-            b.push(format!("function {ns}:setup"));
-            b.push("scoreboard players set #placed dw.sys 1".to_string());
+            b.extend(settled_setup(ns));
             // Clear every planned NPC tag before re-running the unguarded
             // `setup_finish`, or a duplicated body would stand beside this one.
             for n in &plan.npcs {

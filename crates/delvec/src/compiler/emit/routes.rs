@@ -413,7 +413,13 @@ pub(super) fn prove_world(
                 };
                 let mut outside_cells = 0usize;
                 for l in &gathered {
-                    let cells = crate::compiler::nav::press_cells_outside(world, l, &reachable);
+                    let cells = crate::compiler::nav::press_cells_outside(
+                        world,
+                        l,
+                        &reachable,
+                        crate::compiler::nav::BodyBox::interaction,
+                        crate::compiler::crosshair::INTERACTION_REACH,
+                    );
                     outside_cells += cells.len();
                     if let Some(first) = cells.first() {
                         let listed = cells

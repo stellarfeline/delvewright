@@ -25,9 +25,12 @@
 //! Still FLAGGED for owner ratification.
 //!
 //! The list is **configurable**: `Allowlist::from_file` loads a JSON
-//! `{ "allow": ["minecraft:...", ...], "allow_suffixes": ["_stairs", ...] }` that
-//! *replaces* the default, so the owner can tighten or widen it without a code
-//! change. `jigsaw` is included by default because sockets are legitimate library
+//! `{ "allow": ["minecraft:...", ...], "allow_suffixes": ["_stairs", ...],
+//! "allow_entities": ["minecraft:item_frame", ...] }` that *replaces* the
+//! default, so the owner can tighten or widen it without a code change. The
+//! entity list is what a template's `entities` may carry (spec-0111 §3.1); its
+//! default is the three item-holder kinds, and `allow_entities` replaces it as
+//! `allow` replaces the block list. `jigsaw` is included by default because sockets are legitimate library
 //! markers (carved during admission); it is NOT a code-injection vector (a jigsaw
 //! block entity cannot carry a `Command`). This too is flagged for owner review.
 
@@ -43,6 +46,9 @@ use crate::admit::structure::PaletteEntry;
 pub struct Allowlist {
     exact: BTreeSet<String>,
     suffixes: Vec<String>,
+    /// The entity types a template's `entities` list may carry (spec-0111
+    /// §3.1): by default the three item-holder kinds.
+    entities: BTreeSet<String>,
 }
 
 /// The on-disk override shape.
@@ -53,6 +59,9 @@ struct AllowlistFile {
     allow: Vec<String>,
     #[serde(default)]
     allow_suffixes: Vec<String>,
+    /// Replaces the default entity list, as `allow` replaces the block list.
+    #[serde(default)]
+    allow_entities: Option<Vec<String>>,
 }
 
 impl Allowlist {
@@ -60,7 +69,11 @@ impl Allowlist {
     pub fn default_building() -> Allowlist {
         let exact: BTreeSet<String> = DEFAULT_EXACT.iter().map(|s| s.to_string()).collect();
         let suffixes: Vec<String> = DEFAULT_SUFFIXES.iter().map(|s| s.to_string()).collect();
-        Allowlist { exact, suffixes }
+        Allowlist {
+            exact,
+            suffixes,
+            entities: default_entities(),
+        }
     }
 
     /// Load a JSON override that fully replaces the default.
@@ -70,7 +83,32 @@ impl Allowlist {
         Ok(Allowlist {
             exact: f.allow.into_iter().collect(),
             suffixes: f.allow_suffixes,
+            entities: f
+                .allow_entities
+                .map_or_else(default_entities, |l| l.into_iter().collect()),
         })
+    }
+
+    /// True when a template may carry an entity of type `id` (spec-0111 §3.1).
+    pub fn permits_entity(&self, id: &str) -> bool {
+        let id = if id.contains(':') {
+            id.to_string()
+        } else {
+            format!("minecraft:{id}")
+        };
+        self.entities.contains(&id)
+    }
+
+    /// The entity list, for a refusal to name.
+    pub fn entity_list(&self) -> String {
+        if self.entities.is_empty() {
+            return "empty: no entity is admitted".to_string();
+        }
+        self.entities
+            .iter()
+            .map(|e| format!("`{e}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     /// True when a block name is permitted (exact id or a suffix family).
@@ -182,6 +220,15 @@ pub fn route_for(id: &str) -> Option<&'static str> {
         .iter()
         .find(|(ids, _)| ids.contains(&id))
         .map(|(_, route)| *route)
+}
+
+/// The default entity list: the three item-holder kinds of
+/// [`delvewright_dsl::holders::ENTITY_HOLDERS_1_21_11`].
+fn default_entities() -> BTreeSet<String> {
+    delvewright_dsl::holders::ENTITY_HOLDERS_1_21_11
+        .iter()
+        .map(|k| k.id.to_string())
+        .collect()
 }
 
 impl Default for Allowlist {

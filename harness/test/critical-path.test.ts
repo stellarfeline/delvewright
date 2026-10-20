@@ -16,7 +16,7 @@ import type { ReachCompletion } from "../src/critical-path.ts";
 function validRaw(): Record<string, unknown> {
   return {
     version: "0.2.0",
-    format_version: 4,
+    format_version: 5,
     campaign_id: "hello-world",
     non_combatants: {
       kinds: ["mannequin", "villager"],
@@ -1090,4 +1090,59 @@ test("refuses a loop step whose transport is not cross + offset", () => {
       /\/steps\/2\/transport/.test(e.message) &&
       /cross \+ offset/.test(e.message),
   );
+});
+
+// --- format 5: a collect that takes from a holder entity (spec-0111 §5.4) ---
+
+function withCollect(holder: unknown): Record<string, unknown> {
+  const raw = validRaw();
+  const steps = raw["steps"] as Record<string, unknown>[];
+  steps.splice(2, 0, {
+    action: "collect",
+    objective: "obj/take-the-sword",
+    item: "minecraft:iron_sword",
+    count: 1,
+    pos: [10, 65, 12],
+    ...(holder === undefined ? {} : { holder }),
+  });
+  return raw;
+}
+
+test("a collect from a stand carries its kind, slot, click height and stance", () => {
+  const path = parseCriticalPath(
+    withCollect({ kind: "armor-stand", slot: "armor.head", click_height: 1.79, stance: [10, 65, 14] }),
+  );
+  const step = path.steps[2];
+  assert.equal(step?.action, "collect");
+  if (step?.action !== "collect") return;
+  assert.deepEqual(step.holder, {
+    kind: "armor-stand",
+    slot: "armor.head",
+    clickHeight: 1.79,
+    stance: [10, 65, 14],
+  });
+});
+
+test("a collect from a frame carries no click height — a frame is hit", () => {
+  const path = parseCriticalPath(withCollect({ kind: "item-frame", slot: "contents" }));
+  const step = path.steps[2];
+  if (step?.action !== "collect") throw new Error("not a collect");
+  assert.deepEqual(step.holder, { kind: "item-frame", slot: "contents" });
+  // A container collect carries none at all.
+  const plain = parseCriticalPath(withCollect(undefined)).steps[2];
+  if (plain?.action !== "collect") throw new Error("not a collect");
+  assert.equal(plain.holder, undefined);
+});
+
+test("a stand with no click height, an unknown kind or an unknown key is refused", () => {
+  for (const [holder, pointer] of [
+    [{ kind: "armor-stand", slot: "armor.head" }, "/steps/2/holder/click_height"],
+    [{ kind: "painting", slot: "contents" }, "/steps/2/holder/kind"],
+    [{ kind: "item-frame", slot: "contents", tag: "dw_holder_x" }, "/steps/2/holder"],
+  ] as const) {
+    assert.throws(
+      () => parseCriticalPath(withCollect(holder)),
+      (err: unknown) => err instanceof CriticalPathParseError && err.pointer.startsWith(pointer),
+    );
+  }
 });

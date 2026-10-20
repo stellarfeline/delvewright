@@ -163,14 +163,18 @@ pub struct StandAfter {
 }
 
 impl Stand {
-    /// The per-camera binding line (spec-0089 §7).
-    pub fn line(&self, block_entities_omitted: usize) -> String {
+    /// The per-camera binding line (spec-0089 §7), with the holder entities
+    /// inside the frame the picture does not draw (spec-0111 §5.1).
+    pub fn line(&self, block_entities_omitted: usize, holders_not_drawn: usize) -> String {
         match &self.after {
-            None => format!("after: {} at load", self.camera),
+            None => format!(
+                "after: {} at load; {holders_not_drawn} holder(s) not drawn",
+                self.camera
+            ),
             Some(a) => format!(
                 "after: {} after {} (step {} of {} on {}): {} cells moved from load, {} unforced \
                  write(s) not laid, {block_entities_omitted} block entit(ies) omitted; biomes: at \
-                 load; clock: as the picture",
+                 load; clock: as the picture; {holders_not_drawn} holder(s) not drawn",
                 self.camera, a.step, a.index, a.of, a.path, self.cells_moved, self.unforced
             ),
         }
@@ -282,6 +286,34 @@ pub struct Stood {
     /// the shipped setup reach. A world's own laid writes ([`Stands::laid`])
     /// are held out by the writer.
     pub ground: crate::compiler::view::world::Ground,
+    /// The centre of every holder entity's body the pieces carry (spec-0111
+    /// §5.1): the pinned core draws no entity the engine summons, so a camera
+    /// states how many it leaves out of its frame.
+    pub holders: Vec<[f64; 3]>,
+}
+
+/// How many of `holders` (body centres) lie inside `cam`'s frame — the count a
+/// per-camera binding line states as `holder(s) not drawn` (spec-0111 §5.1).
+#[must_use]
+pub fn holders_in_frame(
+    cam: &crate::compiler::view::camera::Camera,
+    holders: &[[f64; 3]],
+) -> usize {
+    let lens = crate::compiler::snapshot::Camera {
+        pos: cam.pos,
+        yaw: cam.yaw,
+        pitch: cam.pitch,
+        fov: cam.fov,
+    };
+    holders
+        .iter()
+        .filter(|p| {
+            lens.project(cam.width, cam.height, **p)
+                .is_some_and(|([x, y], _)| {
+                    x >= 0.0 && y >= 0.0 && x < f64::from(cam.width) && y < f64::from(cam.height)
+                })
+        })
+        .count()
 }
 
 /// The load configuration's bytes: the critical path's arrival at step 0 over

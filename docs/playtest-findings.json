@@ -1029,7 +1029,7 @@
         "kind": "dsl",
         "match": {
           "has": [
-            "container"
+            "holder"
           ]
         }
       },
@@ -1041,7 +1041,7 @@
       "finding": "a collect objective could not fill the room's own container or name its item, so the compiler stamped a chest of its own beside the barrels the fiction described",
       "general_form": "a collect objective adopts a declared container that must resolve to a real fillable container in the assembled world, and no two fills claim one anchor",
       "id": "isl-33",
-      "note": "The precondition is a collect that provisions from a container: one adopting a declared `container`, or one naming neither `container` nor `dropped_by`, where the compiler stamps its own chest at `anchor` - the chest-beside-the-barrels shape of this finding. A `dropped_by` collect is not counted: its item comes off a wave's body, the compiler places no chest and fills no container, and `container` beside it is refused (DW0492), so neither half of the general form has an object to act on. Collects that provision from a container with none declaring `container` = UNBOUND; no such collect = the class measures zero.",
+      "note": "The precondition is a collect that provisions from a container: one adopting a declared `holder`, or one naming neither `holder` nor `dropped_by`, where the compiler stamps its own chest at `anchor` - the chest-beside-the-barrels shape of this finding. A `dropped_by` collect is not counted: its item comes off a wave's body, the compiler places no chest and fills no container, and `holder` beside it is refused (DW0492), so neither half of the general form has an object to act on. Collects that provision from a container with none declaring `holder` = UNBOUND; no such collect = the class measures zero.",
       "round": 12,
       "triage": "capability"
     },
@@ -1524,7 +1524,7 @@
             "type": "collect"
           },
           "has": [
-            "container"
+            "holder"
           ]
         }
       },
@@ -1536,7 +1536,7 @@
       "finding": "only one of four identical barrels held the item the objective wanted, and nothing told the party which",
       "general_form": "an objective's target is distinguishable from identical scenery, or every copy satisfies it",
       "id": "isl-53",
-      "note": "Closed WEAKER than the general form as written, and the gap is stated rather than papered over. DW0861 refuses a `collect` that adopts a prefab container without both a `title` and an `item_name` - the two things that can tell the party which box to open and what they have found - keyed to adoption, which is the act that creates the ambiguity: the compiler's own chest at `anchor` appears when the objective activates, an adopted one is scenery the party has been walking past since the beat began. What it does NOT prove is that the target is visually distinguishable from its identical neighbours, which needs the assembled world and a search radius. The general form's second disjunct - or every copy satisfies it - is not expressible at any strength: `container` names one anchor. The precondition is a collect that provisions from a container - adopted, or the compiler's own chest - the same class as isl-33. A `dropped_by` collect is not counted: its item lies where the wave's body fell, and no box stands for it to be confused with.",
+      "note": "Closed WEAKER than the general form as written, and the gap is stated rather than papered over. DW0861 refuses a `collect` that adopts a prefab container without both a `title` and an `item_name` - the two things that can tell the party which box to open and what they have found - keyed to adoption, which is the act that creates the ambiguity: the compiler's own chest at `anchor` appears when the objective activates, an adopted one is scenery the party has been walking past since the beat began. What it does NOT prove is that the target is visually distinguishable from its identical neighbours, which needs the assembled world and a search radius. The general form's second disjunct - or every copy satisfies it - is not expressible at any strength: `holder` names one anchor. The precondition is a collect that provisions from a container - adopted, or the compiler's own chest - the same class as isl-33. A `dropped_by` collect is not counted: its item lies where the wave's body fell, and no box stands for it to be confused with.",
       "round": 16,
       "triage": "capability"
     },
@@ -3144,7 +3144,7 @@
         "kind": "campaign"
       },
       "binding": {
-        "file": "containers.json",
+        "file": "holders.json",
         "kind": "artifact",
         "path": "cells"
       },
@@ -3156,7 +3156,7 @@
       "finding": "empty decorative containers stood in reach and cost the player time searching them",
       "general_form": "every placed container is declared loot or decoration; a loot container is never empty; when any decoration container exists, the opening tells the player in the campaign's words",
       "id": "str-14",
-      "note": "Carried by `DW1018` (spec-0105): every build takes a census of the container cells of the edited assembled world and attributes each to a `loot`, `collect` or `device` claim; a container nothing claims is scenery, and scenery with no `containers.decoration_notice` refuses the build. `DW1019` refuses an empty `loot` fill, and `DW1024` refuses a place mixing scenery with containers that matter or holding more than two scenery cells. The binding is the census's `cells` in `validation/containers.json`. Measured on this campaign at content `0d1f897` (its documents moved to the engine's dsl_version and the camera `exposure` fields DW1010 refuses removed, in a scratch copy): 19 container cells (16 barrels, 3 chests) in 8 places, 0 loot, 0 collect, 0 device, 19 decoration, no notice, so the build refuses with DW1018; two places (fish-market 5, net-lofts 4) are over the cap DW1024 holds next. The row applies where a detail program names a container block of the twelve kinds; a program that names none is a place the census finds no container in.",
+      "note": "Carried by `DW1018` (spec-0105): every build takes a census of the container cells of the edited assembled world and attributes each to a `loot`, `collect` or `device` claim; a container nothing claims is scenery, and scenery with no `containers.decoration_notice` refuses the build. `DW1019` refuses an empty `loot` fill, and `DW1024` refuses a place mixing scenery with containers that matter or holding more than two scenery cells. The binding is the census's `cells` in `validation/holders.json`. Measured on this campaign at content `0d1f897` (its documents moved to the engine's dsl_version and the camera `exposure` fields DW1010 refuses removed, in a scratch copy): 19 container cells (16 barrels, 3 chests) in 8 places, 0 loot, 0 collect, 0 device, 19 decoration, no notice, so the build refuses with DW1018; two places (fish-market 5, net-lofts 4) are over the cap DW1024 holds next. The row applies where a detail program names a container block of the twelve kinds; a program that names none is a place the census finds no container in.",
       "round": 1,
       "triage": "capability"
     }

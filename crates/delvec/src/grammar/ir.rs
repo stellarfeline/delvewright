@@ -25,10 +25,10 @@ use crate::grammar::block::BlockState;
 use crate::grammar::export::AnchorRole;
 use crate::grammar::geom::{Axis, Mirror, Orientation};
 use crate::grammar::version::{
-    ANCHOR_ROLE_SINCE, BIND_SINCE, CLIMB_SINCE, CONTRACT_SINCE, INCLUDE_SINCE,
+    ANCHOR_ROLE_SINCE, BIND_SINCE, CLIMB_SINCE, CONTRACT_SINCE, HOLDER_SINCE, INCLUDE_SINCE,
     LATEST_PROGRAM_VERSION, LOCAL_FRAME_SINCE, MIRROR_SINCE, SHOWN_FACES_SINCE, WAY_SINCE,
-    has_anchor_role, has_bind, has_climb, has_contract, has_include, has_local_frame, has_mirror,
-    has_shown_faces, has_way, is_supported_version,
+    has_anchor_role, has_bind, has_climb, has_contract, has_holder, has_include, has_local_frame,
+    has_mirror, has_shown_faces, has_way, is_supported_version,
 };
 
 // ---------------------------------------------------------------------------
@@ -792,6 +792,143 @@ pub struct Mark {
     /// them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<AnchorRole>,
+    /// **An item holder standing at the anchor** (spec-0111 §3.2, fenced at
+    /// [`crate::grammar::version::HOLDER_SINCE`]): the export writes the
+    /// entity into the piece's `entities` list at the mark's cell — a frame
+    /// facing the mark's facing, hung on the block behind it; a stand turned
+    /// to the facing — with the scene properties declared here and nothing
+    /// else. The anchor is the holder's anchor, so a `loot` entry or a
+    /// `collect`'s `holder` on it fills the holder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub holder: Option<HolderMark>,
+}
+
+/// The kind of item holder a mark places (spec-0111 §3.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HolderKind {
+    /// `minecraft:item_frame`.
+    ItemFrame,
+    /// `minecraft:glow_item_frame`.
+    GlowItemFrame,
+    /// `minecraft:armor_stand`.
+    ArmorStand,
+}
+
+impl HolderKind {
+    /// The entity type id.
+    #[must_use]
+    pub fn id(self) -> &'static str {
+        match self {
+            HolderKind::ItemFrame => "minecraft:item_frame",
+            HolderKind::GlowItemFrame => "minecraft:glow_item_frame",
+            HolderKind::ArmorStand => "minecraft:armor_stand",
+        }
+    }
+
+    /// Whether it is a frame (the other kind is a stand).
+    #[must_use]
+    pub fn is_frame(self) -> bool {
+        !matches!(self, HolderKind::ArmorStand)
+    }
+}
+
+/// The armour-stand body parts a `pose` may turn, and their NBT names.
+pub const POSE_PARTS: [(&str, &str); 6] = [
+    ("head", "Head"),
+    ("body", "Body"),
+    ("left_arm", "LeftArm"),
+    ("right_arm", "RightArm"),
+    ("left_leg", "LeftLeg"),
+    ("right_leg", "RightLeg"),
+];
+
+/// **An item holder a mark places** (spec-0111 §3.2): its kind and what it
+/// looks like — the scene properties of §3.1 under their DSL spellings, and
+/// nothing the engine owns (the item, the lock flags, the tags).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HolderMark {
+    /// The holder kind.
+    pub kind: HolderKind,
+    /// A frame's item rotation, `0`–`7` eighths of a turn (`ItemRotation`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<u8>,
+    /// A stand's pose: body part (`head`, `body`, `left_arm`, `right_arm`,
+    /// `left_leg`, `right_leg`) → `[x, y, z]` degrees (`Pose`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pose: Option<std::collections::BTreeMap<String, [i32; 3]>>,
+    /// A small stand (`Small`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub small: Option<bool>,
+    /// A stand that shows its arms (`ShowArms`); a filled hand slot forces it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_arms: Option<bool>,
+    /// A stand with no base plate (`NoBasePlate`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub no_base_plate: Option<bool>,
+    /// An invisible frame or stand body (`Invisible`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invisible: Option<bool>,
+}
+
+impl HolderMark {
+    /// A holder of `kind` saying nothing about its look.
+    #[must_use]
+    pub fn new(kind: HolderKind) -> HolderMark {
+        HolderMark {
+            kind,
+            rotation: None,
+            pose: None,
+            small: None,
+            show_arms: None,
+            no_base_plate: None,
+            invisible: None,
+        }
+    }
+
+    /// Why this declaration is not one its kind can carry, or `None`.
+    #[must_use]
+    pub fn fault(&self) -> Option<String> {
+        if self.kind.is_frame() {
+            let stand_only = [
+                ("pose", self.pose.is_some()),
+                ("small", self.small.is_some()),
+                ("show_arms", self.show_arms.is_some()),
+                ("no_base_plate", self.no_base_plate.is_some()),
+            ];
+            if let Some((name, _)) = stand_only.iter().find(|(_, set)| *set) {
+                return Some(format!(
+                    "`{name}` is an armour stand's; a frame says `rotation` and `invisible`"
+                ));
+            }
+            if let Some(r) = self.rotation
+                && r > 7
+            {
+                return Some(format!(
+                    "`rotation` {r} is outside the frame's eight positions, 0 to 7"
+                ));
+            }
+        } else {
+            if self.rotation.is_some() {
+                return Some(
+                    "`rotation` is a frame's item rotation; a stand turns to the mark's facing"
+                        .to_string(),
+                );
+            }
+            if let Some(pose) = &self.pose
+                && let Some(bad) = pose
+                    .keys()
+                    .find(|k| !POSE_PARTS.iter().any(|(p, _)| p == k))
+            {
+                return Some(format!(
+                    "`pose` names `{bad}`, which is not a stand body part (head, body, left_arm, \
+                     right_arm, left_leg, right_leg)"
+                ));
+            }
+        }
+        None
+    }
 }
 
 impl Mark {
@@ -803,7 +940,14 @@ impl Mark {
             facing: None,
             index: MarkIndex::Unique,
             role: None,
+            holder: None,
         }
+    }
+
+    /// Place an item holder at this mark's anchor ([`Mark::holder`]).
+    pub fn holder(mut self, holder: HolderMark) -> Mark {
+        self.holder = Some(holder);
+        self
     }
 
     /// Declare what this mark's anchor is for ([`Mark::role`]).
@@ -1620,6 +1764,16 @@ pub enum ProgramError {
         /// The stem as written.
         anchor: String,
     },
+    /// A `mark`'s `holder` declares a property its kind does not carry
+    /// (spec-0111 §3.2).
+    BadHolder {
+        /// The rule.
+        symbol: String,
+        /// The mark's anchor stem.
+        anchor: String,
+        /// What is wrong.
+        reason: String,
+    },
     /// A `bind` binds nothing, so it is a wrapper with no effect.
     EmptyBind {
         /// The rule.
@@ -1796,6 +1950,15 @@ impl fmt::Display for ProgramError {
                 "rule {symbol:?} marks the anchor {anchor:?}, which is not kebab-case; an \
                  exported anchor is named `anchor/<kebab>` because that is the id the DSL \
                  resolves, so a stem the DSL could never name is refused here"
+            ),
+            ProgramError::BadHolder {
+                symbol,
+                anchor,
+                reason,
+            } => write!(
+                f,
+                "rule {symbol:?} marks the anchor {anchor:?} with a holder that cannot carry what \
+                 it declares: {reason}"
             ),
             ProgramError::EmptyBind { symbol } => write!(
                 f,
@@ -2479,6 +2642,21 @@ impl Program {
                         since: ANCHOR_ROLE_SINCE,
                         declared: self.version.clone(),
                         written_by: format!("rule {symbol:?}"),
+                    });
+                }
+                if mark.holder.is_some() && !has_holder(&self.version) {
+                    return Err(ProgramError::FencedConstruct {
+                        construct: "a `holder` on a mark",
+                        since: HOLDER_SINCE,
+                        declared: self.version.clone(),
+                        written_by: format!("rule {symbol:?}"),
+                    });
+                }
+                if let Some(reason) = mark.holder.as_ref().and_then(HolderMark::fault) {
+                    return Err(ProgramError::BadHolder {
+                        symbol: symbol.to_string(),
+                        anchor: mark.anchor.clone(),
+                        reason,
                     });
                 }
                 if !is_kebab(&mark.anchor) {

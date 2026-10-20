@@ -343,7 +343,7 @@ fn check_objective_prompts(c: &Campaign, d: &mut Vec<Diagnostic>, b: &mut Promis
 
             // DW0861 — an adopted container nothing distinguishes.
             if let Objective::Collect {
-                container: Some(container),
+                holder: Some(container),
                 item_name,
                 item,
                 ..
@@ -932,7 +932,7 @@ fn objective_place(
         Objective::Collect {
             id,
             anchor,
-            container,
+            holder: container,
             dropped_by,
             ..
         } => {

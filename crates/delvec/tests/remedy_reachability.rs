@@ -4591,3 +4591,223 @@ fn dw1019_each_shape_validates_after_its_move() {
     });
     assert_eq!(code, 0, "{log}");
 }
+
+// ---------------------------------------------------------------------------
+// DW1035 / DW1036 / DW1037 / DW1038 — the holder class (spec-0111)
+// ---------------------------------------------------------------------------
+
+/// hello-world over a library whose hello-room carries `entities`, with
+/// `quests` patched and an optional stage-7 `edits` list, through `cmd`.
+fn holders_run(
+    tag: &str,
+    cmd: &str,
+    entities: Vec<delvec::admit::Nbt>,
+    quests: impl FnOnce(&mut serde_json::Value),
+    edits: Option<serde_json::Value>,
+) -> (i32, String) {
+    let dir = tmp(&format!("holders-{tag}"));
+    let prefabs = common::holder_prefabs(&dir.join("prefabs"), entities);
+    let camp = dir.join("camp");
+    common::copy_dir_all(&common::hello_world_dir(), &camp);
+    common::patch_file(&camp.join("quests.json"), |q| quests(&mut q["content"]));
+    if let Some(edits) = edits {
+        let doc = serde_json::json!({
+            "dsl_version": DSL_VERSION, "campaign_id": "hello-world", "stage": "world-edits",
+            "content": {"batches": [{"area": "area/keep", "id": "batch/holders", "edits": edits}]}
+        });
+        std::fs::write(camp.join("world-edits.json"), doc.to_string()).unwrap();
+    }
+    let out = dir.join("out");
+    let mut args = vec![cmd, camp.to_str().unwrap()];
+    if cmd == "build" {
+        args.extend(["-o", out.to_str().unwrap()]);
+    }
+    args.extend(["--prefabs", prefabs.to_str().unwrap()]);
+    let r = delvec(&args);
+    (r.status.code().unwrap_or(-1), log(&r))
+}
+
+fn rack(items: serde_json::Value) -> impl FnOnce(&mut serde_json::Value) {
+    move |c| {
+        c["loot"] =
+            serde_json::json!([{"id": "loot/rack", "anchor": "anchor/rack", "items": items}])
+    }
+}
+
+/// **DW1035 — the moves its message names.** A sword moved from the chest slot
+/// to a slot that takes any stack validates; a stand stack given its slot
+/// builds.
+#[test]
+fn dw1035_a_slot_that_takes_the_stack_validates_and_a_named_slot_builds() {
+    let (code, log) = holders_run(
+        "1035-chest",
+        "validate",
+        vec![common::stand_entity()],
+        rack(serde_json::json!([{"item": "minecraft:iron_sword", "slot": "armor.chest"}])),
+        None,
+    );
+    assert_eq!(code, 1, "{log}");
+    assert!(log.contains("DW1035"), "{log}");
+    let (code, log) = holders_run(
+        "1035-hand",
+        "validate",
+        vec![common::stand_entity()],
+        rack(serde_json::json!([{"item": "minecraft:iron_sword", "slot": "weapon.mainhand"}])),
+        None,
+    );
+    assert_eq!(code, 0, "{log}");
+    let (code, log) = holders_run(
+        "1035-unnamed",
+        "build",
+        vec![common::stand_entity()],
+        rack(serde_json::json!([{"item": "minecraft:iron_sword"}])),
+        None,
+    );
+    assert_eq!(code, 3, "{log}");
+    assert!(log.contains("DW1035"), "{log}");
+    let (code, log) = holders_run(
+        "1035-named",
+        "build",
+        vec![common::stand_entity()],
+        rack(serde_json::json!([{"item": "minecraft:iron_sword", "slot": "weapon.mainhand"}])),
+        None,
+    );
+    assert_eq!(code, 0, "{log}");
+}
+
+/// **DW1037 — both arms and their moves.** A frame moved onto the wall (facing
+/// out of it) builds; the shell that walls a filled frame in, removed, builds.
+#[test]
+fn dw1037_hanging_the_frame_on_the_wall_or_opening_the_sightline_builds() {
+    let mut on_air = common::frame_entity();
+    if let delvec::admit::Nbt::Compound(c) = &mut on_air
+        && let Some(delvec::admit::Nbt::Compound(n)) = c.get_mut("nbt")
+    {
+        n.insert("Facing".to_string(), delvec::admit::Nbt::Byte(4));
+    }
+    let (code, log) = holders_run("1037-air", "build", vec![on_air], |_| {}, None);
+    assert_eq!(code, 3, "{log}");
+    assert!(log.contains("DW1037"), "{log}");
+    let (code, log) = holders_run(
+        "1037-wall",
+        "build",
+        vec![common::frame_entity()],
+        |_| {},
+        None,
+    );
+    assert_eq!(code, 0, "{log}");
+
+    let map = |c: &mut serde_json::Value| {
+        c["loot"] = serde_json::json!([{"id": "loot/map", "anchor": "anchor/frame",
+            "items": [{"item": "minecraft:map"}]}]);
+    };
+    let mut shell = Vec::new();
+    for (i, (min, max)) in [
+        ([1, -1, -1], [2, 2, 1]),
+        ([0, -1, -1], [0, -1, 1]),
+        ([0, 1, -1], [0, 2, 1]),
+        ([0, 0, -1], [0, 0, -1]),
+        ([0, 0, 1], [0, 0, 1]),
+    ]
+    .iter()
+    .enumerate()
+    {
+        shell.push(
+            serde_json::json!({"verb": "select", "name": format!("region/s{i}"),
+            "shape": {"frame": {"kind": "anchor-relative", "anchor": "anchor/frame"},
+                      "kind": "box", "min": min, "max": max}}),
+        );
+        shell.push(
+            serde_json::json!({"verb": "fill", "region": format!("region/s{i}"),
+            "recipe": {"blocks": [{"block": "minecraft:stone", "weight": 1.0}]}}),
+        );
+    }
+    let (code, log) = holders_run(
+        "1037-walled",
+        "build",
+        vec![common::frame_entity()],
+        map,
+        Some(serde_json::Value::Array(shell)),
+    );
+    assert_eq!(code, 3, "{log}");
+    assert!(log.contains("DW1037"), "{log}");
+    let (code, log) = holders_run(
+        "1037-open",
+        "build",
+        vec![common::frame_entity()],
+        map,
+        None,
+    );
+    assert_eq!(code, 0, "{log}");
+}
+
+/// **DW1038 — the move its message names.** The region shrunk off the frame's
+/// cell and its backing block builds.
+#[test]
+fn dw1038_shrinking_the_region_off_the_holder_builds() {
+    let clear = |extent: [i32; 3]| {
+        move |c: &mut serde_json::Value| {
+            c["quests"][0]["on_objective_complete"]["obj/talk"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "type": "clear-region",
+                    "region": {"anchor": "anchor/keeper-stand", "extent": extent},
+                    "happening": {"text": "the floor clears", "verb": "opens"}
+                }));
+        }
+    };
+    // keeper-stand is local [5, 1, 4]; the frame hangs at [1, 2, 2] on x = 0.
+    let (code, log) = holders_run(
+        "1038-wide",
+        "build",
+        vec![common::frame_entity()],
+        clear([5, 1, 2]),
+        None,
+    );
+    assert_eq!(code, 3, "{log}");
+    assert!(log.contains("DW1038"), "{log}");
+    let (code, log) = holders_run(
+        "1038-shrunk",
+        "build",
+        vec![common::frame_entity()],
+        clear([0, 0, 0]),
+        None,
+    );
+    assert_eq!(code, 0, "{log}");
+    assert!(
+        log.contains(
+            "1 runtime edit(s) examined against 1 holder entit(y/ies), 0 reaching a holder"
+        ),
+        "{log}"
+    );
+}
+
+/// **DW1036 — the move its message names.** The owned key removed, the audit
+/// passes.
+#[test]
+fn dw1036_removing_the_owned_key_passes_the_audit() {
+    let dir = tmp("holders-1036");
+    let src = common::prefabs_dir().join("hello-room.nbt");
+    let audit = |name: &str, extra: Vec<(&str, delvec::admit::Nbt)>| {
+        let mut s =
+            delvec::admit::structure::Structure::read(&std::fs::read(&src).unwrap()).unwrap();
+        let mut keys = vec![("Facing", delvec::admit::Nbt::Byte(5))];
+        keys.extend(extra);
+        s.entities = vec![common::holder_entity(
+            "minecraft:item_frame",
+            common::FRAME,
+            true,
+            &keys,
+        )];
+        let p = dir.join(format!("{name}.nbt"));
+        std::fs::write(&p, s.write()).unwrap();
+        let r = delvec(&["prefab", "audit", p.to_str().unwrap()]);
+        (r.status.code().unwrap_or(-1), log(&r))
+    };
+    let (code, log) = audit("fixed", vec![("Fixed", delvec::admit::Nbt::Byte(1))]);
+    assert_ne!(code, 0, "{log}");
+    assert!(log.contains("DW1036") && log.contains("`Fixed`"), "{log}");
+    let (code, log) = audit("plain", vec![]);
+    assert_eq!(code, 0, "{log}");
+}
