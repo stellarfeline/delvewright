@@ -46,7 +46,7 @@ The means are yours. These four are not, and each one is checkable in a line:
    fails on a file that looks present. `file <clone>/prefabs/hello-room.nbt`
    must say `gzip compressed data`, never `ASCII text`.
 3. **Its documents read and its pieces open.** `delvec prefab audit` over the
-   `prefabs/` directory exits 0, and its binding line names a non-zero count of
+   `prefabs/` directory (the one postcondition 4 names) exits 0, and its binding line names a non-zero count of
    documents read and of `.nbt` opened. An empty library is indistinguishable
    from a clone whose LFS never ran, and the first is a real answer while the
    second is a broken one; a document this engine cannot read, or a piece that
@@ -57,7 +57,8 @@ The means are yours. These four are not, and each one is checkable in a line:
 ```sh
 git -C "$LIB_CLONE" rev-parse HEAD          # == $CONTENT_SHA
 file "$LIB_CLONE/prefabs/hello-room.nbt"    # gzip compressed data
-delvec prefab audit "$LIB_CLONE/prefabs" -o /dev/null   # exit 0; "N document(s) read, M `.nbt` opened", N and M non-zero
+delvec --prefabs "$DELVEWRIGHT_PREFABS" prefab audit "$DELVEWRIGHT_PREFABS" -o /dev/null
+                                            # exit 0; "N document(s) read, M `.nbt` opened", N, M > 0
 ```
 
 All four answering is the whole of the postcondition. How the clone got there —
