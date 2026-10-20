@@ -226,7 +226,7 @@ fn derive_walks(
             let Some(w) = r.world else { continue };
             let Ok(cp) = plan.branch_critical_path_linked(
                 &flow,
-                &flow.playthrough_in(w),
+                &flow.story_playthrough(w),
                 takes.get(&r.branch.slug).unwrap_or(&none),
             ) else {
                 continue;
