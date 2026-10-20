@@ -66,13 +66,6 @@ impl PrefabMeta {
             .map_err(|e| format!("parse {}: {e}", json_path.display()))?;
         Ok(Some(meta))
     }
-
-    /// `true` when the declared lighting profile is `lit`.
-    pub fn is_lit(&self) -> Option<bool> {
-        self.lighting
-            .as_ref()
-            .map(|l| l.profile == delvewright_dsl::registry::LightingProfile::Lit)
-    }
 }
 
 #[cfg(test)]
@@ -100,7 +93,10 @@ mod tests {
         assert_eq!(meta.connectors.len(), 1);
         assert_eq!(meta.connectors[0].facing, "north");
         assert!(meta.anchors.contains_key("anchor/keeper-stand"));
-        assert_eq!(meta.is_lit(), Some(true));
+        assert_eq!(
+            meta.lighting.as_ref().map(|l| l.profile),
+            Some(LightingProfile::Lit)
+        );
     }
 
     /// A document with every block a producer can write, both anchor shapes and
@@ -174,7 +170,10 @@ mod tests {
         // Bound, not vacuous: two empty documents satisfy every equality above.
         assert_eq!(view.anchors.len(), 2, "the fixture declares two anchors");
         assert_eq!(view.connectors.len(), 1, "the fixture declares one socket");
-        assert_eq!(view.is_lit(), Some(true));
+        assert_eq!(
+            view.lighting.as_ref().map(|l| l.profile),
+            Some(LightingProfile::Lit)
+        );
         // Both anchor shapes, and fields the renderer's own copy of the document
         // used to lack — they arrive because the leaf type is the document's.
         assert_eq!(view.anchors["anchor/bell"].pos, Some([3, 1, 4]));

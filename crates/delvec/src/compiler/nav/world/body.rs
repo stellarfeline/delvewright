@@ -475,11 +475,19 @@ impl World {
     /// take the nearest OTHER standable cell. Flooded cells are already
     /// excluded (they are not standable), so a shore NPC never resolves onto a
     /// water-tongue cell.
+    ///
+    /// For a holder entity a `collect` takes from (spec-0111 §5.2), the anchor is
+    /// the holder's own cell, which the block model reads as air: the endpoint is
+    /// the stance the stance pass chose ([`World::holder_stances`]), so the leg
+    /// ends where the party stands to take, never inside the holder.
     pub(in crate::compiler::nav) fn snap_endpoint(
         &self,
         c: [i32; 3],
         off_cell: bool,
     ) -> Option<[i32; 3]> {
+        if let Some(stance) = self.holder_stances.get(&c) {
+            return Some(*stance);
+        }
         if off_cell {
             self.snap_in_bounds(c, SNAP_RADIUS, &|n| n != c)
         } else {
@@ -537,7 +545,7 @@ impl World {
     /// here, at the one predicate every route proof, snap, flood and export in
     /// this model funnels through, rather than at any of them.
     pub(in crate::compiler::nav) fn standable_fp(&self, c: [i32; 3], fp: &Footprint) -> bool {
-        if self.meets_lethal_fp(c, fp) {
+        if self.meets_lethal_fp(c, fp) || self.meets_keep_out_fp(c, fp) {
             return false;
         }
         // spec-0065: a body may not be PROVEN to stand on furniture. Asked beside
@@ -548,7 +556,11 @@ impl World {
         }
         fp.cols.iter().all(|&[dx, dz]| {
             let base = [c[0] + dx, c[1], c[2] + dz];
-            self.is_solid([base[0], base[1] - 1, base[2]])
+            let support = [base[0], base[1] - 1, base[2]];
+            // A floor is a block that HOLDS the body: a sieve — bars laid
+            // through a floor, a pane — is a block a body falls between.
+            self.is_solid(support)
+                && !self.is_sieve(support)
                 && (0..fp.height).all(|dy| !self.is_occupied([base[0], base[1] + dy, base[2]]))
         })
     }
@@ -818,7 +830,7 @@ impl World {
             }
             let arrests = |y: i32| {
                 let cell = [side[0], y, side[2]];
-                self.is_occupied(cell) || self.use_gates.contains(&cell)
+                (self.is_occupied(cell) && !self.is_sieve(cell)) || self.use_gates.contains(&cell)
             };
             if arrests(c[1] - 1) {
                 continue; // level ground beside: a walk, not a drop
@@ -843,7 +855,7 @@ impl World {
         let fp = Footprint::player();
         let arrests = |y: i32| {
             let cell = [x, y, z];
-            self.is_occupied(cell) || self.use_gates.contains(&cell)
+            (self.is_occupied(cell) && !self.is_sieve(cell)) || self.use_gates.contains(&cell)
         };
         let mut feet = feet;
         loop {
@@ -947,7 +959,8 @@ impl World {
             if catch == Some(cell) {
                 return catch;
             }
-            if self.is_occupied(cell) {
+            // A falling body passes a sieve: it drops between the posts.
+            if self.is_occupied(cell) && !self.is_sieve(cell) {
                 if self.is_water_surface(cell) {
                     return Some(cell);
                 }

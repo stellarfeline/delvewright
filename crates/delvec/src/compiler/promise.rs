@@ -343,7 +343,7 @@ fn check_objective_prompts(c: &Campaign, d: &mut Vec<Diagnostic>, b: &mut Promis
 
             // DW0861 — an adopted container nothing distinguishes.
             if let Objective::Collect {
-                container: Some(container),
+                holder: Some(container),
                 item_name,
                 item,
                 ..
@@ -932,7 +932,7 @@ fn objective_place(
         Objective::Collect {
             id,
             anchor,
-            container,
+            holder: container,
             dropped_by,
             ..
         } => {
@@ -1139,7 +1139,7 @@ fn note(
         // Every narrate channel is a prompt: chat, title, subtitle, actionbar and
         // art all put authored words in front of the party. The channel changes
         // where the words sit, never whether they have to be read.
-        Verb::Narrate { text, .. } => {
+        Verb::Narrate(delvewright_dsl::Narration { text, .. }) => {
             prompts.push(Prompt {
                 at,
                 ord: here,

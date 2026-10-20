@@ -60,7 +60,7 @@ def test_a_moved_emission_on_a_change_reaching_no_input_is_a_determinism_red():
     [
         "crates/delvec/src/main.rs",
         "gallery/world.json",
-        "prefabs/gallery-generator/src/main.rs",
+        "gallery/prefab-generator/src/main.rs",
         "Cargo.lock",
         "rust-toolchain.toml",
         "tools/ci/gallery_domain.py",

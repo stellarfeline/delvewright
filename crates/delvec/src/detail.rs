@@ -519,6 +519,31 @@ fn prepare(
             return Err(EXIT_INTERNAL);
         }
     };
+    // ---- the piece's entities, judged as the admission audit judges them ----
+    // The holders the marks place (spec-0111 §3.2), read back off the bytes
+    // the piece ships and judged by the one entity judge: a holder kind saying
+    // what it looks like passes, anything else is refused with nothing written.
+    {
+        let allow = delvec::admit::allowlist::Allowlist::default();
+        let mut examined = 0usize;
+        let mut holders = 0usize;
+        for (_, t) in &tiles {
+            let (b, refused) = delvec::admit::entities::judge(&t.entities, &allow);
+            examined += b.examined;
+            holders += b.holders;
+            if let Some(d) = refused.first() {
+                eprintln!(
+                    "error[{}]: `{place}`: {id}: {}\n  nothing was written.",
+                    d.code, d.message
+                );
+                return Err(1);
+            }
+        }
+        eprintln!(
+            "{place}: entities: {examined} examined in the piece's template(s), {holders} item \
+             holder(s), 0 refused (DW0730/DW1036)."
+        );
+    }
     let sky = light::SkyClaim::of(meta.spatial_contract.as_ref());
     let ground: Vec<([i32; 3], &str)> = a
         .ground

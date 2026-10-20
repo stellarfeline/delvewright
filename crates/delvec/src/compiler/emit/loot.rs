@@ -14,13 +14,26 @@ use super::*;
 ///
 /// The container itself is never placed here; it is prefab furniture, and
 /// `DW0431` has already proven one is really there.
-pub(super) fn loot_setup(loot: &[crate::compiler::plan::LootPlan]) -> Vec<String> {
+pub(super) fn loot_setup(
+    loot: &[crate::compiler::plan::LootPlan],
+    holders: &[crate::compiler::holders::OwnedHolder],
+) -> Vec<String> {
     let mut out = Vec::new();
     for l in loot {
+        // A fill of a holder ENTITY is the holder setup's (spec-0111 §4.1).
+        if holders
+            .iter()
+            .any(|o| o.loot.as_deref() == Some(l.id.as_str()))
+        {
+            continue;
+        }
         let c = l.cell;
-        for (slot, it) in l.items.iter().enumerate() {
+        for (n, it) in l.items.iter().enumerate() {
+            // A named slot is the stack's own (spec-0111 §3.3); an unnamed
+            // stack lands positionally.
+            let slot = it.slot.clone().unwrap_or_else(|| format!("container.{n}"));
             out.push(format!(
-                "item replace block {} {} {} container.{slot} with {}{} {}",
+                "item replace block {} {} {} {slot} with {}{} {}",
                 c[0],
                 c[1],
                 c[2],
@@ -87,12 +100,17 @@ mod loot_emit_tests {
     use super::*;
     use crate::compiler::plan::{LootItemPlan, LootPlan};
 
+    fn loot_setup_none(loot: &[LootPlan]) -> Vec<String> {
+        loot_setup(loot, &[])
+    }
+
     fn item(item: &str, count: u32, name: Option<&str>, ench: &[(&str, u32)]) -> LootItemPlan {
         LootItemPlan {
             item: item.to_string(),
             count,
             name: name.map(str::to_string),
             enchantments: ench.iter().map(|(k, v)| ((*k).to_string(), *v)).collect(),
+            slot: None,
         }
     }
 
@@ -108,7 +126,7 @@ mod loot_emit_tests {
     /// Slots are positional and deterministic: nth declared stack -> container.n.
     #[test]
     fn slots_are_assigned_positionally() {
-        let out = loot_setup(&plan_of(vec![
+        let out = loot_setup_none(&plan_of(vec![
             item("minecraft:cooked_cod", 3, None, &[]),
             item("minecraft:torch", 16, None, &[]),
         ]));
@@ -123,7 +141,7 @@ mod loot_emit_tests {
 
     #[test]
     fn a_named_stack_carries_the_custom_name_component() {
-        let out = loot_setup(&plan_of(vec![item(
+        let out = loot_setup_none(&plan_of(vec![item(
             "minecraft:paper",
             1,
             Some("Tide Ledger"),
@@ -165,7 +183,7 @@ mod loot_emit_tests {
 
     #[test]
     fn enchantments_emit_as_the_1_21_component_map() {
-        let out = loot_setup(&plan_of(vec![item(
+        let out = loot_setup_none(&plan_of(vec![item(
             "minecraft:iron_sword",
             1,
             None,
@@ -186,7 +204,7 @@ mod loot_emit_tests {
     /// an anvil ignores.
     #[test]
     fn an_enchanted_book_stores_its_enchantments_on_every_surface() {
-        let out = loot_setup(&plan_of(vec![item(
+        let out = loot_setup_none(&plan_of(vec![item(
             "minecraft:enchanted_book",
             1,
             None,
@@ -225,7 +243,7 @@ mod loot_emit_tests {
     #[test]
     fn every_emitted_fill_validates_against_the_command_tree() {
         let tree = crate::compiler::commands::CommandTree::v1_21_11();
-        let out = loot_setup(&plan_of(vec![
+        let out = loot_setup_none(&plan_of(vec![
             item("minecraft:cooked_cod", 3, None, &[]),
             item("minecraft:paper", 1, Some("Tide Ledger"), &[]),
             item(
@@ -246,7 +264,7 @@ mod loot_emit_tests {
 
     #[test]
     fn no_loot_emits_nothing() {
-        assert!(loot_setup(&[]).is_empty());
+        assert!(loot_setup(&[], &[]).is_empty());
     }
 
     // --- actor equipment (spec-0021) ---

@@ -249,8 +249,7 @@ impl ViewerModel {
     }
 
     /// The prefab document beside the bytes, when there is one. `None` is not
-    /// "declares nothing": it is *there is no document at all*, a different
-    /// claim with a different remedy, and `DW0894` says which.
+    /// "declares nothing": it is *there is no document at all*.
     pub fn meta(&self) -> Option<&PrefabMeta> {
         self.meta.as_ref()
     }

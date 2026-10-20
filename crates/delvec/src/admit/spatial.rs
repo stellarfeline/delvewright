@@ -23,7 +23,7 @@ use std::path::Path;
 
 use crate::admit::scenery;
 use crate::grammar::block::BlockState;
-use crate::grammar::contract::{ContractReport, check_sealed};
+use crate::grammar::contract::{ContractReport, check_at};
 use crate::grammar::geom::Box3;
 use crate::grammar::model::VoxelModel;
 use crate::schem::prefab::PrefabMeta;
@@ -271,7 +271,7 @@ impl Door {
         // never read from the piece itself; judged by the one checker the
         // writer judged it by, with the kind `delvec detail` sealed it on.
         let kind = scenery::place_kind(meta_path, &meta);
-        let mut report = check_sealed(model, contract, &anchors, kind.sealed);
+        let mut report = check_at(model, contract, &anchors, kind.place());
         report.enumeration.insert(0, kind.line());
         let binding = DoorBinding {
             spaces: contract.spaces.len(),

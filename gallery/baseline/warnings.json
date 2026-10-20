@@ -188,6 +188,11 @@
       "stage": "world-edits"
     },
     {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/lay-the-barrier",
+      "stage": "world-edits"
+    },
+    {
       "code": "DW0995",
       "pointer": "pulse binding",
       "stage": "build"
@@ -201,6 +206,11 @@
       "code": "DW0475",
       "pointer": "/content/waves",
       "stage": "quests"
+    },
+    {
+      "code": "DW0810",
+      "pointer": "packtest watch coverage",
+      "stage": "build"
     }
   ],
   "hard.en": [
@@ -375,6 +385,11 @@
       "stage": "world-edits"
     },
     {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/lay-the-barrier",
+      "stage": "world-edits"
+    },
+    {
       "code": "DW0995",
       "pointer": "pulse binding",
       "stage": "build"
@@ -388,6 +403,11 @@
       "code": "DW0475",
       "pointer": "/content/waves",
       "stage": "quests"
+    },
+    {
+      "code": "DW0810",
+      "pointer": "packtest watch coverage",
+      "stage": "build"
     }
   ],
   "ocean-horizon.en": [
@@ -562,6 +582,11 @@
       "stage": "world-edits"
     },
     {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/lay-the-barrier",
+      "stage": "world-edits"
+    },
+    {
       "code": "DW0995",
       "pointer": "pulse binding",
       "stage": "build"
@@ -575,6 +600,11 @@
       "code": "DW0475",
       "pointer": "/content/waves",
       "stage": "quests"
+    },
+    {
+      "code": "DW0810",
+      "pointer": "packtest watch coverage",
+      "stage": "build"
     }
   ],
   "primary.en": [
@@ -749,6 +779,11 @@
       "stage": "world-edits"
     },
     {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/lay-the-barrier",
+      "stage": "world-edits"
+    },
+    {
       "code": "DW0995",
       "pointer": "pulse binding",
       "stage": "build"
@@ -762,6 +797,11 @@
       "code": "DW0475",
       "pointer": "/content/waves",
       "stage": "quests"
+    },
+    {
+      "code": "DW0810",
+      "pointer": "packtest watch coverage",
+      "stage": "build"
     }
   ],
   "primary.zh-cn": [
@@ -936,6 +976,11 @@
       "stage": "world-edits"
     },
     {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/lay-the-barrier",
+      "stage": "world-edits"
+    },
+    {
       "code": "DW0995",
       "pointer": "pulse binding",
       "stage": "build"
@@ -949,6 +994,11 @@
       "code": "DW0475",
       "pointer": "/content/waves",
       "stage": "quests"
+    },
+    {
+      "code": "DW0810",
+      "pointer": "packtest watch coverage",
+      "stage": "build"
     }
   ],
   "site-plan-solid.en": [
@@ -1234,6 +1284,11 @@
       "stage": "world-edits"
     },
     {
+      "code": "DW0353",
+      "pointer": "/content/batches/batch/lay-the-barrier",
+      "stage": "world-edits"
+    },
+    {
       "code": "DW0995",
       "pointer": "pulse binding",
       "stage": "build"
@@ -1247,6 +1302,11 @@
       "code": "DW0475",
       "pointer": "/content/waves",
       "stage": "quests"
+    },
+    {
+      "code": "DW0810",
+      "pointer": "packtest watch coverage",
+      "stage": "build"
     }
   ]
 }

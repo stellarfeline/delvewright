@@ -93,7 +93,7 @@ pub mod palette {
     /// A declared roof zone over a place no piece has drawn yet (spec-0098
     /// §8): massed solid so the skyline is walked before it is drawn.
     pub const ROOF: &str = "minecraft:bricks";
-    /// What a sealed `barred` seam stands in until content opens it.
+    /// What a shut seam stands in until content opens it (spec-0107).
     ///
     /// Re-exported, never restated: `DW0343` asks whether a gate anchor declares
     /// a fill block, and for a derived seam the answer is this constant, so the
@@ -279,8 +279,9 @@ pub struct Binding {
     /// Zero on a plan whose every through-floor run already climbs inside its
     /// hole, and on one with no through-floor stair at all.
     pub stairwell_cells: u64,
-    /// Of those, connections sealed at world load.
-    pub barred: usize,
+    /// Of those, connections built shut at world load — every seam whose
+    /// connection's `gating` names a term (spec-0107), whoever writes its bar.
+    pub shut: usize,
     /// Whole-owned masses written.
     pub volumes: usize,
     /// Anchors synthesized.
@@ -309,7 +310,7 @@ impl Binding {
         format!(
             "blockout binding: {b} place(s) massed ({de} detailed, so {un} massed by the \
              derivation; {r} roof zone(s) massed), {fx} fixed ring ground cell(s) laid, {s} \
-             seam(s) cut ({st} stair, {cl} climb, {ba} barred), {sw} stairwell cell(s) cut over \
+             seam(s) cut ({st} stair, {cl} climb, {ba} shut), {sw} stairwell cell(s) cut over \
              through-floor runs, {v} whole-owned volume(s), {a} anchor(s) synthesized, {f} \
              region write(s) over {c} cell(s).",
             r = self.roofs,
@@ -321,7 +322,7 @@ impl Binding {
             st = self.stairs,
             cl = self.climbs,
             sw = self.stairwell_cells,
-            ba = self.barred,
+            ba = self.shut,
             v = self.volumes,
             a = self.anchors,
             f = self.fills,
@@ -589,9 +590,10 @@ fn narrow(c: [i64; 3]) -> [i32; 3] {
 ///    interior after every shell is what makes "the play space the plan
 ///    allocated is air" an invariant of the derivation rather than a property of
 ///    the order two boxes happen to be written in;
-/// 4. **every seam's frame**, then its **opening** — air, or the bar on a
-///    `barred` way;
-/// 5. **every stair's treads**, inside the box the plan said hosts them.
+/// 4. **every seam's frame**, then its **opening** — air;
+/// 5. **every stair's treads**, inside the box the plan said hosts them, and
+///    every climb's ladder;
+/// 6. **every shut seam's bar** ([`PlacedSeam::bar`], spec-0107 §6), last.
 pub fn derive(c: &Campaign, reads: &mut Reads) -> Option<(AreaPlacement, Blockout)> {
     derive_with(c, reads, Perturb::none())
 }
@@ -841,23 +843,13 @@ pub fn derive_with(
     for (k, s) in seams.iter().enumerate() {
         let (olo, ohi) = slide(s, perturb.slide_openings);
         if !cut_by_derivation(k) && !(s.crossing == Crossing::Contact && perturb.wall_contacts) {
-            // The plane is a bound piece's: its opening, and a `barred` way's
-            // shut state, are the piece's to ship (spec-0098 §2).
+            // The plane is a bound piece's: its opening, and a shut way's bar,
+            // are the piece's to ship (spec-0098 §2).
             continue;
         }
         if s.crossing == Crossing::Contact && perturb.wall_contacts {
             // The deliberate defect: the front the plan allocated, walled.
             mass.write(olo, ohi, palette::WALL);
-        } else if s.class == "barred" {
-            mass.write(olo, ohi, palette::BAR);
-            anchors.insert(
-                seam_anchor(&s.edge),
-                AnchorSpec::Gate {
-                    from: narrow(olo),
-                    to: narrow(ohi),
-                    block: palette::BAR.to_string(),
-                },
-            );
         } else {
             mass.write(olo, ohi, palette::AIR);
         }
@@ -946,12 +938,60 @@ pub fn derive_with(
         climbs += 1;
     }
 
+    // (6c) **The stairwell over every through-floor run.** A stair up through a
+    // floor starts under the hole and walks back under the floor it pierces, so
+    // its upper courses stand where that floor takes a climbing body's head. The
+    // hole the plan allocated is where the stair ARRIVES; the stairwell is what
+    // lets a body get there. It is cut after the openings because it is measured
+    // over them — see [`stairwell`] — and before the bars, because its cut
+    // reaches the hole's own cells: a hatch laid first is cut back to air.
+    let mut stairwell_cells = 0u64;
+    for (s, host, run) in &runs {
+        stairwell_cells += stairwell(&mut mass, s, host, run, perturb.open_stairwells);
+    }
+
+    // (6d) **Every shut seam's bar, last** (spec-0107 §6): the opening is cut
+    // and the crossing realized — treads, ladder, stairwell — and then the bar
+    // is the last write to the cells [`PlacedSeam::bar`] names, after every cut
+    // that can reach them: the opening itself in a wall and through a floor for
+    // a drop or a stair, the course above the hole for a floor climb, whose hole
+    // cell keeps its rung. Written by whoever owns those
+    // cells: where a bound piece owns them, the piece ships the shut state
+    // against the gate region it owes (`owed_anchors`), exactly as it ships its
+    // own doorway.
+    for s in &seams {
+        let Some((blo, bhi)) = s.bar() else { continue };
+        let owner = match site.owner(blo) {
+            Owner::Place(n) => site.index_of(&n),
+            _ => None,
+        };
+        if owner.is_some_and(|i| bound.contains(boxes[i].node.0.as_str())) {
+            continue;
+        }
+        let (blo, bhi) = if perturb.slide_openings == 0 {
+            (blo, bhi)
+        } else {
+            let (olo, ohi) = slide(s, perturb.slide_openings);
+            let dy = blo[1] - s.opening.0[1];
+            ([olo[0], olo[1] + dy, olo[2]], [ohi[0], ohi[1] + dy, ohi[2]])
+        };
+        mass.write(blo, bhi, s.bar_block());
+        anchors.insert(
+            seam_anchor(&s.edge),
+            AnchorSpec::Gate {
+                from: narrow(blo),
+                to: narrow(bhi),
+                block: s.bar_block().to_string(),
+            },
+        );
+    }
+
     // The deliberate defect `Perturb::bury_barred` names: the far side of every
-    // barred door walled flush behind its opening.
+    // shut door in a wall walled flush behind its opening.
     if perturb.bury_barred {
         for s in seams
             .iter()
-            .filter(|s| s.class == "barred" && s.crossing == Crossing::Portal)
+            .filter(|s| s.shut && s.crossing == Crossing::Portal && s.normal_axis != 1)
         {
             let (mut olo, mut ohi) = slide(s, perturb.slide_openings);
             let b_off = s.face.vector()[s.normal_axis];
@@ -959,17 +999,6 @@ pub fn derive_with(
             ohi[s.normal_axis] += b_off;
             mass.write(olo, ohi, palette::WALL);
         }
-    }
-
-    // (7) **The stairwell over every through-floor run.** A stair up through a
-    // floor starts under the hole and walks back under the floor it pierces, so
-    // its upper courses stand where that floor takes a climbing body's head. The
-    // hole the plan allocated is where the stair ARRIVES; the stairwell is what
-    // lets a body get there. It is cut after the openings because it is measured
-    // over them — see [`stairwell`].
-    let mut stairwell_cells = 0u64;
-    for (s, host, run) in &runs {
-        stairwell_cells += stairwell(&mut mass, s, host, run, perturb.open_stairwells);
     }
 
     // The synthesized spatial vocabulary (spec-0049 §5.2), read off the mass
@@ -993,15 +1022,9 @@ pub fn derive_with(
             let Some(edge) = graph.edges.iter().find(|e| e.id() == &s.edge) else {
                 continue;
             };
-            let delvewright_dsl::layout::Edge::Barred { opens_from, .. } = edge else {
+            let Some(side) = edge.opening_side() else {
                 continue;
             };
-            let side = match opens_from {
-                delvewright_dsl::layout::OpensFrom::A => Some(&s.a),
-                delvewright_dsl::layout::OpensFrom::B => Some(&s.b),
-                delvewright_dsl::layout::OpensFrom::Either => None,
-            };
-            let Some(side) = side else { continue };
             let Some(host) = by_node.get(side.0.as_str()).copied() else {
                 continue;
             };
@@ -1088,7 +1111,7 @@ pub fn derive_with(
         stairs,
         climbs,
         stairwell_cells,
-        barred: seams.iter().filter(|s| s.class == "barred").count(),
+        shut: seams.iter().filter(|s| s.shut).count(),
         volumes: plan.volumes.len(),
         anchors: anchors.len(),
         fills: mass.fills.len(),
@@ -1254,7 +1277,7 @@ fn frame_ring(s: &PlacedSeam) -> Vec<([i64; 3], [i64; 3])> {
     out
 }
 
-/// The cell a one-sided `barred` seam's far-side affordance stands on: the
+/// The cell a one-sided shut seam's far-side affordance stands on: the
 /// standable cell of the openable place nearest the middle of the opening.
 ///
 /// It is inside the box rather than in the wall, because an affordance is a
@@ -2002,8 +2025,8 @@ pub fn check(
     Some(Battery { findings, binding })
 }
 
-/// The assembled blocks with every `barred` seam the graph's closure never opens
-/// standing in its bar again.
+/// The assembled blocks with every shut seam the graph's closure never opens
+/// standing in its bar again (spec-0107 §6).
 ///
 /// The graph's monotone closure is the campaign's own answer to *which ways ever
 /// open*, and it is read here rather than re-derived: `crate::compiler::blockout` has no
@@ -2020,20 +2043,19 @@ fn seal_unopened(
     let grants = delvewright_dsl::layout::Grants::of(c, graph);
     let closure = delvewright_dsl::layout::Closure::run(graph, &grants);
     for s in &b.seams {
-        if s.class != "barred" {
+        let Some((lo, hi)) = s.bar() else {
             continue;
-        }
+        };
         let Some(edge) = graph.edges.iter().find(|e| e.id() == &s.edge) else {
             continue;
         };
         if delvewright_dsl::layout::Closure::satisfied(edge.gating(), &closure.obtained) {
             continue; // the campaign opens it; the base world's clear stands.
         }
-        let (lo, hi) = s.opening;
         for cell in cells_of(lo, hi) {
             out.insert(
                 narrow(cell),
-                crate::compiler::blockstate::BlockState::new(palette::BAR),
+                crate::compiler::blockstate::BlockState::new(s.bar_block()),
             );
         }
     }
@@ -2519,7 +2541,11 @@ fn portal_crossing(
                  its face (`at`), or move what stands flush behind it — a stair laid in either \
                  place moves with its own edge's `at`/`meets`, and a detailed place's piece is \
                  re-detailed — so that the opening meets floor on the side that has none.",
-                class = s.class,
+                class = if s.shut {
+                    format!("shut {}", s.class)
+                } else {
+                    s.class.to_string()
+                },
                 id = s.edge,
                 a = s.a,
                 b = s.b,
@@ -2706,7 +2732,7 @@ fn nodes_reached(
     let seat = |x: &PlacedBox| seat_in(x, b, world, &bound);
     let mut seeds: Vec<[i32; 3]> = vec![seat(entry)];
     // What the graph's monotone closure grants — the same reading
-    // `seal_unopened` takes of which barred ways ever open — decides which
+    // `seal_unopened` takes of which shut ways ever open — decides which
     // carries are ever live.
     let carry_grants = {
         let grants = delvewright_dsl::layout::Grants::of(c, graph);
@@ -3909,7 +3935,8 @@ pub struct Perturb {
     /// It is what shows the stairwell admission refuses something — a claim 2
     /// that admitted any hole over a stair would pass it.
     pub open_stairwells: bool,
-    /// Wall the cells flush behind every **barred** portal's opening, on its `b`
+    /// Wall the cells flush behind every **shut** portal's opening in a wall
+    /// (spec-0107), on its `b`
     /// side, over the opening's own span. Reddens `DW0986`: the bar opens onto
     /// a wall, which is the shape a stair's treads laid across a doorway take.
     ///
@@ -3917,8 +3944,7 @@ pub struct Perturb {
     /// untouched, so `DW0836`'s claim 1 stays green; the wall it writes is off
     /// the shared wall's plane, so claim 2 stays green; closing a way only
     /// removes crossings, so `DW0838` stays green. What it can also reach is
-    /// `DW0837`, and only when a barred door is the sole way into its `b` place
-    /// — the gallery's far hall is also entered through the annex chute.
+    /// `DW0837`, and only when a shut door is the sole way into its `b` place.
     pub bury_barred: bool,
     /// Stand every stand-in's ring wall only from its floor course up, leaving
     /// air between the ring's fixed ground and the floor wherever the terrain

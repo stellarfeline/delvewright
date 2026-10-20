@@ -1,9 +1,10 @@
 //! **What a frame shows, and what the renderer did not draw — one sight rule**
-//! (spec-0112 §7.5, §8.1; criteria 12 and 13, and criterion 4's mannequin).
+//! (spec-0112 §7.5, §8.1; criteria 12, 13 and 17, and criterion 4's mannequin).
 //!
 //! The fixture is the gallery's primary: its curator is a mannequin, and its
-//! marked `reach` objectives stand a lantern marker (an `item_display`) in
-//! frame on the legs to them — a body the pinned renderer does not draw yet.
+//! marked `reach` objectives stand an end-rod marker (an `item_display`) in
+//! frame on the legs to them — a holder the pinned renderer draws, with its
+//! end rod, so it leaves `undrawn` (criterion 17).
 
 mod common;
 
@@ -23,7 +24,7 @@ fn json(p: &Path) -> serde_json::Value {
     serde_json::from_slice(&std::fs::read(p).unwrap()).unwrap()
 }
 
-/// The objective whose lantern marker the report is asked about.
+/// The objective whose end-rod marker the report is asked about.
 const MARKED: &str = "obj/board-the-ferry";
 const MARKER: &str = "dw_r_board_the_ferry";
 
@@ -82,7 +83,7 @@ fn marker_frames(index: &serde_json::Value) -> Vec<&serde_json::Value> {
 }
 
 #[test]
-fn a_body_the_renderer_does_not_draw_is_reported_and_one_it_draws_is_not() {
+fn a_holder_the_renderer_draws_leaves_undrawn_and_the_curator_is_drawn() {
     let dir = tmp("rfs-shows");
     let (frames, log) = gallery_frames(&dir, |_| {});
     let index = json(&frames.join("shot-index.json"));
@@ -124,50 +125,49 @@ fn a_body_the_renderer_does_not_draw_is_reported_and_one_it_draws_is_not() {
         "{curator}"
     );
 
-    // Criterion 13: a frame on the leg to the marked objective whose only
-    // undrawn body is its lantern marker.
-    let only = marker_frames(&index)
+    // Criterion 17: a frame on the leg to the marked objective with its
+    // end-rod marker in sight lists nothing undrawn, and the renderer's own
+    // statistics for that frame count the item display and its end rod drawn.
+    let seen = marker_frames(&index)
         .into_iter()
         .find(|s| {
-            let u = s["undrawn"].as_array().unwrap();
-            u.len() == 1 && u[0]["id"].as_str().unwrap().starts_with(MARKER)
+            s["shows"].as_array().unwrap().iter().any(|t| {
+                t["kind"] == "body"
+                    && t["id"].as_str().unwrap().starts_with(MARKER)
+                    && t["occluded"] == false
+            })
         })
-        .expect("a frame whose one undrawn body is the marker");
-    let u = &only["undrawn"][0];
-    assert_eq!(u["reason"], "items", "{u}");
-    assert!(u["judge_by"].as_str().is_some_and(|j| !j.is_empty()), "{u}");
-    assert_eq!(u["body"], "item_display", "{u}");
-    let id = only["id"].as_str().unwrap();
-    let reports = log
-        .lines()
-        .filter(|l| l.starts_with("DW1039") && l.contains(&format!("shot `{id}`:")))
-        .count();
-    assert_eq!(reports, 1, "DW1039 once for `{id}`:\n{log}");
+        .expect("a frame with the marker in sight");
+    let id = seen["id"].as_str().unwrap();
+    assert_eq!(seen["undrawn"], serde_json::json!([]), "{seen}");
+    let m = json(
+        &frames.join(
+            seen["image"]
+                .as_str()
+                .unwrap()
+                .replace(".png", ".manifest.json"),
+        ),
+    );
+    let ents = &m["renderer_stats"]["entities"];
+    assert!(
+        ents["rendered"]["item_display"].as_u64().unwrap_or(0) >= 1,
+        "{ents}"
+    );
+    assert!(ents["skipped"].get("item_display").is_none(), "{ents}");
+    assert!(
+        ents["items_rendered"]["end_rod"].as_u64().unwrap_or(0) >= 1,
+        "{ents}"
+    );
+    assert_eq!(ents["items_skipped"], serde_json::json!({}), "{ents}");
+    assert!(
+        !log.lines()
+            .any(|l| l.starts_with("DW1039") && l.contains(&format!("shot `{id}`:"))),
+        "no DW1039 for `{id}`:\n{log}"
+    );
     assert!(
         log.contains("not drawn by the renderer (DW1039) in "),
         "{log}"
     );
-
-    // The same build with the objective unmarked: nothing undrawn in that
-    // frame.
-    let dir2 = tmp("rfs-shows-unmarked");
-    let (frames2, _) = gallery_frames(&dir2, |v| {
-        for q in v["content"]["quests"].as_array_mut().unwrap() {
-            for o in q["objectives"].as_array_mut().unwrap() {
-                if o["id"] == MARKED {
-                    o["marker"] = serde_json::json!("hidden");
-                }
-            }
-        }
-    });
-    let index2 = json(&frames2.join("shot-index.json"));
-    let same = index2["shots"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|s| s["id"] == id)
-        .expect("the same shot");
-    assert_eq!(same["undrawn"], serde_json::json!([]), "{same}");
 }
 
 /// A campaign with no body the renderer cannot draw prints the measured zero:

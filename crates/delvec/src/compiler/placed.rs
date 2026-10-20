@@ -224,7 +224,7 @@ impl Placed {
             pos[1].parse::<f64>().ok()?,
             pos[2].parse::<f64>().ok()?,
         ];
-        let compound = if nbt.is_empty() {
+        let mut compound = if nbt.is_empty() {
             Nbt::Compound(Vec::new())
         } else {
             parse_snbt(nbt).unwrap_or(Nbt::Compound(Vec::new()))
@@ -253,6 +253,7 @@ impl Placed {
         } else {
             format!("minecraft:{kind}")
         };
+        let (p, yaw) = as_the_server_holds(&kind, p, yaw, &mut compound);
         Some(EntityRecord {
             kind,
             pos: p,
@@ -260,6 +261,97 @@ impl Placed {
             tags,
             nbt: compound,
         })
+    }
+}
+
+/// **A summoned body as the pinned server holds it once it stands**: what
+/// the game recomputes from the summon's compound, so the body written is the
+/// body the save holds (`DW1040`). Measured against the pinned server's save
+/// of the gallery (`tools/ci/check-written-world.py`):
+///
+/// - an item frame or glow item frame hangs on the face of its `block_pos`
+///   its `Facing` turns away from: its position is that cell's centre less
+///   0.46875 along the facing, and its rotation is the facing's — a yaw of
+///   the facing's horizontal index times 90 (south 0, west 90, north 180,
+///   east 270) for a wall, a pitch of −90 (up) or 90 (down) for a floor or a
+///   ceiling;
+/// - an armour stand that is not a marker saves no `Marker`, and its `Pose`
+///   saves only the parts that differ from the stand's default pose (head and
+///   body 0 0 0, left arm −10 0 −10, right arm −15 0 10, left leg −1 0 −1,
+///   right leg 1 0 1).
+fn as_the_server_holds(kind: &str, p: [f64; 3], yaw: f32, c: &mut Nbt) -> ([f64; 3], f32) {
+    match kind {
+        "minecraft:item_frame" | "minecraft:glow_item_frame" => {
+            let facing = match c.get("Facing") {
+                Some(Nbt::Byte(b)) => i32::from(*b),
+                Some(Nbt::Int(i)) => *i,
+                _ => return (p, yaw),
+            };
+            let Some(Nbt::IntArray(bp)) = c.get("block_pos") else {
+                return (p, yaw);
+            };
+            let [bx, by, bz] = [bp[0], bp[1], bp[2]].map(f64::from);
+            let (d, rot): ([f64; 3], [f32; 2]) = match facing {
+                0 => ([0.0, -1.0, 0.0], [0.0, 90.0]),
+                1 => ([0.0, 1.0, 0.0], [0.0, -90.0]),
+                2 => ([0.0, 0.0, -1.0], [180.0, 0.0]),
+                3 => ([0.0, 0.0, 1.0], [0.0, 0.0]),
+                4 => ([-1.0, 0.0, 0.0], [90.0, 0.0]),
+                5 => ([1.0, 0.0, 0.0], [270.0, 0.0]),
+                _ => return (p, yaw),
+            };
+            const DEPTH: f64 = 0.46875;
+            let pos = [
+                bx + 0.5 - d[0] * DEPTH,
+                by + 0.5 - d[1] * DEPTH,
+                bz + 0.5 - d[2] * DEPTH,
+            ];
+            c.set(
+                "Pos",
+                Nbt::List(pos.iter().map(|v| Nbt::Double(*v)).collect()),
+            );
+            c.set(
+                "Rotation",
+                Nbt::List(vec![Nbt::Float(rot[0]), Nbt::Float(rot[1])]),
+            );
+            (pos, rot[0])
+        }
+        "minecraft:armor_stand" => {
+            const DEFAULT_POSE: [(&str, [f32; 3]); 6] = [
+                ("Head", [0.0, 0.0, 0.0]),
+                ("Body", [0.0, 0.0, 0.0]),
+                ("LeftArm", [-10.0, 0.0, -10.0]),
+                ("RightArm", [-15.0, 0.0, 10.0]),
+                ("LeftLeg", [-1.0, 0.0, -1.0]),
+                ("RightLeg", [1.0, 0.0, 1.0]),
+            ];
+            let angles = |v: &Nbt| -> Option<[f32; 3]> {
+                let Nbt::List(l) = v else { return None };
+                let f = |x: &Nbt| match x {
+                    Nbt::Float(f) => Some(*f),
+                    Nbt::Double(d) => Some(*d as f32),
+                    Nbt::Int(i) => Some(*i as f32),
+                    _ => None,
+                };
+                (l.len() == 3).then(|| Some([f(&l[0])?, f(&l[1])?, f(&l[2])?]))?
+            };
+            if let Nbt::Compound(e) = c {
+                e.retain(|(k, v)| !(k == "Marker" && *v == Nbt::Byte(0)));
+                for (k, v) in e.iter_mut() {
+                    if k == "Pose"
+                        && let Nbt::Compound(parts) = v
+                    {
+                        parts.retain(|(part, a)| {
+                            !DEFAULT_POSE
+                                .iter()
+                                .any(|(n, d)| n == part && angles(a) == Some(*d))
+                        });
+                    }
+                }
+            }
+            (p, yaw)
+        }
+        _ => (p, yaw),
     }
 }
 
@@ -456,8 +548,9 @@ fn row_of_line(fired: &Firing, line: &str) -> Option<(String, Placed)> {
     Some((prefix.to_string(), row))
 }
 
-/// Which functions the ledger reads, and how each one fires: `setup_finish`
-/// at setup; `activate_<obj>` at the step its objective activates on; a
+/// Which functions the ledger reads, and how each one fires: `setup_finish`,
+/// `ws_arm_` and a holder's `holder_<id>` at setup; `activate_<obj>` at the step
+/// its objective activates on; a
 /// `complete_<obj>` at its objective's step and a `complete_q_<quest>` at its
 /// last objective's; a `trig_<trigger>` at the trigger's own step; a `trap_`
 /// or `loop_` function unforced; and a beat's function —
@@ -542,6 +635,12 @@ fn firings_of(plan: &crate::compiler::plan::Plan, name: &str) -> Option<Vec<Firi
     if name.starts_with("ws_arm_") {
         // A shortcut gate's wrong-side hitboxes: armed at world init, its one
         // call site `setup_finish` (`emit::shortcut`).
+        return Some(vec![Firing::Setup]);
+    }
+    if name.starts_with("holder_") {
+        // An item holder's body (spec-0111 §4.1): summoned at world init, its
+        // one call site `setup_finish` (`emit::holders::holder_setup`). Its
+        // `item replace entity` fills place nothing the ledger records.
         return Some(vec![Firing::Setup]);
     }
     if name.starts_with("shortcut_open_") {
@@ -895,6 +994,48 @@ impl Parser<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A summoned frame and stand are written as the pinned server's save of
+    /// the gallery holds them: the frame on its face, turned by its facing;
+    /// the stand with no `Marker:0b`.
+    #[test]
+    fn a_holder_body_is_written_as_the_server_holds_it() {
+        let frame = Placed::of_summon(
+            Firing::Setup,
+            "summon minecraft:glow_item_frame 17.5 68.5 29.5 {Facing:2b,Pos:[17.5d,68.5d,29.5d],block_pos:[I;17,68,29],Fixed:0b}",
+        )
+        .unwrap()
+        .entity_record()
+        .unwrap();
+        assert_eq!(frame.pos, [17.5, 68.5, 29.96875]);
+        assert_eq!(frame.yaw, 180.0);
+        let south = Placed::of_summon(
+            Firing::Setup,
+            "summon minecraft:item_frame 10.5 68.5 1.5 {Facing:3b,block_pos:[I;10,68,1]}",
+        )
+        .unwrap()
+        .entity_record()
+        .unwrap();
+        assert_eq!(south.pos, [10.5, 68.5, 1.03125]);
+        assert_eq!(south.yaw, 0.0);
+        let stand = Placed::of_summon(
+            Firing::Setup,
+            "summon minecraft:armor_stand 18.5 67 28.5 {Rotation:[180f,0.0f],Marker:0b,ShowArms:1b,Pose:{Head:[0f,0f,0f],RightArm:[-15f,0f,10f],LeftArm:[-30f,0f,-10f]}}",
+        )
+        .unwrap()
+        .entity_record()
+        .unwrap();
+        assert_eq!(stand.nbt.get("Marker"), None);
+        assert_eq!(
+            stand.nbt.get("Pose"),
+            Some(&Nbt::Compound(vec![(
+                "LeftArm".to_string(),
+                Nbt::List(vec![Nbt::Float(-30.0), Nbt::Float(0.0), Nbt::Float(-10.0)])
+            )])),
+            "the default parts leave, a posed arm stays"
+        );
+        assert_eq!(stand.nbt.get("ShowArms"), Some(&Nbt::Byte(1)));
+    }
 
     #[test]
     fn snbt_reads_what_a_summon_carries() {

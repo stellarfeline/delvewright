@@ -43,6 +43,7 @@ this section is what they are *for* and the traps in each.
   holds). It is narrated in chat to that player, only while the objective is
   open, and without it the click is met with total silence, which reads as a
   broken affordance.
+- **The item a player lays (`takes_item`) is the thing the receiving block shows**: a lectern shows a book, so lay a book (`minecraft:written_book` or `minecraft:writable_book`); an item frame or display shows the item itself. A paper laid on a lectern leaves a book on the lectern.
 
 ## Items, containers and loot
 
@@ -54,6 +55,16 @@ this section is what they are *for* and the traps in each.
   anchor — **the compiler fills furniture, it never places it** (`DW0431`).
   Elites and set-piece actors take `equipment` in the same shape wave mobs use,
   enchantments included.
+- **Put few empty containers.** Opening a container a player can see is close
+  to every player's instinct, and no line of text overrides it. Never build a
+  storeroom of empty chests: wherever containers cluster, every one of them
+  holds something or does something. Never hide a needed item among decoration
+  — a key in one barrel of ten costs the player the other nine. A trapped chest
+  among real loot is fine, because every container there pays off.
+- **Put an item where the scene would hold it,** and use a chest only where a
+  chest belongs: the furniture the piece already places — a barrel in a
+  fishmonger's, a chest at the foot of a bed — is the container the fill
+  names, not a box added beside it.
 - **A handed-over stack is described the same way.** `give-item {item, count,
   name?, carrier?, enchantments?}` — so a shop offer can sell an iron sword with
   `"enchantments": {"minecraft:sharpness": 2}`, and a quest can hand over a
@@ -98,8 +109,7 @@ this section is what they are *for* and the traps in each.
      **Few shipped pieces stand an anchor on a container**, and an anchor's
      name is no evidence of one: **two pieces declare an anchor literally named
      `anchor/chest` whose cell is air** (`cave-room-small`, `keep-room-small-a`)
-     — the obvious thing to reach for, and it is `DW0438` every time. In
-     `pool/stone-keep` there is no piece that can carry a `container` at all.
+     — the obvious thing to reach for, and it is `DW0438` every time.
      Check rather than assume; the library moves.
   2. **`dropped_by: <wave>`** — the item comes off a body instead of out of a
      box. The compiler places no container and PROVES the chain: that the wave

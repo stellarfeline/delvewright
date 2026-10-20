@@ -1679,10 +1679,10 @@ fn run_viewer(inputs: &[PathBuf], out: &Path, title: Option<&str>, vopts: &ViewO
 
     // **Before the page, not after it** (`compiler::view::showing`). A viewer
     // page is one of the three doors a piece reaches a person's eye through, and
-    // the two things a person cannot see in a picture are said here: whether
-    // anybody ever measured this building's light, and how much of its roofed
-    // floor no body can walk to. Asked before the client jar is opened, because
-    // a refusal owed to a reviewer is worth nothing after the page is written.
+    // the thing a person cannot see in a picture is said here: how much of its
+    // roofed floor no body can walk to. Asked before the client jar is opened,
+    // because a report owed to a reviewer is worth nothing after the page is
+    // written.
     let surveys: Vec<showing::Enclosure> = models
         .iter()
         .map(|m| showing::survey(m.structure()))
@@ -1714,22 +1714,6 @@ fn run_viewer(inputs: &[PathBuf], out: &Path, title: Option<&str>, vopts: &ViewO
             )
         );
     }
-    // The light verdict's one escape is a COUNT off these same bytes, never a
-    // word in the document — see `LightVerdict::of`.
-    let light = showing::LightVerdict::of(
-        models
-            .iter()
-            .zip(&surveys)
-            .map(|(m, e)| (m.id(), m.meta(), e.standable)),
-    );
-    if let Some(d) = light.finding() {
-        d.print(vopts.json);
-    }
-    eprintln!("{}", light.line());
-    if light.is_refusal() {
-        return ExitCode::from(exit::INPUT);
-    }
-
     let title = title.map(|t| t.to_string()).unwrap_or_else(|| {
         if models.len() == 1 {
             models[0].id().to_string()

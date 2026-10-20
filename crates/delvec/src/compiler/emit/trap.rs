@@ -421,9 +421,6 @@ pub(super) fn plan_payload_verbs(
                 payload_anchor_failure(placement, &label, kill_zone.anchor.as_str())
             })?;
             let geom = crate::compiler::nav::plan_volley(world, from, region, &label)?;
-            // The cadence is a timing read (DW0918): a body a salvo lands on can
-            // walk out of the zone before the next one.
-            crate::compiler::nav::check_volley_cadence(world, region, salvos, interval, &label)?;
             out.volleys.push(VolleyEmit {
                 key,
                 geom,
@@ -449,10 +446,15 @@ pub(super) fn plan_payload_verbs(
         }
     }
     // A trap is proven in its SPRUNG state (see `check_collapses`).
-    let labelled: Vec<(String, crate::compiler::nav::CollapseGeometry)> = out
+    let labelled: Vec<(String, std::collections::BTreeSet<[i32; 3]>)> = out
         .collapses
         .iter()
-        .map(|c| (format!("collapse `{}`", c.key), c.geom.clone()))
+        .map(|c| {
+            (
+                format!("collapse `{}`", c.key),
+                c.geom.walls(&c.falling_block, c.then_floor.as_deref()),
+            )
+        })
         .collect();
     crate::compiler::nav::check_collapses(plan, world, &labelled)?;
     Ok(out)

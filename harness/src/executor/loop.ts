@@ -1,8 +1,11 @@
 // MineflayerExecutor: a loop: the forced move it makes, and crossing one.
 
 import type { LoopStep, Step, Vec3Tuple } from "../critical-path.ts";
-import { fmt } from "./connection.ts";
-import { goals, REACH_POLL_MS } from "./walk.ts";
+import { delay, fmt } from "./connection.ts";
+import { POLL_MS } from "./clock.ts";
+import { goals } from "./walk.ts";
+import { GameClockWatch } from "../game-time.ts";
+import { LOOP_MOVE_TICKS, LoopCrossWatch, serverMove, type ServerMove } from "../loop-cross.ts";
 import type { MineflayerExecutor } from "../executor.ts";
 
 /**
@@ -19,6 +22,15 @@ function sameDelta(delta: Vec3Tuple, offset: Vec3Tuple): boolean {
   return delta.every((c, i) => Math.abs(c - offset[i]!) <= LOOP_DELTA_TOLERANCE);
 }
 
+/** A server move as a failure names it: its delta, or where it set the body and on which axes. */
+function fmtMove(move: ServerMove | undefined): string {
+  const f = (v: Vec3Tuple): string => `[${v.map((c) => c.toFixed(3)).join(", ")}]`;
+  if (!move) return "with no position packet read";
+  return move.relative
+    ? `by ${f(move.delta)}`
+    : `to ${f(move.to)} (absolute on ${move.absolute.join(", ")}, so a move to a place, not by a delta)`;
+}
+
 const TRANSPORT_JUMP_BLOCKS = 64;
 
 /**
@@ -29,11 +41,14 @@ const TRANSPORT_JUMP_BLOCKS = 64;
  */
 const LOOP_DELTA_TOLERANCE = 1e-3;
 
-/** spec-0086 §6: how long one crossing may take before the step fails. */
-export const LOOP_CROSS_TIMEOUT_MS = 20_000;
-
-/** How far past the slab, in cells, the crossing walk aims along its axis. */
-const LOOP_GOAL_PAST = 2;
+/**
+ * The crossing walk aims at the slab's own cell, `cross`, never past it: the
+ * server reads a body's position once per tick, after every movement packet
+ * queued since the last, so a server that falls behind while the bot walks on
+ * sees the body jump from before the slab to beyond it, and the loop never
+ * holds it. A body that stops in the slab is moved whenever the server next
+ * ticks.
+ */
 
 /** The executor's methods this file holds; `executor.ts` installs them on its prototype. */
 export const methods = {
@@ -45,30 +60,28 @@ export const methods = {
   onForcedMove(this: MineflayerExecutor): void {
     const bot = this.bot;
     const p = bot?.entity?.position;
+    // spec-0086 §6: the move as the server stated it, from the packet that
+    // caused this event; taken once, so a later event never reads it again.
+    const move = serverMove(this.lastPositionPacket);
+    this.lastPositionPacket = undefined;
     if (!p) return;
     const now = { x: p.x, y: p.y, z: p.z };
     const prev = this.lastForcedPos;
     this.lastForcedPos = now;
-    // spec-0086 §6: the move's delta from the last physics tick.
-    const from = this.tickPos;
-    if (from) {
-      const delta: Vec3Tuple = [now.x - from.x, now.y - from.y, now.z - from.z];
-      if (this.loopWatch) {
-        this.loopWatch.deltas.push(delta);
-      } else {
-        for (const [id, offset] of this.loopOffsets) {
-          if (sameDelta(delta, offset)) {
-            this.loopFault = new Error(
-              `a forced move by [${delta.map((c) => c.toFixed(3)).join(", ")}] during a plain ` +
-                `walk is loop ${id}'s offset — the loop held where the compiler proved it ` +
-                `released, so the proof's configuration and the game disagree about its gate`,
-            );
-            this.stopPathfinding();
-            break;
-          }
+    if (this.loopWatch) {
+      this.loopWatch.moves.push(move);
+    } else if (move?.relative) {
+      for (const [id, offset] of this.loopOffsets) {
+        if (sameDelta(move.delta, offset)) {
+          this.loopFault = new Error(
+            `a forced move by ${fmtMove(move)} during a plain ` +
+              `walk is loop ${id}'s offset — the loop held where the compiler proved it ` +
+              `released, so the proof's configuration and the game disagree about its gate`,
+          );
+          this.stopPathfinding();
+          break;
         }
       }
-      this.tickPos = now;
     }
     if (prev && Math.hypot(now.x - prev.x, now.z - prev.z) >= TRANSPORT_JUMP_BLOCKS) {
       this.stopPathfinding();
@@ -96,22 +109,22 @@ export const methods = {
 
   /**
    * **Exercise a loop** (spec-0086 §6): walk to the step's approach cell, set a
-   * walk goal past the slab, and wait for the server's forced move. The move
+   * walk goal in the slab, and wait for the server's forced move. The move
    * must be exactly the loop's offset — within {@link LOOP_DELTA_TOLERANCE} on
-   * each axis, measured from the physics tick before — and on it the pathfinder
+   * each axis, as the server's position packet states it ({@link serverMove}),
+   * never measured against a position the client sampled — and on it the pathfinder
    * is stopped, so the stale goal does not walk the body into the slab again.
-   * Repeated until `times` moves are seen. A forced move with any other delta, or
-   * none within {@link LOOP_CROSS_TIMEOUT_MS}, fails the step naming the loop,
-   * the delta seen and the count reached. The move is identified by its delta,
-   * never by its size: {@link TRANSPORT_JUMP_BLOCKS} is not consulted.
+   * Repeated until `times` moves are seen. A forced move with any other delta
+   * fails the step naming the loop, the delta seen and the count reached, and so
+   * does a crossing {@link crossSlab} judges failed. The move is identified by
+   * its delta, never by its size: {@link TRANSPORT_JUMP_BLOCKS} is not consulted.
    */
   async exerciseLoop(this: MineflayerExecutor, step: LoopStep): Promise<void> {
     const bot = this.requireBot();
     const label = `loop ${step.loop}`;
     const axis = step.offset.findIndex((c) => c !== 0);
     const dir = -Math.sign(step.offset[axis]!);
-    const goal: [number, number, number] = [step.cross[0], step.cross[1], step.cross[2]];
-    goal[axis] = goal[axis]! + dir * LOOP_GOAL_PAST;
+    const goal: Vec3Tuple = [step.cross[0], step.cross[1], step.cross[2]];
     await this.walkTo(step.pos, 1, `${label} — to its approach`);
     for (let seen = 0; seen < step.times; seen++) {
       if (seen > 0) {
@@ -119,42 +132,100 @@ export const methods = {
           step.pos,
         ]);
       }
-      this.loopWatch = { deltas: [] };
-      let deltas: Vec3Tuple[];
+      this.loopWatch = { moves: [] };
+      let moves: Array<ServerMove | undefined>;
       try {
-        const walk = this.nav
-          .goto(new goals.GoalNear(goal[0], goal[1], goal[2], 0))
-          .catch(() => undefined);
-        const moved = await this.waitFor(
-          () => (this.loopWatch?.deltas.length ?? 0) > 0,
-          this.loopCrossTimeoutMs,
-          REACH_POLL_MS,
-        );
-        this.stopPathfinding();
-        await walk;
-        deltas = this.loopWatch?.deltas ?? [];
-        if (!moved) {
-          throw new Error(
-            `${label}: no forced move within ${this.loopCrossTimeoutMs}ms of walking across ` +
-              `[${step.cross.join(", ")}] toward [${goal.join(", ")}]; bot at ` +
-              `${fmt(bot.entity.position)}; ${seen} of ${step.times} move(s) seen`,
-          );
-        }
+        moves = await this.crossSlab(step, label, goal, axis, dir, seen);
       } finally {
         this.loopWatch = undefined;
       }
-      const delta = deltas[0]!;
-      if (!sameDelta(delta, step.offset)) {
+      const move = moves[0];
+      if (!move?.relative || !sameDelta(move.delta, step.offset)) {
         throw new Error(
-          `${label}: a forced move by [${delta.map((c) => c.toFixed(3)).join(", ")}] is not ` +
-            `the loop's offset [${step.offset.join(", ")}]; ${seen} of ${step.times} move(s) ` +
-            `seen before it`,
+          `${label}: a forced move ${fmtMove(move)} is not the loop's relative move by ` +
+            `[${step.offset.join(", ")}]; ${seen} of ${step.times} move(s) seen before it`,
         );
       }
+      const delta = move.delta;
       process.stderr.write(
         `[loop] ${step.loop}: move ${seen + 1} of ${step.times} by ` +
           `[${delta.map((c) => c.toFixed(3)).join(", ")}], bot now at ${fmt(bot.entity.position)}\n`,
       );
     }
+  },
+
+  /**
+   * **One crossing of the slab** (spec-0086 §6): walk toward `goal`, the slab's
+   * cell, until the server's forced move arrives, and return the deltas seen.
+   * Judged by {@link LoopCrossWatch}, in the server's game ticks
+   * (`executor/clock.ts`): the step fails when the body has stood at or past the
+   * slab's near face through {@link LOOP_MOVE_TICKS} game ticks with no move, when
+   * the walk keeps ending short of the slab without advancing or holds its trip,
+   * live, without advancing, or when the game clock stops ({@link GameClockWatch}).
+   * A trip that ends short is walked again. No wall-clock budget: a slow or
+   * stalled host stretches or stops the
+   * ticks, and never fails the crossing.
+   */
+  async crossSlab(
+    this: MineflayerExecutor,
+    step: LoopStep,
+    label: string,
+    goal: Vec3Tuple,
+    axis: number,
+    dir: number,
+    seen: number,
+  ): Promise<Array<ServerMove | undefined>> {
+    const bot = this.requireBot();
+    const here = (): Vec3Tuple => {
+      const p = bot.entity.position;
+      return [p.x, p.y, p.z];
+    };
+    const moved = (): boolean => (this.loopWatch?.moves.length ?? 0) > 0;
+    const watch = new LoopCrossWatch(label, step.cross, axis, dir, seen, step.times);
+    const purpose = `${label}, crossing ${seen + 1} of ${step.times}`;
+    let clock: GameClockWatch | undefined;
+    let ended: { why: string } | undefined;
+    let trip: Promise<void> | undefined;
+    const walk = (): void => {
+      ended = undefined;
+      watch.tripBegins(here());
+      const t = this.nav.goto(new goals.GoalNear(goal[0], goal[1], goal[2], 0)).then(
+        () => {
+          if (trip === t) ended = { why: "the pathfinder resolved" };
+        },
+        (err: unknown) => {
+          if (trip === t) ended = { why: err instanceof Error ? err.message : String(err) };
+        },
+      );
+      trip = t;
+    };
+    try {
+      walk();
+      for (;;) {
+        if (this.death) throw this.death;
+        if (moved()) break;
+        if (ended !== undefined) {
+          if (watch.tripEnded(here(), ended.why)) walk();
+          else ended = undefined;
+        }
+        // The position first, then the reading: the server held the body there
+        // when it answered, and a move it sent by then arrived before the answer.
+        const at = here();
+        const reading = await this.readGameTime(purpose);
+        if (this.death) throw this.death;
+        if (moved()) break;
+        const answeredAt = performance.now();
+        clock ??= new GameClockWatch(purpose, reading.tick, LOOP_MOVE_TICKS);
+        clock.observe(reading.tick, answeredAt);
+        watch.reading(reading.tick, at, answeredAt);
+        await delay(POLL_MS);
+      }
+    } finally {
+      this.stopPathfinding();
+      const t = trip;
+      trip = undefined;
+      await t;
+    }
+    return this.loopWatch?.moves ?? [];
   },
 };

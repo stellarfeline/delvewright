@@ -1,6 +1,7 @@
 // MineflayerExecutor: class selection and the kit: select, equip, re-arm after a respawn.
 
 import type { SelectClassStep } from "../critical-path.ts";
+import { judgeNotice, type HeardSound } from "../containers.ts";
 import { delay } from "./connection.ts";
 import { SPAWN_POLL_MS } from "./death.ts";
 import type { MineflayerExecutor } from "../executor.ts";
@@ -31,9 +32,38 @@ export const methods = {
     // The class-selection dialog button runs `step.command` (a `/trigger`); the
     // bot fires the same command directly. The per-tick handler then applies the
     // kit and teleports the player to the campaign spawn.
-    bot.chat(step.command);
-    // Give the datapack a tick to reset the trigger, give the kit and teleport.
-    await delay(CLASS_SETTLE_MS);
+    // spec-0105 §5.3: the window the arrival line must land in opens with the
+    // class command and closes when the step has settled. Judged once, at the
+    // first selection — the class apply is one-shot per player.
+    const judge = this.containerLedger !== undefined && this.noticeVerdict === undefined;
+    const chatFrom = this.chatMark();
+    const titlesFrom = this.titlesTold.length;
+    const sounds: HeardSound[] = [];
+    const hear = (name: string, p: { x: number; y: number; z: number }): void => {
+      sounds.push({ name, pos: [p.x, p.y, p.z] });
+    };
+    if (judge) bot.on("soundEffectHeard", hear);
+    try {
+      bot.chat(step.command);
+      // Give the datapack a tick to reset the trigger, give the kit and teleport.
+      await delay(CLASS_SETTLE_MS);
+    } finally {
+      if (judge) bot.removeListener("soundEffectHeard", hear);
+    }
+    if (judge && this.containerLedger !== undefined) {
+      const window = this.chatSince(chatFrom);
+      const p = bot.entity.position;
+      const verdict = judgeNotice(this.containerLedger, {
+        chat: window.lines,
+        titles: this.titlesTold.slice(titlesFrom),
+        lost: window.lost,
+        sounds,
+        arrival: [p.x, p.y, p.z],
+      });
+      this.noticeVerdict = verdict;
+      process.stderr.write(`[containers] ${verdict.detail}\n`);
+      if (!verdict.ok) throw new Error(`container notice: ${verdict.detail}`);
+    }
     // Equip the kit (sword + armor) so the bot can fight v0.3 combat waves. A
     // no-op for kits without those items.
     await this.equipLoadout();

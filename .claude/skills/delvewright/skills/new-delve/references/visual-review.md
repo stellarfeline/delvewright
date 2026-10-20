@@ -99,7 +99,7 @@ delvec --prefabs "$DELVEWRIGHT_PREFABS" frames "$DELVEWRIGHT_ENGINE/validation/d
 
 It writes `<stem>.png` and `<stem>.manifest.json` per shot and `shot-index.json`
 under `validation/delve-output/frames/`. **Quote its first line in the review**:
-`renderer: lumenwright <rev>, backend <name> …` says what the frames came off,
+`renderer: lumenwright <version>, backend <name> …` says what the frames came off,
 and whether a GPU drew them or the CPU did (`auto: fell back to cpu` with the
 reason). A shot naming a world the build directory does not hold is refused by
 name with the remedy, a rebuild, before anything is drawn; so is a plan an older
@@ -128,7 +128,8 @@ shot wanted, which is worth a look while you are there.
 **Read each frame's index entry before its picture**: `shows` (every target in
 frame, with its screen box, distance and whether a block hides it — the bodies
 the world holds among them, as kind `body`), `undrawn` (the bodies in frame the
-renderer did not draw — an item display, a text display — each with its reason
+renderer did not draw — a kind it has no model for, a holder of an item it cannot
+draw — each with its reason
 and how to judge it instead; `DW1039` on stderr), and `unchecked` (what no frame
 can show). A frame whose `shows` holds no NPC where one should stand is a
 finding; an `undrawn` marker is not — it is real and the renderer has no model

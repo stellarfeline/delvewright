@@ -5,7 +5,7 @@
 //! playthrough it is handed, so every branch's map already exists
 //! (`Plan::branch_critical_path`). Emission, however, used to consult only the
 //! **exported** path's map, so a crossing that exists solely on a branch emitted
-//! no `teleport` — while `validation/branch-path-<slug>.json` promised one. The
+//! no `teleport` — while the branch's path file promised one. The
 //! island round-21 branch run stranded on exactly that split: `branch/flee`
 //! walked to a deck it was never carried to.
 //!
@@ -148,7 +148,7 @@ fn a_branch_only_crossing_emits_a_flag_gated_teleport() {
     let out = build_campaign(&fixture_dir());
 
     // The promise: the branch path the harness walks says obj/bolt teleports.
-    let bolt = json_at(&out, "validation/branch-path-bolt.json");
+    let bolt = json_at(&out, &common::world_file_of(&out, "branch/bolt", "path"));
     let promised = bolt["steps"]
         .as_array()
         .unwrap()
@@ -189,22 +189,22 @@ fn a_branch_only_crossing_emits_a_flag_gated_teleport() {
 /// Generic contract: for EVERY branch path artifact, every step that promises a
 /// transport has a matching `teleport` in that objective's completion bundle.
 /// This is the r21 failure stated as an invariant rather than a single case —
-/// `branch-path-<slug>.json` and the datapack are one contract.
+/// `world-path-<k>.json` and the datapack are one contract.
 #[test]
 fn the_branch_path_json_and_the_emission_agree() {
     let out = build_campaign(&fixture_dir());
     let slugs: Vec<String> = out
         .keys()
         .filter_map(|k| {
-            k.strip_prefix("validation/branch-path-")
+            k.strip_prefix("validation/world-path-")
                 .and_then(|s| s.strip_suffix(".json"))
                 .map(str::to_string)
         })
         .collect();
-    assert!(!slugs.is_empty(), "the fixture must export branch paths");
+    assert!(!slugs.is_empty(), "the fixture must export world paths");
 
     for slug in &slugs {
-        let path = json_at(&out, &format!("validation/branch-path-{slug}.json"));
+        let path = json_at(&out, &format!("validation/world-path-{slug}.json"));
         for step in path["steps"].as_array().unwrap() {
             let (Some(oid), Some(dest)) = (
                 step["objective"].as_str(),
@@ -370,7 +370,7 @@ fn a_branch_cannot_cross_a_door_only_another_branch_opens() {
         Err(BuildFailure::Diagnostic { code, message }) => {
             assert_eq!(code, "DW0317", "wrong diagnostic: {message}");
             assert!(
-                message.starts_with("branch `branch/bolt`: "),
+                message.starts_with("branch `branch/bolt` (world/"),
                 "the diagnostic must name the branch that cannot walk: {message}"
             );
             assert!(

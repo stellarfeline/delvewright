@@ -83,11 +83,11 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
-    /// **Advisory.** A stage-7 batch writes inside a `close-gate` region: the
-    /// gameplay seal fills that region with the gate anchor's block and `open-gate`
-    /// clears it to air, so one close/open cycle destroys the edit visually. Every
-    /// proof stays sound (the occupancy model already treats the region as
-    /// gate-controlled), so this warns rather than rejects.
+    /// **Advisory.** A stage-7 batch writes inside a region a runtime write lays
+    /// its own block in (`plan.region_events`: a `close-gate`, a `fill-region`, a
+    /// `set-block`, a laid way, a prop the datapack sets), so the write destroys
+    /// the edit visually. Every proof stays sound (the region model reads the
+    /// write), so this warns rather than rejects.
     pub const DW_EDIT_GATE_REGION: DwCode = DwCode::new("DW0353", ExitTier::Build);
 }
 
@@ -856,12 +856,13 @@ fn gate_region_warnings(
             "world-edits",
             format!("/content/batches/{bid}"),
             format!(
-                "world-edits batch `{bid}` writes {} cell(s) (first [{}, {}, {}]) inside a \
-                 `close-gate` region [{}, {}, {}]..[{}, {}, {}]. That region is filled solid \
-                 when the gate closes and cleared to AIR when it opens, so one close/open \
-                 cycle erases the edit — the dressing you see in `delvec frames --campaign` is not what \
-                 players see after the beat fires. Move the edit outside the gate region, or \
-                 keep it only if you are deliberately dressing the sealed state",
+                "world-edits batch `{bid}` writes {} cell(s) (first [{}, {}, {}]) inside the \
+                 region [{}, {}, {}]..[{}, {}, {}] a runtime write lays its own block in — a \
+                 `close-gate`, a `fill-region`, a `set-block`, a laid way, or a prop the \
+                 datapack sets — and a gate's dual clears it to AIR, so the write erases the \
+                 edit: the dressing you see in `delvec frames --campaign` is not what players see once \
+                 it lands. Move the edit outside that region, or keep it only if you are \
+                 deliberately dressing the state before the write",
                 hits.len(),
                 first[0],
                 first[1],

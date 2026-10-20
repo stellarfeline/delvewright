@@ -560,7 +560,7 @@ pub fn generate(table: &Metrics, campaign_id: &str) -> Gym {
                 "nodes": [
                     {
                         "id": "dlg/greeting",
-                        "text": "Walk east through every doorway, then up and down, and tell me \
+                        "text": "Walk on through every doorway, then up and down, and tell me \
                                  where you stopped believing in the standards.",
                         "options": [
                             { "label": "What am I looking for?", "next": "dlg/what" },

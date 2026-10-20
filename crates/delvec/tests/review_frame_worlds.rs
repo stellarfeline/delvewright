@@ -443,7 +443,17 @@ fn library_with_a_sign(dir: &Path) -> PathBuf {
     let bytes = fastnbt::to_bytes(&root).unwrap();
     let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     enc.write_all(&bytes).unwrap();
-    std::fs::write(&path, enc.finish().unwrap()).unwrap();
+    let gz = enc.finish().unwrap();
+    // The copy carries the pinned template's `entities` list through
+    // verbatim; it is judged by the one entity rule before the bytes land,
+    // as every emitter's is (spec-0111 §3.1).
+    let written = delvec::admit::structure::Structure::read(&gz).expect("the copy reads back");
+    let (_, refused) = delvec::admit::entities::judge(
+        &written.entities,
+        &delvec::admit::allowlist::Allowlist::default(),
+    );
+    assert!(refused.is_empty(), "the copy's entities: {refused:?}");
+    std::fs::write(&path, gz).unwrap();
     lib
 }
 
@@ -499,6 +509,44 @@ fn a_template_sign_is_written_with_its_text_and_drawn() {
 /// activation — the world holds the prop at the anchor, the frame's `shows`
 /// lists that cell, and its `expect` names the prop's block and never a
 /// lantern marker the objective does not have.
+/// **A POV frame stands in the state its leg is walked under** (spec-0112 §5
+/// item 1): the route proof walks a leg with its start step's writes, and a
+/// start the arrival does not causally descend from — the gallery's
+/// `trigger/strike-the-sentinel`, whose one written cell the next leg's
+/// arrival does not inherit — leaves that write in the walk and out of the
+/// arrival's configuration. The leg's frames stand in the walk's world, keyed
+/// after the start; standing them in the arrival's put them at load, which is
+/// the shape a door its start opens draws as a shut bar.
+#[test]
+fn a_pov_frame_stands_in_the_world_its_leg_is_walked_in() {
+    let dir = tmp("rfw-pov-leg");
+    let (campaign, prefabs) = common::gallery_primary_at(&dir.join("gallery"));
+    let out = dir.join("build");
+    build(&campaign, &prefabs, &out);
+    let plan = json(&out.join("render-plan.json"));
+    let shots = plan["shots"].as_array().unwrap();
+    let leg: Vec<&serde_json::Value> = shots
+        .iter()
+        .filter(|s| s["kind"] == "pov" && s["leg"] == 1)
+        .collect();
+    assert!(!leg.is_empty(), "the gallery's second leg has frames");
+    for s in &leg {
+        assert_eq!(
+            s["world"], "after-trigger-strike-the-sentinel",
+            "the leg walked from the sentinel's strike stands in the world it leaves: {s}"
+        );
+        assert!(
+            s["after"]["cells_moved"].as_u64().unwrap_or(0) > 0,
+            "and that world moves a cell from load: {s}"
+        );
+    }
+    // The world is written beside the plan, as every world a shot names.
+    assert!(
+        out.join("validation/worlds/after-trigger-strike-the-sentinel/level.dat")
+            .is_file()
+    );
+}
+
 #[test]
 fn a_prop_objectives_interact_frame_stands_in_the_world_that_holds_the_prop() {
     const OBJ: &str = "obj/press-the-case";
@@ -584,4 +632,93 @@ fn a_prop_objectives_interact_frame_stands_in_the_world_that_holds_the_prop() {
         .collect();
     assert!(expect.iter().any(|e| e.contains(&block)), "{expect:?}");
     assert!(expect.iter().all(|e| !e.contains("lantern")), "{expect:?}");
+}
+
+/// **Every block that carries a block entity is written with one** (`DW1040`):
+/// the pinned server makes a block entity whenever it places such a block —
+/// a template's barrel, a sculk sensor, a blank sign — compound or none, and
+/// saves it with the chunk. Over the gallery's load world, the cells holding a
+/// block entity are exactly the cells whose block the measured table
+/// (`data/block-entities-1.21.11.tsv`) gives a type, each of that type, and
+/// the gallery binds the rule with block entities its templates carry no
+/// compound for.
+#[test]
+fn every_block_that_carries_a_block_entity_is_written_with_one() {
+    let dir = tmp("rfw-block-entities");
+    let (campaign, prefabs) = common::gallery_primary_at(&dir.join("gallery"));
+    let out = dir.join("build");
+    build(&campaign, &prefabs, &out);
+    let world = out.join("validation/worlds/at-load");
+    let table: BTreeMap<String, String> = std::fs::read_to_string(
+        common::repo_root().join("crates/delvec/data/block-entities-1.21.11.tsv"),
+    )
+    .unwrap()
+    .lines()
+    .filter(|l| !l.starts_with('#') && !l.is_empty())
+    .map(|l| {
+        let (b, t) = l.split_once('\t').unwrap();
+        (b.to_string(), t.to_string())
+    })
+    .collect();
+    let cells = anvil(&[
+        "cells",
+        world.to_str().unwrap(),
+        "-30000",
+        "-64",
+        "-30000",
+        "30000",
+        "319",
+        "30000",
+    ]);
+    let want: BTreeMap<String, String> = cells
+        .as_object()
+        .unwrap()
+        .iter()
+        .filter_map(|(cell, state)| {
+            let id = state.as_str().unwrap().split('[').next().unwrap();
+            table.get(id).map(|t| (cell.clone(), t.clone()))
+        })
+        .collect();
+    let bes = anvil(&["block-entities", world.to_str().unwrap()]);
+    let got: BTreeMap<String, String> = bes
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| {
+            (
+                format!("{},{},{}", b["x"], b["y"], b["z"]),
+                b["id"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        got, want,
+        "the written block entities are not the cells that carry one"
+    );
+    let bare = bes
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|b| {
+            b.as_object()
+                .unwrap()
+                .keys()
+                .all(|k| ["id", "x", "y", "z"].contains(&k.as_str()))
+        })
+        .count();
+    assert!(
+        bare > 0,
+        "the gallery binds no block entity its writes carry no compound for: {bes}"
+    );
+    for kind in [
+        "minecraft:barrel",
+        "minecraft:sculk_sensor",
+        "minecraft:sign",
+        "minecraft:trapped_chest",
+    ] {
+        assert!(
+            got.values().any(|t| t == kind),
+            "the gallery writes no {kind}: {got:?}"
+        );
+    }
 }

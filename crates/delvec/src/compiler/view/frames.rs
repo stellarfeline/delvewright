@@ -49,15 +49,19 @@ use crate::compiler::framing::Camera;
 use crate::compiler::view::diag::{DW_INPUT, DW_RENDER, Diagnostic};
 use crate::compiler::view::scene;
 
-/// The Lumenwright revision this binary links, as `versions.toml [render]
-/// lumenwright_revision` and `crates/delvec/Cargo.toml` pin it — written on
+/// The Lumenwright version this binary links, as `versions.toml [render]
+/// lumenwright_version` and `crates/delvec/Cargo.toml` pin it — written on
 /// every frame manifest and on the first line of every run, so a frame's
 /// provenance is readable without the frame.
-pub const RENDERER_REVISION: &str = "ed3f049cc496d5f1b7df9829bda1bcb443ad1d06";
+pub const RENDERER_VERSION: &str = "0.1.0";
 
-/// The renderer, in words: `lumenwright <revision>`.
+/// The client's *Mipmap Levels* option at its default, the texture filtering
+/// a player who has not changed it sees.
+pub const CLIENT_MIPMAP_LEVELS: u32 = 4;
+
+/// The renderer, in words: `lumenwright <version>`.
 pub fn renderer() -> String {
-    format!("lumenwright {RENDERER_REVISION}")
+    format!("lumenwright {RENDERER_VERSION}")
 }
 
 /// The review frame's size, square, in pixels.
@@ -165,40 +169,35 @@ pub fn quick_sky(sky: FrameSky) -> QuickSkyColours {
     }
 }
 
-/// The sun's irradiance in an hq frame under a clear sky with the sun above
-/// the horizon, as a multiple of white. **Authored**: the game's lightmap has
-/// no directional term, so the value is chosen for a picture, not read off
-/// the client; zero under rain or thunder and below the horizon.
-pub const HQ_SUN_IRRADIANCE: f32 = 1.5;
-
-/// The sky an hq frame is traced under: the zenith is the light the sky casts
-/// ([`scene::sky_cell`]: the lightmap's colour decoded to linear), the horizon
-/// the fog colour, and the sun as [`HQ_SUN_IRRADIANCE`] while its disc is
-/// drawn ([`scene::LookCell::sun_draw_texture`]).
+/// The sky an hq frame is traced under: Lumenwright's, the sky Chunky traces
+/// (`render::sky::hq_sky`: the Preetham sky, its fall through twilight, and a
+/// white sun at Chunky's default intensity, cited there) along the engine's
+/// sun direction ([`sun_direction`]). Two readings of the client hold it to
+/// the game: the sun is dark while the client draws no disc
+/// ([`scene::LookCell::sun_draw_texture`]: below the horizon, or under rain
+/// or thunder), and the sky's radiance is scaled by the light the client's sky
+/// casts under the frame's weather as a fraction of what it casts in the clear
+/// at the same tick ([`scene::sky_cell`]'s `sky_light`), so a clear sky is
+/// Lumenwright's own and a rain sky is as much darker as the game's.
 pub fn hq_sky(sky: FrameSky) -> HqSky {
     let cell = scene::sky_cell(sky.daytime_ticks, sky.weather);
+    let clear = scene::sky_cell(sky.daytime_ticks, WorldWeather::Clear);
     let d = sun_direction(sky.daytime_ticks);
-    let zenith = Vec3::new(
-        (cell.sky_color.red * cell.sky_light) as f32,
-        (cell.sky_color.green * cell.sky_light) as f32,
-        (cell.sky_color.blue * cell.sky_light) as f32,
-    );
-    let horizon = Vec3::new(
-        cell.fog_color.red as f32,
-        cell.fog_color.green as f32,
-        cell.fog_color.blue as f32,
-    );
-    let sun = if cell.sun_draw_texture && d[1] > 0.0 {
-        Vec3::splat(HQ_SUN_IRRADIANCE)
+    let dir = Vec3::new(d[0] as f32, d[1] as f32, d[2] as f32);
+    let intensity = if clear.sky_light > 0.0 {
+        (cell.sky_light / clear.sky_light) as f32
     } else {
-        Vec3::ZERO
+        1.0
     };
-    HqSky {
-        sun_dir: Vec3::new(d[0] as f32, d[1] as f32, d[2] as f32),
-        sun_color: sun,
-        zenith,
-        horizon,
+    let mut hq = lumenwright::render::sky::hq_sky(
+        dir,
+        lumenwright::render::sky::DEFAULT_SUN_INTENSITY,
+        intensity,
+    );
+    if !(cell.sun_draw_texture && d[1] > 0.0) {
+        hq.sun_color = Vec3::ZERO;
     }
+    hq
 }
 
 /// One frame to draw.
@@ -227,8 +226,14 @@ pub struct Stats {
     pub entities_rendered: std::collections::BTreeMap<String, usize>,
     /// Entity kinds drawn as a box (never under the engine's policy).
     pub entities_boxed: std::collections::BTreeMap<String, usize>,
-    /// Entity kinds the renderer has no model for, not drawn.
+    /// Entity kinds the renderer drew nothing of: a kind it has no model for,
+    /// or a dropped item or item display whose item it cannot draw.
     pub entities_skipped: std::collections::BTreeMap<String, usize>,
+    /// Item stacks drawn (dropped, displayed, framed, held or worn), by short
+    /// item id.
+    pub items_rendered: std::collections::BTreeMap<String, usize>,
+    /// Item stacks the renderer could not draw, by short item id.
+    pub items_skipped: std::collections::BTreeMap<String, usize>,
     /// Block-entity kinds drawn.
     pub block_entities_rendered: std::collections::BTreeMap<String, usize>,
     /// Block-entity kinds not drawn.
@@ -246,9 +251,12 @@ impl Stats {
         self.entities_rendered.contains_key(kind)
     }
 
-    /// Whether the renderer skipped (or boxed) bodies of `kind` in this frame.
+    /// Whether the renderer skipped (or boxed) bodies of `kind` in this frame,
+    /// or `kind` holds items and an item stack in this frame was not drawn.
     pub fn undrew(&self, kind: &str) -> bool {
-        self.entities_skipped.contains_key(kind) || self.entities_boxed.contains_key(kind)
+        self.entities_skipped.contains_key(kind)
+            || self.entities_boxed.contains_key(kind)
+            || (HOLDS_ITEMS.contains(&kind) && !self.items_skipped.is_empty())
     }
 
     /// The statistics as the frame manifest writes them.
@@ -258,6 +266,8 @@ impl Stats {
                 "rendered": self.entities_rendered,
                 "fallback_boxes": self.entities_boxed,
                 "skipped": self.entities_skipped,
+                "items_rendered": self.items_rendered,
+                "items_skipped": self.items_skipped,
             },
             "block_entities": {
                 "rendered": self.block_entities_rendered,
@@ -268,6 +278,19 @@ impl Stats {
         })
     }
 }
+
+/// The entity kinds (short ids) that carry item stacks the renderer draws as
+/// items: a dropped item, an item display, a frame's content, a held or worn
+/// stack. Its statistics count items by item id, not by holder, so a stack it
+/// could not draw is a doubt on every holder in the frame.
+pub const HOLDS_ITEMS: [&str; 6] = [
+    "item",
+    "item_display",
+    "item_frame",
+    "glow_item_frame",
+    "armor_stand",
+    "mannequin",
+];
 
 /// A drawn frame.
 pub struct Drawn {
@@ -375,6 +398,9 @@ pub fn draw(req: &FrameRequest<'_>, opened: Option<&OpenedWorld>) -> Result<Draw
             max: req.chunks.1,
         },
         jar: req.jar,
+        // No Unifont is handed, so a character no bitmap font of the jar
+        // covers (CJK among them) draws nothing on a sign.
+        unifont: None,
         resource_packs: req.packs,
         camera: cam,
         mode,
@@ -392,6 +418,7 @@ pub fn draw(req: &FrameRequest<'_>, opened: Option<&OpenedWorld>) -> Result<Draw
             draw_distance: draw_distance(req.camera.pos, req.chunks),
             brightness: scene::DEFAULT_BRIGHTNESS as f32,
             smooth: true,
+            mipmap_levels: CLIENT_MIPMAP_LEVELS,
         },
         hq,
         sky: Sky::Stated(StatedSky {
@@ -426,6 +453,8 @@ pub fn draw(req: &FrameRequest<'_>, opened: Option<&OpenedWorld>) -> Result<Draw
             entities_rendered: short(&r.entity_stats.rendered),
             entities_boxed: short(&r.entity_stats.fallback_boxes),
             entities_skipped: short(&r.entity_stats.skipped),
+            items_rendered: short(&r.entity_stats.items_rendered),
+            items_skipped: short(&r.entity_stats.items_skipped),
             block_entities_rendered: short(&r.block_entity_stats.rendered),
             block_entities_skipped: short(&r.block_entity_stats.skipped),
             text_lines: r.block_entity_stats.text_lines,

@@ -279,6 +279,12 @@ pub(super) fn validate_loaded(
             examined.push(
                 delvewright_dsl::textstyle::InlineStyleBinding::of(&campaign, &sidecars).line(),
             );
+            // DW1049: a direction in a player-facing English line names what the
+            // player sees, never a compass point.
+            diags.extend(delvewright_dsl::compass::validate_compass_directions(
+                &campaign,
+            ));
+            examined.push(delvewright_dsl::compass::CompassBinding::of(&campaign).line());
             // The compiler's own chrome namespace is reserved as well (DW0186):
             // `delvewright.*` keys are the engine's on-screen strings, shipped
             // translated with the compiler, and a sidecar row under that prefix
@@ -370,6 +376,14 @@ pub(super) fn validate_loaded(
                 let (td, tbind) = delvec::compiler::telling::check_name_tags(&campaign);
                 examined.push(tbind.line());
                 diags.extend(td);
+            }
+            // An objective's title says the act that completes it (DW1045,
+            // spec-0114): its head word is read against the acts the completion
+            // performs, with what it judged and the heads it does not know.
+            {
+                let (ad, abind) = delvec::compiler::telling::check_acts(&campaign);
+                examined.push(abind.line());
+                diags.extend(ad);
             }
             // v0.6 `close-gate` gate-block declaration (DW0343): the fill block is
             // prefab metadata, so this compiler-side check runs here (validation
@@ -512,6 +526,17 @@ pub(super) fn validate_loaded(
                 let (bd, bbind) = delvec::compiler::branch::check_branches_bound(&campaign);
                 examined.push(bbind.line());
                 diags.extend(bd);
+            }
+            // spec-0108: an ending reads the run. What each ending's final scene
+            // reads, where each input is written, which story worlds reach each
+            // ending and what each scene leaves changed — `DW1029` against the
+            // campaign's own `endings_read`, `DW1030` per ending no world
+            // reaches. Bound in the one funnel, the binding line printed on
+            // every run, zeroes included.
+            {
+                let (ed, ebind) = delvec::compiler::ending::check_bound(&campaign);
+                examined.extend(ebind.lines());
+                diags.extend(ed);
             }
             // spec-0031 (DSL v0.10): a numeric gate is judged against the writes
             // the path performs before it (DW0879). The reachability model walks
@@ -835,6 +860,8 @@ fn build_as(
     // validated above). An undeclared `--lang` is a validation-class rejection of
     // the requested build (exit 1, spec-0002).
     let is_english = lang == delvewright_dsl::CANONICAL_LANG;
+    // The act check reads the English, which the localisation below replaces.
+    let act_binding = delvec::compiler::telling::check_acts(&campaign).1;
     let mut campaign = campaign;
     if !is_english {
         if !campaign.world.content.languages.iter().any(|l| l == lang) {
@@ -887,7 +914,10 @@ fn build_as(
             Plan::build_with(&campaign, &prefabs, p.clone())
         }
     };
-    let plan = match built.map(|p| p.with_design_files(loaded.design_files.clone())) {
+    let plan = match built.map(|p| {
+        p.with_design_files(loaded.design_files.clone())
+            .with_act_binding(act_binding)
+    }) {
         Ok(p) => p,
         Err(e) => {
             // Advisories raised before the failure and explaining it (`DW0498`:

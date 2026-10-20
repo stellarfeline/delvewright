@@ -29,6 +29,32 @@ pub struct QuestPlanContent {
     /// flag in the campaign.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub branch_points: Vec<BranchPoint>,
+    /// **What every ending reads** (spec-0108 §3.5): the campaign's declaration
+    /// of how many seeded inputs each ending's final scene reads, and how many of
+    /// those a deed writes. Absent, the engine counts and reports and refuses
+    /// nothing; present, an ending below either term is `DW1029`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endings_read: Option<EndingsRead>,
+}
+
+/// **The campaign's claim about every ending** (spec-0108 §3.5): one object
+/// with two terms, both about the inputs an ending's final scene reads.
+///
+/// The number is the campaign's, never the engine's: a check confirms a
+/// declared intent and never restricts, so a campaign that declares nothing is
+/// refused nothing, and a declaration over zero endings passes with the count
+/// stated.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EndingsRead {
+    /// Every ending's count of **seeded** inputs (written outside the ending's
+    /// host quest, or by an act no quest dates) is at least this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at_least: Option<u32>,
+    /// Every ending's count of seeded inputs **some writer of which is a deed**
+    /// (a thing done in the world, or a quest finished) is at least this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deeds_at_least: Option<u32>,
 }
 
 impl QuestPlanContent {

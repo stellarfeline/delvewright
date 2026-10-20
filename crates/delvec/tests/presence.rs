@@ -234,3 +234,42 @@ fn validate_prints_the_binding() {
         "{text}"
     );
 }
+
+/// A realised branch is walked in the story world that realises it (spec-0108
+/// §4.2): `RealizedBranch::world` indexes the story worlds, which outnumber
+/// the dialogue-choice worlds once a campaign has an elective act. On
+/// `tests/fixtures/elective-reach` a branch is realised by a story world past
+/// the last choice world, so reading its index as a choice world's is out of
+/// bounds; the check walks every configuration instead.
+#[test]
+fn a_branch_is_walked_in_the_story_world_that_realises_it() {
+    let dir = common::compiler_fixtures_dir().join("elective-reach");
+    let read = |f: &str| std::fs::read_to_string(dir.join(f)).unwrap();
+    let c = parse_campaign(&RawCampaign {
+        world: read("world.json"),
+        npcs: read("npcs.json"),
+        classes: read("classes.json"),
+        quest_plan: read("quest-plan.json"),
+        quests: read("quests.json"),
+        dialogue: read("dialogue.json"),
+        world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
+        design: None,
+    })
+    .expect("fixture parses");
+    let flow = delvec::compiler::flow::Flow::new(&c);
+    let realized = delvec::compiler::branch::realize(&c);
+    let worlds: Vec<usize> = realized.iter().filter_map(|r| r.world).collect();
+    assert!(
+        worlds.iter().any(|&w| w >= flow.world_count()),
+        "the fixture must realise a branch past the choice worlds: story worlds {worlds:?}, \
+         {} choice world(s)",
+        flow.world_count()
+    );
+    let (d, bind) = delvec::compiler::presence::check(&c);
+    assert_eq!(bind.configurations, 1 + worlds.len(), "{}", bind.line());
+    assert!(d.iter().all(|x| x.code != "DW1026"), "{d:#?}");
+}

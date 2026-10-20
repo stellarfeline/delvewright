@@ -7,7 +7,7 @@
 // "provably completable by machine" quantify over BRANCHES: the compiler proves
 // each branch structurally (`DW0480`–`DW0485`) and exports, per branch, its flag
 // assignment, the dialogue choices that enter it, and an executable path
-// (`validation/branch-path-<slug>.json`, the ordinary `critical-path.json`
+// (`validation/world-path-<k>.json` per story world — spec-0108 — the ordinary `critical-path.json`
 // contract). This module reads that plan and decides which branches THIS run is
 // answerable for.
 //
@@ -43,9 +43,31 @@ export interface BranchEntryChoice {
   readonly command: string;
 }
 
-/** One enumerated branch, as the compiler proved and exported it. */
+/**
+ * An elective act a story world performs on its path (spec-0108 §4.3), in
+ * front of the step its run performed it at.
+ */
+export interface EntryDeed {
+  /** The act's id: `trigger/…`, `quest/…`, … */
+  readonly act: string;
+  /** Index into the world's flow-level step list it is performed in front of. */
+  readonly beforeStep: number;
+}
+
+/**
+ * One row of the plan: a story world (spec-0108 §4.3) — a dialogue selection
+ * and a participation — as the compiler proved and exported it.
+ */
 export interface PlannedBranch {
   readonly id: string;
+  /** The declared branches this world's flags realize. */
+  readonly branches: readonly string[];
+  /** Why this world exports no executable path, when it does not. */
+  readonly pathReason: string | undefined;
+  /** The elective acts the world performs on its path. */
+  readonly entryDeeds: readonly EntryDeed[];
+  /** The world's flow-level steps: each objective with the quest it belongs to. */
+  readonly questOf: ReadonlyMap<string, string>;
   /** The per-branch chronicle file (generation-time narrative review). */
   readonly chronicle: string;
   /**
@@ -70,6 +92,8 @@ export interface BranchPlan {
   readonly version: string;
   readonly campaignId: string;
   readonly branches: readonly PlannedBranch[];
+  /** Declared branches no world realizes (`DW0482`), named so a run report does. */
+  readonly unrealized: readonly string[];
   /** Directory the plan was read from — where its `pathFile`s live. */
   readonly dir: string;
 }
@@ -143,19 +167,52 @@ function parseBranch(value: unknown, pointer: string): PlannedBranch {
   if (rawPath !== null && typeof rawPath !== "string") {
     fail(`${pointer}/path`, `must be a string or null, got ${JSON.stringify(rawPath)}`);
   }
-  // A reachable branch the compiler exported no path for is not a run the harness
-  // may quietly skip — it is a broken contract between the two halves of
-  // spec-0025, and a silent skip is exactly the failure mode this spec exists to
-  // end.
-  if (reachable && (rawPath === null || rawPath.length === 0)) {
-    fail(`${pointer}/path`, "a reachable branch must name an executable path file");
+  // A reachable world the compiler exported no path for, and no reason why, is
+  // not a run the harness may quietly skip — it is a broken contract between the
+  // two halves of spec-0025/spec-0108, and a silent skip is exactly the failure
+  // mode those specs exist to end. A world whose witness needs an act the
+  // harness cannot perform carries its `path_reason` and is skipped BY NAME.
+  const rawReason = value["path_reason"];
+  if (rawReason !== undefined && rawReason !== null && typeof rawReason !== "string") {
+    fail(`${pointer}/path_reason`, `must be a string or null, got ${JSON.stringify(rawReason)}`);
+  }
+  const pathReason = typeof rawReason === "string" && rawReason.length > 0 ? rawReason : undefined;
+  if (reachable && (rawPath === null || rawPath.length === 0) && pathReason === undefined) {
+    fail(`${pointer}/path`, "a reachable world must name an executable path file or why not");
   }
   const choices = value["entry_choices"];
   if (!Array.isArray(choices)) {
     fail(`${pointer}/entry_choices`, `must be an array, got ${JSON.stringify(choices)}`);
   }
+  const rawDeeds = value["entry_deeds"] ?? [];
+  if (!Array.isArray(rawDeeds)) {
+    fail(`${pointer}/entry_deeds`, `must be an array, got ${JSON.stringify(rawDeeds)}`);
+  }
+  const entryDeeds = rawDeeds.map((d, i): EntryDeed => {
+    const at = `${pointer}/entry_deeds/${i}`;
+    if (!isRecord(d)) fail(at, `must be an object, got ${JSON.stringify(d)}`);
+    const before = d["before_step"];
+    if (typeof before !== "number" || !Number.isInteger(before) || before < 0) {
+      fail(`${at}/before_step`, `must be a non-negative integer, got ${JSON.stringify(before)}`);
+    }
+    return { act: str(d, "act", at), beforeStep: before };
+  });
+  const realizes = value["branches"] === undefined ? [] : strArray(value, "branches", pointer);
+  const questOf = new Map<string, string>();
+  const rawCp = value["critical_path"] ?? [];
+  if (Array.isArray(rawCp)) {
+    for (const s of rawCp) {
+      if (isRecord(s) && typeof s["objective"] === "string" && typeof s["quest"] === "string") {
+        questOf.set(s["objective"], s["quest"]);
+      }
+    }
+  }
   return {
     id: str(value, "id", pointer),
+    branches: realizes,
+    pathReason,
+    entryDeeds,
+    questOf,
     chronicle: str(value, "chronicle", pointer),
     pathFile: typeof rawPath === "string" && rawPath.length > 0 ? rawPath : undefined,
     flagsSet: strArray(flags, "set", `${pointer}/flags`),
@@ -186,10 +243,13 @@ export function parseBranchPlan(value: unknown, dir: string): BranchPlan {
     }
     seen.add(b.id);
   }
+  const unrealized =
+    value["branches_unrealized"] === undefined ? [] : strArray(value, "branches_unrealized", "");
   return {
     version: str(value, "version", ""),
     campaignId: str(value, "campaign_id", ""),
     branches: parsed,
+    unrealized,
     dir,
   };
 }
@@ -315,9 +375,16 @@ export function selectBranches(plan: BranchPlan, tier: BranchTier): BranchSelect
       skipped.push({
         branch: b.id,
         reason:
+          b.pathReason ??
           "unreachable: no playthrough realizes this branch's flag assignment, so the " +
-          "compiler exported no path to walk (see DW0482)",
+            "compiler exported no path to walk (see DW0482)",
       });
+      continue;
+    }
+    if (b.pathFile === undefined) {
+      // A world the harness cannot walk (spec-0108 §6.4): proven statically,
+      // skipped by name at runtime.
+      skipped.push({ branch: b.id, reason: b.pathReason ?? "no executable path" });
       continue;
     }
     if (!wanted(b)) {
@@ -328,6 +395,14 @@ export function selectBranches(plan: BranchPlan, tier: BranchTier): BranchSelect
       continue;
     }
     selected.push(b.id);
+  }
+  for (const id of plan.unrealized) {
+    skipped.push({
+      branch: id,
+      reason:
+        "unrealized: no story world realizes this declared branch's flag assignment " +
+        "(see DW0482)",
+    });
   }
   return { tier: describeTier(tier), selected, skipped };
 }
@@ -406,4 +481,48 @@ export function assertEntryChoicesOnPath(
     );
   }
   return branch.entryChoices.map((c) => c.command);
+}
+
+/**
+ * Assert the world's exported path really performs the acts that make it the
+ * world it is (spec-0108 §6.4).
+ *
+ * A world is a participation as well as a selection: a run that walked the
+ * *none* world while claiming a deed world would report coverage of an ending
+ * it never reached. Every entry deed must appear on the path — a `trigger/…`
+ * act as a `trigger` step pressing it, a `quest/…` act as at least one step of
+ * that quest.
+ *
+ * Returns the acts it matched, for the run report.
+ */
+export function assertEntryDeedsOnPath(
+  branch: PlannedBranch,
+  steps: readonly {
+    readonly action: string;
+    readonly trigger?: string;
+    readonly objective?: string;
+    readonly act?: string;
+  }[],
+): string[] {
+  const missing = branch.entryDeeds.filter((d) => {
+    if (d.act.startsWith("trigger/")) {
+      return !steps.some((s) => s.action === "trigger" && s.trigger === d.act);
+    }
+    if (d.act.startsWith("quest/")) {
+      return !steps.some(
+        (s) => s.objective !== undefined && branch.questOf.get(s.objective) === d.act,
+      );
+    }
+    // Any other act has no harness step kind: the path performs it by mock
+    // (spec-0108 §6.5), or the compiler exports no path for the world at all.
+    return !steps.some((s) => s.action === "mock" && s.act === d.act);
+  });
+  if (missing.length > 0) {
+    throw new BranchTierError(
+      `${branch.id}: its exported path never performs ${missing.map((d) => d.act).join(", ")} — ` +
+        `the deed(s) that make it this world. The plan and the path disagree; rebuild with a ` +
+        `current delvec.`,
+    );
+  }
+  return branch.entryDeeds.map((d) => d.act);
 }

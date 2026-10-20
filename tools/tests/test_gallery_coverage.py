@@ -622,3 +622,72 @@ def test_a_threshold_ledger_that_judges_no_trigger_is_a_zero_binding(tmp_path):
     ledger.unlink()
     zeroes = mod.read_build_ledgers(out)[1]
     assert len(zeroes) == 1 and zeroes[0].startswith("threshold-gate.json: absent"), zeroes
+
+
+def test_a_party_ledger_that_binds_no_join_or_carrier_is_a_zero_binding(tmp_path):
+    """spec-0018 on the gallery: the gallery declares an AND-join and a
+    `carrier: one` give, so a `party-division.json` binding no `party_join`
+    template or no two-player carrier template is a zero, as is a suite with no
+    party ledger beside it."""
+    mod = _load_checker()
+    out = tmp_path / "build"
+    (out / "validation").mkdir(parents=True)
+    row = {"objectives": 19, "and_joins": 1, "and_joins_bound": 1, "carrier_one": 1,
+           "carrier_one_judged": 1, "min_players": 1}
+    ledger = out / "validation" / "party-division.json"
+    ledger.write_text(json.dumps(row))
+    assert mod.read_build_ledgers(out)[1] == []
+    ledger.write_text(json.dumps({**row, "and_joins_bound": 0}))
+    assert mod.read_build_ledgers(out)[1] == ["party-division.json: `and_joins_bound` is 0"]
+    ledger.write_text(json.dumps({**row, "carrier_one_judged": 0}))
+    assert mod.read_build_ledgers(out)[1] == ["party-division.json: `carrier_one_judged` is 0"]
+    ledger.unlink()
+    assert mod.read_build_ledgers(out)[1] == []
+    (out / "packtest-datapack").mkdir()
+    zeroes = mod.read_build_ledgers(out)[1]
+    assert len(zeroes) == 1 and zeroes[0].startswith("party-division.json: absent"), zeroes
+
+
+def test_a_gate_signal_ledger_that_examines_no_gate_is_a_zero_binding(tmp_path):
+    """DW1047 on the gallery: the gallery resolves gates, so a
+    `gate-signal.json` examining none is a proof that stopped reaching what the
+    gallery writes — read through the shared `gates_examined` rule — as is a
+    build that resolves a gate with no ledger beside it."""
+    mod = _load_checker()
+    out = tmp_path / "build"
+    (out / "validation").mkdir(parents=True)
+    (out / "validation" / "gate-seal.json").write_text(json.dumps({"gates_examined": 5}))
+    row = {"code": "DW1047", "gates_examined": 5, "gates": 0, "floor_gates": 0, "cells": 0,
+           "inert_gates": 5, "sources": 11, "sources_written": 6, "nearest": None}
+    ledger = out / "validation" / "gate-signal.json"
+    ledger.write_text(json.dumps(row))
+    assert mod.read_build_ledgers(out)[1] == []
+    ledger.write_text(json.dumps({**row, "gates_examined": 0, "inert_gates": 0}))
+    assert mod.read_build_ledgers(out)[1] == ["gate-signal.json: `gates_examined` is 0"]
+    ledger.unlink()
+    zeroes = mod.read_build_ledgers(out)[1]
+    assert len(zeroes) == 1 and zeroes[0].startswith("gate-signal.json: absent"), zeroes
+
+
+def test_an_act_ledger_that_judges_no_title_is_a_zero_binding(tmp_path):
+    """spec-0114 §9.6 on the gallery: its objectives carry titles, so an
+    `act-gate.json` judging none is a proof that stopped reaching what the
+    gallery writes — read through the shared `examined` rule — and an English
+    build with no act ledger at all is one whose titles nothing read."""
+    mod = _load_checker()
+    out = tmp_path / "build"
+    (out / "validation").mkdir(parents=True)
+    row = {"code": "DW1045", "objectives": 20, "titled": 18, "judged": 18, "examined": 18,
+           "unknown": [], "untitled": 2, "refused": 0}
+    ledger = out / "validation" / "act-gate.json"
+    ledger.write_text(json.dumps(row))
+    assert mod.read_build_ledgers(out)[1] == []
+    ledger.write_text(json.dumps({**row, "judged": 0, "examined": 0}))
+    assert mod.read_build_ledgers(out)[1] == ["act-gate.json: `examined` is 0"]
+    ledger.unlink()
+    assert mod.read_build_ledgers(out)[1] == [], "no path, no objective proven: nothing owed"
+    (out / "critical-path.json").write_text(
+        json.dumps({"steps": [{"action": "reach", "objective": "obj/x"}]})
+    )
+    zeroes = mod.read_build_ledgers(out)[1]
+    assert len(zeroes) == 1 and zeroes[0].startswith("act-gate.json: absent"), zeroes

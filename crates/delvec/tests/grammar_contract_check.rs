@@ -2037,6 +2037,120 @@ fn a_sealed_scenery_piece_states_its_zero_standable_cells() {
     );
 }
 
+/// The obligations that went red, as `id: detail`.
+fn reds(report: &delvec::grammar::ContractReport) -> Vec<String> {
+    report
+        .gates
+        .iter()
+        .filter(|g| g.failed())
+        .map(|g| format!("{}: {}", g.id, g.detail))
+        .collect()
+}
+
+/// **A bare piece is not asked whether it is entered** (`Place::Unseated`).
+/// Whether a body enters a piece is decided by the place it is seated in, so a
+/// piece no place seats owes no way in and is refused none: the beacon — no
+/// exterior edge, no cell to stand in — is green unseated, as it is as
+/// scenery, and red as a reached place on the way in, the walk, the exterior
+/// face and the floor it does not have. The hall, which declares a way in, is green unseated where
+/// scenery refuses the claim. And the piece's own floor is still owed: the
+/// hall with half its floor in no declared space reds `contract-coverage`
+/// unseated exactly as it does reached, and only scenery is excused it.
+///
+/// Regression direction: this can only turn a refusal of a bare piece into a
+/// pass, on the entry obligations and on floor gates that bind nothing; a
+/// seated piece is judged as before.
+#[test]
+fn a_bare_piece_is_not_asked_whether_it_is_entered_and_still_owes_its_floor() {
+    use delvec::grammar::contract::{Place, check_at};
+
+    let mut b = Build::new([5, 5, 5]);
+    b.stone([0, 0, 0], [4, 4, 4]);
+    b.air([1, 2, 1], [3, 2, 3]);
+    let mut beacon = contract("room");
+    beacon.spaces.insert(
+        "room".to_string(),
+        space("enclosed", vec![region([1, 2, 1], [3, 2, 3])]),
+    );
+    let bare = check_at(&b.model, &beacon, &no_anchors(), Place::Unseated);
+    assert!(
+        reds(&bare).is_empty(),
+        "a bare piece owes no entry: {:?}",
+        reds(&bare)
+    );
+    for id in [
+        "contract-reachability",
+        "contract-exterior-faces",
+        "contract-coverage",
+    ] {
+        assert!(
+            bare.enumeration
+                .iter()
+                .any(|l| l.contains(id) && l.contains("seated in no place")),
+            "{id}'s zero is stated, with why: {:?}",
+            bare.enumeration
+        );
+    }
+    let scenery = check_at(&b.model, &beacon, &no_anchors(), Place::Scenery);
+    assert!(reds(&scenery).is_empty(), "{:?}", reds(&scenery));
+    let reached = check_at(&b.model, &beacon, &no_anchors(), Place::Reached);
+    for id in [
+        "contract-well-formed",
+        "contract-reachability",
+        "contract-exterior-faces",
+        "contract-coverage",
+    ] {
+        assert!(
+            gate(&reached, id).failed(),
+            "a reached place with no way in reds {id}: {:?}",
+            reds(&reached)
+        );
+    }
+    assert!(
+        gate(&reached, "contract-well-formed")
+            .detail
+            .contains("claims no way in"),
+        "{:?}",
+        reds(&reached)
+    );
+
+    let (hall, c) = hall();
+    let bare = check_at(&hall.model, &c, &no_anchors(), Place::Unseated);
+    assert!(
+        reds(&bare).is_empty(),
+        "a bare piece's way in is not forbidden: {:?}",
+        reds(&bare)
+    );
+    let scenery = check_at(&hall.model, &c, &no_anchors(), Place::Scenery);
+    assert!(
+        gate(&scenery, "contract-well-formed")
+            .detail
+            .contains("claims a way in from outside"),
+        "scenery refuses a way in: {:?}",
+        reds(&scenery)
+    );
+
+    let mut half = c.clone();
+    half.spaces.insert(
+        "hall".to_string(),
+        space("enclosed", vec![region([1, 1, 1], [4, 4, 7])]),
+    );
+    for (place, owed) in [
+        (Place::Unseated, true),
+        (Place::Reached, true),
+        (Place::Scenery, false),
+    ] {
+        let report = check_at(&hall.model, &half, &no_anchors(), place);
+        assert_eq!(
+            gate(&report, "contract-coverage").failed(),
+            owed,
+            "{place:?}: the floor in no declared space is owed a declaration unless the place \
+             is scenery: {:?}",
+            reds(&report)
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // A climb inside one piece: two spaces and the ladder between them
 // ---------------------------------------------------------------------------

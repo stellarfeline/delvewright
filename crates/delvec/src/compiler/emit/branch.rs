@@ -59,7 +59,7 @@ pub fn branch_transport_overlay(plan: &Plan) -> Result<BranchTransportOverlay, B
         // failed the build for it (same skip as `branch_paths`).
         let Some(w) = r.world else { continue };
         let cp = plan
-            .branch_critical_path(&flow, &flow.playthrough_in(w))
+            .branch_critical_path(&flow, &flow.story_playthrough(w))
             .map_err(|e| BuildFailure::Diagnostic {
                 code: e.failure.code,
                 message: format!("branch `{}`: {}", r.branch.id, e.failure.message),
@@ -103,24 +103,26 @@ pub(super) fn branch_paths(
     takes: &BTreeMap<String, plan::LinkTakes>,
     legs: &[(String, Vec<plan::Step>, Vec<crate::compiler::nav::LegRoute>)],
 ) -> Result<Vec<(String, Value)>, BuildFailure> {
-    let branches = crate::compiler::branch::realize(plan.campaign);
-    if branches.is_empty() {
+    if !crate::compiler::branch::plans_worlds(plan.campaign) {
         return Ok(Vec::new());
     }
+    let rows = crate::compiler::branch::world_rows(plan.campaign);
     let flow = crate::compiler::flow::Flow::new(plan.campaign);
+    let story = flow.story();
     let mut out = Vec::new();
-    for r in &branches {
-        let Some(w) = r.world else { continue };
+    for row in rows.iter().filter(|w| w.no_path.is_none()) {
+        let r = &row.realized;
+        let w = row.k;
         let none = plan::LinkTakes::default();
         let cp = plan
             .branch_critical_path_linked(
                 &flow,
-                &flow.playthrough_in(w),
+                &flow.story_playthrough(w),
                 takes.get(&r.branch.slug).unwrap_or(&none),
             )
             .map_err(|e| BuildFailure::Diagnostic {
                 code: e.failure.code,
-                message: format!("branch `{}`: {}", r.branch.id, e.failure.message),
+                message: format!("{}: {}", row.label(), e.failure.message),
             })?;
         let routes = legs
             .iter()
@@ -135,14 +137,25 @@ pub(super) fn branch_paths(
                 &cp.steps,
                 &cp.transport_by_step,
                 &cp.sneak_by_step,
+                &cp.firing.keep_out,
                 CutsceneHolds {
                     after: &cp.cutscene_by_step,
                     en_route: &en_route,
                 },
                 moves,
                 actor_moves,
+                &super::manifest::shown(&story.runs[w].fired, &story.runs[w].undecided),
             ),
         ));
     }
     Ok(out)
+}
+
+/// A story world's validation file stem: `world-<k>` and `path` →
+/// `world-path-<k>`, the name the branch plan's row and the harness agree on.
+pub(super) fn world_file(slug: &str, what: &str) -> String {
+    match slug.strip_prefix("world-") {
+        Some(k) => format!("world-{what}-{k}"),
+        None => format!("{what}-{slug}"),
+    }
 }

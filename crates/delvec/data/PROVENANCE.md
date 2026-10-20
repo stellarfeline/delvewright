@@ -244,6 +244,28 @@ not third-party reconstructions.
   `tools/maintenance/collision/RedstoneDump.java` names no obfuscated member; the
   dumper's state count must equal the rows' coverage; two runs give the same
   bytes.
+- **`block-entities-1.21.11.tsv`** — the block entity type of every 1.21.11
+  block that carries one (200 of 1,166 blocks over 29,671 states, 48 types;
+  same jar sha256 and mappings sha1 as the collision table, both recorded in
+  the file's header): the game's own `EntityBlock.newBlockEntity(BlockPos.ZERO,
+  state).getType()` named by `BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey`, over
+  every state, a block whose states disagree refused. `moving_piston` makes
+  none and has no row. **Why it exists**: the server makes a block entity for
+  every such block it places, whether or not the write carries a compound,
+  and saves it with the chunk; the world writer
+  (`compiler::view::review::WorldMaker::block_entities`) reads
+  `compiler::registry::block_entity_type` to write the same one (`DW1040`).
+  **Cross-checked** against the pinned server's own data generator
+  (`java -DbundlerMainClass=net.minecraft.data.Main -jar server.jar --reports`,
+  `reports/registries.json`, `minecraft:block_entity_type`: 49 entries, the
+  table's 48 plus `minecraft:piston`) by
+  `registry::tests::the_block_entity_table_is_the_pinned_registry`.
+  **Reproduce it**: `python3 tools/maintenance/dump-block-entities.py [--check]
+  [--work DIR]` (JDK ≥ 21 on `PATH`, network for the mappings). Its pin, fetch
+  and mapping steps are `dump-collision-tops.py`'s own, imported;
+  `tools/maintenance/blockentity/BlockEntityDump.java` names no obfuscated
+  member; the dumper's state count must equal the rows' coverage; two runs give
+  the same bytes.
 - **`support-1.21.11.tsv`** and **`support-bases-1.21.11.tsv`** (in
   `crates/dsl/data/`) — what every 1.21.11 blockstate needs beside it to
   survive, asked inside the pinned server jar (same jar sha256 and mappings
@@ -579,6 +601,26 @@ not third-party reconstructions.
   `SimpleParticleType`; at 1.21.11, 115 types, 97 simple, 18 taking options —
   and refuses when that reading disagrees with the table in any id or answer.
 
+### The item-holder table, read from the jar and written in source
+
+`delvewright_dsl::holders` (spec-0111) holds the item-holder class's entity
+families — `minecraft:item_frame`, `minecraft:glow_item_frame`,
+`minecraft:armor_stand` — with each kind's scene keys, hitbox, slot
+vocabulary, the stand's click bands and filter bits, and the owned-key rules.
+It is not a vendored file: it was read from the pinned 1.21.11 dedicated
+server jar — the bundled `META-INF/versions/1.21.11/server-1.21.11.jar`,
+sha256 `ec47239a8de246335e1d54f6ac319bd35641778eb4b6a6da06372840d02fcebc`,
+from the dedicated-server download `versions.toml` pins — disassembled with
+`javap -c -p` and named through Mojang's official 1.21.11 server mappings
+(`server.txt`, sha1 `5621e9253f05fd57872bbe7f8ddf5f9a7d525955`): the save keys
+from `ItemFrame.readAdditionalSaveData`, `BlockAttachedEntity.readAdditionalSaveData`
+and `ArmorStand.readAdditionalSaveData`; the slot names from `SlotRanges`; the
+filter bits from `EquipmentSlot.<clinit>`; the bands from
+`ArmorStand.getClickedSlot`; the hitboxes from `EntityType.<clinit>`. Every
+entity id is held to the vendored `entities-1.21.11.json` by a test
+(`crates/delvec/tests/holder_table.rs`) that shares no configuration with that
+reading.
+
 ### What vanilla data does NOT provide (and what the compiler does about it)
 
 Mojang publishes no per-entity default attributes — mob base `max_health` and
@@ -644,6 +686,7 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `collision-tops-1.21.11.tsv` | `f4ea1e01f4463272ef527bafcbb36dbe4d8669e58fabfda5ec54c307469196bc` |
 | `faces-1.21.11.tsv` | `ba718f855a73609ebd15f9ede83b43fec9f2bc1db2f53de0ba10ad8289ce8ad4` |
 | `redstone-1.21.11.tsv` | `8a2ca8673d01d420125e1bb0b288533d72d5847d0f69a7f51286593f6bc6d496` |
+| `block-entities-1.21.11.tsv` | `0c302bdc0e3830886accc0c7f1305e65cceae0faf7b936050e1db635ddab2ca0` |
 | `support-1.21.11.tsv` | `c70c0fab67a9c236b7df85f7107a667f4c56f9142f3c1300f7ead807ca45cd4b` |
 | `support-bases-1.21.11.tsv` | `c6769b88424488fe1b82888989f4d291890efe786381571eec406afc576a53d4` |
 | `particles-1.21.11.json` | `a64121b11f5fe66ea4a03a16d655cd09dfe590e5434ea142688078b780b027c7` |

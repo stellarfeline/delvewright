@@ -461,9 +461,19 @@ impl EntityRecord {
             "Pos",
             Nbt::List(self.pos.iter().map(|v| Nbt::Double(*v)).collect()),
         );
+        // The pitch is the compound's own (a frame on a floor or a ceiling
+        // looks up or down), 0 where it states none.
+        let pitch = match c.get("Rotation") {
+            Some(Nbt::List(r)) => match r.get(1) {
+                Some(Nbt::Float(f)) => *f,
+                Some(Nbt::Double(d)) => *d as f32,
+                _ => 0.0,
+            },
+            _ => 0.0,
+        };
         c.set(
             "Rotation",
-            Nbt::List(vec![Nbt::Float(self.yaw), Nbt::Float(0.0)]),
+            Nbt::List(vec![Nbt::Float(self.yaw), Nbt::Float(pitch)]),
         );
         let mut tags: Vec<Nbt> = match c.get("Tags") {
             Some(Nbt::List(t)) => t.clone(),

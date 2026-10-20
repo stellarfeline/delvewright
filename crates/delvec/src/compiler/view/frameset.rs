@@ -263,10 +263,18 @@ pub fn undrawn(shows: &[Value], stats: &frames::Stats) -> Vec<Value> {
             if !stats.undrew(body) {
                 return None;
             }
-            let reason = match body {
-                "item_display" | "item" | "item_frame" | "glow_item_frame" => "items",
-                "text_display" => "text displays",
-                _ => "no model in the renderer",
+            let reason = if frames::HOLDS_ITEMS.contains(&body) && !stats.items_skipped.is_empty() {
+                format!(
+                    "an item the renderer cannot draw in this frame: {}",
+                    stats
+                        .items_skipped
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            } else {
+                "no model in the renderer".to_string()
             };
             let judge_by = if s["occluded"].as_bool().unwrap_or(false) {
                 "in game: a block stands between it and this camera"
@@ -622,4 +630,55 @@ pub fn run_frames(build_dir: &Path, opts: &FramesOptions, json: bool) -> ExitCod
         );
     }
     ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn body(kind: &str) -> Value {
+        json!({"id": format!("dw_{kind}@1,2,3"), "kind": "body", "body": kind,
+               "distance": 4.0, "occluded": false, "pos": [1, 2, 3]})
+    }
+
+    fn counts(kinds: &[&str]) -> BTreeMap<String, usize> {
+        kinds.iter().map(|k| (k.to_string(), 1)).collect()
+    }
+
+    /// A kind the renderer skipped is undrawn for want of a model; a drawn
+    /// kind is not.
+    #[test]
+    fn a_skipped_kind_is_undrawn_and_a_drawn_one_is_not() {
+        let stats = frames::Stats {
+            entities_rendered: counts(&["mannequin"]),
+            entities_skipped: counts(&["bat"]),
+            ..Default::default()
+        };
+        let gone = undrawn(&[body("bat"), body("mannequin")], &stats);
+        assert_eq!(gone.len(), 1, "{gone:?}");
+        assert_eq!(gone[0]["body"], "bat");
+        assert_eq!(gone[0]["reason"], "no model in the renderer");
+    }
+
+    /// The renderer counts items by item id, not by holder: a stack it could
+    /// not draw puts every holder in the frame in doubt, named by the item,
+    /// and moves no body that holds no item.
+    #[test]
+    fn an_item_not_drawn_puts_every_holder_in_doubt() {
+        let mut stats = frames::Stats {
+            entities_rendered: counts(&["item_display", "villager"]),
+            items_rendered: counts(&["lantern"]),
+            ..Default::default()
+        };
+        let shows = [body("item_display"), body("villager")];
+        assert_eq!(undrawn(&shows, &stats), Vec::<Value>::new());
+        stats.items_skipped = counts(&["shield"]);
+        let gone = undrawn(&shows, &stats);
+        assert_eq!(gone.len(), 1, "{gone:?}");
+        assert_eq!(gone[0]["body"], "item_display");
+        assert_eq!(
+            gone[0]["reason"],
+            "an item the renderer cannot draw in this frame: shield"
+        );
+    }
 }

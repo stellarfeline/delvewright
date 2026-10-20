@@ -144,6 +144,18 @@ pub struct FrameWorlds {
     pub worlds: Vec<FrameWorld>,
     pub per_arrival: Vec<usize>,
     pub arrivals: Vec<Configuration>,
+    /// Every walked leg a frame stands on, `(from_step, to_step)`, with the
+    /// configuration it is walked under ([`crate::compiler::nav::leg_configuration`])
+    /// and the index of its world.
+    pub legs: Vec<LegWorld>,
+}
+
+/// One walked leg's world: the configuration the route proof walks it under.
+pub struct LegWorld {
+    pub from: usize,
+    pub to: usize,
+    pub config: Configuration,
+    pub world: usize,
 }
 
 impl FrameWorlds {
@@ -162,20 +174,52 @@ impl FrameWorlds {
     pub fn get(&self, key: &str) -> Option<&FrameWorld> {
         self.worlds.iter().find(|w| w.key == key)
     }
+
+    /// How many configurations a frame can stand in: every arrival
+    /// (`0..arrivals.len()`), then every leg.
+    pub fn stand_count(&self) -> usize {
+        self.arrivals.len() + self.legs.len()
+    }
+
+    /// The configuration of stand `i` ([`FrameWorlds::stand_count`]'s order).
+    pub fn stand_config(&self, i: usize) -> &Configuration {
+        match i.checked_sub(self.arrivals.len()) {
+            None => &self.arrivals[i],
+            Some(l) => &self.legs[l].config,
+        }
+    }
+
+    /// The index into [`FrameWorlds::worlds`] of stand `i`'s world.
+    pub fn stand_world(&self, i: usize) -> usize {
+        match i.checked_sub(self.arrivals.len()) {
+            None => self.per_arrival[i],
+            Some(l) => self.legs[l].world,
+        }
+    }
+
+    /// The stand of the walked leg `from → to`, when this set holds it.
+    pub fn leg_stand(&self, from: usize, to: usize) -> Option<usize> {
+        self.legs
+            .iter()
+            .position(|l| l.from == from && l.to == to)
+            .map(|l| self.arrivals.len() + l)
+    }
 }
 
 /// **The configurations the critical path arrives under**, one per distinct
 /// region state and clock, in first-arrival order — the load world first.
 pub fn frame_worlds(plan: &Plan, world: &World) -> FrameWorlds {
-    frame_worlds_with(plan, world, None)
+    frame_worlds_with(plan, world, None, &[])
 }
 
 /// [`frame_worlds`], a world's identity also holding the placements ledger's
-/// rows its arrival holds.
+/// rows its arrival holds, with the world of every walked leg of `legs`
+/// (`(from_step, to_step)`) a frame stands on.
 pub fn frame_worlds_with(
     plan: &Plan,
     world: &World,
     ledger: Option<&crate::compiler::placed::Ledger>,
+    legs: &[(usize, usize)],
 ) -> FrameWorlds {
     let path = PathModel::critical(plan);
     // Every clock a configuration holds is one the campaign can reach
@@ -199,14 +243,6 @@ pub fn frame_worlds_with(
              clock walk and `light::reachable_clocks` disagree",
             clock.weather
         );
-        // One world per distinct BYTES and clock: two region states that lay
-        // the same cells (one differs only in a write no configuration lays)
-        // are one picture.
-        let laid: BTreeMap<[i32; 3], Option<String>> = config
-            .laid()
-            .into_iter()
-            .map(|(c, b)| (c, b.map(str::to_string)))
-            .collect();
         let rows: Vec<usize> = match ledger {
             Some(l) => crate::compiler::placed::rows_at(plan, l, s)
                 .into_iter()
@@ -214,46 +250,130 @@ pub fn frame_worlds_with(
                 .collect(),
             None => Vec::new(),
         };
-        let found = worlds
+        let after = plan.critical_path[..s]
             .iter()
-            .position(|w| w.laid == laid && w.clock == clock && w.rows == rows);
-        let i = match found {
-            Some(i) => i,
-            None => {
-                let after = plan.critical_path[..s]
+            .rev()
+            .find_map(step_id)
+            .map(str::to_string);
+        let i = world_of(&mut worlds, s, after, config, clock, rows);
+        per_arrival.push(i);
+    }
+    // Every walked leg a frame stands on, in the state the route proof walks
+    // it under (spec-0112 §5 item 1): a leg the ancestry does not connect to
+    // its start is walked with the start's writes, which its arrival's
+    // configuration does not hold — a door the start opened.
+    let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
+    let mut leg_worlds: Vec<LegWorld> = Vec::new();
+    for &(from, to) in legs {
+        if leg_worlds.iter().any(|l| l.from == from && l.to == to) {
+            continue;
+        }
+        let config = crate::compiler::nav::leg_configuration(
+            world,
+            &plan.region_events,
+            &ancestor,
+            from,
+            to,
+        );
+        let fired = crate::compiler::nav::leg_fired(&ancestor, from, to);
+        let rows: Vec<usize> = match ledger {
+            Some(l) => crate::compiler::placed::rows_under(l, to, &fired)
+                .into_iter()
+                .filter_map(|r| l.rows.iter().position(|x| std::ptr::eq(x, r)))
+                .collect(),
+            None => Vec::new(),
+        };
+        let after = plan
+            .critical_path
+            .get(from)
+            .and_then(step_id)
+            .map(str::to_string)
+            .or_else(|| {
+                plan.critical_path[..to.min(plan.critical_path.len())]
                     .iter()
                     .rev()
                     .find_map(step_id)
-                    .map(str::to_string);
-                let mut key = match (&after, worlds.is_empty()) {
-                    (_, true) | (None, _) => AT_LOAD.to_string(),
-                    (Some(a), false) => after_key(a, None),
-                };
-                // A key is a world's identity: a second world under one key
-                // (two states between one step and the next) takes the
-                // arrival as a suffix.
-                if worlds.iter().any(|w| w.key == key) {
-                    key = format!("{key}-at-{}", s + 1);
-                }
-                worlds.push(FrameWorld {
-                    key,
-                    arrival: s,
-                    after: if worlds.is_empty() { None } else { after },
-                    config,
-                    clock,
-                    laid,
-                    rows,
-                });
-                worlds.len() - 1
-            }
-        };
-        per_arrival.push(i);
+                    .map(str::to_string)
+            });
+        let clock = Clock::at(plan, to);
+        let i = world_of(
+            &mut worlds,
+            to,
+            after,
+            crate::compiler::nav::leg_configuration(
+                world,
+                &plan.region_events,
+                &ancestor,
+                from,
+                to,
+            ),
+            clock,
+            rows,
+        );
+        leg_worlds.push(LegWorld {
+            from,
+            to,
+            config,
+            world: i,
+        });
     }
     FrameWorlds {
         worlds,
         per_arrival,
         arrivals,
+        legs: leg_worlds,
     }
+}
+
+/// The index of the world `config` lays under `clock` with `rows`, pushing a
+/// new one keyed after `after` when no world already is it. **One world per
+/// distinct bytes, clock and rows**: two region states that lay the same cells
+/// (one differs only in a write no configuration lays) are one picture.
+fn world_of(
+    worlds: &mut Vec<FrameWorld>,
+    arrival: usize,
+    after: Option<String>,
+    config: Configuration,
+    clock: Clock,
+    rows: Vec<usize>,
+) -> usize {
+    let laid: BTreeMap<[i32; 3], Option<String>> = config
+        .laid()
+        .into_iter()
+        .map(|(c, b)| (c, b.map(str::to_string)))
+        .collect();
+    if let Some(i) = worlds
+        .iter()
+        .position(|w| w.laid == laid && w.clock == clock && w.rows == rows)
+    {
+        return i;
+    }
+    let mut key = match (&after, worlds.is_empty()) {
+        (_, true) | (None, _) => AT_LOAD.to_string(),
+        (Some(a), false) => after_key(a, None),
+    };
+    // A key is a world's identity: a second world under one key (two states
+    // between one step and the next, or a leg's beside an arrival's) takes the
+    // arrival as a suffix, and a further number while that is taken.
+    if worlds.iter().any(|w| w.key == key) {
+        let base = format!("{key}-at-{}", arrival + 1);
+        key = base.clone();
+        let mut n = 2;
+        while worlds.iter().any(|w| w.key == key) {
+            key = format!("{base}-{n}");
+            n += 1;
+        }
+    }
+    worlds.push(FrameWorld {
+        key,
+        arrival,
+        after: if worlds.is_empty() { None } else { after },
+        config,
+        clock,
+        laid,
+        rows,
+    });
+    worlds.len() - 1
 }
 
 /// A region a configuration's writes lay, `(min, max)` inclusive.
@@ -303,13 +423,25 @@ impl WorldMaker {
         }
     }
 
-    /// The block entities a block map holds: a template's compound wherever
-    /// the cell still holds the template's block.
+    /// The block entities a block map holds: one at every cell whose block
+    /// carries one ([`crate::compiler::registry::block_entity_type`]), because
+    /// the server makes it whenever it places the block, compound or none —
+    /// the template's compound wherever the cell still holds the template's
+    /// block, and otherwise the type alone, every other key being the
+    /// server's own default for that type.
     pub fn block_entities(&self, blocks: &BlockMap) -> BTreeMap<[i32; 3], Nbt> {
-        self.template_block_entities
+        blocks
             .iter()
-            .filter(|(c, (state, _))| blocks.get(*c) == Some(state))
-            .map(|(c, (_, nbt))| (*c, nbt.clone()))
+            .filter_map(|(c, state)| {
+                let kind = crate::compiler::registry::block_entity_type(
+                    crate::compiler::assembled::base_id(state.as_str()),
+                )?;
+                let nbt = match self.template_block_entities.get(c) {
+                    Some((placed, nbt)) if placed == state => nbt.clone(),
+                    _ => Nbt::Compound(vec![("id".to_string(), Nbt::Str(kind.to_string()))]),
+                };
+                Some((*c, nbt))
+            })
             .collect()
     }
 
@@ -355,13 +487,11 @@ impl WorldMaker {
         }
         let mut bes = self.block_entities(&blocks);
         for (cell, stacks) in &items {
-            let Some(state) = blocks.get(cell) else {
+            // An item goes into the container's block entity; a cell whose
+            // block carries none holds no item, on the server as here.
+            let Some(entry) = bes.get_mut(cell) else {
                 continue;
             };
-            let id = crate::compiler::assembled::base_id(state.as_str()).to_string();
-            let entry = bes
-                .entry(*cell)
-                .or_insert_with(|| Nbt::Compound(vec![("id".to_string(), Nbt::Str(id))]));
             let mut list: Vec<Nbt> = match entry.get("Items") {
                 Some(Nbt::List(l)) => l.clone(),
                 _ => Vec::new(),
@@ -812,9 +942,7 @@ pub fn light_question(shot: &Value) -> bool {
 }
 
 /// What no review frame shows, by name (spec-0112 §11).
-pub const UNCHECKED: [&str; 7] = [
-    "items: dropped items, item frames' content, item displays, held items and equipment",
-    "text displays",
+pub const UNCHECKED: [&str; 5] = [
     "beds, shulker boxes, the conduit, open lids, a ringing bell, italic or obfuscated sign text",
     "the weather in the air, clouds, hq-mode fog and the moon",
     "a night-vision room's lightmap: judge in game under night vision",

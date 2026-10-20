@@ -30,8 +30,10 @@ whole library:
 - **`final_state = air`** turns the jigsaw block into the 1-block threshold gap
   after generation, leaving a clean 3×3 passage where two doorways meet.
 - **`pool = keep:pool`** is a *placeholder*. The compiler owns the real pool
-  documents — member weights + roles — in **`campaigns/prefabs/pools.json`**
-  (`pool/stone-keep`), and **is the jigsaw**: it solves the layout from the
+  documents — member weights + roles — in a library's `pools.json`; the shipped
+  library declares none, and `pool/stone-keep` is engine test data
+  (`crates/delvec/tests/fixtures/test-pools/pools.json`). The compiler **is the
+  jigsaw**: it solves the layout from the
   campaign seed and emits `/place template` per piece, reading these socket names
   only as a connectivity vocabulary (ADR-0004 amendment; `crate::solver`,
   spec-0002). The prefab only promises the socket geometry; the compiler owns

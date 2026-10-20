@@ -52,7 +52,8 @@ docs/reference/      # live behavior records: compiler.md, tools.md, i18n.md, gr
 docs/ROADMAP.md      # where the line stands, and the next blocks
 crates/              # Rust workspace: dsl / delvec
 gallery/             # the ENGINE's own campaign: one instance of every surface the DSL
-                     #   declares, built on every PR, never released or staged
+                     #   declares, and prefab-generator/, the generator of its pieces (a prefabs/
+                     #   workspace member); built on every PR, never released or staged
 prefabs/             # tileset GENERATORS + shared invariants; the .nbt library lives in
                      #   the CONTENT repo, reached through the `campaigns/` dev symlink
 harness/             # mineflayer bot tests (TypeScript)
@@ -97,6 +98,7 @@ validation/          # docker compose: headless server + bot, same image as CI &
 
 - **English-first** for every repo artifact. Another language is transcreated from the English, never translated line by line: a native writer rewrites each line from its intent, with the facts, names and keys taken from the English.
 - Rust: workspace at `crates/`, edition 2024, `cargo fmt` + `clippy -D warnings` clean. `prefabs/*-generator` are their own workspaces.
+- **One question, one implementation.** Logic that answers one question lives in one module behind one entry point, its internals private, so a second copy cannot be built from parts. Every consumer of that question is held to it by an agreement test: the same generated cases asked of each consumer, red on any difference. A name search never proves uniqueness; a clone detector only points.
 - TypeScript (harness only): strict mode; assertions and navigation, never game logic.
 - ADRs: sequential, status field, cite sources; never edit an Accepted decision — supersede it. Specs: `spec-NNNN-<slug>.md` with a machine-checkable "Acceptance criteria" section. Numbers (spec, ADR, DW code, `dsl_version`) are allocated by the planner across every remote ref, never picked by a round.
 - Commits/PRs: conventional, small, one concern each. Commit messages and every `gh` text argument come from a file, never inline; a measurement belongs in the commit body.

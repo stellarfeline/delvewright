@@ -17,7 +17,8 @@ pub struct LootPlan {
     pub anchor: String,
     /// The world cell of the container to fill.
     pub cell: [i32; 3],
-    /// Contents in declaration order; index IS the container slot.
+    /// Contents in declaration order; a positional stack's index IS its
+    /// container slot (spec-0111 §3.3).
     pub items: Vec<LootItemPlan>,
 }
 
@@ -32,10 +33,13 @@ pub struct LootItemPlan {
     pub name: Option<String>,
     /// Enchantment id → level.
     pub enchantments: BTreeMap<String, u32>,
+    /// The slot the stack names (spec-0111 §3.3), or `None` for a positional
+    /// stack.
+    pub slot: Option<String>,
 }
 
-/// A `collect` objective that ADOPTS a prefab-placed container (DSL v0.8),
-/// resolved to the container's world cell.
+/// A `collect` objective that ADOPTS a prefab-placed holder (`holder`,
+/// spec-0111), resolved to the holder's world cell.
 ///
 /// One resolution, one cell: the build-tier container proof (`DW0438`), the
 /// activation-time fill and the critical-path step the bot opens all read THIS
@@ -46,16 +50,42 @@ pub struct LootItemPlan {
 pub struct CollectFillPlan {
     /// The `collect` objective's id.
     pub objective_id: String,
-    /// The anchor named by `container`.
+    /// The anchor named by `holder`.
     pub anchor: String,
-    /// The world cell of the container to fill.
+    /// The world cell of the holder to fill.
     pub cell: [i32; 3],
     /// How many slots the fill occupies: the objective's own stack plus
     /// `fill_count` padding stacks.
     pub slots: usize,
+    /// The slot the objective's stack lands in, when the collect names one
+    /// (`slot`, spec-0111 §3.4).
+    pub slot: Option<String>,
 }
 
-/// Resolve every `collect` objective's adopted `container` (DSL v0.8) to a world
+impl CollectFillPlan {
+    /// The slot each of the fill's stacks names, in fill order — the
+    /// objective's stack, then its padding — in the shape a `loot` fill's
+    /// stacks name theirs, so one proof and one landing rule serve both doors
+    /// (spec-0111 §3.3, §3.4). A named `container.<n>` carries its padding into
+    /// `container.<n+1>`, …; any other named slot is the stack's alone, its
+    /// padding unnamed; an unnamed fill is positional throughout.
+    #[must_use]
+    pub fn stack_slots(&self) -> Vec<Option<String>> {
+        let start = self
+            .slot
+            .as_deref()
+            .and_then(delvewright_dsl::holders::container_index);
+        (0..self.slots)
+            .map(|k| match (start, &self.slot) {
+                (Some(n), _) => Some(format!("container.{}", n + k)),
+                (None, Some(s)) if k == 0 => Some(s.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+/// Resolve every `collect` objective's adopted `holder` (spec-0111) to a world
 /// cell, in campaign order. An unresolvable anchor is skipped here and reported
 /// by the DSL tier (`DW0142`) — the same policy [`collect_loot`] follows.
 pub(super) fn collect_collect_fills(
@@ -65,7 +95,7 @@ pub(super) fn collect_collect_fills(
     let mut out = Vec::new();
     for q in &campaign.quests.content.quests {
         for o in &q.objectives {
-            let Some(cont) = o.collect_container() else {
+            let Some(cont) = o.collect_holder() else {
                 continue;
             };
             let Some(cell) = point_any(anchors, cont.as_str()) else {
@@ -76,6 +106,7 @@ pub(super) fn collect_collect_fills(
                 anchor: cont.as_str().to_string(),
                 cell,
                 slots: 1 + o.collect_fill_count() as usize,
+                slot: o.collect_slot().map(str::to_string),
             });
         }
     }
@@ -107,6 +138,7 @@ pub(super) fn collect_loot(
                         count: it.count,
                         name: it.name.clone(),
                         enchantments: it.enchantments.clone(),
+                        slot: it.slot.clone(),
                     })
                     .collect(),
             })

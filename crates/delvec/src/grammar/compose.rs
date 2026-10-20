@@ -465,6 +465,8 @@ fn node(prefix: &str, renames: &AnchorRenames<'_>, node: &Node) -> Node {
                 // the compiler's to judge — the include site cannot see the
                 // area the caller will bind this zone to.
                 role: mark.role,
+                // The holder travels too: it is furniture of the place.
+                holder: mark.holder.clone(),
             },
             body: Box::new(self::node(prefix, renames, body)),
         },

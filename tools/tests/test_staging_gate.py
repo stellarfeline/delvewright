@@ -1345,7 +1345,7 @@ def test_the_live_container_preconditions_do_not_count_a_body_drop(gate, tmp_pat
         "dropped": [{**base, "dropped_by": "wave/w"}],
         "plain": [dict(base)],
         "explicit-null": [{**base, "dropped_by": None}],
-        "adopted": [{**base, "container": "anchor/barrel"}],
+        "adopted": [{**base, "holder": "anchor/barrel"}],
         "none": [{"type": "interact"}],
     }
     build = make_build(tmp_path / "out")
@@ -1669,45 +1669,36 @@ def quests_content(tmp_path, where, content):
     return d
 
 
-def test_the_live_timing_read_row_binds_a_volley_with_a_cadence(gate, tmp_path):
-    """`bell-06`'s class is every hazard on a repeating clock the party must
-    read: a `timed-gate`, judged by DW0378, and a `volley` that fires more than
-    once, judged by DW0918 — one body model, one row. A volley campaign read
-    UNBOUND while the carrier judged gates only; it now binds. A volley with
-    `salvos: 1` has no cadence, and a campaign whose only volley is one reads
-    INAPPLICABLE. Driven both ways, through the verdicts."""
+def test_the_live_timing_read_row_binds_timed_gates_only(gate, tmp_path):
+    """`bell-06`'s class is a `timed-gate`, judged by DW0378. A volley is not in
+    it: whether a body can dodge a hazard is the designer's call, so a campaign
+    whose only repeating hazard is a volley reads INAPPLICABLE. Driven both
+    ways, through the verdicts."""
     row = live_rows(gate, {"bell-06"})["bell-06"]
-    assert gate.dw_codes(row["carrier"]) == ["DW0378", "DW0918"]
+    assert gate.dw_codes(row["carrier"]) == ["DW0378"]
     build = make_build(tmp_path)
-
-    def volley(**extra):
-        return dict(
-            {
-                "type": "volley",
-                "from_anchor": "anchor/battery",
-                "kill_zone": {"anchor": "anchor/rampart", "extent": [3, 1, 3]},
-            },
-            **extra,
-        )
-
-    def trap(payload):
-        return {
-            "traps": [
-                {
-                    "id": "trap/rampart-volley",
-                    "at": "anchor/plate",
-                    "trigger": "pressure-plate",
-                    "payload": payload,
-                }
-            ]
-        }
-
+    volley = {
+        "type": "volley",
+        "from_anchor": "anchor/battery",
+        "kill_zone": {"anchor": "anchor/rampart", "extent": [3, 1, 3]},
+        "salvos": 3,
+        "interval": 15,
+    }
     camps = {
-        # vesperhold's own volley: pressure plate, 3 salvos every 15 ticks.
-        "salvos-3": quests_content(tmp_path, "s3", trap([volley(salvos=3, interval=15)])),
-        # `salvos` omitted defaults to 3 — the `has_any` precondition missed it.
-        "default": quests_content(tmp_path, "sd", trap([volley()])),
-        "salvos-1": quests_content(tmp_path, "s1", trap([volley(salvos=1)])),
+        "volley": quests_content(
+            tmp_path,
+            "v",
+            {
+                "traps": [
+                    {
+                        "id": "trap/rampart-volley",
+                        "at": "anchor/plate",
+                        "trigger": "pressure-plate",
+                        "payload": [volley],
+                    }
+                ]
+            },
+        ),
         "gate": quests_content(
             tmp_path,
             "g",
@@ -1723,9 +1714,7 @@ def test_the_live_timing_read_row_binds_a_volley_with_a_cadence(gate, tmp_path):
         for k, d in camps.items()
     }
     assert verdicts == {
-        "salvos-3": ("BOUND", 1),
-        "default": ("BOUND", 1),
-        "salvos-1": ("INAPPLICABLE", 0),
+        "volley": ("INAPPLICABLE", 0),
         "gate": ("BOUND", 1),
         "neither": ("INAPPLICABLE", 0),
     }, verdicts
@@ -2789,3 +2778,118 @@ def test_coverage_only_judges_the_ledger_and_mints_nothing(gate, tmp_path):
     proc = _run_gate(base + ["--coverage-only", "--admit", str(tmp_path / "t.json")])
     assert proc.returncode == 2, proc.stderr
     assert not (tmp_path / "t.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# `bell-08` binds the respawn points the proof examined, not the pairs it made
+# ---------------------------------------------------------------------------
+
+
+def respawn_ledger(*, examined, pairs, hostiles=()):
+    return {
+        "code": "DW0478",
+        "examined": examined,
+        "hostiles": list(hostiles),
+        "pairs": pairs,
+        "unbound": pairs == 0,
+    }
+
+
+def bell08_verdict(gate, tmp_path, *, declared, ledger):
+    row = live_rows(gate, {"bell-08"})["bell-08"]
+    camp = make_campaign(tmp_path, objectives=[{"type": "set-checkpoint"}] * declared)
+    build = make_build(tmp_path, validation={"respawn-safety.json": ledger})
+    return gate.adjudicate(row, engine_of(gate), gate.Subject(camp, build))
+
+
+def test_respawn_points_with_no_hostile_force_are_examined_and_stage(gate, tmp_path):
+    """Three respawn points, no hostile force: the proof covered all three and
+    made no comparison because there is nothing to compare against. A declaration
+    of zero forces is legitimate; the gate states the count and does not refuse."""
+    v = bell08_verdict(
+        gate, tmp_path, declared=3, ledger=respawn_ledger(examined=3, pairs=0)
+    )
+    assert v["verdict"] == "BOUND", v
+    assert v["binding"] == 3
+    assert "respawn-safety.json:examined = 3" in v["detail"]
+
+
+def test_a_proof_that_covered_none_of_the_declared_points_stays_unbound(gate, tmp_path):
+    """The campaign declares three respawn points and the proof examined none:
+    the row's own population went unexamined. Planted by the artifact, which is
+    the only thing a defect in the proof can write."""
+    v = bell08_verdict(
+        gate,
+        tmp_path,
+        declared=3,
+        ledger=respawn_ledger(examined=0, pairs=0, hostiles=["wave/a"]),
+    )
+    assert v["verdict"] == "UNBOUND", v
+    assert v["binding"] == 0
+    assert v["precondition"] == 3
+
+
+def test_the_examined_respawn_points_bind_whatever_the_pairs_are(gate, tmp_path):
+    """The existing island shape: points and forces compared."""
+    v = bell08_verdict(
+        gate,
+        tmp_path,
+        declared=3,
+        ledger=respawn_ledger(examined=3, pairs=8, hostiles=["a", "b"]),
+    )
+    assert (v["verdict"], v["binding"]) == ("BOUND", 3), v
+
+
+def test_no_respawn_point_declared_is_inapplicable(gate, tmp_path):
+    v = bell08_verdict(
+        gate,
+        tmp_path,
+        declared=0,
+        ledger=respawn_ledger(examined=0, pairs=0),
+    )
+    assert v["verdict"] == "INAPPLICABLE", v
+
+
+def _world_campaign(tmp_path, horizon):
+    d = tmp_path / "camp"
+    d.mkdir(exist_ok=True)
+    content = {"id": "x", "name": "n"}
+    if horizon is not None:
+        content["horizon"] = horizon
+    (d / "world.json").write_text(
+        json.dumps({"dsl_version": "0.10.0", "stage": 1, "content": content})
+    )
+    return d
+
+
+def _horizon_binding_rows():
+    ledger = json.loads((REPO_ROOT / "docs" / "playtest-findings.json").read_text())
+    rows = [
+        r
+        for r in ledger["findings"]
+        if "horizon" in ((r.get("binding") or {}).get("match") or {}).get("eq", {})
+    ]
+    assert rows, "no ledger row binds on horizon; this test would be vacuous"
+    return rows
+
+
+@pytest.mark.parametrize(
+    "horizon, bound",
+    [
+        ("ocean", 1),
+        ({"base": "ocean"}, 1),
+        ("void", 0),
+        ({"base": "void"}, 0),
+        (None, 0),
+    ],
+)
+def test_the_horizon_class_binds_in_both_spellings(gate, tmp_path, horizon, bound):
+    # The horizon is the string shorthand or the object form of one variant; a
+    # raw comparison read the object form as absent and called the class
+    # inapplicable. Every ledger row that binds on a horizon is driven.
+    camp = _world_campaign(tmp_path, horizon)
+    build = make_build(tmp_path)
+    subj = gate.Subject(camp, build)
+    for row in _horizon_binding_rows():
+        n, _ = gate.probe(row["binding"], subj)
+        assert n == bound, (row["id"], horizon, n)

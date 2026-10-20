@@ -177,6 +177,8 @@ source is `crates/delvec/src/grammar/version.rs` (`SUPPORTED_PROGRAM_VERSIONS`,
 | `1.8.0` | what a mark is FOR — `role` on a `mark`, written through to the exported anchor's metadata | yes |
 | `1.9.0` | which of the building's own sides are finished exterior surface — the program-level `shown_faces`, written through to the exported prefab's `shown_faces` (`DW0885`) | yes |
 | `1.10.0` | a climb inside one piece — the `climb` class of a contract edge, a way a body climbs on a ladder or a vine between two spaces | yes |
+| `1.11.0` | a library piece placed by name (spec-0106) | reserved |
+| `1.12.0` | an item holder at a mark — `holder` on a `mark`, the item frame or armour stand the export writes into the piece's `entities` | yes |
 
 A number names exactly one surface, in every engine build that knows the number;
 otherwise two engines both call themselves `1.1.0`, disagree about what a
@@ -463,6 +465,7 @@ the declaration is all that is wanted.
 | `facing` | `north`/`south`/`east`/`west`. Omitted, it is **derived** as the direction of *decreasing local `Z`* — the way §5b's frame says travel runs. Which world direction that is depends on both halves of the frame: `north`/`south` when local `Z` names world `Z`, `west`/`east` when it names world `X`, the second of each pair when local `Z` is reflected. All four cardinals are reachable. A scope whose local `Z` is *vertical* has no cardinal facing and says so rather than guessing. |
 | `index` | `unique` (default) → `anchor/<stem>`; `auto` → `anchor/<stem>-<n>`, `n` counting from 1 per stem in expansion order — how a rule that runs once per tower gives every tower an anchor without knowing how many there are. Matches the hand-built `anchor/alcove-1…` convention. |
 | `role` | what the anchor is **for**, written through to the exported anchor's metadata. One term: `entry` — the cell a body arrives at when it enters the area this piece is placed in. The exported KEY is unaffected and stays `anchor/<stem>`; the role is what lets a program declare an entry point without needing to write a name it structurally cannot write. One anchor per area may carry it (`DW0804`), and a campaign still binds every other anchor by name. |
+| `holder` (`1.12.0`) | an **item holder** standing at the anchor (spec-0111): `{"kind": "item-frame" \| "glow-item-frame" \| "armor-stand", …}` with the kind's scene properties — a frame's `rotation` (its item's eighth-turn, `0`–`7`) and `invisible`; a stand's `pose` (`head`, `body`, `left_arm`, `right_arm`, `left_leg`, `right_leg` → `[x, y, z]` degrees), `small`, `show_arms`, `no_base_plate` and `invisible`. The export writes the entity into the piece's `entities` list at the mark's cell: a frame **faces the mark's facing** and hangs on the block behind it; a stand stands on the cell's floor **turned to the facing**. Nothing the engine owns is writable here — the item, the lock flags, the tags — and the entity is judged by the admission's entity judge before a byte is written. The anchor is the holder's anchor, so a `loot` entry or a `collect`'s `holder` on it fills the holder. A property the kind does not carry (`pose` on a frame, `rotation` on a stand, a frame rotation past 7) is a `Program::validate` error. |
 
 `at` is one of:
 
@@ -1163,6 +1166,13 @@ Two mechanisms answer it, and both are enforced by
 | `ir::Mark.facing` | `1.0.0` | — |
 | `ir::Mark.index` | `1.0.0` | — |
 | `ir::Mark.role` | `1.8.0` | `ANCHOR_ROLE_SINCE` |
+| `ir::Mark.holder` | `1.12.0` | `HOLDER_SINCE` |
+| `ir::HolderMark.rotation` | `1.12.0` | `via ir::Mark.holder` |
+| `ir::HolderMark.pose` | `1.12.0` | `via ir::Mark.holder` |
+| `ir::HolderMark.small` | `1.12.0` | `via ir::Mark.holder` |
+| `ir::HolderMark.show_arms` | `1.12.0` | `via ir::Mark.holder` |
+| `ir::HolderMark.no_base_plate` | `1.12.0` | `via ir::Mark.holder` |
+| `ir::HolderMark.invisible` | `1.12.0` | `via ir::Mark.holder` |
 | `ir::Include.rename_anchors` | `1.5.0` | `via ir::Program.include` |
 | `ir::Node.palette` | `1.3.0` | `BIND_SINCE` |
 | `ir::Node.params` | `1.3.0` | `BIND_SINCE` |
@@ -3147,7 +3157,7 @@ does not itself model:
   `delvec prefab socket` appends to it.
 - **`lighting` is measured, over the bytes the export just froze.** The probe is
   the compiler's own block+sky flood — the figure `delvec prefab lighting` prints
-  and `DW0751` grades — run at the moment of production, under the sky the
+  — run at the moment of production, under the sky the
   piece's own spatial contract claims. The `method` line states the binding it
   was taken over, the sky it was taken at, and that it is a static estimate and
   not a live server probe. Deterministic like everything else here: the same

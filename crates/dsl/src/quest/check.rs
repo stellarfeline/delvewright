@@ -3,10 +3,11 @@
 //! over the verbs its effects carry at every effect root (status effects, the
 //! `sequence` nesting rule, a `carrier: "one"` give, `give-item` enchantments).
 
+use crate::blocks::MAX_CONTAINER_SLOTS;
 use crate::cutscene::check_cutscene_shape;
 use crate::diagnostic::{Diagnostic, DwCode, ExitTier, codes};
 use crate::envelope::Campaign;
-use crate::loot::{MIN_CONTAINER_SLOTS, check_stack_count};
+use crate::loot::check_stack_count;
 use crate::registry::{AnchorRegistry, BlockRegistry, EffectRegistry, ItemRegistry};
 use crate::validate::{
     AnchorProviders, check_block_field, for_each_effect_deep, graph_has_cycle, produced_flags,
@@ -25,6 +26,13 @@ crate::dw_code! {
     /// An `interact` declares `missing_item_hint` without a `requires_item`: the
     /// hint answers a gate that does not exist, so it could never narrate.
     pub const MISSING_ITEM_HINT_WITHOUT_ITEM: DwCode = DwCode::new("DW0437", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// An `interact` declares `takes_item: true` without a `requires_item`
+    /// (spec-0114 §6.3): the take is one of the presented item, and nothing is
+    /// presented, so the declaration could never take anything.
+    pub const TAKES_ITEM_WITHOUT_ITEM: DwCode = DwCode::new("DW1046", ExitTier::Build);
 }
 
 crate::dw_code! {
@@ -920,7 +928,7 @@ pub(crate) fn quest_reference_checks(
                     item,
                     count,
                     anchor,
-                    container,
+                    holder,
                     dropped_by,
                     fill_count,
                     ..
@@ -968,8 +976,8 @@ pub(crate) fn quest_reference_checks(
                     // v0.8: the adopted container's anchor must exist
                     // too. Whether its CELL really holds a chest/barrel needs the
                     // assembled world and is the build-tier `DW0438`.
-                    if let Some(cont) = container {
-                        anchor_resolves(&providers, set, cont, i, j, "container", d);
+                    if let Some(cont) = holder {
+                        anchor_resolves(&providers, set, cont, i, j, "holder", d);
                     }
                     // v0.8: the fill is positional — the required stack
                     // in `container.0` plus one padding stack per slot after it —
@@ -977,7 +985,7 @@ pub(crate) fn quest_reference_checks(
                     // does, and for the same reason: every stack past the last slot
                     // is dropped without a word.
                     let slots = 1usize + *fill_count as usize;
-                    if slots > MIN_CONTAINER_SLOTS {
+                    if slots > MAX_CONTAINER_SLOTS {
                         d.push(Diagnostic::error(
                             codes::LOOT_TOO_MANY_ITEMS,
                             "quests",
@@ -985,12 +993,12 @@ pub(crate) fn quest_reference_checks(
                             format!(
                                 "collect objective `{oid}` fills {slots} slots (its own stack \
                                  plus `fill_count` {fill_count}), more than the \
-                                 {MIN_CONTAINER_SLOTS} slots a vanilla chest or barrel has. \
+                                 {MAX_CONTAINER_SLOTS} slots of the largest vanilla container. \
                                  Slots are assigned positionally, so every stack past the \
-                                 {MIN_CONTAINER_SLOTS}th would be dropped silently. Lower \
+                                 {MAX_CONTAINER_SLOTS}th would be dropped silently. Lower \
                                  `fill_count` to at most {max} — a container that reads full \
                                  does not need to overflow.",
-                                max = MIN_CONTAINER_SLOTS - 1
+                                max = MAX_CONTAINER_SLOTS - 1
                             ),
                         ));
                     }
@@ -999,8 +1007,24 @@ pub(crate) fn quest_reference_checks(
                     anchor,
                     requires_item,
                     missing_item_hint,
+                    takes_item,
                     ..
                 } => {
+                    // spec-0114 §6.3: the take is one of the presented item;
+                    // with no item presented there is nothing to take, and the
+                    // declaration would bind to nothing.
+                    if *takes_item && requires_item.is_none() {
+                        d.push(Diagnostic::error(
+                            TAKES_ITEM_WITHOUT_ITEM,
+                            "quests",
+                            format!("/content/quests/{i}/objectives/{j}/takes_item"),
+                            "`interact.takes_item` takes one of the item the player presents, but \
+                             this objective declares no `requires_item`, so nothing is presented \
+                             and nothing can be taken — state the `requires_item` the player lays \
+                             down, or drop `takes_item`"
+                                .to_string(),
+                        ));
+                    }
                     // v0.7: the empty-hand narration answers the held-item gate;
                     // without a gate there is no missing hand to narrate to, and
                     // the authored line would be dead content that never fires.
@@ -1183,7 +1207,8 @@ pub(crate) fn quest_prop_checks(c: &Campaign, blocks: &dyn BlockRegistry, d: &mu
     }
 }
 
-/// `DW0110` over the expanded quests' ids and their objectives' ids.
+/// `DW0110` over the expanded quests' ids, their objectives' ids, and every
+/// `campaign-complete`'s `ending` (spec-0108 §3.1).
 pub(crate) fn quest_id_syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
     for (i, q) in c.quests.content.quests.iter().enumerate() {
         crate::ids::id_syntax!(d, q.id, "quests", format!("/content/quests/{i}/id"));
@@ -1196,6 +1221,16 @@ pub(crate) fn quest_id_syntax(c: &Campaign, d: &mut Vec<Diagnostic>) {
             );
         }
     }
+    // spec-0108 §3.1: an ending is an id, `ending/<kebab>`, wherever its
+    // `campaign-complete` stands — every root, any nesting depth.
+    crate::effects::for_each_campaign_effect(c, &mut |path, _site, eff| {
+        if let crate::Verb::CampaignComplete {
+            ending: Some(ending),
+        } = &eff.verb
+        {
+            crate::ids::id_syntax!(d, ending, "quests", format!("{path}/ending"));
+        }
+    });
 }
 
 /// `DW0111` over the expanded quests' ids, and over the objective ids.

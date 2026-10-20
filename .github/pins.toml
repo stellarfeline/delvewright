@@ -164,12 +164,12 @@ facts and then that the value stands as a whole token at every site.
 
 [[pin]]
 id = "content-repo"
-value = "ff73411a1d7feabad57a4537e1384402a2b096d0"
+value = "43f0f301e10ce88d02d8063eabdceeb87107aa54"
 sites = ["versions.toml"]
 repo = "stellarfeline/delvewright-campaigns"
 policy = "track"
 judged_by = ".github/workflows/ci.yml"
-reviewed = "ff73411a1d7feabad57a4537e1384402a2b096d0"
+reviewed = "43f0f301e10ce88d02d8063eabdceeb87107aa54"
 builds = []
 why = """
 The content commit every reproducible build resolves the prefab library and
@@ -182,7 +182,7 @@ in it: a campaign is judged at its own release, by the engine it pins.
 
 [[pin]]
 id = "skill-page-engine"
-value = "delvec--v1.13.0"
+value = "delvec--v1.14.0"
 sites = [
     ".claude-plugin/marketplace.json",
     ".claude/skills/delvewright/skills/new-delve/versions.toml",
@@ -395,17 +395,19 @@ red (versions.toml [render]).
 """
 
 [[pin]]
-id = "lumenwright-revision"
-value = "ed3f049cc496d5f1b7df9829bda1bcb443ad1d06"
-sites = ["crates/delvec/Cargo.toml", "versions.toml"]
+id = "lumenwright-version"
+value = "0.1.0"
+sites = ["crates/delvec/Cargo.toml", "versions.toml", "crates/delvec/src/compiler/view/frames.rs"]
 policy = "immutable"
+bound_by = "validation/check-versions.sh"
+bound_key = "lumenwright_version"
 why = """
-The stellarfeline/lumenwright commit `delvec` links its renderer from, by git
-revision in development (spec-0112 §6.2, versions.toml [render]
-lumenwright_revision). A commit names fixed source; `validation/check-versions.sh`
-holds the manifest's `rev` and the revision every frame states equal to it.
-Moved by a reviewed edit, and retired for an exact registry version once
-Lumenwright is published.
+Lumenwright (GPL-3.0-or-later), the renderer `delvec` links every review frame,
+showcase camera and panorama from, from crates.io at exactly this version
+(spec-0112 §6.2, versions.toml [render], ADR-0023 §5). A published version
+names fixed source; `validation/check-versions.sh` holds the manifest's `=`
+requirement and the version every frame states equal to it. A bump is a
+reviewed edit that re-derives every frame the gallery baseline holds.
 """
 
 # --- misode/mcmeta data dumps, from which generated tables are extracted ------

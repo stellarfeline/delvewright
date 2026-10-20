@@ -52,7 +52,7 @@
             "hint": "The Factor minds the counter in the side gallery.",
             "id": "obj/reach-the-counter",
             "npc": "npc/factor",
-            "title": "Reach the counter",
+            "title": "Speak to the Factor at the counter",
             "type": "talk-to"
           },
           {
@@ -100,6 +100,14 @@
             },
             "type": "spawn-wave",
             "wave": "wave/muster"
+          },
+          {
+            "anchor": "anchor/seam-annex-chute",
+            "happening": {
+              "text": "The bars across the annex chute draw up with the hall's doors.",
+              "verb": "opens"
+            },
+            "type": "open-gate"
           }
         ],
         "trigger": {
@@ -157,7 +165,7 @@
             "hint": "The Marshal is up in the loft.",
             "id": "obj/climb-the-loft",
             "npc": "npc/marshal",
-            "title": "Climb the loft",
+            "title": "Speak to the Marshal in the loft",
             "type": "talk-to"
           },
           {
@@ -225,6 +233,30 @@
             {
               "type": "set-weather",
               "weather": "thunder"
+            },
+            {
+              "anchor": "anchor/seam-loft-stair",
+              "happening": {
+                "text": "The bars at the head of the loft stair lift with the muster cleared.",
+                "verb": "opens"
+              },
+              "type": "open-gate"
+            },
+            {
+              "anchor": "anchor/seam-undercroft-shaft",
+              "happening": {
+                "text": "The hatch over the undercroft shaft falls open.",
+                "verb": "opens"
+              },
+              "type": "open-gate"
+            },
+            {
+              "anchor": "anchor/seam-undercroft-crawl",
+              "happening": {
+                "text": "The grating over the undercroft ladder comes up.",
+                "verb": "opens"
+              },
+              "type": "open-gate"
             }
           ]
         },
@@ -245,7 +277,7 @@
           },
           {
             "style": "chat",
-            "text": "The east door draws back. The near hall is one room away now.",
+            "text": "The door draws back. The near hall is one room away now.",
             "type": "narrate"
           }
         ],
@@ -259,7 +291,7 @@
         "effects": [
           {
             "style": "actionbar",
-            "text": "The east door does not open from this side.",
+            "text": "The door does not open from this side.",
             "type": "narrate"
           }
         ],
@@ -286,6 +318,6 @@
       }
     ]
   },
-  "dsl_version": "0.41.0",
+  "dsl_version": "0.53.0",
   "stage": "quests"
 }

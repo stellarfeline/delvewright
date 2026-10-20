@@ -1,0 +1,12 @@
+{
+  "code": "DW1024",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/loot/1"
+    }
+  ],
+  "units": [],
+  "why": "The ferryman's barrel left unfilled. The hall holds a loot fill, a collect and a trap, so the barrel becomes a scenery container standing among containers that matter: a player looking for what matters opens every one. The notice still speaks for the scenery (DW1018 passes), and the arrangement rule refuses the hall. It declares no unit: it perturbs a fill the primary binds."
+}

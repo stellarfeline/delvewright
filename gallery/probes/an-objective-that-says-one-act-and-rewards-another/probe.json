@@ -1,0 +1,19 @@
+{
+  "code": "DW1045",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/1/objectives/3/title",
+      "value": "Lay the bone on the mezzanine"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "replace",
+      "path": "/source/obj.far-hall.climb-the-loft.title",
+      "value": "Lay the bone on the mezzanine"
+    }
+  ],
+  "units": [],
+  "why": "The gallery's climb onto the mezzanine, a reach-anchor, with its title re-headed to `Lay` and nothing else changed: the player is told to lay the muster's bone and the game completes the objective the moment a body stands on the mezzanine, with the bone still in the pack. The head `lay` states give; a reach-anchor performs reach; the two are disjoint, so DW1045 refuses the title and names both repairs, the completion one first because `lay` is a placing word: make it an interact that requires the bone and takes it, or re-head the title with a reach word. The sidecar's source is moved with the English so the Chinese row is not stale and this document demonstrates one refusal. It declares no unit: every surface it writes is bound in the gallery proper, and what must not compile is a title that names an act its completion does not perform."
+}

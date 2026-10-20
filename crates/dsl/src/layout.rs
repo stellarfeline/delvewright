@@ -186,8 +186,8 @@ pub struct LayoutGraphContent {
 impl LayoutGraphContent {
     /// **The place an anchor belongs to**, read from the graph alone: the
     /// entry anchor is the entry's, a place's own `anchor/node-…` and each of
-    /// its stations are that place's, and a barred edge's `anchor/unlock-…` is
-    /// the place on its `opens_from` side. The names are
+    /// its stations are that place's, and a gated connection's
+    /// `anchor/unlock-…` is the place on its `gating.opens_from` side. The names are
     /// [`crate::siteplan::synthesized_anchor_kinds`]'s spelling. A seam's gate
     /// region stands between two places and belongs to neither; it and any name
     /// the graph does not spell yield `None`.
@@ -202,17 +202,11 @@ impl LayoutGraphContent {
         }) {
             return Some(&n.id);
         }
-        self.edges.iter().find_map(|e| match e {
-            Edge::Barred { id, opens_from, .. }
-                if crate::siteplan::seam_unlock_anchor(id) == anchor =>
-            {
-                match opens_from {
-                    OpensFrom::A => Some(e.a()),
-                    OpensFrom::B => Some(e.b()),
-                    OpensFrom::Either => None,
-                }
+        self.edges.iter().find_map(|e| {
+            if crate::siteplan::seam_unlock_anchor(e.id()) != anchor {
+                return None;
             }
-            _ => None,
+            e.opening_side()
         })
     }
 }
@@ -238,7 +232,7 @@ pub struct Node {
     ///
     /// A site-plan campaign's anchor vocabulary is otherwise exactly the
     /// synthesized set — `spawn`, one anchor per node, and the seam and unlock
-    /// anchors of barred edges — which is complete only for the authoring order
+    /// anchors of gated connections — which is complete only for the authoring order
     /// it was designed for: quests written against nodes before any piece
     /// exists. The inverse order is real, and its quest layer names places
     /// *inside* places: the fire pit in the camp, the aft deck of the galley.
@@ -365,7 +359,7 @@ pub enum Direction {
     BToA,
 }
 
-/// Which side of a barred connection can open it.
+/// Which side of a gated connection can open it (spec-0107 §5).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum OpensFrom {
@@ -378,12 +372,25 @@ pub enum OpensFrom {
     Either,
 }
 
-/// What a body must already hold for a connection to be passable.
+impl OpensFrom {
+    /// True for the default, which a canonical document leaves unwritten.
+    #[must_use]
+    pub fn is_either(&self) -> bool {
+        matches!(self, OpensFrom::Either)
+    }
+}
+
+/// What a body must already hold for a traversal connection to be passable —
+/// and, because the world keeps the story's order, what the derivation builds
+/// shut until the story opens it (spec-0107).
 ///
 /// A **projection** of the campaign's runtime gating into topology, not the
 /// campaign's [`Gate`](crate::gate::Gate) — see the module docs for why the two
 /// are deliberately different objects, and for why this one carries no negative
-/// flag term and no numeric comparison.
+/// flag term and no numeric comparison. A gating that names a term is built as
+/// a bar in the connection's seam (`anchor/seam-<edge>`), and `opens_from` says
+/// which side can open it: the field lives here because a side can only be
+/// named for a way that shuts.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EdgeGating {
@@ -394,9 +401,40 @@ pub struct EdgeGating {
     /// A quest that must already be complete.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quest: Option<QuestId>,
+    /// Which side can open the shut way: one-sided, the derivation stands
+    /// `anchor/unlock-<edge>` on that side for a `shortcuts[]` affordance.
+    /// Absent means either side.
+    #[serde(default, skip_serializing_if = "OpensFrom::is_either")]
+    pub opens_from: OpensFrom,
 }
 
-impl EdgeGating {
+/// What a `carry` connection waits on before its link is armed (spec-0083 §7).
+/// The terms of [`EdgeGating`] and nothing else: a carry crosses no seam, so it
+/// has no bar and no side to open one from, and `opens_from` here is an unknown
+/// field (`DW0100`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CarryGating {
+    /// Flags a body must already have, each one some `set-flag` effect really
+    /// produces (`DW0818`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub flags: Vec<FlagId>,
+    /// A quest that must already be complete.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quest: Option<QuestId>,
+}
+
+/// The terms a connection demands, read the same way whichever class carries
+/// them — what the closure, `DW0818` and every ledger read.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GatingTerms<'a> {
+    /// Flags a body must already have.
+    pub flags: &'a [FlagId],
+    /// A quest that must already be complete.
+    pub quest: Option<&'a QuestId>,
+}
+
+impl GatingTerms<'_> {
     /// True if this gating demands nothing.
     #[must_use]
     pub fn is_empty(&self) -> bool {
@@ -408,14 +446,46 @@ impl EdgeGating {
     pub fn terms(&self) -> usize {
         self.flags.len() + usize::from(self.quest.is_some())
     }
+
+    /// The terms in words, for a diagnostic: `` `flag/x` and `quest/y` complete ``.
+    #[must_use]
+    pub fn words(&self) -> String {
+        let mut terms: Vec<String> = self.flags.iter().map(|f| format!("`{f}`")).collect();
+        if let Some(q) = self.quest {
+            terms.push(format!("`{q}` complete"));
+        }
+        terms.join(" and ")
+    }
+}
+
+impl EdgeGating {
+    /// The terms this gating demands.
+    #[must_use]
+    pub fn terms(&self) -> GatingTerms<'_> {
+        GatingTerms {
+            flags: &self.flags,
+            quest: self.quest.as_ref(),
+        }
+    }
+}
+
+impl CarryGating {
+    /// The terms this gating demands.
+    #[must_use]
+    pub fn terms(&self) -> GatingTerms<'_> {
+        GatingTerms {
+            flags: &self.flags,
+            quest: self.quest.as_ref(),
+        }
+    }
 }
 
 /// A connection between two places.
 ///
 /// Internally tagged on `class`, in the same shape every other tagged union in
 /// this DSL uses. The tagging is load-bearing rather than stylistic: `falls`
-/// belongs to a drop and `opens_from` belongs to a barred way, and writing
-/// either on a walk would be a declaration nothing reads. Under the tag, serde's
+/// belongs to a drop, and writing it on a walk would be a declaration nothing
+/// reads. Under the tag, serde's
 /// `deny_unknown_fields` refuses it as an ordinary `DW0100` — so the illegal
 /// state is unrepresentable and no diagnostic has to police it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -497,30 +567,6 @@ pub enum Edge {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         gating: Option<EdgeGating>,
     },
-    /// A sealed connection some effect opens.
-    Barred {
-        /// Edge id (`edge/<kebab>`), unique within the graph.
-        id: EdgeId,
-        /// One end.
-        a: NodeId,
-        /// The other end.
-        b: NodeId,
-        /// Which side can open it. The one-side-openable door is spelled here,
-        /// and it is a property of the connection rather than of any campaign's
-        /// fiction.
-        #[serde(default)]
-        opens_from: OpensFrom,
-        /// Declared directionality once open; absent means both ways.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        one_way: Option<Direction>,
-        /// This connection exists to close a loop (`DW0820`).
-        #[serde(default, skip_serializing_if = "is_false")]
-        shortcut: bool,
-        /// What opens it. **Required to say something** (`DW0818`): a barred way
-        /// nothing opens is a wall, and a barred way anything opens is not
-        /// barred.
-        gating: EdgeGating,
-    },
     /// A connection a body is **carried** over (spec-0083 §7): no seam, no sill,
     /// no door check and no body of its own. The derivation writes nothing for
     /// it; at stage 5 every direction it allows is owed a link — a repeatable
@@ -537,10 +583,9 @@ pub enum Edge {
         /// and each direction is then owed a link.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         one_way: Option<Direction>,
-        /// What carries it. **Required to say something** (`DW0818`), as a
-        /// barred way's is: a carry live from world load is a hole in the
-        /// graph's own claim.
-        gating: EdgeGating,
+        /// What carries it. **Required to say something** (`DW0818`): a carry
+        /// live from world load is a hole in the graph's own claim.
+        gating: CarryGating,
     },
     /// A line of sight between two places, in either direction. Carries no body,
     /// so it is not a traversal edge and the reachability closure never walks
@@ -568,7 +613,6 @@ impl Edge {
             | Edge::Stair { id, .. }
             | Edge::Climb { id, .. }
             | Edge::Drop { id, .. }
-            | Edge::Barred { id, .. }
             | Edge::Carry { id, .. }
             | Edge::Vision { id, .. } => id,
         }
@@ -582,7 +626,6 @@ impl Edge {
             | Edge::Stair { a, .. }
             | Edge::Climb { a, .. }
             | Edge::Drop { a, .. }
-            | Edge::Barred { a, .. }
             | Edge::Carry { a, .. }
             | Edge::Vision { a, .. } => a,
         }
@@ -596,7 +639,6 @@ impl Edge {
             | Edge::Stair { b, .. }
             | Edge::Climb { b, .. }
             | Edge::Drop { b, .. }
-            | Edge::Barred { b, .. }
             | Edge::Carry { b, .. }
             | Edge::Vision { b, .. } => b,
         }
@@ -610,7 +652,6 @@ impl Edge {
             Edge::Stair { .. } => "stair",
             Edge::Climb { .. } => "climb",
             Edge::Drop { .. } => "drop",
-            Edge::Barred { .. } => "barred",
             Edge::Carry { .. } => "carry",
             Edge::Vision { .. } => "vision",
         }
@@ -638,7 +679,6 @@ impl Edge {
             Edge::Walk { one_way, .. }
             | Edge::Stair { one_way, .. }
             | Edge::Climb { one_way, .. }
-            | Edge::Barred { one_way, .. }
             | Edge::Carry { one_way, .. } => *one_way,
             Edge::Drop { falls, .. } => Some(*falls),
             Edge::Vision { .. } => None,
@@ -652,22 +692,65 @@ impl Edge {
             Edge::Walk { shortcut, .. }
             | Edge::Stair { shortcut, .. }
             | Edge::Climb { shortcut, .. }
-            | Edge::Drop { shortcut, .. }
-            | Edge::Barred { shortcut, .. } => *shortcut,
+            | Edge::Drop { shortcut, .. } => *shortcut,
             Edge::Carry { .. } | Edge::Vision { .. } => false,
         }
     }
 
     /// What a body must hold to pass, or `None` where the edge demands nothing.
     #[must_use]
-    pub fn gating(&self) -> Option<&EdgeGating> {
+    pub fn gating(&self) -> Option<GatingTerms<'_>> {
+        match self {
+            Edge::Walk { gating, .. }
+            | Edge::Stair { gating, .. }
+            | Edge::Climb { gating, .. }
+            | Edge::Drop { gating, .. } => gating.as_ref().map(EdgeGating::terms),
+            Edge::Carry { gating, .. } => Some(gating.terms()),
+            Edge::Vision { .. } => None,
+        }
+    }
+
+    /// A traversal connection's own gating as written, `opens_from` included —
+    /// `None` on a `carry`, a `vision` and an ungated way.
+    #[must_use]
+    pub fn way_gating(&self) -> Option<&EdgeGating> {
         match self {
             Edge::Walk { gating, .. }
             | Edge::Stair { gating, .. }
             | Edge::Climb { gating, .. }
             | Edge::Drop { gating, .. } => gating.as_ref(),
-            Edge::Barred { gating, .. } | Edge::Carry { gating, .. } => Some(gating),
-            Edge::Vision { .. } => None,
+            Edge::Carry { .. } | Edge::Vision { .. } => None,
+        }
+    }
+
+    /// **True if the world builds this connection shut** (spec-0107 §3): it
+    /// crosses a seam and its `gating` names a term. The derivation stands a
+    /// bar in its seam, `anchor/seam-<edge>` names it, and the world-load seal
+    /// measures it shut until the story opens it. The one predicate every
+    /// reader of "is this way shut" asks.
+    #[must_use]
+    pub fn shuts(&self) -> bool {
+        self.way_gating().is_some_and(|g| !g.terms().is_empty())
+    }
+
+    /// Which side can open a shut connection, or `None` for one that never
+    /// shuts.
+    #[must_use]
+    pub fn opens_from(&self) -> Option<OpensFrom> {
+        self.way_gating()
+            .filter(|g| !g.terms().is_empty())
+            .map(|g| g.opens_from)
+    }
+
+    /// The place on the side a one-sided shut connection opens from, where its
+    /// `anchor/unlock-<edge>` stands; `None` for either side or a way that
+    /// never shuts.
+    #[must_use]
+    pub fn opening_side(&self) -> Option<&NodeId> {
+        match self.opens_from()? {
+            OpensFrom::A => Some(self.a()),
+            OpensFrom::B => Some(self.b()),
+            OpensFrom::Either => None,
         }
     }
 }
@@ -732,13 +815,12 @@ pub struct Closure {
 impl Closure {
     /// True if `gating` is satisfied by `held`.
     #[must_use]
-    pub fn satisfied(gating: Option<&EdgeGating>, held: &BTreeSet<Grant>) -> bool {
+    pub fn satisfied(gating: Option<GatingTerms<'_>>, held: &BTreeSet<Grant>) -> bool {
         let Some(g) = gating else { return true };
         g.flags
             .iter()
             .all(|f| held.contains(&Grant::Flag(f.0.clone())))
             && g.quest
-                .as_ref()
                 .is_none_or(|q| held.contains(&Grant::Quest(q.0.clone())))
     }
 
@@ -867,7 +949,12 @@ impl Grants {
         // (quest, objective) -> the rows its completion fires.
         let mut on_objective: BTreeMap<(&str, &str), Vec<ProducerRow>> = BTreeMap::new();
         let mut on_quest: BTreeMap<&str, Vec<ProducerRow>> = BTreeMap::new();
-        for p in crate::producers::flag_producers(c) {
+        // A story-only row (an `on_kill`) is credited by no place: no kill is
+        // forced, and the graph is not a story world.
+        for p in crate::producers::flag_producers(c)
+            .into_iter()
+            .filter(|p| !p.story_only)
+        {
             let row = (flags_of(&p.requires), Grant::Flag(p.flag.to_string()));
             match p.site {
                 crate::producers::ProducerSite::ObjectiveComplete { quest, objective } => {
@@ -1189,7 +1276,7 @@ fn stations(graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
                     "station `{name}` takes a name the engine derives: {why}. The derivation \
                      synthesizes this campaign's whole spatial vocabulary — `{entry}`, an \
                      `anchor/node-…` for each place, and an `anchor/seam-…` plus an \
-                     `anchor/unlock-…` for each barred connection — so those three prefixes and \
+                     `anchor/unlock-…` for each gated connection — so those three prefixes and \
                      `{entry}` are reserved whether or not this graph happens to produce the \
                      name today. Name the station something of your own, and the quest layer \
                      references it exactly as it references a derived one."
@@ -1519,16 +1606,29 @@ fn mission(c: &Campaign, graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
                 ),
             ));
         }
-        if matches!(e, Edge::Barred { .. }) && g.is_empty() {
+        if !matches!(e, Edge::Carry { .. }) && g.is_empty() {
+            let side = match e.way_gating().map(|w| w.opens_from) {
+                Some(OpensFrom::A) => {
+                    " It names a side (`opens_from: a`) for a way that never \
+                                       shuts, which is a door with no bar in it."
+                }
+                Some(OpensFrom::B) => {
+                    " It names a side (`opens_from: b`) for a way that never \
+                                       shuts, which is a door with no bar in it."
+                }
+                _ => "",
+            };
             d.push(Diagnostic::error(
                 DW_GRAPH_MISSION,
                 "layout-graph",
                 format!("/content/edges/{i}/gating"),
                 format!(
-                    "barred connection `{e_id}` says nothing about what opens it. A barred way \
-                     with an empty `gating` is passable from world load, which is not barred; \
-                     name the flag or the quest whose completion opens it, and `DW0818` then \
-                     holds that name to something the campaign really produces.",
+                    "{class} connection `{e_id}` carries a `gating` that names no term. A \
+                     `gating` is what builds the way shut until the story opens it, and an empty \
+                     one is passable from world load, which is not gated.{side} Name the flag or \
+                     the quest whose completion opens it, and `DW0818` then holds that name to \
+                     something the campaign really produces — or delete the `gating`.",
+                    class = e.class(),
                     e_id = e.id(),
                 ),
             ));

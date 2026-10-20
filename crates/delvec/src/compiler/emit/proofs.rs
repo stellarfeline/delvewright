@@ -346,6 +346,7 @@ pub(super) fn check_finished_tree(
     input_bytes: &BTreeMap<String, Vec<u8>>,
     out: &mut BuildOutput,
     warnings: &mut Vec<delvewright_dsl::Diagnostic>,
+    holders: &[crate::compiler::holders::OwnedHolder],
 ) -> Result<(), BuildFailure> {
     let ns = &plan.namespace;
     // ---- validate every emitted vanilla mcfunction ----
@@ -496,7 +497,7 @@ pub(super) fn check_finished_tree(
     // registers its claim over the plan's own authored list and the claim is
     // judged against the shipped suite: `declared` cannot shrink when the walk
     // skips members, and `invoked` cannot be faked because it is read off bytes.
-    let watch_claims = packtest::watch_claims(plan);
+    let watch_claims = packtest::watch_claims(plan, holders);
     let (claim_binding, breaches) = crate::compiler::watch::check_claims(ns, out, &watch_claims);
 
     put_json(

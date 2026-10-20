@@ -110,7 +110,7 @@ is under half of that. Below about 220 blocks a 2.6-block rib cannot keep a
 - **Red line respected:** it voxelises meshes and implicit solids, never images.
 
 **The floating-structure gap.** Every refusal below was met on the spike's pieces at engine `1ef29efa`:
-- **Light probe:** `delvec prefab lighting` refuses with `DW0752` ("no ground-level entrance on any of the four vertical faces"). The probe seeds from `nav::ground_entry`. As a result `render piece`, `viewer` and `render batch` refuse the piece with `DW0894`.
+- **Light probe:** `delvec prefab lighting` refuses with `DW0752` ("no ground-level entrance on any of the four vertical faces"). The probe seeds from `nav::ground_entry`.
 - **`walk_y`:** `delvec prefab planes` measures it off 2 of 8770 standable cells, the flipper tips.
 - **The build** needs an `entry` anchor (`DW0345`). Given one (`gaps.sh`), it refuses:
   - the scan piece with `DW0322` (1124 reachable cells border a void drop);

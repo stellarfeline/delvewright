@@ -1657,37 +1657,16 @@ fn block_writes(plan: &crate::compiler::plan::Plan) -> Vec<(usize, String, Regio
             return;
         }
         let step = crate::compiler::plan::root_step(plan, &site.root);
-        let label = format!("`{}` at `{}`", e.verb.tag(), site.path);
-        match &e.verb {
-            Verb::FillRegion { region, block, .. } => {
-                if let Some(r) = plan.zone_box(region) {
-                    out.push((step, label, r, block.clone()));
-                }
-            }
-            Verb::ClearRegion { region, .. } => {
-                if let Some(r) = plan.zone_box(region) {
-                    out.push((step, label, r, air.clone()));
-                }
-            }
-            Verb::SetBlock { anchor, block, .. } => {
-                if let Some(p) = plan.point_any(anchor.as_str()) {
-                    out.push((step, label, (p, p), block.clone()));
-                }
-            }
-            Verb::CloseGate { anchor, .. } | Verb::OpenGate { anchor, .. } => {
-                if let Some((from, to, block)) =
-                    crate::compiler::plan::gate_region_block_any(&plan.anchors, anchor.as_str())
-                {
-                    let fills = matches!(e.verb, Verb::CloseGate { .. });
-                    out.push((
-                        step,
-                        label,
-                        (from, to),
-                        if fills { block } else { air.clone() },
-                    ));
-                }
-            }
-            _ => {}
+        // The one resolution of what an effect writes
+        // ([`crate::compiler::plan::effect_writes`]); air for a clear.
+        for (region, _, block) in crate::compiler::plan::effect_writes(e, &plan.anchors, &plan.ways)
+        {
+            out.push((
+                step,
+                format!("`{}` at `{}`", e.verb.tag(), site.path),
+                region,
+                block.unwrap_or_else(|| air.clone()),
+            ));
         }
     });
     // A timed gate's two phases are two configurations of its region.
@@ -2328,22 +2307,18 @@ fn check_one(
                 let Some(eff) = l.on_cross.get(fi) else {
                     continue;
                 };
-                let w = match &eff.verb {
-                    Verb::FillRegion { region, block, .. } => {
-                        plan.zone_box(region).map(|r| (r, block.clone()))
-                    }
-                    Verb::ClearRegion { region, .. } => plan
-                        .zone_box(region)
-                        .map(|r| (r, "minecraft:air".to_string())),
-                    Verb::SetBlock { anchor, block, .. } => plan
-                        .point_any(anchor.as_str())
-                        .map(|p| ((p, p), block.clone())),
-                    _ => None,
-                };
-                if let Some(w) = w
-                    && boxes_meet(w.0, clip)
+                // The one resolution of what an effect writes
+                // ([`crate::compiler::plan::effect_writes`]); air for a clear.
+                let mut met = false;
+                for (region, _, block) in
+                    crate::compiler::plan::effect_writes(eff, &plan.anchors, &plan.ways)
                 {
-                    acc.push(w);
+                    if boxes_meet(region, clip) {
+                        acc.push((region, block.unwrap_or_else(|| "minecraft:air".to_string())));
+                        met = true;
+                    }
+                }
+                if met {
                     any = true;
                     named.push(format!(
                         "`{}` at `/content/loops/{li}/on_cross/{fi}`",
@@ -2551,6 +2526,7 @@ mod tests {
                 lava: BTreeSet::new(),
                 climb: Default::default(),
                 unheld_climb: Default::default(),
+                footprints: Default::default(),
             },
             Premises::geometry_only(),
         )

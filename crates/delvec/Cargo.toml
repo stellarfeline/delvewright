@@ -101,16 +101,14 @@ blake3 = { version = "1", features = ["pure"] }
 
 # Lumenwright (GPL-3.0-or-later) — the renderer every review frame and showcase
 # render is drawn by, linked as a library and called in-process
-# (`compiler::view::frames`, spec-0112 §6). In development it is a git
-# dependency by exact revision; the revision is `versions.toml [render]
-# lumenwright_revision`, held equal to this `rev` by
-# validation/check-versions.sh. At release it is a registry dependency by `=`
-# version, which needs `lumenwright` and `lumenwright-kernel` on crates.io
-# first; until then `tools/ci/check-publishable.sh` is red by construction.
+# (`compiler::view::frames`, spec-0112 §6), from crates.io at the exact version
+# `versions.toml [render].lumenwright_version` records (ADR-0023 §5, as
+# Nucleation), held equal to this requirement and to the version every frame
+# states (`frames::RENDERER_VERSION`) by validation/check-versions.sh.
 # `gpu` adds the Metal, Vulkan and DX12 backends through wgpu, which the
 # engine's lock already holds; no C build script is reached with this feature
 # set. `glam` is used through `lumenwright::glam`.
-lumenwright = { git = "https://github.com/stellarfeline/lumenwright", rev = "ed3f049cc496d5f1b7df9829bda1bcb443ad1d06", default-features = false, features = ["gpu"] }
+lumenwright = { version = "=0.1.0", default-features = false, features = ["gpu"] }
 
 # The thread pool a CPU frame runs on (`delvec frames --threads`): the same
 # rayon Lumenwright draws with, so a frame's thread count is the caller's to

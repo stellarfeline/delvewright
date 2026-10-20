@@ -169,7 +169,7 @@ mineflayer = "4.37.1"
 #
 # The number lives in the root Cargo.toml's `[workspace.package] version`, which
 # the engine crate inherits; check-versions.sh holds the two equal.
-version = "1.13.0"
+version = "1.14.0"
 
 # crates.io identity of the ONE binary (ADR-0023 §3) and of the whole engine
 # (ADR-0025): `cargo install` resolves by CRATE name, never by binary name, so
@@ -197,12 +197,12 @@ crates = [
 # Bound both ways by validation/check-versions.sh: to the crate manifest, and to
 # `DSL_VERSION` in crates/dsl/src/envelope.rs.
 dsl_crate = "delvewright-dsl"
-dsl_crate_version = "0.41.0"
+dsl_crate_version = "0.53.0"
 
 # The engine's `delvewright-dsl` requirement (`[workspace.dependencies]`)
 # is `=` and exactly this version, so one engine version on crates.io resolves
 # to exactly one `delvewright-dsl` build and no other.
-dsl_crate_req = "=0.41.0"
+dsl_crate_req = "=0.53.0"
 
 # `rust-version` in both published manifests, and the channel in
 # rust-toolchain.toml. They must be the same string: a `rust-version` looser than
@@ -265,11 +265,14 @@ aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
 # Consumed by:
 #   - CI (.github/workflows/*.yml): every job that builds a fixture or runs the
 #     ladder checks the content repo out at this exact `sha` and passes
-#     `--prefabs <checkout>/prefabs`.
+#     `--prefabs <checkout>/prefabs`, or, for a fixture that draws a pool, the
+#     test library `tools/ci/test-library.sh` lays the engine's test pools
+#     over it to.
 #   - validation/check-versions.sh: asserts `repo`/`sha` shape here.
 #   - every Rust test that judges the prefab library (crates/delvec/tests/common/pinned.rs):
 #     reads this commit out of the content repository's object store, never a
-#     working tree, on every machine.
+#     working tree, on every machine; the tests that build fixtures read it with
+#     the engine's test pools laid over it (`pinned::test_library`).
 #
 # A `delvec` run by hand resolves the library through the `campaigns/` symlink's
 # working tree instead (compiler default `--prefabs campaigns/prefabs`), so
@@ -280,31 +283,27 @@ aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
 # library at the pin and nothing else in the checkout: a campaign is judged at
 # its own release, by the engine revision it pins.
 repo = "stellarfeline/delvewright-campaigns"
-# Content `main` tip carrying the two campaigns released since the previous pin,
-# `doune-castle-tour` and `vesperhold`, and the library pieces they are built
-# on, so every test and CI job that judges the pinned library judges the one
-# the creator is actually handed.
+# Content `main` tip carrying the released `the-treehouse-camp` and the eleven
+# library pieces it is built on, and the content repository's removal of the
+# pool table: assembly is always designed, so the shipped library declares no
+# pool.
 #
-# What moves under `prefabs/`, counted from `git ls-tree` at both pins and
-# cross-checked against `delvec prefab seating`'s own binding line at this one:
-# 37 `.json` before, 40 after; 36 `.nbt` before, 138 after. Prefab DOCUMENTS
-# (`compiler::registry::is_prefab_document`) go from 36 to 38: two tile-set
-# manifests are added, `doune-castle` (18 tiles) and `vesperhold` (84 tiles),
-# each one grammar-built piece whose `license.generated_by` states the program
-# hash, region and seed it was expanded at. The third new `.json` is
-# `vesperhold.report.json`, a gate report and not a document. `pools.json` and
-# all 36 existing `.nbt` are unchanged (no `M` on either in
-# `git diff --name-status`). Three existing documents change one key each,
-# `shown_faces`: `island-beach-camp` gains `[east, north, south, west]`, and
-# `island-greenfield` and `island-greenfield-bend` widen theirs to all four
-# sides. `vesperhold` declares the one new `waterline_y` (11); the seating
-# command reports every declaration it examines borne out by the bytes.
-# `seating-limits.toml`, `README.md` and `LICENSE-ASSETS.md` are the content
-# repository's own records, not inputs `--prefabs` hands the compiler.
+# What moves under `prefabs/`, counted from `git ls-tree` at both pins: 40
+# `.json` before, 61 after; 138 `.nbt` before, 149 after. 22 `.json` are
+# added — eleven prefab documents (`the-treehouse-camp-*`) and their eleven
+# gate reports (`<id>.report.json`, 1 before, 12 after), each piece with its
+# `.nbt` — and `pools.json` is deleted, with `seating-limits.toml`; `README.md`
+# changes. No existing document or `.nbt` changes (no `M` on either in
+# `git diff --name-status`). The pools the engine's own `areas[]` fixtures
+# draw are engine test data (`crates/delvec/tests/fixtures/test-pools/`),
+# laid over this library by `tools/ci/test-library.sh`, never read from here.
 #
-# The rest of the interval — the two campaigns under `campaigns/`, and the
-# content repository's own CI, skill and pin tooling — is nothing this repo
-# reads.
+# The rest of the interval — `campaigns/the-treehouse-camp`, `references/`,
+# and the content repository's own CI, skill and pin tooling — is nothing the
+# compiler is handed. The library sweep's place kind
+# (`crates/delvec/src/admit/scenery.rs`) does read `campaigns/*/detail-plan.json`
+# and `layout-graph.json` beside the library, to learn which place seats a
+# piece.
 #
 # WHAT CARRIES EACH CLAIM. `tools/ci/check-pins.py` holds this `sha` equal to
 # the `content-repo` entry in `.github/pins.toml`.
@@ -314,7 +313,7 @@ repo = "stellarfeline/delvewright-campaigns"
 # the property assembles; the library sweep (`crates/delvec/tests/admit_library.rs`)
 # asks it of every admitted piece on every run and prints its own binding count
 # there, which is where that number belongs.
-sha = "ff73411a1d7feabad57a4537e1384402a2b096d0"
+sha = "43f0f301e10ce88d02d8063eabdceeb87107aa54"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders
@@ -333,15 +332,13 @@ nucleation_license = "MIT"
 
 # Lumenwright (GPL-3.0-or-later) — the renderer every review frame, showcase
 # camera and panorama is drawn by, linked into `delvec` as a library and called
-# in-process (spec-0112 §6). In development it is a git dependency by exact
-# revision, and this is that revision: `validation/check-versions.sh` holds the
-# manifest's `rev` and `frames::RENDERER_REVISION` equal to it, so the revision
-# a frame names is the one that drew it. Moved by a reviewed edit. At release it
-# becomes a registry dependency by `=` version, which needs `lumenwright` and
-# `lumenwright-kernel` on crates.io first.
-# Consumed by: crates/delvec/Cargo.toml (`lumenwright = { git, rev }`),
+# in-process (spec-0112 §6), from crates.io at exactly this version (ADR-0023
+# §5, as Nucleation): `validation/check-versions.sh` holds the manifest's `=`
+# requirement and `frames::RENDERER_VERSION` equal to it, so the version a
+# frame names is the one that drew it. Moved by a reviewed edit.
+# Consumed by: crates/delvec/Cargo.toml (`lumenwright = { version = "=…" }`),
 # crates/delvec/src/compiler/view/frames.rs + docs/reference/tools.md §4a.
-lumenwright_revision = "ed3f049cc496d5f1b7df9829bda1bcb443ad1d06"
+lumenwright_version = "0.1.0"
 lumenwright_license = "GPL-3.0-or-later"
 
 # deepslate (MIT) — the rendering core of the prefab review page

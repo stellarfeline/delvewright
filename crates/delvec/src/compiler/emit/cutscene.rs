@@ -12,15 +12,38 @@ use super::*;
 /// single shot without `look_at`. The readable prefix keeps generated functions
 /// greppable; the digest makes the key injective, so two cutscenes that share a
 /// first waypoint but differ anywhere later can never collapse onto one function.
+///
+/// A cutscene with a `then` (spec-0108 §3.6) carries a `_then_<digest>` suffix
+/// over the list's canonical JSON: its `cs_end_<bare>` lowers that list, so two
+/// cutscenes with one shot list and two different `then`s are two functions. An
+/// empty `then` adds nothing, so every cutscene without one keeps its name.
 pub(super) fn cutscene_fn(
     shots: &[delvewright_dsl::CameraShot],
     party: delvewright_dsl::CutsceneParty,
+    then: &[QuestEffect],
 ) -> String {
     let name = cutscene_shots_fn(shots);
-    match party {
+    let name = match party {
         delvewright_dsl::CutsceneParty::Present => name,
         delvewright_dsl::CutsceneParty::Absent => format!("{name}_absent"),
+    };
+    if then.is_empty() {
+        return name;
     }
+    let canon = serde_json::to_string(then).expect("an effect list serializes");
+    format!("{name}_then_{}", &sha256_hex(canon.as_bytes())[..8])
+}
+
+/// [`cutscene_fn`] for a `cutscene` effect as declared: its normalized shots,
+/// its party and its `then`. `None` for any other effect and for an unshaped
+/// cutscene (`DW0199`), which emits no call.
+pub(super) fn cutscene_effect_fn(eff: &QuestEffect) -> Option<String> {
+    let shots = eff.cutscene_shots().filter(|s| !s.is_empty())?;
+    Some(cutscene_fn(
+        &shots,
+        eff.cutscene_party().unwrap_or_default(),
+        eff.cutscene_then().unwrap_or_default(),
+    ))
 }
 
 /// The shot-list half of [`cutscene_fn`]: the name a `present` cutscene keeps.
@@ -279,7 +302,8 @@ pub(super) fn cutscene_fns(
         // styled moving-subject cutscene to differ per context gives the shots
         // distinguishing content (e.g. an explicit `seconds`).
         let party = eff.cutscene_party().unwrap_or_default();
-        let start_name = cutscene_fn(&shots, party);
+        let then = eff.cutscene_then().unwrap_or_default();
+        let start_name = cutscene_fn(&shots, party, then);
         if !seen.insert(start_name.clone()) {
             continue;
         }
@@ -463,6 +487,11 @@ pub(super) fn cutscene_fns(
         end.push(format!("tag @a remove {CUTSCENE_TAG}"));
         end.push(format!("scoreboard players set #run_{bare} dw.sys 0"));
         end.push(format!("scoreboard players remove {CS_LIVE} dw.sys 1"));
+        // spec-0108 §3.6: the camera has returned — every restore line above has
+        // run — so the cutscene's `then` plays now, from the scheduled driver's
+        // server source, through the one scheduled-bundle emitter `on_arrive`
+        // uses. An empty `then` adds no line.
+        end.extend(emit_effect_bundle(plan, then, Audience::Scheduled));
         out.push((format!("cs_end_{bare}"), lines(&end)));
     }
     if cutscene_parties(plan)
@@ -487,7 +516,7 @@ pub(super) fn cutscene_parties(plan: &Plan) -> Vec<(String, delvewright_dsl::Cut
             continue;
         };
         let party = eff.cutscene_party().unwrap_or_default();
-        let name = cutscene_fn(&shots, party);
+        let name = cutscene_fn(&shots, party, eff.cutscene_then().unwrap_or_default());
         if seen.insert(name.clone()) {
             out.push((name, party));
         }

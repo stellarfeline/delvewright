@@ -121,22 +121,20 @@ fn parse_views(specs: &[String]) -> Result<Vec<View>, Diagnostic> {
 /// # Why this is here and not inside `render_piece`
 ///
 /// It is asked **before a texture is resolved and before a GPU is initialised**,
-/// and `render_piece` runs after both. A refusal owed to a reviewer is worth its
+/// and `render_piece` runs after both. A report owed to a reviewer is worth its
 /// whole value in arriving early: after the pack loads it costs a GPU init, and
 /// after the frames it costs twenty-eight PNGs the reviewer must be told to
-/// ignore. It is also the difference between a creator on a machine with no
-/// client jar being told *this piece was never measured* and being told *I could
-/// not find your textures* — the second answer is true and useless.
+/// ignore. A piece that cannot be read at all is refused here for the same
+/// reason: a creator who typed the wrong filename is owed that answer and not
+/// *I could not find your textures*.
 ///
 /// So the two arms call this, each before its own `resolve_textures`, and
 /// `render_piece` does not repeat it. Both call sites are named in
 /// [`RenderCommand`]: `Piece` judges the one path it was given, `Batch` judges
 /// every piece it resolved, before either asks for a renderer.
 fn judge_before_showing(input: &Path, json: bool) -> Result<(), (Diagnostic, u8)> {
-    let (piece, meta_path) = tileset::load_piece(input)
+    let (piece, _) = tileset::load_piece(input)
         .map_err(|e| (Diagnostic::error(DW_INPUT, e.to_string()), exit::INPUT))?;
-    let meta = PrefabMeta::at_path(&meta_path)
-        .map_err(|e| (Diagnostic::error(DW_INPUT, e), exit::INPUT))?;
     let id = input
         .file_stem()
         .and_then(|s| s.to_str())
@@ -146,14 +144,7 @@ fn judge_before_showing(input: &Path, json: bool) -> Result<(), (Diagnostic, u8)
         d.print(json);
     }
     eprintln!("{}", enclosure.line(id));
-    // The light verdict's one escape is a COUNT off these same bytes, never a
-    // word in the document — see `showing::LightVerdict::of`.
-    let light = showing::LightVerdict::of([(id, meta.as_ref(), enclosure.standable)]);
-    eprintln!("{}", light.line());
-    match light.finding() {
-        Some(d) => Err((d, exit::INPUT)),
-        None => Ok(()),
-    }
+    Ok(())
 }
 
 fn run_piece(
@@ -548,10 +539,10 @@ fn run_batch(
     // **Every piece is judged before a renderer exists** — see
     // `judge_before_showing`. A batch is the arm that would otherwise spend a
     // GPU init and a directory of PNGs per prefab before saying that one of
-    // them was never measured, and it is judged whole rather than piece by
-    // piece as it draws: a library with one unmeasured piece in it is a fact
-    // about the library, and finding it out after twelve prefabs have rendered
-    // leaves a half-written output tree behind.
+    // them cannot be read, and it is judged whole rather than piece by piece as
+    // it draws: a library with one unreadable piece in it is a fact about the
+    // library, and finding it out after twelve prefabs have rendered leaves a
+    // half-written output tree behind.
     for path in &pieces {
         if let Err((d, code)) = judge_before_showing(path, json) {
             return fail(d, json, code);
