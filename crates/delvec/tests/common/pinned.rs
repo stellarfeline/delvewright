@@ -111,9 +111,8 @@ pub fn test_library() -> PathBuf {
         let script = repo.join("tools/ci/test-library.sh");
         let mut inputs = Vec::new();
         for path in [&pools, &script] {
-            inputs.extend(
-                std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display())),
-            );
+            inputs
+                .extend(std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display())));
         }
         let key = hex(&Sha256::digest(&inputs));
         let sha = sha();
