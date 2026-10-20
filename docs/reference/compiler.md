@@ -3719,7 +3719,16 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   corner-thinned critical-path waypoint (the same `thin()` list the harness
   replays), camera at eye height (`1.62` above the standing cell), oriented along
   the walk toward the next waypoint and — at each leg's final waypoint — toward the
-  objective anchor it arrives at. **The arrival aim is derived from the objective
+  objective anchor it arrives at. **A walking frame frames something the campaign
+  declares** (`render_plan::walking_aim`, authored): it keeps the next waypoint when
+  that frame holds a declared target in frame by the one sight rule (the
+  snapshot's own `resolve_targets` at its default frame — the question
+  `check-gallery-render.py` asks); otherwise it looks at the first later waypoint
+  of the leg whose frame holds a target in frame *and* in sight; otherwise at the
+  nearest declared target on the walked side of the eye that is in sight; with
+  none, it keeps the next waypoint and the view gate names it. The legs are
+  routed in `holders::walk_world`, the world the build's route proof walks, so a
+  leg that ends at a holder `collect` ends at its stance. **The arrival aim is derived from the objective
   and from nothing else** (`render_plan::arrival_aim`): an anchor 4+ blocks away
   is framed directly; a nearer one is aimed at *along its own direction*, out to
   4 blocks at the anchor's height, so the objective is centred and near with the
@@ -6089,8 +6098,12 @@ layout. Details:
   additionally compute the DW0311 critical-path routes; other ids do not.
   An unknown id lists the available ones. The plan is derived against the same
   edited assembled world this command rasterises, so a camera the plan stands up
-  out of the rock is stood up identically here — `--shot` frames what the built
-  plan states, never a second opinion about it.
+  out of the rock is stood up identically here, and a `pov/…` leg is routed in
+  `holders::walk_world`, the build's own route world (holder stances included) —
+  `--shot` frames what the built plan states, never a second opinion about it.
+  `tools/ci/check-gallery-render.py` holds it to that: every manifest's camera
+  is compared with the build's render-plan camera, and a difference is a
+  finding naming the shot.
 
 **Pipeline stages required** — parse → `Plan::build` (placement) → read the
 placed `.nbt` → `assembled::assembled_blocks`. That is all: no relight, no nav
