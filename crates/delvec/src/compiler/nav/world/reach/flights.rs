@@ -115,9 +115,60 @@ impl Key {
 struct Leaf {
     /// The outcome, interned in its shard.
     outcome: u32,
-    swept: Option<Aabb>,
+    /// The swept box (a flight from a start sweeps one on its first tick).
+    swept: Aabb,
     floor: f64,
     left_at: f64,
+}
+
+/// A chunked arena: a push never moves what is held, and the space held past
+/// the last element is at most one chunk.
+struct Arena<T> {
+    chunks: Vec<Vec<T>>,
+}
+
+impl<T> Default for Arena<T> {
+    fn default() -> Self {
+        Arena { chunks: Vec::new() }
+    }
+}
+
+const ARENA_BITS: u32 = 12;
+
+/// Push onto a node list; the new node's index.
+fn push(nodes: &mut Vec<Node>, n: Node) -> u32 {
+    nodes.push(n);
+    (nodes.len() - 1) as u32
+}
+
+impl<T> Arena<T> {
+    fn push(&mut self, v: T) -> u32 {
+        if self
+            .chunks
+            .last()
+            .is_none_or(|c| c.len() == 1 << ARENA_BITS)
+        {
+            self.chunks.push(Vec::with_capacity(1 << ARENA_BITS));
+        }
+        let c = self.chunks.len() - 1;
+        self.chunks[c].push(v);
+        ((c << ARENA_BITS) | (self.chunks[c].len() - 1)) as u32
+    }
+}
+
+impl<T> std::ops::Index<u32> for Arena<T> {
+    type Output = T;
+    #[inline]
+    fn index(&self, i: u32) -> &T {
+        &self.chunks[(i >> ARENA_BITS) as usize][i as usize & ((1 << ARENA_BITS) - 1)]
+    }
+}
+
+impl<T> std::ops::IndexMut<u32> for Arena<T> {
+    #[inline]
+    fn index_mut(&mut self, i: u32) -> &mut T {
+        &mut self.chunks[(i >> ARENA_BITS) as usize][i as usize & ((1 << ARENA_BITS) - 1)]
+    }
 }
 
 /// A recorded flight, as a lookup hands it out.
@@ -180,7 +231,7 @@ struct Shard {
     chunks: Vec<Box<[Entry]>>,
     /// Entries used in the last chunk.
     used: usize,
-    leaves: Vec<Leaf>,
+    leaves: Arena<Leaf>,
     outcomes: Vec<Outcome>,
     interned: HashMap<Outcome, u32, std::hash::BuildHasherDefault<Mix>>,
 }
@@ -258,10 +309,10 @@ pub(super) fn lookup<C: Codes + ?Sized>(key: &Key, codes: &C) -> Option<Kept> {
     loop {
         let node = shard.nodes[n as usize];
         if node.len == 0 {
-            let leaf = shard.leaves[node.child as usize];
+            let leaf = shard.leaves[node.child];
             return Some(Kept {
                 outcome: shard.outcomes[leaf.outcome as usize].clone(),
-                swept: leaf.swept,
+                swept: Some(leaf.swept),
                 floor: leaf.floor,
                 left_at: leaf.left_at,
             });
@@ -480,6 +531,9 @@ pub(super) fn record<C: Codes + ?Sized>(key: Key, reads: Reads<'_, C>, flight: &
     if matches!(flight.outcome, Outcome::Dead(super::Death::Volume)) {
         return;
     }
+    let Some(swept) = flight.swept else {
+        return;
+    };
     if HELD.load(Relaxed) > MEMO_ENTRIES {
         return;
     }
@@ -508,35 +562,38 @@ pub(super) fn record<C: Codes + ?Sized>(key: Key, reads: Reads<'_, C>, flight: &
                 o
             }
         };
-        shard.leaves.push(Leaf {
+        let leaf = shard.leaves.push(Leaf {
             outcome,
-            swept: flight.swept,
+            swept,
             floor: flight.floor,
             left_at: flight.left_at,
         });
-        let leaf = (shard.leaves.len() - 1) as u32;
         let rest = &seq[i..];
         let leaf_code = rest.last().map_or(code, |e| e.1);
-        shard.nodes.push(Node {
-            start: 0,
-            len: 0,
-            child: leaf,
-            sibling: NONE,
-            code: if rest.is_empty() { code } else { leaf_code },
-        });
-        let leaf_node = (shard.nodes.len() - 1) as u32;
+        let leaf_node = push(
+            &mut shard.nodes,
+            Node {
+                start: 0,
+                len: 0,
+                child: leaf,
+                sibling: NONE,
+                code: if rest.is_empty() { code } else { leaf_code },
+            },
+        );
         if rest.is_empty() {
             return leaf_node;
         }
         let start = shard.push_run(rest);
-        shard.nodes.push(Node {
-            start,
-            len: rest.len() as u32,
-            child: leaf_node,
-            sibling: NONE,
-            code,
-        });
-        (shard.nodes.len() - 1) as u32
+        push(
+            &mut shard.nodes,
+            Node {
+                start,
+                len: rest.len() as u32,
+                child: leaf_node,
+                sibling: NONE,
+                code,
+            },
+        )
     };
     let mut n = match shard.roots.get(&key) {
         Some(&n) => n,
@@ -574,8 +631,7 @@ pub(super) fn record<C: Codes + ?Sized>(key: Key, reads: Reads<'_, C>, flight: &
                     sibling: NONE,
                     code: e.code,
                 };
-                shard.nodes.push(old);
-                let a = (shard.nodes.len() - 1) as u32;
+                let a = push(&mut shard.nodes, old);
                 let b = path(shard, i + j + 1, code);
                 shard.nodes[b as usize].sibling = a;
                 let m = &mut shard.nodes[n as usize];
