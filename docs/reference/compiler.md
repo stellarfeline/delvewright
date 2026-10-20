@@ -6172,6 +6172,16 @@ from the image but recorded in the index, never pushed off the edge. Routing is
 best-effort — a campaign whose critical path does not route yet charts without
 the corridor tint rather than refusing to chart.
 
+The corridor is derived by `blocking::walked_corridor` and nowhere else: the
+world is `light::final_world` (the same entry `delvec build` takes its world
+from — assembled cells under every premise `nav::Premises::of_plan` states, the
+relight pass's fixtures standing in them), the path is the one with the links
+the route proof takes spliced in (`nav::with_links_taken`), and the routes are
+`nav::critical_path_routes` over both. `tests/chart_routes.rs` holds the index's
+corridor to the build's `validation/critical-path-waypoints.json`: the leg count
+must be equal, and every waypoint, use-gate and climb end the build names must
+lie in the corridor.
+
 Orientation is **+X right, +Z down (north up)**; each slice carries a title bar
 naming its area, band index, floor Y and cut range.
 
@@ -6181,6 +6191,7 @@ naming its area, band index, floor Y and cut range.
 { "chart_version": 1, "campaign_id": "…", "delvec": "<x.y.z>",
   "orientation": "top-down orthographic; +X right, +Z down (north up)",
   "cut": "each slice draws world Y in [floor-1, floor+3) …",
+  "corridor": { "legs": 5, "cell_count": 161, "cells": [[x,y,z], …] },
   "areas": [ { "area": "area/island",
                "bounds": { "min": [x,y,z], "max": [x,y,z] },
                "walkable_cells": 1500,
