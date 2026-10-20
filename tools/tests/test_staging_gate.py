@@ -2586,16 +2586,47 @@ def demo_cli(tmp_path, name, *, declared, carried, rows, extra=()):
     return proc, tree
 
 
-def test_a_declared_demo_the_live_queue_does_not_name_is_refused_end_to_end(tmp_path):
-    proc, tree = demo_cli(
-        tmp_path, "no-queue-row-names-this", declared=True, carried=True,
-        rows=[live_row(r) for r in LIVE_DESIGN_ROWS],
-        extra=("--stage-anyway", "a reason that is long enough to be one", "--acknowledge-red", "2"),
-    )
+REASON = "a reason that is long enough to be one"
+
+
+@pytest.mark.parametrize(
+    "name,carried,needle",
+    [
+        # Declared and built from the declaration, named by no queue row.
+        ("no-queue-row-names-this", True, "no row of the engine's demo queue names it"),
+        # A queued level whose build was not compiled from the declaration.
+        ("an-item-laid-at-a-place", False, "the build is not of this source"),
+    ],
+)
+def test_a_demo_declaration_that_owes_something_is_a_red_row_stage_anyway_reaches(
+    tmp_path, name, carried, needle
+):
+    """The debt is an ordinary red: refused with no override, printed and
+    counted, admitted by `--stage-anyway` against exactly that count and by
+    nothing short of it."""
+    rows = [live_row(r) for r in LIVE_DESIGN_ROWS]
+    proc, tree = demo_cli(tmp_path / "plain", name, declared=True, carried=carried, rows=rows)
     assert proc.returncode == 1, proc.stdout + proc.stderr
-    assert "no row of the engine's demo queue names it" in proc.stderr
-    assert "`--stage-anyway` does not reach this refusal" in proc.stderr
+    assert "DEMO-UNQUEUED" in proc.stderr and needle in proc.stderr
+    assert "--acknowledge-red 1" in proc.stderr
     assert not (tree / "staging-admission.json").exists()
+
+    short, tree = demo_cli(
+        tmp_path / "short", name, declared=True, carried=carried, rows=rows,
+        extra=("--stage-anyway", REASON, "--acknowledge-red", "0"),
+    )
+    assert short.returncode == 2, short.stdout + short.stderr
+    assert "does not match the 1 red finding(s)" in short.stderr
+    assert not (tree / "staging-admission.json").exists()
+
+    ok, tree = demo_cli(
+        tmp_path / "ok", name, declared=True, carried=carried, rows=rows,
+        extra=("--stage-anyway", REASON, "--acknowledge-red", "1"),
+    )
+    assert ok.returncode == 0, ok.stdout + ok.stderr
+    assert "OVERRIDE" in ok.stderr and "DEMO-UNQUEUED" in ok.stderr
+    token = json.loads((tree / "staging-admission.json").read_text())
+    assert token["override"]["acknowledged_red"] == 1, token
 
 
 def test_a_queued_demo_is_admitted_on_the_live_rows_end_to_end(tmp_path):

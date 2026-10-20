@@ -138,7 +138,8 @@ and `Subject.stand_ins`.
 declaration.** A demo level carries no design record — its approved design is
 its row in `docs/demo-levels.md` — so the design-record rows name their class as
 a `world.json` whose content does not declare `demo_level: true`. The
-declaration is refused, out of `--stage-anyway`'s reach, unless the build's
+declaration reads as one more red row (`DEMO-UNQUEUED`, counted by
+`--acknowledge-red` and admitted by `--stage-anyway` like any red) unless the build's
 `manifest.json` carries it too and a row of the engine's queue names the
 campaign's directory, `campaigns/<id>`, in its Status cell. See `demo_refusal`.
 
@@ -244,6 +245,7 @@ RED_VERDICTS = (
     "NO-GENERAL-FORM",
     "MISSING-CHECK",
     "UNBOUND",
+    "DEMO-UNQUEUED",
 )
 # Counted, never refused, and never silent. Reported in its own section and
 # named row by row in the admission token, so a pass cannot be read as
@@ -735,6 +737,26 @@ def demo_refusal(subj: Subject, queue: pathlib.Path) -> tuple[str | None, list[i
             [],
         )
     return None, lines
+
+
+DEMO_ROW_ID = "demo-declaration"
+
+
+def demo_red(subj: Subject, why: str) -> dict:
+    """The red row of a demo declaration that owes what a demo owes."""
+    return {
+        "id": DEMO_ROW_ID,
+        "campaign": subj.name,
+        "round": None,
+        "finding": "a campaign that declares itself a demo level owes a queued row and a build compiled from the declaration",
+        "triage": "",
+        "general_form": "demo_refusal",
+        "carrier": "staging-gate demo_refusal",
+        "binding": None,
+        "precondition": None,
+        "verdict": "DEMO-UNQUEUED",
+        "detail": why,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -2094,22 +2116,10 @@ def main() -> int:
         return 1
 
     # A declared demo level owes what a demo owes before any row may read the
-    # declaration. Out of `--stage-anyway`'s reach for the pre-detail reason.
+    # declaration. An unmet debt is an ordinary red row, printed and counted
+    # like any other, so `--stage-anyway` admits it only against a count that
+    # includes it.
     demo_why, demo_lines = demo_refusal(subj, DEMO_QUEUE)
-    if demo_why is not None:
-        stale = args.admit or (args.build / ADMISSION_NAME)
-        if stale.is_file():
-            stale.unlink()
-        why = f"{demo_why}. `--stage-anyway` does not reach this refusal."
-        if args.report:
-            args.report.parent.mkdir(parents=True, exist_ok=True)
-            args.report.write_text(
-                f"<!-- {GATE_ARTIFACT_MARKER} -->\n# Staging gate — `{subj.name}`\n\n"
-                f"**REFUSED — not stageable.** {why}\n",
-                encoding="utf-8",
-            )
-        print(f"staging-gate: REFUSED — not stageable. {why}", file=sys.stderr)
-        return 1
     if demo_lines:
         print(
             f"staging-gate: `{subj.name}` is a declared demo level, named by "
@@ -2120,6 +2130,8 @@ def main() -> int:
 
     rows = [r for r in doc["findings"] if _applies(r, subj)]
     results = [adjudicate(r, eng, subj) for r in rows]
+    if demo_why is not None:
+        results.insert(0, demo_red(subj, demo_why))
 
     report = render_report(doc, subj, results, args.strict)
     if args.report:
