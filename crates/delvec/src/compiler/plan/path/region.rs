@@ -665,7 +665,8 @@ pub(in crate::compiler::plan) fn collect_region_events(
 
 /// **The block an objective places when it activates, and where** (gap 13):
 /// a `collect` conjures a `minecraft:chest` at its anchor unless it adopts a
-/// container already in the world or its item is dropped by a fight; an
+/// holder already in the world (a container, a frame or a stand) or its item
+/// is dropped by a fight; an
 /// `interact` places its `prop` at its anchor. `None` for every other
 /// objective and for an anchor that is not a point in the quest's area.
 ///
@@ -687,7 +688,7 @@ pub(crate) fn activation_prop(
             anchor, dropped_by, ..
         } => {
             if dropped_by.is_some()
-                || o.collect_container()
+                || o.collect_holder()
                     .is_some_and(|c| point_any_in(anchors, c.as_str()).is_some())
             {
                 return None;

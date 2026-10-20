@@ -414,6 +414,63 @@ fn hang_over_a_presenting_interact_offers_takes_item_first() {
     assert!(d[0].message.contains("spec-0114 §6.4"), "{}", d[0].message);
 }
 
+/// **A `collect` from an item holder is judged as a take** (spec-0111 ×
+/// spec-0114): the act check reads the completion, not the hand that performs
+/// it, so a collect that adopts a frame or a stand is a `take` like any collect —
+/// "Take the seal" agrees, and a head of another act set over it is refused
+/// with the collect's own remedy, exactly as over a conjured chest.
+#[test]
+fn a_collect_from_a_holder_is_judged_as_a_take() {
+    let from_frame = |title: &str| {
+        let mut o = collect(title);
+        o["holder"] = json!("anchor/exit");
+        o["slot"] = json!("contents");
+        o
+    };
+    let (refused, judged, unknown) = judge(from_frame("Take the seal"), json!({}));
+    assert_eq!((refused.len(), judged, unknown), (0, 1, 0));
+    let (d, b) = telling::check_acts(&with_objectives(
+        vec![from_frame("Climb to the seal")],
+        json!({}),
+    ));
+    assert_eq!((b.judged, b.refused), (1, 1));
+    assert_eq!(d[0].path, TITLE);
+    assert!(
+        d[0].message.contains("its completion `collect` → take"),
+        "{}",
+        d[0].message
+    );
+}
+
+/// **A gated connection's opener says the opening act** (spec-0107 ×
+/// spec-0114): the bar in a gated seam is opened by the `open-gate` an
+/// objective's completion fires. Over an `interact` at the bar, "Open the
+/// hatch", "Lift the grating" and "Unbar the door" all agree; the same titles
+/// over a walk to the seam, or over the conversation whose beat opens it, are
+/// refused — the player is told to work a bar the game opens for them.
+#[test]
+fn a_gated_seams_opener_is_titled_with_the_act_that_opens_it() {
+    let opens = json!({"obj/use": [{"type": "open-gate", "anchor": "anchor/exit"}],
+                       "obj/reach": [{"type": "open-gate", "anchor": "anchor/exit"}],
+                       "obj/talk": [{"type": "open-gate", "anchor": "anchor/exit"}]});
+    for title in ["Open the hatch", "Lift the grating", "Unbar the door"] {
+        let (refused, judged, _) = judge(interact(title), opens.clone());
+        assert_eq!(
+            (refused.len(), judged),
+            (0, 1),
+            "`{title}` over an interact"
+        );
+        for (shape, mk) in [("reach-anchor", reach as Shape), ("talk-to", talk)] {
+            let (refused, judged, _) = judge(mk(title), opens.clone());
+            assert_eq!(
+                (refused, judged),
+                (vec![TITLE.to_string()], 1),
+                "`{title}` over a {shape} that opens the gate"
+            );
+        }
+    }
+}
+
 fn build(campaign: &Campaign) -> BuildOutput {
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(campaign, &prefabs).expect("plan builds");
