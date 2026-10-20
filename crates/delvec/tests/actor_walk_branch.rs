@@ -313,3 +313,77 @@ fn one_mark_two_objective_branches_runs_two_drivers_and_the_shot_follows_its_own
         .count();
     assert_eq!(drivers, 2, "two emitted drivers to `anchor/exit`");
 }
+
+/// A shot follows the driver its own branch runs. The ground branch walks the
+/// body to the door and then on to the exit; the tide branch walks it straight
+/// to the exit from its spawn. Two drivers reach `anchor/exit` from two
+/// places, and each branch's cutscene must aim along its own.
+#[test]
+fn a_shot_follows_its_own_branchs_driver_to_a_shared_mark() {
+    let shot = |dist: u32| {
+        format!(
+            r#"{{ "type": "cutscene", "shots": [ {{ "shot_style": "locked-off", "seconds": 3, "dist": {dist}, "subject": {{ "actor": "actor/ram" }} }} ] }}"#
+        )
+    };
+    let walk = |to: &str| {
+        format!(r#"{{ "type": "move-actor", "actor": "actor/ram", "to": {{ "anchor": "{to}" }} }}"#)
+    };
+    let ground = format!(
+        r#"{{ "type": "sequence", "steps": [
+            {{ "at_ticks": 0, "effects": [ {} ] }},
+            {{ "at_ticks": 100, "effects": [ {}, {} ] }} ] }}"#,
+        walk("anchor/door"),
+        walk("anchor/exit"),
+        shot(6)
+    );
+    let tide = format!("{}, {}", walk("anchor/exit"), shot(7));
+    let base = quests_doc("", "", false);
+    let a = r#"{ "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/exit" } }"#;
+    let b = r#"{ "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/door" } }"#;
+    assert_eq!(base.matches(a).count(), 1);
+    assert_eq!(base.matches(b).count(), 1);
+    let doc = base.replace(a, &ground).replace(b, &tide);
+
+    let c = parse_hw(&doc);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let world = nav::World::from_plan(&plan, &structures(&plan));
+    let actor_moves = nav::plan_actor_moves(&plan, &world).expect("walks plan");
+    let to_exit: Vec<_> = actor_moves
+        .iter()
+        .filter(|m| m.to.anchor.as_str() == "anchor/exit")
+        .collect();
+    assert_eq!(to_exit.len(), 2, "one driver per branch to the exit");
+    assert_ne!(
+        to_exit[0].waypoints[0], to_exit[1].waypoints[0],
+        "the two drivers start in different places"
+    );
+
+    let units = delvec::compiler::camera::cutscene_units(&c);
+    assert_eq!(units.len(), 2, "one cutscene per branch");
+    let mut aimed = Vec::new();
+    for (eff, ctx) in &units {
+        let shots = eff.cutscene_shots().expect("a cutscene");
+        let x = delvec::compiler::camera::expand_shot(&plan, &[], &actor_moves, &shots[0], ctx, 0);
+        let delvec::compiler::camera::AimTrack::Moving(track) = x.aim else {
+            panic!("the shot follows the walking body: {:?}", x.aim);
+        };
+        let key = &ctx
+            .iter()
+            .find(|m| m.to.anchor.as_str() == "anchor/exit")
+            .expect("the exit walk is a sibling move")
+            .gate_key;
+        let own = to_exit
+            .iter()
+            .find(|m| &m.gate_key == key)
+            .expect("the sibling's key names a planned driver");
+        let w = own.waypoints[0];
+        assert_eq!(
+            track[0],
+            [w[0], w[1] + 1.0, w[2]],
+            "the shot aims along its own branch's driver"
+        );
+        aimed.push(track[0]);
+    }
+    assert_ne!(aimed[0], aimed[1], "the two shots follow different walks");
+}
