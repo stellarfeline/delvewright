@@ -438,7 +438,10 @@ fn a_hint_that_names_an_act_names_its_own() {
         Some("Ring the bell"),
         Some("Walk past the slate; pull the cord."),
     ));
-    assert!(hint_warnings(&c).is_empty(), "a hint that also names its own act");
+    assert!(
+        hint_warnings(&c).is_empty(),
+        "a hint that also names its own act"
+    );
     let c = titled(obj(
         "interact",
         Some("Ring the bell"),
@@ -467,7 +470,12 @@ fn a_hint_that_names_an_act_names_its_own() {
         Some("Ring the bell"),
         Some("Walk past the slate."),
     )));
-    assert_eq!((b.hinted >= 1, b.naming >= 1, b.warned), (true, true, 1), "{}", b.line());
+    assert_eq!(
+        (b.hinted >= 1, b.naming >= 1, b.warned),
+        (true, true, 1),
+        "{}",
+        b.line()
+    );
 }
 
 /// One lexicon, two readers: a title's head and a hint's clause heads are read

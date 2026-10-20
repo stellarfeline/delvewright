@@ -339,12 +339,7 @@ pub(super) fn cutscene_fns(
         // distinguishing content (e.g. an explicit `seconds`).
         let party = eff.cutscene_party().unwrap_or_default();
         let then = eff.cutscene_then().unwrap_or_default();
-        let start_name = cutscene_fn(
-            &shots,
-            party,
-            then,
-            cutscene_music_digest(eff).as_deref(),
-        );
+        let start_name = cutscene_fn(&shots, party, then, cutscene_music_digest(eff).as_deref());
         if !seen.insert(start_name.clone()) {
             continue;
         }

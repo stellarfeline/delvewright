@@ -1194,7 +1194,8 @@ fn every_scored_cutscene_owns_its_template() {
 /// bytes and removes only its own.
 #[test]
 fn a_scored_cutscene_with_a_then_emits_the_score_and_the_world_change() {
-    let then = json!([{ "type": "set-block", "anchor": "anchor/exit", "block": "minecraft:light" }]);
+    let then =
+        json!([{ "type": "set-block", "anchor": "anchor/exit", "block": "minecraft:light" }]);
     let both = {
         let mut c = scored(inside(), lament());
         c["then"] = then.clone();
@@ -1229,7 +1230,10 @@ fn a_scored_cutscene_with_a_then_emits_the_score_and_the_world_change() {
     let bare = paint_name.trim_start_matches("cs_paint_").to_string();
     assert!(!bare.contains("_then_"), "{bare}");
     let end = function(&out, &format!("cs_end_{bare}"));
-    assert!(!end.iter().any(|l| l.ends_with(" minecraft:light")), "{end:#?}");
+    assert!(
+        !end.iter().any(|l| l.ends_with(" minecraft:light")),
+        "{end:#?}"
+    );
 
     // Without the score: the world change stands, no paint, no `_m`.
     let mut plain = cutscene(inside(), None);
@@ -1237,7 +1241,10 @@ fn a_scored_cutscene_with_a_then_emits_the_score_and_the_world_change() {
     let out = try_build(&hall(vec![plain])).expect("builds");
     assert!(!out.keys().any(|k| k.contains("cs_paint_")));
     let (end_name, end) = function_named(&out, "cs_end_");
-    assert!(end_name.contains("_then_") && !end_name.contains("_m"), "{end_name}");
+    assert!(
+        end_name.contains("_then_") && !end_name.contains("_m"),
+        "{end_name}"
+    );
     assert!(
         end.iter()
             .any(|l| l.starts_with("setblock ") && l.ends_with(" minecraft:light")),
