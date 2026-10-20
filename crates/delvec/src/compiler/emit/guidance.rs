@@ -116,6 +116,18 @@ pub(super) enum HlBody {
     },
     /// Every body carrying this tag (a wave), or the NPC's body.
     Bodies { tag: String, npc: bool },
+    /// A holder entity a `collect` takes from (spec-0111): an item frame or
+    /// an armour stand, lit by its own `Glowing` flag (`Entity.load` reads it
+    /// on every entity) in the highlight team's colour. Not a living body, so
+    /// no effect reaches it.
+    Holder {
+        /// The holder's own tag (`OwnedHolder::tag`).
+        tag: String,
+        /// Its cell.
+        at: [i32; 3],
+        /// Its own body function (`emit::holders::holder_fn`).
+        body_fn: String,
+    },
 }
 
 /// One declared highlight.
@@ -210,8 +222,14 @@ fn namespaced(id: &str) -> String {
 }
 
 /// Derive the campaign's guidance. `blocks` is the assembled world, read for
-/// the state of a block a highlight lights that the campaign did not place.
-pub(super) fn guide(plan: &Plan, blocks: &crate::compiler::blockstate::BlockMap) -> Guide {
+/// the state of a block a highlight lights that the campaign did not place;
+/// `holders` the holder entities the pieces carry, read for a `collect` taken
+/// from one.
+pub(super) fn guide(
+    plan: &Plan,
+    blocks: &crate::compiler::blockstate::BlockMap,
+    holders: &[crate::compiler::holders::OwnedHolder],
+) -> Guide {
     let c = plan.campaign;
     let guidance = &c.quests.content.guidance;
     let mut g = Guide::default();
@@ -259,13 +277,14 @@ pub(super) fn guide(plan: &Plan, blocks: &crate::compiler::blockstate::BlockMap)
     }
     g.compass = ordinal > 0;
     g.journal = g.watched.iter().any(|w| w.announced) || guidance.manual.is_some();
-    g.highlights = highlight_acts(plan, blocks, &g);
+    g.highlights = highlight_acts(plan, blocks, holders, &g);
     g
 }
 
 fn highlight_acts(
     plan: &Plan,
     blocks: &crate::compiler::blockstate::BlockMap,
+    holders: &[crate::compiler::holders::OwnedHolder],
     g: &Guide,
 ) -> Vec<HlAct> {
     use crate::compiler::pressable::Body;
@@ -313,19 +332,32 @@ fn highlight_acts(
                     .iter()
                     .find(|f| f.objective_id == id.as_str())
                     .map(|f| f.cell);
-                let (cell, state) = match adopted {
-                    Some(cell) => match block_at(cell) {
-                        Some(s) => (cell, s),
-                        None => continue,
-                    },
-                    None => match at(anchor.as_str()) {
-                        Some(cell) => (cell, "minecraft:chest".to_string()),
-                        None => continue,
-                    },
-                };
-                HlBody::Blocks {
-                    cells: vec![(cell, state)],
-                    at: cell,
+                // A collect taken from a holder entity lights the holder
+                // itself: its cell holds air in the block map.
+                let holder = holders
+                    .iter()
+                    .find(|h| h.collect.as_deref() == Some(id.as_str()));
+                if let Some(h) = holder {
+                    HlBody::Holder {
+                        tag: h.tag(),
+                        at: h.holder.cell,
+                        body_fn: super::holders::holder_fn(h),
+                    }
+                } else {
+                    let (cell, state) = match adopted {
+                        Some(cell) => match block_at(cell) {
+                            Some(s) => (cell, s),
+                            None => continue,
+                        },
+                        None => match at(anchor.as_str()) {
+                            Some(cell) => (cell, "minecraft:chest".to_string()),
+                            None => continue,
+                        },
+                    };
+                    HlBody::Blocks {
+                        cells: vec![(cell, state)],
+                        at: cell,
+                    }
                 }
             }
             Objective::TalkTo { npc, .. } => HlBody::Bodies {
@@ -428,6 +460,27 @@ fn body_selector(tag: &str, npc: bool) -> String {
         format!("@e[tag={tag},type=!minecraft:interaction]")
     } else {
         format!("@e[tag={tag}]")
+    }
+}
+
+/// The lines that light (or darken) a holder entity: its `Glowing` flag
+/// (`Entity.load` reads `Glowing` on every entity; the client draws the
+/// outline of any entity whose flag is set, `EntityRenderer.extractRenderState`
+/// writing its team colour to `outlineColor`, which `ItemFrameRenderer.submit`
+/// passes to the frame and its item and a living body's renderer to its model
+/// — pinned 1.21.11 client jar) and the highlight team for the colour.
+fn holder_glow(tag: &str, on: bool) -> Vec<String> {
+    let sel = format!("@e[tag={tag}]");
+    if on {
+        vec![
+            format!("execute as {sel} run data merge entity @s {{Glowing:1b}}"),
+            format!("team join {HL_TEAM} {sel}"),
+        ]
+    } else {
+        vec![
+            format!("execute as {sel} run data merge entity @s {{Glowing:0b}}"),
+            format!("team leave {sel}"),
+        ]
     }
 }
 
@@ -541,7 +594,7 @@ pub(super) fn show_lines(h: &HlAct) -> Vec<String> {
             v.extend(cells.iter().map(|(c, s)| display_summon(&h.safe, *c, s)));
             v
         }
-        HlBody::Bodies { .. } => Vec::new(),
+        HlBody::Bodies { .. } | HlBody::Holder { .. } => Vec::new(),
     }
 }
 
@@ -559,6 +612,7 @@ pub(super) fn completion_lines(g: &Guide, oid: &str) -> Vec<String> {
             v.push(format!("effect clear {sel} minecraft:glowing"));
             v.push(format!("team leave {sel}"));
         }
+        HlBody::Holder { tag, .. } => v.extend(holder_glow(tag, false)),
     }
     v
 }
@@ -800,6 +854,10 @@ pub(super) fn functions(
                 h.armed,
                 body_selector(tag, *npc)
             )),
+            HlBody::Holder { tag, .. } => poll.push(format!(
+                "execute {}as @e[tag={tag}] at @s if entity {near} run scoreboard players set {hin} {GUIDE} 1",
+                h.armed
+            )),
         }
         poll.push(format!(
             "execute if score {hin} {GUIDE} matches 1 unless score {hl} {GUIDE} matches 1 run function {ns}:hl_on_{}",
@@ -844,6 +902,7 @@ pub(super) fn functions(
                     ],
                 )
             }
+            HlBody::Holder { tag, .. } => (holder_glow(tag, true), holder_glow(tag, false)),
         };
         let mut on = on;
         on.push(format!("scoreboard players set {hl} {GUIDE} 1"));

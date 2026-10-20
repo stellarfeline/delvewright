@@ -941,7 +941,7 @@ pub fn build_with_warnings(
     };
     // spec-0104 §6–§8: the compass, the journal and the highlights, derived once
     // over the assembled world every emitter here reads.
-    let guide = guidance::guide(plan, &assembled.blocks);
+    let guide = guidance::guide(plan, &assembled.blocks, &owned_holders);
     // spec-0109 §5.1: what every biome a camera can stand in plays, what each
     // cutscene hears, what each `stop-sound` cuts — read over the forced
     // route's legs (none for a campaign that walks no world). The line is

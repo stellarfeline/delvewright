@@ -531,7 +531,7 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
     for h in &g.highlights {
         // Where the dummy stands to be near, and where it stands to be far.
         let at = match &h.body {
-            HlBody::Blocks { at, .. } => *at,
+            HlBody::Blocks { at, .. } | HlBody::Holder { at, .. } => *at,
             HlBody::Bodies { .. } => {
                 let Some(npc) = h
                     .objective
@@ -558,6 +558,9 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
             HlBody::Blocks { .. } => format!("@e[tag=dw_hl_{s},nbt={{Glowing:1b}}]"),
             HlBody::Bodies { tag, .. } => {
                 format!("@e[tag={tag},type=!minecraft:interaction,team=dw_hl]")
+            }
+            HlBody::Holder { tag, .. } => {
+                format!("@e[tag={tag},team=dw_hl,nbt={{Glowing:1b}}]")
             }
         };
         let mut arm: Vec<String> = Vec::new();
@@ -625,6 +628,10 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
                 center(at[2])
             ));
         }
+        // A holder stands by its own body function, as the build stands it.
+        if let HlBody::Holder { body_fn, .. } = &h.body {
+            b.push(format!("function {ns}:{body_fn}"));
+        }
         if let Some(l) = &latch {
             b.push(format!(
                 "execute store result score #sv_{s}_latch {GUIDE} run scoreboard players get {l} dw.sys"
@@ -688,7 +695,7 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
         b.push(format!("tp {me} {}", pos(far)));
         let hold = format!("dw_pt_hold_{s}");
         let probe = match &h.body {
-            HlBody::Blocks { at, .. } => format!(
+            HlBody::Blocks { at, .. } | HlBody::Holder { at, .. } => format!(
                 "execute positioned {} {} {} run tag @a[distance=..{},tag=!{CUTSCENE_TAG}] add {hold}",
                 center(at[0]),
                 center(at[1]),
