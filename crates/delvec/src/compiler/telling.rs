@@ -1230,30 +1230,18 @@ impl Lexicon {
         })
     }
 
-    /// Every lexicon phrase a line names, wherever it stands (spec-0104 §5,
-    /// the hint arm): read left to right, the longest phrase of up to
-    /// [`MAX_HEAD_WORDS`] words at each position, the words it covers then
-    /// skipped, so a phrase is never also read as the shorter phrase inside it.
-    pub fn acts_in(&self, line: &str) -> Vec<(String, &BTreeSet<Act>)> {
-        let words = title_words(line);
-        let mut out = Vec::new();
-        let mut i = 0;
-        while i < words.len() {
-            let found = (1..=MAX_HEAD_WORDS.min(words.len() - i))
-                .rev()
-                .find_map(|n| {
-                    let key = words[i..i + n].join(" ");
-                    self.phrases.get(&key).map(|acts| (key, acts, n))
-                });
-            match found {
-                Some((key, acts, n)) => {
-                    out.push((key, acts));
-                    i += n;
-                }
-                None => i += 1,
-            }
-        }
-        out
+    /// The head of every clause of a line (spec-0104 §5, the hint arm): the
+    /// line as drawn (`dsl::l10n::plain`) is cut at every `.` `,` `;` `:` `!`
+    /// `?` and dash, and each clause is read by [`Lexicon::head`] — the rule a
+    /// title is read by, so *Past the bell, left of the arch: pull the lever*
+    /// names `pull` and *At the far end of the nave* names nothing. A clause
+    /// whose head the lexicon does not know contributes nothing.
+    pub fn clause_heads(&self, line: &str) -> Vec<(String, &BTreeSet<Act>)> {
+        let drawn = delvewright_dsl::l10n::plain(line);
+        drawn
+            .split(['.', ',', ';', ':', '!', '?', '\u{2014}', '\u{2013}'])
+            .filter_map(|clause| self.head(clause))
+            .collect()
     }
 
     /// Up to `n` example heads for an act set: each act's own name first (every
@@ -1502,12 +1490,12 @@ impl HintActBinding {
 
 /// **A hint that names an act names this objective's** (spec-0104 §5): the
 /// hint arm of `DW1045`, a **warning**. A hint may be a place with no act at
-/// all and passes; one whose every act phrase, read anywhere in its English
-/// against the one act lexicon ([`Lexicon::acts_in`]), states an act the
-/// completion does not perform is reported for the creator to adjudicate. A
-/// hint is free prose, where a closed lexicon cannot tell a noun from a verb or
-/// reported speech from an instruction, so this arm never refuses; a title's
-/// head is read by [`check_acts`], which does.
+/// all, and passes; one whose every clause head, read in its English by the
+/// one act lexicon ([`Lexicon::clause_heads`]), states an act the completion
+/// does not perform is reported for the creator to adjudicate. A hint is free
+/// prose, where a closed lexicon cannot tell a noun from a verb or reported
+/// speech from an instruction, so this arm never refuses; a title's head is
+/// read by [`check_acts`], which does.
 pub fn check_hint_acts(c: &Campaign) -> (Vec<Diagnostic>, HintActBinding) {
     check_hint_acts_with(c, Lexicon::english())
 }
@@ -1527,7 +1515,7 @@ pub fn check_hint_acts_with(c: &Campaign, lex: &Lexicon) -> (Vec<Diagnostic>, Hi
                 continue;
             };
             bind.hinted += 1;
-            let found = lex.acts_in(&hint);
+            let found = lex.clause_heads(&hint);
             if found.is_empty() {
                 continue;
             }

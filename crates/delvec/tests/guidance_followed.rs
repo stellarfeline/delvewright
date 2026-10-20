@@ -436,9 +436,18 @@ fn a_hint_that_names_an_act_names_its_own() {
     let c = titled(obj(
         "interact",
         Some("Ring the bell"),
-        Some("Walk past the slate and pull the cord."),
+        Some("Walk past the slate; pull the cord."),
     ));
     assert!(hint_warnings(&c).is_empty(), "a hint that also names its own act");
+    let c = titled(obj(
+        "interact",
+        Some("Ring the bell"),
+        Some("At the far end of the nave; the hall's door stands open."),
+    ));
+    assert!(
+        hint_warnings(&c).is_empty(),
+        "an act word inside a clause is not its head"
+    );
     for (kind, own) in [
         ("talk-to", "Talk to the miller"),
         ("reach-anchor", "Go to the mill"),
@@ -461,19 +470,23 @@ fn a_hint_that_names_an_act_names_its_own() {
     assert_eq!((b.hinted >= 1, b.naming >= 1, b.warned), (true, true, 1), "{}", b.line());
 }
 
-/// One lexicon, two readers: a title's head and a hint's first act phrase are
-/// read by the same rule. For every phrase the lexicon holds, a line made of
-/// that phrase alone answers the same phrase and the same acts through both.
+/// One lexicon, two readers: a title's head and a hint's clause heads are read
+/// by the same rule. For every phrase the lexicon holds, a line made of that
+/// phrase alone answers the same phrase and the same acts through both, and so
+/// does a line that opens on a place clause and then states it.
 #[test]
 fn the_title_head_and_the_hint_reader_agree_on_every_phrase() {
     let lex = telling::Lexicon::english();
     let mut n = 0;
     for (phrase, acts) in lex.phrases() {
         let head = lex.head(phrase).expect("a phrase is its own head");
-        let read = lex.acts_in(phrase);
+        let read = lex.clause_heads(phrase);
         assert_eq!(read.len(), 1, "`{phrase}`: {read:?}");
         assert_eq!((&head.0, head.1), (&read[0].0, read[0].1), "`{phrase}`");
         assert_eq!(head.1, acts, "`{phrase}`");
+        let placed = lex.clause_heads(&format!("Past the bell, {phrase} the lever."));
+        assert_eq!(placed.len(), 1, "`{phrase}` after a place: {placed:?}");
+        assert_eq!((&placed[0].0, placed[0].1), (&head.0, head.1), "`{phrase}`");
         n += 1;
     }
     assert!(n > 0, "the lexicon holds phrases");
