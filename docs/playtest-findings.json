@@ -2332,8 +2332,21 @@
     },
     {
       "applies_when": {
-        "glob": "design/*",
-        "kind": "campaign"
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "premise",
+            "target_minutes"
+          ],
+          "not_in": {
+            "demo_level": [
+              true
+            ]
+          }
+        }
       },
       "binding": {
         "file": "design-record.json",
@@ -2348,7 +2361,7 @@
       "finding": "a delve whose approved concept art is entirely night scenes was built, rendered and reviewed under noon daylight, because the world's time of day is an optional declaration written at the first authoring step, before the art the design gate approves exists, and nothing between the gate and the build compares the two; the mismatch was found by eye on the first point-of-view frame, after the build and the render had already been paid for",
       "general_form": "the world state a campaign declares and the art its design gate approved are held to each other before the build spends a render: the declaration is refused, or reported at the step that can still change it, when the approved reference and the declared world disagree about a property both state",
       "id": "drill3-01",
-      "note": "Closed by spec-0061: DW0890 holds the approved design's rows to the skies the world can reach, at validation, before anything is placed. The binding counts rows in validation/design-record.json, which every build writes even with no record, so a campaign that has approved no design counts zero. applies_when is world.json because every campaign is a member of the class — every campaign owes a design gate — so INAPPLICABLE is unreachable by construction and a zero is UNBOUND, refused. A skipped design gate is not a design choice.",
+      "note": "Closed by spec-0061: DW0890 holds the approved design's rows to the skies the world can reach, at validation, before anything is placed. The binding counts rows in validation/design-record.json, which every build writes even with no record, so a campaign that has approved no design counts zero. applies_when counts world.json's content unless it declares `demo_level: true`: every campaign owes a design gate except a declared demo level, whose approved design is its row in docs/demo-levels.md, and the staging gate refuses that declaration before any row is read unless the build's manifest carries it and a queue row's Status cell names `campaigns/<id>` (`demo_refusal`). So INAPPLICABLE is reachable only for a declared, queued demo, and any other zero is UNBOUND, refused. A skipped design gate is not a design choice.",
       "round": "drill-3",
       "triage": "capability"
     },
@@ -2389,8 +2402,21 @@
     },
     {
       "applies_when": {
-        "glob": "design/*",
-        "kind": "campaign"
+        "files": [
+          "world.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "premise",
+            "target_minutes"
+          ],
+          "not_in": {
+            "demo_level": [
+              true
+            ]
+          }
+        }
       },
       "binding": {
         "file": "design-record.json",
@@ -2405,7 +2431,7 @@
       "finding": "the built areas bore no resemblance to the design set approved at the gate — a flat sand floor in a box of cobble where the approved image is a tide-cut stair on a black rock headland — and nothing in the pipeline put the two side by side: the build compares the sky and nothing else, and no rendered view of the built world was required to answer any approved image",
       "general_form": "a built world and the design set its gate approved are assembled into one comparison before the build is reviewed: every approved reference is answered by a stated view of the BUILT world, so the disagreement is put in front of a reader rather than left to be remembered; the likeness itself is that reader's judgement and no machine's",
       "id": "drill3-03",
-      "note": "Closed by spec-0070: DW0900 holds every row of design.json to a camera of design/cameras.json, through camera::tally — the one comparison between the two documents, which bind_answers is. A present record leaving any approved picture unanswered refuses delvec build (exit 3) before a piece is seated and delvec cameras scene emission (exit 2); a camera answering no row refuses the build under DW0721, the record's own rule, which the build read past until now. The absent record is not refused at the build, because the first build of every campaign is the build its cameras are written against: it is a measured zero on the binding line and in validation/design-record.json (cameras, answered, unanswered_rows), and it is refused HERE. The binding counts `answered`, so a campaign with rows and no camera reads UNBOUND. applies_when is world.json for drill3-01's reason: every campaign owes a design gate, so INAPPLICABLE is unreachable and a zero is a refusal. The human reading this row also names — whether what was built LOOKS like the picture — is unchanged and stays a person's, at the contact sheet and the storybook; what the engine now guarantees is that the pair they look at exists.",
+      "note": "Closed by spec-0070: DW0900 holds every row of design.json to a camera of design/cameras.json, through camera::tally — the one comparison between the two documents, which bind_answers is. A present record leaving any approved picture unanswered refuses delvec build (exit 3) before a piece is seated and delvec cameras scene emission (exit 2); a camera answering no row refuses the build under DW0721, the record's own rule, which the build read past until now. The absent record is not refused at the build, because the first build of every campaign is the build its cameras are written against: it is a measured zero on the binding line and in validation/design-record.json (cameras, answered, unanswered_rows), and it is refused HERE. The binding counts `answered`, so a campaign with rows and no camera reads UNBOUND. applies_when is drill3-01's, for drill3-01's reason: every campaign but a declared, queued demo level owes a design gate, so for any other campaign a zero is a refusal. The human reading this row also names — whether what was built LOOKS like the picture — is unchanged and stays a person's, at the contact sheet and the storybook; what the engine now guarantees is that the pair they look at exists.",
       "round": "drill-3",
       "triage": "capability"
     },

@@ -2421,6 +2421,243 @@ def test_the_design_record_is_a_stage_document_the_gate_holds(gate):
 
 
 # ---------------------------------------------------------------------------
+# A demo level: the object determines the kind
+# ---------------------------------------------------------------------------
+#
+# A demo level carries no design record: its approved design is its row in the
+# demo queue. The LIVE `drill3-01` / `drill3-03` rows are driven here, not
+# copies, because the copies above kept passing while the live rows' class was
+# keyed to a directory a build script also lives in. Every subject below has
+# zero approved pictures; what moves is only what the campaign declares, what
+# its build carries, and what the engine's queue names.
+
+LIVE_DESIGN_ROWS = ("drill3-01", "drill3-03")
+
+
+def live_row(rid):
+    doc = json.loads((REPO_ROOT / "docs" / "playtest-findings.json").read_text())
+    rows = [r for r in doc["findings"] if r["id"] == rid]
+    assert len(rows) == 1, rid
+    return rows[0]
+
+
+def demo_tree(root, name, *, declared, carried, design_dir=False):
+    """`(campaign, build)`: a campaign called `name` with no approved design.
+    `declared` is what its `world.json` says (`True`, `False`, or `None` for no
+    field); `carried` is the build manifest's `demo_level` (`None` for no key)."""
+    camp = root / name
+    camp.mkdir(parents=True, exist_ok=True)
+    content = {"title": "t", "theme": "t", "premise": "p", "seed": 1, "target_minutes": 10}
+    if declared is not None:
+        content["demo_level"] = declared
+    (camp / "world.json").write_text(json.dumps({"stage": "world", "content": content}))
+    if design_dir:
+        (camp / "design").mkdir(exist_ok=True)
+        (camp / "design" / "build_pieces.py").write_text("print('a piece')\n")
+    build = root / f"{name}.out"
+    (build / "validation").mkdir(parents=True, exist_ok=True)
+    fields = {"inputs": {"world.json": "0" * 8}}
+    if carried is not None:
+        fields["demo_level"] = carried
+    (build / "manifest.json").write_text(manifest(**fields))
+    (build / "validation" / "design-record.json").write_text(
+        json.dumps({"references": 0, "image_files": 0, "cameras": 0, "answered": 0})
+    )
+    return camp, build
+
+
+def demo_subject(gate, root, name, **kw):
+    return gate.Subject(*demo_tree(root, name, **kw))
+
+
+def queue_naming(root, status):
+    q = root / "demo-levels.md"
+    q.write_text(
+        "# Demo levels\n\n## Mechanic demos\n\n"
+        "| Mechanic (spec) | Demo concept | Status |\n|---|---|---|\n"
+        f"| A thing (0001) | **The Thing** | {status} |\n"
+    )
+    return q
+
+
+@pytest.mark.parametrize("rid", LIVE_DESIGN_ROWS)
+@pytest.mark.parametrize("design_dir", [False, True])
+def test_a_campaign_with_no_design_record_is_refused_wherever_its_scripts_live(
+    gate, tmp_path, rid, design_dir
+):
+    """No declaration, no approved picture: refused, whether or not something
+    else (a build script) sits under `design/`. Where a script lives is not
+    what makes a campaign owe a design gate."""
+    subj = demo_subject(gate, tmp_path, "c", declared=None, carried=None, design_dir=design_dir)
+    r = gate.adjudicate(live_row(rid), engine_of(gate), subj)
+    assert r["verdict"] == "UNBOUND", r
+    assert r["precondition"] == 1, r
+
+
+@pytest.mark.parametrize("rid", LIVE_DESIGN_ROWS)
+def test_a_declared_demo_measures_the_design_class_zero(gate, tmp_path, rid):
+    subj = demo_subject(gate, tmp_path, "c", declared=True, carried=True, design_dir=True)
+    r = gate.adjudicate(live_row(rid), engine_of(gate), subj)
+    assert r["verdict"] == "INAPPLICABLE", r
+    assert r["precondition"] == 0, r
+
+
+@pytest.mark.parametrize("rid", LIVE_DESIGN_ROWS)
+def test_demo_level_false_is_no_declaration(gate, tmp_path, rid):
+    subj = demo_subject(gate, tmp_path, "c", declared=False, carried=None)
+    r = gate.adjudicate(live_row(rid), engine_of(gate), subj)
+    assert r["verdict"] == "UNBOUND", r
+
+
+def test_a_declared_demo_the_queue_names_is_admitted_to_adjudication(gate, tmp_path):
+    q = queue_naming(tmp_path, "built (content repo, `campaigns/the-thing`)")
+    subj = demo_subject(gate, tmp_path, "the-thing", declared=True, carried=True)
+    why, lines = gate.demo_refusal(subj, q)
+    assert why is None, why
+    assert lines == [7]
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "pending",
+        # A branch is where work sits, not the level's address.
+        "built (content repo branch `demo/the-thing`)",
+        # Another level's directory, which this one's name prefixes.
+        "built (`campaigns/the-thing-twice`)",
+    ],
+)
+def test_a_declared_demo_no_queue_row_names_is_refused(gate, tmp_path, status):
+    """The perturbation toward the vacuous shape: a campaign that is not a
+    queued demo writes the declaration. The declaration alone buys nothing."""
+    q = queue_naming(tmp_path, status)
+    subj = demo_subject(gate, tmp_path, "the-thing", declared=True, carried=True)
+    why, lines = gate.demo_refusal(subj, q)
+    assert why is not None and "no row of the engine's demo queue names it" in why, why
+    assert lines == []
+
+
+def test_the_name_in_another_cell_is_not_the_status(gate, tmp_path):
+    q = tmp_path / "demo-levels.md"
+    q.write_text(
+        "# Demo levels\n\n## Mechanic demos\n\n"
+        "| Mechanic (spec) | Demo concept | Status |\n|---|---|---|\n"
+        "| A thing (0001) | built like `campaigns/the-thing` | pending |\n"
+    )
+    subj = demo_subject(gate, tmp_path, "the-thing", declared=True, carried=True)
+    assert gate.demo_refusal(subj, q)[0] is not None
+
+
+@pytest.mark.parametrize(
+    "declared,carried,needle",
+    [
+        (True, None, "was not compiled from one"),
+        (True, False, "was not compiled from one"),
+        (None, True, "does not declare"),
+    ],
+)
+def test_a_build_and_a_source_that_disagree_about_the_declaration_are_refused(
+    gate, tmp_path, declared, carried, needle
+):
+    q = queue_naming(tmp_path, "built (`campaigns/the-thing`)")
+    subj = demo_subject(gate, tmp_path, "the-thing", declared=declared, carried=carried)
+    why, _ = gate.demo_refusal(subj, q)
+    assert why is not None and needle in why, why
+
+
+def test_a_campaign_declaring_nothing_owes_the_queue_nothing(gate, tmp_path):
+    q = queue_naming(tmp_path, "pending")
+    subj = demo_subject(gate, tmp_path, "c", declared=None, carried=None)
+    assert gate.demo_refusal(subj, q) == (None, [])
+
+
+def demo_cli(tmp_path, name, *, declared, carried, rows, extra=()):
+    """The real gate end to end, against the engine's LIVE demo queue."""
+    root = tmp_path / "cli"
+    root.mkdir(parents=True, exist_ok=True)
+    camp, tree = demo_tree(root, name, declared=declared, carried=carried)
+    ledger = root / "led.json"
+    ledger.write_text(json.dumps({"findings": rows}))
+    proc = subprocess.run(
+        [sys.executable, str(SCRIPT), "--campaign", str(camp), "--build", str(tree),
+         *proofs(tree), "--ledger", str(ledger), *extra],
+        capture_output=True, text=True,
+    )
+    return proc, tree
+
+
+REASON = "a reason that is long enough to be one"
+
+
+@pytest.mark.parametrize(
+    "name,carried,needle",
+    [
+        # Declared and built from the declaration, named by no queue row.
+        ("no-queue-row-names-this", True, "no row of the engine's demo queue names it"),
+        # A queued level whose build was not compiled from the declaration.
+        ("an-item-laid-at-a-place", False, "the build is not of this source"),
+    ],
+)
+def test_a_demo_declaration_that_owes_something_is_a_red_row_stage_anyway_reaches(
+    tmp_path, name, carried, needle
+):
+    """The debt is an ordinary red: refused with no override, printed and
+    counted, admitted by `--stage-anyway` against exactly that count and by
+    nothing short of it."""
+    rows = [live_row(r) for r in LIVE_DESIGN_ROWS]
+    proc, tree = demo_cli(tmp_path / "plain", name, declared=True, carried=carried, rows=rows)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "DEMO-UNQUEUED" in proc.stderr and needle in proc.stderr
+    assert "--acknowledge-red 1" in proc.stderr
+    assert not (tree / "staging-admission.json").exists()
+
+    short, tree = demo_cli(
+        tmp_path / "short", name, declared=True, carried=carried, rows=rows,
+        extra=("--stage-anyway", REASON, "--acknowledge-red", "0"),
+    )
+    assert short.returncode == 2, short.stdout + short.stderr
+    assert "does not match the 1 red finding(s)" in short.stderr
+    assert not (tree / "staging-admission.json").exists()
+
+    ok, tree = demo_cli(
+        tmp_path / "ok", name, declared=True, carried=carried, rows=rows,
+        extra=("--stage-anyway", REASON, "--acknowledge-red", "1"),
+    )
+    assert ok.returncode == 0, ok.stdout + ok.stderr
+    assert "OVERRIDE" in ok.stderr and "DEMO-UNQUEUED" in ok.stderr
+    token = json.loads((tree / "staging-admission.json").read_text())
+    assert token["override"]["acknowledged_red"] == 1, token
+
+
+def test_a_queued_demo_is_admitted_on_the_live_rows_end_to_end(tmp_path):
+    """A level the live queue names, declared and carried: both design rows
+    measure zero and the token says so."""
+    name = "an-item-laid-at-a-place"
+    queue = (REPO_ROOT / "docs" / "demo-levels.md").read_text()
+    assert f"`campaigns/{name}`" in queue, "the live queue no longer names this level"
+    proc, tree = demo_cli(
+        tmp_path, name, declared=True, carried=True,
+        rows=[live_row(r) for r in LIVE_DESIGN_ROWS],
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "is a declared demo level" in proc.stderr
+    token = json.loads((tree / "staging-admission.json").read_text())
+    assert sorted(token["inapplicable"]) == sorted(LIVE_DESIGN_ROWS)
+
+
+def test_the_same_level_without_the_declaration_is_refused_end_to_end(tmp_path):
+    """The other direction: a level the queue names is still a campaign that
+    owes a design record until it declares itself a demo."""
+    proc, tree = demo_cli(
+        tmp_path, "an-item-laid-at-a-place", declared=None, carried=None,
+        rows=[live_row(r) for r in LIVE_DESIGN_ROWS],
+    )
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert proc.stderr.count("UNBOUND") >= 1
+    assert not (tree / "staging-admission.json").exists()
+
+
+# ---------------------------------------------------------------------------
 # An instrument does not write into what it measures
 #
 # The report names every ledger row, so it prints the strings the ledger's own

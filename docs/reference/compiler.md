@@ -16,7 +16,7 @@ Methodology; CI enforces the DW-code subset — see `tools/ci/check-dw-codes.py`
   other subcommand `delvec --help` lists — and
   the scripts around it (`tools/`, `validation/`) are indexed in
   [`tools.md`](tools.md).
-- Versions (as of this doc): `delvec 1.13.0`, `dsl 0.53.0`, `mc 1.21.11`.
+- Versions (as of this doc): `delvec 1.13.0`, `dsl 0.55.0`, `mc 1.21.11`.
   The `dsl` number is the **one** `dsl_version` this engine accepts (ADR-0024):
   every stage document, map-pipeline document and l10n sidecar declares it, and
   any other number is refused at the envelope with `DW0102`, which names it. The
@@ -315,6 +315,7 @@ Envelope (every stage): `{ dsl_version, campaign_id, stage, content }`,
 | `boundary {margin?,message?,returns?}` (opt) | spec-0013: declares a **derived** playable region (union of final placed-piece AABBs, inflated horizontally by `margin` (`0..=64`, default 16; else `DW0321`), unbounded up, floor = lowest placed block − 8). A 1s clock returns any player outside it to the last checkpoint (`dw:cp`) with an actionbar `message` (l10n `world.boundary.message`, English default when absent) + a soft sound; no damage, no item loss. The clock skips a player watching a cutscene (`dw_cutscene`) and a creator flying with the overlay's free camera (`dw_free`). `returns: false` (spec-0092 §10, default `true`) keeps the region and emits no clock: the creator's switch for a world nobody can leave, legal only where the build proves no body walks out of the region or into the open sea (`DW0960`). `horizon:"ocean"` without a `boundary` = `DW0320`. | 0.6 |
 | `textures[] {id,replaces,license}` (opt) | spec-0084: the vanilla textures this delve replaces. Each row names one texture the pinned client ships (`replaces`, a `minecraft:` resource location without `textures/` and `.png`, resolved against the census `crates/delvec/data/textures-1.21.11.json`) and the campaign's image for it, `textures/<id>.png` (with an optional `textures/<id>.png.mcmeta` animation sidecar), under a `license` recorded in `LicenseEvidence` — the catalog card's shape, `delvewright_dsl::license`. The build copies the bytes verbatim into `resourcepack.zip` at `assets/minecraft/textures/<path>.png` (and `.png.mcmeta`), through `emit`'s one pack funnel; the files are manifest inputs. Refusals: `DW0190` (id malformed or duplicated), `DW0939` (a path off the census, or two rows replacing one texture), `DW0940` (not an image that texture can be replaced by), `DW0741` (the licence), `DW0309` (no file), and — where the replaced texture is one a humanoid entity model is drawn with in the model-part table — `DW0978` (paint no box of that model samples) and `DW0979` (paint only on faces nobody standing level with it sees) — all at `delvec validate`, and again at build over the same bytes. See [A delve wears its own textures](#a-delve-wears-its-own-textures) and [a sheet is drawn to its own model's boxes](delvec/compiler/skinparts.md#dw0978dw0979dw0980--a-sheet-is-drawn-to-its-own-models-boxes-compilerskinparts--dslnpc-error). | 0.35 |
 | `require_resource_pack` (opt, bool) | spec-0084 §11: `true` writes `require-resource-pack=true` into `server/server.properties` (absent/`false` writes nothing, so a campaign that does not declare it is byte-identical). Every server honours the file: the playtest server copies it, and the delve image's entrypoint exports itzg's `RESOURCE_PACK_ENFORCE=TRUE` from it unless the operator named `RESOURCE_PACK_ENFORCE`, which is obeyed in either direction. A player who declines a required pack is disconnected by the server. | 0.35 |
+| `demo_level` (opt, bool) | `true` declares the campaign a demo level: a level off the engine's `docs/demo-levels.md` queue, whose approved design is its queue row rather than a design record. Written to `manifest.json` as `demo_level: true`; absent/`false` writes nothing, and nothing emitted moves either way. `tools/creator/staging-gate.py` stages a declared demo only when its build carries the key and a queue row's Status cell names `campaigns/<id>`, and the design-record rows (`drill3-01`, `drill3-03`) measure it zero. |
 
 #### Celestial time (spec-0081)
 
@@ -726,7 +727,8 @@ from l10n (no stage-7 string is player-visible).
 `design.json`, the machine half of an approved look. **Optional**: absent = a
 campaign that has not approved a design, which validation measures and prints
 as a zero and which `tools/creator/staging-gate.py` refuses — a build the owner plays
-carries an approved design or is not staged. Present = parsed, validated and
+carries an approved design or is not staged, unless it is a declared, queued demo
+level (`world.demo_level`). Present = parsed, validated and
 hashed into `manifest.json` inputs like any other stage document. Nothing in it
 is player-visible, so nothing in it is l10n-inventoried.
 
@@ -2550,7 +2552,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   ledger row's `dw` carrier against, since every unreleased revision states the
   same `delvec_version`), `mc_version`, `inputs` (SHA-256 per authored document the build
   read, l10n sidecars included) and `outputs` (SHA-256 per emitted path), plus
-  `language` on a non-`en` bake and `resource_pack_sha1` +
+  `demo_level: true` on a campaign declaring `world.demo_level`, `language` on a non-`en` bake and `resource_pack_sha1` +
   `resource_pack_overrides_vanilla` on a build that ships a pack; `inputs`
   covers `textures/<id>.png` (spec-0084).
   It names no repository, revision or checkout: a revision is a property of a
