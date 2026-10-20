@@ -341,6 +341,16 @@ impl Dense {
         self.index(c).is_some()
     }
 
+    /// The cell at window index `i` ([`Dense::index`]'s inverse).
+    fn coords(&self, i: usize) -> [i32; 3] {
+        let (dy, dz) = (self.dims[1] as usize, self.dims[2] as usize);
+        [
+            self.lo[0] + (i / dy / dz) as i32,
+            self.lo[1] + (i % dy) as i32,
+            self.lo[2] + ((i / dy) % dz) as i32,
+        ]
+    }
+
     fn bottom(&self) -> i32 {
         self.lo[1]
     }
@@ -457,7 +467,7 @@ impl Codes for Shifted<'_> {
         match self.dense.index(a) {
             Some(i) => {
                 if let Some(t) = self.track {
-                    t.mark_index(i);
+                    t.note(i, a);
                 }
                 self.dense.cells[i]
             }
@@ -876,8 +886,16 @@ fn saturated(input: &Input) -> [f64; 3] {
 /// The furthest supported positions [`edge_position`] found from one cell, by
 /// direction: every launch along a direction starts there, whatever its gait.
 type EdgeMemo = std::cell::RefCell<
-    HashMap<(u64, u64), Option<[f64; 3]>, std::hash::BuildHasherDefault<flights::Mix>>,
+    HashMap<
+        (u64, u64),
+        (Option<[f64; 3]>, Option<bank::Box3>),
+        std::hash::BuildHasherDefault<flights::Mix>,
+    >,
 >;
+
+/// How a launch finds its edge position: through a memo that, given the
+/// direction and the way to compute it, answers once per direction.
+type EdgeAt<'a> = &'a dyn Fn([f64; 2], &dyn Fn() -> Option<[f64; 3]>) -> Option<[f64; 3]>;
 
 /// Fly one launch from cell `c` over `codes`; `killed` says whether a body box
 /// meets a killing volume (always `false` over a template).
@@ -890,7 +908,7 @@ fn fly<C: Codes + ?Sized>(
     unbounded_fall: bool,
     bottom: i32,
     killed: &dyn Fn(&State) -> bool,
-    edges: Option<&EdgeMemo>,
+    edges: Option<EdgeAt<'_>>,
 ) -> (Outcome, Option<Aabb>) {
     match launch_start(codes, c, holding, launch, edges) {
         Start::Done(o, swept) => (o, swept),
@@ -934,7 +952,7 @@ fn launch_start<C: Codes + ?Sized>(
     c: [i32; 3],
     holding: bool,
     launch: &Launch,
-    edges: Option<&EdgeMemo>,
+    edges: Option<EdgeAt<'_>>,
 ) -> Start {
     let body = Attributes::PLAYER;
     let vel = launch.vel;
@@ -962,10 +980,7 @@ fn launch_start<C: Codes + ?Sized>(
         }
         Mode::Edge { .. } | Mode::WalkOff | Mode::Creep if !holding => {
             let found = match edges {
-                Some(m) => *m
-                    .borrow_mut()
-                    .entry((dir[0].to_bits(), dir[1].to_bits()))
-                    .or_insert_with(|| edge_position(codes, &body, c, feet, dir)),
+                Some(m) => m(dir, &|| edge_position(codes, &body, c, feet, dir)),
                 None => edge_position(codes, &body, c, feet, dir),
             };
             let Some(p) = found else {
@@ -1724,6 +1739,24 @@ impl World {
         })
     }
 
+    /// The cells the world is asked about a node `c` itself ([`bank`]): its
+    /// rest state, its walk and its climb (a step to the four cells beside it,
+    /// one up or down, standable with a floor under and two cells of room),
+    /// the support and launch column, and what [`World::rest_kind`] asks
+    /// about where a declared jump out of it lands.
+    fn node_boxes(&self, c: [i32; 3]) -> Vec<bank::Box3> {
+        let mut out = vec![(
+            [c[0] - 1, c[1] - 2, c[2] - 1],
+            [c[0] + 1, c[1] + COLUMN as i32, c[2] + 1],
+        )];
+        for (from, to) in &self.declared_jumps {
+            if *from == c {
+                out.push(rest_box(*to));
+            }
+        }
+        out
+    }
+
     /// Every edge out of `c` (spec-0113 §4.3), computed over `memo`'s snapshot.
     fn expand(
         &self,
@@ -1731,24 +1764,13 @@ impl World {
         params: &ReachParams,
         c: [i32; 3],
         wanted: Quadrants,
-        track: Option<&bank::Track<'_>>,
+        banked: Option<&bank::Expansion<'_>>,
     ) -> NodeEdges {
         let fly_launches = wanted != 0;
-        // What the world is asked about the node itself — its rest state, its
-        // walk and its climb, the support and column — reads the cells round
-        // it; a declared jump out of it, the cells round where it lands.
+        let track = banked.map(|b| &b.track);
         if let Some(t) = track {
-            t.mark_box(
-                [c[0] - 2, c[1] - 3, c[2] - 2],
-                [c[0] + 2, c[1] + COLUMN as i32 + 1, c[2] + 2],
-            );
-            for (from, to) in &self.declared_jumps {
-                if *from == c {
-                    t.mark_box(
-                        [to[0] - 2, to[1] - 3, to[2] - 2],
-                        [to[0] + 2, to[1] + 3, to[2] + 2],
-                    );
-                }
+            for (lo, hi) in self.node_boxes(c) {
+                t.mark_box(lo, hi);
             }
         }
         let fp = Footprint::player();
@@ -1762,17 +1784,16 @@ impl World {
         let dense = &memo.dense;
         let mut edges: Edges = BTreeMap::new();
         // A node's launches land in a few cells many times over: each cell's
-        // rest state is asked of the world once.
+        // rest state is asked of the world once a run (so each run notes the
+        // cells it asks about).
         let kinds: std::cell::RefCell<
             HashMap<[i32; 3], Option<RestKind>, std::hash::BuildHasherDefault<flights::Mix>>,
         > = std::cell::RefCell::default();
         let accept = |to: [i32; 3], want: RestKind| -> bool {
             let k = *kinds.borrow_mut().entry(to).or_insert_with(|| {
                 if let Some(t) = track {
-                    t.mark_box(
-                        [to[0] - 2, to[1] - 3, to[2] - 2],
-                        [to[0] + 2, to[1] + 3, to[2] + 2],
-                    );
+                    let (lo, hi) = rest_box(to);
+                    t.mark_box(lo, hi);
                 }
                 self.rest_kind(to)
             });
@@ -1870,14 +1891,31 @@ impl World {
                 };
                 let killed = |st: &State| self.kills(st);
                 let edge_memo: EdgeMemo = std::cell::RefCell::new(HashMap::default());
+                // An edge position read cells: a launch that takes it from the
+                // memo reads them too, for the run it is in.
+                let edge_at = |dir: [f64; 2], compute: &dyn Fn() -> Option<[f64; 3]>| {
+                    let k = (dir[0].to_bits(), dir[1].to_bits());
+                    let held = edge_memo.borrow().get(&k).copied();
+                    if let Some((v, b)) = held {
+                        if let (Some(t), Some(b)) = (track, b) {
+                            t.extend(b);
+                        }
+                        return v;
+                    }
+                    let saved = track.map(|t| t.begin_scope());
+                    let v = compute();
+                    let b = track.and_then(|t| t.end_scope(saved.flatten()));
+                    edge_memo.borrow_mut().insert(k, (v, b));
+                    v
+                };
                 // The box the launches read: the cell's own neighbourhood, and
                 // every swept box grown by the cells a tick and a landing read
                 // around it.
-                let mut read = (
+                let mut read: bank::Box3 = (
                     [c[0] - 2, c[1] - 2, c[2] - 2],
                     [c[0] + 2, c[1] + COLUMN as i32 + 1, c[2] + 2],
                 );
-                let mut grow = |b: &Aabb| {
+                let grow = |into: &mut Option<bank::Box3>, b: &Aabb| {
                     let lo = [
                         b.min[0].floor() as i32 - 2,
                         b.min[1].floor() as i32 - 3,
@@ -1888,94 +1926,166 @@ impl World {
                         b.max[1].floor() as i32 + 3,
                         b.max[2].floor() as i32 + 2,
                     ];
-                    for i in 0..3 {
-                        read.0[i] = read.0[i].min(lo[i]);
-                        read.1[i] = read.1[i].max(hi[i]);
-                    }
+                    *into = Some(match *into {
+                        None => (lo, hi),
+                        Some((a, b)) => (
+                            [a[0].min(lo[0]), a[1].min(lo[1]), a[2].min(lo[2])],
+                            [b[0].max(hi[0]), b[1].max(hi[1]), b[2].max(hi[2])],
+                        ),
+                    });
                 };
-                for arc in &class.arcs {
-                    if !arc.members.iter().any(|l| l.serves(wanted)) {
-                        continue;
+                let n = class.arcs.len();
+                let runs = if banked.is_some() { bank::GROUPS } else { 1 };
+                for g in 0..runs {
+                    let (lo, hi) = (g * n / runs, (g + 1) * n / runs);
+                    if let Some(t) = track {
+                        t.begin_run();
                     }
-                    let matches = arc.read.iter().all(|(r, code)| shifted.code(*r) == *code)
-                        && !arc.swept.is_some_and(|b| {
-                            self.lethal_near(&b.offset([
-                                f64::from(c[0]),
-                                f64::from(c[1]),
-                                f64::from(c[2]),
-                            ]))
-                        });
-                    if let Some(b) = arc.swept {
-                        grow(&b.offset([f64::from(c[0]), f64::from(c[1]), f64::from(c[2])]));
-                    }
-                    if matches {
-                        out.credited += 1;
-                        let l = arc.members[0];
-                        self.record(c, &arc.outcome, &l, &accept, &mut edges, &mut out);
-                        continue;
-                    }
-                    for l in arc.members.iter().filter(|l| l.serves(wanted)) {
-                        out.simulated += 1;
-                        let at = [f64::from(c[0]), f64::from(c[1]), f64::from(c[2])];
-                        let bottom = dense.bottom() - c[1];
-                        let kills = |st: &State| {
-                            let mut s = *st;
-                            s.pos = [st.pos[0] + at[0], st.pos[1] + at[1], st.pos[2] + at[2]];
-                            killed(&s)
-                        };
-                        let flown =
-                            match launch_start(&shifted, [0, 0, 0], holding, l, Some(&edge_memo)) {
-                                Start::Done(o, swept) => Flown::Here(o, swept),
-                                Start::Run(st, press) => {
-                                    let key = flights::Key::new(
-                                        l,
-                                        &st,
-                                        press,
-                                        dense.wet,
-                                        params.unbounded_fall,
-                                    );
-                                    let run_here = |codes: &dyn Codes| {
-                                        run(
-                                            codes,
-                                            [0, 0, 0],
-                                            l,
-                                            st,
-                                            press,
-                                            params.unbounded_fall,
-                                            bottom,
-                                            &kills,
-                                        )
-                                    };
-                                    match flights::lookup(&key, &shifted) {
-                                        Some(leaf)
-                                            if leaf.holds_at(bottom)
-                                                && !leaf.swept.is_some_and(|b| {
-                                                    self.lethal_near(&b.offset(at))
-                                                }) =>
-                                        {
-                                            Flown::Kept(leaf)
-                                        }
-                                        Some(_) => {
-                                            let f = run_here(&shifted);
-                                            Flown::Here(f.outcome, f.swept)
-                                        }
-                                        None => {
-                                            let reads = flights::Reads::new(&shifted);
-                                            let f = run_here(&reads);
-                                            flights::record(key, reads, &f);
-                                            Flown::Here(f.outcome, f.swept)
-                                        }
-                                    }
+                    let summary = match banked.and_then(|b| b.reuse(g, runs)) {
+                        Some(s) => s,
+                        None => {
+                            kinds.borrow_mut().clear();
+                            let mut gedges: Edges = BTreeMap::new();
+                            let mut gout = NodeEdges::default();
+                            let mut gread: Option<bank::Box3> = None;
+                            for arc in &class.arcs[lo..hi] {
+                                if !arc.members.iter().any(|l| l.serves(wanted)) {
+                                    continue;
                                 }
-                            };
-                        let (o, swept) = match &flown {
-                            Flown::Here(o, swept) => (o, *swept),
-                            Flown::Kept(leaf) => (&leaf.outcome, leaf.swept),
-                        };
-                        if let Some(b) = swept {
-                            grow(&b.offset(at));
+                                let matches =
+                                    arc.read.iter().all(|(r, code)| shifted.code(*r) == *code)
+                                        && !arc.swept.is_some_and(|b| {
+                                            self.lethal_near(&b.offset([
+                                                f64::from(c[0]),
+                                                f64::from(c[1]),
+                                                f64::from(c[2]),
+                                            ]))
+                                        });
+                                if let Some(b) = arc.swept {
+                                    grow(
+                                        &mut gread,
+                                        &b.offset([
+                                            f64::from(c[0]),
+                                            f64::from(c[1]),
+                                            f64::from(c[2]),
+                                        ]),
+                                    );
+                                }
+                                if matches {
+                                    gout.credited += 1;
+                                    let l = arc.members[0];
+                                    self.record(
+                                        c,
+                                        &arc.outcome,
+                                        &l,
+                                        &accept,
+                                        &mut gedges,
+                                        &mut gout,
+                                    );
+                                    continue;
+                                }
+                                for l in arc.members.iter().filter(|l| l.serves(wanted)) {
+                                    gout.simulated += 1;
+                                    let at = [f64::from(c[0]), f64::from(c[1]), f64::from(c[2])];
+                                    let bottom = dense.bottom() - c[1];
+                                    let kills = |st: &State| {
+                                        let mut s = *st;
+                                        s.pos = [
+                                            st.pos[0] + at[0],
+                                            st.pos[1] + at[1],
+                                            st.pos[2] + at[2],
+                                        ];
+                                        killed(&s)
+                                    };
+                                    let flown = match launch_start(
+                                        &shifted,
+                                        [0, 0, 0],
+                                        holding,
+                                        l,
+                                        Some(&edge_at),
+                                    ) {
+                                        Start::Done(o, swept) => Flown::Here(o, swept),
+                                        Start::Run(st, press) => {
+                                            let key = flights::Key::new(
+                                                l,
+                                                &st,
+                                                press,
+                                                dense.wet,
+                                                params.unbounded_fall,
+                                            );
+                                            let run_here = |codes: &dyn Codes| {
+                                                run(
+                                                    codes,
+                                                    [0, 0, 0],
+                                                    l,
+                                                    st,
+                                                    press,
+                                                    params.unbounded_fall,
+                                                    bottom,
+                                                    &kills,
+                                                )
+                                            };
+                                            match flights::lookup(&key, &shifted) {
+                                                Some(leaf)
+                                                    if leaf.holds_at(bottom)
+                                                        && !leaf.swept.is_some_and(|b| {
+                                                            self.lethal_near(&b.offset(at))
+                                                        }) =>
+                                                {
+                                                    Flown::Kept(leaf)
+                                                }
+                                                Some(_) => {
+                                                    let f = run_here(&shifted);
+                                                    Flown::Here(f.outcome, f.swept)
+                                                }
+                                                None => {
+                                                    let reads = flights::Reads::new(&shifted);
+                                                    let f = run_here(&reads);
+                                                    flights::record(key, reads, &f);
+                                                    Flown::Here(f.outcome, f.swept)
+                                                }
+                                            }
+                                        }
+                                    };
+                                    let (o, swept) = match &flown {
+                                        Flown::Here(o, swept) => (o, *swept),
+                                        Flown::Kept(leaf) => (&leaf.outcome, leaf.swept),
+                                    };
+                                    if let Some(b) = swept {
+                                        grow(&mut gread, &b.offset(at));
+                                    }
+                                    self.record(c, o, l, &accept, &mut gedges, &mut gout);
+                                }
+                            }
+                            bank::Summary {
+                                edges: gedges.into_iter().collect(),
+                                leaves_world: gout.leaves_world,
+                                dies: gout.dies,
+                                simulated: gout.simulated,
+                                credited: gout.credited,
+                                grown: gread,
+                            }
                         }
-                        self.record(c, o, l, &accept, &mut edges, &mut out);
+                    };
+                    // Runs merge in their order, as their launches would:
+                    // the first to name an edge names it.
+                    for (k, v) in &summary.edges {
+                        edges.entry(*k).or_insert(*v);
+                    }
+                    out.leaves_world |= summary.leaves_world;
+                    if let Some(d) = summary.dies {
+                        out.dies.get_or_insert(d);
+                    }
+                    out.simulated += summary.simulated;
+                    out.credited += summary.credited;
+                    if let Some((a, b)) = summary.grown {
+                        for i in 0..3 {
+                            read.0[i] = read.0[i].min(a[i]);
+                            read.1[i] = read.1[i].max(b[i]);
+                        }
+                    }
+                    if let (Some(b), Some(t)) = (banked, track) {
+                        b.ran(t.end_run(), summary);
                     }
                 }
                 out.read = Some(read);
@@ -2447,11 +2557,17 @@ impl World {
                 .inherited(&key)
                 .or_else(|| memo.bank.find(&key, &memo.dense, &memo.extra, &volumes))
                 .unwrap_or_else(|| {
-                    let track = bank::Track::new(&memo.dense);
-                    let e = Arc::new(self.expand(memo, params, *c, *q, Some(&track)));
+                    let x = memo.bank.expansion(
+                        &key,
+                        &memo.dense,
+                        &memo.extra,
+                        &self.node_boxes(*c),
+                        &volumes,
+                    );
+                    let e = Arc::new(self.expand(memo, params, *c, *q, Some(&x)));
                     if let Some(b) = e.read {
                         memo.bank
-                            .keep(key, track, &memo.extra, self.volumes_near(b), &e);
+                            .keep(key, x, &memo.extra, self.volumes_near(b), &e);
                     }
                     e
                 });
@@ -2650,6 +2766,13 @@ impl World {
         }
         q
     }
+}
+
+/// The cells [`World::rest_kind`] asks about for a cell `c` of the player's
+/// one column: its floor, itself and the two cells over it (head room, a perch
+/// top's third cell, the water over a swimmer).
+fn rest_box(c: [i32; 3]) -> bank::Box3 {
+    ([c[0], c[1] - 1, c[2]], [c[0], c[1] + 2, c[2]])
 }
 
 /// The cardinal axis a jump from `from` to `to` runs along: the larger of its
