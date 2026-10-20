@@ -17,7 +17,7 @@ use delvec::compiler::registry::PrefabRegistry;
 const BIN: &str = env!("CARGO_BIN_EXE_delvec");
 
 /// The gallery copied to `dir` with its generated pieces written by
-/// `prefabs/gallery-generator` into `dir.prefabs`, as `gallery-prefabs.py`
+/// `gallery/prefab-generator` into `dir.prefabs`, as `gallery-prefabs.py`
 /// writes them for the primary (the overlays' detailed places are not read
 /// by the primary).
 fn gallery_with_pieces(dir: &Path) -> PathBuf {
@@ -28,7 +28,7 @@ fn gallery_with_pieces(dir: &Path) -> PathBuf {
     std::fs::create_dir_all(&pieces).unwrap();
     let out = Command::new(env!("CARGO"))
         .args(["run", "-q", "--locked", "--release", "--manifest-path"])
-        .arg(common::repo_root().join("prefabs/gallery-generator/Cargo.toml"))
+        .arg(common::repo_root().join("gallery/prefab-generator/Cargo.toml"))
         .arg("--")
         .arg(&pieces)
         .arg("--skins")

@@ -97,7 +97,7 @@ fn variant(name: &str, mut quests: Value, mut dialogue: Value) -> PathBuf {
         serde_json::from_str(&std::fs::read_to_string(base.join("npcs.json")).unwrap()).unwrap();
     common::declare_story(&mut quests, &npcs, &dialogue);
     common::declare_dialogue_story(&mut dialogue);
-    let dst = std::env::temp_dir().join(format!("dw-guidance-{name}"));
+    let dst = std::env::temp_dir().join(format!("dw-guidance-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dst);
     common::materialize_from(
         &base,
@@ -922,7 +922,7 @@ fn a_wave_and_a_trigger_are_lit() {
             }
         }
     }
-    let dir = std::env::temp_dir().join("dw-guidance-wave-hl");
+    let dir = std::env::temp_dir().join(format!("dw-guidance-wave-hl-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     common::materialize_from(
         &common::keep_trial_dir(),

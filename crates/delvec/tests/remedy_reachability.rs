@@ -2925,6 +2925,7 @@ fn dw1031_stating_the_music_in_either_spelling_validates() {
 fn dw1031_a_cutscene_that_states_its_score_validates() {
     let shot = |music: Option<serde_json::Value>| {
         let mut c = serde_json::json!({ "type": "cutscene", "seconds": 2,
+            "subject": "landscape",
             "path": [{ "anchor": "anchor/keeper-stand", "offset": [0, 1, 0] }] });
         if let Some(m) = music {
             c["music"] = m;
@@ -2986,7 +2987,7 @@ fn dw1032_the_path_the_place_or_a_repaint_each_build() {
     let mark =
         |dx: i32| serde_json::json!({ "anchor": "anchor/keeper-stand", "offset": [dx, 1, 0] });
     let shot = |path: serde_json::Value| {
-        serde_json::json!({ "type": "cutscene", "seconds": 2,
+        serde_json::json!({ "type": "cutscene", "seconds": 2, "subject": "landscape",
         "path": path, "hears": "atmosphere/dread" })
     };
     let dread_at_keeper = serde_json::json!({ "type": "set-atmosphere",

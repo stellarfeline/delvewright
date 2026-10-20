@@ -487,13 +487,13 @@ fn stop_sound_writes_the_three_shapes_and_a_category_moves_its_token() {
     assert!(
         plays
             .iter()
-            .any(|l| l.contains("playsound minecraft:music.dragon music @a")),
+            .any(|l| l.ends_with("run playsound minecraft:music.dragon music @s")),
         "{plays:#?}"
     );
     assert!(
         plays
             .iter()
-            .any(|l| l.contains("playsound minecraft:block.bell.use master @a")),
+            .any(|l| l.ends_with("run playsound minecraft:block.bell.use master @s")),
         "{plays:#?}"
     );
     assert!(
