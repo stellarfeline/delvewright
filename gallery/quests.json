@@ -3428,7 +3428,7 @@
               "text": "The east bay keeps what the hall has stopped showing.",
               "verb": "arrives"
             },
-            "hint": "Through the arch on the east side of the reliquary.",
+            "hint": "Through the arch at the side of the reliquary.",
             "id": "obj/look-in-the-east-bay",
             "radius": 3,
             "title": "Look into one side bay",
@@ -3459,7 +3459,7 @@
               "text": "They come to the rim of the well and look down it.",
               "verb": "arrives"
             },
-            "hint": "The well is in the reliquary's north-west corner.",
+            "hint": "The well is in a corner of the reliquary.",
             "id": "obj/look-into-the-well",
             "radius": 3,
             "title": "Go to the mouth of the well",
