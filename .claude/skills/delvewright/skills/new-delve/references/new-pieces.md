@@ -83,7 +83,18 @@ this needs are subcommands of the one binary Init I3 installed.
    delvec --prefabs "$DELVEWRIGHT_PREFABS" grammar check --file p.json
    ```
 
-   You write JSON — never Rust, and never blocks by hand. Four traps the
+   **A place's Program is JSON, and how it comes to be is yours to choose, per
+   place**: write it by hand, or write a script (any language) that computes it
+   and emits the JSON — a loop for a colonnade, a table for a stair's treads. The
+   emitted Program is the artifact of record: it is what is checked in and what
+   `grammar expand` and `delvec detail` judge. Check the script in beside it as
+   provenance (`design/generator/` in the campaign); it has no standing over the
+   Program and nothing re-runs it. A script computes geometry and never a
+   judgement the engine makes: walkability, falls, reach and a seam's cells are
+   read from the gate and from `delvec allocation`, never recomputed. Never
+   done: a new piece made by extending the engine's Rust (`crates/`) or the
+   tileset generators in `prefabs/`, and blocks placed outside a Program (a fill
+   command, an edited `.nbt`). Four traps the
    procedure names: two guards that can both hold are a **probability, not a
    priority** (the "none of the above" arm is `otherwise`, and it is also what
    stops a recursion); **`rounding` is owed by every surface, not only floors** —

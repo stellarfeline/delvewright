@@ -44,7 +44,9 @@ included) is `DW0987`, one that writes the ring's fixed ground `DW0990`.
    the opening and must be left open — and its `form` and the face class that
    answers it, the owed anchor names, every void with its owner, the palette. **Read it; type nothing from it
    anywhere.** It is an input to nothing; ask again whenever you want it.
-2. **Write the program** at `programs/<place stem>.json` inside the campaign.
+2. **Write the program** at `programs/<place stem>.json` inside the campaign,
+   by hand or emitted by a script (*New pieces*, step 3; a script reads the
+   handed values from step 1's output and retypes none).
    Declare the handed values you use as parameters under the `handed/` prefix,
    with the allocation's values as their defaults (`handed/datum-y`;
    `handed/ground/{min-y,max-y,bottom-y}`; `handed/roof/…` on a declared roof;
