@@ -89,6 +89,16 @@
     },
     {
       "area": "",
+      "id": "cutscene/obj-reach-the-end/0/shot0/t0",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-reach-the-end/0/shot0/t31",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
       "id": "cutscene/obj-take-the-emeralds/0/shot0/t0",
       "kind": "cutscene"
     },
