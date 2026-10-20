@@ -1,0 +1,223 @@
+//! A scripted walk is planned from the branch it runs on, and that branch is
+//! the conjunction of every gate between it and the bundle's owner — its own
+//! `when`, any enclosing effect's `when`, and the gate of the objective (or
+//! trigger, trap, loop) whose firing runs the bundle.
+//!
+//! The defect pinned here: the planner once read a walk's branch off the walk
+//! effect's own `when` alone. Two objectives, each gated on its own branch
+//! flag, each walked one body somewhere; neither walk carried a `when`. The
+//! second walk then chained from the first walk's destination — a staging its
+//! own branch can never have produced — so the body snapped across the field
+//! before it walked, and no diagnostic fired.
+
+mod common;
+
+use std::collections::BTreeMap;
+
+use delvec::compiler::commands::CommandTree;
+use delvec::compiler::emit::{self, BuildOutput};
+use delvec::compiler::nav;
+use delvec::compiler::plan::Plan;
+use delvec::compiler::registry::PrefabRegistry;
+use delvewright_dsl::{Campaign, DSL_VERSION, RawCampaign, parse_campaign};
+
+/// Two branch objectives after `obj/talk`, gated on `flag/ground` and
+/// `flag/tide`; each walks `actor/ram` from its spawn at `anchor/keeper-stand`.
+/// `walk_a` / `walk_b` are the walk effects' extra fields (a `when`, or empty).
+/// `wrap` wraps both walks in a one-step `sequence` when true.
+fn quests_doc(walk_a: &str, walk_b: &str, wrap: bool) -> String {
+    let a = format!(
+        r#"{{ "type": "move-actor", "actor": "actor/ram", "to": {{ "anchor": "anchor/exit" }}{walk_a} }}"#
+    );
+    let b = format!(
+        r#"{{ "type": "move-actor", "actor": "actor/ram", "to": {{ "anchor": "anchor/door" }}{walk_b} }}"#
+    );
+    let (a, b) = if wrap {
+        (
+            format!(r#"{{ "type": "sequence", "steps": [ {{ "at_ticks": 0, "effects": [ {a} ] }} ] }}"#),
+            format!(r#"{{ "type": "sequence", "steps": [ {{ "at_ticks": 0, "effects": [ {b} ] }} ] }}"#),
+        )
+    } else {
+        (a, b)
+    };
+    format!(
+        r#"{{
+  "dsl_version": "{DSL_VERSION}",
+  "campaign_id": "hello-world",
+  "stage": "quests",
+  "content": {{
+    "actors": [
+      {{ "id": "actor/ram", "entity": "minecraft:sheep", "anchor": "anchor/keeper-stand" }}
+    ],
+    "quests": [
+      {{
+        "id": "quest/open-the-door",
+        "trigger": {{ "type": "campaign-start" }},
+        "objectives": [
+          {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
+          {{ "type": "reach-anchor", "id": "obj/ground", "anchor": "anchor/exit",
+             "radius": 2, "after": ["obj/talk"], "requires_flags": ["flag/ground"] }},
+          {{ "type": "reach-anchor", "id": "obj/tide", "anchor": "anchor/exit",
+             "radius": 2, "after": ["obj/talk"], "requires_flags": ["flag/tide"] }}
+        ],
+        "on_objective_complete": {{
+          "obj/talk": [
+            {{ "type": "open-gate", "anchor": "anchor/door" }},
+            {{ "type": "set-flag", "flag": "flag/ground" }},
+            {{ "type": "set-flag", "flag": "flag/tide" }}
+          ],
+          "obj/ground": [ {a} ],
+          "obj/tide": [ {b} ]
+        }},
+        "on_complete": [ {{ "type": "campaign-complete" }} ]
+      }}
+    ]
+  }}
+}}"#
+    )
+}
+
+fn read_hw(name: &str) -> String {
+    std::fs::read_to_string(common::hello_world_dir().join(name)).unwrap()
+}
+
+fn parse_hw(quests: &str) -> Campaign {
+    let raw = RawCampaign {
+        world: read_hw("world.json"),
+        npcs: read_hw("npcs.json"),
+        classes: read_hw("classes.json"),
+        quest_plan: read_hw("quest-plan.json"),
+        quests: common::declared_quests_doc(quests, &common::hello_world_dir()),
+        dialogue: read_hw("dialogue.json"),
+        world_edits: None,
+        geometry_brief: None,
+        layout_graph: None,
+        site_plan: None,
+        detail_plan: None,
+        design: None,
+    };
+    parse_campaign(&raw).expect("campaign parses")
+}
+
+fn structures(plan: &Plan) -> BTreeMap<String, Vec<u8>> {
+    let mut out: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            for t in &piece.templates {
+                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+                out.insert(t.structure_file.clone(), bytes);
+            }
+        }
+    }
+    out
+}
+
+/// `(destination anchor, first cell, gate key)` of every planned walk.
+fn planned(quests: &str) -> Vec<(String, [i32; 3], String)> {
+    let c = parse_hw(quests);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let world = nav::World::from_plan(&plan, &structures(&plan));
+    nav::plan_actor_moves(&plan, &world)
+        .expect("both walks plan")
+        .into_iter()
+        .map(|m| (m.to.anchor.as_str().to_string(), m.cells[0], m.gate_key))
+        .collect()
+}
+
+fn build(quests: &str) -> BuildOutput {
+    let c = parse_hw(quests);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    emit::build(
+        &plan,
+        &BTreeMap::new(),
+        &structures(&plan),
+        &CommandTree::v1_21_11(),
+        &prefabs,
+        None,
+        &BTreeMap::new(),
+    )
+    .expect("the campaign builds")
+}
+
+fn start_of(walks: &[(String, [i32; 3], String)], anchor: &str) -> [i32; 3] {
+    walks
+        .iter()
+        .find(|(a, _, _)| a == anchor)
+        .unwrap_or_else(|| panic!("no planned walk to `{anchor}`: {walks:?}"))
+        .1
+}
+
+/// **The regression.** Neither walk carries a `when`; each runs from an
+/// objective gated on its own branch flag. Both bodies start at the spawn,
+/// because neither branch can have run the other's walk.
+#[test]
+fn a_walk_inherits_the_gate_of_the_objective_that_runs_it() {
+    let walks = planned(&quests_doc("", "", false));
+    assert_eq!(walks.len(), 2, "two walks planned: {walks:?}");
+    let ground = start_of(&walks, "anchor/exit");
+    let tide = start_of(&walks, "anchor/door");
+    assert_eq!(
+        tide, ground,
+        "the tide-branch walk must start where the ground-branch walk did (the \
+         spawn), never at the ground branch's destination: {walks:?}"
+    );
+}
+
+/// The same pair one level down, inside a `sequence` step — the shape the demo
+/// level that found the defect uses. The objective's gate reaches nested effects.
+#[test]
+fn a_nested_walk_inherits_the_objective_gate_too() {
+    let walks = planned(&quests_doc("", "", true));
+    assert_eq!(
+        start_of(&walks, "anchor/door"),
+        start_of(&walks, "anchor/exit"),
+        "{walks:?}"
+    );
+}
+
+/// The workaround the demo level carried — a `when` restating its objective's
+/// gate on each walk — plans exactly as the bare walks do now: the restated
+/// term is already in the branch, so origin and driver key agree.
+#[test]
+fn restating_the_objective_gate_in_when_changes_nothing() {
+    let bare = planned(&quests_doc("", "", true));
+    let restated = planned(&quests_doc(
+        r#", "when": { "requires_flags": ["flag/ground"] }"#,
+        r#", "when": { "requires_flags": ["flag/tide"] }"#,
+        true,
+    ));
+    assert_eq!(bare, restated);
+}
+
+/// Every emitted call to a walk driver names a driver that was emitted: the
+/// emitter's branch key and the planner's are one reading.
+#[test]
+fn every_walk_call_names_an_emitted_driver() {
+    let out = build(&quests_doc("", "", true));
+    let fns: Vec<String> = out
+        .keys()
+        .filter_map(|p| p.strip_prefix("datapack/data/hello-world/function/"))
+        .filter_map(|n| n.strip_suffix(".mcfunction"))
+        .map(str::to_string)
+        .collect();
+    let mut calls = 0usize;
+    for body in out.values() {
+        let Ok(text) = std::str::from_utf8(body) else {
+            continue;
+        };
+        for word in text.split_whitespace() {
+            if let Some(name) = word.strip_prefix("hello-world:")
+                && name.starts_with("mv_")
+            {
+                calls += 1;
+                assert!(
+                    fns.iter().any(|f| f == name),
+                    "`{name}` is called but not emitted"
+                );
+            }
+        }
+    }
+    assert!(calls >= 2, "both walk calls were found ({calls})");
+}
