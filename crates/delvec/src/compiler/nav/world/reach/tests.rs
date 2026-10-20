@@ -79,6 +79,10 @@ fn an_open_floor_is_reached_and_credited_from_the_template() {
 /// The Bell yard (spec-0113 §9): a yard walled three high, a stone inside,
 /// and a buttress against the wall one cell diagonally across from the stone.
 pub(in crate::compiler::nav) fn bell_yard() -> World {
+    bell_yard_build().world(Ambient::Void, Vec::new())
+}
+
+fn bell_yard_build() -> Build {
     let mut b = Build::default();
     b.fill([-6, 0, -6], [20, 0, 20]);
     // The wall ring, three high, around [0..14]².
@@ -90,7 +94,56 @@ pub(in crate::compiler::nav) fn bell_yard() -> World {
     // The stone, one high, and the buttress, two high, against the east wall.
     b.fill([10, 1, 10], [10, 1, 10]);
     b.fill([12, 1, 12], [13, 2, 12]);
-    b.world(Ambient::Void, Vec::new())
+    b
+}
+
+/// The flight memo and the node bank are accelerators: every node a graph
+/// took from them — a node banked by an earlier graph of the same window, a
+/// node re-flown run by run beside the cells that changed, a launch answered
+/// from a flight that met the same cells — is the node one pass over every
+/// launch, flown here, gives. The Bell yard, then the yard with a doorway
+/// opened in its north wall (one window, two configurations).
+#[test]
+fn a_node_from_the_memo_and_the_bank_is_the_node_flying_gives() {
+    let root = [[5, 1, 5]];
+    let first = bell_yard();
+    let _ = first.body_reach(&root);
+    let mut b = bell_yard_build();
+    b.solid.remove(&[7, 1, 0]);
+    b.solid.remove(&[7, 2, 0]);
+    let opened = b.world(Ambient::Void, Vec::new());
+    let r = opened.body_reach(&root);
+    assert!(r.states.contains_key(&[7, 1, -1]), "the doorway is walked");
+    let params = ReachParams::shipped(opened.unbounded_fall);
+    let memo = opened.graph_memo(&params);
+    let flown: Vec<(FlownKey, Arc<NodeEdges>)> = memo
+        .flown
+        .lock()
+        .expect("memo")
+        .iter()
+        .map(|(k, e)| (*k, Arc::clone(e)))
+        .collect();
+    for (key, e) in &flown {
+        let fresh = opened.expand(&memo, &params, key.0, key.1, None);
+        assert_eq!(fresh.kind, e.kind, "{key:?}");
+        assert_eq!(fresh.edges, e.edges, "{key:?}");
+        assert_eq!(fresh.leaves_world, e.leaves_world, "{key:?}");
+        assert_eq!(fresh.dies, e.dies, "{key:?}");
+        assert_eq!(fresh.simulated, e.simulated, "{key:?}");
+        assert_eq!(fresh.credited, e.credited, "{key:?}");
+        assert_eq!(fresh.read, e.read, "{key:?}");
+    }
+    eprintln!(
+        "agreement: {} flown node(s) of the opened yard re-flown and equal; {} node(s) banked twice, {} run(s) taken as written",
+        flown.len(),
+        memo.bank.revisited(),
+        memo.bank.reused_runs()
+    );
+    // Bound, not vacuous: both graphs flew nodes of the one bank, and some
+    // re-flown node took a run as written.
+    assert!(!flown.is_empty());
+    assert!(memo.bank.revisited() > 0);
+    assert!(memo.bank.reused_runs() > 0);
 }
 
 #[test]

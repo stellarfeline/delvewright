@@ -184,6 +184,7 @@ struct Variant {
 pub(super) struct Expansion<'a> {
     pub(super) track: Track<'a>,
     prior: Option<Prior>,
+    bank: &'a Bank,
     runs: RefCell<Vec<Run>>,
 }
 
@@ -215,6 +216,9 @@ impl Expansion<'_> {
             }
             self.track.extend(b);
         }
+        self.bank
+            .reused
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Some(run.summary.clone())
     }
 
@@ -228,6 +232,8 @@ impl Expansion<'_> {
 #[derive(Default)]
 pub(super) struct Bank {
     nodes: Mutex<HashMap<super::FlownKey, Vec<Arc<Variant>>>>,
+    /// Runs taken as written, for the agreement test's binding.
+    reused: std::sync::atomic::AtomicU64,
 }
 
 /// How many variants of one node the bank keeps: a bound on its memory, never
@@ -261,7 +267,7 @@ impl Bank {
     /// cells is one the node's own queries read (`node`) and the volumes near
     /// it are the same.
     pub(super) fn expansion<'a>(
-        &self,
+        &'a self,
         key: &super::FlownKey,
         dense: &'a Dense,
         extra: &[u16],
@@ -295,6 +301,7 @@ impl Bank {
         Expansion {
             track: Track::new(dense),
             prior: best,
+            bank: self,
             runs: RefCell::new(Vec::new()),
         }
     }
@@ -320,6 +327,25 @@ impl Bank {
                 edges: Arc::clone(edges),
             }));
         }
+    }
+}
+
+impl Bank {
+    /// How many runs this bank's expansions took as written.
+    #[cfg(test)]
+    pub(super) fn reused_runs(&self) -> u64 {
+        self.reused.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// How many nodes it holds two or more variants of.
+    #[cfg(test)]
+    pub(super) fn revisited(&self) -> usize {
+        self.nodes
+            .lock()
+            .expect("bank")
+            .values()
+            .filter(|v| v.len() > 1)
+            .count()
     }
 }
 
