@@ -3112,6 +3112,30 @@
       "note": "Carried by DW1026 (compiler::presence, validation funnel): NPC and actor declarations that carry one visible name are one character; every story state of every configuration (the replay's journal, one effect list per tick, from world init) that leaves two of them in the world is refused. On this campaign's records it refuses the three Ivo Marrack skiff bodies spawned in one list (`obj/the-pillars`) and the four Sleeper NPCs on stage from world init.",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "dialogue.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "dlg/"
+          }
+        }
+      },
+      "campaign": "the-stripped-town",
+      "carrier": {
+        "code": "DW1049",
+        "kind": "dw"
+      },
+      "finding": "a quest hint and the line that answers it placed a house by a compass side of the street, which a player with no compass on screen could not act on",
+      "general_form": "a direction in player-facing text names what the player sees: a place is said from the player's own body or from a landmark they can see, never by a compass point",
+      "id": "sst-01",
+      "note": "Carried by DW1049 (dsl::compass, validation funnel): every line of the English l10n inventory but a declared name is split into words, and a cardinal or intercardinal direction word that no declared name covers is refused, naming the key and the word. The binding counts the dialogue nodes, each of which carries a line DW1049 judges; on this campaign it refused the objective hint and Ansel's answer to which house.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"

@@ -406,7 +406,7 @@
       {
         "damage_type": "fire",
         "id": "lethal/east-pit",
-        "message": "The floor along the north wall is molten stone.",
+        "message": "The floor along that wall is molten stone.",
         "region": {
           "anchor": "anchor/east-pit",
           "extent": [
@@ -892,7 +892,7 @@
               "text": "They reach the counter.",
               "verb": "arrives"
             },
-            "hint": "The Factor keeps the counter on the east side of the near hall.",
+            "hint": "The Factor keeps the counter in the near hall.",
             "id": "obj/reach-the-counter",
             "radius": 3,
             "requires_flags": [
@@ -1835,7 +1835,7 @@
               "text": "They climb the ladder on the cabin's wall and come out on its roof.",
               "verb": "arrives"
             },
-            "hint": "Up the ladder on the cabin's east wall.",
+            "hint": "Up the ladder on the cabin's wall.",
             "id": "obj/climb-onto-the-cabin",
             "radius": 1,
             "requires_flags": [
@@ -3153,7 +3153,7 @@
             },
             "id": "obj/look-in-the-east-bay",
             "radius": 3,
-            "title": "Look into the east bay",
+            "title": "Look into one side bay",
             "type": "reach-anchor"
           },
           {
@@ -3165,7 +3165,7 @@
             },
             "id": "obj/look-in-the-west-bay",
             "radius": 3,
-            "title": "Look into the west bay",
+            "title": "Look into the other side bay",
             "type": "reach-anchor"
           },
           {
