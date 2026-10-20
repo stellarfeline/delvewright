@@ -17,6 +17,6 @@
     "title": "Probe: a deck of water",
     "weather": "clear"
   },
-  "dsl_version": "0.49.0",
+  "dsl_version": "0.53.0",
   "stage": "world"
 }
