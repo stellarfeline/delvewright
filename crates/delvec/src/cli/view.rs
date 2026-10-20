@@ -92,12 +92,17 @@ pub(crate) fn run_snapshot(
         delvec::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
         delvec::compiler::nav::Premises::geometry_only(),
     );
+    // The world a `pov/…` shot's leg is routed in: the build's
+    // (`walk_world`), never the geometry above — a leg that ends at a holder
+    // `collect` ends at the stance the build chose, so the camera on it is
+    // the build's camera.
+    let walk = walk_world(&plan, &assembled, &structures);
     let blocks = assembled.blocks;
     let grid = snapshot::VoxelGrid::build(&blocks);
     snapshot::report_unpainted(&grid);
     let assembled_ms = started.elapsed().as_secs_f64() * 1000.0;
 
-    let cam = match resolve_camera(&plan, &prefabs, &grid, &world, &args) {
+    let cam = match resolve_camera(&plan, &prefabs, &grid, &world, &walk, &args) {
         Ok(c) => c,
         Err(msg) => {
             eprintln!("error: {msg}");
@@ -336,6 +341,23 @@ fn camera_world(
         delvec::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
         delvec::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone()),
     )
+}
+
+/// The world the build's critical-path routes are walked in: the camera's
+/// world ([`camera_world`]) with each holder `collect`'s leg ending at the
+/// stance the build's stance pass chose (`holders::walk_world`). A tool that
+/// draws or stands on the critical path reads it here, so its legs are the
+/// build's legs.
+fn walk_world(
+    plan: &Plan,
+    assembled: &delvec::compiler::assembled::Assembled,
+    structures: &std::collections::BTreeMap<String, Vec<u8>>,
+) -> delvec::compiler::nav::World {
+    let owned = delvec::compiler::holders::own_holders(
+        plan,
+        &delvec::compiler::holders::placed_holders(plan, structures),
+    );
+    delvec::compiler::holders::walk_world(plan, camera_world(plan, assembled), &owned).world
 }
 
 /// The bytes a camera's world starts from
@@ -605,6 +627,7 @@ fn resolve_camera(
     prefabs: &PrefabRegistry,
     grid: &delvec::compiler::snapshot::VoxelGrid,
     world: &delvec::compiler::nav::World,
+    walk: &delvec::compiler::nav::World,
     args: &SnapshotArgs<'_>,
 ) -> Result<delvec::compiler::snapshot::Camera, String> {
     use delvec::compiler::snapshot::{Camera, DEFAULT_FOV, DEFAULT_ORBIT_DIST};
@@ -661,7 +684,7 @@ fn resolve_camera(
     }
 
     if let Some(id) = args.shot {
-        return camera_from_shot(plan, prefabs, world, id);
+        return camera_from_shot(plan, prefabs, world, walk, id);
     }
 
     // Default: a dollhouse overview of the whole layout from the south-east,
@@ -750,6 +773,7 @@ fn camera_from_shot(
     plan: &Plan,
     prefabs: &PrefabRegistry,
     world: &delvec::compiler::nav::World,
+    walk: &delvec::compiler::nav::World,
     id: &str,
 ) -> Result<delvec::compiler::snapshot::Camera, String> {
     use delvec::compiler::render_plan;
@@ -758,12 +782,12 @@ fn camera_from_shot(
     // The path the build reads: the links the route proof takes spliced in
     // (spec-0083), so a `pov/…` id names the leg the build's own render plan
     // named.
-    let relinked = delvec::compiler::nav::with_links_taken(plan, prefabs, world)
+    let relinked = delvec::compiler::nav::with_links_taken(plan, prefabs, walk)
         .map_err(|f| format!("{}: {}", f.code, f.message))?;
     let plan = relinked.as_ref().unwrap_or(plan);
     let pov = if id.starts_with("pov/") {
-        let routes = delvec::compiler::nav::critical_path_routes(plan, world);
-        render_plan::pov_shots(plan, &routes)
+        let routes = delvec::compiler::nav::critical_path_routes(plan, walk);
+        render_plan::pov_shots(plan, &routes, walk)
     } else {
         Vec::new()
     };
@@ -853,10 +877,7 @@ pub(crate) fn run_blocking_chart(
     // premise set draws a corridor no proof ever walked. A route through a
     // declared lethal volume was exactly that: a line on the blocking chart the
     // author could read as cleared.
-    let world = delvec::compiler::nav::World::from_occupancy(
-        delvec::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
-        delvec::compiler::nav::Premises::of_plan(&plan, assembled.gate_seals.clone()),
-    );
+    let world = walk_world(&plan, &assembled, &structures);
     let blocks = assembled.blocks;
     let targets = delvec::compiler::snapshot::collect_targets(&plan);
     // The build's path: the links the route proof takes spliced in (spec-0083).

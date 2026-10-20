@@ -963,7 +963,7 @@ pub(super) fn prove_world(
                 // a render plan can be built (`PlannedShots::into_document`) —
                 // this used to be a POV-only check here, which is exactly why the
                 // identical defect on a seam camera was invisible.
-                pov_shots = crate::compiler::render_plan::pov_shots(plan, &routes);
+                pov_shots = crate::compiler::render_plan::pov_shots(plan, &routes, world);
                 // spec-0025 branch navigation, made first-class. The
                 // DW0311 proof above quantifies over the DEFAULT playthrough
                 // only, and the waypoint export followed it — so a branch run

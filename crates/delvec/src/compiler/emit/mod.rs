@@ -574,7 +574,7 @@ pub fn build_with_warnings(
     // (arrangement), `DW1037` (a holder the party cannot take from), `DW1038`
     // (a runtime edit reaches a holder).
     let owned_holders = crate::compiler::holders::own_holders(plan, &entity_holders);
-    let (container_census, holder_stances) =
+    let (container_census, holder_stances, world) =
         {
             let blocks = &assembled.blocks;
             let claims = crate::compiler::holders::claims_of(plan, blocks, &entity_holders);
@@ -595,13 +595,10 @@ pub fn build_with_warnings(
             // place still standing in its stand-in owes its containers to its
             // detail, so a notice over no scenery is judged there.
             .deferring(plan.blockout.as_ref().map_or(&[][..], |b| &b.massed[..]));
-            let reachable = if owned_holders.iter().any(|o| o.is_filled()) {
-                world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan))
-            } else {
-                BTreeSet::new()
-            };
-            let (stances, (unsupported, unreachable), stance_verdict) =
-                crate::compiler::holders::check_stance(&world, &owned_holders, &reachable);
+            let walked = crate::compiler::holders::walk_world(plan, world, &owned_holders);
+            let (unsupported, unreachable) = walked.counts;
+            let stances = walked.stances;
+            let stance_verdict = walked.verdict;
             let census = census.with_stance(unsupported, unreachable);
             eprintln!("{}", census.line());
             census
@@ -630,15 +627,12 @@ pub fn build_with_warnings(
              reaching a holder (DW1038).",
                 owned_holders.len()
             );
-            (census, stances)
+            (census, stances, walked.world)
         };
-    // A leg that ends at a holder `collect` ends at the stance the pass chose
-    // (spec-0111 §5.2), never inside the holder the block model reads as air:
-    // every route proof, waypoint and the critical-path step read one stance.
-    let world = world.with_holder_stances(crate::compiler::holders::collect_stances(
-        &owned_holders,
-        &holder_stances,
-    ));
+    // From here `world` is `holders::walk_world`'s: a leg that ends at a
+    // holder `collect` ends at the stance the pass chose (spec-0111 §5.2),
+    // never inside the holder the block model reads as air — every route
+    // proof, waypoint and the critical-path step read one stance.
 
     // What the camera reads in each carried place (spec-0080 §2.2): its fog
     // and sky are the client's blend over the 4-cells within `BLEND_REACH`, so

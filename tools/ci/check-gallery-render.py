@@ -19,6 +19,10 @@ a reviewer cannot check by eye across thirty-five frames:
   from its manifest. A render that succeeds, writes a file and is a rectangle of
   flat background looks like one more shot taken to a directory listing, to a
   contact sheet, and to a reviewer skimming.
+- **every frame is drawn at the build's camera.** `delvec snapshot --shot`
+  re-derives a camera from the campaign; the manifest's camera is compared
+  with the camera the build's `render-plan.json` states, so a frame judged here
+  is a frame the build planned and never a second opinion about it.
 - **every view manifest states a non-zero binding** (`DW0726` discipline): a
   shot that framed no target is a camera aimed at nothing, and the count is the
   only thing that separates it from a good one.
@@ -47,6 +51,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -67,6 +72,28 @@ def die(msg: str) -> None:
 
 def safe(shot_id: str) -> str:
     return shot_id.replace("/", "_")
+
+
+def planned_aim(camera: dict) -> tuple[list[float], float, float]:
+    """The build's camera as Minecraft pos/yaw/pitch: `snapshot::Camera::looking_at`
+    over the render plan's `pos`/`look_at`, the bridge `delvec snapshot --shot` takes."""
+    pos, look = camera["pos"], camera["look_at"]
+    d = [look[i] - pos[i] for i in range(3)]
+    horiz = math.hypot(d[0], d[2])
+    if horiz < 1e-9 and abs(d[1]) < 1e-9:
+        return pos, 0.0, 0.0
+    return pos, math.degrees(math.atan2(-d[0], d[2])), math.degrees(math.atan2(-d[1], horiz))
+
+
+def same_camera(planned: dict, drawn: dict) -> bool:
+    """Whether the manifest's camera (rounded to 3 decimals) is the build's."""
+    pos, yaw, pitch = planned_aim(planned)
+    dyaw = (drawn["yaw"] - yaw + 180.0) % 360.0 - 180.0
+    return (
+        all(abs(drawn["pos"][i] - pos[i]) <= 0.002 for i in range(3))
+        and abs(dyaw) <= 0.002
+        and abs(drawn["pitch"] - pitch) <= 0.002
+    )
 
 
 def main() -> int:
@@ -91,6 +118,7 @@ def main() -> int:
         for s in emitted.get("shots", [])
     ]
     declared.sort(key=lambda s: s["id"])
+    planned = {s["id"]: s.get("camera") for s in emitted.get("shots", [])}
 
     if args.write:
         PLAN.write_text(
@@ -169,7 +197,7 @@ def main() -> int:
 
     # ------------------------------------------------------------ produce ----
     frames.mkdir(parents=True, exist_ok=True)
-    produced, refused, findings = 0, [], []
+    produced, refused, findings, agreed = 0, [], [], 0
     def shoot(v: dict) -> subprocess.CompletedProcess:
         return subprocess.run(
             [
@@ -215,6 +243,21 @@ def main() -> int:
                     f"{man} carries no `frame` block. The producer states the verdict; a "
                     "consumer computing its own would be a second authority on it."
                 )
+            # The frame judged is the build's frame. `--shot` re-derives the
+            # camera from the campaign; a camera the build never planned is a
+            # second authority on where a camera stands, and every count below
+            # would be about a picture nobody ships.
+            cam = planned.get(v["id"])
+            if cam is not None and same_camera(cam, doc.get("camera", {})):
+                agreed += 1
+            else:
+                findings.append(
+                    f"{v['id']}: the snapshot drew a camera the build did not plan "
+                    f"(build {cam and cam.get('pos')} → {cam and cam.get('look_at')}; "
+                    f"snapshot {doc.get('camera', {}).get('pos')} yaw "
+                    f"{doc.get('camera', {}).get('yaw')} pitch "
+                    f"{doc.get('camera', {}).get('pitch')})"
+                )
             if frame.get("featureless") is not None:
                 findings.append(
                     f"{v['id']}: the frame is FEATURELESS "
@@ -233,6 +276,7 @@ def main() -> int:
         f"gallery render: {len(committed)} view(s) declared, {produced} produced, "
         f"{len(refused)} refused, {len(findings)} finding(s)."
     )
+    print(f"  {agreed} of {produced} produced frame(s) drawn at the build's camera.")
     for rid, why in refused:
         print(f"  refused: {rid} — {why[0] if why else 'no reason given'}")
 

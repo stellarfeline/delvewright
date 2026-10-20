@@ -1420,6 +1420,46 @@ pub struct Stance {
     pub cells: Vec<[i32; 3]>,
 }
 
+/// What [`walk_world`] found: the world a route is walked in, and the stance
+/// pass's own answer the build judges (`DW1037`).
+pub struct Walked {
+    /// `world` with each holder `collect`'s stance
+    /// ([`crate::compiler::nav::World::with_holder_stances`]).
+    pub world: crate::compiler::nav::World,
+    /// Each holder's stance cells, in [`own_holders`] order.
+    pub stances: Vec<Stance>,
+    /// `(unsupported, unreachable)`.
+    pub counts: (usize, usize),
+    /// `DW1037`, or nothing.
+    pub verdict: Result<(), Failure>,
+}
+
+/// **The world every critical-path route is walked in** (spec-0111 §5.2):
+/// the stance pass over `world` for the holders `owned`, from the cells the
+/// party can walk to, and `world` ending each holder `collect`'s leg at the
+/// stance that pass chose. The build's route proof and every tool that reads
+/// the critical path (`delvec snapshot --shot pov/…`, `delvec blocking-chart`)
+/// take it here, so a leg ends where the build's does.
+pub fn walk_world(
+    plan: &Plan,
+    world: crate::compiler::nav::World,
+    owned: &[OwnedHolder],
+) -> Walked {
+    let reachable = if owned.iter().any(|o| o.is_filled()) {
+        world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan))
+    } else {
+        std::collections::BTreeSet::new()
+    };
+    let (stances, counts, verdict) = check_stance(&world, owned, &reachable);
+    let world = world.with_holder_stances(collect_stances(owned, &stances));
+    Walked {
+        world,
+        stances,
+        counts,
+        verdict,
+    }
+}
+
 /// **The stance pass** (spec-0111 §5.2): every holder is kept by the game —
 /// a frame's support solid and its own cell clear, a stand's foot cell
 /// standable — and every filled holder has a standable, walk-reachable cell

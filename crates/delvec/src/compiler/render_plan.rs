@@ -264,9 +264,16 @@ pub fn eye_cell(eye: [f64; 3]) -> [i32; 3] {
 /// critical-path routes: one camera at eye height on every corner-thinned waypoint
 /// (the same thinning the harness replays — turns + endpoints, never every cell),
 /// oriented along the walk toward the next waypoint, and — at each leg's final
-/// waypoint — toward the objective anchor it arrives at. Pure and deterministic
-/// (route order → waypoint order; no RNG/clock), so it rides the ADR-0006 gate.
-pub fn pov_shots(plan: &Plan, routes: &[LegRoute]) -> Vec<PovShot> {
+/// waypoint — toward the objective anchor it arrives at. A walking frame whose
+/// aim frames nothing the campaign declares looks farther along the leg
+/// ([`walking_aim`]). Pure and deterministic (route order → waypoint order; no
+/// RNG/clock), so it rides the ADR-0006 gate.
+pub fn pov_shots(
+    plan: &Plan,
+    routes: &[LegRoute],
+    world: &crate::compiler::nav::World,
+) -> Vec<PovShot> {
+    let targets = crate::compiler::snapshot::collect_targets(plan);
     let mut shots = Vec::new();
     for (leg, route) in routes.iter().enumerate() {
         // The cells a climb holds in between its ends are no stop (spec-0099):
@@ -301,13 +308,8 @@ pub fn pov_shots(plan: &Plan, routes: &[LegRoute]) -> Vec<PovShot> {
                 cell[2] as f64 + 0.5,
             ];
             let (look_at, arriving) = if wp < last {
-                let n = wps[wp + 1];
                 (
-                    [
-                        n[0] as f64 + 0.5,
-                        n[1] as f64 + EYE_HEIGHT,
-                        n[2] as f64 + 0.5,
-                    ],
+                    walking_aim(world, &targets, eye, &wps[wp + 1..]),
                     Arrival::Walking,
                 )
             } else {
@@ -340,6 +342,51 @@ pub fn pov_shots(plan: &Plan, routes: &[LegRoute]) -> Vec<PovShot> {
         }
     }
     shots
+}
+
+/// Where a walking frame looks: the next waypoint's eye, the way the player
+/// walks, when that frame holds a declared target in frame by the one sight
+/// rule (`framing::sight` through [`crate::compiler::snapshot::resolve_targets`],
+/// the snapshot's own count, at its default frame) — the question
+/// `tools/ci/check-gallery-render.py` asks of every view. When it holds none,
+/// the eye of the first later waypoint of the leg whose frame holds a declared
+/// target both in frame and in sight: the player looking farther along the
+/// walk, to the next thing there is to see. A turned frame owes a clear line
+/// as well, so a camera never turns to face a wall a target stands behind.
+/// When no later waypoint answers, the frame keeps the next waypoint, and the
+/// view gate names it as framing nothing.
+fn walking_aim(
+    world: &crate::compiler::nav::World,
+    targets: &[crate::compiler::snapshot::Target],
+    eye: [f64; 3],
+    ahead: &[[i32; 3]],
+) -> [f64; 3] {
+    let eye_of = |c: &[i32; 3]| {
+        [
+            c[0] as f64 + 0.5,
+            c[1] as f64 + EYE_HEIGHT,
+            c[2] as f64 + 0.5,
+        ]
+    };
+    let frames = |look_at: [f64; 3], in_sight: bool| {
+        let cam = crate::compiler::snapshot::Camera::looking_at(
+            eye,
+            look_at,
+            crate::compiler::snapshot::DEFAULT_FOV,
+        );
+        let opts = crate::compiler::snapshot::FrameOpts::default();
+        let (inside, _) = crate::compiler::snapshot::resolve_targets(world, &cam, &opts, targets);
+        inside.iter().any(|r| !in_sight || !r.occluded)
+    };
+    let next = eye_of(&ahead[0]);
+    if frames(next, false) {
+        return next;
+    }
+    ahead[1..]
+        .iter()
+        .map(eye_of)
+        .find(|a| frames(*a, true))
+        .unwrap_or(next)
 }
 
 /// What a POV frame is a frame OF, which is also what its `expect` line may
