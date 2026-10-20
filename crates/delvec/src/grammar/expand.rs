@@ -176,6 +176,9 @@ pub struct Anchor {
     /// metadata (spec-0046). `None` for a mark that declared none, which is
     /// nearly all of them.
     pub role: Option<crate::grammar::export::AnchorRole>,
+    /// The item holder the mark places at the anchor (spec-0111 §3.2), which
+    /// the export writes into the piece's `entities` list.
+    pub holder: Option<crate::grammar::ir::HolderMark>,
     /// The rule that declared it. Provenance for review, and the other half of
     /// a collision report.
     pub declared_by: String,
@@ -1750,6 +1753,7 @@ impl<'a> Expander<'a> {
             ],
             facing,
             role: mark.role,
+            holder: mark.holder.clone(),
             declared_by: symbol.to_string(),
         };
         if let Some(first) = self.anchors.get(&name) {

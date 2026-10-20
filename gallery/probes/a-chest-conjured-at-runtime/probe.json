@@ -1,0 +1,13 @@
+{
+  "code": "DW1019",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/on_objective_complete/obj~1press-the-case/1/block",
+      "value": "minecraft:chest"
+    }
+  ],
+  "units": [],
+  "why": "The pedestal's `set-block` made to place a chest instead of a sea lantern. A container placed at runtime stands empty for ever, because every fill runs at `setup_finish`, before it exists. It declares no unit: `set-block.block` is bound in the primary. A container in a delve is a `collect`'s own chest or a container the piece places, filled by `loot`."
+}

@@ -574,7 +574,7 @@ fn a_boxed_audience_excludes_the_watcher_but_a_boxed_status_effect_is_allowed() 
         .unwrap();
     let mut boxed = 0;
     for e in beat.iter_mut() {
-        if matches!(e.verb, Verb::Narrate { .. } | Verb::GiveItem { .. }) {
+        if matches!(e.verb, Verb::Narrate(..) | Verb::GiveItem { .. }) {
             e.within = Some(zone.clone());
             boxed += 1;
         }

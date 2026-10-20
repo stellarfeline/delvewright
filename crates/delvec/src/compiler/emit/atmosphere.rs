@@ -46,13 +46,15 @@ pub(super) fn atmosphere_repaint_plan(plan: &Plan) -> Option<serde_json::Value> 
             return;
         };
         // A nested list fires at a moment its root's marker does not mark: a
-        // `sequence` step at its offset, an arrival, a rest, a respawn, a catch.
+        // `sequence` step at its offset, an arrival, a rest, a respawn, a catch,
+        // a camera's return (a cutscene's `then`).
         let top_level = ![
             "/steps/",
             "/on_respawn/",
             "/on_rest/",
             "/on_caught/",
             "/on_arrive/",
+            "/then/",
         ]
         .iter()
         .any(|seg| path.contains(seg));

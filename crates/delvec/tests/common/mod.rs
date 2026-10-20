@@ -527,7 +527,7 @@ pub fn declare_story(
                             o["hint"] = serde_json::json!("The wave comes to you here.");
                         }
                     }
-                    if kind == "collect" && o.get("container").is_some() {
+                    if kind == "collect" && o.get("holder").is_some() {
                         if o.get("title").is_none() {
                             o["title"] = serde_json::json!(format!("Collect: {oid}"));
                         }
@@ -1320,4 +1320,169 @@ pub fn plan_structures_with_trap_triggers(
         }
     }
     out
+}
+
+/// **A hello-world campaign furnished with containers** (spec-0105), written to
+/// `dst`: `blocks` are container blocks a stage-7 batch sets at offsets from
+/// `anchor/keeper-stand` (each one cell), `collect` replaces the reach
+/// objective with a `collect` whose own chest the compiler places at that
+/// anchor, and `notice` declares `containers.decoration_notice`. The one
+/// fixture every container-census test and remedy row builds from.
+pub fn container_campaign(
+    dst: &Path,
+    blocks: &[([i32; 3], &str)],
+    collect: Option<&str>,
+    notice: bool,
+) -> PathBuf {
+    let _ = std::fs::remove_dir_all(dst);
+    copy_dir_all(&hello_world_dir(), dst);
+    patch_file(&dst.join("quests.json"), |q| {
+        let c = &mut q["content"];
+        if let Some(anchor) = collect {
+            c["quests"][0]["objectives"][1] = serde_json::json!({
+                "type": "collect", "id": "obj/exit", "item": "minecraft:bread", "count": 1,
+                "anchor": anchor, "after": ["obj/talk"],
+                "happening": {"text": "the party takes the bread", "verb": "gains"}
+            });
+        }
+        if notice {
+            c["containers"] = serde_json::json!({
+                "decoration_notice": {"text": "The keep was stripped bare before you came.", "sound": "minecraft:block.barrel.close"}
+            });
+        }
+    });
+    if !blocks.is_empty() {
+        let mut edits = Vec::new();
+        for (i, (off, block)) in blocks.iter().enumerate() {
+            edits.push(serde_json::json!({
+                "verb": "select", "name": format!("region/c{i}"),
+                "shape": {"frame": {"kind": "anchor-relative", "anchor": "anchor/keeper-stand"},
+                          "kind": "box", "min": off, "max": off}
+            }));
+            edits.push(serde_json::json!({
+                "verb": "fill", "region": format!("region/c{i}"),
+                "recipe": {"blocks": [{"block": block, "weight": 1.0}]}
+            }));
+        }
+        let doc = serde_json::json!({
+            "dsl_version": delvewright_dsl::DSL_VERSION,
+            "campaign_id": "hello-world",
+            "stage": "world-edits",
+            "content": {"batches": [{"area": "area/keep", "id": "batch/containers", "edits": edits}]}
+        });
+        std::fs::write(
+            dst.join("world-edits.json"),
+            serde_json::to_string_pretty(&doc).unwrap(),
+        )
+        .unwrap();
+    }
+    dst.to_path_buf()
+}
+
+// ---------------------------------------------------------------------------
+// spec-0111: hello-room carrying item holders
+// ---------------------------------------------------------------------------
+
+/// One template entity: `id` at local `cell`, with `extra` keys in its `nbt`.
+pub fn holder_entity(
+    id: &str,
+    cell: [i32; 3],
+    frame: bool,
+    extra: &[(&str, delvec::admit::Nbt)],
+) -> delvec::admit::Nbt {
+    let mut nbt = std::collections::BTreeMap::new();
+    nbt.insert("id".to_string(), delvec::admit::Nbt::String(id.to_string()));
+    for (k, v) in extra {
+        nbt.insert((*k).to_string(), v.clone());
+    }
+    let mut c = std::collections::BTreeMap::new();
+    let y = f64::from(cell[1]) + if frame { 0.5 } else { 0.0 };
+    c.insert(
+        "pos".to_string(),
+        delvec::admit::Nbt::List(vec![
+            delvec::admit::Nbt::Double(f64::from(cell[0]) + 0.5),
+            delvec::admit::Nbt::Double(y),
+            delvec::admit::Nbt::Double(f64::from(cell[2]) + 0.5),
+        ]),
+    );
+    c.insert(
+        "blockPos".to_string(),
+        delvec::admit::Nbt::List(cell.iter().map(|v| delvec::admit::Nbt::Int(*v)).collect()),
+    );
+    c.insert("nbt".to_string(), delvec::admit::Nbt::Compound(nbt));
+    delvec::admit::Nbt::Compound(c)
+}
+
+/// The west-wall frame (facing east, hung on the wall at x = 0) and the stand
+/// on the floor of hello-room, as local cells.
+pub const FRAME: [i32; 3] = [1, 2, 2];
+pub const STAND: [i32; 3] = [8, 1, 2];
+
+/// A private copy of the pinned library whose hello-room carries `entities`,
+/// with `anchor/frame` and `anchor/rack` declared at the frame's and the
+/// stand's cells.
+pub fn holder_prefabs(dst: &Path, entities: Vec<delvec::admit::Nbt>) -> PathBuf {
+    let _ = std::fs::remove_dir_all(dst);
+    copy_dir_all(&prefabs_dir(), dst);
+    let nbt = dst.join("hello-room.nbt");
+    let mut s = delvec::admit::structure::Structure::read(&std::fs::read(&nbt).unwrap()).unwrap();
+    s.entities = entities;
+    std::fs::write(&nbt, s.write()).unwrap();
+    patch_file(&dst.join("hello-room.json"), |m| {
+        m["anchors"]["anchor/frame"] = serde_json::json!({"pos": FRAME, "facing": "east"});
+        m["anchors"]["anchor/rack"] = serde_json::json!({"pos": STAND, "facing": "south"});
+    });
+    dst.to_path_buf()
+}
+
+pub fn frame_entity() -> delvec::admit::Nbt {
+    holder_entity(
+        "minecraft:glow_item_frame",
+        FRAME,
+        true,
+        &[("Facing", delvec::admit::Nbt::Byte(5))],
+    )
+}
+
+pub fn stand_entity() -> delvec::admit::Nbt {
+    holder_entity(
+        "minecraft:armor_stand",
+        STAND,
+        false,
+        &[("ShowArms", delvec::admit::Nbt::Byte(0))],
+    )
+}
+
+/// The story world whose plan row realizes declared branch `id` (spec-0108
+/// §4.3: `validation/branch-plan.json`'s rows are worlds, each naming the
+/// branches its flags realize) — its index `k`, for `world-path-<k>.json`,
+/// `world-waypoints-<k>.json` and `world-chronicle-<k>.md`.
+pub fn world_of_branch(plan: &serde_json::Value, id: &str) -> usize {
+    plan["branches"]
+        .as_array()
+        .expect("the plan has rows")
+        .iter()
+        .find(|w| {
+            w["branches"]
+                .as_array()
+                .is_some_and(|bs| bs.iter().any(|b| b == id))
+        })
+        .and_then(|w| w["id"].as_str())
+        .and_then(|s| s.strip_prefix("world/"))
+        .and_then(|k| k.parse().ok())
+        .unwrap_or_else(|| panic!("no world realizes {id}: {plan:#}"))
+}
+
+/// [`world_of_branch`] over a build's output map: the `validation/` file of the
+/// world realizing `id`, `what` being `path` or `waypoints`.
+pub fn world_file_of(out: &delvec::compiler::emit::BuildOutput, id: &str, what: &str) -> String {
+    let plan: serde_json::Value = serde_json::from_slice(
+        out.get("validation/branch-plan.json")
+            .expect("the build exports a branch plan"),
+    )
+    .expect("the plan is JSON");
+    format!(
+        "validation/world-{what}-{}.json",
+        world_of_branch(&plan, id)
+    )
 }

@@ -83,7 +83,26 @@ BLOCK_RULE_MARKERS = (
     "invariants::assert_blocks_are_real(",
     "registry.validate(",
     "BlockRegistry::validate",
+    # The grammar export's own spelling gate, which judges every palette state
+    # of an expansion against the pinned registry before a byte is written.
+    "refuse_unknown_states(",
 )
+
+# How a file shows it judged the ENTITIES it writes (spec-0111 §3.1): a piece
+# carries item holders saying what they look like, and nothing else. Two
+# spellings of one rule — the engine's entity judge, and the generators' own
+# invariant over the same holder table (`delvewright_dsl::holders`).
+ENTITY_RULE_MARKERS = (
+    "entities::judge(",
+    "invariants::assert_entities_are_holders(",
+)
+
+# An `entities` field initialised to anything but an empty list: the emitter
+# writes entities. A type (`entities: Vec<…>`, `&[…]`) is not an initialiser.
+# The same, spelled as a dynamic NBT key: `"entities"` inserted with anything
+# but an empty list.
+WRITES_ENTITIES_KEY = re.compile(r'"entities"(?!\.to_string\(\),\s*(?:\w+::)*List\(vec!\[\]\))')
+WRITES_ENTITIES = re.compile(r"\bentities:\s*(?!Vec::new\(\)|vec!\[\]|Vec<|&|Option<)\S")
 
 # How a file shows it derived its connection states rather than leaving them to
 # the default that means disconnected: the piece goes through the one authority
@@ -94,6 +113,16 @@ CONNECTION_RULE_MARKERS = ("connections::resolve(",)
 # Named individually and printed on every run, for the same reason NOT_EMITTERS
 # is: a class exemption is what hid the sixth emitter.
 NOT_CONNECTION_EMITTERS = {
+    "crates/delvec/src/grammar/export.rs": (
+        "the grammar export. It derives no connection because it accepts none it would have to: "
+        "`refuse_unknown_states` refuses, before a byte is written, every palette state that "
+        "omits a shape-carrying property (`ExportError::ShapeOmissions`, the `DW0735` rule at the "
+        "writer), so each connection a program's walls, fences and panes carry is one the program "
+        "wrote. It entered this check by writing a template's `entities` (spec-0111 §3.2) through "
+        "`fastnbt::to_bytes`; its blocks still go through `convert::build_region`. The derivation "
+        "lives in `prefab-invariants`, in the `prefabs/` workspace, which `delvec` does not depend "
+        "on."
+    ),
     "crates/delvec/src/compiler/surround.rs": (
         "the horizon surround generator, and the only NON-fixture entry here. Its vocabulary is "
         "rock, ground, logs, leaves and ground cover, and not one of those carries a "
@@ -192,6 +221,48 @@ def tracked(suffix: str) -> list[str]:
         text=True,
     ).stdout.split("\n")
     return [f for f in out if f.endswith(suffix)]
+
+
+def check_entities(emitters: list[str]) -> tuple[list[str], int]:
+    """Every emitter that writes entities judges them (spec-0111 §3.1).
+
+    A template's `entities` list is placed by `/place template` as written, so
+    what an emitter puts there is what the server summons. The engine strips
+    and re-summons every holder it knows, but the obligation is at the writer:
+    an emitter that writes an entity names the rule that judged it. Which
+    emitters write entities is DERIVED from the text — an `entities` field
+    initialised to anything but an empty list — and printed, never listed.
+    """
+    findings: list[str] = []
+    writers: list[str] = []
+    judged: list[str] = []
+    for rel in emitters:
+        scope = emitter_scope(rel, (ROOT / rel).read_text(errors="replace"))
+        writes = any(WRITES_ENTITIES.search(s) for s in scope) or any(
+            WRITES_ENTITIES_KEY.search(s) for s in scope
+        )
+        if not writes:
+            continue
+        writers.append(rel)
+        if any(m in s for m in ENTITY_RULE_MARKERS for s in scope):
+            judged.append(rel)
+        else:
+            findings.append(
+                f"{rel} writes a template's `entities` and never judges them.\n"
+                f"    Route every entity through the one entity rule — "
+                f"`admit::entities::judge` inside the workspace, "
+                f"`invariants::assert_entities_are_holders` in a `prefabs/*` generator — so "
+                f"a piece carries item holders saying what they look like and nothing else "
+                f"(DW0730 / DW1036)."
+            )
+    print(f"emitters examined for entities: {len(emitters)}")
+    print(f"  write entities: {len(writers)}")
+    print(f"  judge the entities they write: {len(judged)}")
+    for f in sorted(judged):
+        print(f"    {f}")
+    if not emitters:
+        findings.append("binding count is zero: no emitter reached the entity check.")
+    return findings, len(writers)
 
 
 def check_connections(emitters: list[str]) -> tuple[list[str], int]:
@@ -606,6 +677,10 @@ def main() -> int:
     print()
     print("== every emitter derives its connection states ==")
     f, _ = check_connections(emitters)
+    findings += f
+    print()
+    print("== every emitter that writes entities judges them ==")
+    f, _ = check_entities(emitters)
     findings += f
     print()
     print("== every prefab generator workspace is wired into CI ==")

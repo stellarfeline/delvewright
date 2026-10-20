@@ -81,6 +81,12 @@ pub struct QuestsContent {
     ///.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub loot: Vec<Loot>,
+    /// **The container class** (spec-0105): what this campaign says about the
+    /// containers its world holds that no fill and no device claims. Absent =
+    /// none is scenery, which the build's container census proves (`DW1018`);
+    /// present and empty is `DW1019`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub containers: Option<crate::Containers>,
     /// Runtime state data (DSL v0.10, spec-0031): named, scoped, integer-valued
     /// counters the campaign sets, adds to and clears at runtime, and compares
     /// against in any gate. A campaign that declares none emits none of it.
@@ -302,6 +308,29 @@ pub struct Quest {
     /// `DW0481`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub happening: Option<Happening>,
+}
+
+impl Quest {
+    /// The acts `o`'s completion performs (spec-0114 §4), read with the
+    /// effects this quest fires when it completes
+    /// ([`Objective::completion_acts`]).
+    pub fn objective_acts(&self, o: &Objective) -> std::collections::BTreeSet<Act> {
+        o.completion_acts(self.objective_completion_effects(o))
+    }
+
+    /// The kind and fields `o`'s acts are derived from
+    /// ([`Objective::completion_shape`]).
+    pub fn objective_shape(&self, o: &Objective) -> String {
+        o.completion_shape(self.objective_completion_effects(o))
+    }
+
+    /// The effects this quest fires when `o` completes.
+    pub fn objective_completion_effects(&self, o: &Objective) -> &[QuestEffect] {
+        self.on_objective_complete
+            .get(o.id())
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
 }
 
 /// What triggers a quest.

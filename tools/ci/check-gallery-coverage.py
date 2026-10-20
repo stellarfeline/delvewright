@@ -878,6 +878,26 @@ def read_build_ledgers(out: Path) -> tuple[dict, list[str]]:
                 "threshold-gate.json: absent beside a critical path that performs a trigger — "
                 "no walk to the step that needs one was judged (DW1044)"
             )
+    # …and a build that resolved a gate with no DW1047 ledger beside it is a
+    # build whose redstone proof was never written. Its zero — no gate
+    # examined — is the generic `gates_examined` row above.
+    seal = ledgers.get("gate-seal.json")
+    if "gate-signal.json" not in ledgers and isinstance(seal, dict) and seal.get("gates_examined"):
+        zeroes.append(
+            "gate-signal.json: absent beside a build that resolves a gate — no shut gate "
+            "was judged for a signal that opens it (DW1047)"
+        )
+    # …and a path that proves an objective with no act ledger beside it is a
+    # build whose titles nothing read (spec-0114 §9.6). Its zero — titles
+    # present, none judged — is the generic `examined` row above:
+    # `act-gate.json` states `judged` also as `examined`.
+    if "act-gate.json" not in ledgers and any(
+        isinstance(st, dict) and st.get("objective") for st in steps
+    ):
+        zeroes.append(
+            "act-gate.json: absent — no objective title of this build was read against "
+            "the act its completion performs (DW1045)"
+        )
     return ledgers, zeroes
 
 

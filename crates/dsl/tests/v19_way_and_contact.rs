@@ -313,23 +313,19 @@ fn dw0876_refuses_a_contact_span_that_leaves_the_shared_face() {
     );
 }
 
-/// Spec-0053 §6 row 4: `stair`, `barred` and `vision` contacts are excluded,
+/// Spec-0053 §6 row 4: `stair`, `climb` and `vision` contacts are excluded,
 /// and the exclusion is the falsifier re-armed rather than an oversight.
 ///
 /// All three are asserted, not one: "the class the author happened to try" is
 /// not the rule.
 #[test]
 fn dw0876_refuses_a_contact_on_a_class_a_front_cannot_be() {
-    for class in ["stair", "barred", "vision"] {
+    for class in ["stair", "climb", "vision"] {
         let mut g: Value = serde_json::from_str(GRAPH.as_str()).expect("parse");
         let e = &mut g["content"]["edges"][4];
         e["class"] = json!(class);
         match class {
-            "stair" => {}
-            "barred" => {
-                e["opens_from"] = json!("a");
-                e["gating"] = json!({ "quest": "quest/open-the-door" });
-            }
+            "stair" | "climb" => {}
             _ => {}
         }
         let d = check_campaign(&campaign(
@@ -357,6 +353,43 @@ fn dw0876_refuses_a_contact_on_a_class_a_front_cannot_be() {
             );
         }
     }
+}
+
+/// `DW1027` (spec-0107 §8.1): a gated connection whose seam is a front. The
+/// world builds a gated way shut with a bar in its opening, and a front has no
+/// opening to stand one in. Both remedies the refusal names are reachable: a
+/// standard `opening` on the seam, or the `gating` removed.
+#[test]
+fn dw1027_a_gated_front_is_refused_and_both_remedies_compile() {
+    let mut g: Value = serde_json::from_str(GRAPH.as_str()).expect("parse");
+    g["content"]["edges"][4]["gating"] = json!({ "quest": "quest/open-the-door" });
+    let gated = serde_json::to_string(&g).expect("re-serialize");
+    let d = check_campaign(&campaign(gated.clone(), PLAN.to_string()));
+    let refusals = with_code(&d, "DW1027");
+    assert_eq!(refusals.len(), 1, "{:?}", codes(&d));
+    let m = &refusals[0].message;
+    assert!(
+        m.contains("edge/court-hall") && m.contains("`quest/open-the-door` complete"),
+        "{m}"
+    );
+    assert_eq!(refusals[0].path, "/content/seams/4");
+
+    // Remedy one: a standard opening, so the bar has somewhere to stand.
+    let mut p: Value = serde_json::from_str(PLAN.as_str()).expect("parse");
+    let seam = &mut p["content"]["seams"][4];
+    seam.as_object_mut().expect("seam").remove("contact");
+    seam["opening"] = json!("arch");
+    seam["at"] = json!(1);
+    seam["meets"] = json!(1);
+    let d = check_campaign(&campaign(
+        gated,
+        serde_json::to_string(&p).expect("re-serialize"),
+    ));
+    assert!(with_code(&d, "DW1027").is_empty(), "{:?}", codes(&d));
+
+    // Remedy two: the connection ungated — the green document itself.
+    let d = check_campaign(&campaign(GRAPH.to_string(), PLAN.to_string()));
+    assert!(with_code(&d, "DW1027").is_empty(), "{:?}", codes(&d));
 }
 
 /// A `drop` contact is legal — a rim falling to a lower court is a genuine broad

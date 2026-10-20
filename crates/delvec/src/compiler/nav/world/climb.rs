@@ -303,7 +303,7 @@ impl World {
         let mut y = top;
         while from - (i64::from(y) + 1) * FULL_16 <= bound {
             let cell = [x, y, z];
-            if self.is_occupied(cell) {
+            if self.is_occupied(cell) && !self.is_sieve(cell) {
                 return None;
             }
             if self.climb_cell_fp(cell, fp) {

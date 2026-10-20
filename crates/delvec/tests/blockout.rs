@@ -144,7 +144,7 @@ fn the_derivation_states_what_it_massed() {
         "two connections are built out of treads — one across a wall, one down \
          through a punched floor"
     );
-    assert_eq!(k.barred, 1, "one way is sealed at world load");
+    assert_eq!(k.shut, 1, "one way is built shut at world load");
     assert_eq!(k.volumes, 2);
     assert!(
         k.cells > 10_000,
@@ -1292,7 +1292,7 @@ fn a_walled_front_reddens_dw0877() {
     );
 }
 
-/// `DW0986`: a barred door whose far side the massing walls flush behind its
+/// `DW0986`: a shut door whose far side the massing walls flush behind its
 /// opening — the shape a stair's treads laid across a doorway take — and the
 /// observer says nothing crosses it.
 ///
@@ -1340,7 +1340,7 @@ fn a_barred_door_onto_a_wall_reddens_dw0986() {
     );
     let m = message_for(&b, "DW0986");
     assert!(
-        m.contains("nothing crosses the barred opening"),
+        m.contains("nothing crosses the shut walk opening"),
         "the refusal names the seam's class and what it measured: {m}"
     );
     assert!(

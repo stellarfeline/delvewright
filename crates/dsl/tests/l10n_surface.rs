@@ -179,6 +179,7 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("Stake", "marker_item", Reference),
     ("LootItem", "item", Reference),
     ("LootItem", "name", Inventoried),
+    ("LootItem", "slot", Machine),
     ("MobEffect", "effect", Reference),
     ("MorphOp", "kind", Machine),
     ("Npc", "base_entity", Reference),
@@ -189,6 +190,7 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("Objective", "item_name", Inventoried),
     ("Objective", "missing_item_hint", Inventoried),
     ("Objective", "requires_item", Reference),
+    ("Objective", "slot", Machine),
     ("Objective", "title", Inventoried),
     ("Objective", "type", Machine),
     ("PaletteBlock", "block", Reference),
@@ -233,6 +235,11 @@ const SURFACE: &[(&str, &str, Kind)] = &[
     ("PotionEffect", "effect", Reference),
     ("Prop", "block", Reference),
     ("Pulse", "place", Reference),
+    // spec-0105: the one player-facing line payload — `narrate` and
+    // `containers.decoration_notice` — inventoried as `fx.….narrate` and
+    // `containers.decoration_notice`.
+    ("Narration", "sound", Reference),
+    ("Narration", "text", Inventoried),
     ("Pulse", "sound", Reference),
     ("QuestEffect", "block", Reference),
     ("QuestEffect", "place", Reference),

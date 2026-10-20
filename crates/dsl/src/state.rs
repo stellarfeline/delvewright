@@ -651,8 +651,8 @@ fn check_player_state_not_scheduled(
                              `player`-scoped, in a bundle that runs with no acting player (a \
                              trigger's effects, a trap's payload and a shortcut's `on_unlock` \
                              are polled on the tick from the server command source; so are a \
-                             `sequence` step and a `move-npc`/`move-actor` `on_arrive`). There \
-                             is no player to read the datum from. Declare it `party`-scoped, or \
+                             `sequence` step, a `move-npc`/`move-actor` `on_arrive` and a \
+                             cutscene's `then`). There is no player to read the datum from. Declare it `party`-scoped, or \
                              move the comparison onto a beat a player completes",
                             e.verb.tag(),
                             cmp.state.as_str()
@@ -673,8 +673,8 @@ fn check_player_state_not_scheduled(
                     "`{}` writes `{}`, which is `player`-scoped, from a bundle that runs with no \
                      acting player (a trigger's effects, a trap's payload and a shortcut's \
                      `on_unlock` are polled on the tick from the server command source; so are a \
-                     `sequence` step and a `move-npc`/`move-actor` `on_arrive`). There is no \
-                     acting player whose datum this would be, so the write would silently reach \
+                     `sequence` step, a `move-npc`/`move-actor` `on_arrive` and a cutscene's \
+                     `then`). There is no acting player whose datum this would be, so the write would silently reach \
                      nobody. Declare the datum `party`-scoped, or move the write onto a beat a \
                      player completes",
                     e.verb.tag(),
@@ -694,7 +694,7 @@ fn check_player_state_not_scheduled(
                     "a `{}` effect declares `audience: actor` in a bundle that runs with no \
                      acting player (a polled trigger's effects, a trap's payload and a shortcut's \
                      `on_unlock` run from the server command source; so do a `move-npc`/\
-                     `move-actor` `on_arrive`, a `bonfire`'s `on_rest`, and every step of a \
+                     `move-actor` `on_arrive`, a `bonfire`'s `on_rest`, a cutscene's `then`, and every step of a \
                      timeline started there). There is no actor to address. Move the beat onto a \
                      site a player drives (an objective's completion, a `presser` trigger, a \
                      respawn), or drop `audience` to address the party",

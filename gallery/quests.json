@@ -389,6 +389,13 @@
         }
       }
     ],
+    "containers": {
+      "decoration_notice": {
+        "sound": "minecraft:block.chest.close",
+        "style": "chat",
+        "text": "The long hall was emptied long ago, and the chest in its end room holds nothing. What this hall keeps, it keeps for you."
+      }
+    },
     "lethal_volumes": [
       {
         "damage_type": "fall",
@@ -580,6 +587,54 @@
           {
             "count": 4,
             "item": "minecraft:emerald"
+          }
+        ]
+      },
+      {
+        "anchor": "anchor/cabin-barrel",
+        "id": "loot/ferryman-stores",
+        "items": [
+          {
+            "count": 3,
+            "item": "minecraft:bread"
+          }
+        ]
+      },
+      {
+        "anchor": "anchor/long-gallery-brewing-stand",
+        "id": "loot/gallery-end-stores",
+        "items": [
+          {
+            "count": 1,
+            "item": "minecraft:glass_bottle"
+          }
+        ]
+      },
+      {
+        "anchor": "anchor/map-frame",
+        "id": "loot/map-frame",
+        "items": [
+          {
+            "count": 1,
+            "item": "minecraft:map",
+            "name": "Reliquary Chart",
+            "slot": "contents"
+          }
+        ]
+      },
+      {
+        "anchor": "anchor/sword-stand",
+        "id": "loot/sword-stand",
+        "items": [
+          {
+            "count": 1,
+            "item": "minecraft:iron_helmet",
+            "slot": "armor.head"
+          },
+          {
+            "count": 1,
+            "item": "minecraft:iron_sword",
+            "slot": "weapon.mainhand"
           }
         ]
       }
@@ -852,7 +907,6 @@
               "obj/press-the-case"
             ],
             "anchor": "anchor/pedestal",
-            "container": "anchor/case",
             "count": 4,
             "fill_count": 4,
             "forbids_flags": [
@@ -864,6 +918,7 @@
               "verb": "gains"
             },
             "hint": "Four of them, in the case.",
+            "holder": "anchor/case",
             "id": "obj/take-the-emeralds",
             "item": "minecraft:emerald",
             "item_name": "Hall Emerald",
@@ -875,6 +930,7 @@
                 "value": 9
               }
             ],
+            "slot": "container.11",
             "stealth": false,
             "title": "Take the emeralds",
             "type": "collect"
@@ -913,6 +969,63 @@
             "stealth": false,
             "title": "Reach the counter",
             "type": "reach-anchor"
+          },
+          {
+            "after": [
+              "obj/reach-the-counter"
+            ],
+            "anchor": "anchor/tray",
+            "announcement": "shown",
+            "forbids_flags": [
+              "flag/hall-sealed"
+            ],
+            "happening": {
+              "subject": "npc/factor",
+              "text": "The party leaves one emerald on the Factor's tray.",
+              "verb": "gains"
+            },
+            "hint": "The Factor's tray sits at the far end of the counter from the stall.",
+            "id": "obj/lay-an-emerald",
+            "prop": {
+              "block": "minecraft:smooth_stone_slab"
+            },
+            "requires_flags": [],
+            "requires_item": "minecraft:emerald",
+            "requires_state": [
+              {
+                "op": "at-most",
+                "state": "state/labels-read",
+                "value": 9
+              }
+            ],
+            "stealth": false,
+            "takes_item": true,
+            "title": "Lay an emerald on the counter",
+            "type": "interact"
+          },
+          {
+            "after": [
+              "obj/take-the-emeralds"
+            ],
+            "anchor": "anchor/pedestal",
+            "count": 1,
+            "forbids_flags": [
+              "flag/hall-sealed"
+            ],
+            "happening": {
+              "subject": "anchor/seal-frame",
+              "text": "They knock the seal out of its frame.",
+              "verb": "gains"
+            },
+            "hint": "It hangs in a frame on the wall, beside an empty one.",
+            "holder": "anchor/seal-frame",
+            "id": "obj/take-the-seal",
+            "item": "minecraft:paper",
+            "item_name": "Hall Seal",
+            "requires_flags": [],
+            "stealth": false,
+            "title": "Take the seal",
+            "type": "collect"
           }
         ],
         "on_complete": [
@@ -1772,7 +1885,7 @@
             },
             "id": "obj/reach-the-end",
             "marker": "hidden",
-            "radius": 2,
+            "radius": 1,
             "requires_flags": [
               "flag/muster-cleared"
             ],
@@ -1910,13 +2023,22 @@
             "type": "set-checkpoint"
           },
           {
-            "ending": "The hall is read end to end.",
+            "ending": "ending/the-hall-remembers",
             "happening": {
               "subject": "anchor/exit",
-              "text": "The hall goes quiet behind them.",
+              "text": "The hall goes quiet behind them, and the struck hearth still holds its warmth.",
               "verb": "survives"
             },
-            "type": "campaign-complete"
+            "type": "campaign-complete",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/hearth-struck",
+                  "value": 1
+                }
+              ]
+            }
           },
           {
             "happening": {
@@ -1938,6 +2060,104 @@
                 }
               ]
             }
+          },
+          {
+            "ending": "ending/the-hall-forgets",
+            "happening": {
+              "subject": "anchor/exit",
+              "text": "The hall goes quiet behind them, cold as the hearth nobody struck.",
+              "verb": "survives"
+            },
+            "type": "campaign-complete",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/hearth-struck",
+                  "value": 0
+                }
+              ]
+            }
+          },
+          {
+            "style": "chat",
+            "text": "The curator's label stays with you: you read it end to end.",
+            "type": "narrate",
+            "when": {
+              "requires_flags": [
+                "flag/read-the-label"
+              ]
+            }
+          },
+          {
+            "style": "chat",
+            "text": "Somewhere behind you the reliquary keeps what you saw in it.",
+            "type": "narrate",
+            "when": {
+              "requires_flags": [
+                "flag/saw-the-reliquary"
+              ]
+            }
+          },
+          {
+            "look_at": {
+              "anchor": "anchor/exit"
+            },
+            "party": "present",
+            "path": [
+              {
+                "anchor": "anchor/exit",
+                "offset": [
+                  0,
+                  3,
+                  -3
+                ]
+              },
+              {
+                "anchor": "anchor/exit",
+                "offset": [
+                  0,
+                  3,
+                  -6
+                ]
+              }
+            ],
+            "seconds": 2,
+            "then": [
+              {
+                "from": {
+                  "anchor": "anchor/exit",
+                  "extent": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                "to": {
+                  "anchor": "anchor/hearth"
+                },
+                "type": "teleport"
+              },
+              {
+                "block": "minecraft:moss_carpet",
+                "region": {
+                  "anchor": "anchor/exit",
+                  "extent": [
+                    1,
+                    0,
+                    1
+                  ]
+                },
+                "type": "fill-region"
+              },
+              {
+                "time": {
+                  "sun": "setting"
+                },
+                "type": "set-time"
+              }
+            ],
+            "type": "cutscene"
           }
         ],
         "on_objective_complete": {
@@ -3657,6 +3877,11 @@
         "initial": 0,
         "note": "How many of the north wall's valves the party has turned in order. Only the three valve triggers write it, a valve out of turn puts it back to 0, and the counter waits on 3: a numeric gate only presses move, whose order the plan finds (DW0985 when none opens it).",
         "scope": "party"
+      },
+      {
+        "id": "state/hearth-struck",
+        "note": "Whether anybody struck the hearth before the far hall closed: the deed the two endings divide on.",
+        "scope": "party"
       }
     ],
     "timed_gates": [
@@ -3855,10 +4080,16 @@
                 }
               ]
             }
+          },
+          {
+            "amount": 1,
+            "state": "state/hearth-struck",
+            "type": "add-state"
           }
         ],
         "forbids_flags": [
-          "flag/hall-sealed"
+          "flag/hall-sealed",
+          "flag/muster-cleared"
         ],
         "id": "trigger/strike-the-hearth",
         "on": {
@@ -4500,6 +4731,6 @@
       }
     ]
   },
-  "dsl_version": "0.41.0",
+  "dsl_version": "0.53.0",
   "stage": "quests"
 }

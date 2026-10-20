@@ -16,7 +16,9 @@ mod class;
 mod creator;
 mod dialogue;
 mod economy;
+pub(super) mod ending;
 mod healthbar;
+mod holders;
 mod lane;
 mod lethal;
 mod lightning;
@@ -49,6 +51,11 @@ pub(super) struct Proved<'a> {
     pub(super) asm_locks: &'a crate::compiler::assembly::Locks,
     /// The watchers, as `watching::prove` judged them.
     pub(super) watch_binding: &'a crate::compiler::watching::WatchBinding,
+    /// Every container cell of the built world and its block, as the container
+    /// census read them.
+    pub(super) containers: &'a BTreeMap<[i32; 3], String>,
+    /// Every holder entity with what the engine owns about it (spec-0111).
+    pub(super) holders: &'a [crate::compiler::holders::OwnedHolder],
 }
 
 /// Emit the compiler-generated PackTest suite (spec-0003). PackTest (misode,
@@ -70,6 +77,8 @@ pub(super) fn emit_packtest(
     let Proved {
         asm_locks,
         watch_binding,
+        containers,
+        holders,
     } = *proved;
     let ns = &plan.namespace;
     put_json(
@@ -96,7 +105,7 @@ pub(super) fn emit_packtest(
     // plus a flag-gate test. Each drives the compiler-generated mechanic functions
     // on a dummy player (no real combat / advancement events needed) and asserts
     // the objective scoreboard. Emits nothing for a v0.2 campaign.
-    objective::emit_verb_packtests(plan, out);
+    objective::emit_verb_packtests(plan, out, holders);
     // spec-0080 §5.2: the server holds the biome each carried place declares,
     // and every repaint moves it — inside the volume and not outside.
     atmosphere::emit_atmosphere_packtests(plan, out);
@@ -143,6 +152,11 @@ pub(super) fn emit_packtest(
     // a campaign that declares no pulse.
     pulse::emit_pulse_packtests(plan, out);
     economy::emit_economy_packtests(plan, out);
+
+    // spec-0108 §6.2: per (ending, witness world), the world after the final
+    // scene holds every change its aftermath declares. Emits nothing for an
+    // ending no world reaches or whose scene changes nothing.
+    ending::emit_ending_packtests(plan, out);
 
     // spec-0031 teleport: the runtime half of TOTALITY, one template per teleport.
     teleport::emit_teleport_packtests(plan, out);
@@ -203,7 +217,7 @@ pub(super) fn emit_packtest(
     // an uncredited death and a compiler removal do not, and a rest tells the
     // two `fires` values apart. Emits nothing for a campaign with no bundle.
     onkill::emit_kill_pays_packtests(plan, out, waves.placements);
-    objective::emit_objective_activation_packtests(plan, out);
+    objective::emit_objective_activation_packtests(plan, out, proved.holders);
     class::emit_class_apply_packtests(plan, out);
     npc::emit_npc_talk_packtests(plan, out);
     // Every environment trigger's own bundle, plus a presser's dispatch and
@@ -211,7 +225,9 @@ pub(super) fn emit_packtest(
     // the gallery the suite never executed at ANY depth — not driven, not even
     // reached transitively. Emits nothing for a campaign with no trigger.
     trigger::emit_env_trigger_packtests(plan, out);
-    loot::emit_loot_packtest(plan, out);
+    loot::emit_loot_packtests(plan, out, containers);
+    // spec-0111 §5.3: every filled holder entity's own body, driven.
+    holders::emit_holder_packtests(plan, out, holders);
     actor::emit_actor_equipment_packtest(plan, out);
     // spec-0016 §6: the patrol NBT survives 1.21.11's strict codec, the lane
     // advances in march order, the squad is released to native AI at aggro range,
@@ -228,6 +244,10 @@ pub(super) fn emit_packtest(
     // spec-0018: one two-player test per objective that hands a `carrier: one`
     // item, asserting exactly one member holds it.
     party::emit_carrier_one_packtests(plan, out);
+
+    // Last, over every template the emitters above wrote: a template that
+    // re-runs `setup` and then the load takes the settled setup.
+    settle_loads(ns, out);
 }
 
 pub use party::{PartyBinding, party_binding};
@@ -257,7 +277,10 @@ pub use party::{PartyBinding, party_binding};
 
 /// Every per-object watch claim the suite registers, in the order the build
 /// judges them.
-pub(super) fn watch_claims(plan: &Plan) -> Vec<crate::compiler::watch::Claim> {
+pub(super) fn watch_claims(
+    plan: &Plan,
+    holders: &[crate::compiler::holders::OwnedHolder],
+) -> Vec<crate::compiler::watch::Claim> {
     let mut watch_claims = vec![
         timed_gate::timed_gate_watch_claim(plan),
         actor::actor_watch_claim(plan),
@@ -269,6 +292,7 @@ pub(super) fn watch_claims(plan: &Plan) -> Vec<crate::compiler::watch::Claim> {
         npc::npc_talk_watch_claim(plan),
         cast::cast_ladder_watch_claim(plan),
         pulse::pulse_watch_claim(plan),
+        holders::holder_watch_claim(holders),
     ];
     watch_claims.extend(trigger::env_trigger_watch_claims(plan));
     watch_claims.extend(dialogue::dialogue_mask_watch_claims(plan));
@@ -297,6 +321,205 @@ fn shielded_tick(ns: &str) -> Vec<String> {
     ]
 }
 
+/// `setup`, re-run by a template, with the world's load latched closed after it.
+///
+/// `setup` re-arms the load: it sets `#placed` to 0 (or 3, for a campaign with
+/// ground), and the next `tick` resumes the placement loop. For a campaign whose
+/// world needs no build step, `place_verify` calls `setup_finish` directly, so
+/// that one `tick` runs the whole load: it re-summons every body and refills
+/// every holder and container, in the same tick as the template's own lines. A
+/// template that runs `tick` would then judge the load, not the effect it drove.
+/// The world the batch server holds is already built, so the template latches
+/// `#placed` at 1, the value `setup_finish` leaves.
+fn settled_setup(ns: &str) -> [String; 2] {
+    [
+        format!("function {ns}:setup"),
+        "scoreboard players set #placed dw.sys 1".to_string(),
+    ]
+}
+
+/// **The one rule that settles a template's load**, applied to every template
+/// the suite ships: every `setup` a template runs is followed by the latch line
+/// of [`settled_setup`], unless the template states that it exercises the
+/// placement chain. The world the batch server holds is already built, and a
+/// template left re-armed hands the load to whatever ticks next: its own `tick`
+/// or `setup_finish` (directly, or through one of the suite's own helper
+/// functions), its own `await` (real ticks run while it waits), or, once it
+/// ends, the server's next real tick, which re-runs `place_all`, the build and
+/// `setup_finish` (every unguarded NPC summon, every holder and container
+/// refill) on the shared server, in front of whichever template runs next.
+///
+/// The statement is the template's own handling of `#placed` after its
+/// `setup`: a write of `#placed` of its own (the latch itself included), or an
+/// `await score #placed dw.sys matches 1` that lets the real chain run and
+/// waits for it to settle before anything else ticks. A template that states
+/// it is left as it declared, and is judged on where it leaves the load all the
+/// same.
+///
+/// Decided here, over the finished templates, so that no emitter decides it,
+/// and a template written tomorrow is settled without its author knowing the
+/// rule. `tests/packtest_batch.rs` (`no_template_ticks_with_the_load_re_armed`)
+/// judges the shipped bytes: no template ticks, awaits or ends re-armed.
+fn settle_loads(ns: &str, out: &mut BuildOutput) {
+    let [setup, latch] = settled_setup(ns);
+    let awaits_settle = "await score #placed dw.sys matches 1";
+    let helper_prefix = format!("packtest-datapack/data/{ns}/function/");
+    let test_prefix = format!("packtest-datapack/data/{ns}/test/");
+    let call = format!("function {ns}:");
+    // Every `<ns>:` function a line calls in its own tick (`schedule` runs a
+    // later tick, and is not followed).
+    let callees = |line: &str| -> Vec<String> {
+        if line.starts_with('#') || line.starts_with("schedule ") {
+            return Vec::new();
+        }
+        line.match_indices(&call)
+            .map(|(i, _)| {
+                line[i + call.len()..]
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .to_string()
+            })
+            .collect()
+    };
+    // The suite's helpers that run the load in the caller's tick, transitively.
+    let helpers: BTreeMap<String, String> = out
+        .iter()
+        .filter_map(|(p, b)| {
+            let name = p
+                .strip_prefix(&helper_prefix)?
+                .strip_suffix(".mcfunction")?;
+            Some((name.to_string(), String::from_utf8_lossy(b).into_owned()))
+        })
+        .collect();
+    fn loads(
+        name: &str,
+        helpers: &BTreeMap<String, String>,
+        callees: &dyn Fn(&str) -> Vec<String>,
+        seen: &mut BTreeSet<String>,
+    ) -> bool {
+        if name == "tick" || name == "setup_finish" {
+            return true;
+        }
+        let Some(body) = helpers.get(name) else {
+            return false;
+        };
+        if !seen.insert(name.to_string()) {
+            return false;
+        }
+        body.lines()
+            .flat_map(|l| callees(l.trim()))
+            .any(|c| loads(&c, helpers, callees, seen))
+    }
+    let runs_load = |line: &str| {
+        callees(line)
+            .iter()
+            .any(|c| loads(c, &helpers, &callees, &mut BTreeSet::new()))
+    };
+    let templates: Vec<String> = out
+        .keys()
+        .filter(|p| p.starts_with(&test_prefix) && p.ends_with(".mcfunction"))
+        .cloned()
+        .collect();
+    for path in templates {
+        let text = String::from_utf8_lossy(&out[&path]).into_owned();
+        let mut body: Vec<&str> = text.split('\n').collect();
+        let mut armed: Option<usize> = None;
+        let mut settle: Vec<usize> = Vec::new();
+        for (i, line) in body.iter().enumerate() {
+            if *line == setup {
+                if let Some(at) = armed {
+                    settle.push(at);
+                }
+                armed = Some(i);
+            } else if line.starts_with("scoreboard players set #placed dw.sys ")
+                || *line == awaits_settle
+            {
+                armed = None;
+            } else if let Some(at) = armed
+                && (line.starts_with("await ") || runs_load(line))
+            {
+                settle.push(at);
+                armed = None;
+            }
+        }
+        // The template's end: the next real tick is the server's.
+        if let Some(at) = armed {
+            settle.push(at);
+        }
+        if settle.is_empty() {
+            continue;
+        }
+        for at in settle.into_iter().rev() {
+            body.insert(at + 1, latch.as_str());
+        }
+        out.insert(path, body.join("\n").into_bytes());
+    }
+}
+
+/// Where [`fast_forward_walk`] left a walk.
+pub(super) enum Reached {
+    /// The driver ran its arrival tick: the last teleport, the watch hand-back
+    /// and the `on_arrive` bundle.
+    Arrival,
+    /// The walk's own arrival takes its body away, so the driver ran the tick
+    /// before it and stopped: the body stands on this waypoint, the arrival
+    /// never ran, and nothing of the walk is left scheduled or latched.
+    BeforeArrival([f64; 3]),
+}
+
+/// **The one way a generated PackTest fast-forwards a walk's driver.** Every
+/// template that jumps a `move-npc` / `move-actor` driver to a tick and reads
+/// the body afterwards drives it here.
+///
+/// The arrival tick runs the last teleport and then, in the same driver call,
+/// the walk's `on_arrive` ([`walk_on_arrive`]). When that bundle takes the
+/// walker out of the world ([`arrival_takes_the_body`]), no body of the walk
+/// stands anywhere after the arrival tick, so a read of it after that tick
+/// reads nothing by construction. Such a walk is driven to the tick before
+/// arrival instead, then its queued reschedule and its run latch are cleared,
+/// so the arrival bundle never runs into a sibling template. Every other walk
+/// is driven to its arrival tick, as the lines it always had.
+pub(super) fn fast_forward_walk(
+    plan: &Plan,
+    walker: Walker,
+    body: &str,
+    mark: &delvewright_dsl::Mark,
+    bare: &str,
+    waypoints: &[[f64; 3]],
+) -> (Vec<String>, Reached) {
+    let ns = &plan.namespace;
+    let total = waypoints.len().saturating_sub(1);
+    let (counter, latch, tick) = match walker {
+        Walker::Npc => (
+            format!("#mt_{bare}"),
+            format!("#mrun_{bare}"),
+            format!("mv_tick_{bare}"),
+        ),
+        Walker::Actor => (
+            format!("#at_{bare}"),
+            format!("#arun_{bare}"),
+            format!("ma_tick_{bare}"),
+        ),
+    };
+    let on_arrive = walk_on_arrive(plan.campaign, walker, body, mark);
+    if total > 0 && arrival_takes_the_body(on_arrive, walker, body) {
+        let b = vec![
+            format!("scoreboard players set {counter} dw.sys {}", total - 1),
+            format!("function {ns}:{tick}"),
+            format!("schedule clear {ns}:{tick}"),
+            format!("scoreboard players set {latch} dw.sys 0"),
+        ];
+        (b, Reached::BeforeArrival(waypoints[total - 1]))
+    } else {
+        let b = vec![
+            format!("scoreboard players set {counter} dw.sys {total}"),
+            format!("function {ns}:{tick}"),
+        ];
+        (b, Reached::Arrival)
+    }
+}
+
 /// The header lines shared by every generated PackTest (`# @dummy` + timeout).
 fn packtest_header(title: &str) -> Vec<String> {
     vec![
@@ -310,8 +533,9 @@ fn packtest_header(title: &str) -> Vec<String> {
 /// Pin a PackTest template's own dummy player: the pin line (`tag @p add …`)
 /// plus the selector that addresses that dummy — and only it — thereafter.
 ///
-/// PackTest runs the whole generated suite as ONE batch on one shared server:
-/// each `# @dummy` test spawns its OWN dummy, all dummies coexist, and every
+/// PackTest runs the generated suite on one shared server, fifty tests a batch
+/// (a solo template, `crate::compiler::solo`, alone in its own): each
+/// `# @dummy` test spawns its OWN dummy, all dummies of a batch coexist, and every
 /// test function executes over the same server tick(s), in an order the
 /// compiler does not control. Consequences for template authorship — the hard
 /// rule is **every generated test is interleaving-independent: own dummy, own

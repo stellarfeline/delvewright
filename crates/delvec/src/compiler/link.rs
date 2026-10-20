@@ -236,11 +236,80 @@ struct Line<'a> {
     timed: Vec<Timed<'a>>,
 }
 
+/// A cutscene's `then` (spec-0108 §3.6) on the timeline the cutscene plays on:
+/// dated one tick past the tick its `cs_end` runs, so a `teleport` there is
+/// after the bracket by construction (`DW0933` cannot fire on it). A `sequence`
+/// in `then` lays its steps from that tick; a nested `then` is dated the same
+/// way from its own cutscene; every other nested list is its own timeline.
+fn push_then<'a>(
+    out: &mut Vec<Line<'a>>,
+    cut: &'a QuestEffect,
+    tick: u32,
+    guards: &[&'a delvewright_dsl::Guard],
+    path: &str,
+    top: usize,
+) {
+    let (Some(then), Some(end)) = (cut.cutscene_then(), cutscene_end_offset(cut)) else {
+        return;
+    };
+    let t0 = tick + end + 1;
+    for (j, e) in then.iter().enumerate() {
+        let p = format!("{path}/then/{j}");
+        let mut g = guards.to_vec();
+        if let Some(w) = &e.when {
+            g.push(w);
+        }
+        out[0].timed.push(Timed {
+            eff: e,
+            tick: t0,
+            guards: g.clone(),
+            path: p.clone(),
+            top,
+        });
+        let nested_of = |out: &mut Vec<Line<'a>>,
+                         x: &'a QuestEffect,
+                         at: u32,
+                         gx: &[&'a delvewright_dsl::Guard],
+                         px: &str| {
+            for (pseg, _, nested) in x.nested_effect_lists_labeled() {
+                if pseg == "then" {
+                    push_then(out, x, at, gx, px, top);
+                } else {
+                    out.extend(timelines(nested, &format!("{px}/{pseg}")));
+                }
+            }
+        };
+        match &e.verb {
+            Verb::Sequence { steps } => {
+                for (s, st) in steps.iter().enumerate() {
+                    for (k, inner) in st.effects.iter().enumerate() {
+                        let ip = format!("{p}/steps/{s}/effects/{k}");
+                        let mut g2 = g.clone();
+                        if let Some(w) = &inner.when {
+                            g2.push(w);
+                        }
+                        out[0].timed.push(Timed {
+                            eff: inner,
+                            tick: t0 + st.at_ticks,
+                            guards: g2.clone(),
+                            path: ip.clone(),
+                            top,
+                        });
+                        nested_of(out, inner, t0 + st.at_ticks, &g2, &ip);
+                    }
+                }
+            }
+            _ => nested_of(out, e, t0, &g, &p),
+        }
+    }
+}
+
 /// A root list's own timeline: its flat effects at tick `0`, and every effect
-/// of a `sequence` step at that step's tick. A nested list that fires at
-/// another moment (`on_respawn`, `on_rest`, `on_caught`, `on_arrive`) is its own
-/// timeline, returned beside this one so nothing is lost and nothing is
-/// misdated.
+/// of a `sequence` step at that step's tick, and every effect of a cutscene's
+/// `then` one tick past the cutscene's end ([`push_then`]). A nested list that
+/// fires at another moment (`on_respawn`, `on_rest`, `on_caught`, `on_arrive`)
+/// is its own timeline, returned beside this one so nothing is lost and nothing
+/// is misdated.
 fn timelines<'a>(list: &'a [QuestEffect], path: &str) -> Vec<Line<'a>> {
     let mut out: Vec<Line<'a>> = vec![Line {
         list,
@@ -271,19 +340,27 @@ fn timelines<'a>(list: &'a [QuestEffect], path: &str) -> Vec<Line<'a>> {
                         out[0].timed.push(Timed {
                             eff: inner,
                             tick: st.at_ticks,
-                            guards: g2,
+                            guards: g2.clone(),
                             path: ip.clone(),
                             top: i,
                         });
                         for (pseg, _, nested) in inner.nested_effect_lists_labeled() {
-                            out.extend(timelines(nested, &format!("{ip}/{pseg}")));
+                            if pseg == "then" {
+                                push_then(&mut out, inner, st.at_ticks, &g2, &ip, i);
+                            } else {
+                                out.extend(timelines(nested, &format!("{ip}/{pseg}")));
+                            }
                         }
                     }
                 }
             }
             _ => {
                 for (pseg, _, nested) in eff.nested_effect_lists_labeled() {
-                    out.extend(timelines(nested, &format!("{p}/{pseg}")));
+                    if pseg == "then" {
+                        push_then(&mut out, eff, 0, &guards, &p, i);
+                    } else {
+                        out.extend(timelines(nested, &format!("{p}/{pseg}")));
+                    }
                 }
             }
         }
@@ -590,8 +667,9 @@ pub fn check_teleport_under_cutscene(campaign: &Campaign) -> Vec<Diagnostic> {
                          is still playing — its `cs_end` runs at tick {end} of this root, and \
                          `cs_end` puts every player back on the marker it saved when the \
                          cutscene started, so the carry is undone for everyone when the camera \
-                         returns. Remedy: put the teleport in a `sequence` step at tick {first} \
-                         or later.",
+                         returns. Remedy: move the teleport into the cutscene's `then`, which \
+                         runs when the camera returns; or put it in a `sequence` step at tick \
+                         {first} or later.",
                         tp = t.path,
                         cs = scene.path,
                         first = end + 1,

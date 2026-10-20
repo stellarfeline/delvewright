@@ -355,6 +355,12 @@ pub enum ExportError {
         /// One line per offending block state, with the cells it covers.
         reasons: Vec<String>,
     },
+    /// The entities the marks place are not ones a piece may carry
+    /// (`crate::admit::entities::judge`, spec-0111 §3.1).
+    Entities {
+        /// One line per refusal, as the entity judge reported it.
+        reasons: Vec<String>,
+    },
     /// The expansion's blocks disagree with the spatial contract it declares.
     ///
     /// Refused **here**, at the writer, and not only in `gates::judge`. The
@@ -414,6 +420,11 @@ impl fmt::Display for ExportError {
                 f,
                 "the expanded model paints block states Minecraft {} does not have: {}",
                 crate::schem::blocks::MC_VERSION,
+                reasons.join("; ")
+            ),
+            ExportError::Entities { reasons } => write!(
+                f,
+                "the marks place entities a piece may not carry: {}",
                 reasons.join("; ")
             ),
             ExportError::Contract { gates } => write!(
@@ -511,7 +522,8 @@ pub fn export_prefab(
     // read a building whose walls are isolated posts and answer about that one.
     refuse_unguarded_oriented_fills(&expansion)?;
     refuse_broken_contract(&expansion)?;
-    let nbt = part_nbt(&expansion.model, &palette, region)?;
+    let entities = holder_entities(&expansion)?;
+    let nbt = part_nbt(&expansion.model, &palette, region, &entities)?;
 
     let size = [
         region.size[0] as i32,
@@ -641,8 +653,9 @@ pub fn export_zone(
     // read a building whose walls are isolated posts and answer about that one.
     refuse_unguarded_oriented_fills(&expansion)?;
     refuse_broken_contract(&expansion)?;
+    let entities = holder_entities(&expansion)?;
 
-    let frozen = package(&expansion.model, &palette, id, GENERATOR)?;
+    let frozen = package(&expansion.model, &palette, id, GENERATOR, &entities)?;
     let tiles: Vec<TileFile> = frozen
         .files
         .into_iter()
@@ -750,7 +763,7 @@ pub fn freeze_model(model: &VoxelModel, id: &str, generator: &str) -> Result<Fro
     }
     let palette = zone_palette(model);
     refuse_unknown_states(model, &palette)?;
-    package(model, &palette, id, generator)
+    package(model, &palette, id, generator, &[])
 }
 
 /// The writer behind [`freeze_model`] and both grammar exports, over a model
@@ -760,6 +773,7 @@ fn package(
     palette: &ZonePalette,
     id: &str,
     generator: &str,
+    entities: &[HolderEntity],
 ) -> Result<Frozen, ExportError> {
     let region = model.region();
     let size = [
@@ -770,7 +784,7 @@ fn package(
     let part_max = MAX_STRUCTURE_AXIS as i32;
     let plan = plan_split(size, part_max);
     if plan.is_single() {
-        let nbt = part_nbt(model, palette, region)?;
+        let nbt = part_nbt(model, palette, region, entities)?;
         let file = format!("{id}.nbt");
         return Ok(Frozen {
             structure: Some(StructureMetadata {
@@ -799,7 +813,7 @@ fn package(
                 part.size[2] as u32,
             ],
         );
-        let nbt = part_nbt(model, palette, part_box)?;
+        let nbt = part_nbt(model, palette, part_box, entities)?;
         let file = part_filename(id, part.grid_index);
         parts.push(TilePart {
             id: file
@@ -1320,7 +1334,12 @@ fn refuse_unguarded_oriented_fills(expansion: &Expansion) -> Result<(), ExportEr
 /// Goes through the `.schem` pipeline's emitter rather than a second one of our
 /// own: one structure writer means one set of determinism guarantees and one
 /// place where the 1.21.11 shape is defined.
-fn part_nbt(model: &VoxelModel, palette: &ZonePalette, part: Box3) -> Result<Vec<u8>, ExportError> {
+fn part_nbt(
+    model: &VoxelModel,
+    palette: &ZonePalette,
+    part: Box3,
+    entities: &[HolderEntity],
+) -> Result<Vec<u8>, ExportError> {
     let size = [
         part.size[0] as i32,
         part.size[1] as i32,
@@ -1374,7 +1393,164 @@ fn part_nbt(model: &VoxelModel, palette: &ZonePalette, part: Box3) -> Result<Vec
                 .collect(),
         });
     }
-    Ok(nbt)
+    // The holders the marks place whose cell lies in this part, rebased to it.
+    let base = [
+        part.origin[0] - model.region().origin[0],
+        part.origin[1] - model.region().origin[1],
+        part.origin[2] - model.region().origin[2],
+    ];
+    let mine: Vec<crate::schem::nbt::Nbt> = entities
+        .iter()
+        .filter(|e| (0..3).all(|i| e.cell[i] >= base[i] && e.cell[i] < base[i] + size[i]))
+        .map(|e| {
+            e.entity_at([
+                e.cell[0] - base[0],
+                e.cell[1] - base[1],
+                e.cell[2] - base[2],
+            ])
+        })
+        .collect();
+    if mine.is_empty() {
+        return Ok(nbt);
+    }
+    Ok(with_entities(&nbt, mine))
+}
+
+/// **An item holder a mark places** (spec-0111 §3.2), in zone coordinates:
+/// the cell and the entity's own `nbt` compound — its type id and the scene
+/// properties the mark declared, nothing else.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HolderEntity {
+    /// The zone-relative cell: a frame's own cell, a stand's foot cell.
+    pub cell: [i32; 3],
+    /// Whether it is a frame (positioned at its cell's centre) or a stand (on
+    /// its cell's floor).
+    pub frame: bool,
+    /// The entity's `nbt` compound.
+    pub nbt: std::collections::BTreeMap<String, crate::schem::nbt::Nbt>,
+}
+
+impl HolderEntity {
+    /// The template entity compound — `pos`, `blockPos`, `nbt` — at `local`.
+    fn entity_at(&self, local: [i32; 3]) -> crate::schem::nbt::Nbt {
+        use crate::schem::nbt::Nbt;
+        let y = f64::from(local[1]) + if self.frame { 0.5 } else { 0.0 };
+        let mut c = BTreeMap::new();
+        c.insert(
+            "pos".to_string(),
+            Nbt::List(vec![
+                Nbt::Double(f64::from(local[0]) + 0.5),
+                Nbt::Double(y),
+                Nbt::Double(f64::from(local[2]) + 0.5),
+            ]),
+        );
+        c.insert(
+            "blockPos".to_string(),
+            Nbt::List(local.iter().map(|v| Nbt::Int(*v)).collect()),
+        );
+        c.insert("nbt".to_string(), Nbt::Compound(self.nbt.clone()));
+        Nbt::Compound(c)
+    }
+}
+
+/// The holders an expansion's marks place, judged by the one entity judge
+/// (`crate::admit::entities::judge`) before any byte is written: a holder the
+/// judge refuses is an engine defect in this writer, refused by name.
+pub fn holder_entities(expansion: &Expansion) -> Result<Vec<HolderEntity>, ExportError> {
+    use crate::schem::nbt::Nbt;
+    let mut out = Vec::new();
+    for anchor in expansion.anchors.values() {
+        let Some(h) = &anchor.holder else { continue };
+        let facing = anchor.facing.to_string();
+        let mut nbt = BTreeMap::new();
+        nbt.insert("id".to_string(), Nbt::String(h.kind.id().to_string()));
+        let flag = |b: bool| Nbt::Byte(i8::from(b));
+        if h.kind.is_frame() {
+            let byte = match facing.as_str() {
+                "north" => 2,
+                "south" => 3,
+                "west" => 4,
+                _ => 5,
+            };
+            nbt.insert("Facing".to_string(), Nbt::Byte(byte));
+            if let Some(r) = h.rotation {
+                nbt.insert("ItemRotation".to_string(), Nbt::Byte(r as i8));
+            }
+        } else {
+            let yaw = match facing.as_str() {
+                "south" => 0.0,
+                "west" => 90.0,
+                "north" => 180.0,
+                _ => 270.0,
+            };
+            nbt.insert(
+                "Rotation".to_string(),
+                Nbt::List(vec![Nbt::Float(yaw), Nbt::Float(0.0)]),
+            );
+            if let Some(pose) = &h.pose {
+                let mut p = BTreeMap::new();
+                for (part, nbt_name) in crate::grammar::ir::POSE_PARTS {
+                    if let Some(a) = pose.get(part) {
+                        p.insert(
+                            nbt_name.to_string(),
+                            Nbt::List(a.iter().map(|d| Nbt::Float(*d as f32)).collect()),
+                        );
+                    }
+                }
+                nbt.insert("Pose".to_string(), Nbt::Compound(p));
+            }
+            for (key, v) in [
+                ("Small", h.small),
+                ("ShowArms", h.show_arms),
+                ("NoBasePlate", h.no_base_plate),
+            ] {
+                if let Some(b) = v {
+                    nbt.insert(key.to_string(), flag(b));
+                }
+            }
+        }
+        if let Some(b) = h.invisible {
+            nbt.insert("Invisible".to_string(), flag(b));
+        }
+        out.push(HolderEntity {
+            cell: anchor.pos,
+            frame: h.kind.is_frame(),
+            nbt,
+        });
+    }
+    // The one judge every door asks: what this writer authored passes it, or
+    // the writer is refused.
+    let compounds: Vec<Nbt> = out.iter().map(|e| e.entity_at(e.cell)).collect();
+    let (_, refused) =
+        crate::admit::entities::judge(&compounds, &crate::admit::allowlist::Allowlist::default());
+    if !refused.is_empty() {
+        return Err(ExportError::Entities {
+            reasons: refused.into_iter().map(|d| d.message).collect(),
+        });
+    }
+    Ok(out)
+}
+
+/// A gzip-framed template with its `entities` list replaced by `entities`,
+/// deterministically (compounds in key order, gzip mtime 0).
+fn with_entities(nbt: &[u8], entities: Vec<crate::schem::nbt::Nbt>) -> Vec<u8> {
+    use crate::schem::nbt::Nbt;
+    use std::io::{Read as _, Write as _};
+    let mut raw = Vec::new();
+    flate2::read::GzDecoder::new(nbt)
+        .read_to_end(&mut raw)
+        .expect("the writer's own gzip decodes");
+    let value: fastnbt::Value = fastnbt::from_bytes(&raw).expect("the writer's own NBT decodes");
+    let Nbt::Compound(mut root) = Nbt::from(value) else {
+        unreachable!("a structure template's root is a compound")
+    };
+    root.insert("entities".to_string(), Nbt::List(entities));
+    let bytes = fastnbt::to_bytes(&Nbt::Compound(root)).expect("an NBT compound serialises");
+    let mut gz = flate2::GzBuilder::new()
+        .mtime(0)
+        .write(Vec::new(), flate2::Compression::new(6));
+    gz.write_all(&bytes).expect("gzip write");
+    gz.finish().expect("gzip finish")
 }
 
 #[cfg(test)]
@@ -1513,5 +1689,107 @@ mod tests {
         };
         assert_eq!(reasons.len(), 8, "one per cell: {reasons:?}");
         assert!(err.to_string().contains("command_block"), "{err}");
+    }
+
+    /// spec-0111 §3.2: a mark's `holder` is written into the piece's
+    /// `entities` at the mark's cell, with its kind and each scene property it
+    /// declared — and perturbing a property moves the bytes.
+    #[test]
+    fn a_mark_holder_writes_the_entity_with_what_it_declared() {
+        use crate::grammar::ir::{HolderKind, HolderMark, Mark, MarkAt};
+        let program = |head: i32| {
+            let mut stand = HolderMark::new(HolderKind::ArmorStand);
+            stand.show_arms = Some(true);
+            stand.pose = Some([("head".to_string(), [head, 0, 0])].into_iter().collect());
+            let mut p = Program::new("rack", "all").rule(
+                "all",
+                Node::Mark {
+                    mark: Mark::new("rack", MarkAt::offset(1, 0, 1))
+                        .facing(crate::grammar::ir::Facing::North)
+                        .holder(stand),
+                    body: Box::new(Node::Void),
+                },
+            );
+            p.version = crate::grammar::version::HOLDER_SINCE.to_string();
+            p
+        };
+        let bytes = |head: i32| {
+            export_prefab(
+                &program(head),
+                Box3::at_origin([3, 3, 3]),
+                &ExpandOptions::seeded(0),
+                "rack",
+            )
+            .unwrap()
+            .nbt
+        };
+        let s = crate::admit::structure::Structure::read(&bytes(10)).unwrap();
+        assert_eq!(s.entities.len(), 1);
+        let e = &s.entities[0];
+        assert_eq!(
+            crate::admit::entities::entity_id(e),
+            Some("minecraft:armor_stand")
+        );
+        assert_eq!(crate::admit::entities::entity_cell(e), Some([1, 0, 1]));
+        let nbt = e.as_compound().unwrap()["nbt"].as_compound().unwrap();
+        assert_eq!(nbt["ShowArms"], crate::schem::nbt::Nbt::Byte(1));
+        let pose = nbt["Pose"].as_compound().unwrap();
+        assert_eq!(
+            pose["Head"],
+            crate::schem::nbt::Nbt::List(vec![
+                crate::schem::nbt::Nbt::Float(10.0),
+                crate::schem::nbt::Nbt::Float(0.0),
+                crate::schem::nbt::Nbt::Float(0.0)
+            ])
+        );
+        // Facing north: the stand is turned to it (yaw 180).
+        assert_eq!(
+            nbt["Rotation"],
+            crate::schem::nbt::Nbt::List(vec![
+                crate::schem::nbt::Nbt::Float(180.0),
+                crate::schem::nbt::Nbt::Float(0.0)
+            ])
+        );
+        // The judge passes what the writer authored.
+        let (b, refused) = crate::admit::entities::judge(
+            &s.entities,
+            &crate::admit::allowlist::Allowlist::default(),
+        );
+        assert!(refused.is_empty(), "{refused:?}");
+        assert_eq!(b.holders, 1);
+        // Perturbation: the pose moves the bytes; the same program reproduces them.
+        assert_ne!(bytes(10), bytes(20));
+        assert_eq!(bytes(10), bytes(10));
+    }
+
+    /// The fence: a document below `HOLDER_SINCE` that writes `holder` is
+    /// refused by name, and a property the kind does not carry is refused.
+    #[test]
+    fn a_holder_is_fenced_and_judged_by_its_kind() {
+        use crate::grammar::ir::{HolderKind, HolderMark, Mark, MarkAt};
+        let with = |holder: HolderMark, version: &str| {
+            let mut p = Program::new("rack", "all").rule(
+                "all",
+                Node::Mark {
+                    mark: Mark::new("rack", MarkAt::offset(1, 0, 1)).holder(holder),
+                    body: Box::new(Node::Void),
+                },
+            );
+            p.version = version.to_string();
+            p.validate()
+        };
+        let err = with(HolderMark::new(HolderKind::ItemFrame), "1.10.0").unwrap_err();
+        assert!(err.to_string().contains("1.12.0"), "{err}");
+        let mut frame = HolderMark::new(HolderKind::GlowItemFrame);
+        frame.small = Some(true);
+        let err = with(frame, crate::grammar::version::HOLDER_SINCE).unwrap_err();
+        assert!(err.to_string().contains("`small`"), "{err}");
+        assert!(
+            with(
+                HolderMark::new(HolderKind::ItemFrame),
+                crate::grammar::version::HOLDER_SINCE
+            )
+            .is_ok()
+        );
     }
 }

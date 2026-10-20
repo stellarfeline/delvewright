@@ -456,10 +456,29 @@ fn post_fork_cast_selecting_nothing_is_dw0483() {
 
 // --- DW0484: exclusive-content leakage -------------------------------------
 
-/// The mourning-scene shape: an ambient producer sets the OTHER branch's flag on
-/// every playthrough, so branch-A-gated content is reachable under branch B.
+/// The mourning-scene shape: a producer every playthrough performs — the
+/// mandatory opening quest's own completion — sets the OTHER branch's flag, so
+/// branch-A-gated content is reachable under branch B.
 #[test]
 fn sibling_flag_produced_on_every_branch_is_dw0484() {
+    let c = campaign_with(|_, quests, _| {
+        quest(quests, "quest/decide")["on_complete"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({ "type": "set-flag", "flag": "flag/wait" }));
+    });
+    let d = find(branch::check_branches(&c), "DW0484");
+    assert!(d.message.contains("LEAKS"), "{}", d.message);
+    assert!(d.message.contains("branch/bolt"), "{}", d.message);
+    assert!(d.message.contains("flag/wait"), "{}", d.message);
+}
+
+/// spec-0108 §4.4: an elective ambient producer is a participation a world
+/// states, not a firing on every branch. A `use` trigger nothing on the
+/// mainline presses sets `flag/wait`; the world that does not press it
+/// realizes `branch/bolt` (its `flag/wait` pinned unset), so nothing leaks.
+#[test]
+fn an_elective_producer_of_a_sibling_flag_is_a_world_that_skips_it() {
     let c = campaign_with(|_, quests, _| {
         quests["content"]["triggers"] = serde_json::json!([{
             "id": "trigger/bell",
@@ -468,10 +487,19 @@ fn sibling_flag_produced_on_every_branch_is_dw0484() {
             "effects": [{ "type": "set-flag", "flag": "flag/wait" }]
         }]);
     });
-    let d = find(branch::check_branches(&c), "DW0484");
-    assert!(d.message.contains("LEAKS"), "{}", d.message);
-    assert!(d.message.contains("branch/bolt"), "{}", d.message);
-    assert!(d.message.contains("flag/wait"), "{}", d.message);
+    let d = branch::check_branches(&c);
+    assert!(!d.iter().any(|x| x.code == "DW0484"), "{d:#?}");
+    let bolt = branch::realize(&c)
+        .into_iter()
+        .find(|r| r.branch.id == "branch/bolt")
+        .unwrap();
+    let flow = delvec::compiler::flow::Flow::new(&c);
+    let w = bolt.world.expect("branch/bolt is realized");
+    assert!(
+        !flow.story().worlds[w].performs.contains("trigger/bell"),
+        "the realizing world skips the bell: {:?}",
+        flow.story().worlds[w]
+    );
 }
 
 // --- DW0485: hard event contradictions -------------------------------------
@@ -1822,8 +1850,20 @@ fn a_stated_subject_beats_the_effect_s_own_object() {
 
 // --- artifacts -------------------------------------------------------------
 
-/// The two artifacts are emitted, named per branch, and byte-identical across
-/// runs (ADR-0006).
+/// The plan row of the story world that realizes declared branch `id`
+/// (spec-0108 §4.3: the plan's rows are worlds, each naming the branches its
+/// flags realize).
+fn row_of<'a>(plan: &'a Value, id: &str) -> &'a Value {
+    plan["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|w| w["branches"].as_array().unwrap().iter().any(|b| b == id))
+        .unwrap_or_else(|| panic!("no world realizes {id}: {plan:#}"))
+}
+
+/// The artifacts are emitted, one row and one chronicle per story world, and
+/// byte-identical across runs (ADR-0006).
 #[test]
 fn artifacts_are_emitted_and_deterministic() {
     let c = green();
@@ -1834,23 +1874,30 @@ fn artifacts_are_emitted_and_deterministic() {
     assert_eq!(
         keys,
         vec![
-            "validation/branch-chronicle-bolt.md",
-            "validation/branch-chronicle-hold.md",
             "validation/branch-plan.json",
+            "validation/world-chronicle-0.md",
+            "validation/world-chronicle-1.md",
         ]
     );
     let plan: Value = serde_json::from_slice(&a["validation/branch-plan.json"]).unwrap();
     let branches = plan["branches"].as_array().unwrap();
     assert_eq!(branches.len(), 2);
-    // Every branch names its flags, its path and the choices that enter it.
+    // Every world names its flags, its path and the choices that enter it.
     for b in branches {
         assert!(b["flags"]["set"].as_array().unwrap().len() == 1);
         assert!(b["flags"]["unset"].as_array().unwrap().len() == 1);
         assert!(!b["critical_path"].as_array().unwrap().is_empty());
         assert!(!b["entry_choices"].as_array().unwrap().is_empty());
+        assert_eq!(b["branches"].as_array().unwrap().len(), 1, "{b}");
     }
-    let md = String::from_utf8(a["validation/branch-chronicle-hold.md"].clone()).unwrap();
-    assert!(md.contains("# Branch chronicle — `branch/hold`"), "{md}");
+    assert_eq!(plan["branches_unrealized"], serde_json::json!([]));
+    let hold = row_of(&plan, "branch/hold");
+    let k = hold["id"].as_str().unwrap().trim_start_matches("world/");
+    let md = String::from_utf8(a[&format!("validation/world-chronicle-{k}.md")].clone()).unwrap();
+    assert!(
+        md.contains(&format!("# World chronicle — `world/{k}`")),
+        "{md}"
+    );
     assert!(md.contains("ending/held"), "{md}");
     // The chronicle is readable start → ending: the first line is the opening
     // beat and the endings section is last.
@@ -1869,23 +1916,20 @@ fn entry_choices_carry_the_command_that_takes_them() {
     let c = green();
     let a = branch::artifacts(&c);
     let plan: Value = serde_json::from_slice(&a["validation/branch-plan.json"]).unwrap();
-    let by_id: std::collections::BTreeMap<&str, &Value> = plan["branches"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|b| (b["id"].as_str().unwrap(), b))
-        .collect();
     // The two branches are entered by two DIFFERENT options of the same NPC —
     // which is exactly what makes a branch run a scripted-choice run.
-    let hold = &by_id["branch/hold"]["entry_choices"][0];
-    let bolt = &by_id["branch/bolt"]["entry_choices"][0];
+    let hold = &row_of(&plan, "branch/hold")["entry_choices"][0];
+    let bolt = &row_of(&plan, "branch/bolt")["entry_choices"][0];
     assert_eq!(hold["npc"], "npc/keeper");
     assert_eq!(hold["command"], "/trigger dw.dlg_keeper set 2");
     assert_eq!(bolt["command"], "/trigger dw.dlg_keeper set 3");
     assert_ne!(hold["option"], bolt["option"]);
-    // Each reachable branch names the executable path the harness walks for it.
-    assert_eq!(by_id["branch/hold"]["path"], "branch-path-hold.json");
-    assert_eq!(by_id["branch/bolt"]["path"], "branch-path-bolt.json");
+    // Each world names the executable path the harness walks for it.
+    for b in ["branch/hold", "branch/bolt"] {
+        let row = row_of(&plan, b);
+        let k = row["id"].as_str().unwrap().trim_start_matches("world/");
+        assert_eq!(row["path"], format!("world-path-{k}.json"));
+    }
 }
 
 /// An option index is 1-based across ONE NPC's tree, so it must be resolved

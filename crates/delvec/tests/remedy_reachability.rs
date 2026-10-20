@@ -4292,6 +4292,140 @@ fn dw1044_closing_the_way_round_builds() {
 }
 
 // ---------------------------------------------------------------------------
+// DW1027, DW1028 — a gated connection (spec-0107 §8)
+// ---------------------------------------------------------------------------
+
+/// The blockout fixture copied, with `graph` and `quests` edited in place:
+/// five places, a gated walk the keeper's beat opens, and a drop the loft
+/// hands to the hall along a front.
+fn gated_fixture(
+    tag: &str,
+    graph: impl FnOnce(&mut serde_json::Value),
+    plan: impl FnOnce(&mut serde_json::Value),
+    quests: impl FnOnce(&mut serde_json::Value),
+) -> PathBuf {
+    let camp = site_plan_campaign(tag, "blockout", None, plan);
+    for (name, edit) in [
+        (
+            "layout-graph.json",
+            Box::new(graph) as Box<dyn FnOnce(&mut serde_json::Value)>,
+        ),
+        ("quests.json", Box::new(quests)),
+    ] {
+        common::patch_file(&camp.join(name), edit);
+    }
+    camp
+}
+
+fn gate_the_front(v: &mut serde_json::Value) {
+    for e in v["content"]["edges"].as_array_mut().unwrap() {
+        if e["id"] == "edge/loft-drop" {
+            e["gating"] = serde_json::json!({ "flags": ["flag/keeper-yields"] });
+        }
+    }
+}
+
+/// The fixture's front, `edge/loft-drop`, gated: refused `DW1027`, naming the
+/// connection.
+#[test]
+fn dw1027_a_gated_front_is_refused() {
+    let camp = gated_fixture("dw1027-front", gate_the_front, |_| {}, |_| {});
+    let (code, text) = validate(&camp);
+    assert_ne!(code, 0, "{text}");
+    assert!(
+        text.contains("DW1027 [error]") && text.contains("edge/loft-drop"),
+        "{text}"
+    );
+}
+
+/// **REMOVE the `gating`.** The front ungated is the fixture as shipped, which
+/// validates without `DW1027`.
+#[test]
+fn dw1027_removing_the_gating_from_the_front_reaches_another_verdict() {
+    let camp = gated_fixture("dw1027-ungated", |_| {}, |_| {}, |_| {});
+    let (_, text) = validate(&camp);
+    assert!(!text.contains("DW1027 [error]"), "{text}");
+}
+
+/// **GIVE the seam a standard `opening`.** The same gated drop through an arch
+/// in the loft's wall: the bar has somewhere to stand, and `DW1027` is gone.
+#[test]
+fn dw1027_giving_the_seam_an_opening_reaches_another_verdict() {
+    let camp = gated_fixture(
+        "dw1027-opening",
+        gate_the_front,
+        |v| {
+            for s in v["content"]["seams"].as_array_mut().unwrap() {
+                if s["edge"] == "edge/loft-drop" {
+                    let o = s.as_object_mut().unwrap();
+                    o.remove("contact");
+                    o.insert("opening".into(), serde_json::json!("arch"));
+                }
+            }
+        },
+        |_| {},
+    );
+    let (_, text) = validate(&camp);
+    assert!(!text.contains("DW1027 [error]"), "{text}");
+}
+
+/// The keeper's beat no longer opens the gated hall door: refused `DW1028`,
+/// naming the connection and its seam gate.
+fn the_opener_retargeted(v: &mut serde_json::Value) {
+    let text = v.to_string();
+    assert_eq!(
+        text.matches("\"anchor/seam-hall-cell\"").count(),
+        1,
+        "{text}"
+    );
+    *v = serde_json::from_str(&text.replace("\"anchor/seam-hall-cell\"", "\"anchor/node-cell\""))
+        .unwrap();
+}
+
+#[test]
+fn dw1028_a_gated_way_nothing_opens_is_refused() {
+    let camp = gated_fixture("dw1028-unopened", |_| {}, |_| {}, the_opener_retargeted);
+    let (code, text) = validate(&camp);
+    assert_ne!(code, 0, "{text}");
+    assert!(
+        text.contains("DW1028 [error]")
+            && text.contains("edge/hall-cell")
+            && text.contains("anchor/seam-hall-cell"),
+        "{text}"
+    );
+}
+
+/// **WRITE the opener.** The fixture as shipped: the keeper's beat opens
+/// `anchor/seam-hall-cell`, and `DW1028` is gone.
+#[test]
+fn dw1028_writing_the_opener_reaches_another_verdict() {
+    let camp = gated_fixture("dw1028-opener", |_| {}, |_| {}, |_| {});
+    let (_, text) = validate(&camp);
+    assert!(!text.contains("DW1028 [error]"), "{text}");
+}
+
+/// **REMOVE the `gating`.** The door ungated owes no opener; the beat's
+/// `open-gate` now names a region nothing synthesizes, which is a different
+/// refusal about a different document.
+#[test]
+fn dw1028_removing_the_gating_reaches_another_verdict() {
+    let camp = gated_fixture(
+        "dw1028-ungated",
+        |v| {
+            for e in v["content"]["edges"].as_array_mut().unwrap() {
+                if e["id"] == "edge/hall-cell" {
+                    e.as_object_mut().unwrap().remove("gating");
+                }
+            }
+        },
+        |_| {},
+        the_opener_retargeted,
+    );
+    let (_, text) = validate(&camp);
+    assert!(!text.contains("DW1028 [error]"), "{text}");
+}
+
+// ---------------------------------------------------------------------------
 // DW0730 — a palette block the allowlist refuses, and the surface it names
 // ---------------------------------------------------------------------------
 //
@@ -4435,4 +4569,481 @@ fn dw0730_a_spawner_is_had_as_a_wave() {
                 }));
         });
     }
+}
+
+// ---------------------------------------------------------------------------
+// DW1018 / DW1019 / DW1024 — the container class (spec-0105)
+// ---------------------------------------------------------------------------
+
+const BARREL: &str = "minecraft:barrel";
+
+/// The container fixture ([`common::container_campaign`]), built.
+fn containers_build(
+    tag: &str,
+    blocks: &[([i32; 3], &str)],
+    collect: Option<&str>,
+    notice: bool,
+) -> (i32, String) {
+    let camp =
+        common::container_campaign(&tmp(&format!("containers-{tag}")), blocks, collect, notice);
+    build(&format!("containers-{tag}"), &camp, &common::prefabs_dir())
+}
+
+/// **DW1018, scenery and no notice — both moves.** Declaring the notice builds;
+/// replacing the container with furniture that is not one builds.
+#[test]
+fn dw1018_declaring_the_notice_or_replacing_the_container_builds() {
+    let (code, log) = containers_build("1018-bare", &[([-3, 0, -2], BARREL)], None, false);
+    assert_eq!(code, 3, "{log}");
+    assert!(log.contains("DW1018"), "{log}");
+    let (code, log) = containers_build("1018-told", &[([-3, 0, -2], BARREL)], None, true);
+    assert_eq!(code, 0, "the notice the message names must build:\n{log}");
+    let (code, log) = containers_build(
+        "1018-replaced",
+        &[([-3, 0, -2], "minecraft:crafting_table")],
+        None,
+        false,
+    );
+    assert_eq!(code, 0, "replacing the container must build:\n{log}");
+}
+
+/// **DW1018, a notice with nothing to speak for.** Deleting it builds.
+#[test]
+fn dw1018_deleting_a_notice_with_no_scenery_builds() {
+    let (code, log) = containers_build("1018-stocked", &[], Some("anchor/exit"), true);
+    assert_eq!(code, 3, "{log}");
+    assert!(log.contains("DW1018"), "{log}");
+    let (code, log) = containers_build("1018-deleted", &[], Some("anchor/exit"), false);
+    assert_eq!(code, 0, "deleting the notice must build:\n{log}");
+}
+
+/// **DW1024, mixed.** Replacing the scenery container reaches a different
+/// verdict — the notice now speaks for nothing (`DW1018`) — and deleting the
+/// notice, the move that one names, builds.
+#[test]
+fn dw1024_replacing_the_scenery_beside_what_matters_reaches_the_next_verdict() {
+    let (code, log) = containers_build(
+        "1024-mixed",
+        &[([-3, 0, -2], BARREL)],
+        Some("anchor/exit"),
+        true,
+    );
+    assert_eq!(code, 3, "{log}");
+    assert!(log.contains("DW1024"), "{log}");
+    let (code, log) = containers_build(
+        "1024-replaced",
+        &[([-3, 0, -2], "minecraft:crafting_table")],
+        Some("anchor/exit"),
+        true,
+    );
+    assert_eq!(code, 3, "{log}");
+    assert!(
+        log.contains("DW1018") && !log.contains("DW1024"),
+        "a different verdict:\n{log}"
+    );
+    let (code, log) = containers_build(
+        "1024-replaced-untold",
+        &[([-3, 0, -2], "minecraft:crafting_table")],
+        Some("anchor/exit"),
+        false,
+    );
+    assert_eq!(code, 0, "{log}");
+}
+
+/// **DW1024, storeroom.** Replacing the surplus builds.
+#[test]
+fn dw1024_replacing_the_surplus_scenery_builds() {
+    let three = [
+        ([-3, 0, -2], BARREL),
+        ([3, 0, -2], BARREL),
+        ([-3, 0, -1], BARREL),
+    ];
+    let (code, log) = containers_build("1024-storeroom", &three, None, true);
+    assert_eq!(code, 3, "{log}");
+    assert!(log.contains("DW1024"), "{log}");
+    let two = [
+        ([-3, 0, -2], BARREL),
+        ([3, 0, -2], BARREL),
+        ([-3, 0, -1], "minecraft:crafting_table"),
+    ];
+    let (code, log) = containers_build("1024-two", &two, None, true);
+    assert_eq!(code, 0, "{log}");
+}
+
+/// `delvec validate` over the container fixture with one quests edit.
+fn containers_validate(tag: &str, f: impl FnOnce(&mut serde_json::Value)) -> (i32, String) {
+    let camp = common::container_campaign(&tmp(&format!("containers-v-{tag}")), &[], None, false);
+    common::patch_file(&camp.join("quests.json"), f);
+    let prefabs = common::prefabs_dir();
+    let r = delvec(&[
+        "validate",
+        camp.to_str().unwrap(),
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+    ]);
+    (r.status.code().unwrap_or(-1), log(&r))
+}
+
+/// **DW1019 — each shape and the move its message names.** A stack in the
+/// fill, the `containers` object deleted, a block that is not a container:
+/// each validates.
+#[test]
+fn dw1019_each_shape_validates_after_its_move() {
+    let empty = serde_json::json!([{ "id": "loot/stores", "anchor": "anchor/exit", "items": [] }]);
+    let stocked = serde_json::json!([{ "id": "loot/stores", "anchor": "anchor/exit",
+        "items": [{ "item": "minecraft:bread" }] }]);
+    let (code, log) = containers_validate("1019-empty", |q| q["content"]["loot"] = empty);
+    assert_eq!(code, 1, "{log}");
+    assert!(log.contains("DW1019"), "{log}");
+    let (code, log) = containers_validate("1019-stocked", |q| q["content"]["loot"] = stocked);
+    assert_eq!(code, 0, "{log}");
+
+    let (code, log) = containers_validate("1019-object", |q| {
+        q["content"]["containers"] = serde_json::json!({});
+    });
+    assert_eq!(code, 1, "{log}");
+    assert!(log.contains("DW1019"), "{log}");
+    let (code, log) = containers_validate("1019-deleted", |_| {});
+    assert_eq!(code, 0, "{log}");
+
+    let set = |block: &str| serde_json::json!({ "type": "set-block", "anchor": "anchor/exit", "block": block });
+    let chest = set("minecraft:chest");
+    let (code, log) = containers_validate("1019-runtime", |q| {
+        q["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap()
+            .push(chest);
+    });
+    assert_eq!(code, 1, "{log}");
+    assert!(log.contains("DW1019"), "{log}");
+    let lamp = set("minecraft:sea_lantern");
+    let (code, log) = containers_validate("1019-lamp", |q| {
+        q["content"]["quests"][0]["on_objective_complete"]["obj/talk"]
+            .as_array_mut()
+            .unwrap()
+            .push(lamp);
+    });
+    assert_eq!(code, 0, "{log}");
+}
+
+// ---------------------------------------------------------------------------
+// DW1035 / DW1036 / DW1037 / DW1038 — the holder class (spec-0111)
+// ---------------------------------------------------------------------------
+
+/// hello-world over a library whose hello-room carries `entities`, with
+/// `quests` patched and an optional stage-7 `edits` list, through `cmd`.
+fn holders_run(
+    tag: &str,
+    cmd: &str,
+    entities: Vec<delvec::admit::Nbt>,
+    quests: impl FnOnce(&mut serde_json::Value),
+    edits: Option<serde_json::Value>,
+) -> (i32, String) {
+    let dir = tmp(&format!("holders-{tag}"));
+    let prefabs = common::holder_prefabs(&dir.join("prefabs"), entities);
+    let camp = dir.join("camp");
+    common::copy_dir_all(&common::hello_world_dir(), &camp);
+    common::patch_file(&camp.join("quests.json"), |q| quests(&mut q["content"]));
+    if let Some(edits) = edits {
+        let doc = serde_json::json!({
+            "dsl_version": DSL_VERSION, "campaign_id": "hello-world", "stage": "world-edits",
+            "content": {"batches": [{"area": "area/keep", "id": "batch/holders", "edits": edits}]}
+        });
+        std::fs::write(camp.join("world-edits.json"), doc.to_string()).unwrap();
+    }
+    let out = dir.join("out");
+    let mut args = vec![cmd, camp.to_str().unwrap()];
+    if cmd == "build" {
+        args.extend(["-o", out.to_str().unwrap()]);
+    }
+    args.extend(["--prefabs", prefabs.to_str().unwrap()]);
+    let r = delvec(&args);
+    (r.status.code().unwrap_or(-1), log(&r))
+}
+
+fn rack(items: serde_json::Value) -> impl FnOnce(&mut serde_json::Value) {
+    move |c| {
+        c["loot"] =
+            serde_json::json!([{"id": "loot/rack", "anchor": "anchor/rack", "items": items}])
+    }
+}
+
+/// **DW1035 — the moves its message names.** A sword moved from the chest slot
+/// to a slot that takes any stack validates; a stand stack given its slot
+/// builds.
+#[test]
+fn dw1035_a_slot_that_takes_the_stack_validates_and_a_named_slot_builds() {
+    let (code, log) = holders_run(
+        "1035-chest",
+        "validate",
+        vec![common::stand_entity()],
+        rack(serde_json::json!([{"item": "minecraft:iron_sword", "slot": "armor.chest"}])),
+        None,
+    );
+    assert_eq!(code, 1, "{log}");
+    assert!(log.contains("DW1035"), "{log}");
+    let (code, log) = holders_run(
+        "1035-hand",
+        "validate",
+        vec![common::stand_entity()],
+        rack(serde_json::json!([{"item": "minecraft:iron_sword", "slot": "weapon.mainhand"}])),
+        None,
+    );
+    assert_eq!(code, 0, "{log}");
+    let (code, log) = holders_run(
+        "1035-unnamed",
+        "build",
+        vec![common::stand_entity()],
+        rack(serde_json::json!([{"item": "minecraft:iron_sword"}])),
+        None,
+    );
+    assert_eq!(code, 3, "{log}");
+    assert!(log.contains("DW1035"), "{log}");
+    let (code, log) = holders_run(
+        "1035-named",
+        "build",
+        vec![common::stand_entity()],
+        rack(serde_json::json!([{"item": "minecraft:iron_sword", "slot": "weapon.mainhand"}])),
+        None,
+    );
+    assert_eq!(code, 0, "{log}");
+}
+
+/// **DW1037 — both arms and their moves.** A frame moved onto the wall (facing
+/// out of it) builds; the shell that walls a filled frame in, removed, builds.
+#[test]
+fn dw1037_hanging_the_frame_on_the_wall_or_opening_the_sightline_builds() {
+    let mut on_air = common::frame_entity();
+    if let delvec::admit::Nbt::Compound(c) = &mut on_air
+        && let Some(delvec::admit::Nbt::Compound(n)) = c.get_mut("nbt")
+    {
+        n.insert("Facing".to_string(), delvec::admit::Nbt::Byte(4));
+    }
+    let (code, log) = holders_run("1037-air", "build", vec![on_air], |_| {}, None);
+    assert_eq!(code, 3, "{log}");
+    assert!(log.contains("DW1037"), "{log}");
+    let (code, log) = holders_run(
+        "1037-wall",
+        "build",
+        vec![common::frame_entity()],
+        |_| {},
+        None,
+    );
+    assert_eq!(code, 0, "{log}");
+
+    let map = |c: &mut serde_json::Value| {
+        c["loot"] = serde_json::json!([{"id": "loot/map", "anchor": "anchor/frame",
+            "items": [{"item": "minecraft:map"}]}]);
+    };
+    let mut shell = Vec::new();
+    for (i, (min, max)) in [
+        ([1, -1, -1], [2, 2, 1]),
+        ([0, -1, -1], [0, -1, 1]),
+        ([0, 1, -1], [0, 2, 1]),
+        ([0, 0, -1], [0, 0, -1]),
+        ([0, 0, 1], [0, 0, 1]),
+    ]
+    .iter()
+    .enumerate()
+    {
+        shell.push(
+            serde_json::json!({"verb": "select", "name": format!("region/s{i}"),
+            "shape": {"frame": {"kind": "anchor-relative", "anchor": "anchor/frame"},
+                      "kind": "box", "min": min, "max": max}}),
+        );
+        shell.push(
+            serde_json::json!({"verb": "fill", "region": format!("region/s{i}"),
+            "recipe": {"blocks": [{"block": "minecraft:stone", "weight": 1.0}]}}),
+        );
+    }
+    let (code, log) = holders_run(
+        "1037-walled",
+        "build",
+        vec![common::frame_entity()],
+        map,
+        Some(serde_json::Value::Array(shell)),
+    );
+    assert_eq!(code, 3, "{log}");
+    assert!(log.contains("DW1037"), "{log}");
+    let (code, log) = holders_run(
+        "1037-open",
+        "build",
+        vec![common::frame_entity()],
+        map,
+        None,
+    );
+    assert_eq!(code, 0, "{log}");
+}
+
+/// **DW1038 — the move its message names.** The region shrunk off the frame's
+/// cell and its backing block builds.
+#[test]
+fn dw1038_shrinking_the_region_off_the_holder_builds() {
+    let clear = |extent: [i32; 3]| {
+        move |c: &mut serde_json::Value| {
+            c["quests"][0]["on_objective_complete"]["obj/talk"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "type": "clear-region",
+                    "region": {"anchor": "anchor/keeper-stand", "extent": extent},
+                    "happening": {"text": "the floor clears", "verb": "opens"}
+                }));
+        }
+    };
+    // keeper-stand is local [5, 1, 4]; the frame hangs at [1, 2, 2] on x = 0.
+    let (code, log) = holders_run(
+        "1038-wide",
+        "build",
+        vec![common::frame_entity()],
+        clear([5, 1, 2]),
+        None,
+    );
+    assert_eq!(code, 3, "{log}");
+    assert!(log.contains("DW1038"), "{log}");
+    let (code, log) = holders_run(
+        "1038-shrunk",
+        "build",
+        vec![common::frame_entity()],
+        clear([0, 0, 0]),
+        None,
+    );
+    assert_eq!(code, 0, "{log}");
+    assert!(
+        log.contains(
+            "1 runtime edit(s) examined against 1 holder entit(y/ies), 0 reaching a holder"
+        ),
+        "{log}"
+    );
+}
+
+/// **DW1036 — the move its message names.** The owned key removed, the audit
+/// passes.
+#[test]
+fn dw1036_removing_the_owned_key_passes_the_audit() {
+    let dir = tmp("holders-1036");
+    let src = common::prefabs_dir().join("hello-room.nbt");
+    let audit = |name: &str, extra: Vec<(&str, delvec::admit::Nbt)>| {
+        let mut s =
+            delvec::admit::structure::Structure::read(&std::fs::read(&src).unwrap()).unwrap();
+        let mut keys = vec![("Facing", delvec::admit::Nbt::Byte(5))];
+        keys.extend(extra);
+        s.entities = vec![common::holder_entity(
+            "minecraft:item_frame",
+            common::FRAME,
+            true,
+            &keys,
+        )];
+        let p = dir.join(format!("{name}.nbt"));
+        std::fs::write(&p, s.write()).unwrap();
+        let r = delvec(&["prefab", "audit", p.to_str().unwrap()]);
+        (r.status.code().unwrap_or(-1), log(&r))
+    };
+    let (code, log) = audit("fixed", vec![("Fixed", delvec::admit::Nbt::Byte(1))]);
+    assert_ne!(code, 0, "{log}");
+    assert!(log.contains("DW1036") && log.contains("`Fixed`"), "{log}");
+    let (code, log) = audit("plain", vec![]);
+    assert_eq!(code, 0, "{log}");
+}
+
+// ---------------------------------------------------------------------------
+// spec-0108 — an ending reads the run
+// ---------------------------------------------------------------------------
+
+/// `tests/fixtures/elective-reach`, copied: one ending (`ending/home`) whose
+/// final scene's epilogue line reads `state/tally`, which the optional tally
+/// quest writes; the tally quest waits on `flag/rang`, which only the elective
+/// bell sets.
+fn ending_campaign(tag: &str) -> PathBuf {
+    let camp = tmp(&format!("ending-{tag}"));
+    common::copy_dir_all(
+        &common::repo_root().join("crates/delvec/tests/fixtures/elective-reach"),
+        &camp,
+    );
+    camp
+}
+
+/// **GATE A LINE OF THE FINAL SCENE ON A FLAG OR DATUM A DEED IN ANOTHER QUEST
+/// WRITES.** `DW1029`'s first move. The campaign declares every ending reads two
+/// seeded inputs; `ending/home` reads one (`state/tally`). Adding an epilogue
+/// line gated on `flag/rang` — the bell's flag, a deed outside the host quest —
+/// makes it two, and the declaration holds. Measured on the fixture: declared,
+/// `analyze` exits 1 (the validation funnel's refusal) with `DW1029` and no
+/// other error; moved, exit 0.
+#[test]
+fn dw1029_gating_an_epilogue_line_on_a_deed_meets_the_declaration() {
+    let dir = common::prefabs_dir();
+    let camp = ending_campaign("dw1029");
+    edit_doc(&camp, "quest-plan.json", |v| {
+        v["content"]["endings_read"] = serde_json::json!({"at_least": 2});
+    });
+    let (code, before) = analyze(&camp, &dir);
+    assert_eq!(code, 1, "{before}");
+    assert!(
+        before.contains("DW1029") && before.contains("reads 1 seeded input(s)"),
+        "{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        v["content"]["quests"][2]["on_complete"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "type": "narrate", "style": "chat", "text": "The bell still hums.",
+                "when": {"requires_flags": ["flag/rang"]}
+            }));
+    });
+    let (code, after) = analyze(&camp, &dir);
+    assert!(!after.contains("DW1029"), "{after}");
+    assert_eq!(code, 0, "the epilogue line meets the declaration:\n{after}");
+}
+
+/// **LOOSEN THE INTERVAL.** `DW1030`'s second move. A second ending needs the
+/// tally at least 5; its only writer is one optional quest, so no world leaves
+/// it above 1 and no world reaches the ending. Loosened to at least 1, the world
+/// that performs the tally quest reaches it. Measured on the fixture: at 5,
+/// `analyze` exits 1 with `DW1030` naming the subset-sum reason, and `DW0482`
+/// beside it — the world realizing `branch/rang` performs the tally quest and,
+/// with the first ending kept for a tally of 0, ends nowhere; at 1, exit 0 and
+/// neither.
+#[test]
+fn dw1030_loosening_the_interval_lets_a_world_reach_the_ending() {
+    let dir = common::prefabs_dir();
+    let camp = ending_campaign("dw1030");
+    let gate = |v: i32| {
+        serde_json::json!({"requires_state": [
+            {"state": "state/tally", "op": "at-least", "value": v}
+        ]})
+    };
+    edit_doc(&camp, "quests.json", |v| {
+        let scene = v["content"]["quests"][2]["on_complete"]
+            .as_array_mut()
+            .unwrap();
+        scene[0]["when"] = serde_json::json!({"requires_state": [
+            {"state": "state/tally", "op": "at-most", "value": 0}
+        ]});
+        scene.push(serde_json::json!({
+            "type": "campaign-complete", "ending": "ending/counted",
+            "happening": {"text": "Counted.", "verb": "survives"},
+            "when": gate(5)
+        }));
+    });
+    let (code, before) = analyze(&camp, &dir);
+    assert_eq!(code, 1, "{before}");
+    assert!(
+        before.contains("DW1030") && before.contains("`ending/counted`"),
+        "{before}"
+    );
+    assert!(
+        before.contains("no subset of elective amounts reaches it"),
+        "{before}"
+    );
+    edit_doc(&camp, "quests.json", |v| {
+        v["content"]["quests"][2]["on_complete"][2]["when"] = gate(1);
+    });
+    let (code, after) = analyze(&camp, &dir);
+    assert!(
+        !after.contains("DW1030") && !after.contains("DW0482"),
+        "{after}"
+    );
+    assert_eq!(code, 0, "the loosened interval is reached:\n{after}");
 }

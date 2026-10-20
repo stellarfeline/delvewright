@@ -1767,6 +1767,17 @@ jobs:
             validation/gallery-src-site-plan -o written-world-site-plan
           python3 tools/ci/check-written-world.py validation/delve-output-gallery-site-plan \
             written-world-site-plan validation/delve-output-gallery-site-plan/world
+      # The site-plan point is where the gallery's shut floor gates are — the
+      # undercroft shaft's hatch and the cover over the crawl's ladder — and a
+      # floor holds the body that stands on it. The hatch stand puts the bot on
+      # every point of every one, on a fresh world before any beat; with
+      # `--only-hatch-stand` the ladder reds when the build names none.
+      - name: a body stood on every shut floor gate stays on it (site-plan)
+        if: '!cancelled()'
+        run: |
+          bash validation/bot-run.sh --project dw-ci-gallery-hatch \
+            --output ./delve-output-gallery-site-plan --only-hatch-stand \
+            --run-out ./run-out/dw-ci-gallery-hatch
       - name: job summary
         if: always()
         run: |

@@ -185,8 +185,9 @@ machine: every step's quest must be active, its `after` prerequisites completed,
 its `requires_flags` set and its `forbids_flags` unset *at that position*, its
 completing dialogue option reachable *at that position*, and `campaign-complete`
 must fire exactly at the final step. The first violation is `DW0204`, naming the
-step. Every reachable branch's exported path (`Flow::playthrough_in` over the
-world `branch::realize` picks, the sequence `validation/branch-path-<slug>.json`
+step. Every reachable branch's exported path (`Flow::story_playthrough` over the
+story world `branch::realize` picks — replayed under that world's participation
+and entry deeds — the sequence `validation/world-path-<k>.json`
 publishes) is replayed by the same rule, and its violation is `DW0204` naming the
 branch and the file: the branch runs walk that file as the bot ladder walks the
 critical path, and the harness fails a walk whose `campaign-complete` arrives

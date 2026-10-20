@@ -763,3 +763,61 @@ mod tests {
         assert_eq!(b.held, 1);
     }
 }
+
+/// **A piece carries item holders saying what they look like, and nothing
+/// else** (spec-0111 §3.1) — the generators' door onto the rule the engine's
+/// admission audit holds a template to (`delvec::admit::entities::judge`):
+/// every entity is one of the holder kinds of
+/// [`delvewright_dsl::holders::ENTITY_HOLDERS_1_21_11`], and every key of its
+/// `nbt` is its type `id` or one of that kind's scene keys. The table both
+/// doors read is the one table; this function only asks it.
+///
+/// `entities` is `(entity type id, the keys its nbt carries)` per entity. A
+/// failure panics, so the generator writes nothing.
+pub fn assert_entities_are_holders(id: &str, entities: &[(&str, Vec<&str>)]) {
+    for (kind_id, keys) in entities {
+        let kind = delvewright_dsl::holders::entity_holder(kind_id).unwrap_or_else(|| {
+            panic!(
+                "{id}: entity `{kind_id}` is not an item holder; a piece carries item frames, \
+                 glow item frames and armour stands, and every other body is summoned from a \
+                 declaration (DW0730)"
+            )
+        });
+        for k in keys {
+            assert!(
+                *k == delvewright_dsl::holders::ENTITY_ID_KEY || kind.scene_keys.contains(k),
+                "{id}: the `{kind_id}` carries `{k}`, which the engine owns — a piece says what a \
+                 holder looks like ({:?}) and nothing else (DW1036)",
+                kind.scene_keys
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod holder_tests {
+    use super::assert_entities_are_holders;
+
+    #[test]
+    fn a_holder_saying_what_it_looks_like_passes() {
+        assert_entities_are_holders(
+            "t",
+            &[
+                ("minecraft:item_frame", vec!["id", "Facing"]),
+                ("minecraft:armor_stand", vec!["id", "Pose", "ShowArms"]),
+            ],
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "DW1036")]
+    fn an_owned_key_panics() {
+        assert_entities_are_holders("t", &[("minecraft:item_frame", vec!["id", "Item"])]);
+    }
+
+    #[test]
+    #[should_panic(expected = "DW0730")]
+    fn another_kind_panics() {
+        assert_entities_are_holders("t", &[("minecraft:pig", vec!["id"])]);
+    }
+}

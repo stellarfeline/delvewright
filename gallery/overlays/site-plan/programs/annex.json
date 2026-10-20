@@ -10,8 +10,11 @@
       {
         "a": "hall",
         "b": "exterior",
-        "class": "walk",
-        "via": "chute-way"
+        "bar": {
+          "block": "bar",
+          "region": "seam-annex-chute"
+        },
+        "class": "barred"
       }
     ],
     "entry": "hall",
@@ -29,6 +32,7 @@
   },
   "name": "gallery-annex",
   "palette": {
+    "bar": "minecraft:iron_bars[east=false,north=false,south=false,waterlogged=false,west=false]",
     "ceiling": "minecraft:spruce_planks",
     "floor": "minecraft:stone_bricks",
     "furniture": "minecraft:chiseled_stone_bricks",
@@ -172,10 +176,13 @@
             },
             {
               "body": {
-                "op": "void"
+                "material": {
+                  "role": "bar"
+                },
+                "op": "fill"
               },
               "op": "claim",
-              "region": "chute-way"
+              "region": "seam-annex-chute"
             },
             {
               "material": {

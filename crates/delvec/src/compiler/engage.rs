@@ -396,6 +396,7 @@ mod tests {
             lava: std::collections::BTreeSet::new(),
             climb: Default::default(),
             unheld_climb: Default::default(),
+            footprints: Default::default(),
             partial: BTreeMap::new(),
             waterloggable: std::collections::BTreeSet::new(),
         };

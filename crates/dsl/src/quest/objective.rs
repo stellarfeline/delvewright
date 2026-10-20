@@ -167,9 +167,10 @@ pub enum Objective {
     },
     /// Completed when `count` of `item` have been collected (v0.3).
     ///
-    /// The items are provided in a container: the compiler's own chest at
-    /// `anchor` by default, or — since DSL v0.8 — the prefab's existing
-    /// chest/barrel at [`Objective::Collect::container`], optionally carrying an
+    /// The items are provided in a holder: the compiler's own chest at
+    /// `anchor` by default, or the prefab's existing holder — a container of
+    /// any of the twelve kinds (spec-0105), an item frame or an armour stand
+    /// (spec-0111) — at [`Objective::Collect::holder`], optionally carrying an
     /// [`Objective::Collect::item_name`] and padded to read full with
     /// [`Objective::Collect::fill_count`].
     Collect {
@@ -194,27 +195,43 @@ pub enum Objective {
         count: u32,
         /// The anchor items are provided at (chest / pickup).
         anchor: AnchorId,
-        /// **Adopt the container the prefab already placed**: the anchor whose
-        /// assembled-world cell holds
-        /// a `chest` / `trapped_chest` / `barrel` this collect fills instead of
-        /// conjuring its own chest at [`Objective::Collect::anchor`].
+        /// **Adopt the holder the prefab already placed** (DSL v0.49, spec-0111):
+        /// the anchor whose assembled-world cell holds a container (any of the
+        /// twelve kinds, spec-0105), an item frame or an armour stand — the
+        /// holder this collect fills instead of conjuring its own chest at
+        /// [`Objective::Collect::anchor`].
         ///
         /// Same division of labour a `loot` entry and a trap's dispenser already
-        /// keep with the prefab: furniture belongs in the piece. A beach camp's
-        /// barrel is scenery the player has been walking past since minute one —
-        /// having the compiler `setblock` a *second*, floating chest beside it to
-        /// hold the quest item is exactly the downstream workaround the no-hack
-        /// rule forbids. A `container` whose cell holds no container is a build
-        /// error (`DW0438`), never a silent fill into a wall.
+        /// keep with the prefab: furniture belongs in the piece. The holder's
+        /// kind, its flags and its tag are the engine's derivations from the
+        /// piece; nothing about them is typed here. Where in the holder the
+        /// objective's item lands is [`Objective::Collect::slot`]. A `holder`
+        /// whose cell holds no holder is a build error (`DW0438`), never a
+        /// silent fill into a wall; padding (`fill_count`) on a frame or a
+        /// stand is `DW1035`, because neither has a `container.<n>` slot to pad.
         ///
-        /// The critical-path step's position follows the container (the bot opens
-        /// *this* block), and no chest is placed at `anchor` when it is set.
+        /// The critical-path step's position follows the holder, and no chest
+        /// is placed at `anchor` when it is set.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        container: Option<AnchorId>,
+        holder: Option<AnchorId>,
+        /// **The slot of the adopted holder the objective's item lands in**
+        /// (DSL v0.49, spec-0111 §3.4), in the holder class's one vocabulary —
+        /// the same words, and the same validation, as a `loot` stack's
+        /// [`crate::LootItem::slot`]: `container.<n>` on a container (padding
+        /// follows in `container.<n+1>`, …), `contents` on an item frame,
+        /// `armor.head`, `armor.chest`, `armor.legs`, `armor.feet`,
+        /// `weapon.mainhand` or `weapon.offhand` on an armour stand. Omitted, the
+        /// item lands positionally — `container.0`, a frame's `contents` — and
+        /// on a stand it is `DW1035`, because which hand or head a thing sits in
+        /// is the author's judgement. Only a collect with a `holder` has a slot
+        /// to name (`DW1035` otherwise); a slot the holder at the anchor lacks
+        /// is `DW0438`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        slot: Option<String>,
         /// **The item comes off a body, not out of a box**: the wave whose
         /// declared `drops[]` yield
         /// this objective's item. No container is placed — not the compiler's own
-        /// chest at `anchor`, not a prefab one — and `container` is therefore
+        /// chest at `anchor`, not a prefab one — and `holder` is therefore
         /// mutually exclusive with it (`DW0100`-adjacent; `DW0492`).
         ///
         /// This is what makes "kill the boss → pick up its key → open the door"
@@ -252,8 +269,9 @@ pub enum Objective {
         ///
         /// A barrel of cheese that opens on one lonely wheel reads as a bug, and
         /// vanilla's notion of "full" is *occupied slots*, not stack size — so
-        /// this counts SLOTS: the objective's own stack lands in `container.0` and
-        /// each padding stack repeats it in `container.1`, `container.2`, … Slot
+        /// this counts SLOTS: the objective's own stack lands in `container.0` (or
+        /// the `container.<n>` [`Objective::Collect::slot`] names) and each
+        /// padding stack repeats it in the slots after it. Slot
         /// assignment is positional and total, the same determinism story `loot`
         /// tells (ADR-0006): no RNG, no loot tables, nothing to reseed.
         ///
@@ -338,6 +356,17 @@ pub enum Objective {
         /// stays quiet.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         missing_item_hint: Option<String>,
+        /// **The presented item leaves the hand** (spec-0114 §6.3): one of
+        /// [`Objective::Interact::requires_item`] is taken from the player who
+        /// presented it, at the moment the objective completes. Default `false`,
+        /// absent when false. Requires `requires_item` (`DW1046`).
+        ///
+        /// What makes *lay*, *hang* and *give* true of a click: the thing is laid
+        /// at the place and is no longer carried. The world showing it there
+        /// afterwards is the author's, composed from what exists (a `set-block` in
+        /// `on_objective_complete`), never a second mechanism here.
+        #[serde(default, skip_serializing_if = "is_false")]
+        takes_item: bool,
         /// Prop block that IS the interaction affordance (DSL v0.4, spec-0008
         /// §2): the compiler `setblock`s it at the anchor on activation (exactly
         /// as `collect` uses a real chest). Omitted = the glowing-lantern
@@ -374,7 +403,168 @@ pub enum Objective {
     },
 }
 
+/// **An act a player performs**, as the pinned game adjudicates it (spec-0114
+/// §4): the closed vocabulary an objective's completion is read in, and the one
+/// its title's head word is read against (`DW1045`).
+///
+/// Declared in the order of the spec's table; the order is the one every
+/// printed act set is written in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Act {
+    /// A body inside a volume at a place — the one **place** act.
+    Reach,
+    /// A dialogue option chosen on a body.
+    Talk,
+    /// A wave's counter at zero.
+    Kill,
+    /// The item in the player's inventory.
+    Take,
+    /// A thing at a place used: the hitbox, or the hand-pressed block.
+    Use,
+    /// The item held in the main hand at the thing when it is used.
+    Present,
+    /// One of the presented item leaves the player at the thing.
+    Give,
+}
+
+impl Act {
+    /// Every act, in declaration order.
+    pub const ALL: [Act; 7] = [
+        Act::Reach,
+        Act::Talk,
+        Act::Kill,
+        Act::Take,
+        Act::Use,
+        Act::Present,
+        Act::Give,
+    ];
+
+    /// The act's name as the lexicon and every message spell it.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Act::Reach => "reach",
+            Act::Talk => "talk",
+            Act::Kill => "kill",
+            Act::Take => "take",
+            Act::Use => "use",
+            Act::Present => "present",
+            Act::Give => "give",
+        }
+    }
+
+    /// The act a lexicon key names, if it names one.
+    pub fn parse(s: &str) -> Option<Act> {
+        Act::ALL.into_iter().find(|a| a.as_str() == s)
+    }
+}
+
+/// An act set written as the messages and the translator's situation write it:
+/// `use, present, give`.
+pub fn acts_line(acts: &std::collections::BTreeSet<Act>) -> String {
+    acts.iter()
+        .map(|a| a.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 impl Objective {
+    /// **The acts this objective's completion performs** (spec-0114 §4),
+    /// derived from its kind and the fields that shape what it completes on,
+    /// with `completion_effects` — the effects its quest fires when it
+    /// completes (`on_objective_complete[<id>]`) — read for a `give-item`,
+    /// which adds [`Act::Take`] to any kind. Nested effect lists (a `sequence`'s
+    /// steps) are read too: an item handed later in the same bundle is still
+    /// handed by this completion.
+    ///
+    /// `reach-anchor` → `{reach}`; `talk-to` → `{talk}`; `kill` → `{kill}`;
+    /// `collect` → `{take}`; `interact` → `{use}`, `+ present` with
+    /// `requires_item`, `+ give` with `takes_item` as well.
+    pub fn completion_acts(
+        &self,
+        completion_effects: &[crate::QuestEffect],
+    ) -> std::collections::BTreeSet<Act> {
+        let mut acts = std::collections::BTreeSet::new();
+        match self {
+            Objective::ReachAnchor { .. } => {
+                acts.insert(Act::Reach);
+            }
+            Objective::TalkTo { .. } => {
+                acts.insert(Act::Talk);
+            }
+            Objective::Kill { .. } => {
+                acts.insert(Act::Kill);
+            }
+            Objective::Collect { .. } => {
+                acts.insert(Act::Take);
+            }
+            Objective::Interact {
+                requires_item,
+                takes_item,
+                ..
+            } => {
+                acts.insert(Act::Use);
+                if requires_item.is_some() {
+                    acts.insert(Act::Present);
+                    if *takes_item {
+                        acts.insert(Act::Give);
+                    }
+                }
+            }
+        }
+        fn hands(effs: &[crate::QuestEffect]) -> bool {
+            effs.iter().any(|e| {
+                e.give_item().is_some()
+                    || e.nested_effect_lists_labeled()
+                        .into_iter()
+                        .any(|(_, _, list)| hands(list))
+            })
+        }
+        if hands(completion_effects) {
+            acts.insert(Act::Take);
+        }
+        acts
+    }
+
+    /// The kind and the fields the completion's acts are derived from, as
+    /// `DW1045` names them: `reach-anchor`, `interact + requires_item`,
+    /// `talk-to + give-item`, ….
+    pub fn completion_shape(&self, completion_effects: &[crate::QuestEffect]) -> String {
+        let mut s = self.kind().to_string();
+        if let Objective::Interact {
+            requires_item,
+            takes_item,
+            ..
+        } = self
+            && requires_item.is_some()
+        {
+            s.push_str(" + requires_item");
+            if *takes_item {
+                s.push_str(" + takes_item");
+            }
+        }
+        if self
+            .completion_acts(completion_effects)
+            .contains(&Act::Take)
+            && !matches!(self, Objective::Collect { .. })
+        {
+            s.push_str(" + give-item");
+        }
+        s
+    }
+
+    /// Whether this is an `interact` whose presented item leaves the hand
+    /// (spec-0114 §6.3), with the item it takes.
+    pub fn taken_item(&self) -> Option<&str> {
+        match self {
+            Objective::Interact {
+                requires_item: Some(it),
+                takes_item: true,
+                ..
+            } => Some(it),
+            _ => None,
+        }
+    }
+
     /// This objective's id.
     pub fn id(&self) -> &ObjectiveId {
         match self {
@@ -551,13 +741,23 @@ impl Objective {
         }
     }
 
-    /// The container this objective ADOPTS (DSL v0.8), if it is a `collect` that
-    /// declares one: the anchor whose prefab-placed chest/barrel it fills instead
-    /// of conjuring its own chest. `None` on every other objective and on a
-    /// `collect` that keeps the compiler-placed chest.
-    pub fn collect_container(&self) -> Option<&AnchorId> {
+    /// The holder this objective ADOPTS (DSL v0.49, spec-0111), if it is a
+    /// `collect` that declares one: the anchor whose prefab-placed holder — a
+    /// container, a frame or a stand — it fills instead of conjuring its own
+    /// chest. `None` on every other objective and on a `collect` that keeps the
+    /// compiler-placed chest.
+    pub fn collect_holder(&self) -> Option<&AnchorId> {
         match self {
-            Objective::Collect { container, .. } => container.as_ref(),
+            Objective::Collect { holder, .. } => holder.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// The slot a `collect`'s item lands in in its adopted holder (DSL v0.49,
+    /// spec-0111 §3.4), if it names one.
+    pub fn collect_slot(&self) -> Option<&str> {
+        match self {
+            Objective::Collect { slot, .. } => slot.as_deref(),
             _ => None,
         }
     }

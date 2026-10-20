@@ -65,11 +65,25 @@ pub(in crate::compiler::nav) struct RegionState {
     /// The volumes behind `lethal`, as `(id, box)`, in declaration order, so a
     /// refusal can name the volume.
     pub(in crate::compiler::nav) lethal_regions: Vec<LethalRegion>,
+    /// The completion volumes a leg keeps out of (`DW0311`), as `(objective,
+    /// box)`: every `reach` armed on it and not yet due
+    /// ([`RegionEvents::keep_out_at`] of the leg's arrival step).
+    pub(in crate::compiler::nav) keep_out: Vec<LethalRegion>,
     /// Per region, the causally-latest **forced** write and the block it lays
     /// (`None` = air), in region order — what [`RegionState::blocks_over`] lays
     /// over the assembled bytes to give this configuration's block map.
     pub(in crate::compiler::nav) laid: Vec<LaidWrite>,
+    /// For each cell in `solid` whose fill block does not cover its cell — iron
+    /// bars, a pane — that block's server footprint
+    /// ([`delvewright_dsl::blockshape::server_footprint`]). A world-load seal
+    /// carries the footprints its bytes hold ([`crate::compiler::assembled::GateSeal`]).
+    /// Absent = a full cube, as every fill was before footprints were read.
+    pub(in crate::compiler::nav) fill_footprints:
+        BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
 }
+
+/// One cell and the server footprint of the block it holds.
+type CellFootprint = ([i32; 3], delvewright_dsl::blockshape::Footprint16);
 
 /// One region a forced write lays, with the block its command writes (`None` =
 /// air) — what [`RegionState::blocks_over`] lays over the assembled bytes.
@@ -95,6 +109,7 @@ impl RegionState {
             && self.unforced.is_empty()
             && self.held.is_empty()
             && self.lethal.is_empty()
+            && self.keep_out.is_empty()
     }
 
     /// This state with `cells` opened: taken out of every fill and laid as a
@@ -104,6 +119,7 @@ impl RegionState {
         let mut st = self.clone();
         st.solid.retain(|c| !cells.contains(c));
         st.unforced.retain(|c| !cells.contains(c));
+        st.fill_footprints.retain(|c, _| !cells.contains(c));
         st.cleared.extend(cells.iter().copied());
         st
     }
@@ -301,6 +317,13 @@ impl World {
         } else {
             Vec::new()
         };
+        // What each world-load seal's bytes hold, where a cell's block does not
+        // cover it: the seal is the block the world was built holding, and a
+        // floor of iron bars is not a floor a body stands on.
+        let seal_footprints: BTreeMap<([i32; 3], [i32; 3]), &[CellFootprint]> = self
+            .modelled_seals()
+            .map(|s| (s.region, s.open_footprints.as_slice()))
+            .collect();
         // The regions the walk has opened by the path's own order (see above).
         let path_ordered: BTreeSet<([i32; 3], [i32; 3])> = performed
             .map(|last| {
@@ -345,7 +368,7 @@ impl World {
                     RegionWrite::Clear | RegionWrite::Unseal => st.laid.push((region, None)),
                     RegionWrite::Fill | RegionWrite::Flood | RegionWrite::Pass => {
                         if block.is_some() {
-                            st.laid.push((region, block));
+                            st.laid.push((region, block.clone()));
                         }
                     }
                 }
@@ -360,6 +383,25 @@ impl World {
             // futures); `Clear`, `Unseal` and `Pass` never reach here unforced, because
             // `plan::collect_region_events` drops them — an unforced firing may make
             // a region impassable and may never make one passable.
+            if write == RegionWrite::Fill {
+                // The fill's footprint: the block the command lays, or — for a
+                // world-load seal, whose block the bytes hold — the bytes'.
+                match block.as_deref() {
+                    Some(b) => {
+                        let fp = delvewright_dsl::blockshape::server_footprint(b);
+                        if fp != delvewright_dsl::blockshape::FULL_FOOTPRINT {
+                            for c in crate::compiler::assembled::region_cells(region.0, region.1) {
+                                st.fill_footprints.insert(c, fp);
+                            }
+                        }
+                    }
+                    None => {
+                        for (c, fp) in seal_footprints.get(&region).copied().unwrap_or_default() {
+                            st.fill_footprints.insert(*c, *fp);
+                        }
+                    }
+                }
+            }
             let into = match write {
                 RegionWrite::Fill if !forced => {
                     st.unforced_regions.push((region, blame));
@@ -521,7 +563,9 @@ impl World {
         to_step: usize,
     ) -> RegionState {
         let fired = leg_fired(ancestor, from_step, to_step);
-        self.region_state_inner(region_events, to_step, &fired, Some(from_step), true)
+        let mut st = self.region_state_inner(region_events, to_step, &fired, Some(from_step), true);
+        st.keep_out = keep_out_of(region_events, to_step);
+        st
     }
 
     /// The same leg with the world-load gate seals lifted — see
@@ -534,7 +578,10 @@ impl World {
         to_step: usize,
     ) -> RegionState {
         let fired = leg_fired(ancestor, from_step, to_step);
-        self.region_state_without_world_load(region_events, to_step, &fired, Some(from_step))
+        let mut st =
+            self.region_state_without_world_load(region_events, to_step, &fired, Some(from_step));
+        st.keep_out = keep_out_of(region_events, to_step);
+        st
     }
 
     /// [`World::leg_region_state`] for a leg the player is asked to WALK — the
@@ -552,6 +599,16 @@ impl World {
     ) -> RegionState {
         self.leg_region_state(region_events, ancestor, from_step, to_step)
     }
+}
+
+/// The completion volumes a leg arriving at `step` keeps out of, as the
+/// world's `(objective, box)` rows.
+fn keep_out_of(region_events: &RegionEvents, step: usize) -> Vec<LethalRegion> {
+    region_events
+        .keep_out_at(step)
+        .iter()
+        .map(|k| (k.objective.clone(), k.bounds()))
+        .collect()
 }
 
 /// The "has the party fired step `g`" predicate for the walked leg

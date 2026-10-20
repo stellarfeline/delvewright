@@ -46,7 +46,13 @@ fn a_press_from_outside_the_volume_is_found() {
         gathered_by: Some("/content/triggers/0/effects/0/steps/0/effects/0".to_string()),
     };
     let all: BTreeSet<[i32; 3]> = (0..12).map(|x| [x, 64, 0]).collect();
-    let cells = press_cells_outside(&w, &link, &all);
+    let cells = press_cells_outside(
+        &w,
+        &link,
+        &all,
+        BodyBox::interaction,
+        crate::compiler::crosshair::INTERACTION_REACH,
+    );
     assert!(
         cells.contains(&[4, 64, 0]),
         "beside the body, outside the volume: {cells:?}"
@@ -61,12 +67,25 @@ fn a_press_from_outside_the_volume_is_found() {
     );
     let only_inside: BTreeSet<[i32; 3]> = (0..3).map(|x| [x, 64, 0]).collect();
     assert!(
-        press_cells_outside(&w, &link, &only_inside).is_empty(),
+        press_cells_outside(
+            &w,
+            &link,
+            &only_inside,
+            BodyBox::interaction,
+            crate::compiler::crosshair::INTERACTION_REACH
+        )
+        .is_empty(),
         "a cell the walk does not reach is no press cell"
     );
     // Widened over every cell the press reaches from, the volume leaves none.
     link.from = ([0, 64, 0], [7, 65, 0]);
-    let wide = press_cells_outside(&w, &link, &all);
+    let wide = press_cells_outside(
+        &w,
+        &link,
+        &all,
+        BodyBox::interaction,
+        crate::compiler::crosshair::INTERACTION_REACH,
+    );
     assert!(wide.iter().all(|c| c[0] > 7), "{wide:?}");
 }
 

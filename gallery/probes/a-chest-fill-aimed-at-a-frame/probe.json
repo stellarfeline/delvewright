@@ -1,0 +1,22 @@
+{
+  "code": "DW0431",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/loot/1/items/-",
+      "value": {
+        "count": 2,
+        "item": "minecraft:apple"
+      }
+    },
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/loot/1/anchor",
+      "value": "anchor/bare-frame"
+    }
+  ],
+  "units": [],
+  "why": "The ferryman's barrel fill, given a second stack as a barrel fill may be and moved onto the empty frame beside the seal frame — positional, as a container fill is. The holder at the anchor is a frame, with one slot, `contents`, so the fill is refused naming the frame and its vocabulary, exactly as a fill wider than a chest is."
+}

@@ -377,6 +377,21 @@ pub struct RegionEvents {
     pub flags: Vec<FlagEvent>,
     /// The replay's datum values along the path.
     pub data: DataReplay,
+    /// Per path step, the completion volumes a leg arriving there keeps out of
+    /// ([`PathFiring::keep_out`]). Empty for a path no step of which has one.
+    pub keep_out: Vec<Vec<crate::compiler::reach::KeepOut>>,
+}
+
+impl RegionEvents {
+    /// The volumes a leg arriving at step `step` keeps out of.
+    pub fn keep_out_at(&self, step: usize) -> &[crate::compiler::reach::KeepOut] {
+        self.keep_out.get(step).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// Whether any step of the path keeps out of a volume at all.
+    pub fn has_keep_out(&self) -> bool {
+        self.keep_out.iter().any(|k| !k.is_empty())
+    }
 }
 
 impl From<Vec<RegionEvent>> for RegionEvents {
@@ -650,7 +665,8 @@ pub(in crate::compiler::plan) fn collect_region_events(
 
 /// **The block an objective places when it activates, and where** (gap 13):
 /// a `collect` conjures a `minecraft:chest` at its anchor unless it adopts a
-/// container already in the world or its item is dropped by a fight; an
+/// holder already in the world (a container, a frame or a stand) or its item
+/// is dropped by a fight; an
 /// `interact` places its `prop` at its anchor. `None` for every other
 /// objective and for an anchor that is not a point in the quest's area.
 ///
@@ -672,7 +688,7 @@ pub(crate) fn activation_prop(
             anchor, dropped_by, ..
         } => {
             if dropped_by.is_some()
-                || o.collect_container()
+                || o.collect_holder()
                     .is_some_and(|c| point_any_in(anchors, c.as_str()).is_some())
             {
                 return None;
@@ -811,6 +827,7 @@ pub(crate) fn region_events_of(
             end: path.data_end.clone(),
             unforced_writers,
         },
+        keep_out: path.keep_out.clone(),
     }
 }
 
