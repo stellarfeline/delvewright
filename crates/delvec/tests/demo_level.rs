@@ -50,14 +50,21 @@ fn a_declared_demo_level_is_carried_in_the_manifest_and_moves_nothing_else() {
 
     assert!(a.get("demo_level").is_none(), "{a}");
     assert_eq!(b["demo_level"], serde_json::json!(true), "{b}");
-    assert_eq!(a["outputs"], b["outputs"], "a demo level emits the same world");
-    let (ai, bi) = (a["inputs"].as_object().unwrap(), b["inputs"].as_object().unwrap());
     assert_eq!(
-        ai.keys().collect::<Vec<_>>(),
-        bi.keys().collect::<Vec<_>>()
+        a["outputs"], b["outputs"],
+        "a demo level emits the same world"
     );
+    let (ai, bi) = (
+        a["inputs"].as_object().unwrap(),
+        b["inputs"].as_object().unwrap(),
+    );
+    assert_eq!(ai.keys().collect::<Vec<_>>(), bi.keys().collect::<Vec<_>>());
     let moved: Vec<&String> = ai.keys().filter(|k| ai[*k] != bi[*k]).collect();
-    assert_eq!(moved, vec!["world.json"], "only the declaring document moves");
+    assert_eq!(
+        moved,
+        vec!["world.json"],
+        "only the declaring document moves"
+    );
 }
 
 #[test]
