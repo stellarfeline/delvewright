@@ -222,11 +222,7 @@ import zipfile
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
-<<<<<<< ours
-from lib import demo_queue, dwcatalog  # noqa: E402
-=======
-from lib import dwcatalog, horizon  # noqa: E402
->>>>>>> theirs
+from lib import demo_queue, dwcatalog, horizon  # noqa: E402
 
 DEFAULT_LEDGER = REPO_ROOT / "docs" / "playtest-findings.json"
 # The demo queue of the engine this gate ships in: the one place a demo level
