@@ -3719,9 +3719,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   draws none. `crates/delvec/tests/review_frame_sky.rs` measures the same camera
   at noon and midnight (mean luma 188.04 against 6.31 on the CPU backend) and
   holds that the engine calls none of the renderer's own sky. In hq mode the sky
-  is a uniform radiance of the same sky colour and a sun of
-  `frames::HQ_SUN_IRRADIANCE` (1.5, **authored**) along the same direction,
-  drawn only while the sun is up; the hq exposure is
+  is Lumenwright's (`render::sky::hq_sky`, the Preetham sky Chunky traces and
+  its fall through twilight, with a white sun at Chunky's default intensity,
+  **cited** there) along the same direction, its radiance scaled by the light
+  the client's sky casts under the frame's weather as a fraction of the clear
+  sky's at the same tick, and its sun dark while the client draws no disc; the hq exposure is
   `frames::HQ_EXPOSURE` (1.0, **authored**) until the showcase standard level is
   re-measured (spec-0112 phase 3). **What no frame shows is named**, in the
   review record's `unchecked` (`review::UNCHECKED`: the
