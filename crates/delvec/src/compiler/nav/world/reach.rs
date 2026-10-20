@@ -413,6 +413,8 @@ impl<C: Codes + ?Sized> CollisionWorld for Sim<'_, C> {
 struct NearStart<'a, C: Codes + ?Sized> {
     inner: &'a C,
     codes: [Code; 45],
+    /// Set when a read fell outside the box.
+    escaped: std::cell::Cell<bool>,
 }
 
 impl<'a, C: Codes + ?Sized> NearStart<'a, C> {
@@ -433,7 +435,11 @@ impl<'a, C: Codes + ?Sized> NearStart<'a, C> {
                 }
             }
         }
-        NearStart { inner, codes }
+        NearStart {
+            inner,
+            codes,
+            escaped: std::cell::Cell::new(false),
+        }
     }
 }
 
@@ -442,12 +448,39 @@ impl<C: Codes + ?Sized> Codes for NearStart<'_, C> {
     fn code(&self, c: [i32; 3]) -> Code {
         match Self::slot(c) {
             Some(i) => self.codes[i],
-            None => self.inner.code(c),
+            None => {
+                self.escaped.set(true);
+                self.inner.code(c)
+            }
         }
     }
     fn wet(&self) -> bool {
         self.inner.wet()
     }
+}
+
+/// The edge positions found from a node whose [`NearStart`] cells hold
+/// `codes`, by direction: shared by every node with those codes, since an
+/// edge position read only inside the box is a function of them alone. At
+/// most [`EDGE_TABLES`] tables are kept; past that a node keeps its own.
+type EdgeTable = std::sync::RwLock<
+    HashMap<(u64, u64), Option<[f64; 3]>, std::hash::BuildHasherDefault<flights::Mix>>,
+>;
+
+const EDGE_TABLES: usize = 4096;
+
+fn shared_edges(codes: &[Code; 45]) -> Option<Arc<EdgeTable>> {
+    type Tables = std::sync::RwLock<HashMap<[Code; 45], Arc<EdgeTable>>>;
+    static T: OnceLock<Tables> = OnceLock::new();
+    let t = T.get_or_init(Default::default);
+    if let Some(e) = t.read().expect("edge tables").get(codes) {
+        return Some(Arc::clone(e));
+    }
+    let mut w = t.write().expect("edge tables");
+    if w.len() >= EDGE_TABLES && !w.contains_key(codes) {
+        return None;
+    }
+    Some(Arc::clone(w.entry(*codes).or_default()))
 }
 
 /// The template world of one launch class: an endless floor of `support` at
@@ -860,6 +893,8 @@ fn edge_position<C: Codes + ?Sized>(
     let at = |t: f64| [centre[0] + dir[0] * t, feet, centre[2] + dir[1] * t];
     let world = Sim(codes);
     let mut boxes = Vec::new();
+    // Every cell under and in the box is read, in this order, whatever the
+    // answer (a template records what a launch read).
     let ok = |p: [f64; 3], boxes: &mut Vec<Aabb>| {
         let bb = Aabb::new(
             p[0] - body.width / 2.0,
@@ -869,26 +904,27 @@ fn edge_position<C: Codes + ?Sized>(
             p[1] + body.height,
             p[2] + body.width / 2.0,
         );
-        boxes.clear();
+        let mut meets = false;
+        let mut stands = false;
         for x in bb.min[0].floor() as i32..=bb.max[0].floor() as i32 {
             for z in bb.min[2].floor() as i32..=bb.max[2].floor() as i32 {
                 for y in (bb.min[1].floor() as i32 - 1)..=bb.max[1].floor() as i32 {
+                    boxes.clear();
                     world.shapes([x, y, z], boxes);
+                    for b in boxes.iter() {
+                        // No overlap at all: a box that starts a hair inside a
+                        // block is not collided with it, and walks through it.
+                        meets |= b.intersects(&bb);
+                        stands |= (b.max[1] - feet).abs() < 1e-7
+                            && b.min[0] < bb.max[0]
+                            && b.max[0] > bb.min[0]
+                            && b.min[2] < bb.max[2]
+                            && b.max[2] > bb.min[2];
+                    }
                 }
             }
         }
-        // No overlap at all: a box that starts a hair inside a block is not
-        // collided with it, and walks through it.
-        if boxes.iter().any(|b| b.intersects(&bb)) {
-            return false;
-        }
-        boxes.iter().any(|b| {
-            (b.max[1] - feet).abs() < 1e-7
-                && b.min[0] < bb.max[0]
-                && b.max[0] > bb.min[0]
-                && b.min[2] < bb.max[2]
-                && b.max[2] > bb.min[2]
-        })
+        !meets && stands
     };
     if !ok(centre, &mut boxes) {
         return None;
@@ -1939,6 +1975,9 @@ impl World {
                 let near = NearStart::new(&shifted);
                 // An edge position read cells: a launch that takes it from the
                 // memo reads them too, for the run it is in.
+                // Nodes whose cells round them hold the same codes find the same
+                // edge positions: those read inside the box are shared.
+                let shared = shared_edges(&near.codes);
                 let edge_at = |dir: [f64; 2], compute: &dyn Fn() -> Option<[f64; 3]>| {
                     let k = (dir[0].to_bits(), dir[1].to_bits());
                     let held = edge_memo.borrow().get(&k).copied();
@@ -1948,10 +1987,24 @@ impl World {
                         }
                         return v;
                     }
+                    if let Some(v) = shared
+                        .as_ref()
+                        .and_then(|t| t.read().expect("edges").get(&k).copied())
+                    {
+                        return v;
+                    }
+                    near.escaped.set(false);
                     let saved = track.map(|t| t.begin_scope());
                     let v = compute();
                     let b = track.and_then(|t| t.end_scope(saved.flatten()));
-                    edge_memo.borrow_mut().insert(k, (v, b));
+                    match &shared {
+                        Some(t) if !near.escaped.get() => {
+                            t.write().expect("edges").insert(k, v);
+                        }
+                        _ => {
+                            edge_memo.borrow_mut().insert(k, (v, b));
+                        }
+                    }
                     v
                 };
                 // The box the launches read: the cell's own neighbourhood, and
