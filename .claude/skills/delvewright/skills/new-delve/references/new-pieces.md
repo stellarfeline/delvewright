@@ -92,8 +92,9 @@ this needs are subcommands of the one binary Init I3 installed.
    Program and nothing re-runs it. A script computes geometry and never a
    judgement the engine makes: walkability, falls, reach and a seam's cells are
    read from the gate and from `delvec allocation`, never recomputed. Never
-   written: Rust, and blocks placed outside a Program (a fill command, an edited
-   `.nbt`). Four traps the
+   done: a new piece made by extending the engine's Rust (`crates/`) or the
+   tileset generators in `prefabs/`, and blocks placed outside a Program (a fill
+   command, an edited `.nbt`). Four traps the
    procedure names: two guards that can both hold are a **probability, not a
    priority** (the "none of the above" arm is `otherwise`, and it is also what
    stops a recursion); **`rounding` is owed by every surface, not only floors** —
