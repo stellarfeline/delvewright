@@ -1024,10 +1024,13 @@ pub fn shown_prefabs_dir(tag: &str) -> PathBuf {
     // several threads, and a helper that deletes and rewrites one shared path
     // is two tests reading a library while a third is halfway through copying
     // it — an intermittent red, which is an under-specified test rather than
-    // something to re-run.
+    // something to re-run. The process id is in the name too: the counter is
+    // per process, and two test processes over one target directory (two
+    // binaries, or two runs) share `CARGO_TARGET_TMPDIR`.
     static NTH: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let nth = NTH.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("shown-{tag}-{nth}"));
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("shown-{tag}-{}-{nth}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     copy_dir_all(&prefabs_dir(), &dir);
