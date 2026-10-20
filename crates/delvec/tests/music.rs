@@ -1185,3 +1185,62 @@ fn every_scored_cutscene_owns_its_template() {
         delvec::compiler::watch::check_claims("hello-world", &without, &[claim]);
     assert_eq!((binding.bodies_judged, breaches.len()), (1, 1));
 }
+
+/// Endings × music: a cutscene that declares its own `music` and a `then`
+/// that changes the world (spec-0108 §3.6, spec-0109 §3.6) emits both. Its
+/// one name carries both suffixes, `_then_` first; the start paints the score
+/// before the camera is taken; the end restores it after the players return
+/// and runs the world change after that. Each half dropped leaves the other's
+/// bytes and removes only its own.
+#[test]
+fn a_scored_cutscene_with_a_then_emits_the_score_and_the_world_change() {
+    let then = json!([{ "type": "set-block", "anchor": "anchor/exit", "block": "minecraft:light" }]);
+    let both = {
+        let mut c = scored(inside(), lament());
+        c["then"] = then.clone();
+        c
+    };
+    let out = try_build(&hall(vec![both])).expect("builds");
+    let (paint_name, _) = function_named(&out, "cs_paint_");
+    let bare = paint_name.trim_start_matches("cs_paint_").to_string();
+    let (t, m) = (bare.find("_then_"), bare.rfind("_m"));
+    assert!(
+        matches!((t, m), (Some(t), Some(m)) if t < m),
+        "one name, the `then` digest before the score's: {bare}"
+    );
+    let at = |f: &[String], needle: &str| f.iter().position(|l| l.contains(needle));
+    let start = function(&out, &format!("cs_{bare}"));
+    assert!(
+        at(&start, &format!("function hello-world:cs_paint_{bare}")).unwrap()
+            < at(&start, "gamemode spectator @a").unwrap()
+    );
+    let end = function(&out, &format!("cs_end_{bare}"));
+    let tp = end.iter().position(|l| l.starts_with("tp @a ")).unwrap();
+    let unpaint = at(&end, &format!("function hello-world:cs_unpaint_{bare}")).unwrap();
+    let change = end
+        .iter()
+        .position(|l| l.starts_with("setblock ") && l.ends_with(" minecraft:light"))
+        .unwrap_or_else(|| panic!("the `then` world change runs from `cs_end`: {end:#?}"));
+    assert!(tp < unpaint && tp < change, "{end:#?}");
+
+    // Without the `then`: the score's bracket stands, no world change, no `_then_`.
+    let out = try_build(&hall(vec![scored(inside(), lament())])).expect("builds");
+    let (paint_name, _) = function_named(&out, "cs_paint_");
+    let bare = paint_name.trim_start_matches("cs_paint_").to_string();
+    assert!(!bare.contains("_then_"), "{bare}");
+    let end = function(&out, &format!("cs_end_{bare}"));
+    assert!(!end.iter().any(|l| l.ends_with(" minecraft:light")), "{end:#?}");
+
+    // Without the score: the world change stands, no paint, no `_m`.
+    let mut plain = cutscene(inside(), None);
+    plain["then"] = then;
+    let out = try_build(&hall(vec![plain])).expect("builds");
+    assert!(!out.keys().any(|k| k.contains("cs_paint_")));
+    let (end_name, end) = function_named(&out, "cs_end_");
+    assert!(end_name.contains("_then_") && !end_name.contains("_m"), "{end_name}");
+    assert!(
+        end.iter()
+            .any(|l| l.starts_with("setblock ") && l.ends_with(" minecraft:light")),
+        "{end:#?}"
+    );
+}
