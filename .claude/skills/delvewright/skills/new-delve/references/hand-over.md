@@ -222,6 +222,14 @@ a token the gate minted for *that exact build tree*.
 without `--strict`, and out of `--stage-anyway`'s reach. A campaign is staged
 only once detailed; step 9 is what makes it so.
 
+**A demo level carries no design record, and says so.** A level off the
+engine's `docs/demo-levels.md` queue declares `demo_level: true` in
+`world.json`; its approved design is its queue row, so the design-record rows
+measure it zero. The gate refuses the declaration, out of `--stage-anyway`'s
+reach, unless the build's `manifest.json` carries it and a row of that queue
+names `campaigns/<id>` in its Status cell. Any other campaign carries the design
+record step 4 writes.
+
 **A red gate is not a defect count.** It is the list of defect classes a
 player is not protected from, drawn from every finding ever reported on any
 campaign — so a campaign that contains none of the objects a row is about shows
