@@ -974,7 +974,7 @@
               "text": "They reach the counter.",
               "verb": "arrives"
             },
-            "hint": "The Factor keeps the counter in the near hall.",
+            "hint": "The Factor, the hall's trader, keeps the counter in the near hall.",
             "id": "obj/reach-the-counter",
             "radius": 3,
             "requires_flags": [
@@ -2180,6 +2180,9 @@
               }
             ],
             "seconds": 2,
+            "subject": {
+              "anchor": "anchor/exit"
+            },
             "then": [
               {
                 "from": {
