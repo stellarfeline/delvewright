@@ -57,6 +57,7 @@ mod equipment;
 mod firework;
 mod functions;
 mod holders;
+pub(super) mod guidance;
 mod lane;
 mod lethal;
 mod lightning;
@@ -760,18 +761,15 @@ pub fn build_with_warnings(
     // the wave would silently never spawn (DW0310). Guards against the class of bug
     // where the spawn position was resolvable only via a `kill` objective.
     check_wave_spawns(plan)?;
-    // DW0863 (spec-0093 §5): a `kill` objective is announced with a hint, or its
-    // wave arrives within reach of the act that spawns it. Judged here, where
-    // the acts have places; the binding is printed whichever way it goes.
+    // DW0863 (spec-0104 §4): every act on a walked path is announced with a
+    // hint, or in sight from where the party stands (and a kill's wave within
+    // reach). Judged here, where the acts have places and the world has
+    // blocks; the binding is printed whichever way it goes.
     {
-        let (fights, verdict) = crate::compiler::promise::check_fight_signposts(plan);
-        eprintln!("{}", fights.line());
-        if let Err(f) = verdict {
-            return Err(BuildFailure::Diagnostic {
-                code: f.code,
-                message: f.message,
-            });
-        }
+        crate::compiler::acts::fix_walks(plan, &branch_takes);
+        let (acts, refusals) = crate::compiler::promise::check_acts_found(plan, &world);
+        eprintln!("{}", acts.line());
+        refuse_first(refusals)?;
     }
     // DW0963 (spec-0093 §7): an unmarked `interact` with no `prop` stands on a
     // block the piece authored, or the party is asked to press empty space.
@@ -926,6 +924,9 @@ pub fn build_with_warnings(
             g
         }
     };
+    // spec-0104 §6–§8: the compass, the journal and the highlights, derived once
+    // over the assembled world every emitter here reads.
+    let guide = guidance::guide(plan, &assembled.blocks);
     let functions = emit_functions(
         plan,
         &chrome,
@@ -946,6 +947,7 @@ pub fn build_with_warnings(
         &asm_locks,
         &pulse_gate.rows,
         &owned_holders,
+        &guide,
     );
     // DW1002's write arms over the FINAL function list, read off the shipped
     // commands so what is judged is what is emitted: the load as the server
@@ -1055,6 +1057,27 @@ pub fn build_with_warnings(
         )?;
     }
 
+    // spec-0104 §8.3: the journal's item modifiers; §6.4: the compass gesture.
+    for (name, value) in guidance::item_modifiers(&guide, plan, &chrome) {
+        insert_unique(
+            &mut out,
+            format!("datapack/data/{ns}/item_modifier/{name}.json"),
+            json_bytes(&value),
+            "item modifier",
+            &name,
+        )?;
+    }
+    if guide.compass {
+        put_json(
+            &mut out,
+            &format!(
+                "datapack/data/{ns}/advancement/{}.json",
+                guidance::COMPASS_USE_ADVANCEMENT
+            ),
+            &guidance::use_advancement(ns),
+        );
+    }
+
     // predicates — currently only the sneak-held gate (see
     // SNEAK_HELD_PREDICATE) the cutscene bounce and the respawn wait's view
     // binding read; a campaign with neither emits none.
@@ -1088,6 +1111,8 @@ pub fn build_with_warnings(
                 .map(|r| (r.cell, r.block.clone()))
                 .collect(),
             holders: &owned_holders,
+            guide: &guide,
+            chrome: &chrome,
         },
     );
     // spec-0018 criterion 1: the party-division checks state what they bound,
@@ -1764,4 +1789,19 @@ delvewright_dsl::dw_code! {
     /// `DW0447`: a trap-payload verb centres its volume on an anchor no placed
     /// prefab piece provides, so the kill zone / collapse region cannot be resolved.
     pub const DW_PAYLOAD_ANCHOR_UNRESOLVED: DwCode = DwCode::new("DW0447", ExitTier::Build);
+}
+
+/// Report every refusal of a rule that returns them all: the first is the
+/// build's verdict, the rest are printed as further errors before it.
+fn refuse_first(refusals: Vec<crate::compiler::failure::Failure>) -> Result<(), BuildFailure> {
+    if let Some((first, rest)) = refusals.split_first() {
+        for extra in rest {
+            eprintln!("{} [error] build: {}", extra.code, extra.message);
+        }
+        return Err(BuildFailure::Diagnostic {
+            code: first.code,
+            message: first.message.clone(),
+        });
+    }
+    Ok(())
 }

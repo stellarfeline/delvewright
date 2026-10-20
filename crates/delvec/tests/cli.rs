@@ -854,6 +854,8 @@ fn lang_build_localizes_only_strings_and_is_deterministic() {
             p.contains("/dialog/")
                 || p.contains("/function/")
                 || p.contains("/advancement/")
+                // The journal's pages (spec-0104 §8.3) are text components.
+                || p.contains("/item_modifier/")
                 || p.contains("packtest-datapack/")
                 // render-plan.json embeds each NPC's display name in its
                 // `expect` checklist ("NPC named X faces the camera"); the vision

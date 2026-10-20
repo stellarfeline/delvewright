@@ -216,7 +216,17 @@ pass afterwards. Which rules bind which line:
   the action, the object and the place, the place by a landmark the player can
   see and a position relative to it, never by a compass point (a player sees no
   compass; a compass word counts as a name only inside a name the campaign declares); a refusal says what is wrong and what
-  fixes it; an item tooltip says what the item does first.
+  fixes it; an item tooltip says what the item does first. An objective's
+  title opens with the verb of the act its type completes on — a `talk-to`
+  talks, asks or tells; an `interact` pulls, rings, opens or reads; a
+  `reach-anchor` goes, climbs or enters; a `kill` clears or defeats; a
+  `collect` takes or brings — never another kind's verb (*Go to the mill* on a
+  `talk-to` sends the party to walk where they must speak). A hint may be a
+  place with no verb at all; when it names an act, it is this objective's.
+  A hint says where to go and what to do: the act as the player performs it,
+  and a place they can find from where they stand — a landmark they can see and
+  a position relative to it (*Past the bell, left of the arch: pull the lever by
+  the gate.*).
 - **Story text** — dialogue, barks, narration: S1–S6. State the fact; end on
   information; a joke carries the function too.
 - **Where the player reads at all**: L1 (`game-writing.md` §8). Before a line
@@ -250,3 +260,9 @@ the words should carry — rarely, at most one span in a line. `delvec validate`
 refuses malformed markup and a translation whose spans differ from the English;
 a bold span counts one pixel wider per character against an option label's
 button (`DW0331`).
+
+**Key spans.** A line that names a key the player presses writes it as
+`[[key|<input>]]` — `use`, `attack`, `jump`, `sneak`, `sprint`, `inventory`,
+`drop`, `swap` — never as a typed key name: the client draws the viewer's own
+binding there (*Stand close and [[key|use]] on the lever.*). A translation
+keeps the key span whole.

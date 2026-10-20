@@ -3405,6 +3405,123 @@
       "note": "Carried by DW1045: the title that names the act no completion performs is refused, so it cannot ship. The capability itself is OPEN (spec-0114 §6.4): a dialogue option reads no hand. The engine work is a held-item gate on a dialogue option (requires_item on DialogueOption, read where option_display_conditions reads requires_state). Also met as \"Show Tamsin the tongue\" (row vh-18). Until it lands DW1045 refuses the title and the honest title is a talk word.",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "obj/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW0863",
+        "kind": "dw"
+      },
+      "finding": "objectives carried no hint, so the player did not know a step existed or where it was",
+      "general_form": "every objective owes a hint that names the action as the player performs it and a place or landmark the player can find",
+      "id": "str-04",
+      "note": "Carried by `DW0863` as spec-0104 §3 widens it to every act on every walked path: an objective is announced with a `hint`, or it is in sight (a clear line by `walk_cells` over `blocks_camera`, within 64 blocks) from the cell the party stands on before it, in the configuration that walk holds there. That is the machine half of the general form: the act can be found. Whether the hint names a place the player can find is prose, and stays QC (spec-0104 §2.4, §12).",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "obj/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1015",
+        "kind": "dw"
+      },
+      "finding": "an objective's text named a different act from the one that completes it: a hint said to walk past a thing that must be right-clicked, and a title said to go somewhere where talking to someone completes it",
+      "general_form": "an objective's title and hint name the act its type completes on (an interact objective says use or right-click, a talk-to objective names the person), never a different verb",
+      "id": "str-05",
+      "note": "Carried by `DW1015` (spec-0104 §5), a warning the creator adjudicates: an objective's title carrying no verb of its own kind's set in the act lexicon (`crates/dsl/data/act-verbs.json`), and a hint naming another kind's act without its own, are reported with the evidence — in the English and every sidecar whose language has a table — and validation exits 0. Membership in a closed set cannot tell a noun from a verb, so the verdict is the creator's; its recall is bounded by the lexicon's seed. What a hint says about where to go is a writing rule in the skill (`references/writing-craft.md` §F), with no machine half.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "any_of": [
+            {
+              "eq": {
+                "type": "interact"
+              }
+            },
+            {
+              "eq": {
+                "on": "use"
+              }
+            }
+          ]
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW0963",
+        "kind": "dw"
+      },
+      "finding": "nothing taught the player that the world's blocks are right-clicked: a sign started a cutscene unannounced, and later props were not tried",
+      "general_form": "a world block the party must act on is a visible block that reads as the thing, picked out on arrival by a highlight the author declares where it does not, and how the setting is operated where it contradicts vanilla is in the journal's manual, readable any time",
+      "id": "str-07",
+      "note": "Carried by `DW0963` (spec-0104 §7.6): every `interact` and every `use`/`strike` trigger sits on a visible block — a prop or an authored block — with no marker hatch. Where the block does not read as the thing, the author declares `highlight {within}` (lit while a player is near and the act is armed; `DW1016` refuses one with nothing to light), and where the setting contradicts vanilla the author writes `guidance.manual` pages, which the journal in every hand holds with the open and done objectives. No check asks that an input be taught: a vanilla player right-clicks a lever without being told.",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "campaign": "the-stranding",
+      "carrier": null,
+      "disposition": "no-machine-form",
+      "finding": "interact props did not read as the thing their text names, and one prop stood among many identical blocks with nothing to say which to press",
+      "general_form": "none: whether a prop reads as the thing its text names is the author's judgement, and a row of identical blocks with a clue elsewhere is a legitimate puzzle",
+      "id": "str-08",
+      "justification": "Only the instance was fixed: three identical valves with no clue were a design fault of that scene. A rule refusing a pressable among blocks of its own kind (spec-0104's first draft) inferred a defect from a shape that is also a legitimate puzzle and was removed (spec-0104 §9). The half of the finding about a prop not reading as the thing is the author's `highlight` (spec-0104 §7, the str-07 row); no general check exists or is owed.",
+      "note": "Re-triaged content (spec-0104 §9): the instance was a design fault of that scene, not an engine gap.",
+      "round": 1,
+      "triage": "content"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "wave/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW0863",
+        "kind": "dw"
+      },
+      "finding": "a fight's bodies were seated far from the player and out of sight, so the player did not know where the fight was",
+      "general_form": "a wave's seated bodies are within sight of the party at the moment the wave is seated, or the objective's hint says where they are",
+      "id": "str-18",
+      "note": "Carried by `DW0863` (spec-0104 §3): a `kill` objective is announced with a `hint`, or its wave's anchor is in sight of every act that fires the wave AND within the wave's reach of it. A kill found by reach alone, the bodies coming unseen round a wall, is no longer found.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"

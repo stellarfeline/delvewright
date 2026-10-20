@@ -21,6 +21,7 @@ pub(super) fn emit_functions(
     asm_locks: &crate::compiler::assembly::Locks,
     pulses: &[crate::compiler::pulse::PulseRow],
     holders: &[crate::compiler::holders::OwnedHolder],
+    guide: &guidance::Guide,
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -625,6 +626,9 @@ pub(super) fn emit_functions(
     // spec-0077 §5: every answer channel the delve declares, read off the
     // finished `setup` — the one place a trigger objective is declared — so the
     // respawn wait locks each one, including any an emitter adds later.
+    // spec-0104 §6–§8: the guidance scoreboards and the highlight team. Empty
+    // for a campaign with no announced objective, no manual and no highlight.
+    setup.extend(guidance::setup_lines(guide));
     let answer_channels = trigger_objectives(&setup);
     let mut setup = {
         let finished_setup = setup;
@@ -793,6 +797,8 @@ pub(super) fn emit_functions(
     // spec-0102: seed each gated pulse's latch, start each ungated pulse's
     // chain. Empty for a campaign that declares none → byte-identical.
     setup.extend(pulse_setup(plan, pulses));
+    // spec-0104 §7.3: a trigger's highlight displays. Empty without one.
+    setup.extend(guidance::setup_finish_lines(guide));
     // Forceload lifecycle (map-editor audit finding 6, planner decision). The
     // edit-AABB forceloads exist for ONE reason — letting the one-shot
     // edit writes land — and `place_verify` above has now proven every
@@ -900,6 +906,8 @@ pub(super) fn emit_functions(
             plan::interact_trigger(&oid)
         ));
     }
+    // spec-0104 §6.4: the compass menu's answer channel.
+    tick.extend(guidance::enable_lines(guide));
     // The lobby (spec-0018 `world.min_players`). A design that genuinely needs n
     // players declares it, and the delve refuses to START below n: the class
     // dialog stays shut and the waiting players get a live party-count actionbar.
@@ -1262,7 +1270,11 @@ pub(super) fn emit_functions(
     tick.extend(crate::compiler::watching::tick_lines(plan));
     tick.extend(named_state_tick(plan));
     tick.extend(economy_tick(plan));
+    // spec-0104 §6–§8: the guidance scan, the highlight polls, the compass
+    // gesture and the refresh. Last, so it reads the state this tick left.
+    tick.extend(guidance::tick_lines(guide, ns));
     fns.push(("tick".to_string(), lines(&tick)));
+    fns.extend(guidance::functions(guide, plan, chrome));
     fns.extend(crate::compiler::healthbar::functions(ns, &health_bars));
     fns.extend(crate::compiler::watching::functions(plan));
     // spec-0082: the assemblies' bodies, clips, drivers and landings. A landing
@@ -1402,7 +1414,7 @@ pub(super) fn emit_functions(
     ));
 
     // --- class apply ---
-    fns.extend(class_apply_fns(plan));
+    fns.extend(class_apply_fns(plan, guide));
 
     // --- dialog option handlers ---
     fns.extend(dialog_handler_fns(plan, &casts));
@@ -1413,6 +1425,7 @@ pub(super) fn emit_functions(
         chrome,
         branch_transport,
         holders,
+        guide,
     ));
 
     // --- campaign_complete (shared by campaign-complete effect) ---

@@ -32,10 +32,27 @@ this section is what they are *for* and the traps in each.
   previous objective completed** — a different room, down a corridor, across an
   area. Read the "may omit" allowance narrowly: an off-screen NPC 60 blocks away
   through an unfamiliar cave leaves the player with nothing.
-- **Hint wording**: landmark-relative directions from places the player already
-  knows — the entrance hall, the gate, a named NPC. Never room-shape jargon
-  ("corner room", "L-shaped hall") and never solver-internal terms (anchor,
-  piece or socket ids).
+- **A hint says where to go and what to do**: it names the act as the player
+  performs it and a place the player can find from where they stand — a
+  landmark they can see and a position relative to it or to themselves (*Past
+  the bell, left of the arch: pull the lever by the gate.*). Never a compass
+  point, never room-shape jargon ("corner room", "L-shaped hall"), never
+  solver-internal terms (anchor, piece or socket ids), never a thing the player
+  has not been told. Every player carries a journal that lists the open
+  objectives with their hints and the done ones, rewritten by the engine, so a
+  hint is written to be re-read as well as heard.
+- **The compass** each player carries follows an announced objective; with
+  several open, using it (right-click) opens a list of the open ones to pick. `compass: hidden`
+  on an objective keeps a secret off it; `guidance.compass: hidden` with no
+  objective opting in carries no compass at all.
+- **A `highlight {within}`** is declared on an act whose block or body does not
+  read as the thing its text names, and only there: it glows while a player is
+  within `within` blocks and the act is open. The first remedy is a better block
+  or a better scene; a lever, a bell or a door that reads as itself carries none.
+- **The journal's `manual`** (`guidance.manual {title?, pages[]}`) is written only
+  for a setting that contradicts vanilla behaviour or an item that needs
+  instructions; most delves write none. Each page carries the key span for any
+  key it names (`[[key|use]]`). The compass page is the engine's.
 - **`interact.requires_item` is HELD, not carried**: the player must have the
   item in their **main hand** when they click — presenting it is the action.
   Author `missing_item_hint` whenever the empty-handed click deserves diegetic

@@ -74,8 +74,9 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
-    /// `DW0982`: a declared name reaches an NPC's line or an option before the
-    /// play order has told the player what it is.
+    /// `DW0982`: a declared name reaches an NPC's line, an option, or an
+    /// announced objective's title or hint (spec-0104 §7) before the play order
+    /// has told the player what it is.
     pub const DW_NAME_UNTOLD: DwCode = DwCode::new("DW0982", ExitTier::Build);
 }
 
@@ -604,6 +605,11 @@ pub struct NameBinding {
     pub dialogue_read: usize,
     /// Dialogue strings the documents declare.
     pub dialogue_declared: usize,
+    /// Objective titles and hints of announced objectives the walks put on
+    /// screen, counted once each (spec-0104 §7).
+    pub objective_read: usize,
+    /// Objective titles and hints of announced objectives the documents declare.
+    pub objective_declared: usize,
     /// Uses of a declared name in those strings, counted per string and name.
     pub uses: usize,
     /// Uses refused: the name was not told before it on some walk.
@@ -615,11 +621,14 @@ impl NameBinding {
     pub fn line(&self) -> String {
         format!(
             "name-told binding (DW0982): {} declared name(s); {} walk(s); {} of {} dialogue \
-             string(s) on screen on some walk; {} use(s) of a name in them, {} untold",
+             string(s) and {} of {} objective string(s) on screen on some walk; {} use(s) of a \
+             name in them, {} untold",
             self.names,
             self.walks,
             self.dialogue_read,
             self.dialogue_declared,
+            self.objective_read,
+            self.objective_declared,
             self.uses,
             self.untold
         )
@@ -740,6 +749,30 @@ pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
             }
         }
     }
+    // spec-0104 §7: an announced objective's title and hint are uses too —
+    // what the party reads as its instruction names only what it has been
+    // told. Keyed like the dialogue map: the key → (quest id, objective id,
+    // pointer). An unannounced objective's strings never reach a screen.
+    let guidance = &c.quests.content.guidance;
+    let mut obj_strings: BTreeMap<String, (String, String)> = BTreeMap::new();
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        let ql = local_id(q.id.as_str());
+        for (oi, o) in q.objectives.iter().enumerate() {
+            if !o.announced(guidance) {
+                continue;
+            }
+            let ol = local_id(o.id().as_str());
+            for f in ["title", "hint"] {
+                obj_strings.insert(
+                    format!("obj.{ql}.{ol}.{f}"),
+                    (
+                        o.id().as_str().to_string(),
+                        format!("/content/quests/{qi}/objectives/{oi}/{f}"),
+                    ),
+                );
+            }
+        }
+    }
     let npc_local: BTreeMap<String, String> = c
         .npcs
         .content
@@ -755,7 +788,9 @@ pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
 
     bind.walks = walks.len();
     bind.dialogue_declared = dlg.keys().filter(|k| inv.contains_key(*k)).count();
+    bind.objective_declared = obj_strings.keys().filter(|k| inv.contains_key(*k)).count();
     let mut read_dialogue: BTreeSet<String> = BTreeSet::new();
+    let mut read_objective: BTreeSet<String> = BTreeSet::new();
     let mut all_uses: BTreeSet<(String, usize)> = BTreeSet::new();
     let mut worst: BTreeMap<(String, usize), Untold> = BTreeMap::new();
     for (label, pt) in &walks {
@@ -803,13 +838,21 @@ pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
                 }
             }
         }
-        // Every use in a dialogue line or option, against when it was told.
+        // Every use in a dialogue line or option, or in an announced
+        // objective's title or hint, against when it was told.
         for (key, &at) in &first {
-            if !dlg.contains_key(*key) {
+            if dlg.contains_key(*key) {
+                if inv.contains_key(*key) {
+                    read_dialogue.insert(key.to_string());
+                }
+            } else if obj_strings.contains_key(*key) {
+                if inv.contains_key(*key) {
+                    read_objective.insert(key.to_string());
+                }
+            } else {
                 continue;
             }
             let Some(text) = inv.get(*key) else { continue };
-            read_dialogue.insert(key.to_string());
             for (i, s, e) in mentions(text, &names) {
                 if !is_use(text, &names[i].core, names[i].text != names[i].core, s, e)
                     || introduces(text, s, e)
@@ -844,19 +887,36 @@ pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
     }
 
     bind.dialogue_read = read_dialogue.len();
+    bind.objective_read = read_objective.len();
     bind.uses = all_uses.len();
     bind.untold = worst.len();
     let mut d = Vec::new();
     for ((key, i), u) in worst {
         let n = &names[i];
-        let Some((npc, node, opt, pointer)) = dlg.get(&key) else {
+        let (whose, stage, pointer) = if let Some((npc, node, opt, pointer)) = dlg.get(&key) {
+            (
+                match opt {
+                    None => format!("`{npc}`'s line in `{node}`"),
+                    Some(o) => format!("option {o} of `{node}` (the player's own words)"),
+                },
+                "dialogue",
+                pointer,
+            )
+        } else if let Some((oid, pointer)) = obj_strings.get(&key) {
+            let field = if key.ends_with(".hint") {
+                "hint"
+            } else {
+                "title"
+            };
+            (
+                format!("the {field} of objective `{oid}` (the party's instruction)"),
+                "quests",
+                pointer,
+            )
+        } else {
             continue;
         };
         let text = inv.get(&key).cloned().unwrap_or_default();
-        let whose = match opt {
-            None => format!("`{npc}`'s line in `{node}`"),
-            Some(o) => format!("option {o} of `{node}` (the player's own words)"),
-        };
         let when = if u.at == 0 {
             "before the first step".to_string()
         } else {
@@ -888,7 +948,7 @@ pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
         };
         d.push(Diagnostic::error(
             DW_NAME_UNTOLD,
-            "dialogue",
+            stage,
             pointer.clone(),
             format!(
                 "{whose} uses `{}` (declared by `{}`) {when}, and the player has not been told \

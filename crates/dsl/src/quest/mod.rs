@@ -27,9 +27,9 @@ use crate::{
 pub struct QuestsContent {
     /// The expanded quests (1:1 with stage 4).
     pub quests: Vec<Quest>,
-    /// **How loudly the campaign guides** (spec-0093): the default for every
-    /// objective's `marker` and `announcement`. Absent = both `shown`, which is
-    /// what every campaign written before the block existed gets, byte for byte.
+    /// **How the campaign guides** (spec-0093, spec-0104): the defaults for
+    /// every objective's `announcement` and `compass`, and the journal's manual.
+    /// Absent = every default, byte for byte.
     #[serde(default, skip_serializing_if = "Guidance::is_default")]
     pub guidance: Guidance,
     /// Combat waves (DSL v0.3). Each wave is spawned by a `spawn-wave` effect and
@@ -168,7 +168,7 @@ pub struct QuestsContent {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Visibility {
-    /// Shown — the marker is summoned, the announcement is printed.
+    /// Shown — the announcement is printed, the compass points.
     #[default]
     Shown,
     /// Hidden — nothing is summoned or printed; the objective still adjudicates.
@@ -183,28 +183,94 @@ impl Visibility {
     }
 }
 
-/// The campaign's guidance defaults (spec-0093): what an objective gets when it
-/// states no `marker` or `announcement` of its own.
+/// The campaign's guidance defaults (spec-0093, spec-0104): what an objective
+/// gets when it states no `announcement` of its own.
 ///
-/// Two values, both defaulting to `shown`, so a document that omits the block
-/// is the document every campaign already was. The objective's own field wins
-/// over the campaign's; there is no third level, because a quest is where a
-/// beat is booked and not the object a lantern hangs over.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+/// Every value defaults to `shown`, so a document that omits the block is the
+/// document every campaign already was. The objective's own field wins over
+/// the campaign's; there is no third level, because a quest is where a beat is
+/// booked and not the object guidance acts on.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Guidance {
-    /// The default for every `interact` (without a `prop`) and `reach-anchor`
-    /// objective's glowing marker.
-    #[serde(default, skip_serializing_if = "Visibility::is_shown")]
-    pub markers: Visibility,
     /// The default for every objective's announcement — the `New objective`
     /// line, the hint's line, the cue sound and the `Objective complete` line.
     #[serde(default, skip_serializing_if = "Visibility::is_shown")]
     pub announcements: Visibility,
+    /// The default for every objective's `compass` (spec-0104 §6): whether an
+    /// announced objective is one the compass each player carries can follow.
+    /// `hidden` with no objective opting in gives no compass at all.
+    #[serde(default, skip_serializing_if = "Visibility::is_shown")]
+    pub compass: Visibility,
+    /// **The author's pages of the journal** (spec-0104 §8): written only for a
+    /// setting that contradicts vanilla behaviour or an item that needs
+    /// instructions. Absent is the default and the right choice for most
+    /// delves; the journal's compass page and its open and done objectives are
+    /// the engine's, derived, never authored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manual: Option<Manual>,
+}
+
+/// The author's part of the journal (spec-0104 §8.1).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Manual {
+    /// The journal's name in the hand. Absent = the engine's `Journal`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// One string per book page, each a line of the span grammar (spec-0096)
+    /// that names any key through the key span (`[[key|use]]`). At least one.
+    #[serde(deserialize_with = "non_empty_pages")]
+    #[schemars(length(min = 1))]
+    pub pages: Vec<String>,
+}
+
+/// `pages` may not be empty when `manual` is declared: an empty manual is a
+/// declaration of nothing, refused where it is entered.
+fn non_empty_pages<'de, D>(d: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let pages = Vec::<String>::deserialize(d)?;
+    if pages.is_empty() {
+        return Err(serde::de::Error::custom(
+            "`guidance.manual.pages` is empty: a manual holds at least one page; remove \
+             `manual` to write none",
+        ));
+    }
+    Ok(pages)
+}
+
+/// **A highlight the party is near** (spec-0104 §7): the act's block or body
+/// glows while a player stands within `within` blocks of it and the act is
+/// armed. Declared by the author per act; never inferred.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Highlight {
+    /// The range in blocks, 1 to 64 (64 is the farthest an outline is drawn).
+    #[serde(deserialize_with = "highlight_within")]
+    #[schemars(range(min = 1, max = 64))]
+    pub within: u8,
+}
+
+/// `within` is 1..=64, refused where it is entered.
+fn highlight_within<'de, D>(d: D) -> Result<u8, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let n = u64::deserialize(d)?;
+    if !(1..=64).contains(&n) {
+        return Err(serde::de::Error::custom(format!(
+            "`highlight.within` is {n}: the range is 1 to 64 blocks (an outline is drawn to \
+             64 blocks at most)"
+        )));
+    }
+    Ok(n as u8)
 }
 
 impl Guidance {
-    /// Serde skip predicate: both `shown` needs no block on the wire.
+    /// Serde skip predicate: every field at its default needs no block on the
+    /// wire.
     pub fn is_default(&self) -> bool {
         *self == Guidance::default()
     }

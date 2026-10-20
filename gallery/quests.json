@@ -396,6 +396,16 @@
         "text": "The long hall was emptied long ago, and the chest in its end room holds nothing. What this hall keeps, it keeps for you."
       }
     },
+    "guidance": {
+      "compass": "shown",
+      "manual": {
+        "pages": [
+          "Things in this hall answer to a hand: stand close and [[key|use]] on a case, a lever, a valve.",
+          "The Curator keeps the cases. Ask before you touch the glass, and do not keep what you take."
+        ],
+        "title": "The Curator's Notes"
+      }
+    },
     "lethal_volumes": [
       {
         "damage_type": "fall",
@@ -846,6 +856,7 @@
           {
             "after": [],
             "announcement": "shown",
+            "compass": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -853,6 +864,9 @@
               "subject": "npc/curator",
               "text": "The Curator tells them what the hall is for.",
               "verb": "learns"
+            },
+            "highlight": {
+              "within": 6
             },
             "hint": "The Curator stands at the lectern.",
             "id": "obj/hear-the-curator",
@@ -866,7 +880,7 @@
               }
             ],
             "stealth": false,
-            "title": "Hear the Curator",
+            "title": "Talk to the Curator",
             "type": "talk-to"
           },
           {
@@ -875,6 +889,7 @@
             ],
             "anchor": "anchor/pedestal",
             "announcement": "shown",
+            "compass": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -882,6 +897,9 @@
               "subject": "anchor/pedestal",
               "text": "The case opens under their hand.",
               "verb": "opens"
+            },
+            "highlight": {
+              "within": 6
             },
             "hint": "The case stands in the middle of the near hall.",
             "id": "obj/press-the-case",
@@ -907,6 +925,7 @@
               "obj/press-the-case"
             ],
             "anchor": "anchor/pedestal",
+            "compass": "shown",
             "count": 4,
             "fill_count": 4,
             "forbids_flags": [
@@ -916,6 +935,9 @@
               "subject": "anchor/pedestal",
               "text": "They take the emeralds out of the case.",
               "verb": "gains"
+            },
+            "highlight": {
+              "within": 6
             },
             "hint": "Four of them, in the case.",
             "holder": "anchor/case",
@@ -1784,7 +1806,7 @@
             "npc": "npc/marshal",
             "requires_flags": [],
             "stealth": false,
-            "title": "Answer the Marshal",
+            "title": "Report to the Marshal",
             "type": "talk-to"
           },
           {
@@ -1792,6 +1814,7 @@
               "obj/answer-the-marshal"
             ],
             "announcement": "shown",
+            "compass": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -1799,6 +1822,9 @@
               "subject": "actor/sergeant",
               "text": "The muster is put down.",
               "verb": "dies"
+            },
+            "highlight": {
+              "within": 8
             },
             "hint": "They are at the muster line.",
             "id": "obj/clear-the-muster",
@@ -1884,7 +1910,6 @@
               "verb": "arrives"
             },
             "id": "obj/reach-the-end",
-            "marker": "hidden",
             "radius": 1,
             "requires_flags": [
               "flag/muster-cleared"
@@ -1912,12 +1937,11 @@
               "verb": "arrives"
             },
             "id": "obj/board-the-ferry",
-            "marker": "shown",
             "radius": 1,
             "requires_flags": [
               "flag/muster-cleared"
             ],
-            "title": "Board the ferry",
+            "title": "Step onto the ferry",
             "type": "reach-anchor"
           },
           {
@@ -1930,6 +1954,7 @@
               "text": "They step off the ferry into the sealed cabin.",
               "verb": "arrives"
             },
+            "hint": "Cross on the ferry to the cabin on the far shore.",
             "id": "obj/cross-the-strait",
             "radius": 1,
             "requires_flags": [
@@ -1986,8 +2011,10 @@
               "text": "the party is set back down in the gallery hall",
               "verb": "arrives"
             },
+            "hint": "Back through the arch you came in by.",
             "id": "obj/back-in-the-hall",
             "radius": 2,
+            "title": "Return to the hall",
             "type": "reach-anchor"
           }
         ],
@@ -3371,6 +3398,7 @@
               "text": "The east bay keeps what the hall has stopped showing.",
               "verb": "arrives"
             },
+            "hint": "Through the arch on the east side of the reliquary.",
             "id": "obj/look-in-the-east-bay",
             "radius": 3,
             "title": "Look into one side bay",
@@ -3394,15 +3422,17 @@
               "obj/look-in-the-west-bay"
             ],
             "anchor": "anchor/west-pit",
-            "announcement": "hidden",
+            "announcement": "shown",
+            "compass": "hidden",
             "happening": {
               "subject": "anchor/west-pit",
               "text": "They come to the rim of the well and look down it.",
               "verb": "arrives"
             },
+            "hint": "The well is in the reliquary's north-west corner.",
             "id": "obj/look-into-the-well",
             "radius": 3,
-            "title": "Look into the well",
+            "title": "Go to the mouth of the well",
             "type": "reach-anchor"
           }
         ],
@@ -3538,6 +3568,7 @@
               "text": "the party reaches the lit end of the long hall",
               "verb": "arrives"
             },
+            "hint": "Run the long hall to its far end.",
             "id": "obj/reach-the-hall-end",
             "radius": 2,
             "title": "Reach the light",
@@ -4289,6 +4320,9 @@
             "type": "sequence"
           }
         ],
+        "highlight": {
+          "within": 5
+        },
         "id": "trigger/ferry-tiller",
         "on": {
           "on": "use"
@@ -4479,7 +4513,7 @@
         },
         "once": false,
         "prop": {
-          "block": "minecraft:lever[face=floor,facing=south]"
+          "block": "minecraft:oak_button[face=floor,facing=south]"
         }
       },
       {
@@ -4534,7 +4568,7 @@
         },
         "once": false,
         "prop": {
-          "block": "minecraft:lever[face=floor,facing=south]"
+          "block": "minecraft:stone_button[face=floor,facing=south]"
         }
       },
       {
@@ -4555,6 +4589,9 @@
             }
           }
         ],
+        "highlight": {
+          "within": 5
+        },
         "id": "trigger/valve-first",
         "on": {
           "on": "use"

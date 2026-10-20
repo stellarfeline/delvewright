@@ -21,8 +21,10 @@
               "text": "the party completes obj/ask",
               "verb": "learns"
             },
+            "hint": "Someone in this hall has the answer.",
             "id": "obj/ask",
             "npc": "npc/keeper",
+            "title": "Ask about the way on",
             "type": "talk-to"
           }
         ],

@@ -7,6 +7,7 @@
 //! were the ones a reader happened to add. `the_module_list_names_every_module`
 //! (`tests/module_list.rs`) is what keeps it whole.
 //!
+//! - [`acts`]: the acts on every walked path — what the party must do, where, and from where it stands (spec-0104), read by `DW0863`.
 //! - [`affordance`]: affordance hardware — the visible half of every right-click target the compiler owns (`DW0420`/`DW0421`).
 //! - [`analyze`]: deep quest/objective reachability (`DW02xx`, exit 2).
 //! - [`approach`]: a body the party talks to faces their approach, or watches it (`DW1025`).
@@ -115,6 +116,7 @@
 //! - [`ways`]: what a campaign does with a piece's contingent ways.
 //! - [`wrongside`]: which side of a sealed shortcut door a player is standing on.
 
+pub mod acts;
 pub mod affordance;
 pub mod analyze;
 pub mod approach;

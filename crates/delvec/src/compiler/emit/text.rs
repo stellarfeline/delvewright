@@ -94,19 +94,6 @@ pub(super) fn snbt_string(s: &str) -> String {
     format!("\"{esc}\"")
 }
 
-/// The `CustomName:…,CustomNameVisible:1b,` NBT fragment (trailing comma) that
-/// labels a floating objective marker with its objective `title`. When the
-/// objective has no title, the marker carries NO name — an empty fragment — so it
-/// still glows and is findable but never surfaces the raw objective id (e.g.
-/// `obj/door`) as player-visible floating text — presentation hygiene. A titled
-/// marker carries its title verbatim.
-pub(super) fn marker_name_fields(title: Option<&str>) -> String {
-    match title {
-        Some(t) => format!("CustomName:{},CustomNameVisible:1b,", snbt_component(t)),
-        None => String::new(),
-    }
-}
-
 /// A text-component SNBT **compound** for a player-visible string:
 /// `{text:"<escaped>"}`. Used for mannequin `description` (DSL v0.4) and any
 /// component-form NBT field. This is deliberately NOT the stringified-JSON form
@@ -153,6 +140,11 @@ pub(super) fn tr(s: &str) -> Value {
                     .iter()
                     .map(|g| match g {
                         delvewright_dsl::textstyle::Segment::Text(t) => json!({ "text": t }),
+                        delvewright_dsl::textstyle::Segment::Span(st, _)
+                            if st.keybind().is_some() =>
+                        {
+                            json!({ "keybind": st.keybind() })
+                        }
                         delvewright_dsl::textstyle::Segment::Span(st, t) => {
                             let mut v = json!({ "text": t });
                             let o = v.as_object_mut().expect("an object");
@@ -184,6 +176,11 @@ pub(super) fn styled_translate(key: &str, text: &str) -> Option<Value> {
         .iter()
         .enumerate()
         .map(|(i, (style, t))| {
+            // A key span (spec-0104 §8.9) is the client's own name for the
+            // viewer's bound key: it has no text to translate.
+            if let Some(k) = style.keybind() {
+                return json!({ "keybind": k });
+            }
             let mut v = json!({
                 "translate": delvewright_dsl::textstyle::span_key(key, i),
                 "fallback": t,

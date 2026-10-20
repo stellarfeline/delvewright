@@ -12,7 +12,7 @@
 //! | [`DW_ADOPTED_CONTAINER_UNMARKED`] | only one of four identical barrels held the item the objective wanted, and nothing told the party which |
 //! | [`DW_PROMPT_UNSHOWN`] | an on-screen prompt told the party to return to one place while the objective it described completed somewhere else |
 //! | [`DW_FIGHT_UNSIGNED`] | a defence wave gave the party no guidance to where the attackers were, so the fight could not be found |
-//! | [`DW_ANNOUNCEMENT_EMPTY`] / [`DW_MARKER_INERT`] | a declaration that asks for guidance nothing can give — the vacuous shape, refused rather than ignored (spec-0093 §7) |
+//! | [`DW_ANNOUNCEMENT_EMPTY`] | a declaration that asks for guidance nothing can give — the vacuous shape, refused rather than ignored (spec-0093 §7) |
 //! | [`DW_PRESSABLE_UNSEEN`] | a quiet delve's slate was an invisible hitbox on an empty cell, and the party could not find the thing to press (spec-0093 §7) |
 //!
 //! # Why these live together and not next to the verbs they judge
@@ -27,18 +27,15 @@
 //! # What the prompt surface actually is
 //!
 //! An objective carries two player-facing strings — [`Objective::title`] and
-//! [`Objective::hint`] — and two visibilities, its `marker` and its
-//! `announcement`, each defaulted by the campaign's `guidance` block
-//! (spec-0093). What the emitter does with them is the load-bearing fact under
+//! [`Objective::hint`] — and its `announcement`, defaulted by the campaign's
+//! `guidance` block (spec-0093). What the emitter does with them is the load-bearing fact under
 //! three of these four rules: the activation announcement and the completion
 //! line are emitted for an **announced** objective — one with a title whose
 //! resolved `announcement` is `shown` ([`Objective::announced`]) — and the hint's
 //! `tellraw` is nested inside that announcement. So:
 //!
 //! * an objective that is not announced prints **nothing at all** — no chat
-//!   line, no cue sound — and its wayfinding marker, when it has one, is
-//!   summoned nameless (`emit::marker_name_fields` refuses to surface a raw
-//!   `obj/…` id);
+//!   line, no cue sound;
 //! * an objective with a `hint` that is not announced shows **neither** — the
 //!   hint is authored prose the emitter drops on the floor, with nothing
 //!   anywhere saying so.
@@ -116,23 +113,20 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
-    /// `DW0863`: a `kill` objective the party cannot find — neither **announced
-    /// with a hint** nor **found by the party** (spec-0093 §5).
+    /// `DW0863`: an act on a walked path the party cannot find — neither
+    /// **announced with a hint** nor **in sight** from the cell the party stands
+    /// on before it (and, for a `kill`, its wave within reach of that cell)
+    /// (spec-0104 §4, widening spec-0093 §5).
     ///
-    /// Bell round 6: a defence wave gave the party no guidance to where the attackers
-    /// were, so the fight could not be found. A fight is the one objective kind the
-    /// compiler gives the world **nothing** for. Measured against the emitter rather
-    /// than assumed: `emit::activation_commands` returns an empty command list for
-    /// `Objective::Kill`, `emit::completion_cleanup` likewise, and the render plan
-    /// falls back to the literal phrase `the fight` because no name exists to use.
-    /// So the party finds the fight one of two ways, and the rule admits both: the
-    /// objective's own two lines say where the wave arrives, or the wave arrives
-    /// where the party already is — every site that fires its `spawn-wave` is a
-    /// placed act (the party stands there when the bundle fires) and the wave's
-    /// anchor lies within the wave's reach ([`crate::compiler::nav::wave_aggro_radius`])
-    /// of it, so the bodies acquire the party by vanilla's own rule.
+    /// Bell round 6: a defence wave gave the party no guidance to where the
+    /// attackers were. The Stranding round 1: steps with no hint went unseen, and
+    /// a fight's bodies were seated out of sight. An act is every objective step
+    /// and every `use`/`strike` trigger the path performs; what the party is owed
+    /// for each is the same whatever the kind: it can see the act from where it
+    /// stands, or the objective's own lines say where it is. A trigger has no
+    /// lines, so sight is its only arm.
     ///
-    /// Judged at the build, where places exist (`emit::build`, beside `DW0310`).
+    /// Judged at the build, where places and blocks exist (`emit::build`).
     pub const DW_FIGHT_UNSIGNED: DwCode = DwCode::new("DW0863", ExitTier::Build);
 }
 
@@ -148,13 +142,20 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
-    /// `DW0962`: `marker` declared on an `interact` that declares a `prop` — the prop
-    /// is the affordance and no marker is ever summoned beside it, so the field
-    /// declares nothing (spec-0093 §7).
-    ///
-    /// `shown` is a lie (nothing glows) and `hidden` is redundant (nothing did);
-    /// either way the author wrote a value the world will not reflect.
-    pub const DW_MARKER_INERT: DwCode = DwCode::new("DW0962", ExitTier::Build);
+    /// `DW1016`: a `highlight` on an act with **nothing to light** (spec-0104
+    /// §7.5) — a `collect` whose items fall from a wave (`dropped_by`, so no
+    /// container stands), or an `approach`, `step` or `strike-assembly`
+    /// trigger (a place, a plate's cell, or an assembly the engine lights as no
+    /// one body). An inert declaration is refused, never ignored.
+    pub const DW_HIGHLIGHT_INERT: DwCode = DwCode::new("DW1016", ExitTier::Build);
+}
+
+delvewright_dsl::dw_code! {
+    /// `DW1017`: `compass: shown` on an objective that is **not announced** —
+    /// no `title`, or a resolved `announcement` of `hidden` (spec-0104 §6.6).
+    /// The compass would point at a thing the player has no name for, and the
+    /// line that names what is followed would have nothing to say.
+    pub const DW_COMPASS_UNTOLD: DwCode = DwCode::new("DW1017", ExitTier::Build);
 }
 
 /// Ticks allowed for a line to appear and the eye to reach it, before any of it
@@ -183,9 +184,6 @@ pub struct PromiseBinding {
     /// Of those, objectives that are announced — have a title and a resolved
     /// `announcement` of `shown` — the population whose hint reaches a screen.
     pub announced: usize,
-    /// Of those, objectives whose kind summons a marker and whose resolved
-    /// `marker` is `shown`.
-    pub marked: usize,
     /// Of those, `collect` objectives adopting a prefab container —
     /// [`DW_ADOPTED_CONTAINER_UNMARKED`]'s population.
     pub adopted_containers: usize,
@@ -200,11 +198,10 @@ impl PromiseBinding {
     /// that measured nothing says so rather than passing quietly.
     pub fn line(&self) -> String {
         format!(
-            "promise: {} objective(s) examined — {} announced, {} marked (DW0862/DW0961/DW0962), \
-             {} adopted container(s) (DW0861); {} failure clock(s) (DW0860) over {} effect root(s)",
+            "promise: {} objective(s) examined — {} announced (DW0862/DW0961), {} adopted \
+             container(s) (DW0861); {} failure clock(s) (DW0860) over {} effect root(s)",
             self.objectives,
             self.announced,
-            self.marked,
             self.adopted_containers,
             self.failure_clocks,
             self.effect_roots,
@@ -257,9 +254,8 @@ fn check_trigger_props(c: &Campaign, d: &mut Vec<Diagnostic>) {
 // The three objective-prompt rules
 // ---------------------------------------------------------------------------
 
-/// `DW0861`, `DW0862`, `DW0961`, `DW0962` — one walk of the objective surface,
-/// because all four ask about the same two strings and the two visibilities
-/// beside them.
+/// `DW0861`, `DW0862`, `DW0961` — one walk of the objective surface, because
+/// all three ask about the same two strings and the visibility beside them.
 fn check_objective_prompts(c: &Campaign, d: &mut Vec<Diagnostic>, b: &mut PromiseBinding) {
     let guidance = &c.quests.content.guidance;
     for (qi, q) in c.quests.content.quests.iter().enumerate() {
@@ -271,7 +267,6 @@ fn check_objective_prompts(c: &Campaign, d: &mut Vec<Diagnostic>, b: &mut Promis
             let hint = o.hint().map(str::trim).filter(|s| !s.is_empty());
             let announced = o.announced(guidance);
             b.announced += usize::from(announced);
-            b.marked += usize::from(o.marker_shown(guidance));
 
             // DW0862 — a hint the emitter will never show.
             if hint.is_some() && !announced {
@@ -312,31 +307,6 @@ fn check_objective_prompts(c: &Campaign, d: &mut Vec<Diagnostic>, b: &mut Promis
                          and without one the emitter prints no line, plays no cue and marks \
                          nothing complete on screen. Give `{id}` a `title`, or remove the \
                          `announcement` field and let the objective be quiet."
-                    ),
-                ));
-            }
-
-            // DW0962 — a marker declared where none is ever summoned.
-            if let Objective::Interact {
-                prop: Some(prop),
-                marker: Some(marker),
-                ..
-            } = o
-            {
-                d.push(Diagnostic::error(
-                    DW_MARKER_INERT,
-                    "quests",
-                    format!("{path}/marker"),
-                    format!(
-                        "objective `{id}` declares `marker: {}` beside a `prop` (`{}`). The prop \
-                         block IS the affordance and no marker is ever summoned beside one, so \
-                         the field declares nothing the world will reflect. Remove `marker`, or \
-                         remove the `prop` and let the compiler's lantern stand there.",
-                        match marker {
-                            delvewright_dsl::Visibility::Shown => "shown",
-                            delvewright_dsl::Visibility::Hidden => "hidden",
-                        },
-                        prop.block
                     ),
                 ));
             }
@@ -384,9 +354,9 @@ fn check_objective_prompts(c: &Campaign, d: &mut Vec<Diagnostic>, b: &mut Promis
 }
 
 delvewright_dsl::dw_code! {
-    /// `DW0963`: **a thing to act on that nothing shows** (spec-0093 §7). An
-    /// `interact` that is not marked — its resolved `marker` is `hidden` — with no
-    /// `prop`, or a `use`/`strike` trigger with no `prop` whose anchor is a point
+    /// `DW0963`: **a thing to act on that nothing shows** (spec-0093 §7,
+    /// tightened by spec-0104 §7.6). An `interact` with no `prop`, or a
+    /// `use`/`strike` trigger with no `prop` whose anchor is a point
     /// in open air, whose hitbox cells hold air in the assembled world: the
     /// player is asked to act on a point in empty space.
     ///
@@ -422,8 +392,6 @@ pub struct PressableBinding {
     pub triggers: usize,
     /// Of both, bound to a vanilla block a hand presses — no hitbox at all.
     pub block_bound: usize,
-    /// Of the interacts, marked — the lantern shows them.
-    pub marked: usize,
     /// Of both, carrying a `prop` vanilla does not report the use of — the block
     /// is placed and the hitbox stands in it.
     pub with_prop: usize,
@@ -443,13 +411,12 @@ impl PressableBinding {
     pub fn line(&self) -> String {
         format!(
             "DW0963 binding: {} `interact` objective(s) and {} click trigger(s); {} bound to a \
-             block a hand presses, {} marked, {} with a prop vanilla does not report, {} on a \
+             block a hand presses, {} with a prop vanilla does not report, {} on a \
              seal, shortcut or gate shell, {} on an NPC's own hitbox, {} on an authored block, \
              {} unplaced",
             self.interacts,
             self.triggers,
             self.block_bound,
-            self.marked,
             self.with_prop,
             self.on_a_structure,
             self.on_an_npc,
@@ -460,7 +427,7 @@ impl PressableBinding {
 }
 
 /// **A pressable thing stands on something the player can see** (`DW0963`):
-/// every `interact` that is not marked and every `use`/`strike` trigger is a
+/// every `interact` and every `use`/`strike` trigger is a
 /// vanilla block a hand presses, or stands on a structure the compiler arms, or
 /// stands in a cell the piece filled. Reads the settled block map for the last
 /// arm: the feet cell and the head cell the hitbox occupies at the anchor,
@@ -475,7 +442,6 @@ pub fn check_pressables_visible(
 ) {
     use crate::compiler::pressable::Body;
     let c = plan.campaign;
-    let guidance = &c.quests.content.guidance;
     let mut b = PressableBinding::default();
     let mut verdict: Result<(), crate::compiler::failure::Failure> = Ok(());
     let cells_hold_a_block = |pos: [i32; 3]| {
@@ -520,10 +486,6 @@ pub fn check_pressables_visible(
                 b.with_prop += 1;
                 continue;
             }
-            if o.marker_shown(guidance) {
-                b.marked += 1;
-                continue;
-            }
             let area = plan.quest_area(q.id.as_str());
             let Some(pos) = area
                 .and_then(|a| plan.point(a, anchor.as_str()))
@@ -536,12 +498,7 @@ pub fn check_pressables_visible(
                 b.on_a_block += 1;
                 continue;
             }
-            let how = if o.marker().is_some() {
-                "its marker is hidden by its own `marker: hidden` and it declares no `prop`"
-            } else {
-                "its marker is hidden by the campaign's `guidance.markers: hidden` and it \
-                 declares no `prop`"
-            };
+            let how = "it declares no `prop`";
             refuse(
                 &mut verdict,
                 format!(
@@ -554,11 +511,12 @@ pub fn check_pressables_visible(
                 &format!(
                     "Give `{}` a `prop` — any block that reads as the thing (a lever, a bell, a \
                      lamp, a winch); a lever, a button or a bell is also its own detector, since \
-                     vanilla reports its use — or author a block at `{}` in the piece, or show \
-                     its marker. If the object does not explain itself, the objective's `hint` \
-                     names it.",
+                     vanilla reports its use — or author a block at `{}` in the piece. If the \
+                     object does not read as the thing, declare a `highlight` on `{}` and let \
+                     the objective's `hint` name it.",
                     id.as_str(),
-                    anchor.as_str()
+                    anchor.as_str(),
+                    id.as_str()
                 ),
             );
         }
@@ -633,31 +591,55 @@ pub fn check_pressables_visible(
 }
 
 // ---------------------------------------------------------------------------
-// DW0863 — a fight the party cannot find
+// DW0863 — an act the party cannot find (spec-0104 §4)
 // ---------------------------------------------------------------------------
 
-/// What [`check_fight_signposts`] examined, stated whichever way it went.
+/// The one reach sight is given (spec-0104 §2.6): the farthest the pinned
+/// client draws a body of a block or less at the default *Entity Distance*
+/// (`64 × size × viewScale`, size clamped to at least 1), used for blocks as
+/// well.
+pub const SIGHT_BLOCKS: f64 = 64.0;
+
+/// The eye of a body standing on a cell: [`crate::compiler::nav::cell_center`]
+/// plus the standing eye height.
+const EYE_HEIGHT: f64 = 1.62;
+
+/// What [`check_acts_found`] examined, stated whichever way it went.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct FightBinding {
-    /// `kill` objectives examined, over every quest.
-    pub kills: usize,
-    /// Of those, announced with a `hint` — found by the objective's own lines.
+pub struct ActBinding {
+    /// Acts judged, counted once per walk they stand on.
+    pub acts: usize,
+    /// Walks taken: the critical path and every realised branch.
+    pub walks: usize,
+    /// Of the acts, announced with a `hint` — found by the objective's own lines.
     pub announced: usize,
-    /// Of those, found by the party — every firing site placed and within reach.
-    pub found: usize,
-    /// Firing sites measured across every `kill` judged by reach.
-    pub sites: usize,
-    /// Of those, sites that place the party nowhere this rule can name.
-    pub unplaced: usize,
+    /// Of the acts, in sight from where the party stands.
+    pub in_sight: usize,
+    /// Of those, `kill`s whose wave is also within reach.
+    pub kills_in_reach: usize,
+    /// Of the acts, triggers — judged by sight alone, having no lines.
+    pub triggers: usize,
+    /// `kill` objectives on no walk, judged from the acts that fire their wave.
+    pub kills_off_walk: usize,
+    /// Acts refused.
+    pub refused: usize,
 }
 
-impl FightBinding {
+impl ActBinding {
     /// The one line a build prints about this rule.
     pub fn line(&self) -> String {
         format!(
-            "DW0863 binding: {} `kill` objective(s); {} announced with a hint, {} found by the \
-             party; {} firing site(s) measured, {} of them placing the party nowhere",
-            self.kills, self.announced, self.found, self.sites, self.unplaced
+            "DW0863 binding: {} act(s) over {} walk(s) — {} announced with a hint, {} in sight \
+             ({} kill(s) also in reach), {} trigger(s) judged by sight alone; {} refused; {} \
+             kill(s) on no walk judged from the acts that fire their wave",
+            self.acts,
+            self.walks,
+            self.announced,
+            self.in_sight,
+            self.kills_in_reach,
+            self.triggers,
+            self.refused,
+            self.kills_off_walk
         )
     }
 }
@@ -671,128 +653,336 @@ struct FiringSite {
     places: Option<Vec<[i32; 3]>>,
 }
 
-/// **A fight the party cannot find** (`DW0863`, spec-0093 §5). A `kill` objective
-/// is discoverable when it is announced with a `hint`, or when every site that
-/// fires its wave is a placed act within the wave's reach of the wave's anchor.
+/// **Why an act is not found from one vantage** (spec-0104 §4, arm 2): the
+/// reasons its target is out of sight from a body standing on `from` — past
+/// [`SIGHT_BLOCKS`], or behind the first cell that stops the line — and, when
+/// `reach` is given (a `kill`'s wave reach and where it comes from), whether
+/// the target is past it. Empty when the act is found.
+pub fn act_unfound(
+    world: &crate::compiler::nav::World,
+    from: [i32; 3],
+    target: [i32; 3],
+    body: bool,
+    reach: Option<(f64, &str)>,
+) -> Vec<String> {
+    let mut why = Vec::new();
+    if let Some(u) = unseen(world, from, target, body) {
+        why.push(format!("its target {target:?} is {u}"));
+    }
+    if let Some((r, src)) = reach {
+        let d = dist(from, target);
+        if d > r {
+            why.push(format!(
+                "its wave's anchor {target:?} is {d:.1} blocks away, past the wave's reach of \
+                 {r} blocks ({src}), so the bodies the party sees do not come to it"
+            ));
+        }
+    }
+    why
+}
+
+/// Why a target is not in sight from a cell, or `None` when it is.
+fn unseen(
+    world: &crate::compiler::nav::World,
+    from: [i32; 3],
+    target: [i32; 3],
+    body: bool,
+) -> Option<String> {
+    let c = crate::compiler::nav::cell_center(from);
+    let eye = [c[0], c[1] + EYE_HEIGHT, c[2]];
+    let t = crate::compiler::nav::cell_center(target);
+    let at = [t[0], t[1] + if body { 1.0 } else { 0.5 }, t[2]];
+    let d = ((eye[0] - at[0]).powi(2) + (eye[1] - at[1]).powi(2) + (eye[2] - at[2]).powi(2)).sqrt();
+    if d > SIGHT_BLOCKS {
+        return Some(format!(
+            "{d:.1} blocks away, past the {SIGHT_BLOCKS} blocks sight reaches"
+        ));
+    }
+    let floor = |p: [f64; 3]| {
+        [
+            p[0].floor() as i32,
+            p[1].floor() as i32,
+            p[2].floor() as i32,
+        ]
+    };
+    let skip = [from, floor(eye), target, floor(at)];
+    crate::compiler::nav::walk_cells(eye, at, |cell| {
+        !skip.contains(&cell) && world.blocks_camera(cell)
+    })
+    .map(|cell| format!("{d:.1} blocks away and hidden: the line is stopped first at {cell:?}"))
+}
+
+/// **An act the party can find** (`DW0863`, spec-0104 §4). On every walked
+/// path, every act ([`crate::compiler::acts`]) is announced with a `hint` (an
+/// objective only), or in sight from the cell the party stands on before it —
+/// a clear line by [`crate::compiler::nav::walk_cells`] over
+/// [`crate::compiler::nav::World::blocks_camera`], within [`SIGHT_BLOCKS`] —
+/// and, for a `kill`, its wave's anchor within the wave's reach of that cell
+/// too. A kill fired by acts is judged from each firing act's cell, all of
+/// which must see it; a kill on no walk is judged from those cells alone.
 ///
-/// Build-tier because the second arm needs places: the critical path's step
-/// positions, the resolved anchors, the NPC and actor stations. The first arm is
-/// read through [`Objective::announced`] — the same predicate the emitter prints
-/// the announcement by — so a campaign that hides announcements is judged by the
-/// act alone.
-pub fn check_fight_signposts(
+/// Every refusal is returned; the build reports the first as its verdict and
+/// the rest as further errors.
+pub fn check_acts_found(
     plan: &crate::compiler::plan::Plan,
-) -> (FightBinding, Result<(), crate::compiler::failure::Failure>) {
+    world: &crate::compiler::nav::World,
+) -> (ActBinding, Vec<crate::compiler::failure::Failure>) {
+    judge_acts(plan, world, crate::compiler::acts::walks(plan))
+}
+
+/// [`check_acts_found`] over the walks it is handed — the plan's own, or a
+/// test's — and, for every `kill` objective on none of them, the acts that
+/// fire its wave.
+pub fn judge_acts(
+    plan: &crate::compiler::plan::Plan,
+    world: &crate::compiler::nav::World,
+    walks: &crate::compiler::acts::ActWalks,
+) -> (ActBinding, Vec<crate::compiler::failure::Failure>) {
+    use crate::compiler::acts::ActWhat;
     let c = plan.campaign;
     let guidance = &c.quests.content.guidance;
-    let mut b = FightBinding::default();
-    let mut verdict = Ok(());
+    let mut b = ActBinding::default();
+    let mut refusals: Vec<crate::compiler::failure::Failure> = Vec::new();
+    let mut refused_ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    b.walks = walks.walks.len();
+    let mut on_a_walk: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    let objective = |qi: usize, oi: usize| &c.quests.content.quests[qi].objectives[oi];
+    for w in &walks.walks {
+        // Each act is judged in the world its walk stands in when the act is
+        // next: on this walk every earlier step has happened, so the doors its
+        // earlier steps opened are open and the ones a later beat opens are
+        // shut — the walk's own order, not only the order every play is forced
+        // into, because sight is a question about this walk.
+        let steps: Vec<usize> = w.acts.iter().map(|a| a.step).collect();
+        let walked = |g: usize, s: usize| g == 0 || g < s;
+        let events = match &w.gates {
+            None => &plan.region_events,
+            Some(gates) => &gates.0,
+        };
+        let (worlds, at) = crate::compiler::nav::worlds_at(world, events, &walked, &steps);
+        for (ai, a) in w.acts.iter().enumerate() {
+            let world: &crate::compiler::nav::World = worlds[at[ai]].as_ref().unwrap_or(world);
+            b.acts += 1;
+            on_a_walk.insert(a.id.as_str());
+            let obj = match a.what {
+                ActWhat::Objective {
+                    quest,
+                    objective: oi,
+                } => Some(objective(quest, oi)),
+                ActWhat::Trigger(_) => None,
+            };
+            if obj.is_none() {
+                b.triggers += 1;
+            }
+            if let Some(o) = obj
+                && o.announced(guidance)
+                && o.hint().map(str::trim).is_some_and(|h| !h.is_empty())
+            {
+                b.announced += 1;
+                continue;
+            }
+            // The cells the party judges from: for a kill, each act that fires
+            // its wave (every one placed, as the reach rule always required);
+            // for every other act, the cell the party stands on before it.
+            let mut kill: Option<(f64, &'static str)> = None;
+            let mut vantages: Vec<([i32; 3], String)> = Vec::new();
+            let mut why: Vec<String> = Vec::new();
+            if let Some(Objective::Kill { wave, .. }) = obj {
+                let w = c
+                    .quests
+                    .content
+                    .waves
+                    .iter()
+                    .find(|x| x.id.as_str() == wave.as_str());
+                if let Some(wv) = w {
+                    kill = Some(crate::compiler::nav::wave_aggro_radius(wv));
+                }
+                let sites = firing_sites(plan, wave.as_str());
+                if sites.is_empty() {
+                    why.push(format!(
+                        "nothing in the campaign fires `spawn-wave` for `{wave}`"
+                    ));
+                }
+                for s in &sites {
+                    match &s.places {
+                        Some(ps) => {
+                            for p in ps {
+                                vantages
+                                    .push((*p, format!("the act at `{}` that fires it", s.path)));
+                            }
+                        }
+                        None => why.push(format!(
+                            "`{}` fires its wave from a root that places the party nowhere this \
+                             rule can name",
+                            s.path
+                        )),
+                    }
+                }
+            } else {
+                match a.from {
+                    Some(f) => vantages.push((f, a.from_what.clone())),
+                    None => continue, // no entry cell: the plan's own refusal
+                }
+            }
+            for (v, what) in &vantages {
+                let reasons = act_unfound(world, *v, a.target, a.body, kill);
+                // A fight's refusal says whether its muster is in sight, so the
+                // author knows which of the two halves failed.
+                if kill.is_some()
+                    && !reasons.is_empty()
+                    && unseen(world, *v, a.target, a.body).is_none()
+                {
+                    why.push(format!(
+                        "from {what} ({v:?}) the wave's anchor {:?} is in sight",
+                        a.target
+                    ));
+                }
+                for r in reasons {
+                    why.push(format!("from {what} ({v:?}) {r}"));
+                }
+            }
+            if why.is_empty() {
+                b.in_sight += 1;
+                if kill.is_some() {
+                    b.kills_in_reach += 1;
+                }
+                continue;
+            }
+            b.refused += 1;
+            if !refused_ids.insert(a.id.clone()) {
+                continue;
+            }
+            let remedy = match obj {
+                Some(o) => {
+                    let how = if o.title().is_none() {
+                        "it has no `title`"
+                    } else if !o.announced(guidance) {
+                        "its announcement is hidden"
+                    } else {
+                        "it has no `hint`"
+                    };
+                    format!(
+                        "It is not announced with a hint ({how}). Give `{}` a `title` and a \
+                         `hint` that says where it is, or move the act or its target into \
+                         sight of where the party stands{}.",
+                        a.id,
+                        if kill.is_some() {
+                            " and the wave within its reach. Do NOT widen `follow_range` to buy \
+                             the distance: that retunes the fight to pass a proof"
+                        } else {
+                            ""
+                        }
+                    )
+                }
+                None => format!(
+                    "A trigger has no lines to say where it is, so its only remedy is the \
+                     world: move `{}` or what it acts on into sight of where the party stands, \
+                     or make the act an `interact` objective with a `hint`.",
+                    a.id
+                ),
+            };
+            refusals.push(crate::compiler::failure::Failure {
+                code: DW_FIGHT_UNSIGNED,
+                message: format!(
+                    "on {}, the `{}` act `{}` cannot be found by the party: {}. An act the \
+                     party can see from where it stands needs no line; one it cannot see owes \
+                     one. {remedy}",
+                    w.label,
+                    a.kind,
+                    a.id,
+                    why.join("; "),
+                ),
+            });
+        }
+    }
+    // A kill on no walk: judged from the acts that fire its wave, as before
+    // this rule reached every act — so widening it to every act on a walk
+    // loosens nothing it already judged.
     for (qi, q) in c.quests.content.quests.iter().enumerate() {
         for (oi, o) in q.objectives.iter().enumerate() {
             let Objective::Kill { id, wave, .. } = o else {
                 continue;
             };
-            b.kills += 1;
-            let hint = o.hint().map(str::trim).is_some_and(|h| !h.is_empty());
-            if o.announced(guidance) && hint {
-                b.announced += 1;
+            if on_a_walk.contains(id.as_str()) {
                 continue;
             }
-            let id = id.as_str();
-            let wave_id = wave.as_str();
-            let Some(w) = c
+            b.kills_off_walk += 1;
+            if o.announced(guidance) && o.hint().map(str::trim).is_some_and(|h| !h.is_empty()) {
+                continue;
+            }
+            let Some(wv) = c
                 .quests
                 .content
                 .waves
                 .iter()
-                .find(|w| w.id.as_str() == wave_id)
+                .find(|w| w.id.as_str() == wave.as_str())
             else {
-                continue; // an unknown wave is `DW0171`'s refusal, not this one
+                continue; // an unknown wave is `DW0171`'s refusal
             };
-            let (radius, radius_source) = crate::compiler::nav::wave_aggro_radius(w);
-            let anchor = crate::compiler::plan::wave_area(c, wave_id)
-                .and_then(|a| plan.point(a, w.anchor.as_str()));
-            let sites = firing_sites(plan, wave_id);
-            b.sites += sites.len();
-            b.unplaced += sites.iter().filter(|s| s.places.is_none()).count();
-            // Every site must place the party, and every place must be in reach.
-            let mut far: Vec<String> = Vec::new();
-            let mut nowhere: Vec<String> = Vec::new();
-            let mut all_in_reach = anchor.is_some() && !sites.is_empty();
-            for site in &sites {
-                match (&site.places, anchor) {
-                    (Some(places), Some(a)) => {
-                        for p in places {
-                            let d = dist(*p, a);
-                            if d > radius {
-                                all_in_reach = false;
-                                far.push(format!(
-                                    "`{}` fires it from {p:?}, {d:.1} blocks from the anchor",
-                                    site.path
-                                ));
+            let (r, src) = crate::compiler::nav::wave_aggro_radius(wv);
+            let anchor = crate::compiler::plan::wave_area(c, wave.as_str())
+                .and_then(|a| plan.point(a, wv.anchor.as_str()));
+            let sites = firing_sites(plan, wave.as_str());
+            let mut why: Vec<String> = Vec::new();
+            if sites.is_empty() {
+                why.push(format!(
+                    "nothing in the campaign fires `spawn-wave` for `{wave}`"
+                ));
+            }
+            match anchor {
+                None => why.push(format!(
+                    "`{wave}`'s anchor `{}` resolves to no cell",
+                    wv.anchor.as_str()
+                )),
+                Some(at) => {
+                    for s in &sites {
+                        match &s.places {
+                            None => why.push(format!(
+                                "`{}` fires it from a root that places the party nowhere this \
+                                 rule can name",
+                                s.path
+                            )),
+                            Some(ps) => {
+                                for p in ps {
+                                    if let Some(u) = unseen(world, *p, at, true) {
+                                        why.push(format!(
+                                            "from `{}` ({p:?}) the wave's anchor is {u}",
+                                            s.path
+                                        ));
+                                    }
+                                    let d = dist(*p, at);
+                                    if d > r {
+                                        why.push(format!(
+                                            "`{}` fires it from {p:?}, {d:.1} blocks from the \
+                                             anchor, past its reach of {r} blocks ({src})",
+                                            s.path
+                                        ));
+                                    }
+                                }
                             }
                         }
                     }
-                    _ => {
-                        all_in_reach = false;
-                        nowhere.push(format!("`{}`", site.path));
-                    }
                 }
             }
-            if all_in_reach {
-                b.found += 1;
+            if why.is_empty() {
                 continue;
             }
-            if verdict.is_ok() {
-                let how = if !o.announced(guidance) && o.title().is_some() {
-                    "its announcement is hidden"
-                } else if o.title().is_none() {
-                    "it has no `title`"
-                } else {
-                    "it has no `hint`"
-                };
-                let mut detail = Vec::new();
-                if sites.is_empty() {
-                    detail.push(format!(
-                        "nothing in the campaign fires `spawn-wave` for `{wave_id}`"
-                    ));
-                }
-                if anchor.is_none() {
-                    detail.push(format!(
-                        "`{wave_id}`'s anchor `{}` resolves to no cell",
-                        w.anchor.as_str()
-                    ));
-                }
-                if !nowhere.is_empty() {
-                    detail.push(format!(
-                        "{} fire(s) it from a root that places the party nowhere this rule can \
-                         name ({})",
-                        nowhere.len(),
-                        nowhere.join(", ")
-                    ));
-                }
-                detail.extend(far);
-                verdict = Err(crate::compiler::failure::Failure {
-                    code: DW_FIGHT_UNSIGNED,
-                    message: format!(
-                        "`kill` objective `{id}` (quest {qi}, objective {oi}) requires the party \
-                         to fight wave `{wave_id}` and the party has no way to find it: {how}, \
-                         so its own lines say nothing, and the wave does not arrive where the \
-                         party is — {}. A fight is the one objective kind that leaves nothing in \
-                         the world to find, so one of two things must hold: the objective is \
-                         announced with a `title` and a `hint` saying where the wave arrives, \
-                         or every act that fires the wave happens within the wave's reach of \
-                         its anchor ({radius} blocks here — {radius_source}), so the bodies \
-                         acquire the party where it stands. Announce it, or move the wave's \
-                         anchor (or the act) within reach. Do NOT widen `follow_range` to buy \
-                         the distance: that retunes the fight to pass a proof.",
-                        detail.join("; ")
-                    ),
-                });
-            }
+            b.refused += 1;
+            refusals.push(crate::compiler::failure::Failure {
+                code: DW_FIGHT_UNSIGNED,
+                message: format!(
+                    "`kill` objective `{id}` (quest {qi}, objective {oi}) stands on no walk and \
+                     the party has no way to find wave `{wave}`: it is not announced with a \
+                     `hint`, and {}. Give it a `title` and a `hint` saying where the wave \
+                     arrives, or have every act that fires the wave stand in sight of its \
+                     anchor and within its reach. Do NOT widen `follow_range` to buy the \
+                     distance: that retunes the fight to pass a proof.",
+                    why.join("; ")
+                ),
+            });
         }
     }
-    (b, verdict)
+    (b, refusals)
 }
 
 /// Euclidean distance between two cells' centres.
@@ -906,7 +1096,7 @@ fn act_places(
 /// Where an objective completes: the critical path's step for it when the path
 /// performs it, else its own anchor resolved in its quest's area, else the body
 /// or wave it is about.
-fn objective_place(
+pub(crate) fn objective_place(
     plan: &crate::compiler::plan::Plan,
     quest: &delvewright_dsl::Quest,
     o: &Objective,
@@ -1158,4 +1348,364 @@ fn note(
         }),
         _ => {}
     }
+}
+
+// ---------------------------------------------------------------------------
+// DW1015 — a title names the act its type completes on (spec-0104 §5), a warning
+// ---------------------------------------------------------------------------
+
+delvewright_dsl::dw_code! {
+    /// `DW1015` (a **warning**): an objective's **title** carries no verb of its
+    /// own kind's set in the act lexicon (`crates/dsl/data/act-verbs.json`) — it
+    /// names another kind's act, or no act — or its **hint** names another
+    /// kind's act and none of its own (spec-0104 §5).
+    ///
+    /// The objective's `type` is the engine's record of what the hands must do;
+    /// the verb a title opens with is the author's claim about it. A closed set
+    /// cannot tell a noun from a verb or reported speech from an instruction, so
+    /// the finding is the creator's question, with its evidence, and never a
+    /// refusal. A hint with no lexicon verb is not reported: a hint may be a
+    /// place.
+    pub const DW_ACT_MISNAMED: DwCode = DwCode::new("DW1015", ExitTier::Build);
+}
+
+/// What [`check_act_verbs`] judged, stated whichever way it went.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ActVerbBinding {
+    /// Titles judged, over every judged language.
+    pub titles: usize,
+    /// Hints judged, over every judged language.
+    pub hints: usize,
+    /// Languages judged (the English document and each sidecar with a table).
+    pub languages: usize,
+    /// Objective strings in sidecar languages with no table — unjudged.
+    pub unjudged: usize,
+    /// Strings warned about.
+    pub warned: usize,
+}
+
+impl ActVerbBinding {
+    /// The one line a run prints about this rule.
+    pub fn line(&self) -> String {
+        format!(
+            "DW1015 binding: {} title(s) and {} hint(s) over {} language(s) judged ({} string(s) \
+             in languages with no table); {} warned",
+            self.titles, self.hints, self.languages, self.unjudged, self.warned
+        )
+    }
+}
+
+/// **A title names the act its type completes on** (`DW1015`, a warning), over
+/// the English document and every sidecar whose language has a table in the act
+/// lexicon. Every finding is [`Diagnostic::warning`]: the creator adjudicates.
+pub fn check_act_verbs(
+    c: &Campaign,
+    sidecars: &std::collections::BTreeMap<String, delvewright_dsl::l10n::L10nDoc>,
+) -> (Vec<Diagnostic>, ActVerbBinding) {
+    use delvewright_dsl::actverbs;
+    use delvewright_dsl::l10n::local_id;
+    let mut d = Vec::new();
+    let mut b = ActVerbBinding::default();
+    // (language, its table, a lookup of each objective string's text there)
+    let mut langs: Vec<(
+        String,
+        &actverbs::Table,
+        Option<&delvewright_dsl::l10n::L10nDoc>,
+    )> = Vec::new();
+    if let Some(t) = actverbs::table("en") {
+        langs.push(("en".to_string(), t, None));
+    }
+    for (lang, doc) in sidecars {
+        match actverbs::table(lang) {
+            Some(t) => langs.push((lang.clone(), t, Some(doc))),
+            None => {
+                b.unjudged += doc
+                    .content
+                    .keys()
+                    .filter(|k| {
+                        k.starts_with("obj.") && (k.ends_with(".title") || k.ends_with(".hint"))
+                    })
+                    .count();
+            }
+        }
+    }
+    b.languages = langs.len();
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        let ql = local_id(q.id.as_str());
+        for (oi, o) in q.objectives.iter().enumerate() {
+            let ol = local_id(o.id().as_str());
+            let kind = o.kind();
+            let id = o.id().as_str();
+            for (lang, table, doc) in &langs {
+                let text_of = |field: &str, english: Option<&str>| -> Option<String> {
+                    match doc {
+                        None => english.map(str::to_string),
+                        Some(doc) => doc.content.get(&format!("obj.{ql}.{ol}.{field}")).cloned(),
+                    }
+                };
+                let at = |field: &str| match doc {
+                    None => (
+                        "quests",
+                        format!("/content/quests/{qi}/objectives/{oi}/{field}"),
+                    ),
+                    Some(_) => (
+                        "l10n",
+                        format!("l10n/{lang}.json#/content/obj.{ql}.{ol}.{field}"),
+                    ),
+                };
+                let own = table.listed(kind);
+                if let Some(title) = text_of("title", o.title()) {
+                    b.titles += 1;
+                    let shown = delvewright_dsl::l10n::plain(&title).into_owned();
+                    let found = table.verbs_in(&shown);
+                    if !found.iter().any(|f| f.kind == kind) {
+                        b.warned += 1;
+                        let what = match found.first() {
+                            Some(f) => {
+                                format!("names another act: `{}` is a `{}` verb", f.verb, f.kind)
+                            }
+                            None => "names no act: it carries no verb of the lexicon".to_string(),
+                        };
+                        let (stage, path) = at("title");
+                        d.push(Diagnostic::warning(
+                            DW_ACT_MISNAMED,
+                            stage,
+                            path,
+                            format!(
+                                "the {lang} title of `{kind}` objective `{id}` (`{shown}`) {what}. \
+                                 A `{kind}` completes on its own act, and the lexicon's `{kind}` \
+                                 verbs are: {own}. Decide whether this title names what the \
+                                 hands do: if it does (the verb read is a noun, or the act is \
+                                 named another way), keep it; if it does not, rewrite it with \
+                                 the act the objective completes on (`Go up the stair and ring \
+                                 the bell` names an `interact`). The lexicon reads words, not \
+                                 meaning, so this is a question for you, never a refusal."
+                            ),
+                        ));
+                    }
+                }
+                if let Some(hint) = text_of("hint", o.hint()) {
+                    b.hints += 1;
+                    let shown = delvewright_dsl::l10n::plain(&hint).into_owned();
+                    let found = table.verbs_in(&shown);
+                    let other = found.iter().find(|f| f.kind != kind);
+                    if let Some(f) = other
+                        && !found.iter().any(|f| f.kind == kind)
+                    {
+                        b.warned += 1;
+                        let (stage, path) = at("hint");
+                        d.push(Diagnostic::warning(
+                            DW_ACT_MISNAMED,
+                            stage,
+                            path,
+                            format!(
+                                "the {lang} hint of `{kind}` objective `{id}` (`{shown}`) reads \
+                                 as another act: `{}` is a `{}` verb, and the hint carries none \
+                                 of the `{kind}` verbs ({own}). Decide whether the hint tells \
+                                 the party to do something this objective does not complete on: \
+                                 if the word is a noun or reported speech, keep it; if it sends \
+                                 the party to the wrong act, name the act this objective \
+                                 completes on, or write the hint as a place (`Past the bell, \
+                                 left of the arch.`). The lexicon reads words, not meaning, so \
+                                 this is a question for you, never a refusal.",
+                                f.verb, f.kind
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    (d, b)
+}
+
+// ---------------------------------------------------------------------------
+// DW1017 — the compass follows only what the party is told (spec-0104 §6.6)
+// ---------------------------------------------------------------------------
+
+/// What [`check_compass`] judged, stated whichever way it went.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CompassBinding {
+    /// Objectives examined.
+    pub objectives: usize,
+    /// Of those, tracked — announced, with a resolved `compass` of `shown`.
+    pub tracked: usize,
+    /// Of the tracked, by their own `compass` field.
+    pub by_field: usize,
+    /// Of the tracked, by the campaign's `guidance.compass`.
+    pub by_default: usize,
+    /// `compass: shown` on an unannounced objective, refused.
+    pub refused: usize,
+}
+
+impl CompassBinding {
+    /// The one line a run prints about the compass.
+    pub fn line(&self) -> String {
+        format!(
+            "compass binding: {} tracked objective(s) of {} — {} by their own field, {} by the \
+             campaign default; {} refused",
+            self.tracked, self.objectives, self.by_field, self.by_default, self.refused
+        )
+    }
+}
+
+/// **The compass follows announced objectives** (`DW1017`): an objective that
+/// states `compass: shown` and is not announced is refused.
+pub fn check_compass(c: &Campaign) -> (Vec<Diagnostic>, CompassBinding) {
+    let guidance = &c.quests.content.guidance;
+    let mut d = Vec::new();
+    let mut b = CompassBinding::default();
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oi, o) in q.objectives.iter().enumerate() {
+            b.objectives += 1;
+            if o.tracked(guidance) {
+                b.tracked += 1;
+                if o.compass().is_some() {
+                    b.by_field += 1;
+                } else {
+                    b.by_default += 1;
+                }
+                continue;
+            }
+            if o.compass() != Some(delvewright_dsl::Visibility::Shown) || o.announced(guidance) {
+                continue;
+            }
+            b.refused += 1;
+            let id = o.id().as_str();
+            let why = if o.title().is_none_or(|t| t.trim().is_empty()) {
+                "has no `title`"
+            } else if o.announcement().is_some() {
+                "states `announcement: hidden`"
+            } else {
+                "falls under the campaign's `guidance.announcements: hidden`"
+            };
+            d.push(Diagnostic::error(
+                DW_COMPASS_UNTOLD,
+                "quests",
+                format!("/content/quests/{qi}/objectives/{oi}/compass"),
+                format!(
+                    "objective `{id}` states `compass: shown` and is not announced — it {why}. \
+                     The compass follows only an objective the party has been told about: it \
+                     would point at a thing the player has no name for, and the line that says \
+                     what is followed would have nothing to say. Announce `{id}` (give it a \
+                     `title` and let its announcement show), or remove the `compass` field."
+                ),
+            ));
+        }
+    }
+    (d, b)
+}
+
+// ---------------------------------------------------------------------------
+// DW1016 — a highlight lights a thing (spec-0104 §7.5)
+// ---------------------------------------------------------------------------
+
+/// What [`check_highlights`] judged, stated whichever way it went.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HighlightBinding {
+    /// Acts that admit a highlight: `interact`, `collect`, `talk-to` and
+    /// `kill` objectives, and every trigger.
+    pub acts: usize,
+    /// Highlights declared.
+    pub highlights: usize,
+    /// Of those, on a block (an `interact`, a `collect`'s container, a `use` or
+    /// `strike` trigger).
+    pub on_block: usize,
+    /// Of those, on a body (a `talk-to`'s NPC, a `kill`'s wave, a
+    /// `strike-npc`'s NPC).
+    pub on_body: usize,
+    /// Refused: nothing to light.
+    pub refused: usize,
+}
+
+impl HighlightBinding {
+    /// The one line a run prints about highlights.
+    pub fn line(&self) -> String {
+        format!(
+            "highlight binding: {} highlight(s) over {} act(s) — {} on a block, {} on a body; {} \
+             refused",
+            self.highlights, self.acts, self.on_block, self.on_body, self.refused
+        )
+    }
+}
+
+/// **A highlight lights a thing** (`DW1016`): a `highlight` on a `collect`
+/// dropped by a wave, or on an `approach`, `step` or `strike-assembly`
+/// trigger, is refused.
+pub fn check_highlights(c: &Campaign) -> (Vec<Diagnostic>, HighlightBinding) {
+    use delvewright_dsl::TriggerOn;
+    let mut d = Vec::new();
+    let mut b = HighlightBinding::default();
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oi, o) in q.objectives.iter().enumerate() {
+            if matches!(o, Objective::ReachAnchor { .. }) {
+                continue;
+            }
+            b.acts += 1;
+            if o.highlight().is_none() {
+                continue;
+            }
+            b.highlights += 1;
+            match o {
+                Objective::Collect {
+                    dropped_by: Some(wave),
+                    ..
+                } => {
+                    b.refused += 1;
+                    let id = o.id().as_str();
+                    d.push(Diagnostic::error(
+                        DW_HIGHLIGHT_INERT,
+                        "quests",
+                        format!("/content/quests/{qi}/objectives/{oi}/highlight"),
+                        format!(
+                            "`collect` objective `{id}` declares `highlight` and its items fall \
+                             from wave `{}`: no container stands for the glow to light, so the \
+                             declaration lights nothing. Remove `highlight`, or give the \
+                             objective a thing to light (the wave's `kill` objective can carry \
+                             the highlight on its bodies).",
+                            wave.as_str()
+                        ),
+                    ));
+                }
+                Objective::TalkTo { .. } | Objective::Kill { .. } => b.on_body += 1,
+                _ => b.on_block += 1,
+            }
+        }
+    }
+    for (ti, t) in c.quests.content.triggers.iter().enumerate() {
+        b.acts += 1;
+        if t.highlight.is_none() {
+            continue;
+        }
+        b.highlights += 1;
+        let what = match &t.on {
+            TriggerOn::Use | TriggerOn::Strike => {
+                b.on_block += 1;
+                continue;
+            }
+            TriggerOn::StrikeNpc { .. } => {
+                b.on_body += 1;
+                continue;
+            }
+            TriggerOn::Approach { .. } => "an `approach` watches a place a body stands in",
+            TriggerOn::Step => "a `step` watches the cell a body steps into",
+            TriggerOn::StrikeAssembly { .. } => {
+                "a `strike-assembly` strikes an assembly of display entities the engine lights \
+                 as no one body"
+            }
+        };
+        b.refused += 1;
+        d.push(Diagnostic::error(
+            DW_HIGHLIGHT_INERT,
+            "quests",
+            format!("/content/triggers/{ti}/highlight"),
+            format!(
+                "trigger `{}` declares `highlight`, and {what}: there is no block or body for the \
+                 glow to light. Remove `highlight`, or make the act one with a thing to light (a \
+                 `use` or `strike` on a block, a `strike-npc` on a person).",
+                t.id.as_str()
+            ),
+        ));
+    }
+    (d, b)
 }

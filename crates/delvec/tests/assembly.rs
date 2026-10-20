@@ -897,6 +897,22 @@ fn reaching_rig() -> Rig {
 /// `far`; its blow derived.
 fn locked_quests() -> Value {
     quests_with(|q| {
+        // The thing stands round the doorway's corner from the keeper's post,
+        // out of his sight: the party steps into the room first, and strikes
+        // it from there (spec-0104 §4 — an act is in sight of where the party
+        // stands).
+        let quest = &mut q["content"]["quests"][0];
+        quest["objectives"].as_array_mut().unwrap().insert(
+            1,
+            json!({ "type": "reach-anchor", "id": "obj/step-in", "anchor": "anchor/exit",
+                    "radius": 1, "after": ["obj/talk"],
+                    "title": "Go through the door", "hint": "Past the keeper.",
+                    "happening": { "verb": "arrives", "text": "the party steps in" } }),
+        );
+        quest["objectives"][2]["after"] = json!(["obj/step-in"]);
+        quest["on_objective_complete"]["obj/step-in"] = json!([{ "type": "set-flag", "flag": "flag/stepped-in",
+                     "happening": { "verb": "learns", "text": "the room is open" } }]);
+        trigger(q)["requires_flags"] = json!(["flag/stepped-in"]);
         let a = assembly(q);
         a["at"] = json!({ "anchor": "anchor/exit", "offset": [-4, 0, 0] });
         a["facing"] = json!("east");

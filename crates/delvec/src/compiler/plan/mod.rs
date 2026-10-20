@@ -328,6 +328,10 @@ pub struct Plan<'a> {
     /// [`crate::compiler::assembled::placed_blocks`] through that iterator, and the
     /// biome paint in [`crate::compiler::emit`].
     pub surround: Option<SurroundPlan>,
+    /// **The acts on every walked path** (spec-0104 §1), derived on first read
+    /// by [`crate::compiler::acts::walks`] — after the plan exists, because a
+    /// branch's path is built from it.
+    pub acts: std::sync::OnceLock<crate::compiler::acts::ActWalks>,
     /// **What the piece-mating check examined** (`DW0780`/`DW0781`), emitted as
     /// `validation/piece-mating.json`.
     ///
@@ -1270,6 +1274,7 @@ impl<'a> Plan<'a> {
             act_binding: None,
             waterline,
             face_binding: binding,
+            acts: std::sync::OnceLock::new(),
         };
         // The props the datapack sets at load, which only the finished plan can
         // list ([`Plan::load_prop_events`]).

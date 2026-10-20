@@ -834,9 +834,13 @@ def chat_once(
 
 #: A placeholder or formatting code the client substitutes or interprets, or a
 #: styled-span marker (spec-0096): a span's opener `[[<styles>|` and its `]]`.
+#: A key span (spec-0104 §8.9) is one token whole, identifier included
+#: (`[[key|use]]`), so a translation that names another input is refused.
 #: Compared as tokens, like a placeholder; the grammar itself is the compiler's
 #: (`dsl::textstyle`), whose `DW0975`/`DW0976` the closing `delvec validate` runs.
-PLACEHOLDER_RE = re.compile(r"%(?:\d+\$)?[sd]|%%|§[0-9a-fk-or]|\[\[[^\[\]|]*\||\]\]")
+PLACEHOLDER_RE = re.compile(
+    r"\[\[key\|[^\[\]|]*\]\]|%(?:\d+\$)?[sd]|%%|§[0-9a-fk-or]|\[\[[^\[\]|]*\||\]\]"
+)
 #: A number written in digits, thousands separators included (`10,811`); its
 #: value is compared with the separators removed, so `10811` keeps it.
 DIGITS_RE = re.compile(r"\d{1,3}(?:,\d{3})+|\d+")
