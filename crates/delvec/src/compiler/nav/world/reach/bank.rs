@@ -14,9 +14,10 @@
 //! of one earlier graph over a box, and this asks it of every earlier graph
 //! over the cells themselves.
 //!
-//! What a world query reads beyond a cell's neighbourhood — the declared
-//! jumps, the climb holds — is part of the bank's own key, so two worlds that
-//! differ in it never share a bank.
+//! What a world query reads beyond a cell's neighbourhood is part of the
+//! bank's own key (the climb holds), or of the node's variant (where the
+//! declared jumps out of it land), so two worlds that differ in it never share
+//! a node.
 //!
 //! A node no variant holds for is flown again — but not all of it. Its
 //! launches are taken in [`GROUPS`] runs of template arcs, in their order, and
@@ -247,6 +248,8 @@ pub(super) type Volumes = Vec<([i32; 3], [i32; 3])>;
 /// One recorded expansion of a node.
 struct Variant {
     deps: Vec<(u32, Code, u16)>,
+    /// Where the declared jumps out of the node land.
+    jumps: Vec<[i32; 3]>,
     volumes: Volumes,
     runs: Vec<Run>,
     edges: Arc<NodeEdges>,
@@ -333,14 +336,15 @@ impl Bank {
         key: &super::FlownKey,
         dense: &Dense,
         extra: &[u16],
+        jumps: &[[i32; 3]],
         volumes: &dyn Fn(Box3) -> Volumes,
     ) -> Option<Arc<NodeEdges>> {
         let variants = self.nodes.lock().expect("bank").get(key)?.clone();
         variants.iter().find_map(|v| {
-            let held = v
-                .deps
-                .iter()
-                .all(|&(i, code, x)| dense.cells[i as usize] == code && extra[i as usize] == x);
+            let held = v.jumps == jumps
+                && v.deps
+                    .iter()
+                    .all(|&(i, code, x)| dense.cells[i as usize] == code && extra[i as usize] == x);
             (held && v.edges.read.is_some_and(|b| volumes(b) == v.volumes))
                 .then(|| Arc::clone(&v.edges))
         })
@@ -356,6 +360,7 @@ impl Bank {
         dense: &'a Dense,
         extra: &[u16],
         node: &[Box3],
+        jumps: &[[i32; 3]],
         volumes: &dyn Fn(Box3) -> Volumes,
     ) -> Expansion<'a> {
         let variants = self
@@ -367,6 +372,9 @@ impl Bank {
             .unwrap_or_default();
         let mut best: Option<Prior> = None;
         for v in variants {
+            if v.jumps != jumps {
+                continue;
+            }
             let diff: Vec<[i32; 3]> = v
                 .deps
                 .iter()
@@ -412,6 +420,7 @@ impl Bank {
         key: super::FlownKey,
         expansion: Expansion<'_>,
         extra: &[u16],
+        jumps: Vec<[i32; 3]>,
         volumes: Volumes,
         edges: &Arc<NodeEdges>,
     ) {
@@ -422,6 +431,7 @@ impl Bank {
         if vs.len() < VARIANTS {
             vs.push(Arc::new(Variant {
                 deps,
+                jumps,
                 volumes,
                 runs,
                 edges: Arc::clone(edges),

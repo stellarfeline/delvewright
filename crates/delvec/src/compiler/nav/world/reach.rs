@@ -1653,7 +1653,7 @@ impl World {
         let extra = raw_membership(self, &dense);
         // The bank's key: the lineage's, and what a node's flights and world
         // queries read that no window cell carries — the world outside the
-        // window, whether any cell is wet, the declared jumps and the climbs.
+        // window, whether any cell is wet, and the climbs.
         let bank = bank::bank(format!(
             "{seed_key}:{:?}:{}:{}",
             dense.outside,
@@ -1681,16 +1681,26 @@ impl World {
             .clone()
     }
 
-    /// What a node's world queries read beyond the cells round it: the
-    /// declared jumps, the climb holds and whether the world keeps a climb.
+    /// What a node's world queries read beyond the cells round it: the climb
+    /// holds and whether the world keeps a climb. (The declared jumps out of
+    /// a node are the node's own, [`World::jumps_from`].)
     fn bank_digest(&self) -> String {
         use sha2::{Digest, Sha256};
         let mut h = Sha256::new();
-        h.update(format!("{:?}", self.declared_jumps).as_bytes());
         h.update(format!("{:?}", self.climb_holds).as_bytes());
         h.update(format!("{:?}", self.unheld_climb).as_bytes());
         h.update([u8::from(self.has_climbs())]);
         h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// Where the declared jumps out of `c` land, in declaration order: the one
+    /// move the walk relation lends a node from beyond the cells round it.
+    fn jumps_from(&self, c: [i32; 3]) -> Vec<[i32; 3]> {
+        self.declared_jumps
+            .iter()
+            .filter(|(from, _)| *from == c)
+            .map(|(_, to)| *to)
+            .collect()
     }
 
     /// The killing volumes near the inclusive cell box `b`, as [`bank`]
@@ -2607,21 +2617,26 @@ impl World {
             return Arc::clone(e);
         }
         let volumes = |b| self.volumes_near(b);
+        let jumps = self.jumps_from(c);
         let e = memo
             .inherited(&key)
-            .or_else(|| memo.bank.find(&key, &memo.dense, &memo.extra, &volumes))
+            .or_else(|| {
+                memo.bank
+                    .find(&key, &memo.dense, &memo.extra, &jumps, &volumes)
+            })
             .unwrap_or_else(|| {
                 let x = memo.bank.expansion(
                     &key,
                     &memo.dense,
                     &memo.extra,
                     &self.node_boxes(c),
+                    &jumps,
                     &volumes,
                 );
                 let e = Arc::new(self.expand(memo, params, c, q, Some(&x)));
                 if let Some(b) = e.read {
                     memo.bank
-                        .keep(key, x, &memo.extra, self.volumes_near(b), &e);
+                        .keep(key, x, &memo.extra, jumps, self.volumes_near(b), &e);
                 }
                 e
             });
