@@ -832,6 +832,11 @@ def _identity_shaped(pred: dict) -> bool:
     return True
 
 
+def _spell(value) -> str:
+    """A predicate value as the document spells it: `true`, not Python's `True`."""
+    return json.dumps(value) if isinstance(value, bool) else str(value)
+
+
 def describe(pred: dict) -> str:
     """Name the object class a predicate picks out, so a binding count reads as
     a fact about the campaign rather than as "0 nodes"."""
@@ -843,9 +848,9 @@ def describe(pred: dict) -> str:
         # a word, never as Python's spelling of it.
         bits.append(f"{field}:absent" if want is None else f"{field}={want}")
     for field, wants in (pred.get("in") or {}).items():
-        bits.append(f"{field}∈{{{','.join(map(str, wants))}}}")
+        bits.append(f"{field}∈{{{','.join(map(_spell, wants))}}}")
     for field, unwanted in (pred.get("not_in") or {}).items():
-        bits.append(f"{field}∉{{{','.join(map(str, unwanted))}}}")
+        bits.append(f"{field}∉{{{','.join(map(_spell, unwanted))}}}")
     for field, want in (pred.get("prefix") or {}).items():
         bits.append(f"{field}~{want}*")
     for field in pred.get("has") or []:
