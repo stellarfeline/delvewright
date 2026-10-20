@@ -5,7 +5,10 @@ import {
   INTERACTION_REACH,
   acquireFromStances,
   hitboxDims,
+  interactionDims,
   occlusionFailure,
+  type BlockShapes,
+  type Box,
   type Hitbox,
   type Vec3Like,
 } from "../crosshair.ts";
@@ -20,6 +23,10 @@ export const AFFORDANCE_RADIUS = 3;
 const PLAYER_HITBOX_WIDTH = 0.6;
 
 const PLAYER_HITBOX_HEIGHT = 1.8;
+
+/** Cells the pick ray passes through: air (no outline) and fluids (the client's
+ * pick clips blocks with fluids ignored). */
+const PASS_THROUGH = new Set(["air", "cave_air", "void_air", "water", "lava", "bubble_column"]);
 
 /** Vanilla standing eye height, 1.21.11: where the entity-pick ray starts. */
 const PLAYER_EYE_HEIGHT = 1.62;
@@ -42,7 +49,13 @@ export const methods = {
     const out: Hitbox[] = [];
     for (const e of Object.values(bot.entities)) {
       if (!e?.position || e.id === bot.entity?.id) continue;
-      const dims = hitboxDims(e.name ?? "", e.width, e.height);
+      const keys = bot.registry?.entitiesByName?.[e.name ?? ""]?.metadataKeys;
+      const dims = hitboxDims(
+        e.name ?? "",
+        e.width,
+        e.height,
+        e.name === "interaction" ? interactionDims(e.metadata, keys) : undefined,
+      );
       if (!dims) continue;
       const d = Math.sqrt(
         (e.position.x - (pos[0] + 0.5)) ** 2 +
@@ -126,6 +139,45 @@ export const methods = {
   },
 
   /**
+   * The blocks around the bot as the pick ray meets them (see {@link BlockShapes}).
+   *
+   * mineflayer carries a block's collision boxes (`shapes`), not its outline; a
+   * block with no collision that is not air or a fluid — a lever, a sign, a
+   * flower — is taken as its whole cell, the conservative direction: its outline
+   * is inside that cell, so it can only occlude more here than in the client.
+   */
+  blockShapes(this: MineflayerExecutor): { shapes: BlockShapes; names: (x: number, y: number, z: number) => string } {
+    const bot = this.requireBot();
+    const p = bot.entity.position;
+    const cache = new Map<string, { boxes: readonly Box[] | null; name: string }>();
+    const read = (x: number, y: number, z: number) => {
+      const key = `${x},${y},${z}`;
+      const hit = cache.get(key);
+      if (hit) return hit;
+      const b = bot.blockAt(p.offset(x - p.x, y - p.y, z - p.z)) as {
+        name?: string;
+        shapes?: number[][];
+      } | null;
+      let boxes: readonly Box[] | null;
+      if (!b) boxes = null;
+      else if (PASS_THROUGH.has(b.name ?? "")) boxes = [];
+      else if (Array.isArray(b.shapes) && b.shapes.length > 0) {
+        boxes = b.shapes.map((s) => ({
+          min: { x: x + s[0]!, y: y + s[1]!, z: z + s[2]! },
+          max: { x: x + s[3]!, y: y + s[4]!, z: z + s[5]! },
+        }));
+      } else boxes = [{ min: { x, y, z }, max: { x: x + 1, y: y + 1, z: z + 1 } }];
+      const out = { boxes, name: b?.name ?? "unloaded" };
+      cache.set(key, out);
+      return out;
+    };
+    return {
+      shapes: (x, y, z) => read(x, y, z).boxes,
+      names: (x, y, z) => read(x, y, z).name,
+    };
+  },
+
+  /**
    * Every eye position this step allows, arrival stance first.
    *
    * The step's walk goal is `GoalNear(pos, range)`, so any standable cell inside
@@ -183,9 +235,19 @@ export const methods = {
     }
     const others = bodies.filter((b) => b.id !== target.id);
     const stances = this.stancesAround(pos, range, bodies);
-    const verdict = acquireFromStances(stances, target, others);
+    const world = this.blockShapes();
+    const verdict = acquireFromStances(
+      stances,
+      target,
+      others,
+      INTERACTION_REACH,
+      world.shapes,
+      world.names,
+    );
     if (!verdict.ok) {
-      throw new Error(occlusionFailure(what, target, verdict.blockers, verdict.triedStances));
+      throw new Error(
+        occlusionFailure(what, target, verdict.blockers, verdict.triedStances, verdict.blocks),
+      );
     }
     if (verdict.clearStances < verdict.triedStances) {
       process.stderr.write(

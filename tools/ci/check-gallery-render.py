@@ -174,7 +174,8 @@ def main() -> int:
         return subprocess.run(
             [
                 str(delvec), "--prefabs", args.prefabs, "snapshot", str(GALLERY),
-                "--shot", v["id"], "-o", str(frames / f"{safe(v['id'])}.png"),
+                "--shot", v["id"], "--build", str(out),
+                "-o", str(frames / f"{safe(v['id'])}.png"),
             ],
             capture_output=True,
             text=True,

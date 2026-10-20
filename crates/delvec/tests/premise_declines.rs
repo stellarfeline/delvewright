@@ -12,8 +12,7 @@
 //! the call; this test only insists that the entry exists.
 //!
 //! The population is the package's sources (`crates/delvec/src`, the
-//! compiler and the binary that mounts it — `delvec snapshot` stands a
-//! camera up in `cli/view.rs`), each read as its production text
+//! compiler and the binary that mounts it), each read as its production text
 //! ([`common::source_scan`]): a synthetic world in a unit test has no
 //! campaign behind it and nothing to state.
 
@@ -24,9 +23,6 @@ fn premise_declines_are_enumerated() {
     // (file under `src/`, how many production call sites) — the path, not
     // the file name: `mod.rs` names more than one file.
     const EXPECTED: &[(&str, usize)] = &[
-        // `cli/view.rs`: `delvec snapshot`, where a camera is stood up
-        // against blocks.
-        ("cli/view.rs", 1),
         // `blockout.rs`: the stage-5 battery's `open` and `sealed` worlds,
         // which carry their own sealing authority; and the stairwell pass,
         // which asks only whether one step between two courses of a stair
@@ -155,8 +151,9 @@ fn the_graph_declines_are_enumerated() {
         // over a box.
         ("compiler/blockout.rs", ".walk_region(", 1),
         // `DW0937`: the critical path performs the strike, so the question is
-        // whether the party walks on cue to a cell it strikes from (§4.5).
-        ("compiler/emit/proofs.rs", ".walk_region(", 1),
+        // whether the party walks on cue to a cell it strikes from (§4.5);
+        // and the bot's spared stand beside it, a cell it walks to on cue.
+        ("compiler/emit/proofs.rs", ".walk_region(", 2),
         // `DW0920`: where the party is walked to engage a fight in water.
         ("compiler/engage.rs", ".walk_region(", 1),
         // `DW0315`/`DW0316`: checkpoints and respawns (§4.5).

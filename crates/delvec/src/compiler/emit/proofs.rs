@@ -47,7 +47,12 @@ pub(super) fn prove_assemblies(
             .filter(|p| !crate::compiler::nav::returned_from(returned, *p))
             .any(|p| crate::compiler::strand::eye_reaches_box(ground, p, lo, hi))
     };
-    let (binding, findings) = crate::compiler::assembly::check(plan, population, &reaches);
+    // The spared stand is a cell the bot walks to on cue: drawn only from the
+    // walk relation's region from where the party is put (spec-0113 §4.5),
+    // never a place only a leap reaches.
+    let open = world.without_exclusions();
+    let walk = open.walk_region(&crate::compiler::lethal::put_at_roots(plan, entry));
+    let (binding, findings) = crate::compiler::assembly::check(plan, population, &walk, &reaches);
     eprintln!("{}", binding.line());
     eprintln!("{}", binding.cost_line());
     if let Some((first, rest)) = findings.split_first() {
@@ -402,6 +407,19 @@ pub(super) fn check_finished_tree(
         .filter(|p| p.starts_with("packtest-datapack/") && p.contains("/test/fixture_"))
         .count();
     put_json(out, "validation/fixture-gate.json", &fixture_gate.to_json());
+
+    // ---- a click box wins the pick (DW1013) ----
+    // Every `minecraft:interaction` placed at a cell must be strictly nearer than
+    // any block it stands in along every click ray, or the block wins the tie and
+    // the click never reaches the box. Read off the shipped tree, so every emitter
+    // that summons a box is an entry point by existing.
+    let click_boxes =
+        crate::compiler::clickbox::check(out).map_err(|e| BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        })?;
+    eprintln!("{}", click_boxes.line());
+    put_json(out, "validation/click-box.json", &click_boxes.to_json());
 
     // ---- the party is seen in its own cutscenes (spec-0095, DW0971) ----
     // Every cutscene declared `present` places its stand-ins before the party

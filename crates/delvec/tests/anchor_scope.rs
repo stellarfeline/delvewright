@@ -49,7 +49,7 @@ const NAME: &str = "anchor/keeper-stand";
 /// is declared in and stands in — so the two areas can both provide the name
 /// without the ledger row claiming a body that is somewhere else.
 fn fixture(tag: &str, annex_provides_the_name: bool, beat_in_annex: bool) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("dw-anchor-scope-{tag}"));
+    let dir = std::env::temp_dir().join(format!("dw-anchor-scope-{}-{tag}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(
         &common::compiler_fixtures_dir().join("talkto-cast-pos"),
@@ -239,7 +239,8 @@ fn a_name_one_area_provides_still_resolves_from_another() {
 /// anchors to the solver, so the DSL tier cannot see the second provider.
 #[test]
 fn a_reference_no_scope_settles_is_dw0859() {
-    let dir = std::env::temp_dir().join("dw-anchor-scope-ambiguous");
+    let dir =
+        std::env::temp_dir().join(format!("dw-anchor-scope-ambiguous-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(
         &common::compiler_fixtures_dir().join("talkto-cast-pos"),

@@ -25,6 +25,26 @@ fn tmp(name: &str) -> PathBuf {
     dir
 }
 
+/// The keep-vertical fixture built once per run: what `--shot` reads its
+/// camera from (`--build`).
+fn keep_vertical_build() -> PathBuf {
+    static OUT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    OUT.get_or_init(|| {
+        let out = tmp("snap-build");
+        let o = delvec(&[
+            "build",
+            common::keep_vertical_dir().to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--prefabs",
+            common::prefabs_dir().to_str().unwrap(),
+        ]);
+        assert_eq!(code(&o), 0, "{}", String::from_utf8_lossy(&o.stderr));
+        out
+    })
+    .clone()
+}
+
 /// Run `snapshot` on the keep-vertical fixture (a 3D multi-piece layout, so the
 /// raycaster sees real geometry at several elevations) with extra args.
 fn snap(out_png: &Path, extra: &[&str]) -> Output {
@@ -300,7 +320,11 @@ fn malformed_camera_and_unknown_anchor_fail_with_a_useful_message() {
         "an unknown anchor must list the real ones: {e}"
     );
 
-    let out = snap(&png, &["--shot", "no/such/shot"]);
+    let build = keep_vertical_build();
+    let out = snap(
+        &png,
+        &["--shot", "no/such/shot", "--build", build.to_str().unwrap()],
+    );
     assert_eq!(code(&out), 1);
     let e = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -367,11 +391,77 @@ fn shot_reuses_a_render_plan_camera() {
     // the planned shot points.
     let dir = tmp("snap-shot");
     let png = dir.join("frame.png");
-    let out = snap(&png, &["--shot", "spawn"]);
+    let build = keep_vertical_build();
+    let out = snap(
+        &png,
+        &["--shot", "spawn", "--build", build.to_str().unwrap()],
+    );
     assert_eq!(code(&out), 0, "{}", String::from_utf8_lossy(&out.stderr));
     let m = manifest_of(&png);
-    assert!(m["camera"]["pos"].is_array());
     assert!(!m["targets"].as_array().unwrap().is_empty());
+    // The camera is the build's own: its position is the plan's, to the
+    // manifest's three decimals.
+    let plan: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(build.join("render-plan.json")).unwrap()).unwrap();
+    let shot = plan["shots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == "spawn")
+        .expect("the build plans a spawn shot");
+    for i in 0..3 {
+        let want = shot["camera"]["pos"][i].as_f64().unwrap();
+        let got = m["camera"]["pos"][i].as_f64().unwrap();
+        assert!(
+            (want - got).abs() < 1e-3,
+            "axis {i}: plan {want}, snapshot {got}"
+        );
+    }
+}
+
+#[test]
+fn a_shot_without_a_build_is_refused() {
+    // A shot is a build product: `--shot` names a camera of the plan a build
+    // emitted, so it is refused without the build to read it from.
+    let dir = tmp("snap-shot-no-build");
+    let out = snap(&dir.join("frame.png"), &["--shot", "spawn"]);
+    assert_ne!(code(&out), 0);
+    let e = String::from_utf8_lossy(&out.stderr);
+    assert!(e.contains("--build"), "{e}");
+}
+
+#[test]
+fn a_shot_from_a_build_of_another_campaign_state_is_refused() {
+    // The build is checked against the campaign as it stands: a document
+    // changed since the build makes it the build of something else.
+    let dir = tmp("snap-shot-stale");
+    let campaign = dir.join("campaign");
+    common::copy_dir_all(&common::keep_vertical_dir(), &campaign);
+    let build = keep_vertical_build();
+    let world = campaign.join("world.json");
+    let mut v: serde_json::Value = serde_json::from_slice(&std::fs::read(&world).unwrap()).unwrap();
+    v["content"]["areas"][0]["name"] = serde_json::json!("Another Keep");
+    std::fs::write(&world, serde_json::to_vec_pretty(&v).unwrap()).unwrap();
+    let out = delvec(&[
+        "snapshot",
+        campaign.to_str().unwrap(),
+        "--prefabs",
+        common::prefabs_dir().to_str().unwrap(),
+        "-o",
+        dir.join("frame.png").to_str().unwrap(),
+        "--width",
+        "64",
+        "--height",
+        "36",
+        "--shot",
+        "spawn",
+        "--build",
+        build.to_str().unwrap(),
+    ]);
+    assert_eq!(code(&out), 1, "{}", String::from_utf8_lossy(&out.stderr));
+    let e = String::from_utf8_lossy(&out.stderr);
+    assert!(e.contains("is not a build of"), "{e}");
+    assert!(e.contains("world.json"), "{e}");
 }
 
 #[test]

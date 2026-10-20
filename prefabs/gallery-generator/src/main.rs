@@ -190,14 +190,16 @@ const MUST_WALK_SENSOR: [i32; 3] = [17, 0, 3];
 
 /// **The sealed catalyst** (spec-0100 §3.7, `DW1001`): a sculk catalyst set
 /// into the solid stone over the near hall's roof, three courses above it,
-/// east of the terrace and west of the long gallery. The nearest place a body
-/// can stand is a rafter of the near hall, which a body jumps up to from a
-/// crate by the fence tops beside it (the reach graph's, spec-0113): six
-/// columns east, five courses down, three north (`distSqr` 70 > 64) — so it
-/// can hear no death, and the build states the nearest body cell. One column
-/// further east it is `DW1001` by that rafter; six further west, over the
-/// terrace annex's rim, likewise.
-const SEALED_CATALYST: [i32; 3] = [17, 10, 8];
+/// west of the long gallery. The places a body can stand nearest it (the reach
+/// graph's, spec-0113) are a rafter of the near hall seven columns east and
+/// five courses down (`distSqr` 74), the near hall's floor eight courses down
+/// and four south (80), and the roof of the vestibule closing the clocked door
+/// at `x` 19..20, which a body reaches from the rafters (93) — so it can hear
+/// no death, and the build states the nearest body cell. The probe that hangs
+/// a lever on a pane under the roof makes the pane's top a perch, seven south
+/// and five down (74), and is refused for the lever alone. One cell south the
+/// perch is within earshot (61), and that probe is `DW1001`.
+const SEALED_CATALYST: [i32; 3] = [16, 10, 5];
 
 /// The block state of [`SEALED_CATALYST`].
 const SEALED_CATALYST_STATE: &[(&str, &str)] = &[("bloom", "false")];
@@ -233,6 +235,39 @@ const DIVIDER_Z: i32 = 15;
 /// three tall (`y ∈ 1..=3`) and filled with iron bars, which is what a
 /// prefab-declared gate anchor opens.
 const GATES: [(i32, i32); 5] = [(14, 15), (24, 25), (4, 5), (9, 10), (19, 20)];
+
+/// **The clocked doors' vestibules** — a stone closet on the near side of each
+/// door a clock owns, roofed, so a clocked door leads from the far hall into a
+/// closet and nowhere else.
+///
+/// A door on a clock is open for part of every cycle from world load. Opening
+/// straight onto the near hall, three of them would join the two halves the
+/// story gate (`anchor/gate-main`) keeps apart, and the story gate would
+/// separate nothing (`DW1011`). Each closet is the door's own width and one
+/// cell deep, walled on the three sides the door does not hold and roofed one
+/// course over the door's head, with its own light: the ceiling grid does not
+/// reach a roofed floor.
+///
+/// `(x_from, x_to)` inclusive of each clocked door, as in [`GATES`].
+const CLOCKED_DOORS: [(i32, i32); 3] = [(24, 25), (9, 10), (19, 20)];
+
+/// Whether `(x, y, z)` is a closet's wall or roof, or its lantern.
+fn vestibule_at(x: i32, y: i32, z: i32) -> Option<bool> {
+    let (inner, front) = (DIVIDER_Z - 1, DIVIDER_Z - 2);
+    for (x0, x1) in CLOCKED_DOORS {
+        let span = (x0 - 1..=x1 + 1).contains(&x);
+        let depth = (front..=inner).contains(&z);
+        if !span || !depth || !(1..=4).contains(&y) {
+            continue;
+        }
+        if [x, y, z] == [x0, 3, inner] {
+            return Some(true);
+        }
+        let interior = (x0..=x1).contains(&x) && z == inner && y <= 3;
+        return if interior { None } else { Some(false) };
+    }
+    None
+}
 
 /// **The west terrace, and the well cut through it** — the gallery's pit whose
 /// keep-out lies under the rim (spec-0062 §10).
@@ -881,6 +916,17 @@ const ANCHORS: &[Anchor] = &[
                figure the move cannot repeat",
         role: None,
     },
+    Anchor {
+        name: "anchor/flight-head",
+        pos: [FLIGHT.0, LOFT_TOP_Y + 1, LOFT.3],
+        facing: Some("north"),
+        trigger_block: None,
+        note: "the head of the broken flight, on the mezzanine's south edge where the relaid \
+               treads come out: every walk onto the loft steps through here, so a trigger \
+               the loft's objective relies on stands here and is judged entered by every \
+               walk (DW1044)",
+        role: None,
+    },
 ];
 
 /// **Container anchors** — the cells that hold a chest.
@@ -1233,6 +1279,11 @@ fn block_at(
     // the corner away from the lane the boss marches.
     if z == LONG_GALLERY_STAIR_Z && (21..=27).contains(&x) && y <= x - 20 {
         return ("minecraft:stone", None);
+    }
+    match vestibule_at(x, y, z) {
+        Some(true) => return ("minecraft:lantern", Some(&[("hanging", "true")])),
+        Some(false) => return ("minecraft:stone", None),
+        None => {}
     }
     if z == DIVIDER_Z {
         for (from_x, to_x) in GATES {

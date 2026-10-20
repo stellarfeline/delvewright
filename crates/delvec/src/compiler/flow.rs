@@ -452,6 +452,11 @@ pub struct JournalStep {
     /// included — read by the replay's own gate test where it reached each one.
     /// The one answer to "did this beat play", which the chronicle reads.
     pub fired: BTreeSet<String>,
+    /// `fired` in the order the replay fired it: each list's lines in declared
+    /// order, a nested list (a `sequence` step, an `on_arrive`) right after the
+    /// line that holds it. Read where the order of lifecycle lines matters
+    /// ([`crate::compiler::presence`]).
+    pub fired_in_order: Vec<String>,
     /// The members of `fired` whose gate held only on an undatable numeric
     /// term — played by the replay, never forced (`plan::firing_of`).
     pub undecided: BTreeSet<String>,
@@ -536,6 +541,7 @@ impl Walk<'_, '_> {
             flags_before: before.flags,
             flags_after: self.st.flags.clone(),
             fired: self.st.fired.iter().cloned().collect(),
+            fired_in_order: self.st.fired.clone(),
             undecided: self.st.undecided.iter().cloned().collect(),
         }
     }

@@ -314,3 +314,51 @@ fn the_garden_bed_is_got_into_and_left() {
         );
     }
 }
+
+/// A cell shut in on its four sides, two of which meet the yard's corner
+/// diagonally: the yard's north wall holds `[1, 1, 1]` and its east wall
+/// `[2, 1, 2]`, and the shut cell `[2, 1, 1]` sits across the corner where
+/// the two meet, walled on its other two sides. A 0.6-wide body cannot pass
+/// between two blocks that meet at a corner.
+pub(in crate::compiler::nav) fn corner_cell() -> World {
+    let mut b = Build::default();
+    b.fill([-4, 0, 0], [3, 0, 7]);
+    // The yard, x -3..=1 by z 2..=6, ringed three high.
+    for x in -4..=2 {
+        b.fill([x, 1, 1], [x, 3, 1]);
+        b.fill([x, 1, 7], [x, 3, 7]);
+    }
+    for z in 1..=7 {
+        b.fill([-4, 1, z], [-4, 3, z]);
+        b.fill([2, 1, z], [2, 3, z]);
+    }
+    // The shut cell's own two walls, and the cell itself left open.
+    b.fill([2, 1, 0], [2, 3, 0]);
+    b.fill([3, 1, 1], [3, 3, 1]);
+    b.solid.remove(&[2, 1, 1]);
+    b.solid.remove(&[2, 2, 1]);
+    b.solid.remove(&[2, 3, 1]);
+    b.world(Ambient::Void, Vec::new())
+}
+
+/// spec-0113 §4.3: a landing is credited only in the cells the body's exact
+/// box rests on. A body pressed into the yard's north-east corner rests in
+/// `[1, 1, 2]` alone; the cell across the corner is never credited, and the
+/// closure from the yard never reaches it.
+#[test]
+fn a_landing_is_never_credited_across_a_corner() {
+    let w = corner_cell();
+    let shut = [2, 1, 1];
+    assert!(w.is_standable(shut), "the shut cell is a rest state");
+    let r = w.body_reach(&[[-1, 1, 4]]);
+    assert!(r.states.contains_key(&[1, 1, 2]), "the yard's corner cell");
+    assert!(
+        !r.states.contains_key(&shut),
+        "the shut cell is reached across the corner"
+    );
+    let memo = w.graph_memo(&ReachParams::shipped(false));
+    let body = Attributes::PLAYER;
+    let half = body.width / 2.0;
+    let corner = [2.0 - half, 1.0, 2.0 + half];
+    assert_eq!(landing_cells(&memo.dense, &body, corner), vec![[1, 1, 2]]);
+}

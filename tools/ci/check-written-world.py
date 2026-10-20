@@ -49,6 +49,16 @@ count, printed with its cells, never an allowlist of cells — or it reds as
 A non-zero class is a finding about the model, reported with its cells; it
 does not red. Every count is printed with its denominator.
 
+**Item entities.** The server save is also read for every item entity
+(`minecraft:item`, a block or item lying on the ground; `anvil.item_entities`),
+anywhere in the save. A block the load writes and the server does not keep — a
+falling block a later write lands on, a torch whose wall a later write takes —
+lies there as one, and leaves no differing cell behind. The load's own
+functions (`setup`, the ground and world-build steps, `place_all`,
+`setup_finish`) are the only declarations that can put one there, as a `summon
+minecraft:item`; an item entity beyond what they summon reds as `DW0955`,
+with its position and item.
+
 `--record <path>` also writes the verdict as JSON, named by the sha256 of the
 build's `manifest.json` — the fingerprint the staging gate binds an admission
 to — so `tools/creator/staging-gate.py --written-world <path>` can refuse a
@@ -180,6 +190,54 @@ def clocked_regions(build: Path):
     return out
 
 
+LOAD_FUNCTIONS = ("setup", "place_all", "setup_finish")
+LOAD_STEPS = ("world_build", "world_ground")
+
+
+def declared_items(build: Path) -> int:
+    """How many `summon minecraft:item` lines the load's own functions hold —
+    the only declarations that put an item entity in a save taken at load."""
+    n = 0
+    for f in sorted(build.glob("datapack/data/*/function/*.mcfunction")):
+        stem = f.stem
+        if stem not in LOAD_FUNCTIONS and not any(
+            stem == s or (stem.startswith(s + "_") and stem[len(s) + 1 :].isdigit()) for s in LOAD_STEPS
+        ):
+            continue
+        for line in f.read_text(encoding="utf-8").splitlines():
+            if "summon minecraft:item " in f" {line} " or line.rstrip().endswith("summon minecraft:item"):
+                n += 1
+    return n
+
+
+def item_findings(build: Path, server: Path) -> tuple[int, list[str], dict]:
+    items = anvil.item_entities(server)
+    declared = declared_items(build)
+    total = sum(c for _, _, c in items)
+    by = collections.Counter()
+    for _, i, c in items:
+        by[i] += c
+    lines = [
+        f"item entities: {len(items)} in the server save holding {total} item(s) "
+        f"({', '.join(f'{k} x{v}' for k, v in sorted(by.items())) or 'none'}); "
+        f"{declared} declared by a `summon minecraft:item` in the load's functions"
+    ]
+    sample = [
+        {"pos": [round(c, 2) for c in pos], "item": i, "count": c}
+        for pos, i, c in sorted(items, key=lambda r: (r[0], r[1]))[:SHOWN]
+    ]
+    summary = {"entities": len(items), "items": total, "declared": declared, "by_item": dict(sorted(by.items())), "sample": sample}
+    if len(items) > declared:
+        lines.append(
+            f"{CODE} the server save holds {len(items) - declared} item entit(y/ies) no declaration put there: "
+            "a block the load wrote and the server did not keep lies on the ground as an item (DW1002 judges "
+            f"the writes that make one). First {len(sample)}: "
+            + "; ".join(f"{s['item']} x{s['count']} at {s['pos']}" for s in sample)
+        )
+        return 1, lines, summary
+    return 0, lines, summary
+
+
 def compare(build: Path, written: Path, server: Path) -> tuple[int, list[str], dict]:
     lines: list[str] = []
     summary: dict = {"compared": 0, "classes": {}, "model_sample": []}
@@ -287,6 +345,11 @@ def main(argv: list[str]) -> int:
             )
             return 2
     code, lines, summary = compare(a.build, a.written, a.server)
+    if (a.server / "level.dat").is_file():
+        icode, ilines, isummary = item_findings(a.build, a.server)
+        lines += ilines
+        summary["item_entities"] = isummary
+        code = code or icode
     for line in lines:
         print(line)
     if a.record is not None:

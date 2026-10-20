@@ -48,7 +48,7 @@ fn hw(name: &str) -> String {
 /// `[4,64,6]`). One anchor is enough — the world edit and the runtime fill are
 /// deliberately the **same box**, so that the only thing under test is the root.
 fn prefabs_with_doorstep(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(name);
+    let dir = std::env::temp_dir().join(format!("{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     common::copy_dir_all(&common::prefabs_dir(), &dir);
     let path = dir.join("hello-room.json");

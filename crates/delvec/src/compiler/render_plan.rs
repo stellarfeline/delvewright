@@ -216,30 +216,30 @@ fn spawn_of(plan: &Plan) -> Option<(String, [i32; 3], Option<String>)> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PovShot {
     /// Stable shot id (`pov/leg{L}/wp{W}`).
-    pub id: String,
+    pub(crate) id: String,
     /// Destination area id of the leg.
-    pub area: String,
+    pub(crate) area: String,
     /// Critical-path leg index (order the player walks the legs).
-    pub leg: usize,
+    pub(crate) leg: usize,
     /// Waypoint index within the leg (0 = leg start).
-    pub wp: usize,
+    pub(crate) wp: usize,
     /// The `critical_path` step the leg arrives at — whose configuration the
     /// leg is walked in (spec-0089 §8).
-    pub step: usize,
+    pub(crate) step: usize,
     /// Objective id this leg walks toward, if resolvable.
-    pub objective: Option<String>,
+    pub(crate) objective: Option<String>,
     /// The standing (feet) cell — a DW0314-proven-standable waypoint.
-    pub standing_cell: [i32; 3],
+    pub(crate) standing_cell: [i32; 3],
     /// Camera eye world position (feet + [`EYE_HEIGHT`], block-centred).
-    pub eye: [f64; 3],
+    pub(crate) eye: [f64; 3],
     /// World point the camera looks at (next waypoint's eye, or — at the leg's
     /// final waypoint — the objective anchor it arrives at).
-    pub look_at: [f64; 3],
+    pub(crate) look_at: [f64; 3],
     /// One-sentence machine description of what this frame should show, composed
     /// from campaign data (area name + objective/anchor names + hint).
-    pub expect_line: String,
+    pub(crate) expect_line: String,
     /// Structural expect checks appended after the description.
-    pub extra_expect: Vec<String>,
+    pub(crate) extra_expect: Vec<String>,
 }
 
 impl PovShot {
@@ -266,7 +266,7 @@ pub fn eye_cell(eye: [f64; 3]) -> [i32; 3] {
 /// oriented along the walk toward the next waypoint, and — at each leg's final
 /// waypoint — toward the objective anchor it arrives at. Pure and deterministic
 /// (route order → waypoint order; no RNG/clock), so it rides the ADR-0006 gate.
-pub fn pov_shots(plan: &Plan, routes: &[LegRoute]) -> Vec<PovShot> {
+pub(crate) fn pov_shots(plan: &Plan, routes: &[LegRoute]) -> Vec<PovShot> {
     let mut shots = Vec::new();
     for (leg, route) in routes.iter().enumerate() {
         // The cells a climb holds in between its ends are no stop (spec-0099):

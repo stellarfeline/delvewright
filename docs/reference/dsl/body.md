@@ -15,7 +15,7 @@ This module's rows of a section whose prose is on the [`delvec::compiler::traver
 
 ### DW099x — a body watches (spec-0101; `dsl::validate` + `compiler::watching`; error)
 
-A **watching body** turns, every tick, to face the nearest player its `watch.who` names within `watch.within` blocks (`compiler.md` §2 stage 2 `watch`, §3 "body watch"). The declaration is refused where it can never turn the body: when the class it names is one nobody can take (`DW0996`, here) and when no cell a player walks to stands within its reach (`DW0997`, on the [`delvec::compiler::watching` page](../delvec/compiler/watching.md)).
+A **watching body** turns, every tick, to face the nearest player its `watch.who` names within `watch.within` blocks (`compiler.md` §2 stage 2 `watch`, §3 "body watch"). An NPC a player can talk to watches `nearest` within `DEFAULT_WATCH_WITHIN` (8) blocks when it declares no `watch`, and declares `"watch": "none"` (`NpcWatch`) to hold its facing; `body_watch_sites` resolves the default, so every consumer reads one answer. The declaration is refused where it can never turn the body: when the class it names is one nobody can take (`DW0996`, here) and when no cell a player walks to stands within its reach (`DW0997`, on the [`delvec::compiler::watching` page](../delvec/compiler/watching.md)).
 
 | Code | Meaning |
 |------|---------|

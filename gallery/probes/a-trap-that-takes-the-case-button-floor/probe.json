@@ -1,0 +1,23 @@
+{
+  "code": "DW1002",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/traps/0/payload/-",
+      "value": {
+        "region": {
+          "anchor": "anchor/pedestal",
+          "extent": [
+            0,
+            1,
+            0
+          ]
+        },
+        "type": "clear-region"
+      }
+    }
+  ],
+  "units": [],
+  "why": "A write a beat nobody has to play makes, and a block it drops. The plate trap's payload runs only if the party springs it, so no configuration the critical path passes lays its write; the runtime arm lays every block-writing line of every function the load does not run, at once. The payload clears the pedestal column, and the case's button stands on the pedestal: a fill clears a column from the bottom up, so the pedestal goes first and the server drops the button as an item before the fill reaches its cell. The build refuses it, naming the button, the payload line and the air it may stand on. It declares no unit: which block holds which is the pinned game's rule over blocks an effect already writes, and states no DSL surface."
+}

@@ -1156,6 +1156,8 @@ fn every_pov_shot_the_build_names_is_one_the_snapshot_resolves() {
             .arg(&dir)
             .arg("--shot")
             .arg(id)
+            .arg("--build")
+            .arg(&run.out)
             .arg("-o")
             .arg(frames.join(format!("{}.png", id.replace('/', "_"))))
             .output()

@@ -1724,13 +1724,36 @@ jobs:
           built = json.load(open("validation/delve-output-gallery-primary/validation/watchers.json"))
           r = json.load(open("validation/run-out/dw-ci-gallery-bot/run-report.json"))
           b = r.get("watch_binding")
-          print(f"watchers declared by the build: {built['binding']['declared']}; bot: {json.dumps(b)}")
-          if b is None or b["in_record"] != built["binding"]["declared"]:
+          print(f"watchers in the build (declared and default): {built['binding']['watchers']}; bot: {json.dumps(b)}")
+          if b is None or b["in_record"] != built["binding"]["watchers"]:
               sys.exit("the bot's record does not carry the build's watchers")
           if b["within_reach"] < 1:
               sys.exit("the proven path came within reach of no watcher: the gallery's watch binds nothing at run time")
           if b["asserted"] != b["within_reach"]:
               sys.exit("a watcher the path reached was not asserted")
+          PY
+      # The engine's quest cues arrive where the player stands: every cue an
+      # observed marker owed arrived at the bot, and at least one was judged
+      # with the bot beyond the cue's range of the world spawn, where a cue
+      # played at the command source is never sent. The counts are the run's.
+      - name: the gallery's quest cues are judged far from the world spawn
+        run: |
+          python3 - <<'PY'
+          import json
+          import sys
+          sys.stdout.reconfigure(newline="\n")
+          built = json.load(open("validation/delve-output-gallery-primary/validation/cues.json"))
+          r = json.load(open("validation/run-out/dw-ci-gallery-bot/run-report.json"))
+          b = r.get("cue_binding")
+          print(f"announced objectives in the build: {len(built['objectives'])}; bot: {json.dumps(b and {k: v for k, v in b.items() if k != 'verdicts'})}")
+          if b is None or b["objectives"] != len(built["objectives"]):
+              sys.exit("the bot's record does not carry the build's cue ledger")
+          if b["owed"] < 1:
+              sys.exit("no marker the run observed owed a cue: the cue judgement binds nothing")
+          if b["arrived"] != b["owed"]:
+              sys.exit("an owed cue did not arrive at the bot")
+          if b["beyond_range"] < 1:
+              sys.exit("no cue was judged beyond its range of the world spawn: the judgement cannot tell a cue at the player from one at the spawn")
           PY
       # spec-0089 §5.4 (`DW0955`) over the site-plan point: the point whose
       # pieces carry `structure_void` at every cell their place does not own

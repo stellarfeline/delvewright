@@ -514,43 +514,21 @@ impl World {
         returned: Option<([i32; 3], [i32; 3])>,
         shortcuts: &[crate::compiler::plan::ShortcutPlan],
     ) -> bool {
-        let levers: Vec<Option<[i32; 3]>> = shortcuts
-            .iter()
-            .map(|s| self.snap_standable(s.unlock, SNAP_RADIUS))
-            .collect();
-        let mut opened: BTreeSet<usize> = BTreeSet::new();
-        loop {
-            let owned;
-            let w: &World = if opened.is_empty() {
-                self
-            } else {
-                let cells: BTreeSet<[i32; 3]> = opened
+        self.in_shortcut_rounds(
+            shortcuts,
+            |c| self.with_cleared(c),
+            |w| {
+                let seen: BTreeSet<[i32; 3]> = w.body_reach(pocket).cells();
+                if seen
                     .iter()
-                    .flat_map(|&i| {
-                        let (lo, hi) = shortcuts[i].gate_region;
-                        crate::compiler::assembled::region_cells(lo, hi)
-                    })
-                    .collect();
-                owned = self.with_cleared(&cells);
-                &owned
-            };
-            let seen: BTreeSet<[i32; 3]> = w.body_reach(pocket).cells();
-            if seen
-                .iter()
-                .any(|c| seeds.contains(c) || returned_from(returned, *c))
-            {
-                return true;
-            }
-            let before = opened.len();
-            for (i, lever) in levers.iter().enumerate() {
-                if lever.is_some_and(|l| seen.contains(&l)) {
-                    opened.insert(i);
+                    .any(|c| seeds.contains(c) || returned_from(returned, *c))
+                {
+                    return std::ops::ControlFlow::Break(());
                 }
-            }
-            if opened.len() == before {
-                return false;
-            }
-        }
+                std::ops::ControlFlow::Continue(seen)
+            },
+        )
+        .is_break()
     }
 
     /// The reach-graph closure of `roots` ([`World::body_reach`], spec-0113)

@@ -75,7 +75,8 @@
           "quest": "quest/near-hall"
         },
         "id": "edge/west-door",
-        "opens_from": "a"
+        "opens_from": "a",
+        "shortcut": true
       },
       {
         "a": "node/near-hall",
@@ -85,7 +86,8 @@
           "quest": "quest/near-hall"
         },
         "id": "edge/centre-door",
-        "opens_from": "either"
+        "opens_from": "either",
+        "shortcut": true
       },
       {
         "a": "node/near-hall",

@@ -701,21 +701,62 @@ fn feet_of<C: Codes + ?Sized>(codes: &C, c: [i32; 3]) -> Option<f64> {
 }
 
 /// The cells a body that touched down with its feet at `p` rests in: every
-/// column the box widened by `0.1` overlaps whose support's collision top is
-/// at the feet (spec-0113 §4.3).
+/// cell whose support has a collision box with its top at the feet that the
+/// body's exact box stands over — overlapping it by more than the simulator's
+/// touch tolerance, the way the game finds a body's supporting block
+/// (spec-0113 §4.3). Nothing is credited when the box at `p` meets a solid.
 fn landing_cells<C: Codes + ?Sized>(codes: &C, body: &Attributes, p: [f64; 3]) -> Vec<[i32; 3]> {
-    let h = body.width / 2.0 + LANDING_WIDENING;
+    let h = body.width / 2.0;
+    let bb = Aabb::new(
+        p[0] - h,
+        p[1],
+        p[2] - h,
+        p[0] + h,
+        p[1] + body.height,
+        p[2] + h,
+    );
+    let world = Sim(codes);
+    let mut boxes = Vec::new();
+    // The box itself must be clear: a solid it overlaps by more than the
+    // touch tolerance is a position no body holds.
+    let inner = Aabb::new(
+        bb.min[0] + TOUCH,
+        bb.min[1] + TOUCH,
+        bb.min[2] + TOUCH,
+        bb.max[0] - TOUCH,
+        bb.max[1] - TOUCH,
+        bb.max[2] - TOUCH,
+    );
+    for x in bb.min[0].floor() as i32..=bb.max[0].floor() as i32 {
+        for z in bb.min[2].floor() as i32..=bb.max[2].floor() as i32 {
+            // From the cell under the feet: a barrier there reaches half a
+            // block over its own cell.
+            for y in bb.min[1].floor() as i32 - 1..=bb.max[1].floor() as i32 {
+                world.shapes([x, y, z], &mut boxes);
+            }
+        }
+    }
+    if boxes.iter().any(|b| b.intersects(&inner)) {
+        return Vec::new();
+    }
     let mut out = Vec::new();
-    for x in (p[0] - h).floor() as i32..=(p[0] + h).floor() as i32 {
-        for z in (p[2] - h).floor() as i32..=(p[2] + h).floor() as i32 {
-            let y0 = (p[1] - 1e-7).floor() as i32;
-            // A barrier's top is half a block into the cell over it: the cell
-            // under the feet cell's support is asked only for feet at a half.
-            let half = ((p[1] - p[1].floor()) - 0.5).abs() < 1e-6;
+    let y0 = (p[1] - 1e-7).floor() as i32;
+    // A barrier's top is half a block into the cell over it: the cell under the
+    // feet cell's support is asked only for feet at a half.
+    let half = ((p[1] - p[1].floor()) - 0.5).abs() < 1e-6;
+    for x in bb.min[0].floor() as i32..=bb.max[0].floor() as i32 {
+        for z in bb.min[2].floor() as i32..=bb.max[2].floor() as i32 {
             for sy in [y0, y0 - 1].into_iter().take(if half { 2 } else { 1 }) {
-                if let Some(t) = top_of(codes.code([x, sy, z]))
-                    && (f64::from(sy) + t - p[1]).abs() < 1e-6
-                {
+                boxes.clear();
+                world.shapes([x, sy, z], &mut boxes);
+                let under = boxes.iter().any(|b| {
+                    (b.max[1] - p[1]).abs() < 1e-6
+                        && b.min[0] < bb.max[0] - TOUCH
+                        && b.max[0] > bb.min[0] + TOUCH
+                        && b.min[2] < bb.max[2] - TOUCH
+                        && b.max[2] > bb.min[2] + TOUCH
+                });
+                if under {
                     out.push([x, sy + 1, z]);
                 }
             }
@@ -724,8 +765,9 @@ fn landing_cells<C: Codes + ?Sized>(codes: &C, body: &Attributes, p: [f64; 3]) -
     out
 }
 
-/// The widening of the body's box a landing is credited by (spec-0113 §4.3).
-pub const LANDING_WIDENING: f64 = 0.1;
+/// The overlap under which a box only touches another: the simulator's
+/// collision tolerance (`body-movement.md` §4).
+const TOUCH: f64 = 1e-7;
 
 fn water_kind<C: Codes + ?Sized>(codes: &C, c: [i32; 3]) -> RestKind {
     let up = codes.code([c[0], c[1] + 1, c[2]]);
@@ -1289,12 +1331,12 @@ fn carry_table() -> &'static [f64] {
 }
 
 /// The widest Chebyshev distance, in columns, a launch from a cell can put a
-/// body's widened box over after a fall of at most `k` blocks: the carry, plus
-/// the launch position's offset in its cell and the box's half width widened.
+/// body's box over after a fall of at most `k` blocks: the carry, plus the
+/// launch position's offset in its cell and the box's half width.
 fn reach_columns(k: i32) -> i32 {
     let t = carry_table();
     let k = (k.max(0) as usize).min(t.len() - 1);
-    (t[k] + 1.0 + Attributes::PLAYER.width / 2.0 + LANDING_WIDENING).floor() as i32
+    (t[k] + 1.0 + Attributes::PLAYER.width / 2.0).floor() as i32
 }
 
 impl World {

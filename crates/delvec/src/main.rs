@@ -199,9 +199,15 @@ enum Command {
         #[arg(long, requires = "at")]
         dist: Option<f64>,
         /// Reuse the camera of a `render-plan.json` shot id (e.g. `spawn`,
-        /// `npc/perimedes`, `pov/leg0/wp0`).
-        #[arg(long)]
+        /// `npc/perimedes`, `pov/leg0/wp0`), read from the render plan the
+        /// build at `--build` emitted.
+        #[arg(long, requires = "build")]
         shot: Option<String>,
+        /// The `delvec build` output of this campaign that `--shot` reads its
+        /// camera from; refused unless it is a build of the campaign as it
+        /// stands, by this delvec.
+        #[arg(long, requires = "shot")]
+        build: Option<PathBuf>,
         /// Output PNG path (the manifest is written beside it — see `--help`
         /// of the reference doc; default `snapshot.png`).
         #[arg(short, long, default_value = "snapshot.png")]
@@ -426,6 +432,7 @@ fn main() -> ExitCode {
             orbit,
             dist,
             shot,
+            build,
             out,
             labels,
             width,
@@ -440,6 +447,7 @@ fn main() -> ExitCode {
                 orbit: *orbit,
                 dist: *dist,
                 shot: shot.as_deref(),
+                build: build.as_deref(),
                 out,
                 labels: *labels,
                 width: *width,

@@ -4,6 +4,14 @@ use super::*;
 
 /// Whether a stage-2 NPC declares `deferred: true` (DSL v0.6) — it is not summoned
 /// at world init and enters only via a `spawn-npc` effect.
+/// The width, in blocks, of the `minecraft:interaction` hitbox every NPC's
+/// dialogue rides on (its summon's `width`).
+pub const NPC_HITBOX_WIDTH: f64 = 1.0;
+
+/// The height, in blocks, of an NPC's interaction hitbox (its summon's
+/// `height`), standing on the body's feet.
+pub const NPC_HITBOX_HEIGHT: f64 = 2.0;
+
 pub(super) fn npc_is_deferred(c: &delvewright_dsl::Campaign, npc_id: &str) -> bool {
     c.npcs
         .content
@@ -51,11 +59,12 @@ pub(super) fn npc_summon_commands(
         .map(|n| n.base_entity.as_str())
         .unwrap_or("minecraft:villager");
     // spec-0101: a watching body carries the live-watch tag from its summon.
-    let watch_tag = if dsl_npc.is_some_and(|n| n.watch.is_some()) {
-        format!(",\"{}\"", crate::compiler::watching::WATCH_TAG)
-    } else {
-        String::new()
-    };
+    let watch_tag =
+        if dsl_npc.is_some_and(|n| crate::compiler::watching::body_watches(plan, n.id.as_str())) {
+            format!(",\"{}\"", crate::compiler::watching::WATCH_TAG)
+        } else {
+            String::new()
+        };
     let p = ent_xyz(pos);
     let mut out = Vec::new();
     if let Some(skin) = dsl_npc.and_then(|n| n.skin.as_ref()) {
@@ -98,7 +107,7 @@ pub(super) fn npc_summon_commands(
         .collect::<Vec<_>>()
         .join(",");
     out.push(format!(
-        "summon minecraft:interaction {} {} {} {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{BORNE_NBT}{tag_list}]}}",
+        "summon minecraft:interaction {} {} {} {{width:{NPC_HITBOX_WIDTH:.1}f,height:{NPC_HITBOX_HEIGHT:.1}f,response:1b,Invulnerable:1b,Tags:[{BORNE_NBT}{tag_list}]}}",
         p[0], p[1], p[2]
     ));
     out

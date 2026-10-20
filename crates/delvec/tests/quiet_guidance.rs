@@ -55,7 +55,7 @@ fn variant_with(name: &str, mut quests: Value, mut dialogue: Value, extra: Value
         }
     }
     common::declare_dialogue_story(&mut dialogue);
-    let dst = std::env::temp_dir().join(format!("dw-quiet-{name}"));
+    let dst = std::env::temp_dir().join(format!("dw-quiet-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dst);
     let mut documents = json!({ "quests": quests, "dialogue": dialogue });
     for (k, v) in extra.as_object().unwrap() {
@@ -618,6 +618,18 @@ fn beach_quests(wave: Value, extra_roots: Value) -> Value {
     json!({ "campaign_id": NS, "stage": "quests", "content": content })
 }
 
+/// hello-world's cast with the keeper watching: the second talk comes after the
+/// fight at the exit, so the party walks back to the keeper from the south, behind
+/// a stand that faces north (`DW1025`).
+fn keeper_watching() -> Value {
+    let mut npcs: Value = serde_json::from_str(
+        &std::fs::read_to_string(common::hello_world_dir().join("npcs.json")).unwrap(),
+    )
+    .unwrap();
+    npcs["content"]["npcs"][0]["watch"] = json!({ "who": "nearest", "within": 4 });
+    json!({ "npcs": npcs })
+}
+
 fn beach_dialogue() -> Value {
     json!({
         "campaign_id": NS, "stage": "dialogue",
@@ -653,10 +665,11 @@ fn surf(follow_range: Option<f64>) -> Value {
 /// The generated `dialogue_mask` PackTest breaks each of those terms on its own.
 #[test]
 fn the_completing_button_carries_its_objectives_pending_guard() {
-    let out = build_dir(&variant(
+    let out = build_dir(&variant_with(
         "beach-button",
         beach_quests(surf(None), json!({})),
         beach_dialogue(),
+        keeper_watching(),
     ));
     let dmask = fn_body(&out, "dmask_keeper_greeting").expect("the node is display-gated");
     let lead_on = dmask
@@ -721,7 +734,7 @@ fn the_completing_button_carries_its_objectives_pending_guard() {
 /// are single-spaced and the build's command-tree check walks them.
 #[test]
 fn the_button_guard_and_a_gated_press_answer_each_read_their_one_authority() {
-    let out = build_dir(&variant(
+    let out = build_dir(&variant_with(
         "beach-button-and-press",
         beach_quests(
             surf(None),
@@ -739,6 +752,7 @@ fn the_button_guard_and_a_gated_press_answer_each_read_their_one_authority() {
             }] }),
         ),
         beach_dialogue(),
+        keeper_watching(),
     ));
     let press =
         fn_body(&out, "press_bell").expect("a presser trigger answers through its press function");
@@ -915,7 +929,10 @@ fn a_checkpoint_set_by_an_approach_trigger_builds_and_names_its_trigger() {
                 "happening": { "verb": "gains", "text": "The shrine keeps them." }
             }]
         }));
-    let dst = std::env::temp_dir().join("dw-quiet-trigger-checkpoint");
+    let dst = std::env::temp_dir().join(format!(
+        "dw-quiet-trigger-checkpoint-{}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&dst);
     common::materialize_from(&base, &json!({ "documents": { "quests": quests } }), &dst);
     common::copy_dir_all(&base.join("skins"), &dst.join("skins"));
