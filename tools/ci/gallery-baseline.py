@@ -92,7 +92,6 @@ ANY_WARNING_RE = re.compile(r"^(DW\d{4}) \[warning\] ")
 EMISSION_INPUTS = (
     "crates/",
     "gallery/",
-    "prefabs/gallery-generator/",
     "Cargo.toml",
     "Cargo.lock",
     "rust-toolchain.toml",

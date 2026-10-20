@@ -84,7 +84,7 @@ GALLERY = REPO / "gallery"
 # expected-warnings ledger, the sculpt forms (library assets `gallery-prefabs.py` sculpts into the
 # prefab directory), the overlay set, the refusal probes. A point is the gallery MINUS
 # these, plus at most one of the points inside them.
-NOT_CAMPAIGN = ("baseline", "forms", "overlays", "probes")
+NOT_CAMPAIGN = ("baseline", "forms", "overlays", "prefab-generator", "probes")
 
 # A point's own manifest — what it declares it binds, or which refusal it
 # demonstrates — is tooling metadata, never a stage document.

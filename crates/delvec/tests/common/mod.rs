@@ -230,7 +230,13 @@ pub fn gallery_site_plan_at(dir: &Path) {
     let gallery = repo_root().join("gallery");
     copy_dir_all(&gallery, dir);
     for junk in [
-        "baseline", "forms", "overlays", "probes", "skins", "textures",
+        "baseline",
+        "forms",
+        "overlays",
+        "prefab-generator",
+        "probes",
+        "skins",
+        "textures",
     ] {
         let _ = std::fs::remove_dir_all(dir.join(junk));
     }
@@ -254,7 +260,7 @@ pub fn gallery_site_plan_at(dir: &Path) {
     std::fs::create_dir_all(&pieces).unwrap();
     let out = std::process::Command::new(env!("CARGO"))
         .args(["run", "-q", "--locked", "--release", "--manifest-path"])
-        .arg(repo_root().join("prefabs/gallery-generator/Cargo.toml"))
+        .arg(repo_root().join("gallery/prefab-generator/Cargo.toml"))
         .arg("--")
         .arg(&pieces)
         .arg("--skins")

@@ -346,6 +346,45 @@ def sweep_excluded_prefix() -> str | None:
     return m.group(1) if m else None
 
 
+def normalised(path: str) -> str:
+    """`path`, relative to the repository root, with `..` segments resolved."""
+    out: list[str] = []
+    for part in path.split("/"):
+        if part == "..":
+            out.pop()
+        elif part not in ("", "."):
+            out.append(part)
+    return "/".join(out)
+
+
+def prefab_packages() -> set[str]:
+    """Every package of the `prefabs/` workspace on disk, by repo-relative path.
+
+    Two shapes, both read off the disk rather than off the members list the
+    result is compared against: a directory directly under `prefabs/` carrying a
+    `Cargo.toml`, and a tracked manifest anywhere else whose `[package]
+    workspace` resolves to `prefabs/` — the only way cargo admits a member that
+    is not under its workspace root.
+    """
+    found = {
+        p.parent.relative_to(ROOT).as_posix()
+        for p in sorted((ROOT / "prefabs").glob("*/Cargo.toml"))
+    }
+    for rel in tracked("Cargo.toml"):
+        if rel.startswith("prefabs/") or "/" not in rel:
+            continue
+        try:
+            pkg = tomllib.loads((ROOT / rel).read_text()).get("package", {})
+        except (OSError, tomllib.TOMLDecodeError):
+            continue
+        ws = pkg.get("workspace")
+        if isinstance(ws, str):
+            here = rel.rsplit("/", 1)[0]
+            if normalised(f"{here}/{ws}") == "prefabs":
+                found.add(here)
+    return found
+
+
 def check_generators_are_wired() -> tuple[list[str], int]:
     """Every package in `prefabs/` is one CI actually builds, and every generator
     in it is one CI runs twice.
@@ -379,9 +418,12 @@ def check_generators_are_wired() -> tuple[list[str], int]:
                                       committed and there is no list to match
 
     THE POPULATION IS TWO POPULATIONS, and telling them apart is the point. Every
-    directory under `prefabs/` carrying a `Cargo.toml` is a PACKAGE and owes
-    membership; the subset of those carrying a `src/main.rs` are the GENERATORS
-    and owe the double run as well. The shared rule crate is a library: it must
+    directory under `prefabs/` carrying a `Cargo.toml`, and every tracked package
+    elsewhere whose `[package] workspace` names `prefabs/` (the gallery's own
+    generator, `gallery/prefab-generator`), is a PACKAGE and owes membership; the
+    subset of those carrying a `src/main.rs` are the GENERATORS and owe the double
+    run as well. Each is named by its path from the repository root, which is how
+    the job's loop names it too. The shared rule crate is a library: it must
     be built and tested, and there is nothing to run twice. Asking "which of
     these is a binary" of the disk, rather than keeping a list of names here, is
     what stops a new generator arriving as a library by omission.
@@ -395,10 +437,10 @@ def check_generators_are_wired() -> tuple[list[str], int]:
     claim about a repository, asked before it bites.
     """
     findings: list[str] = []
-    packages = {p.parent.name for p in sorted((ROOT / "prefabs").glob("*/Cargo.toml"))}
+    packages = prefab_packages()
     # A generator is a binary. Asked of the disk rather than of a list here, so
     # that a new generator cannot arrive classified as a library by omission.
-    generators = {g for g in packages if (ROOT / "prefabs" / g / "src" / "main.rs").is_file()}
+    generators = {g for g in packages if (ROOT / g / "src" / "main.rs").is_file()}
 
     # --- the wiring that is NOT in the workflow at all -----------------------
     # `cargo build --workspace` has one population and it is this list. A package
@@ -413,7 +455,10 @@ def check_generators_are_wired() -> tuple[list[str], int]:
             ],
             0,
         )
-    members = set(tomllib.loads(ws_manifest.read_text())["workspace"]["members"])
+    members = {
+        normalised("prefabs/" + m)
+        for m in tomllib.loads(ws_manifest.read_text())["workspace"]["members"]
+    }
 
     ci = (ROOT / ".github/workflows/ci.yml").read_text()
     # Split on the JOB KEY (two-space indent, own line), never on the bare text:
@@ -435,7 +480,7 @@ def check_generators_are_wired() -> tuple[list[str], int]:
     loops = list(re.finditer(r"for g in ([^;]+?); do", body, re.S))
     lists = {"`prefabs/Cargo.toml` members": (members, packages)}
     for i, m in enumerate(loops):
-        names = set(re.findall(r"[\w.-]+", m.group(1).replace("\\\n", " ")))
+        names = set(re.findall(r"[\w./-]+", m.group(1).replace("\\\n", " ")))
         lists[f"`for g in` loop #{i + 1}"] = (names, generators)
 
     for label, (names, want) in lists.items():
@@ -491,11 +536,9 @@ def check_generators_are_wired() -> tuple[list[str], int]:
     tracked_manifests = set(tracked("Cargo.toml"))
     # The workspace root manifest is in the population too: it is what
     # `cargo locate-project --workspace` resolves every member to.
-    owed = {"Cargo.toml"} | {f"{g}/Cargo.toml" for g in packages}
-    in_population = {m for m in owed if f"prefabs/{m}" in tracked_manifests}
-    swallowed = (
-        {m for m in owed if prefix and f"prefabs/{m}".startswith(prefix)} if prefix else set()
-    )
+    owed = {"prefabs/Cargo.toml"} | {f"{g}/Cargo.toml" for g in packages}
+    in_population = {m for m in owed if m in tracked_manifests}
+    swallowed = {m for m in owed if prefix and m.startswith(prefix)} if prefix else set()
 
     # --- every wiring is present, looked for by name, never by count ---------
     established = {
@@ -522,13 +565,13 @@ def check_generators_are_wired() -> tuple[list[str], int]:
         )
     for m in sorted(owed - in_population):
         findings.append(
-            f"prefabs/{m} is not tracked by git, so the derived fmt sweep — whose population IS "
+            f"{m} is not tracked by git, so the derived fmt sweep — whose population IS "
             f"`git ls-files` — never sees it. Commit the manifest; a package outside the "
             f"population is invisible to a check that states an honest count."
         )
     for m in sorted(swallowed):
         findings.append(
-            f"tools/ci/fmt-workspaces.sh's exclusion prefix '{prefix}' swallows prefabs/{m}. An "
+            f"tools/ci/fmt-workspaces.sh's exclusion prefix '{prefix}' swallows {m}. An "
             f"exclusion that reaches live content truncates the sweep's population while every "
             f"count it prints stays truthful about the smaller world it was handed."
         )
@@ -545,7 +588,7 @@ def check_generators_are_wired() -> tuple[list[str], int]:
     )
     print(f"  swallowed by the sweep's exclusion {prefix!r}: {len(swallowed)} of {len(owed)}")
     if not packages:
-        findings.append("binding count is zero: no prefabs/*/Cargo.toml found")
+        findings.append("binding count is zero: no prefab workspace package found")
     return findings, len(packages)
 
 

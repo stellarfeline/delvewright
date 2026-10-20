@@ -204,7 +204,10 @@ def main() -> int:
             # `invariants` is a library and has no binary: a member with nothing
             # to run writes no document and is not this gate's subject.
             continue
-        out = scratch / member
+        # A member is a path relative to `prefabs/`, and one lives outside it
+        # (`../gallery/prefab-generator`): its scratch directory is named from
+        # the path so that it stays inside `scratch`.
+        out = scratch / member.replace("../", "").replace("/", "-")
         out.mkdir(parents=True)
         run = subprocess.run([str(binary), str(out)], capture_output=True, text=True)
         if run.returncode != 0:

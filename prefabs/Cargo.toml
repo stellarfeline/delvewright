@@ -29,8 +29,8 @@
 [workspace]
 resolver = "2"
 members = [
+    "../gallery/prefab-generator",
     "cave-generator",
-    "gallery-generator",
     "generator",
     "hello-room-generator",
     "invariants",

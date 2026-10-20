@@ -21,8 +21,8 @@ Two classes of untracked file are build caches, never pieces, and are skipped
 and COUNTED on every run:
 
 - any path with a `target/` segment — cargo's output (the engine the run was
-  handed sits at `target/debug/delvec`; the generator's build is under
-  `prefabs/gallery-generator/target/`);
+  handed sits at `target/debug/delvec`; the generator's build is under its
+  workspace's `prefabs/target/`);
 - any path with a `__pycache__/` segment — the bytecode of the tools that ran.
 
 ## What it refuses
