@@ -3750,7 +3750,12 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `setup_finish`, `ws_arm_<shortcut>` (a shortcut gate's wrong-side
   hitboxes, armed at world init) and `holder_<id>` (an item holder's body,
   summoned at world init; its `item replace entity` fills are no row, so a
-  frame's world holds the frame or stand without the item it is filled with);
+  frame's world holds the frame or stand without the item it is filled with;
+  the body is written as the pinned server holds it, `placed::as_the_server_holds`
+  — a frame on the face its `Facing` turns from, 0.46875 off its cell's
+  centre and turned by the facing, a stand with no `Marker:0b` and only the
+  pose parts that differ from the default — measured against the server's save
+  of the gallery by `check-written-world.py`);
   `activate_<obj>` (at the latest critical step
   its objective's step causally follows, else at the `select-class` step — a
   campaign-start quest is armed by the party's first class pick, never at world
