@@ -253,11 +253,14 @@ aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
 # Consumed by:
 #   - CI (.github/workflows/*.yml): every job that builds a fixture or runs the
 #     ladder checks the content repo out at this exact `sha` and passes
-#     `--prefabs <checkout>/prefabs`.
+#     `--prefabs <checkout>/prefabs`, or, for a fixture that draws a pool, the
+#     test library `tools/ci/test-library.sh` lays the engine's test pools
+#     over it to.
 #   - validation/check-versions.sh: asserts `repo`/`sha` shape here.
 #   - every Rust test that judges the prefab library (crates/delvec/tests/common/pinned.rs):
 #     reads this commit out of the content repository's object store, never a
-#     working tree, on every machine.
+#     working tree, on every machine; the tests that build fixtures read it with
+#     the engine's test pools laid over it (`pinned::test_library`).
 #
 # A `delvec` run by hand resolves the library through the `campaigns/` symlink's
 # working tree instead (compiler default `--prefabs campaigns/prefabs`), so

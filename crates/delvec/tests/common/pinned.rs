@@ -94,6 +94,84 @@ pub fn prefabs() -> PathBuf {
     root().join("prefabs")
 }
 
+/// **The engine's test library**: the prefab library at the pin with the
+/// engine's own pool declarations (`crates/delvec/tests/fixtures/test-pools/`)
+/// laid over it by `tools/ci/test-library.sh`, the one assembler CI runs too.
+///
+/// The shipped library declares no pool; the pools the engine's `areas[]`
+/// fixtures draw are engine test data, held with the tests. Materialised once
+/// per (pin, pool table, assembler) under `CARGO_TARGET_TMPDIR`, with a
+/// manifest checked on every first use in a process, exactly as [`root`] is.
+pub fn test_library() -> PathBuf {
+    static LIB: OnceLock<PathBuf> = OnceLock::new();
+    LIB.get_or_init(|| {
+        let content = prefabs();
+        let repo = super::repo_root();
+        let pools = repo.join("crates/delvec/tests/fixtures/test-pools/pools.json");
+        let script = repo.join("tools/ci/test-library.sh");
+        let mut inputs = Vec::new();
+        for path in [&pools, &script] {
+            inputs.extend(
+                std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display())),
+            );
+        }
+        let key = hex(&Sha256::digest(&inputs));
+        let sha = sha();
+        let header = format!("commit {sha} test-pools {key}");
+        let cache = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("test-library");
+        let dest = cache.join(format!("{sha}-{}", &key[..16]));
+        std::fs::create_dir_all(&cache).unwrap();
+        let lock_path = cache.join(format!("{sha}-{}.lock", &key[..16]));
+        let lock = std::fs::File::create(&lock_path)
+            .unwrap_or_else(|e| panic!("{}: {e}", lock_path.display()));
+        lock.lock()
+            .unwrap_or_else(|e| panic!("{}: {e}", lock_path.display()));
+        if dest.join(MANIFEST).is_file() {
+            drop(lock);
+            verify(&dest, &header);
+            return dest;
+        }
+        if dest.exists() {
+            std::fs::remove_dir_all(&dest).unwrap_or_else(|e| panic!("{}: {e}", dest.display()));
+        }
+        let staging = cache.join(format!(
+            "{}.partial-{}-{:?}",
+            dest.file_name().unwrap().to_string_lossy(),
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&staging);
+        let out = Command::new("bash")
+            .arg(&script)
+            .arg(&content)
+            .arg(&staging)
+            .output()
+            .unwrap_or_else(|e| panic!("bash {}: {e}", script.display()));
+        assert!(
+            out.status.success(),
+            "{} {} {} failed:\n{}{}",
+            script.display(),
+            content.display(),
+            staging.display(),
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let mut files = BTreeMap::new();
+        walk(&staging, &staging, &mut files);
+        let mut text = format!("{header}\n");
+        for (path, digest) in &files {
+            text.push_str(&format!("{digest} {path}\n"));
+        }
+        std::fs::write(staging.join(MANIFEST), text).unwrap();
+        std::fs::rename(&staging, &dest)
+            .unwrap_or_else(|e| panic!("{} -> {}: {e}", staging.display(), dest.display()));
+        drop(lock);
+        verify(&dest, &header);
+        dest
+    })
+    .clone()
+}
+
 fn git(repo: &Path, args: &[&str]) -> std::process::Output {
     Command::new("git")
         .arg("-C")
@@ -154,7 +232,7 @@ pub fn materialise_into(cache: &Path) -> PathBuf {
         .unwrap_or_else(|e| panic!("{}: {e}", lock_path.display()));
     if dest.join(MANIFEST).is_file() {
         drop(lock);
-        verify(&dest, &sha);
+        verify(&dest, &format!("commit {sha}"));
         return dest;
     }
     if dest.exists() {
@@ -260,7 +338,7 @@ pub fn materialise_into(cache: &Path) -> PathBuf {
     std::fs::rename(&staging, &dest)
         .unwrap_or_else(|e| panic!("{} -> {}: {e}", staging.display(), dest.display()));
     drop(lock);
-    verify(&dest, &sha);
+    verify(&dest, &format!("commit {sha}"));
     dest
 }
 
@@ -305,14 +383,14 @@ fn hex(bytes: &[u8]) -> String {
 
 /// The materialised tree, file for file and byte for byte, against the manifest
 /// written when it was materialised.
-fn verify(dest: &Path, sha: &str) {
+fn verify(dest: &Path, header: &str) {
     let manifest_path = dest.join(MANIFEST);
     let text = std::fs::read_to_string(&manifest_path)
         .unwrap_or_else(|e| panic!("{}: {e}", manifest_path.display()));
     let mut lines = text.lines();
     assert_eq!(
         lines.next(),
-        Some(format!("commit {sha}").as_str()),
+        Some(header),
         "{}: manifest names another commit",
         manifest_path.display()
     );

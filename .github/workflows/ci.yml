@@ -2053,11 +2053,18 @@ jobs:
           python3 tools/ci/check-written-world.py validation/delve-output-gallery \
             written-world validation/delve-output-gallery/world
 
+      # keep-trial, souls-bonfire and souls-td-lanes draw `areas[]` pieces from
+      # pools. The shipped library declares none; the pools are engine test
+      # data, laid over the pinned library by the one assembler the Rust tests
+      # also run.
+      - name: assemble the engine's test library (pinned library + test pools)
+        run: bash tools/ci/test-library.sh campaigns/prefabs "$RUNNER_TEMP/test-library"
+
       - name: build the keep-trial delve output (held-item interact)
         run: |
           target/debug/delvec \
             build crates/dsl/fixtures/valid/keep-trial \
-            -o validation/delve-output-keeptrial --prefabs campaigns/prefabs
+            -o validation/delve-output-keeptrial --prefabs "$RUNNER_TEMP/test-library"
 
       - name: PackTest suite — keep-trial (`requires_item` is HELD, not carried)
         run: |
@@ -2076,7 +2083,7 @@ jobs:
         run: |
           target/debug/delvec \
             build crates/delvec/tests/fixtures/souls-bonfire \
-            -o validation/delve-output-bonfire --prefabs campaigns/prefabs
+            -o validation/delve-output-bonfire --prefabs "$RUNNER_TEMP/test-library"
 
       - name: PackTest suite — souls-bonfire (rest, re-seat, stationed re-seat)
         run: |
@@ -2096,7 +2103,7 @@ jobs:
         run: |
           target/debug/delvec \
             build crates/delvec/tests/fixtures/souls-td-lanes \
-            -o validation/delve-output-lanes --prefabs campaigns/prefabs
+            -o validation/delve-output-lanes --prefabs "$RUNNER_TEMP/test-library"
 
       - name: PackTest suite — souls-td-lanes (patrol NBT, march, release, re-seat)
         run: |
