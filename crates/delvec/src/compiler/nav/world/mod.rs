@@ -449,6 +449,34 @@ pub struct World {
     /// lives here and not on the plan. Empty on every campaign with no holder
     /// collect, which keeps every route byte-identical.
     pub(in crate::compiler::nav) holder_stances: BTreeMap<[i32; 3], [i32; 3]>,
+    /// **Which floors hold a body** ([`Floors`]): the solid cells whose block
+    /// does not cover its cell, and the subset of them a body over falls
+    /// through.
+    pub(in crate::compiler::nav) floors: Floors,
+}
+
+/// **Whether a solid cell holds a body standing over it**, read from the
+/// collision footprints of its block and of the blocks beside it
+/// ([`delvewright_dsl::blockshape::body_falls_through`]) rather than from
+/// whether the cell holds a block.
+///
+/// `footprints` holds every solid cell whose block does not cover its cell —
+/// iron bars, a pane, a chain, a lantern — with its server footprint; a solid
+/// cell absent from it covers its cell. `sieve` is the subset a body over
+/// falls through: the cell under it does not stop a fall (or is itself a
+/// sieve), and a body-wide square of the course, centred over the cell, meets
+/// no box. A sieve cell still stops a body walking into it, as a post does;
+/// it is never a floor, and a falling body passes it.
+///
+/// Every view derives `sieve` from its own cells ([`World::resieve`]), so a
+/// region write that lays or clears a block beside a hatch moves the answer.
+/// Empty for a world with no such block, which keeps every proof over it
+/// byte-identical.
+#[derive(Clone, Debug, Default)]
+pub struct Floors {
+    pub(in crate::compiler::nav) footprints:
+        BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
+    pub(in crate::compiler::nav) sieve: BTreeSet<[i32; 3]>,
 }
 
 /// The block-derived cell sets of a [`World`], as [`World::from_occupancy`]
@@ -463,6 +491,7 @@ struct Cells {
     lava: CellSet,
     climb_holds: ClimbHolds,
     unheld_climb: UnheldClimbs,
+    footprints: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
 }
 
 /// **Everything a [`World`] carries that is not a block** — the premises the
@@ -762,6 +791,7 @@ impl World {
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             holder_stances: self.holder_stances.clone(),
+            floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -962,6 +992,7 @@ impl World {
                 lava: occ.lava.into(),
                 climb_holds: std::sync::Arc::new(occ.climb),
                 unheld_climb: std::sync::Arc::new(occ.unheld_climb),
+                footprints: occ.footprints,
             },
             premises,
         )
@@ -983,6 +1014,7 @@ impl World {
                 lava: self.lava.clone(),
                 climb_holds: self.climb_holds.clone(),
                 unheld_climb: self.unheld_climb.clone(),
+                footprints: self.floors.footprints.clone(),
             },
             premises,
         )
@@ -994,10 +1026,73 @@ impl World {
     pub fn with_extra_solid(mut self, extra: &BTreeSet<[i32; 3]>) -> World {
         self.solid.extend(extra.iter().copied());
         self.solid.compact();
+        for c in extra {
+            self.floors.footprints.remove(c);
+        }
+        self.resieve()
+    }
+
+    /// This world with [`Floors::sieve`] derived from its own cells — every
+    /// view ends here, so no view answers with another's sieve.
+    ///
+    /// A cell is a sieve when its block does not cover it and a body-wide
+    /// square centred over it meets no box in its own course or the course
+    /// under it ([`delvewright_dsl::blockshape::body_falls_through`]). A cell
+    /// that is not solid is read as empty unless a body would land on it (a
+    /// barrier, a gate leaf), which can only find a gap the world closes, never
+    /// close one it leaves open.
+    pub(in crate::compiler::nav) fn resieve(mut self) -> World {
+        use delvewright_dsl::blockshape::{EMPTY_FOOTPRINT, FULL_FOOTPRINT, body_falls_through};
+        self.floors.sieve.clear();
+        if self.floors.footprints.is_empty() {
+            return self;
+        }
+        let cells: Vec<[i32; 3]> = self.floors.footprints.keys().copied().collect();
+        let mut sieve = BTreeSet::new();
+        // What a falling body meets in cell `n`: a solid block's footprint, a
+        // whole cell for a barrier or a gate leaf it would land on, nothing
+        // for anything a body passes or sinks into.
+        let course = |y: i32, c: [i32; 3]| {
+            let mut layer = [[EMPTY_FOOTPRINT; 3]; 3];
+            for (dz, row) in layer.iter_mut().enumerate() {
+                for (dx, fp) in row.iter_mut().enumerate() {
+                    let n = [c[0] + dx as i32 - 1, y, c[2] + dz as i32 - 1];
+                    if self.solid.contains(&n) {
+                        *fp = self
+                            .floors
+                            .footprints
+                            .get(&n)
+                            .copied()
+                            .unwrap_or(FULL_FOOTPRINT);
+                    } else if self.tall.contains(&n) || self.use_gates.contains(&n) {
+                        *fp = FULL_FOOTPRINT;
+                    }
+                }
+            }
+            layer
+        };
+        for c in cells {
+            if !self.solid.contains(&c) {
+                continue;
+            }
+            if body_falls_through(&course(c[1], c), &course(c[1] - 1, c)) {
+                sieve.insert(c);
+            }
+        }
+        self.floors.sieve = sieve;
         self
     }
 
+    /// Whether a body over `c` falls through it ([`Floors::sieve`]).
+    pub(in crate::compiler::nav) fn is_sieve(&self, c: [i32; 3]) -> bool {
+        self.floors.sieve.contains(&c)
+    }
+
     fn from_cells(cells: Cells, premises: Premises) -> Self {
+        let floors = Floors {
+            footprints: cells.footprints,
+            sieve: BTreeSet::new(),
+        };
         World {
             solid: cells.solid,
             tall: cells.tall,
@@ -1033,7 +1128,9 @@ impl World {
             built: premises.built,
             objective_cells: premises.objective_cells,
             holder_stances: BTreeMap::new(),
+            floors,
         }
+        .resieve()
     }
 
     /// This world with its world-generator [`Ambient`] declared (spec-0013) and
@@ -1115,6 +1212,19 @@ impl World {
     /// model treats every gate cell as passable; sealing a gate for the legs that
     /// occur after it closes makes a path that must re-cross it fail routing.
     pub(in crate::compiler::nav) fn with_sealed(&self, extra: &BTreeSet<[i32; 3]>) -> World {
+        self.with_sealed_by(extra, &BTreeMap::new())
+    }
+
+    /// [`World::with_sealed`] where the sealing block is known per cell: a cell
+    /// in `footprints` holds a block that does not cover it (iron bars laid
+    /// through a floor), and whether a body over it is held is then judged
+    /// from that footprint ([`World::resieve`]) rather than assumed. Every
+    /// other cell of `extra` is a full cube.
+    pub(in crate::compiler::nav) fn with_sealed_by(
+        &self,
+        extra: &BTreeSet<[i32; 3]>,
+        footprints: &BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
+    ) -> World {
         let mut solid = self.solid.clone();
         solid.extend(extra.iter().copied());
         // A sealed gate cell is a full-cube wall, never a partial floor.
@@ -1139,6 +1249,7 @@ impl World {
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             holder_stances: self.holder_stances.clone(),
+            floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1155,7 +1266,13 @@ impl World {
             built: self.built.clone(),
         };
         w.drop_unheld_climbs(extra);
-        w
+        for c in extra {
+            match footprints.get(c) {
+                Some(fp) => w.floors.footprints.insert(*c, *fp),
+                None => w.floors.footprints.remove(c),
+            };
+        }
+        w.resieve()
     }
 
     /// A copy of this world with `extra` cells **emptied of blocks** — the dual of
@@ -1189,6 +1306,7 @@ impl World {
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             holder_stances: self.holder_stances.clone(),
+            floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1212,6 +1330,7 @@ impl World {
             w.tall.remove(c);
             w.use_gates.remove(c);
             w.partial.remove(c);
+            w.floors.footprints.remove(c);
         }
         let owned: BTreeSet<[i32; 3]> = extra
             .iter()
@@ -1219,7 +1338,7 @@ impl World {
             .copied()
             .collect();
         w.drop_unheld_climbs(&owned);
-        w
+        w.resieve()
     }
 
     /// A copy of this world with `extra` cells holding **free fluid** — the third
@@ -1251,6 +1370,7 @@ impl World {
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             holder_stances: self.holder_stances.clone(),
+            floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1274,10 +1394,11 @@ impl World {
             w.flooded.insert(*c);
             w.pinned.insert(*c);
             w.flood_written.insert(*c);
+            w.floors.footprints.remove(c);
         }
         w.flood_regions.extend_from_slice(regions);
         w.drop_unheld_climbs(extra);
-        w
+        w.resieve()
     }
 
     /// A copy of this world with `extra` cells holding a block that **may or may not
@@ -1311,6 +1432,7 @@ impl World {
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             holder_stances: self.holder_stances.clone(),
+            floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1337,7 +1459,7 @@ impl World {
             w.pinned.insert(*c);
         }
         w.drop_unheld_climbs(extra);
-        w
+        w.resieve()
     }
 
     /// This world as of one point in the quest DAG: every region a runtime write
@@ -1366,7 +1488,7 @@ impl World {
             st.unforced.union(&st.held).copied().collect()
         };
         self.with_cleared(&st.cleared)
-            .with_sealed(&st.solid)
+            .with_sealed_by(&st.solid, &st.fill_footprints)
             .with_unforced(&walled)
             .with_flooded(&st.flooded, &st.flood_regions)
             .with_staged_lethal(&st.lethal, &st.lethal_regions)
@@ -1418,6 +1540,7 @@ impl World {
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             holder_stances: self.holder_stances.clone(),
+            floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1498,6 +1621,7 @@ impl World {
             unheld_climb: self.unheld_climb.clone(),
             objective_cells: self.objective_cells.clone(),
             holder_stances: self.holder_stances.clone(),
+            floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
             staged_lethal: self.staged_lethal.clone(),
@@ -1551,6 +1675,7 @@ impl World {
                 lava: BTreeSet::new(),
                 climb: BTreeMap::new(),
                 unheld_climb: BTreeMap::new(),
+                footprints: BTreeMap::new(),
             },
             Premises::geometry_only(),
         )

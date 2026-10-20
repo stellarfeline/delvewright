@@ -35,7 +35,7 @@ use std::sync::LazyLock;
 ///                              edge/porch-vault-sightline (vision)
 ///        ┌───────────────────────────────────────────────────────┐
 ///        │                                                       │
-///   [porch] ──walk── [hall] ══barred (quest)══ [vault] ──walk── [yard]
+///   [porch] ──walk── [hall] ══gated (quest)═══ [vault] ──walk── [yard]
 ///        │             ║                                           ║ ╲
 ///       drop        stair (shortcut)                             drop stair
 ///        ╲             ║                                           ╲ ╱
@@ -58,8 +58,8 @@ static GRAPH: LazyLock<String> = LazyLock::new(|| {
     ],
     "edges": [
       { "id": "edge/porch-hall", "class": "walk", "a": "node/porch", "b": "node/hall" },
-      { "id": "edge/hall-vault", "class": "barred", "a": "node/hall", "b": "node/vault",
-        "opens_from": "a", "gating": { "quest": "quest/open-the-door" } },
+      { "id": "edge/hall-vault", "class": "walk", "a": "node/hall", "b": "node/vault",
+        "gating": { "quest": "quest/open-the-door", "opens_from": "a" } },
       { "id": "edge/hall-cellar", "class": "stair", "a": "node/hall", "b": "node/cellar",
         "shortcut": true },
       { "id": "edge/porch-cellar", "class": "drop", "a": "node/porch", "b": "node/cellar",
@@ -470,9 +470,9 @@ static PLAN: LazyLock<String> = LazyLock::new(|| {
 ///   has no prefab to name an anchor, so `anchor/node-<place>` is what its
 ///   content binds to — the names `delvewright_dsl::synthesized_anchors`
 ///   reports and the derivation really places.
-/// * **the `open-gate` names the barred seam's own region.** `DW0818`'s
-///   byte-side half: a barred way nothing opens is a wall, and the region such
-///   an effect must target only exists once a plan does.
+/// * **the `open-gate` names the gated seam's own region.** `DW1028`: a gated
+///   way nothing opens is a wall, and the region such an effect must target
+///   only exists once a plan does.
 ///
 /// A campaign handed no plan is left exactly as it was, which is what keeps the
 /// "a campaign with no plan binds nothing" case honest.
@@ -1412,21 +1412,20 @@ fn two_placement_authorities_in_one_campaign_are_refused() {
 }
 
 // ---------------------------------------------------------------------------
-// The opener obligation's byte-side half (spec-0049 §3.3 `DW0818`)
+// The opener obligation (spec-0107 §8.2 `DW1028`)
 // ---------------------------------------------------------------------------
 
-/// `DW0818`: a barred way nothing opens is a wall, and the region such an effect
+/// `DW1028`: a gated way nothing opens is a wall, and the region such an effect
 /// must target is the seam's own.
 ///
-/// The graph half of this rule already stood: a `barred` edge must declare a
-/// `gating` naming a flag something really sets. That says the way is MEANT to
-/// open. This is the other half, and it could not be written before this round
-/// because the region an opener addresses did not exist until the derivation
-/// synthesized it.
+/// The graph half of this rule stands under `DW0818`: a gated connection must
+/// declare a `gating` naming a flag something really sets. That says the way is
+/// MEANT to open. This is the other half, and it can only be asked once a plan
+/// exists, because the region an opener addresses is synthesized from it.
 #[test]
-fn a_barred_way_no_effect_opens_is_refused_by_name() {
+fn dw1028_a_gated_way_no_effect_opens_is_refused_by_name() {
     // The green campaign's `open-gate` names the seam. Point it somewhere else —
-    // an anchor no seam owns — and the barred way has nothing that opens it.
+    // an anchor no seam owns — and the gated way has nothing that opens it.
     let mut raw = campaign(
         Some(PLAN.to_string()),
         Some(GRAPH.to_string()),
@@ -1438,24 +1437,67 @@ fn a_barred_way_no_effect_opens_is_refused_by_name() {
     let d = check_campaign(&raw);
     let got: Vec<String> = d.iter().map(|x| x.code.clone()).collect();
     assert!(
-        has(&got, "DW0818"),
-        "a barred way nothing opens must be refused: {got:?}"
+        has(&got, "DW1028"),
+        "a gated way nothing opens must be refused: {got:?}"
     );
     let m = d
         .iter()
-        .find(|x| x.code == "DW0818" && x.message.contains("barred and nothing"))
+        .find(|x| x.code == "DW1028")
         .expect("the opener refusal is present");
-    assert_eq!(m.stage, "layout-graph", "the fault is the graph's claim");
+    assert_eq!(
+        m.stage, "quests",
+        "the opener is the quest documents' to write"
+    );
     assert!(
-        m.message.contains("anchor/seam-hall-vault"),
-        "the refusal names the region an opener must address: {}",
+        m.message.contains("anchor/seam-hall-vault")
+            && m.message.contains("edge/hall-vault")
+            && m.message.contains("nothing in this campaign opens it"),
+        "the refusal names the connection and the region an opener must address: {}",
+        m.message
+    );
+    // The remedy the refusal names — remove the `gating` — is reachable: the
+    // same campaign with the connection ungated compiles without `DW1028`.
+    let mut g: Value = serde_json::from_str(GRAPH.as_str()).expect("parse");
+    g["content"]["edges"][1]
+        .as_object_mut()
+        .expect("edge")
+        .remove("gating");
+    raw.layout_graph = Some(serde_json::to_string(&g).expect("re-serialize"));
+    let got = codes_of(&raw);
+    assert!(
+        !has(&got, "DW1028"),
+        "an ungated way owes no opener: {got:?}"
+    );
+}
+
+/// The population is every gated connection, not one class: a gated `stair`
+/// is built shut exactly as a gated walk is, and nothing opening it is the
+/// same refusal, naming the stair's own seam.
+#[test]
+fn dw1028_judges_a_gated_stair_as_it_judges_a_gated_walk() {
+    let mut raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let mut g: Value = serde_json::from_str(GRAPH.as_str()).expect("parse");
+    g["content"]["edges"][2]["gating"] = json!({ "quest": "quest/open-the-door" });
+    raw.layout_graph = Some(serde_json::to_string(&g).expect("re-serialize"));
+    let d = check_campaign(&raw);
+    let m = d
+        .iter()
+        .find(|x| x.code == "DW1028")
+        .unwrap_or_else(|| panic!("a gated stair nothing opens is refused: {d:#?}"));
+    assert!(
+        m.message.contains("anchor/seam-hall-cellar") && m.message.contains("`stair`"),
+        "{}",
         m.message
     );
 }
 
 /// The same obligation, satisfied by a `shortcut` rather than by an `open-gate`.
 ///
-/// Two verbs open a gate and the rule knows both, which is what stops it from
+/// Every verb that opens a gate is an opener, which is what stops this from
 /// being a rule about `open-gate` that a shortcut campaign has to work around.
 #[test]
 fn a_shortcut_satisfies_the_opener_obligation_too() {
@@ -1475,8 +1517,55 @@ fn a_shortcut_satisfies_the_opener_obligation_too() {
     raw.quests = serde_json::to_string(&quests).expect("re-serialize");
     let got = codes_of(&raw);
     assert!(
-        !got.iter().any(|c| c == "DW0818"),
+        !got.iter().any(|c| c == "DW1028"),
         "a shortcut lifting the bar is an opener: {got:?}"
+    );
+}
+
+/// A timed gate's clock is an opener too (spec-0107 §8.2): the way is shut
+/// part of every cycle and open the rest, so it is not shut forever.
+#[test]
+fn a_timed_gate_satisfies_the_opener_obligation() {
+    let mut raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let mut quests: Value = serde_json::from_str(&raw.quests).expect("quests parse");
+    quests["content"]["quests"][0]["on_objective_complete"]["obj/talk"] = json!([]);
+    quests["content"]["timed_gates"] = json!([{
+        "id": "timed-gate/vault-door",
+        "gate": "anchor/seam-hall-vault",
+        "open_ticks": 100,
+        "closed_ticks": 100
+    }]);
+    raw.quests = serde_json::to_string(&quests).expect("re-serialize");
+    let got = codes_of(&raw);
+    assert!(
+        !has(&got, "DW1028"),
+        "a clock lifting the bar is an opener: {got:?}"
+    );
+}
+
+/// `DW1027` and `DW1028` state their binding on every run, with the
+/// denominator: the green plan carries one gated connection, opened by an
+/// `open-gate`, and no front among the gated.
+#[test]
+fn the_gated_bindings_are_stated_with_their_denominator() {
+    let raw = campaign(
+        Some(PLAN.to_string()),
+        Some(GRAPH.to_string()),
+        Some(BRIEF.to_string()),
+    );
+    let c = delvewright_dsl::parse_campaign(&raw).expect("the green campaign parses");
+    let line = delvewright_dsl::LayoutBinding::of(&c).plan_line();
+    assert!(
+        line.contains("DW1027 binding: 1 gated connection(s), 0 of them fronts")
+            && line.contains(
+                "DW1028 binding: 1 gated connection(s), 1 opened by an `open-gate`, 0 by a \
+                 shortcut, 0 by a clock, 0 by nothing"
+            ),
+        "{line}"
     );
 }
 

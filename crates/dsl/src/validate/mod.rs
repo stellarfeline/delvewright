@@ -268,7 +268,7 @@ pub fn validate_campaign_with(
 /// roots: a defect of expressibility, not of care*. It cost exactly what that
 /// shape always costs. When a site plan became a second placement authority
 /// (spec-0049 §5.2), the derivation began synthesizing a campaign's whole anchor
-/// vocabulary — a `node-` per place, a `seam-` per barred way, an `unlock-` on
+/// vocabulary — a `node-` per place, a `seam-` per gated way, an `unlock-` on
 /// the openable side of a one-sided one — and **one** of the eleven walks was
 /// taught to ask [`crate::siteplan::synthesized_anchors`] about it. The other ten
 /// went on enumerating prefabs a derived world does not have, so every stage-5

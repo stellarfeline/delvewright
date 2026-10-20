@@ -53,9 +53,13 @@ included) is `DW0987`, one that writes the ring's fixed ground `DW0990`.
    `handed/seam/<edge stem>/{x0,y0,z0,x1,y1,z1,rise}`); answer each seam with
    an opening at the handed cells and a contract edge to `exterior` whose `via`
    is that opening; answer each owed name with a `mark` of that stem
-   (`anchor/node-annex` → `node-annex`) — and a `barred` seam whose plane this
-   place owns with the contract edge's own `bar` over exactly the seam's
-   cells, its region named by the same stem (`anchor/seam-west-door` →
+   (`anchor/node-annex` → `node-annex`) — and a gated seam whose bar this
+   place owns (the allocation hands its cells as the seam's `bar`, and the
+   block it is built of as `bar_block` — iron bars in a wall, a closed iron
+   trapdoor through a floor, which holds the body standing on it) with a
+   `barred` contract edge whose `bar` is over exactly those cells, filled with
+   a palette role of that block, its region
+   named by the same stem (`anchor/seam-west-door` →
    `"region": "seam-west-door"`), which exports as the gate anchor that name
    binds to (`DW0845`); declare a spatial contract (`DW0843`). **The enclosed spaces are
    yours to declare**, and the closure gate confirms exactly those: a street, a

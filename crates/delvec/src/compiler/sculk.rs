@@ -172,7 +172,7 @@ impl Write {
         (0..3).all(|i| a[i].min(b[i]) <= c[i] && c[i] <= a[i].max(b[i]))
     }
 
-    fn cells(&self) -> impl Iterator<Item = [i32; 3]> {
+    pub(crate) fn cells(&self) -> impl Iterator<Item = [i32; 3]> {
         let (a, b) = self.region;
         let lo = [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])];
         let hi = [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])];
@@ -275,7 +275,11 @@ pub fn check_rest(blocks: &BlockMap, writes: &[Write]) -> (RestBinding, Option<F
 
 /// Every block a cell may hold: the as-placed one (air when the map holds
 /// none), then every block a runtime write may lay there.
-fn possible<'a>(blocks: &'a BlockMap, writes: &'a [Write], c: [i32; 3]) -> Vec<(&'a str, String)> {
+pub(crate) fn possible<'a>(
+    blocks: &'a BlockMap,
+    writes: &'a [Write],
+    c: [i32; 3],
+) -> Vec<(&'a str, String)> {
     let mut out = vec![(
         blocks.get(&c).map_or("minecraft:air", |s| s.as_str()),
         "in the world as placed".to_string(),
@@ -288,7 +292,7 @@ fn possible<'a>(blocks: &'a BlockMap, writes: &'a [Write], c: [i32; 3]) -> Vec<(
 
 /// The six face neighbours of `c`, in the fixed order down, up, north, south,
 /// west, east (ADR-0006).
-fn neighbours(c: [i32; 3]) -> [[i32; 3]; 6] {
+pub(crate) fn neighbours(c: [i32; 3]) -> [[i32; 3]; 6] {
     [
         [c[0], c[1] - 1, c[2]],
         [c[0], c[1] + 1, c[2]],

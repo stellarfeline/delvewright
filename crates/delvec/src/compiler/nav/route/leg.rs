@@ -479,6 +479,7 @@ pub(in crate::compiler::nav) fn to_standable(
             st.cleared.remove(&c);
             st.flooded.remove(&c);
             st.unforced.remove(&c);
+            st.fill_footprints.remove(&c);
             match wr.write {
                 crate::compiler::plan::RegionWrite::Flood => {
                     st.flooded.insert(c);

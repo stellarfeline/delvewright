@@ -646,3 +646,24 @@ def test_a_party_ledger_that_binds_no_join_or_carrier_is_a_zero_binding(tmp_path
     (out / "packtest-datapack").mkdir()
     zeroes = mod.read_build_ledgers(out)[1]
     assert len(zeroes) == 1 and zeroes[0].startswith("party-division.json: absent"), zeroes
+
+
+def test_a_gate_signal_ledger_that_examines_no_gate_is_a_zero_binding(tmp_path):
+    """DW1047 on the gallery: the gallery resolves gates, so a
+    `gate-signal.json` examining none is a proof that stopped reaching what the
+    gallery writes — read through the shared `gates_examined` rule — as is a
+    build that resolves a gate with no ledger beside it."""
+    mod = _load_checker()
+    out = tmp_path / "build"
+    (out / "validation").mkdir(parents=True)
+    (out / "validation" / "gate-seal.json").write_text(json.dumps({"gates_examined": 5}))
+    row = {"code": "DW1047", "gates_examined": 5, "gates": 0, "floor_gates": 0, "cells": 0,
+           "inert_gates": 5, "sources": 11, "sources_written": 6, "nearest": None}
+    ledger = out / "validation" / "gate-signal.json"
+    ledger.write_text(json.dumps(row))
+    assert mod.read_build_ledgers(out)[1] == []
+    ledger.write_text(json.dumps({**row, "gates_examined": 0, "inert_gates": 0}))
+    assert mod.read_build_ledgers(out)[1] == ["gate-signal.json: `gates_examined` is 0"]
+    ledger.unlink()
+    zeroes = mod.read_build_ledgers(out)[1]
+    assert len(zeroes) == 1 and zeroes[0].startswith("gate-signal.json: absent"), zeroes
