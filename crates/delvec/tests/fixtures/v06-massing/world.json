@@ -31,6 +31,6 @@
     "title": "The Keep Crawl",
     "weather": "clear"
   },
-  "dsl_version": "0.53.0",
+  "dsl_version": "0.54.0",
   "stage": "world"
 }
