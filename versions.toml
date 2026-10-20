@@ -268,31 +268,27 @@ aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
 # library at the pin and nothing else in the checkout: a campaign is judged at
 # its own release, by the engine revision it pins.
 repo = "stellarfeline/delvewright-campaigns"
-# Content `main` tip carrying the two campaigns released since the previous pin,
-# `doune-castle-tour` and `vesperhold`, and the library pieces they are built
-# on, so every test and CI job that judges the pinned library judges the one
-# the creator is actually handed.
+# Content `main` tip carrying the released `the-treehouse-camp` and the eleven
+# library pieces it is built on, and the content repository's removal of the
+# pool table: assembly is always designed, so the shipped library declares no
+# pool.
 #
-# What moves under `prefabs/`, counted from `git ls-tree` at both pins and
-# cross-checked against `delvec prefab seating`'s own binding line at this one:
-# 37 `.json` before, 40 after; 36 `.nbt` before, 138 after. Prefab DOCUMENTS
-# (`compiler::registry::is_prefab_document`) go from 36 to 38: two tile-set
-# manifests are added, `doune-castle` (18 tiles) and `vesperhold` (84 tiles),
-# each one grammar-built piece whose `license.generated_by` states the program
-# hash, region and seed it was expanded at. The third new `.json` is
-# `vesperhold.report.json`, a gate report and not a document. `pools.json` and
-# all 36 existing `.nbt` are unchanged (no `M` on either in
-# `git diff --name-status`). Three existing documents change one key each,
-# `shown_faces`: `island-beach-camp` gains `[east, north, south, west]`, and
-# `island-greenfield` and `island-greenfield-bend` widen theirs to all four
-# sides. `vesperhold` declares the one new `waterline_y` (11); the seating
-# command reports every declaration it examines borne out by the bytes.
-# `seating-limits.toml`, `README.md` and `LICENSE-ASSETS.md` are the content
-# repository's own records, not inputs `--prefabs` hands the compiler.
+# What moves under `prefabs/`, counted from `git ls-tree` at both pins: 40
+# `.json` before, 61 after; 138 `.nbt` before, 149 after. 22 `.json` are
+# added — eleven prefab documents (`the-treehouse-camp-*`) and their eleven
+# gate reports (`<id>.report.json`, 1 before, 12 after), each piece with its
+# `.nbt` — and `pools.json` is deleted, with `seating-limits.toml`; `README.md`
+# changes. No existing document or `.nbt` changes (no `M` on either in
+# `git diff --name-status`). The pools the engine's own `areas[]` fixtures
+# draw are engine test data (`crates/delvec/tests/fixtures/test-pools/`),
+# laid over this library by `tools/ci/test-library.sh`, never read from here.
 #
-# The rest of the interval — the two campaigns under `campaigns/`, and the
-# content repository's own CI, skill and pin tooling — is nothing this repo
-# reads.
+# The rest of the interval — `campaigns/the-treehouse-camp`, `references/`,
+# and the content repository's own CI, skill and pin tooling — is nothing the
+# compiler is handed. The library sweep's place kind
+# (`crates/delvec/src/admit/scenery.rs`) does read `campaigns/*/detail-plan.json`
+# and `layout-graph.json` beside the library, to learn which place seats a
+# piece.
 #
 # WHAT CARRIES EACH CLAIM. `tools/ci/check-pins.py` holds this `sha` equal to
 # the `content-repo` entry in `.github/pins.toml`.
@@ -302,7 +298,7 @@ repo = "stellarfeline/delvewright-campaigns"
 # the property assembles; the library sweep (`crates/delvec/tests/admit_library.rs`)
 # asks it of every admitted piece on every run and prints its own binding count
 # there, which is where that number belongs.
-sha = "ff73411a1d7feabad57a4537e1384402a2b096d0"
+sha = "43f0f301e10ce88d02d8063eabdceeb87107aa54"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders
