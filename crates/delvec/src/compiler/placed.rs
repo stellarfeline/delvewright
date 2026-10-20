@@ -456,8 +456,9 @@ fn row_of_line(fired: &Firing, line: &str) -> Option<(String, Placed)> {
     Some((prefix.to_string(), row))
 }
 
-/// Which functions the ledger reads, and how each one fires: `setup_finish`
-/// at setup; `activate_<obj>` at the step its objective activates on; a
+/// Which functions the ledger reads, and how each one fires: `setup_finish`,
+/// `ws_arm_` and a holder's `holder_<id>` at setup; `activate_<obj>` at the step
+/// its objective activates on; a
 /// `complete_<obj>` at its objective's step and a `complete_q_<quest>` at its
 /// last objective's; a `trig_<trigger>` at the trigger's own step; a `trap_`
 /// or `loop_` function unforced; and a beat's function —
@@ -542,6 +543,12 @@ fn firings_of(plan: &crate::compiler::plan::Plan, name: &str) -> Option<Vec<Firi
     if name.starts_with("ws_arm_") {
         // A shortcut gate's wrong-side hitboxes: armed at world init, its one
         // call site `setup_finish` (`emit::shortcut`).
+        return Some(vec![Firing::Setup]);
+    }
+    if name.starts_with("holder_") {
+        // An item holder's body (spec-0111 §4.1): summoned at world init, its
+        // one call site `setup_finish` (`emit::holders::holder_setup`). Its
+        // `item replace entity` fills place nothing the ledger records.
         return Some(vec![Firing::Setup]);
     }
     if name.starts_with("shortcut_open_") {

@@ -3747,8 +3747,11 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   `critical_path` index of the step whose completion, activation or trigger runs
   it) or `{"unforced": <blame>}` (a beat nobody has to play, which no
   configuration lays). The rows are read off the functions that place —
-  `setup_finish` and `ws_arm_<shortcut>` (a shortcut gate's wrong-side
-  hitboxes, armed at world init); `activate_<obj>` (at the latest critical step
+  `setup_finish`, `ws_arm_<shortcut>` (a shortcut gate's wrong-side
+  hitboxes, armed at world init) and `holder_<id>` (an item holder's body,
+  summoned at world init; its `item replace entity` fills are no row, so a
+  frame's world holds the frame or stand without the item it is filled with);
+  `activate_<obj>` (at the latest critical step
   its objective's step causally follows, else at the `select-class` step — a
   campaign-start quest is armed by the party's first class pick, never at world
   load); `shortcut_open_<shortcut>` (unforced); `complete_<obj>` and `complete_q_<quest>`

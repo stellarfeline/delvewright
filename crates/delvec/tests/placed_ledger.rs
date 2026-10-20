@@ -42,6 +42,7 @@ const LEDGER: &[&str] = &[
     "loop_",
     "ws_arm_",
     "shortcut_open_",
+    "holder_",
 ];
 
 /// A placing function the ledger does not read, by class and prefix.
