@@ -284,7 +284,8 @@ pub(super) struct Reads<'a, C: Codes + ?Sized> {
     seen: std::cell::RefCell<ReadSeq>,
     stamp: u32,
     /// The thread's tables, taken for this flight and handed back after.
-    tables: std::cell::RefCell<Tables>,
+    near: Vec<std::cell::Cell<(u32, Code)>>,
+    far: std::cell::RefCell<Seen>,
 }
 
 /// The cells near the launch cell a flight has read, with their codes, each
@@ -380,7 +381,10 @@ thread_local! {
 
 impl<C: Codes + ?Sized> Drop for Reads<'_, C> {
     fn drop(&mut self) {
-        let t = std::mem::take(&mut *self.tables.borrow_mut());
+        let t = Tables {
+            near: std::mem::take(&mut self.near),
+            seen: std::mem::take(&mut *self.far.borrow_mut()),
+        };
         TABLES.with(|x| *x.borrow_mut() = t);
     }
 }
@@ -437,16 +441,17 @@ impl<'a, C: Codes + ?Sized> Reads<'a, C> {
             inner,
             seen: std::cell::RefCell::new(Vec::new()),
             stamp,
-            tables: std::cell::RefCell::new(tables),
+            near: tables.near,
+            far: std::cell::RefCell::new(tables.seen),
         }
     }
 }
 
 impl<C: Codes + ?Sized> Codes for Reads<'_, C> {
+    #[inline]
     fn code(&self, c: [i32; 3]) -> Code {
-        let tables = self.tables.borrow();
         if let Some(i) = near_slot(c) {
-            let slot = &tables.near[i];
+            let slot = &self.near[i];
             let (s, v) = slot.get();
             if s == self.stamp {
                 return v;
@@ -456,9 +461,8 @@ impl<C: Codes + ?Sized> Codes for Reads<'_, C> {
             self.seen.borrow_mut().push((c, v));
             return v;
         }
-        drop(tables);
         let v = self.inner.code(c);
-        if self.tables.borrow_mut().seen.insert(self.stamp, c) {
+        if self.far.borrow_mut().insert(self.stamp, c) {
             self.seen.borrow_mut().push((c, v));
         }
         v

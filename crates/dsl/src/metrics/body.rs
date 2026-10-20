@@ -51,6 +51,7 @@ pub struct Aabb {
 
 impl Aabb {
     /// The box `[x0, y0, z0] .. [x1, y1, z1]`.
+    #[inline]
     #[must_use]
     pub const fn new(x0: f64, y0: f64, z0: f64, x1: f64, y1: f64, z1: f64) -> Aabb {
         Aabb {
@@ -60,6 +61,7 @@ impl Aabb {
     }
 
     /// This box moved by `d`.
+    #[inline]
     #[must_use]
     pub fn offset(mut self, d: [f64; 3]) -> Aabb {
         for (i, v) in d.iter().enumerate() {
@@ -71,6 +73,7 @@ impl Aabb {
 
     /// This box grown toward `d` on each axis (its far face moves, its near one
     /// stays) — the region a move by `d` sweeps.
+    #[inline]
     #[must_use]
     pub fn extend(mut self, d: [f64; 3]) -> Aabb {
         for (i, v) in d.iter().enumerate() {
@@ -84,6 +87,7 @@ impl Aabb {
     }
 
     /// This box shrunk by `d` on every face.
+    #[inline]
     #[must_use]
     pub fn contract(mut self, d: [f64; 3]) -> Aabb {
         for (i, v) in d.iter().enumerate() {
@@ -94,12 +98,14 @@ impl Aabb {
     }
 
     /// Whether the two boxes overlap (strictly; touching faces do not).
+    #[inline]
     #[must_use]
     pub fn intersects(&self, o: &Aabb) -> bool {
         (0..3).all(|i| self.min[i] < o.max[i] && self.max[i] > o.min[i])
     }
 
     /// How far `other` may move by `off` along `axis` before it meets this box.
+    #[inline]
     fn offset_along(&self, other: &Aabb, axis: usize, off: f64) -> f64 {
         let (a, b) = match axis {
             0 => (1, 2),
@@ -152,6 +158,7 @@ pub enum Material {
 
 impl Material {
     /// The block friction (`BlockBehaviour.Properties.friction`).
+    #[inline]
     #[must_use]
     pub fn friction(self) -> f64 {
         match self {
@@ -415,12 +422,14 @@ impl State {
     }
 
     /// The body's box at its position, at the height its pose gives it.
+    #[inline]
     #[must_use]
     pub fn aabb(&self, body: &Attributes) -> Aabb {
         player_box(self.pos, body.width, self.height)
     }
 }
 
+#[inline]
 fn player_box(p: [f64; 3], width: f64, height: f64) -> Aabb {
     let w = width / 2.0;
     Aabb::new(-w, 0.0, -w, w, height, w).offset(p)
@@ -438,16 +447,19 @@ fn sin_table() -> &'static [f32] {
 }
 
 /// `Mth.sin(x)` for `x` in `float` radians.
+#[inline]
 fn mth_sin(x: f32) -> f32 {
     sin_table()[((f64::from(x) * 10430.378350470453) as i64 & 65535) as usize]
 }
 
 /// `Mth.cos(x)`.
+#[inline]
 fn mth_cos(x: f32) -> f32 {
     sin_table()[((f64::from(x) * 10430.378350470453 + 16384.0) as i64 & 65535) as usize]
 }
 
 /// `(sin, cos)` of the facing `yaw` (game degrees) as each rule set computes it.
+#[inline]
 fn facing(rules: Rules, yaw: f64) -> (f64, f64) {
     match rules {
         // mineflayer stores `π − yaw`; prismarine turns it back with `π − ·`.
@@ -479,6 +491,7 @@ thread_local! {
     };
 }
 
+#[inline]
 fn floor(v: f64) -> i32 {
     v.floor() as i32
 }
@@ -496,6 +509,7 @@ fn surrounding<W: CollisionWorld + ?Sized>(world: &W, q: &Aabb, out: &mut Vec<Aa
     }
 }
 
+#[inline]
 fn block_at<W: CollisionWorld + ?Sized>(world: &W, p: [f64; 3]) -> [i32; 3] {
     let _ = world;
     [floor(p[0]), floor(p[1]), floor(p[2])]
@@ -779,6 +793,7 @@ fn tick_with<W: CollisionWorld + ?Sized>(
 
 /// The block below that affects the body's movement under [`Rules::Game`]
 /// (`getBlockPosBelowThatAffectsMyMovement` = `getOnPos(0.500001)`).
+#[inline]
 fn game_below(p: [f64; 3]) -> [i32; 3] {
     [floor(p[0]), floor(p[1] - 0.500_001), floor(p[2])]
 }
@@ -811,6 +826,7 @@ fn pose_height<W: CollisionWorld + ?Sized>(
     }
 }
 
+#[inline]
 fn apply_heading(st: &mut State, strafe: f64, forward: f64, multiplier: f64, sin: f64, cos: f64) {
     let mut speed = (strafe * strafe + forward * forward).sqrt();
     if speed < 0.01 {
@@ -958,6 +974,7 @@ fn does_not_collide<W: CollisionWorld + ?Sized>(
 /// The order the movement's axes are resolved in: `y` first, then `x` and
 /// `z` — the bot always `x` then `z`, the jar the larger first
 /// (`Direction.axisStepOrder`).
+#[inline]
 fn horizontal_order(rules: Rules, d: [f64; 3]) -> [usize; 2] {
     match rules {
         Rules::Game if d[0].abs() < d[2].abs() => [2, 0],
@@ -965,6 +982,7 @@ fn horizontal_order(rules: Rules, d: [f64; 3]) -> [usize; 2] {
     }
 }
 
+#[inline]
 fn collide_axes(boxes: &[Aabb], bb: &mut Aabb, d: &mut [f64; 3], order: [usize; 2]) {
     for b in boxes {
         d[1] = b.offset_along(bb, 1, d[1]);

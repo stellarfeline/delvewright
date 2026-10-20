@@ -377,12 +377,14 @@ impl Codes for Dense {
 struct Sim<'a, C: Codes + ?Sized>(&'a C);
 
 impl<C: Codes + ?Sized> CollisionWorld for Sim<'_, C> {
+    #[inline]
     fn shapes(&self, c: [i32; 3], out: &mut Vec<Aabb>) {
         if let Some(top) = top_of(self.0.code(c)) {
             let (x, y, z) = (f64::from(c[0]), f64::from(c[1]), f64::from(c[2]));
             out.push(Aabb::new(x, y, z, x + 1.0, y + top, z + 1.0));
         }
     }
+    #[inline]
     fn material(&self, c: [i32; 3]) -> Material {
         material_of_code(self.0.code(c))
     }
@@ -401,6 +403,50 @@ impl<C: Codes + ?Sized> CollisionWorld for Sim<'_, C> {
         } else {
             None
         }
+    }
+}
+
+/// The cells round a launch cell a launch's start reads — its support and
+/// every cell its box overhangs at an edge position — copied once per node
+/// out of `inner`, so a node's thousands of edge positions read an array; a
+/// cell outside the box is read through `inner`.
+struct NearStart<'a, C: Codes + ?Sized> {
+    inner: &'a C,
+    codes: [Code; 45],
+}
+
+impl<'a, C: Codes + ?Sized> NearStart<'a, C> {
+    #[inline]
+    fn slot(c: [i32; 3]) -> Option<usize> {
+        let (x, y, z) = (c[0] + 1, c[1] + 2, c[2] + 1);
+        ((0..3).contains(&x) && (0..5).contains(&y) && (0..3).contains(&z))
+            .then(|| ((x * 3 + z) * 5 + y) as usize)
+    }
+
+    fn new(inner: &'a C) -> Self {
+        let mut codes = [0; 45];
+        for x in -1..=1 {
+            for z in -1..=1 {
+                for y in -2..=2 {
+                    let i = Self::slot([x, y, z]).expect("inside");
+                    codes[i] = inner.code([x, y, z]);
+                }
+            }
+        }
+        NearStart { inner, codes }
+    }
+}
+
+impl<C: Codes + ?Sized> Codes for NearStart<'_, C> {
+    #[inline]
+    fn code(&self, c: [i32; 3]) -> Code {
+        match Self::slot(c) {
+            Some(i) => self.codes[i],
+            None => self.inner.code(c),
+        }
+    }
+    fn wet(&self) -> bool {
+        self.inner.wet()
     }
 }
 
@@ -1879,6 +1925,8 @@ impl World {
                 };
                 let killed = |st: &State| self.kills(st);
                 let edge_memo: EdgeMemo = std::cell::RefCell::new(HashMap::default());
+                // Its cells are among the node's own (`node_boxes`).
+                let near = NearStart::new(&shifted);
                 // An edge position read cells: a launch that takes it from the
                 // memo reads them too, for the run it is in.
                 let edge_at = |dir: [f64; 2], compute: &dyn Fn() -> Option<[f64; 3]>| {
@@ -1986,7 +2034,7 @@ impl World {
                                         killed(&s)
                                     };
                                     let flown = match launch_start(
-                                        &shifted,
+                                        &near,
                                         [0, 0, 0],
                                         holding,
                                         l,
