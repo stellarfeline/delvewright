@@ -368,17 +368,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tidal-keep-gen"
-version = "0.0.0"
-dependencies = [
- "fastnbt",
- "flate2",
- "prefab-invariants",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"

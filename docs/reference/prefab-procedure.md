@@ -1014,16 +1014,17 @@ edit.
 | `delvec grammar` | writes it (single template) and the tile-set manifest (several) |
 | `delvec render` | a narrow view — `anchors`, `connectors`, `lighting` — built from the document's own leaf types, because it must also read a tile-set manifest, which names `structure_set` instead of `structure` |
 | `delvec::schem::split` | one key, `structure_set`, to tell the two shapes apart |
-| `prefabs/generator`, `prefabs/*-generator` | write it, serialize-only (their own workspace, outside the engine's; they never read a prefab back) |
+| `prefabs/generator`, `prefabs/*-generator`, `gallery/prefab-generator` | write it, serialize-only (their own workspace, outside the engine's; they never read a prefab back) |
 
 ## 10. Hand-written Rust generators
 
-`prefabs/generator` (the keep) and `prefabs/*-generator` are members of the
-`prefabs/` workspace. A campaign tileset generator is maintained, not extended:
-a new piece is a grammar program. `prefabs/gallery-generator` is the exception —
+`prefabs/generator` (the keep), `prefabs/*-generator` and the gallery's
+`gallery/prefab-generator` are members of the `prefabs/` workspace. A campaign tileset generator is maintained, not extended:
+a new piece is a grammar program. `gallery/prefab-generator` is the exception —
 it builds the gallery, which owes an element for every engine surface. Running
 one is `cargo run --release --manifest-path
-prefabs/<gen>/Cargo.toml -- campaigns/prefabs/`, and every piece it emits goes
+prefabs/<gen>/Cargo.toml -- campaigns/prefabs/` (the gallery's writes a build
+directory instead), and every piece it emits goes
 through `prefabs/invariants/src/invariants.rs` — including the block-registry check, so the
 `DW0733` class is refused at that emitter too.
 

@@ -3,6 +3,9 @@ name = "gallery-prefab-gen"
 version = "0.0.0"
 edition = "2021"
 publish = false
+# A member of the `prefabs/` workspace, which builds and tests it with every
+# other generator; it lives here because the gallery is its only reader.
+workspace = "../../prefabs"
 
 [[bin]]
 name = "gallery-prefab-gen"

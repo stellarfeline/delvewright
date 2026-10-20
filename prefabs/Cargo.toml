@@ -29,15 +29,14 @@
 [workspace]
 resolver = "2"
 members = [
+    "../gallery/prefab-generator",
     "cave-generator",
-    "gallery-generator",
     "generator",
     "hello-room-generator",
     "invariants",
     "island-generator",
     "island-terrain-generator",
     "rig-generator",
-    "tidal-keep-generator",
 ]
 
 # One declaration per dependency, so a member states a name and nothing else.

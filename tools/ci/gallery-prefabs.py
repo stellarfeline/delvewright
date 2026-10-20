@@ -4,7 +4,7 @@
 ## What the gallery's pieces are
 
 The gallery commits no piece. Its hand-built pieces — the hall, the annex kit,
-the yard, the skins — are written by `prefabs/gallery-generator`; its
+the yard, the skins — are written by `gallery/prefab-generator`; its
 program-detailed places — every place of the `site-plan` and `site-plan-solid`
 overlays (spec-0098: a stand-in never ships, so a stageable point binds every
 place) — are written by `delvec detail` from each overlay's `programs/`
@@ -59,7 +59,7 @@ from delvec_bin import resolve as resolve_delvec  # noqa: E402
 from gallery_domain import GALLERY, PatchError, apply_patch, materialise  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
-GENERATOR = REPO / "prefabs" / "gallery-generator" / "Cargo.toml"
+GENERATOR = REPO / "gallery" / "prefab-generator" / "Cargo.toml"
 # The overlay points whose places are detailed from programs, in order. Each
 # names its pieces by its own campaign id (`<campaign id>-<place stem>`), so
 # the two never write the same piece.

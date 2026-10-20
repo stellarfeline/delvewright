@@ -17,7 +17,7 @@
 //! every run rather than trusting the carving.
 //!
 //! ```text
-//! cargo run --release --manifest-path prefabs/gallery-generator/Cargo.toml -- <out_dir>
+//! cargo run --release --manifest-path gallery/prefab-generator/Cargo.toml -- <out_dir>
 //! ```
 //!
 //! Unlike the tileset generators, `<out_dir>` here is a **build directory**, not
@@ -2052,7 +2052,7 @@ fn metadata() -> serde_json::Value {
             "id": ID,
             "size": SIZE,
             "data_version": DATA_VERSION,
-            "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
+            "generator": "gallery/prefab-generator (gallery-prefab-gen)"
         },
         "anchors": Value::Object(anchors),
         "spatial_contract": spatial_contract(),
@@ -2068,7 +2068,7 @@ fn metadata() -> serde_json::Value {
             "spdx": "GPL-3.0-or-later",
             "note": "Original Delvewright project asset (pipeline-code license per \
                      prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
-            "provenance": "Generated deterministically by prefabs/gallery-generator \
+            "provenance": "Generated deterministically by gallery/prefab-generator \
                            (ADR-0006); regenerating yields byte-identical NBT and metadata."
         }
     })
@@ -3023,7 +3023,7 @@ fn annex_metadata(t: &AnnexTile) -> serde_json::Value {
             "id": t.id,
             "size": ANNEX_SIZE,
             "data_version": DATA_VERSION,
-            "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
+            "generator": "gallery/prefab-generator (gallery-prefab-gen)"
         },
         // One anchor per tile: the standing cell at the middle of its floor.
         //
@@ -3052,7 +3052,7 @@ fn annex_metadata(t: &AnnexTile) -> serde_json::Value {
             "spdx": "GPL-3.0-or-later",
             "note": "Original Delvewright project asset (pipeline-code license per \
                      prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
-            "provenance": "Generated deterministically by prefabs/gallery-generator \
+            "provenance": "Generated deterministically by gallery/prefab-generator \
                            (ADR-0006); regenerating yields byte-identical NBT and metadata."
         }
     })
@@ -3207,10 +3207,10 @@ fn write_shard(out: &Path) {
     std::fs::write(out.join(format!("{SHARD_ID}.nbt")), &framed).expect("write shard nbt");
     let mut meta = serde_json::json!({
         "prefab_id": format!("prefab/{SHARD_ID}"),
-        "structure": { "file": format!("{SHARD_ID}.nbt"), "id": SHARD_ID, "size": SHARD_SIZE, "data_version": DATA_VERSION, "generator": "prefabs/gallery-generator (gallery-prefab-gen)" },
+        "structure": { "file": format!("{SHARD_ID}.nbt"), "id": SHARD_ID, "size": SHARD_SIZE, "data_version": DATA_VERSION, "generator": "gallery/prefab-generator (gallery-prefab-gen)" },
         "anchors": {},
         "lighting": { "profile": "lit", "measured_min_light": 8, "measured": "2026-08-20", "method": "derived: a lantern on a solid 3-cube; never entered, only stamped" },
-        "license": { "source": "original", "spdx": "GPL-3.0-or-later", "note": "Original Delvewright project asset (pipeline-code license per prefabs/LICENSE-ASSETS.md). No third-party material ingested.", "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006)." }
+        "license": { "source": "original", "spdx": "GPL-3.0-or-later", "note": "Original Delvewright project asset (pipeline-code license per prefabs/LICENSE-ASSETS.md). No third-party material ingested.", "provenance": "Generated deterministically by gallery/prefab-generator (ADR-0006)." }
     });
     // A fragment source is a block of material something later cuts from, not a
     // place a party stands, so it may genuinely have no walk plane — and a
@@ -3372,7 +3372,7 @@ fn yard_metadata() -> serde_json::Value {
             "id": YARD_ID,
             "size": YARD_SIZE,
             "data_version": DATA_VERSION,
-            "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
+            "generator": "gallery/prefab-generator (gallery-prefab-gen)"
         },
         // `note`, not `role`. `role` is the engine's own closed vocabulary for
         // what the compiler must FIND without being told a name (spec-0046);
@@ -3441,7 +3441,7 @@ fn yard_metadata() -> serde_json::Value {
             "spdx": "GPL-3.0-or-later",
             "note": "Original Delvewright project asset (pipeline-code license per \
                      prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
-            "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006)."
+            "provenance": "Generated deterministically by gallery/prefab-generator (ADR-0006)."
         }
     })
 }
@@ -3550,7 +3550,7 @@ fn write_probe_piece(
             "id": id,
             "size": size,
             "data_version": DATA_VERSION,
-            "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
+            "generator": "gallery/prefab-generator (gallery-prefab-gen)"
         },
         "anchors": {},
         "license": {
@@ -3558,7 +3558,7 @@ fn write_probe_piece(
             "spdx": "GPL-3.0-or-later",
             "note": "Original Delvewright project asset (pipeline-code license per \
                      prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
-            "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006)."
+            "provenance": "Generated deterministically by gallery/prefab-generator (ADR-0006)."
         }
     });
     document::write_preserving(&out.join(format!("{id}.json")), &meta);
@@ -3730,7 +3730,7 @@ fn bank_metadata() -> serde_json::Value {
             "id": BANK_ID,
             "size": BANK_SIZE,
             "data_version": DATA_VERSION,
-            "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
+            "generator": "gallery/prefab-generator (gallery-prefab-gen)"
         },
         "anchors": {
             "anchor/bank-arrival": {
@@ -3761,7 +3761,7 @@ fn bank_metadata() -> serde_json::Value {
             "source": "original",
             "spdx": "GPL-3.0-or-later",
             "note": "Original Delvewright project asset (pipeline-code license per prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
-            "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006)."
+            "provenance": "Generated deterministically by gallery/prefab-generator (ADR-0006)."
         }
     })
 }
@@ -3897,7 +3897,7 @@ fn quay_metadata() -> serde_json::Value {
             "id": QUAY_ID,
             "size": QUAY_SIZE,
             "data_version": DATA_VERSION,
-            "generator": "prefabs/gallery-generator (gallery-prefab-gen)"
+            "generator": "gallery/prefab-generator (gallery-prefab-gen)"
         },
         "anchors": {
             "quay-mooring": {
@@ -3917,7 +3917,7 @@ fn quay_metadata() -> serde_json::Value {
             "source": "original",
             "spdx": "GPL-3.0-or-later",
             "note": "Original Delvewright project asset (pipeline-code license per prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
-            "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006)."
+            "provenance": "Generated deterministically by gallery/prefab-generator (ADR-0006)."
         }
     })
 }
@@ -4400,7 +4400,7 @@ fn write_long_hall(out: &Path) {
             "part_max": cut,
             "grid": [1, 1, i],
             "data_version": DATA_VERSION,
-            "generator": "prefabs/gallery-generator (gallery-prefab-gen)",
+            "generator": "gallery/prefab-generator (gallery-prefab-gen)",
             "parts": parts,
         },
         "anchors": serde_json::Value::Object(anchors),
@@ -4419,7 +4419,7 @@ fn write_long_hall(out: &Path) {
             "spdx": "GPL-3.0-or-later",
             "note": "Original Delvewright project asset (pipeline-code license per \
                      prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
-            "provenance": "Generated deterministically by prefabs/gallery-generator (ADR-0006), \
+            "provenance": "Generated deterministically by gallery/prefab-generator (ADR-0006), \
                            after the eldritch spike's station 4."
         }
     });
@@ -4627,7 +4627,7 @@ fn write_arm_rig(out: &Path) {
         ],
         clips,
         provenance: RigProvenance {
-            generator: "prefabs/gallery-generator".to_string(),
+            generator: "gallery/prefab-generator".to_string(),
             source: "original".to_string(),
             spdx: "GPL-3.0-or-later".to_string(),
         },
@@ -4775,7 +4775,7 @@ fn write_rig(out: &Path) {
         ],
         clips,
         provenance: RigProvenance {
-            generator: "prefabs/gallery-generator".to_string(),
+            generator: "gallery/prefab-generator".to_string(),
             source: "original".to_string(),
             spdx: "GPL-3.0-or-later".to_string(),
         },
