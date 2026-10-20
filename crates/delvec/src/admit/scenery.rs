@@ -24,12 +24,19 @@
 //! stem. A document claiming another piece's id under its own file name is
 //! judged strictly.
 //!
-//! Every way of not finding the evidence lands on the strict judgement, which
-//! can only refuse: no `campaigns/` beside the library, no campaign placing the
-//! piece, a placing campaign with no layout graph or no node of that name. A
-//! campaign whose `detail-plan.json` does not parse under this engine places
-//! nothing in any world this engine builds, so it owns nothing; it is named in
-//! the evidence line rather than passed over in silence.
+//! Not finding the evidence never buys the scenery kind. A piece some campaign
+//! seats at a place its layout graph does not mark `reached: false` (or does
+//! not name, or a campaign with no layout graph) is judged reached, strictly.
+//! A piece **no** campaign seats — no `campaigns/` beside the library, no row
+//! placing it, a document that is not the piece a campaign resolves — is
+//! judged [`Place::Unseated`]: a bare piece, of which no way in is demanded or
+//! forbidden, because whether a body enters it is the place's question and is
+//! judged where a place seats it. Every obligation about the piece's own floor
+//! and declarations is still judged as for a reached place, so a piece's own
+//! word still buys nothing. A campaign whose `detail-plan.json` or
+//! `layout-graph.json` does not parse under this engine places nothing in any
+//! world this engine builds, so it owns nothing; it is named in the evidence
+//! line rather than passed over in silence.
 
 use std::path::Path;
 
@@ -38,6 +45,7 @@ use delvewright_dsl::layout::LayoutGraphContent;
 use delvewright_dsl::{Envelope, NodeId};
 
 use crate::compiler::load::{DETAIL_PLAN_FILE, LAYOUT_GRAPH_FILE};
+use crate::grammar::contract::Place;
 use crate::schem::prefab::PrefabMeta;
 
 /// **Whether `node` is scenery in `graph`** (spec-0098 §14): a place the graph
@@ -77,19 +85,36 @@ pub struct PlaceKind {
     pub owners: Vec<Owner>,
     /// Campaign directories examined.
     pub campaigns: usize,
-    /// Campaigns whose detail plan does not parse, by directory name.
+    /// Campaigns whose detail plan or layout graph does not parse, by
+    /// directory name.
     pub unread: Vec<String>,
     /// Why no campaign was consulted, when none was.
     pub not_consulted: Option<String>,
 }
 
 impl PlaceKind {
+    /// The place the contract is judged as seated in: scenery when every row
+    /// seats it at a scenery node, reached when any row seats it elsewhere, and
+    /// unseated when no row seats it.
+    pub fn place(&self) -> Place {
+        if self.sealed {
+            Place::Scenery
+        } else if self.owners.is_empty() {
+            Place::Unseated
+        } else {
+            Place::Reached
+        }
+    }
+
     /// The evidence, as one line a reader of the audit can check.
     pub fn line(&self) -> String {
+        const UNSEATED: &str = "unseated (a bare piece: no way in is demanded or forbidden, \
+                                every other obligation is judged strictly)";
         if let Some(why) = &self.not_consulted {
             return format!(
-                "place kind: reached (strict) — no campaign was consulted: {why}; a piece is \
-                 judged as scenery only when a campaign places it at a `reached: false` node"
+                "place kind: {UNSEATED} — no campaign was consulted: {why}; a piece is judged \
+                 as scenery only when a campaign places it at a `reached: false` node, and as \
+                 reached when one places it anywhere else"
             );
         }
         let rows = if self.owners.is_empty() {
@@ -116,8 +141,8 @@ impl PlaceKind {
             String::new()
         } else {
             format!(
-                "; {} campaign(s) whose detail plan this engine cannot parse place nothing it \
-                 builds: {}",
+                "; {} campaign(s) whose detail plan or layout graph this engine cannot \
+                 parse place nothing it builds: {}",
                 self.unread.len(),
                 self.unread
                     .iter()
@@ -129,10 +154,10 @@ impl PlaceKind {
         format!(
             "place kind: {} — {} detail-plan row(s) of {} campaign(s) read place this piece: \
              {rows}{unread}",
-            if self.sealed {
-                "scenery (sealed: built to be seen and never entered)"
-            } else {
-                "reached (strict)"
+            match self.place() {
+                Place::Scenery => "scenery (sealed: built to be seen and never entered)",
+                Place::Reached => "reached (strict)",
+                Place::Unseated => UNSEATED,
             },
             self.owners.len(),
             self.campaigns,
@@ -217,9 +242,20 @@ pub fn place_kind(meta_path: &Path, meta: &PrefabMeta) -> PlaceKind {
         if rows.is_empty() {
             continue;
         }
-        let graph = std::fs::read_to_string(dir.join(LAYOUT_GRAPH_FILE))
-            .ok()
-            .and_then(|raw| serde_json::from_str::<Envelope<LayoutGraphContent>>(&raw).ok());
+        // An absent graph names no node, and absent means reached. A graph that
+        // is there and does not parse is a campaign this engine builds nothing
+        // of — the same as a detail plan that does not parse — so it owns
+        // nothing, rather than vouching that its places are reached.
+        let graph = match std::fs::read_to_string(dir.join(LAYOUT_GRAPH_FILE)) {
+            Ok(raw) => match serde_json::from_str::<Envelope<LayoutGraphContent>>(&raw) {
+                Ok(g) => Some(g),
+                Err(_) => {
+                    kind.unread.push(name);
+                    continue;
+                }
+            },
+            Err(_) => None,
+        };
         for row in rows {
             kind.owners.push(Owner {
                 campaign: name.clone(),
