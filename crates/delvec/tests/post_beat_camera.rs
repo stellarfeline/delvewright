@@ -1421,7 +1421,7 @@ fn a_filled_brewing_stand_is_written_with_its_bottles() {
         q["content"]["loot"] = serde_json::json!([{
             "id": "loot/two-bottles", "anchor": "anchor/filled-stand",
             "items": [
-                {"item": "minecraft:glass_bottle", "count": 1},
+                {"item": "minecraft:glass_bottle", "count": 1, "slot": "container.0"},
                 {"item": "minecraft:potion", "count": 1, "slot": "container.2"}
             ]
         }]);
@@ -1453,7 +1453,7 @@ fn a_filled_brewing_stand_is_written_with_its_bottles() {
     assert_eq!(
         at("1"),
         Some("minecraft:brewing_stand[has_bottle_0=true,has_bottle_1=false,has_bottle_2=true]"),
-        "the filled stand shows the two bottles its loot lands in slot 0 and the named slot 2"
+        "the filled stand shows the two bottles its loot lands in the named slots 0 and 2"
     );
     assert_eq!(
         at("9"),
