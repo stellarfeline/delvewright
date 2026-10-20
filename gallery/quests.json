@@ -1043,6 +1043,9 @@
               "text": "They knock the seal out of its frame.",
               "verb": "gains"
             },
+            "highlight": {
+              "within": 6
+            },
             "hint": "It hangs in a frame on the wall, beside an empty one.",
             "holder": "anchor/seal-frame",
             "id": "obj/take-the-seal",
