@@ -194,6 +194,10 @@ caught only at §5, by eye.
 
 ## 3. Author the program as JSON
 
+The Program is the data; how it is produced is the author's choice, by hand or
+by a script that emits it, and a script is checked in beside it as provenance
+(the skill's *New pieces*, step 3, states the rule).
+
 **Read the idiom index first** (`grammar.md` §2c). It is ten techniques with a
 runnable program each, and it is the part of the language that no type signature
 shows: how a repetition, a taper, an opening, a decay gradient, a symmetric
