@@ -148,7 +148,7 @@ struct Shard {
     len: u32,
     leaves: Vec<Leaf>,
     outcomes: Vec<Outcome>,
-    interned: HashMap<Outcome, u32>,
+    interned: HashMap<Outcome, u32, std::hash::BuildHasherDefault<Mix>>,
 }
 
 impl Shard {
@@ -244,15 +244,78 @@ pub(super) fn lookup<C: Codes + ?Sized>(key: &Key, codes: &C) -> Option<Kept> {
 /// with what it held.
 pub(super) struct Reads<'a, C: Codes + ?Sized> {
     inner: &'a C,
-    seen: std::cell::RefCell<(ReadSeq, CellSet)>,
+    seen: std::cell::RefCell<ReadSeq>,
+    stamp: u32,
 }
 
 /// The cells a flight read, in the order it first read them, with their codes.
 type ReadSeq = Vec<([i32; 3], Code)>;
 
-/// The cells a flight has read, under a hash that costs a multiply a word: a
-/// flight reads a few hundred cells, most of them many times.
-type CellSet = std::collections::HashSet<[i32; 3], std::hash::BuildHasherDefault<Mix>>;
+/// The cells the flight a thread is recording has read: an open-addressed
+/// table of cells, each slot stamped with the flight it belongs to, so a new
+/// flight starts with an empty table without clearing it. A flight reads a
+/// few hundred cells, most of them many times.
+struct Seen {
+    stamp: u32,
+    slots: Vec<(u32, [i32; 3])>,
+    held: usize,
+}
+
+impl Seen {
+    fn slot(slots: &[(u32, [i32; 3])], c: [i32; 3]) -> usize {
+        let mut h = Mix::default();
+        for v in c {
+            std::hash::Hasher::write_i32(&mut h, v);
+        }
+        (std::hash::Hasher::finish(&h) as usize) & (slots.len() - 1)
+    }
+
+    /// Whether `c` is new to the flight stamped `stamp`.
+    fn insert(&mut self, stamp: u32, c: [i32; 3]) -> bool {
+        if self.stamp != stamp {
+            self.stamp = stamp;
+            self.held = 0;
+        }
+        if (self.held + 1) * 2 > self.slots.len() {
+            let n = (self.slots.len() * 2).max(1 << 12);
+            let old = std::mem::replace(&mut self.slots, vec![(0, [0; 3]); n]);
+            for (s, c) in old {
+                if s == stamp {
+                    let mut i = Seen::slot(&self.slots, c);
+                    while self.slots[i].0 == stamp {
+                        i = (i + 1) & (n - 1);
+                    }
+                    self.slots[i] = (stamp, c);
+                }
+            }
+        }
+        let n = self.slots.len();
+        let mut i = Seen::slot(&self.slots, c);
+        loop {
+            let (s, held) = self.slots[i];
+            if s != stamp {
+                self.slots[i] = (stamp, c);
+                self.held += 1;
+                return true;
+            }
+            if held == c {
+                return false;
+            }
+            i = (i + 1) & (n - 1);
+        }
+    }
+}
+
+thread_local! {
+    static SEEN: std::cell::RefCell<Seen> = const {
+        std::cell::RefCell::new(Seen {
+            stamp: 0,
+            slots: Vec::new(),
+            held: 0,
+        })
+    };
+    static STAMP: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
 
 /// A multiply-rotate hash. Nothing it orders reaches an output: it keys the
 /// memo's maps, which are only ever looked up.
@@ -286,9 +349,19 @@ impl std::hash::Hasher for Mix {
 
 impl<'a, C: Codes + ?Sized> Reads<'a, C> {
     pub(super) fn new(inner: &'a C) -> Self {
+        // A stamp no slot carries yet: the table is wiped when they wrap.
+        let stamp = STAMP.with(|s| {
+            let v = s.get().wrapping_add(1).max(1);
+            if v == 1 {
+                SEEN.with(|t| t.borrow_mut().slots.iter_mut().for_each(|x| x.0 = 0));
+            }
+            s.set(v);
+            v
+        });
         Reads {
             inner,
-            seen: std::cell::RefCell::new((Vec::new(), CellSet::default())),
+            seen: std::cell::RefCell::new(Vec::new()),
+            stamp,
         }
     }
 }
@@ -296,9 +369,8 @@ impl<'a, C: Codes + ?Sized> Reads<'a, C> {
 impl<C: Codes + ?Sized> Codes for Reads<'_, C> {
     fn code(&self, c: [i32; 3]) -> Code {
         let v = self.inner.code(c);
-        let mut seen = self.seen.borrow_mut();
-        if seen.1.insert(c) {
-            seen.0.push((c, v));
+        if SEEN.with(|t| t.borrow_mut().insert(self.stamp, c)) {
+            self.seen.borrow_mut().push((c, v));
         }
         v
     }
@@ -318,7 +390,7 @@ pub(super) fn record<C: Codes + ?Sized>(key: Key, reads: Reads<'_, C>, flight: &
     if HELD.load(Relaxed) > MEMO_NODES {
         return;
     }
-    let seq = reads.seen.into_inner().0;
+    let seq = reads.seen.into_inner();
     let Some(seq) = seq
         .iter()
         .map(|(c, v)| small(*c).map(|c| (c, *v)))

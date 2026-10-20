@@ -57,30 +57,59 @@ fn inside(c: [i32; 3], b: &Box3) -> bool {
 /// How many runs a node's launches are taken in.
 pub(super) const GROUPS: usize = 32;
 
-/// The window cells one node's expansion read, as a bitmap over the window,
-/// and the box of the cells the current run read.
+/// The window cells one node's expansion read, as a bitmap over the window
+/// with the words it set, and the box of the cells the current run read. The
+/// bitmap is the thread's, taken clear and handed back clear.
 pub(super) struct Track<'a> {
     dense: &'a Dense,
     bits: Vec<Cell<u64>>,
+    touched: RefCell<Vec<u32>>,
     run: Cell<Option<Box3>>,
+}
+
+thread_local! {
+    static BITS: RefCell<Vec<Cell<u64>>> = const { RefCell::new(Vec::new()) };
+}
+
+impl Drop for Track<'_> {
+    fn drop(&mut self) {
+        for &w in self.touched.borrow().iter() {
+            self.bits[w as usize].set(0);
+        }
+        let bits = std::mem::take(&mut self.bits);
+        BITS.with(|b| *b.borrow_mut() = bits);
+    }
 }
 
 impl<'a> Track<'a> {
     pub(super) fn new(dense: &'a Dense) -> Track<'a> {
+        let n = dense.cells.len().div_ceil(64);
+        let mut bits = BITS.with(|b| std::mem::take(&mut *b.borrow_mut()));
+        if bits.len() < n {
+            bits.resize_with(n, || Cell::new(0));
+        }
         Track {
             dense,
-            bits: (0..dense.cells.len().div_ceil(64))
-                .map(|_| Cell::new(0))
-                .collect(),
+            bits,
+            touched: RefCell::new(Vec::new()),
             run: Cell::new(None),
         }
+    }
+
+    #[inline]
+    fn set(&self, i: usize) {
+        let w = &self.bits[i / 64];
+        let old = w.get();
+        if old == 0 {
+            self.touched.borrow_mut().push((i / 64) as u32);
+        }
+        w.set(old | 1 << (i % 64));
     }
 
     /// Note the window cell `c`, at index `i`.
     #[inline]
     pub(super) fn note(&self, i: usize, c: [i32; 3]) {
-        let w = &self.bits[i / 64];
-        w.set(w.get() | 1 << (i % 64));
+        self.set(i);
         self.extend((c, c));
     }
 
@@ -96,8 +125,7 @@ impl<'a> Track<'a> {
             for z in lo[2]..=hi[2] {
                 for y in lo[1]..=hi[1] {
                     if let Some(i) = self.dense.index([x, y, z]) {
-                        let w = &self.bits[i / 64];
-                        w.set(w.get() | 1 << (i % 64));
+                        self.set(i);
                     }
                 }
             }
@@ -131,8 +159,11 @@ impl<'a> Track<'a> {
     /// The cells noted, each with its snapshot code and raw membership.
     fn deps(&self, extra: &[u16]) -> Vec<(u32, Code, u16)> {
         let mut out = Vec::new();
-        for (w, word) in self.bits.iter().enumerate() {
-            let mut b = word.get();
+        let mut words = self.touched.borrow().clone();
+        words.sort_unstable();
+        for w in words {
+            let w = w as usize;
+            let mut b = self.bits[w].get();
             while b != 0 {
                 let i = w * 64 + b.trailing_zeros() as usize;
                 b &= b - 1;
