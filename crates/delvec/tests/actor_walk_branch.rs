@@ -342,7 +342,12 @@ fn a_shot_follows_its_own_branchs_driver_to_a_shared_mark() {
     let b = r#"{ "type": "move-actor", "actor": "actor/ram", "to": { "anchor": "anchor/door" } }"#;
     assert_eq!(base.matches(a).count(), 1);
     assert_eq!(base.matches(b).count(), 1);
-    let doc = base.replace(a, &ground).replace(b, &tide);
+    // Through placeholders: each replacement contains the other's walk text.
+    let doc = base
+        .replace(a, "@GROUND@")
+        .replace(b, "@TIDE@")
+        .replace("@GROUND@", &ground)
+        .replace("@TIDE@", &tide);
 
     let c = parse_hw(&doc);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
