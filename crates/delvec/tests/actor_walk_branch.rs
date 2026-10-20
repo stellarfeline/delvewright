@@ -34,8 +34,12 @@ fn quests_doc(walk_a: &str, walk_b: &str, wrap: bool) -> String {
     );
     let (a, b) = if wrap {
         (
-            format!(r#"{{ "type": "sequence", "steps": [ {{ "at_ticks": 0, "effects": [ {a} ] }} ] }}"#),
-            format!(r#"{{ "type": "sequence", "steps": [ {{ "at_ticks": 0, "effects": [ {b} ] }} ] }}"#),
+            format!(
+                r#"{{ "type": "sequence", "steps": [ {{ "at_ticks": 0, "effects": [ {a} ] }} ] }}"#
+            ),
+            format!(
+                r#"{{ "type": "sequence", "steps": [ {{ "at_ticks": 0, "effects": [ {b} ] }} ] }}"#
+            ),
         )
     } else {
         (a, b)
@@ -209,7 +213,7 @@ fn every_walk_call_names_an_emitted_driver() {
         };
         for word in text.split_whitespace() {
             if let Some(name) = word.strip_prefix("hello-world:")
-                && name.starts_with("mv_")
+                && name.starts_with("ma_")
             {
                 calls += 1;
                 assert!(
@@ -220,4 +224,92 @@ fn every_walk_call_names_an_emitted_driver() {
         }
     }
     assert!(calls >= 2, "both walk calls were found ({calls})");
+}
+
+/// The `quests_doc` shape with the actor walks swapped for `move-npc`s of
+/// `npc/keeper` (home `anchor/keeper-stand`): the NPC planner reads the same
+/// branch.
+fn npc_doc() -> String {
+    quests_doc("", "", false)
+        .replace(
+            r#""type": "move-actor", "actor": "actor/ram""#,
+            r#""type": "move-npc", "npc": "npc/keeper""#,
+        )
+        .replace(
+            r#"{ "id": "actor/ram", "entity": "minecraft:sheep", "anchor": "anchor/keeper-stand" }"#,
+            "",
+        )
+        .replace(r#""actors": [
+      
+    ],"#, "")
+}
+
+/// `move-npc` shares the planner shape, so it shares the fix.
+#[test]
+fn a_move_npc_inherits_the_gate_of_the_objective_that_runs_it() {
+    let doc = npc_doc();
+    assert!(!doc.contains("move-actor"), "fixture swap applied: {doc}");
+    let c = parse_hw(&doc);
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let world = nav::World::from_plan(&plan, &structures(&plan));
+    let moves = nav::plan_moves(&plan, &world).expect("both walks plan");
+    assert_eq!(moves.len(), 2, "two walks planned");
+    let start = |a: &str| {
+        moves
+            .iter()
+            .find(|m| m.to.anchor.as_str() == a)
+            .unwrap_or_else(|| panic!("no walk to `{a}`"))
+            .cells[0]
+    };
+    assert_eq!(start("anchor/door"), start("anchor/exit"));
+}
+
+/// Two branches walk the body to ONE mark with no `when` on either: two
+/// drivers, one per branch, and a cutscene in each branch follows its own.
+#[test]
+fn one_mark_two_objective_branches_runs_two_drivers_and_the_shot_follows_its_own() {
+    let shot = r#"{ "type": "cutscene", "shots": [ { "shot_style": "locked-off", "seconds": 3, "dist": 6, "subject": { "actor": "actor/ram" } } ] }"#;
+    let doc = quests_doc("", "", false)
+        .replace(
+            r#""to": { "anchor": "anchor/door" }"#,
+            r#""to": { "anchor": "anchor/exit" }"#,
+        )
+        .replace(
+            r#""obj/ground": [ "#,
+            &format!(r#""obj/ground": [ {shot}, "#),
+        )
+        // A second shot that differs, so each branch's cutscene is its own
+        // function rather than one content-keyed cutscene shared by both.
+        .replace(
+            r#""obj/tide": [ "#,
+            &format!(
+                r#""obj/tide": [ {}, "#,
+                shot.replace(r#""dist": 6"#, r#""dist": 7"#)
+            ),
+        );
+    let walks = planned(&doc);
+    assert_eq!(walks.len(), 2, "one driver per branch: {walks:?}");
+    assert_ne!(walks[0].2, walks[1].2, "the drivers' branch keys differ");
+    assert!(walks.iter().all(|w| !w.2.is_empty()), "{walks:?}");
+
+    let c = parse_hw(&doc);
+    let units = delvec::compiler::camera::cutscene_units(&c);
+    let mut keys: Vec<String> = units
+        .iter()
+        .flat_map(|(_, ctx)| ctx.iter().map(|m| m.gate_key.clone()))
+        .collect();
+    keys.sort();
+    let mut planned_keys: Vec<String> = walks.iter().map(|w| w.2.clone()).collect();
+    planned_keys.sort();
+    assert_eq!(
+        keys, planned_keys,
+        "each cutscene's sibling move carries its own driver's branch key"
+    );
+    let out = build(&doc);
+    let drivers = out
+        .keys()
+        .filter(|p| p.contains("/function/ma_tick_ram_exit_b"))
+        .count();
+    assert_eq!(drivers, 2, "two emitted drivers to `anchor/exit`");
 }

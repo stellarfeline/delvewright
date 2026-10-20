@@ -485,6 +485,10 @@ pub struct MoveCtx {
     pub id: String,
     /// The move's destination mark (disambiguates multiple moves).
     pub to: delvewright_dsl::Mark,
+    /// The branch key of the move's driver ([`crate::compiler::nav::gate_key`]):
+    /// two branches that walk one body to one mark run two drivers, and the
+    /// shot follows the one its own branch runs.
+    pub gate_key: String,
     /// Ticks between the move's start and the cutscene's start.
     pub delta: i32,
 }
@@ -776,12 +780,12 @@ fn resolve_subject(
         let track: Option<&[[f64; 3]]> = if is_actor {
             actor_moves
                 .iter()
-                .find(|p| p.actor == mv.id && p.to == mv.to)
+                .find(|p| p.actor == mv.id && p.to == mv.to && p.gate_key == mv.gate_key)
                 .map(|p| p.waypoints.as_slice())
         } else {
             moves
                 .iter()
-                .find(|p| p.npc == mv.id && p.to == mv.to)
+                .find(|p| p.npc == mv.id && p.to == mv.to && p.gate_key == mv.gate_key)
                 .map(|p| p.waypoints.as_slice())
         };
         if let Some(track) = track
@@ -890,20 +894,23 @@ fn neg(v: [f64; 3]) -> [f64; 3] {
 pub fn cutscene_units(
     campaign: &delvewright_dsl::Campaign,
 ) -> Vec<(&delvewright_dsl::QuestEffect, Vec<MoveCtx>)> {
+    use crate::compiler::nav::Branches;
     use delvewright_dsl::QuestEffect;
-    fn list_moves(list: &[QuestEffect], delta: i32, out: &mut Vec<MoveCtx>) {
+    fn list_moves(list: &[QuestEffect], delta: i32, br: &Branches, out: &mut Vec<MoveCtx>) {
         for e in list {
             match &e.verb {
                 Verb::MoveNpc { npc, to, .. } => out.push(MoveCtx {
                     is_actor: false,
                     id: npc.to_string(),
                     to: to.clone(),
+                    gate_key: br.key(e),
                     delta,
                 }),
                 Verb::MoveActor { actor, to, .. } => out.push(MoveCtx {
                     is_actor: true,
                     id: actor.to_string(),
                     to: to.clone(),
+                    gate_key: br.key(e),
                     delta,
                 }),
                 _ => {}
@@ -913,10 +920,11 @@ pub fn cutscene_units(
     fn scan<'a>(
         list: &'a [QuestEffect],
         scope: &[MoveCtx],
+        br: &Branches,
         out: &mut Vec<(&'a QuestEffect, Vec<MoveCtx>)>,
     ) {
         let mut local = scope.to_vec();
-        list_moves(list, 0, &mut local);
+        list_moves(list, 0, br, &mut local);
         for e in list {
             match &e.verb {
                 Verb::Cutscene { .. } => {
@@ -924,7 +932,7 @@ pub fn cutscene_units(
                     // A `then` (spec-0108 §3.6) runs when the camera returns, at
                     // a moment of its own: a fresh scope, as a reaction list.
                     for inner in e.nested_effect_lists() {
-                        scan(inner, &[], out);
+                        scan(inner, &[], br, out);
                     }
                 }
                 Verb::Sequence { steps } => {
@@ -932,7 +940,7 @@ pub fn cutscene_units(
                     let mut timed: Vec<(i32, MoveCtx)> = Vec::new();
                     for st in steps {
                         let mut tmp = Vec::new();
-                        list_moves(&st.effects, 0, &mut tmp);
+                        list_moves(&st.effects, 0, br, &mut tmp);
                         for m in tmp {
                             timed.push((st.at_ticks as i32, m));
                         }
@@ -960,12 +968,12 @@ pub fn cutscene_units(
                                 Verb::Cutscene { .. } => {
                                     out.push((e2, step_scope.clone()));
                                     for inner in e2.nested_effect_lists() {
-                                        scan(inner, &[], out);
+                                        scan(inner, &[], br, out);
                                     }
                                 }
                                 _ => {
                                     for inner in e2.nested_effect_lists() {
-                                        scan(inner, &[], out);
+                                        scan(inner, &[], br, out);
                                     }
                                 }
                             }
@@ -974,7 +982,7 @@ pub fn cutscene_units(
                 }
                 _ => {
                     for inner in e.nested_effect_lists() {
-                        scan(inner, &[], out);
+                        scan(inner, &[], br, out);
                     }
                 }
             }
@@ -984,9 +992,10 @@ pub fn cutscene_units(
     // the single enumeration rather than listed here — this walk used to name three
     // of the five while asserting in prose that it walked "in the order `emit`
     // walks them".
+    let br = Branches::of(campaign);
     let mut out = Vec::new();
     crate::compiler::plan::for_each_effect_root(campaign, &mut |_site, list| {
-        scan(list, &[], &mut out);
+        scan(list, &[], &br, &mut out);
     });
     out
 }

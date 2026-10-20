@@ -197,12 +197,15 @@ pub fn plan_moves(plan: &Plan, world: &World) -> Result<Vec<MovePlan>, Failure> 
     // `DW0488` instead of a silent teleport.
     let mut planned_origin: BTreeMap<(String, String, String), ([i32; 3], BranchGate)> =
         BTreeMap::new();
+    // The branch each walk runs on: its own `when`, every enclosing `when`, and
+    // the gate of the objective (or trigger, trap, loop) that runs its bundle.
+    let branches = Branches::of(plan.campaign);
     let mut cache = SealCache::default();
     for (eff, seal, beat) in crate::compiler::timeline::walk_with_beat_area(plan) {
         let Verb::MoveNpc { npc, to, speed, .. } = &eff.verb else {
             continue;
         };
-        let gate = BranchGate::of(eff);
+        let gate = branches.gate(eff);
         // The world this walk actually happens in: gates this timeline already
         // shut are solid. Empty seal ⇒ the base world, unchanged.
         let leg_world: &World = match cache.index_of(world, &seal) {

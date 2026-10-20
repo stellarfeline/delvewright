@@ -300,7 +300,7 @@ fn a_guarded_move_is_gated_and_still_resolves_in_its_beat_area() {
         "the guard is read through the one accessor, off `when` and not off the verb"
     );
     assert!(
-        !nav::gate_key(moves[0]).is_empty(),
+        !nav::gate_key(plan.campaign, moves[0]).is_empty(),
         "a `when` on the effect must reach the walk driver's branch key — an empty \
          key is one driver for both branches"
     );

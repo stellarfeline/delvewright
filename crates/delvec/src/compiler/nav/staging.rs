@@ -4,11 +4,12 @@
 
 use super::*;
 use crate::compiler::failure::Failure;
-use delvewright_dsl::QuestEffect;
+use crate::compiler::plan::EffectRoot;
+use delvewright_dsl::{Campaign, Gate, QuestEffect};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// The branch condition a staging effect fires under: the per-effect
-/// `requires_flags` / `forbids_flags` gate (DSL v0.6).
+/// The branch condition a staging effect fires under: the flag terms of every
+/// gate between the effect and its bundle's owner ([`Branches`]).
 ///
 /// This exists because walk origins **chain** — each leg starts where the body's
 /// previous leg left it — and that chain used to be a single flat sequence per
@@ -31,20 +32,57 @@ pub struct BranchGate {
 }
 
 impl BranchGate {
-    /// The gate an effect carries.
-    pub(in crate::compiler::nav) fn of(eff: &QuestEffect) -> Self {
-        Self {
-            requires: eff
-                .requires_flags()
-                .iter()
-                .map(|f| f.as_str().to_string())
-                .collect(),
-            forbids: eff
-                .forbids_flags()
-                .iter()
-                .map(|f| f.as_str().to_string())
-                .collect(),
+    /// Conjoin the flag terms of `gate` into this branch. A numeric term
+    /// decides nothing a staging origin can be chained on, so it is not read.
+    fn and(&mut self, gate: Gate<'_>) {
+        self.requires
+            .extend(gate.requires_flags.iter().map(|f| f.as_str().to_string()));
+        self.forbids
+            .extend(gate.forbids_flags.iter().map(|f| f.as_str().to_string()));
+    }
+
+    /// The branch a whole bundle fires on: the gate of the object whose firing
+    /// runs it, read through that object's own `gate()`.
+    ///
+    /// An objective's bundle runs at the moment the objective completes, and
+    /// it completes only while its gate holds (`emit::quest::pending_guard`). A
+    /// quest's `on_complete` runs once every objective has completed; flags are
+    /// only ever set, so every flag any of its objectives required still holds,
+    /// while a flag one of them forbade may have been set since, and is not
+    /// carried. A trigger's, a trap's and a loop's gate decide whether the
+    /// bundle can fire at all. Every other root carries no gate of its own here.
+    fn of_root(campaign: &Campaign, root: &EffectRoot<'_>) -> Self {
+        let mut g = Self::default();
+        match root {
+            EffectRoot::ObjectiveComplete { quest, objective } => {
+                if let Some(o) = campaign
+                    .quests
+                    .content
+                    .quests
+                    .iter()
+                    .filter(|q| q.id.as_str() == *quest)
+                    .flat_map(|q| q.objectives.iter())
+                    .find(|o| o.id().as_str() == *objective)
+                {
+                    g.and(o.gate());
+                }
+            }
+            EffectRoot::QuestComplete(q) => {
+                for o in &q.objectives {
+                    g.and(Gate::of(o.gate().requires_flags, &[], &[]));
+                }
+            }
+            EffectRoot::Trigger(t) => g.and(t.gate()),
+            EffectRoot::TrapPayload(t) => g.and(t.gate()),
+            EffectRoot::LoopCross(l) => g.and(l.gate()),
+            EffectRoot::DialogueRespawn
+            | EffectRoot::ShortcutUnlock
+            | EffectRoot::OnDeath
+            | EffectRoot::ShopOffer
+            | EffectRoot::OnKill(_)
+            | EffectRoot::AssemblyLand(_) => {}
         }
+        g
     }
 
     /// Whether the effect is unconditional (always fires).
@@ -87,8 +125,71 @@ impl BranchGate {
 /// Including the gate in the key gives each branch its own driver. Unconditional
 /// walks contribute the **empty** suffix, so every campaign that never gated a
 /// walk keeps byte-identical function names.
-pub fn gate_key(eff: &QuestEffect) -> String {
-    BranchGate::of(eff).key()
+pub fn gate_key(campaign: &Campaign, eff: &QuestEffect) -> String {
+    Branches::of(campaign).gate(eff).key()
+}
+
+/// **The branch every effect in a campaign fires on** — the one reading of it.
+///
+/// A walk's branch is not its own `when` alone. An effect runs only when every
+/// gate between it and the bundle's owner holds: its own `when`, the `when` of
+/// every effect it is nested in (a `sequence`, an `on_arrive`, a cutscene's
+/// `then`), and the gate of the object whose firing runs the bundle
+/// ([`BranchGate::of_root`]). A walk whose objective is gated on `flag/tide`
+/// runs on the tide branch whether or not it restates that in a `when`, so it
+/// must not inherit an origin the ground branch's walk left.
+///
+/// Keyed by the effect's identity within the campaign it was built from: the
+/// planners and the emitter all walk that one campaign's effects by reference.
+pub struct Branches {
+    by_effect: BTreeMap<usize, BranchGate>,
+}
+
+impl Branches {
+    /// Read every effect's branch off the one effect-root enumeration.
+    pub fn of(campaign: &Campaign) -> Self {
+        fn descend(e: &QuestEffect, outer: &BranchGate, out: &mut BTreeMap<usize, BranchGate>) {
+            let mut g = outer.clone();
+            g.and(e.gate());
+            for (_, _, list) in e.nested_effect_lists_labeled() {
+                for inner in list {
+                    descend(inner, &g, out);
+                }
+            }
+            out.entry(identity(e)).or_insert(g);
+        }
+        let mut by_effect = BTreeMap::new();
+        crate::compiler::plan::for_each_effect_root(campaign, &mut |site, effs| {
+            let root = BranchGate::of_root(campaign, &site.root);
+            for e in effs {
+                descend(e, &root, &mut by_effect);
+            }
+        });
+        Self { by_effect }
+    }
+
+    /// The branch `eff` fires on. An effect no root of the campaign reaches has
+    /// no owner to inherit from, and its branch is its own gate.
+    pub(in crate::compiler) fn gate(&self, eff: &QuestEffect) -> BranchGate {
+        self.by_effect
+            .get(&identity(eff))
+            .cloned()
+            .unwrap_or_else(|| {
+                let mut g = BranchGate::default();
+                g.and(eff.gate());
+                g
+            })
+    }
+
+    /// The driver-name suffix of `eff`'s branch ([`gate_key`]).
+    pub(in crate::compiler) fn key(&self, eff: &QuestEffect) -> String {
+        self.gate(eff).key()
+    }
+}
+
+/// An effect's identity within the campaign that holds it.
+fn identity(e: &QuestEffect) -> usize {
+    e as *const QuestEffect as usize
 }
 
 impl BranchGate {
