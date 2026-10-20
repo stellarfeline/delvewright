@@ -1,0 +1,172 @@
+{
+  "campaign_id": "hello-world",
+  "content": {
+    "quests": [
+      {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greeting",
+            "doing": "keeping the door"
+          }
+        },
+        "happening": {
+          "text": "The party reaches the Keeper.",
+          "verb": "arrives"
+        },
+        "id": "quest/decide",
+        "objectives": [
+          {
+            "happening": {
+              "text": "The Keeper listens.",
+              "verb": "learns"
+            },
+            "id": "obj/decide",
+            "npc": "npc/keeper",
+            "type": "talk-to"
+          }
+        ],
+        "on_complete": [
+          {
+            "anchor": "anchor/door",
+            "happening": {
+              "subject": "anchor/door",
+              "text": "The Keeper opens the door.",
+              "verb": "opens"
+            },
+            "type": "open-gate"
+          }
+        ],
+        "trigger": {
+          "type": "campaign-start"
+        }
+      },
+      {
+        "cast": {
+          "npc/keeper": {
+            "at": "anchor/keeper-stand",
+            "dialogue": "dlg/greeting",
+            "doing": "keeping the door"
+          }
+        },
+        "happening": {
+          "text": "The road opens.",
+          "verb": "learns"
+        },
+        "id": "quest/end",
+        "objectives": [
+          {
+            "anchor": "anchor/exit",
+            "happening": {
+              "text": "The party walks out.",
+              "verb": "arrives"
+            },
+            "id": "obj/walk-out",
+            "radius": 2,
+            "type": "reach-anchor"
+          }
+        ],
+        "on_complete": [
+          {
+            "ending": "ending/rung",
+            "happening": {
+              "text": "The bell rang behind them.",
+              "verb": "survives"
+            },
+            "type": "campaign-complete",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "at-least",
+                  "state": "state/rings",
+                  "value": 1
+                }
+              ]
+            }
+          },
+          {
+            "ending": "ending/silent",
+            "happening": {
+              "text": "Nobody rang the bell.",
+              "verb": "survives"
+            },
+            "type": "campaign-complete",
+            "when": {
+              "requires_state": [
+                {
+                  "op": "at-most",
+                  "state": "state/rings",
+                  "value": 0
+                }
+              ]
+            }
+          },
+          {
+            "style": "chat",
+            "text": "The candle you bought still burns.",
+            "type": "narrate",
+            "when": {
+              "requires_flags": [
+                "flag/candle"
+              ]
+            }
+          },
+          {
+            "time": "night",
+            "type": "set-time"
+          }
+        ],
+        "trigger": {
+          "quest": "quest/decide",
+          "type": "quest-complete"
+        }
+      }
+    ],
+    "shops": [
+      {
+        "anchor": "spawn",
+        "id": "shop/stall",
+        "offers": [
+          {
+            "effects": [
+              {
+                "flag": "flag/candle",
+                "type": "set-flag"
+              }
+            ],
+            "label": "A candle"
+          }
+        ],
+        "title": "The Stall"
+      }
+    ],
+    "state": [
+      {
+        "id": "state/rings",
+        "scope": "party"
+      }
+    ],
+    "triggers": [
+      {
+        "at": "anchor/exit",
+        "effects": [
+          {
+            "amount": 1,
+            "state": "state/rings",
+            "type": "add-state"
+          }
+        ],
+        "id": "trigger/bell",
+        "on": {
+          "on": "use"
+        },
+        "once": true,
+        "prop": {
+          "block": "minecraft:bell[attachment=floor,facing=north]"
+        }
+      }
+    ]
+  },
+  "dsl_version": "0.53.0",
+  "stage": "quests"
+}

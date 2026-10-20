@@ -4,9 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use delvewright_dsl::{
-    AnchorRegistry, Diagnostic, EntityRegistry, ItemRegistry, Lighting, PoolId, PrefabId,
-};
+use delvewright_dsl::{AnchorRegistry, Diagnostic, EntityRegistry, ItemRegistry, PoolId, PrefabId};
 use delvewright_dsl::{DwCode, ExitTier};
 use serde::Deserialize;
 
@@ -732,12 +730,6 @@ impl AnchorRegistry for PrefabRegistry {
     /// diagnostics are reported together.
     fn has_prefab(&self, prefab: &PrefabId) -> Option<bool> {
         Some(self.by_id.contains_key(prefab.as_str()))
-    }
-
-    fn lighting_for(&self, prefab: &PrefabId) -> Option<Lighting> {
-        self.by_id
-            .get(prefab.as_str())
-            .and_then(|m| m.lighting.clone())
     }
 
     /// This registry IS the library, so a rig it does not hold is missing.

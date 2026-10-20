@@ -45,6 +45,7 @@
 //! - [`eclipse`]: no body stands in front of an affordance the party clicks (`DW0359`), no affordance shares a cell with a sealed gate's hitboxes (`DW0422`), and no two affordances share a cell with each other (`DW0878`).
 //! - [`edit`]: the map editor's stage-7 edit-script replay.
 //! - [`emit`]: build the `<out>/` output tree (bytes), deterministically.
+//! - [`ending`]: an ending reads the run — its inputs, their writers and kinds, its aftermath, and the story worlds that reach it (spec-0108; `DW1029`, `DW1030`).
 //! - [`engage`]: a body staged as a fight is one its own vanilla AI will fight under the delve's hour, weather and footing (`DW0920`).
 //! - [`faces`]: does the piece next to this one answer the way out it declares?
 //! - [`failure`]: the one type a compiler pass fails with — a DW code and the message that goes with it.
@@ -52,10 +53,12 @@
 //! - [`flow`]: the branch-coherent flag/quest flow model and the critical-path extraction (`DW0204`).
 //! - [`framing`]: what a frame frames — the camera, the occupancy grid a sight line is asked of, the targets a review names, and the frame manifest.
 //! - [`gates`]: `close-gate` gate-block validation — the physical dual of `open-gate`.
+//! - [`gatesignal`]: no redstone signal opens a shut gate — a source powering a shut seam's trapdoor is refused (`DW1047`).
 //! - [`guarantee`]: which anchors an area's binding guarantees, answered before anything is placed (`DW0889`).
 //! - [`gym`]: the metrics gym — a site-plan campaign generated from the metrics table.
 //! - [`healthbar`]: a fight's health bar — its emission, and the colour/style vocabulary read from the pinned command tree (`DW0911`).
 //! - [`hold`]: how long a cutscene holds the party, per critical-path step — what a step's completion schedules and what its walk passes.
+//! - [`holders`]: the holder census — every container and holder entity is loot, a collect, a device, scenery or exempt (`DW1018`, `DW1024`) — and the holder entities a piece carries, owned, summoned and proven takeable (`DW1037`, `DW1038`).
 //! - [`horizon`]: the one place a resolved `horizon` becomes the physical facts the rest of the compiler reads.
 //! - [`integrity`]: the emitted call graph is closed — every `function` call points at a function the compiler wrote (`DW0497`).
 //! - [`lethal`]: lethal volumes — the proofs a box that kills owes the completability model.
@@ -91,6 +94,7 @@
 //! - [`seeding`]: no emitted comparison reads a score entry the emitted pack never creates (`DW0495`).
 //! - [`served`]: what the declared view distance costs the host — the pinned server's chunk set, the fitted live heap, the ceiling stated in `server/resources.properties` (spec-0091).
 //! - [`skinparts`]: the model-part table every skin and entity texture is drawn to, and the one rule that refuses paint no box samples (`DW0978`) or nobody standing level sees (`DW0979`) — spec-0097.
+//! - [`solo`]: a generated PackTest whose drive takes every player's body runs alone, in its own test environment.
 //! - [`solver`]: the jigsaw layout solver.
 //! - [`stairs`]: the stair-orientation proof over the assembled world (`DW0430`).
 //! - [`stake`]: the recovery stake's compile-time placement table and the proofs it owes.
@@ -150,6 +154,7 @@ pub mod detail;
 pub mod eclipse;
 pub mod edit;
 pub mod emit;
+pub mod ending;
 pub mod engage;
 pub mod faces;
 pub mod failure;
@@ -157,10 +162,12 @@ pub mod firework;
 pub mod flow;
 pub mod framing;
 pub mod gates;
+pub mod gatesignal;
 pub mod guarantee;
 pub mod gym;
 pub mod healthbar;
 pub mod hold;
+pub mod holders;
 pub mod horizon;
 pub mod integrity;
 pub mod lethal;
@@ -197,6 +204,7 @@ pub mod seating;
 pub mod seeding;
 pub mod served;
 pub mod skinparts;
+pub mod solo;
 pub mod solver;
 pub mod stairs;
 pub mod stake;

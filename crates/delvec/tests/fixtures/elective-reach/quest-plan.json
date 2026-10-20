@@ -1,0 +1,70 @@
+{
+  "campaign_id": "hello-world",
+  "content": {
+    "branch_points": [
+      {
+        "branches": [
+          {
+            "flags": [
+              "flag/rang"
+            ],
+            "id": "branch/rang",
+            "leads_to": "quest/end"
+          },
+          {
+            "flags": [],
+            "id": "branch/silent",
+            "leads_to": "quest/end"
+          }
+        ],
+        "forks_on": [
+          "flag/rang"
+        ],
+        "id": "branch-point/bell",
+        "opens_at": "quest/decide"
+      }
+    ],
+    "finale": "quest/end",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/keep",
+        "depends_on": [],
+        "goal": "Do quest/decide.",
+        "id": "quest/decide",
+        "mandatory": true,
+        "npcs": [
+          "npc/keeper"
+        ]
+      },
+      {
+        "act": 1,
+        "area": "area/keep",
+        "depends_on": [
+          "quest/decide"
+        ],
+        "goal": "Do quest/tally.",
+        "id": "quest/tally",
+        "mandatory": false,
+        "npcs": [
+          "npc/keeper"
+        ]
+      },
+      {
+        "act": 1,
+        "area": "area/keep",
+        "depends_on": [
+          "quest/decide"
+        ],
+        "goal": "Do quest/end.",
+        "id": "quest/end",
+        "mandatory": true,
+        "npcs": [
+          "npc/keeper"
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.53.0",
+  "stage": "quest-plan"
+}

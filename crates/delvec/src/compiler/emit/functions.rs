@@ -20,6 +20,7 @@ pub(super) fn emit_functions(
     stake_table: Option<&crate::compiler::stake::StakeTable>,
     asm_locks: &crate::compiler::assembly::Locks,
     pulses: &[crate::compiler::pulse::PulseRow],
+    holders: &[crate::compiler::holders::OwnedHolder],
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -771,9 +772,15 @@ pub(super) fn emit_functions(
     // v0.6: fill each trap dispenser payload and summon disarm affordances
     // (spec-0011). Empty for a campaign with no traps → byte-identical.
     setup.extend(trap_setup(plan, trap_gates));
+    // spec-0111 §4.1: summon every holder entity the pieces carry with the NBT
+    // the engine owns, then fill each slot a `loot` entry claims. Before the
+    // container fills; empty for a campaign whose pieces carry no holder ->
+    // byte-identical.
+    setup.extend(holder_setup(ns, holders));
+    fns.extend(holder_fns(holders));
     // spec-0021: fill each declared container. Empty for a campaign with no
     // `loot` -> byte-identical.
-    setup.extend(loot_setup(&plan.loot));
+    setup.extend(loot_setup(&plan.loot, holders));
     // spec-0016 §2: summon each shortcut's far-side unlock affordance. The gate
     // itself needs no command — it is sealed from world-load by the prefab.
     setup.extend(shortcut_setup(plan));
@@ -968,7 +975,7 @@ pub(super) fn emit_functions(
         let area = plan.quest_area(q.id.as_str()).unwrap_or("");
         let qa = quest_active_score(q.id.as_str());
         for o in &q.objectives {
-            if activation_commands(plan, area, o).is_empty() {
+            if activation_commands(plan, holders, area, o).is_empty() {
                 continue;
             }
             tick.push(format!(
@@ -1189,6 +1196,11 @@ pub(super) fn emit_functions(
             }
         }
     }
+    // spec-0111 §4.3: a frame its player has emptied freezes on the next
+    // tick. Absent for a campaign with no frame holder → byte-identical.
+    if let Some(line) = frame_freeze_line(ns, holders) {
+        tick.push(line);
+    }
     // v0.4: environment-trigger per-tick checks (empty for a campaign with no
     // triggers → byte-identical).
     tick.extend(env_trigger_tick(plan, chrome));
@@ -1396,7 +1408,12 @@ pub(super) fn emit_functions(
     fns.extend(dialog_handler_fns(plan, &casts));
 
     // --- objective completion + quest checks ---
-    fns.extend(quest_completion_fns(plan, chrome, branch_transport));
+    fns.extend(quest_completion_fns(
+        plan,
+        chrome,
+        branch_transport,
+        holders,
+    ));
 
     // --- campaign_complete (shared by campaign-complete effect) ---
     fns.extend(campaign_complete_fns(plan, chrome));

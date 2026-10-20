@@ -9,7 +9,7 @@
 //! It is **strict**, so that it can only ever agree with the dynamic walk:
 //! every key is a declared field (`deny_unknown_fields`), every integer must be
 //! an NBT `Int` ([`StrictInt`]), every list must be an NBT `List`, and the parts
-//! no reader looks at (`entities`, a block's `nbt`, `DataVersion`, `palettes`)
+//! no reader looks at (a block's `nbt`, `DataVersion`, `palettes`)
 //! are still decoded in full as [`fastnbt::Value`]. A file that decodes here
 //! therefore has exactly the shape the dynamic walk reads field by field, and a
 //! file that does not (any decode error) is handed to the dynamic walk, which
@@ -49,8 +49,32 @@ pub(crate) struct Root {
     #[allow(dead_code)]
     pub palettes: Option<fastnbt::Value>,
     pub blocks: Option<Vec<Block>>,
-    #[allow(dead_code)]
+    /// The template's `entities` list — read by
+    /// [`crate::compiler::holders::template_entities`] (spec-0111 §3.1).
     pub entities: Option<fastnbt::Value>,
+}
+
+/// The root compound read for its `entities` alone, for a file the strict
+/// [`Root`] refuses: every other key is skipped.
+#[derive(serde::Deserialize)]
+struct EntitiesOnly {
+    entities: Option<fastnbt::Value>,
+}
+
+/// A decompressed template's `entities` list, element by element: the strict
+/// decoding's when it accepts the file, otherwise a lenient one that reads the
+/// key and skips the rest. Empty when the key is absent or not a list.
+pub(crate) fn entities(raw: &[u8]) -> Vec<fastnbt::Value> {
+    let list = match root(raw) {
+        Some(r) => r.entities,
+        None => fastnbt::from_bytes::<EntitiesOnly>(raw)
+            .ok()
+            .and_then(|e| e.entities),
+    };
+    match list {
+        Some(fastnbt::Value::List(l)) => l,
+        _ => Vec::new(),
+    }
 }
 
 /// One `palette` entry.

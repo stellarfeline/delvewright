@@ -38,7 +38,7 @@ ladder to face away from the wall (`facing` is the way a body climbing it has
 its back), or give it a sturdy block behind; never move the objective.
 
 **"shut gate(s) do not separate their two sides".** A body gets
-round a shut gate — a barred door, a gate station, a prefab gate — by walking,
+round a shut gate — a gated connection's bar, a gate station, a prefab gate — by walking,
 falling, jumping or swimming, and reaches the far side before the story opens
 it. The message names the gate, the quest step it is shut at, the cell the way
 round starts from and ends at, its moves by kind, where it leaves the walked
@@ -49,7 +49,16 @@ dive, but it swims across the top), raise the edge it climbs, jumps or drops
 over, or close the second way the plan left open. Never fence walkable-looking
 ground with an invisible barrier or mark it unwalkable, and never move the
 gate's objective to dodge it. If the party is meant to get round the gate —
-the door closes a loop — declare the barred edge `shortcut`.
+the door closes a loop — declare the connection `shortcut`, or, where only one
+side may open it, name that side in its `gating.opens_from`.
+
+**A gated connection's seam "is a front".** A `gating` builds a way shut with
+a bar in its opening, and a `contact` has no opening. Give the seam a standard
+`opening`, or remove the `gating`.
+
+**A gated connection "nothing in this campaign opens".** Nothing names its
+`anchor/seam-<edge>`. Write the `open-gate` at the beat whose completion the
+gating names (or a `shortcut`, or a `timed-gate`), or remove the `gating`.
 
 **`DW1002`: a block "the server drops", "not kept where it is written", or
 "not kept in some configuration the story can reach".** The server will remove

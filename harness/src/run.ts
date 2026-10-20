@@ -8,6 +8,7 @@
 
 import { loadRepaintPlanForCriticalPath, repaintBindingLine } from "./repaint.ts";
 import { loadPulsePlanForCriticalPath, pulseBindingLine } from "./pulse.ts";
+import { loadContainerLedgerForCriticalPath } from "./containers.ts";
 import { cueBinding, cueBindingLine, loadCueLedgerForCriticalPath } from "./cues.ts";
 import { readFile } from "node:fs/promises";
 import nodePath from "node:path";
@@ -47,11 +48,13 @@ import {
   type StageName,
 } from "./report.ts";
 import { installCrashReporter } from "./crash.ts";
+import { runHatchStand } from "./hatch-stand.ts";
 import { CLIENT_WAIT_TIMEOUT_MS, SERVER_LOAD_TIMEOUT_TICKS } from "./client-loaded.ts";
 import { unreportedWindows } from "./load-window.ts";
 import { judgeResourcePack } from "./resource-pack.ts";
 import {
   assertEntryChoicesOnPath,
+  assertEntryDeedsOnPath,
   branchTierFromEnv,
   drivenBranchFromEnv,
   loadBranchPlanForCriticalPath,
@@ -168,6 +171,12 @@ async function main(): Promise<number> {
     return 1;
   }
 
+  // The hatch stand runs in a session of its own, on a world no beat has
+  // touched (`validation/bot-run.sh` starts it): every floor gate shut.
+  if (process.env["DELVEWRIGHT_STAGE"] === "hatch-stand") {
+    return runHatchStand(pathArg);
+  }
+
   const exported = await readFile(pathArg, "utf8");
 
   // spec-0025 §3 — the branch tier. A build that declares narrative branches ships
@@ -211,6 +220,23 @@ async function main(): Promise<number> {
   if (driven && entryCommands.length > 0) {
     process.stderr.write(`scripted branch choice(s): ${entryCommands.join(" ; ")}\n`);
   }
+  // spec-0108 §6.4: a world is its participation too — the path must perform
+  // every entry deed, so a run cannot claim a deed world while walking the
+  // extreme.
+  const entryDeeds = driven
+    ? assertEntryDeedsOnPath(
+        driven,
+        criticalPath.steps as readonly {
+          action: string;
+          trigger?: string;
+          objective?: string;
+          act?: string;
+        }[],
+      )
+    : [];
+  if (driven && entryDeeds.length > 0) {
+    process.stderr.write(`entry deed(s) on the path: ${entryDeeds.join(" ; ")}\n`);
+  }
 
   // If the compiler's proven waypoint artifact accompanies the
   // path being walked, the executor navigates each walked leg through it
@@ -220,7 +246,7 @@ async function main(): Promise<number> {
   // The artifact's legs are consumed in LOCKSTEP with the walked positions of
   // the path being walked, so each path gets ITS OWN artifact: the exported path
   // its `critical-path-waypoints.json`, a driven branch its
-  // `branch-waypoints-<slug>.json`, whose legs follow that branch's
+  // `world-waypoints-<k>.json`, whose legs follow that world's
   // own step sequence. The critical-path artifact is never replayed on a branch
   // — its legs are position-ordered for a different sequence, and the wrong legs
   // would strand the bot while looking like a content fault.
@@ -342,6 +368,19 @@ async function main(): Promise<number> {
     );
   } else {
     process.stderr.write(`pulse plan: none in this build (no pulse)\n`);
+  }
+  // spec-0105 §5.3: the arrival line the census ledger names. Absent → a build
+  // that predates the census, said out loud.
+  const containerLedger = await loadContainerLedgerForCriticalPath(pathArg);
+  if (containerLedger) {
+    executor.containerLedger = containerLedger;
+    process.stderr.write(
+      `container ledger: ${containerLedger.cells} container cell(s), ` +
+        `${containerLedger.decoration} scenery; notice ` +
+        `${containerLedger.notice ? `declared (${containerLedger.notice.style})` : "none"}\n`,
+    );
+  } else {
+    process.stderr.write(`container ledger: none in this build\n`);
   }
   // The engine's quest cues, judged where each arrives. Absent → a build that
   // predates the ledger, said out loud.
@@ -552,6 +591,8 @@ async function main(): Promise<number> {
     // spec-0029: the name-preference binding, always recorded — including a zero.
     report.recordNamePreference(executor.namePreference());
     report.recordRests(executor.performedRests());
+    report.recordAftermath(executor.aftermathResults);
+    report.recordMocks(executor.mockResults);
     report.recordLoadWindows(executor.loadWindows());
     for (const w of executor.loadWindows()) {
       process.stderr.write(
@@ -597,6 +638,13 @@ async function main(): Promise<number> {
     // at its silent one; a pulse with no station is reported, never passed.
     const pulseVerdicts = executor.pulseVerdicts();
     report.recordPulseStations(executor.pulseStations);
+    if (containerLedger) {
+      const v = executor.noticeVerdict;
+      if (v) report.recordContainerNotice(v);
+      process.stderr.write(
+        `container notice: ${v ? `${v.ok ? "ok" : "FAILED"} — ${v.detail}` : "NOT JUDGED — no class was selected, so the window never opened"}\n`,
+      );
+    }
     if (pulsePlan) {
       process.stderr.write(`${pulseBindingLine(pulsePlan, pulseVerdicts)}\n`);
     }
@@ -760,6 +808,7 @@ async function main(): Promise<number> {
             chronicle: b.chronicle,
             entryCommands,
             endings: b.endings,
+            mocked: executor.mockResults.map((m) => `${m.act}: mocked: ${m.kind}`),
           };
         }
         const skipped = selection.skipped.find((s) => s.branch === b.id);

@@ -48,14 +48,14 @@
       {
         "a": "node/hall",
         "b": "node/cell",
-        "class": "barred",
+        "class": "walk",
         "gating": {
           "flags": [
             "flag/keeper-yields"
-          ]
+          ],
+          "opens_from": "a"
         },
-        "id": "edge/hall-cell",
-        "opens_from": "a"
+        "id": "edge/hall-cell"
       },
       {
         "a": "node/cell",
@@ -98,6 +98,6 @@
       }
     ]
   },
-  "dsl_version": "0.41.0",
+  "dsl_version": "0.53.0",
   "stage": "layout-graph"
 }

@@ -1,0 +1,230 @@
+{
+  "pools": {
+    "pool/cave-shore": {
+      "members": [
+        {
+          "prefab": "prefab/cave-shore",
+          "role": "entry",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/cave-passage-straight",
+          "role": "connector",
+          "weight": 4
+        },
+        {
+          "prefab": "prefab/cave-passage-corner",
+          "role": "connector",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/cave-passage-tee",
+          "role": "connector",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/cave-passage-cross",
+          "role": "connector",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/cave-descent",
+          "role": "connector",
+          "weight": 2
+        },
+        {
+          "prefab": "prefab/cave-room-small",
+          "role": "room",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/cave-den",
+          "role": "room",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/cave-hollow",
+          "role": "room",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/cave-mouth",
+          "role": "terminal",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/cave-hearth",
+          "role": "terminal",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/cave-cavern",
+          "role": "terminal",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/cave-niche",
+          "role": "terminal",
+          "weight": 1
+        }
+      ]
+    },
+    "pool/island": {
+      "members": [
+        {
+          "prefab": "prefab/island-beach-camp",
+          "role": "entry",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/island-greenfield",
+          "role": "connector",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/island-greenfield-bend",
+          "role": "connector",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/island-mountain",
+          "role": "terminal",
+          "weight": 1
+        }
+      ]
+    },
+    "pool/stone-keep": {
+      "members": [
+        {
+          "prefab": "prefab/keep-spawn-hall",
+          "role": "entry",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-corridor-straight",
+          "role": "connector",
+          "weight": 4
+        },
+        {
+          "prefab": "prefab/keep-corridor-corner",
+          "role": "connector",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-corridor-tee",
+          "role": "connector",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-cross",
+          "role": "connector",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-room-small-a",
+          "role": "room",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-room-small-b",
+          "role": "room",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-room-small-c",
+          "role": "room",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-gate-room",
+          "role": "terminal",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-shrine",
+          "role": "terminal",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-boss-hall",
+          "role": "terminal",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-alcove",
+          "role": "terminal",
+          "weight": 1
+        }
+      ]
+    },
+    "pool/vertical-keep": {
+      "members": [
+        {
+          "prefab": "prefab/keep-spawn-hall",
+          "role": "entry",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-corridor-straight",
+          "role": "connector",
+          "weight": 4
+        },
+        {
+          "prefab": "prefab/keep-corridor-corner",
+          "role": "connector",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-corridor-tee",
+          "role": "connector",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-cross",
+          "role": "connector",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-stair",
+          "role": "connector",
+          "weight": 2
+        },
+        {
+          "prefab": "prefab/keep-room-small-a",
+          "role": "room",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-room-small-b",
+          "role": "room",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-room-small-c",
+          "role": "room",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-gate-room",
+          "role": "terminal",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-shrine",
+          "role": "terminal",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-boss-hall",
+          "role": "terminal",
+          "weight": 1
+        },
+        {
+          "prefab": "prefab/keep-alcove",
+          "role": "terminal",
+          "weight": 1
+        }
+      ]
+    }
+  }
+}

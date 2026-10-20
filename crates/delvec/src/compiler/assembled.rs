@@ -592,6 +592,54 @@ pub struct GateSeal {
     /// `replace`-filtered to the declared block. `0` is the healthy case. See
     /// `docs/reference/compiler.md` for the stated limitation this number exposes.
     pub foreign: usize,
+    /// Every blocked cell whose block does not cover its cell, with that block's
+    /// server footprint ([`delvewright_dsl::blockshape::server_footprint`]) —
+    /// iron bars, a pane. Measured from the bytes, as `blocked` is, so the seal
+    /// the route model lays is the block the world holds: a floor of bars is
+    /// read as the posts a body falls between, never as a full cube. Empty for
+    /// a seal of blocks that cover their cells.
+    pub open_footprints: Vec<([i32; 3], delvewright_dsl::blockshape::Footprint16)>,
+    /// **Where a body stands on this gate while it is shut**, when it is a
+    /// floor: a region one course thick whose every cell holds a block at
+    /// world-load with nothing over it — a hatch, the cover over a ladder's
+    /// hole. The feet height a body standing on it has (the course plus the
+    /// tallest measured collision top among its blocks), and the points over
+    /// it to stand at: every cell centre, every midpoint between two of its
+    /// cells and every corner four of them share, because a body falls through
+    /// a hatch where its boxes leave a gap, and a lattice's gap is between its
+    /// cells. Measured from the bytes, never from the nav model's verdict, so
+    /// the bot that stands there judges the model rather than repeating it.
+    /// `None` for every other gate.
+    pub stand: Option<GateStand>,
+}
+
+/// Where a body stands on a shut floor gate ([`GateSeal::stand`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct GateStand {
+    /// The feet height of a body standing on the gate, in blocks.
+    pub feet_y: f64,
+    /// The `(x, z)` points over the gate to stand at, in blocks.
+    pub points: Vec<[f64; 2]>,
+}
+
+impl Eq for GateStand {}
+
+/// The stand of a one-course region `lo..=hi` whose blocks top out at
+/// `top_16` sixteenths: every half-cell point strictly inside its footprint.
+fn gate_stand(lo: [i32; 3], hi: [i32; 3], top_16: u8) -> GateStand {
+    let mut points = Vec::new();
+    for i in 1..(2 * (hi[0] - lo[0] + 1)) {
+        for k in 1..(2 * (hi[2] - lo[2] + 1)) {
+            points.push([
+                f64::from(lo[0]) + f64::from(i) / 2.0,
+                f64::from(lo[2]) + f64::from(k) / 2.0,
+            ]);
+        }
+    }
+    GateStand {
+        feet_y: f64::from(lo[1]) + f64::from(top_16) / 16.0,
+        points,
+    }
 }
 
 impl GateSeal {
@@ -611,6 +659,10 @@ impl GateSeal {
             "blocked_at_world_load": self.blocked,
             "foreign_blocks": self.foreign,
             "sealed": self.sealed(),
+            "stand": self.stand.as_ref().map(|st| serde_json::json!({
+                "feet_y": st.feet_y,
+                "points": st.points,
+            })),
         })
     }
 }
@@ -650,7 +702,30 @@ pub(crate) fn measure_gate_seals(
         };
         let declared = base_id(block);
         let (mut cells, mut blocked, mut foreign) = (0usize, 0usize, 0usize);
+        let mut open_footprints = Vec::new();
+        let (lo, hi) = (
+            [from[0].min(to[0]), from[1].min(to[1]), from[2].min(to[2])],
+            [from[0].max(to[0]), from[1].max(to[1]), from[2].max(to[2])],
+        );
+        // A floor gate: one course, every cell blocked, nothing over any.
+        let mut floor = lo[1] == hi[1];
+        let mut top_16 = 0u8;
         for cell in region_cells(*from, *to) {
+            let above = [cell[0], cell[1] + 1, cell[2]];
+            match blocks.get(&cell) {
+                Some(name) if !is_air(name) => {
+                    let top = delvewright_dsl::blockshape::measured_collision(name)
+                        .and_then(|m| m.span)
+                        .and_then(|(_, hi)| hi.whole())
+                        .and_then(|t| u8::try_from(t).ok())
+                        .unwrap_or(delvewright_dsl::blockshape::FULL_HEIGHT_16);
+                    top_16 = top_16.max(top);
+                }
+                _ => floor = false,
+            }
+            if blocks.get(&above).is_some_and(|b| !is_air(b)) {
+                floor = false;
+            }
             cells += 1;
             let Some(name) = blocks.get(&cell) else {
                 continue; // absent from the map = air
@@ -662,6 +737,10 @@ pub(crate) fn measure_gate_seals(
             if base_id(name) != declared {
                 foreign += 1;
             }
+            let fp = delvewright_dsl::blockshape::server_footprint(name);
+            if fp != delvewright_dsl::blockshape::FULL_FOOTPRINT {
+                open_footprints.push((cell, fp));
+            }
         }
         out.push(GateSeal {
             area: area.clone(),
@@ -670,6 +749,8 @@ pub(crate) fn measure_gate_seals(
             cells,
             blocked,
             foreign,
+            open_footprints,
+            stand: floor.then(|| gate_stand(lo, hi, top_16)),
         });
     }
     out
@@ -1219,6 +1300,10 @@ pub fn shipped_blocks(
             m.insert(p.pos, BlockState::new(&p.block));
         }
     }
+    // Last, what a holder shows of its contents: `setup_finish` fills every
+    // `loot` holder, and a brewing stand's first tick then draws its bottle
+    // slots as `has_bottle_<n>` (`loot::show_contents`).
+    crate::compiler::loot::show_contents(&plan.loot, &mut m);
     m
 }
 
@@ -1317,6 +1402,13 @@ pub struct Occupancy {
     /// name it (`DW0991`) rather than report an unroutable leg over a ladder the
     /// author can see in the piece.
     pub unheld_climb: BTreeMap<[i32; 3], String>,
+    /// For each `solid` cell whose block does **not** cover its cell, the
+    /// block's server footprint ([`delvewright_dsl::blockshape::server_footprint`]):
+    /// the posts of iron bars, a pane, a chain, a lantern. Not a collision class
+    /// and a subset of `solid`: the cell still stops a body walking into it, and
+    /// whether a body over it is held or falls between its boxes is the nav
+    /// model's to judge from these and the cells around them.
+    pub footprints: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
 }
 
 /// **What keeps one climbable where it is** (spec-0099 §3.2), as the cells its
@@ -1572,6 +1664,11 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
     let mut lava_sources: BTreeSet<[i32; 3]> = BTreeSet::new();
     let mut partial: BTreeMap<[i32; 3], u8> = BTreeMap::new();
     let mut waterloggable: BTreeSet<[i32; 3]> = BTreeSet::new();
+    let mut footprints: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16> =
+        BTreeMap::new();
+    // One footprint lookup per distinct block state, not per cell.
+    let mut footprint_of: BTreeMap<String, Option<delvewright_dsl::blockshape::Footprint16>> =
+        BTreeMap::new();
     for (cell, name) in blocks {
         if is_waterloggable(name) {
             waterloggable.insert(*cell);
@@ -1632,6 +1729,13 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
                 if let Collision::PartialFloor(h) = class {
                     partial.insert(*cell, h);
                 }
+                let fp = footprint_of.entry(name.to_string()).or_insert_with(|| {
+                    let fp = delvewright_dsl::blockshape::server_footprint(name);
+                    (fp != delvewright_dsl::blockshape::FULL_FOOTPRINT).then_some(fp)
+                });
+                if let Some(fp) = fp {
+                    footprints.insert(*cell, *fp);
+                }
             }
         }
     }
@@ -1659,6 +1763,7 @@ pub fn occupancy_over(blocks: &BlockMap, open_gates: &BTreeSet<[i32; 3]>) -> Occ
         lava,
         climb,
         unheld_climb,
+        footprints,
     }
 }
 

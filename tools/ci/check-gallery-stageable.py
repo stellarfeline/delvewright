@@ -259,7 +259,7 @@ def main() -> int:
     if not prefabs.is_dir():
         die(
             f"no prefab directory at `{prefabs}`. The gallery's piece is GENERATED: `cargo run "
-            "--manifest-path prefabs/gallery-generator/Cargo.toml -- <dir> --skins gallery/skins "
+            "--manifest-path gallery/prefab-generator/Cargo.toml -- <dir> --skins gallery/skins "
             "--design gallery/design --textures gallery/textures "
             "--terrain gallery/overlays/site-plan/terrain`."
         )

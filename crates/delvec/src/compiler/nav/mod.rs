@@ -252,16 +252,6 @@ delvewright_dsl::dw_code! {
     pub const DW_TIMED_GATE_COIN_FLIP: DwCode = DwCode::new("DW0378", ExitTier::Build);
 }
 delvewright_dsl::dw_code! {
-    /// `DW0918`: a `volley` (spec-0022) whose cadence is a coin flip rather than a
-    /// timing read — a player standing anywhere in the kill zone when a salvo lands
-    /// cannot leave the zone before the next salvo in at least **20% of the
-    /// interval**. The volley's counterplay is LEAVING the zone (spec-0022: "a
-    /// decision, not a lucky strafe"); an interval too short for the walk out makes
-    /// that decision unavailable. The same body model and floor as
-    /// [`DW_TIMED_GATE_COIN_FLIP`] (`DW0378`), through the one [`timing_read`].
-    pub const DW_VOLLEY_COIN_FLIP: DwCode = DwCode::new("DW0918", ExitTier::Build);
-}
-delvewright_dsl::dw_code! {
     /// `DW0388`: a **timed hazard** (spec-0016 §4 addendum) the player cannot
     /// observe before committing to it — no standable cell exists that is clear of
     /// the hazard's lethal span, reachable without entering it, and has line of
@@ -478,7 +468,7 @@ delvewright_dsl::dw_code! {
 
 delvewright_dsl::dw_code! {
     /// `DW1011`: **a shut gate its two sides are joined round.** While a gate is
-    /// shut — a barred edge's seam gate, or any gate anchor, as the quest
+    /// shut — a gated connection's seam gate (spec-0107), or any gate anchor, as the quest
     /// configuration leaves it — a body standing at its near face reaches its far
     /// face by moves a player makes ([`World::body_moves`]: walking, falling,
     /// jumping, swimming) without passing it, and so reaches what the story keeps
@@ -486,9 +476,9 @@ delvewright_dsl::dw_code! {
     ///
     /// Judged once per quest configuration the critical path passes through, from
     /// the faces of each shut gate the party can get to there. A `shortcut`'s door
-    /// and a barred edge declared `shortcut` are got round by declaration and not
-    /// judged; a clocked gate's region is its clock's; a one-sided barred edge is
-    /// judged from its openable face.
+    /// and a gated connection declared `shortcut` are got round by declaration and
+    /// not judged; a clocked gate's region is its clock's; a one-sided gated
+    /// connection is judged from its openable face.
     pub const DW_GATE_BYPASSED: DwCode = DwCode::new("DW1011", ExitTier::Build);
 }
 

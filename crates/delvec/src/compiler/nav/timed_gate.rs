@@ -9,9 +9,8 @@ use std::collections::BTreeSet;
 /// The minimum share of a timed hazard's cycle that must admit passage
 /// (spec-0016 §4). Below this the hazard stops being a timing read and becomes a
 /// coin flip. Expressed as a percentage so the arithmetic below stays in
-/// integers — no float rounding in a proof (ADR-0006). One floor for every timed
-/// hazard: a `timed-gate` (`DW0378`) and a `volley` (`DW0918`) are judged by
-/// [`timing_read`] against this same number.
+/// integers — no float rounding in a proof (ADR-0006). A `timed-gate`
+/// (`DW0378`) is judged by [`timing_read`] against this number.
 pub(in crate::compiler::nav) const TIMING_READ_MIN_ADMIT_PERCENT: u32 = 20;
 
 /// One timing read: a route of `moves` blocks that must be completed inside a

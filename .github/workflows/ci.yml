@@ -430,7 +430,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Two workspaces: the engine, and `prefabs` (one workspace, target
-      # `prefabs/target`), whose `gallery-generator` member the gallery
+      # `prefabs/target`), whose `gallery/prefab-generator` member the gallery
       # subject's `gallery-prefabs.py` compiles.
       - uses: Swatinem/rust-cache@v2
         with:
@@ -571,16 +571,17 @@ jobs:
       - name: run every generator twice — invariants hold, output is identical
         run: |
           set -euo pipefail
-          for g in generator cave-generator gallery-generator hello-room-generator \
-                   island-generator island-terrain-generator rig-generator tidal-keep-generator; do
+          for g in generator cave-generator ../gallery/prefab-generator hello-room-generator \
+                   island-generator island-terrain-generator rig-generator; do
             echo "::group::$g"
-            rm -rf "/tmp/$g-a" "/tmp/$g-b"
-            mkdir -p "/tmp/$g-a" "/tmp/$g-b"
+            d="/tmp/${g##*/}"
+            rm -rf "$d-a" "$d-b"
+            mkdir -p "$d-a" "$d-b"
             cargo run --locked --release --manifest-path "prefabs/$g/Cargo.toml" \
-              -- "/tmp/$g-a" > /dev/null
+              -- "$d-a" > /dev/null
             cargo run --locked --release --manifest-path "prefabs/$g/Cargo.toml" \
-              -- "/tmp/$g-b" > /dev/null
-            diff -r "/tmp/$g-a" "/tmp/$g-b"
+              -- "$d-b" > /dev/null
+            diff -r "$d-a" "$d-b"
             echo "::endgroup::"
           done
       # And the other half of what a re-run must not do: DELETE a key it did not
@@ -1387,7 +1388,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      # The cache serves `prefabs/gallery-generator`, which `gallery-prefabs.py`
+      # The cache serves `gallery/prefab-generator` (a `prefabs/` workspace member), which `gallery-prefabs.py`
       # compiles: a different workspace from the engine, built for its own sake.
       - uses: Swatinem/rust-cache@v2
         with: { key: gallery }
@@ -1690,7 +1691,7 @@ jobs:
       DELVEWRIGHT_RUN_TIMEOUT_MS: "2400000"
     steps:
       - uses: actions/checkout@v4
-      # The cache serves `prefabs/gallery-generator`, which `gallery-prefabs.py`
+      # The cache serves `gallery/prefab-generator` (a `prefabs/` workspace member), which `gallery-prefabs.py`
       # compiles: a different workspace from the engine.
       - uses: Swatinem/rust-cache@v2
         with: { key: gallery-bot }
@@ -1784,6 +1785,17 @@ jobs:
             validation/gallery-src-site-plan -o written-world-site-plan
           python3 tools/ci/check-written-world.py validation/delve-output-gallery-site-plan \
             written-world-site-plan validation/delve-output-gallery-site-plan/world
+      # The site-plan point is where the gallery's shut floor gates are — the
+      # undercroft shaft's hatch and the cover over the crawl's ladder — and a
+      # floor holds the body that stands on it. The hatch stand puts the bot on
+      # every point of every one, on a fresh world before any beat; with
+      # `--only-hatch-stand` the ladder reds when the build names none.
+      - name: a body stood on every shut floor gate stays on it (site-plan)
+        if: '!cancelled()'
+        run: |
+          bash validation/bot-run.sh --project dw-ci-gallery-hatch \
+            --output ./delve-output-gallery-site-plan --only-hatch-stand \
+            --run-out ./run-out/dw-ci-gallery-hatch
       - name: job summary
         if: always()
         run: |
@@ -1849,7 +1861,7 @@ jobs:
       - name: bootstrap — one live Mojang fetch for the whole job
         run: bash validation/server-bootstrap-cache.sh
 
-      # The cache serves `prefabs/gallery-generator`, which the gallery pass
+      # The cache serves `gallery/prefab-generator` (a `prefabs/` workspace member), which the gallery pass
       # compiles: a different workspace from the engine.
       - uses: Swatinem/rust-cache@v2
       # The run's one `delvec`, handed to every build step below. Each of those
@@ -2032,7 +2044,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p gallery-prefabs
-          cargo run --locked --manifest-path prefabs/gallery-generator/Cargo.toml \
+          cargo run --locked --manifest-path gallery/prefab-generator/Cargo.toml \
             -- gallery-prefabs --skins gallery/skins --design gallery/design \
             --textures gallery/textures
           target/debug/delvec build gallery \
@@ -2059,11 +2071,18 @@ jobs:
           python3 tools/ci/check-written-world.py validation/delve-output-gallery \
             written-world validation/delve-output-gallery/world
 
+      # keep-trial, souls-bonfire and souls-td-lanes draw `areas[]` pieces from
+      # pools. The shipped library declares none; the pools are engine test
+      # data, laid over the pinned library by the one assembler the Rust tests
+      # also run.
+      - name: assemble the engine's test library (pinned library + test pools)
+        run: bash tools/ci/test-library.sh campaigns/prefabs "$RUNNER_TEMP/test-library"
+
       - name: build the keep-trial delve output (held-item interact)
         run: |
           target/debug/delvec \
             build crates/dsl/fixtures/valid/keep-trial \
-            -o validation/delve-output-keeptrial --prefabs campaigns/prefabs
+            -o validation/delve-output-keeptrial --prefabs "$RUNNER_TEMP/test-library"
 
       - name: PackTest suite — keep-trial (`requires_item` is HELD, not carried)
         run: |
@@ -2082,7 +2101,7 @@ jobs:
         run: |
           target/debug/delvec \
             build crates/delvec/tests/fixtures/souls-bonfire \
-            -o validation/delve-output-bonfire --prefabs campaigns/prefabs
+            -o validation/delve-output-bonfire --prefabs "$RUNNER_TEMP/test-library"
 
       - name: PackTest suite — souls-bonfire (rest, re-seat, stationed re-seat)
         run: |
@@ -2102,7 +2121,7 @@ jobs:
         run: |
           target/debug/delvec \
             build crates/delvec/tests/fixtures/souls-td-lanes \
-            -o validation/delve-output-lanes --prefabs campaigns/prefabs
+            -o validation/delve-output-lanes --prefabs "$RUNNER_TEMP/test-library"
 
       - name: PackTest suite — souls-td-lanes (patrol NBT, march, release, re-seat)
         run: |

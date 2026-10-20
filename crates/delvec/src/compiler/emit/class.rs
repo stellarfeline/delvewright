@@ -355,6 +355,20 @@ pub(super) fn class_apply_fns(plan: &Plan) -> Vec<(String, String)> {
         if let Some(pos) = campaign_spawn(plan) {
             body.push(format!("teleport @s {} {} {}", pos[0], pos[1], pos[2]));
         }
+        // spec-0105 §4.1: the container class's arrival line, told to this
+        // player by the one `narrate` emitter in the same function that warps
+        // them in — so it precedes every container a body can reach, by
+        // construction — and after the warp, so its sound plays at the
+        // arrival where the player stands. One-shot with the function.
+        if let Some(n) = c
+            .quests
+            .content
+            .containers
+            .as_ref()
+            .and_then(|k| k.decoration_notice.as_ref())
+        {
+            super::effect::emit_narrate(&n.text, n.style, n.sound.as_deref(), "@s", &mut body);
+        }
         fns.push((format!("class_apply_{}", plan_class.safe), lines(&body)));
     }
     fns

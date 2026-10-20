@@ -217,6 +217,27 @@ pub(super) fn seams(
         if !contact_declaration(&ctx, table, d) {
             continue;
         }
+        // ---- `DW1027`: a gated front (spec-0107 §8.1). The world builds a gated
+        // connection shut with a bar in its opening; a front has no opening, and a
+        // bar across one is a wall the plan did not draw.
+        if s.contact.is_some() && ctx.edge.shuts() {
+            let g = ctx.edge.gating().map(|g| g.words()).unwrap_or_default();
+            d.push(Diagnostic::error(
+                DW_GATED_FRONT,
+                "site-plan",
+                format!("/content/seams/{}", ctx.index),
+                format!(
+                    "the seam for `{edge}` is a front (`contact`), and `{edge}` is gated on {g}: the \
+                     world builds a gated connection shut, with a bar standing in its opening until \
+                     the story opens it, and a front is where two places simply meet along a span — \
+                     it has no opening to stand a bar in, and a bar across it is a wall the plan did \
+                     not draw. Give the seam a standard `opening` (the bar then stands in it), or \
+                     remove the `gating` from the connection in the layout graph.",
+                    edge = ctx.seam.edge,
+                ),
+            ));
+            continue;
+        }
 
         let opening = if s.contact.is_some() {
             // A contact has no opening name to resolve and no single sill, so
@@ -244,7 +265,7 @@ pub(super) fn seams(
             Edge::Stair { .. } => stair(&ctx, table, reads, d),
             Edge::Climb { .. } => climb(&ctx, d),
             Edge::Drop { falls, .. } => drop_seam(&ctx, *falls, plan.max_drop, d),
-            Edge::Walk { .. } | Edge::Barred { .. } => {
+            Edge::Walk { .. } => {
                 if let Some(opening) = opening {
                     sill(&ctx, opening, d);
                 }
@@ -401,8 +422,9 @@ fn contact_declaration(ctx: &SeamCtx<'_>, table: &Metrics, d: &mut Vec<Diagnosti
     // ---- Shape 3: the classes a contact may carry.
     //
     // `walk` and `drop` only. A rim falling to a lower court is a genuine broad
-    // hand-off, so `drop` is in; `stair`, `barred` and `vision` are excluded
+    // hand-off, so `drop` is in; `stair`, `climb` and `vision` are excluded
     // until a campaign brief demands one (spec-0053 §4, the falsifier re-armed).
+    // A gated front is its own refusal (`DW1027`), in `seams`.
     if !matches!(ctx.edge, Edge::Walk { .. } | Edge::Drop { .. }) {
         refuse(
             format!(
@@ -411,10 +433,10 @@ fn contact_declaration(ctx: &SeamCtx<'_>, table: &Metrics, d: &mut Vec<Diagnosti
                 class = ctx.edge.class(),
             ),
             "give the seam a standard `opening`, or declare the connection `walk` or \
-             `drop` in the layout graph. A stair needs a run and a pitch, a barred door \
-             needs a gate region that seals and clears, and a sightline is not a crossing \
-             at all — none of the three is a thing a front can be, and this engine does \
-             not have them as contacts until a campaign brief demands one"
+             `drop` in the layout graph. A stair needs a run and a pitch, a climb needs a \
+             ladder in an opening, and a sightline is not a crossing at all — none of the \
+             three is a thing a front can be, and this engine does not have them as \
+             contacts until a campaign brief demands one"
                 .to_string(),
         );
         return false;

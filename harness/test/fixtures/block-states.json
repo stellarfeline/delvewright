@@ -1,0 +1,79 @@
+{
+  "parse": [
+    {
+      "name": "minecraft:stone",
+      "properties": {},
+      "text": "minecraft:stone"
+    },
+    {
+      "name": "minecraft:stone",
+      "properties": {},
+      "text": "stone"
+    },
+    {
+      "name": "minecraft:white_candle",
+      "properties": {
+        "candles": "3",
+        "lit": "true",
+        "waterlogged": "false"
+      },
+      "text": "minecraft:white_candle[candles=3,lit=true,waterlogged=false]"
+    },
+    {
+      "name": "minecraft:bell",
+      "properties": {
+        "attachment": "ceiling",
+        "facing": "north",
+        "powered": "false"
+      },
+      "text": "minecraft:bell[attachment=ceiling,facing=north,powered=false]"
+    },
+    {
+      "name": "minecraft:oak_stairs",
+      "properties": {
+        "facing": "east",
+        "half": "top"
+      },
+      "text": "minecraft:oak_stairs[facing=east,half=top]"
+    },
+    {
+      "name": "delvewright:thing",
+      "properties": {
+        "a": "b"
+      },
+      "text": "delvewright:thing[a=b]"
+    }
+  ],
+  "satisfies": [
+    {
+      "holds": true,
+      "read": "minecraft:white_candle[candles=3,lit=true,waterlogged=false]",
+      "stated": "minecraft:white_candle[candles=3,lit=true,waterlogged=false]"
+    },
+    {
+      "holds": false,
+      "read": "minecraft:white_candle[candles=1,lit=true,waterlogged=false]",
+      "stated": "minecraft:white_candle[candles=3,lit=true,waterlogged=false]"
+    },
+    {
+      "holds": false,
+      "read": "minecraft:white_candle",
+      "stated": "minecraft:white_candle[candles=3,lit=true,waterlogged=false]"
+    },
+    {
+      "holds": true,
+      "read": "minecraft:water[level=0]",
+      "stated": "minecraft:water"
+    },
+    {
+      "holds": true,
+      "read": "minecraft:oak_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]",
+      "stated": "minecraft:oak_stairs[facing=east]"
+    },
+    {
+      "holds": false,
+      "read": "minecraft:soul_fire",
+      "stated": "minecraft:fire"
+    }
+  ]
+}

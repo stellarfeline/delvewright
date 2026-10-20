@@ -68,11 +68,26 @@ fn every_nested_effect_container_is_classified() {
          `compiler::hold::Nesting` classifies (right) differ"
     );
     for f in &fields {
-        if f != "steps" {
+        // `steps` and a cutscene's `then` are timelines whose offset the carrier
+        // decides (a step's `at_ticks`; the cutscene's length plus one), so
+        // `hold::nested` classifies them from the effect, not from the name.
+        if f != "steps" && f != "then" {
             assert!(
                 delvec::compiler::hold::Nesting::of_field(f).is_some(),
                 "`{f}` has no classification"
             );
         }
     }
+    let cut: delvewright_dsl::QuestEffect = serde_json::from_value(serde_json::json!({
+        "type": "cutscene", "seconds": 1, "path": [{"anchor": "anchor/a"}],
+        "then": [{"type": "set-flag", "flag": "flag/after"}]
+    }))
+    .unwrap();
+    let end = delvec::compiler::link::cutscene_end_offset(&cut).unwrap();
+    let nested = delvec::compiler::hold::nested(&cut);
+    assert_eq!(nested.len(), 1);
+    assert_eq!(
+        nested[0].0,
+        delvec::compiler::hold::Nesting::Timeline(end + 1)
+    );
 }

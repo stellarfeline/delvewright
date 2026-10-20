@@ -46,7 +46,7 @@ def _write(repo: pathlib.Path, rel: str, body: str = "x") -> None:
 def test_everything_generation_wrote_is_packed_and_caches_are_not(repo, tmp_path, capsys):
     for rel in ["gallery-prefabs/hall.nbt", "gallery/skins/a.png", "gallery/design/ref.png", "gallery/textures/t.png"]:
         _write(repo, rel)
-    for rel in ["target/debug/delvec", "prefabs/gallery-generator/target/release/g", "tools/ci/__pycache__/x.pyc"]:
+    for rel in ["target/debug/delvec", "gallery/prefab-generator/target/release/g", "tools/ci/__pycache__/x.pyc"]:
         _write(repo, rel)
     out = tmp_path / "pieces.tar"
     assert mod.main(["--out", str(out), "--repo", str(repo)]) == 0

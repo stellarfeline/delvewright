@@ -46,7 +46,7 @@ const TICKS_PER_SECOND: u32 = 20;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Nesting {
     /// On the carrier's own timeline, this many ticks after it (`sequence`
-    /// steps).
+    /// steps; a cutscene's `then`, one tick past the tick its `cs_end` runs).
     Timeline(u32),
     /// When the body a `move-npc` / `move-actor` moves arrives (`on_arrive`):
     /// later, while the route is being walked.
@@ -75,8 +75,14 @@ impl Nesting {
 
     /// Every field name a nested list is held under, with `steps` for the
     /// `sequence` container — the set the schema is compared against.
-    pub const FIELDS: [&'static str; 5] =
-        ["steps", "on_arrive", "on_rest", "on_respawn", "on_caught"];
+    pub const FIELDS: [&'static str; 6] = [
+        "steps",
+        "on_arrive",
+        "on_rest",
+        "on_respawn",
+        "on_caught",
+        "then",
+    ];
 }
 
 /// Every effect list nested directly in `eff`, classified.
@@ -86,6 +92,15 @@ pub fn nested(eff: &QuestEffect) -> Vec<(Nesting, &[QuestEffect])> {
             .iter()
             .map(|s| (Nesting::Timeline(s.at_ticks), s.effects.as_slice()))
             .collect();
+    }
+    // spec-0108 §3.6: a cutscene's `then` plays when the camera returns — on
+    // the carrier's own timeline, dated one tick past the tick `cs_end` runs
+    // (the date `link::timelines` gives it).
+    if let Verb::Cutscene { then, .. } = &eff.verb {
+        return match crate::compiler::link::cutscene_end_offset(eff) {
+            Some(end) if !then.is_empty() => vec![(Nesting::Timeline(end + 1), then.as_slice())],
+            _ => Vec::new(),
+        };
     }
     eff.nested_effect_lists_labeled()
         .into_iter()

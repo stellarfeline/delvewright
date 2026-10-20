@@ -62,6 +62,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+import horizon  # noqa: E402
 import parallel  # noqa: E402
 from delvec_bin import resolve as resolve_delvec  # noqa: E402
 from gallery_domain import GALLERY, materialise, overlays  # noqa: E402
@@ -119,11 +120,7 @@ def horizon_of(world_json: Path) -> str | None:
     """The base a stage-1 document declares, or `None` if it declares none."""
     if not world_json.is_file():
         return None
-    doc = json.loads(world_json.read_text())
-    h = doc.get("content", doc).get("horizon")
-    if h is None:
-        return None
-    return h if isinstance(h, str) else h.get("base")
+    return horizon.declared_base(json.loads(world_json.read_text()))
 
 
 def points_by_base() -> dict[str, str | None]:

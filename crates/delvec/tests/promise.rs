@@ -302,17 +302,17 @@ fn an_adopted_container_without_both_marks_is_dw0861() {
     for (obj, expect) in [
         (
             r#"{ "type": "collect", "id": "obj/cheese", "item": "minecraft:pumpkin_pie", "count": 1,
-                 "anchor": "anchor/exit", "container": "anchor/keeper-stand" }"#,
+                 "anchor": "anchor/exit", "holder": "anchor/keeper-stand" }"#,
             "neither a `title` nor an `item_name`",
         ),
         (
             r#"{ "type": "collect", "id": "obj/cheese", "item": "minecraft:pumpkin_pie", "count": 1,
-                 "anchor": "anchor/exit", "container": "anchor/keeper-stand", "item_name": "Kefalotyri" }"#,
+                 "anchor": "anchor/exit", "holder": "anchor/keeper-stand", "item_name": "Kefalotyri" }"#,
             "no `title`",
         ),
         (
             r#"{ "type": "collect", "id": "obj/cheese", "item": "minecraft:pumpkin_pie", "count": 1,
-                 "anchor": "anchor/exit", "container": "anchor/keeper-stand", "title": "Take the Cheese" }"#,
+                 "anchor": "anchor/exit", "holder": "anchor/keeper-stand", "title": "Take the Cheese" }"#,
             "no `item_name`",
         ),
     ] {
@@ -499,7 +499,7 @@ fn a_stealth_beat_that_punishes_nothing_is_not_a_failure_clock() {
 #[test]
 fn the_binding_counts_what_it_examined() {
     let obj = r#"{ "type": "collect", "id": "obj/cheese", "item": "minecraft:pumpkin_pie", "count": 1,
-        "anchor": "anchor/exit", "container": "anchor/keeper-stand",
+        "anchor": "anchor/exit", "holder": "anchor/keeper-stand",
         "title": "Take the Cheese", "item_name": "Kefalotyri" }"#;
     let bundle = r#"{ "type": "begin-stealth", "grace_ticks": 400,
         "zones": [ { "anchor": "anchor/exit", "extent": [4, 3, 4] } ],
@@ -535,7 +535,7 @@ fn every_rule_fires_on_its_own_perturbation() {
         (
             "DW0861",
             r#"{ "type": "collect", "id": "obj/cheese", "item": "minecraft:pumpkin_pie", "count": 1,
-                 "anchor": "anchor/exit", "container": "anchor/keeper-stand" }"#,
+                 "anchor": "anchor/exit", "holder": "anchor/keeper-stand" }"#,
             DONE,
         ),
         (

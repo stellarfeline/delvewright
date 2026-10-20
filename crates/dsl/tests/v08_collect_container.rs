@@ -60,7 +60,7 @@ fn campaign_with(quests: String) -> RawCampaign {
 
 /// The whole surface at once: adopt the prefab's container, name the item, pad
 /// the container to read full.
-const ADOPTED: &str = r#", "container": "anchor/door", "item_name": "Cheese", "fill_count": 8"#;
+const ADOPTED: &str = r#", "holder": "anchor/door", "item_name": "Cheese", "fill_count": 8"#;
 
 #[test]
 fn the_adoption_surface_validates_clean_at_v08() {
@@ -75,13 +75,13 @@ fn the_adoption_surface_validates_clean_at_v08() {
 #[test]
 fn an_invented_container_anchor_is_dw0142() {
     let diags = check_campaign(&campaign_with(quests(
-        r#", "container": "anchor/no-such-barrel""#,
+        r#", "holder": "anchor/no-such-barrel""#,
     )));
     let d = diags
         .iter()
         .find(|d| d.code == "DW0142")
         .unwrap_or_else(|| panic!("expected DW0142, got: {diags:#?}"));
-    assert!(d.path.ends_with("/container"), "{}", d.path);
+    assert!(d.path.ends_with("/holder"), "{}", d.path);
 }
 
 /// The fill is positional, so it obeys the same 27-slot ceiling a `loot`
@@ -90,7 +90,7 @@ fn an_invented_container_anchor_is_dw0142() {
 #[test]
 fn padding_past_the_last_slot_is_dw0432() {
     let diags = check_campaign(&campaign_with(quests(
-        r#", "container": "anchor/door", "fill_count": 27"#,
+        r#", "holder": "anchor/door", "fill_count": 27"#,
     )));
     let d = diags
         .iter()
@@ -102,7 +102,7 @@ fn padding_past_the_last_slot_is_dw0432() {
     // The exact ceiling validates: 26 padding stacks + the objective's own = 27.
     assert!(
         !check_campaign(&campaign_with(quests(
-            r#", "container": "anchor/door", "fill_count": 26"#,
+            r#", "holder": "anchor/door", "fill_count": 26"#,
         )))
         .iter()
         .any(|d| d.code == "DW0432"),
@@ -144,7 +144,7 @@ fn a_loot_entry_and_an_adopted_collect_on_one_anchor_is_dw0435() {
         .iter()
         .find(|d| d.code == "DW0435")
         .unwrap_or_else(|| panic!("expected DW0435, got: {diags:#?}"));
-    assert!(d.path.ends_with("/container"), "{}", d.path);
+    assert!(d.path.ends_with("/holder"), "{}", d.path);
     assert!(
         d.message.contains("loot/galley-stores") && d.message.contains("obj/cheese"),
         "the message must name both claimants: {}",
@@ -169,9 +169,9 @@ fn two_adopted_collects_on_one_anchor_is_dw0435() {
         "objectives": [
           { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
           { "type": "collect", "id": "obj/cheese", "item": "minecraft:bread", "count": 1,
-            "anchor": "anchor/exit", "after": ["obj/talk"], "container": "anchor/door" },
+            "anchor": "anchor/exit", "after": ["obj/talk"], "holder": "anchor/door" },
           { "type": "collect", "id": "obj/wine", "item": "minecraft:potion", "count": 1,
-            "anchor": "anchor/exit", "after": ["obj/cheese"], "container": "anchor/door" }
+            "anchor": "anchor/exit", "after": ["obj/cheese"], "holder": "anchor/door" }
         ],
         "on_complete": [ { "type": "campaign-complete" } ]
       }
@@ -207,9 +207,40 @@ fn item_name_enters_the_l10n_inventory() {
 fn stage5_schema_exports_the_adoption_fields() {
     let schema = delvewright_dsl::schema::stage_schema(delvewright_dsl::Stage::Quests);
     let json = serde_json::to_string(&schema).unwrap();
-    for field in ["\"container\"", "\"item_name\"", "\"fill_count\""] {
+    for field in ["\"holder\"", "\"item_name\"", "\"fill_count\""] {
         assert!(json.contains(field), "stage-5 schema is missing {field}");
     }
+    // spec-0111 criterion 1: `LootItem.slot` is exported, and the collect
+    // variant carries `holder` and no `container`.
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let defs = v
+        .get("$defs")
+        .or_else(|| v.get("definitions"))
+        .expect("schema defs");
+    assert!(
+        defs["LootItem"]["properties"].get("slot").is_some(),
+        "LootItem.slot is not exported"
+    );
+    let objective = serde_json::to_string(&defs["Objective"]).unwrap();
+    let collect: Vec<&serde_json::Value> = defs["Objective"]["oneOf"]
+        .as_array()
+        .expect("Objective is a oneOf")
+        .iter()
+        .filter(|variant| {
+            variant["properties"]["type"]
+                .to_string()
+                .contains("collect")
+        })
+        .collect();
+    assert_eq!(collect.len(), 1, "{objective}");
+    assert!(
+        collect[0]["properties"].get("holder").is_some(),
+        "{objective}"
+    );
+    assert!(
+        collect[0]["properties"].get("container").is_none(),
+        "{objective}"
+    );
 }
 
 /// A collect that declares none of it serializes exactly as it did before the
@@ -219,7 +250,7 @@ fn stage5_schema_exports_the_adoption_fields() {
 fn an_unadopted_collect_serializes_without_the_new_fields() {
     let c = parse_campaign(&campaign_with(quests(""))).expect("parses");
     let json = serde_json::to_string(&c.quests.content).expect("serializes");
-    for field in ["container", "item_name", "fill_count"] {
+    for field in ["holder", "item_name", "fill_count"] {
         assert!(
             !json.contains(field),
             "an unadopted collect must not serialize `{field}`: {json}"

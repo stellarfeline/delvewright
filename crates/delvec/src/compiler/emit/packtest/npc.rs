@@ -235,8 +235,7 @@ pub(super) fn emit_v04_packtests(
             "{}: despawn-npc `{npc}` removes body + hitbox, unseen",
             artifact_title(c)
         ));
-        b.push(format!("function {ns}:setup"));
-        b.push("scoreboard players set #placed dw.sys 1".to_string());
+        b.extend(settled_setup(ns));
         // Clear EVERY planned NPC tag, not just the target's: `setup_finish`'s
         // summons are unguarded, and on the shared-batch server the world init
         // (and any sibling test) has already run it — re-running it over live
@@ -308,8 +307,7 @@ pub(super) fn emit_v04_packtests(
             artifact_title(c),
             trigger.id.as_str()
         ));
-        b.push(format!("function {ns}:setup"));
-        b.push("scoreboard players set #placed dw.sys 1".to_string());
+        b.extend(settled_setup(ns));
         // Clear EVERY planned NPC tag before re-running `setup_finish`: its
         // summons are unguarded, and the world init (and any sibling test) has
         // already run it on the shared-batch server — duplicated hitboxes would
@@ -402,8 +400,7 @@ pub(super) fn emit_v04_packtests(
             "{}: attack-then-talk — NPC `{npc_id}`'s hitbox is the only click target at its anchor",
             artifact_title(c)
         ));
-        b.push(format!("function {ns}:setup"));
-        b.push("scoreboard players set #placed dw.sys 1".to_string());
+        b.extend(settled_setup(ns));
         for n in &plan.npcs {
             b.push(format!("kill @e[tag={}]", n.tag));
         }
@@ -448,21 +445,18 @@ pub(super) fn emit_v04_packtests(
 
     // move-npc walks a collision-safe path that ends with the NPC at the target
     // anchor. The walk is a per-tick self-scheduling driver; to assert the
-    // endpoint in a single tick, fast-forward the tick counter to the final
-    // waypoint and run the driver once (the reschedule it queues is harmless in a
-    // PackTest). Uses the same MovePlan the emitter drove, so the asserted target
-    // is the path's real final waypoint.
+    // endpoint in a single tick, fast-forward the driver ([`fast_forward_walk`])
+    // and run it once. Uses the same MovePlan the emitter drove, so the asserted
+    // target is the path's real final waypoint.
     if let Some(m) = moves.first() {
         let safe = plan::safe_local(&m.npc);
         let bare = movenpc_bare(&m.npc, &m.to, &m.gate_key);
-        let total = m.ticks();
         let p = m.target;
         let mut b = packtest_header(&format!(
             "{}: move-npc walks to its target anchor",
             artifact_title(c)
         ));
-        b.push(format!("function {ns}:setup"));
-        b.push("scoreboard players set #placed dw.sys 1".to_string());
+        b.extend(settled_setup(ns));
         // Clear EVERY planned NPC tag before re-running the unguarded
         // `setup_finish` (see `v04_despawn`/`npc_summons`): a duplicated walker
         // would leave a stray body behind at the start cell.
@@ -470,20 +464,42 @@ pub(super) fn emit_v04_packtests(
             b.push(format!("kill @e[tag={}]", n.tag));
         }
         b.push(format!("function {ns}:setup_finish"));
-        // Jump the driver to its last tick, then execute the final waypoint tp.
         b.extend(walk_claim(
             Walker::Npc,
             &bare,
             &safe,
             supersedable_walkers(moves.iter().map(|m| m.npc.as_str())).contains(m.npc.as_str()),
         ));
-        b.push(format!("scoreboard players set #mt_{bare} dw.sys {total}"));
-        b.push(format!("function {ns}:mv_tick_{bare}"));
-        b.push(format!(
-            "execute store result score #npos_nmov dw.sys if entity @e[tag=dw_npc_{safe},x={},dx=0,y={},dy=0,z={},dz=0]",
-            p[0], p[1], p[2]
-        ));
-        b.push("assert score #npos_nmov dw.sys matches 1..".to_string());
+        let (drive, reached) =
+            fast_forward_walk(plan, Walker::Npc, &m.npc, &m.to, &bare, &m.waypoints);
+        b.extend(drive);
+        match reached {
+            Reached::BeforeArrival(w) => {
+                // The body stands on the waypoint before arrival, within one
+                // tick's stride of the target cell.
+                b.push(format!(
+                    "execute store result score #npos_nmov dw.sys if entity @e[tag=dw_npc_{safe},x={},y={},z={},distance=..0.01]",
+                    fmt_f64(w[0]),
+                    fmt_f64(w[1]),
+                    fmt_f64(w[2])
+                ));
+                b.push("assert score #npos_nmov dw.sys matches 1..".to_string());
+                b.push(format!(
+                    "execute store result score #nnear_nmov dw.sys if entity @e[tag=dw_npc_{safe},x={},y={},z={},distance=..1]",
+                    f64::from(p[0]) + 0.5,
+                    p[1],
+                    f64::from(p[2]) + 0.5
+                ));
+                b.push("assert score #nnear_nmov dw.sys matches 1..".to_string());
+            }
+            Reached::Arrival => {
+                b.push(format!(
+                    "execute store result score #npos_nmov dw.sys if entity @e[tag=dw_npc_{safe},x={},dx=0,y={},dy=0,z={},dz=0]",
+                    p[0], p[1], p[2]
+                ));
+                b.push("assert score #npos_nmov dw.sys matches 1..".to_string());
+            }
+        }
         write("v04_move", b);
     }
 

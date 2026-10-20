@@ -485,20 +485,7 @@ pub(super) fn actor_fns(
         // `#aown_<bare> < #agen_<actor>` ⇔ a later leg for this puppet has started.
         let (own, gen_) = walk_stamp(Walker::Actor, &bare, &safe);
         let stale = format!("score {own} dw.sys < {gen_} dw.sys");
-        // The on_arrive bundle for this (actor, to) — the first-seen effect,
-        // matching the planner's dedup order.
-        let on_arrive: &[QuestEffect] = all_campaign_effects(plan.campaign)
-            .into_iter()
-            .find_map(|e| match &e.verb {
-                Verb::MoveActor {
-                    actor,
-                    to,
-                    on_arrive,
-                    ..
-                } if actor.as_str() == m.actor && *to == m.to => Some(on_arrive.as_slice()),
-                _ => None,
-            })
-            .unwrap_or(&[]);
+        let on_arrive = walk_on_arrive(plan.campaign, Walker::Actor, &m.actor, &m.to);
 
         // start: guard re-entry, take the walk generation, reset the tick counter,
         // schedule the driver. The re-entry refusal is generation-aware: a latch left

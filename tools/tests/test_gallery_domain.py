@@ -370,9 +370,11 @@ def test_every_committed_probe_is_the_primary_plus_its_declared_edit():
         own += sum(
             1 for f in pd.rglob("*") if f.is_file() and f.name not in gallery_domain.POINT_MANIFESTS
         )
+        base = gallery_domain.base_overlay(pd)
         for op in ops:
-            assert (GALLERY / op["doc"]).is_file(), (
-                f"probe `{pd.name}` edits `{op['doc']}`, which is not a primary document"
+            where = base if base is not None else GALLERY
+            assert (where / op["doc"]).is_file(), (
+                f"probe `{pd.name}` edits `{op['doc']}`, which is not a document of its point"
             )
     assert edits or own, (
         f"{len(probes)} probe(s) examined and not one perturbs anything — every probe would "
@@ -404,4 +406,42 @@ def test_a_probe_may_edit_an_overlay_document_named_by_its_path(tmp_path):
         "patch": [{"doc": "overlays/no-such-overlay/site-plan.json", "op": "remove", "path": "/x"}],
     }))
     with pytest.raises(gallery_domain.PatchError, match="no overlay holds"):
+        gallery_domain.materialise(dest, p)
+
+
+def test_a_probe_of_an_overlay_point_is_that_point_plus_its_edit(tmp_path):
+    """`"point": "<overlay>"`: the overlay materialised as its own build is, plus one edit."""
+    overlay = GALLERY / "overlays" / "site-plan"
+    want = tmp_path / "overlay"
+    gallery_domain.materialise(want, overlay)
+    p = tmp_path / "a-based-probe"
+    p.mkdir()
+    graph = json.loads((overlay / "layout-graph.json").read_text())
+    i = next(k for k, e in enumerate(graph["content"]["edges"]) if e["id"] == "edge/exit-arch")
+    (p / "probe.json").write_text(json.dumps({
+        "code": "DW0818",
+        "point": "site-plan",
+        "patch": [{"doc": "layout-graph.json", "op": "add",
+                   "path": f"/content/edges/{i}/gating", "value": {"opens_from": "a"}}],
+    }))
+    dest = tmp_path / "out"
+    gallery_domain.materialise(dest, p)
+    got = json.loads((dest / "layout-graph.json").read_text())
+    assert got["content"]["edges"][i]["gating"] == {"opens_from": "a"}, "the edit landed"
+    got["content"]["edges"][i].pop("gating")
+    assert got == json.loads((want / "layout-graph.json").read_text()), (
+        "everything but the edit is the overlay point's"
+    )
+    files = sorted(str(f.relative_to(dest)) for f in dest.rglob("*") if f.is_file())
+    assert files == sorted(str(f.relative_to(want)) for f in want.rglob("*") if f.is_file())
+    # An `overlays/...` path on a based probe is ambiguous, and refused.
+    (p / "probe.json").write_text(json.dumps({
+        "code": "DW0818", "point": "site-plan",
+        "patch": [{"doc": "overlays/site-plan/layout-graph.json", "op": "remove", "path": "/content/beats"}],
+    }))
+    with pytest.raises(gallery_domain.PatchError, match="name the document itself"):
+        gallery_domain.materialise(dest, p)
+    # A point that is no overlay is a refusal naming it.
+    (p / "probe.json").write_text(json.dumps({"code": "DW0818", "point": "no-such", "patch": []}))
+    with pytest.raises(gallery_domain.PatchError, match="not an overlay"):
         gallery_domain.materialise(dest, p)

@@ -57,8 +57,8 @@ massing nobody authored):
 |---|---|
 | `spawn` | The entry place's footing. The derivation **declares** it, exactly as a prefab does: the anchor arrives carrying `"role": "entry"`, so the graph's own `entry` node is what decides, and the spelling is a name content may address rather than the thing resolution reads. |
 | `anchor/node-<place>` | A place's own footing. `node/near-hall` becomes `anchor/node-near-hall`, because a campaign reaches an anchor through `anchor/<kebab>` and `node/<id>` is not a name any document could write. Scenery (`reached: false`) has none: no body stands in it, so nothing seeds a flood from inside it (`DW0210`'s survey, the fixture pass) and a document naming one is refused at validation. |
-| `anchor/seam-<edge>` | A `barred` seam's gate region, filled at world load with the bar and measured shut by the same gate-seal model a prefab-authored gate is. `open-gate` and `shortcut` address it. Synthesized only while the place owning the seam's plane is a stand-in; once a piece fills that place, the name is the piece's gate anchor, bound through its `details[]` row. |
-| `anchor/unlock-<edge>` | The far-side affordance's footing, on the side a one-sided `barred` seam opens from. Absent on an `either` seam, which needs none. |
+| `anchor/seam-<edge>` | A shut seam's gate region (spec-0107: every connection whose `gating` names a term) over its bar's cells — the opening in a wall, the hole through a floor for a drop or a stair, the course above the hole for a floor climb — filled at world load with the bar and measured shut by the same gate-seal model a prefab-authored gate is. `open-gate`, `shortcut` and `timed-gate` address it. Synthesized only while the place owning the bar's cells is a stand-in; once a piece fills that place, the name is the piece's gate anchor, bound through its `details[]` row. |
+| `anchor/unlock-<edge>` | The far-side affordance's footing, on the side a one-sided shut seam opens from (`gating.opens_from`). Absent on an `either` seam, which needs none. |
 
 Each is read off the mass **after** it is laid, not computed from the plan: a
 stair the plan hosts in a box legitimately stands on that box's centre, so an
@@ -88,7 +88,7 @@ else — no datum, no opening, no footing — so the whole error list under it i
 measured need or not, and is what shows `DW0836`'s stairwell admission refuses
 something: the cells over courses no head reaches are a leak, and on the blockout
 fixture the whole error list under it is `DW0836` alone.
-`bury_barred` walls the cells flush behind every barred portal on its `b` side,
+`bury_barred` walls the cells flush behind every shut portal in a wall on its `b` side,
 over the opening's own span — the shape a stair's treads laid across a doorway
 take — and leaves the opening clear, so neither `DW0836` nor `DW0838` can see it;
 on the blockout fixture and on the gallery's site-plan point `DW0986` is the
@@ -180,7 +180,7 @@ point of each:
 **Binding line.** Every build of a site-plan campaign prints two: what the
 derivation massed (places, how many detailed and how many massed by the
 derivation, roof zones massed, fixed ring ground cells laid, seams with their
-stair and barred counts, whole-owned volumes, anchors synthesized, region writes
+stair, climb and shut counts (`N shut`: every seam built shut, zero stated as zero), whole-owned volumes, anchors synthesized, region writes
 and the cells they cover) and what the battery examined (seams, walls, places,
 standable cells, place pairs, sightlines, identities with the declaration-only
 count, critical-path legs, fixed ring cells handed, plot-edge columns and

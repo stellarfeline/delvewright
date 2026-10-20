@@ -1893,6 +1893,102 @@ test("reach: a completion transport landing mid-gate-leg is step success, not a 
   );
 });
 
+import { CUTSCENE_POLL_MS } from "../src/executor/cutscene.ts";
+
+/**
+ * A reach whose own completion plays a cutscene that carries the party: the
+ * first `goto` completes the objective and takes control (spectator), the scene
+ * gives the body back at the carry's destination, and every later `goto` would
+ * be a walk back to the goal.
+ */
+class SceneCarryBot extends TransportReachBot {
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    goto: async (goal?: { x: number; y: number; z: number }): Promise<void> => {
+      this.gotoCalls++;
+      if (this.gotoCalls > 1) {
+        // A walk back: arrive at the goal, as a pathfinder would.
+        if (goal) this.entity.position = new FakeVec3(goal.x + 0.5, goal.y, goal.z + 0.5);
+        return;
+      }
+      this.entity.position = new FakeVec3(10.75, 67, 25.5);
+      this.emit("messagestr", "[dw:complete gallery obj/reach-the-end]");
+      this.game.gameMode = "spectator";
+      setTimeout(() => {
+        this.entity.position = new FakeVec3(5.5, 67, 9.5);
+        this.game.gameMode = "adventure";
+      }, 3 * CUTSCENE_POLL_MS);
+      // The walk is interrupted, never finished; the scene's end settles it.
+      await new Promise<void>((resolve) => setTimeout(resolve, 20 * CUTSCENE_POLL_MS));
+    },
+  };
+}
+
+test("reach: a cutscene its own completion plays ends the walk where the scene put the bot", async () => {
+  // The gallery bot: the final reach completed, the scene's `then` carried the
+  // party to the hearth, and the walk resumed back to the exit — so the bot read
+  // the carry as failed ("stood at [11.5, 67.06, 24.5]").
+  const bot = new SceneCarryBot();
+  bot.entity.position = new FakeVec3(4.5, 67, 25.5);
+  const executor = attach(bot, { DELVEWRIGHT_CUTSCENE_GRACE_MS: "300" });
+  executor.useCampaign("gallery");
+  const step: ReachStep = {
+    action: "reach",
+    objective: "obj/reach-the-end",
+    anchor: "anchor/exit",
+    pos: [11, 67, 25],
+    radius: 1,
+    completion: { kind: "cube" as const, lo: [10, 66, 24], hi: [12, 68, 26] },
+    cutsceneSeconds: 1,
+  };
+  executor.beginStep(30);
+  await executor.beforeStep(step);
+  await within("executor.reach(step)", executor.reach(step));
+  assert.equal(bot.gotoCalls, 1, "no walk back after the scene");
+  const p = bot.entity.position;
+  assert.deepEqual([p.x, p.y, p.z], [5.5, 67, 9.5], "the bot stands where the scene put it");
+});
+
+test("reach: a walk that starts with the body held by its step's own scene does not walk once it is back", async () => {
+  // The same gallery reach on the next run: the objective completed as the walk
+  // began, so the scene already held the body; control came back at the hearth
+  // and the walk went on to the exit.
+  const bot = new SceneCarryBot();
+  bot.entity.position = new FakeVec3(10.75, 67, 25.5);
+  const executor = attach(bot, { DELVEWRIGHT_CUTSCENE_GRACE_MS: "300" });
+  executor.useCampaign("gallery");
+  const step: ReachStep = {
+    action: "reach",
+    objective: "obj/reach-the-end",
+    anchor: "anchor/exit",
+    pos: [11, 67, 25],
+    radius: 1,
+    completion: { kind: "cube" as const, lo: [10, 66, 24], hi: [12, 68, 26] },
+    cutsceneSeconds: 1,
+  };
+  executor.beginStep(30);
+  await executor.beforeStep(step);
+  bot.emit("messagestr", "[dw:complete gallery obj/reach-the-end]");
+  bot.game.gameMode = "spectator";
+  bot.entity.position = new FakeVec3(4.5, 90, 4.5); // the scene's camera
+  setTimeout(() => {
+    bot.entity.position = new FakeVec3(5.5, 67, 9.5);
+    bot.game.gameMode = "adventure";
+  }, 3 * CUTSCENE_POLL_MS);
+  await within("executor.reach(step)", executor.reach(step));
+  assert.equal(bot.gotoCalls, 0, "no walk after the scene");
+  const p = bot.entity.position;
+  assert.deepEqual([p.x, p.y, p.z], [5.5, 67, 9.5], "the bot stands where the scene put it");
+});
+
 /**
  * A pathfinder that searches only what the client holds: a goal farther than
  * `heldRadius` blocks from the bot answers "No path to the goal!", as
@@ -1962,6 +2058,43 @@ test("a straight proven run longer than the client sees is walked in hops of its
   }
   const end = bot.entity.position;
   assert.ok(Math.abs(Math.floor(end.z) - 140) <= 1, `the walk ends at its destination: z ${end.z}`);
+});
+
+test("a walk to a holder's stance replays the leg the holder's cell names, and consumes it", async () => {
+  // spec-0111 §5.2: a holder collect's proven leg is named by the holder's cell
+  // (the step's `pos`) and ends at the stance beside it; the bot walks to the
+  // stance and must replay and consume that leg, or every leg after it falls
+  // out of lockstep.
+  const bot = new HeldRadiusBot();
+  bot.entity.position = new FakeVec3(5.5, 65, 4.5);
+  const executor = attach(bot);
+  executor.useCampaign("hello-world");
+  executor.useWaypoints(
+    parseWaypoints({
+      version: "0.0.0-fixture",
+      campaign_id: "hello-world",
+      legs: [
+        {
+          from: [5, 65, 4],
+          to: [8, 65, 2],
+          waypoints: [
+            [5, 65, 4],
+            [5, 65, 1],
+            [8, 65, 1],
+          ],
+        },
+      ],
+    }),
+  );
+  await within(
+    "executor.walkTo(stance)",
+    executor.walkTo([8, 65, 1], 0, "armor-stand minecraft:iron_sword", false, undefined, undefined, [8, 65, 2]),
+  );
+  assert.equal(executor.legCursor, 1, "the holder's leg is consumed");
+  for (const [x, , z] of bot.goals) {
+    assert.ok(!(x === 8 && z === 2), `no hop into the stand's cell: ${bot.goals.join(" ")}`);
+  }
+  assert.deepEqual(bot.goals.at(-1), [8, 65, 1], "the walk ends at the stance");
 });
 
 test("the hop bound is inside the radius the engine's floor view distance serves", () => {

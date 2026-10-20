@@ -441,7 +441,7 @@ fn every_root_is_visited_by_every_walker() {
         // was a walk that could not REPRESENT a root, not one that skipped a list.
         let mut seen_site: Option<EffectSite> = None;
         delvewright_dsl::for_each_campaign_effect(&c, &mut |_path, site, eff| {
-            if let Verb::Narrate { text, .. } = &eff.verb
+            if let Verb::Narrate(delvewright_dsl::Narration { text, .. }) = &eff.verb
                 && *text == probe_text(k)
             {
                 seen_site = Some(site.clone());
