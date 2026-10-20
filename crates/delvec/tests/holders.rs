@@ -556,14 +556,19 @@ fn a_highlight_on_a_holder_collect_lights_the_holder() {
         let off = read(&out, &format!("{fdir}/hl_off_o_exit.mcfunction"));
         assert!(off.contains("{Glowing:0b}"), "{tag}: {off}");
         let poll = read(&out, &format!("{fdir}/hl_poll_o_exit.mcfunction"));
-        assert!(poll.contains(&format!("as @e[tag=dw_holder_{stem}] at @s")), "{tag}: {poll}");
+        assert!(
+            poll.contains(&format!("as @e[tag=dw_holder_{stem}] at @s")),
+            "{tag}: {poll}"
+        );
         let pt = read(
             &out,
             "packtest-datapack/data/hello-world/test/guide_highlight_o_exit.mcfunction",
         );
         assert!(
             pt.contains(&format!("function hello-world:holder_{stem}"))
-                && pt.contains(&format!("@e[tag=dw_holder_{stem},team=dw_hl,nbt={{Glowing:1b}}]")),
+                && pt.contains(&format!(
+                    "@e[tag=dw_holder_{stem},team=dw_hl,nbt={{Glowing:1b}}]"
+                )),
             "{tag}: {pt}"
         );
     }

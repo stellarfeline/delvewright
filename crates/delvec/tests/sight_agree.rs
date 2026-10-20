@@ -91,7 +91,9 @@ fn every_consumer_of_in_sight_answers_alike() {
             hidden += 1;
         }
         if camera != rule {
-            differ.push(format!("case {case}: framing::sight says {camera}, the rule {rule}"));
+            differ.push(format!(
+                "case {case}: framing::sight says {camera}, the rule {rule}"
+            ));
         }
         if act != rule {
             differ.push(format!("case {case}: DW0863 says {act}, the rule {rule}"));
@@ -103,5 +105,10 @@ fn every_consumer_of_in_sight_answers_alike() {
         seen + hidden
     );
     assert!(seen > 0 && hidden > 0, "the cases exercise both answers");
-    assert!(differ.is_empty(), "{} difference(s):\n{}", differ.len(), differ.join("\n"));
+    assert!(
+        differ.is_empty(),
+        "{} difference(s):\n{}",
+        differ.len(),
+        differ.join("\n")
+    );
 }

@@ -707,14 +707,18 @@ fn unseen(
     }
     // The vantage is no occluder: the cell a step names and the eye's own
     // cell never stop a line (spec-0104 §4); the target's cells are the box's.
-    let eye_cell = [eye[0].floor() as i32, eye[1].floor() as i32, eye[2].floor() as i32];
+    let eye_cell = [
+        eye[0].floor() as i32,
+        eye[1].floor() as i32,
+        eye[2].floor() as i32,
+    ];
     let lines = in_sight(eye, &sight_box, &|cell| {
         cell != from && cell != eye_cell && world.blocks_camera(cell)
     });
     (!lines.seen()).then(|| {
-        let first = lines
-            .centre_block
-            .map_or_else(String::new, |cell| format!(": the centre line is stopped first at {cell:?}"));
+        let first = lines.centre_block.map_or_else(String::new, |cell| {
+            format!(": the centre line is stopped first at {cell:?}")
+        });
         format!("{d:.1} blocks away and hidden — all nine lines to it are stopped{first}")
     })
 }
