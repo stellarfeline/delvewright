@@ -1,0 +1,13 @@
+{
+  "code": "DW1032",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/1/on_objective_complete/obj~1clear-the-muster/17/hears",
+      "value": "atmosphere/still-air"
+    }
+  ],
+  "units": [],
+  "why": "One edit: the muster's flyover, whose camera stands in the hall the marshal's beat repainted with `atmosphere/the-reckoning`, declares that it hears `atmosphere/still-air`. Every 4-cell the camera passes wears the reckoning in the configuration the forced route reaches it in, so the build refuses the declaration with `DW1032`, naming the shot, the cell, the biome it wears and the one declared. It is refused by `build`, not `validate`: the camera's cells are known once the anchors resolve. It declares no unit: `hears` is bound by the primary."
+}

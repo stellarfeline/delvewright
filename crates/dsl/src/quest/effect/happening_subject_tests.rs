@@ -138,6 +138,11 @@ fn every_verb_answers_the_census() {
             Some("anchor/bell"),
         ),
         (
+            "stop-sound",
+            serde_json::json!({"type":"stop-sound","category":"music"}),
+            None,
+        ),
+        (
             "damage-players",
             serde_json::json!({"type":"damage-players","amount":2}),
             None,

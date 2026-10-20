@@ -808,9 +808,9 @@ pub enum OceanRoom {
 }
 
 /// A copy of the prefab library in which `hello-room` is a piece that can stand
-/// on an ocean, for every fixture that declares `horizon: ocean`.
+/// on an ocean, for every fixture that declares an `ocean` base.
 ///
-/// The shipped `hello-room` cannot. `horizon: ocean` puts an area origin at
+/// The shipped `hello-room` cannot. An `ocean` base puts an area origin at
 /// y=60 under a sea at 62, and a piece with its floor at local y=0 then stands
 /// its walk plane at y=61 — a block under the surface — while declaring nothing
 /// about where it meets the sea. That is not a modelling nicety: the room
@@ -1485,4 +1485,11 @@ pub fn world_file_of(out: &delvec::compiler::emit::BuildOutput, id: &str, what: 
         "validation/world-{what}-{}.json",
         world_of_branch(&plan, id)
     )
+}
+/// A `horizon` of `base` in the object form, its ground a declared silence
+/// that lets a playing track run out (spec-0109: every ground states its
+/// music). For a case about something other than music.
+#[allow(dead_code)]
+pub fn horizon(base: &str) -> serde_json::Value {
+    serde_json::json!({ "base": base, "attributes": { "audio/background_music": {} } })
 }

@@ -294,9 +294,15 @@ last player-visible sentence of the run, absent = the finale quest's `goal`.
   resources.properties` `heap-max`, the host's to meet) and the storybook owes
   the player the render-distance line (step 13): a client set below the
   declared number is served less, and nothing on the server can raise it.
-- **`horizon`.** Absent = `void`, and that is the right answer unless the
-  ground around the map is part of the design. `void` keeps the area datum where
-  every piece was authored for it and puts nothing outside them.
+- **`horizon` is required, and it states the ground's music.** Write the object
+  form `{"base": "void", "attributes": {"audio/background_music": {}}}` — `{}`
+  is silence, or name a track the way an atmosphere does. `base: void` is the
+  right answer unless the ground around the map is part of the design: it keeps
+  the area datum where every piece was authored for it and puts nothing outside
+  them. `attributes` takes the `audio/` ids only; the ground's look stays the
+  base's. There is no string shorthand and no default: the ground is a biome a
+  camera can stand in, so the build refuses a world that leaves its music to
+  the game.
 - **`valley` rings the map in generated mountain, and it needs to know how big
   the map is.** A surround rings a DECLARED extent, and the campaign's is the
   site plan's `region` — required, and never grown by a box (`DW0826`). What
@@ -312,8 +318,8 @@ last player-visible sentence of the run, absent = the finale quest's `goal`.
   playable region: the compiler derives one from the placed geometry plus a
   `margin` of blocks on every side (default 16, range `0..=64`), and a per-second
   clock returns anyone who leaves it to their last checkpoint, with an optional
-  `message` on the actionbar. **`horizon: ocean` or `valley` with no `boundary` is
-  `DW0320`** — an infinite swimmable sea, or a walkable gap floor, with no return
+  `message` on the actionbar. **A `horizon` whose `base` is `ocean` or `valley`
+  with no `boundary` is `DW0320`** — an infinite swimmable sea, or a walkable gap floor, with no return
   rule — so those two are written together or neither is written. `void` is the
   one base that cannot need it, because there is nothing out there to stand on.
   The clock never moves a player watching a cutscene, or a creator flying with

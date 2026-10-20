@@ -259,6 +259,7 @@
                     "anchor": "anchor/plinth",
                     "at": "anchor"
                   },
+                  "category": "block",
                   "sound": "minecraft:block.anvil.land",
                   "type": "play-sound"
                 }
@@ -319,6 +320,7 @@
                     "anchor": "anchor/reach",
                     "at": "anchor"
                   },
+                  "category": "block",
                   "sound": "minecraft:block.anvil.land",
                   "type": "play-sound"
                 }
@@ -764,6 +766,7 @@
         "at": {
           "anchor": "anchor/annex-second-bay"
         },
+        "category": "ambient",
         "every": 40,
         "floor": 0.2,
         "id": "pulse/the-drip",
@@ -1296,6 +1299,7 @@
                 "anchor": "anchor/pedestal",
                 "at": "anchor"
               },
+              "category": "block",
               "pitch": 1.2,
               "sound": "minecraft:block.chest.open",
               "type": "play-sound",
@@ -1390,6 +1394,7 @@
                         ]
                       },
                       "audience": "actor",
+                      "category": "hostile",
                       "pitch": 0.5,
                       "sound": "minecraft:entity.warden.nearby_closest",
                       "type": "play-sound",
@@ -1592,24 +1597,35 @@
                   "at_ticks": 10,
                   "effects": [
                     {
+                      "hears": null,
                       "look_at": {
                         "anchor": "anchor/stall"
+                      },
+                      "music": {
+                        "audio/background_music": {
+                          "default": {
+                            "max_delay": 0,
+                            "min_delay": 0,
+                            "replace_current_music": true,
+                            "sound": "minecraft:music_disc.pigstep"
+                          }
+                        }
                       },
                       "path": [
                         {
                           "anchor": "anchor/stall",
                           "offset": [
                             0,
-                            14,
-                            -24
+                            28,
+                            -16
                           ]
                         },
                         {
                           "anchor": "anchor/stall",
                           "offset": [
                             0,
-                            16,
-                            -24
+                            30,
+                            -16
                           ]
                         }
                       ],
@@ -1631,6 +1647,7 @@
                           0
                         ]
                       },
+                      "category": "master",
                       "sound": "minecraft:block.chest.close",
                       "type": "play-sound",
                       "when": {
@@ -2212,6 +2229,15 @@
                   }
                 ]
               }
+            },
+            {
+              "category": "music",
+              "type": "stop-sound"
+            },
+            {
+              "atmosphere": "atmosphere/the-reckoning",
+              "place": "area/hall",
+              "type": "set-atmosphere"
             }
           ],
           "obj/back-in-the-hall": [
@@ -2627,6 +2653,7 @@
               "type": "end-stealth"
             },
             {
+              "hears": "atmosphere/the-reckoning",
               "look_at": {
                 "anchor": "anchor/exit"
               },
@@ -3099,6 +3126,7 @@
               "at": {
                 "at": "players"
               },
+              "category": "music",
               "sound": "minecraft:entity.wither.spawn",
               "type": "play-sound",
               "when": {
@@ -3585,6 +3613,31 @@
                 "verb": "arrives"
               },
               "type": "set-checkpoint"
+            },
+            {
+              "category": "ambient",
+              "sound": "minecraft:ambient.cave",
+              "type": "stop-sound"
+            },
+            {
+              "sound": "minecraft:entity.warden.heartbeat",
+              "type": "stop-sound"
+            },
+            {
+              "category": "record",
+              "type": "stop-sound"
+            },
+            {
+              "category": "weather",
+              "type": "stop-sound"
+            },
+            {
+              "category": "neutral",
+              "type": "stop-sound"
+            },
+            {
+              "category": "voice",
+              "type": "stop-sound"
             }
           ]
         },
@@ -4097,6 +4150,7 @@
               "anchor": "anchor/hearth",
               "at": "anchor"
             },
+            "category": "ambient",
             "sound": "minecraft:block.campfire.crackle",
             "type": "play-sound",
             "when": {
@@ -4254,6 +4308,7 @@
               "anchor": "anchor/annex-second-bay",
               "at": "anchor"
             },
+            "category": "player",
             "sound": "minecraft:block.stone.step",
             "type": "play-sound"
           }
@@ -4749,6 +4804,7 @@
               "at": {
                 "at": "players"
               },
+              "category": "ui",
               "sound": "minecraft:entity.experience_orb.pickup",
               "type": "play-sound",
               "when": {

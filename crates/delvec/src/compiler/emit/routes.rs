@@ -211,8 +211,8 @@ pub(super) fn prove_world(
             //    counts a flooded cell as arrest, so a bottomless column with a
             //    waterfall running down it reads as supported — and the proof
             //    goes quiet on precisely the columns the water escaped through.
-            //    Measured on the shipped `island-beach-camp` piece placed under
-            //    `horizon: void`: 9792 escaped cells, and `DW0322` silent.
+            //    Measured on the shipped `island-beach-camp` piece placed on
+            //    a `void` base: 9792 escaped cells, and `DW0322` silent.
             //
             // So escaping fluid is a false premise of the proof that runs next,
             // exactly as an unsettled gravity block is a false premise of

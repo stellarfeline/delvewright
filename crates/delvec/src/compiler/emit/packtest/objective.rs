@@ -427,6 +427,7 @@ pub(super) fn emit_objective_activation_packtests(
 pub(super) fn objective_activation_watch_claim(plan: &Plan) -> crate::compiler::watch::Claim {
     crate::compiler::watch::Claim {
         mechanic: "objective-activation",
+        kind: crate::compiler::watch::ClaimKind::Body,
         families: vec!["activate_o_".to_string()],
         declared: plan
             .campaign

@@ -3522,6 +3522,30 @@
       "note": "Carried by `DW0863` (spec-0104 §3): a `kill` objective is announced with a `hint`, or its wave's anchor is in sight of every act that fires the wave AND within the wave's reach of it. A kill found by reach alone, the bodies coming unseen round a wall, is no longer found.",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "cutscene"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1031",
+        "kind": "dw"
+      },
+      "finding": "vanilla ambient music played over scenes it contradicted, with no way for the campaign to silence it or choose a track",
+      "general_form": "a campaign controls music per scene: silence or a chosen track, declared, with vanilla's ambient music never playing over a scene that declares otherwise",
+      "id": "str-11",
+      "note": "The general form is `DW1031` (spec-0109, `dsl::music`, validation tier): every biome a camera can stand in states its music — each `world.atmospheres[]` entry carries `audio/background_music` and the ground does too, through the required object form of `horizon` and its `attributes` — `{}` for silence or a `default` track, so vanilla's overworld music (the dimension's `music.game`, which a biome declaring none inherits) never plays over a scene that did not name it. A story stage moves the music by repainting the place (`set-atmosphere`), `stop-sound` is the hard cut, every played sound names a `category`, and a cutscene may declare what it `hears`, which `DW1032` confirms against the biome every 4-cell its camera passes wears. Every build prints `music binding:` and writes `validation/music.json`. The binding counts cutscenes, the scenes where an unchosen track is most audible.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"

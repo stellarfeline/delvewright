@@ -202,7 +202,7 @@ fn a_span_past_the_ceiling_forceloads_every_chunk_of_itself() {
     let campaign = common::campaign_bound_to(&root.join("campaign"), "wide-room");
     common::patch_file(&campaign.join("world.json"), |v| {
         let c = v["content"].as_object_mut().unwrap();
-        c.insert("horizon".into(), serde_json::json!("valley"));
+        c.insert("horizon".into(), common::horizon("valley"));
         c.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
     });
 

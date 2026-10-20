@@ -279,7 +279,7 @@ fn rain_protects_where_it_falls() {
     let tmp = TempCampaign::new("rain-ocean");
     campaign_with(tmp.path(), true, |world, _| {
         world["content"]["weather"] = serde_json::json!("rain");
-        world["content"]["horizon"] = serde_json::json!("ocean");
+        world["content"]["horizon"] = common::horizon("ocean");
         world["content"]["boundary"] = serde_json::json!({});
     });
     build(tmp.path()).expect("rain falls on the ocean biome, so the garrison stays wet");
@@ -492,7 +492,8 @@ fn dry_yard(world: &mut serde_json::Value, precipitation: &str) {
     world["content"]["time"] = serde_json::json!("dusk");
     world["content"]["weather"] = serde_json::json!("rain");
     world["content"]["atmospheres"] = serde_json::json!([
-        { "id": "atmosphere/yard", "precipitation": precipitation }
+        { "id": "atmosphere/yard", "precipitation": precipitation,
+          "attributes": { "audio/background_music": {} } }
     ]);
 }
 

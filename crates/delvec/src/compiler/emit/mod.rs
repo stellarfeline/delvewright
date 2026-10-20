@@ -927,6 +927,25 @@ pub fn build_with_warnings(
     // spec-0104 §6–§8: the compass, the journal and the highlights, derived once
     // over the assembled world every emitter here reads.
     let guide = guidance::guide(plan, &assembled.blocks);
+    // spec-0109 §5.1: what every biome a camera can stand in plays, what each
+    // cutscene hears, what each `stop-sound` cuts — read over the forced
+    // route's legs (none for a campaign that walks no world). The line is
+    // printed on every build, zeroes and a refusal included, and the ledger is
+    // written on every build: every campaign states the ground's music.
+    {
+        let routes: &[crate::compiler::nav::LegRoute] = path_legs
+            .iter()
+            .find(|(slug, _, _)| slug == "critical-path")
+            .map(|(_, _, r)| r.as_slice())
+            .unwrap_or(&[]);
+        let (music, verdict) = crate::compiler::music::measure(plan, routes, &moves, &actor_moves);
+        eprintln!("{}", music.line());
+        verdict.map_err(|f| BuildFailure::Diagnostic {
+            code: f.code,
+            message: f.message,
+        })?;
+        put_json(&mut out, "validation/music.json", &music.to_json());
+    }
     let functions = emit_functions(
         plan,
         &chrome,
@@ -1129,7 +1148,14 @@ pub fn build_with_warnings(
     crate::compiler::creator::emit_creator(plan, &mut out, &moves, &actor_moves);
 
     // ---- server ----
-    emit_ground_biome(plan, &mut out);
+    {
+        // spec-0109 §3.6: every variant a cutscene's own music derives ships
+        // beside the biomes it is derived from.
+        let (scores, _) = crate::compiler::music::scores(plan, &moves, &actor_moves);
+        let variants: Vec<crate::compiler::music::Variant> =
+            scores.into_iter().flat_map(|s| s.variants).collect();
+        emit_ground_biome(plan, &mut out, &variants);
+    }
     emit_server(plan, &mut out);
 
     // ---- critical path ----
@@ -1541,13 +1567,6 @@ pub fn build_with_warnings(
     // volume, no `on_death` and no stake emits no file at all.
     if let Some(dp) = &death_plan {
         put_json(&mut out, "validation/death-plan.json", dp);
-    }
-    // spec-0080 §5.2: what each repaint must tell a connected client — the
-    // chunks of its painted 4-cell box, and the completion marker of the bundle
-    // that fires it — so the bot tier asserts the `chunk_biomes` packets and
-    // the absent reload. A campaign with no `set-atmosphere` emits no file.
-    if let Some(rp) = atmosphere_repaint_plan(plan) {
-        put_json(&mut out, "validation/atmosphere-repaints.json", &rp);
     }
     // spec-0080 §5.3: which biome each carried place stands in at the first
     // tick, as the biome map states it, so a reader that draws a scene inside

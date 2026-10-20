@@ -8,6 +8,12 @@
         "prefab": "prefab/long-gallery"
       }
     ],
+    "horizon": {
+      "attributes": {
+        "audio/background_music": {}
+      },
+      "base": "void"
+    },
     "premise": "A gallery of identical bays that does not end until it has been walked enough.",
     "seed": 20261002,
     "target_minutes": 5,

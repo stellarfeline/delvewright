@@ -57,7 +57,7 @@ fn prefabs_arg() -> String {
     common::prefabs_dir().display().to_string()
 }
 
-/// The same, for a fixture that declares `horizon: ocean`: the library with
+/// The same, for a fixture that declares an `ocean` base: the library with
 /// `hello-room` rebuilt as a piece that declares its own walk plane and a
 /// waterline its bytes bear out (`common::ocean_prefabs_dir`). The shipped room
 /// declares neither, so an ocean campaign that seats it is `DW0886` before
@@ -307,7 +307,7 @@ fn edit_breaching_the_outer_wall_is_dw0322() {
     );
 }
 
-/// Rewrite the copy's stage-1 world doc to declare `horizon: ocean` (spec-0013)
+/// Rewrite the copy's stage-1 world doc to declare an `ocean` base (spec-0013)
 /// at the given stage `dsl_version`, leaving everything else in the fixture alone.
 ///
 /// The version is a parameter because `horizon` is a **world-stage** surface with
@@ -322,14 +322,14 @@ fn set_ocean_horizon_at(dir: &Path, dsl_version: &str) {
     let mut doc: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     doc["dsl_version"] = serde_json::json!(dsl_version);
-    doc["content"]["horizon"] = serde_json::json!("ocean");
+    doc["content"]["horizon"] = common::horizon("ocean");
     // `DW0320`: an ocean horizon needs a return rule; the default margin is fine.
     doc["content"]["boundary"] = serde_json::json!({});
     std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
 }
 
 /// The world-stage version floor for `horizon` (spec-0013) and the current
-/// `DSL_VERSION` — the two ends every `horizon: ocean` proof is driven
+/// `DSL_VERSION` — the two ends every `ocean`-base proof is driven
 /// at.
 const OCEAN_VERSIONS: [&str; 2] = [DSL_VERSION, DSL_VERSION];
 
@@ -521,7 +521,7 @@ fn edit_ocean_unbreached_hull_is_green_and_says_what_it_examined() {
     );
 }
 
-/// A `horizon: void` build emits the ledger too, saying `void` and zeroes.
+/// A build on a `void` base emits the ledger too, saying `void` and zeroes.
 ///
 /// This is the shape a check goes quiet in: no sea, no file, and a later reader
 /// cannot tell "there was nothing to find" from "nobody ran it". The unedited

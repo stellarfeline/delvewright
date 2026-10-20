@@ -25,6 +25,7 @@ mod lethal;
 mod lightning;
 mod r#loop;
 mod loot;
+mod music;
 mod npc;
 mod objective;
 mod onkill;
@@ -116,6 +117,9 @@ pub(super) fn emit_packtest(
     // spec-0080 §5.2: the server holds the biome each carried place declares,
     // and every repaint moves it — inside the volume and not outside.
     atmosphere::emit_atmosphere_packtests(plan, out);
+    // spec-0109 §5.3: a cutscene's own music — its paint, restore, interrupt
+    // and restart functions leave every painted cell at its base.
+    music::emit_music_packtests(plan, out, moves, actor_moves);
 
     creator::emit_creator_packtests(plan, out);
 
@@ -306,6 +310,7 @@ pub(super) fn watch_claims(
         cast::cast_ladder_watch_claim(plan),
         pulse::pulse_watch_claim(plan),
         holders::holder_watch_claim(holders),
+        music::cutscene_music_watch_claim(plan),
     ];
     watch_claims.extend(trigger::env_trigger_watch_claims(plan));
     watch_claims.extend(dialogue::dialogue_mask_watch_claims(plan));

@@ -8,6 +8,9 @@
     },
     "difficulty": "normal",
     "horizon": {
+      "attributes": {
+        "audio/background_music": {}
+      },
       "base": "valley",
       "ratio": 2.5,
       "rim_height": 48

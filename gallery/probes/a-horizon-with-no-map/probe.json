@@ -3,9 +3,12 @@
   "patch": [
     {
       "doc": "world.json",
-      "op": "add",
+      "op": "replace",
       "path": "/content/horizon",
       "value": {
+        "attributes": {
+          "audio/background_music": {}
+        },
         "base": "valley"
       }
     }

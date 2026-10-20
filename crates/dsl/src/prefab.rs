@@ -214,8 +214,8 @@ pub struct PrefabMeta {
     /// whether the claim is TRUE — whether the piece's own bytes put a water
     /// block at that plane and none above it — and refuses a declaration that
     /// is a fiction wherever the document and its `.nbt` are read together.
-    /// `DW0344` asks whether the PLACEMENT honours it: in a `horizon: ocean`
-    /// world the declared waterline must land at world sea level.
+    /// `DW0344` asks whether the PLACEMENT honours it: on an `ocean`
+    /// base the declared waterline must land at world sea level.
     ///
     /// Absent for pieces that author no sea, which neither rule then judges. A
     /// piece that authors water and declares nothing is not refused by

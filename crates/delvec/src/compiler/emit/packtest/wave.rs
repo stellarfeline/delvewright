@@ -42,6 +42,7 @@ use super::*;
 pub(super) fn wave_census_watch_claim(plan: &Plan) -> crate::compiler::watch::Claim {
     crate::compiler::watch::Claim {
         mechanic: "wave-census",
+        kind: crate::compiler::watch::ClaimKind::Body,
         families: vec!["wave_census_".to_string()],
         declared: plan
             .campaign
@@ -232,6 +233,7 @@ pub(super) fn emit_kill_reward_packtests(
 pub(super) fn kill_reward_watch_claim(plan: &Plan) -> crate::compiler::watch::Claim {
     crate::compiler::watch::Claim {
         mechanic: "kill-reward",
+        kind: crate::compiler::watch::ClaimKind::Body,
         families: vec!["k_reward_".to_string()],
         declared: plan
             .campaign

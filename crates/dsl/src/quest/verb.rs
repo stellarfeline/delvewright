@@ -5,11 +5,12 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::serde_fields::is_zero3;
+use crate::serde_fields::{is_zero3, present};
 use crate::{
     ActorId, AnchorId, AssemblyId, AtmosphereId, CameraShot, Carrier, CutsceneParty, DamageKind,
     DespawnStyle, EndingId, FireworkExplosion, FlagId, Mark, NpcId, PlaceRef, PrefabId,
-    QuestEffect, SequenceStep, StakeId, StateId, StealthZone, WaveId, WorldTime, WorldWeather,
+    QuestEffect, SequenceStep, SoundCategory, StakeId, StateId, StealthZone, WaveId, WorldTime,
+    WorldWeather,
 };
 
 #[cfg(doc)]
@@ -349,6 +350,33 @@ pub enum Verb {
         /// the same mechanism as an ending's aftermath.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         then: Vec<QuestEffect>,
+        /// **What the cutscene hears** (spec-0109 §3.5) — a confirmation, never
+        /// a mover. A cutscene has no music of its own: its camera stands in a
+        /// biome, and the biome's declaration plays. `hears` names the one
+        /// atmosphere (`atmosphere/<id>`), or `null` for the ground, that every
+        /// 4-cell the camera passes through wears in the configuration the
+        /// forced route reaches the cutscene in; a camera cell wearing another
+        /// is `DW1032`, an undeclared atmosphere `DW0112`. Absent, nothing is
+        /// judged and the music ledger still reports what the camera hears.
+        #[serde(
+            default,
+            deserialize_with = "present",
+            skip_serializing_if = "Option::is_none"
+        )]
+        #[schemars(with = "Option<AtmosphereId>")]
+        hears: Option<Option<AtmosphereId>>,
+        /// **The cutscene's own music** (spec-0109 §3.6): the music statement
+        /// every atmosphere makes, as an attribute map admitting exactly
+        /// `audio/background_music` (required inside it; `{}` is a scored
+        /// silence) and `audio/music_volume` (optional), read by the one
+        /// attribute reader. While the cutscene plays, every 4-cell its camera
+        /// can be in wears a derived biome carrying this statement; when it
+        /// ends, is interrupted, or the server restarts under it, every cell
+        /// wears what it wore before. A missing `audio/background_music`, a
+        /// `creative` entry or any other id is `DW1031`; a value outside its
+        /// shape is `DW0928`. Absent, the cutscene hears the places it looks at.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        music: Option<BTreeMap<String, serde_json::Value>>,
     },
     /// Cuts the dimension-global world time to a new state (DSL v0.5, spec-0010).
     /// Instantaneous (vanilla has no gradual transition); the state persists
@@ -381,6 +409,30 @@ pub enum Verb {
         /// Playback pitch (vanilla 0.0..=2.0; default 1.0).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pitch: Option<f64>,
+        /// The sound's category (spec-0109 §3.4) — which of the player's
+        /// sliders governs it. Absent = `master`, vanilla's own default for
+        /// `playsound`. A stinger in `music` is governed by the music slider
+        /// and the scene's fade and is cut by `stop-sound music`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        category: Option<SoundCategory>,
+    },
+    /// **Stops sounds the audience hears** (spec-0109 §3.4): vanilla's
+    /// `stopsound`, the counterpart of [`Verb::PlaySound`]. `category` alone
+    /// stops every playing instance in that category; `sound` alone stops that
+    /// event in any category; both, that event in that category; neither,
+    /// every sound. It stops instances and never touches the client's music
+    /// manager: in a scene that declares silence it is the hard cut of a
+    /// play-out or a stinger, in a scene that declares a track a hiccup of a
+    /// few ticks. It addresses players, and a player watching a cutscene is
+    /// addressed — a cut is not harm.
+    StopSound {
+        /// One of the eleven categories; absent = any (written `*` when a
+        /// `sound` is named).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        category: Option<SoundCategory>,
+        /// A registered sound event (`DW0326`), `minecraft:` optional.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sound: Option<String>,
     },
     /// Deals damage to the acting player(s) (DSL v0.6): the real consequence a
     /// stealth `on_caught` or a souls-style beat needs — vanilla's `/damage`
@@ -1032,6 +1084,7 @@ impl Verb {
             Verb::SetTime { .. } => "set-time",
             Verb::SetWeather { .. } => "set-weather",
             Verb::PlaySound { .. } => "play-sound",
+            Verb::StopSound { .. } => "stop-sound",
             Verb::DamagePlayers { .. } => "damage-players",
             Verb::SetCheckpoint { .. } => "set-checkpoint",
             Verb::Bonfire { .. } => "bonfire",
@@ -1078,6 +1131,8 @@ impl Verb {
             Verb::GiveItem { .. }
             | Verb::Narrate(..)
             | Verb::PlaySound { .. }
+            // spec-0109: a cut is heard by the audience it addresses.
+            | Verb::StopSound { .. }
             | Verb::DamagePlayers { .. }
             | Verb::GiveEffect { .. }
             | Verb::ClearEffect { .. }
@@ -1177,6 +1232,7 @@ impl Verb {
             | Verb::PlayClip { .. } => true,
             Verb::Narrate { .. }
             | Verb::PlaySound { .. }
+            | Verb::StopSound { .. }
             | Verb::Firework { .. }
             | Verb::Particle { .. }
             | Verb::Cutscene { .. }

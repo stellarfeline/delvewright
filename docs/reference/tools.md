@@ -2109,8 +2109,6 @@ Every test is bounded by `--test-timeout`; a test's wait on the code under test 
 
 **A quest cue arrives where the bot stands (`harness/src/cues.ts`).** When the build ships `validation/cues.json`, the executor logs, from connect, every `soundEffectHeard` packet naming one of its cues and every completion marker of the run's campaign, in arrival order, each with the bot's own position. At the critical-path stage's end it judges: an announced objective's marker owes the completion cue, the first one at the ledger's `volume` and `pitch` (±0.01) after that marker and before the next; the campaign marker owes the campaign cue, anywhere between the markers on either side of it; an owed cue must arrive, and every cue packet, owed or not, must arrive at the bot's position (per axis ±1.5, `harness/src/sound-heard.ts`, the one rule the containers' arrival-notice judgement reads too). A miss fails the stage. It prints `cue binding: A of O owed cue(s) arrived at the bot (N announced objective(s) in the build), F of the O judged farther than <range> blocks from the world spawn; B of U other cue packet(s) at the bot`, with `UNBOUND` when no observed marker owed a cue, and the run report carries `cue_binding` (the counts and every verdict). CI's `gallery bot` requires at least one owed cue, every owed cue arrived, and at least one judged beyond the cue's range of the world spawn — where a cue at the command source is never sent.
 
-**A repaint reaches the client (`harness/src/repaint.ts`, spec-0080 §5.2).** When the build ships `validation/atmosphere-repaints.json`, the executor feeds every `chunk_biomes`, `map_chunk`, `unload_chunk`, `login`, `respawn` and `update_view_distance` packet, and every completion marker with where the bot stood, into a ledger. A `login` or `respawn` drops every chunk the client held (the client discards its level and the server sends no `unload_chunk`). Every harness bot asks for `CLIENT_VIEW_DISTANCE` (32, vanilla's ceiling, `harness/src/client-loaded.ts`), so it is served the campaign's declared view distance. For each repaint whose bundle's marker arrived, a painted chunk is **owed** when it lies inside the served disc around the bot's chunk at that moment (chunk-offset distance under the served view distance, one ring inside what the server sends), and **bound** when it is owed and the client held it. Every held chunk must be named by a `chunk_biomes` within 10 s and never resent by a `map_chunk`; the repaint refuses when nothing binds: every chunk beyond the served distance (a chunk held at the server's margin binds nothing, because whether it is held is luck), none of the owed chunks held yet, or the bot's standpoint or the served distance unknown. The verdicts join the `critical-path` stage's failures, and the run prints `atmosphere repaints: R in the build, K with a marker, P performed; B bound chunk(s) (held inside the served view distance) of O owed of N painted; T of H held chunk(s) told by chunk_biomes, M resent by map_chunk`. A repaint whose firing no marker announces (`after: null`) is counted and not judged.
-
 `harness/src/note-bot.ts` is driven by `validation/playtest-note-flow.sh` and
 `harness/src/rehearsal-bot.ts` by `validation/rehearsal-flow.sh`, never by hand.
 
@@ -2123,7 +2121,12 @@ Every test is bounded by `--test-timeout`; a test's wait on the code under test 
 `docs/reference/compiler.md`, "`trigger` steps"). The bot does to the target what
 a player does: `strike` and `strike-npc` are a real attack (`bot.attack`) on the
 `interaction` hitbox at `pos`, `use` a real right-click (`bot.activateEntity`),
-`approach` a walk into the trigger's `range` — never a command. The hitbox is
+`approach` a walk into the trigger's `range` — never a command. The approach
+walk's goal is `approachGoalRange(range)`: the server measures from the middle
+of the anchor cell's floor (`positioned` centres an integer x and z), and the
+bot may stop anywhere in a cell the goal accepts, so the goal is the widest `k`
+with `k` plus half a cell's diagonal inside `range` — a block goal on the
+anchor cell at range 1. The hitbox is
 acquired by the crosshair rule below, and the step passes only on the trigger's
 own fired marker, `[dw:complete <campaign> trigger/<id>]`.
 
