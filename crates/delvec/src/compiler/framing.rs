@@ -211,10 +211,44 @@ pub fn sight(
     };
     let in_frame = ndc(&cam, aspect, reference)
         .is_some_and(|[x, y]| round6(x.abs()) <= ACTION_SAFE && round6(y.abs()) <= ACTION_SAFE);
-    let blocked = |to: [f64; 3]| walk_cells(pose.pos, to, |c| blocks(c) && !sight_box.contains(c));
+    let Lines {
+        clear: lines_clear,
+        centre_block,
+    } = in_sight(pose.pos, sight_box, blocks);
+    Sight {
+        in_frame,
+        lines_clear,
+        centre_block,
+    }
+}
+
+/// What an eye sees of a box past the cells that stop a line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Lines {
+    /// How many of the nine lines cross no blocking cell outside the box.
+    pub clear: u8,
+    /// The first blocking cell on the centre line, when it is blocked.
+    pub centre_block: Option<[i32; 3]>,
+}
+
+impl Lines {
+    /// At least one line is clear.
+    pub fn seen(&self) -> bool {
+        self.clear > 0
+    }
+}
+
+/// **The one "in sight" rule** (spec-0110 §5.5): of the nine lines from `eye`
+/// to `sight_box` (its centre and its eight corners inset,
+/// [`CellBox::sight_points`]), how many cross no cell `blocks` holds for, the
+/// box's own cells excluded. [`sight`] asks it of a camera's lens; `DW0863`
+/// (`promise`, spec-0104 §4) asks it of a standing body's eye, with no frame,
+/// because a player turns to look.
+pub fn in_sight(eye: [f64; 3], sight_box: &CellBox, blocks: &dyn Fn([i32; 3]) -> bool) -> Lines {
+    let blocked = |to: [f64; 3]| walk_cells(eye, to, |c| blocks(c) && !sight_box.contains(c));
     let pts = sight_box.sight_points();
     let centre_block = blocked(pts[0]);
-    let lines_clear = pts
+    let clear = pts
         .iter()
         .enumerate()
         .filter(|(i, p)| {
@@ -225,9 +259,8 @@ pub fn sight(
             }
         })
         .count() as u8;
-    Sight {
-        in_frame,
-        lines_clear,
+    Lines {
+        clear,
         centre_block,
     }
 }

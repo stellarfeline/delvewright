@@ -688,28 +688,35 @@ fn unseen(
     target: [i32; 3],
     body: bool,
 ) -> Option<String> {
+    use crate::compiler::framing::{CellBox, in_sight};
     let c = crate::compiler::nav::cell_center(from);
     let eye = [c[0], c[1] + EYE_HEIGHT, c[2]];
-    let t = crate::compiler::nav::cell_center(target);
-    let at = [t[0], t[1] + if body { 1.0 } else { 0.5 }, t[2]];
+    // A body is its feet and head cells; a block is its cell. The centre line
+    // ends at the box's centre: a body's torso, a block's middle.
+    let sight_box = if body {
+        CellBox::spanning(target, [target[0], target[1] + 1, target[2]])
+    } else {
+        CellBox::cell(target)
+    };
+    let at = sight_box.centre();
     let d = ((eye[0] - at[0]).powi(2) + (eye[1] - at[1]).powi(2) + (eye[2] - at[2]).powi(2)).sqrt();
     if d > SIGHT_BLOCKS {
         return Some(format!(
             "{d:.1} blocks away, past the {SIGHT_BLOCKS} blocks sight reaches"
         ));
     }
-    let floor = |p: [f64; 3]| {
-        [
-            p[0].floor() as i32,
-            p[1].floor() as i32,
-            p[2].floor() as i32,
-        ]
-    };
-    let skip = [from, floor(eye), target, floor(at)];
-    crate::compiler::nav::walk_cells(eye, at, |cell| {
-        !skip.contains(&cell) && world.blocks_camera(cell)
+    // The vantage is no occluder: the cell a step names and the eye's own
+    // cell never stop a line (spec-0104 §4); the target's cells are the box's.
+    let eye_cell = [eye[0].floor() as i32, eye[1].floor() as i32, eye[2].floor() as i32];
+    let lines = in_sight(eye, &sight_box, &|cell| {
+        cell != from && cell != eye_cell && world.blocks_camera(cell)
+    });
+    (!lines.seen()).then(|| {
+        let first = lines
+            .centre_block
+            .map_or_else(String::new, |cell| format!(": the centre line is stopped first at {cell:?}"));
+        format!("{d:.1} blocks away and hidden — all nine lines to it are stopped{first}")
     })
-    .map(|cell| format!("{d:.1} blocks away and hidden: the line is stopped first at {cell:?}"))
 }
 
 /// **An act the party can find** (`DW0863`, spec-0104 §4). On every walked

@@ -227,7 +227,7 @@ A hint that names an act other than its objective's is the `DW1045` warning, for
 | Calque markers (zh) | Marker list | 9 of 11 (82%); recall 9 of 23 |
 | Item tooltip without function | Shop/item tooltip with no mechanical word | 8 of 9 (89%); recall 8 of 16 |
 | Echo closer / symmetry (en) | Last sentence repeats a content word, tricolon fragment, twin short sentences | 9 of 14 (64%); recall 9 of 23 |
-| Act found (`DW0863`, built) | Every act on every walked path: announced with a hint, or a clear line within 64 blocks from where the party stands | Binding stated by every build |
+| Act found (`DW0863`, built) | Every act on every walked path: announced with a hint, or one clear line of nine to it within 64 blocks from where the party stands | Binding stated by every build |
 | Functional text without action or place | Functional keys lacking an imperative, a direction or a named object | 8 of 26 (31%) — not usable as a refusal |
 | Hint-for-statement (en) | No mechanical signal found | 6 of 16 (38%) — human review only; stays human beside the rows above |
 
