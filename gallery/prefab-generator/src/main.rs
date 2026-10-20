@@ -463,7 +463,7 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/hearth-stone",
-        pos: [6, 1, 9],
+        pos: [7, 1, 9],
         facing: Some("west"),
         trigger_block: None,
         note: "the stone beside the hearth, where the `strike` trigger hangs. \
