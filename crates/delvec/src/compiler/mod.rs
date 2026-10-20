@@ -35,6 +35,7 @@
 //! - [`cohabit`]: one mark, one body — two bodies whose lifetimes overlap may not be declared on one cell (`DW0896`).
 //! - [`combat`]: compile-time combat winnability — the arithmetic half of the combat proofs.
 //! - [`commands`]: the vendored 1.21.11 Brigadier command-tree validator.
+//! - [`containers`]: the container census — loot, device or scenery (`DW1018`, `DW1024`).
 //! - [`continuity`]: the NPC location-continuity lint (`DW0351`).
 //! - [`creator`]: the playtest-only creator overlay (`creator-datapack/`).
 //! - [`crosshair`]: two things the party must click may not stand where the crosshair cannot tell them apart (`DW0489`).
@@ -139,6 +140,7 @@ pub mod clock;
 pub mod cohabit;
 pub mod combat;
 pub mod commands;
+pub mod containers;
 pub mod continuity;
 pub mod creator;
 pub mod crosshair;

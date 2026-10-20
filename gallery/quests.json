@@ -389,6 +389,13 @@
         }
       }
     ],
+    "containers": {
+      "decoration_notice": {
+        "sound": "minecraft:block.chest.close",
+        "style": "chat",
+        "text": "The long hall was emptied long ago, and the chest in its end room holds nothing. What this hall keeps, it keeps for you."
+      }
+    },
     "lethal_volumes": [
       {
         "damage_type": "fall",
@@ -580,6 +587,26 @@
           {
             "count": 4,
             "item": "minecraft:emerald"
+          }
+        ]
+      },
+      {
+        "anchor": "anchor/cabin-barrel",
+        "id": "loot/ferryman-stores",
+        "items": [
+          {
+            "count": 3,
+            "item": "minecraft:bread"
+          }
+        ]
+      },
+      {
+        "anchor": "anchor/long-gallery-brewing-stand",
+        "id": "loot/gallery-end-stores",
+        "items": [
+          {
+            "count": 1,
+            "item": "minecraft:glass_bottle"
           }
         ]
       }
@@ -4500,6 +4527,6 @@
       }
     ]
   },
-  "dsl_version": "0.41.0",
+  "dsl_version": "0.43.0",
   "stage": "quests"
 }

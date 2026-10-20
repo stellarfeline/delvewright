@@ -10,8 +10,12 @@ use crate::{AnchorId, LootId};
 #[cfg(doc)]
 use crate::enchantment_component;
 
-/// A stage-5 container fill (DSL v0.6, spec-0021): contents for a chest or
-/// barrel the prefab already placed.
+/// A stage-5 container fill (DSL v0.6, spec-0021): contents for a container
+/// the prefab already placed — any of the twelve container kinds of the pinned
+/// game (spec-0105): a chest, trapped
+/// chest, barrel or shulker box (27 slots), a hopper or brewing stand (5), a
+/// dispenser, dropper or crafter (9), a furnace, blast furnace or smoker (3:
+/// input, fuel, result).
 ///
 /// The container is **hardware the prefab authored**, exactly like a trap's
 /// dispenser: this declaration gives an already-placed, already-lit, already
@@ -54,6 +58,33 @@ pub struct LootItem {
     pub enchantments: BTreeMap<String, u32>,
 }
 
+/// **The container class's home in stage 5** (DSL v0.43, spec-0105).
+///
+/// Every container cell of the built world is loot (a fill stands in it), a
+/// device (a trap, trigger or objective acts on it) or scenery. Declaring
+/// [`Containers::decoration_notice`] is the declaration that every container
+/// no fill and no device claims is scenery, and that this line tells the
+/// player so — once, at arrival, before any container can be reached. What it
+/// covers is derived by the build's census and printed; it is never typed.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Containers {
+    /// The line that tells each player, at arrival, what the containers no
+    /// fill claims hold — the one `narrate` payload ([`crate::Narration`]),
+    /// emitted in every class's apply function after the warp in, so its sound
+    /// plays where the player arrives. Inventoried for translation as
+    /// `containers.decoration_notice`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decoration_notice: Option<crate::Narration>,
+}
+
+impl Containers {
+    /// Whether the object declares nothing (`DW1019`).
+    pub fn is_empty(&self) -> bool {
+        self.decoration_notice.is_none()
+    }
+}
+
 fn one_u32() -> u32 {
     1
 }
@@ -81,6 +112,92 @@ crate::dw_code! {
     /// in the pinned 1.21.11 registry. `item replace … container.<n> with <item>
     /// <count>` fails **silently** above the cap, shipping an empty slot.
     pub const ITEM_COUNT_OVER_STACK: DwCode = DwCode::new("DW0436", ExitTier::Build);
+}
+
+crate::dw_code! {
+    /// (spec-0105 §6.2) A container declaration that holds nothing: a `loot`
+    /// fill with no stack, a `containers` object that declares nothing, or a
+    /// runtime `set-block` / `fill-region` that places a container — which
+    /// stands empty for ever, because every fill runs at `setup_finish`.
+    pub const CONTAINER_HOLDS_NOTHING: DwCode = DwCode::new("DW1019", ExitTier::Build);
+}
+
+/// `DW1019`: every declaration that would leave a container holding nothing
+/// (spec-0105 §6.2). A container meant to hold nothing is scenery, and scenery
+/// is declared once, by `containers.decoration_notice` — never by an empty
+/// fill, and never by a container conjured at runtime.
+pub(crate) fn container_declaration_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
+    let quests = &c.quests.content;
+    for (i, l) in quests.loot.iter().enumerate() {
+        if l.items.is_empty() {
+            d.push(Diagnostic::error(
+                CONTAINER_HOLDS_NOTHING,
+                "quests",
+                format!("/content/loot/{i}/items"),
+                format!(
+                    "loot `{}` declares no stack, so the container at anchor `{}` would open \
+                     to an empty grid. A loot fill is never empty: give it at least one stack. \
+                     A container meant to hold nothing is scenery, and scenery is declared \
+                     once for the whole campaign by `containers.decoration_notice` — delete \
+                     this entry and let the notice speak for the container.",
+                    l.id, l.anchor
+                ),
+            ));
+        }
+    }
+    if quests.containers.as_ref().is_some_and(Containers::is_empty) {
+        d.push(Diagnostic::error(
+            CONTAINER_HOLDS_NOTHING,
+            "quests",
+            "/content/containers".to_string(),
+            "`containers` is present and declares nothing. Declare \
+             `containers.decoration_notice` — the line that tells the party, at arrival, \
+             what the containers no fill claims hold — or delete `containers`."
+                .to_string(),
+        ));
+    }
+    fn descend(
+        path: String,
+        eff: &crate::QuestEffect,
+        f: &mut dyn FnMut(String, &crate::QuestEffect),
+    ) {
+        f(path.clone(), eff);
+        for (pseg, _kseg, list) in eff.nested_effect_lists_labeled() {
+            for (j, inner) in list.iter().enumerate() {
+                descend(format!("{path}/{pseg}/{j}"), inner, f);
+            }
+        }
+    }
+    crate::effects::for_each_effect_root(c, &mut |site, list| {
+        for (m, eff) in list.iter().enumerate() {
+            descend(format!("{}/{m}", site.path), eff, &mut |path, e| {
+                let block = match &e.verb {
+                    crate::Verb::SetBlock { block, .. } | crate::Verb::FillRegion { block, .. } => {
+                        block
+                    }
+                    _ => return,
+                };
+                if crate::blocks::container_kind(block).is_none() {
+                    return;
+                }
+                d.push(Diagnostic::error(
+                    CONTAINER_HOLDS_NOTHING,
+                    site.stage,
+                    format!("{path}/block"),
+                    format!(
+                        "this `{}` places `{block}` at runtime. A container placed at runtime \
+                         stands empty for ever: every fill runs at `setup_finish`, before it \
+                         exists. A container in a delve is one of two things — a `collect`'s \
+                         own chest, which the compiler places and fills (a `collect` with \
+                         neither `container` nor `dropped_by`), or a container the piece \
+                         places, filled by a `loot` entry. Place a block that is not a \
+                         container here.",
+                        e.verb.tag()
+                    ),
+                ));
+            });
+        }
+    });
 }
 
 /// Exclusive ownership of an adopted container (DSL v0.8, `DW0435`).
@@ -132,12 +249,7 @@ pub(crate) fn collect_container_claim_checks(c: &Campaign, d: &mut Vec<Diagnosti
     }
 }
 
-/// The smallest vanilla container the container-fill surfaces admit. A barrel and
-/// a single chest both hold 27; refusing >27 up front keeps the overflow from
-/// being discovered as a silently dropped stack on a live server. Shared by the
-/// `loot` stack ceiling and the v0.8 `collect` `fill_count` ceiling, which are the
-/// same positional-fill rule (`DW0432`) on two surfaces.
-pub(crate) const MIN_CONTAINER_SLOTS: usize = 27;
+use crate::blocks::MAX_CONTAINER_SLOTS;
 
 /// `DW0436`: a **single-slot fill** whose `count` exceeds the item's
 /// `minecraft:max_stack_size` in the pinned 1.21.11 registry.
@@ -266,15 +378,15 @@ pub(crate) fn loot_checks(
                 ),
             ));
         }
-        if l.items.len() > MIN_CONTAINER_SLOTS {
+        if l.items.len() > MAX_CONTAINER_SLOTS {
             d.push(Diagnostic::error(
                 codes::LOOT_TOO_MANY_ITEMS,
                 "quests",
                 format!("/content/loot/{i}/items"),
                 format!(
-                    "loot `{}` declares {} stacks, more than the {MIN_CONTAINER_SLOTS} slots a \
-                     vanilla chest or barrel has. Slots are assigned positionally, so every \
-                     stack past the {MIN_CONTAINER_SLOTS}th would be dropped silently. Split \
+                    "loot `{}` declares {} stacks, more than the {MAX_CONTAINER_SLOTS} slots of \
+                     the largest vanilla container. Slots are assigned positionally, so every \
+                     stack past the {MAX_CONTAINER_SLOTS}th would be dropped silently. Split \
                      the contents across more than one container.",
                     l.id,
                     l.items.len()

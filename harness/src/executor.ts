@@ -126,6 +126,12 @@ export class MineflayerExecutor implements StepExecutor {
   readonly sculk = new SculkEar();
   /** The pulses and their stations (spec-0102 §5.3), when the build declares any. */
   pulsePlan: PulsePlan | undefined;
+  /** The container census ledger (spec-0105 §5.3), when the build wrote one. */
+  containerLedger: import("./containers.ts").ContainerLedger | undefined;
+  /** The arrival line's verdict, judged at the first class selection. */
+  noticeVerdict: import("./containers.ts").NoticeVerdict | undefined;
+  /** Every title text the server sent this run, in order. */
+  readonly titlesTold: string[] = [];
   /** Station key → `undefined` when the station judged as owed, else the failure. */
   readonly pulseRecorded = new Map<string, string | undefined>();
   /** Every station stood at, with what it heard — the run report's `pulse_stations`. */

@@ -1,0 +1,23 @@
+{
+  "code": "DW1019",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/loot/0/items",
+      "value": []
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/content/loot.pedestal-case.item.0.name"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/source/loot.pedestal-case.item.0.name"
+    }
+  ],
+  "units": [],
+  "why": "`loot/pedestal-case` with its stacks removed: a fill that fills nothing, so the reliquary would open to an empty grid while the census counted it as loot. A container meant to hold nothing is scenery, and scenery is declared once, by the notice, never by an empty fill. It declares no unit: `items` is bound in the primary. The zh-cn row for the removed stack's name goes with it."
+}

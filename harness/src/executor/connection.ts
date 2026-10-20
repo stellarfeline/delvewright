@@ -261,6 +261,10 @@ export const methods = {
     // reader that watches only the first reports a cleared purse as its last known
     // value, which is the one direction a currency assertion must never drift in.
     this.installScoreObserver(bot);
+    // spec-0105 §5.3: an on-screen notice arrives as a title packet, not chat.
+    bot.on("title", (text: unknown) => {
+      this.titlesTold.push(typeof text === "string" ? text : JSON.stringify(text));
+    });
     // The quest cues: every sound packet naming one, in arrival order beside the
     // markers above, so each is judged against the marker that owed it.
     bot.on(
