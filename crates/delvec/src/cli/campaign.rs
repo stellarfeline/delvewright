@@ -400,6 +400,11 @@ pub(super) fn validate_loaded(
                 let (ad, abind) = delvec::compiler::telling::check_acts(&campaign);
                 examined.push(abind.line());
                 diags.extend(ad);
+                // spec-0104 §5: a hint that names an act names this
+                // objective's — the same lexicon, a warning.
+                let (hd, hbind) = delvec::compiler::telling::check_hint_acts(&campaign);
+                examined.push(hbind.line());
+                diags.extend(hd);
             }
             // v0.6 `close-gate` gate-block declaration (DW0343): the fill block is
             // prefab metadata, so this compiler-side check runs here (validation
@@ -501,12 +506,6 @@ pub(super) fn validate_loaded(
                 let (pd, pbind) = delvec::compiler::promise::check(&campaign);
                 examined.push(pbind.line());
                 diags.extend(pd);
-                // DW1015 (spec-0104 §5): a title that does not name the act its
-                // type completes on is a warning the creator adjudicates, in the
-                // English and every sidecar with a table.
-                let (vd, vbind) = delvec::compiler::promise::check_act_verbs(&campaign, &sidecars);
-                examined.push(vbind.line());
-                diags.extend(vd);
                 // DW1017 (spec-0104 §6.6): the compass follows only an announced
                 // objective. DW1016 (§7.5): a highlight lights a block or a body.
                 let (cd, cbind) = delvec::compiler::promise::check_compass(&campaign);

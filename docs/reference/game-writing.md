@@ -28,7 +28,7 @@ any game, however oblique its story.
   behind you), never by a compass point: Minecraft shows no compass, so
   `north` leaves the player guessing. `Hold the Warden's Key to the iron-bound
   door past the broken bell.` not `The keyhole is old and large.`, and not
-  `the door at the west end of the walk`. The landmark rule is **authored**; the compass half is refused in every player-facing English line by `DW1049` ([dsl/compass.md](dsl/compass.md)). **Machine half:** a title with no verb of its objective kind's set in the act lexicon (`crates/dsl/data/act-verbs.json`), and a hint naming only another kind's act, are `DW1015` warnings the creator adjudicates — a closed set cannot tell a noun from a verb; a key the act needs is named by a key span, `[[key|use]]`, never typed out (spec-0104).
+  `the door at the west end of the walk`. The landmark rule is **authored**; the compass half is refused in every player-facing English line by `DW1049` ([dsl/compass.md](dsl/compass.md)). **Machine half:** a title opening on an act its completion does not perform is refused, and a hint naming only another act is a warning the creator adjudicates — both `DW1045` (F7); a key the act needs is named by a key span, `[[key|use]]`, never typed out (spec-0104).
   **Cited:** Microsoft Writing Style Guide, *Top 10 tips* ("start each statement
   with a verb", "get to the point fast"); Game Accessibility Guidelines, *Use
   simple clear language* (basic level; about 14% of US/UK adults read below an
@@ -214,7 +214,7 @@ names that reach dialogue, is `DW0982`: the declared names (the inventory's
 order against what has told them (N1, N3). A question without an answer is
 `DW0981`: an option that asks and opens no line. A name tag on a crowd is
 `DW0983` (N6, [`compiler::telling` § DW0983](delvec/compiler/telling.md#dw0983--a-name-tag-marks-a-person-compilertelling-error-exit-1)). An objective title headed by an act its completion does not perform is `DW1045` (F7, [`compiler::telling` § DW1045](delvec/compiler/telling.md#dw1045--an-objective-says-the-act-that-completes-it-compilertelling-error-exit-1)). All four refuse at `delvec validate` ([`compiler::telling` § DW0981/DW0982](delvec/compiler/telling.md#dw0981dw0982--what-the-dialogue-tells-the-player-compilertelling-error-exit-1)).
-An objective's title that may not name the act its type completes on is the `DW1015` warning, for the creator to adjudicate; an act the party can see from where it stands, or that is announced with a hint, is `DW0863` (spec-0104, [`compiler::promise`](delvec/compiler/promise.md)); and `DW0982` reads an announced objective's title and hint as well as dialogue. The rest is not built.
+A hint that names an act other than its objective's is the `DW1045` warning, for the creator to adjudicate; an act the party can see from where it stands, or that is announced with a hint, is `DW0863` (spec-0104, [`compiler::promise`](delvec/compiler/promise.md)); and `DW0982` reads an announced objective's title and hint as well as dialogue. The rest is not built.
 
 | Check | What it reads | Estimated precision on Vesperhold |
 |---|---|---|
@@ -227,7 +227,6 @@ An objective's title that may not name the act its type completes on is the `DW1
 | Calque markers (zh) | Marker list | 9 of 11 (82%); recall 9 of 23 |
 | Item tooltip without function | Shop/item tooltip with no mechanical word | 8 of 9 (89%); recall 8 of 16 |
 | Echo closer / symmetry (en) | Last sentence repeats a content word, tricolon fragment, twin short sentences | 9 of 14 (64%); recall 9 of 23 |
-| Title names another act (`DW1015`, built, a warning the creator adjudicates) | Every objective title and hint, in the English and every sidecar with a table, against the act lexicon: a title carries its own kind's verb; a hint names no other kind's act without its own | Measured on the motivating campaign at the commit that landed it (its body states the count against spec-0104 §2.2's hand count of 9 of 18 titles) |
 | Act found (`DW0863`, built) | Every act on every walked path: announced with a hint, or a clear line within 64 blocks from where the party stands | Binding stated by every build |
 | Functional text without action or place | Functional keys lacking an imperative, a direction or a named object | 8 of 26 (31%) — not usable as a refusal |
 | Hint-for-statement (en) | No mechanical signal found | 6 of 16 (38%) — human review only; stays human beside the rows above |

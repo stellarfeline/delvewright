@@ -1,7 +1,8 @@
 //! What the text tells the player: a question gets an answer (`DW0981`), a
 //! name reaches a line only after the player has been told it (`DW0982`), a
 //! name tag marks a person, never one of a crowd (`DW0983`), and an objective's
-//! title says the act that completes it (`DW1045`, spec-0114).
+//! title says the act that completes it (`DW1045`, spec-0114) — and a hint that
+//! names an act names that one, a `DW1045` warning (spec-0104 §5).
 //!
 //! Both are `docs/reference/game-writing.md` rules made mechanical: §2 S1/S5 (the
 //! critical path is plain) for the first, §3 N1/N3 (introduce a name before you
@@ -1229,6 +1230,32 @@ impl Lexicon {
         })
     }
 
+    /// Every lexicon phrase a line names, wherever it stands (spec-0104 §5,
+    /// the hint arm): read left to right, the longest phrase of up to
+    /// [`MAX_HEAD_WORDS`] words at each position, the words it covers then
+    /// skipped, so a phrase is never also read as the shorter phrase inside it.
+    pub fn acts_in(&self, line: &str) -> Vec<(String, &BTreeSet<Act>)> {
+        let words = title_words(line);
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < words.len() {
+            let found = (1..=MAX_HEAD_WORDS.min(words.len() - i))
+                .rev()
+                .find_map(|n| {
+                    let key = words[i..i + n].join(" ");
+                    self.phrases.get(&key).map(|acts| (key, acts, n))
+                });
+            match found {
+                Some((key, acts, n)) => {
+                    out.push((key, acts));
+                    i += n;
+                }
+                None => i += 1,
+            }
+        }
+        out
+    }
+
     /// Up to `n` example heads for an act set: each act's own name first (every
     /// act's name is one of its heads), then its one-word heads in order,
     /// taken round-robin across the acts.
@@ -1442,6 +1469,100 @@ pub fn check_acts_with(c: &Campaign, lex: &Lexicon) -> (Vec<Diagnostic>, ActBind
                     o.id(),
                     acts_line(said),
                     acts_line(&done),
+                ),
+            ));
+        }
+    }
+    (d, bind)
+}
+
+/// What the hint arm of `DW1045` read, zeroes included.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HintActBinding {
+    /// Objectives in the campaign.
+    pub objectives: usize,
+    /// Objectives carrying a non-blank English hint.
+    pub hinted: usize,
+    /// Of those, hints naming at least one act the lexicon knows — the judged ones.
+    pub naming: usize,
+    /// Judged hints naming only acts the completion does not perform.
+    pub warned: usize,
+}
+
+impl HintActBinding {
+    /// The binding line `delvec validate` prints.
+    pub fn line(&self) -> String {
+        format!(
+            "hint act binding (DW1045): {} of {} English hint(s) name an act, over {} \
+             objective(s); {} warned",
+            self.naming, self.hinted, self.objectives, self.warned
+        )
+    }
+}
+
+/// **A hint that names an act names this objective's** (spec-0104 §5): the
+/// hint arm of `DW1045`, a **warning**. A hint may be a place with no act at
+/// all and passes; one whose every act phrase, read anywhere in its English
+/// against the one act lexicon ([`Lexicon::acts_in`]), states an act the
+/// completion does not perform is reported for the creator to adjudicate. A
+/// hint is free prose, where a closed lexicon cannot tell a noun from a verb or
+/// reported speech from an instruction, so this arm never refuses; a title's
+/// head is read by [`check_acts`], which does.
+pub fn check_hint_acts(c: &Campaign) -> (Vec<Diagnostic>, HintActBinding) {
+    check_hint_acts_with(c, Lexicon::english())
+}
+
+/// [`check_hint_acts`] against a given lexicon.
+pub fn check_hint_acts_with(c: &Campaign, lex: &Lexicon) -> (Vec<Diagnostic>, HintActBinding) {
+    let mut bind = HintActBinding::default();
+    let mut d = Vec::new();
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oi, o) in q.objectives.iter().enumerate() {
+            bind.objectives += 1;
+            let Some(hint) = o
+                .hint()
+                .map(|t| delvewright_dsl::l10n::plain(t).into_owned())
+                .filter(|t| !t.trim().is_empty())
+            else {
+                continue;
+            };
+            bind.hinted += 1;
+            let found = lex.acts_in(&hint);
+            if found.is_empty() {
+                continue;
+            }
+            bind.naming += 1;
+            let done = q.objective_acts(o);
+            if found
+                .iter()
+                .any(|(_, said)| said.intersection(&done).next().is_some())
+            {
+                continue;
+            }
+            bind.warned += 1;
+            let (phrase, said) = &found[0];
+            let words = lex.examples(&done, 3);
+            d.push(Diagnostic::warning(
+                DW_ACT_UNTRUE,
+                "quests",
+                format!("/content/quests/{qi}/objectives/{oi}/hint"),
+                format!(
+                    "the hint of objective `{}` (\"{hint}\") reads as another act: `{phrase}` → \
+                     {}, and its completion `{}` → {}, and the hint names none of those. \
+                     Decide whether it sends the party to do something the game does not \
+                     reward: if the word is a noun or reported speech, keep it; if not, name \
+                     the act the completion performs ({}), or write the hint as a place \
+                     (`Past the bell, left of the arch.`). The lexicon reads words, not \
+                     meaning, so a hint is a question for you, never a refusal.",
+                    o.id(),
+                    acts_line(said),
+                    q.objective_shape(o),
+                    acts_line(&done),
+                    words
+                        .iter()
+                        .map(|w| format!("`{w}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
             ));
         }

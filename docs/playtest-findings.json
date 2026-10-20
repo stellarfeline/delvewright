@@ -3444,13 +3444,13 @@
       },
       "campaign": "the-stranding",
       "carrier": {
-        "code": "DW1015",
+        "code": "DW1045",
         "kind": "dw"
       },
       "finding": "an objective's text named a different act from the one that completes it: a hint said to walk past a thing that must be right-clicked, and a title said to go somewhere where talking to someone completes it",
       "general_form": "an objective's title and hint name the act its type completes on (an interact objective says use or right-click, a talk-to objective names the person), never a different verb",
       "id": "str-05",
-      "note": "Carried by `DW1015` (spec-0104 §5), a warning the creator adjudicates: an objective's title carrying no verb of its own kind's set in the act lexicon (`crates/dsl/data/act-verbs.json`), and a hint naming another kind's act without its own, are reported with the evidence — in the English and every sidecar whose language has a table — and validation exits 0. Membership in a closed set cannot tell a noun from a verb, so the verdict is the creator's; its recall is bounded by the lexicon's seed. What a hint says about where to go is a writing rule in the skill (`references/writing-craft.md` §F), with no machine half.",
+      "note": "Carried by `DW1045` (`compiler::telling`, spec-0114 and spec-0104 §5): an objective's title whose head, the longest phrase of the act lexicon `crates/delvec/data/acts-en.json` it opens on, states an act its completion does not perform is refused; a hint whose every act phrase states an act the completion does not perform is a warning the creator adjudicates, since a closed lexicon cannot tell a noun from a verb in free prose. Both arms read the English; a transcreated line is bound by provenance (`DW0187`). Both binding lines print their counts. What a hint says about where to go is a writing rule in the skill (`references/writing-craft.md` §F), with no machine half.",
       "round": 1,
       "triage": "capability"
     },

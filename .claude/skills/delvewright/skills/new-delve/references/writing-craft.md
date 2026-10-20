@@ -217,10 +217,12 @@ pass afterwards. Which rules bind which line:
   see and a position relative to it, never by a compass point (a player sees no
   compass; a compass word counts as a name only inside a name the campaign declares); a refusal says what is wrong and what
   fixes it; an item tooltip says what the item does first. An objective's
-  title opens with the verb of the act its type completes on — a `talk-to`
-  talks, asks or tells; an `interact` pulls, rings, opens or reads; a
-  `reach-anchor` goes, climbs or enters; a `kill` clears or defeats; a
-  `collect` takes or brings — never another kind's verb (*Go to the mill* on a
+  title opens with the act its completion performs — a `talk-to` speaks, asks
+  or tells; an `interact` pulls, rings, opens or lights, and with
+  `requires_item` also shows or holds up; a `reach-anchor` goes, climbs or
+  enters; a `kill` clears, puts down or defeats; a `collect` takes, fetches or
+  gathers; *lay*, *place*, *give* and *bring* are true only of an `interact`
+  that requires and takes the item — never another act (*Go to the mill* on a
   `talk-to` sends the party to walk where they must speak). A hint may be a
   place with no verb at all; when it names an act, it is this objective's.
   A hint says where to go and what to do: the act as the player performs it,

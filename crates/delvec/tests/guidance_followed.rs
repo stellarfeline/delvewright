@@ -1,6 +1,6 @@
 //! Guidance a player can follow (spec-0104): every act is in sight or told
-//! (`DW0863`), a title that does not name the act its type completes on is a
-//! warning (`DW1015`), and a hint's names are told (`DW0982`).
+//! (`DW0863`), a hint that names an act names its own (a `DW1045` warning),
+//! and a hint's names are told (`DW0982`).
 //!
 //! Each acceptance criterion of spec-0104 that a cargo test can hold is held
 //! here, against a hello-world-shaped campaign built from its plan, or against
@@ -362,7 +362,7 @@ fn the_first_act_is_judged_from_the_entry_cell() {
 }
 
 // ---------------------------------------------------------------------------
-// §4 — DW1015
+// §5 — a hint that names an act names its own (DW1045's hint arm)
 // ---------------------------------------------------------------------------
 
 fn titled(kind_obj: Value) -> Campaign {
@@ -398,66 +398,116 @@ fn obj(kind: &str, title: Option<&str>, hint: Option<&str>) -> Value {
     o
 }
 
-/// The `DW1015` findings on the objective under test — every one a warning.
-fn verb_refusals(c: &Campaign, sidecars: &BTreeMap<String, L10nDoc>) -> Vec<String> {
-    let d = promise::check_act_verbs(c, sidecars).0;
+/// The hint findings on the objective under test — every one a `DW1045`
+/// warning at the hint's path.
+fn hint_warnings(c: &Campaign) -> Vec<String> {
+    let d = telling::check_hint_acts(c).0;
     assert!(
-        d.iter().all(|d| d.code == promise::DW_ACT_MISNAMED
-            && d.severity == delvewright_dsl::Severity::Warning),
+        d.iter().all(|d| d.code == telling::DW_ACT_UNTRUE
+            && d.severity == delvewright_dsl::Severity::Warning
+            && d.path.ends_with("/hint")),
         "{d:?}"
     );
     d.into_iter()
-        .filter(|d| d.path.contains("objectives/0") || d.path.contains("obj.open-the-door.talk."))
+        .filter(|d| d.path.contains("objectives/0"))
         .map(|d| d.message)
         .collect()
 }
 
-/// spec-0104 criterion 3: a title without its kind's verb, and a hint naming
-/// only another kind's act, are `DW1015` warnings, in English.
+/// spec-0104 §5, folded into `DW1045`: a hint naming only an act its
+/// completion does not perform is a warning; a hint naming its own act, or no
+/// act at all (a place), is not reported.
 #[test]
-fn a_title_names_its_kinds_act() {
-    let none = BTreeMap::new();
-    let c = titled(obj("talk-to", Some("Talk to the miller"), None));
-    assert!(verb_refusals(&c, &none).is_empty());
-    let c = titled(obj("reach-anchor", Some("Talk to the miller"), None));
-    let r = verb_refusals(&c, &none);
-    assert_eq!(r.len(), 1, "{r:?}");
-    assert!(r[0].contains("`talk` is a `talk-to` verb"), "{}", r[0]);
-    let c = titled(obj("talk-to", Some("Go to the mill"), None));
-    assert_eq!(verb_refusals(&c, &none).len(), 1);
-    for kind in ["talk-to", "reach-anchor", "interact", "kill", "collect"] {
-        let c = titled(obj(kind, Some("The Mill"), None));
-        let r = verb_refusals(&c, &none);
-        assert_eq!(r.len(), 1, "{kind}: {r:?}");
-        assert!(r[0].contains("names no act"), "{}", r[0]);
-        let own = match kind {
-            "talk-to" => "Talk to the miller",
-            "reach-anchor" => "Go to the mill",
-            "interact" => "Ring the bell",
-            "kill" => "Clear the yard",
-            _ => "Take the stick",
-        };
-        let c = titled(obj(
-            kind,
-            Some(own),
-            Some("Past the bell, left of the arch."),
-        ));
-        assert!(verb_refusals(&c, &none).is_empty(), "{kind}");
-    }
+fn a_hint_that_names_an_act_names_its_own() {
     let c = titled(obj(
         "interact",
         Some("Ring the bell"),
         Some("Walk past the slate."),
     ));
-    let r = verb_refusals(&c, &none);
+    let r = hint_warnings(&c);
     assert_eq!(r.len(), 1, "{r:?}");
-    assert!(r[0].contains("hint"), "{}", r[0]);
+    assert!(r[0].contains("`walk` → reach"), "{}", r[0]);
     let c = titled(obj(
         "reach-anchor",
         Some("Go to the mill"),
         Some("Walk past the slate."),
     ));
-    assert!(verb_refusals(&c, &none).is_empty());
+    assert!(hint_warnings(&c).is_empty());
+    let c = titled(obj(
+        "interact",
+        Some("Ring the bell"),
+        Some("Walk past the slate and pull the cord."),
+    ));
+    assert!(hint_warnings(&c).is_empty(), "a hint that also names its own act");
+    for (kind, own) in [
+        ("talk-to", "Talk to the miller"),
+        ("reach-anchor", "Go to the mill"),
+        ("interact", "Ring the bell"),
+        ("kill", "Clear the yard"),
+        ("collect", "Take the stick"),
+    ] {
+        let c = titled(obj(
+            kind,
+            Some(own),
+            Some("Past the bell, left of the arch."),
+        ));
+        assert!(hint_warnings(&c).is_empty(), "{kind}: a place names no act");
+    }
+    let (_, b) = telling::check_hint_acts(&titled(obj(
+        "interact",
+        Some("Ring the bell"),
+        Some("Walk past the slate."),
+    )));
+    assert_eq!((b.hinted >= 1, b.naming >= 1, b.warned), (true, true, 1), "{}", b.line());
+}
+
+/// One lexicon, two readers: a title's head and a hint's first act phrase are
+/// read by the same rule. For every phrase the lexicon holds, a line made of
+/// that phrase alone answers the same phrase and the same acts through both.
+#[test]
+fn the_title_head_and_the_hint_reader_agree_on_every_phrase() {
+    let lex = telling::Lexicon::english();
+    let mut n = 0;
+    for (phrase, acts) in lex.phrases() {
+        let head = lex.head(phrase).expect("a phrase is its own head");
+        let read = lex.acts_in(phrase);
+        assert_eq!(read.len(), 1, "`{phrase}`: {read:?}");
+        assert_eq!((&head.0, head.1), (&read[0].0, read[0].1), "`{phrase}`");
+        assert_eq!(head.1, acts, "`{phrase}`");
+        n += 1;
+    }
+    assert!(n > 0, "the lexicon holds phrases");
+}
+
+/// `delvec validate` exits 0 on a document whose only hint finding is the
+/// `DW1045` warning, and prints the warning and its binding.
+#[test]
+fn a_misnamed_hint_warns_and_validation_exits_zero() {
+    let mut q = quests(nulls());
+    q["content"]["quests"][0]["objectives"][0]["hint"] = json!("Walk past the slate.");
+    let dir = variant("hint-exit", q, dialogue(GREETING));
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
+        .arg("--prefabs")
+        .arg(common::prefabs_dir())
+        .arg("validate")
+        .arg(&dir)
+        .output()
+        .expect("`delvec validate` runs");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(out.status.code(), Some(0), "{text}");
+    assert!(
+        text.lines()
+            .any(|l| l.starts_with("DW1045") && l.contains("Walk past the slate.")),
+        "{text}"
+    );
+    assert!(
+        text.contains("hint act binding (DW1045)") && text.contains("; 1 warned"),
+        "{text}"
+    );
 }
 
 fn sidecar(lang: &str, rows: &[(&str, &str)]) -> L10nDoc {
@@ -469,78 +519,6 @@ fn sidecar(lang: &str, rows: &[(&str, &str)]) -> L10nDoc {
         "content": rows.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(),
     }))
     .expect("a sidecar")
-}
-
-/// spec-0104 criterion 3, the zh-cn table and a language with none.
-#[test]
-fn a_sidecar_title_is_judged_by_its_own_table_or_counted_unjudged() {
-    let c = titled(obj("talk-to", Some("Talk to the miller"), None));
-    let key = "obj.open-the-door.talk.title";
-    let mut s = BTreeMap::new();
-    s.insert("zh-cn".to_string(), sidecar("zh-cn", &[(key, "去磨坊")]));
-    let r = verb_refusals(&c, &s);
-    assert_eq!(r.len(), 1, "{r:?}");
-    assert!(r[0].contains("`去` is a `reach-anchor` verb"), "{}", r[0]);
-    s.insert("zh-cn".to_string(), sidecar("zh-cn", &[(key, "找磨坊主")]));
-    assert!(verb_refusals(&c, &s).is_empty());
-    s.insert(
-        "fr".to_string(),
-        sidecar("fr", &[(key, "Parler au meunier")]),
-    );
-    let (_, b) = promise::check_act_verbs(&c, &s);
-    assert_eq!((b.languages, b.unjudged), (2, 1), "{}", b.line());
-    assert!(b.line().ends_with("; 0 warned"), "{}", b.line());
-    assert!(
-        b.line()
-            .contains("(1 string(s) in languages with no table)")
-    );
-}
-
-/// spec-0104 criterion 3: `delvec validate` exits 0 on a document whose only
-/// finding is a `DW1015` warning, and prints the warning and its binding.
-#[test]
-fn a_misnamed_title_warns_and_validation_exits_zero() {
-    for (n, (kind, title)) in [
-        ("reach-anchor", "Talk to the miller"),
-        ("talk-to", "Go to the mill"),
-        ("talk-to", "The Mill"),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let mut q = quests(nulls());
-        let o = &mut q["content"]["quests"][0]["objectives"][0];
-        if kind == "reach-anchor" {
-            *o = json!({ "type": "reach-anchor", "id": "obj/talk", "anchor": "anchor/keeper-stand",
-                         "radius": 2, "title": title, "hint": "He stands by the door." });
-        } else {
-            o["title"] = json!(title);
-        }
-        let mut d = dialogue(GREETING);
-        if kind != "talk-to" {
-            d["content"]["dialogues"][0]["nodes"][0]["options"] = json!([{ "label": "Farewell." }]);
-        }
-        let dir = variant(&format!("verb-exit-{n}"), q, d);
-        let out = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
-            .arg("--prefabs")
-            .arg(common::prefabs_dir())
-            .arg("validate")
-            .arg(&dir)
-            .output()
-            .expect("`delvec validate` runs");
-        let text = format!(
-            "{}{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
-        );
-        assert_eq!(out.status.code(), Some(0), "{title}: {text}");
-        assert!(
-            text.lines()
-                .any(|l| l.starts_with("DW1015") && l.contains(title)),
-            "{title}: {text}"
-        );
-        assert!(text.contains("; 1 warned"), "{title}: {text}");
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -601,10 +579,10 @@ fn every_binding_line_states_its_zeroes() {
          also in reach), 0 trigger(s) judged by sight alone; 0 refused; 0 kill(s) on no walk judged \
          from the acts that fire their wave"
     );
-    assert!(
-        promise::ActVerbBinding::default()
-            .line()
-            .starts_with("DW1015 binding: 0 title(s)")
+    assert_eq!(
+        telling::HintActBinding::default().line(),
+        "hint act binding (DW1045): 0 of 0 English hint(s) name an act, over 0 objective(s); 0 \
+         warned"
     );
     assert_eq!(
         promise::CompassBinding::default().line(),

@@ -21,7 +21,6 @@
 //! nothing depends on hash order, wall-clock, or absolute paths.
 
 pub mod actor;
-pub mod actverbs;
 pub mod ambush;
 pub mod assembly;
 pub mod blocks;
