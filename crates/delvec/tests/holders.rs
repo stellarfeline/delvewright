@@ -505,6 +505,70 @@ fn a_collect_adopting_a_frame_fills_it_at_activation_and_tells_the_bot() {
     );
 }
 
+/// spec-0104 §7 × spec-0111: a `highlight` on a `collect` taken from a holder
+/// entity lights the holder itself — its `Glowing` flag and the highlight
+/// team — for a frame and for a stand; the block map holds air at a holder,
+/// and a highlight that read only blocks was dropped there with no word.
+#[test]
+fn a_highlight_on_a_holder_collect_lights_the_holder() {
+    let dir = scratch("holders-highlight-prefabs");
+    let prefabs = holder_prefabs(&dir.join("prefabs"), vec![frame_entity(), stand_entity()]);
+    for (tag, holder, extra) in [
+        (
+            "holders-highlight-frame",
+            "anchor/frame",
+            serde_json::json!({"item": "minecraft:map", "slot": "contents"}),
+        ),
+        (
+            "holders-highlight-stand",
+            "anchor/rack",
+            serde_json::json!({"item": "minecraft:iron_sword", "slot": "weapon.mainhand"}),
+        ),
+    ] {
+        let (code, log, out) = build_holders(
+            tag,
+            &prefabs,
+            |c| {
+                let mut o = serde_json::json!({
+                    "type": "collect", "id": "obj/exit", "count": 1,
+                    "anchor": "anchor/exit", "holder": holder, "after": ["obj/talk"],
+                    "title": "Take it", "item_name": "The Thing",
+                    "happening": {"text": "the party takes it", "verb": "gains"},
+                    "highlight": {"within": 6}
+                });
+                for (k, v) in extra.as_object().unwrap() {
+                    o[k] = v.clone();
+                }
+                c["quests"][0]["objectives"][1] = o;
+            },
+            None,
+        );
+        assert_eq!(code, 0, "{tag}: {log}");
+        let stem = holder.trim_start_matches("anchor/");
+        let fdir = "datapack/data/hello-world/function";
+        let on = read(&out, &format!("{fdir}/hl_on_o_exit.mcfunction"));
+        assert!(
+            on.contains(&format!(
+                "execute as @e[tag=dw_holder_{stem}] run data merge entity @s {{Glowing:1b}}"
+            )) && on.contains(&format!("team join dw_hl @e[tag=dw_holder_{stem}]")),
+            "{tag}: {on}"
+        );
+        let off = read(&out, &format!("{fdir}/hl_off_o_exit.mcfunction"));
+        assert!(off.contains("{Glowing:0b}"), "{tag}: {off}");
+        let poll = read(&out, &format!("{fdir}/hl_poll_o_exit.mcfunction"));
+        assert!(poll.contains(&format!("as @e[tag=dw_holder_{stem}] at @s")), "{tag}: {poll}");
+        let pt = read(
+            &out,
+            "packtest-datapack/data/hello-world/test/guide_highlight_o_exit.mcfunction",
+        );
+        assert!(
+            pt.contains(&format!("function hello-world:holder_{stem}"))
+                && pt.contains(&format!("@e[tag=dw_holder_{stem},team=dw_hl,nbt={{Glowing:1b}}]")),
+            "{tag}: {pt}"
+        );
+    }
+}
+
 /// `DW1037`, unsupported arm: a frame whose backing block is cleared to air.
 /// (Glass is legacy-solid in the pinned game — `BlockBehaviour.calculateSolid`
 /// — so a frame on glass survives; air is what drops one.)
