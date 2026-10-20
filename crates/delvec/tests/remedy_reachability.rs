@@ -3268,7 +3268,7 @@ fn dw0933_putting_the_teleport_at_the_named_tick_builds() {
     let prefabs = common::ferry::ferry_prefabs();
     let at = |q: &mut serde_json::Value, tick: u32| {
         tiller(q)["effects"] = serde_json::json!([{"type": "sequence", "steps": [
-            {"at_ticks": 0, "effects": [{"type": "cutscene", "seconds": 1, "path": [
+            {"at_ticks": 0, "effects": [{"type": "cutscene", "subject": "landscape", "seconds": 1, "path": [
                 {"anchor": "anchor/boat", "offset": [0, 2, 1]},
                 {"anchor": "anchor/boat", "offset": [2, 2, 1]}]}]},
             // The whole west room's floor: after a cutscene the carry takes

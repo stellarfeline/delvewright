@@ -70,6 +70,7 @@ pub mod metrics;
 pub mod music;
 pub mod npc;
 pub mod onkill;
+pub mod ordering;
 pub mod perception;
 pub mod placement;
 pub mod prefab;

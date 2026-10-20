@@ -185,7 +185,7 @@ fn typod_set_checkpoint_anchor_is_dw0360() {
 #[test]
 fn typod_cutscene_waypoint_anchor_is_dw0360() {
     expect_dw0360(
-        r#"{ "type": "cutscene", "seconds": 3,
+        r#"{ "type": "cutscene", "subject": "landscape", "seconds": 3,
              "path": [ { "anchor": "anchor/exit" }, { "anchor": "anchor/elsewhere" } ] }"#,
         "typo'd cutscene waypoint anchor",
     );

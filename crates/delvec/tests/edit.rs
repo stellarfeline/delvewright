@@ -1312,7 +1312,7 @@ fn edit_apply_runs_the_full_build_tier_proof_set() {
         &dir,
         quests_with(serde_json::json!({
             "on_complete": [
-                { "type": "cutscene", "seconds": 3, "path": [
+                { "type": "cutscene", "subject": "landscape", "seconds": 3, "path": [
                     { "anchor": "anchor/keeper-stand", "offset": [0, 2, 0] },
                     { "anchor": "anchor/exit", "offset": [0, 2, 0] }
                 ] },

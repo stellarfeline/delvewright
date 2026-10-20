@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 pub mod assembly_fixture;
 pub mod corridor;
 pub mod ferry;
+pub mod framing_fixture;
 pub mod pinned;
 pub mod sculpt;
 pub mod source_scan;

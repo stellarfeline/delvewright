@@ -57,7 +57,7 @@ fn quests_doc(cutscene: &str) -> String {
     )
 }
 
-const A_CUTSCENE: &str = r#"{ "type": "cutscene", "seconds": 2,
+const A_CUTSCENE: &str = r#"{ "type": "cutscene", "subject": "landscape", "seconds": 2,
   "path": [ { "anchor": "anchor/exit", "offset": [-2, 2, 0] },
             { "anchor": "anchor/exit", "offset": [2, 2, 0] } ] }"#;
 

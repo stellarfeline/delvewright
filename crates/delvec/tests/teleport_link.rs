@@ -340,7 +340,7 @@ fn a_link_between_two_areas_is_dw0932() {
 /// A one-second cutscene in the west room.
 fn cutscene() -> Value {
     json!({
-        "type": "cutscene", "seconds": 1,
+        "type": "cutscene", "subject": "landscape", "seconds": 1,
         "path": [
             {"anchor": "anchor/boat", "offset": [0, 2, 1]},
             {"anchor": "anchor/boat", "offset": [2, 2, 1]}

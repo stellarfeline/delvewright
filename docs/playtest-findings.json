@@ -3546,6 +3546,54 @@
       "note": "The general form is `DW1031` (spec-0109, `dsl::music`, validation tier): every biome a camera can stand in states its music — each `world.atmospheres[]` entry carries `audio/background_music` and the ground does too, through the required object form of `horizon` and its `attributes` — `{}` for silence or a `default` track, so vanilla's overworld music (the dimension's `music.game`, which a biome declaring none inherits) never plays over a scene that did not name it. A story stage moves the music by repainting the place (`set-atmosphere`), `stop-sound` is the hard cut, every played sound names a `category`, and a cutscene may declare what it `hears`, which `DW1032` confirms against the biome every 4-cell its camera passes wears. Every build prints `music binding:` and writes `validation/music.json`. The binding counts cutscenes, the scenes where an unchosen track is most audible.",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "id": "assembly/"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1034",
+        "kind": "dw"
+      },
+      "finding": "cutscene shots meant to show a creature's assemblies showed nothing, and an assembly appeared only when the player stood on it",
+      "general_form": "every assembly a shot or a scene relies on is summoned and rendered to the viewer at the camera's distance for the whole span it must be seen",
+      "id": "str-09",
+      "note": "Carried by `DW1034` (spec-0110 §6.2, `compiler::framing`): a shot names an assembly as its subject (`{\"assembly\": …}`), and the build refuses one no `spawn-assembly` places before the cutscene on every path (the one ordering rule, `dsl::ordering::Order`, shared with `DW0195`/`DW0198`), or one whose root and parts stand beyond their tracking range (160 blocks, capped by the served distance) at some judged tick. The draw distance is the engine's: `asm_summon_<s>` emits `view_range` on the root and every part, derived from every shot framing it and the farthest standing eye of its place, at the client's lowest entity distance (§5.8), raised by the assembly's `seen_from`; `validation/shot-subjects.json` records each value and the term that won. Which of the two causes (cull distance or a late spawn beat) hid each instance is still not established; both are refused. What the client draws is confirmed by eye on the demo level *The Thing Across the Water* (spec-0110 debt).",
+      "round": 1,
+      "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "eq": {
+            "type": "cutscene"
+          }
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1033",
+        "kind": "dw"
+      },
+      "finding": "a whole cutscene framed only sea and sky, and a shot aimed at a stretch of ground where nothing happened",
+      "general_form": "every shot declares the subject it frames, and the build proves the subject is inside the frustum and unoccluded from the camera pose",
+      "id": "str-10",
+      "note": "Carried by `DW1033` (spec-0110 §6.1, `compiler::framing`): every shot declares its `subject` (`DW0199` when absent; `\"landscape\"` declares a shot about no thing), and the build judges every shot at every driver tick over the client's tweened poses against the proof frame (70° vertical on 854 × 480, 60° in water): the subject's reference point must lie inside the action-safe rectangle and at least one of nine sight lines to its box must cross no camera-blocking cell. The one sight rule, `framing::sight`, also computes `delvec snapshot`'s `occluded`/`out_of_frame`. Every build with a cutscene prints `shot subjects: …` and writes `validation/shot-subjects.json`.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"

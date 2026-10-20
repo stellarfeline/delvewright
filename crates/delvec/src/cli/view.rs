@@ -114,7 +114,7 @@ pub(crate) fn run_snapshot(
     let render_started = std::time::Instant::now();
     let mut frame = snapshot::render_frame(&grid, &cam, &opts);
     let targets = snapshot::collect_targets(&plan);
-    let (inside, outside) = snapshot::resolve_targets(&grid, &cam, &opts, &targets);
+    let (inside, outside) = snapshot::resolve_targets(&world, &cam, &opts, &targets);
     if args.labels {
         snapshot::draw_labels(&mut frame, &grid, &cam, &inside);
     }

@@ -683,6 +683,9 @@ pub fn build_with_warnings(
     // The binding is kept: the critical path carries the bot's witness of each
     // blow, and the staging record states which were witnessed.
     let population = walked_population(plan, &world);
+    // spec-0110 §5.8: how far a standing player's eye is from each assembly,
+    // in the place it stands in — the floor its `view_range` is derived to.
+    let assembly_place_reach = crate::compiler::framing::place_reach(plan, &population);
     let assembly_binding: Option<crate::compiler::assembly::AssemblyBinding> =
         Some(prove_assemblies(plan, &world, &population)?);
 
@@ -720,6 +723,7 @@ pub fn build_with_warnings(
         loop_gate,
         firework_gate,
         cutscene_shots_judged,
+        shot_ledger,
         lightning_gate,
         stake_table,
         death_plan,
@@ -761,6 +765,23 @@ pub fn build_with_warnings(
     // the wave would silently never spawn (DW0310). Guards against the class of bug
     // where the spawn position was resolvable only via a `kill` objective.
     check_wave_spawns(plan)?;
+    // spec-0110 §5.8: every assembly's `view_range`, derived from the shots
+    // that frame it and the place it stands in, raised by its `seen_from`.
+    let assembly_ranges = crate::compiler::framing::view_ranges(
+        plan,
+        &shot_ledger
+            .as_ref()
+            .map(|l| l.assembly_reach.clone())
+            .unwrap_or_default(),
+        &assembly_place_reach,
+    );
+    if let Some(ledger) = &shot_ledger {
+        put_json(
+            &mut out,
+            "validation/shot-subjects.json",
+            &ledger.to_json(&assembly_ranges),
+        );
+    }
     // DW0863 (spec-0104 §4): every act on a walked path is announced with a
     // hint, or in sight from where the party stands (and a kill's wave within
     // reach). Judged here, where the acts have places and the world has
@@ -967,6 +988,7 @@ pub fn build_with_warnings(
         &pulse_gate.rows,
         &owned_holders,
         &guide,
+        &assembly_ranges,
     );
     // DW1002's write arms over the FINAL function list, read off the shipped
     // commands so what is judged is what is emitted: the load as the server

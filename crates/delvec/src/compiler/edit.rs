@@ -765,7 +765,7 @@ fn check_batch_invariants(
     if let Some(e) = crate::compiler::nav::measure_fluid_escape(&with_fixtures).finding() {
         return Err(ctx(e));
     }
-    let starts = anchor_starts(plan);
+    let starts = body_starts(plan).roots;
     crate::compiler::nav::verify_boundary_safety(&with_fixtures, &starts).map_err(ctx)?;
     Ok(())
 }
@@ -1001,17 +1001,114 @@ fn check_support(
 pub fn anchor_starts(plan: &Plan) -> Vec<crate::compiler::nav::AnchorRoot> {
     plan.anchors
         .iter()
-        .map(|((area_id, _), resolved)| {
-            let at = match resolved {
-                ResolvedAnchor::Point { pos, .. } => *pos,
-                ResolvedAnchor::Gate { from, .. } => *from,
-            };
-            crate::compiler::nav::AnchorRoot {
-                at,
-                within: plan.piece_bounds(area_id, at),
-            }
-        })
+        .map(|((area_id, _), resolved)| anchor_root(plan, area_id, resolved))
         .collect()
+}
+
+/// One resolved anchor as a reachability root (see [`anchor_starts`]).
+fn anchor_root(
+    plan: &Plan,
+    area_id: &str,
+    resolved: &ResolvedAnchor,
+) -> crate::compiler::nav::AnchorRoot {
+    let at = match resolved {
+        ResolvedAnchor::Point { pos, .. } => *pos,
+        ResolvedAnchor::Gate { from, .. } => *from,
+    };
+    crate::compiler::nav::AnchorRoot {
+        at,
+        within: plan.piece_bounds(area_id, at),
+    }
+}
+
+/// The roots the boundary-safety proof (`DW0322`) floods the walk region
+/// from, and the anchors it leaves out.
+#[derive(Debug, Clone)]
+pub struct BodyStarts {
+    /// The roots: every anchor of [`anchor_starts`] but the excluded ones.
+    pub roots: Vec<crate::compiler::nav::AnchorRoot>,
+    /// Anchors the plan resolves.
+    pub anchors: usize,
+    /// Excluded anchors, by name, in plan order: each a station of a scenery
+    /// place (`reached: false`) that no body is put in.
+    pub excluded: Vec<String>,
+}
+
+/// **Where a body can start a walk** — the roots of the boundary-safety proof.
+///
+/// Every resolved anchor ([`anchor_starts`]) except a station of a scenery
+/// place (`reached: false`, spec-0098 §14). Scenery is built to be seen and
+/// never entered: `DW0816` refuses a connection into it and `DW0837` proves
+/// no walk from the entry reaches it in the built world, which is why such a
+/// place has no place anchor (`siteplan::synthesized_anchor_kinds`). A
+/// station it declares is a mark — where an assembly stands, what a shot
+/// frames — not a floor a body stands on, so flooding from it judges ground
+/// no player is ever on. The exclusion lapses for a scenery place the
+/// campaign puts a body in by declaration — a critical-path step, a link's or
+/// teleport's landing, a checkpoint seat inside its box — because then a
+/// body does stand there and the proof owes it.
+pub fn body_starts(plan: &Plan) -> BodyStarts {
+    let anchors = plan.anchors.len();
+    type Space = ([i64; 3], [i64; 3]);
+    let scenery: Vec<(&delvewright_dsl::layout::Node, Space)> =
+        match (plan.campaign.layout_graph.as_ref(), plan.blockout.as_ref()) {
+            (Some(g), Some(b)) => g
+                .content
+                .nodes
+                .iter()
+                .filter(|n| !n.reached)
+                .filter_map(|n| {
+                    b.boxes
+                        .iter()
+                        .find(|x| x.node == n.id)
+                        .map(|x| (n, x.space()))
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+    if scenery.is_empty() {
+        return BodyStarts {
+            roots: anchor_starts(plan),
+            anchors,
+            excluded: Vec::new(),
+        };
+    }
+    // Every cell the campaign puts a player on by declaration.
+    let mut put: Vec<[i32; 3]> = crate::compiler::bound::places(plan)
+        .into_iter()
+        .map(|(_, c)| c)
+        .collect();
+    put.extend(plan.checkpoints.iter().map(|cp| cp.pos));
+    // The box's play space, a course deeper and higher: a body put on its
+    // floor or its crown is in it.
+    let inside = |c: [i32; 3], (lo, hi): Space| {
+        let c = [i64::from(c[0]), i64::from(c[1]), i64::from(c[2])];
+        c[0] >= lo[0]
+            && c[0] <= hi[0]
+            && c[2] >= lo[2]
+            && c[2] <= hi[2]
+            && c[1] >= lo[1] - 1
+            && c[1] <= hi[1] + 1
+    };
+    let unvisited: BTreeSet<&str> = scenery
+        .iter()
+        .filter(|(_, space)| !put.iter().any(|c| inside(*c, *space)))
+        .flat_map(|(n, _)| n.stations.iter().map(|st| st.anchor.as_str()))
+        .collect();
+    let mut roots = Vec::with_capacity(anchors);
+    let mut excluded = Vec::new();
+    for ((area_id, name), resolved) in plan.anchors.iter() {
+        if unvisited.contains(name.as_str()) {
+            excluded.push(name.clone());
+        } else {
+            roots.push(anchor_root(plan, area_id, resolved));
+        }
+    }
+    BodyStarts {
+        roots,
+        anchors,
+        excluded,
+    }
 }
 
 /// Write one cell: the assembled model and the batch write-log both keep the

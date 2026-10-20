@@ -1,0 +1,33 @@
+{
+  "code": "DW1033",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/1/on_objective_complete/obj~1clear-the-muster/18/shots/2",
+      "value": {
+        "path": [
+          {
+            "anchor": "anchor/lectern",
+            "offset": [
+              0,
+              2,
+              -8
+            ]
+          }
+        ],
+        "seconds": 2,
+        "subject": {
+          "npc": "npc/curator",
+          "offset": [
+            0,
+            1,
+            0
+          ]
+        }
+      }
+    }
+  ],
+  "units": [],
+  "why": "The parade's insert of the Curator, moved outside the hall: the camera stands eight blocks beyond the hall's north wall, aimed at her. She is in the frame and every sight line to her body runs through the wall, so the shot shows stone; validation names the tick and the cell the centre line meets first. The remedy is a camera on her side of the wall."
+}

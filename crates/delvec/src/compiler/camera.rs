@@ -332,6 +332,54 @@ impl ExpandedShot {
         ShotFrames { cadence, frames }
     }
 
+    /// **The pose the client draws at every driver tick** (`len == ticks + 1`):
+    /// `(position, yaw, pitch)`, the keyframe pose at a keyframe's landing tick
+    /// and the linear tween of position, shortest-arc yaw and pitch between the
+    /// two keyframes that bracket any other tick — the client's tween
+    /// (measurements 2–3), on the same landing-tick grid the chord check
+    /// reads. What the framing proof judges (spec-0110 §5.2).
+    pub fn client_poses(&self) -> Vec<([f64; 3], f64, f64)> {
+        let sf = self.frames();
+        let nodes: Vec<(i32, &Frame)> = sf
+            .frames
+            .iter()
+            .map(|f| {
+                let land = if f.tick == 0 {
+                    0
+                } else {
+                    (f.tick + sf.cadence).min(self.ticks)
+                };
+                (land, f)
+            })
+            .collect();
+        (0..=self.ticks.max(0))
+            .map(|t| {
+                let mut prev = nodes[0];
+                for n in &nodes {
+                    if n.0 <= t {
+                        prev = *n;
+                    }
+                }
+                match nodes.iter().find(|n| n.0 > t) {
+                    None => (prev.1.pos, prev.1.yaw, prev.1.pitch),
+                    Some(next) => {
+                        let f = (t - prev.0) as f64 / (next.0 - prev.0) as f64;
+                        let (a, b) = (prev.1, next.1);
+                        (
+                            [
+                                a.pos[0] + (b.pos[0] - a.pos[0]) * f,
+                                a.pos[1] + (b.pos[1] - a.pos[1]) * f,
+                                a.pos[2] + (b.pos[2] - a.pos[2]) * f,
+                            ],
+                            lerp_angle(a.yaw, b.yaw, f),
+                            a.pitch + (b.pitch - a.pitch) * f,
+                        )
+                    }
+                }
+            })
+            .collect()
+    }
+
     /// The peak angular rate (degrees per tick, 3-decimal rounded) of the exact
     /// aim across the shot — the `DW0347` budget metric. The client-rendered
     /// rate is a per-interval average of this, so the exact maximum bounds what
@@ -506,12 +554,14 @@ pub fn expand_shot(
     shot_offset: i32,
 ) -> ExpandedShot {
     let ticks = shot_ticks(shot.resolved_seconds());
+    // A `"landscape"` frames nothing and resolves to no point (spec-0110).
     let subject = shot
         .subject
         .as_ref()
-        .map(|s| resolve_subject(plan, moves, actor_moves, s, ctx, shot_offset, ticks));
-    // Aim: explicit `look_at` wins; else the subject (static point or moving
-    // track); else travel.
+        .and_then(|s| resolve_subject(plan, moves, actor_moves, s, ctx, shot_offset, ticks));
+    // Aim (spec-0110 §4.2, one rule for every shot): explicit `look_at` wins;
+    // else the subject's reference point (static point or moving track); else
+    // — a landscape — the direction of travel.
     let aim = match &shot.look_at {
         Some(t) => AimTrack::Static(crate::compiler::nav::camera_look_point(plan, t)),
         None => match &subject {
@@ -525,12 +575,7 @@ pub fn expand_shot(
         return ExpandedShot {
             ticks,
             path: CameraPath::Polyline(crate::compiler::nav::camera_points(plan, &shot.path)),
-            aim: match (&shot.look_at, &shot.shot_style) {
-                // An unstyled explicit path with no look_at keeps the v0.4
-                // travel-aim default (byte-identical pre-style emission).
-                (None, None) => AimTrack::Travel,
-                _ => aim,
-            },
+            aim,
         };
     }
     let Some(style) = shot.shot_style else {
@@ -664,15 +709,7 @@ pub fn expand_shot(
                 .as_ref()
                 .map(|s| {
                     subject_pos(
-                        &Some(resolve_subject(
-                            plan,
-                            moves,
-                            actor_moves,
-                            s,
-                            ctx,
-                            shot_offset,
-                            ticks,
-                        )),
+                        &resolve_subject(plan, moves, actor_moves, s, ctx, shot_offset, ticks),
                         0,
                     )
                 })
@@ -717,8 +754,8 @@ pub fn expand_shot(
     }
 }
 
-/// A subject's resolved geometry for one shot window.
-enum SubjectGeom {
+/// A subject's resolved reference point for one shot window.
+pub(crate) enum SubjectGeom {
     Static([f64; 3]),
     /// Per-tick positions for the shot window (`len == ticks + 1`).
     Moving(Vec<[f64; 3]>),
@@ -733,12 +770,16 @@ fn subject_pos(subject: &Option<SubjectGeom>, t: i32) -> [f64; 3] {
     }
 }
 
-/// Resolve a shot subject: an anchor is a fixed block-centre point; an
-/// npc/actor is its compiler-planned motion track when a matching sibling move
-/// exists (picked by [`MoveCtx`]: the move most recently started at cutscene
-/// time, else the next to start), otherwise its declared anchor. Entity
-/// subjects aim one block above the feet cell (torso height) before `offset`.
-fn resolve_subject(
+/// Resolve a shot subject's **reference point** (spec-0110 §4.1): an anchor is
+/// a fixed block-centre point; an assembly, a place and a region are the
+/// centre of their box ([`crate::compiler::framing::subject_box`]); an
+/// npc/actor is its compiler-planned motion track when a matching sibling
+/// move exists (picked by [`MoveCtx`]: the move most recently started at
+/// cutscene time, else the next to start), otherwise its declared anchor.
+/// Entity subjects aim one block above the feet cell (torso height) before
+/// `offset`. `None` for a `"landscape"`, and for a box that does not resolve
+/// (an unknown place or an unplaced assembly — `DW0112`/`DW0360` report it).
+pub(crate) fn resolve_subject(
     plan: &Plan,
     moves: &[MovePlan],
     actor_moves: &[ActorMovePlan],
@@ -746,14 +787,17 @@ fn resolve_subject(
     ctx: &[MoveCtx],
     shot_offset: i32,
     ticks: i32,
-) -> SubjectGeom {
+) -> Option<SubjectGeom> {
     let (is_actor, id, offset) = match subject {
         CameraSubject::Anchor(s) => {
-            return SubjectGeom::Static(crate::compiler::nav::anchor_offset_point(
-                plan,
-                s.anchor.as_str(),
-                s.offset,
+            return Some(SubjectGeom::Static(
+                crate::compiler::nav::anchor_offset_point(plan, s.anchor.as_str(), s.offset),
             ));
+        }
+        CameraSubject::Landscape(_) => return None,
+        CameraSubject::Assembly(_) | CameraSubject::Place(_) | CameraSubject::Region(_) => {
+            return crate::compiler::framing::subject_box(plan, subject)
+                .map(|b| SubjectGeom::Static(b.centre()));
         }
         CameraSubject::Npc(s) => (false, s.npc.as_str(), s.offset),
         CameraSubject::Actor(s) => (true, s.actor.as_str(), s.offset),
@@ -792,7 +836,7 @@ fn resolve_subject(
             let window: Vec<[f64; 3]> = (0..=ticks)
                 .map(|t| add(track_at(track, shot_offset + mv.delta + t), lift))
                 .collect();
-            return SubjectGeom::Moving(window);
+            return Some(SubjectGeom::Moving(window));
         }
     }
     // Static: the entity's declared mark (anchor plus offset, spec-0066).
@@ -817,7 +861,7 @@ fn resolve_subject(
         .map(|m| (m.anchor.as_str().to_string(), m.offset))
         .unwrap_or_default();
     let base = crate::compiler::nav::anchor_offset_point(plan, &anchor, offset);
-    SubjectGeom::Static(add(base, lift))
+    Some(SubjectGeom::Static(add(base, lift)))
 }
 
 /// Build a follow-style camera track: subject per-tick position + a constant

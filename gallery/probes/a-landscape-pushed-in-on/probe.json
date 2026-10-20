@@ -1,0 +1,13 @@
+{
+  "code": "DW0348",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/1/on_objective_complete/obj~1clear-the-muster/18/shots/7/subject",
+      "value": "landscape"
+    }
+  ],
+  "units": [],
+  "why": "The parade's push-in, made about nothing: a style builds its dolly from its subject's geometry, and a landscape has none. The remedy is an explicit `path` with no style, or a subject the push-in closes on."
+}
