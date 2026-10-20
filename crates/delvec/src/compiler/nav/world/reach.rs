@@ -1651,23 +1651,11 @@ impl World {
     /// compares them: every volume [`World::lethal_near`] could find near a
     /// box inside it.
     fn volumes_near(&self, b: ([i32; 3], [i32; 3])) -> bank::Volumes {
-        let bx = Aabb::new(
-            f64::from(b.0[0]),
-            f64::from(b.0[1]),
-            f64::from(b.0[2]),
-            f64::from(b.1[0]) + 1.0,
-            f64::from(b.1[1]) + 1.0,
-            f64::from(b.1[2]) + 1.0,
-        );
         let mut v: bank::Volumes = self
             .lethal_regions
             .iter()
             .map(|(_, r)| *r)
-            .filter(|(lo, hi)| {
-                (0..3).all(|i| {
-                    f64::from(lo[i]) <= bx.max[i] + 1.0 && f64::from(hi[i]) + 1.0 >= bx.min[i] - 1.0
-                })
-            })
+            .filter(|v| bank::near(v, &b))
             .collect();
         v.sort_unstable();
         v
@@ -2013,18 +2001,22 @@ impl World {
                                                 dense.wet,
                                                 params.unbounded_fall,
                                             );
-                                            let run_here = |codes: &dyn Codes| {
-                                                run(
-                                                    codes,
-                                                    [0, 0, 0],
-                                                    l,
-                                                    st,
-                                                    press,
-                                                    params.unbounded_fall,
-                                                    bottom,
-                                                    &kills,
-                                                )
-                                            };
+                                            // Flown through each reader's own type, so
+                                            // the simulator's reads are not dispatched.
+                                            macro_rules! run_here {
+                                                ($codes:expr) => {
+                                                    run(
+                                                        $codes,
+                                                        [0, 0, 0],
+                                                        l,
+                                                        st,
+                                                        press,
+                                                        params.unbounded_fall,
+                                                        bottom,
+                                                        &kills,
+                                                    )
+                                                };
+                                            }
                                             match flights::lookup(&key, &shifted) {
                                                 Some(leaf)
                                                     if leaf.holds_at(bottom)
@@ -2035,12 +2027,12 @@ impl World {
                                                     Flown::Kept(leaf)
                                                 }
                                                 Some(_) => {
-                                                    let f = run_here(&shifted);
+                                                    let f = run_here!(&shifted);
                                                     Flown::Here(f.outcome, f.swept)
                                                 }
                                                 None => {
                                                     let reads = flights::Reads::new(&shifted);
-                                                    let f = run_here(&reads);
+                                                    let f = run_here!(&reads);
                                                     flights::record(key, reads, &f);
                                                     Flown::Here(f.outcome, f.swept)
                                                 }
@@ -2207,7 +2199,12 @@ impl World {
             self.rest_kind(c),
             Some(RestKind::Standing | RestKind::Holding)
         ) {
-            out.extend(self.expand(&memo, &params, c, ALL_QUADRANTS, None).edges);
+            out.extend(
+                self.flown(&memo, &params, c, ALL_QUADRANTS)
+                    .edges
+                    .iter()
+                    .cloned(),
+            );
         }
         out.sort();
         out.dedup_by(|a, b| a.to == b.to && a.kind == b.kind);
@@ -2413,7 +2410,14 @@ impl World {
     pub fn fatal_launch(&self, c: [i32; 3]) -> Option<Death> {
         let params = ReachParams::shipped(self.unbounded_fall);
         let memo = self.graph_memo(&params);
-        self.expand(&memo, &params, c, ALL_QUADRANTS, None).dies
+        if matches!(
+            self.rest_kind(c),
+            Some(RestKind::Standing | RestKind::Holding)
+        ) {
+            self.flown(&memo, &params, c, ALL_QUADRANTS).dies
+        } else {
+            self.expand(&memo, &params, c, ALL_QUADRANTS, None).dies
+        }
     }
 
     /// [`World::body_reach`] from `starts` each snapped to the nearest
@@ -2540,6 +2544,47 @@ impl World {
         self.fly_into(&memo, &params, reach, &todo);
     }
 
+    /// The launches of the standing or holding node `c` serving `q`, flown:
+    /// from this graph's memo, the lineage, the bank, or flown here and
+    /// banked. Every reader of a node's launches asks here.
+    fn flown(
+        &self,
+        memo: &GraphMemo,
+        params: &ReachParams,
+        c: [i32; 3],
+        q: Quadrants,
+    ) -> Arc<NodeEdges> {
+        let key = (c, q);
+        if let Some(e) = memo.flown.lock().expect("memo").get(&key) {
+            return Arc::clone(e);
+        }
+        let volumes = |b| self.volumes_near(b);
+        let e = memo
+            .inherited(&key)
+            .or_else(|| memo.bank.find(&key, &memo.dense, &memo.extra, &volumes))
+            .unwrap_or_else(|| {
+                let x = memo.bank.expansion(
+                    &key,
+                    &memo.dense,
+                    &memo.extra,
+                    &self.node_boxes(c),
+                    &volumes,
+                );
+                let e = Arc::new(self.expand(memo, params, c, q, Some(&x)));
+                if let Some(b) = e.read {
+                    memo.bank
+                        .keep(key, x, &memo.extra, self.volumes_near(b), &e);
+                }
+                e
+            });
+        memo.flown
+            .lock()
+            .expect("memo")
+            .entry(key)
+            .or_insert_with(|| Arc::clone(&e))
+            .clone()
+    }
+
     fn fly_into(
         &self,
         memo: &GraphMemo,
@@ -2547,37 +2592,8 @@ impl World {
         reach: &mut Reach,
         cells: &[([i32; 3], Quadrants)],
     ) {
-        let flown: Vec<Arc<NodeEdges>> = crate::par::map(cells, |(c, q)| {
-            let key = (*c, *q);
-            if let Some(e) = memo.flown.lock().expect("memo").get(&key) {
-                return Arc::clone(e);
-            }
-            let volumes = |b| self.volumes_near(b);
-            let e = memo
-                .inherited(&key)
-                .or_else(|| memo.bank.find(&key, &memo.dense, &memo.extra, &volumes))
-                .unwrap_or_else(|| {
-                    let x = memo.bank.expansion(
-                        &key,
-                        &memo.dense,
-                        &memo.extra,
-                        &self.node_boxes(*c),
-                        &volumes,
-                    );
-                    let e = Arc::new(self.expand(memo, params, *c, *q, Some(&x)));
-                    if let Some(b) = e.read {
-                        memo.bank
-                            .keep(key, x, &memo.extra, self.volumes_near(b), &e);
-                    }
-                    e
-                });
-            memo.flown
-                .lock()
-                .expect("memo")
-                .entry(key)
-                .or_insert_with(|| Arc::clone(&e))
-                .clone()
-        });
+        let flown: Vec<Arc<NodeEdges>> =
+            crate::par::map(cells, |(c, q)| self.flown(memo, params, *c, *q));
         let mut new: Vec<[i32; 3]> = Vec::new();
         for ((c, q), e) in cells.iter().zip(flown) {
             *reach.flown.entry(*c).or_insert(0) |= *q;

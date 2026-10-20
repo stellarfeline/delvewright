@@ -50,6 +50,16 @@ fn union(a: Option<Box3>, b: Option<Box3>) -> Option<Box3> {
     }
 }
 
+/// Whether the killing volume `v` lies near the cell box `b`: within a cell
+/// of its faces — every volume [`super::World::lethal_near`] or a body's box
+/// inside `b` could meet.
+pub(super) fn near(v: &([i32; 3], [i32; 3]), b: &Box3) -> bool {
+    (0..3).all(|i| {
+        f64::from(v.0[i]) <= f64::from(b.1[i]) + 2.0
+            && f64::from(v.1[i]) + 1.0 >= f64::from(b.0[i]) - 1.0
+    })
+}
+
 fn inside(c: [i32; 3], b: &Box3) -> bool {
     (0..3).all(|i| b.0[i] <= c[i] && c[i] <= b.1[i])
 }
@@ -224,6 +234,8 @@ pub(super) struct Expansion<'a> {
 struct Prior {
     variant: Arc<Variant>,
     diff: Vec<[i32; 3]>,
+    /// The volumes near the variant's read box in this world.
+    volumes: Volumes,
 }
 
 impl Expansion<'_> {
@@ -235,6 +247,15 @@ impl Expansion<'_> {
             return None;
         }
         let run = &p.variant.runs[g];
+        // A run's launches meet a volume only near the box they grew the read
+        // box by: the volumes near it must be the same here.
+        if let Some(gb) = run.summary.grown {
+            let here =
+                |vs: &Volumes| -> Volumes { vs.iter().filter(|v| near(v, &gb)).copied().collect() };
+            if here(&p.volumes) != here(&p.variant.volumes) {
+                return None;
+            }
+        }
         if let Some(b) = run.bbox {
             if p.diff.iter().any(|d| inside(*d, &b)) {
                 return None;
@@ -320,13 +341,29 @@ impl Bank {
                 .filter(|&&(i, code, x)| dense.cells[i as usize] != code || extra[i as usize] != x)
                 .map(|&(i, _, _)| dense.coords(i as usize))
                 .collect();
+            let Some(read) = v.edges.read else {
+                continue;
+            };
+            // The node's own queries: no changed cell among them, and the
+            // volumes near them the same.
+            let here = volumes(read);
+            let at_node = |vs: &Volumes| -> Volumes {
+                vs.iter()
+                    .filter(|x| node.iter().any(|b| near(x, b)))
+                    .copied()
+                    .collect()
+            };
             if diff.iter().any(|d| node.iter().any(|b| inside(*d, b)))
-                || v.edges.read.is_none_or(|b| volumes(b) != v.volumes)
+                || at_node(&here) != at_node(&v.volumes)
             {
                 continue;
             }
             if best.as_ref().is_none_or(|b| diff.len() < b.diff.len()) {
-                best = Some(Prior { variant: v, diff });
+                best = Some(Prior {
+                    variant: v,
+                    diff,
+                    volumes: here,
+                });
             }
         }
         Expansion {

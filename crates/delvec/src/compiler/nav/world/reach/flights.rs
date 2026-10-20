@@ -246,6 +246,35 @@ pub(super) struct Reads<'a, C: Codes + ?Sized> {
     inner: &'a C,
     seen: std::cell::RefCell<ReadSeq>,
     stamp: u32,
+    /// The thread's tables, taken for this flight and handed back after.
+    tables: std::cell::RefCell<Tables>,
+}
+
+/// The cells near the launch cell a flight has read, with their codes, each
+/// slot stamped with the flight it belongs to, and [`Seen`] for the cells
+/// further off. A flight reads each cell many times, the first through the
+/// world and every later one from here.
+#[derive(Default)]
+struct Tables {
+    near: Vec<std::cell::Cell<(u32, Code)>>,
+    seen: Seen,
+}
+
+/// The box round the launch cell [`Tables::near`] holds: `±NEAR_XZ` across,
+/// `NEAR_DOWN` under and `NEAR_UP` over.
+const NEAR_XZ: i32 = 12;
+const NEAR_DOWN: i32 = 32;
+const NEAR_UP: i32 = 12;
+const NEAR_W: usize = (2 * NEAR_XZ + 1) as usize;
+const NEAR_H: usize = (NEAR_DOWN + NEAR_UP + 1) as usize;
+
+#[inline]
+fn near_slot(c: [i32; 3]) -> Option<usize> {
+    let x = (c[0] + NEAR_XZ) as u32;
+    let y = (c[1] + NEAR_DOWN) as u32;
+    let z = (c[2] + NEAR_XZ) as u32;
+    (x < NEAR_W as u32 && y < NEAR_H as u32 && z < NEAR_W as u32)
+        .then(|| (x as usize * NEAR_W + z as usize) * NEAR_H + y as usize)
 }
 
 /// The cells a flight read, in the order it first read them, with their codes.
@@ -255,6 +284,7 @@ type ReadSeq = Vec<([i32; 3], Code)>;
 /// table of cells, each slot stamped with the flight it belongs to, so a new
 /// flight starts with an empty table without clearing it. A flight reads a
 /// few hundred cells, most of them many times.
+#[derive(Default)]
 struct Seen {
     stamp: u32,
     slots: Vec<(u32, [i32; 3])>,
@@ -307,14 +337,15 @@ impl Seen {
 }
 
 thread_local! {
-    static SEEN: std::cell::RefCell<Seen> = const {
-        std::cell::RefCell::new(Seen {
-            stamp: 0,
-            slots: Vec::new(),
-            held: 0,
-        })
-    };
+    static TABLES: std::cell::RefCell<Tables> = std::cell::RefCell::new(Tables::default());
     static STAMP: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+impl<C: Codes + ?Sized> Drop for Reads<'_, C> {
+    fn drop(&mut self) {
+        let t = std::mem::take(&mut *self.tables.borrow_mut());
+        TABLES.with(|x| *x.borrow_mut() = t);
+    }
 }
 
 /// A multiply-rotate hash. Nothing it orders reaches an output: it keys the
@@ -349,11 +380,18 @@ impl std::hash::Hasher for Mix {
 
 impl<'a, C: Codes + ?Sized> Reads<'a, C> {
     pub(super) fn new(inner: &'a C) -> Self {
-        // A stamp no slot carries yet: the table is wiped when they wrap.
+        let mut tables = TABLES.with(|x| std::mem::take(&mut *x.borrow_mut()));
+        if tables.near.is_empty() {
+            tables.near = (0..NEAR_W * NEAR_W * NEAR_H)
+                .map(|_| std::cell::Cell::new((0, 0)))
+                .collect();
+        }
+        // A stamp no slot carries yet: the tables are wiped when they wrap.
         let stamp = STAMP.with(|s| {
             let v = s.get().wrapping_add(1).max(1);
             if v == 1 {
-                SEEN.with(|t| t.borrow_mut().slots.iter_mut().for_each(|x| x.0 = 0));
+                tables.seen.slots.iter_mut().for_each(|x| x.0 = 0);
+                tables.near.iter().for_each(|x| x.set((0, 0)));
             }
             s.set(v);
             v
@@ -362,14 +400,28 @@ impl<'a, C: Codes + ?Sized> Reads<'a, C> {
             inner,
             seen: std::cell::RefCell::new(Vec::new()),
             stamp,
+            tables: std::cell::RefCell::new(tables),
         }
     }
 }
 
 impl<C: Codes + ?Sized> Codes for Reads<'_, C> {
     fn code(&self, c: [i32; 3]) -> Code {
+        let tables = self.tables.borrow();
+        if let Some(i) = near_slot(c) {
+            let slot = &tables.near[i];
+            let (s, v) = slot.get();
+            if s == self.stamp {
+                return v;
+            }
+            let v = self.inner.code(c);
+            slot.set((self.stamp, v));
+            self.seen.borrow_mut().push((c, v));
+            return v;
+        }
+        drop(tables);
         let v = self.inner.code(c);
-        if SEEN.with(|t| t.borrow_mut().insert(self.stamp, c)) {
+        if self.tables.borrow_mut().seen.insert(self.stamp, c) {
             self.seen.borrow_mut().push((c, v));
         }
         v
@@ -390,7 +442,7 @@ pub(super) fn record<C: Codes + ?Sized>(key: Key, reads: Reads<'_, C>, flight: &
     if HELD.load(Relaxed) > MEMO_NODES {
         return;
     }
-    let seq = reads.seen.into_inner();
+    let seq = std::mem::take(&mut *reads.seen.borrow_mut());
     let Some(seq) = seq
         .iter()
         .map(|(c, v)| small(*c).map(|c| (c, *v)))
