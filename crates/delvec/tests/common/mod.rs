@@ -114,13 +114,16 @@ pub fn copy_l10n_dir(base: &Path, dst: &Path) {
     }
 }
 
-/// The prefab library at the pinned content commit (`versions.toml`
-/// `[content].sha`), read out of the content repository's object store by
-/// [`pinned`] — never the `campaigns/` working tree, so a local run judges the
-/// same bytes CI does whatever revision the developer's content checkout sits
-/// on. A fixture may only bind prefabs that exist at the pin; one that binds a
-/// newer prefab reds here exactly as it reds in CI. Bumping the pin to make a
-/// fixture build is a content-repo decision, never a fix for a test.
+/// The engine's test library: the prefab library at the pinned content commit
+/// (`versions.toml` `[content].sha`), read out of the content repository's
+/// object store by [`pinned`] — never the `campaigns/` working tree, so a local
+/// run judges the same bytes CI does whatever revision the developer's content
+/// checkout sits on — with the engine's own pool declarations
+/// (`tests/fixtures/test-pools/pools.json`) laid over it
+/// ([`pinned::test_library`]). No pool is read from the content repository. A
+/// fixture may only bind prefabs that exist at the pin; one that binds a newer
+/// prefab reds here exactly as it reds in CI. Bumping the pin to make a fixture
+/// build is a content-repo decision, never a fix for a test.
 ///
 /// # This asserts the library PARSES, and that is not decoration
 ///
@@ -145,7 +148,7 @@ pub fn copy_l10n_dir(base: &Path, dst: &Path) {
 /// call site already goes through.
 pub fn prefabs_dir() -> PathBuf {
     static CHECKED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-    let dir = pinned::prefabs();
+    let dir = pinned::test_library();
     CHECKED.get_or_init(|| {
         let Ok(reg) = delvec::compiler::registry::PrefabRegistry::load_dir(&dir) else {
             // An unreadable directory is the caller's own problem and every call
