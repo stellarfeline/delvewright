@@ -353,8 +353,11 @@ pub fn pov_shots(
 /// target both in frame and in sight: the player looking farther along the
 /// walk, to the next thing there is to see. A turned frame owes a clear line
 /// as well, so a camera never turns to face a wall a target stands behind.
-/// When no later waypoint answers, the frame keeps the next waypoint, and the
-/// view gate names it as framing nothing.
+/// When no later waypoint answers, the nearest declared target ahead of the
+/// walk (on the walked side of the eye, horizontally) whose frame holds it in
+/// sight: the player glancing at the nearest thing ahead there is to see.
+/// When nothing answers, the frame keeps the next waypoint, and the view gate
+/// names it as framing nothing.
 fn walking_aim(
     world: &crate::compiler::nav::World,
     targets: &[crate::compiler::snapshot::Target],
@@ -382,10 +385,25 @@ fn walking_aim(
     if frames(next, false) {
         return next;
     }
-    ahead[1..]
+    if let Some(a) = ahead[1..].iter().map(eye_of).find(|a| frames(*a, true)) {
+        return a;
+    }
+    let heading = [next[0] - eye[0], next[2] - eye[2]];
+    let mut glances: Vec<(f64, usize, [f64; 3])> = targets
         .iter()
-        .map(eye_of)
-        .find(|a| frames(*a, true))
+        .enumerate()
+        .filter_map(|(i, t)| {
+            let c = t.centre();
+            let d = [c[0] - eye[0], c[1] - eye[1], c[2] - eye[2]];
+            (d[0] * heading[0] + d[2] * heading[1] > 0.0)
+                .then(|| ((d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt(), i, c))
+        })
+        .collect();
+    glances.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    glances
+        .into_iter()
+        .map(|(_, _, c)| c)
+        .find(|c| frames(*c, true))
         .unwrap_or(next)
 }
 
