@@ -3625,9 +3625,14 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   terms of the light model (`light::LightArrays`) over the configuration's
   blocks, block light from the emitters the configuration holds and sky light
   seeded at 15, one nibble a cell in `y`-`z`-`x` order, low nibble first.
-  **`block_entities`** carries every template block entity whose cell still
-  holds the template's block (`assembled::template_block_entities`), with a
-  ledger item laid into its container's `Items`; the entity file carries every
+  **`block_entities`** carries one block entity at every cell whose block
+  carries one on the pinned server (`registry::block_entity_type`,
+  `data/block-entities-1.21.11.tsv`), because the server makes it whenever it
+  places the block, compound or none: the template's compound where the cell
+  still holds the template's block (`assembled::template_block_entities`),
+  otherwise its `id` alone, every other key the server's default; a ledger item
+  is laid into its container's `Items`, and a cell whose block carries none
+  holds no item; the entity file carries every
   ledger body the configuration holds — the summon's whole compound with `id`,
   `Pos`, `Rotation` (`[yaw, 0]`), `Tags` and a `UUID` derived from its tags and
   position. **A cell no build write reached holds the horizon generator's

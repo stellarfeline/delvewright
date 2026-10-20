@@ -122,6 +122,34 @@ impl ItemRegistry for FullItemRegistry {
     }
 }
 
+/// The block entity type the pinned server makes for a block it places, or
+/// `None` for a block that carries none: `data/block-entities-1.21.11.tsv`,
+/// measured from the pinned server jar by
+/// `tools/maintenance/dump-block-entities.py` (see `data/PROVENANCE.md`).
+///
+/// The server makes this block entity whenever it places the block — a
+/// structure template's barrel, a `setblock` chest, a sign — whether or not the
+/// write carries a compound, and saves it with the chunk; a world written
+/// without it is not the world the server builds (`DW1040`). `block` is a bare
+/// block id (`minecraft:oak_wall_sign`), never a state.
+pub fn block_entity_type(block: &str) -> Option<&'static str> {
+    static TABLE: std::sync::OnceLock<BTreeMap<&'static str, &'static str>> =
+        std::sync::OnceLock::new();
+    TABLE
+        .get_or_init(|| {
+            include_str!("../../data/block-entities-1.21.11.tsv")
+                .lines()
+                .filter(|l| !l.starts_with('#') && !l.is_empty())
+                .map(|l| {
+                    l.split_once('\t')
+                        .expect("vendored block-entity table rows are `block<TAB>type`")
+                })
+                .collect()
+        })
+        .get(block)
+        .copied()
+}
+
 /// The complete 1.21.11 entity-type registry (157 ids), vendored under `data/`
 /// from the same `misode/mcmeta` summary as the item registry (see
 /// `data/PROVENANCE.md`). Validates v0.3 wave mobs (`DW0173`).
@@ -785,6 +813,108 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    /// The block-entity table is the pinned jar's, read two ways. Its type set
+    /// is the `minecraft:block_entity_type` registry the pinned server's own
+    /// data generator reports (`java -DbundlerMainClass=net.minecraft.data.Main
+    /// -jar server.jar --reports`, `reports/registries.json`: 49 entries), less
+    /// `minecraft:piston`, which only `moving_piston` carries and which no
+    /// `newBlockEntity` makes. Every block it names is a block of the pinned
+    /// registry, and the count its header states is its row count.
+    #[test]
+    fn the_block_entity_table_is_the_pinned_registry() {
+        let raw = include_str!("../../data/block-entities-1.21.11.tsv");
+        let rows: Vec<(&str, &str)> = raw
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.is_empty())
+            .map(|l| l.split_once('\t').unwrap())
+            .collect();
+        let types: BTreeSet<String> = rows.iter().map(|(_, t)| t.to_string()).collect();
+        let reported: BTreeSet<String> = [
+            "banner",
+            "barrel",
+            "beacon",
+            "bed",
+            "beehive",
+            "bell",
+            "blast_furnace",
+            "brewing_stand",
+            "brushable_block",
+            "calibrated_sculk_sensor",
+            "campfire",
+            "chest",
+            "chiseled_bookshelf",
+            "command_block",
+            "comparator",
+            "conduit",
+            "copper_golem_statue",
+            "crafter",
+            "creaking_heart",
+            "daylight_detector",
+            "decorated_pot",
+            "dispenser",
+            "dropper",
+            "enchanting_table",
+            "end_gateway",
+            "end_portal",
+            "ender_chest",
+            "furnace",
+            "hanging_sign",
+            "hopper",
+            "jigsaw",
+            "jukebox",
+            "lectern",
+            "mob_spawner",
+            "piston",
+            "sculk_catalyst",
+            "sculk_sensor",
+            "sculk_shrieker",
+            "shelf",
+            "shulker_box",
+            "sign",
+            "skull",
+            "smoker",
+            "structure_block",
+            "test_block",
+            "test_instance_block",
+            "trapped_chest",
+            "trial_spawner",
+            "vault",
+        ]
+        .into_iter()
+        .filter(|t| *t != "piston")
+        .map(|t| format!("minecraft:{t}"))
+        .collect();
+        assert_eq!(
+            types, reported,
+            "the table's types are not the reported registry's"
+        );
+        let classified: serde_json::Value =
+            serde_json::from_str(include_str!("../../data/block-classification-1.21.11.json"))
+                .unwrap();
+        for (b, _) in &rows {
+            assert!(
+                classified["blocks"].get(*b).is_some(),
+                "{b} is no pinned block"
+            );
+        }
+        let stated = format!("# {} of 1166 blocks", rows.len());
+        assert!(
+            raw.contains(&stated),
+            "the header states another row count than {}",
+            rows.len()
+        );
+        assert_eq!(
+            block_entity_type("minecraft:oak_wall_sign"),
+            Some("minecraft:sign")
+        );
+        assert_eq!(
+            block_entity_type("minecraft:red_shulker_box"),
+            Some("minecraft:shulker_box")
+        );
+        assert_eq!(block_entity_type("minecraft:stone"), None);
+        assert_eq!(block_entity_type("minecraft:moving_piston"), None);
     }
 
     /// The vendored stack-size table must cover EXACTLY the vendored item

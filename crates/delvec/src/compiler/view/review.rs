@@ -303,13 +303,25 @@ impl WorldMaker {
         }
     }
 
-    /// The block entities a block map holds: a template's compound wherever
-    /// the cell still holds the template's block.
+    /// The block entities a block map holds: one at every cell whose block
+    /// carries one ([`crate::compiler::registry::block_entity_type`]), because
+    /// the server makes it whenever it places the block, compound or none —
+    /// the template's compound wherever the cell still holds the template's
+    /// block, and otherwise the type alone, every other key being the
+    /// server's own default for that type.
     pub fn block_entities(&self, blocks: &BlockMap) -> BTreeMap<[i32; 3], Nbt> {
-        self.template_block_entities
+        blocks
             .iter()
-            .filter(|(c, (state, _))| blocks.get(*c) == Some(state))
-            .map(|(c, (_, nbt))| (*c, nbt.clone()))
+            .filter_map(|(c, state)| {
+                let kind = crate::compiler::registry::block_entity_type(
+                    crate::compiler::assembled::base_id(state.as_str()),
+                )?;
+                let nbt = match self.template_block_entities.get(c) {
+                    Some((placed, nbt)) if placed == state => nbt.clone(),
+                    _ => Nbt::Compound(vec![("id".to_string(), Nbt::Str(kind.to_string()))]),
+                };
+                Some((*c, nbt))
+            })
             .collect()
     }
 
@@ -355,13 +367,11 @@ impl WorldMaker {
         }
         let mut bes = self.block_entities(&blocks);
         for (cell, stacks) in &items {
-            let Some(state) = blocks.get(cell) else {
+            // An item goes into the container's block entity; a cell whose
+            // block carries none holds no item, on the server as here.
+            let Some(entry) = bes.get_mut(cell) else {
                 continue;
             };
-            let id = crate::compiler::assembled::base_id(state.as_str()).to_string();
-            let entry = bes
-                .entry(*cell)
-                .or_insert_with(|| Nbt::Compound(vec![("id".to_string(), Nbt::Str(id))]));
             let mut list: Vec<Nbt> = match entry.get("Items") {
                 Some(Nbt::List(l)) => l.clone(),
                 _ => Vec::new(),

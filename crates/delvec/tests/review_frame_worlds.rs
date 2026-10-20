@@ -585,3 +585,92 @@ fn a_prop_objectives_interact_frame_stands_in_the_world_that_holds_the_prop() {
     assert!(expect.iter().any(|e| e.contains(&block)), "{expect:?}");
     assert!(expect.iter().all(|e| !e.contains("lantern")), "{expect:?}");
 }
+
+/// **Every block that carries a block entity is written with one** (`DW1040`):
+/// the pinned server makes a block entity whenever it places such a block —
+/// a template's barrel, a sculk sensor, a blank sign — compound or none, and
+/// saves it with the chunk. Over the gallery's load world, the cells holding a
+/// block entity are exactly the cells whose block the measured table
+/// (`data/block-entities-1.21.11.tsv`) gives a type, each of that type, and
+/// the gallery binds the rule with block entities its templates carry no
+/// compound for.
+#[test]
+fn every_block_that_carries_a_block_entity_is_written_with_one() {
+    let dir = tmp("rfw-block-entities");
+    let (campaign, prefabs) = common::gallery_primary_at(&dir.join("gallery"));
+    let out = dir.join("build");
+    build(&campaign, &prefabs, &out);
+    let world = out.join("validation/worlds/at-load");
+    let table: BTreeMap<String, String> = std::fs::read_to_string(
+        common::repo_root().join("crates/delvec/data/block-entities-1.21.11.tsv"),
+    )
+    .unwrap()
+    .lines()
+    .filter(|l| !l.starts_with('#') && !l.is_empty())
+    .map(|l| {
+        let (b, t) = l.split_once('\t').unwrap();
+        (b.to_string(), t.to_string())
+    })
+    .collect();
+    let cells = anvil(&[
+        "cells",
+        world.to_str().unwrap(),
+        "-30000",
+        "-64",
+        "-30000",
+        "30000",
+        "319",
+        "30000",
+    ]);
+    let want: BTreeMap<String, String> = cells
+        .as_object()
+        .unwrap()
+        .iter()
+        .filter_map(|(cell, state)| {
+            let id = state.as_str().unwrap().split('[').next().unwrap();
+            table.get(id).map(|t| (cell.clone(), t.clone()))
+        })
+        .collect();
+    let bes = anvil(&["block-entities", world.to_str().unwrap()]);
+    let got: BTreeMap<String, String> = bes
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| {
+            (
+                format!("{},{},{}", b["x"], b["y"], b["z"]),
+                b["id"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        got, want,
+        "the written block entities are not the cells that carry one"
+    );
+    let bare = bes
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|b| {
+            b.as_object()
+                .unwrap()
+                .keys()
+                .all(|k| ["id", "x", "y", "z"].contains(&k.as_str()))
+        })
+        .count();
+    assert!(
+        bare > 0,
+        "the gallery binds no block entity its writes carry no compound for: {bes}"
+    );
+    for kind in [
+        "minecraft:barrel",
+        "minecraft:sculk_sensor",
+        "minecraft:sign",
+        "minecraft:trapped_chest",
+    ] {
+        assert!(
+            got.values().any(|t| t == kind),
+            "the gallery writes no {kind}: {got:?}"
+        );
+    }
+}
