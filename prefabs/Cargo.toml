@@ -37,7 +37,6 @@ members = [
     "island-generator",
     "island-terrain-generator",
     "rig-generator",
-    "tidal-keep-generator",
 ]
 
 # One declaration per dependency, so a member states a name and nothing else.

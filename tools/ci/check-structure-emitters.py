@@ -314,7 +314,7 @@ def emitter_scope(rel: str, text: str) -> list[str]:
     """The file, plus the module files IT declares.
 
     A generator may put its palette in one file and its emission in another
-    (`prefabs/tidal-keep-generator` splits `main.rs` / `common.rs`), so the
+    (`main.rs` beside a `common.rs` it declares with `mod`), so the
     marker is looked for through the file's own `mod` declarations. Deliberately
     not "everything in the directory" and not "everything in the crate": a
     neighbour's judgement is not this file's, and widening the scope that far

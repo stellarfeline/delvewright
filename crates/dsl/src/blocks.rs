@@ -7,9 +7,9 @@
 //! checked against the pinned command tree by the emitter, not by a test, because
 //! the operator running the tool does not run `cargo test`.* Blocks had no such
 //! rule. The consequence is measured, not hypothetical: 1.21.11 renamed
-//! `minecraft:chain` to `minecraft:iron_chain`, and
-//! `prefabs/tidal-keep-generator` kept placing the old id — eight cells of
-//! bell-rope in `tk-bell-tower.nbt` that do not exist. A structure template
+//! `minecraft:chain` to `minecraft:iron_chain`, and a tileset generator kept
+//! placing the old id — eight cells of bell-rope in a bell-tower piece that do
+//! not exist. A structure template
 //! carrying an unknown block loads it as **air**: the generator exits 0, the
 //! `.nbt` is well-formed, the byte-identity gate passes, the tower simply has no
 //! ropes, and nothing anywhere says so. The same class is in the shipped
@@ -23,7 +23,7 @@
 //! the admission audit and the compiler's own render surface all check against
 //! this one table. And no crate is the only site that turns a palette into
 //! `.nbt` bytes — reasoning as though one were is what left the sixth emitter
-//! unguarded. The seven `prefabs/*-generator` packages may not depend on
+//! unguarded. The prefab generator packages may not depend on
 //! `delvec` and reach the same rule through `prefab-invariants`, which depends
 //! on this crate. Which sites owe it is therefore not remembered: it
 //! is discovered from the ingredient by `tools/ci/check-structure-emitters.py`,
