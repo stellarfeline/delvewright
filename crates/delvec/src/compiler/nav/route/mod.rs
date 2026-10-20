@@ -594,6 +594,37 @@ pub fn configuration_at(
     }
 }
 
+/// **The configuration a walked leg is walked under** (spec-0112 §5 item 1):
+/// the region state the route proof walks the leg `from_step → to_step` in
+/// ([`World::walked_leg_region_state`]) — every write the arrival's ancestors,
+/// the start step and the start's ancestors fire — so a frame standing on the
+/// leg sees the doors the walk passed through as the walk found them.
+pub fn leg_configuration(
+    world: &World,
+    events: &RegionEvents,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+    from_step: usize,
+    to_step: usize,
+) -> Configuration {
+    let fired = region::leg_fired(ancestor, from_step, to_step);
+    Configuration {
+        step: to_step,
+        live: world.staged_liveness(events, to_step, &fired),
+        state: world.walked_leg_region_state(events, ancestor, from_step, to_step),
+    }
+}
+
+/// The "has the party fired step `g`" predicate of a walked leg
+/// ([`leg_configuration`]'s), in the `(fire_step, arrival)` shape the
+/// placements ledger is asked in ([`crate::compiler::placed::rows_under`]).
+pub fn leg_fired<'a>(
+    ancestor: &'a dyn Fn(usize, usize) -> bool,
+    from_step: usize,
+    to_step: usize,
+) -> impl Fn(usize, usize) -> bool + 'a {
+    region::leg_fired(ancestor, from_step, to_step)
+}
+
 /// **The quest configurations the critical path passes**, in path order — one per
 /// distinct region state, keyed by the first arrival under it — with `per_step`
 /// mapping every critical step to its configuration's index (spec-0088 §5). The

@@ -232,9 +232,11 @@ pub struct PovShot {
     pub leg: usize,
     /// Waypoint index within the leg (0 = leg start).
     pub wp: usize,
-    /// The `critical_path` step the leg arrives at — whose configuration the
-    /// leg is walked in (spec-0089 §8).
+    /// The `critical_path` step the leg arrives at (spec-0089 §8).
     pub step: usize,
+    /// The `critical_path` step the leg walks from: with [`PovShot::step`], the
+    /// walked leg whose configuration the frame stands in (spec-0112 §5 item 1).
+    pub from_step: usize,
     /// Objective id this leg walks toward, if resolvable.
     pub objective: Option<String>,
     /// The standing (feet) cell — a DW0314-proven-standable waypoint.
@@ -342,6 +344,7 @@ pub fn pov_shots(plan: &Plan, routes: &[LegRoute]) -> Vec<PovShot> {
                 leg,
                 wp,
                 step: route.to_step,
+                from_step: route.from_step,
                 objective: objective.clone(),
                 standing_cell: cell,
                 eye,
@@ -711,7 +714,7 @@ impl<'c> Shots<'c> {
             plan,
             frames,
             base,
-            navs: (0..frames.arrivals.len()).map(|_| None).collect(),
+            navs: (0..frames.stand_count()).map(|_| None).collect(),
             shots: Vec::new(),
             eyes: Vec::new(),
             pulled_in: 0,
@@ -721,7 +724,7 @@ impl<'c> Shots<'c> {
     /// The nav world of arrival `i`.
     fn nav(&mut self, i: usize) -> &World {
         if self.navs[i].is_none() {
-            self.navs[i] = Some(self.frames.arrivals[i].world(self.base));
+            self.navs[i] = Some(self.frames.stand_config(i).world(self.base));
         }
         match &self.navs[i] {
             Some(Some(w)) => w,
@@ -807,7 +810,7 @@ impl<'c> Shots<'c> {
                 ),
             );
         }
-        let fw = &self.frames.worlds[self.frames.per_arrival[shot.world]];
+        let fw = &self.frames.worlds[self.frames.stand_world(shot.world)];
         let mut obj = serde_json::Map::new();
         obj.insert("id".to_string(), json!(shot.id));
         obj.insert("kind".to_string(), json!(shot.kind));
@@ -849,11 +852,11 @@ impl<'c> Shots<'c> {
         }
         let worlds = by_world
             .keys()
-            .map(|a| self.frames.per_arrival[*a])
+            .map(|a| self.frames.stand_world(*a))
             .collect::<std::collections::BTreeSet<_>>()
             .len();
         for (w, eyes) in &by_world {
-            let config = &self.frames.arrivals[*w];
+            let config = self.frames.stand_config(*w);
             let block_at = |c: [i32; 3]| {
                 config
                     .blocks(picture)
@@ -869,6 +872,15 @@ impl<'c> Shots<'c> {
             .collect();
         Ok(worlds)
     }
+}
+
+/// The stand a POV shot's frame is in: its walked leg's configuration
+/// (spec-0112 §5 item 1), or — for a leg the frame set was built without — its
+/// arrival's.
+fn pov_stand(frames: &FrameWorlds, shot: &PovShot) -> usize {
+    frames
+        .leg_stand(shot.from_step, shot.step)
+        .unwrap_or_else(|| shot.step.min(frames.arrivals.len() - 1))
 }
 
 /// **The mode a frame is drawn in, from what it asks** (spec-0112 §6.1 item 4):
@@ -981,7 +993,7 @@ pub fn render_plan(
     let pov_after: Vec<Value> = pov
         .iter()
         .map(|shot| {
-            let wi = frames.per_arrival.get(shot.step).copied().unwrap_or(0);
+            let wi = frames.stand_world(pov_stand(frames, shot));
             let cells = *moved
                 .entry(wi)
                 .or_insert_with(|| frames.worlds[wi].config.moved_from(&load));
@@ -1287,7 +1299,7 @@ pub fn render_plan(
             expect,
             stamped: true,
             aim: None,
-            world: shot.step.min(frames.arrivals.len() - 1),
+            world: pov_stand(frames, shot),
         });
     }
 
@@ -1908,6 +1920,7 @@ mod pov_tests {
             leg: 0,
             wp: 0,
             step: 1,
+            from_step: 0,
             objective: None,
             standing_cell: [5, 65, 4],
             eye: [5.5, 66.62, 4.5],

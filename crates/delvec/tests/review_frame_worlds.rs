@@ -499,6 +499,44 @@ fn a_template_sign_is_written_with_its_text_and_drawn() {
 /// activation — the world holds the prop at the anchor, the frame's `shows`
 /// lists that cell, and its `expect` names the prop's block and never a
 /// lantern marker the objective does not have.
+/// **A POV frame stands in the state its leg is walked under** (spec-0112 §5
+/// item 1): the route proof walks a leg with its start step's writes, and a
+/// start the arrival does not causally descend from — the gallery's
+/// `trigger/strike-the-sentinel`, whose one written cell the next leg's
+/// arrival does not inherit — leaves that write in the walk and out of the
+/// arrival's configuration. The leg's frames stand in the walk's world, keyed
+/// after the start; standing them in the arrival's put them at load, which is
+/// the shape a door its start opens draws as a shut bar.
+#[test]
+fn a_pov_frame_stands_in_the_world_its_leg_is_walked_in() {
+    let dir = tmp("rfw-pov-leg");
+    let (campaign, prefabs) = common::gallery_primary_at(&dir.join("gallery"));
+    let out = dir.join("build");
+    build(&campaign, &prefabs, &out);
+    let plan = json(&out.join("render-plan.json"));
+    let shots = plan["shots"].as_array().unwrap();
+    let leg: Vec<&serde_json::Value> = shots
+        .iter()
+        .filter(|s| s["kind"] == "pov" && s["leg"] == 1)
+        .collect();
+    assert!(!leg.is_empty(), "the gallery's second leg has frames");
+    for s in &leg {
+        assert_eq!(
+            s["world"], "after-trigger-strike-the-sentinel",
+            "the leg walked from the sentinel's strike stands in the world it leaves: {s}"
+        );
+        assert!(
+            s["after"]["cells_moved"].as_u64().unwrap_or(0) > 0,
+            "and that world moves a cell from load: {s}"
+        );
+    }
+    // The world is written beside the plan, as every world a shot names.
+    assert!(
+        out.join("validation/worlds/after-trigger-strike-the-sentinel/level.dat")
+            .is_file()
+    );
+}
+
 #[test]
 fn a_prop_objectives_interact_frame_stands_in_the_world_that_holds_the_prop() {
     const OBJ: &str = "obj/press-the-case";

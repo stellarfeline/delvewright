@@ -3619,12 +3619,18 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   machine description composed from campaign data (area name + objective/anchor/NPC
   names + objective hint) — the (image ↔ expect) pair a vision model reviews.
   **Each POV shot states the configuration its leg is walked in** (spec-0089
-  §8): `after: {step, cells_moved}` — `cells_moved` the cells whose block the
-  configuration the leg arrives under (`path_configurations`' `per_step`) holds
-  differently from the load world, over the world as shipped
+  §8, spec-0112 §5 item 1): the state the route proof walks the leg under
+  (`nav::leg_configuration`, the same `World::walked_leg_region_state` the
+  walk is proven in — every write of the arrival's ancestors, of the start step
+  and of the start's ancestors), which holds a write of a start the arrival
+  does not causally descend from, such as a door that start opens. `after:
+  {step, cells_moved}` — `cells_moved` the cells whose block that configuration
+  holds differently from the load world, over the world as shipped
   (`view::beat::picture_base`), and `step` the latest step of `plan.critical_path`
   before the leg's that carries an id (`null` when none does); its `world` is
-  that configuration's key, and its frame is drawn from that world. The shot
+  that configuration's key (`view::review::FrameWorlds::legs`; a leg's world
+  that lays the bytes of an arrival's is that arrival's world), and its frame is
+  drawn from that world. The shot
   before a climb's take-hold looks where the climb lands, so it frames the climb
   rather than the wall the climbable hangs on.
   Deterministic (route order → waypoint order; no RNG/clock) and appended after the
@@ -3648,13 +3654,13 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   list through one `push` that records the eye from the same position it writes
   into the camera. Each shot names the world it stands in (`world`): the
   configuration the critical path arrives under at its arrival — `at-load` for
-  the `spawn`, `interior`, `seam`, `npc` and `gate` kinds, the leg's arrival
-  for a `pov`, the firing step's arrival for a `cutscene`, the arrival at its
+  the `spawn`, `interior`, `seam`, `npc` and `gate` kinds, the walked leg's
+  configuration for a `pov`, the firing step's arrival for a `cutscene`, the arrival at its
   objective's own step for an `interact` (so a `prop` its quest's activation
   places stands in its frame; `at-load`, said in its `expect`, when no
   critical-path step does the objective) — and its eye
   is proven against that configuration's `World` (`Configuration::world`), one
-  per distinct arrival. Six kinds place their camera at a fixed stand-off from a
+  per distinct arrival or walked leg. Six kinds place their camera at a fixed stand-off from a
   subject; such a camera whose own cell is occupied, **or whose sight line to its
   subject crosses a block** past the subject's own cells, stands at the farthest
   open point on that line (`crate::camera::stand_before`, which starts past a

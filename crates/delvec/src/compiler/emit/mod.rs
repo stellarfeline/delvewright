@@ -1196,8 +1196,9 @@ pub fn build_with_warnings(
     // under `validation/worlds/` beside the plan, with the review record.
     // The frame worlds again, now that the ledger exists: a world is its
     // configuration's bytes, the rows its arrival holds, and its clock.
+    let pov_legs: Vec<(usize, usize)> = pov_shots.iter().map(|s| (s.from_step, s.step)).collect();
     let frame_worlds =
-        crate::compiler::view::review::frame_worlds_with(plan, &world, Some(&ledger));
+        crate::compiler::view::review::frame_worlds_with(plan, &world, Some(&ledger), &pov_legs);
     let (render_plan_doc, camera_warnings) = crate::compiler::render_plan::render_plan(
         plan,
         prefabs,
