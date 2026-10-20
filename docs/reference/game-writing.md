@@ -62,6 +62,24 @@ any game, however oblique its story.
 - **F6 — A class blurb names the role in plain words.** `Front-line fighter.
   Heavy axe, heavy armour; slow, but very hard to kill.` not `Slow, and hard to
   stop.` **Authored.**
+- **F7 — An objective title's first word is the act that completes it.** A
+  `reach-anchor` is reached (`Climb to the loft`), a `talk-to` is spoken to
+  (`Speak to Oru`), a `kill` is fought (`Put down the muster`), a `collect` is
+  taken (`Take the levy's roll`), an `interact` is used (`Draw the grating`) and,
+  with `requires_item`, presented (`Show the hook the lantern`); `Lay`, `Hang`,
+  `Give`, `Bring` are true only of an `interact` that takes the presented item
+  (`takes_item`). `Lay the roll in the loft` over a `reach-anchor` tells the
+  player to do one thing and rewards another, which L2 forbids. **Cited:** quest
+  structure reduces to atomic actions whose post-condition is the state the game
+  checks — `goto` → *you are there*, `take` → *you have it*, `give` → *they have
+  it, and you don't* (Doran & Parberry 2011, Table 5); getting somewhere is a
+  quest kind of its own (Aarseth 2005, via Karlsen 2008); an MMO tracker derives
+  the objective line from the condition and types it (Warcraft Wiki,
+  `GetQuestObjectiveInfo`); where the line is authored free — the game's own
+  advancements (Minecraft Wiki, *Advancement definition*), the Creation Kit's
+  objective display text (UESP) — nothing binds it to the completion, and this
+  lie is that shape's ordinary failure. The head-word reading, the act
+  vocabulary and the engine's check (`DW1045`, spec-0114) are **authored**.
 
 ## 2. Story text: say it
 
@@ -188,20 +206,21 @@ Chinese is §7.
 
 ## 5. What a machine can check
 
-Summary of the design in the evidence file §5. Four rows are built. One name,
+Summary of the design in the evidence file §5. Five rows are built. One name,
 one rendering is the transcreation tool's fact check, run on every line it writes
 ([i18n.md § The fact check](i18n.md#the-fact-check)). Dangling name, for the
 names that reach dialogue, is `DW0982`: the declared names (the inventory's
 `name` and item-name rows, the fact check's set) placed in the compiler's play
 order against what has told them (N1, N3). A question without an answer is
 `DW0981`: an option that asks and opens no line. A name tag on a crowd is
-`DW0983` (N6, [`compiler::telling` § DW0983](delvec/compiler/telling.md#dw0983--a-name-tag-marks-a-person-compilertelling-error-exit-1)). All three refuse at `delvec validate` ([`compiler::telling` § DW0981/DW0982](delvec/compiler/telling.md#dw0981dw0982--what-the-dialogue-tells-the-player-compilertelling-error-exit-1)).
+`DW0983` (N6, [`compiler::telling` § DW0983](delvec/compiler/telling.md#dw0983--a-name-tag-marks-a-person-compilertelling-error-exit-1)). An objective title headed by an act its completion does not perform is `DW1045` (F7, [`compiler::telling` § DW1045](delvec/compiler/telling.md#dw1045--an-objective-says-the-act-that-completes-it-compilertelling-error-exit-1)). All four refuse at `delvec validate` ([`compiler::telling` § DW0981/DW0982](delvec/compiler/telling.md#dw0981dw0982--what-the-dialogue-tells-the-player-compilertelling-error-exit-1)).
 The rest is not built.
 
 | Check | What it reads | Estimated precision on Vesperhold |
 |---|---|---|
 | Dangling name (`DW0982`, built for dialogue) | Every NPC line and option label or tooltip at its earliest display step in the compiler's play order (the replay's walk, on the critical path and every branch), against the declared names and what has told them: the person speaking, the class and kit, an item handed over, or a sentence that says what it is | Refused uses on content main: Vesperhold 1 of 4 (`Tallow`), and, order-free on the campaigns the current engine cannot read, Hollow Vigil 3 of 3 (`First Warden`) — each a name the evidence file's audit rates dangling; none rated introduced is refused. A place or thing the documents never name (an anchor) is out of its reach |
 | Name tag on a crowd (`DW0983`, built) | Every wave entry and actor carrying a name that one wave spawns more than one body under | Content main: 17 of 21 waves refused (Hollow Vigil 2 of 2, Nobody's Isle 3 of 3, Vesperhold 12 of 16), 0 of 36 named actors; every wave left standing is a single named boss or elite |
+| Title that names another act (`DW1045`, built) | Every objective title's head — the longest phrase of `crates/delvec/data/acts-en.json` it begins with — against the acts its completion performs | The evidence file §8's corpus: 12 of 117 titles refused, the same 12 one reader's hand labelling found; 0 heads the lexicon does not know |
 | Question without an answer (`DW0981`, built) | Every dialogue option whose label or tooltip, in any language, ends in `?`/`？` | 0 of 73 question options on content main refused; in the gallery and its overlays 2 of 5, both in the site-plan overlay, since answered |
 | One name, one rendering | Glossary names × the Chinese of every string that contains them | 3 of 4 hits real (75%); recall 3 of 4 |
 | Archaic register (zh) | Marker list (诸位、在下、可曾、相询、若、便、择) | 7 of 9 (78%); recall 7 of 7 |
@@ -320,9 +339,11 @@ How a quest plan is shaped as a web rather than a chain, how an ending reads the
 
 ## Sources
 
+- Aarseth, E. From Hunt the Wumpus to EverQuest: Introduction to Quest Theory. ICEC 2005, LNCS 3711; as read in Karlsen, F. Quests in Context: A Comparative Analysis of Discworld and World of Warcraft. Game Studies 8(1), 2008.
 - bg3.wiki. *Container* (community wiki, CC BY-NC-SA; ideas and counts only, as in `docs/ACKNOWLEDGEMENTS.md`).
 - Callison-Burch, Fordyce, Koehn, Monz, Schroeder. (Meta-) Evaluation of Machine Translation. WMT 2007.
 - Chung, B. *Level Design: Readability*. blendogames.com.
+- Doran, J. & Parberry, I. A Prototype Quest Generator Based on a Structural Analysis of Quests from Four MMORPGs. PCGames 2011. ianparberry.com/pubs/pcg2011.pdf.
 - Fextralife wikis: Dark Souls *Estus Flask*; Elden Ring *Flask of Crimson Tears*.
 - Game Accessibility Guidelines. *Use simple clear language*. gameaccessibilityguidelines.com.
 - Grice, H. P. Logic and Conversation (1975), as summarised in the Stanford Encyclopedia of Philosophy, *Implicature*.
@@ -333,11 +354,16 @@ How a quest plan is shaped as a web rather than a chain, how an ending reads the
 - Li, Zhang, Wang, Zhang, Cui, Yin, Xiao, Zhang. Lost in Literalism: How Supervised Training Shapes Translationese in LLMs. ACL 2025. arXiv:2503.04369.
 - Mangiron, C. & O'Hagan, M. Game Localisation: Unleashing Imagination with "Restricted" Translation. JoSTrans 6, 2006.
 - Microsoft Writing Style Guide. *Top 10 tips for Microsoft style and voice*.
+- Microsoft. *Xbox Accessibility Guideline 109: Objective clarity*. learn.microsoft.com.
+- Minecraft Wiki. *Advancement definition*. minecraft.wiki/w/Advancement_definition.
 - Nielsen Norman Group (Neusesser, Sunwall). *Error-Message Guidelines*.
 - Paech, Roush, Goldfeder, Shwartz-Ziv. Antislop. arXiv:2510.15061.
 - Reinhart et al. Do LLMs write like humans? Variation in grammatical and rhetorical styles. PNAS 122(8), 2025.
 - Slabinski, M. 8 Key Principles of Writing Effective Game Dialogue. Game Developer.
 - Tencent News / 半月谈. AI味儿到底是一种什么味儿？文字创作也有"预制菜".
+- TES Renewal: Skywind. *Quest Design Principles*. handbook.tesrskywind.com/dev/Principles.
+- UESP Creation Kit wiki. *Bethesda Tutorial Quest Objectives*; *SetObjectiveCompleted – Quest*. ck.uesp.net.
+- Warcraft Wiki. *API GetQuestObjectiveInfo*. warcraft.wiki.gg.
 - Wein, S. & Schneider, N. Lost in Translationese? Reducing Translation Effect Using Abstract Meaning Representation. EACL 2024. arXiv:2304.11501.
 - Wikipedia. *Signs of AI writing* (ideas only, as in `docs/ACKNOWLEDGEMENTS.md`).
 - Xiao, R. How different is translated Chinese from native Chinese? IJCL 15(1), 2010.

@@ -887,6 +887,17 @@ def read_build_ledgers(out: Path) -> tuple[dict, list[str]]:
             "gate-signal.json: absent beside a build that resolves a gate — no shut gate "
             "was judged for a signal that opens it (DW1047)"
         )
+    # …and a path that proves an objective with no act ledger beside it is a
+    # build whose titles nothing read (spec-0114 §9.6). Its zero — titles
+    # present, none judged — is the generic `examined` row above:
+    # `act-gate.json` states `judged` also as `examined`.
+    if "act-gate.json" not in ledgers and any(
+        isinstance(st, dict) and st.get("objective") for st in steps
+    ):
+        zeroes.append(
+            "act-gate.json: absent — no objective title of this build was read against "
+            "the act its completion performs (DW1045)"
+        )
     return ledgers, zeroes
 
 

@@ -43,6 +43,7 @@ this section is what they are *for* and the traps in each.
   holds). It is narrated in chat to that player, only while the objective is
   open, and without it the click is met with total silence, which reads as a
   broken affordance.
+- **The item a player lays (`takes_item`) is the thing the receiving block shows**: a lectern shows a book, so lay a book (`minecraft:written_book` or `minecraft:writable_book`); an item frame or display shows the item itself. A paper laid on a lectern leaves a book on the lectern.
 
 ## Items, containers and loot
 

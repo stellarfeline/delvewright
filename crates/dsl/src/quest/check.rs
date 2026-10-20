@@ -29,6 +29,13 @@ crate::dw_code! {
 }
 
 crate::dw_code! {
+    /// An `interact` declares `takes_item: true` without a `requires_item`
+    /// (spec-0114 §6.3): the take is one of the presented item, and nothing is
+    /// presented, so the declaration could never take anything.
+    pub const TAKES_ITEM_WITHOUT_ITEM: DwCode = DwCode::new("DW1046", ExitTier::Build);
+}
+
+crate::dw_code! {
     /// Planned quest (stage 4) has no expansion in stage 5.
     pub const QUEST_NOT_EXPANDED: DwCode = DwCode::new("DW0150", ExitTier::Build);
 }
@@ -1000,8 +1007,24 @@ pub(crate) fn quest_reference_checks(
                     anchor,
                     requires_item,
                     missing_item_hint,
+                    takes_item,
                     ..
                 } => {
+                    // spec-0114 §6.3: the take is one of the presented item;
+                    // with no item presented there is nothing to take, and the
+                    // declaration would bind to nothing.
+                    if *takes_item && requires_item.is_none() {
+                        d.push(Diagnostic::error(
+                            TAKES_ITEM_WITHOUT_ITEM,
+                            "quests",
+                            format!("/content/quests/{i}/objectives/{j}/takes_item"),
+                            "`interact.takes_item` takes one of the item the player presents, but \
+                             this objective declares no `requires_item`, so nothing is presented \
+                             and nothing can be taken — state the `requires_item` the player lays \
+                             down, or drop `takes_item`"
+                                .to_string(),
+                        ));
+                    }
                     // v0.7: the empty-hand narration answers the held-item gate;
                     // without a gate there is no missing hand to narrate to, and
                     // the authored line would be dead content that never fires.

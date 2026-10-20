@@ -377,6 +377,14 @@ pub(super) fn validate_loaded(
                 examined.push(tbind.line());
                 diags.extend(td);
             }
+            // An objective's title says the act that completes it (DW1045,
+            // spec-0114): its head word is read against the acts the completion
+            // performs, with what it judged and the heads it does not know.
+            {
+                let (ad, abind) = delvec::compiler::telling::check_acts(&campaign);
+                examined.push(abind.line());
+                diags.extend(ad);
+            }
             // v0.6 `close-gate` gate-block declaration (DW0343): the fill block is
             // prefab metadata, so this compiler-side check runs here (validation
             // tier). No-op for a campaign that uses no `close-gate`.
@@ -822,6 +830,8 @@ pub(crate) fn run_build(
     // validated above). An undeclared `--lang` is a validation-class rejection of
     // the requested build (exit 1, spec-0002).
     let is_english = lang == delvewright_dsl::CANONICAL_LANG;
+    // The act check reads the English, which the localisation below replaces.
+    let act_binding = delvec::compiler::telling::check_acts(&campaign).1;
     let mut campaign = campaign;
     if !is_english {
         if !campaign.world.content.languages.iter().any(|l| l == lang) {
@@ -874,7 +884,10 @@ pub(crate) fn run_build(
             Plan::build_with(&campaign, &prefabs, p.clone())
         }
     };
-    let plan = match built.map(|p| p.with_design_files(loaded.design_files.clone())) {
+    let plan = match built.map(|p| {
+        p.with_design_files(loaded.design_files.clone())
+            .with_act_binding(act_binding)
+    }) {
         Ok(p) => p,
         Err(e) => {
             // Advisories raised before the failure and explaining it (`DW0498`:

@@ -483,6 +483,17 @@ const ANCHORS: &[Anchor] = &[
         role: None,
     },
     Anchor {
+        name: "anchor/tray",
+        pos: [20, 1, 9],
+        facing: Some("east"),
+        trigger_block: None,
+        note: "the Factor's tray at the west end of the counter: an `interact` that takes the \
+               item it is shown (spec-0114) — the party lays one emerald here and it leaves \
+               the hand. Three cells west of the stall, the counter's mirror, so the tray is \
+               clear of the vendor body the way the shop's own affordance is",
+        role: None,
+    },
+    Anchor {
         name: "anchor/counter",
         pos: [26, 1, 9],
         facing: Some("west"),
