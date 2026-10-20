@@ -36,7 +36,7 @@ Rules of the queue:
 |---|---|---|
 | Traps: stair-volley / dart gallery / trapped chest (0011) | **The Toll Road** — a short fortified pass where every trap type guards one alcove of loot; disarm levers teach counterplay | pending |
 | Checkpoints + stealth zones (0012) | covered by nobodys-cave-island (blind-giant climb) | covered |
-| Actors, staging, cutscenes (0014) | **The Wake** — a funeral procession level that is 80% staging: mourners walk, a eulogy sequence, one player choice redirects the procession | pending |
+| Actors, staging, cutscenes (0014) | **The Wake** — a funeral procession level that is 80% staging: mourners walk, a eulogy sequence, one player choice redirects the procession | built — content repo, `campaigns/the-wake`, branch `demo/the-wake` |
 | Bonfire rest + wave re-seat (0016 §1) | covered by vesperhold | covered |
 | Shortcut loop-back (0016 §2) | covered by vesperhold (portcullis, well-house door, ringers' stair) | covered |
 | Ambush (0016 §3) | covered by vesperhold (seven ambushes) | covered |
