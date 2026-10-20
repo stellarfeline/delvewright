@@ -439,10 +439,12 @@ impl<C: Codes> Codes for Recorder<'_, C> {
     }
 }
 
-/// A [`Codes`] relative to a world cell: the template's origin put at `at`.
+/// A [`Codes`] relative to a world cell: the template's origin put at `at`,
+/// noting every window cell it reads in `track` ([`bank`]).
 struct Shifted<'a> {
     dense: &'a Dense,
     at: [i32; 3],
+    track: Option<&'a bank::Track<'a>>,
 }
 
 impl Codes for Shifted<'_> {
@@ -453,7 +455,12 @@ impl Codes for Shifted<'_> {
     fn code(&self, c: [i32; 3]) -> Code {
         let a = [c[0] + self.at[0], c[1] + self.at[1], c[2] + self.at[2]];
         match self.dense.index(a) {
-            Some(i) => self.dense.cells[i],
+            Some(i) => {
+                if let Some(t) = self.track {
+                    t.mark_index(i);
+                }
+                self.dense.cells[i]
+            }
             None => self.dense.code(a),
         }
     }
@@ -1298,6 +1305,11 @@ pub(in crate::compiler::nav) struct GraphMemo {
     premise_cells: BTreeSet<[i32; 3]>,
     /// Every closure taken over this graph, with the roots it was taken from.
     closures: Mutex<Vec<Closure>>,
+    /// Per window cell, the world's raw membership the snapshot's code does
+    /// not carry ([`raw_membership`]).
+    extra: Vec<u16>,
+    /// The nodes every graph of this window flew ([`bank`]).
+    bank: Arc<bank::Bank>,
 }
 
 impl GraphMemo {
@@ -1432,6 +1444,48 @@ fn reach_columns(k: i32) -> i32 {
     (t[k] + 1.0 + Attributes::PLAYER.width / 2.0).floor() as i32
 }
 
+/// Per window cell of `d`, the world's raw membership: bit 0 tall, 1 a
+/// use-gate, 2 a killing cell, 3 furniture, 4 waterloggable, 5 flooded, 6
+/// lava, 7 solid, and bits 8.. the partial height plus one (`0`: none) — every
+/// cell set a world query reads, so two worlds equal here and in the snapshot
+/// answer every query about the cell alike.
+fn raw_membership(w: &World, d: &Dense) -> Vec<u16> {
+    let mut x = vec![0u16; d.cells.len()];
+    let mut set = |c: [i32; 3], v: u16| {
+        if let Some(i) = d.index(c) {
+            x[i] |= v;
+        }
+    };
+    for c in w.tall.iter() {
+        set(c, 1);
+    }
+    for c in w.use_gates.iter() {
+        set(c, 1 << 1);
+    }
+    for c in w.lethal.iter() {
+        set(c, 1 << 2);
+    }
+    for c in w.furniture.iter() {
+        set(c, 1 << 3);
+    }
+    for c in w.waterloggable.iter() {
+        set(c, 1 << 4);
+    }
+    for c in w.flooded.iter() {
+        set(c, 1 << 5);
+    }
+    for c in w.lava.iter() {
+        set(c, 1 << 6);
+    }
+    for c in w.solid.iter() {
+        set(c, 1 << 7);
+    }
+    for (c, v) in w.partial.iter() {
+        set(*c, (u16::from(*v) + 1) << 8);
+    }
+    x
+}
+
 impl World {
     /// **This world's content digest** — the sha256 of every cell set the reach
     /// graph reads and every premise it applies, in cell order. Two worlds with
@@ -1535,8 +1589,20 @@ impl World {
             diff.dedup();
             (base, diff)
         });
+        let extra = raw_membership(self, &dense);
+        // The bank's key: the lineage's, and what a node's flights and world
+        // queries read that no window cell carries — the world outside the
+        // window, whether any cell is wet, the declared jumps and the climbs.
+        let bank = bank::bank(format!(
+            "{seed_key}:{:?}:{}:{}",
+            dense.outside,
+            dense.wet,
+            self.bank_digest()
+        ));
         let g = Arc::new(GraphMemo {
             columns: Columns::of(&dense),
+            extra,
+            bank,
             dense,
             nodes: Mutex::new(HashMap::new()),
             flown: Mutex::new(HashMap::new()),
@@ -1552,6 +1618,44 @@ impl World {
             .entry(key)
             .or_insert_with(|| Arc::clone(&g))
             .clone()
+    }
+
+    /// What a node's world queries read beyond the cells round it: the
+    /// declared jumps, the climb holds and whether the world keeps a climb.
+    fn bank_digest(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(format!("{:?}", self.declared_jumps).as_bytes());
+        h.update(format!("{:?}", self.climb_holds).as_bytes());
+        h.update(format!("{:?}", self.unheld_climb).as_bytes());
+        h.update([u8::from(self.has_climbs())]);
+        h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// The killing volumes near the inclusive cell box `b`, as [`bank`]
+    /// compares them: every volume [`World::lethal_near`] could find near a
+    /// box inside it.
+    fn volumes_near(&self, b: ([i32; 3], [i32; 3])) -> bank::Volumes {
+        let bx = Aabb::new(
+            f64::from(b.0[0]),
+            f64::from(b.0[1]),
+            f64::from(b.0[2]),
+            f64::from(b.1[0]) + 1.0,
+            f64::from(b.1[1]) + 1.0,
+            f64::from(b.1[2]) + 1.0,
+        );
+        let mut v: bank::Volumes = self
+            .lethal_regions
+            .iter()
+            .map(|(_, r)| *r)
+            .filter(|(lo, hi)| {
+                (0..3).all(|i| {
+                    f64::from(lo[i]) <= bx.max[i] + 1.0 && f64::from(hi[i]) + 1.0 >= bx.min[i] - 1.0
+                })
+            })
+            .collect();
+        v.sort_unstable();
+        v
     }
 
     /// The rest state `c` holds a body in, if any (spec-0113 §4.1).
@@ -1627,8 +1731,26 @@ impl World {
         params: &ReachParams,
         c: [i32; 3],
         wanted: Quadrants,
+        track: Option<&bank::Track<'_>>,
     ) -> NodeEdges {
         let fly_launches = wanted != 0;
+        // What the world is asked about the node itself — its rest state, its
+        // walk and its climb, the support and column — reads the cells round
+        // it; a declared jump out of it, the cells round where it lands.
+        if let Some(t) = track {
+            t.mark_box(
+                [c[0] - 2, c[1] - 3, c[2] - 2],
+                [c[0] + 2, c[1] + COLUMN as i32 + 1, c[2] + 2],
+            );
+            for (from, to) in &self.declared_jumps {
+                if *from == c {
+                    t.mark_box(
+                        [to[0] - 2, to[1] - 3, to[2] - 2],
+                        [to[0] + 2, to[1] + 3, to[2] + 2],
+                    );
+                }
+            }
+        }
         let fp = Footprint::player();
         let mut out = NodeEdges {
             kind: self.rest_kind(c),
@@ -1645,10 +1767,15 @@ impl World {
             HashMap<[i32; 3], Option<RestKind>, std::hash::BuildHasherDefault<flights::Mix>>,
         > = std::cell::RefCell::default();
         let accept = |to: [i32; 3], want: RestKind| -> bool {
-            let k = *kinds
-                .borrow_mut()
-                .entry(to)
-                .or_insert_with(|| self.rest_kind(to));
+            let k = *kinds.borrow_mut().entry(to).or_insert_with(|| {
+                if let Some(t) = track {
+                    t.mark_box(
+                        [to[0] - 2, to[1] - 3, to[2] - 2],
+                        [to[0] + 2, to[1] + 3, to[2] + 2],
+                    );
+                }
+                self.rest_kind(to)
+            });
             match k {
                 Some(k) => k == want || (want == RestKind::Standing && k == RestKind::Holding),
                 None => false,
@@ -1736,7 +1863,11 @@ impl World {
                     *v = dense.code([c[0], c[1] + i as i32, c[2]]);
                 }
                 let class = template_class(&(support, column, holding, params.key()), params);
-                let shifted = Shifted { dense, at: c };
+                let shifted = Shifted {
+                    dense,
+                    at: c,
+                    track,
+                };
                 let killed = |st: &State| self.kills(st);
                 let edge_memo: EdgeMemo = std::cell::RefCell::new(HashMap::default());
                 // The box the launches read: the cell's own neighbourhood, and
@@ -1961,12 +2092,12 @@ impl World {
     pub fn body_edges(&self, c: [i32; 3]) -> Vec<Edge> {
         let params = ReachParams::shipped(self.unbounded_fall);
         let memo = self.graph_memo(&params);
-        let mut out = self.expand(&memo, &params, c, 0).edges;
+        let mut out = self.expand(&memo, &params, c, 0, None).edges;
         if matches!(
             self.rest_kind(c),
             Some(RestKind::Standing | RestKind::Holding)
         ) {
-            out.extend(self.expand(&memo, &params, c, ALL_QUADRANTS).edges);
+            out.extend(self.expand(&memo, &params, c, ALL_QUADRANTS, None).edges);
         }
         out.sort();
         out.dedup_by(|a, b| a.to == b.to && a.kind == b.kind);
@@ -2172,7 +2303,7 @@ impl World {
     pub fn fatal_launch(&self, c: [i32; 3]) -> Option<Death> {
         let params = ReachParams::shipped(self.unbounded_fall);
         let memo = self.graph_memo(&params);
-        self.expand(&memo, &params, c, ALL_QUADRANTS).dies
+        self.expand(&memo, &params, c, ALL_QUADRANTS, None).dies
     }
 
     /// [`World::body_reach`] from `starts` each snapped to the nearest
@@ -2311,9 +2442,19 @@ impl World {
             if let Some(e) = memo.flown.lock().expect("memo").get(&key) {
                 return Arc::clone(e);
             }
+            let volumes = |b| self.volumes_near(b);
             let e = memo
                 .inherited(&key)
-                .unwrap_or_else(|| Arc::new(self.expand(memo, params, *c, *q)));
+                .or_else(|| memo.bank.find(&key, &memo.dense, &memo.extra, &volumes))
+                .unwrap_or_else(|| {
+                    let track = bank::Track::new(&memo.dense);
+                    let e = Arc::new(self.expand(memo, params, *c, *q, Some(&track)));
+                    if let Some(b) = e.read {
+                        memo.bank
+                            .keep(key, track, &memo.extra, self.volumes_near(b), &e);
+                    }
+                    e
+                });
             memo.flown
                 .lock()
                 .expect("memo")
@@ -2390,11 +2531,13 @@ impl World {
                 .collect();
             if !missing.is_empty() {
                 let fresh: Vec<Arc<NodeEdges>> = if missing.len() >= 64 {
-                    crate::par::map(&missing, |c| Arc::new(self.expand(memo, params, *c, 0)))
+                    crate::par::map(&missing, |c| {
+                        Arc::new(self.expand(memo, params, *c, 0, None))
+                    })
                 } else {
                     missing
                         .iter()
-                        .map(|c| Arc::new(self.expand(memo, params, *c, 0)))
+                        .map(|c| Arc::new(self.expand(memo, params, *c, 0, None)))
                         .collect()
                 };
                 let mut held = memo.nodes.lock().expect("memo");
@@ -2770,6 +2913,7 @@ impl ReachBinding {
     }
 }
 
+mod bank;
 mod flights;
 
 #[cfg(test)]
