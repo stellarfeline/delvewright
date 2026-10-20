@@ -449,9 +449,13 @@ impl Codes for Shifted<'_> {
     fn wet(&self) -> bool {
         self.dense.wet
     }
+    #[inline]
     fn code(&self, c: [i32; 3]) -> Code {
-        self.dense
-            .code([c[0] + self.at[0], c[1] + self.at[1], c[2] + self.at[2]])
+        let a = [c[0] + self.at[0], c[1] + self.at[1], c[2] + self.at[2]];
+        match self.dense.index(a) {
+            Some(i) => self.dense.cells[i],
+            None => self.dense.code(a),
+        }
     }
 }
 
@@ -864,7 +868,9 @@ fn saturated(input: &Input) -> [f64; 3] {
 
 /// The furthest supported positions [`edge_position`] found from one cell, by
 /// direction: every launch along a direction starts there, whatever its gait.
-type EdgeMemo = std::cell::RefCell<HashMap<(u64, u64), Option<[f64; 3]>>>;
+type EdgeMemo = std::cell::RefCell<
+    HashMap<(u64, u64), Option<[f64; 3]>, std::hash::BuildHasherDefault<flights::Mix>>,
+>;
 
 /// Fly one launch from cell `c` over `codes`; `killed` says whether a body box
 /// meets a killing volume (always `false` over a template).
@@ -879,18 +885,51 @@ fn fly<C: Codes + ?Sized>(
     killed: &dyn Fn(&State) -> bool,
     edges: Option<&EdgeMemo>,
 ) -> (Outcome, Option<Aabb>) {
-    let body = Attributes::PLAYER;
-    let world = Sim(codes);
-    let sprint = !matches!(launch.mode, Mode::WalkOff | Mode::Creep);
-    let input = Input {
+    match launch_start(codes, c, holding, launch, edges) {
+        Start::Done(o, swept) => (o, swept),
+        Start::Run(st, press) => {
+            let f = run(codes, c, launch, st, press, unbounded_fall, bottom, killed);
+            (f.outcome, f.swept)
+        }
+    }
+}
+
+/// A launch's outcome and swept box, flown here or kept from a flight that
+/// met the same cells ([`flights`]).
+enum Flown {
+    Here(Outcome, Option<Aabb>),
+    Kept(flights::Kept),
+}
+
+/// Where a launch starts: the state it is flown from and the tick its jump is
+/// pressed on, or the outcome it has without a tick.
+enum Start {
+    Done(Outcome, Option<Aabb>),
+    Run(State, Option<u8>),
+}
+
+/// The input a launch holds on every tick (its jump pressed apart).
+fn launch_input(launch: &Launch) -> Input {
+    Input {
         forward: 1,
         strafe: launch.strafe,
         jump: false,
-        sprint,
+        sprint: !matches!(launch.mode, Mode::WalkOff | Mode::Creep),
         sneak: false,
         yaw: launch.yaw,
         magnitude: 1.0,
-    };
+    }
+}
+
+/// The state a launch from cell `c` starts in ([`fly`]'s first half).
+fn launch_start<C: Codes + ?Sized>(
+    codes: &C,
+    c: [i32; 3],
+    holding: bool,
+    launch: &Launch,
+    edges: Option<&EdgeMemo>,
+) -> Start {
+    let body = Attributes::PLAYER;
     let vel = launch.vel;
     let speed = (vel[0] * vel[0] + vel[2] * vel[2]).sqrt();
     let dir = if speed > 0.0 {
@@ -904,9 +943,9 @@ fn fly<C: Codes + ?Sized>(
         feet_of(codes, c)
     };
     let Some(feet) = feet else {
-        return (Outcome::Nowhere, None);
+        return Start::Done(Outcome::Nowhere, None);
     };
-    let (mut st, press): (State, Option<u8>) = match launch.mode {
+    let (st, press): (State, Option<u8>) = match launch.mode {
         Mode::Approach { press } => {
             let mut st =
                 State::standing([f64::from(c[0]) + 0.5, feet, f64::from(c[2]) + 0.5], &body);
@@ -923,7 +962,7 @@ fn fly<C: Codes + ?Sized>(
                 None => edge_position(codes, &body, c, feet, dir),
             };
             let Some(p) = found else {
-                return (Outcome::Nowhere, None);
+                return Start::Done(Outcome::Nowhere, None);
             };
             let mut st = State::standing(p, &body);
             st.vel = match launch.mode {
@@ -938,7 +977,46 @@ fn fly<C: Codes + ?Sized>(
             };
             (st, press)
         }
-        _ => return (Outcome::Nowhere, None),
+        _ => return Start::Done(Outcome::Nowhere, None),
+    };
+    Start::Run(st, press)
+}
+
+/// One launch's flight from its start ([`fly`]'s second half): what it did,
+/// the box it swept, and the feet heights the floor of the world was checked
+/// against — what a cached flight needs to be the same flight under another
+/// floor ([`flights`]).
+struct Flight {
+    outcome: Outcome,
+    swept: Option<Aabb>,
+    /// The lowest feet height the floor check passed (`+∞`: it never ran).
+    floor: f64,
+    /// The feet height the flight left the world at ([`Outcome::LeftWorld`]
+    /// alone; `NaN` otherwise).
+    left_at: f64,
+}
+
+/// Fly a launch from `st`, its jump pressed on tick `press`, from cell `c`.
+#[allow(clippy::too_many_arguments)]
+fn run<C: Codes + ?Sized>(
+    codes: &C,
+    c: [i32; 3],
+    launch: &Launch,
+    mut st: State,
+    press: Option<u8>,
+    unbounded_fall: bool,
+    bottom: i32,
+    killed: &dyn Fn(&State) -> bool,
+) -> Flight {
+    let body = Attributes::PLAYER;
+    let world = Sim(codes);
+    let input = launch_input(launch);
+    let mut floor = f64::INFINITY;
+    let done = |outcome: Outcome, swept: Option<Aabb>, floor: f64| Flight {
+        outcome,
+        swept,
+        floor,
+        left_at: f64::NAN,
     };
     // An approach pressed late must still be supported when it presses.
     let mut jumped = false;
@@ -954,7 +1032,7 @@ fn fly<C: Codes + ?Sized>(
             if t == usize::from(p) && !st.on_ground {
                 // The press comes on a tick the body is no longer on the
                 // ground: that launch is another one's.
-                return (Outcome::Nowhere, bbox);
+                return done(Outcome::Nowhere, bbox, floor);
             }
             i.jump = true;
         }
@@ -976,13 +1054,13 @@ fn fly<C: Codes + ?Sized>(
             ),
         });
         if killed(&st) {
-            return (Outcome::Dead(Death::Volume), bbox);
+            return done(Outcome::Dead(Death::Volume), bbox, floor);
         }
         if st.in_lava {
-            return (Outcome::Dead(Death::Lava), bbox);
+            return done(Outcome::Dead(Death::Lava), bbox, floor);
         }
         if !unbounded_fall && st.landing_damage >= body.max_health {
-            return (Outcome::Dead(Death::Fall), bbox);
+            return done(Outcome::Dead(Death::Fall), bbox, floor);
         }
         let kind = if jumped {
             EdgeKind::Jump
@@ -998,10 +1076,14 @@ fn fly<C: Codes + ?Sized>(
                 w[1] += 1;
             }
             if codes.code(w) & WATER == 0 {
-                return (Outcome::Nowhere, bbox);
+                return done(Outcome::Nowhere, bbox, floor);
             }
             let rel = [w[0] - c[0], w[1] - c[1], w[2] - c[2]];
-            return (Outcome::Rest(vec![(rel, water_kind(codes, w))], kind), bbox);
+            return done(
+                Outcome::Rest(vec![(rel, water_kind(codes, w))], kind),
+                bbox,
+                floor,
+            );
         }
         if here != c && codes.code(here) & CLIMB != 0 {
             let rel = [here[0] - c[0], here[1] - c[1], here[2] - c[2]];
@@ -1010,7 +1092,11 @@ fn fly<C: Codes + ?Sized>(
             } else {
                 kind
             };
-            return (Outcome::Rest(vec![(rel, RestKind::Holding)], kind), bbox);
+            return done(
+                Outcome::Rest(vec![(rel, RestKind::Holding)], kind),
+                bbox,
+                floor,
+            );
         }
         if st.on_ground {
             let moved = [here[0], here[2]] != origin || here[1] != c[1];
@@ -1021,30 +1107,37 @@ fn fly<C: Codes + ?Sized>(
                     .map(|r| ([r[0] - c[0], r[1] - c[1], r[2] - c[2]], RestKind::Standing))
                     .collect();
                 if !cells.is_empty() || airborne {
-                    return (
+                    return done(
                         if cells.is_empty() {
                             Outcome::Nowhere
                         } else {
                             Outcome::Rest(cells, kind)
                         },
                         bbox,
+                        floor,
                     );
                 }
             }
             if st.vel[0].abs() < 1e-4 && st.vel[2].abs() < 1e-4 {
                 still += 1;
                 if still > 3 {
-                    return (Outcome::Nowhere, bbox);
+                    return done(Outcome::Nowhere, bbox, floor);
                 }
             }
         } else {
             airborne = true;
         }
         if st.pos[1] < f64::from(bottom) {
-            return (Outcome::LeftWorld, bbox);
+            return Flight {
+                outcome: Outcome::LeftWorld,
+                swept: bbox,
+                floor,
+                left_at: st.pos[1],
+            };
         }
+        floor = floor.min(st.pos[1]);
     }
-    (Outcome::Nowhere, bbox)
+    done(Outcome::Nowhere, bbox, floor)
 }
 
 // ---------------------------------------------------------------------------
@@ -1546,8 +1639,17 @@ impl World {
         };
         let dense = &memo.dense;
         let mut edges: Edges = BTreeMap::new();
+        // A node's launches land in a few cells many times over: each cell's
+        // rest state is asked of the world once.
+        let kinds: std::cell::RefCell<
+            HashMap<[i32; 3], Option<RestKind>, std::hash::BuildHasherDefault<flights::Mix>>,
+        > = std::cell::RefCell::default();
         let accept = |to: [i32; 3], want: RestKind| -> bool {
-            match self.rest_kind(to) {
+            let k = *kinds
+                .borrow_mut()
+                .entry(to)
+                .or_insert_with(|| self.rest_kind(to));
+            match k {
                 Some(k) => k == want || (want == RestKind::Standing && k == RestKind::Holding),
                 None => false,
             }
@@ -1636,7 +1738,7 @@ impl World {
                 let class = template_class(&(support, column, holding, params.key()), params);
                 let shifted = Shifted { dense, at: c };
                 let killed = |st: &State| self.kills(st);
-                let edge_memo: EdgeMemo = std::cell::RefCell::new(HashMap::new());
+                let edge_memo: EdgeMemo = std::cell::RefCell::new(HashMap::default());
                 // The box the launches read: the cell's own neighbourhood, and
                 // every swept box grown by the cells a tick and a landing read
                 // around it.
@@ -1683,28 +1785,66 @@ impl World {
                     }
                     for l in arc.members.iter().filter(|l| l.serves(wanted)) {
                         out.simulated += 1;
-                        let (o, swept) = fly(
-                            &shifted,
-                            [0, 0, 0],
-                            holding,
-                            l,
-                            params.unbounded_fall,
-                            dense.bottom() - c[1],
-                            &|st: &State| {
-                                let mut s = *st;
-                                s.pos = [
-                                    st.pos[0] + f64::from(c[0]),
-                                    st.pos[1] + f64::from(c[1]),
-                                    st.pos[2] + f64::from(c[2]),
-                                ];
-                                killed(&s)
-                            },
-                            Some(&edge_memo),
-                        );
+                        let at = [f64::from(c[0]), f64::from(c[1]), f64::from(c[2])];
+                        let bottom = dense.bottom() - c[1];
+                        let kills = |st: &State| {
+                            let mut s = *st;
+                            s.pos = [st.pos[0] + at[0], st.pos[1] + at[1], st.pos[2] + at[2]];
+                            killed(&s)
+                        };
+                        let flown =
+                            match launch_start(&shifted, [0, 0, 0], holding, l, Some(&edge_memo)) {
+                                Start::Done(o, swept) => Flown::Here(o, swept),
+                                Start::Run(st, press) => {
+                                    let key = flights::Key::new(
+                                        l,
+                                        &st,
+                                        press,
+                                        dense.wet,
+                                        params.unbounded_fall,
+                                    );
+                                    let run_here = |codes: &dyn Codes| {
+                                        run(
+                                            codes,
+                                            [0, 0, 0],
+                                            l,
+                                            st,
+                                            press,
+                                            params.unbounded_fall,
+                                            bottom,
+                                            &kills,
+                                        )
+                                    };
+                                    match flights::lookup(&key, &shifted) {
+                                        Some(leaf)
+                                            if leaf.holds_at(bottom)
+                                                && !leaf.swept.is_some_and(|b| {
+                                                    self.lethal_near(&b.offset(at))
+                                                }) =>
+                                        {
+                                            Flown::Kept(leaf)
+                                        }
+                                        Some(_) => {
+                                            let f = run_here(&shifted);
+                                            Flown::Here(f.outcome, f.swept)
+                                        }
+                                        None => {
+                                            let reads = flights::Reads::new(&shifted);
+                                            let f = run_here(&reads);
+                                            flights::record(key, reads, &f);
+                                            Flown::Here(f.outcome, f.swept)
+                                        }
+                                    }
+                                }
+                            };
+                        let (o, swept) = match &flown {
+                            Flown::Here(o, swept) => (o, *swept),
+                            Flown::Kept(leaf) => (&leaf.outcome, leaf.swept),
+                        };
                         if let Some(b) = swept {
-                            grow(&b.offset([f64::from(c[0]), f64::from(c[1]), f64::from(c[2])]));
+                            grow(&b.offset(at));
                         }
-                        self.record(c, &o, l, &accept, &mut edges, &mut out);
+                        self.record(c, o, l, &accept, &mut edges, &mut out);
                     }
                 }
                 out.read = Some(read);
@@ -2629,6 +2769,8 @@ impl ReachBinding {
         })
     }
 }
+
+mod flights;
 
 #[cfg(test)]
 mod tests;
