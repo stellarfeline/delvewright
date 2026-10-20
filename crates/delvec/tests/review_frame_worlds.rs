@@ -443,7 +443,17 @@ fn library_with_a_sign(dir: &Path) -> PathBuf {
     let bytes = fastnbt::to_bytes(&root).unwrap();
     let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     enc.write_all(&bytes).unwrap();
-    std::fs::write(&path, enc.finish().unwrap()).unwrap();
+    let gz = enc.finish().unwrap();
+    // The copy carries the pinned template's `entities` list through
+    // verbatim; it is judged by the one entity rule before the bytes land,
+    // as every emitter's is (spec-0111 §3.1).
+    let written = delvec::admit::structure::Structure::read(&gz).expect("the copy reads back");
+    let (_, refused) = delvec::admit::entities::judge(
+        &written.entities,
+        &delvec::admit::allowlist::Allowlist::default(),
+    );
+    assert!(refused.is_empty(), "the copy's entities: {refused:?}");
+    std::fs::write(&path, gz).unwrap();
     lib
 }
 
