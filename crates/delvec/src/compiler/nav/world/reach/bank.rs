@@ -74,7 +74,9 @@ pub(super) struct Track<'a> {
     dense: &'a Dense,
     bits: Vec<Cell<u64>>,
     touched: RefCell<Vec<u32>>,
-    run: Cell<Option<Box3>>,
+    /// The current run's box, empty while `lo > hi`.
+    lo: [Cell<i32>; 3],
+    hi: [Cell<i32>; 3],
 }
 
 thread_local! {
@@ -102,7 +104,16 @@ impl<'a> Track<'a> {
             dense,
             bits,
             touched: RefCell::new(Vec::new()),
-            run: Cell::new(None),
+            lo: [
+                Cell::new(i32::MAX),
+                Cell::new(i32::MAX),
+                Cell::new(i32::MAX),
+            ],
+            hi: [
+                Cell::new(i32::MIN),
+                Cell::new(i32::MIN),
+                Cell::new(i32::MIN),
+            ],
         }
     }
 
@@ -117,16 +128,35 @@ impl<'a> Track<'a> {
     }
 
     /// Note the window cell `c`, at index `i`.
-    #[inline]
+    #[inline(always)]
     pub(super) fn note(&self, i: usize, c: [i32; 3]) {
         self.set(i);
-        self.extend((c, c));
+        for ((lo, hi), v) in self.lo.iter().zip(&self.hi).zip(c) {
+            lo.set(lo.get().min(v));
+            hi.set(hi.get().max(v));
+        }
     }
 
     /// Grow the current run's box by `b`.
     #[inline]
     pub(super) fn extend(&self, b: Box3) {
-        self.run.set(union(self.run.get(), Some(b)));
+        for k in 0..3 {
+            self.lo[k].set(self.lo[k].get().min(b.0[k]));
+            self.hi[k].set(self.hi[k].get().max(b.1[k]));
+        }
+    }
+
+    /// The current run's box, emptied.
+    fn take(&self) -> Option<Box3> {
+        let b = (
+            [self.lo[0].get(), self.lo[1].get(), self.lo[2].get()],
+            [self.hi[0].get(), self.hi[1].get(), self.hi[2].get()],
+        );
+        for k in 0..3 {
+            self.lo[k].set(i32::MAX);
+            self.hi[k].set(i32::MIN);
+        }
+        (b.0[0] <= b.1[0]).then_some(b)
     }
 
     /// Note every window cell of the inclusive box `lo..=hi`.
@@ -145,24 +175,26 @@ impl<'a> Track<'a> {
 
     /// Start a run: its box is empty.
     pub(super) fn begin_run(&self) {
-        self.run.set(None);
+        self.take();
     }
 
     /// End a run: its box.
     pub(super) fn end_run(&self) -> Option<Box3> {
-        self.run.take()
+        self.take()
     }
 
     /// Set the current box aside to measure what one computation reads.
     pub(super) fn begin_scope(&self) -> Option<Box3> {
-        self.run.take()
+        self.take()
     }
 
     /// The box the computation since [`Track::begin_scope`] read; the run's
     /// box takes it in.
     pub(super) fn end_scope(&self, saved: Option<Box3>) -> Option<Box3> {
-        let inner = self.run.get();
-        self.run.set(union(saved, inner));
+        let inner = self.take();
+        if let Some(b) = union(saved, inner) {
+            self.extend(b);
+        }
         inner
     }
 

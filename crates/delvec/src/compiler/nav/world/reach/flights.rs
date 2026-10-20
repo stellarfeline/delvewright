@@ -37,8 +37,26 @@ use std::sync::{OnceLock, RwLock};
 
 /// What a flight's start is, exactly, as bits: every input to the flight but
 /// the cells it reads.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(super) struct Key([u64; 12]);
+#[derive(Debug, Clone)]
+pub(super) struct Key {
+    words: [u64; 12],
+    /// The words' hash, taken once: it picks the shard and keys the map.
+    hash: u64,
+}
+
+impl PartialEq for Key {
+    fn eq(&self, o: &Key) -> bool {
+        self.words == o.words
+    }
+}
+
+impl Eq for Key {}
+
+impl std::hash::Hash for Key {
+    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+        h.write_u64(self.hash);
+    }
+}
 
 impl Key {
     pub(super) fn new(
@@ -61,7 +79,7 @@ impl Key {
             | u64::from(sprint) << 9
             | u64::from(press.map_or(0x1ff, u16::from)) << 16
             | u64::from(st.jump_ticks) << 32;
-        Key([
+        let words = [
             flags,
             launch.yaw.to_bits(),
             launch.strafe.to_bits(),
@@ -74,16 +92,20 @@ impl Key {
             st.fall.to_bits(),
             st.landing_damage.to_bits(),
             st.height.to_bits(),
-        ])
+        ];
+        let mut h = Mix::default();
+        for w in words {
+            std::hash::Hasher::write_u64(&mut h, w);
+        }
+        Key {
+            words,
+            hash: std::hash::Hasher::finish(&h),
+        }
     }
 
     /// A spread of the key over the shards; any function of the key will do.
     fn shard(&self) -> usize {
-        let mut h = Mix::default();
-        for w in self.0 {
-            std::hash::Hasher::write_u64(&mut h, w);
-        }
-        (std::hash::Hasher::finish(&h) >> 40) as usize % SHARDS
+        (self.hash >> 40) as usize % SHARDS
     }
 }
 
@@ -119,33 +141,45 @@ impl Kept {
 }
 
 const NONE: u32 = u32::MAX;
-/// The tag on [`Node::child`] that makes the node a leaf: the rest of the word
-/// indexes the shard's leaves.
-const LEAF: u32 = 1 << 31;
 
-/// One node of a start's tree: a cell to read (relative to the launch cell)
-/// and its first child, or a leaf; `code` is the code the parent's cell held
-/// on the way here, `sibling` the parent's next child.
-#[derive(Clone, Copy)]
-struct Node {
+/// One read of a flight: a cell (relative to the launch cell) and the code
+/// it held.
+#[derive(Clone, Copy, Default)]
+struct Entry {
     cell: [i16; 3],
     code: Code,
-    child: u32,
-    sibling: u32,
 }
 
-/// The nodes a chunk of a shard's arena holds: a path is pushed whole, so a
-/// walk down a fresh path reads consecutive nodes.
+/// One node of a start's tree: a run of cells a flight reads in order
+/// (`len` entries from `start`) — every one but the last must hold the code
+/// beside it, and the last one's code picks a child — or, with `len == 0`, a
+/// leaf (`child` is then the leaf's index). `code` is the code the parent's
+/// last cell held on the way here; `sibling` the parent's next child. A run
+/// is split only where two flights' reads part, so a walk reads long runs out
+/// of one block of memory.
+#[derive(Clone, Copy)]
+struct Node {
+    start: u32,
+    len: u32,
+    child: u32,
+    sibling: u32,
+    code: Code,
+}
+
+/// The entries a chunk of a shard's arena holds. A run never crosses a
+/// chunk; a flight that read more cells than a chunk holds is not kept.
 const CHUNK_BITS: u32 = 14;
 const CHUNK: usize = 1 << CHUNK_BITS;
 
-/// One shard of the memo: every start that hashes here, the nodes of their
-/// trees in one arena, their leaves, and the outcomes the leaves name.
+/// One shard of the memo: every start that hashes here, their trees' nodes
+/// and entries, the leaves, and the outcomes the leaves name.
 #[derive(Default)]
 struct Shard {
     roots: HashMap<Key, u32, std::hash::BuildHasherDefault<Mix>>,
-    chunks: Vec<Box<[Node]>>,
-    len: u32,
+    nodes: Vec<Node>,
+    chunks: Vec<Box<[Entry]>>,
+    /// Entries used in the last chunk.
+    used: usize,
     leaves: Vec<Leaf>,
     outcomes: Vec<Outcome>,
     interned: HashMap<Outcome, u32, std::hash::BuildHasherDefault<Mix>>,
@@ -153,42 +187,35 @@ struct Shard {
 
 impl Shard {
     #[inline]
-    fn node(&self, n: u32) -> &Node {
-        &self.chunks[(n >> CHUNK_BITS) as usize][n as usize & (CHUNK - 1)]
+    fn entry(&self, i: u32) -> Entry {
+        self.chunks[(i >> CHUNK_BITS) as usize][i as usize & (CHUNK - 1)]
     }
 
-    #[inline]
-    fn node_mut(&mut self, n: u32) -> &mut Node {
-        &mut self.chunks[(n >> CHUNK_BITS) as usize][n as usize & (CHUNK - 1)]
-    }
-
-    fn push(&mut self, node: Node) -> u32 {
-        let n = self.len;
-        if (n as usize).is_multiple_of(CHUNK) {
-            self.chunks.push(
-                vec![
-                    Node {
-                        cell: [0; 3],
-                        code: 0,
-                        child: NONE,
-                        sibling: NONE,
-                    };
-                    CHUNK
-                ]
-                .into_boxed_slice(),
-            );
+    /// Store `run` contiguously; its first entry's index.
+    fn push_run(&mut self, run: &[([i16; 3], Code)]) -> u32 {
+        if self.chunks.is_empty() || self.used + run.len() > CHUNK {
+            self.chunks
+                .push(vec![Entry::default(); CHUNK].into_boxed_slice());
+            self.used = 0;
         }
-        self.len += 1;
-        *self.node_mut(n) = node;
-        n
+        let c = self.chunks.len() - 1;
+        let at = self.used;
+        for (k, (cell, code)) in run.iter().enumerate() {
+            self.chunks[c][at + k] = Entry {
+                cell: *cell,
+                code: *code,
+            };
+        }
+        self.used += run.len();
+        ((c << CHUNK_BITS) | at) as u32
     }
 
     /// The child of `n` reached by `code`, if any.
     #[inline]
     fn child(&self, n: u32, code: Code) -> Option<u32> {
-        let mut k = self.node(n).child;
+        let mut k = self.nodes[n as usize].child;
         while k != NONE {
-            let node = self.node(k);
+            let node = &self.nodes[k as usize];
             if node.code == code {
                 return Some(k);
             }
@@ -199,10 +226,10 @@ impl Shard {
 }
 
 const SHARDS: usize = 256;
-/// The nodes the memo holds before it stops recording (sixteen bytes a node,
-/// with a leaf's seventy-two beside): a bound on its memory, never on what a
-/// build answers.
-const MEMO_NODES: u64 = 1 << 25;
+/// The entries and nodes the memo holds before it stops recording (eight
+/// bytes an entry, twenty a node, a leaf's seventy-two beside): a bound on
+/// its memory, never on what a build answers.
+const MEMO_ENTRIES: u64 = 1 << 25;
 
 fn shards() -> &'static [RwLock<Shard>] {
     static S: OnceLock<Vec<RwLock<Shard>>> = OnceLock::new();
@@ -219,14 +246,19 @@ fn small(c: [i32; 3]) -> Option<[i16; 3]> {
     ])
 }
 
+#[inline]
+fn read<C: Codes + ?Sized>(codes: &C, c: [i16; 3]) -> Code {
+    codes.code([i32::from(c[0]), i32::from(c[1]), i32::from(c[2])])
+}
+
 /// The recorded flight of `key` over `codes`, if one met the same cells.
 pub(super) fn lookup<C: Codes + ?Sized>(key: &Key, codes: &C) -> Option<Kept> {
     let shard = shards()[key.shard()].read().expect("flight memo");
     let mut n = *shard.roots.get(key)?;
     loop {
-        let node = *shard.node(n);
-        if node.child != NONE && node.child & LEAF != 0 {
-            let leaf = shard.leaves[(node.child & !LEAF) as usize];
+        let node = shard.nodes[n as usize];
+        if node.len == 0 {
+            let leaf = shard.leaves[node.child as usize];
             return Some(Kept {
                 outcome: shard.outcomes[leaf.outcome as usize].clone(),
                 swept: leaf.swept,
@@ -234,9 +266,14 @@ pub(super) fn lookup<C: Codes + ?Sized>(key: &Key, codes: &C) -> Option<Kept> {
                 left_at: leaf.left_at,
             });
         }
-        let c = node.cell;
-        let v = codes.code([i32::from(c[0]), i32::from(c[1]), i32::from(c[2])]);
-        n = shard.child(n, v)?;
+        for k in 0..node.len - 1 {
+            let e = shard.entry(node.start + k);
+            if read(codes, e.cell) != e.code {
+                return None;
+            }
+        }
+        let last = shard.entry(node.start + node.len - 1);
+        n = shard.child(n, read(codes, last.cell))?;
     }
 }
 
@@ -439,7 +476,7 @@ pub(super) fn record<C: Codes + ?Sized>(key: Key, reads: Reads<'_, C>, flight: &
     if matches!(flight.outcome, Outcome::Dead(super::Death::Volume)) {
         return;
     }
-    if HELD.load(Relaxed) > MEMO_NODES {
+    if HELD.load(Relaxed) > MEMO_ENTRIES {
         return;
     }
     let seq = std::mem::take(&mut *reads.seen.borrow_mut());
@@ -450,71 +487,113 @@ pub(super) fn record<C: Codes + ?Sized>(key: Key, reads: Reads<'_, C>, flight: &
     else {
         return;
     };
+    if seq.len() > CHUNK {
+        return;
+    }
     let mut guard = shards()[key.shard()].write().expect("flight memo");
     let shard = &mut *guard;
-    let before = shard.len;
-    // The node after `i` cells of the flight were read: the next cell to
-    // read, or the flight's leaf.
-    let fresh = |shard: &mut Shard, i: usize, code: Code| -> u32 {
-        let node = match seq.get(i) {
-            Some((cell, _)) => Node {
-                cell: *cell,
-                code,
-                child: NONE,
-                sibling: NONE,
-            },
+    // A new path for the reads from `i` on: a run of them and the flight's
+    // leaf, or the leaf alone when there are none.
+    let path = |shard: &mut Shard, i: usize, code: Code| -> u32 {
+        let outcome = match shard.interned.get(&flight.outcome) {
+            Some(&o) => o,
             None => {
-                let outcome = match shard.interned.get(&flight.outcome) {
-                    Some(&o) => o,
-                    None => {
-                        shard.outcomes.push(flight.outcome.clone());
-                        let o = (shard.outcomes.len() - 1) as u32;
-                        shard.interned.insert(flight.outcome.clone(), o);
-                        o
-                    }
-                };
-                shard.leaves.push(Leaf {
-                    outcome,
-                    swept: flight.swept,
-                    floor: flight.floor,
-                    left_at: flight.left_at,
-                });
-                Node {
-                    cell: [0; 3],
-                    code,
-                    child: LEAF | (shard.leaves.len() - 1) as u32,
-                    sibling: NONE,
-                }
+                shard.outcomes.push(flight.outcome.clone());
+                let o = (shard.outcomes.len() - 1) as u32;
+                shard.interned.insert(flight.outcome.clone(), o);
+                o
             }
         };
-        shard.push(node)
+        shard.leaves.push(Leaf {
+            outcome,
+            swept: flight.swept,
+            floor: flight.floor,
+            left_at: flight.left_at,
+        });
+        let leaf = (shard.leaves.len() - 1) as u32;
+        let rest = &seq[i..];
+        let leaf_code = rest.last().map_or(code, |e| e.1);
+        shard.nodes.push(Node {
+            start: 0,
+            len: 0,
+            child: leaf,
+            sibling: NONE,
+            code: if rest.is_empty() { code } else { leaf_code },
+        });
+        let leaf_node = (shard.nodes.len() - 1) as u32;
+        if rest.is_empty() {
+            return leaf_node;
+        }
+        let start = shard.push_run(rest);
+        shard.nodes.push(Node {
+            start,
+            len: rest.len() as u32,
+            child: leaf_node,
+            sibling: NONE,
+            code,
+        });
+        (shard.nodes.len() - 1) as u32
     };
     let mut n = match shard.roots.get(&key) {
         Some(&n) => n,
         None => {
-            let n = fresh(shard, 0, 0);
+            let n = path(shard, 0, 0);
             shard.roots.insert(key, n);
-            n
+            HELD.fetch_add(seq.len() as u64 + 2, Relaxed);
+            return;
         }
     };
-    for (i, (cell, v)) in seq.iter().enumerate() {
-        let node = *shard.node(n);
-        if (node.child != NONE && node.child & LEAF != 0) || node.cell != *cell {
+    let mut i = 0usize;
+    loop {
+        let node = shard.nodes[n as usize];
+        if node.len == 0 {
+            // The flight's leaf already, or a flight that read on past where
+            // this one stopped: either way nothing is added.
             break;
         }
-        let k = match shard.child(n, *v) {
-            Some(k) => k,
-            None => {
-                let k = fresh(shard, i + 1, *v);
-                shard.node_mut(k).sibling = node.child;
-                shard.node_mut(n).child = k;
-                k
+        let len = node.len as usize;
+        for j in 0..len {
+            let e = shard.entry(node.start + j as u32);
+            let Some(&(cell, code)) = seq.get(i + j) else {
+                return;
+            };
+            if cell != e.cell {
+                return;
             }
-        };
-        n = k;
+            if j + 1 < len && code != e.code {
+                // The reads part here: the run ends at this cell, its old
+                // rest and the new path become its two children.
+                let old = Node {
+                    start: node.start + j as u32 + 1,
+                    len: (len - j - 1) as u32,
+                    child: node.child,
+                    sibling: NONE,
+                    code: e.code,
+                };
+                shard.nodes.push(old);
+                let a = (shard.nodes.len() - 1) as u32;
+                let b = path(shard, i + j + 1, code);
+                shard.nodes[b as usize].sibling = a;
+                let m = &mut shard.nodes[n as usize];
+                m.len = j as u32 + 1;
+                m.child = b;
+                HELD.fetch_add((seq.len() - i - j) as u64 + 3, Relaxed);
+                return;
+            }
+        }
+        let v = seq[i + len - 1].1;
+        match shard.child(n, v) {
+            Some(k) => {
+                n = k;
+                i += len;
+            }
+            None => {
+                let k = path(shard, i + len, v);
+                shard.nodes[k as usize].sibling = shard.nodes[n as usize].child;
+                shard.nodes[n as usize].child = k;
+                HELD.fetch_add((seq.len() - i - len) as u64 + 2, Relaxed);
+                return;
+            }
+        }
     }
-    // The walk ends on this flight's leaf, new or already recorded; a cell to
-    // read there is a flight that read on past where this one stopped, and
-    // the flight is not kept.
-    HELD.fetch_add(u64::from(shard.len - before), Relaxed);
 }

@@ -461,7 +461,7 @@ impl Codes for Shifted<'_> {
     fn wet(&self) -> bool {
         self.dense.wet
     }
-    #[inline]
+    #[inline(always)]
     fn code(&self, c: [i32; 3]) -> Code {
         let a = [c[0] + self.at[0], c[1] + self.at[1], c[2] + self.at[2]];
         match self.dense.index(a) {
