@@ -2840,3 +2840,48 @@ def test_no_respawn_point_declared_is_inapplicable(gate, tmp_path):
         ledger=respawn_ledger(examined=0, pairs=0),
     )
     assert v["verdict"] == "INAPPLICABLE", v
+
+
+def _world_campaign(tmp_path, horizon):
+    d = tmp_path / "camp"
+    d.mkdir(exist_ok=True)
+    content = {"id": "x", "name": "n"}
+    if horizon is not None:
+        content["horizon"] = horizon
+    (d / "world.json").write_text(
+        json.dumps({"dsl_version": "0.10.0", "stage": 1, "content": content})
+    )
+    return d
+
+
+def _horizon_binding_rows():
+    ledger = json.loads((REPO_ROOT / "docs" / "playtest-findings.json").read_text())
+    rows = [
+        r
+        for r in ledger["findings"]
+        if "horizon" in ((r.get("binding") or {}).get("match") or {}).get("eq", {})
+    ]
+    assert rows, "no ledger row binds on horizon; this test would be vacuous"
+    return rows
+
+
+@pytest.mark.parametrize(
+    "horizon, bound",
+    [
+        ("ocean", 1),
+        ({"base": "ocean"}, 1),
+        ("void", 0),
+        ({"base": "void"}, 0),
+        (None, 0),
+    ],
+)
+def test_the_horizon_class_binds_in_both_spellings(gate, tmp_path, horizon, bound):
+    # The horizon is the string shorthand or the object form of one variant; a
+    # raw comparison read the object form as absent and called the class
+    # inapplicable. Every ledger row that binds on a horizon is driven.
+    camp = _world_campaign(tmp_path, horizon)
+    build = make_build(tmp_path)
+    subj = gate.Subject(camp, build)
+    for row in _horizon_binding_rows():
+        n, _ = gate.probe(row["binding"], subj)
+        assert n == bound, (row["id"], horizon, n)

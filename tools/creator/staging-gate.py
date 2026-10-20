@@ -214,7 +214,7 @@ import zipfile
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
-from lib import dwcatalog  # noqa: E402
+from lib import dwcatalog, horizon  # noqa: E402
 
 DEFAULT_LEDGER = REPO_ROOT / "docs" / "playtest-findings.json"
 
@@ -667,12 +667,24 @@ PREDICATE_CLAUSES = ("eq", "in", "not_in", "prefix", "has", "has_any", "any_of")
 EXCLUDING_CLAUSES = ("not_in",)
 
 
+# A field the DSL spells in more than one way is read through the ONE rule the
+# compiler's consumers share, never compared as the raw JSON value: `horizon`
+# is `"ocean"` or `{"base": "ocean"}`, the same variant. A raw comparison read
+# the object form as absent and reported the class inapplicable.
+_FOLDED_FIELDS = {"horizon": horizon.base_of}
+
+
+def _field(node: dict, field: str):
+    fold = _FOLDED_FIELDS.get(field)
+    return fold(node.get(field)) if fold else node.get(field)
+
+
 def _matches(node: dict, pred: dict) -> bool:
     for field, want in (pred.get("eq") or {}).items():
-        if node.get(field) != want:
+        if _field(node, field) != want:
             return False
     for field, wants in (pred.get("in") or {}).items():
-        if node.get(field) not in wants:
+        if _field(node, field) not in wants:
             return False
     # The complement of `in`, read the same way: an absent field is None, so
     # `not_in {salvos: [1]}` keeps a node that omits `salvos` (the DSL's
@@ -681,7 +693,7 @@ def _matches(node: dict, pred: dict) -> bool:
     # values the engine admits — that range belongs to the diagnostic that
     # enforces it, not to the ledger.
     for field, unwanted in (pred.get("not_in") or {}).items():
-        if node.get(field) in unwanted:
+        if _field(node, field) in unwanted:
             return False
     for field, want in (pred.get("prefix") or {}).items():
         val = node.get(field)
