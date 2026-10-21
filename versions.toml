@@ -271,8 +271,8 @@ aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
 # library at the pin and nothing else in the checkout: a campaign is judged at
 # its own release, by the engine revision it pins.
 repo = "stellarfeline/delvewright-campaigns"
-# The content commit that moves the tileset generators into the library's
-# `prefabs/generators/` as provenance records (ADR-0018 §6) and removes
+# Content `main` tip carrying the commit that moves the tileset generators
+# into the library's `prefabs/generators/` as provenance records (ADR-0018 §6) and removes
 # `hello-room` from the library: `prefab/hello-room` is engine test data
 # (`crates/delvec/tests/fixtures/test-pieces/`), laid over this library by
 # `tools/ci/test-library.sh`, which refuses a library that still holds it.
@@ -292,7 +292,7 @@ repo = "stellarfeline/delvewright-campaigns"
 # the property assembles; the library sweep (`crates/delvec/tests/admit_library.rs`)
 # asks it of every admitted piece on every run and prints its own binding count
 # there, which is where that number belongs.
-sha = "482177532790d4efefaf61680b54f12e822b1d7e"
+sha = "3d8b343dbcb9f44c267da77fa2a31f1c47e8957e"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders
