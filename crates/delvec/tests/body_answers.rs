@@ -788,3 +788,94 @@ fn no_page_says_vanilla_offers_no_left_click_criterion() {
     );
     assert_eq!(matched, 0);
 }
+
+// ---------------------------------------------------------------------------
+// Byte identity, and the inventory (criteria 3 and 9)
+// ---------------------------------------------------------------------------
+
+/// **An actor that answers nothing emits what it emitted before the field**:
+/// the same campaign built with a villager actor's volunteered `answers` and
+/// with the field removed. Every function of the field-less build is in the
+/// answering build byte for byte, except `spawn_actor_<id>` and `unleash_<id>`,
+/// which each differ by exactly the one box line; what the answering build adds is the two answers'
+/// `trig_` / `press_` bodies and nothing else.
+#[test]
+fn removing_the_answers_removes_exactly_the_box_and_the_two_answers() {
+    let mut clerk = statue();
+    clerk["entity"] = json!("minecraft:villager");
+    clerk.as_object_mut().unwrap().remove("equipment");
+    let without = build(&campaign(&raw(vec![clerk.clone()])));
+    clerk["answers"] = both_lines();
+    let with = build(&campaign(&raw(vec![clerk])));
+    let fns = |out: &BuildOutput| -> BTreeMap<String, String> {
+        out.iter()
+            .filter_map(|(p, b)| {
+                let n = p
+                    .strip_prefix(&format!("{FN_DIR}/"))?
+                    .strip_suffix(".mcfunction")?;
+                Some((n.to_string(), String::from_utf8(b.clone()).unwrap()))
+            })
+            .collect()
+    };
+    let (a, b) = (fns(&without), fns(&with));
+    let mut compared = 0;
+    for (name, body) in &a {
+        let other = b.get(name).unwrap_or_else(|| panic!("`{name}` is gone"));
+        // The box stands with the puppet and goes before the twin stands.
+        if name == "spawn_actor_statue" || name == "unleash_statue" {
+            let extra: Vec<&str> = other
+                .lines()
+                .filter(|l| !body.lines().any(|x| x == *l))
+                .collect();
+            assert_eq!(extra.len(), 1, "{other}");
+            assert!(extra[0].contains("dw_abody_statue"), "{other}");
+            continue;
+        }
+        assert_eq!(body, other, "`{name}` moved");
+        compared += 1;
+    }
+    let added: Vec<&String> = b.keys().filter(|k| !a.contains_key(*k)).collect();
+    assert_eq!(
+        added,
+        vec![
+            "press_dw_answer_actor_statue_struck",
+            "press_dw_answer_actor_statue_touched",
+            "trig_dw_answer_actor_statue_struck",
+            "trig_dw_answer_actor_statue_touched",
+        ],
+        "the answering build adds the two answers' bodies and nothing else"
+    );
+    assert!(compared > 10, "binding: {compared} function(s) compared");
+}
+
+#[test]
+fn the_answers_are_inventoried_as_refusals_with_a_situation() {
+    let mut s = statue();
+    s["answers"] = both_lines();
+    let r = raw_with(
+        vec![s],
+        Vec::new(),
+        |n| n["content"]["npcs"][0]["answers"] = json!({ "struck": "He does not flinch." }),
+        |_| {},
+    );
+    let c = campaign(&r);
+    let inv = delvewright_dsl::l10n::inventory(&c);
+    let situations = delvewright_dsl::l10n::key_situations(&c);
+    for key in [
+        "npc.keeper.answers.struck",
+        "actor.statue.answers.struck",
+        "actor.statue.answers.touched",
+    ] {
+        assert!(inv.contains_key(key), "`{key}` is inventoried");
+        assert_eq!(
+            delvewright_dsl::l10n::key_kind(key),
+            Some(delvewright_dsl::l10n::TextKind::Refusal),
+            "`{key}` is a refusal"
+        );
+        let lines = situations.get(key).expect("a situation row");
+        assert!(
+            lines.iter().any(|l| l.contains("action bar")),
+            "`{key}`'s situation says where it shows: {lines:?}"
+        );
+    }
+}
