@@ -2148,15 +2148,24 @@ fn travel_axis(
     let (Some(a), Some(b)) = (spaces.get(e.a.as_str()), spaces.get(e.b.as_str())) else {
         return 1;
     };
+    let footprint: BTreeSet<(i32, i32)> = cells.iter().map(|c| (c[0], c[2])).collect();
     let mut best: Option<(usize, usize)> = None;
     for axis in [0usize, 2] {
-        let step = |c: &[i32; 3], d: i32| {
-            let mut n = *c;
-            n[axis] += d;
-            n
-        };
+        // A space abuts the region one cell along the axis, beyond the
+        // region's own footprint, at the region's course or a course above or
+        // below it: a stair's top tread meets its landing a course up.
         let touches = |s: &BTreeSet<[i32; 3]>, d: i32| {
-            cells.iter().filter(|c| s.contains(&step(c, d))).count()
+            cells
+                .iter()
+                .filter(|c| {
+                    (-1..=1).any(|dy| {
+                        let mut n = **c;
+                        n[axis] += d;
+                        n[1] += dy;
+                        !footprint.contains(&(n[0], n[2])) && s.contains(&n)
+                    })
+                })
+                .count()
         };
         let (la, hb, lb, ha) = (touches(a, -1), touches(b, 1), touches(b, -1), touches(a, 1));
         let score = if la > 0 && hb > 0 {
@@ -2170,7 +2179,20 @@ fn travel_axis(
             best = Some((axis, score));
         }
     }
-    best.map_or(1, |(a, _)| a)
+    match best {
+        Some((a, _)) => a,
+        // A stair travels across the ground whatever its spaces say: the
+        // longer of its region's two horizontal extents.
+        None if e.class == "stair" => {
+            let ext = |a: usize| {
+                let lo = cells.iter().map(|c| c[a]).min().unwrap_or(0);
+                let hi = cells.iter().map(|c| c[a]).max().unwrap_or(0);
+                hi - lo
+            };
+            if ext(0) > ext(2) { 0 } else { 2 }
+        }
+        None => 1,
+    }
 }
 
 /// Every runtime write a cell of a way can take, as a state: each effect's
