@@ -2,6 +2,8 @@
   "campaign_id": "gallery",
   "content": {
     "actor.hall-moth.name": "厅中之蛾",
+    "actor.hall-sentry.answers.struck": "铁甲裹着石头，这尊哨卫纹丝不动。",
+    "actor.hall-sentry.answers.touched": "冰冷的铁。立在这里是给人看的，不是叫人唤醒的。",
     "actor.rafter-spider.name": "梁上之蛛",
     "actor.sergeant.drop.1.name": "点兵信物",
     "actor.sergeant.name": "军士",
@@ -85,6 +87,7 @@
     "lethal.west-pit.message": "西角的地面并不是地面。",
     "loot.map-frame.item.0.name": "圣物海图",
     "loot.pedestal-case.item.0.name": "展柜钥匙",
+    "npc.copyist.answers.struck": "干得像一张旧羊皮纸。抄写员头也不抬。",
     "npc.copyist.name": "抄写员",
     "npc.curator.name": "馆长",
     "npc.factor.name": "经纪",
@@ -158,6 +161,8 @@
   "lang": "zh-cn",
   "source": {
     "actor.hall-moth.name": "The Hall Moth",
+    "actor.hall-sentry.answers.struck": "Iron over stone. The sentry does not stir.",
+    "actor.hall-sentry.answers.touched": "Cold metal. It was set here to be looked at, not woken.",
     "actor.rafter-spider.name": "The Rafter Spider",
     "actor.sergeant.drop.1.name": "Muster Token",
     "actor.sergeant.name": "The Sergeant",
@@ -237,6 +242,7 @@
     "lethal.west-pit.message": "The well in the terrace floor has no bottom you would survive.",
     "loot.map-frame.item.0.name": "Reliquary Chart",
     "loot.pedestal-case.item.0.name": "Case Key",
+    "npc.copyist.answers.struck": "Dry as old vellum. The copyist does not look up from the page.",
     "npc.copyist.name": "The Copyist",
     "npc.curator.name": "The Curator",
     "npc.factor.name": "The Factor",
