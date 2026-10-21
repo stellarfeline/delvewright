@@ -3431,6 +3431,40 @@
       "note": "Carried by DW1045: the title that names the act no completion performs is refused, so it cannot ship. The capability itself is OPEN (spec-0114 §6.4): a dialogue option reads no hand. The engine work is a held-item gate on a dialogue option (requires_item on DialogueOption, read where option_display_conditions reads requires_state). Also met as \"Show Tamsin the tongue\" (row vh-18). Until it lands DW1045 refuses the title and the honest title is a talk word.",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "binding": {
+        "files": [
+          "npcs.json",
+          "quests.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "any_of": [
+            {
+              "prefix": {
+                "id": "npc/"
+              }
+            },
+            {
+              "prefix": {
+                "id": "actor/"
+              }
+            }
+          ]
+        }
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1055",
+        "kind": "dw"
+      },
+      "finding": "a standing body of a hostile mob type that cannot be harmed stood beside the route, inviting an attack that did nothing",
+      "general_form": "a body of a kind the pinned game discards on peaceful, that cannot be harmed and does not fight, and that a walking player can strike at a station it is declared to stand on, carries a line the campaign writes for the blow (an actor also for the touch), shown to the player who struck it",
+      "id": "str-17",
+      "note": "Carried by DW1055 (spec-0119): every build reads every stage-2 NPC and stage-5 actor, and refuses an inert monster-kind body in reach that declares no `answers.struck` (an actor also `answers.touched`); DW1056 refuses a line no press of the body can show. The binding counts the bodies the check quantifies over: 12 npcs and 3 actors on the-stranding's source as committed on its campaign branch (15). The re-run on that campaign is not yet possible: its documents are written against an earlier surface and the current engine refuses them at the schema (DW0100, a layout-graph edge class) before the build reaches the bodies, so the general form is proven live on The Sentinels and the gallery instead.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"
