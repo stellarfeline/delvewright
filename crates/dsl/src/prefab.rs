@@ -361,6 +361,30 @@ pub struct ContractEdge {
     /// byte-for-byte what it was.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub way: Option<ContractWay>,
+    /// **The narrowings this piece way means** (spec-0120 §4.2), on a `walk`,
+    /// `stair`, `climb`, `drop` or `barred` edge that answers no plan seam:
+    /// each a structure the author stands inside the way's clear width on
+    /// purpose, named by its cells in the piece's own frame, its block and
+    /// what it is, and confirmed cell for cell against the bytes (`DW1058`).
+    /// An edge that realizes a plan seam carries none — the seam's declaration
+    /// is the one authority (`DW0888`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub narrowed: Vec<EdgeNarrowing>,
+}
+
+/// **A narrowing a piece way means** (spec-0120 §4.2). The object determines
+/// the frame: a seam speaks in sides and columns, a way place in stations and
+/// columns, and a piece has only cells. `block` and `what` answer to the one
+/// rule every narrowing does ([`crate::siteplan::narrowing_text`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct EdgeNarrowing {
+    /// The cells it stands in, in the piece's own frame.
+    pub cells: Vec<[i32; 3]>,
+    /// The block that stands there, with its state as the palette writes it. A
+    /// state the declaration names must match; one it omits is not compared.
+    pub block: String,
+    /// What it is, in a few words — never player-facing.
+    pub what: String,
 }
 
 /// A contingent edge's way: the region that decides whether the edge is

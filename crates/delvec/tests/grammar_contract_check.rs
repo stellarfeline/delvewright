@@ -98,6 +98,7 @@ fn edge(a: &str, b: &str, class: &str) -> ContractEdge {
         via: None,
         bar: None,
         way: None,
+        narrowed: Vec::new(),
     }
 }
 

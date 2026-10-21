@@ -152,8 +152,39 @@ pub struct Blockout {
     /// The places this derivation stood a stand-in in — every place no piece is
     /// bound to, by name, in plan order. A stand-in never ships (spec-0098 §8).
     pub massed: Vec<String>,
+    /// Every stair run this derivation laid, in plan seam order — the courses
+    /// [`tread`] wrote, handed to the clear-width check (spec-0120) so the run
+    /// it judges is the run that was laid, never a second reading of the plan.
+    pub runs: Vec<LaidStair>,
     /// What the derivation bound to.
     pub binding: Binding,
+}
+
+/// **One stair run as the derivation laid it** (spec-0120 §1.3): which seam it
+/// climbs, which place hosts it, the axis it walks and the one across it,
+/// where each course stands and the cell a body stands in over each tread.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaidStair {
+    /// The connection the run climbs.
+    pub edge: delvewright_dsl::ids::EdgeId,
+    /// The place that hosts the treads.
+    pub host: NodeId,
+    /// The horizontal axis the run walks: 0 = x, 2 = z.
+    pub run_axis: usize,
+    /// The horizontal axis across the run.
+    pub cross: usize,
+    /// Where course 0, the one a body steps off at the top, stands on `run_axis`.
+    pub start: i64,
+    /// Which way the run walks back into the host, down the climb: `+1` or `-1`.
+    pub step: i64,
+    /// The span across the run the treads occupy, inclusive.
+    pub clo: i64,
+    /// The high end of that span.
+    pub chi: i64,
+    /// Per course, top first: the `y` of the cell a body stands in over the
+    /// tread (the course's top solid cell plus one; the host's walk plane for
+    /// a course laid at no height).
+    pub body_y: Vec<i64>,
 }
 
 /// One synthesized anchor, in the shape the plan resolves it to.
@@ -820,6 +851,7 @@ pub fn derive_with(
     // piece's to build (spec-0050 §3) and the bytes battery proves it was built.
     let mut stairs = 0usize;
     let mut runs: Vec<(&PlacedSeam, &PlacedBox, LaidRun)> = Vec::new();
+    let mut laid: Vec<LaidStair> = Vec::new();
     for s in &seams {
         let Some(host_id) = &s.stair_in else { continue };
         if bound.contains(host_id.0.as_str()) {
@@ -830,6 +862,17 @@ pub fn derive_with(
         };
         if let Some(run) = tread(&mut mass, s, host, &table, reads) {
             stairs += 1;
+            laid.push(LaidStair {
+                edge: s.edge.clone(),
+                host: host.node.clone(),
+                run_axis: run.run_axis,
+                cross: run.cross,
+                start: run.start,
+                step: run.step,
+                clo: run.clo,
+                chi: run.chi,
+                body_y: run.body_y.clone(),
+            });
             runs.push((s, host, run));
         }
     }
@@ -1137,6 +1180,7 @@ pub fn derive_with(
             seams,
             ground,
             massed,
+            runs: laid,
             binding,
         },
     ))
@@ -1472,9 +1516,13 @@ fn tread(
     // carries the 8/16 remainder a half-pitch leaves.
     let top16 = climb * 16;
     let mut laid = false;
+    let mut body_y: Vec<i64> = Vec::new();
     for k in 0..courses {
         // Height of this course's top face above the host's walk plane.
         let h16 = ((top16 * (courses - k)) / courses).clamp(0, top16);
+        // The cell a body stands in over this tread: one over its top solid
+        // cell — a half course's slab is solid, so it counts as one.
+        body_y.push(host.floor + h16 / 16 + i64::from(h16 % 16 != 0));
         if h16 == 0 {
             continue;
         }
@@ -1512,6 +1560,7 @@ fn tread(
         courses,
         clo,
         chi,
+        body_y,
     })
 }
 
@@ -1531,6 +1580,8 @@ struct LaidRun {
     /// The span across the run the treads occupy, inclusive.
     clo: i64,
     chi: i64,
+    /// Per course, the `y` of the cell a body stands in over the tread.
+    body_y: Vec<i64>,
 }
 
 /// **Cut the floor over a through-floor run wherever a body climbing it cannot

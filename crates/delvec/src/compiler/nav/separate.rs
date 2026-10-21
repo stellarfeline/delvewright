@@ -140,7 +140,7 @@ struct Faces {
 
 /// Whether a body can be in `c`: standing, holding a climbable (spec-0099), or
 /// afloat at the top of water.
-fn can_be(w: &World, c: [i32; 3]) -> bool {
+pub(in crate::compiler::nav) fn can_be(w: &World, c: [i32; 3]) -> bool {
     w.holds_body(c) || w.is_water_surface(c)
 }
 
