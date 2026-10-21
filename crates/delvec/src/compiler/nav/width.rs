@@ -2362,6 +2362,7 @@ impl WidthBinding {
             "codes": [DW_WAY_NARROWED.id(), DW_NARROWING_NOT_SHOWN.id()],
             "line": self.line(),
             "ways": self.records.len(),
+            "examined": self.records.len(),
             "traversal_seams": c.seams,
             "boxes": c.boxes,
             "contract_edges": c.edges,
