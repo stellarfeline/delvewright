@@ -25,7 +25,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use delvewright_dsl::WorldWeather;
+use delvewright_dsl::{TimeSite, WorldTime, WorldWeather};
 
 use crate::compiler::view::diag::{DW_INPUT, Diagnostic};
 
@@ -51,9 +51,8 @@ pub struct RenderPlan {
 /// delve is played at (`crate::compiler::render_plan`'s `sky_fact`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct Sky {
-    /// The author's spelling (`"dusk"`, or a celestial object) — for messages,
-    /// never for the sun.
-    #[allow(dead_code)]
+    /// The author's spelling (`"dusk"`, or a celestial object) — the day the
+    /// moon's phase is read from ([`Sky::world_time`]), never the sun.
     pub time: serde_json::Value,
     /// The vanilla `daytime` tick value that keyword sets. **This** is what the
     /// sun is a function of, so a state vanilla does not name is worth as much
@@ -238,14 +237,42 @@ fn closed_form_sky_angle_rad(daytime_ticks: i64) -> f64 {
     (1.0 - (std::f64::consts::PI * turn).cos() + quarters) * 60f64.to_radians()
 }
 
-/// The sky a frame is taken under: the hour as the `daytime` tick value the
-/// sun is a function of, and the weather. Built from `render-plan.json` by
-/// [`plan_sky`] (the panorama) or from a showcase camera
-/// (`crate::compiler::view::camera`).
+/// The sky a frame is taken under: the day (whose phase the moon shows), the
+/// hour as the `daytime` tick value the sun is a function of, and the weather.
+/// Built from `render-plan.json` by [`plan_sky`] (the panorama) or from a
+/// showcase camera (`crate::compiler::view::camera`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SceneSky {
+    pub day: i64,
     pub daytime_ticks: i64,
     pub weather: WorldWeather,
+}
+
+/// **The day a frame taken at `time` stands on**, in a world whose own time is
+/// `world`: the `time query day` of the clock `time` sets as a cut there
+/// ([`WorldTime::clock`] at [`TimeSite::Cut`]) — a celestial statement's
+/// phase, else the world's day. The world's own time asked of itself gives the
+/// world's own day, so one rule serves the world's clock and every cut.
+pub fn frame_day(time: WorldTime, world: WorldTime) -> i64 {
+    time.clock(TimeSite::Cut, world).day
+}
+
+impl Sky {
+    /// The world's own time the plan states, as the DSL reads it, or
+    /// [`DW_INPUT`] naming the value it could not read.
+    pub fn world_time(&self) -> Result<WorldTime, Diagnostic> {
+        serde_json::from_value(self.time.clone()).map_err(|e| {
+            Diagnostic::error(
+                DW_INPUT,
+                format!(
+                    "render-plan.json states the time `{}`, which is not a time of day this \
+                     engine reads ({e}): rebuild the delve with this engine (delvec {})",
+                    self.time,
+                    env!("CARGO_PKG_VERSION")
+                ),
+            )
+        })
+    }
 }
 
 /// The hour and weather a plan states, or [`DW_INPUT`] naming what is missing.
@@ -286,7 +313,9 @@ pub fn plan_sky(plan: &RenderPlan) -> Result<SceneSky, Diagnostic> {
             ),
         )
     })?;
+    let world = sky.world_time()?;
     Ok(SceneSky {
+        day: frame_day(world, world),
         daytime_ticks: sky.daytime_ticks,
         weather,
     })
@@ -772,6 +801,34 @@ pub fn sky_phrase(weather: WorldWeather, daytime_ticks: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// [`frame_day`] asked of the world's own time is the world's own clock's
+    /// day, for keywords and for celestial statements with and without a
+    /// phase; a cut with a phase stands on that phase's day, one without on
+    /// the world's.
+    #[test]
+    fn a_frames_day_is_its_clocks_day() {
+        let t = |j: &str| -> WorldTime { serde_json::from_str(j).unwrap() };
+        let worlds = [
+            t(r#""noon""#),
+            t(r#""midnight""#),
+            t(r#"{"moon":"just-risen","phase":"new-moon"}"#),
+            t(r#"{"sun":"setting"}"#),
+            t(r#"{"moon":"high","phase":"waxing-crescent"}"#),
+        ];
+        for w in worlds {
+            assert_eq!(frame_day(w, w), w.world_clock().day, "{w:?}");
+            assert_eq!(frame_day(t(r#""dusk""#), w), w.world_clock().day, "{w:?}");
+            assert_eq!(frame_day(t(r#"{"sun":"setting"}"#), w), w.world_clock().day);
+            assert_eq!(
+                frame_day(t(r#"{"moon":"high","phase":"full-moon"}"#), w),
+                0,
+                "{w:?}"
+            );
+        }
+        assert_eq!(frame_day(worlds[2], worlds[2]), 4);
+        assert_eq!(frame_day(t(r#""dusk""#), worlds[2]), 4);
+    }
 
     /// **The pinned track and the published closed form agree** (spec-0081
     /// §2.3) — the vendored `sun_angle` track ([`sky_angle_rad`], which

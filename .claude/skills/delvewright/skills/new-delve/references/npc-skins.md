@@ -183,8 +183,9 @@ ships. Every step is mandatory once a design calls for one:
    (`DW0741`).
 4. **Look at it.** `delvec --prefabs "$DELVEWRIGHT_PREFABS" textures campaigns/<id>` writes one sheet per row to
    `review/textures/` — vanilla beside yours. That sheet is the only place a
-   mob's skin or the moon can be seen before the hand-over: no render this engine
-   makes draws either. A block texture also shows in the build's own pack:
+   mob's skin can be seen before the hand-over: no render this engine makes
+   draws it. A moon texture also shows, from the build's own pack, in every
+   clear frame `delvec frames` or `delvec cameras` draws with the moon in view. A block texture also shows in the build's own pack:
       `delvec --prefabs "$DELVEWRIGHT_PREFABS" viewer --pack <out>/resourcepack.zip …`, and in every frame
    `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames <out>` draws, which layers the build's own pack over the jar.
 5. **Say it in the hand-over.** Each row is one item of step 13's report, in the

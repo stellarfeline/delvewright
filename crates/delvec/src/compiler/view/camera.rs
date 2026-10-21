@@ -306,9 +306,10 @@ impl CameraSky {
         format!("{}+{}", self.time.keyword(), self.weather.keyword())
     }
 
-    /// The scene sky this pair is.
-    pub fn scene(self) -> SceneSky {
+    /// The scene sky this pair is, in a world whose own time is `world`.
+    pub fn scene(self, world: WorldTime) -> SceneSky {
         SceneSky {
+            day: scene::frame_day(self.time, world),
             daytime_ticks: self.time.daytime_ticks(),
             weather: self.weather,
         }
@@ -661,12 +662,17 @@ impl ResolvedSky {
                 SkyOrigin::Stated => "stated".to_string(),
             },
             scene::sky_phrase(self.sky.weather, self.sky.time.daytime_ticks()),
-            // spec-0081 §5.4: the pinned renderer draws no moon, so a frame of a
-            // sky whose moon is up carries no phase — said where it is read.
-            if delvewright_dsl::celestial::moon_up(self.sky.time.daytime_ticks()) {
-                "; moon not drawn by the renderer"
-            } else {
-                ""
+            // A clear frame stands at its clock (`frames::stated_sky`), so the
+            // renderer draws the moon at the clock's phase; under rain or
+            // thunder the client draws none, and neither does the frame — said
+            // where it is read.
+            match (
+                delvewright_dsl::celestial::moon_up(self.sky.time.daytime_ticks()),
+                self.sky.weather,
+            ) {
+                (false, _) => String::new(),
+                (true, WorldWeather::Clear) => "; moon drawn at its day's phase".to_string(),
+                (true, w) => format!("; no moon under {}, as the client draws none", w.keyword()),
             }
         )
     }
@@ -1085,6 +1091,11 @@ pub fn frames_of(
     // sky, or no weather, was written by an older engine, and is refused by name
     // here as every frame of a plan refuses it.
     scene::plan_sky(&plan)?;
+    let world = plan
+        .sky
+        .as_ref()
+        .expect("plan_sky refuses a plan with no sky")
+        .world_time()?;
     let cameras = selected(&plan.campaign_id, sheet, &opts.only, opts.bracket.as_ref())?;
     let mut out = Vec::new();
     for c in cameras {
@@ -1092,7 +1103,7 @@ pub fn frames_of(
         out.push(CameraFrame {
             stem: camera_stem(&plan.campaign_id, &c.name, opts.draft),
             frame: Frame::of(&c, opts.draft),
-            sky: sky.sky.scene(),
+            sky: sky.sky.scene(world),
             camera: c,
         });
     }
@@ -1636,6 +1647,7 @@ mod tests {
         assert_eq!(
             f.sky,
             SceneSky {
+                day: 0,
                 daytime_ticks: WorldTime::Day.daytime_ticks(),
                 weather: WorldWeather::Clear
             }

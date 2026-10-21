@@ -153,6 +153,7 @@ pub(crate) fn run_frames_campaign(
             packs: &[],
             camera: cam,
             sky: delvec::compiler::view::frames::FrameSky {
+                day: clock.clock(&plan).day,
                 daytime_ticks: clock.daytime_ticks(),
                 weather: clock.weather,
             },

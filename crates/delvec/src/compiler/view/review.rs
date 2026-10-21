@@ -91,9 +91,12 @@ impl Clock {
 
     /// `level.dat`'s `DayTime`: the absolute clock, its day included.
     pub fn day_time(&self, plan: &Plan) -> i64 {
-        self.time
-            .clock(self.site, plan.campaign.world.content.time)
-            .absolute()
+        self.clock(plan).absolute()
+    }
+
+    /// The day and `daytime` this clock sets, at its site in the plan's world.
+    pub fn clock(&self, plan: &Plan) -> delvewright_dsl::Clock {
+        self.time.clock(self.site, plan.campaign.world.content.time)
     }
 
     /// The step that set this clock last, by id, or `None` for the world's
@@ -944,7 +947,7 @@ pub fn light_question(shot: &Value) -> bool {
 /// What no review frame shows, by name (spec-0112 §11).
 pub const UNCHECKED: [&str; 5] = [
     "beds, shulker boxes, the conduit, open lids, a ringing bell, italic or obfuscated sign text",
-    "the weather in the air, clouds, hq-mode fog and the moon",
+    "the weather in the air, clouds and hq-mode fog; under rain or thunder, the sunrise and sunset fan",
     "a night-vision room's lightmap: judge in game under night vision",
     "a body's pose at a tick, the party and its stand-ins, a collapse's debris, a set-atmosphere repaint, a flood's spread past its laid cells, an unforced write",
     "a cutscene no critical step fires",

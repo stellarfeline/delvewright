@@ -63,8 +63,9 @@ air.** A `rain` or `thunder` frame is lit and skied as the game lights and skies
 that hour under that weather, but no rain falls and no cloud is drawn; each
 frame's `unchecked` list says so. A delve declared at `night` or `midnight` is
 drawn dark, and that is the frame: the sun is below the horizon, exactly as in
-the game. **No frame shows the moon**, so a night frame says nothing about the
-phase; the phase is confirmed in the game. Declared-dark areas with a
+the game. **A clear frame draws the moon at its day's phase**, the stars and the
+sunrise and sunset fan, as the client draws them at that clock; under rain or
+thunder the client draws no moon, and no frame does. Declared-dark areas with a
 `night-vision` mitigation are drawn without the effect and their `unchecked`
 names the lightmap: judge their legibility in the game. Never move an hour to
 make a picture come out, and never type a camera's exposure: the engine derives

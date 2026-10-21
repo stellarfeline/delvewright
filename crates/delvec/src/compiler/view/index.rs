@@ -23,6 +23,10 @@ use crate::compiler::view::frames::{FrameSky, Mode, REVIEW_HQ_SPP};
 #[derive(Debug, Deserialize)]
 struct RenderPlan {
     campaign_id: String,
+    /// The world's own time and weather: the day a shot's moon stands on is
+    /// read against it ([`crate::compiler::view::scene::frame_day`]).
+    #[serde(default)]
+    sky: Option<crate::compiler::view::scene::Sky>,
     shots: Vec<RawShot>,
 }
 
@@ -117,6 +121,32 @@ pub fn plan_shots(plan_json: &[u8]) -> Result<(String, Vec<PlanShot>), Diagnosti
         };
         let world = s.world.clone().ok_or_else(|| stale("world"))?;
         let sky = s.sky.as_ref().ok_or_else(|| stale("sky"))?;
+        let world_time = plan
+            .sky
+            .as_ref()
+            .ok_or_else(|| {
+                Diagnostic::error(
+                    DW_INPUT,
+                    format!(
+                        "render-plan.json states no top-level `sky`, so no shot's day can be read \
+                         against the world's own time. The plan was written by an engine older \
+                         than this one (delvec {}): rebuild the delve with `delvec build`",
+                        crate::compiler::DELVEC_VERSION
+                    ),
+                )
+            })?
+            .world_time()?;
+        let shot_time: delvewright_dsl::WorldTime = serde_json::from_value(sky.time.clone())
+            .map_err(|e| {
+                Diagnostic::error(
+                    DW_INPUT,
+                    format!(
+                        "render-plan.json: shot `{}` states the time `{}`, which is not a time of \
+                         day this engine reads ({e}): rebuild the delve with `delvec build`",
+                        s.id, sky.time
+                    ),
+                )
+            })?;
         let mode = match s.mode.as_deref() {
             Some("quick") => Mode::Quick,
             Some("hq") => Mode::Hq { spp: REVIEW_HQ_SPP },
@@ -152,6 +182,7 @@ pub fn plan_shots(plan_json: &[u8]) -> Result<(String, Vec<PlanShot>), Diagnosti
             },
             world,
             sky: FrameSky {
+                day: crate::compiler::view::scene::frame_day(shot_time, world_time),
                 daytime_ticks: sky.daytime_ticks,
                 weather: sky.weather,
             },

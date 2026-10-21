@@ -56,6 +56,7 @@ fn carries_sky(sky: FrameSky, tick: i64, weather: WorldWeather) -> bool {
     let hq = frames::hq_sky(sky);
     let near = |a: f32, b: f64| (f64::from(a) - b).abs() < 1e-6;
     sky == FrameSky {
+        day: sky.day,
         daytime_ticks: tick,
         weather,
     } && near(quick.sky_factor, at.sky_light_factor)
@@ -74,6 +75,7 @@ fn carries_sky(sky: FrameSky, tick: i64, weather: WorldWeather) -> bool {
 
 fn sky_of(f: &CameraFrame) -> FrameSky {
     FrameSky {
+        day: f.sky.day,
         daytime_ticks: f.sky.daytime_ticks,
         weather: f.sky.weather,
     }
@@ -201,6 +203,7 @@ fn each_frame_kind_reads_its_sky_from_its_own_source() {
     assert!(
         carries_sky(
             FrameSky {
+                day: pano.sky.day,
                 daytime_ticks: pano.sky.daytime_ticks,
                 weather: pano.sky.weather
             },

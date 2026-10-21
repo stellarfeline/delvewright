@@ -17,8 +17,14 @@
 //!   frame's tick under its weather ([`crate::compiler::view::scene::sky_cell`],
 //!   [`crate::compiler::view::scene::sky_attributes`],
 //!   [`crate::compiler::view::scene::sun_at`]), stated to the renderer as
-//!   [`lumenwright::Sky::Stated`]. Lumenwright's own derivation of a vanilla
-//!   sky from a tick is never what a `delvec` frame shows;
+//!   [`lumenwright::Sky::Stated`] ([`stated_sky`]): the colours, the sun and
+//!   the lightmap's factor are always the engine's. Under a clear sky the
+//!   statement also stands at the frame's clock with the game's look by the
+//!   time of day ([`lumenwright::SkyLook::ByTime`]), so what the client draws
+//!   from the tick alone — the sunrise fan, the moon at its phase, the stars,
+//!   and in hq the light the game's sky casts — is drawn at that clock; under
+//!   rain or thunder it stands at no tick, because the game's look draws no
+//!   weather;
 //! - **the bodies** — every entity and block entity the world holds, with a
 //!   body the renderer has no model for skipped and counted, never drawn as a
 //!   box ([`lumenwright::UnknownEntities::Skip`]).
@@ -40,10 +46,10 @@ use lumenwright::scene::camera::Camera as LwCamera;
 use lumenwright::world::{Dimension, World};
 use lumenwright::{
     ChunkRect, EntityPolicy, HqOptions, QuickOptions, QuickSkyColours, Request, RequestError, Sky,
-    StatedSky, UnknownEntities, WorldSource,
+    SkyLook, StatedSky, StatedTick, UnknownEntities, WorldSource,
 };
 
-use delvewright_dsl::WorldWeather;
+use delvewright_dsl::{Clock, WorldWeather};
 
 use crate::compiler::framing::Camera;
 use crate::compiler::view::diag::{DW_INPUT, DW_RENDER, Diagnostic};
@@ -53,7 +59,7 @@ use crate::compiler::view::scene;
 /// lumenwright_version` and `crates/delvec/Cargo.toml` pin it — written on
 /// every frame manifest and on the first line of every run, so a frame's
 /// provenance is readable without the frame.
-pub const RENDERER_VERSION: &str = "0.2.0";
+pub const RENDERER_VERSION: &str = "0.3.0";
 
 /// The client's *Mipmap Levels* option at its default, the texture filtering
 /// a player who has not changed it sees.
@@ -130,11 +136,27 @@ impl Backend {
     }
 }
 
-/// The clock a frame is of: the `daytime` tick and the weather.
+/// The clock a frame is of: the day, the `daytime` tick and the weather.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameSky {
+    /// `time query day` of the frame's clock: the moon shows this day's phase.
+    pub day: i64,
+    /// `time query daytime`: what the sun and the sky's colours are a
+    /// function of.
     pub daytime_ticks: i64,
     pub weather: WorldWeather,
+}
+
+impl FrameSky {
+    /// The absolute `dayTime` (`day × 24000 + daytime`): the tick a clear
+    /// frame's sky stands at ([`stated_sky`]).
+    pub fn day_time(&self) -> i64 {
+        Clock {
+            day: self.day,
+            daytime: self.daytime_ticks,
+        }
+        .absolute()
+    }
 }
 
 /// The unit vector toward the sun at a tick, in world axes (+X east, +Y up),
@@ -200,6 +222,36 @@ pub fn hq_sky(sky: FrameSky) -> HqSky {
         hq.sun_color = Vec3::ZERO;
     }
     hq
+}
+
+/// **The sky stated to the renderer for one frame** (spec-0112 §6.1 item 6).
+/// In both modes the colours, the sun and the lightmap's factor are the
+/// engine's ([`quick_sky`] for the camera's look, and [`hq_sky`], Chunky's part
+/// of an hq frame).
+///
+/// **Under a clear sky the statement stands at the frame's clock**
+/// ([`FrameSky::day_time`], so the moon shows the clock's phase) with the
+/// game's look by the time of day ([`SkyLook::ByTime`]) at the client's render
+/// distance ([`scene::CLIENT_RENDER_DISTANCE`]): the renderer draws what the
+/// client derives from the tick alone — the sunrise fan, the moon and the stars
+/// in both modes — and an hq frame is lit as the game lights the tick, Chunky's
+/// look on the client's day plateau, the game's at night and a mix by the
+/// lightmap's sky factor between them. A quick frame takes the tick because its
+/// question is what the player sees, and the client draws the fan, the moon and
+/// the stars of a clear sky.
+///
+/// **Under rain or thunder it stands at no tick**: the game's look draws a
+/// clear sky and no weather, and the client at full rain draws no sun, moon or
+/// stars, so the frame is the engine's darkened colours in quick mode and
+/// Chunky's sky scaled to the weather's light, its sun dark, in hq mode.
+pub fn stated_sky(sky: FrameSky, look: [f64; 3]) -> StatedSky {
+    let stated = StatedSky::new(quick_sky(sky, look), hq_sky(sky));
+    if sky.weather != WorldWeather::Clear {
+        return stated;
+    }
+    let mut tick = StatedTick::new(sky.day_time(), SkyLook::ByTime);
+    tick.render_distance = scene::CLIENT_RENDER_DISTANCE * 16.0;
+    stated.at(tick)
 }
 
 /// One frame to draw.
@@ -423,10 +475,7 @@ pub fn draw(req: &FrameRequest<'_>, opened: Option<&OpenedWorld>) -> Result<Draw
             mipmap_levels: CLIENT_MIPMAP_LEVELS,
         },
         hq,
-        sky: Sky::Stated(StatedSky {
-            quick: quick_sky(req.sky, req.camera.basis().0),
-            hq: hq_sky(req.sky),
-        }),
+        sky: Sky::Stated(stated_sky(req.sky, req.camera.basis().0)),
     };
     let r = lumenwright::render(&request).map_err(|e| {
         let why = match e.downcast_ref::<RequestError>() {
@@ -507,6 +556,7 @@ mod tests {
     fn a_rain_sky_draws_no_sun_and_a_midnight_sky_is_dark() {
         let rain = quick_sky(
             FrameSky {
+                day: 0,
                 daytime_ticks: 6000,
                 weather: WorldWeather::Rain,
             },
@@ -515,6 +565,7 @@ mod tests {
         assert!(rain.sun_dir.y < 0.0);
         let noon = quick_sky(
             FrameSky {
+                day: 0,
                 daytime_ticks: 6000,
                 weather: WorldWeather::Clear,
             },
@@ -522,6 +573,7 @@ mod tests {
         );
         let night = quick_sky(
             FrameSky {
+                day: 0,
                 daytime_ticks: 18000,
                 weather: WorldWeather::Clear,
             },
@@ -531,6 +583,7 @@ mod tests {
         assert!(night.sky.length() < noon.sky.length());
         assert_eq!(
             hq_sky(FrameSky {
+                day: 0,
                 daytime_ticks: 6000,
                 weather: WorldWeather::Thunder
             })
@@ -573,6 +626,7 @@ mod tests {
             assert_eq!(scene::clear_color(6000, WorldWeather::Clear, look), want);
             let q = quick_sky(
                 FrameSky {
+                    day: 0,
                     daytime_ticks: 6000,
                     weather: WorldWeather::Clear,
                 },
@@ -594,6 +648,35 @@ mod tests {
         let west = scene::clear_color(t, WorldWeather::Clear, [-1.0, 0.0, 0.0]);
         let east = scene::clear_color(t, WorldWeather::Clear, [1.0, 0.0, 0.0]);
         assert_ne!(west, east);
+    }
+
+    /// A clear frame's sky stands at its clock, its day included, with the
+    /// game's look by the time of day at the client's render distance; a rain
+    /// or thunder frame's at no tick. The colours and sun are the engine's in
+    /// every weather.
+    #[test]
+    fn a_clear_sky_stands_at_its_clock_and_a_wet_one_at_none() {
+        let dusk = |weather| FrameSky {
+            day: 4,
+            daytime_ticks: 12782,
+            weather,
+        };
+        let look = [-0.92, 0.05, -0.38];
+        let clear = stated_sky(dusk(WorldWeather::Clear), look);
+        let tick = clear.tick.expect("a clear sky stands at a tick");
+        assert_eq!(tick.time, 4 * 24000 + 12782);
+        assert_eq!(tick.look, SkyLook::ByTime);
+        assert_eq!(tick.render_distance, 192.0);
+        let engine = quick_sky(dusk(WorldWeather::Clear), look);
+        assert_eq!(clear.quick.fog, engine.fog);
+        assert_eq!(clear.quick.sun_dir, engine.sun_dir);
+        assert_eq!(clear.hq.sun_dir, hq_sky(dusk(WorldWeather::Clear)).sun_dir);
+        for w in [WorldWeather::Rain, WorldWeather::Thunder] {
+            let wet = stated_sky(dusk(w), look);
+            assert!(wet.tick.is_none(), "{w:?}");
+            assert_eq!(wet.quick.fog, quick_sky(dusk(w), look).fog, "{w:?}");
+            assert_eq!(wet.hq.sun_color, Vec3::ZERO, "{w:?}");
+        }
     }
 
     #[test]

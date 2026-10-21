@@ -614,6 +614,7 @@ fn run_panorama(
             packs: &packs,
             camera: pano.frame.view(),
             sky: crate::compiler::view::frames::FrameSky {
+                day: pano.sky.day,
                 daytime_ticks: pano.sky.daytime_ticks,
                 weather: pano.sky.weather,
             },
@@ -660,6 +661,7 @@ fn run_panorama(
         "world": crate::compiler::view::beat::AT_LOAD,
         "chunks": { "min": pano.chunks.0, "max": pano.chunks.1 },
         "sky": {
+            "day": pano.sky.day,
             "daytime_ticks": pano.sky.daytime_ticks,
             "weather": pano.sky.weather.keyword(),
         },
@@ -1275,6 +1277,7 @@ pub fn run_cameras(
                 packs: &packs,
                 camera: f.frame.view(),
                 sky: crate::compiler::view::frames::FrameSky {
+                    day: f.sky.day,
                     daytime_ticks: f.sky.daytime_ticks,
                     weather: f.sky.weather,
                 },
@@ -1321,6 +1324,7 @@ pub fn run_cameras(
                 "path": format!("worlds/{}", stand.key),
             },
             "sky": {
+                "day": f.sky.day,
                 "daytime_ticks": f.sky.daytime_ticks,
                 "weather": f.sky.weather.keyword(),
             },
