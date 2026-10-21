@@ -16,6 +16,6 @@
     "title": "The Open Yard",
     "weather": "clear"
   },
-  "dsl_version": "0.55.0",
+  "dsl_version": "0.59.0",
   "stage": "world"
 }
