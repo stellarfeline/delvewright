@@ -953,11 +953,16 @@ pub fn judge_acts(
         // when an announced objective with a hint is armed on the way to it
         // that this walk performs later, or when the next act is in sight
         // from where the leg starts. A place after the last act leads to
-        // nothing left to find, and is not judged.
+        // nothing left to find, and one the party already stands on is no
+        // leg; neither is judged.
         for (pi, p) in w.passes.iter().enumerate() {
             let Some(next) = w.acts.iter().find(|a| a.step > p.step) else {
                 continue;
             };
+            // A place the party already stands on is passed, not walked to.
+            if p.from == Some(p.target) {
+                continue;
+            }
             b.passes += 1;
             let world: &crate::compiler::nav::World =
                 worlds[at[w.acts.len() + pi]].as_ref().unwrap_or(world);
