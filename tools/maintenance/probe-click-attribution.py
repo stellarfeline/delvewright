@@ -257,6 +257,9 @@ def main() -> int:
         sys.exit(f"probe: {a.jar} is sha256 {got}, pin is {want}")
     if not (a.node_modules / "mineflayer" / "package.json").is_file():
         sys.exit(f"probe: {a.node_modules} carries no mineflayer")
+    # Absolute, because the bot runs with its own home as its cwd and is
+    # handed its script by a path built under `--work`.
+    a.work = a.work.resolve()
     a.work.mkdir(parents=True, exist_ok=False)
     (a.work / "eula.txt").write_text("eula=true\n")
     (a.work / "server.properties").write_text(
