@@ -458,17 +458,29 @@ fn a_gated_press_answer_dispatches_through_a_parseable_line() {
 // The diagnostics the surface needs
 // ---------------------------------------------------------------------------
 
-/// `DW0427` — vanilla can attribute a right-click to a player and nothing else.
-/// A left-click is recorded in the entity's `attack` NBT as a UUID no command can
-/// become, so `audience: presser` on a `strike` is refused rather than
-/// approximated (CLAUDE.md: a capability with no vanilla primitive under it is
-/// excluded, never faked downstream).
+/// `DW0427` — a presser is named by its event's carrier, and an `approach` has
+/// none (spec-0119). A left-click on the door is named by
+/// `minecraft:player_hurt_entity` and is admitted; an approach is refused rather
+/// than approximated (CLAUDE.md: a capability with no vanilla primitive under it
+/// is excluded, never faked downstream).
 #[test]
-fn a_presser_answer_on_a_left_click_is_dw0427() {
+fn a_presser_answer_on_an_approach_is_dw0427_and_on_a_left_click_is_not() {
     let mut c = fixture();
     c.quests.dsl_version = DSL_VERSION.to_string();
     let mut t = authored_answer();
     t.on = delvewright_dsl::TriggerOn::Strike;
+    c.quests.content.triggers.push(t);
+    let diags = diagnostics(&c);
+    assert!(
+        !diags.iter().any(|d| d.code == "DW0427"),
+        "a left-click names its striker: {diags:#?}"
+    );
+
+    let mut c = fixture();
+    c.quests.dsl_version = DSL_VERSION.to_string();
+    let mut t = authored_answer();
+    t.on = delvewright_dsl::TriggerOn::Approach { range: 3 };
+    t.prop = None;
     c.quests.content.triggers.push(t);
     let diags = diagnostics(&c);
     let d = diags
@@ -476,8 +488,8 @@ fn a_presser_answer_on_a_left_click_is_dw0427() {
         .find(|d| d.code == "DW0427")
         .unwrap_or_else(|| panic!("expected DW0427, got {diags:#?}"));
     assert!(
-        d.message.contains("trigger/from-the-wrong-side") && d.message.contains("strike"),
-        "DW0427 names the trigger and the click it watches: {}",
+        d.message.contains("trigger/from-the-wrong-side") && d.message.contains("approach"),
+        "DW0427 names the trigger and the event it watches: {}",
         d.message
     );
 }

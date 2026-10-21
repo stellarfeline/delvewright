@@ -32,9 +32,17 @@ fn read_hw(name: &str) -> String {
 /// The hello-world NPC document with `npc/keeper`'s body and standing anchor
 /// swapped for the fixture's.
 fn npcs_doc(base_entity: &str, anchor: &str) -> String {
-    read_hw("npcs.json")
-        .replace("\"minecraft:villager\"", &format!("\"{base_entity}\""))
-        .replace("\"anchor/keeper-stand\"", &format!("\"{anchor}\""))
+    // A body the game calls a monster, standing where the party walks, owes the
+    // line a blow on it answers with (`DW1055`, spec-0119).
+    common::patch_doc(
+        &read_hw("npcs.json")
+            .replace("\"minecraft:villager\"", &format!("\"{base_entity}\""))
+            .replace("\"anchor/keeper-stand\"", &format!("\"{anchor}\"")),
+        |d| {
+            d["content"]["npcs"][0]["answers"] =
+                serde_json::json!({ "struck": "It does not stir." })
+        },
+    )
 }
 
 /// A quests document whose quest carries one **prop-less** `interact` objective

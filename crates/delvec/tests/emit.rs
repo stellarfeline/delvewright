@@ -1327,6 +1327,9 @@ mod health_bar {
         });
         if vulnerable {
             a["vulnerable"] = json!(true);
+        } else {
+            // An inert monster-kind body in reach owes its lines (`DW1055`).
+            a["answers"] = json!({ "struck": "It does not stir.", "touched": "Cold, and still." });
         }
         if let Some(b) = actor_bar {
             a["health_bar"] = b;
