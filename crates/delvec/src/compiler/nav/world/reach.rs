@@ -733,9 +733,11 @@ struct Local<'a, C: Codes + ?Sized> {
     stamp: u32,
 }
 
+/// A thread's slots for [`Local`], with the stamp of the last expansion.
+type LocalSlots = (u32, Vec<std::cell::Cell<(u32, Code)>>);
+
 thread_local! {
-    static LOCAL: std::cell::RefCell<(u32, Vec<std::cell::Cell<(u32, Code)>>)> =
-        const { std::cell::RefCell::new((0, Vec::new())) };
+    static LOCAL: std::cell::RefCell<LocalSlots> = const { std::cell::RefCell::new((0, Vec::new())) };
 }
 
 impl<'a, C: Codes + ?Sized> Local<'a, C> {
@@ -1620,6 +1622,12 @@ type Closure = (Vec<[i32; 3]>, Arc<Reach>);
 
 /// A node and the quadrants of its launch set that were flown.
 type FlownKey = ([i32; 3], Quadrants);
+
+/// Write the node banks this run grew to `DELVEC_REACH_CACHE`, when it names a
+/// directory (`reach/persist.rs`); a run that ends calls it once.
+pub fn persist_reach_cache() {
+    bank::persist_all();
+}
 
 /// The memo of one world's graph: its snapshot and every node expanded so far.
 pub(in crate::compiler::nav) struct GraphMemo {
@@ -3454,6 +3462,7 @@ impl ReachBinding {
 
 mod bank;
 mod flights;
+mod persist;
 
 #[cfg(test)]
 mod tests;

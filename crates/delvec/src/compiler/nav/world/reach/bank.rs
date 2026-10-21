@@ -238,7 +238,7 @@ pub(super) type NamedEdge = (([i32; 3], EdgeKind), (Option<i16>, bool));
 #[derive(Debug, Clone)]
 pub(super) struct Run {
     /// Every window cell the run read lies in this box.
-    bbox: Option<Box3>,
+    pub(super) bbox: Option<Box3>,
     pub(super) summary: Summary,
 }
 
@@ -246,13 +246,13 @@ pub(super) struct Run {
 pub(super) type Volumes = Vec<([i32; 3], [i32; 3])>;
 
 /// One recorded expansion of a node.
-struct Variant {
-    deps: Vec<(u32, Code, u16)>,
+pub(super) struct Variant {
+    pub(super) deps: Vec<(u32, Code, u16)>,
     /// Where the declared jumps out of the node land.
-    jumps: Vec<[i32; 3]>,
-    volumes: Volumes,
-    runs: Vec<Run>,
-    edges: Arc<NodeEdges>,
+    pub(super) jumps: Vec<[i32; 3]>,
+    pub(super) volumes: Volumes,
+    pub(super) runs: Vec<Run>,
+    pub(super) edges: Arc<NodeEdges>,
 }
 
 /// One expansion as the bank follows it: the cells it reads, the variant it
@@ -321,6 +321,11 @@ pub(super) struct Bank {
     nodes: Mutex<HashMap<super::FlownKey, Vec<Arc<Variant>>>>,
     /// Runs taken as written, for the agreement test's binding.
     reused: std::sync::atomic::AtomicU64,
+    /// The bank's key, which names its file ([`super::persist`]).
+    key: String,
+    /// The variants its file held when the run read it: a bank holding no
+    /// more is not written back.
+    loaded: usize,
 }
 
 /// How many variants of one node the bank keeps: a bound on its memory, never
@@ -459,10 +464,72 @@ impl Bank {
     }
 }
 
-/// The bank shared by every graph of `key`.
+type Banks = Mutex<HashMap<String, Arc<Bank>>>;
+
+fn banks() -> &'static Banks {
+    static BANKS: std::sync::OnceLock<Banks> = std::sync::OnceLock::new();
+    BANKS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// The bank shared by every graph of `key`: on first asking, what the cache
+/// directory holds for it ([`super::persist`]).
 pub(super) fn bank(key: String) -> Arc<Bank> {
-    static BANKS: std::sync::OnceLock<Mutex<HashMap<String, Arc<Bank>>>> =
-        std::sync::OnceLock::new();
-    let banks = BANKS.get_or_init(|| Mutex::new(HashMap::new()));
-    Arc::clone(banks.lock().expect("banks").entry(key).or_default())
+    let mut banks = banks().lock().expect("banks");
+    if let Some(b) = banks.get(&key) {
+        return Arc::clone(b);
+    }
+    let held = super::persist::load(&key);
+    let loaded = held.iter().map(|(_, vs)| vs.len()).sum();
+    let b = Arc::new(Bank {
+        nodes: Mutex::new(held.into_iter().collect()),
+        reused: Default::default(),
+        key: key.clone(),
+        loaded,
+    });
+    banks.insert(key, Arc::clone(&b));
+    b
+}
+
+/// Write every bank that gained a variant this run to the cache directory,
+/// in key order; nothing where the cache is off.
+pub(super) fn persist_all() {
+    let banks: Vec<Arc<Bank>> = banks().lock().expect("banks").values().cloned().collect();
+    for b in banks {
+        let mut nodes: Vec<(super::FlownKey, Vec<Arc<Variant>>)> = b
+            .nodes
+            .lock()
+            .expect("bank")
+            .iter()
+            .map(|(k, v)| (*k, v.clone()))
+            .collect();
+        if nodes.iter().map(|(_, vs)| vs.len()).sum::<usize>() <= b.loaded {
+            continue;
+        }
+        nodes.sort_by_key(|n| n.0);
+        super::persist::store(&b.key, &nodes);
+    }
+}
+
+#[cfg(test)]
+impl Bank {
+    /// Every variant the bank holds, in key order.
+    pub(super) fn held(&self) -> Vec<(super::FlownKey, Vec<Arc<Variant>>)> {
+        let mut v: Vec<_> = self
+            .nodes
+            .lock()
+            .expect("bank")
+            .iter()
+            .map(|(k, vs)| (*k, vs.clone()))
+            .collect();
+        v.sort_by_key(|n| n.0);
+        v
+    }
+
+    /// A bank holding `nodes`, as one read from a file is.
+    pub(super) fn holding(nodes: Vec<(super::FlownKey, Vec<Arc<Variant>>)>) -> Bank {
+        Bank {
+            nodes: Mutex::new(nodes.into_iter().collect()),
+            ..Bank::default()
+        }
+    }
 }

@@ -468,3 +468,45 @@ fn a_snapshot_shares_every_chunk_its_lineage_holds_alike() {
         .expect("the yard is the opened yard's lineage");
     assert_eq!(diff, &vec![[7, 1, 0], [7, 2, 0]]);
 }
+
+/// The node bank as a file holds it (`persist`): every variant the Bell yard
+/// and its opened twin banked, written and read back, answers each node of
+/// the opened yard with the node flying gives.
+#[test]
+fn a_bank_read_back_from_its_file_answers_what_flying_gives() {
+    let root = [[5, 1, 5]];
+    let _ = bell_yard().body_reach(&root);
+    let mut b = bell_yard_build();
+    b.solid.remove(&[7, 1, 0]);
+    b.solid.remove(&[7, 2, 0]);
+    let opened = b.world(Ambient::Void, Vec::new());
+    let _ = opened.body_reach(&root);
+    let params = ReachParams::shipped(opened.unbounded_fall);
+    let memo = opened.graph_memo(&params);
+    let held = memo.bank.held();
+    let read = super::persist::round_trip("key", &held).expect("the file decodes");
+    assert_eq!(read.len(), held.len());
+    let back = bank::Bank::holding(read);
+    let flown: Vec<FlownKey> = memo.flown.lock().expect("memo").keys().copied().collect();
+    assert!(!flown.is_empty());
+    let mut answered = 0;
+    for key in flown {
+        let volumes = |bx| opened.volumes_near(bx);
+        let jumps = opened.jumps_from(key.0);
+        let Some(e) = back.find(&key, &memo.dense, &memo.extra, &jumps, &volumes) else {
+            continue;
+        };
+        answered += 1;
+        let fresh = opened.expand(&memo, &params, key.0, key.1, None);
+        assert_eq!(fresh.kind, e.kind, "{key:?}");
+        assert_eq!(fresh.edges, e.edges, "{key:?}");
+        assert_eq!(fresh.leaves_world, e.leaves_world, "{key:?}");
+        assert_eq!(fresh.open_sea, e.open_sea, "{key:?}");
+        assert_eq!(fresh.dies, e.dies, "{key:?}");
+        assert_eq!(fresh.simulated, e.simulated, "{key:?}");
+        assert_eq!(fresh.credited, e.credited, "{key:?}");
+        assert_eq!(fresh.read, e.read, "{key:?}");
+    }
+    // Bound, not vacuous: the bank read back answers nodes.
+    assert!(answered > 0, "the read-back bank answered no node");
+}

@@ -263,7 +263,9 @@ def _codes(r: subprocess.CompletedProcess) -> list[str]:
     return [c for c in codes if c]
 
 
-def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[str], str]:
+def run_probe(
+    delvec: Path, campaign: Path, prefabs: Path, cache: Path | None = None
+) -> tuple[int, list[str], str]:
     """Put a probe through the engine and report how it was refused.
 
     **`detail` first where the probe carries a program, then `validate`, then
@@ -277,10 +279,17 @@ def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[st
     So the refusal hatch was silently unavailable to `DW0359`, `DW0422`,
     `DW0878` and their whole family, and nothing said so.
 
+    `cache`, when given, is the reach graph's node-bank directory every probe
+    of the run shares (`DELVEC_REACH_CACHE`, `docs/reference/compiler.md`):
+    the probes are the primary plus one edit, so the nodes the first build
+    flew answer the rest, and an answer from the bank is the answer flying
+    gives.
+
     A campaign `validate` already refuses never reaches the build, so the
     fifteen probes that predate this pay nothing. The phase that produced the
     refusal is returned with it, so the index says which one looked.
     """
+    env = {**os.environ, "DELVEC_REACH_CACHE": str(cache)} if cache else None
     # **A probe that ships a program is refused where the program is entered.**
     # `delvec detail` is the event that begins detail work for a program
     # (spec-0058): it binds the handing, expands and judges before any file is
@@ -300,6 +309,7 @@ def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[st
             d = parallel.run(
                 [str(delvec), "--prefabs", str(scratch), "detail", str(campaign), "--all", "--json"],
                 kind="delvec detail",
+                env=env,
             )
             if d.returncode != 0:
                 return d.returncode, _codes(d), "detail"
@@ -308,6 +318,7 @@ def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[st
     v = parallel.run(
         [str(delvec), "validate", str(campaign), "--prefabs", str(prefabs), "--json"],
         kind="delvec validate",
+        env=env,
     )
     if v.returncode != 0:
         return v.returncode, _codes(v), "validate"
@@ -325,6 +336,7 @@ def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[st
                 "--json",
             ],
             kind="delvec build",
+            env=env,
         )
         return b.returncode, _codes(b), "build"
     finally:
@@ -670,8 +682,9 @@ def main() -> int:
             except SystemExit as e:
                 held = (said.getvalue(), e.code)
                 break
+        cache = tmp / "reach-cache"
         runs = parallel.ordered(
-            lambda p: run_probe(delvec, p["dest"], prefabs), prepared
+            lambda p: run_probe(delvec, p["dest"], prefabs, cache), prepared
         )
         with contextlib.closing(runs):
             for p, outcome in zip(prepared, runs):

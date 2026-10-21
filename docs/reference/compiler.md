@@ -212,6 +212,18 @@ available parallelism. `DELVEC_THREADS=1` runs everything on the calling
 thread. The count changes how long a build takes and never a byte it emits
 (§4 "Determinism").
 
+**The reach graph's node bank across runs.** `DELVEC_REACH_CACHE=<dir>` names
+a directory the reach graph's node banks are read from when a run first asks
+for one and written back to when the run ends, if the run grew one: a later
+run over a world of the same window takes every node whose read cells hold
+the same, unflown (`docs/reference/delvec/compiler/nav.md`, the node bank). A
+file is named for the bank's key and the sha256 of the running executable's
+own bytes, so a run reads only what its own binary wrote; a file that does not
+decode is read as empty, and a file is replaced whole by a rename. Unset, the
+bank lives and dies with the run. Either way the bytes a build emits are the
+same (`tests/reach_cache.rs`); the gallery coverage gate sets it to a scratch
+directory its probe runs share.
+
 **The output directory** holds exactly what the last build emitted: a build into a directory a previous build wrote removes every file that build emitted and this one does not, and a directory holding anything no build wrote is refused untouched (`DW0967`, §5).
 
 **Exit codes**: `0` ok · `1` validation failure · `2` analysis failure · `3`
