@@ -1682,9 +1682,21 @@ fn piece_flight(p: &BoundPiece<'_>, s: &PlacedSeam) -> Option<Flight> {
 
 /// A piece flight's stations: its region's layers as courses, top first (the
 /// end its head space stands at), and the approach in its foot space.
+///
+/// A flight need not climb toward the plane: one that runs along the wall
+/// under its opening (a stair up the wall to a landing at the face) travels
+/// on an axis the plane does not cut, and its columns are counted across the
+/// flight from its own first column, since the opening spans nothing across
+/// it. Which end is the head is read off the climb — the end whose course
+/// stands higher; only a flight whose two end courses stand at one height
+/// falls back to the end nearer the plane.
 fn flight_stations(f: &Flight, s: &PlacedSeam, host_side: NarrowSide) -> Vec<Station> {
     let cross = across_of(f.travel);
-    let u0 = n32(s.opening.0[cross]);
+    let u0 = if cross == s.normal_axis {
+        f.cells.iter().map(|c| c[cross]).min().unwrap_or(0)
+    } else {
+        n32(s.opening.0[cross])
+    };
     let ends = [
         (f.head.0.as_str(), &f.head.1),
         (f.foot.0.as_str(), &f.foot.1),
@@ -1697,18 +1709,25 @@ fn flight_stations(f: &Flight, s: &PlacedSeam, host_side: NarrowSide) -> Vec<Sta
         (Some(l), _) if l.label == head_name => true,
         (_, Some(h)) if h.label == head_name => false,
         _ => {
-            let t0 = region.first().map_or(0, |st| {
-                st.columns
-                    .first()
-                    .map_or(0, |c| if f.travel == 0 { c.x } else { c.z })
-            });
-            let t1 = region.last().map_or(0, |st| {
-                st.columns
-                    .first()
-                    .map_or(0, |c| if f.travel == 0 { c.x } else { c.z })
-            });
-            let plane = n32(s.plane);
-            (t0 - plane).abs() <= (t1 - plane).abs()
+            let low_of =
+                |st: Option<&Station>| st.and_then(|st| st.columns.iter().map(|c| c.ylo).min());
+            match (low_of(region.first()), low_of(region.last())) {
+                (Some(first), Some(last)) if first != last => first > last,
+                _ => {
+                    let t0 = region.first().map_or(0, |st| {
+                        st.columns
+                            .first()
+                            .map_or(0, |c| if f.travel == 0 { c.x } else { c.z })
+                    });
+                    let t1 = region.last().map_or(0, |st| {
+                        st.columns
+                            .first()
+                            .map_or(0, |c| if f.travel == 0 { c.x } else { c.z })
+                    });
+                    let plane = n32(s.plane);
+                    (t0 - plane).abs() <= (t1 - plane).abs()
+                }
+            }
         }
     };
     let (mut courses, foot) = if head_low {
@@ -3335,6 +3354,158 @@ mod tests {
             "{labels:?}"
         );
         assert!(way.label.contains("room--stair--landing"), "{}", way.label);
+    }
+
+    /// A host piece's flight that runs along the wall under the opening — a
+    /// stair up the yard's south wall, rising west to a landing at the face —
+    /// travels on an axis the plane does not cut. Its head is the end its
+    /// courses climb to, so its foot's approach is judged in the room it
+    /// starts from, and its columns are counted across the flight from its own
+    /// first column. Both were read off the plane before: the foot was taken
+    /// for the head and went unjudged, and every column was numbered 0.
+    #[test]
+    fn a_host_flight_along_the_wall_is_judged_at_its_foot() {
+        use delvewright_dsl::prefab::{
+            ContractEdge, ContractSpace, ContractVolume, Region, SpatialContract,
+        };
+        use delvewright_dsl::siteplan::{Base, Face};
+        let node = |n: &str| delvewright_dsl::NodeId(n.to_string());
+        let yard = PlacedBox {
+            node: node("node/yard"),
+            foot: [0, 17, 0, 9],
+            floor: 64,
+            clearance: 9,
+            open: false,
+            base: Base::Ground,
+            roof: None,
+        };
+        let ledge = PlacedBox {
+            node: node("node/ledge"),
+            foot: [0, 9, 11, 16],
+            floor: 69,
+            clearance: 3,
+            open: false,
+            base: Base::Ground,
+            roof: None,
+        };
+        let seam = PlacedSeam {
+            edge: delvewright_dsl::ids::EdgeId("edge/yard-ledge".to_string()),
+            class: "stair",
+            a: node("node/yard"),
+            b: node("node/ledge"),
+            face: Face::South,
+            normal_axis: 2,
+            plane: 10,
+            opening: ([2, 69, 10], [4, 71, 10]),
+            shared: ([0, 64, 10], [9, 71, 10]),
+            crossing: Crossing::Portal,
+            rise: 5,
+            stair_in: Some(node("node/yard")),
+            form: "a stone stair up the yard's south wall".to_string(),
+            shut: false,
+        };
+        let region = |a: [i32; 3], b: [i32; 3]| Region { from: a, to: b };
+        let space = |a: [i32; 3], b: [i32; 3]| ContractSpace {
+            envelope: "enclosed".to_string(),
+            boxes: vec![region(a, b)],
+        };
+        let mut spaces = BTreeMap::new();
+        spaces.insert("room".to_string(), space([6, 1, 1], [16, 8, 9]));
+        spaces.insert("landing".to_string(), space([1, 6, 7], [5, 8, 9]));
+        let contract = SpatialContract {
+            entry: "room".to_string(),
+            spaces,
+            no_body: BTreeMap::new(),
+            edges: vec![
+                ContractEdge {
+                    a: "landing".to_string(),
+                    b: "exterior".to_string(),
+                    class: "walk".to_string(),
+                    rise: Some(0),
+                    via: Some(ContractVolume {
+                        region: "stair-head".to_string(),
+                        boxes: vec![region([2, 6, 10], [4, 8, 10])],
+                    }),
+                    bar: None,
+                    way: None,
+                    narrowed: Vec::new(),
+                },
+                ContractEdge {
+                    a: "room".to_string(),
+                    b: "landing".to_string(),
+                    class: "stair".to_string(),
+                    rise: Some(5),
+                    via: Some(ContractVolume {
+                        region: "flight".to_string(),
+                        boxes: (6..=9).map(|x| region([x, 10 - x, 7], [x, 8, 9])).collect(),
+                    }),
+                    bar: None,
+                    way: None,
+                    narrowed: Vec::new(),
+                },
+            ],
+            faces: Vec::new(),
+            no_body_majority_ack: None,
+        };
+        let placement = crate::compiler::plan::PiecePlacement {
+            prefab_id: "prefab/test-yard".to_string(),
+            templates: Vec::new(),
+            pos: [0, 63, 0],
+            size: [18, 10, 11],
+            rotation: crate::compiler::solver::Rotation::None,
+            mated: Vec::new(),
+        };
+        let by_node: BTreeMap<&str, &PlacedBox> = [("node/yard", &yard), ("node/ledge", &ledge)]
+            .into_iter()
+            .collect();
+        let pieces: BTreeMap<&str, BoundPiece<'_>> = [(
+            "node/yard",
+            BoundPiece {
+                placement: &placement,
+                contract: &contract,
+            },
+        )]
+        .into_iter()
+        .collect();
+        let input = SeamInput {
+            s: &seam,
+            boxes: &by_node,
+            laid: None,
+            pieces: &pieces,
+            decl: &[],
+            seam_index: 0,
+            own_gates: &[],
+        };
+        let mut census = Census::default();
+        let mut flights = BTreeSet::new();
+        let way = seam_way(&input, &mut census, &mut flights).expect("a way");
+        assert_eq!(way.run, Run::Piece);
+        let labels: Vec<&str> = way.stations.iter().map(|s| s.label.as_str()).collect();
+        let foot = way
+            .stations
+            .iter()
+            .find(|s| s.label == "the foot's approach in `room`")
+            .unwrap_or_else(|| panic!("the foot is judged: {labels:?}"));
+        let cells: Vec<(usize, i32, i32, i32)> = foot
+            .columns
+            .iter()
+            .map(|c| (c.index, c.x, c.ylo, c.z))
+            .collect();
+        assert_eq!(
+            cells,
+            vec![(0, 10, 64, 7), (1, 10, 64, 8), (2, 10, 64, 9)],
+            "the foot's approach is the row east of the lowest tread, counted from the flight's first column"
+        );
+        let course0 = way
+            .stations
+            .iter()
+            .find(|s| s.label == "course 0 of the run")
+            .expect("course 0");
+        assert!(
+            course0.columns.iter().all(|c| c.x == 6),
+            "course 0 is the top tread: {:?}",
+            course0.columns
+        );
     }
 
     /// A `narrowed` on a contract edge that realizes a plan seam is refused by
