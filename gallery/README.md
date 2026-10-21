@@ -39,7 +39,7 @@ order a player would:
 | Where | What it holds |
 | --- | --- |
 | `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages, and its sky stated in a designer's words: a new moon just risen (`{"moon": "just-risen", "phase": "new-moon"}`, day 4 — every build's `clock:` lines say where each stated time puts the sun and the moon); and two atmospheres (spec-0080): `atmosphere/frost-hall`, which sets every one of the twenty attributes an atmosphere admits and is carried by the hall from the first tick, and `atmosphere/still-air`, which the vantage trigger paints over the east bay and the counter paints back off the whole hall; and and the one vanilla texture the delve replaces — stone bricks, the annex tiles' walls and the hall's tread courses, drawn in one flat colour from `textures/hall-stone.png` so a render shows which block the pack changed — with the pack declared required, and the drowned's outer layer, painted from `textures/drowned-wrap.png` on the boxes that model really builds — the base positions, grown — which is where a mob's second layer reads (spec-0097); and the seconds a fallen player waits before rejoining the party |
-| `npcs.json` | five speaking parts — a quest-giver, a gatekeeper, a counter, a drill officer and a copyist at the wall desk who never looks up; the quest-giver is a mannequin that hides its cape layer, and the standard bearer in `quests.json` hides the other six, so every overlay layer a mannequin can hide is written once (spec-0097) |
+| `npcs.json` | five speaking parts — a quest-giver, a gatekeeper, a counter, a drill officer and a copyist at the wall desk who never looks up, a husk who answers a blow with her own line (spec-0119); the quest-giver is a mannequin that hides its cape layer, and the standard bearer in `quests.json` hides the other six, so every overlay layer a mannequin can hide is written once (spec-0097) |
 | `classes.json` | two kits, one carrying a flask (what a bonfire rest refills) |
 | `quest-plan.json` | three quests and the branch point the fork opens |
 | `quests.json` | the bulk: objectives, effects, waves, actors (a barded and saddled horse among them), traps, triggers, a shop, a shortcut, a stake, a timed gate, three killing volumes — one of them the pit under the terrace annex, live from the beat that clears the lid over it (spec-0088) — and six named datums of which one — the tokens — stands on the sidebar (`display: sidebar`, spec-0076); the hearth's two buttons, like every shop offer and some dialogue options, hover a tooltip saying what pressing them does (spec-0078); and the guidance surface (spec-0093): every objective kind states its `announcement`, the two reach objectives at the end of the hall and over the well are quiet (`announcement: hidden`, the first unmarked too), the ferry deck states both `shown`, and the valley overlay's whole campaign is quiet by `guidance` with its far corner opting its marker back in; the ferry's tiller and the cabin's are levers (`triggers[].prop`), the block the party uses and vanilla reports, so no hitbox stands there; the label under the case is a sign, a visible thing vanilla reports no use of, so its hit area is fitted over the sign; the stone beside the hearth is a stone slab, the thing the `strike` hits, and since the slab's sides lie on its cell's faces its hit area stands one hundredth of a block past them, so a swing at the slab reaches the hit area and not the slab (`DW1013` judges every hit area the gallery places); and the counter's third bark carries two styled spans, one obfuscated and one coloured, which its zh-cn row places in the Chinese order (spec-0096); and the item holders the hall carries (spec-0111): a glow frame on the reliquary wall holding a named map (`loot/map-frame`, its `slot` `contents`), an armour stand beside it wearing a helmet and holding a sword (`loot/sword-stand`, each stack naming its slot), a plain frame on the near hall's south wall the critical path's `obj/take-the-seal` takes from (`holder`), an empty frame beside it that the census prints frozen, and an empty brewing stand beside the long gallery's filled one — two holders whose contents show, exempt from the scenery rules |
@@ -294,6 +294,9 @@ holding them at once.
 | `a-trap-that-takes-the-case-button-floor` | `DW1002` | `build` | having the plate trap's payload clear the pedestal column the case's button stands on: a beat nobody has to play, and the fill clears the pedestal before the button, so the server drops it |
 | `one-branch-takes-the-case-button-floor` | `DW1002` | `build` | having `obj/take-the-bone` clear the same column only once `flag/skipped-the-label` holds: a write only one branch makes, judged as every write is |
 | `a-copyist-in-the-open` | `DW1025` | `build` | standing the copyist, who declares `watch: "none"`, one block off the north wall, so seven of the cells a player can talk to her from lie behind her — though no step of the route talks to her |
+| `a-statue-that-takes-blows-in-silence` | `DW1055` | `build` | taking the lines away from the iron sentry on the speaking row (and their two Chinese rows with them): a zombie in iron, not `vulnerable`, never unleashed, that a player can strike from the row and that says nothing |
+| `a-line-on-a-body-that-bleeds` | `DW1056` | `validate` | giving the vulnerable sergeant a `struck` line: a box on a body that takes blows would take every blow meant for the fight |
+| `a-touch-that-already-talks` | `DW1056` | `validate` | giving the curator a `touched` line: her right-click is her dialogue |
 | `a-name-two-bodies-wear-at-once` | `DW1026` | `validate` | giving the factor the curator's name, so two bodies of one character stand in the hall from world init |
 
 **A probe is the primary plus one declared edit.** It carries no copy of any
@@ -647,6 +650,28 @@ from every cell) (`DW1025`). The route's walk to the marshal arrives side-on,
 through the main gate in the west corner, so narrowing his watch to one class
 leaves him facing 90° off the approach, which `DW1025` admits; the route has
 no talk beat that a narrowed watch turns its back on.
+
+## The sentry, and the copyist who is dry as vellum
+
+A body the game calls a monster, that cannot be harmed and does not fight,
+standing where the party walks, says what it is when it is struck (spec-0119).
+`actor/hall-sentry` is a zombie in an iron helmet and chestplate set on the
+speaking row between the usher and the page (`anchor/usher` and
+`offset: [2, 0, 0]`), never `vulnerable` and never unleashed: it carries
+`answers.struck` and `answers.touched`, and wears an answer box — a
+`minecraft:interaction` enclosing its body, summoned with the puppet by
+`spawn_actor_hall_sentry` and carrying the two answers' tags — so a blow and a
+right-click on it are each dispatched as the player who pressed, by
+`minecraft:player_hurt_entity` and `minecraft:player_interacted_with_entity`.
+`npc/copyist` is a husk, so the same rule holds her to `answers.struck`, which
+rides her dialogue hitbox; a right-click on her is her dialogue, so a
+`touched` line there is refused (probe `a-touch-that-already-talks`). The
+usher and the page are villagers: in reach, and owed nothing. The build says
+what it read on its `body answers (DW1055):` line — 13 bodies, 4 of a kind the
+game discards on peaceful, 2 inert, 2 in reach, 3 lines owed and 3 declared —
+and writes `validation/body-answers.json`, one row per body; the generated
+`v119_answer_box_hall_sentry` PackTest stands the box with the puppet and
+watches it go before the twin stands.
 
 ## The heartbeat, and the drip
 
