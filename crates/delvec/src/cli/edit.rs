@@ -237,8 +237,8 @@ pub(crate) fn run_edit(
     // by the renderer every frame goes through, from the edited load world
     // written under `<out>/world/`.
     let assembled = &replay.assembled;
-    let nav = camera_world(&plan, assembled);
-    let base = camera_base(&plan, assembled);
+    let (nav, relight) = camera_world(&plan, assembled);
+    let base = camera_base(&plan, assembled, &relight);
     let load = delvec::compiler::view::beat::load_blocks(&plan, &nav, &base);
     let grid = framing::VoxelGrid::build(&load);
     let targets = framing::collect_targets(&plan);
