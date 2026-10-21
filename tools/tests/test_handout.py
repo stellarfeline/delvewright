@@ -217,7 +217,8 @@ def test_a_detailed_neighbour_is_named_with_its_piece(rig: Rig):
             {
                 "campaign_id": "three-places",
                 "content": {"details": [{"anchors": {}, "piece": "prefab/three-places-landing", "place": "node/landing"}]},
-                "dsl_version": "0.55.0",
+                # the fixture's own number, never a literal a bump would have to find
+                "dsl_version": json.loads((rig.campaign / "world.json").read_text(encoding="utf-8"))["dsl_version"],
                 "stage": "detail-plan",
             }
         ),
