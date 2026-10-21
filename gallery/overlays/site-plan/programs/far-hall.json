@@ -1180,6 +1180,10 @@
                           },
                           {
                             "op": "call",
+                            "symbol": "wall"
+                          },
+                          {
+                            "op": "call",
                             "symbol": "room-air"
                           },
                           {
@@ -1213,7 +1217,14 @@
                           {
                             "blocks": {
                               "expr": "int",
-                              "value": 9
+                              "value": 1
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 8
                             },
                             "size": "absolute"
                           },
