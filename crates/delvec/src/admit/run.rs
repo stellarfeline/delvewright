@@ -1144,7 +1144,7 @@ fn run_anchor(nbt: &Path, name: &str, args: AnchorArgs, json: bool) -> ExitCode 
 /// # It is the same rules, not a fourth reading of them
 ///
 /// The walk plane is `schem::nav::standable_cells`'s lowest plane — the rule the
-/// seating derivation, the generators' `prefab_invariants::walkplane` and this
+/// seating derivation, the gallery generator's `prefab_invariants::walkplane` and this
 /// verb all mean — and the waterline is `compiler::seating::PieceFacts`'s top
 /// authored water block, which is the number `DW0887` checks a declaration
 /// against. So a document this verb writes is a document that check passes, by

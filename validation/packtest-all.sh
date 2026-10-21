@@ -73,6 +73,12 @@ done < "$matrix_file"
 [ "$total" -gt 0 ] || { echo "error: empty matrix — refusing rather than passing" >&2; exit 1; }
 
 echo "==> packtest-all: ${total} project(s) from ci.yml tier 2 (prefix '${prefix}')"
+# The tier-2 job builds every engine fixture from the test library it assembles
+# into `$RUNNER_TEMP/test-library`; here the same assembler writes it into this
+# run's own directory, and a row naming CI's path builds from it.
+test_library="$repo/validation/test-library-${prefix}"
+rm -rf "$test_library"
+( cd "$repo" && bash tools/ci/test-library.sh campaigns/prefabs "$test_library" </dev/null )
 ran=0
 skipped=0
 failed=""
@@ -87,6 +93,7 @@ failures=0
 while IFS= read -r row <&3; do
   [ -n "$row" ] || continue
   IFS=$'\t' read -r project tree campaign prefabs generator skins <<< "$row"
+  [ "$prefabs" = '"$RUNNER_TEMP/test-library"' ] && prefabs="$test_library"
   if [ -n "$only" ] && [ "$project" != "$only" ]; then
     skipped=$((skipped + 1))
     continue

@@ -95,13 +95,15 @@ pub fn prefabs() -> PathBuf {
 }
 
 /// **The engine's test library**: the prefab library at the pin with the
-/// engine's own pool declarations (`crates/delvec/tests/fixtures/test-pools/`)
-/// laid over it by `tools/ci/test-library.sh`, the one assembler CI runs too.
+/// engine's own test data — its pool declarations
+/// (`crates/delvec/tests/fixtures/test-pools/`) and the pieces only its tests
+/// bind (`crates/delvec/tests/fixtures/test-pieces/`) — laid over it by
+/// `tools/ci/test-library.sh`, the one assembler CI runs too.
 ///
-/// The shipped library declares no pool; the pools the engine's `areas[]`
-/// fixtures draw are engine test data, held with the tests. Materialised once
-/// per (pin, pool table, assembler) under `CARGO_TARGET_TMPDIR`, with a
-/// manifest checked on every first use in a process, exactly as [`root`] is.
+/// The shipped library declares no pool and holds no test piece; both are
+/// engine test data, held with the tests. Materialised once per (pin, pool
+/// table, test pieces, assembler) under `CARGO_TARGET_TMPDIR`, with a manifest
+/// checked on every first use in a process, exactly as [`root`] is.
 pub fn test_library() -> PathBuf {
     static LIB: OnceLock<PathBuf> = OnceLock::new();
     LIB.get_or_init(|| {
@@ -109,14 +111,32 @@ pub fn test_library() -> PathBuf {
         let repo = super::repo_root();
         let pools = repo.join("crates/delvec/tests/fixtures/test-pools/pools.json");
         let script = repo.join("tools/ci/test-library.sh");
+        // The test pieces the assembler copies: every top-level `.nbt` and
+        // `.json`, by name, so a changed piece is a new key.
+        let pieces_dir = repo.join("crates/delvec/tests/fixtures/test-pieces");
+        let mut pieces: Vec<PathBuf> = std::fs::read_dir(&pieces_dir)
+            .unwrap_or_else(|e| panic!("{}: {e}", pieces_dir.display()))
+            .map(|e| e.unwrap().path())
+            .filter(|p| {
+                p.is_file()
+                    && matches!(p.extension().and_then(|x| x.to_str()), Some("nbt" | "json"))
+            })
+            .collect();
+        pieces.sort();
+        assert!(
+            !pieces.is_empty(),
+            "{} holds no test piece",
+            pieces_dir.display()
+        );
         let mut inputs = Vec::new();
-        for path in [&pools, &script] {
+        for path in [&pools, &script].into_iter().chain(pieces.iter()) {
+            inputs.extend(path.file_name().unwrap().as_encoded_bytes());
             inputs
                 .extend(std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display())));
         }
         let key = hex(&Sha256::digest(&inputs));
         let sha = sha();
-        let header = format!("commit {sha} test-pools {key}");
+        let header = format!("commit {sha} test-data {key}");
         let cache = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("test-library");
         let dest = cache.join(format!("{sha}-{}", &key[..16]));
         std::fs::create_dir_all(&cache).unwrap();

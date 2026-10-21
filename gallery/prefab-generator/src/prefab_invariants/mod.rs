@@ -1,4 +1,4 @@
-//! **The rules every prefab generator obeys before it writes bytes.**
+//! **The rules the gallery's generator obeys before it writes bytes.**
 //!
 //! Five modules, one authority each, and each of them a gate rather than a
 //! convenience: [`invariants`] is the `assert!`-shaped record of every
@@ -16,16 +16,8 @@
 //! already have stopped bearing out, and `DW0887`/`DW0888` are where a library
 //! learns it did.
 //!
-//! This is a crate because the alternative was seven copies. Every generator
-//! used to reach these two files by `#[path = "../../invariants.rs"]`, a source
-//! include: the rule stayed single but the compilation did not, and the unit
-//! tests below ran only when somebody named one particular generator's manifest
-//! on a `cargo test` command line. A dependency edge is what says *one build,
-//! one test run, every generator* — and it costs nothing that mattered, because
-//! what had to be true was that these rules never enter the shipped `delvec`,
-//! and `[workspace] exclude` in the repository root is what establishes that.
-//!
-//! The generators depend on this crate; nothing depends on the generators.
+//! A module of the gallery's generator, its only user. `delvewright-dsl` is
+//! its one engine dependency; it never reaches `delvec`.
 
 pub mod connections;
 pub mod document;

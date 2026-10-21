@@ -1,6 +1,6 @@
 //! **The piece's own waterline, measured from its own bytes** (spec-0060 §4).
 //!
-//! [`walkplane`](crate::walkplane) is this module's pair: one says where a body
+//! [`walkplane`](super::walkplane) is this module's pair: one says where a body
 //! stands, this one says where the piece meets a sea, and both are numbers the
 //! generator that laid the blocks reads back out of them rather than states.
 //!
@@ -32,7 +32,7 @@
 //! generator writes and the number `DW0887` checks it against are one
 //! measurement taken twice.
 
-use crate::invariants::Cells;
+use super::invariants::Cells;
 
 /// The block a waterline is a claim about. Spelled once here and once in the
 /// engine's reader, and the two are held equal by `DW0887` refusing any

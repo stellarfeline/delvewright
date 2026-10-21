@@ -52,11 +52,10 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SKIP_DIRS = {"target", ".git", "node_modules", ".venv"}
 
 #: Roots scanned when no path is given on the command line. Every Rust source in
-#: the repository — the workspace crates and the prefab generators (`prefabs/`,
-#: and the gallery's own under `gallery/prefab-generator`), which are a separate
-#: cargo workspace and exactly where a copy-paste of a labelled block is most
-#: likely to land unnoticed.
-DEFAULT_TARGETS = ("crates", "prefabs", "gallery/prefab-generator", "harness")
+#: the repository — the workspace crates and the gallery's prefab generator
+#: (`gallery/prefab-generator`), which is a separate cargo workspace and exactly
+#: where a copy-paste of a labelled block is most likely to land unnoticed.
+DEFAULT_TARGETS = ("crates", "gallery/prefab-generator", "harness")
 
 #: A section-header comment: a line comment whose body is fenced by runs of
 #: dashes on both sides. `// ---- name ----`, the convention used throughout the

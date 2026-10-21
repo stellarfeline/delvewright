@@ -1,17 +1,12 @@
-//! Cross-tileset generator invariants — one authority, every generator.
+//! The generator's piece invariants — one authority for every piece it writes.
 //!
-//! The generators under `prefabs/*-generator` are outside `crates/` and stay
-//! outside the engine's resolution (`[workspace] exclude`, `docs/reference/tools.md`
-//! §9), so that none of them can enter the shipped `delvec`. That isolation is
-//! worth its cost, but it must not cost us the same lesson once per generator:
-//! every generator reaches this module by depending on `prefab-invariants`,
-//! which compiles it once for all seven.
+//! This generator is outside `crates/` and outside the engine's resolution
+//! (`[workspace] exclude`, `docs/reference/tools.md` §9), so none of it can
+//! enter the shipped `delvec`.
 //!
 //! Everything here is an `assert!`-style gate or the vocabulary a gate defines.
-//! Running a generator is the test (`prefab-generators` CI job): it either emits
-//! or panics.
-
-#![allow(dead_code)]
+//! Running the generator is the test (every gallery build runs it): it either
+//! emits or panics.
 
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
@@ -23,7 +18,7 @@ use std::sync::OnceLock;
 /// emitters. Two readers of one file is not two authorities — the alternative
 /// here would be a *further* hand-maintained block list, which is the defect
 /// this gate exists to catch.
-const BLOCK_REGISTRY_JSON: &str = include_str!("../../../crates/dsl/data/blocks-1.21.11.json");
+const BLOCK_REGISTRY_JSON: &str = include_str!("../../../../crates/dsl/data/blocks-1.21.11.json");
 
 /// **What a block state does to a body that walks into it** — the same module
 /// `delvec`, the grammar back end and the admission pipeline all read
@@ -321,7 +316,7 @@ fn may_rest_on_a_tread(name: &str) -> bool {
 /// climbing the piece puts its feet on. A loose block resting on a tread is
 /// therefore always wrong — it reads as litter dropped on the steps and it is what
 /// the player collides with on the way up. Wear on a walked surface belongs *in*
-/// the surface (a weathered variant of the same shape — see [`weathered`]), never
+/// the surface (a weathered variant of the same shape), never
 /// on top of it.
 ///
 /// The gate: for every bottom-half stair with headroom (the cell two above it is
@@ -360,7 +355,7 @@ pub fn assert_distress_never_stacks(id: &str, cells: &Cells) {
     assert!(
         bad.is_empty(),
         "{id}: {} of {treads} walkable stair tread(s) carry a stacked block — distress must be \
-         EMBEDDED into the surface (weathered variant of the same stair, `invariants::weathered`), \
+         EMBEDDED into the surface (a weathered variant of the same stair), \
          never laid on top of it. Offenders: {}",
         bad.len(),
         bad.iter()
@@ -370,132 +365,6 @@ pub fn assert_distress_never_stacks(id: &str, cells: &Cells) {
             .join(", ")
     );
 }
-
-/// The weathered counterpart of a surface material — the vocabulary
-/// [`assert_distress_never_stacks`] expects wear to be spoken in.
-///
-/// **A scatter delivers the quantity it aims at, over the whole domain it was
-/// given** — and the number is asserted rather than looked at.
-///
-/// The owner's cherry-grove finding: a valley staged as a grove held a handful
-/// of trees and bare rock in every other direction, and the acceptance proxy was
-/// a rendered shot. A shot is one bearing; it cannot see a region, and nothing
-/// anywhere produced the count. A scatter that aims at N and stops early because
-/// its candidates ran out — every one of them rejected by a spacing rule, an
-/// exclusion, or ground it cannot stand on — is silent today: the loop simply
-/// ends, and what ships is whatever the ground happened to allow.
-///
-/// `domain` is the region the generator was given, NOT the subset that turned
-/// out to be usable, because a count whose denominator is the part that worked
-/// is the render shot in numeric clothes. Both are in the message, so a failure
-/// says which of the two ran out.
-///
-/// The compiler's own `scatter`/`plant` verbs answer the same question through
-/// `DW0864`; this is that rule at the layer that has no diagnostics, only
-/// panics.
-pub fn assert_scatter_reaches_its_target(
-    id: &str,
-    what: &str,
-    want: usize,
-    got: usize,
-    domain: usize,
-    usable: usize,
-) {
-    assert!(
-        got >= want,
-        "{id}: the {what} scatter aimed at {want} and placed {got} over a domain of \
-         {domain} cell(s), {usable} of which it could use. Widen the domain, relax the \
-         spacing, or aim at what the ground can carry — never ship the shortfall, which \
-         is what a render shot of one bearing cannot see"
-    );
-}
-
-/// Shape is preserved by construction: a stair maps to a stair of the damaged
-/// material, a slab to a slab, a full block to a full block, so the caller can keep
-/// the original block state (facing / half / shape / waterlogged) verbatim and the
-/// geometry a nav proof walked does not move. Every entry is a real 1.21.11 block —
-/// there is, for instance, no `cracked_stone_brick_stairs` in vanilla, so cracked
-/// stone brickwork weathers to its mossy stair rather than to an invented one.
-///
-/// `None` means "this surface has no weathered form": the caller then leaves the
-/// surface untouched and drops the distress, which still satisfies the invariant.
-pub fn weathered(name: &str) -> Option<&'static str> {
-    WEATHERED
-        .iter()
-        .find(|(from, _)| *from == name)
-        .map(|(_, to)| *to)
-}
-
-/// The wear map itself.
-///
-/// A table rather than a `match` arm set for one reason: a test can walk a
-/// table. `every_curated_block_name_is_a_real_block` asserts every key *and*
-/// every value here is a block Minecraft 1.21.11 actually has — the claim the
-/// doc comment above makes in prose, made checkable. A `match` can only be
-/// spot-checked at names somebody thought to write down.
-const WEATHERED: &[(&str, &str)] = &[
-    ("minecraft:stone", "minecraft:cobblestone"),
-    ("minecraft:stone_stairs", "minecraft:cobblestone_stairs"),
-    ("minecraft:stone_slab", "minecraft:cobblestone_slab"),
-    ("minecraft:cobblestone", "minecraft:mossy_cobblestone"),
-    (
-        "minecraft:cobblestone_stairs",
-        "minecraft:mossy_cobblestone_stairs",
-    ),
-    (
-        "minecraft:cobblestone_slab",
-        "minecraft:mossy_cobblestone_slab",
-    ),
-    (
-        "minecraft:cobblestone_wall",
-        "minecraft:mossy_cobblestone_wall",
-    ),
-    ("minecraft:stone_bricks", "minecraft:cracked_stone_bricks"),
-    (
-        "minecraft:stone_brick_stairs",
-        "minecraft:mossy_stone_brick_stairs",
-    ),
-    (
-        "minecraft:stone_brick_slab",
-        "minecraft:mossy_stone_brick_slab",
-    ),
-    (
-        "minecraft:stone_brick_wall",
-        "minecraft:mossy_stone_brick_wall",
-    ),
-    ("minecraft:polished_andesite", "minecraft:andesite"),
-    (
-        "minecraft:polished_andesite_stairs",
-        "minecraft:andesite_stairs",
-    ),
-    (
-        "minecraft:polished_andesite_slab",
-        "minecraft:andesite_slab",
-    ),
-    (
-        "minecraft:polished_deepslate",
-        "minecraft:cobbled_deepslate",
-    ),
-    (
-        "minecraft:polished_deepslate_stairs",
-        "minecraft:cobbled_deepslate_stairs",
-    ),
-    (
-        "minecraft:polished_deepslate_slab",
-        "minecraft:cobbled_deepslate_slab",
-    ),
-    (
-        "minecraft:deepslate_bricks",
-        "minecraft:cracked_deepslate_bricks",
-    ),
-    (
-        "minecraft:deepslate_tiles",
-        "minecraft:cracked_deepslate_tiles",
-    ),
-    ("minecraft:bricks", "minecraft:mud_bricks"),
-    ("minecraft:oak_planks", "minecraft:stripped_oak_log"),
-    ("minecraft:spruce_planks", "minecraft:stripped_spruce_log"),
-];
 
 #[cfg(test)]
 mod tests {
@@ -623,59 +492,6 @@ mod tests {
             );
         }
         assert_eq!(TREAD_ATTACHMENT_NAMES.len(), 23);
-
-        // The whole wear map: every surface it is keyed on and every surface it
-        // answers with. The doc comment on `weathered` claims "every entry is a
-        // real 1.21.11 block"; this is that claim, checked.
-        for (from, to) in WEATHERED {
-            assert!(
-                registry.contains_key(*from),
-                "weathered() is keyed on {from}, which Minecraft 1.21.11 does not have"
-            );
-            assert!(
-                registry.contains_key(*to),
-                "weathered({from}) is {to}, which Minecraft 1.21.11 does not have"
-            );
-        }
-        assert_eq!(WEATHERED.len(), 22, "the wear map lost entries");
-    }
-
-    /// Wear keeps the shape it wore: a stair weathers to a stair, a slab to a slab.
-    /// A mapping that changed shape would move geometry a nav proof already walked.
-    #[test]
-    fn weathering_preserves_the_shape_family() {
-        for (from, to) in [
-            (
-                "minecraft:cobblestone_stairs",
-                "minecraft:mossy_cobblestone_stairs",
-            ),
-            (
-                "minecraft:stone_brick_stairs",
-                "minecraft:mossy_stone_brick_stairs",
-            ),
-            (
-                "minecraft:cobblestone_slab",
-                "minecraft:mossy_cobblestone_slab",
-            ),
-            ("minecraft:stone_bricks", "minecraft:cracked_stone_bricks"),
-        ] {
-            assert_eq!(weathered(from), Some(to));
-            let shape = |n: &str| {
-                if n.ends_with("_stairs") {
-                    "stairs"
-                } else if n.ends_with("_slab") {
-                    "slab"
-                } else {
-                    "block"
-                }
-            };
-            assert_eq!(
-                shape(from),
-                shape(to),
-                "{from} changed shape when weathered"
-            );
-        }
-        assert_eq!(weathered("minecraft:gravel"), None);
     }
 
     /// A 3x3x3 box of stone with one cell hollowed at the centre, plus whatever
