@@ -3740,7 +3740,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   sunset fan, the moon at the clock's phase and the stars, from the pinned jar;
   a rain or thunder frame stands at no clock, because the game's look draws no
   weather and the client draws no moon or stars at full rain. `crates/delvec/tests/review_frame_sky.rs` measures the same camera
-  at noon and midnight (mean luma 187.64 against 6.11 on the CPU backend) and
+  at noon and midnight (mean luma 187.64 against 6.14 on the CPU backend) and
   holds that the engine calls none of the renderer's own sky. In hq mode
   Chunky's part of the sky is Lumenwright's (`render::sky::hq_sky`, the Preetham
   sky Chunky traces and its fall through twilight, with a white sun at Chunky's
