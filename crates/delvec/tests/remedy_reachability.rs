@@ -5181,11 +5181,15 @@ fn dw1054_changing_the_word_to_the_true_one_builds() {
     assert_eq!(code, 0, "{after}");
 }
 
-/// **PLACE the reward.** The same `rewarded` door with an `interact` beat at
-/// its unlock anchor, on the hall side by the door — an interaction on the
-/// branch — builds.
+/// **PLACE the reward — on a branch, not on an open floor.** The fixture's
+/// hall is an open floor and its door stands in a wall of it, so the door has
+/// no branch: the ground only it leads to is empty (spec-0118 §5.2). An
+/// `interact` beat placed by the door, on that open floor, is still refused —
+/// a reward the party walks past on the open route pays for no branch. The
+/// green half of the move, a reward on a dead-end branch, is held over a
+/// corridor world in `nav::learned`'s unit tests.
 #[test]
-fn dw1054_placing_the_reward_on_the_branch_builds() {
+fn dw1054_a_reward_on_the_open_floor_pays_for_no_branch() {
     let camp = learned_fixture("dw1054-rewarded-placed", Some("rewarded"), |q| {
         let quest = &mut q["content"]["quests"][0];
         let objectives = quest["objectives"].as_array_mut().unwrap();
@@ -5209,6 +5213,11 @@ fn dw1054_placing_the_reward_on_the_branch_builds() {
             }));
     });
     let (code, after) = build("dw1054-rewarded-placed", &camp, &common::prefabs_dir());
-    assert_eq!(code, 0, "{after}");
-    assert!(after.contains("(0 seen, 0 told, 1 rewarded)"), "{after}");
+    assert_eq!(code, 3, "{after}");
+    assert!(
+        after.contains(
+            "declared `rewarded`, but no pickup, interaction or fight within the branch's 0 cell(s)"
+        ),
+        "{after}"
+    );
 }

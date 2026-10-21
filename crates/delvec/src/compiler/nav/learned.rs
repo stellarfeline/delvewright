@@ -339,22 +339,43 @@ fn path_to(tree: &BTreeMap<[i32; 3], Option<[i32; 3]>>, target: [i32; 3]) -> Vec
     path
 }
 
-/// The body-move closure from `roots` that enters no cell of `route` — the
-/// pocket a branch opens into, the route itself excluded.
-fn branch_ground(w: &World, roots: &[[i32; 3]], route: &BTreeSet<[i32; 3]>) -> BTreeSet<[i32; 3]> {
-    let mut seen: BTreeSet<[i32; 3]> = roots.iter().copied().collect();
-    let mut queue: VecDeque<[i32; 3]> = seen.iter().copied().collect();
-    while let Some(cur) = queue.pop_front() {
-        for n in w.body_moves(cur) {
-            if route.contains(&n) {
-                continue;
-            }
-            if seen.insert(n) {
-                queue.push_back(n);
+/// **The branch ground** (spec-0118 §5.2): the cells a body reaches from the
+/// shut way's face that it cannot reach from the open route without passing
+/// the junction or walking the branch path — the ground the branch alone
+/// leads to. The open side is the body-move closure of the route cells with
+/// the junction and the branch path taken out; the ground is the closure from
+/// the face, less that open side and less the route itself. On an open floor
+/// the open side flows round the branch path, so the ground is empty: an open
+/// floor is not a branch, and nothing on it pays for one.
+fn branch_ground(
+    w: &World,
+    face: &[[i32; 3]],
+    route: &BTreeSet<[i32; 3]>,
+    junction: [i32; 3],
+    branch: &[[i32; 3]],
+) -> BTreeSet<[i32; 3]> {
+    let cut: BTreeSet<[i32; 3]> = branch.iter().copied().chain([junction]).collect();
+    let flood = |roots: Vec<[i32; 3]>, avoid: &BTreeSet<[i32; 3]>| {
+        let mut seen: BTreeSet<[i32; 3]> = roots.into_iter().collect();
+        let mut queue: VecDeque<[i32; 3]> = seen.iter().copied().collect();
+        while let Some(cur) = queue.pop_front() {
+            for n in w.body_moves(cur) {
+                if !avoid.contains(&n) && seen.insert(n) {
+                    queue.push_back(n);
+                }
             }
         }
-    }
-    seen
+        seen
+    };
+    let open = flood(
+        route.iter().copied().filter(|c| !cut.contains(c)).collect(),
+        &cut,
+    );
+    let none = BTreeSet::new();
+    flood(face.to_vec(), &none)
+        .into_iter()
+        .filter(|c| !open.contains(c) && !route.contains(c))
+        .collect()
 }
 
 /// From the player's eye at `j`, whether the bar of `region` is the first
@@ -500,7 +521,7 @@ fn verify_with_eye(
                         .map(|c| c[1])
                         .max()
                         .map_or(0, |y| y - junction[1]);
-                    let ground = branch_ground(w, &face, &route_set);
+                    let ground = branch_ground(w, &face, &route_set, junction, branch);
                     out.push(Met {
                         way: gi,
                         config: *ci,
@@ -814,15 +835,18 @@ mod learned_tests {
         }
     }
 
-    /// A route corridor along x at z = 0 (x 0..=10), a branch three wide
-    /// (x 4..=6) off it from z = 1 to z = `len`, and a one-wide bar at
+    /// A route corridor along x at z = 0 (x 0..=10), a branch off it through
+    /// a mouth one wide at `[5, 1]`, three wide (x 4..=6) from z = 2 to `len`,
+    /// and a one-wide bar at
     /// `[5, 1..=top, len + 1]` with a room past it. `shut` fills the bar.
     fn branch(len: i32, top: i32, shut: bool, extra: &[[i32; 3]]) -> World {
         let mut open = BTreeSet::new();
         for x in 0..=10 {
             open.insert([x, 0]);
         }
-        for z in 1..=len {
+        // The branch leaves the route by a mouth one wide, then widens.
+        open.insert([5, 1]);
+        for z in 2..=len {
             for x in 4..=6 {
                 open.insert([x, z]);
             }
@@ -1099,7 +1123,7 @@ mod learned_tests {
         assert_eq!(err.code.id(), "DW1054");
         assert!(
             err.message
-                .contains("the nearest is `anchor/chest`, 5 block(s) from it"),
+                .contains("the nearest is `anchor/chest`, 6 block(s) from it"),
             "{}",
             err.message
         );
@@ -1207,6 +1231,50 @@ mod learned_tests {
             "{}",
             b.line()
         );
+    }
+
+    /// spec-0118 §5.2: an open floor is not a branch. A hall eleven square with
+    /// the route along its near wall and a barred door in its far wall: the
+    /// branch path runs across open floor, the open side flows round it, and
+    /// the branch ground is empty — so a chest standing in the hall's far
+    /// corner, off the route and off the path, does not pay for the walk. The
+    /// ground read as "not a route cell" held the whole hall, and confirmed it.
+    #[test]
+    fn a_reward_elsewhere_on_an_open_floor_does_not_confirm_rewarded() {
+        let build = |shut: bool| {
+            let mut open = BTreeSet::new();
+            for x in 0..=10 {
+                for z in 0..=10 {
+                    open.insert([x, z]);
+                }
+            }
+            open.insert([5, 11]);
+            for x in 4..=6 {
+                open.insert([x, 12]);
+            }
+            let mut extra: Vec<[i32; 3]> = (3..=WALL).map(|y| [5, y, 11]).collect();
+            if shut {
+                extra.extend([[5, 1, 11], [5, 2, 11]]);
+            }
+            carve([0, 0], [10, 12], &open, &extra)
+        };
+        let (base, shut) = (build(false), build(true));
+        let ways = [way(([5, 1, 11], [5, 2, 11]), 2, Some(Learned::Rewarded))];
+        let route: Vec<[i32; 3]> = (0..=10).map(|x| [x, 1, 0]).collect();
+        let chest = Reward {
+            anchor: "anchor/far-corner".to_string(),
+            kind: "a loot holder",
+            pos: [9, 1, 9],
+        };
+        let (b, verdict) = verify_shut_ways(
+            &ways,
+            &base,
+            &[(&shut, "now".to_string(), route, vec![0])],
+            std::slice::from_ref(&chest),
+        );
+        let err = verdict.expect_err("a chest in an open hall is no branch's pay");
+        assert_eq!(err.code.id(), "DW1054", "{}", err.message);
+        assert_eq!(b.rows[0]["rewarded"]["ground_cells"], 0, "{:?}", b.rows);
     }
 
     /// Acceptance 9: the binding line prints every count, zeroes included.

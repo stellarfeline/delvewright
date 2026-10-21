@@ -44,7 +44,6 @@
     "Identity.cmp",
     "Identity.fact",
     "Identity.measure",
-    "Learned::rewarded",
     "Learned::seen",
     "Learned::told",
     "Measure::box-extent",
