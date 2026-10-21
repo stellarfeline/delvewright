@@ -9,6 +9,7 @@ import type { PackPush } from "../resource-pack.ts";
 import { traceLoadWindows, type LoadWindowRecord, type TracedBot } from "../load-window.ts";
 import { serverAge } from "./death.ts";
 import { answersTrigger } from "./trigger.ts";
+import { chunkKey } from "../shot-subjects.ts";
 import { pathfinder } from "./walk.ts";
 import { holdWalkedClimbableNodes, type ClimbHoldBot } from "../movement.ts";
 import type { MineflayerExecutor } from "../executor.ts";
@@ -247,7 +248,7 @@ export const methods = {
       // table is read the moment its line arrives (`harness/src/shot-subjects.ts`).
       if (this.shotSubjects?.watching) {
         const m = /\[dw:clock \d+ (-?\d+)\]/.exec(message);
-        if (m) this.shotSubjects.clock(Number(m[1]), this.trackedEntities());
+        if (m) this.shotSubjects.clock(Number(m[1]), this.clientView());
       }
       // A bracket marker is protocol, not speech: nothing else reads it.
       if (this.brackets.observe(message)) return;
@@ -375,12 +376,18 @@ export const methods = {
     });
     bot.on("game", () => {
       if (!this.shotSubjects) return;
-      this.shotSubjects.gameModeChanged(this.gameModeNow(), this.trackedEntities());
+      this.shotSubjects.gameModeChanged(this.gameModeNow(), this.clientView());
       if (this.shotSubjects.watching) void this.readShotClock();
     });
     bot.on("entityGone", (entity: Entity) => {
-      if (entity) this.shotSubjects?.entityChanged(entity.name ?? "");
+      if (entity) this.shotSubjects?.entityChanged(entity.id, entity.name ?? "");
     });
+    // A framed body's chunk column sent to or dropped by the client: the
+    // server sends no entity in a chunk the client does not hold.
+    const chunkChanged = (corner: { x: number; z: number }) =>
+      this.shotSubjects?.chunkChanged(chunkKey(corner.x, corner.z));
+    bot.on("chunkColumnLoad", chunkChanged);
+    bot.on("chunkColumnUnload", chunkChanged);
     client?.on("world_event", (packet: unknown) => {
       const p = packet as { effectId?: number; location?: { x: number; y: number; z: number } };
       if (typeof p.effectId !== "number" || !p.location) return;
@@ -394,7 +401,7 @@ export const methods = {
     });
     bot.on("entitySpawn", (entity: Entity) => {
       this.sculk.onSpawn(entity?.name);
-      if (entity) this.shotSubjects?.entityChanged(entity.name ?? "");
+      if (entity) this.shotSubjects?.entityChanged(entity.id, entity.name ?? "");
     });
   },
 
@@ -409,6 +416,19 @@ export const methods = {
         name: e.name ?? "",
         pos: [e.position.x, e.position.y, e.position.z] as const,
       }));
+  },
+
+  /** What the client holds now, as the shot observer reads it: every entity
+   * it tracks, and which framed bodies' chunk columns it has been sent. */
+  clientView(this: MineflayerExecutor): import("../shot-subjects.ts").ClientView {
+    const seen = this.trackedEntities();
+    const world = this.bot?.world as unknown as { getColumn?: (cx: number, cz: number) => unknown } | undefined;
+    const chunks = new Set<string>();
+    for (const key of this.shotSubjects?.chunks ?? []) {
+      const [cx, cz] = key.split(",").map(Number) as [number, number];
+      if (world?.getColumn?.(cx, cz)) chunks.add(key);
+    }
+    return { seen, chunks };
   },
 
   /**

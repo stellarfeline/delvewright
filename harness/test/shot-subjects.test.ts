@@ -9,6 +9,7 @@ import {
   parseShotSubjectPlan,
   shotSubjectBindingLine,
   shotSubjectFailures,
+  chunkKey,
   type SeenEntity,
 } from "../src/shot-subjects.ts";
 
@@ -64,45 +65,78 @@ interface Play {
   /** The entity table as the server left it at the end of driver tick `d`
    * (`d = -1` is the start function's tick). */
   table?: (d: number) => readonly SeenEntity[];
+  /** Whether the client holds the body's chunk at the end of driver tick `d`. */
+  held?: (d: number) => boolean;
   /** Driver ticks the server plays before the end function (the ledger plans 10). */
   total?: number;
   /** Driver ticks whose gap between server ticks no reading lands in. */
   missed?: readonly number[];
-  /** Driver ticks in which the client is told a body-typed entity spawned or left. */
+  /** Driver ticks in which the client is told the body (id 7) spawned or left. */
   churn?: readonly number[];
+  /** Driver ticks in which the client is told another `item_display` spawned. */
+  other?: readonly number[];
+  /** Driver ticks in which the client is sent or drops the body's chunk. */
+  chunkChurn?: readonly number[];
   /** Game ticks between the end and the reading after it (1 places it). */
   afterGap?: number;
   /** Where the first lens stands. */
   lens?: readonly [number, number, number];
 }
 
+/** The body's chunk column. */
+const ROOT_CHUNK = chunkKey(23.5, 12.5);
+
 /**
- * One cutscene as the server sends it: the start function's gamemode change
- * in tick `G0 - 1`; each driver tick `d` at game time `G0 + d` (lens packets
- * at the first two, entity churn, then a reading in the gap after it); the
- * end function in the same game tick as the last driver tick, after which one
+ * One cutscene as the server sends it. The start function, in tick `G0 - 1`:
+ * the gamemode change, then the two lens entities it summons (each an
+ * `item_display`, the type of the body), then a reading in the gap after the
+ * tick. Each driver tick `d` at game time `G0 + d`: lens packets at the first
+ * two, entity and chunk churn, then a reading in the gap after it. The end
+ * function in the same game tick as the last driver tick, after which one
  * reading answers.
  */
 function play(o: ShotSubjectObserver, p: Play = {}) {
   const table = p.table ?? (() => [ROOT]);
+  const held = p.held ?? (() => true);
+  const view = (d: number) => ({ seen: table(d), chunks: new Set(held(d) ? [ROOT_CHUNK] : []) });
   const total = p.total ?? 10;
   const missed = new Set(p.missed ?? []);
   const churn = new Set(p.churn ?? []);
+  const other = new Set(p.other ?? []);
+  const chunkChurn = new Set(p.chunkChurn ?? []);
   const last = total - 1;
-  o.gameModeChanged("spectator", []);
-  if (churn.has(-1)) o.entityChanged("item_display");
-  o.clock(G0 - 1, table(-1));
+  const tick = (d: number) => {
+    if (churn.has(d)) o.entityChanged(7, "item_display");
+    if (other.has(d)) o.entityChanged(200 + d, "item_display");
+    if (chunkChurn.has(d)) o.chunkChanged(ROOT_CHUNK);
+  };
+  o.gameModeChanged("spectator", view(-1));
+  o.entityChanged(100, "item_display");
+  o.entityChanged(101, "item_display");
+  tick(-1);
+  if (!missed.has(-1)) o.clock(G0 - 1, view(-1));
   for (let d = 0; d < last; d++) {
     if (d < 2) o.lensTick("spectator", p.lens ?? LENS);
-    if (churn.has(d)) o.entityChanged("minecraft:item_display");
-    if (!missed.has(d)) o.clock(G0 + d, table(d));
+    tick(d);
+    if (!missed.has(d)) o.clock(G0 + d, view(d));
   }
-  o.gameModeChanged("adventure", table(last - 1));
-  o.clock(G0 + last + (p.afterGap ?? 1) - 1, []);
+  o.gameModeChanged("adventure", view(last - 1));
+  o.clock(G0 + last + (p.afterGap ?? 1) - 1, { seen: [], chunks: new Set() });
 }
 
-function run(p: Play = {}) {
-  const plan = parseShotSubjectPlan(LEDGER);
+/** The same cutscene with the assembly framed from its first driver tick,
+ * the shape of a cutscene that opens on the body (the ledger plans 10). */
+const OPENS_ON_BODY = {
+  cutscenes: [
+    {
+      ...LEDGER.cutscenes[0]!,
+      shots: [{ ...LEDGER.cutscenes[0]!.shots[1]!, index: 0, start_tick: 0, ticks: 9 }],
+    },
+  ],
+};
+
+function run(p: Play = {}, ledger: unknown = LEDGER) {
+  const plan = parseShotSubjectPlan(ledger);
   const o = new ShotSubjectObserver(plan);
   play(o, p);
   return { plan, records: o.records, spans: o.spans, watching: o.watching };
@@ -204,7 +238,68 @@ test("a lens packet outside spectator names nothing", () => {
   const plan = parseShotSubjectPlan(LEDGER);
   const o = new ShotSubjectObserver(plan);
   o.lensTick("adventure", LENS);
-  o.clock(G0, [ROOT]);
-  o.gameModeChanged("adventure", [ROOT]);
+  o.clock(G0, { seen: [ROOT], chunks: new Set([ROOT_CHUNK]) });
+  o.gameModeChanged("adventure", { seen: [ROOT], chunks: new Set([ROOT_CHUNK]) });
   assert.deepEqual([o.records, o.spans, o.watching], [[], [], false]);
+});
+
+// The intermittent red this rule removes. The start function switches the
+// gamemode and then summons the two lens entities, both `item_display`s like
+// the assembly root; the reading that first lands after the gamemode change
+// can fall at driver tick 1 or later. Judged by type, the lens spawns sat
+// between the start and that reading, so driver tick 0 was unplaced and the
+// body counted absent, on unchanged bytes. Judged by the body's own id, the
+// body seen at the start and at the first reading with nothing of its own in
+// between was there at driver tick 0.
+test("a lens summoned by the start is not the body: a late first reading still places the shot's first tick", () => {
+  const { records, spans } = run({ missed: [-1, 0] }, OPENS_ON_BODY);
+  assert.deepEqual(records.map((r) => r.shot), [0]);
+  assert.deepEqual([records[0]!.spawnedBefore, records[0]!.spawnedThrough], [true, true]);
+  assert.deepEqual([spans[0]!.read, spans[0]!.unplaced], [9, 0]);
+  assert.deepEqual(shotSubjectFailures(records, spans), []);
+});
+
+test("a body the start did not have, first seen after a late first reading, is unplaced at the first tick", () => {
+  // The body arrives in driver tick 0 itself; no reading lands there, so the
+  // first tick is not decided, and the row reads false.
+  const { records } = run({ missed: [-1, 0], table: (d) => (d >= 0 ? [ROOT] : []), churn: [0] }, OPENS_ON_BODY);
+  assert.deepEqual([records[0]!.spawnedBefore, records[0]!.unplacedTicks], [false, 1]);
+});
+
+test("another entity of the body's type churning around a missed tick does not unplace it", () => {
+  const { records, spans } = run({ missed: [6], other: [6] });
+  assert.deepEqual([records[0]!.spawnedBefore, records[0]!.spawnedThrough], [true, true]);
+  assert.deepEqual([spans[0]!.read, spans[0]!.unplaced], [9, 0]);
+});
+
+test("a body absent at both sides of a missed tick, with its type churning, is unplaced", () => {
+  const { records, spans } = run({ table: (d) => (d >= 8 ? [ROOT] : []), churn: [8], missed: [5], other: [5] });
+  assert.equal(records[0]!.spawnedBefore, false);
+  assert.equal(records[0]!.unplacedTicks, 1);
+  assert.equal(spans[0]!.unplaced, 1);
+});
+
+test("a body absent at its shot's first tick although its chunk was held is a finding that says so", () => {
+  const { records, spans } = run({ table: () => [] });
+  assert.equal(records[0]!.chunkSent, true);
+  assert.match(shotSubjectFailures(records, spans)[0]!, /not spawned .* though its chunk had been sent to the bot by the tick before/);
+});
+
+test("a body absent at its shot's first tick because its chunk had not been sent is a finding that says so", () => {
+  // The chunk arrives at driver tick 5's end; the body is sent at 6. The
+  // shot opens at 5: the client did not hold the place it frames.
+  const { records, spans } = run({
+    table: (d) => (d >= 6 ? [ROOT] : []),
+    held: (d) => d >= 5,
+    churn: [6],
+    chunkChurn: [5],
+  });
+  assert.deepEqual([records[0]!.spawnedBefore, records[0]!.chunkSent], [false, false]);
+  assert.match(shotSubjectFailures(records, spans)[0]!, /its chunk had not been sent to the bot by the tick before/);
+});
+
+test("a chunk that changed around a missed tick leaves the chunk fact undecided", () => {
+  const { records, spans } = run({ table: () => [], held: (d) => d >= 4, chunkChurn: [4], missed: [4] });
+  assert.equal(records[0]!.chunkSent, null);
+  assert.match(shotSubjectFailures(records, spans)[0]!, /no reading decides whether its chunk/);
 });

@@ -820,7 +820,9 @@ export class RunReport {
             },
       // Every body a cutscene shot framed (spec-0110 §7): whether it was
       // spawned to the bot by the shot's first tick and stayed through the
-      // shot. Empty for a build whose shots frame no body.
+      // shot, the shot's ticks no reading decided, and whether the body's
+      // chunk had been sent by the tick before the shot (`null`: undecided).
+      // Empty for a build whose shots frame no body.
       shot_subjects: this.shotSubjects.map((r) => ({
         cutscene: r.cutscene,
         shot: r.shot,
@@ -828,6 +830,8 @@ export class RunReport {
         entity: r.entity,
         spawned_before: r.spawnedBefore,
         spawned_through: r.spawnedThrough,
+        unplaced_ticks: r.unplacedTicks,
+        chunk_sent: r.chunkSent,
       })),
     };
   }

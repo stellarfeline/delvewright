@@ -19,9 +19,24 @@
 // (`driverTicks - 1`), so the reading after the end places it, and with it
 // every reading before. Driver tick `d` is judged on the entity table as the
 // server left it at the end of `d` — the reading at `d`, or for the last tick
-// the table at the end. A tick no reading landed on takes its neighbours'
-// table when no body-typed entity was spawned or removed between them;
-// otherwise it is unplaced, and a body is not counted there.
+// the table at the end. The start (the gamemode change) is a view too: the
+// start function runs in the tick before driver tick 0 and schedules the
+// driver one tick on, so it lies before that tick's end. A fact at a tick no
+// view landed on is decided by the views on either side when they agree and
+// nothing that could change it arrived between them: for a body seen on both
+// sides, a spawn or removal of that same entity (by id — the lens the start
+// summons is an `item_display` too, and is not the body); for a body seen on
+// neither, any entity of its type. Otherwise it is unplaced, and a body is
+// not counted there.
+//
+// What the pinned server guarantees (`docs/reference/entity-tracking.md`):
+// a body is sent to a client in the tick its tracker first finds it within
+// range of the player and in a chunk the client already holds, and a
+// spectating player is moved to the camera and re-checked against every
+// tracker each tick. So a body absent at its shot's first tick is a finding
+// either way, and the record says which: its chunk had been sent by the tick
+// before (the server owed the body), or not (the shot opens before the client
+// holds the place it frames).
 //
 // The compiler computes everything (`validation/shot-subjects.json`): where
 // the lens stands at each cutscene's first tick (the point a watching client
@@ -175,6 +190,21 @@ export interface SeenEntity {
   readonly pos: Vec3;
 }
 
+/**
+ * What the client holds at one place in the packet stream: every entity it
+ * tracks, and which of the framed bodies' chunks it has been sent.
+ */
+export interface ClientView {
+  readonly seen: readonly SeenEntity[];
+  /** Keys ({@link chunkKey}) of the observer's `chunks` the client holds. */
+  readonly chunks: ReadonlySet<string>;
+}
+
+/** The key of the chunk column holding block x/z: `"<cx>,<cz>"`. */
+export function chunkKey(x: number, z: number): string {
+  return `${Math.floor(x / 16)},${Math.floor(z / 16)}`;
+}
+
 /** What one body did during one shot, for the run report. */
 export interface BodyRecord {
   readonly cutscene: string;
@@ -187,6 +217,10 @@ export interface BodyRecord {
   readonly spawnedThrough: boolean;
   /** Ticks of the shot whose table no reading decides (counted as absent). */
   readonly unplacedTicks: number;
+  /** Whether the body's chunk had been sent to the bot by the end of the
+   * tick before the shot's first tick — the server's precondition for
+   * sending the body in that first tick; `null` when no reading decides. */
+  readonly chunkSent: boolean | null;
 }
 
 const bare = (s: string): string => s.replace(/^minecraft:/, "");
@@ -222,7 +256,7 @@ export interface CutsceneSpan {
   readonly placed: boolean;
   /** Driver ticks a reading (or the end) landed on. */
   readonly read: number;
-  /** Driver ticks whose table no reading decides. */
+  /** Driver ticks at which some framed body's presence no reading decides. */
   readonly unplaced: number;
   /** A reading earlier than the tick before driver tick 0: the server took
    * longer from the start to the end than the plan. */
@@ -230,9 +264,11 @@ export interface CutsceneSpan {
 }
 
 type Entry =
-  | { readonly kind: "clock"; readonly g: number; readonly seen: readonly SeenEntity[] }
-  | { readonly kind: "change"; readonly name: string }
-  | { readonly kind: "end"; readonly seen: readonly SeenEntity[] };
+  | { readonly kind: "start"; readonly view: ClientView }
+  | { readonly kind: "clock"; readonly g: number; readonly view: ClientView }
+  | { readonly kind: "entity"; readonly id: number; readonly name: string }
+  | { readonly kind: "chunk"; readonly key: string }
+  | { readonly kind: "end"; readonly view: ClientView };
 
 interface Run {
   /** `null` until the first lens packet names the cutscene; `undefined`
@@ -242,21 +278,52 @@ interface Run {
   ended: boolean;
 }
 
+/** A place in the log whose view is known, at driver tick `d`. */
+interface Anchor {
+  readonly d: number;
+  readonly at: number;
+  readonly view: ClientView;
+}
+
+type Presence =
+  | { readonly kind: "present"; readonly id: number }
+  | { readonly kind: "absent" }
+  | { readonly kind: "undecided" };
+
+/**
+ * The start's place on the driver clock: inside the game tick before driver
+ * tick 0, before that tick ends. The start function switches the gamemode
+ * and schedules the driver one tick on, so the gamemode packet precedes the
+ * end of that tick; a view there decides the end of the tick only together
+ * with a later view and nothing changed between.
+ */
+const START_D = -1.5;
+
 /**
  * Watches the client during cutscenes, on the server's clock. Fed, in the
  * order the packets arrive: every gamemode change, the lens packets (the
  * first names the cutscene by where the bot stands), every game-time reading
- * answered, and every entity spawned to or removed from the client.
+ * answered, every entity spawned to or removed from the client, and every
+ * framed body's chunk column the client is sent or told to forget.
  */
 export class ShotSubjectObserver {
   readonly records: BodyRecord[] = [];
   readonly spans: CutsceneSpan[] = [];
+  /** Every chunk column a framed body stands in, by {@link chunkKey}. */
+  readonly chunks: readonly string[];
+  private readonly chunkSet: ReadonlySet<string>;
   private run: Run | undefined;
 
   private readonly plan: ShotSubjectPlan;
 
   constructor(plan: ShotSubjectPlan) {
     this.plan = plan;
+    const keys = new Set<string>();
+    for (const c of plan.cutscenes) {
+      for (const s of c.shots) for (const b of s.bodies) keys.add(chunkKey(b.at[0], b.at[2]));
+    }
+    this.chunks = [...keys].sort();
+    this.chunkSet = keys;
   }
 
   /** Whether a cutscene is playing or awaits the reading that places its end. */
@@ -265,9 +332,9 @@ export class ShotSubjectObserver {
   }
 
   /** The gamemode changed: spectator begins a run, leaving it is the end. */
-  gameModeChanged(gameMode: string | undefined, seen: readonly SeenEntity[]): void {
+  gameModeChanged(gameMode: string | undefined, view: ClientView): void {
     if (gameMode === "spectator") {
-      if (!this.run) this.run = { cs: null, log: [], ended: false };
+      if (!this.run) this.run = { cs: null, log: [{ kind: "start", view }], ended: false };
       return;
     }
     const run = this.run;
@@ -276,7 +343,7 @@ export class ShotSubjectObserver {
       this.run = undefined;
       return;
     }
-    run.log.push({ kind: "end", seen });
+    run.log.push({ kind: "end", view });
     run.ended = true;
   }
 
@@ -286,21 +353,27 @@ export class ShotSubjectObserver {
     this.run.cs = cutsceneAt(this.plan, pos);
   }
 
-  /** A game-time reading answered at `gameTime`, with the table it found. */
-  clock(gameTime: number, seen: readonly SeenEntity[]): void {
+  /** A game-time reading answered at `gameTime`, with the view it found. */
+  clock(gameTime: number, view: ClientView): void {
     const run = this.run;
     if (!run) return;
     if (!run.ended) {
-      run.log.push({ kind: "clock", g: gameTime, seen });
+      run.log.push({ kind: "clock", g: gameTime, view });
       return;
     }
     this.run = undefined;
     if (run.cs) this.settle(run.cs, run.log, gameTime);
   }
 
-  /** An entity named `name` was spawned to or removed from the client. */
-  entityChanged(name: string): void {
-    if (this.run && !this.run.ended) this.run.log.push({ kind: "change", name });
+  /** The entity `id`, of type `name`, was spawned to or removed from the client. */
+  entityChanged(id: number, name: string): void {
+    if (this.run && !this.run.ended) this.run.log.push({ kind: "entity", id, name });
+  }
+
+  /** The chunk column `key` ({@link chunkKey}) was sent to or dropped by the client. */
+  chunkChanged(key: string): void {
+    if (!this.chunkSet.has(key)) return;
+    if (this.run && !this.run.ended) this.run.log.push({ kind: "chunk", key });
   }
 
   /** The run ended and the reading after it answered `after`: judge it. */
@@ -314,87 +387,153 @@ export class ShotSubjectObserver {
     }
     // The end ran in game tick `after`, at driver tick `last`.
     const first = after - last;
-    const types = new Set(cs.shots.flatMap((s) => s.bodies.map((b) => bare(b.entity))));
-    const anchors: { d: number; at: number; seen: readonly SeenEntity[] }[] = [];
+    const anchors: Anchor[] = [];
     let overrun = false;
     log.forEach((e, at) => {
-      if (e.kind === "clock") {
+      if (e.kind === "start") {
+        anchors.push({ d: START_D, at, view: e.view });
+      } else if (e.kind === "clock") {
         const d = e.g - first;
         if (d < -1) overrun = true;
-        anchors.push({ d, at, seen: e.seen });
+        anchors.push({ d, at, view: e.view });
       } else if (e.kind === "end") {
-        anchors.push({ d: last, at, seen: e.seen });
+        anchors.push({ d: last, at, view: e.view });
       }
     });
-    const changedBetween = (from: number, to: number): boolean => {
-      for (let i = from + 1; i < to; i++) {
-        const e = log[i]!;
-        if (e.kind === "change" && types.has(bare(e.name))) return true;
-      }
-      return false;
-    };
-    const table: (readonly SeenEntity[] | undefined)[] = [];
+    const judge = new TickJudge(log, anchors);
     let read = 0;
-    for (let d = 0; d <= last; d++) {
-      let exact: (typeof anchors)[number] | undefined;
-      let prev: (typeof anchors)[number] | undefined;
-      let next: (typeof anchors)[number] | undefined;
-      for (const a of anchors) {
-        if (a.d === d) exact = a;
-        else if (a.d < d && (!prev || a.at > prev.at)) prev = a;
-        else if (a.d > d && (!next || a.at < next.at)) next = a;
-      }
-      if (exact) {
-        read += 1;
-        table.push(exact.seen);
-      } else if (prev && next) {
-        table.push(changedBetween(prev.at, next.at) ? undefined : prev.seen);
-      } else if (next) {
-        table.push(changedBetween(-1, next.at) ? undefined : next.seen);
-      } else {
-        table.push(undefined);
-      }
+    for (let d = 0; d <= last; d++) if (judge.exact(d)) read += 1;
+    const undecided = new Set<number>();
+    for (const shot of cs.shots) {
+      for (const body of shot.bodies) this.judge(cs, shot, body, last, judge, undecided);
     }
     this.spans.push({
       cutscene: cs.path,
       planned: cs.driverTicks,
       placed: true,
       read,
-      unplaced: table.filter((t) => t === undefined).length,
+      unplaced: undecided.size,
       overrun,
     });
-    for (const shot of cs.shots) {
-      for (const body of shot.bodies) this.judge(cs, shot, body, table);
-    }
   }
 
-  /** One body over its shot, on the per-tick tables. */
+  /** One body over its shot, tick by tick on the server's clock. */
   private judge(
     cs: PlannedCutscene,
     shot: PlannedShot,
     body: PlannedBody,
-    table: readonly (readonly SeenEntity[] | undefined)[],
+    last: number,
+    judge: TickJudge,
+    undecided: Set<number>,
   ): void {
-    const end = Math.min(shot.startTick + shot.ticks, table.length - 1);
-    const at = table[shot.startTick];
-    const e = at ? findBody(body, at) : undefined;
-    let through = e !== undefined && shot.startTick + shot.ticks <= table.length - 1;
-    let unplaced = at === undefined ? 1 : 0;
-    for (let t = shot.startTick + 1; t <= end; t++) {
-      const seen = table[t];
-      if (seen === undefined) unplaced += 1;
-      if (!e || !seen || !seen.some((x) => x.id === e.id)) through = false;
+    const end = Math.min(shot.startTick + shot.ticks, last);
+    const at = judge.presence(body, shot.startTick);
+    const id = at.kind === "present" ? at.id : undefined;
+    let through = id !== undefined && shot.startTick + shot.ticks <= last;
+    let unplaced = 0;
+    for (let t = shot.startTick; t <= end; t++) {
+      const p = t === shot.startTick ? at : judge.presence(body, t);
+      if (p.kind === "undecided") {
+        unplaced += 1;
+        undecided.add(t);
+      }
+      if (p.kind !== "present" || p.id !== id) through = false;
     }
     this.records.push({
       cutscene: cs.path,
       shot: shot.index,
       subject: body.subject,
       entity: body.entity,
-      spawnedBefore: e !== undefined,
+      spawnedBefore: id !== undefined,
       spawnedThrough: through,
       unplacedTicks: unplaced,
+      chunkSent: judge.chunkHeld(chunkKey(body.at[0], body.at[2]), shot.startTick - 1),
     });
   }
+}
+
+/**
+ * Decides one fact at the end of one driver tick from the views around it.
+ * A view taken at that tick decides it. Otherwise the views on either side
+ * decide it when they agree and nothing that could change the fact arrived
+ * between them: for a body seen on both sides, a spawn or removal of that
+ * same entity; for a body seen on neither, a spawn or removal of any entity
+ * of its type; for a chunk, a load or unload of that chunk. Anything else is
+ * undecided.
+ */
+class TickJudge {
+  private readonly log: readonly Entry[];
+  private readonly anchors: readonly Anchor[];
+
+  constructor(log: readonly Entry[], anchors: readonly Anchor[]) {
+    this.log = log;
+    this.anchors = anchors;
+  }
+
+  exact(d: number): Anchor | undefined {
+    let exact: Anchor | undefined;
+    for (const a of this.anchors) if (a.d === d) exact = a;
+    return exact;
+  }
+
+  private around(d: number): { prev: Anchor | undefined; next: Anchor | undefined } {
+    let prev: Anchor | undefined;
+    let next: Anchor | undefined;
+    for (const a of this.anchors) {
+      if (a.d < d && (!prev || a.at > prev.at)) prev = a;
+      else if (a.d > d && (!next || a.at < next.at)) next = a;
+    }
+    return { prev, next };
+  }
+
+  private arrivedBetween(from: number, to: number, hit: (e: Entry) => boolean): boolean {
+    for (let i = from + 1; i < to; i++) if (hit(this.log[i]!)) return true;
+    return false;
+  }
+
+  presence(body: PlannedBody, d: number): Presence {
+    const exact = this.exact(d);
+    if (exact) {
+      const e = findBody(body, exact.view.seen);
+      return e ? { kind: "present", id: e.id } : { kind: "absent" };
+    }
+    const { prev, next } = this.around(d);
+    if (!prev || !next) return { kind: "undecided" };
+    const a = findBody(body, prev.view.seen);
+    const b = findBody(body, next.view.seen);
+    if (a && b && a.id === b.id) {
+      const moved = this.arrivedBetween(prev.at, next.at, (e) => e.kind === "entity" && e.id === a.id);
+      return moved ? { kind: "undecided" } : { kind: "present", id: a.id };
+    }
+    if (!a && !b) {
+      const type = bare(body.entity);
+      const moved = this.arrivedBetween(prev.at, next.at, (e) => e.kind === "entity" && bare(e.name) === type);
+      return moved ? { kind: "undecided" } : { kind: "absent" };
+    }
+    return { kind: "undecided" };
+  }
+
+  chunkHeld(key: string, d: number): boolean | null {
+    const exact = this.exact(d);
+    if (exact) return exact.view.chunks.has(key);
+    const { prev, next } = this.around(d);
+    if (!prev || !next) return null;
+    const a = prev.view.chunks.has(key);
+    if (a !== next.view.chunks.has(key)) return null;
+    return this.arrivedBetween(prev.at, next.at, (e) => e.kind === "chunk" && e.key === key) ? null : a;
+  }
+}
+
+/** Why a body absent at its shot's first tick is a finding, from its chunk. */
+function notSpawnedWhy(chunkSent: boolean | null): string {
+  if (chunkSent === true) return ", though its chunk had been sent to the bot by the tick before";
+  if (chunkSent === false) {
+    return (
+      ", and its chunk had not been sent to the bot by the tick before: the server sends no entity " +
+      "in a chunk the client does not hold, so the shot opens before the client has the place it frames"
+    );
+  }
+  return ", and no reading decides whether its chunk had been sent to the bot by the tick before";
 }
 
 /**
@@ -412,7 +551,7 @@ export function shotSubjectFailures(
         `cutscene ${r.cutscene} shot ${r.shot}: ${r.subject} (${r.entity}) ` +
         (r.spawnedBefore
           ? "was spawned to the bot at the shot's first tick and left before the shot ended"
-          : "was not spawned to the bot by the shot's first tick") +
+          : "was not spawned to the bot by the shot's first tick" + notSpawnedWhy(r.chunkSent)) +
         (r.unplacedTicks > 0 ? ` (${r.unplacedTicks} tick(s) of the shot no reading placed)` : ""),
     );
   const spanFailures = spans.flatMap((s) => {
