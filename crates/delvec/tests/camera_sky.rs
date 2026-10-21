@@ -241,7 +241,8 @@ fn each_frame_kind_reads_its_sky_from_its_own_source() {
     );
 
     // A review frame: the sky the shot states, whatever the plan's.
-    let shot = serde_json::json!({"campaign_id": "mini", "shots": [{
+    let shot = serde_json::json!({"campaign_id": "mini",
+        "sky": {"time": "dusk", "daytime_ticks": 12000, "weather": "rain"}, "shots": [{
         "id": "pov/leg0/wp0", "kind": "pov", "world": "after-obj-x",
         "camera": {"pos": [4.5, 70.0, 4.5], "yaw": 0.0, "pitch": 5.0, "fov": 70.0},
         "sky": {"time": "midnight", "daytime_ticks": 18000, "weather": "thunder",
@@ -436,7 +437,7 @@ fn the_gallery_reaches_every_weather_and_every_class() {
         "campaign_id": sheet.campaign_id,
         "layout_aabb": {"min": [0, 60, 0], "max": [64, 90, 64]},
         "sky": {
-            "time": time.keyword(),
+            "time": time,
             "daytime_ticks": time.daytime_ticks(),
             "weather": world["content"]["weather"],
         },

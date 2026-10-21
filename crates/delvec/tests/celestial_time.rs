@@ -573,7 +573,10 @@ fn a_celestial_camera_renders_its_positions_sun_and_its_days_moon() {
         ..cam
     };
     let line = camera::resolve_sky(&noon, &rows).unwrap().line();
-    assert!(!line.contains("moon"), "{line}");
+    assert!(
+        !line.contains("moon drawn") && !line.contains("no moon"),
+        "{line}"
+    );
     // `--sky` spells a celestial time in JSON, split off the last comma.
     let parsed = CameraSky::parse(r#"{"moon":"high","phase":"new-moon"},thunder"#).unwrap();
     assert_eq!(parsed.time, time(r#"{"moon":"high","phase":"new-moon"}"#));
