@@ -15,17 +15,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
-name = "cave-prefab-gen"
-version = "0.0.0"
-dependencies = [
- "fastnbt",
- "flate2",
- "prefab-invariants",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "cesu8"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -98,7 +87,6 @@ dependencies = [
  "delvewright-dsl",
  "fastnbt",
  "flate2",
- "prefab-invariants",
  "serde",
  "serde_json",
 ]
@@ -108,17 +96,6 @@ name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
-
-[[package]]
-name = "hello-room-gen"
-version = "0.0.0"
-dependencies = [
- "fastnbt",
- "flate2",
- "prefab-invariants",
- "serde",
- "serde_json",
-]
 
 [[package]]
 name = "indexmap"
@@ -131,43 +108,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "island-prefab-gen"
-version = "0.0.0"
-dependencies = [
- "fastnbt",
- "flate2",
- "prefab-invariants",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "island-terrain-gen"
-version = "0.0.0"
-dependencies = [
- "fastnbt",
- "flate2",
- "prefab-invariants",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
-
-[[package]]
-name = "keep-prefab-gen"
-version = "0.0.0"
-dependencies = [
- "fastnbt",
- "flate2",
- "prefab-invariants",
- "serde",
- "serde_json",
-]
 
 [[package]]
 name = "linkme"
@@ -206,15 +150,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "prefab-invariants"
-version = "0.0.0"
-dependencies = [
- "delvewright-dsl",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -250,14 +185,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "rig-gen"
-version = "0.0.0"
-dependencies = [
- "delvewright-dsl",
- "serde_json",
 ]
 
 [[package]]

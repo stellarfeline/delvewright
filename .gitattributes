@@ -1,5 +1,7 @@
-# Binary prefab assets are tracked via git-lfs (ADR-0004, ADR-0007).
-prefabs/**/*.nbt filter=lfs diff=lfs merge=lfs -text
+# A structure template is binary (gzip-framed NBT): never diffed or normalised as
+# text. The engine tracks only the test pieces its tests bind; the prefab
+# library is the content repository's, through git-lfs there.
+*.nbt binary
 
 # For Windows compatibility.
 # Shell and Dockerfiles are executed inside Linux containers, but a Windows checkout would turn them into CRLF.

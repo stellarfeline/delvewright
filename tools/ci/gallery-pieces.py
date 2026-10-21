@@ -22,7 +22,7 @@ and COUNTED on every run:
 
 - any path with a `target/` segment — cargo's output (the engine the run was
   handed sits at `target/debug/delvec`; the generator's build is under its
-  workspace's `prefabs/target/`);
+  workspace's `gallery/prefab-generator/target/`);
 - any path with a `__pycache__/` segment — the bytecode of the tools that ran.
 
 ## What it refuses

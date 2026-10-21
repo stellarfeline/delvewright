@@ -355,14 +355,18 @@ class Engine:
 
     @property
     def rust_text(self) -> str:
-        # `prefabs/` is in scope alongside `crates/`: the strongest general form
-        # of several findings is a GENERATOR invariant (a sheared canopy, debris
-        # stacked on a tread, an unsupported gravity floor), and those live with
-        # the generators, not with the compiler.
+        # `gallery/prefab-generator` is in scope alongside `crates/`: the
+        # strongest general form of several findings is a GENERATOR invariant
+        # (debris stacked on a tread, an unsupported gravity floor), and the
+        # piece invariants the engine still runs live with the one generator it
+        # runs (`gallery/prefab-generator/src/prefab_invariants/`). A campaign
+        # generator lives in the content repository as a provenance record and
+        # gates nothing (ADR-0018 §6), so an invariant only it carries is not
+        # carried here.
         if self._rust_text is None:
             self._rust_text = self._read_all(
                 REPO_ROOT / "crates", "*.rs"
-            ) + self._read_all(REPO_ROOT / "prefabs", "*.rs")
+            ) + self._read_all(REPO_ROOT / "gallery" / "prefab-generator" / "src", "*.rs")
         return self._rust_text
 
     @property
@@ -1221,7 +1225,7 @@ def carrier_exists(carrier: dict, eng: Engine, subj: Subject) -> tuple[bool, str
         # exists is a promise nobody keeps, so the name is checked, not assumed.
         name = carrier["test"]
         if not re.search(rf"\bfn\s+{re.escape(name)}\s*\(", eng.rust_text):
-            return False, f"no `fn {name}(` anywhere in crates/ or prefabs/"
+            return False, f"no `fn {name}(` anywhere in crates/ or gallery/prefab-generator/src/"
         return True, ""
     if kind == "tool":
         # A check script, named relative to `tools/` and therefore carrying the
