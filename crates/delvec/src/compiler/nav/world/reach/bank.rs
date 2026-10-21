@@ -32,7 +32,7 @@
 //! The bank is an accelerator, never a premise: what no variant answers is
 //! flown, and a variant that holds answers what flying would.
 
-use super::{Code, Death, Dense, EdgeKind, NodeEdges};
+use super::{Chunked, Code, Death, Dense, EdgeKind, NodeEdges};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -200,7 +200,7 @@ impl<'a> Track<'a> {
     }
 
     /// The cells noted, each with its snapshot code and raw membership.
-    fn deps(&self, extra: &[u16]) -> Vec<(u32, Code, u16)> {
+    fn deps(&self, extra: &Chunked<u16>) -> Vec<(u32, Code, u16)> {
         let mut out = Vec::new();
         let mut words = self.touched.borrow().clone();
         words.sort_unstable();
@@ -335,7 +335,7 @@ impl Bank {
         &self,
         key: &super::FlownKey,
         dense: &Dense,
-        extra: &[u16],
+        extra: &Chunked<u16>,
         jumps: &[[i32; 3]],
         volumes: &dyn Fn(Box3) -> Volumes,
     ) -> Option<Arc<NodeEdges>> {
@@ -358,7 +358,7 @@ impl Bank {
         &'a self,
         key: &super::FlownKey,
         dense: &'a Dense,
-        extra: &[u16],
+        extra: &Chunked<u16>,
         node: &[Box3],
         jumps: &[[i32; 3]],
         volumes: &dyn Fn(Box3) -> Volumes,
@@ -419,7 +419,7 @@ impl Bank {
         &self,
         key: super::FlownKey,
         expansion: Expansion<'_>,
-        extra: &[u16],
+        extra: &Chunked<u16>,
         jumps: Vec<[i32; 3]>,
         volumes: Volumes,
         edges: &Arc<NodeEdges>,

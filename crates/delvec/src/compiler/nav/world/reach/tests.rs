@@ -416,3 +416,55 @@ fn a_landing_is_never_credited_across_a_corner() {
     let corner = [2.0 - half, 1.0, 2.0 + half];
     assert_eq!(landing_cells(&memo.dense, &body, corner), vec![[1, 1, 2]]);
 }
+
+/// A configuration's snapshot keeps its own copy of only the chunks its
+/// lineage holds otherwise, and reads every cell as a snapshot of its own
+/// would: the Bell yard (a window wider than one chunk), then the yard with a
+/// doorway opened in its north wall.
+#[test]
+fn a_snapshot_shares_every_chunk_its_lineage_holds_alike() {
+    let params = ReachParams::shipped(false);
+    let mut b = bell_yard_build();
+    // A cell far from the doorway, so the two worlds' windows are the yard's
+    // and this test's own (no other test's world shares the window).
+    b.fill([-6, 0, 40], [-6, 0, 40]);
+    let first = b.world(Ambient::Void, Vec::new());
+    let base = first.graph_memo(&params);
+    b.solid.remove(&[7, 1, 0]);
+    b.solid.remove(&[7, 2, 0]);
+    let opened = b.world(Ambient::Void, Vec::new());
+    let memo = opened.graph_memo(&params);
+    let own = Dense::of(&opened);
+    assert!(
+        own.cells.chunks.len() > 2,
+        "the window spans {} chunk(s); a test of sharing needs several",
+        own.cells.chunks.len()
+    );
+    // Perturbed toward the vacuous shape: a snapshot that shared nothing, or
+    // shared a chunk it holds otherwise, reds one of these.
+    let mine = memo.dense.cells.own_chunks(&base.dense.cells);
+    assert!(
+        (1..=2).contains(&mine),
+        "the doorway's two cells lie in one or two chunks; the snapshot holds {mine} of its own"
+    );
+    assert!(memo.extra.own_chunks(&base.extra) <= 2);
+    assert_eq!(own.cells.len(), memo.dense.cells.len());
+    for i in 0..own.cells.len() {
+        assert_eq!(
+            own.cells[i],
+            memo.dense.cells[i],
+            "cell {:?}",
+            own.coords(i)
+        );
+    }
+    let raw = raw_membership(&opened, &own);
+    for i in 0..raw.len() {
+        assert_eq!(raw[i], memo.extra[i], "cell {:?}", own.coords(i));
+    }
+    // The lineage's diff is exactly the doorway.
+    let (_, diff) = memo
+        .lineage
+        .as_ref()
+        .expect("the yard is the opened yard's lineage");
+    assert_eq!(diff, &vec![[7, 1, 0], [7, 2, 0]]);
+}

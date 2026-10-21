@@ -199,12 +199,92 @@ enum Outside {
     Ocean { level: i32, floor_top: i32 },
 }
 
+/// A window-long array held in chunks, which a later snapshot of a world
+/// like this one shares wherever it holds the same values. The quest
+/// configurations of one campaign are worlds that differ in a few cells, and
+/// every graph a build takes is kept for the build's life (a proof asking the
+/// same world again is answered from it), so each keeps its own copy of only
+/// the chunks those cells lie in. Held only in memory, read only by index:
+/// what a build emits never depends on which snapshot owns a chunk.
+pub(in crate::compiler::nav) struct Chunked<T> {
+    chunks: Vec<Arc<[T]>>,
+    len: usize,
+}
+
+/// A chunk of a [`Chunked`] array holds `1 << CHUNK_CELLS_BITS` values.
+const CHUNK_CELLS_BITS: u32 = 12;
+const CHUNK_CELLS_MASK: usize = (1 << CHUNK_CELLS_BITS) - 1;
+
+impl<T: Copy + PartialEq> Chunked<T> {
+    fn new(values: &[T]) -> Chunked<T> {
+        Chunked {
+            chunks: values
+                .chunks(1 << CHUNK_CELLS_BITS)
+                .map(Arc::from)
+                .collect(),
+            len: values.len(),
+        }
+    }
+
+    /// Take `base`'s chunk wherever it holds what this one holds.
+    fn share(&mut self, base: &Chunked<T>) {
+        if base.len != self.len {
+            return;
+        }
+        for (mine, theirs) in self.chunks.iter_mut().zip(&base.chunks) {
+            if !Arc::ptr_eq(mine, theirs) && **mine == **theirs {
+                *mine = Arc::clone(theirs);
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    /// The indices at which this array and `other`, of one length, differ —
+    /// a shared chunk is skipped unread.
+    fn differences(&self, other: &Chunked<T>) -> Vec<usize> {
+        let mut out = Vec::new();
+        for (k, (a, b)) in self.chunks.iter().zip(&other.chunks).enumerate() {
+            if Arc::ptr_eq(a, b) {
+                continue;
+            }
+            for (j, (x, y)) in a.iter().zip(b.iter()).enumerate() {
+                if x != y {
+                    out.push((k << CHUNK_CELLS_BITS) | j);
+                }
+            }
+        }
+        out
+    }
+
+    /// How many chunks this array holds that `other` does not share.
+    #[cfg(test)]
+    fn own_chunks(&self, other: &Chunked<T>) -> usize {
+        self.chunks
+            .iter()
+            .zip(&other.chunks)
+            .filter(|(a, b)| !Arc::ptr_eq(a, b))
+            .count()
+    }
+}
+
+impl<T> std::ops::Index<usize> for Chunked<T> {
+    type Output = T;
+    #[inline(always)]
+    fn index(&self, i: usize) -> &T {
+        &self.chunks[i >> CHUNK_CELLS_BITS][i & CHUNK_CELLS_MASK]
+    }
+}
+
 /// A dense snapshot of a [`World`] over its window: the built volume grown by
 /// [`WINDOW_MARGIN`] (spec-0113 §4.7).
 pub(in crate::compiler::nav) struct Dense {
     lo: [i32; 3],
     dims: [i32; 3],
-    cells: Vec<Code>,
+    cells: Chunked<Code>,
     outside: Outside,
     /// Whether any cell holds water, lava or a cobweb, here or outside.
     wet: bool,
@@ -256,7 +336,7 @@ impl Dense {
             return Dense {
                 lo: [0; 3],
                 dims: [0; 3],
-                cells: Vec::new(),
+                cells: Chunked::new(&[]),
                 outside,
                 wet: matches!(outside, Outside::Ocean { .. }),
             };
@@ -276,12 +356,13 @@ impl Dense {
         let mut d = Dense {
             lo,
             dims,
-            cells: vec![0; n],
+            cells: Chunked::new(&[]),
             outside,
             wet: matches!(outside, Outside::Ocean { .. })
                 || !world.flooded.is_empty()
                 || world.material.iter().any(|(_, m)| *m == Material::Cobweb),
         };
+        let mut cells: Vec<Code> = vec![0; n];
         // The ambient first, outside every placed piece; then the model's own
         // cells, which win wherever they are.
         if let Outside::Ocean { level, floor_top } = outside {
@@ -304,7 +385,7 @@ impl Dense {
                         if built[i] {
                             continue;
                         }
-                        d.cells[i] = if y <= floor_top {
+                        cells[i] = if y <= floor_top {
                             16
                         } else if y <= level {
                             WATER
@@ -317,7 +398,7 @@ impl Dense {
         }
         let mut set = |c: [i32; 3], f: &dyn Fn(Code) -> Code| {
             if let Some(i) = d.index(c) {
-                d.cells[i] = f(d.cells[i]);
+                cells[i] = f(cells[i]);
             }
         };
         for c in world.solid.iter() {
@@ -356,6 +437,7 @@ impl Dense {
                 }
             });
         }
+        d.cells = Chunked::new(&cells);
         d
     }
 
@@ -1484,7 +1566,7 @@ pub(in crate::compiler::nav) struct GraphMemo {
     closures: Mutex<Vec<Closure>>,
     /// Per window cell, the world's raw membership the snapshot's code does
     /// not carry ([`raw_membership`]).
-    extra: Vec<u16>,
+    extra: Chunked<u16>,
     /// The nodes every graph of this window flew ([`bank`]).
     bank: Arc<bank::Bank>,
 }
@@ -1627,7 +1709,7 @@ fn reach_columns(k: i32) -> i32 {
 /// sieve ([`super::Floors::sieve`]: never a floor, and a fall passes it) — every
 /// cell set a world query reads, so two worlds equal here and in the snapshot
 /// answer every query about the cell alike.
-fn raw_membership(w: &World, d: &Dense) -> Vec<u16> {
+fn raw_membership(w: &World, d: &Dense) -> Chunked<u16> {
     let mut x = vec![0u16; d.cells.len()];
     let mut set = |c: [i32; 3], v: u16| {
         if let Some(i) = d.index(c) {
@@ -1664,7 +1746,7 @@ fn raw_membership(w: &World, d: &Dense) -> Vec<u16> {
     for c in w.floors.sieve.iter() {
         set(*c, 1 << 13);
     }
-    x
+    Chunked::new(&x)
 }
 
 impl World {
@@ -1754,7 +1836,7 @@ impl World {
         if let Some(g) = memo.lock().expect("memo").get(&key) {
             return Arc::clone(g);
         }
-        let dense = Dense::of(self);
+        let mut dense = Dense::of(self);
         let premise_cells: BTreeSet<[i32; 3]> =
             self.lethal.iter().chain(self.furniture.iter()).collect();
         // The lineage: the first graph over a world with this window, ambient
@@ -1771,17 +1853,18 @@ impl World {
         );
         let seeds = SEEDS.get_or_init(|| Mutex::new(HashMap::new()));
         let seed = seeds.lock().expect("memo").get(&seed_key).cloned();
+        let mut extra = raw_membership(self, &dense);
+        if let Some(base) = &seed {
+            dense.cells.share(&base.dense.cells);
+            extra.share(&base.extra);
+        }
         let lineage = seed.map(|base| {
-            let mut diff: Vec<[i32; 3]> = Vec::new();
-            for (i, (a, b)) in dense.cells.iter().zip(&base.dense.cells).enumerate() {
-                if a != b {
-                    let (dy, dz) = (dense.dims[1] as usize, dense.dims[2] as usize);
-                    let y = (i % dy) as i32;
-                    let z = ((i / dy) % dz) as i32;
-                    let x = (i / dy / dz) as i32;
-                    diff.push([dense.lo[0] + x, dense.lo[1] + y, dense.lo[2] + z]);
-                }
-            }
+            let mut diff: Vec<[i32; 3]> = dense
+                .cells
+                .differences(&base.dense.cells)
+                .into_iter()
+                .map(|i| dense.coords(i))
+                .collect();
             diff.extend(
                 premise_cells
                     .symmetric_difference(&base.premise_cells)
@@ -1791,7 +1874,6 @@ impl World {
             diff.dedup();
             (base, diff)
         });
-        let extra = raw_membership(self, &dense);
         // The bank's key: the lineage's, and what a node's flights and world
         // queries read that no window cell carries — the world outside the
         // window, whether any cell is wet, and the climbs.
