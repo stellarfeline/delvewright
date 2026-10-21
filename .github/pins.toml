@@ -396,7 +396,7 @@ red (versions.toml [render]).
 
 [[pin]]
 id = "lumenwright-version"
-value = "0.1.0"
+value = "0.2.0"
 sites = ["crates/delvec/Cargo.toml", "versions.toml", "crates/delvec/src/compiler/view/frames.rs"]
 policy = "immutable"
 bound_by = "validation/check-versions.sh"

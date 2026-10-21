@@ -53,7 +53,7 @@ use crate::compiler::view::scene;
 /// lumenwright_version` and `crates/delvec/Cargo.toml` pin it — written on
 /// every frame manifest and on the first line of every run, so a frame's
 /// provenance is readable without the frame.
-pub const RENDERER_VERSION: &str = "0.1.0";
+pub const RENDERER_VERSION: &str = "0.2.0";
 
 /// The client's *Mipmap Levels* option at its default, the texture filtering
 /// a player who has not changed it sees.

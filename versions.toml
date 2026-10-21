@@ -329,7 +329,7 @@ nucleation_license = "MIT"
 # frame names is the one that drew it. Moved by a reviewed edit.
 # Consumed by: crates/delvec/Cargo.toml (`lumenwright = { version = "=…" }`),
 # crates/delvec/src/compiler/view/frames.rs + docs/reference/tools.md §4a.
-lumenwright_version = "0.1.0"
+lumenwright_version = "0.2.0"
 lumenwright_license = "GPL-3.0-or-later"
 
 # deepslate (MIT) — the rendering core of the prefab review page
