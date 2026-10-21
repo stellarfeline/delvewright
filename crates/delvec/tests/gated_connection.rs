@@ -174,9 +174,10 @@ fn each_gated_connection_is_built_shut_at_its_kinds_cells() {
         shut.get(&[28, 63, 16])
     );
 
-    // Seven gated connections: the three doors and the four above.
+    // Eight gated connections: the three doors, the four above, and the
+    // loft's drop, shut by the loft stair's beat.
     let line = derivation_line(&c);
-    assert!(line.contains(", 7 shut)"), "{line}");
+    assert!(line.contains(", 8 shut)"), "{line}");
     let mut none = c.clone();
     for e in [
         "edge/west-door",
@@ -184,6 +185,7 @@ fn each_gated_connection_is_built_shut_at_its_kinds_cells() {
         "edge/east-door",
         "edge/annex-chute",
         "edge/loft-stair",
+        "edge/loft-drop",
         "edge/undercroft-shaft",
         "edge/undercroft-crawl",
     ] {
