@@ -97,8 +97,8 @@ pub(crate) fn run_frames_campaign(
         Ok(a) => a,
         Err(code) => return ExitCode::from(code),
     };
-    let world = camera_world(&plan, &assembled);
-    let base = camera_base(&plan, &assembled);
+    let (world, relight) = camera_world(&plan, &assembled);
+    let base = camera_base(&plan, &assembled, &relight);
     let load = delvec::compiler::view::beat::load_blocks(&plan, &world, &base);
     let grid = framing::VoxelGrid::build(&load);
     let cam = match resolve_camera(&plan, &grid, &args) {
@@ -312,7 +312,7 @@ fn stood_over(
     };
     let structures = read_structures(&plan, &prefabs, prefabs_dir, json).map_err(|c| (None, c))?;
     let assembled = edited_assembled(&plan, &prefabs, &structures, json).map_err(|c| (None, c))?;
-    let world = camera_world(&plan, &assembled);
+    let (world, relight) = camera_world(&plan, &assembled);
     // The path the build's proofs read: the links the route proof takes
     // spliced in (spec-0083), so a step is the step `critical-path.json` names.
     let relinked = match delvec::compiler::nav::with_links_taken(&plan, &prefabs, &world) {
@@ -323,7 +323,7 @@ fn stood_over(
         }
     };
     let plan = relinked.as_ref().unwrap_or(&plan);
-    let base = camera_base(plan, &assembled);
+    let base = camera_base(plan, &assembled, &relight);
     let stands = configure(plan, &world, &base)?;
     Ok(delvec::compiler::view::beat::Stood {
         stands,
@@ -338,29 +338,33 @@ fn stood_over(
     })
 }
 
-/// The world a camera's configuration is asked of: the assembled occupancy
-/// under the premises the build's proofs carry — the measured world-load
-/// seals among them, which is what makes a gate the prefab built shut a
-/// step-0 write (`nav::Premises::of_plan`).
+/// **The world a view stands its cameras in, and the bytes its pictures
+/// start from — the build's own, derived through the build's entry points.**
+/// The world is [`delvec::compiler::light::final_world`]: the assembled cells
+/// under the campaign's premises with the relight pass's fixtures standing in
+/// them, the world `delvec build` walks. The bytes are
+/// [`delvec::compiler::view::beat::picture_base`] over the same pass's
+/// placements, asked of `path_plan` — the plan with the links the route proof
+/// takes spliced in where the caller has taken them, as the build asks it. A
+/// relight pass that refuses is the build's to raise; a view still draws the
+/// world it would have walked.
 pub(crate) fn camera_world(
     plan: &Plan,
     assembled: &delvec::compiler::assembled::Assembled,
-) -> delvec::compiler::nav::World {
-    delvec::compiler::nav::World::from_occupancy(
-        delvec::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
-        delvec::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone()),
-    )
+) -> (
+    delvec::compiler::nav::World,
+    delvec::compiler::light::Relight,
+) {
+    delvec::compiler::light::final_world(plan, assembled)
 }
 
-/// The bytes a camera's world starts from
-/// ([`delvec::compiler::view::beat::picture_base`]): the relight pass is run
-/// as the build runs it, so a fixture the datapack sets is in the picture.
+/// See [`camera_world`]: the picture base over the relight `relight` placed.
 pub(crate) fn camera_base(
-    plan: &Plan,
+    path_plan: &Plan,
     assembled: &delvec::compiler::assembled::Assembled,
+    relight: &delvec::compiler::light::Relight,
 ) -> delvec::compiler::blockstate::BlockMap {
-    let relight = delvec::compiler::light::relight_over(plan, assembled);
-    delvec::compiler::view::beat::picture_base(plan, assembled, &relight.placements)
+    delvec::compiler::view::beat::picture_base(path_plan, assembled, &relight.placements)
 }
 
 /// The manifest sidecar path for an output image: the image path with its
@@ -583,32 +587,21 @@ pub(crate) fn run_blocking_chart(
         Ok(a) => a,
         Err(code) => return ExitCode::from(code),
     };
-    // Every premise the campaign states (`nav::Premises::of_plan`), because the
-    // corridor this chart draws is `critical_path_routes` — the SAME derivation
-    // the build's completability proof takes — and a chart taken over a smaller
-    // premise set draws a corridor no proof ever walked. A route through a
-    // declared lethal volume was exactly that: a line on the blocking chart the
-    // author could read as cleared.
-    let world = delvec::compiler::nav::World::from_occupancy(
-        delvec::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
-        delvec::compiler::nav::Premises::of_plan(&plan, assembled.gate_seals.clone()),
-    );
-    let blocks = assembled.blocks;
-    let targets = delvec::compiler::framing::collect_targets(&plan);
-    // The build's path: the links the route proof takes spliced in (spec-0083).
-    let relinked = match delvec::compiler::nav::with_links_taken(&plan, &prefabs, &world) {
-        Ok(r) => r,
+    // The corridor is the build's: one derivation (`blocking::walked_corridor`)
+    // over the world the build's proofs walk (relight fixtures, gate seals,
+    // lethal volumes, clocked regions) and the path with the links the route
+    // proof takes spliced in. A chart taken over a smaller premise set draws a
+    // corridor no proof ever walked.
+    let walked = match delvec::compiler::blocking::walked_corridor(&plan, &prefabs, &assembled) {
+        Ok(w) => w,
         Err(f) => {
             eprintln!("{} [error] build: {}", f.code, f.message);
             return ExitCode::from(f.code.exit_tier().exit_status());
         }
     };
-    let corridor: std::collections::BTreeSet<[i32; 3]> =
-        delvec::compiler::nav::critical_path_routes(relinked.as_ref().unwrap_or(&plan), &world)
-            .into_iter()
-            .flat_map(|leg| leg.cells)
-            .collect();
-    let chart = delvec::compiler::blocking::chart(&plan, &blocks, &world, &targets, &corridor);
+    let blocks = assembled.blocks;
+    let targets = delvec::compiler::framing::collect_targets(&plan);
+    let chart = delvec::compiler::blocking::chart(&plan, &blocks, &targets, &walked);
     let elapsed = started.elapsed().as_secs_f64() * 1000.0;
 
     let mut index = match serde_json::to_vec_pretty(&chart.index) {

@@ -157,6 +157,6 @@
       }
     ]
   },
-  "dsl_version": "0.53.0",
+  "dsl_version": "0.55.0",
   "stage": "dialogue"
 }

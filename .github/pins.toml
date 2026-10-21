@@ -164,12 +164,12 @@ facts and then that the value stands as a whole token at every site.
 
 [[pin]]
 id = "content-repo"
-value = "43f0f301e10ce88d02d8063eabdceeb87107aa54"
+value = "3d8b343dbcb9f44c267da77fa2a31f1c47e8957e"
 sites = ["versions.toml"]
 repo = "stellarfeline/delvewright-campaigns"
 policy = "track"
 judged_by = ".github/workflows/ci.yml"
-reviewed = "43f0f301e10ce88d02d8063eabdceeb87107aa54"
+reviewed = "3d8b343dbcb9f44c267da77fa2a31f1c47e8957e"
 builds = []
 why = """
 The content commit every reproducible build resolves the prefab library and
@@ -396,7 +396,7 @@ red (versions.toml [render]).
 
 [[pin]]
 id = "lumenwright-version"
-value = "0.1.0"
+value = "0.2.0"
 sites = ["crates/delvec/Cargo.toml", "versions.toml", "crates/delvec/src/compiler/view/frames.rs"]
 policy = "immutable"
 bound_by = "validation/check-versions.sh"

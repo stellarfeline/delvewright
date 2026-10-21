@@ -29,8 +29,8 @@ The glob is then cross-checked against the root manifest: every path the root
 was not, must hold no publishable package anywhere beneath it. A crate that
 moves out from under `crates/` therefore reds as a derivation-shape error
 instead of silently dropping out of both gates' binding count, while a declared
-path that is a NESTED WORKSPACE of unpublished tools (`prefabs/`, excluded so
-that nothing in it can enter `delvec`'s resolution) is accepted for the reason
+path that is a NESTED WORKSPACE of unpublished tools (`gallery/prefab-generator`,
+excluded so that nothing in it can enter `delvec`'s resolution) is accepted for the reason
 that makes it safe rather than by name. The property demanded is one the defect
 cannot supply: every `Cargo.toml` at or under such a path either declares no
 `[package]` at all or says `publish = false`.

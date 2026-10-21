@@ -94,6 +94,10 @@ WHOLE_TREE = frozenset(
         "test_mdtable.py",
         "test_server_heap.py",
         "test_version_sites.py",
+        # every generator workspace, discovered over the tracked manifests
+        # (`tools/lib/generator_workspaces.py`, a `git ls-files` glob)
+        "test_check_generator_preservation.py",
+        "test_staging_gate.py",
         # the creator plugin; `check-skill-page.py` also holds every engine path
         # the page names to the tracked tree, which can be any path
         "test_check_skill_page.py",

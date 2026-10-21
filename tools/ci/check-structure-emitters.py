@@ -2,8 +2,8 @@
 """Nothing in this repo may write a prefab `.nbt` without judging its block states.
 
 The rule itself lives elsewhere
-(`prefabs/invariants/src/invariants.rs::assert_blocks_are_real` for the
-generators, `BlockRegistry::validate` inside the engine's workspace).
+(`gallery/prefab-generator/src/prefab_invariants/invariants.rs::assert_blocks_are_real`
+for the gallery's generator, `BlockRegistry::validate` inside the engine's workspace).
 This file answers a different question: **which sites is it obliged at?**
 
 That set was enumerated by hand once, and the hand missed one. Five tileset
@@ -38,24 +38,17 @@ So the set is discovered, not listed. Three checks:
    completing a state from `BlockRegistry::default_state` ships the isolated post
    the author never meant AND empties the `DW0735` predicate, which is the check
    going green by ceasing to bind. The obligation is therefore the derivation
-   (`prefabs/invariants/src/connections.rs`, computing each property from the blocks beside the
+   (`gallery/prefab-generator/src/prefab_invariants/connections.rs`, computing each property from the blocks beside the
    cell), and an emitter whose palette carries no connection class says so in
    [`NOT_CONNECTION_EMITTERS`] with its reason.
 
-3. **Every package in `prefabs/` is built, and every generator in it is run
-   twice.** The other way a new emitter arrives is a new
-   `prefabs/<name>-generator/`. The wirings it owes are looked for BY NAME —
-   workspace membership, the build cache, the double run, and `cargo fmt` —
-   because each is established by a different mechanism. The two enumerated ones
-   (the workspace's `members`, the job's `for g in` loop) are held equal to what
-   is on disk, in both directions, over two populations the disk decides: a
-   `Cargo.toml` makes a directory a package and a `src/main.rs` makes it a
-   generator. `fmt` is derived (`tools/ci/fmt-workspaces.sh` takes its population
-   from `git ls-files`), so what is asked of it is not a name match but whether
-   the population can be TRUNCATED: is the sweep invoked, is each manifest inside
-   the population it derives from, does its own exclusion prefix swallow one.
-   Either way, adding a generator without wiring it up is an ordinary red rather
-   than a tileset nothing ever runs twice.
+3. **Every generator workspace is built, linted, tested and formatted.** The
+   other way a new emitter arrives is a new generator outside the root
+   workspace, which `cargo …--workspace` never reaches. The population is read
+   off the disk (a tracked manifest with its own `[workspace]` table and a
+   `src/main.rs` that serialises NBT), and each wiring it owes — clippy, test,
+   and the derived `cargo fmt` sweep — is looked for by name in what `ci.yml`
+   runs. Adding a generator without wiring it up is an ordinary red.
 
 Exit 0 clean, 1 with findings. All three checks print their binding count: a
 check that matched nothing is a finding, not a pass (CLAUDE.md).
@@ -66,8 +59,11 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from lib.generator_workspaces import fmt_excluded_prefix, generator_workspaces  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -78,7 +74,7 @@ INGREDIENT = "fastnbt::to_bytes"
 # How a file shows it applied the block-state rule to the palette it authored:
 # every id and every property value is judged against the pinned registry before
 # the bytes are written. Two spellings of one rule — the one the generators share
-# through `prefab-invariants`, and the registry method used inside the workspace.
+# through `prefab_invariants`, and the registry method used inside the workspace.
 BLOCK_RULE_MARKERS = (
     "invariants::assert_blocks_are_real(",
     "registry.validate(",
@@ -120,7 +116,7 @@ NOT_CONNECTION_EMITTERS = {
         "writer), so each connection a program's walls, fences and panes carry is one the program "
         "wrote. It entered this check by writing a template's `entities` (spec-0111 §3.2) through "
         "`fastnbt::to_bytes`; its blocks still go through `convert::build_region`. The derivation "
-        "lives in `prefab-invariants`, in the `prefabs/` workspace, which `delvec` does not depend "
+        "lives in the gallery's generator (`gallery/prefab-generator`, its own workspace), which `delvec` does not depend "
         "on."
     ),
     "crates/delvec/src/compiler/surround.rs": (
@@ -134,10 +130,10 @@ NOT_CONNECTION_EMITTERS = {
         "`minecraft:pink_petals`, which is multipart in `flower_amount`/`facing` and was being "
         "written bare, so vanilla would have filled a cherry valley floor with one north-facing "
         "petal per cell. Those two are an authored decision rather than something the neighbours "
-        "imply (the same reason `prefabs/invariants/src/connections.rs` derives a fence but not a fence gate), "
+        "imply (the same reason `gallery/prefab-generator/src/prefab_invariants/connections.rs` derives a fence but not a fence gate), "
         "so they are now authored, and the surround owes `connections::resolve` nothing. This "
-        "crate could not call it in any case: the derivation lives in `prefab-invariants`, in "
-        "the `prefabs/` workspace, and `delvec` does not depend on it."
+        "crate could not call it in any case: the derivation lives in the gallery's generator "
+        "(`gallery/prefab-generator`, its own workspace), and `delvec` does not depend on it."
     ),
     "crates/delvec/tests/staged_lethal.rs": (
         "test fixture for spec-0088's staged lethal volume: the lid room. Its palette is four "
@@ -258,7 +254,7 @@ def check_entities(emitters: list[str]) -> tuple[list[str], int]:
                 f"{rel} writes a template's `entities` and never judges them.\n"
                 f"    Route every entity through the one entity rule — "
                 f"`admit::entities::judge` inside the workspace, "
-                f"`invariants::assert_entities_are_holders` in a `prefabs/*` generator — so "
+                f"`invariants::assert_entities_are_holders` in the gallery's generator — so "
                 f"a piece carries item holders saying what they look like and nothing else "
                 f"(DW0730 / DW1036)."
             )
@@ -284,7 +280,7 @@ def check_connections(emitters: list[str]) -> tuple[list[str], int]:
     impl block, seventy lines apart, and the defeater is the shorter call.
 
     So the obligation is the derivation, not the completion: a connection comes
-    from the blocks beside the cell (`prefabs/invariants/src/connections.rs`, vanilla's own
+    from the blocks beside the cell (`gallery/prefab-generator/src/prefab_invariants/connections.rs`, vanilla's own
     `connectsTo` / `attachsTo` / `canAttachTo`). This binds it to the event.
     Same polarity as the check above — an emitter is presumed to owe it, and an
     exception is named individually and printed on every run.
@@ -355,7 +351,7 @@ def check_emitters() -> tuple[list[str], int, list[str]]:
             findings.append(
                 f"{rel} serialises NBT ({INGREDIENT}) and never judges a block state.\n"
                 f"    If it writes a prefab `.nbt`, route its palette through the block-state "
-                f"rule — `invariants::assert_blocks_are_real` in a `prefabs/*` generator, "
+                f"rule — `invariants::assert_blocks_are_real` in the gallery's generator, "
                 f"`BlockRegistry::validate` inside the workspace — or an id it writes "
                 f"that the pinned version does not have loads as AIR, costing the piece "
                 f"those cells with no error anywhere.\n"
@@ -408,272 +404,86 @@ def emitter_scope(rel: str, text: str) -> list[str]:
     return scope
 
 
-def sweep_excluded_prefix() -> str | None:
-    """The path prefix `tools/ci/fmt-workspaces.sh` excludes from its own population.
-
-    Read out of the script rather than restated here. An exclusion is a claim
-    about a repository, and the one thing that must never happen quietly is a
-    generator workspace falling inside it — so this asks the sweep what its
-    exclusion IS, and a sweep whose constant cannot be read is a finding rather
-    than an assumption.
-    """
-    script = ROOT / "tools" / "ci" / "fmt-workspaces.sh"
-    if not script.is_file():
-        return None
-    m = re.search(r'^EXCLUDED_PREFIX="([^"]*)"', script.read_text(), re.M)
-    return m.group(1) if m else None
-
-
-def normalised(path: str) -> str:
-    """`path`, relative to the repository root, with `..` segments resolved."""
-    out: list[str] = []
-    for part in path.split("/"):
-        if part == "..":
-            out.pop()
-        elif part not in ("", "."):
-            out.append(part)
-    return "/".join(out)
-
-
-def prefab_packages() -> set[str]:
-    """Every package of the `prefabs/` workspace on disk, by repo-relative path.
-
-    Two shapes, both read off the disk rather than off the members list the
-    result is compared against: a directory directly under `prefabs/` carrying a
-    `Cargo.toml`, and a tracked manifest anywhere else whose `[package]
-    workspace` resolves to `prefabs/` — the only way cargo admits a member that
-    is not under its workspace root.
-    """
-    found = {
-        p.parent.relative_to(ROOT).as_posix()
-        for p in sorted((ROOT / "prefabs").glob("*/Cargo.toml"))
-    }
-    for rel in tracked("Cargo.toml"):
-        if rel.startswith("prefabs/") or "/" not in rel:
-            continue
-        try:
-            pkg = tomllib.loads((ROOT / rel).read_text()).get("package", {})
-        except (OSError, tomllib.TOMLDecodeError):
-            continue
-        ws = pkg.get("workspace")
-        if isinstance(ws, str):
-            here = rel.rsplit("/", 1)[0]
-            if normalised(f"{here}/{ws}") == "prefabs":
-                found.add(here)
-    return found
-
-
 def check_generators_are_wired() -> tuple[list[str], int]:
-    """Every package in `prefabs/` is one CI actually builds, and every generator
-    in it is one CI runs twice.
+    """Every generator workspace is one CI builds, lints, tests and formats.
 
-    WHAT THIS KEYS ON, AND WHY IT MOVED. It first demanded "the cache list and
-    two `for g in` loops", counting the lists it found — reading the workflow by
-    ORDINAL POSITION, so it failed closed the moment `fmt` stopped being a
-    hand-written loop. Failing closed was right; the KEY was wrong, and the
-    wirings became four things looked for by NAME, because each is established by
-    a different mechanism:
+    A generator outside the root workspace is reached by no `cargo …--workspace`
+    the `rust` job runs, so each wiring it owes is looked for BY NAME, in what
+    `ci.yml` RUNS (comment lines stripped — a comment that quotes a command
+    would otherwise stand in for it):
 
-      * workspace membership        — enumerated in `prefabs/Cargo.toml`. A
-                                      package that is not a member is built by
-                                      nothing: it is `cargo build --workspace`'s
-                                      own population, and no CI step can add to
-                                      it
-      * the build cache             — enumerated in the job (`workspaces:`), and
-                                      it now names the ONE workspace rather than
-                                      a list that could fall behind disk
-      * the double run              — enumerated in the job (`for g in`), and it
-                                      is the ADR-0006 byte-identity gate plus the
-                                      invariant panics, so it cannot be derived
-                                      from the tree: whether CI runs a generator
-                                      twice and diffs the trees is a fact ABOUT
-                                      THE WORKFLOW, and reading the workflow is
-                                      the only way to learn it
-      * `cargo fmt`                 — enumerated nowhere.
-                                      `tools/ci/fmt-workspaces.sh` derives its
-                                      population from `git ls-files`, so a new
-                                      package is covered the moment it is
-                                      committed and there is no list to match
+      * `cargo clippy … --manifest-path <ws>/Cargo.toml … -D warnings`
+      * `cargo test … --manifest-path <ws>/Cargo.toml`
+      * `cargo fmt` — enumerated nowhere: `tools/ci/fmt-workspaces.sh` derives
+        its population from `git ls-files`, so what is asked of it is whether
+        the sweep is invoked, whether the manifest is inside the population
+        (tracked), and whether the sweep's own exclusion prefix swallows it.
 
-    THE POPULATION IS TWO POPULATIONS, and telling them apart is the point. Every
-    directory under `prefabs/` carrying a `Cargo.toml`, and every tracked package
-    elsewhere whose `[package] workspace` names `prefabs/` (the gallery's own
-    generator, `gallery/prefab-generator`), is a PACKAGE and owes membership; the
-    subset of those carrying a `src/main.rs` are the GENERATORS and owe the double
-    run as well. Each is named by its path from the repository root, which is how
-    the job's loop resolves it too. The shared rule crate is a library: it must
-    be built and tested, and there is nothing to run twice. Asking "which of
-    these is a binary" of the disk, rather than keeping a list of names here, is
-    what stops a new generator arriving as a library by omission.
-
-    For the derived wiring the question is a different question, and asking the
-    old one would be a green that measures nothing. What can go wrong with a
-    derived population is that it is TRUNCATED — so what is checked is that CI
-    invokes the sweep at all, that each manifest is inside the population the
-    sweep derives from (git-tracked), and that the sweep's own exclusion prefix
-    does not swallow one. That is the recorded shape of an exclusion list being a
-    claim about a repository, asked before it bites.
+    Running the generator is the gallery build's own act
+    (`tools/ci/gallery-prefabs.py`), and a generator that panics on an
+    invariant fails that build; it is not asked here.
     """
     findings: list[str] = []
-    packages = prefab_packages()
-    # A generator is a binary. Asked of the disk rather than of a list here, so
-    # that a new generator cannot arrive classified as a library by omission.
-    generators = {g for g in packages if (ROOT / g / "src" / "main.rs").is_file()}
-
-    # --- the wiring that is NOT in the workflow at all -----------------------
-    # `cargo build --workspace` has one population and it is this list. A package
-    # missing from it is compiled by no step in any job, and no step can fix that.
-    ws_manifest = ROOT / "prefabs" / "Cargo.toml"
-    if not ws_manifest.is_file():
-        return (
-            [
-                "prefabs/Cargo.toml is gone — there is no prefab workspace, so every check "
-                "below binds to nothing. The generators are built by `cargo …--workspace` over "
-                "that manifest and by nothing else."
-            ],
-            0,
-        )
-    members = {
-        normalised("prefabs/" + m)
-        for m in tomllib.loads(ws_manifest.read_text())["workspace"]["members"]
-    }
-
+    workspaces = set(generator_workspaces(ROOT))
     ci = (ROOT / ".github/workflows/ci.yml").read_text()
-    # Split on the JOB KEY (two-space indent, own line), never on the bare text:
-    # `prefab-generators:` also opens the `changes` job's output map, and a split
-    # there made the "job body" every job up to `harness`, so another job's
-    # `workspaces:` was judged as this one's.
-    job = re.split(r"^  prefab-generators:\n", ci, maxsplit=1, flags=re.M)
-    if len(job) != 2:
-        return ["the `prefab-generators` job is gone from ci.yml — this check binds to nothing"], 0
-    body = job[1].split("\n  harness:", 1)[0]
+    runnable = "\n".join(ln for ln in ci.splitlines() if not ln.lstrip().startswith("#"))
+    joined = runnable.replace("\\\n", " ")
 
-    # What a workflow RUNS, never what it says about itself. Applied to the job
-    # body for the same reason it is applied to the whole file below: a comment
-    # that quotes a `for g in` line would otherwise stand in for the loop it
-    # describes, which is the identical defect one step over.
-    body = "\n".join(ln for ln in body.splitlines() if not ln.lstrip().startswith("#"))
-
-    # --- the wirings that are ENUMERATED, each against its own population -----
-    loops = list(re.finditer(r"for g in ([^;]+?); do", body, re.S))
-    lists = {"`prefabs/Cargo.toml` members": (members, packages)}
-    for i, m in enumerate(loops):
-        # Each entry is spelled as the workspace's `members` spell it — relative
-        # to `prefabs/`, `../gallery/prefab-generator` included — and compared
-        # by the repo-relative path it names.
-        names = {
-            normalised("prefabs/" + n)
-            for n in re.findall(r"[\w./-]+", m.group(1).replace("\\\n", " "))
-        }
-        lists[f"`for g in` loop #{i + 1}"] = (names, generators)
-
-    for label, (names, want) in lists.items():
-        missing = sorted(want - names)
-        extra = sorted(names - want)
-        if missing:
-            findings.append(
-                f"{label} does not name {', '.join(missing)}, which is on disk. A package "
-                f"outside the workspace is built by nothing; a generator outside the double "
-                f"run is a tileset with no invariant gate and no ADR-0006 comparison."
-            )
-        if extra:
-            findings.append(
-                f"{label} names {', '.join(extra)}, which is not there — the workspace or the "
-                f"job will fail on a path that does not exist."
-            )
-
-    # The build cache names the ONE workspace. A list of package directories here
-    # would be the old defect in a new place: seven names to keep equal to disk.
-    # Both YAML spellings are read — the inline scalar and a `|` block — because
-    # the shape that must red is *a list of package directories*, and reading
-    # only the inline form would report the block form as the literal `|` and
-    # name nothing the reader could act on.
-    cached: set[str] = set()
-    for m in re.finditer(r"^(\s+)workspaces:[ \t]*(.*)$", body, re.M):
-        indent, value = m.group(1), m.group(2).strip()
-        if value and value != "|":
-            cached.add(value)
-            continue
-        for line in body[m.end() :].splitlines()[1:]:
-            if line.strip() and len(line) - len(line.lstrip()) > len(indent):
-                cached.add(line.strip())
-            else:
-                break
-    if cached != {"prefabs"}:
-        findings.append(
-            f"the prefab-generators job's build cache names {sorted(cached) or 'nothing'}; it "
-            f"should name exactly the one workspace, `prefabs`. A cache keyed per package is a "
-            f"list to keep equal to disk, which is what collapsing the seven workspaces removed."
+    def invoked(verb: str, manifest: str, extra: str = "") -> bool:
+        return any(
+            f"--manifest-path {manifest}" in line and (not extra or extra in line)
+            for line in joined.splitlines()
+            if f"cargo {verb}" in line
         )
 
-    # --- the wiring that is DERIVED, and what can truncate it ----------------
-    # Same stripping, over the whole file, because the sweep is invoked from a
-    # different job. Caught by the perturbation that removed it: the step was
-    # replaced with the root-only `cargo fmt --all` and this still reported the
-    # sweep invoked, because the comment explaining the step names it too. A
-    # check that reads what a workflow SAYS instead of what it RUNS is the
-    # recorded shape of asking the right question about the wrong key — nothing
-    # errors, and the answer comes back plausible and wrong.
-    runnable = "\n".join(ln for ln in ci.splitlines() if not ln.lstrip().startswith("#"))
     sweep_invoked = re.search(r"tools/ci/fmt-workspaces\.sh[^\n]*--check", runnable) is not None
-    prefix = sweep_excluded_prefix()
+    prefix = fmt_excluded_prefix(ROOT)
     tracked_manifests = set(tracked("Cargo.toml"))
-    # The workspace root manifest is in the population too: it is what
-    # `cargo locate-project --workspace` resolves every member to.
-    owed = {"prefabs/Cargo.toml"} | {f"{g}/Cargo.toml" for g in packages}
-    in_population = {m for m in owed if m in tracked_manifests}
-    swallowed = {m for m in owed if prefix and m.startswith(prefix)} if prefix else set()
 
-    # --- every wiring is present, looked for by name, never by count ---------
-    established = {
-        "workspace membership (`prefabs/Cargo.toml` `[workspace] members`)": bool(members),
-        "the build cache (the job's `workspaces:` key)": bool(cached),
-        "the invariant panics and the ADR-0006 double run (a `for g in` loop in "
-        "the job)": bool(loops),
-        "`cargo fmt` (an invocation of tools/ci/fmt-workspaces.sh --check)": sweep_invoked,
-    }
-    for what, ok in established.items():
-        if not ok:
+    print(f"generator workspaces on disk: {len(workspaces)} ({', '.join(sorted(workspaces))})")
+    for ws in sorted(workspaces):
+        manifest = f"{ws}/Cargo.toml"
+        wired = {
+            "`cargo clippy … -D warnings`": invoked("clippy", manifest, "-D warnings"),
+            "`cargo test`": invoked("test", manifest),
+        }
+        for what, ok in wired.items():
+            if not ok:
+                findings.append(
+                    f"no ci.yml step runs {what} with `--manifest-path {manifest}`. The root "
+                    f"workspace does not reach this generator, so nothing else does either."
+                )
+        if manifest not in tracked_manifests:
             findings.append(
-                f"nothing establishes {what} for the prefab packages. Either the wiring was "
-                f"removed or it was restructured past what this check reads — and in both cases "
-                f"a package can now exist on disk with nothing in CI touching it, which is the "
-                f"whole of what this section exists to refuse."
+                f"{manifest} is not tracked by git, so the derived fmt sweep — whose population IS "
+                f"`git ls-files` — never sees it."
             )
-
+        if prefix and manifest.startswith(prefix):
+            findings.append(
+                f"tools/ci/fmt-workspaces.sh's exclusion prefix '{prefix}' swallows {manifest}."
+            )
+        print(
+            f"  {ws}: clippy {'yes' if wired['`cargo clippy … -D warnings`'] else 'NO'}, "
+            f"test {'yes' if wired['`cargo test`'] else 'NO'}"
+        )
+    if not sweep_invoked:
+        findings.append(
+            "nothing in ci.yml invokes tools/ci/fmt-workspaces.sh --check, so no generator "
+            "workspace is held to `cargo fmt`."
+        )
     if prefix is None:
         findings.append(
             "tools/ci/fmt-workspaces.sh's EXCLUDED_PREFIX could not be read, so this check cannot "
-            "say whether the derived fmt sweep still covers the prefab packages. An unreadable "
-            "exclusion is a finding, not an assumption."
+            "say whether the derived fmt sweep still covers the generator workspaces. An "
+            "unreadable exclusion is a finding, not an assumption."
         )
-    for m in sorted(owed - in_population):
-        findings.append(
-            f"{m} is not tracked by git, so the derived fmt sweep — whose population IS "
-            f"`git ls-files` — never sees it. Commit the manifest; a package outside the "
-            f"population is invisible to a check that states an honest count."
-        )
-    for m in sorted(swallowed):
-        findings.append(
-            f"tools/ci/fmt-workspaces.sh's exclusion prefix '{prefix}' swallows {m}. An "
-            f"exclusion that reaches live content truncates the sweep's population while every "
-            f"count it prints stays truthful about the smaller world it was handed."
-        )
-
-    print(f"prefab packages on disk: {len(packages)} ({', '.join(sorted(packages))})")
-    print(f"  of which generators (a `src/main.rs`): {len(generators)}")
-    for label, (names, want) in lists.items():
-        print(f"  {label}: {len(names)} of {len(want)} on disk")
-    print(f"  build cache names: {', '.join(sorted(cached)) or 'nothing'}")
     print(f"  derived fmt sweep invoked by ci.yml: {'yes' if sweep_invoked else 'NO'}")
-    print(
-        f"  inside the sweep's derived population (git-tracked): "
-        f"{len(in_population)} of {len(owed)}"
-    )
-    print(f"  swallowed by the sweep's exclusion {prefix!r}: {len(swallowed)} of {len(owed)}")
-    if not packages:
-        findings.append("binding count is zero: no prefab workspace package found")
-    return findings, len(packages)
+    if not workspaces:
+        findings.append(
+            "binding count is zero: no generator workspace found — the gallery's generator "
+            "(`gallery/prefab-generator`) is one, so the discovery has gone stale"
+        )
+    return findings, len(workspaces)
 
 
 def main() -> int:
@@ -690,7 +500,7 @@ def main() -> int:
     f, _ = check_entities(emitters)
     findings += f
     print()
-    print("== every prefab generator workspace is wired into CI ==")
+    print("== every generator workspace is wired into CI ==")
     f, _ = check_generators_are_wired()
     findings += f
 

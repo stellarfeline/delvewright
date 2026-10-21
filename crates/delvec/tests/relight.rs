@@ -803,3 +803,90 @@ fn dw0210_on_a_built_site_plan_names_the_rooms_and_a_reachable_remedy() {
         "the count moves with the list of ways actually offered:\n{message}"
     );
 }
+
+/// **A view stands its cameras in the world the build walks, relight fixtures
+/// standing.** `delvec frames --campaign`, `delvec cameras`, `delvec
+/// written-world` and `delvec edit` take their world from
+/// `light::final_world`, the build's one entry point, and never assemble one of
+/// their own: a private copy built from the assembled occupancy alone left out
+/// every fixture the relight pass places, so a camera's route, its step and its
+/// sight lines were judged over a world the delve does not ship.
+///
+/// The fixture forces lanterns over hello-world's room (a declared lantern
+/// relight at night under thunder). Every fixture the build's world holds as a
+/// solid cell is absent from the private copy's shape — so a view built that
+/// way reds here — and no view source assembles a world or runs the relight
+/// pass itself.
+#[test]
+fn a_view_stands_its_cameras_in_the_world_the_build_walks() {
+    let mut c = hello_world();
+    c.world.dsl_version = DSL_VERSION.to_string();
+    c.world.content.time = WorldTime::Night;
+    c.world.content.weather = WorldWeather::Thunder;
+    c.world.content.areas[0].lighting = Some(AreaLighting {
+        fixture: Fixture::Lantern,
+        min_light: 10,
+    });
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    let plan = Plan::build(&c, &prefabs).expect("plan builds");
+    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for t in plan
+        .areas
+        .iter()
+        .flat_map(|a| &a.pieces)
+        .flat_map(|p| &p.templates)
+    {
+        let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
+        structures.insert(t.structure_file.clone(), bytes);
+    }
+    let assembled = delvec::compiler::assembled::assemble(&plan, &structures);
+    let (world, relight) = light::final_world(&plan, &assembled);
+    let private = delvec::compiler::nav::World::from_occupancy(
+        delvec::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
+        delvec::compiler::nav::Premises::of_plan(&plan, assembled.gate_seals.clone()),
+    );
+    let placed = relight.placements.len();
+    let standing: Vec<[i32; 3]> = relight
+        .placements
+        .iter()
+        .map(|p| p.pos)
+        .filter(|&c| world.solid_at(c))
+        .collect();
+    let missed = standing.iter().filter(|&&c| !private.solid_at(c)).count();
+    eprintln!(
+        "view world: {placed} fixture(s) placed, {} solid in the build's world, {missed} of them absent from an assembled-only world",
+        standing.len()
+    );
+    assert!(placed > 0, "the fixture must place relight fixtures");
+    assert!(
+        !standing.is_empty(),
+        "no placed fixture stands as a solid cell"
+    );
+    assert_eq!(missed, standing.len());
+
+    // No view assembles its own world or runs its own relight pass.
+    let cli = common::repo_root().join("crates/delvec/src/cli");
+    let mut entries: Vec<_> = std::fs::read_dir(&cli)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|x| x == "rs"))
+        .collect();
+    entries.sort();
+    let mut final_world_calls = 0;
+    for path in &entries {
+        let src = std::fs::read_to_string(path).unwrap();
+        for private_shape in ["World::from_occupancy(", "relight_over("] {
+            assert!(
+                !src.contains(private_shape),
+                "{} builds a view world of its own ({private_shape})",
+                path.display()
+            );
+        }
+        final_world_calls += src.matches("light::final_world(").count();
+    }
+    eprintln!(
+        "view world: {} cli source(s) read, {final_world_calls} call(s) of light::final_world",
+        entries.len()
+    );
+    assert!(entries.len() > 5 && final_world_calls > 0);
+}

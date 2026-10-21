@@ -61,8 +61,8 @@ HARNESS_IF = "    if: github.event_name != 'pull_request' || needs.changes.outpu
         ("**/*.json", "gallery/x/y.jsonl", False),
         ("tools/lib/*", "tools/lib/a.py", True),
         ("tools/lib/*", "tools/lib/x/a.py", False),
-        ("Cargo.toml", "prefabs/Cargo.toml", False),
-        ("**/Cargo.toml", "prefabs/Cargo.toml", True),
+        ("Cargo.toml", "gallery/prefab-generator/Cargo.toml", False),
+        ("**/Cargo.toml", "gallery/prefab-generator/Cargo.toml", True),
         ("docs/a?.md", "docs/ab.md", True),
         ("docs/a?.md", "docs/a/.md", False),
     ],
@@ -98,7 +98,7 @@ def test_a_compiler_source_change_reaches_everything_that_builds_the_crates():
     table = ci_reach.load_table()
     got = on(ci_reach.decide(table, "pull_request", ["crates/delvec/src/main.rs"]))
     assert {"rust", "publishable", "engine-shelf", "mecha-crosscheck", "zone-audit", "tool-tests", "gallery-pieces", "gallery-coverage", "gallery-views", "gallery-baseline", "tier2-validation"} <= got
-    assert got.isdisjoint({"harness", "skin-tool", "prefab-generators"})
+    assert got.isdisjoint({"harness", "skin-tool"})
 
 
 WHOLE_TREE_READERS = {"manifest", "dsl-crate-version", "tool-tests-tree", "docs", "line-endings"}

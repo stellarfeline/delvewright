@@ -38,9 +38,13 @@ fn log(o: &Output) -> String {
     )
 }
 
+/// The look vector the quick sky is asked for: due south, off the east–west
+/// line the sunrise colour leans along.
+const LOOK: [f64; 3] = [0.0, 0.0, 1.0];
+
 /// Whether a frame is taken under the sky of `tick` under `weather`, and the
-/// renderer is handed the engine's reading of it: the client's sky and fog
-/// colours and lightmap factor in quick mode ([`scene::sky_attributes`]), in
+/// renderer is handed the engine's reading of it: the client's sky colour,
+/// clear colour ([`scene::clear_color`]) and lightmap factor in quick mode ([`scene::sky_attributes`]), in
 /// hq mode Lumenwright's sky scaled by the light the client's sky casts under
 /// the weather against the clear ([`scene::sky_cell`]), and a sun drawn only
 /// while its disc is up under a clear sky.
@@ -48,7 +52,7 @@ fn carries_sky(sky: FrameSky, tick: i64, weather: WorldWeather) -> bool {
     let at = scene::sky_attributes(tick, weather);
     let cell = scene::sky_cell(tick, weather);
     let clear = scene::sky_cell(tick, WorldWeather::Clear);
-    let quick = frames::quick_sky(sky);
+    let quick = frames::quick_sky(sky, LOOK);
     let hq = frames::hq_sky(sky);
     let near = |a: f32, b: f64| (f64::from(a) - b).abs() < 1e-6;
     sky == FrameSky {
@@ -56,7 +60,10 @@ fn carries_sky(sky: FrameSky, tick: i64, weather: WorldWeather) -> bool {
         weather,
     } && near(quick.sky_factor, at.sky_light_factor)
         && near(quick.sky.x, f64::from(at.sky_color[0]) / 255.0)
-        && near(quick.fog.z, f64::from(at.fog_color[2]) / 255.0)
+        && near(
+            quick.fog.z,
+            f64::from(scene::clear_color(tick, weather, LOOK)[2]) / 255.0,
+        )
         && near(
             hq.sky_light,
             f64::from(lumenwright::render::sky::twilight(hq.sun_dir.y.asin()))
@@ -483,8 +490,8 @@ fn the_gallery_reaches_every_weather_and_every_class() {
         "the stated sky reaches the frame"
     );
     assert_ne!(
-        frames::quick_sky(sky_of(&after[i])).fog,
-        frames::quick_sky(sky_of(&emission[i])).fog,
+        frames::quick_sky(sky_of(&after[i]), LOOK).fog,
+        frames::quick_sky(sky_of(&emission[i]), LOOK).fog,
         "and the colours the renderer is handed"
     );
     // The stated clear camera: its tick moved (`just-risen` -> `noon`) moves
@@ -547,7 +554,7 @@ fn a_camera_at_a_night_beat_renders_the_night_sky() {
         "the moon high puts the sun under the horizon"
     );
     assert!(carries_sky(sky_of(&night), 18000, WorldWeather::Clear));
-    let n = frames::quick_sky(sky_of(&night));
+    let n = frames::quick_sky(sky_of(&night), LOOK);
     assert!(n.sun_dir.y < 0.0, "no sun drawn: {n:?}");
     assert_eq!(frames::hq_sky(sky_of(&night)).sun_color.x, 0.0);
 
@@ -557,6 +564,6 @@ fn a_camera_at_a_night_beat_renders_the_night_sky() {
         WorldTime::Dusk.daytime_ticks(),
         WorldWeather::Clear
     ));
-    let d = frames::quick_sky(sky_of(&dusk));
+    let d = frames::quick_sky(sky_of(&dusk), LOOK);
     assert!(d.sun_dir.y > 0.0 && d.sky_factor > n.sky_factor, "{d:?}");
 }

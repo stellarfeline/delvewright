@@ -20,6 +20,6 @@
     "title": "The Keeper's Trial",
     "weather": "clear"
   },
-  "dsl_version": "0.53.0",
+  "dsl_version": "0.55.0",
   "stage": "world"
 }

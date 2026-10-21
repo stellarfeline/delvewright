@@ -69,9 +69,8 @@ not third-party reconstructions.
   `minecraft:iron_chain` in 1.21.11 and kept being emitted; a structure template
   loads an unknown block as AIR, so the piece ships with the feature silently
   missing. Consumed by `delvec::schem::blocks` (the grammar export and
-  `delvec prefab audit`'s `DW0733`) and by `prefabs/invariants/src/invariants.rs` +
-  `prefabs/invariants/src/connections.rs` (the `prefab-invariants` crate every
-  `prefabs/*-generator` depends on).
+  `delvec prefab audit`'s `DW0733`) and by `gallery/prefab-generator/src/prefab_invariants/invariants.rs` +
+  `gallery/prefab-generator/src/prefab_invariants/connections.rs` (the gallery's generator's piece invariants).
   `DW0193` (every DSL block-id site) validates against this registry
   (`dsl::registry::VendoredBlockRegistry`).
   **Reproduce it**: `python3 tools/maintenance/extract-block-registry.py
@@ -99,7 +98,7 @@ not third-party reconstructions.
   Consumed by `delvec::schem::blocks` (`shape_carrying` /
   `omitted_shape_carrying`), which serves `delvec prefab audit` and the grammar
   back end's `shape-complete` gate + export refusal, and by
-  `prefabs/invariants/src/connections.rs`, which fills the properties this table names from the
+  `gallery/prefab-generator/src/prefab_invariants/connections.rs`, which fills the properties this table names from the
   piece's own neighbours before a generator writes its bytes.
 
 - **`block-appearance-1.21.11.json`** — how every 1.21.11 block **looks**: its
@@ -417,7 +416,7 @@ not third-party reconstructions.
   recipe graph in the same summary. 1166 blocks → **788 families**, 128
   multi-member covering 506 blocks, largest **20** (deepslate). Consumed by
   `tools/creator/block-appearance.py`'s screen and mix report (spec-0035), and by
-  `prefabs/invariants/src/connections.rs`, whose `fence` / `pane` / `wall` connection classes
+  `gallery/prefab-generator/src/prefab_invariants/connections.rs`, whose `fence` / `pane` / `wall` connection classes
   are this table's `form` rather than a name-matched list of its own.
   **Why it exists**: palette selection needed to answer "what shape is this" and
   "what material is this derived from", and the only alternative was name

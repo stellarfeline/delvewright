@@ -25,6 +25,8 @@ Then `dialogue.json`. Three rules that are not style preferences:
   with no `next` closes the dialog, so a question there is asked into silence.
   Its `complete-objective` still fires when it is chosen.
 
+**A line names a thing as the player sees it.** Every title, hint, notice and dialogue line calls a built object by the word a player would use for the block or build in front of them: a vanilla sign is a sign or a notice, never a slate. Where the story needs a noun the vanilla block does not read as, build the thing out of blocks so it reads as that noun, or change the noun. This rule is authored, not cited; the engine does not check it and the playtest judges it.
+
 Loop `delvec --prefabs "$DELVEWRIGHT_PREFABS" validate <campaign-dir>` until clean after each.
 **This is the step where clean is reachable**, and it is where the codes step 3
 ended holding go away: writing `quests.json` clears `DW0150` for every quest at
