@@ -5212,3 +5212,57 @@ fn dw1054_placing_the_reward_on_the_branch_builds() {
     assert_eq!(code, 0, "{after}");
     assert!(after.contains("(0 seen, 0 told, 1 rewarded)"), "{after}");
 }
+
+/// spec-0118 acceptance 3: the hall door made a one-way door, declared
+/// `shortcut` and opened only from the cell, is met from its wrong side, the
+/// hall. Over one build `DW1011` counts it as a way round and does not judge
+/// it, and the shut-way check judges it at that face.
+#[test]
+fn a_one_way_door_dw1011_counts_is_judged_at_its_wrong_side() {
+    let camp = gated_fixture(
+        "shut-way-one-way-door",
+        |v| {
+            for e in v["content"]["edges"].as_array_mut().unwrap() {
+                if e["id"] == "edge/hall-cell" {
+                    e["shortcut"] = serde_json::json!(true);
+                    e["gating"]["opens_from"] = serde_json::json!("b");
+                    e["gating"]["learned"] = serde_json::json!("told");
+                }
+            }
+        },
+        |_| {},
+        |q| {
+            q["content"]["triggers"] = serde_json::json!([{
+                "id": "trigger/cell-door-wrong-side", "at": "anchor/seam-hall-cell",
+                "on": { "on": "use" }, "once": false, "audience": "presser",
+                "effects": [{ "type": "narrate", "style": "actionbar",
+                              "text": "The door does not open from this side." }]
+            }]);
+        },
+    );
+    let (code, text) = build("shut-way-one-way-door", &camp, &common::prefabs_dir());
+    assert_eq!(code, 0, "{text}");
+    assert!(
+        text.contains("1 declared a way round (shortcut)"),
+        "DW1011 counts the door: {text}"
+    );
+    assert!(
+        text.contains("shut way(s) met at a face — 1 declared (0 seen, 1 told, 0 rewarded)")
+            || text.contains("declared (0 seen, 1 told, 0 rewarded)"),
+        "the shut-way check judges it: {text}"
+    );
+    let ledger: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            Path::new(env!("CARGO_TARGET_TMPDIR"))
+                .join("remedy-out-shut-way-one-way-door/validation/shut-ways.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let row = &ledger["rows"][0];
+    assert_eq!(row["face"], "node/hall", "{ledger}");
+    assert_eq!(
+        row["openable"], false,
+        "met from the side it does not open from: {ledger}"
+    );
+}
