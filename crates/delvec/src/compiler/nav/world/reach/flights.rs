@@ -356,9 +356,11 @@ const NEAR_DOWN: i32 = 32;
 const NEAR_UP: i32 = 12;
 const NEAR_W: usize = (2 * NEAR_XZ + 1) as usize;
 const NEAR_H: usize = (NEAR_DOWN + NEAR_UP + 1) as usize;
+/// The slots of the box round a launch cell [`near_slot`] indexes.
+pub(super) const NEAR_SLOTS: usize = NEAR_W * NEAR_W * NEAR_H;
 
 #[inline]
-fn near_slot(c: [i32; 3]) -> Option<usize> {
+pub(super) fn near_slot(c: [i32; 3]) -> Option<usize> {
     let x = (c[0] + NEAR_XZ) as u32;
     let y = (c[1] + NEAR_DOWN) as u32;
     let z = (c[2] + NEAR_XZ) as u32;

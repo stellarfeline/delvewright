@@ -717,6 +717,84 @@ impl Codes for Shifted<'_> {
     }
 }
 
+/// The cells round a node its launches read, each read through `inner` the
+/// first time in the node's expansion and from a slot after: a node's
+/// thousands of launches, and every flight-memo walk among them, read the
+/// same few hundred cells over and over. A slot answers what `inner`
+/// answered, and a read it answers still grows the bank's current run and
+/// scope box by the cell (its bit, being the expansion's, was set by the
+/// first read), so what the bank records of a run is what it was without
+/// the slots.
+struct Local<'a, C: Codes + ?Sized> {
+    inner: &'a C,
+    at: [i32; 3],
+    track: Option<&'a bank::Track<'a>>,
+    slots: Vec<std::cell::Cell<(u32, Code)>>,
+    stamp: u32,
+}
+
+thread_local! {
+    static LOCAL: std::cell::RefCell<(u32, Vec<std::cell::Cell<(u32, Code)>>)> =
+        const { std::cell::RefCell::new((0, Vec::new())) };
+}
+
+impl<'a, C: Codes + ?Sized> Local<'a, C> {
+    fn new(inner: &'a C, at: [i32; 3], track: Option<&'a bank::Track<'a>>) -> Self {
+        let (stamp, slots) = LOCAL.with(|l| {
+            let mut l = l.borrow_mut();
+            let mut slots = std::mem::take(&mut l.1);
+            if slots.is_empty() {
+                slots = vec![std::cell::Cell::new((0, 0)); flights::NEAR_SLOTS];
+            }
+            l.0 = l.0.wrapping_add(1);
+            if l.0 == 0 {
+                for s in &slots {
+                    s.set((0, 0));
+                }
+                l.0 = 1;
+            }
+            (l.0, slots)
+        });
+        Local {
+            inner,
+            at,
+            track,
+            slots,
+            stamp,
+        }
+    }
+}
+
+impl<C: Codes + ?Sized> Drop for Local<'_, C> {
+    fn drop(&mut self) {
+        let slots = std::mem::take(&mut self.slots);
+        LOCAL.with(|l| l.borrow_mut().1 = slots);
+    }
+}
+
+impl<C: Codes + ?Sized> Codes for Local<'_, C> {
+    fn wet(&self) -> bool {
+        self.inner.wet()
+    }
+    #[inline(always)]
+    fn code(&self, c: [i32; 3]) -> Code {
+        let Some(i) = flights::near_slot(c) else {
+            return self.inner.code(c);
+        };
+        let (s, v) = self.slots[i].get();
+        if s == self.stamp {
+            if let Some(t) = self.track {
+                let a = [c[0] + self.at[0], c[1] + self.at[1], c[2] + self.at[2]];
+                t.extend((a, a));
+            }
+            return v;
+        }
+        let v = self.inner.code(c);
+        self.slots[i].set((self.stamp, v));
+        v
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The launch set (spec-0113 §4.3).
 // ---------------------------------------------------------------------------
@@ -2177,7 +2255,8 @@ impl World {
                 let killed = |st: &State| self.kills(st);
                 let edge_memo: EdgeMemo = std::cell::RefCell::new(HashMap::default());
                 // Its cells are among the node's own (`node_boxes`).
-                let near = NearStart::new(&shifted);
+                let local = Local::new(&shifted, c, track);
+                let near = NearStart::new(&local);
                 // An edge position read cells: a launch that takes it from the
                 // memo reads them too, for the run it is in.
                 // Nodes whose cells round them hold the same codes find the same
@@ -2257,7 +2336,7 @@ impl World {
                                     continue;
                                 }
                                 let matches =
-                                    arc.read.iter().all(|(r, code)| shifted.code(*r) == *code)
+                                    arc.read.iter().all(|(r, code)| local.code(*r) == *code)
                                         && !arc.swept.is_some_and(|b| {
                                             self.lethal_near(&b.offset([
                                                 f64::from(c[0]),
@@ -2333,7 +2412,7 @@ impl World {
                                                     )
                                                 };
                                             }
-                                            match flights::lookup(&key, &shifted) {
+                                            match flights::lookup(&key, &local) {
                                                 Some(leaf)
                                                     if leaf.holds_at(bottom)
                                                         && !leaf.swept.is_some_and(|b| {
@@ -2343,11 +2422,11 @@ impl World {
                                                     Flown::Kept(leaf)
                                                 }
                                                 Some(_) => {
-                                                    let f = run_here!(&shifted);
+                                                    let f = run_here!(&local);
                                                     Flown::Here(f.outcome, f.swept)
                                                 }
                                                 None => {
-                                                    let reads = flights::Reads::new(&shifted);
+                                                    let reads = flights::Reads::new(&local);
                                                     let f = run_here!(&reads);
                                                     flights::record(key, reads, &f);
                                                     Flown::Here(f.outcome, f.swept)
