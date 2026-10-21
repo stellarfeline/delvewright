@@ -18,7 +18,8 @@ WHAT IT ASSERTS
 1. The build job exists, runs exactly `BUILD`, uploads the artifact `ARTIFACT`,
    and declares the `sha256` output its consumers verify against.
 2. A job outside `COMPILES` invokes cargo only against another workspace (a
-   `--manifest-path` naming `prefabs/`), in its own `run:` text and in every
+   `--manifest-path` naming `gallery/prefab-generator/`, the gallery's
+   generator and its own workspace), in its own `run:` text and in every
    repository script that text invokes, followed through the shell libraries
    those scripts source.
 3. A job outside `COMPILES` that runs `target/debug/delvec` needs the build job
@@ -77,7 +78,8 @@ COMPILES: dict[str, str] = {
 }
 
 CARGO_COMPILE = re.compile(r"\bcargo\s+(?:\+\S+\s+)?(?P<verb>build|run|test|bench|clippy|check|install|package|publish|doc)\b")
-OTHER_WORKSPACE = re.compile(r"--manifest-path[\s=]+[\"']?(?:\$\S*/)?prefabs/")
+# `gallery/prefab-generator` is its own workspace (the root workspace excludes it).
+OTHER_WORKSPACE = re.compile(r"--manifest-path[\s=]+[\"']?(?:\$\S*/)?gallery/prefab-generator/")
 PY_CARGO = re.compile(
     r"[\"']cargo[\"']\s*,\s*[\"'](?P<verb>build|run|test|bench|clippy|check|install|package|publish|doc)[\"'](?P<rest>[^\]]*)\]",
     re.S,

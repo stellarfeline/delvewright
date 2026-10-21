@@ -210,6 +210,7 @@ pub(super) fn quest_completion_fns(
     plan: &Plan,
     chrome: &delvewright_dsl::Chrome,
     branch_transport: &BranchTransportOverlay,
+    holders: &[crate::compiler::holders::OwnedHolder],
 ) -> Vec<(String, String)> {
     let ns = &plan.namespace;
     let c = plan.campaign;
@@ -221,7 +222,7 @@ pub(super) fn quest_completion_fns(
             // v0.3 activation function (gap 13): run once when the objective
             // activates (driven from `tick`) — set the global once-flag, then place
             // the objective's prop(s). Emitted only for objectives with a prop.
-            let cmds = activation_commands(plan, q_area, o);
+            let cmds = activation_commands(plan, holders, q_area, o);
             if !cmds.is_empty() {
                 let mut act = vec![format!(
                     "scoreboard players set {} dw.sys 1",
@@ -280,6 +281,14 @@ pub(super) fn quest_completion_fns(
             }
 
             let mut body: Vec<String> = Vec::new();
+            // spec-0114 §6.3: an item laid at a place leaves the hand. The
+            // function runs `as` the player the tick's hand guard found holding
+            // the item, so `@s` is the one who presented it, and exactly one of
+            // it is taken at the moment of completion. First, so nothing the
+            // completion's effects do can stand between the click and the take.
+            if let Some(it) = o.taken_item() {
+                body.push(format!("clear @s {it} 1"));
+            }
             // The completing action advances the PARTY (spec-0018) — this single
             // write is what lets two players clear two arms of an AND-join in two
             // rooms and unlock the successor for both.
@@ -338,7 +347,7 @@ pub(super) fn quest_completion_fns(
             // persist; only summoned entities are removed. Gated identically to the
             // summon (a non-empty activation) so objectives with no summon emit
             // nothing here.
-            if !activation_commands(plan, q_area, o).is_empty() {
+            if !activation_commands(plan, holders, q_area, o).is_empty() {
                 body.extend(completion_cleanup(o));
             }
             // `complete_<obj>` is dispatched `as @a` from `tick`, so this bundle

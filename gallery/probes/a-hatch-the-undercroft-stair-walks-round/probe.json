@@ -1,0 +1,13 @@
+{
+  "code": "DW1011",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "remove",
+      "path": "/content/edges/9/shortcut"
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The shaft down through the near hall's floor no longer declared a way round. Its hatch is built shut until the muster is cleared, and once the story doors open the undercroft is reached from the far hall's stair as well — a connection the author left open — so while the hatch is shut a body at the near hall's face of it walks through the west door, down the undercroft stair and stands under it. `DW1011` judges the hatch, a gated `drop` (spec-0107 widened its population from `barred` edges to every gated connection), and names the way round with its moves. It declares no unit: what must not compile is a gated way a body gets round that nothing declares a way round."
+}

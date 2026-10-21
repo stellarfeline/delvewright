@@ -69,9 +69,8 @@ not third-party reconstructions.
   `minecraft:iron_chain` in 1.21.11 and kept being emitted; a structure template
   loads an unknown block as AIR, so the piece ships with the feature silently
   missing. Consumed by `delvec::schem::blocks` (the grammar export and
-  `delvec prefab audit`'s `DW0733`) and by `prefabs/invariants/src/invariants.rs` +
-  `prefabs/invariants/src/connections.rs` (the `prefab-invariants` crate every
-  `prefabs/*-generator` depends on).
+  `delvec prefab audit`'s `DW0733`) and by `gallery/prefab-generator/src/prefab_invariants/invariants.rs` +
+  `gallery/prefab-generator/src/prefab_invariants/connections.rs` (the gallery's generator's piece invariants).
   `DW0193` (every DSL block-id site) validates against this registry
   (`dsl::registry::VendoredBlockRegistry`).
   **Reproduce it**: `python3 tools/maintenance/extract-block-registry.py
@@ -99,7 +98,7 @@ not third-party reconstructions.
   Consumed by `delvec::schem::blocks` (`shape_carrying` /
   `omitted_shape_carrying`), which serves `delvec prefab audit` and the grammar
   back end's `shape-complete` gate + export refusal, and by
-  `prefabs/invariants/src/connections.rs`, which fills the properties this table names from the
+  `gallery/prefab-generator/src/prefab_invariants/connections.rs`, which fills the properties this table names from the
   piece's own neighbours before a generator writes its bytes.
 
 - **`block-appearance-1.21.11.json`** — how every 1.21.11 block **looks**: its
@@ -395,7 +394,7 @@ not third-party reconstructions.
   recipe graph in the same summary. 1166 blocks → **788 families**, 128
   multi-member covering 506 blocks, largest **20** (deepslate). Consumed by
   `tools/creator/block-appearance.py`'s screen and mix report (spec-0035), and by
-  `prefabs/invariants/src/connections.rs`, whose `fence` / `pane` / `wall` connection classes
+  `gallery/prefab-generator/src/prefab_invariants/connections.rs`, whose `fence` / `pane` / `wall` connection classes
   are this table's `form` rather than a name-matched list of its own.
   **Why it exists**: palette selection needed to answer "what shape is this" and
   "what material is this derived from", and the only alternative was name
@@ -578,6 +577,26 @@ not third-party reconstructions.
   a second method — a type registered by `register(String, boolean)` returns a
   `SimpleParticleType`; at 1.21.11, 115 types, 97 simple, 18 taking options —
   and refuses when that reading disagrees with the table in any id or answer.
+
+### The item-holder table, read from the jar and written in source
+
+`delvewright_dsl::holders` (spec-0111) holds the item-holder class's entity
+families — `minecraft:item_frame`, `minecraft:glow_item_frame`,
+`minecraft:armor_stand` — with each kind's scene keys, hitbox, slot
+vocabulary, the stand's click bands and filter bits, and the owned-key rules.
+It is not a vendored file: it was read from the pinned 1.21.11 dedicated
+server jar — the bundled `META-INF/versions/1.21.11/server-1.21.11.jar`,
+sha256 `ec47239a8de246335e1d54f6ac319bd35641778eb4b6a6da06372840d02fcebc`,
+from the dedicated-server download `versions.toml` pins — disassembled with
+`javap -c -p` and named through Mojang's official 1.21.11 server mappings
+(`server.txt`, sha1 `5621e9253f05fd57872bbe7f8ddf5f9a7d525955`): the save keys
+from `ItemFrame.readAdditionalSaveData`, `BlockAttachedEntity.readAdditionalSaveData`
+and `ArmorStand.readAdditionalSaveData`; the slot names from `SlotRanges`; the
+filter bits from `EquipmentSlot.<clinit>`; the bands from
+`ArmorStand.getClickedSlot`; the hitboxes from `EntityType.<clinit>`. Every
+entity id is held to the vendored `entities-1.21.11.json` by a test
+(`crates/delvec/tests/holder_table.rs`) that shares no configuration with that
+reading.
 
 ### What vanilla data does NOT provide (and what the compiler does about it)
 

@@ -397,6 +397,7 @@ mod tests {
             climb: Default::default(),
             unheld_climb: Default::default(),
             material: Default::default(),
+            footprints: Default::default(),
             partial: BTreeMap::new(),
             waterloggable: std::collections::BTreeSet::new(),
         };

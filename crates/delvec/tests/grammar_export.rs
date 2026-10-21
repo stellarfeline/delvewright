@@ -781,18 +781,14 @@ fn shown_faces_is_fenced_by_the_document_s_version() {
 // The write-then-expand pair
 // ---------------------------------------------------------------------------
 
-/// **The test that found the defect, run against the repair.**
+/// **An expansion measures its own light, and the command agrees with it.**
 ///
-/// `DW0894` refuses to show a piece nobody has measured the light of. Its remedy
-/// used to be `delvec prefab lighting --write`, and an export rewrites the whole
-/// metadata document — so the next `delvec grammar expand` reset the field the
-/// command had just written. Two actions, each undoing the other, one
-/// prescribing what the other refuses: the pair defect this repository names,
-/// and it made `DW0894` a diagnostic that would refuse every generated zone
-/// unless a creator re-ran a measurement after every single expansion, with
-/// nothing telling them to.
+/// An export rewrites the whole metadata document, so a profile `delvec prefab
+/// lighting --write` wrote would be reset by the next `delvec grammar expand`
+/// unless the expansion measures it too. Two doors onto one measurement must
+/// write the same thing.
 ///
-/// The repair is not to preserve the field. A lighting profile is a MEASUREMENT
+/// The answer is not to preserve the field. A lighting profile is a MEASUREMENT
 /// of the bytes, and carrying one across an expansion that writes new bytes makes
 /// the document's own `method` line ("min over N floor cell(s) …") false about
 /// the piece it now sits beside. `shown_faces` took the preserve-and-write-through

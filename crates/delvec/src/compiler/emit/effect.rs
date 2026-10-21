@@ -622,10 +622,8 @@ pub(super) fn emit_quest_effect(
             ));
         }
         // --- DSL v0.4 effects ---
-        Verb::Narrate {
-            text, style, sound, ..
-        } => {
-            emit_narrate(text, *style, sound.as_deref(), who, body);
+        Verb::Narrate(n) => {
+            emit_narrate(&n.text, n.style, n.sound.as_deref(), who, body);
         }
         Verb::SetBlock { anchor, block, .. } => {
             if let Some(pos) = anchor_point_any(plan, anchor.as_str()) {
@@ -691,9 +689,8 @@ pub(super) fn emit_quest_effect(
         Verb::Cutscene { .. } => {
             // Shape is policed at validation (`DW0199`); an unshaped cutscene
             // resolves to no shots and emits no call rather than a dangling one.
-            if let Some(shots) = eff.cutscene_shots().filter(|s| !s.is_empty()) {
-                let party = eff.cutscene_party().unwrap_or_default();
-                body.push(format!("function {ns}:{}", cutscene_fn(&shots, party)));
+            if let Some(name) = cutscene_effect_fn(eff) {
+                body.push(format!("function {ns}:{name}"));
             }
         }
         // --- DSL v0.5 effects (spec-0010) ---

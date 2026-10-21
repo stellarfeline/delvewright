@@ -844,6 +844,13 @@ def read_build_ledgers(out: Path) -> tuple[dict, list[str]]:
         # being emitted, or a measure that stopped seeing it.
         if f.name == "chain-length.json" and not doc.get("steps"):
             zeroes.append(f"{f.name}: `steps` is 0")
+        # spec-0018: the gallery declares an AND-join and a `carrier: one` give,
+        # so a party ledger binding neither a `party_join` template nor a
+        # two-player carrier template is a check that stopped reaching them.
+        if f.name == "party-division.json":
+            for k in ("and_joins_bound", "carrier_one_judged"):
+                if not doc.get(k):
+                    zeroes.append(f"{f.name}: `{k}` is 0")
     # …and a path that exercises a loop with no loop ledger beside it is a build
     # that crossed a slab nothing judged.
     path = out / "critical-path.json"
@@ -854,6 +861,13 @@ def read_build_ledgers(out: Path) -> tuple[dict, list[str]]:
                 "loop-gate.json: absent beside a critical path that exercises a loop — the "
                 "slab it crosses was never judged"
             )
+    # …and a build that emitted a PackTest suite with no party ledger beside it
+    # stated nothing about the AND-joins and carriers that suite was owed.
+    if "party-division.json" not in ledgers and (out / "packtest-datapack").is_dir():
+        zeroes.append(
+            "party-division.json: absent beside a PackTest suite — the party-division "
+            "checks stated no binding"
+        )
     # …and a path that performs a trigger with no DW1044 ledger beside it is a
     # build whose walked-past proof was never written. Its zero — no trigger
     # judged — is the generic `examined` row above: `threshold-gate.json` states
@@ -864,6 +878,26 @@ def read_build_ledgers(out: Path) -> tuple[dict, list[str]]:
                 "threshold-gate.json: absent beside a critical path that performs a trigger — "
                 "no walk to the step that needs one was judged (DW1044)"
             )
+    # …and a build that resolved a gate with no DW1047 ledger beside it is a
+    # build whose redstone proof was never written. Its zero — no gate
+    # examined — is the generic `gates_examined` row above.
+    seal = ledgers.get("gate-seal.json")
+    if "gate-signal.json" not in ledgers and isinstance(seal, dict) and seal.get("gates_examined"):
+        zeroes.append(
+            "gate-signal.json: absent beside a build that resolves a gate — no shut gate "
+            "was judged for a signal that opens it (DW1047)"
+        )
+    # …and a path that proves an objective with no act ledger beside it is a
+    # build whose titles nothing read (spec-0114 §9.6). Its zero — titles
+    # present, none judged — is the generic `examined` row above:
+    # `act-gate.json` states `judged` also as `examined`.
+    if "act-gate.json" not in ledgers and any(
+        isinstance(st, dict) and st.get("objective") for st in steps
+    ):
+        zeroes.append(
+            "act-gate.json: absent — no objective title of this build was read against "
+            "the act its completion performs (DW1045)"
+        )
     return ledgers, zeroes
 
 

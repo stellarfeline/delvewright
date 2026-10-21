@@ -63,37 +63,35 @@
       {
         "a": "node/near-hall",
         "b": "node/far-hall",
-        "class": "barred",
+        "class": "walk",
         "gating": {
+          "opens_from": "a",
           "quest": "quest/near-hall"
         },
-        "id": "edge/west-door",
-        "opens_from": "a",
-        "shortcut": true
+        "id": "edge/west-door"
       },
       {
         "a": "node/near-hall",
         "b": "node/far-hall",
-        "class": "barred",
+        "class": "walk",
         "gating": {
+          "opens_from": "either",
           "quest": "quest/near-hall"
         },
-        "id": "edge/centre-door",
-        "opens_from": "either",
-        "shortcut": true
+        "id": "edge/centre-door"
       },
       {
         "a": "node/near-hall",
         "b": "node/far-hall",
-        "class": "barred",
+        "class": "walk",
         "gating": {
           "flags": [
             "flag/east-door-drawn"
-          ]
+          ],
+          "opens_from": "b"
         },
         "id": "edge/east-door",
         "one_way": "a-to-b",
-        "opens_from": "b",
         "shortcut": true
       },
       {
@@ -103,7 +101,8 @@
         "gating": {
           "flags": [
             "flag/muster-cleared"
-          ]
+          ],
+          "opens_from": "a"
         },
         "id": "edge/loft-stair"
       },
@@ -112,6 +111,11 @@
         "b": "node/loft",
         "class": "drop",
         "falls": "b-to-a",
+        "gating": {
+          "flags": [
+            "flag/muster-cleared"
+          ]
+        },
         "id": "edge/loft-drop",
         "shortcut": true
       },
@@ -125,6 +129,11 @@
         "a": "node/undercroft",
         "b": "node/near-hall",
         "class": "climb",
+        "gating": {
+          "flags": [
+            "flag/muster-cleared"
+          ]
+        },
         "id": "edge/undercroft-crawl",
         "one_way": "a-to-b",
         "shortcut": true
@@ -139,7 +148,8 @@
             "flag/muster-cleared"
           ]
         },
-        "id": "edge/undercroft-shaft"
+        "id": "edge/undercroft-shaft",
+        "shortcut": true
       },
       {
         "a": "node/far-hall",
@@ -215,6 +225,6 @@
       }
     ]
   },
-  "dsl_version": "0.50.0",
+  "dsl_version": "0.58.0",
   "stage": "layout-graph"
 }

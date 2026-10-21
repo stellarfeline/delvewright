@@ -1,0 +1,23 @@
+{
+  "code": "DW1019",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/containers",
+      "value": {}
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/content/containers.decoration_notice"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/source/containers.decoration_notice"
+    }
+  ],
+  "units": [],
+  "why": "The gallery's `containers` object kept and emptied: a declaration of the container class that says nothing. It declares no unit: the object's one field is bound in the primary, and what the engine refuses is the empty object, which an author could only have meant as the notice they forgot to write."
+}

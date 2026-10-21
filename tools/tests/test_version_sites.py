@@ -122,10 +122,10 @@ def test_a_site_that_stopped_carrying_the_number_reds(scratch: Path) -> None:
 
 
 def test_a_row_whose_file_is_gone_reds(scratch: Path) -> None:
-    (scratch / "prefabs/Cargo.lock").unlink()
+    (scratch / "gallery/prefab-generator/Cargo.lock").unlink()
     r = run("verify", root=scratch)
     assert r.returncode == 1
-    assert "no such file: prefabs/Cargo.lock" in r.stderr
+    assert "no such file: gallery/prefab-generator/Cargo.lock" in r.stderr
 
 
 @pytest.mark.parametrize("kind", sorted(version_sites.ROWS))

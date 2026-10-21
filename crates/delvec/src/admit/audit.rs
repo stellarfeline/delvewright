@@ -53,7 +53,7 @@ const HARD_FORBID_BE: &[&str] = &[
     "structure_block",
 ];
 
-use crate::admit::allowlist::Allowlist;
+use crate::admit::allowlist::{Allowlist, route_for};
 use crate::admit::diag::{DW_ALLOWLIST, DW_FORBIDDEN, DW_UNKNOWN_BLOCK, Diagnostic};
 use crate::admit::structure::Structure;
 
@@ -107,6 +107,11 @@ pub struct AuditReport {
     /// Run directions that leave the piece's own outer face, where these bytes
     /// decide nothing. Counted, never judged.
     pub fluid_at_edge: usize,
+    /// **What the entity judge examined** (spec-0111 §3.1): the template's
+    /// entities, how many are item holders, and how many were refused —
+    /// `DW0730` for a kind the entity list does not name, `DW1036` for an
+    /// owned key on a holder. Always present, a zero included.
+    pub entities: crate::admit::entities::EntityBinding,
     pub findings: Vec<Finding>,
     /// **What the spatial contract's second door did** — always present, in
     /// every arm, including the arms where it judged nothing.
@@ -569,17 +574,31 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
                 Diagnostic::error(
                     DW_ALLOWLIST,
                     format!(
-                        "block `{}`{via} is not in the palette allowlist — swap it for an \
-                         allowlisted block, or, if the prefab genuinely needs it, propose adding \
-                         it to the allowlist under review. Do NOT bypass the allowlist to admit \
-                         the asset",
-                        judged.judged
+                        "block `{}`{via} is not in the palette allowlist — {}. If the prefab \
+                         genuinely needs the block as geometry, propose adding it to the \
+                         allowlist under review. Do NOT bypass the allowlist to admit the asset",
+                        judged.judged,
+                        match route_for(judged.judged) {
+                            Some(route) => format!(
+                                "the DSL has a surface for it, so take the block out of the \
+                                 prefab and {route}"
+                            ),
+                            None => "no DSL surface stands in for it, so swap it for an \
+                                     allowlisted block"
+                                .to_string(),
+                        }
                     ),
                 )
                 .at(b.pos),
             );
         }
     }
+
+    // --- Entities (spec-0111 §3.1): item holders saying what they look like,
+    // and nothing else. ---
+    let (entities, entity_diags) = crate::admit::entities::judge(&s.entities, allow);
+    not_allowlisted += entities.not_allowlisted;
+    diags.extend(entity_diags);
 
     let verdict = if diags.iter().any(|d| d.is_error()) {
         "fail"
@@ -601,6 +620,7 @@ fn audit_palette(asset: &str, s: &Structure, allow: &Allowlist) -> (AuditReport,
         fluid_cells_examined: 0,
         fluid_held_cells: 0,
         fluid_at_edge: 0,
+        entities,
         findings: diags.iter().map(to_finding).collect(),
         contract: crate::admit::spatial::DoorBinding::default(),
         waterline: WaterlineBinding::no_document(),
@@ -633,9 +653,14 @@ pub fn audit_tile_set(
     let mut palette: BTreeSet<String> = BTreeSet::new();
     let (mut block_count, mut forbidden, mut not_allowlisted, mut unknown_blocks) = (0, 0, 0, 0);
     let (mut pre_pin_unknown, mut underspecified) = (0, 0);
+    let mut entities = crate::admit::entities::EntityBinding::default();
 
     for (part, structure) in tiles {
         let (rep, diags) = audit_palette(&part.file, structure, allow);
+        entities.examined += rep.entities.examined;
+        entities.holders += rep.entities.holders;
+        entities.not_allowlisted += rep.entities.not_allowlisted;
+        entities.owned_keys += rep.entities.owned_keys;
         block_count += rep.block_count;
         forbidden += rep.forbidden;
         not_allowlisted += rep.not_allowlisted;
@@ -689,6 +714,7 @@ pub fn audit_tile_set(
         fluid_cells_examined: settling.fluid_cells_examined,
         fluid_held_cells: settling.fluid_held_cells,
         fluid_at_edge: settling.fluid_at_edge,
+        entities,
         findings: all_diags.iter().map(to_finding).collect(),
         contract: crate::admit::spatial::DoorBinding::default(),
         waterline: WaterlineBinding::no_document(),

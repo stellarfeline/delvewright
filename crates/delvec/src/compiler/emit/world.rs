@@ -13,6 +13,11 @@ pub(super) fn sealing_commands(
         "gamerule advance_weather false".to_string(),
         "gamerule fire_spread_radius_around_player 0".to_string(),
         "gamerule mob_griefing false".to_string(),
+        // A frame under `entity_drops false` deletes the item a hit pops
+        // (`ItemFrame.dropItem`), so the take of a framed item would hand the
+        // player nothing (spec-0111 §4.1). Written for every campaign: the rule
+        // is the world's, not the frame's.
+        "gamerule entity_drops true".to_string(),
         // Spawn scatter OFF. Vanilla scatters a first join / spawnpoint-less
         // respawn uniformly in a square of this radius around world spawn; in a box
         // garden every scattered cell is solid prefab (or void), so the only

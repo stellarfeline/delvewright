@@ -122,6 +122,28 @@ impl NoBodyKind {
     }
 }
 
+/// **The place a piece is judged as seated in** — the kind is the place's,
+/// never the piece's own word.
+///
+/// Whether a piece is entered is decided by the place it is seated in, so the
+/// obligations about entry — a way in from outside, an exterior face, a walk
+/// from the entry space — are owed to a place, not to the bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Place {
+    /// Seated in a place a body reaches: the entry owes a way in from outside.
+    Reached,
+    /// Seated in scenery (`reached: false`, spec-0098 §14): built to be seen
+    /// and never entered, so the piece claims no way in, and declaring one is
+    /// a contradiction.
+    Scenery,
+    /// Seated in no place the judge can read: a bare piece. Whether it is
+    /// entered or stood in has no subject yet, so no way in is demanded or
+    /// forbidden, and an entry or floor obligation that binds nothing is
+    /// stated, not refused; floor the piece has is judged as for a reached
+    /// place, so an undeclared standable cell is still refused.
+    Unseated,
+}
+
 /// The verdict over one (grid, resolved contract) pair.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContractReport {
@@ -382,6 +404,8 @@ struct Index<'a> {
     contract: &'a SpatialContract,
     /// The piece's place is scenery: it claims no way in (see [`check_sealed`]).
     sealed: bool,
+    /// The piece is seated in no place: entry is not asked (see [`Place`]).
+    unseated: bool,
     /// Space name → cells.
     space_cells: BTreeMap<&'a str, BTreeSet<[i32; 3]>>,
     /// Out-of-walk region name → cells.
@@ -423,6 +447,7 @@ impl<'a> Index<'a> {
         Index {
             contract,
             sealed: false,
+            unseated: false,
             space_cells,
             no_body_cells,
             via_cells,
@@ -528,6 +553,29 @@ fn scenery_zero(ix: &Index) -> Option<String> {
     })
 }
 
+/// **Why a bare piece owes no entry**, or `None`: the piece is seated in no
+/// place ([`Place::Unseated`]), so whether a body enters it — the way in, the
+/// exterior face it is entered through, the walk from its entry space — has no
+/// subject until a place seats it, and is judged there. `what` names the
+/// obligation that bound nothing.
+fn unseated_zero(ix: &Index, what: &str) -> Option<String> {
+    ix.unseated.then(|| {
+        format!(
+            "{what}: the piece is seated in no place, and whether a body enters it is the              place's question — it is judged where a place seats the piece, and not asked of              the bare piece"
+        )
+    })
+}
+
+/// **Why a bare piece with no floor owes no floor declaration**, or `None`:
+/// the piece is seated in no place and holds no standable cell, so the floor
+/// gates have nothing to judge and whether a body stands in it is the place's
+/// question. A bare piece WITH floor is judged on it as a reached place is.
+fn floorless_zero(ix: &Index) -> Option<String> {
+    (ix.standable.is_empty())
+        .then(|| unseated_zero(ix, "0 standable cell(s)"))
+        .flatten()
+}
+
 /// Every passable cell the air outside the piece reaches.
 ///
 /// The positive fact `facade` demands (spec-0036 §2.6). The model's region *is*
@@ -589,8 +637,27 @@ pub fn check_sealed(
     anchors: &BTreeMap<String, [i32; 3]>,
     sealed: bool,
 ) -> ContractReport {
+    let place = if sealed {
+        Place::Scenery
+    } else {
+        Place::Reached
+    };
+    check_at(model, contract, anchors, place)
+}
+
+/// [`check`] for a piece seated in `place` (see [`Place`]). `delvec detail`
+/// always knows the place it writes for; a standalone audit derives it from the
+/// campaigns beside the library (`crate::admit::scenery::place_kind`), and a
+/// piece none of them seats is [`Place::Unseated`].
+pub fn check_at(
+    model: &VoxelModel,
+    contract: &SpatialContract,
+    anchors: &BTreeMap<String, [i32; 3]>,
+    place: Place,
+) -> ContractReport {
     let mut ix = Index::new(model, contract);
-    ix.sealed = sealed;
+    ix.sealed = place == Place::Scenery;
+    ix.unseated = place == Place::Unseated;
     let mut gates = Vec::new();
     let mut findings = Vec::new();
     let mut enumeration = Vec::new();
@@ -654,11 +721,13 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
                 e.a, e.class, e.b
             ));
         }
-    } else if !contract.edges.iter().any(|e| {
-        is_traversal(&e.class)
-            && ((e.a == contract.entry && e.b == EXTERIOR)
-                || (e.b == contract.entry && e.a == EXTERIOR))
-    }) {
+    } else if !ix.unseated
+        && !contract.edges.iter().any(|e| {
+            is_traversal(&e.class)
+                && ((e.a == contract.entry && e.b == EXTERIOR)
+                    || (e.b == contract.entry && e.a == EXTERIOR))
+        })
+    {
         bad.push(format!(
             "the entry space {:?} carries no `exterior` edge of a traversal class — the piece \
              claims no way in",
@@ -866,6 +935,19 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
             // cell of ANOTHER exterior opening of the same space that itself
             // touches the room: a cell reached only through its own opening's
             // cells is still detached.
+            //
+            // **An opening shut by its own bar** (spec-0107 §6): a hole through
+            // a floor whose bar stands in the course above it — the grating over
+            // a ladder's hole — opens onto the room through the bar's cells, so
+            // a cell of the edge's own bar that touches the room is a hop the
+            // same as another opening's. The bar is the edge's; it is the shut
+            // state of this very hole.
+            let own_bar: BTreeSet<[i32; 3]> = edge
+                .bar
+                .as_ref()
+                .filter(|_| edge.class == "barred")
+                .map(|b| cells(&b.boxes))
+                .unwrap_or_default();
             let through_other: BTreeSet<[i32; 3]> = contract
                 .edges
                 .iter()
@@ -877,6 +959,7 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
                         && (e.a == *space || e.b == *space)
                 })
                 .flat_map(|(j, _)| ix.via_cells[j].iter().copied())
+                .chain(own_bar.iter().copied())
                 .filter(|c| !via.contains(c) && touches_room(c))
                 .collect();
             let detached: BTreeSet<[i32; 3]> = via
@@ -1155,7 +1238,7 @@ fn coverage(ix: &Index) -> Gate {
                 describe_cells(&uncovered)
             )
         },
-        empty_ok: scenery,
+        empty_ok: scenery.or_else(|| floorless_zero(ix)),
         bound: ix.standable.len(),
     }
 }
@@ -1930,8 +2013,11 @@ fn no_body_gate(ix: &Index, kinds: &CellKinds) -> Gate {
             ix.standable.len()
         )
     });
-    let empty_ok =
-        all_play_space.or_else(|| scenery_zero(ix).filter(|_| kinds.by_region.is_empty()));
+    let empty_ok = all_play_space.or_else(|| {
+        scenery_zero(ix)
+            .or_else(|| floorless_zero(ix))
+            .filter(|_| kinds.by_region.is_empty())
+    });
     Gate {
         id: "contract-no-body",
         state: verdict(bad.is_empty()),
@@ -2360,9 +2446,16 @@ fn reachability(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<String>) -
 
     Gate {
         id: "contract-reachability",
-        state: verdict(unreached.is_empty() && (!targets.is_empty() || ix.sealed)),
+        state: verdict(unreached.is_empty() && (!targets.is_empty() || ix.sealed || ix.unseated)),
         undecided: 0,
-        empty_ok: targets.is_empty().then(|| scenery_zero(ix)).flatten(),
+        empty_ok: targets
+            .is_empty()
+            .then(|| {
+                scenery_zero(ix).or_else(|| {
+                    unseated_zero(ix, "no declared space holds a standable cell to walk to")
+                })
+            })
+            .flatten(),
         bound: targets.len(),
         detail: if !unreached.is_empty() {
             format!(
@@ -2765,11 +2858,17 @@ fn exterior_faces_gate(ix: &Index, model: &VoxelModel, enumeration: &mut Vec<Str
         id: "contract-exterior-faces",
         state: verdict(silent.is_empty()),
         undecided: 0,
-        empty_ok: (ix.sealed && declared == 0).then(|| {
-            "0 exterior edge(s): the place is scenery, built to be seen and never entered, so \
-             the piece claims no way in"
-                .to_string()
-        }),
+        empty_ok: (declared == 0)
+            .then(|| {
+                ix.sealed
+                    .then(|| {
+                        "0 exterior edge(s): the place is scenery, built to be seen and never \
+                         entered, so the piece claims no way in"
+                            .to_string()
+                    })
+                    .or_else(|| unseated_zero(ix, "0 exterior edge(s)"))
+            })
+            .flatten(),
         bound: declared,
         detail: if !silent.is_empty() {
             silent.join(" · ")
@@ -2823,7 +2922,7 @@ fn no_body_majority(ix: &Index, kinds: &CellKinds) -> Gate {
         id: "contract-no-body-majority",
         state: verdict(!majority || excused),
         undecided: 0,
-        empty_ok: scenery_zero(ix),
+        empty_ok: scenery_zero(ix).or_else(|| floorless_zero(ix)),
         bound: total,
         detail: if !majority {
             format!(

@@ -968,6 +968,7 @@ mod tests {
                 climb: BTreeMap::new(),
                 unheld_climb: BTreeMap::new(),
                 material: Default::default(),
+                footprints: Default::default(),
             },
             crate::compiler::nav::Premises::geometry_only(),
         )
@@ -1172,6 +1173,7 @@ mod tests {
             climb: BTreeMap::new(),
             unheld_climb: BTreeMap::new(),
             material: Default::default(),
+            footprints: Default::default(),
         };
         occ.partial.insert([4, 63, 3], 8);
         let w = World::from_occupancy(occ, crate::compiler::nav::Premises::geometry_only());

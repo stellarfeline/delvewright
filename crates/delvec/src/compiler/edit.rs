@@ -83,11 +83,11 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
-    /// **Advisory.** A stage-7 batch writes inside a `close-gate` region: the
-    /// gameplay seal fills that region with the gate anchor's block and `open-gate`
-    /// clears it to air, so one close/open cycle destroys the edit visually. Every
-    /// proof stays sound (the occupancy model already treats the region as
-    /// gate-controlled), so this warns rather than rejects.
+    /// **Advisory.** A stage-7 batch writes inside a region a runtime write lays
+    /// its own block in (`plan.region_events`: a `close-gate`, a `fill-region`, a
+    /// `set-block`, a laid way, a prop the datapack sets), so the write destroys
+    /// the edit visually. Every proof stays sound (the region model reads the
+    /// write), so this warns rather than rejects.
     pub const DW_EDIT_GATE_REGION: DwCode = DwCode::new("DW0353", ExitTier::Build);
 }
 
@@ -868,12 +868,13 @@ fn gate_region_warnings(
             "world-edits",
             format!("/content/batches/{bid}"),
             format!(
-                "world-edits batch `{bid}` writes {} cell(s) (first [{}, {}, {}]) inside a \
-                 `close-gate` region [{}, {}, {}]..[{}, {}, {}]. That region is filled solid \
-                 when the gate closes and cleared to AIR when it opens, so one close/open \
-                 cycle erases the edit — the dressing you see in `delvec snapshot` is not what \
-                 players see after the beat fires. Move the edit outside the gate region, or \
-                 keep it only if you are deliberately dressing the sealed state",
+                "world-edits batch `{bid}` writes {} cell(s) (first [{}, {}, {}]) inside the \
+                 region [{}, {}, {}]..[{}, {}, {}] a runtime write lays its own block in — a \
+                 `close-gate`, a `fill-region`, a `set-block`, a laid way, or a prop the \
+                 datapack sets — and a gate's dual clears it to AIR, so the write erases the \
+                 edit: the dressing you see in `delvec snapshot` is not what players see once \
+                 it lands. Move the edit outside that region, or keep it only if you are \
+                 deliberately dressing the state before the write",
                 hits.len(),
                 first[0],
                 first[1],
@@ -1404,7 +1405,7 @@ fn is_dressing_candidate(assembled: &Assembled, c: [i32; 3]) -> bool {
 
 /// The `scatter` verb (spec-0017): seeded dressing over a region's
 /// standable cells, honoring keep-clear envelopes. Ported from the greenfield
-/// meadow's flower/dressing pass (`prefabs/island-terrain-generator`): raw
+/// meadow's flower/dressing pass (the island terrain generator): raw
 /// white-noise gates (dressing wants speckle, not the fill verbs' clustered
 /// patches), weighted item pick per cell, optional both-axes spacing rule and
 /// count cap taken in descending noise order — the generators' spread idiom.
@@ -1489,7 +1490,7 @@ fn scatter(
 
 // ---------------------------------------------------------------------------
 // The lean-or-grow canopy rules, ported from
-// `prefabs/island-terrain-generator` — spec-0017's `plant` verb. The corridor
+// the island terrain generator — spec-0017's `plant` verb. The corridor
 // rule is STRUCTURAL, never a cut: a canopy that would reach a keep-clear
 // column first leans one block away; failing that the tree grows tall enough
 // to arch its whole canopy over the corridor. No leaf is ever sliced.
@@ -2078,7 +2079,8 @@ fn coalesce_commands(writes: &BTreeMap<[i32; 3], String>) -> Vec<String> {
 
 // ---------------------------------------------------------------------------
 // The seeded palette primitive family (ported from the island/cave prefab
-// generators — `prefabs/cave-generator`, `prefabs/island-terrain-generator` —
+// generators — the cave and island terrain generators, kept in the content
+// repository as `prefabs/generators/` provenance records —
 // the repo's proven "palette recipe + value noise" idiom: a smooth noise field
 // keys a cumulative-weight palette, so picks cluster into strata/patches
 // instead of per-cell speckle).

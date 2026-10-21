@@ -54,7 +54,6 @@ jobs:
       rust: ${{ steps.reach.outputs.rust }}
       publishable: ${{ steps.reach.outputs.publishable }}
       engine-shelf: ${{ steps.reach.outputs.engine-shelf }}
-      prefab-generators: ${{ steps.reach.outputs.prefab-generators }}
       harness: ${{ steps.reach.outputs.harness }}
       skin-tool: ${{ steps.reach.outputs.skin-tool }}
       tool-tests-tree: ${{ steps.reach.outputs.tool-tests-tree }}
@@ -422,15 +421,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      # Two workspaces: the engine, and `prefabs` (one workspace, target
-      # `prefabs/target`), whose `gallery-generator` member the gallery
-      # subject's `gallery-prefabs.py` compiles.
+      # Two workspaces: the engine, and `gallery/prefab-generator` (its own
+      # workspace), which the gallery subject's `gallery-prefabs.py` compiles.
       - uses: Swatinem/rust-cache@v2
         with:
           key: determinism-macos
           workspaces: |
             . -> target
-            prefabs -> target
+            gallery/prefab-generator -> target
       - name: build the engine under test
         run: cargo build --locked -p delvec --bin delvec
       - name: the macOS side's digest
@@ -513,79 +511,6 @@ jobs:
           python-version: "3.12"
       - name: every shelf target compiles
         run: bash tools/ci/build-release-binaries.sh --check-only
-
-  # The prefab generators are ONE workspace outside `crates/` (`prefabs/`, which
-  # the root workspace excludes, so nothing here can enter the shipped `delvec`),
-  # which until it was wired meant `cargo …--workspace` never saw them and nothing
-  # in CI compiled, ran or checked them at all. Their whole design is that every
-  # debugging lesson is pinned as an ASSERT — route walkability, stair-flank
-  # sealing, anchor sanity, gravity substrate, sightlines — so simply running each
-  # generator IS the gate: it either emits or panics. Wired after the drowned-bell
-  # shipped a tileset with 132 reversed stair blocks (`DW0430`) through a green
-  # pipeline.
-  prefab-generators:
-    name: prefab generators (invariants + determinism)
-    needs: changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.prefab-generators == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: prefabs
-      # `fmt` is NOT here, and that is the point of the change that moved it: it
-      # lived in a hand-written list of generator names, so a person's
-      # `cargo fmt --all` could not reach it and only a pull request could tell
-      # them. It is one sweep in `rust (fmt, clippy, test)` running
-      # `tools/ci/fmt-workspaces.sh --check` — the same script a person runs, over a
-      # population derived from `git ls-files` rather than typed here.
-      #
-      # `clippy -D warnings` IS here now. It was held back while the oldest
-      # generator carried two pre-existing style lints; those are fixed, and one
-      # workspace means one invocation covers every generator and the shared
-      # crate rather than seven that could each be forgotten.
-      - name: the generators and the rules they share are clippy-clean
-        run: |
-          cargo clippy --locked --manifest-path prefabs/Cargo.toml \
-            --workspace --all-targets -- -D warnings
-      # `prefab-invariants` is the crate every generator depends on, so this one
-      # `cargo test` compiles and runs the shared gate's own unit tests —
-      # including the cases that prove it FAILS (a rock stacked on a stair
-      # tread), which running the generators can only prove by not firing.
-      - name: shared generator invariants — unit tests
-        run: cargo test --locked --manifest-path prefabs/Cargo.toml --workspace
-      # Running the generator twice into different trees proves BOTH halves at
-      # once: the invariants (a panic fails the job) and ADR-0006 byte-identity.
-      #
-      # The list is written out rather than derived, and it is not a list
-      # somebody has to remember: `tools/ci/check-structure-emitters.py` holds it
-      # equal to the generators on disk in both directions, so a generator added
-      # to the workspace and not named here is a red rather than a silence.
-      - name: run every generator twice — invariants hold, output is identical
-        run: |
-          set -euo pipefail
-          for g in generator cave-generator gallery-generator hello-room-generator \
-                   island-generator island-terrain-generator rig-generator tidal-keep-generator; do
-            echo "::group::$g"
-            rm -rf "/tmp/$g-a" "/tmp/$g-b"
-            mkdir -p "/tmp/$g-a" "/tmp/$g-b"
-            cargo run --locked --release --manifest-path "prefabs/$g/Cargo.toml" \
-              -- "/tmp/$g-a" > /dev/null
-            cargo run --locked --release --manifest-path "prefabs/$g/Cargo.toml" \
-              -- "/tmp/$g-b" > /dev/null
-            diff -r "/tmp/$g-a" "/tmp/$g-b"
-            echo "::endgroup::"
-          done
-      # And the other half of what a re-run must not do: DELETE a key it did not
-      # write. The generators merge through
-      # `prefab_invariants::document::write_preserving`; this plants the kinds of
-      # key a later step adds — an anchor a campaign binds, an entry role, a
-      # shown face, a spatial contract, a key this engine does not model — and
-      # refuses if a re-generation loses one.
-      - name: a generator deletes nothing it did not write
-        run: |
-          python3 tools/ci/check-generator-preservation.py \
-            --scratch "$RUNNER_TEMP/generator-preservation"
 
   harness:
     name: harness (typecheck, test)
@@ -694,11 +619,16 @@ jobs:
           python-version: "3.14"
       - name: install mecha + beet (both pinned)
         run: pip install "mecha==0.104.1" "beet==0.116.0"
+      # hello-world binds `prefab/hello-room`, an engine test piece: it builds
+      # from the test library, the pinned library with the engine's test data
+      # laid over it by the one assembler the Rust tests also run.
+      - name: assemble the engine's test library (pinned library + test data)
+        run: bash tools/ci/test-library.sh campaigns/prefabs "$RUNNER_TEMP/test-library"
       - name: build the hello-world delve
         run: |
           target/debug/delvec \
             build crates/dsl/fixtures/valid/hello-world \
-            -o out --prefabs campaigns/prefabs
+            -o out --prefabs "$RUNNER_TEMP/test-library"
       - name: mecha validates every emitted mcfunction
         run: python3 .github/scripts/mecha_crosscheck.py out/datapack
 
@@ -1380,12 +1310,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      # The cache serves `prefabs/gallery-generator`, which `gallery-prefabs.py`
+      # The cache serves `gallery/prefab-generator` (its own workspace), which `gallery-prefabs.py`
       # compiles: a different workspace from the engine, built for its own sake.
       - uses: Swatinem/rust-cache@v2
-        with: { key: gallery }
+        with:
+          key: gallery
+          workspaces: gallery/prefab-generator -> target
       - uses: ./.github/actions/delvec-binary
         with: { sha256: "${{ needs.delvec-binary.outputs.sha256 }}" }
+      # The generator and the piece invariants it carries
+      # (`src/prefab_invariants/`), held to clippy and to their own unit tests —
+      # including the cases that prove a rule FAILS (a rock stacked on a stair
+      # tread), which running the generator can only prove by not firing.
+      - name: the gallery's generator is clippy-clean
+        run: |
+          cargo clippy --locked --manifest-path gallery/prefab-generator/Cargo.toml \
+            --all-targets -- -D warnings
+      - name: the gallery's generator and its invariants — unit tests
+        run: cargo test --locked --manifest-path gallery/prefab-generator/Cargo.toml
       # The piece and the skins, generated — never committed (§6). Doing this in
       # a job of its own means a generator that stopped producing a piece fails
       # in a context named for the generator, not inside one named for a gate.
@@ -1418,6 +1360,17 @@ jobs:
           path: ${{ runner.temp }}/gallery-pieces/gallery-pieces.tar
           if-no-files-found: error
           retention-days: 1
+      # A generator deletes no key it did not write: the generator writes its
+      # documents through `prefab_invariants::document::write_preserving`; this
+      # plants the kinds of key a later step adds — an anchor a campaign binds,
+      # an entry role, a shown face, a spatial contract, a key this engine does
+      # not model — and refuses if a re-generation loses one. Its population is
+      # every generator workspace on disk; the release build is the one the step
+      # above made.
+      - name: a generator deletes nothing it did not write
+        run: |
+          python3 tools/ci/check-generator-preservation.py --no-build \
+            --scratch "$RUNNER_TEMP/generator-preservation"
       # ADR-0006's LINUX HALF for the gallery (ADR-0034): the gallery primary —
       # its generated pieces, the campaign `gallery_domain` materialises and its
       # `en` build — digested by the same script, invoked identically, that the
@@ -1438,6 +1391,9 @@ jobs:
     needs: [changes, delvec-binary, gallery-pieces]
     if: github.event_name != 'pull_request' || needs.changes.outputs.gallery-coverage == 'true'
     runs-on: ubuntu-latest
+    # The job's bound, so a reach graph that grows past its measured cost reds
+    # here instead of holding a runner for six hours.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -1672,7 +1628,7 @@ jobs:
       DELVEWRIGHT_RUN_TIMEOUT_MS: "2400000"
     steps:
       - uses: actions/checkout@v4
-      # The cache serves `prefabs/gallery-generator`, which `gallery-prefabs.py`
+      # The cache serves `gallery/prefab-generator` (its own workspace), which `gallery-prefabs.py`
       # compiles: a different workspace from the engine.
       - uses: Swatinem/rust-cache@v2
         with: { key: gallery-bot }
@@ -1775,6 +1731,17 @@ jobs:
             validation/gallery-src-site-plan -o written-world-site-plan
           python3 tools/ci/check-written-world.py validation/delve-output-gallery-site-plan \
             written-world-site-plan validation/delve-output-gallery-site-plan/world
+      # The site-plan point is where the gallery's shut floor gates are — the
+      # undercroft shaft's hatch and the cover over the crawl's ladder — and a
+      # floor holds the body that stands on it. The hatch stand puts the bot on
+      # every point of every one, on a fresh world before any beat; with
+      # `--only-hatch-stand` the ladder reds when the build names none.
+      - name: a body stood on every shut floor gate stays on it (site-plan)
+        if: '!cancelled()'
+        run: |
+          bash validation/bot-run.sh --project dw-ci-gallery-hatch \
+            --output ./delve-output-gallery-site-plan --only-hatch-stand \
+            --run-out ./run-out/dw-ci-gallery-hatch
       - name: job summary
         if: always()
         run: |
@@ -1840,7 +1807,7 @@ jobs:
       - name: bootstrap — one live Mojang fetch for the whole job
         run: bash validation/server-bootstrap-cache.sh
 
-      # The cache serves `prefabs/gallery-generator`, which the gallery pass
+      # The cache serves `gallery/prefab-generator` (its own workspace), which the gallery pass
       # compiles: a different workspace from the engine.
       - uses: Swatinem/rust-cache@v2
       # The run's one `delvec`, handed to every build step below. Each of those
@@ -1849,11 +1816,19 @@ jobs:
       # dependency resolution once reddened "build the hello-world delve output".
       - uses: ./.github/actions/delvec-binary
         with: { sha256: "${{ needs.delvec-binary.outputs.sha256 }}" }
+      # Every engine fixture below builds from the test library: hello-world and
+      # the spec fixtures bind `prefab/hello-room`, an engine test piece, and
+      # keep-trial, souls-bonfire and souls-td-lanes draw `areas[]` pieces from
+      # pools. The shipped library holds neither; both are engine test data,
+      # laid over the pinned library by the one assembler the Rust tests also
+      # run.
+      - name: assemble the engine's test library (pinned library + test data)
+        run: bash tools/ci/test-library.sh campaigns/prefabs "$RUNNER_TEMP/test-library"
       - name: build the hello-world delve output
         run: |
           target/debug/delvec \
             build crates/dsl/fixtures/valid/hello-world \
-            -o validation/delve-output --prefabs campaigns/prefabs
+            -o validation/delve-output --prefabs "$RUNNER_TEMP/test-library"
 
       # spec-0005: the delve image now builds FROM ghcr.io/stellarfeline/delvewright-base
       # by digest (Dockerfile.delve), so this pulls the base from GHCR — no Docker Hub.
@@ -1972,7 +1947,7 @@ jobs:
         run: |
           target/debug/delvec \
             build crates/delvec/tests/fixtures/cast-ledger \
-            -o validation/delve-output-cast --prefabs campaigns/prefabs
+            -o validation/delve-output-cast --prefabs "$RUNNER_TEMP/test-library"
 
       - name: PackTest suite — cast ledger (per-clause ladder, bark delivery, explicit none)
         run: |
@@ -1992,7 +1967,7 @@ jobs:
         run: |
           target/debug/delvec \
             build crates/delvec/tests/fixtures/cast-state-ladder \
-            -o validation/delve-output-caststate --prefabs campaigns/prefabs
+            -o validation/delve-output-caststate --prefabs "$RUNNER_TEMP/test-library"
 
       - name: PackTest suite — cast ladder distinguishes state-only siblings
         run: |
@@ -2023,7 +1998,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p gallery-prefabs
-          cargo run --locked --manifest-path prefabs/gallery-generator/Cargo.toml \
+          cargo run --locked --manifest-path gallery/prefab-generator/Cargo.toml \
             -- gallery-prefabs --skins gallery/skins --design gallery/design \
             --textures gallery/textures
           target/debug/delvec build gallery \
@@ -2054,7 +2029,7 @@ jobs:
         run: |
           target/debug/delvec \
             build crates/dsl/fixtures/valid/keep-trial \
-            -o validation/delve-output-keeptrial --prefabs campaigns/prefabs
+            -o validation/delve-output-keeptrial --prefabs "$RUNNER_TEMP/test-library"
 
       - name: PackTest suite — keep-trial (`requires_item` is HELD, not carried)
         run: |
@@ -2073,7 +2048,7 @@ jobs:
         run: |
           target/debug/delvec \
             build crates/delvec/tests/fixtures/souls-bonfire \
-            -o validation/delve-output-bonfire --prefabs campaigns/prefabs
+            -o validation/delve-output-bonfire --prefabs "$RUNNER_TEMP/test-library"
 
       - name: PackTest suite — souls-bonfire (rest, re-seat, stationed re-seat)
         run: |
@@ -2093,7 +2068,7 @@ jobs:
         run: |
           target/debug/delvec \
             build crates/delvec/tests/fixtures/souls-td-lanes \
-            -o validation/delve-output-lanes --prefabs campaigns/prefabs
+            -o validation/delve-output-lanes --prefabs "$RUNNER_TEMP/test-library"
 
       - name: PackTest suite — souls-td-lanes (patrol NBT, march, release, re-seat)
         run: |
@@ -2129,7 +2104,7 @@ jobs:
         run: |
           target/debug/delvec \
             build crates/delvec/tests/fixtures/lethal-volume \
-            -o validation/delve-output-lethal --prefabs campaigns/prefabs
+            -o validation/delve-output-lethal --prefabs "$RUNNER_TEMP/test-library"
 
       - name: PackTest suite — lethal-volume (a body enters the box and dies)
         run: |
@@ -2154,7 +2129,7 @@ jobs:
         run: |
           target/debug/delvec \
             build crates/delvec/tests/fixtures/teleport-volume \
-            -o validation/delve-output-teleport --prefabs campaigns/prefabs
+            -o validation/delve-output-teleport --prefabs "$RUNNER_TEMP/test-library"
 
       - name: PackTest suite — teleport-volume (everything in the box moves)
         run: |
@@ -2176,7 +2151,7 @@ jobs:
         run: |
           target/debug/delvec \
             build crates/delvec/tests/fixtures/economy \
-            -o validation/delve-output-economy --prefabs campaigns/prefabs
+            -o validation/delve-output-economy --prefabs "$RUNNER_TEMP/test-library"
 
       - name: PackTest suite — economy (a purchase debits; a stake gives back)
         run: |
@@ -2220,7 +2195,7 @@ jobs:
         run: |
           target/debug/delvec \
             build crates/delvec/tests/fixtures/lift \
-            -o validation/delve-output-lift --prefabs campaigns/prefabs
+            -o validation/delve-output-lift --prefabs "$RUNNER_TEMP/test-library"
 
       - name: PackTest suite — lift (both rides move everything in the car)
         run: |
@@ -2256,7 +2231,7 @@ jobs:
         run: |
           target/debug/delvec \
             build crates/delvec/tests/fixtures/lift-stake \
-            -o validation/delve-output-lift-stake --prefabs campaigns/prefabs
+            -o validation/delve-output-lift-stake --prefabs "$RUNNER_TEMP/test-library"
 
       - name: PackTest suite — lift-stake (the ride leaves the wager standing)
         run: |
@@ -2267,7 +2242,7 @@ jobs:
         run: |
           target/debug/delvec \
             build crates/delvec/tests/fixtures/souls-timed-gate-disarm \
-            -o validation/delve-output-tgdisarm --prefabs campaigns/prefabs
+            -o validation/delve-output-tgdisarm --prefabs "$RUNNER_TEMP/test-library"
 
       - name: PackTest suite — souls-timed-gate-disarm (jam, then no re-seal)
         run: |

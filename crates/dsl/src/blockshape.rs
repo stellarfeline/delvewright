@@ -954,6 +954,176 @@ pub fn face_is_full(name: &str, face: Face) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Whether a floor holds a body standing over it (the collision footprint)
+// ---------------------------------------------------------------------------
+
+/// The pinned jar's collision-footprint table:
+/// `crates/dsl/data/collision-footprints-1.21.11.tsv`, the horizontal (x, z)
+/// projection of every blockstate's collision shape on a 16x16 grid of
+/// sixteenths (`tools/maintenance/dump-collision-footprints.py`).
+const FOOTPRINT_TSV: &str = include_str!("../data/collision-footprints-1.21.11.tsv");
+
+/// One block state's collision **footprint**: sixteen rows, `z = 0..15`, bit `x`
+/// set when the sixteenth-square `(x, z)` lies inside one of its collision boxes.
+pub type Footprint16 = [u16; 16];
+
+/// A footprint that covers the whole cell.
+pub const FULL_FOOTPRINT: Footprint16 = [0xFFFF; 16];
+
+/// A footprint that covers nothing.
+pub const EMPTY_FOOTPRINT: Footprint16 = [0; 16];
+
+fn footprint_rows() -> &'static PinnedRows<Footprint16> {
+    static ROWS: std::sync::OnceLock<PinnedRows<Footprint16>> = std::sync::OnceLock::new();
+    ROWS.get_or_init(|| {
+        pinned_rows(FOOTPRINT_TSV, "footprint", |fp, _covered| match fp {
+            "full" => FULL_FOOTPRINT,
+            "-" => EMPTY_FOOTPRINT,
+            hex => {
+                let mut rows = EMPTY_FOOTPRINT;
+                for (z, row) in rows.iter_mut().enumerate() {
+                    *row = u16::from_str_radix(&hex[z * 4..z * 4 + 4], 16)
+                        .expect("footprint table row parses");
+                }
+                rows
+            }
+        })
+    })
+}
+
+/// **The footprint the server holds for this block state** — the pinned jar's
+/// collision footprint, with every property the server re-derives from the
+/// neighbours taken at its least.
+///
+/// A pane's or a bar's connections, a fence's and a wall's arms are not the
+/// author's to set: the game re-derives them from what stands beside the block
+/// whenever the block or a neighbour updates, so the bytes a structure carries
+/// are not what the server holds. Those properties are the block's
+/// shape-carrying ones ([`crate::blocks::BlockRegistry::shape_carrying`]), and
+/// the footprint read here is the **intersection** over every value they take:
+/// iron bars are their 2x2-sixteenth post, whatever arms the template wrote.
+/// That can only report a gap the server closes, never close one it leaves
+/// open — the direction every reader of [`body_falls_through`] needs.
+///
+/// A block the table does not hold (a foreign namespace) is [`FULL_FOOTPRINT`],
+/// the full-cube default this module takes for everything it cannot read.
+pub fn server_footprint(name: &str) -> Footprint16 {
+    let id = namespaced_id(name);
+    let Some(rows) = footprint_rows().get(id.as_ref()) else {
+        return FULL_FOOTPRINT;
+    };
+    let reg = crate::blocks::BlockRegistry::v1_21_11();
+    let derived = reg.shape_carrying(&id);
+    let defaults = reg.default_state(&id);
+    let mut out = FULL_FOOTPRINT;
+    let mut any = false;
+    for (props, fp) in rows {
+        let selected = props.iter().all(|(k, v)| {
+            derived.iter().any(|d| d == k)
+                || state_value(name, k)
+                    .or_else(|| defaults.and_then(|d| d.get(k)).map(String::as_str))
+                    == Some(v.as_str())
+        });
+        if selected {
+            any = true;
+            for (o, r) in out.iter_mut().zip(fp) {
+                *o &= r;
+            }
+        }
+    }
+    if any { out } else { FULL_FOOTPRINT }
+}
+
+/// Whether this block state's server footprint covers its whole cell.
+pub fn footprint_is_full(name: &str) -> bool {
+    server_footprint(name) == FULL_FOOTPRINT
+}
+
+/// The side of the smallest square of whole sixteenths a standing body's
+/// footprint fits through: [`crate::metrics::PLAYER_WIDTH`] (0.6 = 9.6/16)
+/// rounded up, because every gap the footprint grid reports is a whole number
+/// of sixteenths and a gap of 9 is narrower than the body while a gap of 10 is
+/// not.
+pub fn body_side_16() -> usize {
+    (crate::metrics::PLAYER_WIDTH * 16.0).ceil() as usize
+}
+
+/// **Does a body over the centre cell of this course fall through it?** —
+/// the question a floor answers, asked of the blocks' collision footprints
+/// rather than of whether the cells hold a block.
+///
+/// `layer[dz][dx]` is the footprint of the cell at `(dx − 1, dz − 1)` from the
+/// centre, all in one horizontal course, and `under` the same for the course
+/// below it; a cell a body passes through (air, a torch, a fence-gate opening)
+/// is [`EMPTY_FOOTPRINT`]. The answer is `true` when a square of
+/// [`body_side_16`] sixteenths, placed anywhere on the grid with its centre
+/// over the centre cell, meets no covered sixteenth in either course: a body
+/// there drops between the boxes and on down. A square that clears the course
+/// and lands on the course below beside the hole is a body standing on that
+/// floor, which is no fall through anything — the grating over a ladder's
+/// hole, whose post every body over the one-cell hole meets. That is how iron bars or a pane laid
+/// flat through a floor fail to hold a body: each cell is a post, and a 2x2 of
+/// them leaves a gap of 14 sixteenths between the posts, wider than a body.
+/// One cell of bars set in solid ground holds, because every placement of the
+/// body over it meets the post or the ground around it.
+pub fn body_falls_through(layer: &[[Footprint16; 3]; 3], under: &[[Footprint16; 3]; 3]) -> bool {
+    let side = body_side_16();
+    let covered = |x: usize, z: usize| {
+        let bit = 1 << (x % 16);
+        layer[z / 16][x / 16][z % 16] & bit != 0 || under[z / 16][x / 16][z % 16] & bit != 0
+    };
+    // A centre in 16..32 on both axes puts the square's low corner at centre − side/2.
+    let half = side / 2;
+    for z0 in (16 - half)..(32 - half) {
+        for x0 in (16 - half)..(32 - half) {
+            if (z0..z0 + side).all(|z| (x0..x0 + side).all(|x| !covered(x, z))) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// **Every footprint [`server_footprint`] can answer**, sorted and without
+/// repeats: [`FULL_FOOTPRINT`], and for each block of the pinned table and each
+/// assignment of the properties the server does not re-derive, the
+/// intersection of the rows that assignment selects — the intersection
+/// `server_footprint` takes. A footprint's position here names it the same way
+/// in every build (ADR-0006), which a reader that packs a footprint into a
+/// small code needs ([`server_footprint_index`]).
+pub fn server_footprint_palette() -> &'static [Footprint16] {
+    static PALETTE: std::sync::OnceLock<Vec<Footprint16>> = std::sync::OnceLock::new();
+    PALETTE.get_or_init(|| {
+        let reg = crate::blocks::BlockRegistry::v1_21_11();
+        let mut out = std::collections::BTreeSet::from([FULL_FOOTPRINT]);
+        for (id, rows) in footprint_rows() {
+            let derived = reg.shape_carrying(id);
+            let mut groups: std::collections::BTreeMap<Vec<(String, String)>, Footprint16> =
+                std::collections::BTreeMap::new();
+            for (props, fp) in rows {
+                let key: Vec<(String, String)> = props
+                    .iter()
+                    .filter(|(k, _)| !derived.iter().any(|d| d == k))
+                    .cloned()
+                    .collect();
+                let acc = groups.entry(key).or_insert(FULL_FOOTPRINT);
+                for (o, r) in acc.iter_mut().zip(fp) {
+                    *o &= r;
+                }
+            }
+            out.extend(groups.into_values());
+        }
+        out.into_iter().collect()
+    })
+}
+
+/// The position of `fp` in [`server_footprint_palette`], or `None` for a
+/// footprint the server never holds.
+pub fn server_footprint_index(fp: &Footprint16) -> Option<usize> {
+    server_footprint_palette().binary_search(fp).ok()
+}
+
+// ---------------------------------------------------------------------------
 // What redstone does to a block (spec-0100 §4.2)
 // ---------------------------------------------------------------------------
 
@@ -1980,5 +2150,126 @@ mod tests {
         ] {
             assert!(!is_player_openable(id), "{id}");
         }
+    }
+
+    /// The footprint table reads the jar: a bar with no connection is a
+    /// 2x2-sixteenth post at the cell centre, an arm adds a 2-sixteenth strip to
+    /// its face, and a closed iron trapdoor of either half covers the cell.
+    #[test]
+    fn the_footprint_table_reads_the_jar() {
+        let post = {
+            let mut f = EMPTY_FOOTPRINT;
+            f[7] = 0x0180;
+            f[8] = 0x0180;
+            f
+        };
+        assert_eq!(
+            pinned_row(
+                footprint_rows(),
+                "minecraft:iron_bars[east=false,north=false,south=false,west=false]"
+            ),
+            Some(&post)
+        );
+        // Whatever arms the bytes carry, the server re-derives them: the post.
+        assert_eq!(
+            server_footprint("minecraft:iron_bars[east=true,north=true,south=true,west=true]"),
+            post
+        );
+        assert_eq!(server_footprint("minecraft:glass_pane"), post);
+        for half in ["top", "bottom"] {
+            let lid = format!("minecraft:iron_trapdoor[facing=north,half={half},open=false]");
+            assert!(footprint_is_full(&lid), "{lid}");
+        }
+        assert!(!footprint_is_full(
+            "minecraft:iron_trapdoor[facing=north,open=true]"
+        ));
+        assert!(footprint_is_full("minecraft:stone"));
+        assert_eq!(server_footprint("minecraft:air"), EMPTY_FOOTPRINT);
+        assert_eq!(body_side_16(), 10);
+    }
+
+    /// A floor of bars over a drop lets a body through between its posts; one
+    /// bar set in solid ground does not, and nor does a closed iron trapdoor.
+    #[test]
+    fn a_body_falls_between_bars_and_not_through_a_trapdoor() {
+        let bar = server_footprint("minecraft:iron_bars");
+        let stone = FULL_FOOTPRINT;
+        // The north-west cell of a 2x2 hatch of bars in a stone floor.
+        let hatch = [[stone, stone, stone], [stone, bar, bar], [stone, bar, bar]];
+        let shaft = [
+            [stone, stone, stone],
+            [stone, EMPTY_FOOTPRINT, EMPTY_FOOTPRINT],
+            [stone, EMPTY_FOOTPRINT, EMPTY_FOOTPRINT],
+        ];
+        assert!(body_falls_through(&hatch, &shaft));
+        // The same hatch laid on solid ground: nothing to fall into.
+        assert!(!body_falls_through(&hatch, &[[stone; 3]; 3]));
+        // One cell of bars in a stone floor.
+        let lone = [[stone; 3], [stone, bar, stone], [stone; 3]];
+        let hole = [[stone; 3], [stone, EMPTY_FOOTPRINT, stone], [stone; 3]];
+        assert!(!body_falls_through(&lone, &hole));
+        // A lone post standing in a room over a one-cell hole (a grating): a
+        // body over it that clears the post is over the floor beside the hole.
+        let room = [
+            [EMPTY_FOOTPRINT; 3],
+            [EMPTY_FOOTPRINT, bar, EMPTY_FOOTPRINT],
+            [EMPTY_FOOTPRINT; 3],
+        ];
+        assert!(!body_falls_through(&room, &hole));
+        // A 2x1 row read at its posts leaves 14 sixteenths between them along x
+        // and the whole cell along z: a body fits. The server joins those posts
+        // with arms that close the gap, so this is the reading that reports a
+        // gap the server closes — the direction `server_footprint` is taken in.
+        let row = [[stone; 3], [stone, bar, bar], [stone; 3]];
+        let trench = [
+            [stone; 3],
+            [stone, EMPTY_FOOTPRINT, EMPTY_FOOTPRINT],
+            [stone; 3],
+        ];
+        assert!(body_falls_through(&row, &trench));
+        let lid = server_footprint("minecraft:iron_trapdoor[half=top,open=false]");
+        let shut = [[stone, stone, stone], [stone, lid, lid], [stone, lid, lid]];
+        assert!(!body_falls_through(&shut, &shaft));
+        // A bar beside an open shaft: a body over its edge is over the shaft.
+        let edge = [[stone; 3], [EMPTY_FOOTPRINT, bar, stone], [stone; 3]];
+        let pit = [
+            [stone; 3],
+            [EMPTY_FOOTPRINT, EMPTY_FOOTPRINT, stone],
+            [stone; 3],
+        ];
+        assert!(body_falls_through(&edge, &pit));
+    }
+
+    /// The palette holds every footprint the server answers for every state of
+    /// the pinned table, and nothing twice.
+    #[test]
+    fn the_footprint_palette_holds_every_server_footprint() {
+        let palette = server_footprint_palette();
+        assert!(
+            palette.windows(2).all(|w| w[0] < w[1]),
+            "sorted, no repeats"
+        );
+        let mut states = 0usize;
+        for (id, rows) in footprint_rows() {
+            for (props, _) in rows {
+                let name = if props.is_empty() {
+                    id.clone()
+                } else {
+                    let p: Vec<String> = props.iter().map(|(k, v)| format!("{k}={v}")).collect();
+                    format!("{id}[{}]", p.join(","))
+                };
+                let fp = server_footprint(&name);
+                assert!(server_footprint_index(&fp).is_some(), "{name}");
+                states += 1;
+            }
+        }
+        assert!(states > 1000, "the table binds: {states} state(s)");
+        assert!(server_footprint_index(&server_footprint("minecraft:iron_bars")).is_some());
+        assert!(server_footprint_index(&FULL_FOOTPRINT).is_some());
+        assert!(
+            palette.len() < 1 << 16,
+            "a footprint's index fits sixteen bits: {}",
+            palette.len()
+        );
     }
 }

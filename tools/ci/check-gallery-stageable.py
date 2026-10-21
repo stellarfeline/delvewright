@@ -75,6 +75,14 @@ REPO = Path(__file__).resolve().parents[2]
 GALLERY_BUILD = REPO / "tools" / "ci" / "gallery-build.py"
 STAGING_GATE = REPO / "tools" / "creator" / "staging-gate.py"
 PRIMARY = "primary"
+# The one point that is judged to be red, and exactly how. The `demo-level`
+# overlay declares `demo_level: true` and the gallery is not a queued demo
+# (`docs/demo-levels.md` names campaigns, and the gallery is none), so the
+# gate reads that declaration as one `DEMO-UNQUEUED` row. The point is bound
+# only when its reds are EXACTLY these: the declaration removed (no red), or
+# any other red beside it, is a refusal, so the element stays bound and the
+# expectation can never absorb a second finding.
+EXPECTED_REDS = {"demo-level.en": ["demo-declaration DEMO-UNQUEUED"]}
 ADMISSION = "staging-admission.json"
 
 
@@ -225,11 +233,19 @@ def judged(work: Path, out: Path, point: str, lang: str, r: subprocess.Completed
         "exit": r.returncode,
         "findings": len(rows),
         "reds": reds,
+        "expected_reds": EXPECTED_REDS.get(key, []),
         "inapplicable": sum(1 for x in rows if x["verdict"] == "INAPPLICABLE"),
         "stderr": r.stderr,
         "report": report,
         "token_in_tree": token_in_tree(out),
     }
+
+
+def is_refused(r: dict) -> bool:
+    """A point is refused unless it is judged exactly as declared: stageable, or red in exactly its expected rows."""
+    if r["expected_reds"]:
+        return r["reds"] != r["expected_reds"] or r["exit"] != 1
+    return r["exit"] != 0
 
 
 def main() -> int:
@@ -259,7 +275,7 @@ def main() -> int:
     if not prefabs.is_dir():
         die(
             f"no prefab directory at `{prefabs}`. The gallery's piece is GENERATED: `cargo run "
-            "--manifest-path prefabs/gallery-generator/Cargo.toml -- <dir> --skins gallery/skins "
+            "--manifest-path gallery/prefab-generator/Cargo.toml -- <dir> --skins gallery/skins "
             "--design gallery/design --textures gallery/textures "
             "--terrain gallery/overlays/site-plan/terrain`."
         )
@@ -301,7 +317,7 @@ def main() -> int:
             built(point, lang, src, out, b)
             r = judged(work, out, point, lang, j)
             results.append(r)
-            mark = "REFUSED" if r["exit"] != 0 else "stageable"
+            mark = "REFUSED" if is_refused(r) else ("expected-red" if r["expected_reds"] else "stageable")
             print(
                 f"  {r['key']:<22} {mark:<10} {len(r['reds'])} red / {r['findings']} finding(s), "
                 f"{r['inapplicable']} inapplicable",
@@ -313,7 +329,10 @@ def main() -> int:
     if len(results) != len(rows):
         die(f"judged {len(results)} point(s) of {len(rows)} — the walk did not finish")
 
-    refused = [r for r in results if r["exit"] != 0]
+    refused = [r for r in results if is_refused(r)]
+    missing = sorted(set(EXPECTED_REDS) - {r["key"] for r in results})
+    if missing:
+        die(f"an expected-red point is not in the domain: {', '.join(missing)}")
     leaked = [r for r in results if r["token_in_tree"]]
 
     if leaked:
@@ -337,8 +356,9 @@ def main() -> int:
         return 1
 
     print(
-        f"\nall {len(results)} of {len(rows)} gallery build point(s) are stageable: every finding "
-        "class each one contains carries a live, binding check on that build."
+        f"\nall {len(results)} of {len(rows)} gallery build point(s) are judged as declared "
+        f"({sum(1 for r in results if r['expected_reds'])} with its expected red, the rest stageable): "
+        "every finding class each one contains carries a live, binding check on that build."
     )
     return 0
 

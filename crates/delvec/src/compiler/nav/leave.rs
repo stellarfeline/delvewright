@@ -845,6 +845,7 @@ mod leave_tests {
             climb: Default::default(),
             unheld_climb: Default::default(),
             material: Default::default(),
+            footprints: Default::default(),
         };
         let w = World::from_occupancy(occ, Premises::geometry_only());
         assert!(!w.body_edge_cells([2, 1, 3]).contains(&[3, 0, 3]));
@@ -871,6 +872,7 @@ mod leave_tests {
             climb: Default::default(),
             unheld_climb: Default::default(),
             material: Default::default(),
+            footprints: Default::default(),
         };
         let w = World::from_occupancy(occ, Premises::geometry_only());
         assert_eq!(w.fatal_launch([11, 1, 12]), Some(Death::Lava));

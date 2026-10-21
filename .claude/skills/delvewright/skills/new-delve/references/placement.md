@@ -45,8 +45,14 @@ form and the commands are in *Reference: drawing the map's reference*.
 
 2. **`layout-graph.json`** — the space as a graph, **before any coordinate
    exists**. `nodes[]` are places (`{id, intent, stations?, note?, reached?}`);
-   `edges[]` are connections (`walk | stair | climb | drop | barred | carry |
-   vision`, with `gating`, `one_way`, `shortcut`, `opens_from`). Plus `entry`,
+   `edges[]` are connections (`walk | stair | climb | drop | carry | vision`,
+   with `gating`, `one_way`, `shortcut`). **A connection the story shuts
+   carries `gating`** — `{flags?, quest?, opens_from?}`, naming what opens it
+   — and the world builds it shut: a bar stands in its seam until the quest
+   layer opens `anchor/seam-<edge>`. A door shut by bars is a `walk` with a
+   `gating`; a stair, a ladder or a shaft the story opens later is a gated
+   `stair`, `climb` or `drop`. `opens_from` (`a`, `b`, default either) names
+   the side a one-sided way opens from. Plus `entry`,
    `goal`, an authored `critical_path[]`, and `beats[]` binding every
    place-bound quest beat to the node it happens in.
    - **A place carries no size class.** Its size is its box's `extent` in the
@@ -170,8 +176,9 @@ form and the commands are in *Reference: drawing the map's reference*.
        Its width is yours: a front one cell wide is as legal as one fifty-five
        wide.
      - A contact carries `walk` or `drop` only. A rim falling to a lower court is
-       a real broad hand-off; a stair, a barred door and a sightline are not
-       things a front can be (`DW0876`).
+       a real broad hand-off; a stair, a climb and a sightline are not things a
+       front can be (`DW0876`), and a front cannot carry a `gating`: a bar has no
+       opening to stand in.
      - The engine MEASURES which columns of the span a body crosses, over the
        built bytes, and refuses a front nothing can cross (`DW0877`). Saying the
        face is fine is not a declaration it accepts.
@@ -218,14 +225,16 @@ there are no prefabs to read anchor names out of:
 | --- | --- |
 | `spawn` | the entry node |
 | `anchor/node-<place>` | the floor centre of each reached place — where NPCs, waves and `reach-anchor` objectives go |
-| `anchor/seam-<edge>` | the gate region over a `barred` seam: what `open-gate` or a `shortcut` names |
-| `anchor/unlock-<edge>` | the far-side affordance of a one-sided `barred` seam, where a `shortcut`'s `unlock` stands. Present only when `opens_from` is `a` or `b` |
+| `anchor/seam-<edge>` | the gate region over a gated connection's bar: what `open-gate`, a `shortcut` or a `timed-gate` names. The bar is the opening in a wall (iron bars), the hole through a floor for a drop or a stair (a closed iron trapdoor in the hole's upper half), the course above the hole for a ladder through a floor (a closed iron trapdoor lying on the floor over the hole). A trapdoor opens on a redstone signal, so keep every lever, button, plate or other source off its six neighbours and off the solid blocks beside it |
+| `anchor/unlock-<edge>` | the far-side affordance of a one-sided gated connection, where a `shortcut`'s `unlock` stands. Present only when `gating.opens_from` is `a` or `b` |
 | a `stations[]` entry's `anchor` | a station a layout-graph node declares; it may not take a derived name |
 
 `<place>` and `<edge>` are the part of the id after the `/` — `node/near-hall`
-becomes `anchor/node-near-hall`. A `barred` way declares a non-empty `gating` —
-one with none is passable from world load and is refused (`DW0818`) — and is
-opened by an `open-gate` or `shortcut` naming its own `anchor/seam-<edge>`; a
+becomes `anchor/node-near-hall`. A `gating` names a flag or a quest — one that
+names neither is passable from world load and is refused (`DW0818`) — and its
+quest layer opens the way with an `open-gate` at the beat the gating names, a
+`shortcut`, or a `timed-gate`, naming its own `anchor/seam-<edge>`; a gated way
+nothing opens is refused as a wall carrying a claim about order; a
 sealed door a player can push on owes an answer (`DW0429`) — a `use` trigger
 anchored on the gate.
 

@@ -22,6 +22,7 @@ pub mod audit;
 pub mod catalog;
 pub mod cli;
 pub mod diag;
+pub mod entities;
 pub mod fixtures;
 pub mod gallery;
 pub mod jigsaw;

@@ -36,6 +36,7 @@ export const methods = {
    */
   async beforeStep(this: MineflayerExecutor, step: Step): Promise<void> {
     this.legHearingFrom = undefined;
+    this.stepKeepOut = ("keepOut" in step ? step.keepOut : undefined) ?? [];
     await this.runBacksBefore(step);
     await this.listenAtPulseStations(step);
   },

@@ -194,6 +194,10 @@ caught only at §5, by eye.
 
 ## 3. Author the program as JSON
 
+The Program is the data; how it is produced is the author's choice, by hand or
+by a script that emits it, and a script is checked in beside it as provenance
+(the skill's *New pieces*, step 3, states the rule).
+
 **Read the idiom index first** (`grammar.md` §2c). It is ten techniques with a
 runnable program each, and it is the part of the language that no type signature
 shows: how a repetition, a taper, an opening, a decay gradient, a symmetric
@@ -450,20 +454,12 @@ delvec render piece out/<id>.nbt   -o shots/ --size 640   # one structure templa
 delvec render piece out/<id>.json  -o shots/ --size 640   # a zone that shipped as a tile set
 ```
 
-**Two things are said about the piece before a single frame is planned, because
-neither is visible in a picture** (`DW0894` / `DW0895`, `compiler.md` §5). The
-first is a refusal: a piece **with floor in it** whose document declares
-`"profile": "unmeasured"`, or declares no `lighting` block, or has no document at
-all, is not drawn — the renderer lights every frame for the camera and not for
-the body, so a picture is the one medium darkness does not show in. An expansion
-measures its own light (§6), so this is a piece from somewhere else, or from an
-expansion older than that rule: re-expand it, or run `delvec prefab lighting
-<piece> --write` (§7) and render again. A measured `dark` is fine, not knowing is
-not; a piece with nowhere in it to stand is shown and counted, because there is
-no floor for a measurement to be about.
-The second is a report: how much of the piece's roofed floor no body can walk to,
+**One thing is said about the piece before a single frame is planned, because
+it is not visible in a picture** (`DW0895`, `compiler.md` §5). Light is not
+judged here: it is checked on the whole world and on each region, never on a
+prefab. The report says how much of the piece's roofed floor no body can walk to,
 which pockets it forms, and — where the walk was turned back by the step rule —
-the cell to open. The same two run on `delvec viewer`.
+the cell to open. The same report runs on `delvec viewer`.
 
 Which of the two the expand wrote is a fact about the region (§6); pass whichever
 file is there. The manifest reassembles the tiles first, so every camera below —
@@ -605,6 +601,19 @@ Each of these was established by running it, except the two marked otherwise:
   banner. Anything with a payload is bound by the *campaign* against an anchor
   (spec-0021), never by the piece. So the piece must **declare an anchor** for
   every such thing.
+- **Entities: item holders, saying what they look like, and nothing else**
+  (spec-0111 §3.1). A template's `entities` may carry an item frame, a glow
+  item frame or an armour stand — a grammar program places one with `holder`
+  on a `mark` (`grammar.md` §2b), a hand-written generator writes it and calls
+  `invariants::assert_entities_are_holders` — with only its scene properties: a
+  frame's `Facing`, `ItemRotation`, `Invisible`; a stand's `Rotation`, `Pose`,
+  `Small`, `ShowArms`, `NoBasePlate`, `Invisible`. Its item, lock flags, slot
+  locks and tags are the engine's (`DW1036`), any other entity kind is
+  `DW0730`, and the build ships the template with no entity at all: it summons
+  every holder itself. The holder's cell carries an anchor, which a `loot`
+  entry or a `collect`'s `holder` fills. A frame hangs on the solid block
+  behind its face; a stand stands on a solid block with two clear cells over
+  it (`DW1037`).
 - **No jigsaw connectors.** The export emits none. A grammar prefab is usable as
   a single-`prefab` area as it stands; for a `prefab_pool` a socket is carved
   afterwards (§7).
@@ -727,7 +736,13 @@ The door judges the piece sealed exactly when its writer did: the place kind is
 derived from the layout graph of every campaign under the library's sibling
 `campaigns/` whose `detail-plan` places the piece (by `prefab_id`, the document's
 file name corroborating it), sealed only when at least one does and every one
-places it at a `reached: false` node. The piece's own document is never asked;
+places it at a `reached: false` node. A piece some campaign places elsewhere is
+judged reached. A piece no campaign places is judged **unseated**, a bare piece:
+whether a body enters it or stands in it is the place's question, so no way in is
+demanded or forbidden, and an entry or floor obligation that binds nothing is
+stated rather than refused; floor it has is still owed a declaration. A campaign
+whose `detail-plan.json` or `layout-graph.json` does not parse under this engine
+places nothing and is named as unread. The piece's own document is never asked;
 the first contract enumeration line states the kind and the rows it came from,
 and the report's `contract.owners` / `contract.sealed` carry its binding.
 A door that did not open is `DW0783` and never a silence: it names what it
@@ -772,8 +787,10 @@ as 8) and `minecraft:jigsaw` joins the audited palette. Both are the marker bein
 counted, not a blocked door, and the verdict stays `pass`.
 
 `lighting --write` is a **static** estimate, not a live probe; it says so in the
-metadata it writes. A piece it calls `dark` is dark because the program placed
-no light — the grammar cannot warn you, so this step is where you find out.
+metadata it writes. It measures and records; it judges nothing. Light is checked
+on the whole world and on each region once the piece is seated (`DW0210`), never
+on a prefab, because whether a surface is walked is decided by the place it is
+seated in.
 
 The minimum is taken over the **floor a body can walk to from a ground-level
 entrance**, and the report states how many cells that was, out of how many are
@@ -784,20 +801,19 @@ lantern reaches and no player ever stands in.
 **Which sky the piece is measured under is read off its own `spatial_contract`.**
 A piece declaring no contract, or one declaring any space `open` or `open_top`,
 is measured standing in open air, so sky light reaches under a roof from the
-side — which is why an open-air piece grades like any other, and why a `dark`
-verdict on a colonnade is about the hour rather than about the openings. There
+side — which is why an open-air piece measures like any other, and why a `dark`
+profile on a colonnade is about the hour rather than about the openings. There
 the profile is taken at a clear night, the darkest sky the engine models, and the
-daylight minimum is printed beside it: "black at night, lit by day" is the
-sentence to act on, and `dark` alone is not.
+daylight minimum is printed beside it.
 
 A piece whose contract declares **every** space `enclosed` is measured with no
 sky at all, and both figures are that one. That is the piece a `detail-plan` row
 binds: it stands inside the box a site plan gave it, under a roof the whole owns,
 and never meets the sky — so a `lit` taken off the night sky floor would be true
-of nowhere it can stand, and `DW0210` would say so at the first build. Such a
-piece with no emitter in it reads `dark` here, which is the number to act on:
-put light in the program. The report names the sky it used and why, in
-`assumed_sky`, and the written `method` says it again.
+of nowhere it can stand. Such a piece with no emitter in it reads `dark` here;
+the build's `DW0210` is what judges it, in the place it is seated. The report
+names the sky it used and why, in `assumed_sky`, and the written `method` says
+it again.
 
 A binding of zero is `DW0752` and fails the step — carve the
 sockets before probing a piece whose only way in is one. `--write` without metadata beside the
@@ -1021,20 +1037,23 @@ edit.
 | `delvec grammar` | writes it (single template) and the tile-set manifest (several) |
 | `delvec render` | a narrow view — `anchors`, `connectors`, `lighting` — built from the document's own leaf types, because it must also read a tile-set manifest, which names `structure_set` instead of `structure` |
 | `delvec::schem::split` | one key, `structure_set`, to tell the two shapes apart |
-| `prefabs/generator`, `prefabs/*-generator` | write it, serialize-only (their own workspace, outside the engine's; they never read a prefab back) |
+| `gallery/prefab-generator` | writes it, serialize-only (its own workspace, outside the engine's; it never reads a prefab back) |
 
 ## 10. Hand-written Rust generators
 
-`prefabs/generator` (the keep) and `prefabs/*-generator` are members of the
-`prefabs/` workspace. A campaign tileset generator is maintained, not extended:
-a new piece is a grammar program. `prefabs/gallery-generator` is the exception —
-it builds the gallery, which owes an element for every engine surface. Running
-one is `cargo run --release --manifest-path
-prefabs/<gen>/Cargo.toml -- campaigns/prefabs/`, and every piece it emits goes
-through `prefabs/invariants/src/invariants.rs` — including the block-registry check, so the
-`DW0733` class is refused at that emitter too.
+A new piece is a grammar program. The one hand-written Rust generator the
+engine runs is the gallery's, `gallery/prefab-generator` (its own workspace) —
+it builds the gallery, which owes an element for every engine surface. The
+generators that wrote the shipped library's tilesets are kept in the content
+repository beside the library, at `prefabs/generators/<name>/` there, as
+provenance records (ADR-0018 §6): never built, never a gate. Running the
+gallery's is `cargo run --release --manifest-path
+gallery/prefab-generator/Cargo.toml -- <build-dir>` (`tools/ci/gallery-prefabs.py`
+runs it), and every piece it emits goes through
+`gallery/prefab-generator/src/prefab_invariants/invariants.rs` — including the
+block-registry check, so the `DW0733` class is refused at that emitter too.
 
-`prefabs/invariants/src/connections.rs` runs at those same emitters, just before those gates.
+`gallery/prefab-generator/src/prefab_invariants/connections.rs` runs at the same emitter, just before those gates.
 It fills the shape-carrying properties a state leaves unwritten — connections
 for a fence, wall, pane or bars; absent faces for a vine or a lichen — from the
 piece's own neighbours, by vanilla's rule, and never overwrites a value the
@@ -1051,14 +1070,6 @@ rather than guessing. This is narrower than the `stair-shape` gate above, where 
 stair writing no `shape` makes no claim and nothing disagrees with it: that gate
 judges a claim, this one needs a fact. A stair standing alone may still say
 nothing; a stair standing next to something that joins must say what it is.
-
-A pass that *places* a vine or a lichen asks the same module where the block may
-hold on — `attachable_faces(block, cell, at)`, which returns every supported
-face of that block, best first, and an empty list when the cell can hold
-nothing. Ask it rather than walking the neighbours by hand: the module owns
-which faces the block has and which direction each looks in, so a scan can
-neither name the face pointing away from the rock nor overlook that rock
-overhead is rock to hang from.
 
 A fence gate in a run of fencing takes its `facing` from the run, not from
 taste. A gate is joinable only across `facing.getClockWise()`, so a gate whose

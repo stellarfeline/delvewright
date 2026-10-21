@@ -24,47 +24,81 @@ pub(super) fn dw_codes() -> Vec<&'static str> {
 /// for the ending — the campaign PackTest, the harness completion window — must
 /// wait out the tail the emitter itself scheduled. `sequence` steps add their
 /// `at_ticks`; a `move-npc` / `move-actor` `on_arrive` adds the planned walk
-/// duration. Reaction bundles (`on_respawn` / `on_rest` / `on_caught`) are
-/// skipped: driving objective completions never fires them, and `DW0204` proves
-/// the path's ending does not live exclusively there. Flag gates are ignored —
-/// a gated ending yields an upper bound, and waiting longer can only wait,
-/// never wrongly pass.
+/// duration; a cutscene's `then` adds the cutscene's length plus one tick
+/// (spec-0108 §3.6). Reaction bundles (`on_respawn` / `on_rest` / `on_caught`)
+/// are skipped: driving objective completions never fires them, and `DW0204`
+/// proves the path's ending does not live exclusively there. Flag gates are
+/// ignored — a gated ending yields an upper bound, and waiting longer can only
+/// wait, never wrongly pass.
+///
+/// **The aftermath is waited out too** (spec-0108 §3.6, §6.3): where the bundle
+/// reaches an ending, the tail is the later of the ending and the last effect
+/// of the bundle that changes the world ([`Verb::changes_world`]), so a run
+/// that asserts the world the ending left reads it after the last change landed.
 pub(super) fn campaign_complete_tail(
     effs: &[QuestEffect],
     moves: &[crate::compiler::nav::MovePlan],
     actor_moves: &[crate::compiler::nav::ActorMovePlan],
 ) -> Option<u32> {
+    let ending = scheduled_tail(effs, moves, actor_moves, &|e| {
+        matches!(e.verb, Verb::CampaignComplete { .. })
+    })?;
+    let aftermath =
+        scheduled_tail(effs, moves, actor_moves, &|e| e.verb.changes_world()).unwrap_or(0);
+    Some(ending.max(aftermath))
+}
+
+/// The latest tick, counted from firing `effs`, at which an effect `pick`
+/// accepts runs — along the bundle's own schedule (`sequence` steps, `on_arrive`
+/// walks, a cutscene's `then`), reaction bundles skipped. `None` when nothing
+/// on the schedule is picked.
+pub(super) fn scheduled_tail(
+    effs: &[QuestEffect],
+    moves: &[crate::compiler::nav::MovePlan],
+    actor_moves: &[crate::compiler::nav::ActorMovePlan],
+    pick: &dyn Fn(&QuestEffect) -> bool,
+) -> Option<u32> {
     effs.iter()
-        .filter_map(|e| match &e.verb {
-            Verb::CampaignComplete { .. } => Some(0),
-            Verb::Sequence { steps } => steps
-                .iter()
-                .filter_map(|s| {
-                    campaign_complete_tail(&s.effects, moves, actor_moves).map(|t| s.at_ticks + t)
-                })
-                .max(),
-            Verb::MoveNpc {
-                npc, to, on_arrive, ..
-            } => campaign_complete_tail(on_arrive, moves, actor_moves).map(|t| {
-                t + moves
+        .filter_map(|e| {
+            let own = pick(e).then_some(0);
+            let nested = match &e.verb {
+                Verb::Sequence { steps } => steps
                     .iter()
-                    .find(|m| m.npc == npc.as_str() && m.to == *to)
-                    .map(|m| m.ticks() as u32)
-                    .unwrap_or(0)
-            }),
-            Verb::MoveActor {
-                actor,
-                to,
-                on_arrive,
-                ..
-            } => campaign_complete_tail(on_arrive, moves, actor_moves).map(|t| {
-                t + actor_moves
-                    .iter()
-                    .find(|m| m.actor == actor.as_str() && m.to == *to)
-                    .map(|m| m.ticks() as u32)
-                    .unwrap_or(0)
-            }),
-            _ => None,
+                    .filter_map(|s| {
+                        scheduled_tail(&s.effects, moves, actor_moves, pick).map(|t| s.at_ticks + t)
+                    })
+                    .max(),
+                Verb::MoveNpc {
+                    npc, to, on_arrive, ..
+                } => scheduled_tail(on_arrive, moves, actor_moves, pick).map(|t| {
+                    t + moves
+                        .iter()
+                        .find(|m| m.npc == npc.as_str() && m.to == *to)
+                        .map(|m| m.ticks() as u32)
+                        .unwrap_or(0)
+                }),
+                Verb::MoveActor {
+                    actor,
+                    to,
+                    on_arrive,
+                    ..
+                } => scheduled_tail(on_arrive, moves, actor_moves, pick).map(|t| {
+                    t + actor_moves
+                        .iter()
+                        .find(|m| m.actor == actor.as_str() && m.to == *to)
+                        .map(|m| m.ticks() as u32)
+                        .unwrap_or(0)
+                }),
+                Verb::Cutscene { then, .. } => {
+                    let end = crate::compiler::link::cutscene_end_offset(e).unwrap_or(0);
+                    scheduled_tail(then, moves, actor_moves, pick).map(|t| end + 1 + t)
+                }
+                _ => None,
+            };
+            match (own, nested) {
+                (Some(a), Some(b)) => Some(a.max(b)),
+                (a, b) => a.or(b),
+            }
         })
         .max()
 }
@@ -237,18 +271,42 @@ pub(super) fn emit_critical_path(
     routes: &[crate::compiler::nav::LegRoute],
 ) -> Value {
     let en_route = crate::compiler::hold::en_route_holds(plan, &plan.critical_path, routes);
+    // What one world shows after the exported path's ending (spec-0108 §6.3):
+    // the lines the mainline's own story world fires — that world dates what
+    // the mainline's replay cannot, an elective act's datum — and of those only
+    // the ones decided there. A line the replay opened on an undatable term
+    // fires in some worlds and not others, so no one world shows it.
+    let flow = crate::compiler::flow::Flow::new(plan.campaign);
+    let fired: BTreeSet<String> = match flow.mainline_story_world() {
+        Some(k) => shown(&flow.story().runs[k].fired, &flow.story().runs[k].undecided),
+        None => {
+            let journal = flow.journal(&flow.playthrough());
+            let undecided: BTreeSet<String> =
+                journal.iter().flat_map(|j| j.undecided.clone()).collect();
+            let fired: BTreeSet<String> = journal.into_iter().flat_map(|j| j.fired).collect();
+            shown(&fired, &undecided)
+        }
+    };
     critical_path_json(
         plan,
         &plan.critical_path,
         &plan.critical_path_transport,
         &plan.critical_path_sneak,
+        &plan.path_firing.keep_out,
         CutsceneHolds {
             after: &plan.critical_path_cutscene,
             en_route: &en_route,
         },
         moves,
         actor_moves,
+        &fired,
     )
+}
+
+/// The lines a run fires that one world shows: every fired pointer whose gate
+/// the run decided — `fired` without `undecided`.
+pub(super) fn shown(fired: &BTreeSet<String>, undecided: &BTreeSet<String>) -> BTreeSet<String> {
+    fired.difference(undecided).cloned().collect()
 }
 
 /// Serialize a step list in the `critical-path.json` contract (format 2).
@@ -265,15 +323,22 @@ pub(super) struct CutsceneHolds<'a> {
     pub(super) en_route: &'a [Option<u32>],
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn critical_path_json(
     plan: &Plan,
     walked: &[plan::Step],
     transports: &[Option<[i32; 3]>],
     sneak: &[bool],
+    keep_out: &[Vec<crate::compiler::reach::KeepOut>],
     holds: CutsceneHolds<'_>,
     moves: &[crate::compiler::nav::MovePlan],
     actor_moves: &[crate::compiler::nav::ActorMovePlan],
+    fired: &BTreeSet<String>,
 ) -> Value {
+    // spec-0108 §6.3: what the world the ending left looks like, for the bot to
+    // read after the campaign marker and the tail — each aftermath line of the
+    // scene of every ending this path's replay fires, that fires itself.
+    let aftermath = path_aftermath(plan, fired);
     // Scheduled-ending tail for THIS path's quests: exported on the
     // terminal `assert-complete` step as `ending_tail_ticks`, so the harness
     // completion window covers a `sequence`-scheduled finale (the-wake: 250t)
@@ -376,6 +441,20 @@ pub(super) fn critical_path_json(
                     "action": "loop", "loop": loop_id, "pos": pos, "cross": cross,
                     "offset": offset, "times": times, "transport": transport
                 }),
+                // spec-0108 §6.5: an act the bot runs as the engine's own bundle
+                // function, asserting the terms it changes before and after.
+                Step::Mock { act, kind, function, before, after } => {
+                    let term = |t: &plan::GateTerm| json!({
+                        "objective": t.objective, "holder": t.holder(),
+                        "min": t.min, "max": t.max, "negate": t.negate,
+                    });
+                    json!({
+                        "action": "mock", "act": act, "kind": kind,
+                        "function": format!("{}:{function}", plan.namespace),
+                        "before": before.iter().map(term).collect::<Vec<_>>(),
+                        "after": after.iter().map(term).collect::<Vec<_>>(),
+                    })
+                }
                 Step::AssertComplete { objective, value } => {
                     let mut v = json!({
                         "action": "assert-complete", "scoreboard": { "objective": objective, "value": value }
@@ -384,6 +463,11 @@ pub(super) fn critical_path_json(
                         && let Some(obj) = v.as_object_mut()
                     {
                         obj.insert("ending_tail_ticks".to_string(), json!(ending_tail));
+                    }
+                    if !aftermath.is_empty()
+                        && let Some(obj) = v.as_object_mut()
+                    {
+                        obj.insert("aftermath".to_string(), Value::Array(aftermath.clone()));
                     }
                     v
                 }
@@ -409,6 +493,23 @@ pub(super) fn critical_path_json(
                 && let Some(obj) = step.as_object_mut()
             {
                 obj.insert("sneak".to_string(), json!(true));
+            }
+            // The completion volumes this step keeps out of (`DW0311`): every
+            // `reach` armed while the party performs it and not its own. The bot
+            // keeps every walk of the step out of them by the selector's hitbox
+            // rule. Present only when non-empty.
+            if let Some(ko) = keep_out.get(i)
+                && !ko.is_empty()
+                && let Some(obj) = step.as_object_mut()
+            {
+                obj.insert(
+                    "keep_out".to_string(),
+                    Value::Array(
+                        ko.iter()
+                            .map(crate::compiler::reach::KeepOut::to_json)
+                            .collect(),
+                    ),
+                );
             }
             if let Some(secs) = holds.after[i]
                 && secs > 0
@@ -511,6 +612,15 @@ pub(super) fn emit_manifest(
     // pack carries an `assets/minecraft/` entry. Written once, here, from the
     // archive paths the pack was built from, and read by every host-side script
     // — never re-derived from the zip.
+    // The demo-level declaration (`world.demo_level`), carried so the staging
+    // gate can read that this build was compiled from it. Absent for every
+    // other campaign, which keeps their manifests byte-identical.
+    if plan.campaign.world.content.demo_level {
+        manifest
+            .as_object_mut()
+            .expect("manifest is a JSON object")
+            .insert("demo_level".to_string(), Value::Bool(true));
+    }
     if let Some((sha1, overrides)) = resource_pack {
         let m = manifest.as_object_mut().expect("manifest is a JSON object");
         m.insert(
@@ -523,4 +633,42 @@ pub(super) fn emit_manifest(
         );
     }
     manifest
+}
+
+/// The aftermath a path's bot reads after the ending (spec-0108 §6.3): for each
+/// ending whose `campaign-complete` the path's replay fires, every aftermath
+/// effect of its scene that fires too, with what the bot can observe of it —
+/// the §6.2 observable, or what a player's own body shows (`health` after
+/// `damage-players`, an `effect` given or cleared) — or `emission-only`.
+pub(super) fn path_aftermath(plan: &Plan, fired: &BTreeSet<String>) -> Vec<Value> {
+    let scenes = crate::compiler::ending::Scenes::of(plan.campaign);
+    let mut by_path: BTreeMap<String, &QuestEffect> = BTreeMap::new();
+    delvewright_dsl::for_each_campaign_effect(plan.campaign, &mut |p, _, e| {
+        by_path.insert(p.to_string(), e);
+    });
+    let mut seen: BTreeSet<usize> = BTreeSet::new();
+    let mut out = Vec::new();
+    for e in &scenes.endings {
+        if !fired.contains(&e.path) || !seen.insert(e.scene) {
+            continue;
+        }
+        for x in &scenes.scenes[e.scene].aftermath {
+            if !fired.contains(&x.path) {
+                continue;
+            }
+            let Some(eff) = by_path.get(&x.path) else {
+                continue;
+            };
+            let observable = match &eff.verb {
+                Verb::DamagePlayers { amount, .. } => json!({"kind": "health", "amount": amount}),
+                Verb::GiveEffect { effect, .. } => json!({"kind": "effect", "effect": effect}),
+                Verb::ClearEffect { effect, .. } => {
+                    json!({"kind": "no-effect", "effect": effect})
+                }
+                _ => observation(plan, eff).unwrap_or(Value::String("emission-only".into())),
+            };
+            out.push(json!({"path": x.path, "verb": x.verb, "observable": observable}));
+        }
+    }
+    out
 }

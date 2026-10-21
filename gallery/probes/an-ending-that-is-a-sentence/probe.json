@@ -1,0 +1,13 @@
+{
+  "code": "DW0110",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/1/on_complete/2/ending",
+      "value": "The hall is read end to end."
+    }
+  ],
+  "units": [],
+  "why": "The far hall's first ending is renamed with the sentence the gallery's one ending used to carry. An ending is an id, `ending/<kebab>` (spec-0108 §3.1): the branch plan, the endings ledger and the bot's report name endings by id, and a sentence in that column is a name a stranger cannot resolve. `DW0110` refuses it at the effect's own `ending`, naming the form the field takes. It declares no unit: `ending` is bound by the primary's two endings."
+}

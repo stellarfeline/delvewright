@@ -482,11 +482,11 @@ mod tests {
         };
         assert!(
             !beat(vec![
-                Verb::Narrate {
+                Verb::Narrate(delvewright_dsl::Narration {
                     text: "Spotted!".to_string(),
                     style: None,
                     sound: None,
-                }
+                })
                 .into(),
             ])
             .is_punishing(),

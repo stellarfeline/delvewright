@@ -1467,10 +1467,13 @@ fn an_unlit_leafy_scenery_room_is_never_surveyed_for_light() {
 /// `delvec prefab audit` over the written piece passes, deriving the kind from
 /// the campaign's layout graph through the rule the writer sealed on. The same
 /// bytes are refused with `DW0782` once the evidence moves: the node made
-/// reached, or the detail-plan row placing the piece removed. And a piece's
-/// own word buys nothing: a copy under its own id carrying a hand-written
-/// `scenery: true` / `reached: false`, and a copy claiming the scenery piece's
-/// id under another file name, are both judged strictly and refused.
+/// reached (judged reached), the detail-plan row placing the piece removed, or
+/// the layout graph made one this engine cannot parse (judged unseated — a
+/// bare piece is asked no entry question, and its own floor is still owed). And
+/// a piece's own word buys nothing: a copy under its own id carrying a
+/// hand-written `scenery: true` / `reached: false`, and a copy claiming the
+/// scenery piece's id under another file name, are both judged unseated and
+/// refused on their floor.
 #[test]
 fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_itself() {
     let tmp = tempdir("audit-scenery");
@@ -1513,15 +1516,15 @@ fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_i
     assert_eq!(report["contract"]["sealed"], true, "{}", report["contract"]);
     assert_eq!(report["contract"]["owners"], 1, "{}", report["contract"]);
 
-    let refused_strictly = |nbt: &Path, why: &str| {
+    let refused_strictly = |nbt: &Path, kind: &str, why: &str| {
         let out = audit(nbt);
         let t = text(&out);
         assert_eq!(code(&out), 1, "{why}: {t}");
         assert!(
             t.contains("DW0782")
                 && t.contains("contract-coverage FAILED")
-                && t.contains("place kind: reached (strict)"),
-            "{why}: the strict judgement refuses the leaf tops: {t}"
+                && t.contains(&format!("place kind: {kind}")),
+            "{why}: judged {kind}, the leaf tops are refused: {t}"
         );
     };
 
@@ -1543,6 +1546,7 @@ fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_i
     .unwrap();
     refused_strictly(
         &prefabs.join("forged-crown.nbt"),
+        "unseated",
         "a piece's own scenery claim is not evidence",
     );
     // ...and claiming the scenery piece's id under another file name: it is
@@ -1555,6 +1559,7 @@ fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_i
     .unwrap();
     refused_strictly(
         &prefabs.join("impostor.nbt"),
+        "unseated",
         "another piece's id is not this piece's evidence",
     );
 
@@ -1568,14 +1573,36 @@ fn the_audit_judges_a_scenery_piece_as_its_writer_did_and_no_piece_vouches_for_i
             }
         }
     });
-    refused_strictly(&piece, "a reached node's piece owes its floor");
+    refused_strictly(
+        &piece,
+        "reached (strict)",
+        "a reached node's piece owes its floor",
+    );
+    // ...the layout graph one this engine cannot parse: the campaign builds
+    // nothing here, so it seats nothing, and is named as unread.
+    common::patch_file(&graph, |v| {
+        v["content"]["nodes"] = json!("not a node list");
+    });
+    refused_strictly(
+        &piece,
+        "unseated",
+        "an unparseable layout graph vouches for no place",
+    );
+    assert!(
+        text(&audit(&piece)).contains("cannot parse place nothing it builds: `site-plan`"),
+        "the unread campaign is named"
+    );
     std::fs::write(&graph, graph_bytes).unwrap();
     assert_eq!(code(&audit(&piece)), 0, "restored, it passes again");
     // ...and the row placing the piece removed: no campaign places it.
     common::patch_file(&dir.join("detail-plan.json"), |v| {
         v["content"]["details"] = json!([]);
     });
-    refused_strictly(&piece, "a piece no campaign places is judged strictly");
+    refused_strictly(
+        &piece,
+        "unseated",
+        "a piece no campaign places is a bare piece, and its floor is still owed",
+    );
 }
 
 /// **A frame change is answered by ONE `detail --all`, whatever the order of

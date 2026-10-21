@@ -5,7 +5,7 @@ The gate itself runs the generators, which needs a release build of a second
 workspace; that half lives in CI. What is bound HERE is everything the gate
 decides with — the two halves that can be wrong without any generator running:
 
-  * the population is DERIVED from `prefabs/Cargo.toml`'s own workspace members,
+  * the population is DERIVED from the disk (`tools/lib/generator_workspaces.py`),
     so a generator added and forgotten in a list here cannot exist;
   * `leaf_paths` counts the same things the Rust writer counts, so a key
     "surviving" means the same to both sides of the pair;
@@ -19,7 +19,6 @@ from __future__ import annotations
 import importlib.util
 import json
 import pathlib
-import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 TOOL = ROOT / "tools" / "ci" / "check-generator-preservation.py"
@@ -32,20 +31,15 @@ def load():
     return module
 
 
-def test_the_population_is_the_workspaces_own_member_list():
+def test_the_population_is_every_generator_workspace_on_disk():
     module = load()
-    members = module.workspace_members()
-    declared = re.search(
-        r"^members\s*=\s*\[(.*?)\]",
-        (ROOT / "prefabs" / "Cargo.toml").read_text(encoding="utf-8"),
-        re.S | re.M,
-    ).group(1)
-    assert members == re.findall(r'"([^"]+)"', declared)
-    assert len(members) > 1, f"the sweep would examine {len(members)} member(s)"
-    # Every member is a real directory: a stale name would make the gate skip in
-    # silence rather than red.
+    members = module.generator_workspaces(ROOT)
+    assert members == ["gallery/prefab-generator"], members
+    # Every member is a real workspace with a binary to run: a stale name would
+    # make the gate skip in silence rather than red.
     for m in members:
-        assert (ROOT / "prefabs" / m / "Cargo.toml").is_file(), m
+        assert (ROOT / m / "Cargo.toml").is_file(), m
+        assert module.package_name(ROOT, m), m
 
 
 def test_leaf_paths_reach_into_arrays_and_objects():
@@ -59,7 +53,9 @@ def test_the_rust_writer_and_this_gate_agree_on_what_a_leaf_is():
     """The pair reads one rule. `prefab_invariants::document::leaf_paths` and the
     function above are two implementations of the same walk, so the Rust side's
     own unit test asserts the identical expectation over the identical value."""
-    rust = (ROOT / "prefabs" / "invariants" / "src" / "document.rs").read_text(encoding="utf-8")
+    rust = (
+        ROOT / "gallery" / "prefab-generator" / "src" / "prefab_invariants" / "document.rs"
+    ).read_text(encoding="utf-8")
     assert 'vec!["a.b", "c[0].d", "c[1]", "e", "f"]' in rust
 
 

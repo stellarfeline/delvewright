@@ -231,6 +231,18 @@ fn campaign_progression_baseline(c: &delvewright_dsl::Campaign, comp_obj: &str) 
             quest_active_score(qid)
         ));
     }
+    // The party's data are party progression too (spec-0031): a datum a gate on
+    // the playthrough reads — an ending chosen on a tally (spec-0108) — starts
+    // each phase at its declared `initial`, as a fresh delve does.
+    for s in &c.quests.content.state {
+        if s.scope == delvewright_dsl::StateScope::Party {
+            b.push(format!(
+                "scoreboard players set {party} {} {}",
+                plan::state_score(s.id.as_str()),
+                s.initial
+            ));
+        }
+    }
     b
 }
 

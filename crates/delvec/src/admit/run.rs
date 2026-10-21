@@ -15,8 +15,7 @@ use crate::admit::audit::{self, audit};
 use crate::admit::catalog::CatalogCard;
 use crate::admit::cli::{CatalogCmd, PrefabArgs, PrefabCommand};
 use crate::admit::diag::{
-    DW_DARK, DW_FRAGMENT, DW_GALLERY, DW_INPUT, DW_NO_PROVENANCE, DW_TOOLING, DW_UNBOUND,
-    Diagnostic,
+    DW_FRAGMENT, DW_GALLERY, DW_INPUT, DW_NO_PROVENANCE, DW_TOOLING, DW_UNBOUND, Diagnostic,
 };
 use crate::admit::gallery::{self, Candidate};
 use crate::admit::light::{self, Zone};
@@ -1145,7 +1144,7 @@ fn run_anchor(nbt: &Path, name: &str, args: AnchorArgs, json: bool) -> ExitCode 
 /// # It is the same rules, not a fourth reading of them
 ///
 /// The walk plane is `schem::nav::standable_cells`'s lowest plane — the rule the
-/// seating derivation, the generators' `prefab_invariants::walkplane` and this
+/// seating derivation, the gallery generator's `prefab_invariants::walkplane` and this
 /// verb all mean — and the waterline is `compiler::seating::PieceFacts`'s top
 /// authored water block, which is the number `DW0887` checks a declaration
 /// against. So a document this verb writes is a document that check passes, by
@@ -1385,56 +1384,6 @@ fn run_lighting(input: &Path, write: bool, dark_threshold: i32, json: bool) -> E
         .print(json);
         return ExitCode::from(EXIT_FAIL);
     }
-    if probe.is_dark() {
-        let cell = probe
-            .darkest_cell
-            .map(|c| format!("; darkest at {},{},{}", c[0], c[1], c[2]))
-            .unwrap_or_default();
-        // "Lit by day" is a sentence about a piece the sky reaches. An enclosed
-        // piece meets no sky at either end of the table, so the second figure is
-        // the first one again and offering it as a consolation would be false.
-        let by_day = if !probe.sky.admits_sky() {
-            String::new()
-        } else {
-            match probe.min_light_daylight {
-                Some(d) if d >= dark_threshold => format!(
-                    "; by day it is {} — this is a piece the sky reaches, and it needs a light \
-                     only where the delve reaches night",
-                    d
-                ),
-                Some(d) => format!("; still {d} under full daylight"),
-                None => String::new(),
-            }
-        };
-        let under = if probe.sky.admits_sky() {
-            format!(
-                "at sky light {} (a clear night, the darkest the engine models)",
-                probe.sky_light
-            )
-        } else {
-            format!("with no sky ({})", probe.sky.why())
-        };
-        // **The distribution, and the minimum only as the place to start.** One
-        // cell at light 0 behind a pillar and a room where every cell is at
-        // light 0 used to print the same sentence, and they are a detail and a
-        // room nobody can see in. The repair is to re-arrange the room or raise
-        // the density of what is already lighting it, and neither is a decision
-        // a reader can take from one number.
-        Diagnostic::warning(
-            DW_DARK,
-            format!(
-                "dark interior {under}: {dark} of {measured} floor cell(s) a player can walk to \
-                 ({pct:.1}%) are below light {threshold} — {distribution}{cell}{by_day}",
-                dark = probe.dark_cells(),
-                measured = probe.measured_cells,
-                pct = probe.dark_fraction() * 100.0,
-                threshold = dark_threshold,
-                distribution = probe.dark_distribution(),
-            ),
-        )
-        .print(json);
-    }
-
     if write {
         // A tool that cannot establish where a piece came from REFUSES; it never
         // invents. Writing a skeleton here manufactured `source: unknown`,

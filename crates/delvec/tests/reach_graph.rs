@@ -13,7 +13,7 @@ fn gallery_hall(name: &str) -> World {
     std::fs::create_dir_all(&dir).unwrap();
     let out = std::process::Command::new(env!("CARGO"))
         .args(["run", "-q", "--locked", "--release", "--manifest-path"])
-        .arg(common::repo_root().join("prefabs/gallery-generator/Cargo.toml"))
+        .arg(common::repo_root().join("gallery/prefab-generator/Cargo.toml"))
         .arg("--")
         .arg(&dir)
         .output()

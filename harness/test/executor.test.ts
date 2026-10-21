@@ -1893,6 +1893,102 @@ test("reach: a completion transport landing mid-gate-leg is step success, not a 
   );
 });
 
+import { CUTSCENE_POLL_MS } from "../src/executor/cutscene.ts";
+
+/**
+ * A reach whose own completion plays a cutscene that carries the party: the
+ * first `goto` completes the objective and takes control (spectator), the scene
+ * gives the body back at the carry's destination, and every later `goto` would
+ * be a walk back to the goal.
+ */
+class SceneCarryBot extends TransportReachBot {
+  override pathfinder = {
+    stop: (): void => {
+      this.pathfinderStops += 1;
+      this.pathfinderCalls.push("stop");
+    },
+    setGoal: (goal: unknown): void => {
+      this.pathfinderCalls.push(goal === null ? "setGoal(null)" : "setGoal");
+    },
+    setMovements: (): void => {},
+    thinkTimeout: 0,
+    goto: async (goal?: { x: number; y: number; z: number }): Promise<void> => {
+      this.gotoCalls++;
+      if (this.gotoCalls > 1) {
+        // A walk back: arrive at the goal, as a pathfinder would.
+        if (goal) this.entity.position = new FakeVec3(goal.x + 0.5, goal.y, goal.z + 0.5);
+        return;
+      }
+      this.entity.position = new FakeVec3(10.75, 67, 25.5);
+      this.emit("messagestr", "[dw:complete gallery obj/reach-the-end]");
+      this.game.gameMode = "spectator";
+      setTimeout(() => {
+        this.entity.position = new FakeVec3(5.5, 67, 9.5);
+        this.game.gameMode = "adventure";
+      }, 3 * CUTSCENE_POLL_MS);
+      // The walk is interrupted, never finished; the scene's end settles it.
+      await new Promise<void>((resolve) => setTimeout(resolve, 20 * CUTSCENE_POLL_MS));
+    },
+  };
+}
+
+test("reach: a cutscene its own completion plays ends the walk where the scene put the bot", async () => {
+  // The gallery bot: the final reach completed, the scene's `then` carried the
+  // party to the hearth, and the walk resumed back to the exit — so the bot read
+  // the carry as failed ("stood at [11.5, 67.06, 24.5]").
+  const bot = new SceneCarryBot();
+  bot.entity.position = new FakeVec3(4.5, 67, 25.5);
+  const executor = attach(bot, { DELVEWRIGHT_CUTSCENE_GRACE_MS: "300" });
+  executor.useCampaign("gallery");
+  const step: ReachStep = {
+    action: "reach",
+    objective: "obj/reach-the-end",
+    anchor: "anchor/exit",
+    pos: [11, 67, 25],
+    radius: 1,
+    completion: { kind: "cube" as const, lo: [10, 66, 24], hi: [12, 68, 26] },
+    cutsceneSeconds: 1,
+  };
+  executor.beginStep(30);
+  await executor.beforeStep(step);
+  await within("executor.reach(step)", executor.reach(step));
+  assert.equal(bot.gotoCalls, 1, "no walk back after the scene");
+  const p = bot.entity.position;
+  assert.deepEqual([p.x, p.y, p.z], [5.5, 67, 9.5], "the bot stands where the scene put it");
+});
+
+test("reach: a walk that starts with the body held by its step's own scene does not walk once it is back", async () => {
+  // The same gallery reach on the next run: the objective completed as the walk
+  // began, so the scene already held the body; control came back at the hearth
+  // and the walk went on to the exit.
+  const bot = new SceneCarryBot();
+  bot.entity.position = new FakeVec3(10.75, 67, 25.5);
+  const executor = attach(bot, { DELVEWRIGHT_CUTSCENE_GRACE_MS: "300" });
+  executor.useCampaign("gallery");
+  const step: ReachStep = {
+    action: "reach",
+    objective: "obj/reach-the-end",
+    anchor: "anchor/exit",
+    pos: [11, 67, 25],
+    radius: 1,
+    completion: { kind: "cube" as const, lo: [10, 66, 24], hi: [12, 68, 26] },
+    cutsceneSeconds: 1,
+  };
+  executor.beginStep(30);
+  await executor.beforeStep(step);
+  bot.emit("messagestr", "[dw:complete gallery obj/reach-the-end]");
+  bot.game.gameMode = "spectator";
+  bot.entity.position = new FakeVec3(4.5, 90, 4.5); // the scene's camera
+  setTimeout(() => {
+    bot.entity.position = new FakeVec3(5.5, 67, 9.5);
+    bot.game.gameMode = "adventure";
+  }, 3 * CUTSCENE_POLL_MS);
+  await within("executor.reach(step)", executor.reach(step));
+  assert.equal(bot.gotoCalls, 0, "no walk after the scene");
+  const p = bot.entity.position;
+  assert.deepEqual([p.x, p.y, p.z], [5.5, 67, 9.5], "the bot stands where the scene put it");
+});
+
 /**
  * A pathfinder that searches only what the client holds: a goal farther than
  * `heldRadius` blocks from the bot answers "No path to the goal!", as
@@ -1962,6 +2058,43 @@ test("a straight proven run longer than the client sees is walked in hops of its
   }
   const end = bot.entity.position;
   assert.ok(Math.abs(Math.floor(end.z) - 140) <= 1, `the walk ends at its destination: z ${end.z}`);
+});
+
+test("a walk to a holder's stance replays the leg the holder's cell names, and consumes it", async () => {
+  // spec-0111 §5.2: a holder collect's proven leg is named by the holder's cell
+  // (the step's `pos`) and ends at the stance beside it; the bot walks to the
+  // stance and must replay and consume that leg, or every leg after it falls
+  // out of lockstep.
+  const bot = new HeldRadiusBot();
+  bot.entity.position = new FakeVec3(5.5, 65, 4.5);
+  const executor = attach(bot);
+  executor.useCampaign("hello-world");
+  executor.useWaypoints(
+    parseWaypoints({
+      version: "0.0.0-fixture",
+      campaign_id: "hello-world",
+      legs: [
+        {
+          from: [5, 65, 4],
+          to: [8, 65, 2],
+          waypoints: [
+            [5, 65, 4],
+            [5, 65, 1],
+            [8, 65, 1],
+          ],
+        },
+      ],
+    }),
+  );
+  await within(
+    "executor.walkTo(stance)",
+    executor.walkTo([8, 65, 1], 0, "armor-stand minecraft:iron_sword", false, undefined, undefined, [8, 65, 2]),
+  );
+  assert.equal(executor.legCursor, 1, "the holder's leg is consumed");
+  for (const [x, , z] of bot.goals) {
+    assert.ok(!(x === 8 && z === 2), `no hop into the stand's cell: ${bot.goals.join(" ")}`);
+  }
+  assert.deepEqual(bot.goals.at(-1), [8, 65, 1], "the walk ends at the stance");
 });
 
 test("the hop bound is inside the radius the engine's floor view distance serves", () => {
@@ -3085,9 +3218,14 @@ function functionsCalled(bot: CombatFakeBot): string[] {
     .map((c) => c.slice("chat(/function ".length, -1).split(":").pop()!);
 }
 
-/** Let the executor's damage handler finish reading and staging. */
-async function settleStaging(): Promise<void> {
-  await delay(2_000);
+/**
+ * Let the executor's damage handler finish reading and staging: wait for the
+ * staging acts it has started, never for a stretch of wall time. A handler
+ * registers its task in the tick the damage event is emitted, so an empty set
+ * means nothing was started and nothing is pending.
+ */
+async function settleStaging(executor: MineflayerExecutor): Promise<void> {
+  while (executor.stagingTasks.size > 0) await Promise.allSettled([...executor.stagingTasks]);
 }
 
 test("a body of a wave the run has not read yet is read where it stands, then removed", async () => {
@@ -3103,7 +3241,7 @@ test("a body of a wave the run has not read yet is read where it stands, then re
   executor.useCombatPlan(combatPlan(2, true), false);
   const [attacker] = bot.waveIds();
   bot.emit("entityHurt", bot.entity, bot.entities[attacker!]);
-  await within("settleStaging()", settleStaging());
+  await within("settleStaging(executor)", settleStaging(executor));
 
   assert.deepEqual(bot.stagedBlows, [attacker], "the body that hit the bot was removed");
   const muster = bot.calls.findIndex((c) => c.includes(":wave_muster_"));
@@ -3234,7 +3372,7 @@ test("a removed body's blows are refunded — its own, named ones only, rounded 
   bot.emit("entityHurt", bot.entity, bot.entities[attacker!]);
   bot.health = 9; // an 11-point blow
   bot.emit("health");
-  await within("settleStaging()", settleStaging());
+  await within("settleStaging(executor)", settleStaging(executor));
 
   assert.deepEqual(bot.stagedBlows, [attacker]);
   const effects = bot.calls.filter((c) => c.startsWith("chat(/effect "));
@@ -3254,7 +3392,7 @@ test("a removed body's blows are refunded — its own, named ones only, rounded 
   // A drop the server named no body for — a fall, a lethal volume — is never refunded.
   bot.health = 3;
   bot.emit("health");
-  await within("settleStaging()", settleStaging());
+  await within("settleStaging(executor)", settleStaging(executor));
   assert.equal(bot.calls.filter((c) => c.startsWith("chat(/effect ")).length, 2, "no refund was added");
 });
 
@@ -3270,7 +3408,7 @@ test("which wave a body is of is the server's tag, not a radius around the ancho
   executor.useCombatPlan(combatPlan(2, true), false);
   const [attacker] = bot.waveIds();
   bot.emit("entityHurt", bot.entity, bot.entities[attacker!]);
-  await within("settleStaging()", settleStaging());
+  await within("settleStaging(executor)", settleStaging(executor));
   await within("executor.kill({ ...KILL_STEP, count: 2 })", executor.kill({ ...KILL_STEP, count: 2 }));
 
   const verdict = executor.waveMusters().get("wave/gate-assault")!;
@@ -4161,12 +4299,14 @@ function oneVolumePlan(): ReturnType<typeof parseDeathPlan> {
     on_death: { effects: 1, drops_stake: [] },
     stakes: [],
     placement: { seats: [], regions: [], rows: [] },
+    crush_gates: [],
     binding: {
       lethal_volumes: 1,
       on_death_effects: 1,
       stakes: 0,
       respawn_seats: 0,
       placement_rows: 0,
+      crush_gates: 0,
       unbound: false,
       reason: null,
     },
@@ -4196,12 +4336,14 @@ function westPitPlan(): ReturnType<typeof parseDeathPlan> {
     on_death: { effects: 1, drops_stake: [] },
     stakes: [],
     placement: { seats: [], regions: [], rows: [] },
+    crush_gates: [],
     binding: {
       lethal_volumes: 1,
       on_death_effects: 1,
       stakes: 0,
       respawn_seats: 0,
       placement_rows: 0,
+      crush_gates: 0,
       unbound: false,
       reason: null,
     },
@@ -4421,7 +4563,7 @@ function westPitPlanWithLip(): ReturnType<typeof parseDeathPlan> {
     on_death: { effects: 1, drops_stake: [] },
     stakes: [],
     placement: {
-      seats: [{ cp: 0, label: "spawn", cell: [0, 65, 0] }],
+      seats: [{ cp: 0, label: "spawn", cell: [0, 65, 0], in_force_after: 0 }],
       regions: [
         { label: "west-pit", lethal: true, volume: "lethal/west-pit", region: { lo: [1, 63, 2], hi: [3, 67, 4] } },
       ],
@@ -4434,12 +4576,14 @@ function westPitPlanWithLip(): ReturnType<typeof parseDeathPlan> {
       // cell out because a body has a width, not because the scenario changed.
       rows: [{ seat: 0, region: 0, anchor: [1, 65, 6] }],
     },
+    crush_gates: [],
     binding: {
       lethal_volumes: 1,
       on_death_effects: 1,
       stakes: 0,
       respawn_seats: 1,
       placement_rows: 1,
+      crush_gates: 0,
       unbound: false,
       reason: null,
     },
@@ -5397,6 +5541,16 @@ test("the bounties a staged clear pays into a wagered purse are taken back befor
  */
 class LoopFakeBot extends InteractFakeBot {
   answer: [number, number, number] | null = [0, 0, -6];
+  /**
+   * Whether the pathfinder recentres the body between the physics tick that
+   * read it in the slab and the move's arrival: mineflayer-pathfinder's
+   * `fullStop` (2.4.5, `index.js`) writes `position.z = floor(z) + 0.5` when the
+   * body is more than 0.2 block off its cell's centre, with no physics tick.
+   */
+  recentre = false;
+  /** The packet's flags: relative on every axis, as a loop's `tp @s ~dx ~dy ~dz` sends. */
+  flags: Record<string, boolean> | number = { x: true, y: true, z: true, yaw: true, pitch: true };
+  _client = new EventEmitter();
   moves = 0;
   constructor() {
     super();
@@ -5417,12 +5571,24 @@ class LoopFakeBot extends InteractFakeBot {
       this.calls.push(`goto(${goal.x},${goal.y},${goal.z})`);
       if (goal.z >= 22) {
         // Into the slab at z = 22: the body enters it, and the server answers.
-        this.entity.position = new FakeVec3(2.5, 67, 22.3);
+        this.entity.position = new FakeVec3(2.5, 67, 22.178);
         this.emit("physicsTick");
         if (this.answer) {
+          // The server runs the `tp` from the position it holds; mineflayer
+          // applies the packet's relative axes to wherever the body is when it
+          // lands (lib/plugins/physics.js).
           const [dx, dy, dz] = this.answer;
-          const p = this.entity.position;
-          this.entity.position = new FakeVec3(p.x + dx, p.y + dy, p.z + dz);
+          if (this.recentre) {
+            const p = this.entity.position;
+            this.entity.position = new FakeVec3(p.x, p.y, Math.floor(p.z) + 0.5);
+          }
+          const packet = { x: dx, y: dy, z: dz, flags: this.flags };
+          this._client.emit("position", packet);
+          const q = this.entity.position;
+          this.entity.position =
+            typeof this.flags === "number" || this.flags.z
+              ? new FakeVec3(q.x + dx, q.y + dy, q.z + dz)
+              : new FakeVec3(dx, dy, dz);
           this.moves += 1;
           this.emit("forcedMove");
         }
@@ -5457,6 +5623,36 @@ test("a loop step crosses, sees the exact offset, stops pathfinding, and repeats
   assert.ok(bot.pathfinderStops >= 2, `${bot.pathfinderStops} stop(s)`);
   // …and the body is on the landing side, where the next leg begins.
   assert.ok(bot.entity.position.z < 22, `bot at z ${bot.entity.position.z}`);
+});
+
+test("a loop's move is the packet's, so the pathfinder recentring the body before it lands is not read as part of it", async () => {
+  // The gallery bot's red at loop/the-hall-that-runs-on: the body read in the
+  // slab at z 74.178 by the physics tick, recentred to 74.5 by the pathfinder's
+  // stop, then moved by the packet's -6. Measured from the physics tick, that
+  // is a move by -5.678.
+  const bot = new LoopFakeBot();
+  bot.recentre = true;
+  serve(bot);
+  const executor = attach(bot);
+  executor.useLoops([LOOP]);
+  await within("executor.exerciseLoop(recentred)", executor.exerciseLoop(LOOP));
+  assert.equal(bot.moves, 2, "two moves seen");
+});
+
+test("a loop step fails naming the move when the server set the body to a place rather than moving it by a delta", async () => {
+  const bot = new LoopFakeBot();
+  bot.flags = { x: false, y: false, z: false };
+  bot.answer = [2.5, 67, 16.5];
+  serve(bot);
+  const executor = attach(bot);
+  await assert.rejects(
+    within("executor.exerciseLoop(absolute)", executor.exerciseLoop(LOOP)),
+    (e: unknown) =>
+      e instanceof Error &&
+      e.message.includes("loop/gallery") &&
+      e.message.includes("to [2.500, 67.000, 16.500] (absolute on x, y, z") &&
+      e.message.includes("0 of 2"),
+  );
 });
 
 test("a loop step fails naming the loop and the delta when the move is not the offset", async () => {
@@ -5621,12 +5817,14 @@ function stagedVolumePlan(): ReturnType<typeof parseDeathPlan> {
     on_death: { effects: 1, drops_stake: [] },
     stakes: [],
     placement: { seats: [], regions: [], rows: [] },
+    crush_gates: [],
     binding: {
       lethal_volumes: 1,
       on_death_effects: 1,
       stakes: 0,
       respawn_seats: 0,
       placement_rows: 0,
+      crush_gates: 0,
       unbound: false,
       reason: null,
     },

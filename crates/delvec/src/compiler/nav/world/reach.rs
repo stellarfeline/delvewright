@@ -95,9 +95,14 @@ pub struct Edge {
 
 /// A cell's code: bits 0..=4 the collision shape (`0` none, `1..=16` a floor
 /// that many sixteenths tall, [`BARRIER`] a fence-class 1.5-block box), bit 5
-/// water, bit 6 lava, bit 7 a kept climbable, bits 8..=11 the [`Material`].
-type Code = u16;
+/// water, bit 6 lava, bit 7 a kept climbable, bits 8..=11 the [`Material`], and
+/// bits 16.. the footprint of a **sieve** ([`super::Floors::sieve`]): one plus
+/// its position in [`delvewright_dsl::blockshape::server_footprint_palette`],
+/// `0` for a shape that covers its cell.
+type Code = u32;
 const SHAPE: Code = 0x1f;
+const MATERIAL: Code = 0xf00;
+const POSTS_SHIFT: u32 = 16;
 /// A fence, wall or gate: a full-width box 1.5 tall. The model carries no
 /// post-and-arm geometry, so a barrier is read as its whole cell — more top to
 /// land on and less room to squeeze past (stated in `docs/reference/compiler.md`).
@@ -134,6 +139,48 @@ fn material_of_code(c: Code) -> Material {
         _ if c & CLIMB != 0 => Material::Climbable,
         _ => Material::Plain,
     }
+}
+
+/// A sieve's collision boxes, by footprint position: the footprint's covered
+/// sixteenths as rectangles, each row's runs merged down the rows that repeat
+/// them, as `[x0, z0, x1, z1]` in blocks inside the cell.
+fn posts_of(index: usize) -> &'static [[f64; 4]] {
+    static RECTS: OnceLock<Vec<Vec<[f64; 4]>>> = OnceLock::new();
+    &RECTS.get_or_init(|| {
+        delvewright_dsl::blockshape::server_footprint_palette()
+            .iter()
+            .map(|fp| {
+                let mut out: Vec<[f64; 4]> = Vec::new();
+                let mut z = 0;
+                while z < 16 {
+                    let row = fp[z];
+                    let mut z1 = z + 1;
+                    while z1 < 16 && fp[z1] == row {
+                        z1 += 1;
+                    }
+                    let mut x = 0;
+                    while x < 16 {
+                        if row & (1 << x) == 0 {
+                            x += 1;
+                            continue;
+                        }
+                        let x0 = x;
+                        while x < 16 && row & (1 << x) != 0 {
+                            x += 1;
+                        }
+                        out.push([
+                            x0 as f64 / 16.0,
+                            z as f64 / 16.0,
+                            x as f64 / 16.0,
+                            z1 as f64 / 16.0,
+                        ]);
+                    }
+                    z = z1;
+                }
+                out
+            })
+            .collect()
+    })[index]
 }
 
 /// The collision top of a code's shape above its cell floor, in blocks.
@@ -289,7 +336,25 @@ impl Dense {
         }
         for (c, m) in world.material.iter() {
             let m = material_code(*m);
-            set(*c, &|v| (v & 0xff) | m);
+            set(*c, &|v| (v & !MATERIAL) | m);
+        }
+        // A sieve is read at its posts (main's floor rule, the nav model's
+        // `Floors`): a body over it falls between them and one walking into it
+        // meets them. A cell some later pass turned into a barrier or a fluid
+        // is that instead.
+        for c in world.floors.sieve.iter() {
+            let Some(fp) = world.floors.footprints.get(c) else {
+                continue;
+            };
+            let index = delvewright_dsl::blockshape::server_footprint_index(fp)
+                .expect("a sieve's footprint is one the server holds");
+            set(*c, &|v| {
+                if v & SHAPE == 0 || v & SHAPE == BARRIER || v & (WATER | LAVA) != 0 {
+                    v
+                } else {
+                    v | ((index as Code + 1) << POSTS_SHIFT)
+                }
+            });
         }
         d
     }
@@ -379,9 +444,24 @@ struct Sim<'a, C: Codes + ?Sized>(&'a C);
 impl<C: Codes + ?Sized> CollisionWorld for Sim<'_, C> {
     #[inline]
     fn shapes(&self, c: [i32; 3], out: &mut Vec<Aabb>) {
-        if let Some(top) = top_of(self.0.code(c)) {
+        let code = self.0.code(c);
+        if let Some(top) = top_of(code) {
             let (x, y, z) = (f64::from(c[0]), f64::from(c[1]), f64::from(c[2]));
-            out.push(Aabb::new(x, y, z, x + 1.0, y + top, z + 1.0));
+            match code >> POSTS_SHIFT {
+                0 => out.push(Aabb::new(x, y, z, x + 1.0, y + top, z + 1.0)),
+                p => {
+                    for r in posts_of(p as usize - 1) {
+                        out.push(Aabb::new(
+                            x + r[0],
+                            y,
+                            z + r[1],
+                            x + r[2],
+                            y + top,
+                            z + r[3],
+                        ));
+                    }
+                }
+            }
         }
     }
     #[inline]
@@ -1543,7 +1623,8 @@ fn reach_columns(k: i32) -> i32 {
 
 /// Per window cell of `d`, the world's raw membership: bit 0 tall, 1 a
 /// use-gate, 2 a killing cell, 3 furniture, 4 waterloggable, 5 flooded, 6
-/// lava, 7 solid, and bits 8.. the partial height plus one (`0`: none) — every
+/// lava, 7 solid, bits 8..=12 the partial height plus one (`0`: none), and 13 a
+/// sieve ([`super::Floors::sieve`]: never a floor, and a fall passes it) — every
 /// cell set a world query reads, so two worlds equal here and in the snapshot
 /// answer every query about the cell alike.
 fn raw_membership(w: &World, d: &Dense) -> Vec<u16> {
@@ -1579,6 +1660,9 @@ fn raw_membership(w: &World, d: &Dense) -> Vec<u16> {
     }
     for (c, v) in w.partial.iter() {
         set(*c, (u16::from(*v) + 1) << 8);
+    }
+    for c in w.floors.sieve.iter() {
+        set(*c, 1 << 13);
     }
     x
 }
@@ -1618,7 +1702,27 @@ impl World {
                 for x in c {
                     h.update(x.to_le_bytes());
                 }
-                h.update(material_code(*v).to_le_bytes());
+                h.update((material_code(*v) as u16).to_le_bytes());
+            }
+            // A sieve and a leg's keep-out move the rest states (`standable_fp`)
+            // without moving a cell set above; a world with neither hashes as
+            // it did before they existed.
+            if !self.floors.sieve.is_empty() {
+                h.update(b"sieve");
+                for c in self.floors.sieve.iter() {
+                    for x in c {
+                        h.update(x.to_le_bytes());
+                    }
+                    if let Some(fp) = self.floors.footprints.get(c) {
+                        for r in fp {
+                            h.update(r.to_le_bytes());
+                        }
+                    }
+                }
+            }
+            if !self.keep_out.is_empty() {
+                h.update(b"keep-out");
+                h.update(self.keep_out_digest().as_bytes());
             }
             h.update(b"lethal");
             for (id, (lo, hi)) in &self.lethal_regions {
@@ -1657,12 +1761,13 @@ impl World {
         // and launch set.
         static SEEDS: OnceLock<Mutex<HashMap<String, Arc<GraphMemo>>>> = OnceLock::new();
         let seed_key = format!(
-            "{}:{}:{:?}:{:?}:{}",
+            "{}:{}:{:?}:{:?}:{}:{}",
             params.key(),
             self.ambient.name(),
             dense.lo,
             dense.dims,
-            self.unbounded_fall
+            self.unbounded_fall,
+            self.keep_out_digest()
         );
         let seeds = SEEDS.get_or_init(|| Mutex::new(HashMap::new()));
         let seed = seeds.lock().expect("memo").get(&seed_key).cloned();
@@ -1720,6 +1825,24 @@ impl World {
     /// What a node's world queries read beyond the cells round it: the climb
     /// holds and whether the world keeps a climb. (The declared jumps out of
     /// a node are the node's own, [`World::jumps_from`].)
+    /// The leg's keep-out volumes ([`World::keep_out`]), which every rest
+    /// state judges and no window cell carries: part of the lineage's key and
+    /// so of the bank's. Empty for a world with none.
+    fn keep_out_digest(&self) -> String {
+        if self.keep_out.is_empty() {
+            return String::new();
+        }
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        for (id, (lo, hi)) in &self.keep_out {
+            h.update(id.as_bytes());
+            for x in lo.iter().chain(hi) {
+                h.update(x.to_le_bytes());
+            }
+        }
+        h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+    }
+
     fn bank_digest(&self) -> String {
         use sha2::{Digest, Sha256};
         let mut h = Sha256::new();

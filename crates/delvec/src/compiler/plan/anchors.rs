@@ -553,7 +553,7 @@ pub(crate) fn required_anchors_for_area(campaign: &Campaign, area_id: &str) -> V
             // objective cannot do without — a pool draw that omits its carrier
             // leaves the collect with nothing to fill, so it joins the required
             // set exactly as a lane waypoint does. Absent field adds nothing.
-            if let Some(cont) = o.collect_container() {
+            if let Some(cont) = o.collect_holder() {
                 set.insert(cont.as_str().to_string());
             }
         }

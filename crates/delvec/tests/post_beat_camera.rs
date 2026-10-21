@@ -1314,3 +1314,95 @@ fn a_camera_after_a_repaint_and_a_strike_names_the_biomes_it_does_not_lay() {
         "the repaint is not laid, and the line says so: {line}"
     );
 }
+
+/// **A filled brewing stand is written with its bottles** (`DW0955`). The
+/// server's `BrewingStandBlockEntity.serverTick` sets `has_bottle_<n>` from
+/// whether bottle slot `n` holds a stack, on the stand's first tick, so once
+/// `setup_finish` has filled it the stand shows what the fill put there,
+/// whatever the piece wrote: a stand whose `loot` lands a stack in slot 0 by
+/// position and one in `container.2` by name (spec-0111 §3.3) shows those two
+/// bottles and none in slot 1, and a stand no fill reaches shows none though
+/// its piece wrote one.
+#[test]
+fn a_filled_brewing_stand_is_written_with_its_bottles() {
+    let lib = tmp("brew-prefabs");
+    common::copy_dir_all(&common::prefabs_dir(), &lib);
+    let path = lib.join("hello-room.json");
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    meta["anchors"]["anchor/filled-stand"] = serde_json::json!({ "pos": [1, 1, 1] });
+    meta["anchors"]["anchor/empty-stand"] = serde_json::json!({ "pos": [9, 1, 9] });
+    std::fs::write(&path, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+
+    let camp = tmp("brew-camp");
+    common::copy_dir_all(&common::hello_world_dir(), &camp);
+    let stand = |anchor: &str, n: usize, written: &str| {
+        [
+            serde_json::json!({
+                "verb": "select", "name": format!("region/s{n}"),
+                "shape": {"frame": {"kind": "anchor-relative", "anchor": anchor},
+                          "kind": "box", "min": [0, 0, 0], "max": [0, 0, 0]}
+            }),
+            serde_json::json!({
+                "verb": "fill", "region": format!("region/s{n}"),
+                "recipe": {"blocks": [{"block": written, "weight": 1.0}]}
+            }),
+        ]
+    };
+    let empty = "minecraft:brewing_stand[has_bottle_0=false,has_bottle_1=false,has_bottle_2=false]";
+    let one = "minecraft:brewing_stand[has_bottle_0=true,has_bottle_1=false,has_bottle_2=false]";
+    let mut edits: Vec<serde_json::Value> = stand("anchor/filled-stand", 0, empty).into();
+    edits.extend(stand("anchor/empty-stand", 1, one));
+    std::fs::write(
+        camp.join("world-edits.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "dsl_version": DSL_VERSION, "campaign_id": "hello-world", "stage": "world-edits",
+            "content": {"batches": [{"area": "area/keep", "id": "batch/stands", "edits": edits}]}
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    common::patch_file(&camp.join("quests.json"), |q| {
+        q["content"]["loot"] = serde_json::json!([{
+            "id": "loot/two-bottles", "anchor": "anchor/filled-stand",
+            "items": [
+                {"item": "minecraft:glass_bottle", "count": 1},
+                {"item": "minecraft:potion", "count": 1, "slot": "container.2"}
+            ]
+        }]);
+    });
+
+    let written = tmp("brew-world");
+    let (code, log) = run(&[
+        "--prefabs",
+        lib.to_str().unwrap(),
+        "written-world",
+        camp.to_str().unwrap(),
+        "-o",
+        written.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "{log}");
+    let back = read_back(&written);
+    // The two stands, by their column: the room's local (1, 1) and (9, 9).
+    let stands: Vec<(&String, &String)> = back
+        .iter()
+        .filter(|(_, s)| s.starts_with("minecraft:brewing_stand"))
+        .collect();
+    assert_eq!(stands.len(), 2, "{stands:?}");
+    let at = |x: &str| {
+        stands
+            .iter()
+            .find(|(c, _)| c.starts_with(&format!("{x},")))
+            .map(|(_, s)| s.as_str())
+    };
+    assert_eq!(
+        at("1"),
+        Some("minecraft:brewing_stand[has_bottle_0=true,has_bottle_1=false,has_bottle_2=true]"),
+        "the filled stand shows the two bottles its loot lands in slot 0 and the named slot 2"
+    );
+    assert_eq!(
+        at("9"),
+        Some(empty),
+        "a stand no fill reaches shows no bottle, though its piece wrote one"
+    );
+}

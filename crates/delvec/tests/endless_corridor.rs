@@ -1445,7 +1445,9 @@ fn dw0946_a_staged_volume_that_stands_down_in_one_bay_only() {
 /// On the assembled gallery the released test left the hall sealed, and the
 /// shop test after it was refused its purchase. So every score either test
 /// writes (the compiler's `#lp_` scratch excepted) is saved after `setup` and
-/// put back after the test's last act, value or unset.
+/// put back after the test's last act, value or unset. The load latch straight
+/// after `setup` (`#placed` set to 1) is itself the put-back of the `#placed`
+/// that `setup` re-arms, to the value every template starts from.
 #[test]
 fn a_loop_packtest_puts_back_every_score_it_writes() {
     let run = build(&campaign("restores", |_| {}));
@@ -1461,7 +1463,13 @@ fn a_loop_packtest_puts_back_every_score_it_writes() {
             .rposition(|l| l.starts_with("kill @e[tag=dw_looptest_"))
             .unwrap_or_else(|| panic!("{name} kills its dummy: {t}"));
         let mut written = std::collections::BTreeSet::new();
-        for l in &lines[..last_kill] {
+        for (i, l) in lines[..last_kill].iter().enumerate() {
+            if *l == "scoreboard players set #placed dw.sys 1"
+                && i > 0
+                && lines[i - 1] == format!("function {ns}:setup")
+            {
+                continue;
+            }
             let w: Vec<&str> = l.split_whitespace().collect();
             if let [
                 "scoreboard",

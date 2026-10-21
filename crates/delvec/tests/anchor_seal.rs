@@ -324,22 +324,44 @@ fn typod_anchor_nested_in_a_trap_payload_is_dw0360() {
 
 /// Control for root 5: a `set-block` in a dialogue option's `on_respawn` bundle on
 /// a real anchor builds, and its `setblock` really is in the shipped pack (it is
-/// lowered into `cp_on_respawn_<i>`).
+/// lowered into `cp_on_respawn_<i>`). The block is one a body passes through
+/// (`minecraft:light`), because the anchor is the checkpoint's own cell: a block
+/// a body collides with there is refused, below.
 #[test]
 fn set_block_in_a_dialogue_respawn_bundle_emits_its_setblock() {
     let out = build_campaign(
         &quests_doc(r#"{ "type": "open-gate", "anchor": "anchor/door" }"#),
         Some(&respawn_dialogue(
-            r#"{ "type": "set-block", "anchor": "anchor/exit", "block": "minecraft:cobblestone" }"#,
+            r#"{ "type": "set-block", "anchor": "anchor/exit", "block": "minecraft:light" }"#,
         )),
     )
     .expect("a set-block in a dialogue on_respawn bundle must build");
     let all = all_function_text(&out);
     assert!(
         all.lines()
-            .any(|l| l.trim_start().starts_with("setblock ") && l.contains("minecraft:cobblestone")),
+            .any(|l| l.trim_start().starts_with("setblock ") && l.contains("minecraft:light")),
         "a dialogue on_respawn bundle is lowered — its set-block must emit:\n{all}"
     );
+}
+
+/// **A respawn bundle that sets a solid block on the checkpoint's own cell
+/// strands the party** (`DW0315`): the bundle runs only after a death, so it is
+/// an unforced write that seals the cell, and the cell is the next required
+/// anchor. A `set-block` reaches the region model like every other write, so the
+/// checkpoint proof sees the cobblestone it would respawn the party into.
+#[test]
+fn a_solid_set_block_on_the_respawn_cell_is_dw0315() {
+    match build_campaign(
+        &quests_doc(r#"{ "type": "open-gate", "anchor": "anchor/door" }"#),
+        Some(&respawn_dialogue(
+            r#"{ "type": "set-block", "anchor": "anchor/exit", "block": "minecraft:cobblestone" }"#,
+        )),
+    ) {
+        Err(emit::BuildFailure::Diagnostic { code, message }) => {
+            assert_eq!(code, "DW0315", "wrong code: {message}");
+        }
+        other => panic!("cobblestone on the respawn cell must be refused: {other:?}"),
+    }
 }
 
 /// A typo'd anchor in a dialogue option's `set-checkpoint` `on_respawn` bundle is

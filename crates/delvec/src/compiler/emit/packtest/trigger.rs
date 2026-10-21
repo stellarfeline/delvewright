@@ -326,8 +326,7 @@ pub(super) fn emit_shared_hitbox_packtest(plan: &Plan, out: &mut BuildOutput) {
         early.id.as_str(),
         late.id.as_str()
     ));
-    t.push(format!("function {ns}:setup"));
-    t.push("scoreboard players set #placed dw.sys 1".to_string());
+    t.extend(settled_setup(ns));
     // Own init (batch contract): rebuild every NPC so exactly one hitbox exists.
     for n in &plan.npcs {
         t.push(format!("kill @e[tag={}]", n.tag));

@@ -59,7 +59,7 @@ Ideas only: the algorithmic *techniques* are re-implemented in our own Rust from
 their published description. No third-party source files are read or copied —
 algorithms are not copyrightable, only their concrete expression.
 
-### Implemented — cave/shore tileset (`prefabs/cave-generator`)
+### Implemented — cave/shore tileset (the cave generator, kept in the content repository as `prefabs/generators/cave-generator`; its palette family is ported into `delvec`'s edit stage)
 
 | Source | License (verified) | Technique we re-implemented |
 |---|---|---|

@@ -120,12 +120,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from lib import mdtable  # noqa: E402
+from lib import demo_queue  # noqa: E402
 from lib.rust_source import VISIBILITY  # noqa: E402
 from lib.gitbase import BaseUnresolved, resolve_base  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-QUEUE = "docs/demo-levels.md"
+QUEUE = demo_queue.PATH
 CRATES = "crates"
 
 ATTR_START = re.compile(r"#\[(?:arg|clap)\(")
@@ -137,7 +137,7 @@ DW_CODE = re.compile(r"DW[0-9]{4}")
 ADR_REF = re.compile(r"ADR-([0-9]{4})")
 BARE_NUMBER = re.compile(r"(?<![0-9A-Za-z])([0-9]{4})(?![0-9A-Za-z])")
 
-MECHANIC_HEADING = "## Mechanic demos"
+MECHANIC_HEADING = demo_queue.HEADING
 
 
 # --------------------------------------------------------------------- git ---
@@ -281,12 +281,12 @@ def flag_owners(ref: str | None) -> tuple[dict[str, set[str]], int, int]:
 def parse_queue(ref: str | None) -> tuple[list[list[str]], list[tuple[int, str]]]:
     """The mechanic-demo table's data rows, and the rows no table contains.
 
-    The section between this heading and the next `## ` is read by
-    `tools/lib/mdtable.py`, which applies the renderer's rule and no other:
-    a pipe table runs from a header row, through a delimiter row, to the first
-    blank line or the start of another block-level structure. A row under a
-    blank line is therefore not in the table, and the reader sees a paragraph
-    of literal pipe characters where this gate used to see an entry.
+    Read by `tools/lib/demo_queue.py`, the queue's one reader, which hands the
+    section to `tools/lib/mdtable.py`: a pipe table runs from a header row,
+    through a delimiter row, to the first blank line or the start of another
+    block-level structure. A row under a blank line is therefore not in the
+    table, and the reader sees a paragraph of literal pipe characters where
+    this gate used to see an entry.
 
     The detached rows come back alongside rather than being dropped, because
     dropping them would rebuild the same defect facing the other way: the gate
@@ -294,19 +294,8 @@ def parse_queue(ref: str | None) -> tuple[list[list[str]], list[tuple[int, str]]
 
     Returns `(rows, orphans)`, each orphan a `(line number in the file, text)`.
     """
-    text = read_text(ref, QUEUE)
-    if MECHANIC_HEADING not in text:
-        return [], []
-    before, body = text.split(MECHANIC_HEADING, 1)
-    # `body` resumes on the heading's own line, so line k of it is that line + k.
-    heading_lineno = before.count("\n") + 1
-    section = body.split("\n## ", 1)[0]
-
-    rows, orphans = mdtable.read(section)
-    return (
-        [list(row.cells) for row in rows],
-        [(heading_lineno + n - 1, line) for n, line in orphans],
-    )
+    rows, orphans = demo_queue.read(read_text(ref, QUEUE))
+    return [list(cells) for _, cells in rows], orphans
 
 
 def queue_rows(ref: str | None) -> list[list[str]]:
