@@ -128,6 +128,7 @@ pub mod blind;
 pub mod blocking;
 pub mod blockout;
 pub mod blockstate;
+pub mod bodies;
 pub mod bound;
 pub mod branch;
 pub mod burial;

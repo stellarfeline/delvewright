@@ -143,6 +143,11 @@ pub fn body_at(plan: &Plan, anchor: &str) -> Body {
 /// block when that block is one a hand presses (spec-0093 §6.5) — the block is
 /// the body and vanilla reports the press — else [`body_at`] its anchor.
 pub fn trigger_body(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> Body {
+    // spec-0119: a body's answer has no cell; it rides the box its body owns.
+    if let Some(a) = crate::compiler::bodies::answer_of(plan.campaign, t.id.as_str()) {
+        let (tag, owner) = a.carrier(plan);
+        return Body::Rides { tag, owner };
+    }
     let Some(at) = t.at_anchor() else {
         return Body::Nothing;
     };

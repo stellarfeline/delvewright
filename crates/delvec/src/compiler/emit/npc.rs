@@ -4,12 +4,14 @@ use super::*;
 
 /// Whether a stage-2 NPC declares `deferred: true` (DSL v0.6) — it is not summoned
 /// at world init and enters only via a `spawn-npc` effect.
-/// The width, in blocks, of the `minecraft:interaction` hitbox every NPC's
-/// dialogue rides on (its summon's `width`).
+/// The least width, in blocks, of the `minecraft:interaction` hitbox an NPC's
+/// dialogue rides on — the box every body up to `1.0` wide wears. A wider body
+/// wears the box that encloses it ([`crate::compiler::bodies::answer_box_dims`]).
 pub const NPC_HITBOX_WIDTH: f64 = 1.0;
 
-/// The height, in blocks, of an NPC's interaction hitbox (its summon's
-/// `height`), standing on the body's feet.
+/// The least height, in blocks, of an NPC's interaction hitbox, standing on the
+/// body's feet — the box every body up to `2.0` tall wears; a taller body wears
+/// the box that encloses it ([`crate::compiler::bodies::answer_box_dims`]).
 pub const NPC_HITBOX_HEIGHT: f64 = 2.0;
 
 pub(super) fn npc_is_deferred(c: &delvewright_dsl::Campaign, npc_id: &str) -> bool {
@@ -101,14 +103,28 @@ pub(super) fn npc_summon_commands(
     // the anchor's own cell (spec-0066).
     let stand_anchor = if offset == [0, 0, 0] { anchor } else { "" };
     tags.extend(npc_hitbox_trigger_tags(c, stand_anchor, &npc.npc_id));
+    // spec-0119: the NPC's `struck` answer rides this hitbox too.
+    tags.extend(crate::compiler::bodies::npc_hitbox_answer_tags(
+        c,
+        &npc.npc_id,
+    ));
     let tag_list = tags
         .iter()
         .map(|t| format!("\"{t}\""))
         .collect::<Vec<_>>()
         .join(",");
+    // spec-0119 §3: the box encloses the body that ships, so a blow on the body
+    // lands on the box vanilla names the striker for. A body up to `1.0 × 2.0`
+    // wears the box it always wore.
+    let shipped = dsl_npc.map_or_else(|| base.to_string(), crate::compiler::nav::npc_body_entity);
+    let (w, h) = crate::compiler::bodies::answer_box_dims(&shipped);
     out.push(format!(
-        "summon minecraft:interaction {} {} {} {{width:{NPC_HITBOX_WIDTH:.1}f,height:{NPC_HITBOX_HEIGHT:.1}f,response:1b,Invulnerable:1b,Tags:[{BORNE_NBT}{tag_list}]}}",
-        p[0], p[1], p[2]
+        "summon minecraft:interaction {} {} {} {{width:{}f,height:{}f,response:1b,Invulnerable:1b,Tags:[{BORNE_NBT}{tag_list}]}}",
+        p[0],
+        p[1],
+        p[2],
+        crate::compiler::bodies::dim_snbt(w),
+        crate::compiler::bodies::dim_snbt(h)
     ));
     out
 }

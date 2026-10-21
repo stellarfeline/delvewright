@@ -624,6 +624,20 @@ pub fn build_with_warnings(
             );
             (census, stances)
         };
+    // ---- spec-0119: a harmless body says what it is (`DW1055`) ----
+    //
+    // Over the same world and the same walk-reachable set the holder stance
+    // pass reads, asked through the one stance entry point
+    // (`nav::interaction_stances`). The binding line is printed before the
+    // verdict, zeroes included.
+    {
+        let (binding, verdict) = crate::compiler::bodies::check(plan, &world);
+        eprintln!("{}", binding.line());
+        verdict.map_err(|e| BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        })?;
+    }
     // A leg that ends at a holder `collect` ends at the stance the pass chose
     // (spec-0111 §5.2), never inside the holder the block model reads as air:
     // every route proof, waypoint and the critical-path step read one stance.

@@ -73,6 +73,14 @@ pub struct Npc {
     /// (`DW1025`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub watch: Option<NpcWatch>,
+    /// What this body says to the player who strikes it (spec-0119): the same
+    /// [`crate::BodyAnswers`] a stage-5 [`crate::Actor`] carries, because the
+    /// answer belongs to the body. An NPC answers a blow only (`struck`); its
+    /// right-click is its dialogue. Owed by `DW1055` when the body's kind is one
+    /// the game discards on peaceful and a walking player can reach it. Absent =
+    /// byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<crate::BodyAnswers>,
 }
 
 /// A mannequin NPC's player-model skin (DSL v0.4). The skin PNG is sourced from

@@ -1476,7 +1476,7 @@ pub fn check_stance(
             ));
         }
         let cells = if o.is_filled() {
-            crate::compiler::nav::stance_cells(world, &h.body_box(), reach, reachable)
+            crate::compiler::nav::interaction_stances(world, &h.body_box(), reachable)
                 .into_iter()
                 .filter(|c| holder_free(world, *c, &occupied))
                 .collect()

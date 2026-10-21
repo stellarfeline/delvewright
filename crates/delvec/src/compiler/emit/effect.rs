@@ -823,6 +823,17 @@ pub(super) fn emit_quest_effect(
                 .actors
                 .iter()
                 .any(|a| a.id.as_str() == actor.as_str() && actor_declares_drops(a));
+            // spec-0119: the answer box leaves before the puppet does.
+            if let Some(a) = plan
+                .campaign
+                .quests
+                .content
+                .actors
+                .iter()
+                .find(|a| a.id.as_str() == actor.as_str())
+            {
+                body.extend(actor_answer_box_kill(a));
+            }
             emit_despawn_actor(ns, actor.as_str(), *style, declares_drops, body);
         }
         Verb::MoveActor { actor, to, .. } => {

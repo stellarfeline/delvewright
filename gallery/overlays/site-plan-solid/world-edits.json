@@ -3,6 +3,6 @@
   "content": {
     "batches": []
   },
-  "dsl_version": "0.55.0",
+  "dsl_version": "0.60.0",
   "stage": "world-edits"
 }

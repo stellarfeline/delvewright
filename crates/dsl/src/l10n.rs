@@ -41,6 +41,8 @@
 //! | `class.<class>.kit.<i>.name` | a kit item's display `name` (only if set) |
 //! | `npc.<npc>.name` | each stage-2 NPC `name` (see *entity display names* below) |
 //! | `actor.<actor>.name` | each stage-5 actor `name` (v0.6, only if set; see below) |
+//! | `npc.<npc>.answers.struck` | what an NPC's body answers a blow (spec-0119, only if set) |
+//! | `actor.<actor>.answers.struck` / `.touched` | what an actor's body answers a blow / a touch (spec-0119, only if set) |
 //! | `quest.<quest>.goal` | each stage-4 planned-quest `goal` |
 //! | `obj.<quest>.<obj>.title` / `.hint` | a stage-5 objective's `title`/`hint` (only if set) |
 //! | `obj.<quest>.<obj>.missing_item_hint` | a stage-5 `interact`'s `missing_item_hint` (v0.7, only if set) |
@@ -361,6 +363,18 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
         );
         f(&key, &mut npc.name);
     }
+    // Stage 2 — what an NPC's body answers a blow (spec-0119). After every NPC
+    // name, so the entity display-name class above keeps its own order.
+    for npc in &mut c.npcs.content.npcs {
+        let nl = local(npc.id.as_str()).to_string();
+        if let Some(answers) = npc.answers.as_mut() {
+            for press in crate::BodyPress::ALL {
+                if let Some(line) = answers.line_mut(press) {
+                    f(&format!("npc.{nl}.answers.{}", press.token()), line);
+                }
+            }
+        }
+    }
     // Stage 4 — quest goals.
     for q in &mut c.quest_plan.content.quests {
         let key = format!("quest.{}.goal", local(q.id.as_str()));
@@ -487,6 +501,14 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
         // actor's `name`, under whatever key that name is inventoried.
         if let Some(t) = a.health_bar.as_mut().and_then(|b| b.title.as_mut()) {
             f(&format!("actor.{al}.health_bar.title"), t);
+        }
+        // What the puppet answers a blow and a touch (spec-0119).
+        if let Some(answers) = a.answers.as_mut() {
+            for press in crate::BodyPress::ALL {
+                if let Some(line) = answers.line_mut(press) {
+                    f(&format!("actor.{al}.answers.{}", press.token()), line);
+                }
+            }
         }
     }
     // Stage 5 — loot item custom names (spec-0021), keyed like a class kit
@@ -685,6 +707,13 @@ pub fn key_kind(key: &str) -> Option<TextKind> {
             _ => return None,
         },
         "area" | "npc" | "state" if n == 3 && last == "name" => Name,
+        // spec-0119: a body's answer to a press is a refusal — the act did
+        // nothing, and the line says what the thing is.
+        "npc" | "actor"
+            if n == 4 && segs[2] == "answers" && matches!(last, "struck" | "touched") =>
+        {
+            Refusal
+        }
         "class" => match (n, last) {
             (3, "name") => Name,
             (3, "blurb") => Description,
@@ -906,6 +935,36 @@ pub fn key_situations(c: &Campaign) -> BTreeMap<String, Vec<String>> {
             ["dlg", np, nd, "opt", oi, field] => option_lines(np, nd, oi, &mut lines, field),
             ["lethal", _, "message"] => {
                 lines.push("Shown to a player as this hazard kills them.".into())
+            }
+            ["npc" | "actor", b, "answers", press] => {
+                let body = crate::body_sites(c).into_iter().map(|s| s.body).find(|x| {
+                    x.stage() == if segs[0] == "npc" { "npcs" } else { "quests" }
+                        && local(x.id()) == *b
+                });
+                if let Some(body) = body {
+                    let what = match body {
+                        crate::BodyRef::Npc(n) => n.name.clone(),
+                        crate::BodyRef::Actor(a) => {
+                            a.name.clone().unwrap_or_else(|| a.id.to_string())
+                        }
+                    };
+                    let act = if *press == "struck" {
+                        "strikes"
+                    } else {
+                        "right-clicks"
+                    };
+                    lines.push(format!(
+                        "Shown on the action bar to the one player who {act} {what}, a `{}` that \
+                         cannot be harmed and does not fight: the blow or the touch does \
+                         nothing, and this line says what the thing is.",
+                        body.worn_entity()
+                    ));
+                    if let crate::BodyRef::Npc(n) = body
+                        && let Some(area) = c.world.content.areas.iter().find(|a| a.id == n.area)
+                    {
+                        lines.push(format!("Stands in: {}", area.name));
+                    }
+                }
             }
             ["stake", _, "collected"] => {
                 lines.push("Shown when a player picks up what they dropped at death.".into())

@@ -267,6 +267,47 @@ pub(super) fn emit_v06_actor_packtests(
         write(&format!("v06_unleash_{safe}"), b);
     }
 
+    // spec-0119 §5.1: an actor's answer box stands with its puppet and goes
+    // before the twin stands — so a blow before the unleash is answered, and a
+    // blow after it lands on the body that fights. Per actor that wears one.
+    for a in actors
+        .iter()
+        .filter(|a| actor_has_answer_box(c, a.id.as_str()))
+    {
+        let safe = plan::safe_local(a.id.as_str());
+        let tag = crate::compiler::bodies::answer_box_tag(a.id.as_str());
+        let mut b = packtest_header(&format!(
+            "{}: actor `{}`'s answer box stands with its puppet and is gone when the twin stands",
+            artifact_title(c),
+            a.id
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!(
+            "execute store result score #abx_sp_{safe} dw.sys if entity @e[type=minecraft:interaction,tag={tag}]"
+        ));
+        b.push(format!("assert score #abx_sp_{safe} dw.sys matches 1"));
+        // Idempotent: a second spawn stands no second box.
+        b.push(format!("function {ns}:spawn_actor_{safe}"));
+        b.push(format!(
+            "execute store result score #abx_sp2_{safe} dw.sys if entity @e[type=minecraft:interaction,tag={tag}]"
+        ));
+        b.push(format!("assert score #abx_sp2_{safe} dw.sys matches 1"));
+        b.push(format!("function {ns}:unleash_{safe}"));
+        b.push(format!(
+            "execute store result score #abx_un_{safe} dw.sys if entity @e[tag={tag}]"
+        ));
+        b.push(format!("assert score #abx_un_{safe} dw.sys matches 0"));
+        b.push(format!(
+            "execute store result score #abx_tw_{safe} dw.sys if entity @e[type={},tag=dw_actor_{safe}]",
+            a.entity
+        ));
+        b.push(format!("assert score #abx_tw_{safe} dw.sys matches 1"));
+        b.push(format!("kill @e[tag=dw_actor_{safe}]"));
+        write(&format!("v119_answer_box_{safe}"), b);
+    }
+
     // The puppets whose leg drivers carry the supersession guard: a template that
     // invokes one of their drivers directly claims it first ([`walk_claim`]).
     let actor_guarded = supersedable_walkers(actor_moves.iter().map(|m| m.actor.as_str()));
