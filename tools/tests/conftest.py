@@ -103,6 +103,7 @@ WHOLE_TREE = frozenset(
         "test_check_skill_page.py",
         "test_check_toolchain.py",
         "test_fetch_delvec.py",
+        "test_handout.py",
         "test_release_tags.py",
         # documents outside `docs/reference/compiler.md`
         "test_check_demo_levels.py",
