@@ -635,12 +635,16 @@ pub(super) fn display_origin(cell: [i32; 3], state: &str) -> String {
     }
 }
 
-/// The summon of one highlight display at `cell` drawing `state` (§7.2),
-/// lit from the moment it exists: a display is summoned only while its
-/// highlight is lit ([`hold_lines`]).
-pub(super) fn display_summon(safe: &str, cell: [i32; 3], state: &str) -> String {
+/// The summon of highlight `safe`'s display of its `i`th cell, `cell`,
+/// drawing `state` (§7.2), lit from the moment it exists: a display is
+/// summoned only while its highlight is lit ([`hold_lines`]). It carries
+/// [`cell_tag`] beside the highlight's own tag.
+pub(super) fn display_summon(safe: &str, i: usize, cell: [i32; 3], state: &str) -> String {
     let base = state.split('[').next().unwrap_or(state);
-    let tags = format!("Glowing:1b,Tags:[{FIXTURE_NBT}\"dw_hl\",\"dw_hl_{safe}\"]");
+    let tags = format!(
+        "Glowing:1b,Tags:[{FIXTURE_NBT}\"dw_hl\",\"dw_hl_{safe}\",\"{}\"]",
+        cell_tag(safe, i)
+    );
     let at = display_origin(cell, state);
     if display_entity(state) == "minecraft:item_display" {
         format!(
@@ -656,19 +660,11 @@ pub(super) fn display_summon(safe: &str, cell: [i32; 3], state: &str) -> String 
     }
 }
 
-/// The selector of the one display of highlight `safe` standing at `cell`
-/// drawing `state`: found where its kind stands to draw the cell, within a
-/// thousandth of a block.
-fn cell_display(safe: &str, cell: [i32; 3], state: &str) -> String {
-    let o = display_origin(cell, state);
-    let [x, y, z]: [&str; 3] = {
-        let p: Vec<&str> = o.split(' ').collect();
-        [p[0], p[1], p[2]]
-    };
-    format!(
-        "@e[type={},tag=dw_hl_{safe},x={x},y={y},z={z},distance=..0.001]",
-        display_entity(state)
-    )
+/// The tag of highlight `safe`'s display of its `i`th cell: `dw_hl_<a>.<i>`.
+/// The `.` is never in a `safe_local` name, so no other highlight's tag can
+/// spell it.
+pub(super) fn cell_tag(safe: &str, i: usize) -> String {
+    format!("dw_hl_{safe}.{i}")
 }
 
 /// The body of `hl_hold_<a>`, the one place a block highlight's displays are
@@ -684,16 +680,16 @@ pub(super) fn hold_lines(h: &HlAct) -> Vec<String> {
         return Vec::new();
     };
     let mut v = Vec::new();
-    for (cell, state) in cells {
+    for (i, (cell, state)) in cells.iter().enumerate() {
         let pred = drawn_predicate(state);
         let [x, y, z] = *cell;
-        let sel = cell_display(&h.safe, *cell, state);
+        let sel = format!("@e[tag={}]", cell_tag(&h.safe, i));
         v.push(format!(
             "execute unless block {x} {y} {z} {pred} run kill {sel}"
         ));
         v.push(format!(
             "execute if block {x} {y} {z} {pred} unless entity {sel} run {}",
-            display_summon(&h.safe, *cell, state)
+            display_summon(&h.safe, i, *cell, state)
         ));
     }
     v
@@ -1505,7 +1501,7 @@ mod tests {
             ([-16, -3, -1], ["-16.0", "-3.0", "-1.0"]),
             ([0, 0, 0], ["0.0", "0.0", "0.0"]),
         ] {
-            let line = display_summon("o_x", cell, "minecraft:lever[face=floor,facing=north]");
+            let line = display_summon("o_x", 0, cell, "minecraft:lever[face=floor,facing=north]");
             assert!(
                 line.starts_with("summon minecraft:block_display "),
                 "{line}"
@@ -1523,7 +1519,12 @@ mod tests {
             ([8209, 64, 8192], ["8209.5", "64.5", "8192.5"]),
             ([-16, -3, -1], ["-15.5", "-2.5", "-0.5"]),
         ] {
-            let line = display_summon("o_x", cell, "minecraft:bell[attachment=floor,facing=north]");
+            let line = display_summon(
+                "o_x",
+                0,
+                cell,
+                "minecraft:bell[attachment=floor,facing=north]",
+            );
             assert!(line.starts_with("summon minecraft:item_display "), "{line}");
             assert_eq!(at(&line), want, "{line}");
         }
@@ -1569,12 +1570,12 @@ mod tests {
         assert_eq!(v.len(), 2, "{v:?}");
         assert_eq!(
             v[0],
-            format!(
-                "execute unless block 1 2 3 {state} run kill @e[type=minecraft:block_display,tag=dw_hl_t_x,x=1.0,y=2.0,z=3.0,distance=..0.001]"
-            )
+            format!("execute unless block 1 2 3 {state} run kill @e[tag=dw_hl_t_x.0]")
         );
         assert!(
-            v[1].starts_with(&format!("execute if block 1 2 3 {state} unless entity @e[type=minecraft:block_display,tag=dw_hl_t_x,")),
+            v[1].starts_with(&format!(
+                "execute if block 1 2 3 {state} unless entity @e[tag=dw_hl_t_x.0] run "
+            )),
             "{}",
             v[1]
         );
