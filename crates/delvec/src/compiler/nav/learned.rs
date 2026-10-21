@@ -100,6 +100,23 @@ struct Met {
     rise: i32,
     seen: SeenFinding,
     reward: RewardFinding,
+    cut: Cut,
+}
+
+/// Where the branch ground is cut off the open route (spec-0118 §5.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Cut {
+    /// The junction and the branch path's own cells, one body wide.
+    Path,
+    /// The full declared width of a way's station the branch path walks.
+    Section {
+        /// The way in words.
+        way: String,
+        /// The station in words.
+        station: String,
+        /// Its declared width, in columns.
+        width: usize,
+    },
 }
 
 /// What [`check_shut_ways_learned`] measured, whether or not it refused.
@@ -257,6 +274,7 @@ fn rewards(plan: &Plan) -> Vec<Reward> {
 pub fn check_shut_ways_learned(
     plan: &Plan,
     world: &World,
+    prefabs: &crate::compiler::registry::PrefabRegistry,
 ) -> (ShutWayBinding, Result<(), Failure>) {
     let gated = gated_connections(plan);
     let q = &plan.campaign.quests.content;
@@ -301,7 +319,8 @@ pub fn check_shut_ways_learned(
     let configurations = Configurations::of(plan, world);
     let regions: Vec<([i32; 3], [i32; 3])> = ways.iter().map(|w| w.gate.region).collect();
     let judged = configurations.judged(plan, world, &regions);
-    let (mut binding, verdict) = verify_shut_ways(&ways, world, &judged, &rewards(plan));
+    let sections = super::width::plan_cross_sections(plan, prefabs);
+    let (mut binding, verdict) = verify_shut_ways(&ways, world, &judged, &rewards(plan), &sections);
     binding.gated = gated.len();
     (binding, verdict)
 }
@@ -339,23 +358,73 @@ fn path_to(tree: &BTreeMap<[i32; 3], Option<[i32; 3]>>, target: [i32; 3]) -> Vec
     path
 }
 
-/// **The branch ground** (spec-0118 §5.2): the cells a body reaches from the
-/// shut way's face that it cannot reach from the open route without passing
-/// the junction or walking the branch path — the ground the branch alone
-/// leads to. The open side is the body-move closure of the route cells with
-/// the junction and the branch path taken out; the ground is the closure from
-/// the face, less that open side, less every cell one move from it, and less
-/// the route itself. On an open floor
-/// the open side flows round the branch path, so the ground is empty: an open
-/// floor is not a branch, and nothing on it pays for one.
-fn branch_ground(
+/// **The branch ground and where it is cut** (spec-0118 §5.2): the ground
+/// behind the narrowest cross-section the branch path passes that separates
+/// it from the open route. The path's own cells are one body wide, the
+/// narrowest a path can be, and are tried first; where the open side flows
+/// round them, the stations of declared ways the path walks
+/// ([`super::width::CrossSection`], the width model of spec-0120) are tried
+/// narrowest first, each cut across its full declared width, the one nearer
+/// the face first among equals. The first that leaves ground is the cut;
+/// where none does, the ground is empty and the cut is the path's.
+fn cut_branch(
     w: &World,
     face: &[[i32; 3]],
     route: &BTreeSet<[i32; 3]>,
     junction: [i32; 3],
     branch: &[[i32; 3]],
+    sections: &[super::width::CrossSection],
+) -> (BTreeSet<[i32; 3]>, Cut) {
+    let path: Vec<[i32; 3]> = std::iter::once(junction)
+        .chain(branch.iter().copied())
+        .collect();
+    let ground = branch_ground(w, face, route, &path, &BTreeSet::new());
+    if !ground.is_empty() {
+        return (ground, Cut::Path);
+    }
+    let mut walked: Vec<(usize, std::cmp::Reverse<usize>, &super::width::CrossSection)> = sections
+        .iter()
+        .filter_map(|s| {
+            path.iter()
+                .rposition(|c| s.cells.contains(c))
+                .map(|i| (s.width, std::cmp::Reverse(i), s))
+        })
+        .collect();
+    walked.sort_by(|a, b| {
+        (a.0, a.1, &a.2.way, &a.2.station).cmp(&(b.0, b.1, &b.2.way, &b.2.station))
+    });
+    for (_, _, s) in walked {
+        let ground = branch_ground(w, face, route, &path, &s.cells);
+        if !ground.is_empty() {
+            return (
+                ground,
+                Cut::Section {
+                    way: s.way.clone(),
+                    station: s.station.clone(),
+                    width: s.width,
+                },
+            );
+        }
+    }
+    (BTreeSet::new(), Cut::Path)
+}
+
+/// **The ground behind one cut**: the cells a body reaches from the shut
+/// way's face that it cannot reach from the open route without passing the
+/// cut — the junction, the branch path, and the cross-section `across` when
+/// one is given. The open side is the body-move closure of the route cells
+/// with the cut taken out; the ground is the closure from the face, less that
+/// open side, less every cell one move from it, and less the route itself. On
+/// an open floor the open side flows round the cut, so the ground is empty:
+/// an open floor is not a branch, and nothing on it pays for one.
+fn branch_ground(
+    w: &World,
+    face: &[[i32; 3]],
+    route: &BTreeSet<[i32; 3]>,
+    path: &[[i32; 3]],
+    across: &BTreeSet<[i32; 3]>,
 ) -> BTreeSet<[i32; 3]> {
-    let cut: BTreeSet<[i32; 3]> = branch.iter().copied().chain([junction]).collect();
+    let cut: BTreeSet<[i32; 3]> = path.iter().chain(across).copied().collect();
     let flood = |roots: Vec<[i32; 3]>, avoid: &BTreeSet<[i32; 3]>| {
         let mut seen: BTreeSet<[i32; 3]> = roots.into_iter().collect();
         let mut queue: VecDeque<[i32; 3]> = seen.iter().copied().collect();
@@ -457,12 +526,14 @@ pub(super) fn verify_shut_ways(
     base: &World,
     configs: &[SeparationConfig<'_>],
     rewards: &[Reward],
+    sections: &[super::width::CrossSection],
 ) -> (ShutWayBinding, Result<(), Failure>) {
     verify_with_eye(
         ways,
         base,
         configs,
         rewards,
+        sections,
         delvewright_dsl::metrics::PLAYER_EYE_HEIGHT,
     )
 }
@@ -472,6 +543,7 @@ fn verify_with_eye(
     base: &World,
     configs: &[SeparationConfig<'_>],
     rewards: &[Reward],
+    sections: &[super::width::CrossSection],
     eye_height: f64,
 ) -> (ShutWayBinding, Result<(), Failure>) {
     let mut binding = ShutWayBinding {
@@ -528,7 +600,8 @@ fn verify_with_eye(
                         .map(|c| c[1])
                         .max()
                         .map_or(0, |y| y - junction[1]);
-                    let ground = branch_ground(w, &face, &route_set, junction, branch);
+                    let (ground, cut) =
+                        cut_branch(w, &face, &route_set, junction, branch, sections);
                     out.push(Met {
                         way: gi,
                         config: *ci,
@@ -539,6 +612,7 @@ fn verify_with_eye(
                         rise,
                         seen: sight(w, junction, ways[gi].gate.region, eye_height),
                         reward: reward_on(&ground, rewards),
+                        cut,
                     });
                 }
             }
@@ -700,12 +774,38 @@ fn reward_words(m: &Met) -> String {
     match &m.reward {
         RewardFinding::Rewarded(a, kind) => format!("`{a}` ({kind}) stands on the branch"),
         RewardFinding::Bare(n, nearest) => {
-            let mut s = format!("no pickup, interaction or fight within the branch's {n} cell(s)");
+            let mut s = format!(
+                "no pickup, interaction or fight within the branch's {n} cell(s) behind {}",
+                cut_words(&m.cut)
+            );
             if let Some((a, d)) = nearest {
                 s.push_str(&format!(" (the nearest is `{a}`, {d} block(s) from it)"));
             }
             s
         }
+    }
+}
+
+/// The cut in words: where the branch ground is cut off the open route.
+fn cut_words(cut: &Cut) -> String {
+    match cut {
+        Cut::Path => "the branch path's own cells, one body wide".to_string(),
+        Cut::Section {
+            way,
+            station,
+            width,
+        } => format!("{station} of {way}, {width} column(s) wide"),
+    }
+}
+
+fn cut_json(cut: &Cut) -> serde_json::Value {
+    match cut {
+        Cut::Path => serde_json::json!({ "at": "path", "width": 1 }),
+        Cut::Section {
+            way,
+            station,
+            width,
+        } => serde_json::json!({ "at": station, "way": way, "width": width }),
     }
 }
 
@@ -788,6 +888,7 @@ fn row(
         "junction": m.junction,
         "branch_length": m.length,
         "branch_rise": m.rise,
+        "branch_cut": cut_json(&m.cut),
         "learned": way.learned.map(Learned::word),
         "confirmed": confirmed,
         "seen": seen,
@@ -801,6 +902,7 @@ fn row(
 #[cfg(test)]
 mod learned_tests {
     use super::super::separate::verify_gates_separate;
+    use super::super::width::CrossSection;
     use super::*;
 
     const WALL: i32 = 4;
@@ -895,6 +997,7 @@ mod learned_tests {
             base,
             &[(w, "while `obj/test` is next".to_string(), route(), vec![0])],
             rewards,
+            &[],
             eye,
         )
     }
@@ -976,6 +1079,7 @@ mod learned_tests {
             &base,
             &[(&shut, "now".to_string(), route(), vec![0])],
             &[],
+            &[],
         );
         assert!(core.is_ok(), "{core:?}");
     }
@@ -1030,6 +1134,7 @@ mod learned_tests {
             &base,
             &[(&shut, "now".to_string(), route, vec![0])],
             &[],
+            &[],
         );
         assert!(verdict.is_ok(), "{verdict:?} {:?}", b.rows);
         assert_eq!((b.met, b.seen), (1, 1), "{}", b.line());
@@ -1063,6 +1168,7 @@ mod learned_tests {
             std::slice::from_ref(&cover),
             &base,
             &[(&shut, "now".to_string(), vec![[3, 3, 3]], vec![0])],
+            &[],
             &[],
         );
         assert!(verdict.is_ok(), "{verdict:?} {:?}", b.rows);
@@ -1184,7 +1290,7 @@ mod learned_tests {
             (&shut, "while `obj/a` is next".to_string(), route(), vec![0]),
             (&shut, "while `obj/b` is next".to_string(), route(), vec![0]),
         ];
-        let (b, verdict) = verify_shut_ways(&ways, &base, &two, &[]);
+        let (b, verdict) = verify_shut_ways(&ways, &base, &two, &[], &[]);
         let err = verdict.expect_err("met with no word");
         assert_eq!(err.code.id(), "DW1053");
         assert_eq!(
@@ -1219,12 +1325,12 @@ mod learned_tests {
         let walled = branch(7, 2, true, &wall);
         let walled_base = branch(7, 2, false, &wall);
         let one = [(&walled, "now".to_string(), route(), vec![0])];
-        let (b, verdict) = verify_shut_ways(&ways, &walled_base, &one, &[]);
+        let (b, verdict) = verify_shut_ways(&ways, &walled_base, &one, &[], &[]);
         assert!(verdict.is_ok(), "{verdict:?}");
         assert_eq!((b.met, b.undeclared, b.inert), (0, 0, 0), "{}", b.line());
 
         let declared = [way(region, 2, Some(Learned::Seen))];
-        let (b, verdict) = verify_shut_ways(&declared, &walled_base, &one, &[]);
+        let (b, verdict) = verify_shut_ways(&declared, &walled_base, &one, &[], &[]);
         assert!(verdict.is_ok(), "{verdict:?}");
         assert_eq!(
             (b.inert, b.inert_ways.clone()),
@@ -1278,10 +1384,223 @@ mod learned_tests {
             &base,
             &[(&shut, "now".to_string(), route, vec![0])],
             std::slice::from_ref(&chest),
+            &[],
         );
         let err = verdict.expect_err("a chest in an open hall is no branch's pay");
         assert_eq!(err.code.id(), "DW1054", "{}", err.message);
         assert_eq!(b.rows[0]["rewarded"]["ground_cells"], 0, "{:?}", b.rows);
+    }
+
+    /// A declared way's station as the width model hands it: `width` columns
+    /// along x from `x0` at `z`, the body cell at `y` and the one over it.
+    fn section(station: &str, x0: i32, width: i32, y: i32, z: i32) -> CrossSection {
+        CrossSection {
+            way: "the stair `edge/test-stair`".to_string(),
+            station: station.to_string(),
+            width: usize::try_from(width).unwrap(),
+            cells: (x0..x0 + width)
+                .flat_map(|x| [[x, y, z], [x, y + 1, z]])
+                .collect(),
+        }
+    }
+
+    fn judge_cut(
+        w: &World,
+        base: &World,
+        ways: &[ShutWay],
+        route: Vec<[i32; 3]>,
+        rewards: &[Reward],
+        sections: &[CrossSection],
+    ) -> (ShutWayBinding, Result<(), Failure>) {
+        verify_shut_ways(
+            ways,
+            base,
+            &[(w, "now".to_string(), route, vec![0])],
+            rewards,
+            sections,
+        )
+    }
+
+    /// spec-0118 §5.2: the one-cell choke still cuts. The branch leaves the
+    /// route by a mouth one wide; the path's own cells separate the pocket,
+    /// so the cut is the path's even with a three-wide declared station on
+    /// the branch, and the ground is the one the path alone cut.
+    #[test]
+    fn the_old_one_cell_choke_still_cuts() {
+        let region = ([5, 1, 8], [5, 2, 8]);
+        let (base, shut) = (branch(7, 2, false, &[]), branch(7, 2, true, &[]));
+        let ways = [way(region, 2, Some(Learned::Rewarded))];
+        let chest = Reward {
+            anchor: "anchor/chest".to_string(),
+            kind: "a loot holder",
+            pos: [6, 1, 6],
+        };
+        let wide = [section("the branch's middle", 4, 3, 1, 4)];
+        let (alone, verdict) = judge_cut(
+            &shut,
+            &base,
+            &ways,
+            route(),
+            std::slice::from_ref(&chest),
+            &[],
+        );
+        assert!(verdict.is_ok(), "{verdict:?}");
+        let (b, verdict) = judge_cut(
+            &shut,
+            &base,
+            &ways,
+            route(),
+            std::slice::from_ref(&chest),
+            &wide,
+        );
+        assert!(verdict.is_ok(), "{verdict:?}");
+        assert_eq!(b.rewarded, 1);
+        assert_eq!(
+            b.rows[0]["branch_cut"],
+            serde_json::json!({ "at": "path", "width": 1 })
+        );
+        assert_eq!(alone.rows, b.rows, "a wider station moves nothing");
+    }
+
+    /// A yard (route along z = 0) with a stair three wide up its back wall to
+    /// a ledge, walled at both sides, and a one-wide bar in the ledge's back
+    /// wall with a room past it. Course `i` (z = 4 + i) stands `i` high.
+    fn stair_yard(shut: bool) -> World {
+        let mut solid = BTreeSet::new();
+        for x in -1..=11 {
+            for z in -1..=14 {
+                solid.insert([x, 0, z]);
+                let yard = (0..=10).contains(&x) && (0..=4).contains(&z);
+                let up = (4..=6).contains(&x) && (5..=13).contains(&z);
+                if !yard && !up {
+                    for y in 1..=10 {
+                        solid.insert([x, y, z]);
+                    }
+                }
+            }
+        }
+        for x in 4..=6 {
+            for z in 5..=8 {
+                for y in 1..=z - 4 {
+                    solid.insert([x, y, z]);
+                }
+            }
+            // The ledge, its floor five up, z 9..=11.
+            for z in 9..=11 {
+                for y in 1..=5 {
+                    solid.insert([x, y, z]);
+                }
+            }
+            // The back wall at z 12 with the bar at x 5, and the room past it.
+            for y in 1..=10 {
+                if !(x == 5 && (6..=7).contains(&y)) {
+                    solid.insert([x, y, 12]);
+                }
+            }
+            for z in 13..=13 {
+                for y in 1..=5 {
+                    solid.insert([x, y, z]);
+                }
+            }
+        }
+        if shut {
+            solid.extend([[5, 6, 12], [5, 7, 12]]);
+        }
+        World::from_solid_cells(solid)
+    }
+
+    /// spec-0118 §5.2: a stair three wide is cut at its run. The path's own
+    /// cells do not separate the ledge — the open side climbs the other two
+    /// columns — so the ground is empty and `rewarded` is refused, as before;
+    /// handed the stair's courses (three wide) and a station across the yard
+    /// (five wide, which the yard's floor flows round), the narrowest that
+    /// separates is a course, nearest the face first, and the chest on the
+    /// ledge pays.
+    #[test]
+    fn a_three_wide_stair_cuts_at_its_run() {
+        let (base, shut) = (stair_yard(false), stair_yard(true));
+        let ways = [way(([5, 6, 12], [5, 7, 12]), 2, Some(Learned::Rewarded))];
+        let route: Vec<[i32; 3]> = (0..=10).map(|x| [x, 1, 0]).collect();
+        let chest = Reward {
+            anchor: "anchor/ledge-chest".to_string(),
+            kind: "a loot holder",
+            pos: [4, 6, 11],
+        };
+        let rewards = std::slice::from_ref(&chest);
+        let (b, verdict) = judge_cut(&shut, &base, &ways, route.clone(), rewards, &[]);
+        let err = verdict.expect_err("the path alone does not cut a stair three wide");
+        assert_eq!(err.code.id(), "DW1054", "{}", err.message);
+        assert_eq!(b.rows[0]["rewarded"]["ground_cells"], 0, "{:?}", b.rows);
+        assert!(
+            err.message
+                .contains("behind the branch path's own cells, one body wide"),
+            "{}",
+            err.message
+        );
+        let mut sections: Vec<CrossSection> = (1..=4)
+            .map(|i| section(&format!("course {} of the run", 5 - i), 4, 3, i + 1, 4 + i))
+            .collect();
+        sections.push(section("the yard's middle", 3, 5, 1, 2));
+        let (b, verdict) = judge_cut(&shut, &base, &ways, route.clone(), rewards, &sections);
+        assert!(verdict.is_ok(), "{verdict:?} {:?}", b.rows);
+        assert_eq!(b.rewarded, 1);
+        assert_eq!(
+            b.rows[0]["branch_cut"],
+            serde_json::json!({ "at": "course 1 of the run", "way": "the stair `edge/test-stair`", "width": 3 }),
+            "{:?}",
+            b.rows
+        );
+        // The wide station alone is round-flowed: no cut, no ground.
+        let (b, verdict) = judge_cut(&shut, &base, &ways, route, rewards, &sections[4..]);
+        assert_eq!(verdict.expect_err("no narrowing").code.id(), "DW1054");
+        assert_eq!(b.rows[0]["branch_cut"]["at"], "path");
+    }
+
+    /// spec-0118 §5.2: a branch with no narrowing is refused as before. The
+    /// open hall of the test above, with a declared station three wide that
+    /// the branch path walks across the open floor: the floor flows round
+    /// it, so it cuts nothing, the ground is empty and `rewarded` is refused
+    /// `DW1054`, cut at the path.
+    #[test]
+    fn a_branch_with_no_narrowing_is_refused_as_before() {
+        let build = |shut: bool| {
+            let mut open = BTreeSet::new();
+            for x in 0..=10 {
+                for z in 0..=10 {
+                    open.insert([x, z]);
+                }
+            }
+            open.insert([5, 11]);
+            for x in 4..=6 {
+                open.insert([x, 12]);
+            }
+            let mut extra: Vec<[i32; 3]> = (3..=WALL).map(|y| [5, y, 11]).collect();
+            if shut {
+                extra.extend([[5, 1, 11], [5, 2, 11]]);
+            }
+            carve([0, 0], [10, 12], &open, &extra)
+        };
+        let (base, shut) = (build(false), build(true));
+        let ways = [way(([5, 1, 11], [5, 2, 11]), 2, Some(Learned::Rewarded))];
+        let route: Vec<[i32; 3]> = (0..=10).map(|x| [x, 1, 0]).collect();
+        let chest = Reward {
+            anchor: "anchor/far-corner".to_string(),
+            kind: "a loot holder",
+            pos: [9, 1, 9],
+        };
+        let mid = [section("the hall's middle", 4, 3, 1, 5)];
+        let (b, verdict) = judge_cut(
+            &shut,
+            &base,
+            &ways,
+            route,
+            std::slice::from_ref(&chest),
+            &mid,
+        );
+        let err = verdict.expect_err("an open floor is no branch");
+        assert_eq!(err.code.id(), "DW1054", "{}", err.message);
+        assert_eq!(b.rows[0]["rewarded"]["ground_cells"], 0, "{:?}", b.rows);
+        assert_eq!(b.rows[0]["branch_cut"]["at"], "path");
     }
 
     /// Acceptance 9: the binding line prints every count, zeroes included.
@@ -1385,7 +1704,7 @@ mod learned_tests {
                     ..way(g.region, 2, Some(Learned::Seen))
                 })
                 .collect();
-            let (learned, _) = verify_shut_ways(&ways, &base, &configs, &[]);
+            let (learned, _) = verify_shut_ways(&ways, &base, &configs, &[], &[]);
             assert_eq!(sep.met, learned.met_triples, "seed {seed}");
             met_any += learned.met_triples.len();
         }

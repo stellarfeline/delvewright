@@ -461,6 +461,56 @@ fn column_clear(w: &World, c: &Column, y0: i32) -> bool {
             .is_some_and(|top| i64::from(top) <= MAX_AUTO_STEP_16)
 }
 
+/// **The cells a body passing this column can be in** — the cells
+/// [`column_clear`] and [`lowest_body`] read a body in: from `ylo` to `yhi`
+/// and, off a vertical column, the cell over `yhi` (the body on the floor a
+/// step puts it on).
+fn body_cells(c: &Column) -> impl Iterator<Item = [i32; 3]> + '_ {
+    let top = if c.vertical { c.yhi } else { c.yhi + 1 };
+    (c.ylo..=top).map(move |y| [c.x, y, c.z])
+}
+
+/// One station of a declared way as a **cross-section**: the way's full
+/// declared width there, as the cells a body passing any of its columns can be
+/// in. The shut-way check cuts a branch at the narrowest one its path walks
+/// (spec-0118 §5.2); the width is the station's column count, the denominator
+/// this check judges the station's clear width against.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CrossSection {
+    /// The way in words.
+    pub way: String,
+    /// The station in words.
+    pub station: String,
+    /// The declared width there, in columns.
+    pub width: usize,
+    /// Every cell a body passing the station can be in.
+    pub cells: BTreeSet<[i32; 3]>,
+}
+
+/// Every station of every way as a [`CrossSection`], a portal's plane
+/// included: what a body passing the way passes, whoever judges its columns.
+#[must_use]
+pub fn cross_sections(ways: &[Way]) -> Vec<CrossSection> {
+    ways.iter()
+        .flat_map(|w| {
+            w.stations.iter().map(move |s| CrossSection {
+                way: w.label.clone(),
+                station: s.label.clone(),
+                width: s.columns.len(),
+                cells: s.columns.iter().flat_map(body_cells).collect(),
+            })
+        })
+        .filter(|x| x.width > 0)
+        .collect()
+}
+
+/// The cross-sections of every declared way of the plan — the one entry
+/// point a reader outside this check takes them by.
+#[must_use]
+pub fn plan_cross_sections(plan: &Plan, prefabs: &PrefabRegistry) -> Vec<CrossSection> {
+    cross_sections(&population(plan, prefabs).0)
+}
+
 /// The lowest cell of a column a body can be in, over `w` — the measurement a
 /// piece way's station plane is taken from.
 fn lowest_body(w: &World, c: &Column) -> Option<i32> {
@@ -2927,6 +2977,128 @@ mod tests {
         "minecraft:oak_planks",
         "minecraft:dirt_path",
     ];
+
+    /// **The cross-section agrees with the width model** (spec-0118 §5.2 reads
+    /// spec-0120's ways): over generated worlds and stations of every column
+    /// shape — a walk plane's, a piece way's measured plane, a hole's — a
+    /// station's cross-section spans exactly the columns this check judges,
+    /// its width is the station's column count and bounds every clear count
+    /// the judgement reports, and every cell a body can be in where the
+    /// column test finds the column clear (or where a piece way's plane is
+    /// measured, or down a hole) is a cell of the cross-section.
+    #[test]
+    fn a_cross_section_spans_the_columns_the_width_model_judges() {
+        let mut rng = Lcg(0x0118);
+        let mut bodies = 0usize;
+        let mut stations = 0usize;
+        for _ in 0..24 {
+            let mut m = BlockMap::new();
+            for x in 0..12 {
+                for z in 0..12 {
+                    m.insert([x, 0, z], BlockState::new(STONE));
+                    for y in 1..5 {
+                        if rng.next().is_multiple_of(4) {
+                            let b = PALETTE[usize::try_from(rng.next() % 10).unwrap()];
+                            m.insert([x, y, z], BlockState::new(b));
+                        }
+                    }
+                }
+            }
+            let open = BTreeSet::new();
+            let whole = World::from_occupancy(
+                crate::compiler::assembled::occupancy_over(&m, &open),
+                Premises::geometry_only(),
+            );
+            let along_x = rng.next().is_multiple_of(2);
+            let width = 1 + usize::try_from(rng.next() % 4).unwrap();
+            let t = 3 + i32::try_from(rng.next() % 5).unwrap();
+            let u0 = 2 + i32::try_from(rng.next() % 4).unwrap();
+            let shape = rng.next() % 3;
+            let columns: Vec<Column> = (0..width)
+                .map(|i| {
+                    let u = u0 + i32::try_from(i).unwrap();
+                    let (x, z) = if along_x { (u, t) } else { (t, u) };
+                    match shape {
+                        0 => Column {
+                            index: i,
+                            x,
+                            z,
+                            ylo: 1,
+                            yhi: 1,
+                            y0: Some(1),
+                            vertical: false,
+                        },
+                        1 => Column {
+                            index: i,
+                            x,
+                            z,
+                            ylo: 1,
+                            yhi: 3,
+                            y0: None,
+                            vertical: false,
+                        },
+                        _ => Column {
+                            index: i,
+                            x,
+                            z,
+                            ylo: 1,
+                            yhi: 4,
+                            y0: None,
+                            vertical: true,
+                        },
+                    }
+                })
+                .collect();
+            let station = Station {
+                key: StationKey::Side(NarrowSide::A),
+                label: "the generated station".to_string(),
+                deferred: false,
+                columns: columns.clone(),
+            };
+            let w = Way {
+                width,
+                ..way(vec![station.clone()], Vec::new())
+            };
+            let sections = cross_sections(std::slice::from_ref(&w));
+            assert_eq!(sections.len(), 1);
+            let cs = &sections[0];
+            assert_eq!(cs.width, station.columns.len());
+            let rec = judge_over(w, &m, &[], &[]);
+            assert!(
+                rec.stations[0].clear.iter().all(|c| *c <= cs.width),
+                "{:?} against {}",
+                rec.stations[0].clear,
+                cs.width
+            );
+            let spanned: BTreeSet<[i32; 2]> = cs.cells.iter().map(|c| [c[0], c[2]]).collect();
+            let judged: BTreeSet<[i32; 2]> = columns.iter().map(|c| [c.x, c.z]).collect();
+            assert_eq!(spanned, judged, "the cut spans the judged columns");
+            for c in &columns {
+                let body: Vec<[i32; 3]> = match c.y0 {
+                    Some(y0) if column_clear(&whole, c, y0) => [y0, y0 + 1]
+                        .into_iter()
+                        .map(|y| [c.x, y, c.z])
+                        .filter(|cell| super::super::shutmodel::can_be(&whole, *cell))
+                        .collect(),
+                    Some(_) => Vec::new(),
+                    None if c.vertical => (c.ylo..=c.yhi).map(|y| [c.x, y, c.z]).collect(),
+                    None => lowest_body(&whole, c)
+                        .map(|y| vec![[c.x, y, c.z]])
+                        .unwrap_or_default(),
+                };
+                for cell in body {
+                    assert!(
+                        cs.cells.contains(&cell),
+                        "a body at {cell:?} passes the column and not the cut"
+                    );
+                    bodies += 1;
+                }
+            }
+            stations += 1;
+        }
+        assert_eq!(stations, 24, "every generated station was judged");
+        assert!(bodies > 0, "the generator puts a body in some column");
+    }
 
     /// **Criterion 3: one predicate.** Over generated worlds, the column test
     /// at a body cell agrees with `nav::can_be` there — clear wherever a body

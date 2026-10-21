@@ -728,7 +728,7 @@ pub(super) fn prove_world(
                 // DW1011 just judged. The binding is printed and the ledger
                 // written before the verdict is taken.
                 let (shut_ways, shut_ways_verdict) =
-                    crate::compiler::nav::check_shut_ways_learned(plan, world);
+                    crate::compiler::nav::check_shut_ways_learned(plan, world, prefabs);
                 eprintln!("{}", shut_ways.line());
                 put_json(out, "validation/shut-ways.json", &shut_ways.to_json());
                 shut_ways_verdict?;
