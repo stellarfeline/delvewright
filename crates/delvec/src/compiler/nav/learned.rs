@@ -344,7 +344,8 @@ fn path_to(tree: &BTreeMap<[i32; 3], Option<[i32; 3]>>, target: [i32; 3]) -> Vec
 /// the junction or walking the branch path — the ground the branch alone
 /// leads to. The open side is the body-move closure of the route cells with
 /// the junction and the branch path taken out; the ground is the closure from
-/// the face, less that open side and less the route itself. On an open floor
+/// the face, less that open side, less every cell one move from it, and less
+/// the route itself. On an open floor
 /// the open side flows round the branch path, so the ground is empty: an open
 /// floor is not a branch, and nothing on it pays for one.
 fn branch_ground(
@@ -372,9 +373,15 @@ fn branch_ground(
         &cut,
     );
     let none = BTreeSet::new();
+    // A cell one move from the open side is open ground too: on an open floor
+    // the branch path's own cells, taken out of the flood, stand beside it.
     flood(face.to_vec(), &none)
         .into_iter()
-        .filter(|c| !open.contains(c) && !route.contains(c))
+        .filter(|c| {
+            !open.contains(c)
+                && !route.contains(c)
+                && !w.body_moves(*c).iter().any(|n| open.contains(n))
+        })
         .collect()
 }
 
