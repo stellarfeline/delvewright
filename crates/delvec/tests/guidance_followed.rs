@@ -257,6 +257,108 @@ fn an_untitled_interact_is_found_in_sight_and_refused_behind_a_wall_or_too_far()
     assert_eq!((b.announced, b.in_sight), (1, 0));
 }
 
+/// The walk back to an announced objective whose gate opens only at its own
+/// door: `obj/press` waits on a flag that only an `approach` trigger at the
+/// keeper's post sets. The replay holds it armed at its own step, after the
+/// trigger the path performs in front of it, and not at the trigger's: so
+/// its announcement is nowhere on screen while the party walks to the post.
+/// That leg is judged — refused with the act out of sight, found with it in
+/// sight — and the same objective with no flag gate guides the leg by its
+/// lines.
+#[test]
+fn a_walk_to_an_objective_that_arms_at_its_own_door_is_judged() {
+    let shape = |gated: bool, name: &str| {
+        let mut q = quests(nulls());
+        q["content"]["triggers"] = json!([{
+            "id": "trigger/at-the-post",
+            "at": "anchor/keeper-stand",
+            "on": { "on": "approach", "range": 2 },
+            "effects": [{ "type": "set-flag", "flag": "flag/at-the-post" }]
+        }]);
+        if gated {
+            q["content"]["quests"][0]["objectives"][2]["requires_flags"] =
+                json!(["flag/at-the-post"]);
+        }
+        let dir = variant(name, q, dialogue(GREETING));
+        let (_, c) = load(&dir);
+        c
+    };
+    let prefabs = prefabs();
+    let c = shape(true, "arms-at-its-door");
+    let plan = Plan::build(&c, &prefabs).expect("plan");
+    let at = |id: &str| {
+        plan.critical_path
+            .iter()
+            .position(|s| s.objective() == Some(id) || s.trigger() == Some(id))
+            .unwrap_or_else(|| panic!("{id} on the path: {:?}", plan.critical_path))
+    };
+    let (t, p) = (at("trigger/at-the-post"), at("obj/press"));
+    assert!(
+        t < p,
+        "the path performs the trigger in front of the objective"
+    );
+    let armed = &plan.region_events.armed;
+    assert!(armed[p].contains("obj/press"), "{armed:?}");
+    assert!(!armed[t].contains("obj/press"), "{armed:?}");
+    let press = ActWhat::Objective {
+        quest: 0,
+        objective: 2,
+    };
+    let walk = |t: usize, p: usize| ActWalks {
+        walks: vec![ActWalk {
+            label: "the test walk".into(),
+            acts: vec![Act {
+                step: p,
+                ..act(
+                    "obj/press",
+                    press.clone(),
+                    "interact",
+                    [3, 64, 0],
+                    [10, 64, 0],
+                )
+            }],
+            passes: vec![delvec::compiler::acts::Pass {
+                step: t,
+                name: "`trigger/at-the-post`".into(),
+                from: Some([0, 64, 0]),
+                from_what: "the previous act's cell".into(),
+                target: [3, 64, 0],
+            }],
+            gates: None,
+        }],
+    };
+    let (b, r) = promise::judge_acts(&plan, &walls(&wall_at_x5()), &walk(t, p));
+    assert_eq!(
+        (b.passes, b.refused, b.announced),
+        (1, 1, 1),
+        "{}",
+        b.line()
+    );
+    assert_eq!(r[0].code, promise::DW_FIGHT_UNSIGNED);
+    assert!(
+        r[0].message.contains("`trigger/at-the-post`")
+            && r[0]
+                .message
+                .contains("(`obj/press`) are not yet armed on the way"),
+        "{}",
+        r[0].message
+    );
+    let (b, r) = promise::judge_acts(&plan, &walls(&[]), &walk(t, p));
+    assert!(r.is_empty(), "{r:?}");
+    assert_eq!(b.passes_in_sight, 1, "{}", b.line());
+
+    let c = shape(false, "armed-from-the-start");
+    let plan = Plan::build(&c, &prefabs).expect("plan");
+    let p = plan
+        .critical_path
+        .iter()
+        .position(|s| s.objective() == Some("obj/press"))
+        .unwrap();
+    let (b, r) = promise::judge_acts(&plan, &walls(&wall_at_x5()), &walk(p - 1, p));
+    assert!(r.is_empty(), "{r:?}");
+    assert_eq!((b.passes, b.passes_announced), (1, 1), "{}", b.line());
+}
+
 /// spec-0104 criterion 2 (e): a `use` trigger the path performs behind a wall
 /// is refused, and its remedy is the trigger's — it has no lines.
 #[test]

@@ -227,7 +227,7 @@ A hint that names an act other than its objective's is the `DW1045` warning, for
 | Calque markers (zh) | Marker list | 9 of 11 (82%); recall 9 of 23 |
 | Item tooltip without function | Shop/item tooltip with no mechanical word | 8 of 9 (89%); recall 8 of 16 |
 | Echo closer / symmetry (en) | Last sentence repeats a content word, tricolon fragment, twin short sentences | 9 of 14 (64%); recall 9 of 23 |
-| Act found (`DW0863`, built) | Every act on every walked path: announced with a hint, or one clear line of nine to it within 64 blocks from where the party stands | Binding stated by every build |
+| Act found (`DW0863`, built) | Every act on every walked path: announced with a hint and armed on the way to it, or one clear line of nine to it within 64 blocks from where the party stands; every place walked through before a later act: an announced objective armed on the way, or the next act in sight | Binding stated by every build |
 | Functional text without action or place | Functional keys lacking an imperative, a direction or a named object | 8 of 26 (31%) — not usable as a refusal |
 | Hint-for-statement (en) | No mechanical signal found | 6 of 16 (38%) — human review only; stays human beside the rows above |
 
@@ -307,7 +307,9 @@ How a quest plan is shaped as a web rather than a chain, how an ending reads the
   pointing at a destination, or a note, plaque or lectern whose only job is to
   be read so that a gate opens. **Machine half** (spec-0104 §4): every act on
   a walked path is in sight of where the party stands — a clear line within 64
-  blocks — or its objective carries a `title` and a `hint` (`DW0863`); a hint
+  blocks — or its objective carries a `title` and a `hint` and is armed while
+  the party walks to it, and no leg of the walk is left with neither
+  (`DW0863`); a hint
   names only what the party has been told (`DW0982`).
 - **L2 — Mystery comes from the telling and the events, never from obscured
   wording; whatever the text says of the world is true.** A line the player must
