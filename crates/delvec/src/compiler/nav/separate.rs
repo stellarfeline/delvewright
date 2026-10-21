@@ -8,7 +8,7 @@
 //! get back, this one whether a body can get past.
 
 use super::shutmodel::{
-    Configurations, GateUnderTest, NamedGate, SeparationConfig, faces_of, gated_connections,
+    Configurations, Faces, GateUnderTest, NamedGate, SeparationConfig, faces_of, gated_connections,
     gated_gate, meet, opens_low, party_reach,
 };
 use super::*;
@@ -441,7 +441,9 @@ pub(super) fn verify_gates_separate(
     let mut first: BTreeMap<usize, (usize, Bypass, usize)> = BTreeMap::new();
     let mut order: Vec<usize> = Vec::new();
     for (ci, (shut, unstood, reached, found, met)) in judged.into_iter().enumerate() {
-        binding.met.extend(met.into_iter().map(|(gi, h)| (gi, ci, h)));
+        binding
+            .met
+            .extend(met.into_iter().map(|(gi, h)| (gi, ci, h)));
         binding.shut += shut;
         binding.unstood += unstood;
         binding.reached += reached;

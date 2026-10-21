@@ -418,7 +418,9 @@ pub struct EdgeGating {
 
 /// How the player learns a shut way is shut (spec-0118 §4): the three ways the
 /// engine confirms, and no fourth.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum Learned {
     /// The bar is the first thing the player's eye meets from the junction

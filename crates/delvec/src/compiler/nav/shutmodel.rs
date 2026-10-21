@@ -234,10 +234,10 @@ pub(super) struct GatedConnection<'p> {
 /// Every gated connection the layout graph declares — every connection the
 /// world builds shut ([`delvewright_dsl::layout::Edge::shuts`]) — keyed by the
 /// gate anchor the derivation names for it, with the axis its seam hands.
-pub(super) fn gated_connections(plan: &Plan) -> BTreeMap<String, GatedConnection<'_>> {
+pub(super) fn gated_connections<'c>(plan: &Plan<'c>) -> BTreeMap<String, GatedConnection<'c>> {
     let graph = plan.campaign.layout_graph.as_ref().map(|g| &g.content);
     let seams = delvewright_dsl::siteplan::SitePlan::of(plan.campaign).seams;
-    let mut gated: BTreeMap<String, GatedConnection<'_>> = BTreeMap::new();
+    let mut gated: BTreeMap<String, GatedConnection<'c>> = BTreeMap::new();
     for e in graph.map(|g| g.edges.iter()).into_iter().flatten() {
         if e.shuts() {
             let seam = seams.iter().find(|s| &s.edge == e.id());
@@ -272,9 +272,9 @@ pub(super) fn gated_gate(
 ) -> GateUnderTest {
     let e = g.edge;
     let terms = e.gating().map(|g| g.words()).unwrap_or_default();
-    let unlock = e.opening_side().and_then(|_| {
-        point_anchor(plan, &delvewright_dsl::siteplan::seam_unlock_anchor(e.id()))
-    });
+    let unlock = e
+        .opening_side()
+        .and_then(|_| point_anchor(plan, &delvewright_dsl::siteplan::seam_unlock_anchor(e.id())));
     GateUnderTest {
         label: format!(
             "gated {} `{}` (gate `{}`, opened on {terms})",

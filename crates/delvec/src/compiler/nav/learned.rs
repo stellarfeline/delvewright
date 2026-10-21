@@ -10,8 +10,8 @@
 //! reach of [`super::shutmodel`], the one model `DW1011` reads too.
 
 use super::shutmodel::{
-    Configurations, GateUnderTest, SeparationConfig, faces_of, gated_connections, gated_gate,
-    meet, opens_low, party_reach,
+    Configurations, GateUnderTest, SeparationConfig, faces_of, gated_connections, gated_gate, meet,
+    opens_low, party_reach,
 };
 use super::*;
 use crate::compiler::failure::Failure;
@@ -329,11 +329,7 @@ fn path_to(tree: &BTreeMap<[i32; 3], Option<[i32; 3]>>, target: [i32; 3]) -> Vec
 
 /// The body-move closure from `roots` that enters no cell of `route` — the
 /// pocket a branch opens into, the route itself excluded.
-fn branch_ground(
-    w: &World,
-    roots: &[[i32; 3]],
-    route: &BTreeSet<[i32; 3]>,
-) -> BTreeSet<[i32; 3]> {
+fn branch_ground(w: &World, roots: &[[i32; 3]], route: &BTreeSet<[i32; 3]>) -> BTreeSet<[i32; 3]> {
     let mut seen: BTreeSet<[i32; 3]> = roots.iter().copied().collect();
     let mut queue: VecDeque<[i32; 3]> = seen.iter().copied().collect();
     while let Some(cur) = queue.pop_front() {
@@ -356,8 +352,7 @@ fn sight(w: &World, j: [i32; 3], region: ([i32; 3], [i32; 3]), eye_height: f64) 
     let c = cell_center(j);
     let eye = [c[0], c[1] + eye_height, c[2]];
     let (a, b) = region;
-    let inside =
-        |c: &[i32; 3]| (0..3).all(|i| a[i].min(b[i]) <= c[i] && c[i] <= a[i].max(b[i]));
+    let inside = |c: &[i32; 3]| (0..3).all(|i| a[i].min(b[i]) <= c[i] && c[i] <= a[i].max(b[i]));
     let mut hidden: Vec<([i32; 3], [i32; 3])> = Vec::new();
     for r in crate::compiler::assembled::region_cells(a, b) {
         let t = [
@@ -625,10 +620,7 @@ fn verify_with_eye(
 fn face_words(way: &ShutWay, m: &Met) -> String {
     let side = match &way.sides {
         Some((low, high)) => format!("the `{}` side", if m.high { high } else { low }),
-        None => format!(
-            "its {} face",
-            if m.high { "high" } else { "low" }
-        ),
+        None => format!("its {} face", if m.high { "high" } else { "low" }),
     };
     match m.openable {
         Some(true) => format!("{side}, the side it opens from"),
@@ -637,7 +629,7 @@ fn face_words(way: &ShutWay, m: &Met) -> String {
     }
 }
 
-fn when(configs: &[SeparationConfig<'_>], ci: usize) -> &str {
+fn when<'a>(configs: &'a [SeparationConfig<'_>], ci: usize) -> &'a str {
     configs.get(ci).map_or("", |c| c.1.as_str())
 }
 
@@ -713,10 +705,7 @@ fn unconfirmed_words(way: &ShutWay, m: &Met, configs: &[SeparationConfig<'_>]) -
             way.seam,
             delvewright_dsl::trigger::press_answer_prescription(&way.seam, "the way")
         ),
-        Some(Learned::Rewarded) => format!(
-            "{place}; declared `rewarded`, but {}",
-            reward_words(m)
-        ),
+        Some(Learned::Rewarded) => format!("{place}; declared `rewarded`, but {}", reward_words(m)),
         None => place,
     }
 }
