@@ -24,7 +24,7 @@ MECHA_TAKE = """      - uses: ./.github/actions/checkout-content
       # A DIFFERENT interpreter line"""
 MECHA_BUILD = """          target/debug/delvec \\
             build crates/dsl/fixtures/valid/hello-world \\
-            -o out --prefabs campaigns/prefabs"""
+            -o out --prefabs "$RUNNER_TEMP/test-library\""""
 
 
 # The download action as the live workflow pins it (`.github/pins.toml` holds the
