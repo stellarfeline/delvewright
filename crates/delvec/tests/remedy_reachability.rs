@@ -5221,3 +5221,69 @@ fn dw1054_a_reward_on_the_open_floor_pays_for_no_branch() {
         "{after}"
     );
 }
+
+/// spec-0118 acceptance 3: a one-way door declared `shortcut`, met from its
+/// wrong side. The blockout hall gains a second, open doorway into the cell,
+/// so the barred door closes a loop (`DW0820` admits the mark), and the door
+/// opens only from the cell. Over one build `DW1011` counts it as a way round
+/// and does not judge it, and the shut-way check judges it at the hall, the
+/// side it does not open from.
+#[test]
+fn a_one_way_door_dw1011_counts_is_judged_at_its_wrong_side() {
+    let camp = gated_fixture(
+        "shut-way-one-way-door",
+        |v| {
+            let edges = v["content"]["edges"].as_array_mut().unwrap();
+            for e in edges.iter_mut() {
+                if e["id"] == "edge/hall-cell" {
+                    e["shortcut"] = serde_json::json!(true);
+                    e["gating"]["opens_from"] = serde_json::json!("b");
+                    e["gating"]["learned"] = serde_json::json!("told");
+                }
+            }
+            edges.push(serde_json::json!({
+                "id": "edge/hall-cell-side", "class": "walk",
+                "a": "node/hall", "b": "node/cell"
+            }));
+        },
+        |v| {
+            v["content"]["seams"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "edge": "edge/hall-cell-side", "face": "south", "at": 6, "meets": 6,
+                    "opening": "door", "form": "an open doorway beside the barred arch"
+                }));
+        },
+        |q| {
+            q["content"]["triggers"] = serde_json::json!([{
+                "id": "trigger/cell-door-wrong-side", "at": "anchor/seam-hall-cell",
+                "on": { "on": "use" }, "once": false, "audience": "presser",
+                "effects": [{ "type": "narrate", "style": "actionbar",
+                              "text": "The door does not open from this side." }]
+            }]);
+        },
+    );
+    let (code, text) = build("shut-way-one-way-door", &camp, &common::prefabs_dir());
+    assert_eq!(code, 0, "{text}");
+    assert!(
+        text.contains("1 declared a way round (shortcut)"),
+        "DW1011 counts the door: {text}"
+    );
+    let ledger: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            Path::new(env!("CARGO_TARGET_TMPDIR"))
+                .join("remedy-out-shut-way-one-way-door/validation/shut-ways.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let wrong_side = ledger["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["connection"] == "edge/hall-cell" && r["face"] == "node/hall")
+        .unwrap_or_else(|| panic!("the door is judged at the hall: {ledger}"));
+    assert_eq!(wrong_side["openable"], false, "{ledger}");
+    assert_eq!(wrong_side["confirmed"], true, "{ledger}");
+}
