@@ -171,14 +171,13 @@ def main() -> int:
     frames.mkdir(parents=True, exist_ok=True)
     produced, refused, findings = 0, [], []
     def shoot(v: dict) -> subprocess.CompletedProcess:
-        return subprocess.run(
+        return parallel.run(
             [
                 str(delvec), "--prefabs", args.prefabs, "snapshot", str(GALLERY),
                 "--shot", v["id"], "--build", str(out),
                 "-o", str(frames / f"{safe(v['id'])}.png"),
             ],
-            capture_output=True,
-            text=True,
+            kind="delvec snapshot",
         )
 
     # Every view is its own frame and manifest, so the shots run on the shared

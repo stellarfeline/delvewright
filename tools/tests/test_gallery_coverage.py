@@ -320,6 +320,14 @@ def test_the_probe_contract_refuses_every_way_of_breaking_it():
         with pytest.raises(SystemExit):
             mod.assert_refused("p", kind, "DW0001", 1, ["DW0002"], "validate")
         mod.assert_refused("p", kind, "DW0001", 1, ["DW0002", "DW0001"], "validate")  # green
+        # A run that died returned no verdict, even when the code it names was
+        # printed before it died: killed by a signal (the out-of-memory
+        # killer's SIGKILL), a panic's 101, an internal error.
+        for dead in (-9, -6, 101, 10):
+            with pytest.raises(SystemExit):
+                mod.assert_refused("p", kind, "DW0001", dead, ["DW0001"], "build")
+        for status in mod.REFUSAL_STATUSES:
+            mod.assert_refused("p", kind, "DW0001", status, ["DW0001"], "build")  # green
 
     # The green case discharges exactly what it claims.
     assert mod.probe_discharges(
@@ -691,3 +699,19 @@ def test_an_act_ledger_that_judges_no_title_is_a_zero_binding(tmp_path):
     )
     zeroes = mod.read_build_ledgers(out)[1]
     assert len(zeroes) == 1 and zeroes[0].startswith("act-gate.json: absent"), zeroes
+
+
+def test_a_code_counts_only_where_the_run_refused_with_it():
+    # Perturbed toward the vacuous shape: a run refused for one reason that
+    # WARNED with the probe's code would otherwise pass as refused with it.
+    mod = _load_checker()
+    row = {"stage": "", "path": "", "message": ""}
+    lines = "\n".join(
+        [
+            json.dumps({"code": "DW0001", "severity": "warning", **row}),
+            json.dumps({"code": "DW0002", "severity": "error", **row}),
+            "DW0003 [error] not json",
+        ]
+    )
+    r = mod.subprocess.CompletedProcess([], 3, lines, "")
+    assert mod._codes(r) == ["DW0002"]

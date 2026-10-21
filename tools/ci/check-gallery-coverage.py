@@ -82,6 +82,7 @@ import io
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -233,16 +234,32 @@ def bind(enumerator: Enumerator, export: dict, docs: dict[str, list[dict]], labe
     return b
 
 
+# The engine's refusal statuses (`docs/reference/compiler.md`, "Exit codes"):
+# a validation, an analysis or a build failure. Any other non-zero status is not
+# a verdict — `>= 10` is an internal error, a panic exits 101, and a negative
+# status is the signal that killed the run (the kernel's out-of-memory killer
+# sends SIGKILL).
+REFUSAL_STATUSES = {1: "validation", 2: "analysis", 3: "build"}
+
+
 def _codes(r: subprocess.CompletedProcess) -> list[str]:
+    """The codes the run REFUSED with: its `--json` lines of severity `error`.
+
+    A warning that carries a probe's code is not a refusal with it: a run
+    refused for one reason while it warned with another code proves nothing
+    about the code it warned with.
+    """
     codes = []
     for line in (r.stdout + r.stderr).splitlines():
         line = line.strip()
         if not line.startswith("{"):
             continue
         try:
-            codes.append(json.loads(line).get("code"))
+            d = json.loads(line)
         except json.JSONDecodeError:
             continue
+        if isinstance(d, dict) and d.get("severity") == "error":
+            codes.append(d.get("code"))
     return [c for c in codes if c]
 
 
@@ -280,25 +297,23 @@ def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[st
                 raise ProbeRefusal(
                     f"the prefab directory `{prefabs}` copied for the probe holds no file"
                 )
-            d = subprocess.run(
+            d = parallel.run(
                 [str(delvec), "--prefabs", str(scratch), "detail", str(campaign), "--all", "--json"],
-                capture_output=True,
-                text=True,
+                kind="delvec detail",
             )
             if d.returncode != 0:
                 return d.returncode, _codes(d), "detail"
         finally:
             shutil.rmtree(scratch.parent, ignore_errors=True)
-    v = subprocess.run(
+    v = parallel.run(
         [str(delvec), "validate", str(campaign), "--prefabs", str(prefabs), "--json"],
-        capture_output=True,
-        text=True,
+        kind="delvec validate",
     )
     if v.returncode != 0:
         return v.returncode, _codes(v), "validate"
     out = Path(tempfile.mkdtemp(prefix="gallery-probe-build-"))
     try:
-        b = subprocess.run(
+        b = parallel.run(
             [
                 str(delvec),
                 "build",
@@ -309,8 +324,7 @@ def run_probe(delvec: Path, campaign: Path, prefabs: Path) -> tuple[int, list[st
                 str(prefabs),
                 "--json",
             ],
-            capture_output=True,
-            text=True,
+            kind="delvec build",
         )
         return b.returncode, _codes(b), "build"
     finally:
@@ -402,6 +416,13 @@ def probe_patch(name: str, manifest: dict) -> list[dict]:
     return ops
 
 
+def _signal_name(n: int) -> str:
+    try:
+        return signal.Signals(n).name
+    except ValueError:
+        return "an unnamed signal"
+
+
 def assert_refused(
     name: str, kind: str, code: str, rc: int, codes: list[str], phase: str
 ) -> None:
@@ -416,6 +437,17 @@ def assert_refused(
     named in the refusal so an accepted probe says which phases looked, rather
     than naming one and leaving the reader to assume it was the only one.
     """
+    if rc != 0 and rc not in REFUSAL_STATUSES:
+        how = (
+            f"was killed by signal {-rc} ({_signal_name(-rc)})"
+            if rc < 0
+            else f"exited {rc}, which is no refusal status of the engine"
+        )
+        die(
+            f"probe `{name}`: `delvec {phase}` {how}, so it returned NO VERDICT. A run that "
+            "dies is not a refusal, whatever it printed before it died; SIGKILL is what the "
+            "kernel's out-of-memory killer sends. The probe is unjudged, never passed."
+        )
     if rc == 0:
         die(
             f"probe `{name}` was ACCEPTED by `delvec validate` AND by "
@@ -431,7 +463,8 @@ def assert_refused(
         )
     if code not in codes:
         die(
-            f"probe `{name}` was refused by `delvec {phase}`, but not with `{code}` "
+            f"probe `{name}` was refused by `delvec {phase}` (exit {rc}, a "
+            f"{REFUSAL_STATUSES[rc]} failure), but not with `{code}` "
             f"(got {sorted(set(codes)) or 'no machine-readable code'}). A probe "
             "refused for an unrelated reason proves nothing about the rule it "
             "names."
@@ -690,6 +723,8 @@ def main() -> int:
         f"declared edit over the primary, {paths_touched} JSON path(s) touched, "
         f"{own_documents} document(s) of their own the primary does not hold."
     )
+    if probes_examined:
+        print(parallel.admission().line())
 
     # ------------------------------------------- compiler-stated bindings (§8.6)
     ledgers, zero_bindings = read_build_ledgers(Path(args.build_out)) if args.build_out else ({}, [])
