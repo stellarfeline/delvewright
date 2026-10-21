@@ -264,6 +264,30 @@ pub struct AnswerBinding {
     pub volunteered: usize,
     /// `X`: bodies refused.
     pub refused: usize,
+    /// One row per body, in body order — the record `validation/body-answers.json`
+    /// carries.
+    pub rows: Vec<AnswerRow>,
+}
+
+/// What `DW1055` read for one body.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AnswerRow {
+    /// The body's id.
+    pub id: String,
+    /// The kind it ships as.
+    pub kind: String,
+    /// `M`: the game discards that kind on peaceful.
+    pub monster: bool,
+    /// `I`: it cannot be harmed and does not fight while staged.
+    pub inert: bool,
+    /// `T`: the authored trigger that rides its blow, if any.
+    pub carried_by: Option<String>,
+    /// The station that reaches it and the stance cell, when one does.
+    pub reached: Option<([i32; 3], [i32; 3])>,
+    /// The presses it owes a line for.
+    pub owed: Vec<&'static str>,
+    /// The presses it declares a line for.
+    pub declared: Vec<&'static str>,
 }
 
 impl AnswerBinding {
@@ -284,6 +308,37 @@ impl AnswerBinding {
             self.out_of_reach,
             self.carried
         )
+    }
+
+    /// The record as `validation/body-answers.json`: the binding, with every
+    /// column and its denominator, and one row per body.
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "code": DW_BODY_SILENT,
+            "binding": {
+                "bodies": self.bodies,
+                "monster_kind": self.monster,
+                "inert": self.inert,
+                "in_reach": self.in_reach,
+                "lines_owed": self.owed,
+                "lines_declared": self.declared,
+                "volunteered": self.volunteered,
+                "refused": self.refused,
+                "out_of_reach": self.out_of_reach,
+                "carried_by_strike_trigger": self.carried,
+            },
+            "bodies": self.rows.iter().map(|r| serde_json::json!({
+                "id": r.id,
+                "kind": r.kind,
+                "monster_kind": r.monster,
+                "inert": r.inert,
+                "carried_by": r.carried_by,
+                "station": r.reached.map(|(s, _)| s),
+                "stance": r.reached.map(|(_, c)| c),
+                "owed": r.owed,
+                "declared": r.declared,
+            })).collect::<Vec<_>>(),
+        })
     }
 }
 
@@ -347,9 +402,9 @@ struct Reading<'c> {
 /// **`DW1055`**: every body owed a line declares it. Returns the binding (always)
 /// and the verdict.
 ///
-/// `reachable` is the walk-reachable set `world.reachable_walkable_rooted(
-/// anchor_starts(plan))` — the set `DW1037`'s stance pass reads — or `None` to
-/// have it computed here, only when some body needs it.
+/// The walk-reachable set is `world.reachable_walkable_rooted(anchor_starts(plan))`
+/// — the set `DW1037`'s stance pass reads — computed only when some body needs
+/// it.
 pub fn check(
     plan: &Plan,
     world: &crate::compiler::nav::World,
@@ -407,6 +462,20 @@ pub fn check(
         if reading.owed.is_empty() {
             b.volunteered += declared;
         }
+        b.rows.push(AnswerRow {
+            id: body.id().to_string(),
+            kind: kind.to_string(),
+            monster: delvewright_dsl::removed_on_peaceful(kind),
+            inert: body.inert(),
+            carried_by: body.struck_rider(c).map(|t| t.id.as_str().to_string()),
+            reached: reading.reach.as_ref().map(|(_, s, c)| (*s, *c)),
+            owed: reading.owed.iter().map(|p| p.token()).collect(),
+            declared: BodyPress::ALL
+                .iter()
+                .filter(|p| body.answers().and_then(|a| a.line(**p)).is_some())
+                .map(|p| p.token())
+                .collect(),
+        });
         readings.push(reading);
     }
     let mut lines = Vec::new();
