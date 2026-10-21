@@ -290,7 +290,7 @@ fn a_walk_to_an_objective_that_arms_at_its_own_door_is_judged() {
         plan.critical_path
             .iter()
             .position(|s| s.objective() == Some(id) || s.trigger() == Some(id))
-            .unwrap_or_else(|| panic!("{id} on the path: {:?}", plan.critical_path))
+            .unwrap_or_else(|| panic!("{id} is on the path"))
     };
     let (t, p) = (at("trigger/at-the-post"), at("obj/press"));
     assert!(
