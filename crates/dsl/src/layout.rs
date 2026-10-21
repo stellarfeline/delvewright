@@ -406,6 +406,41 @@ pub struct EdgeGating {
     /// Absent means either side.
     #[serde(default, skip_serializing_if = "OpensFrom::is_either")]
     pub opens_from: OpensFrom,
+    /// How the player learns this way is shut (spec-0118): `seen` from the
+    /// junction where its branch leaves the route, `told` by a pressable answer
+    /// at its face, or `rewarded` by a pickup, interaction or fight on its
+    /// branch. Owed by `DW1053` wherever a body meets the way shut, and
+    /// confirmed over the world by `DW1054`. Like `opens_from`, it can only be
+    /// named for a way that shuts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub learned: Option<Learned>,
+}
+
+/// How the player learns a shut way is shut (spec-0118 §4): the three ways the
+/// engine confirms, and no fourth.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Learned {
+    /// The bar is the first thing the player's eye meets from the junction
+    /// where the branch to it leaves the open route.
+    Seen,
+    /// A `use` trigger answers a press at the way's seam,
+    /// `anchor/seam-<edge>`.
+    Told,
+    /// A pickup, interaction or fight stands on the branch's ground.
+    Rewarded,
+}
+
+impl Learned {
+    /// The word as the document spells it.
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Learned::Seen => "seen",
+            Learned::Told => "told",
+            Learned::Rewarded => "rewarded",
+        }
+    }
 }
 
 /// What a `carry` connection waits on before its link is armed (spec-0083 §7).
@@ -740,6 +775,15 @@ impl Edge {
         self.way_gating()
             .filter(|g| !g.terms().is_empty())
             .map(|g| g.opens_from)
+    }
+
+    /// How a shut connection declares it is learned shut, or `None` for one
+    /// that never shuts or declares nothing (spec-0118).
+    #[must_use]
+    pub fn learned(&self) -> Option<Learned> {
+        self.way_gating()
+            .filter(|g| !g.terms().is_empty())
+            .and_then(|g| g.learned)
     }
 
     /// The place on the side a one-sided shut connection opens from, where its
@@ -1607,17 +1651,22 @@ fn mission(c: &Campaign, graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
             ));
         }
         if !matches!(e, Edge::Carry { .. }) && g.is_empty() {
-            let side = match e.way_gating().map(|w| w.opens_from) {
-                Some(OpensFrom::A) => {
-                    " It names a side (`opens_from: a`) for a way that never \
+            let mut side = match e.way_gating().map(|w| w.opens_from) {
+                Some(OpensFrom::A) => " It names a side (`opens_from: a`) for a way that never \
                                        shuts, which is a door with no bar in it."
-                }
-                Some(OpensFrom::B) => {
-                    " It names a side (`opens_from: b`) for a way that never \
+                    .to_string(),
+                Some(OpensFrom::B) => " It names a side (`opens_from: b`) for a way that never \
                                        shuts, which is a door with no bar in it."
-                }
-                _ => "",
+                    .to_string(),
+                _ => String::new(),
             };
+            if let Some(l) = e.way_gating().and_then(|w| w.learned) {
+                side.push_str(&format!(
+                    " It says how the way is learned shut (`learned: {}`) beside `opens_from`, \
+                     for a way that never shuts: only a way with a bar in it can be learned shut.",
+                    l.word()
+                ));
+            }
             d.push(Diagnostic::error(
                 DW_GRAPH_MISSION,
                 "layout-graph",
