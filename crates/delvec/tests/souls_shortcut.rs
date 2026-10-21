@@ -214,6 +214,15 @@ fn shortcut_runtime_behaviour_is_packtested() {
             && t.contains("assert score #sp_scut dw.sys matches 1"),
         "sealed-before / open-after / still-open asserts all present: {t}"
     );
+    let sealed = t
+        .lines()
+        .find(|l| l.contains("score #sb_scut dw.sys if block"))
+        .expect("the sealed probe");
+    assert!(
+        !sealed.contains('['),
+        "the sealed probe names the gate's block by id, never a state vanilla's shape \
+         update can rewrite: {sealed}"
+    );
 }
 
 // ---------------------------------------------------------------------------
