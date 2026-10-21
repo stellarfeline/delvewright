@@ -24,7 +24,7 @@ MECHA_TAKE = """      - uses: ./.github/actions/checkout-content
       # A DIFFERENT interpreter line"""
 MECHA_BUILD = """          target/debug/delvec \\
             build crates/dsl/fixtures/valid/hello-world \\
-            -o out --prefabs campaigns/prefabs"""
+            -o out --prefabs "$RUNNER_TEMP/test-library\""""
 
 
 # The download action as the live workflow pins it (`.github/pins.toml` holds the
@@ -80,7 +80,7 @@ def test_a_script_that_can_build_its_own_engine_is_refused(tmp_path, capsys):
 def test_another_workspace_may_be_compiled(tmp_path, capsys):
     wf = perturbed(tmp_path, MECHA_TAKE, MECHA_TAKE.replace(
         "      # A DIFFERENT interpreter line",
-        "      - run: cargo build --locked --manifest-path prefabs/Cargo.toml\n      # A DIFFERENT interpreter line",
+        "      - run: cargo build --locked --manifest-path gallery/prefab-generator/Cargo.toml\n      # A DIFFERENT interpreter line",
     ))
     code, out = run_gate(capsys, wf)
     assert code == 0, out

@@ -134,6 +134,15 @@ derivation's binding line and the places it massed — counts a place no piece
 fills, names one, or is missing from a site-plan build. See `Subject.pre_detail`
 and `Subject.stand_ins`.
 
+**A declared demo level owes its queue row before any row reads the
+declaration.** A demo level carries no design record — its approved design is
+its row in `docs/demo-levels.md` — so the design-record rows name their class as
+a `world.json` whose content does not declare `demo_level: true`. The
+declaration reads as one more red row (`DEMO-UNQUEUED`, counted by
+`--acknowledge-red` and admitted by `--stage-anyway` like any red) unless the build's
+`manifest.json` carries it too and a row of the engine's queue names the
+campaign's directory, `campaigns/<id>`, in its Status cell. See `demo_refusal`.
+
 The precondition may be a declared `applies_when`, or the binding probe's own
 shape where that probe COUNTS THE OBJECT CLASS ITSELF: an identity-shaped
 `dsl` predicate, or a campaign-source file glob with no `contains`, where the
@@ -214,9 +223,13 @@ import zipfile
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
-from lib import dwcatalog, horizon  # noqa: E402
+from lib import demo_queue, dwcatalog, generator_workspaces, horizon  # noqa: E402
 
 DEFAULT_LEDGER = REPO_ROOT / "docs" / "playtest-findings.json"
+# The demo queue of the engine this gate ships in: the one place a demo level
+# is named (`tools/lib/demo_queue.py`). Not a flag: a gate pointed at a queue of
+# the caller's choosing would be a hatch the caller writes for itself.
+DEMO_QUEUE = REPO_ROOT / demo_queue.PATH
 
 # Verdicts, in report order. The reds are listed separately rather than as one
 # "FAIL" because the remedy differs completely per class — build the check /
@@ -232,6 +245,7 @@ RED_VERDICTS = (
     "NO-GENERAL-FORM",
     "MISSING-CHECK",
     "UNBOUND",
+    "DEMO-UNQUEUED",
 )
 # Counted, never refused, and never silent. Reported in its own section and
 # named row by row in the admission token, so a pass cannot be read as
@@ -341,14 +355,19 @@ class Engine:
 
     @property
     def rust_text(self) -> str:
-        # `prefabs/` is in scope alongside `crates/`: the strongest general form
-        # of several findings is a GENERATOR invariant (a sheared canopy, debris
-        # stacked on a tread, an unsupported gravity floor), and those live with
-        # the generators, not with the compiler.
+        # Every generator workspace this engine tree holds is in scope
+        # alongside `crates/`: the strongest general form of several findings
+        # is a GENERATOR invariant (debris stacked on a tread, an unsupported
+        # gravity floor), and those live with the generator that runs them.
+        # The workspaces are discovered (`tools/lib/generator_workspaces.py`),
+        # never named here. A campaign generator lives in the content
+        # repository as a provenance record and gates nothing (ADR-0018 §6),
+        # so an invariant only it carries is not carried here.
         if self._rust_text is None:
-            self._rust_text = self._read_all(
-                REPO_ROOT / "crates", "*.rs"
-            ) + self._read_all(REPO_ROOT / "prefabs", "*.rs")
+            text = self._read_all(REPO_ROOT / "crates", "*.rs")
+            for ws in generator_workspaces.generator_workspaces(REPO_ROOT):
+                text += self._read_all(REPO_ROOT / ws / "src", "*.rs")
+            self._rust_text = text
         return self._rust_text
 
     @property
@@ -495,6 +514,29 @@ class Subject:
         return bool(self.stages)
 
     @property
+    def demo_declared(self) -> bool:
+        """Does the campaign SOURCE declare itself a demo level
+        (`world.json` `content.demo_level: true`)?"""
+        world = self.stages.get("world.json")
+        content = world.get("content") if isinstance(world, dict) else None
+        return isinstance(content, dict) and content.get("demo_level") is True
+
+    @property
+    def manifest_demo_level(self) -> bool | None:
+        """Does the BUILD's manifest say it was compiled from a demo-level
+        declaration? `None` = the build tree cannot answer (no manifest, or an
+        unreadable one); an absent key is `False`, which is what the compiler
+        writes for a campaign that declares none."""
+        m = self.build / "manifest.json"
+        try:
+            doc = json.loads(m.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(doc, dict):
+            return None
+        return doc.get("demo_level") is True
+
+    @property
     def building_engine(self) -> BuildingEngine:
         """The engine that built this tree — the one a `dw` carrier is judged
         against (`Engine.dw_exists`)."""
@@ -636,6 +678,92 @@ class Subject:
         return (self.build / "validation" / rel).is_file()
 
 
+def demo_refusal(subj: Subject, queue: pathlib.Path) -> tuple[str | None, list[int]]:
+    """`(refusal, queue lines)` for a subject that declares itself a demo level.
+
+    A demo level carries no design record: its approved design is its row in
+    the demo queue, the one mechanic it puts in the spotlight. So a ledger row
+    whose class is "a campaign that owes a design record" names that class by a
+    precondition that counts the source's `world.json` content unless it
+    declares `demo_level: true`, and a declared demo measures it zero.
+
+    The declaration buys that only together with what a demo owes, and each of
+    these is something a campaign that merely skipped its design gate cannot
+    produce:
+
+    - the build was compiled from the declaration: the compiler's own
+      `manifest.json` carries `demo_level: true`, and a source and a build that
+      disagree are refused, in either direction;
+    - the engine's demo queue names the campaign's directory: at least one row
+      of `## Mechanic demos` whose Status cell names `campaigns/<id>`, which is
+      a row added to the engine's own record and reviewed there.
+
+    A subject declaring nothing, in source or build, is `(None, [])`: nothing to
+    refuse and nothing named.
+    """
+    declared = subj.demo_declared
+    carried = subj.manifest_demo_level
+    if not declared and carried is not True:
+        return None, []
+    if carried is None:
+        return (
+            f"`{subj.name}` declares itself a demo level and the build carries no "
+            "readable `manifest.json`, so whether it was compiled from that "
+            "declaration is unknown",
+            [],
+        )
+    if declared != carried:
+        said = "declares" if declared else "does not declare"
+        built = "was" if carried else "was not"
+        return (
+            f"`{subj.name}`'s `world.json` {said} `demo_level: true` and the build "
+            f"{built} compiled from one (`manifest.json` `demo_level`): the build "
+            "is not of this source. Rebuild it from the campaign as it stands",
+            [],
+        )
+    try:
+        text = queue.read_text(encoding="utf-8")
+    except OSError as e:
+        return (
+            f"`{subj.name}` declares itself a demo level and the demo queue "
+            f"{queue} cannot be read ({e}), so nothing names it",
+            [],
+        )
+    lines = demo_queue.naming(text, subj.name)
+    if not lines:
+        return (
+            f"`{subj.name}` declares itself a demo level (`world.json` "
+            "`demo_level: true`) and no row of the engine's demo queue names it: "
+            f"{demo_queue.PATH} `{demo_queue.HEADING[3:]}` has no row whose Status "
+            f"cell names `campaigns/{subj.name}`. A demo level is the level of a "
+            "queued mechanic: name its directory in that mechanic's row, or, if "
+            "this is not a demo level, remove the declaration and carry the "
+            "design record step 4 writes",
+            [],
+        )
+    return None, lines
+
+
+DEMO_ROW_ID = "demo-declaration"
+
+
+def demo_red(subj: Subject, why: str) -> dict:
+    """The red row of a demo declaration that owes what a demo owes."""
+    return {
+        "id": DEMO_ROW_ID,
+        "campaign": subj.name,
+        "round": None,
+        "finding": "a campaign that declares itself a demo level owes a queued row and a build compiled from the declaration",
+        "triage": "",
+        "general_form": "demo_refusal",
+        "carrier": "staging-gate demo_refusal",
+        "binding": None,
+        "precondition": None,
+        "verdict": "DEMO-UNQUEUED",
+        "detail": why,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Binding probes — "how many objects of the class this check quantifies over
 # does THIS campaign actually contain"
@@ -743,6 +871,11 @@ def _identity_shaped(pred: dict) -> bool:
     return True
 
 
+def _spell(value) -> str:
+    """A predicate value as the document spells it: `true`, not Python's `True`."""
+    return json.dumps(value) if isinstance(value, bool) else str(value)
+
+
 def describe(pred: dict) -> str:
     """Name the object class a predicate picks out, so a binding count reads as
     a fact about the campaign rather than as "0 nodes"."""
@@ -754,9 +887,9 @@ def describe(pred: dict) -> str:
         # a word, never as Python's spelling of it.
         bits.append(f"{field}:absent" if want is None else f"{field}={want}")
     for field, wants in (pred.get("in") or {}).items():
-        bits.append(f"{field}∈{{{','.join(map(str, wants))}}}")
+        bits.append(f"{field}∈{{{','.join(map(_spell, wants))}}}")
     for field, unwanted in (pred.get("not_in") or {}).items():
-        bits.append(f"{field}∉{{{','.join(map(str, unwanted))}}}")
+        bits.append(f"{field}∉{{{','.join(map(_spell, unwanted))}}}")
     for field, want in (pred.get("prefix") or {}).items():
         bits.append(f"{field}~{want}*")
     for field in pred.get("has") or []:
@@ -1093,7 +1226,7 @@ def carrier_exists(carrier: dict, eng: Engine, subj: Subject) -> tuple[bool, str
         # exists is a promise nobody keeps, so the name is checked, not assumed.
         name = carrier["test"]
         if not re.search(rf"\bfn\s+{re.escape(name)}\s*\(", eng.rust_text):
-            return False, f"no `fn {name}(` anywhere in crates/ or prefabs/"
+            return False, f"no `fn {name}(` anywhere in crates/ or a generator workspace"
         return True, ""
     if kind == "tool":
         # A check script, named relative to `tools/` and therefore carrying the
@@ -2006,8 +2139,23 @@ def main() -> int:
         print(f"staging-gate: REFUSED — not stageable. {why}", file=sys.stderr)
         return 1
 
+    # A declared demo level owes what a demo owes before any row may read the
+    # declaration. An unmet debt is an ordinary red row, printed and counted
+    # like any other, so `--stage-anyway` admits it only against a count that
+    # includes it.
+    demo_why, demo_lines = demo_refusal(subj, DEMO_QUEUE)
+    if demo_lines:
+        print(
+            f"staging-gate: `{subj.name}` is a declared demo level, named by "
+            f"{demo_queue.PATH} line(s) {', '.join(map(str, demo_lines))}; a row "
+            "whose class is a campaign that is not a demo level measures it zero.",
+            file=sys.stderr,
+        )
+
     rows = [r for r in doc["findings"] if _applies(r, subj)]
     results = [adjudicate(r, eng, subj) for r in rows]
+    if demo_why is not None:
+        results.insert(0, demo_red(subj, demo_why))
 
     report = render_report(doc, subj, results, args.strict)
     if args.report:

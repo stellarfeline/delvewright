@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A tileset generator deletes nothing it did not write.
+"""A generator deletes nothing it did not write.
 
 ## The defect this gate exists to catch
 
@@ -30,7 +30,8 @@ The committed prefab library lives in the content repository, reached through a
 gitignored symlink that CI does not always have. A gate whose population is a
 directory that may not be there is a gate that reports zero and passes, which is
 the unbound vacuity mode. So the population is the generators themselves —
-derived from `prefabs/Cargo.toml`'s own workspace members, never listed here —
+every generator workspace on disk (`tools/lib/generator_workspaces.py`, the one
+discovery `tools/ci/check-structure-emitters.py` reads too), never listed here —
 and every document each one writes is decorated and re-checked. The denominators
 are printed on every run.
 
@@ -50,13 +51,14 @@ import argparse
 import hashlib
 import json
 import pathlib
-import re
 import shutil
 import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-PREFABS = ROOT / "prefabs"
+sys.path.insert(0, str(ROOT / "tools"))
+
+from lib.generator_workspaces import generator_workspaces, package_name  # noqa: E402
 
 # The kinds of key a later step adds to a generated document, and which this
 # gate plants. Each one is a real surface with a real reader, named beside it —
@@ -84,27 +86,11 @@ INSIDE_ANCHOR = {
 }
 
 
-def workspace_members() -> list[str]:
-    """Every crate in the generators' workspace, from the manifest itself."""
-    text = (PREFABS / "Cargo.toml").read_text(encoding="utf-8")
-    block = re.search(r"^members\s*=\s*\[(.*?)\]", text, re.S | re.M)
-    if not block:
-        sys.exit("prefabs/Cargo.toml declares no `members` — nothing to sweep")
-    return re.findall(r'"([^"]+)"', block.group(1))
-
-
-def binary_name(member: str) -> str:
-    text = (PREFABS / member / "Cargo.toml").read_text(encoding="utf-8")
-    m = re.search(r'^name\s*=\s*"([^"]+)"', text, re.M)
-    if not m:
-        sys.exit(f"prefabs/{member}/Cargo.toml declares no package name")
-    return m.group(1)
-
-
 def leaf_paths(value, at: str = "") -> list[str]:
     """Every leaf key path, as `a.b[0].c`.
 
-    The same shape `prefab_invariants::document::leaf_paths` computes, because
+    The same shape `prefab_invariants::document::leaf_paths` computes
+    (`gallery/prefab-generator/src/prefab_invariants/document.rs`), because
     the gate and the writer must count the same thing.
     """
     out: list[str] = []
@@ -176,18 +162,17 @@ def main() -> int:
     )
     args = ap.parse_args()
 
+    members = generator_workspaces(ROOT)
     if not args.no_build:
-        build = subprocess.run(
-            ["cargo", "build", "--release", "--workspace",
-             "--manifest-path", str(PREFABS / "Cargo.toml")],
-            cwd=PREFABS,
-        )
-        if build.returncode != 0:
-            print("the generators do not build, so nothing was measured", file=sys.stderr)
-            return 2
-
-    shelf = PREFABS / "target" / "release"
-    members = workspace_members()
+        for member in members:
+            build = subprocess.run(
+                ["cargo", "build", "--locked", "--release",
+                 "--manifest-path", str(ROOT / member / "Cargo.toml")],
+                cwd=ROOT / member,
+            )
+            if build.returncode != 0:
+                print(f"{member} does not build, so nothing was measured", file=sys.stderr)
+                return 2
     swept = documents = planted_keys = 0
     lost: list[str] = []
     moved: list[str] = []
@@ -199,15 +184,15 @@ def main() -> int:
     scratch.mkdir(parents=True)
 
     for member in members:
-        binary = shelf / binary_name(member)
-        if not binary.exists():
-            # `invariants` is a library and has no binary: a member with nothing
-            # to run writes no document and is not this gate's subject.
-            continue
-        # A member is a path relative to `prefabs/`, and one lives outside it
-        # (`../gallery/prefab-generator`): its scratch directory is named from
-        # the path so that it stays inside `scratch`.
-        out = scratch / member.replace("../", "").replace("/", "-")
+        name = package_name(ROOT, member)
+        binary = ROOT / member / "target" / "release" / (name or "")
+        if not name or not binary.is_file():
+            print(f"{member}: no release binary at {binary} — build it, or drop --no-build",
+                  file=sys.stderr)
+            return 2
+        # A member is a repo-relative directory: its scratch directory is named
+        # from the path so that it stays inside `scratch`.
+        out = scratch / member.replace("/", "-")
         out.mkdir(parents=True)
         run = subprocess.run([str(binary), str(out)], capture_output=True, text=True)
         if run.returncode != 0:
@@ -247,7 +232,7 @@ def main() -> int:
             if after_nbt.get(name) != before:
                 moved.append(f"{member}/{name}")
 
-    print(f"generator preservation binding: {len(members)} workspace member(s) declared, "
+    print(f"generator preservation binding: {len(members)} generator workspace(s) on disk, "
           f"{swept} document-writing generator(s) swept, {documents} document(s) decorated "
           f"and re-generated, {planted_keys} planted key(s) checked, "
           f"{len(lost)} deletion finding(s), {len(moved)} `.nbt` moved.")

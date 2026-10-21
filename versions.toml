@@ -197,12 +197,12 @@ crates = [
 # Bound both ways by validation/check-versions.sh: to the crate manifest, and to
 # `DSL_VERSION` in crates/dsl/src/envelope.rs.
 dsl_crate = "delvewright-dsl"
-dsl_crate_version = "0.53.0"
+dsl_crate_version = "0.55.0"
 
 # The engine's `delvewright-dsl` requirement (`[workspace.dependencies]`)
 # is `=` and exactly this version, so one engine version on crates.io resolves
 # to exactly one `delvewright-dsl` build and no other.
-dsl_crate_req = "=0.53.0"
+dsl_crate_req = "=0.55.0"
 
 # `rust-version` in both published manifests, and the channel in
 # rust-toolchain.toml. They must be the same string: a `rust-version` looser than
@@ -283,27 +283,18 @@ aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
 # library at the pin and nothing else in the checkout: a campaign is judged at
 # its own release, by the engine revision it pins.
 repo = "stellarfeline/delvewright-campaigns"
-# Content `main` tip carrying the released `the-treehouse-camp` and the eleven
-# library pieces it is built on, and the content repository's removal of the
-# pool table: assembly is always designed, so the shipped library declares no
-# pool.
+# Content `main` tip carrying the commit that moves the tileset generators
+# into the library's `prefabs/generators/` as provenance records (ADR-0018 §6) and removes
+# `hello-room` from the library: `prefab/hello-room` is engine test data
+# (`crates/delvec/tests/fixtures/test-pieces/`), laid over this library by
+# `tools/ci/test-library.sh`, which refuses a library that still holds it.
 #
-# What moves under `prefabs/`, counted from `git ls-tree` at both pins: 40
-# `.json` before, 61 after; 138 `.nbt` before, 149 after. 22 `.json` are
-# added — eleven prefab documents (`the-treehouse-camp-*`) and their eleven
-# gate reports (`<id>.report.json`, 1 before, 12 after), each piece with its
-# `.nbt` — and `pools.json` is deleted, with `seating-limits.toml`; `README.md`
-# changes. No existing document or `.nbt` changes (no `M` on either in
-# `git diff --name-status`). The pools the engine's own `areas[]` fixtures
-# draw are engine test data (`crates/delvec/tests/fixtures/test-pools/`),
-# laid over this library by `tools/ci/test-library.sh`, never read from here.
-#
-# The rest of the interval — `campaigns/the-treehouse-camp`, `references/`,
-# and the content repository's own CI, skill and pin tooling — is nothing the
-# compiler is handed. The library sweep's place kind
-# (`crates/delvec/src/admit/scenery.rs`) does read `campaigns/*/detail-plan.json`
-# and `layout-graph.json` beside the library, to learn which place seats a
-# piece.
+# What moves under `prefabs/`, counted from `git ls-tree` at both pins: 61
+# `.json` before, 60 after; 149 `.nbt` before, 148 after — `hello-room.json`
+# and `hello-room.nbt` are deleted, `README.md` changes, and
+# `prefabs/generators/` is added (no `.json` or `.nbt` in it; the registry
+# reads the library's top level and `rigs/`, so a subdirectory is not read).
+# No other document or `.nbt` changes (`git diff --name-status`).
 #
 # WHAT CARRIES EACH CLAIM. `tools/ci/check-pins.py` holds this `sha` equal to
 # the `content-repo` entry in `.github/pins.toml`.
@@ -313,7 +304,7 @@ repo = "stellarfeline/delvewright-campaigns"
 # the property assembles; the library sweep (`crates/delvec/tests/admit_library.rs`)
 # asks it of every admitted piece on every run and prints its own binding count
 # there, which is where that number belongs.
-sha = "43f0f301e10ce88d02d8063eabdceeb87107aa54"
+sha = "3d8b343dbcb9f44c267da77fa2a31f1c47e8957e"
 
 [render]
 # The render layer (spec-0007 rendering infra / spec-0003 visual tier). Renders

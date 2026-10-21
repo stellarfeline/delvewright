@@ -82,7 +82,6 @@ Read on: [the DSL, stage by stage](docs/reference/compiler.md) · [writing the s
 | [`crates/`](crates) | the Rust workspace: `dsl`, the campaign format, and `delvec`, the one binary every creator-facing capability is a subcommand of |
 | [`.claude/skills/delvewright/`](.claude/skills/delvewright) | the Claude Code plugin and its `/new-delve` page |
 | [`gallery/`](gallery) | the engine's own campaign |
-| [`prefabs/`](prefabs) | tileset generators; the `.nbt` piece library lives in the [content repository](https://github.com/stellarfeline/delvewright-campaigns) |
 | [`harness/`](harness) | the mineflayer bot |
 | [`packtest/`](packtest) | PackTest templates |
 | [`validation/`](validation) | the Docker Compose rig that local checks, CI and releases share |

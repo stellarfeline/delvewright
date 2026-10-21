@@ -39,29 +39,27 @@
 //! where it would are equally visible, so a default would be a hack rather
 //! than a safe approximation.
 
-#![allow(dead_code)]
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
-use crate::invariants::Cells;
+use super::invariants::Cells;
 
 /// The pinned block registry — legal property names and values per block.
 /// Read out of the DSL crate's own vendored copy (see `invariants.rs`: two
 /// readers of one file is not two authorities).
-const BLOCK_REGISTRY_JSON: &str = include_str!("../../../crates/dsl/data/blocks-1.21.11.json");
+const BLOCK_REGISTRY_JSON: &str = include_str!("../../../../crates/dsl/data/blocks-1.21.11.json");
 
 /// Per block, the properties its own blockstate definition's `multipart`
 /// selectors name — Mojang's answer to "which properties carry this block's
 /// shape", never a hand-kept id list. `DW0735` fires on exactly this class.
 const SHAPE_PROPS_JSON: &str =
-    include_str!("../../../crates/dsl/data/blockstate-shape-props-1.21.11.json");
+    include_str!("../../../../crates/dsl/data/blockstate-shape-props-1.21.11.json");
 
 /// Per block, its **form** (shape class), derived from vanilla's own block
 /// tags. `fence`, `wall` and `pane` are the three connection classes whose
 /// members must be recognised by class rather than by name.
 const CLASSIFICATION_JSON: &str =
-    include_str!("../../../crates/delvec/data/block-classification-1.21.11.json");
+    include_str!("../../../../crates/delvec/data/block-classification-1.21.11.json");
 
 fn registry() -> &'static BTreeMap<String, BTreeMap<String, Vec<String>>> {
     static R: OnceLock<BTreeMap<String, BTreeMap<String, Vec<String>>>> = OnceLock::new();
@@ -392,104 +390,12 @@ fn stair_face_support(props: &BTreeMap<String, String>, face: &str) -> Option<bo
     })
 }
 
-/// **Can a decal — a vine, a patch of lichen — sit on this cell's `face`?**
-///
-/// `name`/`props` are the block in that direction, and the question is whether
-/// it presents a full face back (`MultifaceBlock.canAttachTo`). A generator's
-/// decoration scan asks this *before* placing, so an unclassified neighbour
-/// answers **no**: declining to decorate is the safe direction for a placement
-/// decision, and the piece is visibly poorer rather than silently wrong. The
-/// refusal stays where it belongs — on an emitted state that names such a face
-/// ([`assert_attachments_are_supported`]).
-///
-/// Private on purpose: see [`attachable_faces`], which is the question a placer
-/// actually has.
-fn can_attach(name: &str, props: &BTreeMap<String, String>, face: &str) -> bool {
-    face_support(name, props, opposite(face)).unwrap_or(false)
-}
-
-/// The order [`attachable_faces`] offers a decal its supports in.
-///
-/// The four walls before the ceiling before the floor, because that is the
-/// order in which a face reads: growth on a wall is what a wall decal is, a
-/// ceiling is the next thing a player looks at, and a floor decal is under
-/// their feet. Within the walls the sequence carries no meaning beyond being
-/// **fixed** — a cell with rock on two sides must resolve the same way on every
-/// run (ADR-0006) — and it is the sequence the decoration scans already walked,
-/// so introducing this table moves no decal that already had a wall to hold.
-///
-/// Deliberately not [`DIRS`]: that order is alphabetical and puts `down` first,
-/// which would hang every decal on the floor.
-const ATTACH_PREFERENCE: [&str; 6] = ["west", "east", "north", "south", "up", "down"];
-
-/// **Where may this attachable block hold on, here?**
-///
-/// The whole of "a multiface block needs something to attach to, and these are
-/// the places it may attach" — returned as every face of *this* block that has
-/// a supporting neighbour, in [`ATTACH_PREFERENCE`] order. A decoration scan
-/// asks this and takes the first answer; an empty answer means the cell can
-/// hold no decal at all and none should be placed.
-///
-/// The capability belongs here, on the block class that *has* faces, and not in
-/// whatever pass happens to be placing plants, for two reasons that both cost a
-/// shipped piece before this existed:
-///
-///  1. **The faces a block has are this module's fact.** They come from the
-///     pinned shape table, so a vine is asked about its five and a lichen about
-///     its six. Every caller that enumerated faces by hand enumerated *four* —
-///     the horizontals — and so a decal whose only rock was overhead had
-///     nowhere to hang and was silently dropped rather than hung from the
-///     ceiling. That is a defect of expressibility, not of care, and it cannot
-///     be fixed once per caller.
-///  2. **A face and the direction it looks in are one fact, not two.** A caller
-///     pairing its own offsets with its own face names can pair them backwards,
-///     which is exactly what two scans did: they found the rock and then named
-///     the face pointing away from it, and vanilla deleted the decal at the
-///     first block update. Here the pairing is [`offset`]'s, once.
-///
-/// `at` answers what block occupies a cell — `None` for air or for outside the
-/// piece. An unclassified neighbour answers *no* (see [`can_attach`]): a placer
-/// declining to decorate leaves the piece poorer, never silently wrong.
-///
-/// This does not *repair* an emitted state, and must not: a multiface face is a
-/// placement decision rather than a connection (see [`multiface_state`]), so
-/// re-hanging a decal that already shipped facing nothing would convert
-/// [`assert_attachments_are_supported`]'s red into a silent rewrite. The query
-/// serves the placer; the assertion still judges the bytes.
-pub fn attachable_faces<F>(name: &str, pos: [i32; 3], at: F) -> Vec<&'static str>
-where
-    F: Fn([i32; 3]) -> Option<(String, BTreeMap<String, String>)>,
-{
-    assert_eq!(
-        class(name),
-        Some(Class::Multiface),
-        "{name} is not a multiface block, so it does not hold on by a face. Ask \
-         `attachable_faces` only about blocks in `MULTIFACE`."
-    );
-    let faces = shape_props().get(name).map(Vec::as_slice).unwrap_or(&[]);
-    ATTACH_PREFERENCE
-        .iter()
-        .copied()
-        .filter(|face| faces.iter().any(|f| f == face))
-        .filter(|face| {
-            let o = offset(face);
-            let q = [pos[0] + o[0], pos[1] + o[1], pos[2] + o[2]];
-            match at(q) {
-                Some((nname, nprops)) => can_attach(&nname, &nprops, face),
-                None => false,
-            }
-        })
-        .collect()
-}
-
 // ---------------------------------------------------------------------------
 // The piece, as every generator's `Structure` can be viewed
 // ---------------------------------------------------------------------------
 
-/// A piece's palette and block list, in the one shape every generator shares.
-/// Each generator converts its own `Structure` into this and back — the types
-/// are per-package (the generators are outside the engine's workspace on purpose), the rule
-/// is not.
+/// A piece's palette and block list, in the one shape every piece shares. The
+/// generator converts its own `Structure` into this and back.
 pub struct Piece {
     /// `(block id, properties)`, in palette order.
     pub palette: Vec<(String, BTreeMap<String, String>)>,
@@ -637,7 +543,7 @@ fn wall_state(
             "{id}: a wall at {pos:?} has {above} above it, and this module has no verdict on \
              whether that block's underside is a full face — so it cannot say whether the wall \
              runs up to meet it (`tall`) or stops short (`low`). Classify {above} in \
-             `prefabs/invariants/src/connections.rs` (FULL_CUBES / NO_FULL_FACE) rather than letting the wall \
+             `gallery/prefab-generator/src/prefab_invariants/connections.rs` (FULL_CUBES / NO_FULL_FACE) rather than letting the wall \
              guess."
         )
     });
@@ -761,7 +667,7 @@ fn sturdy_for_connection(
             "{id}: the cell at {pos:?} has {nname} to its {dir}, and this module has no verdict \
              on whether that block presents a full face there — so it cannot say whether the \
              fence/wall/bars join it or stop at it. Classify {nname} in \
-             `prefabs/invariants/src/connections.rs` (FULL_CUBES / NO_FULL_FACE, or a per-state rule if its \
+             `gallery/prefab-generator/src/prefab_invariants/connections.rs` (FULL_CUBES / NO_FULL_FACE, or a per-state rule if its \
              faces differ). Guessing is not available: connecting where vanilla would not and \
              failing to connect where it would are equally visible."
         )
@@ -842,7 +748,7 @@ pub fn assert_attachments_are_supported(id: &str, cells: &Cells) {
                 panic!(
                     "{id}: {name} at {pos:?} declares a face to its {face}, where {nname} is, and \
                      this module has no verdict on whether that block can hold it. Classify \
-                     {nname} in `prefabs/invariants/src/connections.rs`."
+                     {nname} in `gallery/prefab-generator/src/prefab_invariants/connections.rs`."
                 )
             });
             if !supported {
@@ -1164,132 +1070,6 @@ mod tests {
         assert_eq!(p["south"], "false");
         assert_eq!(p["up"], "false");
         assert_eq!(p["down"], "false");
-    }
-
-    /// `attachable_faces` over a fixture built as a `Cells` map.
-    fn faces_at(cells: &Cells, name: &str, pos: [i32; 3]) -> Vec<&'static str> {
-        attachable_faces(name, pos, |q| cells.get(&q).cloned())
-    }
-
-    /// **The whole point of the capability living here.** A decal whose only
-    /// rock is overhead hangs from it. Every caller that enumerated faces by
-    /// hand enumerated the four horizontals, so this cell offered nothing and
-    /// the decal was dropped instead of hung.
-    #[test]
-    fn a_decal_whose_only_rock_is_overhead_hangs_from_it() {
-        let mut cells = Cells::new();
-        cell(&mut cells, [0, 1, 0], "minecraft:tuff", &[]);
-        // Everything around it that is not rock: air, and a dripstone tip,
-        // which is the neighbour that looks like support and is not.
-        cell(&mut cells, [1, 0, 0], "minecraft:pointed_dripstone", &[]);
-        cell(&mut cells, [0, 0, 0], "minecraft:glow_lichen", &[]);
-        assert_eq!(
-            faces_at(&cells, "minecraft:glow_lichen", [0, 0, 0]),
-            vec!["up"]
-        );
-        assert_eq!(faces_at(&cells, "minecraft:vine", [0, 0, 0]), vec!["up"]);
-    }
-
-    /// A wall is offered before the ceiling, so adopting the general query
-    /// moves no decal that already had a wall to hold.
-    #[test]
-    fn a_wall_is_offered_before_the_ceiling_and_the_ceiling_before_the_floor() {
-        let mut cells = Cells::new();
-        cell(&mut cells, [0, 0, 0], "minecraft:glow_lichen", &[]);
-        cell(&mut cells, [0, -1, 0], "minecraft:tuff", &[]);
-        assert_eq!(
-            faces_at(&cells, "minecraft:glow_lichen", [0, 0, 0]),
-            vec!["down"]
-        );
-        cell(&mut cells, [0, 1, 0], "minecraft:tuff", &[]);
-        assert_eq!(
-            faces_at(&cells, "minecraft:glow_lichen", [0, 0, 0]),
-            vec!["up", "down"]
-        );
-        cell(&mut cells, [0, 0, 1], "minecraft:tuff", &[]);
-        assert_eq!(
-            faces_at(&cells, "minecraft:glow_lichen", [0, 0, 0]),
-            vec!["south", "up", "down"]
-        );
-    }
-
-    /// The faces a block has come from the pinned shape table, so a vine is
-    /// asked about its five and never offered the `down` it does not have.
-    #[test]
-    fn a_vine_is_never_offered_the_face_it_does_not_have() {
-        let mut cells = Cells::new();
-        cell(&mut cells, [0, -1, 0], "minecraft:tuff", &[]);
-        cell(&mut cells, [0, 1, 0], "minecraft:tuff", &[]);
-        assert_eq!(faces_at(&cells, "minecraft:vine", [0, 0, 0]), vec!["up"]);
-        assert_eq!(
-            faces_at(&cells, "minecraft:glow_lichen", [0, 0, 0]),
-            vec!["up", "down"]
-        );
-        // Binding count, so the assertion above cannot pass by the table
-        // having gone empty.
-        assert_eq!(shape_props()["minecraft:vine"].len(), 5);
-        assert_eq!(shape_props()["minecraft:glow_lichen"].len(), 6);
-    }
-
-    /// A face and the direction it looks in are one fact. The offsets are the
-    /// module's, so a caller cannot pair them backwards the way two decoration
-    /// scans did.
-    #[test]
-    fn the_face_offered_is_the_one_that_touches_the_rock() {
-        let mut cells = Cells::new();
-        // Rock to the WEST of the cell.
-        cell(&mut cells, [-1, 0, 0], "minecraft:andesite", &[]);
-        cell(&mut cells, [0, 0, 0], "minecraft:glow_lichen", &[]);
-        assert_eq!(
-            faces_at(&cells, "minecraft:glow_lichen", [0, 0, 0]),
-            vec!["west"]
-        );
-        // And what it offers is exactly what the post-condition accepts.
-        let mut out = Cells::new();
-        cell(&mut out, [-1, 0, 0], "minecraft:andesite", &[]);
-        cell(
-            &mut out,
-            [0, 0, 0],
-            "minecraft:glow_lichen",
-            &[("west", "true")],
-        );
-        assert_attachments_are_supported("fixture", &resolved(&out));
-    }
-
-    /// Nothing to hold on to is an empty answer, which is a placer's cue to
-    /// place nothing — never a face picked anyway.
-    #[test]
-    fn a_cell_with_no_support_offers_no_face() {
-        let mut cells = Cells::new();
-        cell(&mut cells, [1, 0, 0], "minecraft:pointed_dripstone", &[]);
-        cell(
-            &mut cells,
-            [0, 0, 1],
-            "minecraft:lantern",
-            &[("hanging", "true")],
-        );
-        cell(&mut cells, [0, 0, 0], "minecraft:glow_lichen", &[]);
-        assert!(faces_at(&cells, "minecraft:glow_lichen", [0, 0, 0]).is_empty());
-    }
-
-    /// An unclassified neighbour declines, because this is a PLACEMENT
-    /// decision: a poorer piece is safe, a silently wrong one is not. The
-    /// refusal stays on the emitted state, which
-    /// `an_unclassified_neighbour_refuses` covers.
-    #[test]
-    fn an_unclassified_neighbour_offers_no_face_rather_than_panicking() {
-        let mut cells = Cells::new();
-        cell(&mut cells, [0, 1, 0], "minecraft:cake", &[]);
-        cell(&mut cells, [0, 0, 0], "minecraft:glow_lichen", &[]);
-        assert!(faces_at(&cells, "minecraft:glow_lichen", [0, 0, 0]).is_empty());
-    }
-
-    /// The question is only meaningful for a block that holds on by a face.
-    #[test]
-    #[should_panic(expected = "does not hold on by a face")]
-    fn asking_a_fence_where_it_may_attach_is_a_bug() {
-        let cells = Cells::new();
-        faces_at(&cells, "minecraft:oak_fence", [0, 0, 0]);
     }
 
     /// A material with no declared verdict is a refusal, never a default.
