@@ -6,16 +6,17 @@
 # ## What this exists to remove
 #
 # `cargo fmt --all` at the repository root reaches the ROOT workspace and nothing
-# else. `prefabs/` is a separate workspace on purpose, so the obvious local
-# command reports clean while a generator is unformatted — and CI's per-workspace
-# fmt steps then redden the pull request. That is not a hypothetical: a stage's
+# else. `gallery/prefab-generator` is a separate workspace on purpose, so the
+# obvious local command reports clean while the generator is unformatted — and
+# CI's per-workspace fmt steps then redden the pull request. That is not a hypothetical: a stage's
 # new generator code went in unformatted and reddened a pull request after a merge.
 #
 # The defect is not the missing minute. It is that **the cost is paid by whoever
 # pushes rather than by whoever wrote it**, which is the same shape as every
 # other check this repository moves earlier. Widening the root workspace would
-# close it and is refused: the root workspace `exclude`s `prefabs/` on purpose,
-# and a generator entering the engine's resolution is exactly what that prevents.
+# close it and is refused: the root workspace `exclude`s the generator on
+# purpose, and a generator entering the engine's resolution is exactly what that
+# prevents.
 #
 # ## The population is DERIVED, never listed
 #
@@ -54,9 +55,9 @@
 # ## What it does NOT do
 #
 # It does not run `clippy`. Each workspace's own CI job does that — `rust (fmt,
-# clippy, test)` for the root and `prefab generators (invariants + determinism)`
-# for `prefabs/` — and a sweep that ran both would be a second authority on which
-# lints each workspace is held to.
+# clippy, test)` for the root and `gallery pieces (generator output)` for
+# `gallery/prefab-generator` — and a sweep that ran both would be a second
+# authority on which lints each workspace is held to.
 #
 # It does not format the harness (TypeScript, `harness/`). That is prettier's
 # subject and a different command; this one is about `cargo fmt`'s reach.

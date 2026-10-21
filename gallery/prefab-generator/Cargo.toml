@@ -3,21 +3,26 @@ name = "gallery-prefab-gen"
 version = "0.0.0"
 edition = "2021"
 publish = false
-# A member of the `prefabs/` workspace, which builds and tests it with every
-# other generator; it lives here because the gallery is its only reader.
-workspace = "../../prefabs"
+
+# Its own workspace: the root workspace excludes this directory, so nothing
+# here enters the shipped `delvec`.
+[workspace]
 
 [[bin]]
 name = "gallery-prefab-gen"
 path = "src/main.rs"
 
 [dependencies]
-prefab-invariants.workspace = true
-fastnbt.workspace = true
-flate2.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-# The rig document an assembly reads (spec-0082 §3.1): written through the
-# engine's own type, so the file this generator writes is the file the engine
-# parses, by construction.
-delvewright-dsl.workspace = true
+fastnbt = "2"
+flate2 = "1"
+serde = { version = "1", features = ["derive"] }
+# `preserve_order` so a document this generator writes comes out in the order
+# its own struct declares. `document::write_preserving` routes every write
+# through `serde_json::Value`, and with the default `BTreeMap` map that alone
+# would re-sort every key of every document it writes.
+serde_json = { version = "1", features = ["preserve_order"] }
+# Block knowledge (`blockshape`, `fluid`) and the rig document an assembly reads
+# (spec-0082 §3.1): written through the engine's own type, so the file this
+# generator writes is the file the engine parses, by construction. A path
+# dependency on `delvewright-dsl`, never on `delvec`.
+delvewright-dsl = { path = "../../crates/dsl" }

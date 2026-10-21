@@ -150,9 +150,14 @@ else
     delvec="$repo/target/release/delvec"
   fi
   [ -x "$delvec" ] || { echo "reset-when-empty: '$delvec' is not executable" >&2; exit 2; }
+  # hello-world binds `prefab/hello-room`, an engine test piece: it builds from
+  # the test library the one assembler lays over the content library.
+  test_library="$here/reset-out/$project-test-library"
+  rm -rf "$test_library"
+  ( cd "$repo" && bash tools/ci/test-library.sh campaigns/prefabs "$test_library" >/dev/null )
   say "building crates/dsl/fixtures/valid/hello-world -> $build_dir"
   rm -rf "$build_dir"; mkdir -p "$build_dir"
-  ( cd "$repo" && "$delvec" build crates/dsl/fixtures/valid/hello-world -o "$build_dir" >/dev/null )
+  ( cd "$repo" && "$delvec" --prefabs "$test_library" build crates/dsl/fixtures/valid/hello-world -o "$build_dir" >/dev/null )
 fi
 for required in datapack server/server.properties manifest.json critical-path.json; do
   [ -e "$build_dir/$required" ] || {

@@ -273,7 +273,7 @@
       "finding": "a valley staged as a cherry grove held a handful of malformed trees and bare rock in every other direction; the render-shot acceptance proxy passed it",
       "general_form": "a generator's scatter reaches a quantity floor over its whole declared domain, asserted as a number rather than by eye",
       "id": "hv-10",
-      "note": "Closed 2026-08-24 by DW0864, which states what every placement verb declared and delivered over the DECLARED domain rather than over the usable part of it, and refuses where the shortfall is unambiguous (a `plant` short of its own `count`, or a verb that could act on no cell at all). The earlier note said no such assertion existed anywhere under prefabs/ or crates/ -- that was true, and the class is now carried at BOTH layers: DW0864 for the DSL verbs, and `prefabs/invariants/src/invariants.rs::assert_scatter_reaches_its_target` for the generators, which have no diagnostics. First run found a live instance in the engine's own gallery: a lane scatter over a 406-cell surface-band aimed at the solid course, dressing none of it, counted as coverage for the `scatter` unit. Binding verified non-zero on a real subject: nobodys-cave-island, 4 verbs, 0 short.",
+      "note": "Closed 2026-08-24 by DW0864, which states what every placement verb declared and delivered over the DECLARED domain rather than over the usable part of it, and refuses where the shortfall is unambiguous (a `plant` short of its own `count`, or a verb that could act on no cell at all). The earlier note said no such assertion existed anywhere under prefabs/ or crates/ -- that was true, and the class is carried by DW0864 for the DSL verbs. The generator-side form, `assert_scatter_reaches_its_target`, left the engine with the campaign generators that called it, which the content repository keeps as provenance records and nothing re-runs (ADR-0018 §6). First run found a live instance in the engine's own gallery: a lane scatter over a 406-cell surface-band aimed at the solid course, dressing none of it, counted as coverage for the `scatter` unit. Binding verified non-zero on a real subject: nobodys-cave-island, 4 verbs, 0 short.",
       "round": "cherry-2026-08-05",
       "triage": "content"
     },
@@ -612,12 +612,12 @@
       "campaign": "nobodys-cave-island",
       "carrier": {
         "kind": "invariant",
-        "test": "assert_greenfield_corridor_clear"
+        "test": "plant_grows_over_a_keep_clear_column_it_cannot_lean_off"
       },
       "finding": "the generated landscape contained sheared half-trees where the terrain writer cut through prefab vegetation",
       "general_form": "a generator never leaves a structural feature half-written: it regrows or removes it whole",
       "id": "isl-12",
-      "note": "applies_when added 2026-08-21: generator invariants examine prefab bytes, which reach a build only through areas[] placement today (a derived blockout places no .nbt). Areas declared with zero .nbt in the build = UNBOUND; no area = the class measures zero. Re-point at detail pieces when spec-0050 lands them.",
+      "note": "applies_when added 2026-08-21: generator invariants examine prefab bytes, which reach a build only through areas[] placement today (a derived blockout places no .nbt). Areas declared with zero .nbt in the build = UNBOUND; no area = the class measures zero. Re-point at detail pieces when spec-0050 lands them. The carrier was `assert_greenfield_corridor_clear`, an invariant of the island terrain generator, which lives in the content repository as a provenance record and gates nothing (ADR-0018 §6). The row is carried by the compiler's own form of the same rule, the `plant` verb's lean-or-grow canopy (ported from that generator), which leans or grows a tree and never slices it. That carrier does not reach the island terrain pieces' bytes: those were written by the generator with its invariant holding, and are fixed.",
       "round": 4,
       "triage": "capability"
     },

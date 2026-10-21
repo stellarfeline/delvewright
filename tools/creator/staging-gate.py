@@ -223,7 +223,7 @@ import zipfile
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
-from lib import demo_queue, dwcatalog, horizon  # noqa: E402
+from lib import demo_queue, dwcatalog, generator_workspaces, horizon  # noqa: E402
 
 DEFAULT_LEDGER = REPO_ROOT / "docs" / "playtest-findings.json"
 # The demo queue of the engine this gate ships in: the one place a demo level
@@ -355,14 +355,19 @@ class Engine:
 
     @property
     def rust_text(self) -> str:
-        # `prefabs/` is in scope alongside `crates/`: the strongest general form
-        # of several findings is a GENERATOR invariant (a sheared canopy, debris
-        # stacked on a tread, an unsupported gravity floor), and those live with
-        # the generators, not with the compiler.
+        # Every generator workspace this engine tree holds is in scope
+        # alongside `crates/`: the strongest general form of several findings
+        # is a GENERATOR invariant (debris stacked on a tread, an unsupported
+        # gravity floor), and those live with the generator that runs them.
+        # The workspaces are discovered (`tools/lib/generator_workspaces.py`),
+        # never named here. A campaign generator lives in the content
+        # repository as a provenance record and gates nothing (ADR-0018 §6),
+        # so an invariant only it carries is not carried here.
         if self._rust_text is None:
-            self._rust_text = self._read_all(
-                REPO_ROOT / "crates", "*.rs"
-            ) + self._read_all(REPO_ROOT / "prefabs", "*.rs")
+            text = self._read_all(REPO_ROOT / "crates", "*.rs")
+            for ws in generator_workspaces.generator_workspaces(REPO_ROOT):
+                text += self._read_all(REPO_ROOT / ws / "src", "*.rs")
+            self._rust_text = text
         return self._rust_text
 
     @property
@@ -1221,7 +1226,7 @@ def carrier_exists(carrier: dict, eng: Engine, subj: Subject) -> tuple[bool, str
         # exists is a promise nobody keeps, so the name is checked, not assumed.
         name = carrier["test"]
         if not re.search(rf"\bfn\s+{re.escape(name)}\s*\(", eng.rust_text):
-            return False, f"no `fn {name}(` anywhere in crates/ or prefabs/"
+            return False, f"no `fn {name}(` anywhere in crates/ or a generator workspace"
         return True, ""
     if kind == "tool":
         # A check script, named relative to `tools/` and therefore carrying the

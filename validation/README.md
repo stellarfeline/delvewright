@@ -266,8 +266,9 @@ cell more than 16 blocks off its own lane.
 clean, so there is no separate teardown command to forget:
 
 ```sh
+bash tools/ci/test-library.sh campaigns/prefabs validation/test-library-cast
 delvec build crates/delvec/tests/fixtures/cast-ledger \
-  -o validation/delve-output-cast --prefabs campaigns/prefabs
+  -o validation/delve-output-cast --prefabs validation/test-library-cast
 
 EULA=TRUE validation/packtest-run.sh --project dw-cast --output ./delve-output-cast
 ```

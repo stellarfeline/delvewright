@@ -152,9 +152,9 @@ ROWS: dict[str, list[dict[str, object]]] = {
             "sites": None,
         },
         {
-            "path": "prefabs/Cargo.lock",
+            "path": "gallery/prefab-generator/Cargo.lock",
             "label": "delvewright-dsl — cargo's, never edited: "
-            "cargo update -p delvewright-dsl --manifest-path prefabs/Cargo.toml",
+            "cargo update -p delvewright-dsl --manifest-path gallery/prefab-generator/Cargo.toml",
             "kind": "lock",
             "package": "delvewright-dsl",
             "shape": "cargo-written",

@@ -1037,21 +1037,23 @@ edit.
 | `delvec grammar` | writes it (single template) and the tile-set manifest (several) |
 | `delvec render` | a narrow view — `anchors`, `connectors`, `lighting` — built from the document's own leaf types, because it must also read a tile-set manifest, which names `structure_set` instead of `structure` |
 | `delvec::schem::split` | one key, `structure_set`, to tell the two shapes apart |
-| `prefabs/generator`, `prefabs/*-generator`, `gallery/prefab-generator` | write it, serialize-only (their own workspace, outside the engine's; they never read a prefab back) |
+| `gallery/prefab-generator` | writes it, serialize-only (its own workspace, outside the engine's; it never reads a prefab back) |
 
 ## 10. Hand-written Rust generators
 
-`prefabs/generator` (the keep), `prefabs/*-generator` and the gallery's
-`gallery/prefab-generator` are members of the `prefabs/` workspace. A campaign tileset generator is maintained, not extended:
-a new piece is a grammar program. `gallery/prefab-generator` is the exception —
-it builds the gallery, which owes an element for every engine surface. Running
-one is `cargo run --release --manifest-path
-prefabs/<gen>/Cargo.toml -- campaigns/prefabs/` (the gallery's writes a build
-directory instead), and every piece it emits goes
-through `prefabs/invariants/src/invariants.rs` — including the block-registry check, so the
-`DW0733` class is refused at that emitter too.
+A new piece is a grammar program. The one hand-written Rust generator the
+engine runs is the gallery's, `gallery/prefab-generator` (its own workspace) —
+it builds the gallery, which owes an element for every engine surface. The
+generators that wrote the shipped library's tilesets are kept in the content
+repository beside the library, at `prefabs/generators/<name>/` there, as
+provenance records (ADR-0018 §6): never built, never a gate. Running the
+gallery's is `cargo run --release --manifest-path
+gallery/prefab-generator/Cargo.toml -- <build-dir>` (`tools/ci/gallery-prefabs.py`
+runs it), and every piece it emits goes through
+`gallery/prefab-generator/src/prefab_invariants/invariants.rs` — including the
+block-registry check, so the `DW0733` class is refused at that emitter too.
 
-`prefabs/invariants/src/connections.rs` runs at those same emitters, just before those gates.
+`gallery/prefab-generator/src/prefab_invariants/connections.rs` runs at the same emitter, just before those gates.
 It fills the shape-carrying properties a state leaves unwritten — connections
 for a fence, wall, pane or bars; absent faces for a vine or a lichen — from the
 piece's own neighbours, by vanilla's rule, and never overwrites a value the
@@ -1068,14 +1070,6 @@ rather than guessing. This is narrower than the `stair-shape` gate above, where 
 stair writing no `shape` makes no claim and nothing disagrees with it: that gate
 judges a claim, this one needs a fact. A stair standing alone may still say
 nothing; a stair standing next to something that joins must say what it is.
-
-A pass that *places* a vine or a lichen asks the same module where the block may
-hold on — `attachable_faces(block, cell, at)`, which returns every supported
-face of that block, best first, and an empty list when the cell can hold
-nothing. Ask it rather than walking the neighbours by hand: the module owns
-which faces the block has and which direction each looks in, so a scan can
-neither name the face pointing away from the rock nor overlook that rock
-overhead is rock to hang from.
 
 A fence gate in a run of fencing takes its `facing` from the run, not from
 taste. A gate is joinable only across `facing.getClockWise()`, so a gate whose
