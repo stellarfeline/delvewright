@@ -14,3 +14,9 @@ output and never an authority: `crates/delvec/tests/handout_script.rs` holds it
 equal to the built binary's own answer, byte for byte, so a change to what the
 engine hands a place reds there and the file is re-recorded with the same
 command.
+
+The per-place procedure of `references/detail.md` has been executed green on
+this fixture once, end to end: three fresh agents, one per place in
+critical-path order, each from its own handout; `delvec detail --all` and
+`delvec build` exit 0 with all three places detailed and none massed. The
+numbers are in the body of the commit that added this paragraph.

@@ -43,8 +43,10 @@ piece must be **exactly** that shape — undersize is refused the same way
 oversize is (`DW0843`), because a smaller building means a smaller box, which is
 a site-plan edit. Every cell of the frame the place does not own — a
 neighbour's wall, the ring's fixed ground, nobody's — is a **void**: the verb
-writes `minecraft:structure_void` there, and a piece that paints a void (air
-included) is `DW0987`, one that writes the ring's fixed ground `DW0990`.
+writes `minecraft:structure_void` there after expansion, so whatever a program
+paints at a void is replaced and never reaches the piece; a piece already in
+the library that paints a void (air included) is `DW0987`, one that writes the
+ring's fixed ground `DW0990`.
 
 ## Each place has its own author
 
