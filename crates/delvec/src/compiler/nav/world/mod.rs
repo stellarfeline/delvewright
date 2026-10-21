@@ -1170,6 +1170,8 @@ impl World {
     /// close one it leaves open.
     pub(in crate::compiler::nav) fn resieve(mut self) -> World {
         use delvewright_dsl::blockshape::{EMPTY_FOOTPRINT, FULL_FOOTPRINT, body_falls_through};
+        // The reach graph's digest reads the sieve ([`World::fingerprint`]).
+        self.fingerprint = std::sync::OnceLock::new();
         self.floors.sieve.clear();
         if self.floors.footprints.is_empty() {
             return self;
@@ -1300,6 +1302,7 @@ impl World {
     pub fn with_ambient(mut self, ambient: Ambient, built: Vec<BuiltPiece>) -> Self {
         self.ambient = ambient;
         self.built = built;
+        self.fingerprint = std::sync::OnceLock::new();
         self
     }
 
@@ -1650,6 +1653,8 @@ impl World {
     /// This world keeping out of `regions` ([`World::keep_out`]).
     fn with_keep_out(mut self, regions: &[LethalRegion]) -> World {
         self.keep_out.extend(regions.iter().cloned());
+        // The reach graph's digest reads the keep-out ([`World::fingerprint`]).
+        self.fingerprint = std::sync::OnceLock::new();
         self
     }
 
@@ -1665,6 +1670,7 @@ impl World {
         self.lethal.extend(cells.iter().copied());
         self.lethal.compact();
         self.lethal_regions.extend(regions.iter().cloned());
+        self.fingerprint = std::sync::OnceLock::new();
         self
     }
 

@@ -901,6 +901,48 @@ fn a_body_falls_between_bars_laid_through_a_floor_and_stands_on_a_trapdoor() {
     assert!(lone.is_standable([2, 64, 2]));
 }
 
+/// **The reach graph flies a sieve at its posts.** The same 2x2 hatch of bars
+/// over a shaft too deep to survive: the cell relation proves no landing down
+/// it, so only a launch can find the fall, and a launch over the bars drops
+/// between their posts and dies. Read as whole cells, the bars were a floor a
+/// launch walked across.
+#[test]
+fn a_launch_over_bars_drops_between_their_posts() {
+    let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..8 {
+        for z in 0..8 {
+            cells.push(([x, 20, z], "minecraft:stone"));
+            let in_hatch = (3..=4).contains(&x) && (3..=4).contains(&z);
+            cells.push((
+                [x, 63, z],
+                if in_hatch {
+                    "minecraft:iron_bars"
+                } else {
+                    "minecraft:stone"
+                },
+            ));
+            // A wall round the hall, so the one way down is the hatch.
+            if x == 0 || z == 0 || x == 7 || z == 7 {
+                for y in 64..=67 {
+                    cells.push(([x, y, z], "minecraft:stone"));
+                }
+            }
+        }
+    }
+    let bars = crate::compiler::nav::testkit::blocks_world(&cells);
+    assert!(bars.is_sieve([3, 63, 3]));
+    assert!(
+        bars.fatal_launch([2, 64, 3]).is_some(),
+        "a launch onto the bars falls between the posts"
+    );
+    let stone: Vec<([i32; 3], &str)> = cells.iter().map(|(c, _)| (*c, "minecraft:stone")).collect();
+    let floor = crate::compiler::nav::testkit::blocks_world(&stone);
+    assert!(
+        floor.fatal_launch([2, 64, 3]).is_none(),
+        "the same floor in stone kills no launch"
+    );
+}
+
 /// The seal a world-load gate lays is read through its block too: a hatch of
 /// bars sealed over an open shaft is no floor, and the same region sealed
 /// with a block that covers its cells is.
