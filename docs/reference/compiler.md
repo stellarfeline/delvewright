@@ -3729,7 +3729,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   of the leg whose frame holds a target in frame *and* in sight; otherwise at the
   nearest declared target on the walked side of the eye that is in sight; with
   none, it keeps the next waypoint and the view gate names it. The legs are
-  routed in `holders::walk_world`, the world the build's route proof walks, so a
+  routed in `holders::final_walk`, the world the build's route proof walks, so a
   leg that ends at a holder `collect` ends at its stance. **The arrival aim is derived from the objective
   and from nothing else** (`render_plan::arrival_aim`): an anchor 4+ blocks away
   is framed directly; a nearer one is aimed at *along its own direction*, out to
@@ -6101,7 +6101,8 @@ layout. Details:
   An unknown id lists the available ones. The plan is derived against the same
   edited assembled world this command rasterises, so a camera the plan stands up
   out of the rock is stood up identically here, and a `pov/…` leg is routed in
-  `holders::walk_world`, the build's own route world (holder stances included) —
+  `holders::final_walk`, the build's own route world (relight fixtures and holder
+  stances included, derived only when `--shot` is given) —
   `--shot` frames what the built plan states, never a second opinion about it.
   `tools/ci/check-gallery-render.py` holds it to that: every manifest's camera
   is compared with the build's render-plan camera, and a difference is a
@@ -6324,14 +6325,17 @@ best-effort — a campaign whose critical path does not route yet charts without
 the corridor tint rather than refusing to chart.
 
 The corridor is derived by `blocking::walked_corridor` and nowhere else: the
-world is `light::final_world` (the same entry `delvec build` takes its world
-from — assembled cells under every premise `nav::Premises::of_plan` states, the
-relight pass's fixtures standing in them), the path is the one with the links
+world is `holders::final_walk` (the one entry `delvec build`, `delvec snapshot
+--shot` and this chart take their route world from — assembled cells under every
+premise `nav::Premises::of_plan` states, the relight pass's fixtures standing in
+them, and each holder `collect`'s leg ending at the stance the build's stance
+pass chose), the path is the one with the links
 the route proof takes spliced in (`nav::with_links_taken`), and the routes are
 `nav::critical_path_routes` over both. `tests/chart_routes.rs` holds the index's
 corridor to the build's `validation/critical-path-waypoints.json`: the leg count
 must be equal, and every waypoint, use-gate and climb end the build names must
-lie in the corridor.
+lie in the corridor — over four fixtures and over a leg ending at a holder
+`collect`.
 
 Orientation is **+X right, +Z down (north up)**; each slice carries a title bar
 naming its area, band index, floor Y and cut range.

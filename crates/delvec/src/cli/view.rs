@@ -92,17 +92,20 @@ pub(crate) fn run_snapshot(
         delvec::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
         delvec::compiler::nav::Premises::geometry_only(),
     );
-    // The world a `pov/…` shot's leg is routed in: the build's
-    // (`walk_world`), never the geometry above — a leg that ends at a holder
-    // `collect` ends at the stance the build chose, so the camera on it is
-    // the build's camera.
-    let walk = walk_world(&plan, &assembled, &structures);
+    // The world a shot's path is read over: the build's
+    // (`holders::final_walk`), never the geometry above — a leg that ends at a
+    // holder `collect` ends at the stance the build chose, and a relight
+    // fixture stands where the build stood it, so the camera on it is the
+    // build's camera. Derived only when a shot is asked for.
+    let walk = args
+        .shot
+        .map(|_| walk_world(&plan, &assembled, &structures));
     let blocks = assembled.blocks;
     let grid = snapshot::VoxelGrid::build(&blocks);
     snapshot::report_unpainted(&grid);
     let assembled_ms = started.elapsed().as_secs_f64() * 1000.0;
 
-    let cam = match resolve_camera(&plan, &prefabs, &grid, &world, &walk, &args) {
+    let cam = match resolve_camera(&plan, &prefabs, &grid, &world, walk.as_ref(), &args) {
         Ok(c) => c,
         Err(msg) => {
             eprintln!("error: {msg}");
@@ -343,11 +346,9 @@ fn camera_world(
     )
 }
 
-/// The world the build's critical-path routes are walked in: the camera's
-/// world ([`camera_world`]) with each holder `collect`'s leg ending at the
-/// stance the build's stance pass chose (`holders::walk_world`). A tool that
-/// draws or stands on the critical path reads it here, so its legs are the
-/// build's legs.
+/// The world the build's critical-path routes are walked in
+/// ([`delvec::compiler::holders::final_walk`]): a tool that draws or stands on
+/// the critical path reads it here, so its legs are the build's legs.
 fn walk_world(
     plan: &Plan,
     assembled: &delvec::compiler::assembled::Assembled,
@@ -357,7 +358,9 @@ fn walk_world(
         plan,
         &delvec::compiler::holders::placed_holders(plan, structures),
     );
-    delvec::compiler::holders::walk_world(plan, camera_world(plan, assembled), &owned).world
+    delvec::compiler::holders::final_walk(plan, assembled, &owned)
+        .0
+        .world
 }
 
 /// The bytes a camera's world starts from
@@ -627,7 +630,7 @@ fn resolve_camera(
     prefabs: &PrefabRegistry,
     grid: &delvec::compiler::snapshot::VoxelGrid,
     world: &delvec::compiler::nav::World,
-    walk: &delvec::compiler::nav::World,
+    walk: Option<&delvec::compiler::nav::World>,
     args: &SnapshotArgs<'_>,
 ) -> Result<delvec::compiler::snapshot::Camera, String> {
     use delvec::compiler::snapshot::{Camera, DEFAULT_FOV, DEFAULT_ORBIT_DIST};
@@ -683,7 +686,7 @@ fn resolve_camera(
         ));
     }
 
-    if let Some(id) = args.shot {
+    if let (Some(id), Some(walk)) = (args.shot, walk) {
         return camera_from_shot(plan, prefabs, world, walk, id);
     }
 
@@ -876,7 +879,12 @@ pub(crate) fn run_blocking_chart(
     // lethal volumes, clocked regions) and the path with the links the route
     // proof takes spliced in. A chart taken over a smaller premise set draws a
     // corridor no proof ever walked.
-    let walked = match delvec::compiler::blocking::walked_corridor(&plan, &prefabs, &assembled) {
+    let walked = match delvec::compiler::blocking::walked_corridor(
+        &plan,
+        &prefabs,
+        &assembled,
+        &delvec::compiler::holders::placed_holders(&plan, &structures),
+    ) {
         Ok(w) => w,
         Err(f) => {
             eprintln!("{} [error] build: {}", f.code, f.message);

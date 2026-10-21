@@ -528,7 +528,11 @@ pub fn build_with_warnings(
     // reachable cells and no `lighting` declaration → output byte-identical.
     // The geometry is classified once: relight surveys it as it stands, and the
     // campaign's world below is the same cells under the campaign's premises.
-    let (world, relight) = crate::compiler::light::final_world(plan, assembled);
+    // The world every route below is walked in, with the holder stances the
+    // census judges further down (spec-0111 §5.2): one derivation, the one
+    // every reader of the critical path takes (`holders::final_walk`).
+    let owned_holders = crate::compiler::holders::own_holders(plan, &entity_holders);
+    let (walked, relight) = crate::compiler::holders::final_walk(plan, assembled, &owned_holders);
     if let Some(diag) = relight.diagnostics.first() {
         return Err(BuildFailure::Diagnostic {
             code: diag.code,
@@ -566,7 +570,6 @@ pub fn build_with_warnings(
     // printed before any verdict: `DW1018` (built vs declared), `DW1024`
     // (arrangement), `DW1037` (a holder the party cannot take from), `DW1038`
     // (a runtime edit reaches a holder).
-    let owned_holders = crate::compiler::holders::own_holders(plan, &entity_holders);
     let (container_census, holder_stances, world) =
         {
             let blocks = &assembled.blocks;
@@ -588,7 +591,6 @@ pub fn build_with_warnings(
             // place still standing in its stand-in owes its containers to its
             // detail, so a notice over no scenery is judged there.
             .deferring(plan.blockout.as_ref().map_or(&[][..], |b| &b.massed[..]));
-            let walked = crate::compiler::holders::walk_world(plan, world, &owned_holders);
             let (unsupported, unreachable) = walked.counts;
             let stances = walked.stances;
             let stance_verdict = walked.verdict;
@@ -622,7 +624,7 @@ pub fn build_with_warnings(
             );
             (census, stances, walked.world)
         };
-    // From here `world` is `holders::walk_world`'s: a leg that ends at a
+    // From here `world` is `holders::final_walk`'s: a leg that ends at a
     // holder `collect` ends at the stance the pass chose (spec-0111 §5.2),
     // never inside the holder the block model reads as air — every route
     // proof, waypoint and the critical-path step read one stance.

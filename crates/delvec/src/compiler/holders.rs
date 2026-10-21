@@ -1434,17 +1434,31 @@ pub struct Walked {
     pub verdict: Result<(), Failure>,
 }
 
-/// **The world every critical-path route is walked in** (spec-0111 §5.2):
-/// the stance pass over `world` for the holders `owned`, from the cells the
-/// party can walk to, and `world` ending each holder `collect`'s leg at the
-/// stance that pass chose. The build's route proof and every tool that reads
-/// the critical path (`delvec snapshot --shot pov/…`, `delvec blocking-chart`)
-/// take it here, so a leg ends where the build's does.
-pub fn walk_world(
+/// **The world every critical-path route is walked in, derived once**
+/// (spec-0111 §5.2): the build's final world
+/// ([`crate::compiler::light::final_world`]: the assembled cells under every
+/// premise the campaign states, relight fixtures standing in them), the stance
+/// pass over it for the holders `owned`, and that world ending each holder
+/// `collect`'s leg at the stance the pass chose. `delvec build` and every tool
+/// that reads the critical path (`delvec snapshot --shot …`,
+/// `delvec blocking-chart`) take their world here and nowhere else, so a leg
+/// ends where the build's does. The caller reads `Relight::diagnostics` and
+/// [`Walked::verdict`] — a refused pass is the build's failure to raise, not
+/// this derivation's.
+pub fn final_walk(
     plan: &Plan,
-    world: crate::compiler::nav::World,
+    assembled: &crate::compiler::assembled::Assembled,
     owned: &[OwnedHolder],
-) -> Walked {
+) -> (Walked, crate::compiler::light::Relight) {
+    let (world, relight) = crate::compiler::light::final_world(plan, assembled);
+    (walk_world(plan, world, owned), relight)
+}
+
+/// The stance pass over `world` for the holders `owned`, from the cells the
+/// party can walk to, and `world` ending each holder `collect`'s leg at the
+/// stance that pass chose. Private: every reader takes it through
+/// [`final_walk`].
+fn walk_world(plan: &Plan, world: crate::compiler::nav::World, owned: &[OwnedHolder]) -> Walked {
     let reachable = if owned.iter().any(|o| o.is_filled()) {
         world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan))
     } else {

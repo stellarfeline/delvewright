@@ -1203,12 +1203,10 @@ pub fn lit_world(
 /// **The world the build's proofs walk, derived once**: the relight pass over
 /// `assembled`, and the nav model of the same cells under the campaign's
 /// premises ([`crate::compiler::nav::Premises::of_plan`]) with the pass's
-/// fixtures standing in it ([`lit_world`]). `delvec build` and every view that
-/// draws what the proofs walked (`blocking-chart`) take their world from this
-/// one entry point, so a route read over it is the route the build proved.
-/// The caller reads `Relight::diagnostics` — a refused pass is the build's
-/// failure to raise, not this derivation's.
-pub fn final_world(
+/// fixtures standing in it ([`lit_world`]). Its one caller is
+/// [`crate::compiler::holders::final_walk`], which stands the holder stances
+/// in it; every reader of the critical path takes its world there.
+pub(crate) fn final_world(
     plan: &Plan,
     assembled: &crate::compiler::assembled::Assembled,
 ) -> (World, Relight) {
