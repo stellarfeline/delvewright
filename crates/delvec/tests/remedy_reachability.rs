@@ -4478,7 +4478,19 @@ fn dw1044_moving_the_anchor_into_the_only_way_through_builds() {
     let (code, before) = dw1044("dw1044-door", 2, "anchor/door", Some(door()), true);
     assert_ne!(code, 0, "{before}");
     assert!(before.contains("DW1044 [error]"), "{before}");
-    let (code, after) = dw1044("dw1044-exit", 2, "anchor/exit", Some(door()), true);
+    // On the exit the trigger can no longer gate the exit itself: that beat
+    // would arm only on arrival, with nothing guiding the walk there
+    // (`DW0863`). It gates the beat after it.
+    let camp = tmp("camp-dw1044-exit");
+    common::threshold::doorway_campaign(
+        &camp,
+        common::threshold::approach(2),
+        "anchor/exit",
+        Some(door()),
+    );
+    common::threshold::bar_the_door(&camp);
+    common::threshold::gate_a_later_beat(&camp);
+    let (code, after) = build("dw1044-exit", &camp, &common::prefabs_dir());
     assert_eq!(code, 0, "{after}");
     assert!(after.contains("1 entered by every walk"), "{after}");
 }

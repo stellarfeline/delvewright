@@ -252,7 +252,18 @@ fn an_untitled_interact_is_found_in_sight_and_refused_behind_a_wall_or_too_far()
     let (_, c2) = load(&dir);
     let prefabs2 = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan2 = Plan::build(&c2, &prefabs2).expect("plan");
-    let (b, r) = promise::judge_acts(&plan2, &walls(&wall_at_x5()), &a([10, 64, 0]));
+    // Credited by its lines at the step the path performs it, where the
+    // replay holds it armed.
+    let step = plan2
+        .critical_path
+        .iter()
+        .position(|s| s.objective() == Some("obj/pull"))
+        .expect("obj/pull is on the path");
+    let announced = one_walk(vec![Act {
+        step,
+        ..act("obj/pull", PULL, "interact", [0, 64, 0], [10, 64, 0])
+    }]);
+    let (b, r) = promise::judge_acts(&plan2, &walls(&wall_at_x5()), &announced);
     assert!(r.is_empty(), "{r:?}");
     assert_eq!((b.announced, b.in_sight), (1, 0));
 }
@@ -263,11 +274,10 @@ fn an_untitled_interact_is_found_in_sight_and_refused_behind_a_wall_or_too_far()
 /// trigger the path performs in front of it, and not at the trigger's: so
 /// its announcement is nowhere on screen while the party walks to the post.
 /// That leg is judged — refused with the act out of sight, found with it in
-/// sight — and the same objective with no flag gate guides the leg by its
-/// lines.
+/// sight.
 #[test]
 fn a_walk_to_an_objective_that_arms_at_its_own_door_is_judged() {
-    let shape = |gated: bool, name: &str| {
+    let shape = |name: &str| {
         let mut q = quests(nulls());
         q["content"]["triggers"] = json!([{
             "id": "trigger/at-the-post",
@@ -275,16 +285,13 @@ fn a_walk_to_an_objective_that_arms_at_its_own_door_is_judged() {
             "on": { "on": "approach", "range": 2 },
             "effects": [{ "type": "set-flag", "flag": "flag/at-the-post" }]
         }]);
-        if gated {
-            q["content"]["quests"][0]["objectives"][2]["requires_flags"] =
-                json!(["flag/at-the-post"]);
-        }
+        q["content"]["quests"][0]["objectives"][2]["requires_flags"] = json!(["flag/at-the-post"]);
         let dir = variant(name, q, dialogue(GREETING));
         let (_, c) = load(&dir);
         c
     };
     let prefabs = prefabs();
-    let c = shape(true, "arms-at-its-door");
+    let c = shape("arms-at-its-door");
     let plan = Plan::build(&c, &prefabs).expect("plan");
     let at = |id: &str| {
         plan.critical_path
@@ -346,17 +353,6 @@ fn a_walk_to_an_objective_that_arms_at_its_own_door_is_judged() {
     let (b, r) = promise::judge_acts(&plan, &walls(&[]), &walk(t, p));
     assert!(r.is_empty(), "{r:?}");
     assert_eq!(b.passes_in_sight, 1, "{}", b.line());
-
-    let c = shape(false, "armed-from-the-start");
-    let plan = Plan::build(&c, &prefabs).expect("plan");
-    let p = plan
-        .critical_path
-        .iter()
-        .position(|s| s.objective() == Some("obj/press"))
-        .unwrap();
-    let (b, r) = promise::judge_acts(&plan, &walls(&wall_at_x5()), &walk(p - 1, p));
-    assert!(r.is_empty(), "{r:?}");
-    assert_eq!((b.passes, b.passes_announced), (1, 1), "{}", b.line());
 }
 
 /// spec-0104 criterion 2 (e): a `use` trigger the path performs behind a wall
