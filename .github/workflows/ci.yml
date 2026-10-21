@@ -1391,6 +1391,9 @@ jobs:
     needs: [changes, delvec-binary, gallery-pieces]
     if: github.event_name != 'pull_request' || needs.changes.outputs.gallery-coverage == 'true'
     runs-on: ubuntu-latest
+    # The job's bound, so a reach graph that grows past its measured cost reds
+    # here instead of holding a runner for six hours.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
