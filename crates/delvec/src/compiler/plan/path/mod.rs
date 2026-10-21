@@ -607,10 +607,11 @@ pub(crate) struct PathFiring {
     /// steps; read by the route proof (`DW0311`) through
     /// [`RegionEvents::keep_out`] and exported on the step for the bot.
     pub keep_out: Vec<Vec<crate::compiler::reach::KeepOut>>,
-    /// Per step, every objective armed while the party walks to it — the
-    /// replay's guaranteed armed set in front of the step
-    /// ([`crate::compiler::flow::Walk::armed_objectives`]), after the
-    /// triggers due there for the step's own objective. Aligned 1:1 with the
+    /// Per step, every objective that may be armed while the party walks to
+    /// it — the replay's guaranteed armed set in front of the step, a term on
+    /// a datum no ordered walk dates read as open
+    /// ([`crate::compiler::flow::Walk::armed_objectives_unless_shut`]), after
+    /// the triggers due there for the step's own objective. Aligned 1:1 with the
     /// path's steps; empty for a step that stands nowhere. Read by `DW0863`
     /// through [`RegionEvents::armed`].
     pub armed: Vec<BTreeSet<String>>,
@@ -661,6 +662,8 @@ pub(super) fn build_critical_path(
     // acts in front of that path step, and as it takes the step itself — what
     // each step's keep-out volumes are read from.
     let mut armed_at: Vec<(BTreeSet<String>, BTreeSet<String>)> = Vec::new();
+    // The same, with a term on an undatable datum read as open (`DW0863`).
+    let mut armed_open_at: Vec<(BTreeSet<String>, BTreeSet<String>)> = Vec::new();
     let mut guaranteed = flow.walk_for_performing(path);
     // (objective id, physical area, step index) in critical-path order, for the
     // transport map and the per-step transport marker.
@@ -798,15 +801,19 @@ pub(super) fn build_critical_path(
             // Taking it: once every trigger due there is performed and every
             // entry deed due there has fired.
             let before: BTreeSet<String> = guaranteed.armed_objectives().into_iter().collect();
+            let before_open: BTreeSet<String> = guaranteed
+                .armed_objectives_unless_shut()
+                .into_iter()
+                .collect();
             for t in due.get(&si).into_iter().flatten().filter_map(Step::trigger) {
                 guaranteed = guaranteed.performing(t);
             }
-            let taking: BTreeSet<String> = guaranteed
-                .with_due_deeds()
-                .armed_objectives()
-                .into_iter()
-                .collect();
+            let ahead = guaranteed.with_due_deeds();
+            let taking: BTreeSet<String> = ahead.armed_objectives().into_iter().collect();
+            let taking_open: BTreeSet<String> =
+                ahead.armed_objectives_unless_shut().into_iter().collect();
             armed_at.push((before, taking));
+            armed_open_at.push((before_open, taking_open));
             guaranteed.take(st);
         }
         let qid = st.quest.as_str();
@@ -1279,31 +1286,36 @@ pub(super) fn build_critical_path(
             completion: reach_completion(pos, *radius),
         })
     };
-    let mut armed_ids_by_step: Vec<BTreeSet<String>> = (0..steps.len())
-        .map(|k| {
-            // A step that stands nowhere walks nowhere: a class pick, a mock,
-            // the completion assertion.
-            if steps[k].pos().is_none() {
-                return BTreeSet::new();
-            }
-            si_start
-                .iter()
-                .rposition(|(_, first)| *first <= k)
-                .and_then(|i| Some((path.steps.get(si_start[i].0)?, armed_at.get(i)?)))
-                .map(|(st, (before, taking))| {
-                    if steps[k].objective() == Some(st.objective.as_str()) {
-                        taking.clone()
-                    } else {
-                        before.clone()
-                    }
-                })
-                .unwrap_or_default()
-        })
-        .collect();
-    let mut armed_by_step: Vec<Vec<crate::compiler::reach::KeepOut>> = armed_ids_by_step
+    // Per step, the armed set in front of it: `taking` at the step of the
+    // objective the replay takes there, `before` at every other.
+    let per_step = |sets: &[(BTreeSet<String>, BTreeSet<String>)]| -> Vec<BTreeSet<String>> {
+        (0..steps.len())
+            .map(|k| {
+                // A step that stands nowhere walks nowhere: a class pick, a
+                // mock, the completion assertion.
+                if steps[k].pos().is_none() {
+                    return BTreeSet::new();
+                }
+                si_start
+                    .iter()
+                    .rposition(|(_, first)| *first <= k)
+                    .and_then(|i| Some((path.steps.get(si_start[i].0)?, sets.get(i)?)))
+                    .map(|(st, (before, taking))| {
+                        if steps[k].objective() == Some(st.objective.as_str()) {
+                            taking.clone()
+                        } else {
+                            before.clone()
+                        }
+                    })
+                    .unwrap_or_default()
+            })
+            .collect()
+    };
+    let mut armed_by_step: Vec<Vec<crate::compiler::reach::KeepOut>> = per_step(&armed_at)
         .iter()
         .map(|armed| armed.iter().filter_map(|o| reach_volume(o)).collect())
         .collect();
+    let mut armed_ids_by_step: Vec<BTreeSet<String>> = per_step(&armed_open_at);
 
     // ---- the legs the party must cross ----
     //
