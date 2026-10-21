@@ -336,7 +336,13 @@ hand, in the running game, is `$DELVEWRIGHT_ENGINE/docs/reference/tools.md`
 
 Required for every place: the staging gate at step 13 refuses a build with no
 detail plan, or with any place still standing in its stand-in. **Needs**:
-step 8. **Produces**: `detail-plan.json`, one place at a time. **Read**:
+step 8. **Produces**: `detail-plan.json`, one place at a time. **You write no
+program**: each place's program is written by a **fresh agent** handed only
+that place's handout — `scripts/handout.py` writes it from the campaign, you
+launch the agent with the Agent tool on the one-line prompt the script prints,
+and `delvec detail` on your side is the verdict; a refusal goes back into a
+fresh agent's handout, never into your own edit. One agent at a time, in
+critical-path order. **Read**:
 `references/detail.md`; a piece the library does not have is
 `references/new-pieces.md`; a row that binds a piece the shipped library holds
 takes the library through `references/the-shipped-library.md`.
@@ -414,7 +420,7 @@ reference means the file listed here.
 | `references/ladder.md` | PackTest, the bot, branch runs, and how to triage a red | step 10 |
 | `references/chronicle.md` | reading a branch's chronicle against the design | step 11 |
 | `references/visual-review.md` | the POV sequence, `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames`, and what the set costs | step 12 |
-| `references/detail.md` | `detail-plan.json`, one place at a time | step 9 |
+| `references/detail.md` | `detail-plan.json`, one place at a time, each by its own fresh agent | step 9 |
 | `references/new-pieces.md` | making a piece the library does not have | step 9 |
 | `references/hand-over.md` | the storybook, its marker, the play server, the staging gate, and the report | step 13 |
 | `references/playtest-rounds.md` | every round after the first | step 13 |
@@ -425,3 +431,4 @@ reference means the file listed here.
 | `scripts/fetch-delvec.py` | run at I3a: the archive, verified and unpacked | I3a |
 | `scripts/find-jdk.py` | run at I1: the newest JDK 21+ already on this machine | I1 |
 | `scripts/fetch-client-jar.py` | run at I5, on the download path | I5 |
+| `scripts/handout.py` | run at step 9, once per place per attempt: the handout a fresh agent authors that place's program from | step 9 |
