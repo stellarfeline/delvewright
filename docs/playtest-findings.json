@@ -3431,6 +3431,43 @@
       "note": "Carried by DW1045: the title that names the act no completion performs is refused, so it cannot ship. The capability itself is OPEN (spec-0114 §6.4): a dialogue option reads no hand. The engine work is a held-item gate on a dialogue option (requires_item on DialogueOption, read where option_display_conditions reads requires_state). Also met as \"Show Tamsin the tongue\" (row vh-18). Until it lands DW1045 refuses the title and the honest title is a talk word.",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "layout-graph.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "gating"
+          ],
+          "in": {
+            "class": [
+              "walk",
+              "stair",
+              "climb",
+              "drop"
+            ]
+          }
+        }
+      },
+      "binding": {
+        "file": "shut-ways.json",
+        "kind": "artifact",
+        "path": "gated"
+      },
+      "campaign": "the-stranding",
+      "carrier": {
+        "code": "DW1053",
+        "kind": "dw"
+      },
+      "finding": "a long climb led to a way the story keeps shut, and the player found that only at its top and walked back down",
+      "general_form": "every story-shut way a body meets says how the player learns it is shut — seen from the junction where its branch leaves the open route, told by a pressable answer at its face, or rewarded by a pickup, interaction or fight on its branch — and the world confirms the word",
+      "id": "str-19",
+      "note": "Carried by `DW1053` and `DW1054` (`compiler::nav::learned`, spec-0118): over the configurations, faces and reach `DW1011` judges (`compiler::nav::shutmodel`), every gated connection met shut at a face owes `gating.learned`, and the word is confirmed over the world. The general form is the ruling's: no source gives a length or rise at which a branch to a shut way is too long, so the branch's length and rise are written in `validation/shut-ways.json` and never judged. The binding counts the layout graph's gated connections (`shut-ways.json` `gated`); `applies_when` counts the traversal connections that carry a `gating`.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"
