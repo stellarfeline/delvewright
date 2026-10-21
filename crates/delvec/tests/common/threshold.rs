@@ -47,11 +47,15 @@ pub fn doorway_campaign(camp: &Path, on: Value, at: &str, edits: Option<Vec<Valu
 }
 
 /// The flag the trigger pays moved off `obj/exit` onto a later beat,
-/// `obj/look-back`, back at the Keeper's post: `obj/exit` is armed from the
-/// talk on, so its title and hint guide the walk to the trigger on the exit
-/// (`DW0863`), and the path still owes the trigger before the last beat.
+/// `obj/look-back`, back at the Keeper's post, and the trigger armed by the
+/// exit's completion: `obj/exit` is armed from the talk on, so its title and
+/// hint guide the walk to the exit (`DW0863`), the trigger on it is performed
+/// once the exit is done, and the path still owes it before the last beat.
 pub fn gate_a_later_beat(camp: &Path) {
     super::patch_file(&camp.join("quests.json"), |q| {
+        q["content"]["quests"][0]["on_objective_complete"]["obj/exit"] =
+            json!([{ "type": "set-flag", "flag": "flag/out-the-door" }]);
+        q["content"]["triggers"][0]["requires_flags"] = json!(["flag/out-the-door"]);
         let objectives = q["content"]["quests"][0]["objectives"]
             .as_array_mut()
             .unwrap();
