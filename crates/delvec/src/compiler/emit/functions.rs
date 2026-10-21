@@ -804,8 +804,6 @@ pub(super) fn emit_functions(
     // spec-0102: seed each gated pulse's latch, start each ungated pulse's
     // chain. Empty for a campaign that declares none → byte-identical.
     setup.extend(pulse_setup(plan, pulses));
-    // spec-0104 §7.3: a trigger's highlight displays. Empty without one.
-    setup.extend(guidance::setup_finish_lines(guide));
     // Forceload lifecycle (map-editor audit finding 6, planner decision). The
     // edit-AABB forceloads exist for ONE reason — letting the one-shot
     // edit writes land — and `place_verify` above has now proven every

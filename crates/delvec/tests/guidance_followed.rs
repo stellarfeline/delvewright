@@ -825,19 +825,22 @@ fn a_highlight_lights_the_thing_while_armed_and_near() {
     objs[2]["title"] = json!("Ring the bell");
     objs[2]["highlight"] = json!({ "within": 6 });
     let out = try_build(&variant("highlight", q, dialogue(GREETING))).expect("builds");
+    // The activation places the prop and nothing else: a display exists
+    // only while the highlight is lit, summoned by `hl_hold_<a>` alone.
     let act = fn_body(&out, "activate_o_pull").unwrap();
-    assert!(act.contains("function hello-world:hl_show_o_pull"), "{act}");
-    let show = fn_body(&out, "hl_show_o_pull").unwrap();
+    assert!(!act.contains("dw_hl"), "{act}");
+    let show = fn_body(&out, "hl_hold_o_pull").unwrap();
     assert!(
         show.contains("summon minecraft:block_display")
             && show.contains("Name:\"minecraft:lever\"")
             && show.contains("face:\"floor\"")
+            && show.contains("Glowing:1b")
             && show.contains("scale:[1.002f,1.002f,1.002f]")
             && show.contains("translation:[-0.001f,-0.001f,-0.001f]")
             && show.contains("glow_color_override:16755200"),
         "{show}"
     );
-    let bell = fn_body(&out, "hl_show_o_press").unwrap();
+    let bell = fn_body(&out, "hl_hold_o_press").unwrap();
     assert!(
         bell.contains("summon minecraft:item_display") && bell.contains("id:\"minecraft:bell\""),
         "a bell is drawn by its renderer: {bell}"
@@ -862,13 +865,10 @@ fn a_highlight_lights_the_thing_while_armed_and_near() {
     let summon_at = |body: &str, kind: &str| -> String {
         let line = body
             .lines()
-            .find(|l| l.starts_with(&format!("summon {kind} ")))
-            .unwrap_or_else(|| panic!("a {kind}: {body}"));
-        line.split(' ')
-            .skip(2)
-            .take(3)
-            .collect::<Vec<_>>()
-            .join(" ")
+            .find_map(|l| l.split_once(&format!("run summon {kind} ")))
+            .unwrap_or_else(|| panic!("a {kind}: {body}"))
+            .1;
+        line.split(' ').take(3).collect::<Vec<_>>().join(" ")
     };
     let [x, y, z] = cell_of("activate_o_pull", "minecraft:lever");
     assert_eq!(
@@ -893,8 +893,15 @@ fn a_highlight_lights_the_thing_while_armed_and_near() {
             && poll.contains("@a[distance=..6,tag=!dw_cutscene]"),
         "{poll}"
     );
+    // Lit, the displays are held to their cells; dark, none exists.
+    assert!(
+        poll.contains("matches 1 run function hello-world:hl_hold_o_pull"),
+        "{poll}"
+    );
     let on = fn_body(&out, "hl_on_o_pull").unwrap();
-    assert!(on.contains("{Glowing:1b}"), "{on}");
+    assert!(on.contains("function hello-world:hl_hold_o_pull"), "{on}");
+    let pull_off = fn_body(&out, "hl_off_o_pull").unwrap();
+    assert!(pull_off.contains("kill @e[tag=dw_hl_o_pull]"), "{pull_off}");
     let talk = fn_body(&out, "hl_on_o_talk").unwrap();
     assert!(
         talk.contains(
@@ -908,7 +915,10 @@ fn a_highlight_lights_the_thing_while_armed_and_near() {
         "{off}"
     );
     let done = fn_body(&out, "complete_o_pull").unwrap();
-    assert!(done.contains("kill @e[tag=dw_hl_o_pull]"), "{done}");
+    assert!(
+        done.contains("function hello-world:hl_off_o_pull"),
+        "{done}"
+    );
     let setup = fn_body(&out, "setup").unwrap();
     assert!(setup.contains("team modify dw_hl color gold"), "{setup}");
     assert!(
@@ -916,6 +926,9 @@ fn a_highlight_lights_the_thing_while_armed_and_near() {
             "packtest-datapack/data/hello-world/test/guide_highlight_o_pull.mcfunction"
         )
     );
+    assert!(out.contains_key(
+        "packtest-datapack/data/hello-world/test/guide_highlight_spent_o_pull.mcfunction"
+    ));
 }
 
 /// spec-0104 criterion 6: a wave and a `use` trigger are lit the same way.

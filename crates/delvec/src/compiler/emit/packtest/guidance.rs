@@ -638,37 +638,10 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
             ));
         }
         b.extend(d.open());
+        stage_cells(&h.body, &mut b);
         let near = i32::from(h.within) - 1;
         let far = i32::from(h.within) + 2;
         let pos = |dx: i32| format!("{} {} {}", center(at[0] + dx), corner(at[1]), center(at[2]));
-        if let HlBody::Blocks { cells, .. } = &h.body {
-            b.push(format!("function {ns}:hl_show_{s}"));
-            // Each display stands where its kind draws the lit cell whole: a
-            // block display at the cell's corner, an item display at its
-            // centre. The positions are written here from the cell, never
-            // read from the emitter, and a display is found within a
-            // thousandth of a block of it.
-            for (i, (cell, state)) in cells.iter().enumerate() {
-                let kind = display_entity(state);
-                let half = if kind == "minecraft:item_display" {
-                    0.5
-                } else {
-                    0.0
-                };
-                let [x, y, z] = cell.map(|v| format!("{:.1}", f64::from(v) + half));
-                b.push(format!(
-                    "execute store result score #{s}_p{i} {GUIDE} if entity @e[type={kind},tag=dw_hl_{s},x={x},y={y},z={z},distance=..0.001]"
-                ));
-                b.push(format!("assert score #{s}_p{i} {GUIDE} matches 1"));
-            }
-            b.push(format!(
-                "execute store result score #{s}_pn {GUIDE} if entity @e[tag=dw_hl_{s}]"
-            ));
-            b.push(format!(
-                "assert score #{s}_pn {GUIDE} matches {}",
-                cells.len()
-            ));
-        }
         // Start dark, whatever a sibling or the tick left lit.
         b.push(format!("scoreboard players set {hl} {GUIDE} 1"));
         b.push(format!("function {ns}:hl_off_{s}"));
@@ -681,6 +654,7 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
                 "execute store result score #{s}_n {GUIDE} if entity {lit}"
             ));
             b.push(format!("assert score #{s}_n {GUIDE} matches 0"));
+            assert_no_display(&h.body, s, "u", &mut b);
         }
         // Armed and near: lit.
         b.extend(arm.iter().cloned());
@@ -689,6 +663,7 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
             "execute store result score #{s}_n {GUIDE} if entity {lit}"
         ));
         b.push(format!("assert score #{s}_n {GUIDE} matches 1.."));
+        assert_displays_stand(&h.body, s, &mut b);
         // Armed and far: dark. Every other player within the range — a
         // sibling's dummy standing at the same thing — is held out of play for
         // this one poll, as a watcher is, and handed back at once.
@@ -723,6 +698,7 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
             "execute store result score #{s}_n {GUIDE} if entity {lit}"
         ));
         b.push(format!("assert score #{s}_n {GUIDE} matches 0"));
+        assert_no_display(&h.body, s, "f", &mut b);
         // Leave nothing lit, and the state as it was.
         b.push(format!("function {ns}:hl_off_{s}"));
         if let Some(l) = &latch {
@@ -731,14 +707,220 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
             ));
         }
         b.extend(d.close());
-        if h.objective.is_some() {
-            b.push(format!("kill @e[tag=dw_hl_{s}]"));
-        }
         if stand_in {
             b.push("kill @e[tag=dw_pt_hlw]".to_string());
         }
         out.insert(
             format!("packtest-datapack/data/{ns}/test/guide_highlight_{s}.mcfunction"),
+            lines(&b).into_bytes(),
+        );
+    }
+}
+
+/// For a block highlight whose cells hold a block the objective's activation
+/// places, the lines that place it as the activation does: the state the
+/// display draws. Nothing for a cell the world carries.
+fn stage_cells(body: &HlBody, b: &mut Vec<String>) {
+    if let HlBody::Blocks {
+        cells,
+        staged: true,
+        ..
+    } = body
+    {
+        for ([x, y, z], state) in cells {
+            b.push(format!(
+                "execute unless block {x} {y} {z} {state} run setblock {x} {y} {z} {state}"
+            ));
+        }
+    }
+}
+
+/// For a block highlight, the assertion that no display of it exists at all
+/// (`k` names the holder).
+fn assert_no_display(body: &HlBody, s: &str, k: &str, b: &mut Vec<String>) {
+    if matches!(body, HlBody::Blocks { .. }) {
+        b.push(format!(
+            "execute store result score #{s}_x{k} {GUIDE} if entity @e[tag=dw_hl_{s}]"
+        ));
+        b.push(format!("assert score #{s}_x{k} {GUIDE} matches 0"));
+    }
+}
+
+/// For a block highlight, the assertion that each display stands where its
+/// kind draws the lit cell whole — a block display at the cell's corner, an
+/// item display at its centre, written here from the cell, never read from
+/// the emitter, and found within a thousandth of a block of it — and that the
+/// displays number the cells.
+fn assert_displays_stand(body: &HlBody, s: &str, b: &mut Vec<String>) {
+    let HlBody::Blocks { cells, .. } = body else {
+        return;
+    };
+    for (i, (cell, state)) in cells.iter().enumerate() {
+        let kind = display_entity(state);
+        let half = if kind == "minecraft:item_display" {
+            0.5
+        } else {
+            0.0
+        };
+        let [x, y, z] = cell.map(|v| format!("{:.1}", f64::from(v) + half));
+        b.push(format!(
+            "execute store result score #{s}_p{i} {GUIDE} if entity @e[type={kind},tag=dw_hl_{s},x={x},y={y},z={z},distance=..0.001]"
+        ));
+        b.push(format!("assert score #{s}_p{i} {GUIDE} matches 1"));
+    }
+    b.push(format!(
+        "execute store result score #{s}_pn {GUIDE} if entity @e[tag=dw_hl_{s}]"
+    ));
+    b.push(format!(
+        "assert score #{s}_pn {GUIDE} matches {}",
+        cells.len()
+    ));
+}
+
+/// The state a hand's press leaves a pressed block in: a lever's or a
+/// button's `powered` turned over. `None` for a state with no `powered`.
+fn pressed_state(state: &str) -> Option<String> {
+    let (name, props) = state.split_once('[')?;
+    let props = props.trim_end_matches(']');
+    let mut hit = false;
+    let kv: Vec<String> = props
+        .split(',')
+        .map(|p| match p.split_once('=') {
+            Some(("powered", v)) => {
+                hit = true;
+                format!("powered={}", if v == "true" { "false" } else { "true" })
+            }
+            _ => p.to_string(),
+        })
+        .collect();
+    hit.then(|| format!("{name}[{}]", kv.join(",")))
+}
+
+/// A block highlight leaves the world once its act is spent (spec-0104 §7.3):
+/// no display of it exists after a trigger fires — its `once` latch written
+/// and its pressed block pressed, the two writes a press makes before
+/// anything else — nor after an objective completes. One template per block
+/// highlight whose act a firing or a completion ends: an objective's, and a
+/// trigger's that is `once` or whose block a press changes.
+pub(super) fn emit_highlight_spent_packtests(plan: &Plan, out: &mut BuildOutput, g: &Guide) {
+    let ns = &plan.namespace;
+    let c = plan.campaign;
+    let title = artifact_title(c);
+    for h in &g.highlights {
+        let HlBody::Blocks { cells, at, .. } = &h.body else {
+            continue;
+        };
+        let s = &h.safe;
+        let n = cells.len();
+        let mut d = Drive::new(&format!("hs{s}"));
+        let mut b: Vec<String>;
+        let (pin, me) = pin_dummy(&format!("dw_pt_hs_{s}"));
+        let lit_check = |b: &mut Vec<String>, k: &str, want: String| {
+            b.push(format!(
+                "execute store result score #{s}_s{k} {GUIDE} if entity @e[tag=dw_hl_{s}]"
+            ));
+            b.push(format!("assert score #{s}_s{k} {GUIDE} matches {want}"));
+        };
+        let near = format!(
+            "tp {me} {} {} {}",
+            center(at[0] + i32::from(h.within) - 1),
+            corner(at[1]),
+            center(at[2])
+        );
+        match (&h.objective, &h.trigger) {
+            (Some(oid), _) => {
+                let st = Guide::state_holder(&plan::safe_local(oid));
+                d.put(&obj_score(oid), 0);
+                b = packtest_header(&format!(
+                    "{title}: the highlight on `{oid}` leaves the world when it completes (spec-0104 §7.3)"
+                ));
+                b.push(format!("function {ns}:setup"));
+                b.push(pin);
+                b.extend(d.open());
+                stage_cells(&h.body, &mut b);
+                b.push(format!("scoreboard players set {st} {GUIDE} 1"));
+                b.push(format!("scoreboard players set #hl_{s} {GUIDE} 1"));
+                b.push(format!("function {ns}:hl_off_{s}"));
+                b.push(near);
+                b.push(format!("function {ns}:hl_poll_{s}"));
+                lit_check(&mut b, "l", n.to_string());
+                b.push(format!(
+                    "execute as {me} at @s run function {ns}:complete_{}",
+                    safe_obj_fn(oid)
+                ));
+                lit_check(&mut b, "c", "0".to_string());
+                // And on the next tick, read from the state the completion wrote.
+                b.push(format!("function {ns}:guide_scan"));
+                b.push(format!("function {ns}:hl_poll_{s}"));
+                lit_check(&mut b, "t", "0".to_string());
+                b.push(format!("function {ns}:hl_off_{s}"));
+                b.extend(d.close());
+                b.push(format!("function {ns}:guide_scan"));
+            }
+            (None, Some(tid)) => {
+                let Some(t) = c
+                    .quests
+                    .content
+                    .triggers
+                    .iter()
+                    .find(|t| t.id.as_str() == tid)
+                else {
+                    continue;
+                };
+                if !t.requires_state.is_empty() {
+                    continue;
+                }
+                let pressed: Vec<([i32; 3], String, String)> = cells
+                    .iter()
+                    .filter_map(|(c, st)| pressed_state(st).map(|p| (*c, st.clone(), p)))
+                    .collect();
+                if !t.once && pressed.is_empty() {
+                    continue;
+                }
+                for f in &t.requires_flags {
+                    d.put(&plan::flag_score(f.as_str()), 1);
+                }
+                for f in &t.forbids_flags {
+                    d.put(&plan::flag_score(f.as_str()), 0);
+                }
+                let l = format!("#trig_{}", plan::safe_local(tid));
+                b = packtest_header(&format!(
+                    "{title}: the highlight on `{tid}` leaves the world when the trigger fires (spec-0104 §7.3)"
+                ));
+                b.push(format!("function {ns}:setup"));
+                b.push(pin);
+                b.push(format!(
+                    "execute store result score #sv_{s}_hsl {GUIDE} run scoreboard players get {l} dw.sys"
+                ));
+                b.extend(d.open());
+                b.push(format!("scoreboard players set {l} dw.sys 0"));
+                b.push(format!("scoreboard players set #hl_{s} {GUIDE} 1"));
+                b.push(format!("function {ns}:hl_off_{s}"));
+                b.push(near);
+                b.push(format!("function {ns}:hl_poll_{s}"));
+                lit_check(&mut b, "l", n.to_string());
+                // The press: the latch the trigger's function writes first,
+                // and the block a hand turns over.
+                b.push(format!("scoreboard players set {l} dw.sys 1"));
+                for ([x, y, z], _, p) in &pressed {
+                    b.push(format!("setblock {x} {y} {z} {p}"));
+                }
+                b.push(format!("function {ns}:hl_poll_{s}"));
+                lit_check(&mut b, "f", "0".to_string());
+                // The world and the latch as they were.
+                for ([x, y, z], st, _) in &pressed {
+                    b.push(format!("setblock {x} {y} {z} {st}"));
+                }
+                b.push(format!("function {ns}:hl_off_{s}"));
+                b.push(format!(
+                    "scoreboard players operation {l} dw.sys = #sv_{s}_hsl {GUIDE}"
+                ));
+                b.extend(d.close());
+            }
+            _ => continue,
+        }
+        out.insert(
+            format!("packtest-datapack/data/{ns}/test/guide_highlight_spent_{s}.mcfunction"),
             lines(&b).into_bytes(),
         );
     }

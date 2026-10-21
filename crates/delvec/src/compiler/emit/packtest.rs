@@ -235,6 +235,7 @@ pub(super) fn emit_packtest(
     guidance::emit_compass_wave_packtest(plan, out, guide);
     guidance::emit_journal_packtests(plan, out, guide, chrome);
     guidance::emit_highlight_packtests(plan, out, guide);
+    guidance::emit_highlight_spent_packtests(plan, out, guide);
     class::emit_class_apply_packtests(plan, out);
     npc::emit_npc_talk_packtests(plan, out);
     // Every environment trigger's own bundle, plus a presser's dispatch and

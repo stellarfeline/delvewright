@@ -108,11 +108,15 @@ const WAVE_AIM_TAG: &str = "dw_caim";
 /// What one highlight lights (§7.2).
 #[derive(Clone, Debug)]
 pub(super) enum HlBody {
-    /// Block displays: one per cell, with the state each draws, polled from
-    /// `at`.
+    /// Block displays: one per cell, with the complete state each draws
+    /// ([`drawn_state`]), polled from `at`. A display exists only while the
+    /// highlight is lit and its cell holds what it draws ([`hold_lines`]).
     Blocks {
         cells: Vec<([i32; 3], String)>,
         at: [i32; 3],
+        /// The cells hold a block the objective's activation places (an
+        /// interact's prop, a collect's chest), not one the world carries.
+        staged: bool,
     },
     /// Every body carrying this tag (a wave), or the NPC's body.
     Bodies { tag: String, npc: bool },
@@ -315,10 +319,12 @@ fn highlight_acts(
                     .as_ref()
                     .map(|p| namespaced(&p.block))
                     .or_else(|| block_at(cell));
+                let staged = prop.is_some();
                 let Some(state) = state else { continue };
                 HlBody::Blocks {
                     cells: vec![(cell, state)],
                     at: cell,
+                    staged,
                 }
             }
             Objective::Collect {
@@ -344,19 +350,20 @@ fn highlight_acts(
                         body_fn: super::holders::holder_fn(h),
                     }
                 } else {
-                    let (cell, state) = match adopted {
+                    let (cell, state, staged) = match adopted {
                         Some(cell) => match block_at(cell) {
-                            Some(s) => (cell, s),
+                            Some(s) => (cell, s, false),
                             None => continue,
                         },
                         None => match at(anchor.as_str()) {
-                            Some(cell) => (cell, "minecraft:chest".to_string()),
+                            Some(cell) => (cell, "minecraft:chest".to_string(), true),
                             None => continue,
                         },
                     };
                     HlBody::Blocks {
                         cells: vec![(cell, state)],
                         at: cell,
+                        staged,
                     }
                 }
             }
@@ -432,7 +439,11 @@ fn highlight_acts(
                 let Some(at) = cells.first().map(|c| c.0) else {
                     continue;
                 };
-                HlBody::Blocks { cells, at }
+                HlBody::Blocks {
+                    cells,
+                    at,
+                    staged: false,
+                }
             }
             TriggerOn::StrikeNpc { npc } => HlBody::Bodies {
                 tag: format!("dw_npc_{}", plan::safe_local(npc.as_str())),
@@ -450,7 +461,66 @@ fn highlight_acts(
             armed,
         });
     }
+    // Every display draws the complete state, and the same string is what its
+    // cell is held to, so the copy and the check cannot disagree.
+    for h in &mut out {
+        if let HlBody::Blocks { cells, .. } = &mut h.body {
+            for (_, state) in cells.iter_mut() {
+                *state = drawn_state(state);
+            }
+        }
+    }
     out
+}
+
+/// The complete state a block display of `state` draws: every property the
+/// state leaves out filled with the pinned default the game resolves it to
+/// (`BlockRegistry::default_state`), written `minecraft:id[k=v,…]` in
+/// property order. A `block_display`'s `block_state` fills an unwritten
+/// property the same way, so this is the state the display shows.
+pub(super) fn drawn_state(state: &str) -> String {
+    let (name, written) = match state.split_once('[') {
+        Some((n, rest)) => (n, rest.trim_end_matches(']')),
+        None => (state, ""),
+    };
+    let name = namespaced(name);
+    let mut props: BTreeMap<String, String> = written
+        .split(',')
+        .filter_map(|kv| kv.split_once('='))
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    if let Some(d) = crate::schem::blocks::BlockRegistry::v1_21_11().default_state(&name) {
+        for (k, v) in d {
+            props.entry(k.clone()).or_insert_with(|| v.clone());
+        }
+    }
+    if props.is_empty() {
+        return name;
+    }
+    let kv: Vec<String> = props.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    format!("{name}[{}]", kv.join(","))
+}
+
+/// The block predicate a display of `state` holds its cell to: what the
+/// display draws, and nothing it does not. A `block_display` draws the whole
+/// state; an `item_display` draws the block's item turned by `facing`, so its
+/// cell is held to the block and its `facing`.
+pub(super) fn drawn_predicate(state: &str) -> String {
+    if display_entity(state) == "minecraft:block_display" {
+        return state.to_string();
+    }
+    let (name, props) = match state.split_once('[') {
+        Some((n, rest)) => (n, rest.trim_end_matches(']')),
+        None => (state, ""),
+    };
+    match props
+        .split(',')
+        .filter_map(|kv| kv.split_once('='))
+        .find(|(k, _)| *k == "facing")
+    {
+        Some((_, v)) => format!("{}[facing={v}]", namespaced(name)),
+        None => namespaced(name),
+    }
 }
 
 /// The selector of a highlighted body: every entity carrying the tag that can
@@ -565,10 +635,12 @@ pub(super) fn display_origin(cell: [i32; 3], state: &str) -> String {
     }
 }
 
-/// The summon of one highlight display at `cell` drawing `state` (§7.2).
+/// The summon of one highlight display at `cell` drawing `state` (§7.2),
+/// lit from the moment it exists: a display is summoned only while its
+/// highlight is lit ([`hold_lines`]).
 pub(super) fn display_summon(safe: &str, cell: [i32; 3], state: &str) -> String {
     let base = state.split('[').next().unwrap_or(state);
-    let tags = format!("Tags:[{FIXTURE_NBT}\"dw_hl\",\"dw_hl_{safe}\"]");
+    let tags = format!("Glowing:1b,Tags:[{FIXTURE_NBT}\"dw_hl\",\"dw_hl_{safe}\"]");
     let at = display_origin(cell, state);
     if display_entity(state) == "minecraft:item_display" {
         format!(
@@ -584,37 +656,57 @@ pub(super) fn display_summon(safe: &str, cell: [i32; 3], state: &str) -> String 
     }
 }
 
-/// The lines that place a highlight's displays: run at an objective's
-/// activation, and at `setup_finish` for a trigger. Guarded so a second run
-/// places nothing twice. Empty for a body highlight.
-pub(super) fn show_lines(h: &HlAct) -> Vec<String> {
-    match &h.body {
-        HlBody::Blocks { cells, .. } => {
-            let mut v = vec![format!("kill @e[tag=dw_hl_{}]", h.safe)];
-            v.extend(cells.iter().map(|(c, s)| display_summon(&h.safe, *c, s)));
-            v
-        }
-        HlBody::Bodies { .. } | HlBody::Holder { .. } => Vec::new(),
-    }
+/// The selector of the one display of highlight `safe` standing at `cell`
+/// drawing `state`: found where its kind stands to draw the cell, within a
+/// thousandth of a block.
+fn cell_display(safe: &str, cell: [i32; 3], state: &str) -> String {
+    let o = display_origin(cell, state);
+    let [x, y, z]: [&str; 3] = {
+        let p: Vec<&str> = o.split(' ').collect();
+        [p[0], p[1], p[2]]
+    };
+    format!(
+        "@e[type={},tag=dw_hl_{safe},x={x},y={y},z={z},distance=..0.001]",
+        display_entity(state)
+    )
 }
 
-/// The lines an objective's completion runs for its highlight: the displays
-/// removed, the bodies' glow cleared.
-pub(super) fn completion_lines(g: &Guide, oid: &str) -> Vec<String> {
-    let Some(h) = g.highlight_of(oid) else {
+/// The body of `hl_hold_<a>`, the one place a block highlight's displays are
+/// summoned: run while the highlight is lit, it keeps exactly one display on
+/// each cell that holds the state the display draws, and none on a cell that
+/// does not. A display is never left standing over a cell that changed — a
+/// lever pulled, a button pressed, a block taken — and none exists while the
+/// highlight is dark: `hl_off_<a>` kills them all, and the poll turns the
+/// highlight off on the tick its act stops being armed. Empty for a body
+/// highlight.
+pub(super) fn hold_lines(h: &HlAct) -> Vec<String> {
+    let HlBody::Blocks { cells, .. } = &h.body else {
         return Vec::new();
     };
-    let mut v = vec![format!("scoreboard players set #hl_{} {GUIDE} 0", h.safe)];
-    match &h.body {
-        HlBody::Blocks { .. } => v.push(format!("kill @e[tag=dw_hl_{}]", h.safe)),
-        HlBody::Bodies { tag, npc } => {
-            let sel = body_selector(tag, *npc);
-            v.push(format!("effect clear {sel} minecraft:glowing"));
-            v.push(format!("team leave {sel}"));
-        }
-        HlBody::Holder { tag, .. } => v.extend(holder_glow(tag, false)),
+    let mut v = Vec::new();
+    for (cell, state) in cells {
+        let pred = drawn_predicate(state);
+        let [x, y, z] = *cell;
+        let sel = cell_display(&h.safe, *cell, state);
+        v.push(format!(
+            "execute unless block {x} {y} {z} {pred} run kill {sel}"
+        ));
+        v.push(format!(
+            "execute if block {x} {y} {z} {pred} unless entity {sel} run {}",
+            display_summon(&h.safe, *cell, state)
+        ));
     }
     v
+}
+
+/// The lines an objective's completion runs for its highlight: the same
+/// `hl_off_<a>` the poll turns it dark with, so the displays are removed and
+/// the bodies' glow cleared through the one way a highlight goes out.
+pub(super) fn completion_lines(g: &Guide, ns: &str, oid: &str) -> Vec<String> {
+    match g.highlight_of(oid) {
+        Some(h) => vec![format!("function {ns}:hl_off_{}", h.safe)],
+        None => Vec::new(),
+    }
 }
 
 /// The `setup` lines: the scoreboards and the highlight team.
@@ -641,15 +733,6 @@ pub(super) fn setup_lines(g: &Guide) -> Vec<String> {
         v.push(format!("team modify {HL_TEAM} color {HL_COLOR}"));
     }
     v
-}
-
-/// The `setup_finish` lines: a trigger's highlight displays.
-pub(super) fn setup_finish_lines(g: &Guide) -> Vec<String> {
-    g.highlights
-        .iter()
-        .filter(|h| h.trigger.is_some())
-        .flat_map(show_lines)
-        .collect()
 }
 
 /// The `tick` lines (§6.3, §6.4, §7.3, §8.3, §8.4).
@@ -877,17 +960,18 @@ pub(super) fn functions(
                 h.safe
             ));
         }
+        if matches!(h.body, HlBody::Blocks { .. }) {
+            // While lit, every cell is held to what its display draws.
+            poll.push(format!(
+                "execute if score {hl} {GUIDE} matches 1 run function {ns}:hl_hold_{}",
+                h.safe
+            ));
+        }
         fns.push((format!("hl_poll_{}", h.safe), lines(&poll)));
         let (on, off) = match &h.body {
             HlBody::Blocks { .. } => (
-                vec![format!(
-                    "execute as @e[tag=dw_hl_{}] run data merge entity @s {{Glowing:1b}}",
-                    h.safe
-                )],
-                vec![format!(
-                    "execute as @e[tag=dw_hl_{}] run data merge entity @s {{Glowing:0b}}",
-                    h.safe
-                )],
+                vec![format!("function {ns}:hl_hold_{}", h.safe)],
+                vec![format!("kill @e[tag=dw_hl_{}]", h.safe)],
             ),
             HlBody::Bodies { tag, npc } => {
                 let sel = body_selector(tag, *npc);
@@ -911,7 +995,7 @@ pub(super) fn functions(
         fns.push((format!("hl_on_{}", h.safe), lines(&on)));
         fns.push((format!("hl_off_{}", h.safe), lines(&off)));
         if matches!(h.body, HlBody::Blocks { .. }) {
-            fns.push((format!("hl_show_{}", h.safe), lines(&show_lines(h))));
+            fns.push((format!("hl_hold_{}", h.safe), lines(&hold_lines(h))));
         }
     }
 
@@ -1443,5 +1527,61 @@ mod tests {
             assert!(line.starts_with("summon minecraft:item_display "), "{line}");
             assert_eq!(at(&line), want, "{line}");
         }
+    }
+
+    /// A display draws the complete state: a lever written without
+    /// `powered` is drawn unpowered, and that is the state its cell is held
+    /// to, so a pulled lever no longer matches.
+    #[test]
+    fn a_display_draws_and_holds_the_complete_state() {
+        assert_eq!(
+            drawn_state("lever[face=floor,facing=north]"),
+            "minecraft:lever[face=floor,facing=north,powered=false]"
+        );
+        assert_eq!(drawn_state("minecraft:stone"), "minecraft:stone");
+        // An item display draws the item turned by `facing`: that is all it
+        // holds its cell to.
+        assert_eq!(
+            drawn_predicate(&drawn_state("minecraft:chest")),
+            "minecraft:chest[facing=north]"
+        );
+    }
+
+    /// The one place a block highlight's display is summoned holds each cell
+    /// to what it draws: killed where the cell differs, summoned where it
+    /// matches and none stands.
+    #[test]
+    fn a_held_display_goes_when_its_cell_changes() {
+        let state = drawn_state("minecraft:lever[face=floor,facing=north]");
+        let h = HlAct {
+            safe: "t_x".to_string(),
+            objective: None,
+            trigger: Some("trigger/x".to_string()),
+            within: 6,
+            body: HlBody::Blocks {
+                cells: vec![([1, 2, 3], state.clone())],
+                at: [1, 2, 3],
+                staged: false,
+            },
+            armed: String::new(),
+        };
+        let v = hold_lines(&h);
+        assert_eq!(v.len(), 2, "{v:?}");
+        assert_eq!(
+            v[0],
+            format!(
+                "execute unless block 1 2 3 {state} run kill @e[type=minecraft:block_display,tag=dw_hl_t_x,x=1.0,y=2.0,z=3.0,distance=..0.001]"
+            )
+        );
+        assert!(
+            v[1].starts_with(&format!("execute if block 1 2 3 {state} unless entity @e[type=minecraft:block_display,tag=dw_hl_t_x,")),
+            "{}",
+            v[1]
+        );
+        assert!(
+            v[1].contains("run summon minecraft:block_display 1.0 2.0 3.0 {Glowing:1b,"),
+            "{}",
+            v[1]
+        );
     }
 }
