@@ -118,6 +118,11 @@
         "b": "node/loft",
         "class": "drop",
         "falls": "b-to-a",
+        "gating": {
+          "flags": [
+            "flag/muster-cleared"
+          ]
+        },
         "id": "edge/loft-drop",
         "shortcut": true
       },

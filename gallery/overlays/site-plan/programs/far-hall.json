@@ -44,8 +44,11 @@
       {
         "a": "room",
         "b": "exterior",
-        "class": "walk",
-        "via": "loft-drop"
+        "bar": {
+          "block": "bar",
+          "region": "seam-loft-drop"
+        },
+        "class": "barred"
       },
       {
         "a": "room",
@@ -176,18 +179,6 @@
             "role": "lid"
           },
           "op": "fill"
-        },
-        "weight": 1
-      }
-    ],
-    "loft-drop-air": [
-      {
-        "body": {
-          "body": {
-            "op": "void"
-          },
-          "op": "claim",
-          "region": "loft-drop"
         },
         "weight": 1
       }
@@ -855,7 +846,7 @@
                           },
                           {
                             "op": "call",
-                            "symbol": "loft-drop-air"
+                            "symbol": "seam-loft-drop-bar"
                           },
                           {
                             "op": "call",
@@ -1180,10 +1171,6 @@
                           },
                           {
                             "op": "call",
-                            "symbol": "wall"
-                          },
-                          {
-                            "op": "call",
                             "symbol": "room-air"
                           },
                           {
@@ -1217,14 +1204,7 @@
                           {
                             "blocks": {
                               "expr": "int",
-                              "value": 1
-                            },
-                            "size": "absolute"
-                          },
-                          {
-                            "blocks": {
-                              "expr": "int",
-                              "value": 8
+                              "value": 9
                             },
                             "size": "absolute"
                           },
@@ -1973,6 +1953,21 @@
           },
           "op": "claim",
           "region": "room"
+        },
+        "weight": 1
+      }
+    ],
+    "seam-loft-drop-bar": [
+      {
+        "body": {
+          "body": {
+            "material": {
+              "role": "bar"
+            },
+            "op": "fill"
+          },
+          "op": "claim",
+          "region": "seam-loft-drop"
         },
         "weight": 1
       }

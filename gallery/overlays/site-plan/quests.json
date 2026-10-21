@@ -258,6 +258,14 @@
               "type": "open-gate"
             },
             {
+              "anchor": "anchor/seam-loft-drop",
+              "happening": {
+                "text": "The bars across the loft's drop lift with them.",
+                "verb": "opens"
+              },
+              "type": "open-gate"
+            },
+            {
               "anchor": "anchor/seam-undercroft-shaft",
               "happening": {
                 "text": "The hatch over the undercroft shaft falls open.",
