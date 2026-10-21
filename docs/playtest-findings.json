@@ -3468,6 +3468,41 @@
       "note": "Carried by `DW1053` and `DW1054` (`compiler::nav::learned`, spec-0118): over the configurations, faces and reach `DW1011` judges (`compiler::nav::shutmodel`), every gated connection met shut at a face owes `gating.learned`, and the word is confirmed over the world. The general form is the ruling's: no source gives a length or rise at which a branch to a shut way is too long, so the branch's length and rise are written in `validation/shut-ways.json` and never judged. The binding counts the layout graph's gated connections (`shut-ways.json` `gated`); `applies_when` counts the traversal connections that carry a `gating`.",
       "round": 1,
       "triage": "capability"
+    },
+    {
+      "applies_when": {
+        "files": [
+          "site-plan.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "prefix": {
+            "edge": "edge/"
+          }
+        }
+      },
+      "binding": {
+        "files": [
+          "site-plan.json"
+        ],
+        "kind": "dsl",
+        "match": {
+          "has": [
+            "opening"
+          ]
+        }
+      },
+      "campaign": "three-ways-shut",
+      "carrier": {
+        "code": "DW1057",
+        "kind": "dw"
+      },
+      "finding": "a stone stair three wide stood with its foot against a shut way's barricade and that way's mouth: before the beat the barricade's wood stood over one of the stair's three columns and the jamb over another, and after it the jamb still did, while every proof passed on the one free column",
+      "general_form": "the clear width a door, a stair or a road declares is clear along the whole way — its approaches, every course of a stair's run, a contact's span, a way place's run — in every state its cells can take, and a narrowing the author means is declared on the way and confirmed cell for cell",
+      "id": "tws-01",
+      "note": "Carried by DW1057 (compiler::nav::width, build tier), with DW1058 holding every declared narrowing to the bytes (spec-0120). The binding counts the site plan's portal seams — every seam with an `opening`, a stair's among them — which is the class whose approaches and runs the check judges; the precondition is the plan's seams themselves (`edge/` ids). The re-run that closes the row is on the demo re-detailed in the shape spec-0120 §8 gives it — its mouth a fireplace that hides the passage with its opening as wide as the stair — and that demo is built on spec-0118's surface, so the re-run is measured on the integration that carries both; until then the row stays open.",
+      "round": 1,
+      "triage": "capability"
     }
   ],
   "ledger_version": "2026-08-11"

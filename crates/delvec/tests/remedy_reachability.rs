@@ -5287,3 +5287,131 @@ fn a_one_way_door_dw1011_counts_is_judged_at_its_wrong_side() {
     assert_eq!(wrong_side["openable"], false, "{ledger}");
     assert_eq!(wrong_side["confirmed"], true, "{ledger}");
 }
+
+// ---------------------------------------------------------------------------
+// A way is whole (spec-0120 §6): DW1057 and DW1058
+// ---------------------------------------------------------------------------
+
+/// The blockout fixture with the loft stair's arch at `at` on the hall's
+/// east face — the loft, the drop off it and the vista into it moved with it
+/// — and `narrowed` written on the cell door's seam. At 14 the run the
+/// stand-in lays walks back along the hall's south row (z 18..19), and its
+/// course 8 (`polished_diorite`, one full course) stands in the second of the
+/// two columns of the cell door's approach (x 16, z 19); at 13 the run walks
+/// one row north and the approach is whole.
+fn narrowed_by_the_run(tag: &str, at: i64, narrowed: serde_json::Value) -> PathBuf {
+    site_plan_campaign(tag, "blockout", None, |plan| {
+        let content = &mut plan["content"];
+        for s in content["seams"].as_array_mut().unwrap().iter_mut() {
+            if s["edge"] == "edge/hall-loft" {
+                s["at"] = serde_json::json!(at);
+            }
+            if s["edge"] == "edge/loft-drop" {
+                s["meets"] = serde_json::json!(at - 2);
+                s["contact"] = serde_json::json!({"extent": [4, 3]});
+            }
+            if s["edge"] == "edge/hall-cell" && !narrowed.is_null() {
+                s["narrowed"] = narrowed.clone();
+            }
+        }
+        for v in content["sightlines"].as_array_mut().unwrap().iter_mut() {
+            if v["edge"] == "edge/loft-sightline" {
+                v["to"] = serde_json::json!([29, 70, 19]);
+            }
+        }
+    })
+}
+
+fn tread_entry(block: &str) -> serde_json::Value {
+    serde_json::json!([{
+        "side": "a",
+        "across": [1, 1],
+        "block": block,
+        "what": "the foot of the loft stair"
+    }])
+}
+
+/// **MOVE THE STRUCTURE.** `DW1057`'s first move: the run that takes one of
+/// the cell door approach's two columns moved one row north, out of it.
+/// Measured on the fixture: at 14, `build` exits 3 with `DW1057` naming
+/// `edge/hall-cell`, `1 of 2` and the tread at `[16, 64, 19]`; at 13, exit 0.
+#[test]
+fn dw1057_moving_the_structure_out_of_the_ways_columns_makes_it_whole() {
+    let prefabs = tmp("dw1057-move-prefabs");
+    let camp = narrowed_by_the_run("dw1057-move-red", 14, serde_json::Value::Null);
+    let (code, before) = build("dw1057-move-red", &camp, &prefabs);
+    assert_eq!(code, 3, "{before}");
+    assert!(
+        before.contains("DW1057 [error]")
+            && before.contains("edge/hall-cell")
+            && before.contains("1 of 2")
+            && before.contains("[16, 64, 19] `minecraft:polished_diorite`"),
+        "{before}"
+    );
+    let camp = narrowed_by_the_run("dw1057-move-green", 13, serde_json::Value::Null);
+    let (code, after) = build("dw1057-move-green", &camp, &prefabs);
+    assert!(!after.contains("DW1057 [error]"), "{after}");
+    assert_eq!(code, 0, "the moved run leaves the approach whole:\n{after}");
+}
+
+/// **DECLARE IT.** `DW1057`'s second move: the narrowing the message hands,
+/// with its `what` written, is confirmed; the same entry with a block other
+/// than the one standing is `DW1058`. Measured on the fixture: declared
+/// `polished_diorite`, exit 0 with `1 narrowed as declared`; declared
+/// `stone_bricks`, exit 3 with `DW1058` naming both blocks.
+#[test]
+fn dw1057_declaring_the_narrowing_confirms_it_and_a_wrong_block_is_dw1058() {
+    let prefabs = tmp("dw1057-declare-prefabs");
+    let camp = narrowed_by_the_run(
+        "dw1057-declare-green",
+        14,
+        tread_entry("minecraft:polished_diorite"),
+    );
+    let (code, after) = build("dw1057-declare-green", &camp, &prefabs);
+    assert!(
+        !after.contains("DW1057 [error]") && !after.contains("DW1058 [error]"),
+        "{after}"
+    );
+    assert!(after.contains("1 narrowed as declared"), "{after}");
+    assert_eq!(code, 0, "{after}");
+    let camp = narrowed_by_the_run(
+        "dw1057-declare-wrong",
+        14,
+        tread_entry("minecraft:stone_bricks"),
+    );
+    let (code, wrong) = build("dw1057-declare-wrong", &camp, &prefabs);
+    assert_eq!(code, 3, "{wrong}");
+    assert!(
+        wrong.contains("DW1058 [error]")
+            && wrong.contains(
+                "declares `minecraft:stone_bricks`, but `minecraft:polished_diorite` stands"
+            ),
+        "{wrong}"
+    );
+}
+
+/// **CORRECT OR REMOVE THE ENTRY, OR PUT THE STRUCTURE BACK.** `DW1058`'s
+/// moves: the run moved off the approach with its excuse left standing is a
+/// stale excuse; the entry removed is green, and so is the run put back under
+/// the entry. Measured on the fixture: stale, exit 3 with `DW1058` and `clear
+/// in every state`; removed, exit 0; put back, exit 0.
+#[test]
+fn dw1058_removing_the_stale_entry_or_putting_the_structure_back_is_green() {
+    let prefabs = tmp("dw1058-prefabs");
+    let entry = tread_entry("minecraft:polished_diorite");
+    let camp = narrowed_by_the_run("dw1058-stale", 13, entry.clone());
+    let (code, stale) = build("dw1058-stale", &camp, &prefabs);
+    assert_eq!(code, 3, "{stale}");
+    assert!(
+        stale.contains("DW1058 [error]") && stale.contains("clear in every state"),
+        "{stale}"
+    );
+    let camp = narrowed_by_the_run("dw1058-removed", 13, serde_json::Value::Null);
+    let (code, removed) = build("dw1058-removed", &camp, &prefabs);
+    assert!(!removed.contains("DW1058 [error]"), "{removed}");
+    assert_eq!(code, 0, "{removed}");
+    let camp = narrowed_by_the_run("dw1058-back", 14, entry);
+    let (code, back) = build("dw1058-back", &camp, &prefabs);
+    assert!(!back.contains("DW1058 [error]"), "{back}");
+    assert_eq!(code, 0, "{back}");
+}

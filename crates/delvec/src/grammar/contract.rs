@@ -868,6 +868,24 @@ fn well_formed(ix: &Index, model: &VoxelModel) -> Gate {
             ));
         }
         way_well_formed(ix, model, i, edge, &site, exterior, &mut bad);
+        // spec-0120 §4.2: a narrowing names a structure in a way's clear width,
+        // so it stands on the five classes a body passes and on nothing else,
+        // and every entry names its cells, a block the registry knows and what
+        // it is.
+        if !edge.narrowed.is_empty() && edge.class == "vision" {
+            bad.push(format!(
+                "{site}: declares {} narrowing(s), and a sightline is no way a body passes",
+                edge.narrowed.len()
+            ));
+        }
+        for (k, n) in edge.narrowed.iter().enumerate() {
+            if n.cells.is_empty() {
+                bad.push(format!("{site}: narrowed[{k}] names no cell"));
+            }
+            if let Err(why) = delvewright_dsl::siteplan::narrowing_text(&n.block, &n.what) {
+                bad.push(format!("{site}: narrowed[{k}] is refused: {why}"));
+            }
+        }
 
         let via = &ix.via_cells[i];
         if via.is_empty() {

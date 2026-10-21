@@ -52,7 +52,12 @@ form and the commands are in *Reference: drawing the map's reference*.
    layer opens `anchor/seam-<edge>`. A door shut by bars is a `walk` with a
    `gating`; a stair, a ladder or a shaft the story opens later is a gated
    `stair`, `climb` or `drop`. `opens_from` (`a`, `b`, default either) names
-   the side a one-sided way opens from. Plus `entry`,
+   the side a one-sided way opens from. **A structure that hides a shut way
+   stands only in that way's own width; it never enters the width of a door, a
+   stair or a road beside it** — a fireplace that hides a passage is built round
+   the passage's opening, its cheeks beside it and its mantel above, and what
+   stands inside the opening is the way's own gate, cleared when the way opens.
+   Plus `entry`,
    `goal`, an authored `critical_path[]`, and `beats[]` binding every
    place-bound quest beat to the node it happens in.
    - **A place carries no size class.** Its size is its box's `extent` in the

@@ -55,6 +55,7 @@ mod timed_gate;
 mod trap;
 mod view;
 mod wave;
+pub mod width;
 pub use actor::*;
 pub use ambush::*;
 pub use checkpoint::*;

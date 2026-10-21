@@ -976,6 +976,16 @@ const FLIGHT: (i32, i32, i32, i32) = (19, 20, 21, 22);
 /// exported metadata lists them in.
 const TREADS: [(i32, i32); 2] = [(1, 22), (2, 21)];
 
+/// **The newel post at the foot of the flight** (spec-0120): one column of the
+/// flight's two, at its foot, standing inside the way's clear width on purpose
+/// and declared on the flight's contract edge (`narrowed`), so the piece way's
+/// declaration is bound and the clear-width check confirms it cell for cell.
+const NEWEL: [i32; 3] = [FLIGHT.1, 1, FLIGHT.3 + 1];
+
+/// What the newel is: a post of dark wood, a full cube a body does not step
+/// onto, so it takes its column of the way.
+const NEWEL_BLOCK: &str = "minecraft:stripped_dark_oak_log";
+
 /// What the treads are laid in. Deliberately not the hall's own stone: a player
 /// who repairs the flight should be able to see which courses they put back.
 const TREAD_BLOCK: &str = "minecraft:stone_bricks";
@@ -1352,6 +1362,9 @@ fn block_at(
     }
     if [x, y, z] == SEALED_CATALYST {
         return ("minecraft:sculk_catalyst", Some(SEALED_CATALYST_STATE));
+    }
+    if [x, y, z] == NEWEL {
+        return (NEWEL_BLOCK, Some(&[("axis", "y")]));
     }
     if y == 0 {
         let (bx0, bx1, bz0, bz1) = BURNING_STRIP;
@@ -2211,7 +2224,12 @@ fn spatial_contract() -> serde_json::Value {
                     "boxes": treads,
                     "role": "tread",
                     "block": TREAD_BLOCK
-                }
+                },
+                "narrowed": [{
+                    "cells": [NEWEL],
+                    "block": NEWEL_BLOCK,
+                    "what": "the newel post at the foot of the mezzanine flight"
+                }]
             }
         ]
     })
@@ -2583,6 +2601,18 @@ fn lift_metadata(meta: &serde_json::Value) -> serde_json::Value {
         match v {
             serde_json::Value::Object(map) => {
                 for (k, child) in map.iter_mut() {
+                    // A narrowing's `cells` are positions too, each one.
+                    if k == "cells" {
+                        if let Some(cells) = child.as_array_mut() {
+                            for c in cells.iter_mut() {
+                                if let Some(a) = c.as_array_mut().filter(|a| a.len() == 3) {
+                                    let y = a[1].as_i64().expect("a cell's y is an integer");
+                                    a[1] = serde_json::json!(y + SHORE_PLINTH as i64);
+                                }
+                            }
+                            continue;
+                        }
+                    }
                     if matches!(k.as_str(), "pos" | "local_pos" | "from" | "to") {
                         if let Some(a) = child.as_array_mut() {
                             if a.len() == 3 {

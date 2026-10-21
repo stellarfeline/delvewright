@@ -98,6 +98,7 @@ fn edge(a: &str, b: &str, class: &str) -> ContractEdge {
         via: None,
         bar: None,
         way: None,
+        narrowed: Vec::new(),
     }
 }
 
@@ -2397,4 +2398,65 @@ fn a_leafy_scenery_crown_owes_no_floor_and_a_reached_one_does() {
         gate(&reached, "contract-coverage").failed(),
         "a reached place's standable leaf tops are owed a declaration"
     );
+}
+
+/// **A narrowing stands on a way a body passes** (spec-0120 §4.2): the hall's
+/// door may declare the structure it means inside its width, and the same
+/// entry on a sightline, with no cell, with an empty `what` or a block the
+/// registry does not know is refused by `contract-well-formed`.
+#[test]
+fn a_narrowing_on_a_way_is_well_formed_and_on_a_sightline_or_unsaid_it_is_not() {
+    use delvec::schem::prefab::EdgeNarrowing;
+    let entry = |cells: Vec<[i32; 3]>, block: &str, what: &str| EdgeNarrowing {
+        cells,
+        block: block.to_string(),
+        what: what.to_string(),
+    };
+    let (b, mut c) = hall();
+    c.edges[0].narrowed = vec![entry(vec![[0, 1, 4]], "minecraft:oak_fence", "a rail post")];
+    let report = check(&b.model, &c, &no_anchors());
+    let g = gate(&report, "contract-well-formed");
+    assert!(g.passed(), "{}", g.detail);
+
+    for (bad, cells, block, what, says) in [
+        (
+            "vision",
+            vec![[0, 1, 4]],
+            "minecraft:oak_fence",
+            "a rail post",
+            "a sightline is no way",
+        ),
+        (
+            "walk",
+            Vec::new(),
+            "minecraft:oak_fence",
+            "a rail post",
+            "names no cell",
+        ),
+        (
+            "walk",
+            vec![[0, 1, 4]],
+            "minecraft:oak_fence",
+            " ",
+            "`what` is empty",
+        ),
+        (
+            "walk",
+            vec![[0, 1, 4]],
+            "minecraft:no_such_block",
+            "a rail post",
+            "names no block",
+        ),
+    ] {
+        let (b, mut c) = hall();
+        c.edges[0].narrowed = vec![entry(cells, block, what)];
+        if bad == "vision" {
+            c.edges[0].class = "vision".to_string();
+            c.edges[0].rise = None;
+        }
+        let report = check(&b.model, &c, &no_anchors());
+        let g = gate(&report, "contract-well-formed");
+        assert!(!g.passed(), "{bad}: {}", g.detail);
+        assert!(g.detail.contains(says), "{bad}: {}", g.detail);
+    }
 }
