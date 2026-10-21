@@ -5047,3 +5047,243 @@ fn dw1030_loosening_the_interval_lets_a_world_reach_the_ending() {
     );
     assert_eq!(code, 0, "the loosened interval is reached:\n{after}");
 }
+
+// ---------------------------------------------------------------------------
+// DW1053, DW1054 — a shut way declares how it is learned (spec-0118 §6)
+// ---------------------------------------------------------------------------
+
+/// The blockout fixture's gated hall door with its `learned` set to `word`
+/// (`None` removes it), built. The fixture as shipped declares `seen`: the
+/// door's bar is the first thing the eye meets from the junction.
+fn learned_fixture(
+    tag: &str,
+    word: Option<&str>,
+    quests: impl FnOnce(&mut serde_json::Value),
+) -> PathBuf {
+    let word = word.map(str::to_string);
+    gated_fixture(
+        tag,
+        move |v| {
+            for e in v["content"]["edges"].as_array_mut().unwrap() {
+                if e["id"] == "edge/hall-cell" {
+                    let g = e["gating"].as_object_mut().unwrap();
+                    match &word {
+                        Some(w) => {
+                            g.insert("learned".into(), serde_json::json!(w));
+                        }
+                        None => {
+                            g.remove("learned");
+                        }
+                    }
+                }
+            }
+        },
+        |_| {},
+        quests,
+    )
+}
+
+/// **WRITE `seen` where the junction sees the bar.** The door met shut with no
+/// word is refused `DW1053`, naming the three words; the word the message
+/// shows to be true builds.
+#[test]
+fn dw1053_writing_seen_where_the_bar_is_seen_builds() {
+    let camp = learned_fixture("dw1053-none", None, |_| {});
+    let (code, before) = build("dw1053-none", &camp, &common::prefabs_dir());
+    assert_eq!(code, 3, "{before}");
+    assert!(before.contains("DW1053 [error]"), "{before}");
+    assert!(before.contains("`seen` — the bar is seen from"), "{before}");
+    let camp = learned_fixture("dw1053-seen", Some("seen"), |_| {});
+    let (code, after) = build("dw1053-seen", &camp, &common::prefabs_dir());
+    assert_eq!(code, 0, "{after}");
+    assert!(after.contains("(1 seen, 0 told, 0 rewarded)"), "{after}");
+}
+
+/// The trigger a `DW1054` `told` refusal prescribes, parsed out of its message
+/// and given a name.
+fn prescribed_trigger(message: &str) -> serde_json::Value {
+    let json = message
+        .split("Anchor a trigger on the seam — `")
+        .nth(1)
+        .and_then(|t| t.split('`').next())
+        .expect("the refusal carries the trigger it prescribes")
+        .replace("trigger/<name>", "trigger/cell-door-shut");
+    serde_json::from_str(&json).expect("the prescription is JSON")
+}
+
+/// **WRITE the trigger.** The door declared `told` with nothing answering a
+/// press at its seam is refused `DW1054`, carrying the trigger `DW0429`
+/// prescribes; that trigger, parsed out of the message and written, builds —
+/// and the same trigger discharges `DW0429` on the door made a shortcut, so
+/// the two codes name one remedy (spec-0118 acceptance 5).
+#[test]
+fn dw1054_writing_the_prescribed_trigger_clears_both_codes() {
+    let camp = learned_fixture("dw1054-told-red", Some("told"), |_| {});
+    let (code, before) = build("dw1054-told-red", &camp, &common::prefabs_dir());
+    assert_eq!(code, 3, "{before}");
+    assert!(
+        before.contains("DW1054 [error]") && before.contains("declared `told`"),
+        "{before}"
+    );
+    let trigger = prescribed_trigger(&before);
+    let t = trigger.clone();
+    let camp = learned_fixture("dw1054-told-green", Some("told"), move |q| {
+        q["content"]["triggers"] = serde_json::json!([t]);
+    });
+    let (code, after) = build("dw1054-told-green", &camp, &common::prefabs_dir());
+    assert_eq!(code, 0, "{after}");
+    assert!(after.contains("(0 seen, 1 told, 0 rewarded)"), "{after}");
+
+    // The door as a shortcut whose wrong side nothing answers: `DW0429`.
+    let shortcut = |q: &mut serde_json::Value| {
+        q["content"]["shortcuts"] = serde_json::json!([{
+            "id": "shortcut/cell-door", "gate": "anchor/seam-hall-cell",
+            "unlock": "anchor/unlock-hall-cell", "on_unlock": []
+        }]);
+        for quest in q["content"]["quests"].as_array_mut().unwrap() {
+            if let Some(m) = quest["on_objective_complete"].as_object_mut() {
+                for effects in m.values_mut() {
+                    effects
+                        .as_array_mut()
+                        .unwrap()
+                        .retain(|e| e["type"] != "open-gate");
+                }
+            }
+        }
+    };
+    let camp = learned_fixture("dw0429-shortcut-red", Some("told"), shortcut);
+    let (code, red) = validate(&camp);
+    assert_ne!(code, 0, "{red}");
+    assert!(red.contains("DW0429 [error]"), "{red}");
+    let camp = learned_fixture("dw0429-shortcut-green", Some("told"), move |q| {
+        shortcut(q);
+        q["content"]["triggers"] = serde_json::json!([trigger]);
+    });
+    let (_, green) = validate(&camp);
+    assert!(!green.contains("DW0429 [error]"), "{green}");
+}
+
+/// **CHANGE the word to the one that is true.** The door declared `rewarded`
+/// with no pickup, interaction or fight on its branch is refused `DW1054`,
+/// naming the branch's cells; the word its bar makes true, `seen`, builds.
+#[test]
+fn dw1054_changing_the_word_to_the_true_one_builds() {
+    let camp = learned_fixture("dw1054-rewarded-red", Some("rewarded"), |_| {});
+    let (code, before) = build("dw1054-rewarded-red", &camp, &common::prefabs_dir());
+    assert_eq!(code, 3, "{before}");
+    assert!(
+        before.contains("DW1054 [error]")
+            && before.contains("declared `rewarded`, but no pickup, interaction or fight"),
+        "{before}"
+    );
+    let camp = learned_fixture("dw1054-rewarded-seen", Some("seen"), |_| {});
+    let (code, after) = build("dw1054-rewarded-seen", &camp, &common::prefabs_dir());
+    assert_eq!(code, 0, "{after}");
+}
+
+/// **PLACE the reward — on a branch, not on an open floor.** The fixture's
+/// hall is an open floor and its door stands in a wall of it, so the door has
+/// no branch: the ground only it leads to is empty (spec-0118 §5.2). An
+/// `interact` beat placed by the door, on that open floor, is still refused —
+/// a reward the party walks past on the open route pays for no branch. The
+/// green half of the move, a reward on a dead-end branch, is held over a
+/// corridor world in `nav::learned`'s unit tests.
+#[test]
+fn dw1054_a_reward_on_the_open_floor_pays_for_no_branch() {
+    let camp = learned_fixture("dw1054-rewarded-placed", Some("rewarded"), |q| {
+        let quest = &mut q["content"]["quests"][0];
+        let objectives = quest["objectives"].as_array_mut().unwrap();
+        objectives.insert(
+            0,
+            serde_json::json!({
+                "type": "interact", "id": "obj/try-the-door",
+                "anchor": "anchor/unlock-hall-cell",
+                "happening": { "text": "The party tries the cell door's latch.", "verb": "learns" }
+            }),
+        );
+        objectives[1]["after"] = serde_json::json!(["obj/try-the-door"]);
+    });
+    common::patch_file(&camp.join("layout-graph.json"), |v| {
+        v["content"]["beats"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "node": "node/hall", "objective": "obj/try-the-door",
+                "quest": "quest/walk-the-whole"
+            }));
+    });
+    let (code, after) = build("dw1054-rewarded-placed", &camp, &common::prefabs_dir());
+    assert_eq!(code, 3, "{after}");
+    assert!(
+        after.contains(
+            "declared `rewarded`, but no pickup, interaction or fight within the branch's 0 cell(s)"
+        ),
+        "{after}"
+    );
+}
+
+/// spec-0118 acceptance 3: a one-way door declared `shortcut`, met from its
+/// wrong side. The blockout hall gains a second, open doorway into the cell,
+/// so the barred door closes a loop (`DW0820` admits the mark), and the door
+/// opens only from the cell. Over one build `DW1011` counts it as a way round
+/// and does not judge it, and the shut-way check judges it at the hall, the
+/// side it does not open from.
+#[test]
+fn a_one_way_door_dw1011_counts_is_judged_at_its_wrong_side() {
+    let camp = gated_fixture(
+        "shut-way-one-way-door",
+        |v| {
+            let edges = v["content"]["edges"].as_array_mut().unwrap();
+            for e in edges.iter_mut() {
+                if e["id"] == "edge/hall-cell" {
+                    e["shortcut"] = serde_json::json!(true);
+                    e["gating"]["opens_from"] = serde_json::json!("b");
+                    e["gating"]["learned"] = serde_json::json!("told");
+                }
+            }
+            edges.push(serde_json::json!({
+                "id": "edge/hall-cell-side", "class": "walk",
+                "a": "node/hall", "b": "node/cell"
+            }));
+        },
+        |v| {
+            v["content"]["seams"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "edge": "edge/hall-cell-side", "face": "south", "at": 6, "meets": 6,
+                    "opening": "door", "form": "an open doorway beside the barred arch"
+                }));
+        },
+        |q| {
+            q["content"]["triggers"] = serde_json::json!([{
+                "id": "trigger/cell-door-wrong-side", "at": "anchor/seam-hall-cell",
+                "on": { "on": "use" }, "once": false, "audience": "presser",
+                "effects": [{ "type": "narrate", "style": "actionbar",
+                              "text": "The door does not open from this side." }]
+            }]);
+        },
+    );
+    let (code, text) = build("shut-way-one-way-door", &camp, &common::prefabs_dir());
+    assert_eq!(code, 0, "{text}");
+    assert!(
+        text.contains("1 declared a way round (shortcut)"),
+        "DW1011 counts the door: {text}"
+    );
+    let ledger: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            Path::new(env!("CARGO_TARGET_TMPDIR"))
+                .join("remedy-out-shut-way-one-way-door/validation/shut-ways.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let wrong_side = ledger["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["connection"] == "edge/hall-cell" && r["face"] == "node/hall")
+        .unwrap_or_else(|| panic!("the door is judged at the hall: {ledger}"));
+    assert_eq!(wrong_side["openable"], false, "{ledger}");
+    assert_eq!(wrong_side["confirmed"], true, "{ledger}");
+}

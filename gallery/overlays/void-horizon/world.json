@@ -136,6 +136,6 @@
     "title": "The Gallery",
     "weather": "clear"
   },
-  "dsl_version": "0.55.0",
+  "dsl_version": "0.57.0",
   "stage": "world"
 }

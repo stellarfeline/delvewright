@@ -697,6 +697,17 @@ pub(super) fn prove_world(
                     "validation/separation-proof.json",
                     &separation.to_json(),
                 );
+                // DW1053/DW1054 (spec-0118): every shut way the party meets
+                // says how the player learns it is shut, and the world
+                // confirms the word — over the configurations, faces and reach
+                // DW1011 just judged. The binding is printed and the ledger
+                // written before the verdict is taken.
+                let (shut_ways, shut_ways_verdict) =
+                    crate::compiler::nav::check_shut_ways_learned(plan, world);
+                eprintln!("{}", shut_ways.line());
+                put_json(out, "validation/shut-ways.json", &shut_ways.to_json());
+                shut_ways_verdict?;
+                warnings.extend(shut_ways.findings());
                 // DW0924: a body a `kill` objective waits on cannot get to a
                 // place it survives and the party cannot strike it from. After
                 // DW0921 because it reads the same playable region and a party

@@ -54,6 +54,7 @@
         "b": "node/far-hall",
         "class": "walk",
         "gating": {
+          "learned": "told",
           "quest": "quest/near-hall"
         },
         "id": "edge/annex-chute",
@@ -65,6 +66,7 @@
         "b": "node/far-hall",
         "class": "walk",
         "gating": {
+          "learned": "told",
           "opens_from": "a",
           "quest": "quest/near-hall"
         },
@@ -75,6 +77,7 @@
         "b": "node/far-hall",
         "class": "walk",
         "gating": {
+          "learned": "told",
           "opens_from": "either",
           "quest": "quest/near-hall"
         },
@@ -88,6 +91,7 @@
           "flags": [
             "flag/east-door-drawn"
           ],
+          "learned": "told",
           "opens_from": "b"
         },
         "id": "edge/east-door",
@@ -102,6 +106,7 @@
           "flags": [
             "flag/muster-cleared"
           ],
+          "learned": "seen",
           "opens_from": "a"
         },
         "id": "edge/loft-stair"
@@ -127,7 +132,8 @@
         "gating": {
           "flags": [
             "flag/muster-cleared"
-          ]
+          ],
+          "learned": "told"
         },
         "id": "edge/undercroft-crawl",
         "one_way": "a-to-b",
@@ -141,7 +147,8 @@
         "gating": {
           "flags": [
             "flag/muster-cleared"
-          ]
+          ],
+          "learned": "told"
         },
         "id": "edge/undercroft-shaft",
         "shortcut": true
@@ -220,6 +227,6 @@
       }
     ]
   },
-  "dsl_version": "0.55.0",
+  "dsl_version": "0.57.0",
   "stage": "layout-graph"
 }

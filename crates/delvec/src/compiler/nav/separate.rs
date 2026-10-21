@@ -7,10 +7,14 @@
 //! `DW0921`'s question over the same relation: that one asks whether a body can
 //! get back, this one whether a body can get past.
 
+use super::shutmodel::{
+    Configurations, Faces, GateUnderTest, NamedGate, SeparationConfig, faces_of, gated_connections,
+    gated_gate, meet, opens_low, party_reach,
+};
 use super::*;
 use crate::compiler::failure::Failure;
 use crate::compiler::plan::Plan;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// How many bypassed gates a `DW1011` report names before summarising the rest.
 const BYPASS_LIST_LIMIT: usize = 6;
@@ -52,6 +56,11 @@ pub struct SeparationBinding {
     pub reached: usize,
     /// Of them, pairs where a body gets from the near face to the far one.
     pub bypassed: usize,
+    /// The `(gate, configuration, face)` triples the party meets — the face
+    /// `true` for the high one — indices into the core's gates and
+    /// configurations. Not in the ledger: the agreement with `DW1053`'s
+    /// population is asserted on it (spec-0118 §5).
+    pub(super) met: BTreeSet<(usize, usize, bool)>,
 }
 
 impl SeparationBinding {
@@ -97,136 +106,6 @@ impl SeparationBinding {
             "bypassed": self.bypassed,
         })
     }
-}
-
-/// One gate the proof judges: how a report names it, its region, and which of
-/// its two faces opens it when a declaration says so.
-#[derive(Debug, Clone)]
-pub(super) struct GateUnderTest {
-    /// The gate in words: the gated connection it bars, or its anchor and area.
-    pub label: String,
-    /// The region's inclusive corners.
-    pub region: ([i32; 3], [i32; 3]),
-    /// The axis the gate is thin on, when something states it: a gated
-    /// connection's seam hands its own normal (spec-0107 §6), so a bar one cell
-    /// on two axes — the grating over a one-wide hole — is judged on that axis's
-    /// two faces rather than guessed at. `None` for every other gate, whose axis
-    /// is read off its shape.
-    pub axis: Option<usize>,
-    /// `Some(true)` when only the low face (of the thin axis) opens it,
-    /// `Some(false)` when only the high face does, `None` when either does.
-    pub opens_low: Option<bool>,
-    /// Where the openable side's anchor stands, when the gate is one-sided —
-    /// resolved to [`GateUnderTest::opens_low`] once the thin axis is known.
-    pub unlock: Option<[i32; 3]>,
-}
-
-/// A gate by name and region, for an escape path to name the gates it passes.
-pub(super) type NamedGate = (String, ([i32; 3], [i32; 3]));
-
-/// One quest configuration the proof judges: its world, the configuration in
-/// words, its route cells, and the gates shut in it (indices into the gates).
-pub(super) type SeparationConfig<'w> = (&'w World, String, Vec<[i32; 3]>, Vec<usize>);
-
-/// The two faces of a gate: the cells a body may stand or float in either side
-/// of its thin axis, low first. Candidates — each configuration keeps those a
-/// body can be in there.
-#[derive(Debug, Clone)]
-struct Faces {
-    axis: usize,
-    low: Vec<[i32; 3]>,
-    high: Vec<[i32; 3]>,
-}
-
-/// Whether a body can be in `c`: standing, holding a climbable (spec-0099), or
-/// afloat at the top of water.
-fn can_be(w: &World, c: [i32; 3]) -> bool {
-    w.holds_body(c) || w.is_water_surface(c)
-}
-
-/// The candidate cells on one face of a gate region, for thin axis `axis`.
-/// A horizontal axis takes the column of cells just outside the slab over its
-/// span, from a course under its bottom to its top (a body standing at a door
-/// stands with its feet in the doorway's bottom course or a step below it); the
-/// vertical axis takes the course on top and the four courses under it.
-fn face_cells(lo: [i32; 3], hi: [i32; 3], axis: usize, high: bool) -> Vec<[i32; 3]> {
-    let mut out = Vec::new();
-    if axis == 1 {
-        let ys: Vec<i32> = if high {
-            vec![hi[1] + 1]
-        } else {
-            (lo[1] - 4..lo[1]).collect()
-        };
-        for x in lo[0]..=hi[0] {
-            for z in lo[2]..=hi[2] {
-                for &y in &ys {
-                    out.push([x, y, z]);
-                }
-            }
-        }
-        return out;
-    }
-    let other = 2 - axis;
-    let at = if high { hi[axis] + 1 } else { lo[axis] - 1 };
-    for o in lo[other]..=hi[other] {
-        for y in lo[1] - 1..=hi[1] {
-            let mut c = [0; 3];
-            c[axis] = at;
-            c[other] = o;
-            c[1] = y;
-            out.push(c);
-        }
-    }
-    out
-}
-
-/// The faces of a gate region over `base` (the world with every gate open), or
-/// `None` when its shape names no two: the handed axis when one is stated;
-/// else the thin axis is the unique smallest extent, or — among axes tied for
-/// smallest — the one axis whose two faces both hold a cell a body can be in.
-fn faces_of(base: &World, region: ([i32; 3], [i32; 3]), axis: Option<usize>) -> Option<Faces> {
-    let (a, b) = region;
-    let lo = [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])];
-    let hi = [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])];
-    let extent = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
-    let faces = |axis: usize| Faces {
-        axis,
-        low: face_cells(lo, hi, axis, false),
-        high: face_cells(lo, hi, axis, true),
-    };
-    if let Some(axis) = axis {
-        return Some(faces(axis));
-    }
-    let least = *extent.iter().min()?;
-    let tied: Vec<usize> = (0..3).filter(|&i| extent[i] == least).collect();
-    if tied.len() == 1 {
-        return Some(faces(tied[0]));
-    }
-    let open: Vec<Faces> = tied
-        .into_iter()
-        .map(faces)
-        .filter(|f| {
-            f.low.iter().any(|c| can_be(base, *c)) && f.high.iter().any(|c| can_be(base, *c))
-        })
-        .collect();
-    match open.len() {
-        1 => open.into_iter().next(),
-        _ => None,
-    }
-}
-
-/// The body-movement closure of `roots` over `w`.
-fn closure(w: &World, roots: &[[i32; 3]]) -> BTreeSet<[i32; 3]> {
-    let mut seen: BTreeSet<[i32; 3]> = roots.iter().copied().collect();
-    let mut queue: VecDeque<[i32; 3]> = seen.iter().copied().collect();
-    while let Some(cur) = queue.pop_front() {
-        for n in w.body_moves(cur) {
-            if seen.insert(n) {
-                queue.push_back(n);
-            }
-        }
-    }
-    seen
 }
 
 /// The path over `w` from any cell of `from` to any cell of `to` that takes the
@@ -385,30 +264,12 @@ pub fn check_gates_separate(
     world: &World,
 ) -> (SeparationBinding, Result<(), Failure>) {
     let mut binding = SeparationBinding::default();
-    let graph = plan.campaign.layout_graph.as_ref().map(|g| &g.content);
     // The gated connections (spec-0107), keyed by the gate anchor the
     // derivation names for them, each with the axis its seam hands.
-    let seams = delvewright_dsl::siteplan::SitePlan::of(plan.campaign).seams;
-    let mut gated: BTreeMap<String, (&delvewright_dsl::layout::Edge, Option<usize>)> =
-        BTreeMap::new();
-    for e in graph.map(|g| g.edges.iter()).into_iter().flatten() {
-        if e.shuts() {
-            binding.gated_edges += 1;
-            let axis = seams
-                .iter()
-                .find(|s| &s.edge == e.id())
-                .map(delvewright_dsl::siteplan::PlacedSeam::bar_axis);
-            gated.insert(delvewright_dsl::siteplan::seam_anchor(e.id()), (e, axis));
-        }
-    }
+    let gated = gated_connections(plan);
+    binding.gated_edges = gated.len();
     let shortcut_regions: BTreeSet<([i32; 3], [i32; 3])> =
         plan.shortcuts.iter().map(|s| s.gate_region).collect();
-    let point = |name: &str| {
-        plan.anchors.iter().find_map(|((_, n), r)| match r {
-            crate::compiler::plan::ResolvedAnchor::Point { pos, .. } if n == name => Some(*pos),
-            _ => None,
-        })
-    };
     let mut gates: Vec<GateUnderTest> = Vec::new();
     let mut bound_edges: BTreeSet<String> = BTreeSet::new();
     // Every gate by name, so an escape path through one — a clocked door, a
@@ -440,8 +301,8 @@ pub fn check_gates_separate(
     });
     for (seal, clocked) in world.every_gate() {
         binding.gates += 1;
-        let found = gated.get(&seal.anchor).copied();
-        let edge = found.map(|(e, _)| e);
+        let found = gated.get(&seal.anchor);
+        let edge = found.map(|g| g.edge);
         if edge.is_some() {
             bound_edges.insert(seal.anchor.clone());
         }
@@ -458,81 +319,24 @@ pub fn check_gates_separate(
             binding.unoperated += 1;
             continue;
         }
-        let (label, unlock, axis) = match found {
-            Some((e, axis)) => {
-                let terms = e.gating().map(|g| g.words()).unwrap_or_default();
-                let unlock = e
-                    .opening_side()
-                    .and_then(|_| point(&delvewright_dsl::siteplan::seam_unlock_anchor(e.id())));
-                (
-                    format!(
-                        "gated {} `{}` (gate `{}`, opened on {terms})",
-                        e.class(),
-                        e.id(),
-                        seal.anchor,
-                    ),
-                    unlock,
-                    axis,
-                )
-            }
-            None => (
-                format!("gate `{}` of `{}`", seal.anchor, seal.area),
-                None,
-                None,
-            ),
-        };
-        gates.push(GateUnderTest {
-            label,
-            region: seal.region,
-            axis,
-            opens_low: None,
-            unlock,
+        gates.push(match found {
+            Some(g) => gated_gate(plan, g, seal),
+            None => GateUnderTest {
+                label: format!("gate `{}` of `{}`", seal.anchor, seal.area),
+                region: seal.region,
+                axis: None,
+                opens_low: None,
+                unlock: None,
+            },
         });
     }
     binding.gated_bound = bound_edges.len();
 
     // One configuration per distinct region state the critical path passes
-    // through, carrying the route cells of every leg that arrives under it —
-    // the same configurations `DW0921` judges.
-    let ancestor = |g: usize, s: usize| plan.gate_fired_before(g, s);
-    let mut configs: Vec<(RegionState, usize, BTreeSet<[i32; 3]>)> = Vec::new();
-    for (step, cells) in critical_route_cells(plan, world) {
-        let st = world.region_state_at(&plan.region_events, step, &ancestor);
-        match configs.iter_mut().find(|(s, _, _)| *s == st) {
-            Some((_, first, seeds)) => {
-                *first = (*first).min(step);
-                seeds.extend(cells);
-            }
-            None => configs.push((st, step, cells.into_iter().collect())),
-        }
-    }
-    let owned: Vec<Option<World>> = configs
-        .iter()
-        .map(|(st, _, _)| (!st.is_empty()).then(|| world.with_region_state(st)))
-        .collect();
-    let judged: Vec<SeparationConfig<'_>> = configs
-        .iter()
-        .zip(&owned)
-        .map(|((st, first, seeds), w)| {
-            let w = w.as_ref().unwrap_or(world);
-            let when = plan
-                .critical_path
-                .get(*first)
-                .and_then(|s| s.objective())
-                .map(|o| format!("while `{o}` is next"))
-                .unwrap_or_else(|| format!("from critical step {first}"));
-            let shut: Vec<usize> = gates
-                .iter()
-                .enumerate()
-                .filter(|(_, g)| {
-                    crate::compiler::assembled::region_cells(g.region.0, g.region.1)
-                        .all(|c| st.solid.contains(&c))
-                })
-                .map(|(i, _)| i)
-                .collect();
-            (w, when, seeds.iter().copied().collect(), shut)
-        })
-        .collect();
+    // through — the same configurations `DW0921` judges.
+    let configurations = Configurations::of(plan, world);
+    let regions: Vec<([i32; 3], [i32; 3])> = gates.iter().map(|g| g.region).collect();
+    let judged = configurations.judged(plan, world, &regions);
     let (core, verdict) = verify_gates_separate(&gates, &others, world, &judged);
     binding.faceless = core.faceless;
     binding.configurations = core.configurations;
@@ -540,6 +344,7 @@ pub fn check_gates_separate(
     binding.unstood = core.unstood;
     binding.reached = core.reached;
     binding.bypassed = core.bypassed;
+    binding.met = core.met;
     (binding, verdict)
 }
 
@@ -567,50 +372,37 @@ pub(super) fn verify_gates_separate(
     let opens_low: Vec<Option<bool>> = gates
         .iter()
         .zip(&faces)
-        .map(|(g, f)| {
-            g.opens_low.or_else(|| {
-                let (f, u) = (f.as_ref()?, g.unlock?);
-                let (lo, hi) = g.region;
-                let a = f.axis;
-                if u[a] < lo[a].min(hi[a]) {
-                    Some(true)
-                } else if u[a] > lo[a].max(hi[a]) {
-                    Some(false)
-                } else {
-                    None
-                }
-            })
-        })
+        .map(|(g, f)| opens_low(g, f.as_ref()))
         .collect();
-    type Judged = (usize, usize, usize, Vec<Bypass>);
+    type Judged = (usize, usize, usize, Vec<Bypass>, Vec<(usize, bool)>);
     let judged: Vec<Judged> = crate::par::map(configs, |(w, when, seeds, shut)| {
-        let seeds: Vec<[i32; 3]> = seeds.iter().copied().filter(|c| can_be(w, *c)).collect();
-        let reach = closure(w, &seeds);
+        let (_, reach) = party_reach(w, seeds);
         let (mut unstood, mut reached) = (0usize, 0usize);
         let mut found: Vec<Bypass> = Vec::new();
+        let mut met: Vec<(usize, bool)> = Vec::new();
         for &gi in shut {
             let Some(f) = faces[gi].as_ref() else {
                 continue;
             };
-            let low: Vec<[i32; 3]> = f.low.iter().copied().filter(|c| can_be(w, *c)).collect();
-            let high: Vec<[i32; 3]> = f.high.iter().copied().filter(|c| can_be(w, *c)).collect();
-            if low.is_empty() || high.is_empty() {
+            let m = meet(w, f, &reach);
+            if m.unstood() {
                 unstood += 1;
                 continue;
             }
-            let low_in = low.iter().any(|c| reach.contains(c));
-            let high_in = high.iter().any(|c| reach.contains(c));
-            if !low_in && !high_in {
+            let faces_met = m.met();
+            if faces_met.is_empty() {
                 continue;
             }
+            met.extend(faces_met.iter().map(|&h| (gi, h)));
             reached += 1;
+            let (low, high, low_in, high_in) = (&m.low, &m.high, m.low_in, m.high_in);
             // The near face: the one that opens it when a declaration says so,
             // else each face the party reaches. A body reaching the far face
             // only across the gate's own region is what the gate is for.
             let sides: Vec<Side<'_>> = match opens_low[gi] {
-                Some(true) => vec![(&low, &high, low_in)],
-                Some(false) => vec![(&high, &low, high_in)],
-                None => vec![(&low, &high, low_in), (&high, &low, high_in)],
+                Some(true) => vec![(low, high, low_in)],
+                Some(false) => vec![(high, low, high_in)],
+                None => vec![(low, high, low_in), (high, low, high_in)],
             };
             for (near, far, near_in) in sides {
                 if !near_in || !far.iter().any(|c| reach.contains(c)) {
@@ -642,13 +434,16 @@ pub(super) fn verify_gates_separate(
                 }
             }
         }
-        (shut.len(), unstood, reached, found)
+        (shut.len(), unstood, reached, found, met)
     });
     // Each bypassed gate is named once, at the first configuration that finds
     // it, with the number of configurations it is got round in.
     let mut first: BTreeMap<usize, (usize, Bypass, usize)> = BTreeMap::new();
     let mut order: Vec<usize> = Vec::new();
-    for (ci, (shut, unstood, reached, found)) in judged.into_iter().enumerate() {
+    for (ci, (shut, unstood, reached, found, met)) in judged.into_iter().enumerate() {
+        binding
+            .met
+            .extend(met.into_iter().map(|(gi, h)| (gi, ci, h)));
         binding.shut += shut;
         binding.unstood += unstood;
         binding.reached += reached;

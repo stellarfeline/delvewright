@@ -430,6 +430,11 @@ impl World {
     /// mob eye height) crosses no camera-blocking geometry. Reuses the cutscene
     /// clip traversal, so "can this be seen through" has exactly one definition in
     /// the compiler.
+    ///
+    /// **Whose eye**: a mob's, for the fight and hazard checks that ask what a
+    /// mob sees. A question about what the PLAYER sees walks the same
+    /// [`walk_cells`] from `metrics::PLAYER_EYE_HEIGHT` (1.62) instead — the loop
+    /// proof's *Sight*, and the shut-way check's `seen` (`nav::learned`).
     pub(crate) fn has_line_of_sight(&self, a: [i32; 3], b: [i32; 3]) -> bool {
         let eye = |c: [i32; 3]| {
             let p = cell_center(c);

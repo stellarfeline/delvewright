@@ -72,6 +72,16 @@ form and the commands are in *Reference: drawing the map's reference*.
      Scenery still owns its outside and stitches to the ground, owes no node
      anchor and no play light, and its piece is judged sealed. Absent means
      reached.
+   - **Where a shut way is shut is craft, and this is the craft.** A long way
+     that joins two areas and that the story opens later is shut at the end
+     the player reaches first — its mouth by the earlier area — never at its
+     far end: shut at the exit, the whole corridor is walked to find a dead
+     end, and the walk back is the player's. Hide the shut way with structure
+     that belongs to the setting — a fallen arch, a portcullis in its housing,
+     a stacked barricade — rather than a bare block in a doorway. When it
+     opens, show the opened place: a short close-up shot of the changed mouth
+     tells the player the way is open better than a line does. Advice, never a
+     check.
    - Every seam `opening` that names a standard names an entry in the **metrics
      table**. `delvec metrics` prints it — 223 lines of JSON on stdout, and a
      summary plus its binding counts on stderr, so read them separately:
