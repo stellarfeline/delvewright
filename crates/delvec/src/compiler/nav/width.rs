@@ -872,7 +872,7 @@ fn undeclared_refusal(way: &Way, s: &Station, v: &StationVerdict, cols: &[usize]
                 .flat_map(|c| v.taken.get(c).into_iter().flatten())
                 .filter(|t| t.block != "minecraft:air")
                 .map(|t| {
-                    let l = local_cell(*rotation, *pos, t.cell);
+                    let l = crate::compiler::ways::local_cell(*rotation, *pos, t.cell);
                     format!("[{}, {}, {}]", l[0], l[1], l[2])
                 })
                 .collect();
@@ -904,32 +904,6 @@ fn undeclared_refusal(way: &Way, s: &Station, v: &StationVerdict, cols: &[usize]
             },
         ),
     }
-}
-
-/// A world cell back into a piece's own frame.
-fn local_cell(
-    rotation: crate::compiler::solver::Rotation,
-    pos: [i32; 3],
-    world: [i32; 3],
-) -> [i32; 3] {
-    use crate::compiler::solver::Rotation;
-    let d = [world[0] - pos[0], world[1] - pos[1], world[2] - pos[2]];
-    let back = match rotation {
-        Rotation::None => Rotation::None,
-        Rotation::Cw90 => Rotation::Ccw90,
-        Rotation::Cw180 => Rotation::Cw180,
-        Rotation::Ccw90 => Rotation::Cw90,
-    };
-    back.transform(d)
-}
-
-fn world_cell(
-    rotation: crate::compiler::solver::Rotation,
-    pos: [i32; 3],
-    local: [i32; 3],
-) -> [i32; 3] {
-    let t = rotation.transform(local);
-    [pos[0] + t[0], pos[1] + t[1], pos[2] + t[2]]
 }
 
 // ---------------------------------------------------------------------------
@@ -1540,8 +1514,8 @@ fn region_world(
 ) -> BTreeSet<[i32; 3]> {
     let mut out = BTreeSet::new();
     for r in boxes {
-        let a = world_cell(p.rotation, p.pos, r.from);
-        let b = world_cell(p.rotation, p.pos, r.to);
+        let a = crate::compiler::ways::world_cell(p.rotation, p.pos, r.from);
+        let b = crate::compiler::ways::world_cell(p.rotation, p.pos, r.to);
         out.extend(crate::compiler::assembled::region_cells(a, b));
     }
     out
@@ -2097,7 +2071,7 @@ fn piece_declared(
     let mut columns = BTreeSet::new();
     let mut unplaced = None;
     for l in &d.cells {
-        let w = world_cell(p.rotation, p.pos, *l);
+        let w = crate::compiler::ways::world_cell(p.rotation, p.pos, *l);
         let hit = stations.iter().find_map(|s| {
             s.columns
                 .iter()
