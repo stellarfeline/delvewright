@@ -133,7 +133,7 @@
           "flags": [
             "flag/muster-cleared"
           ],
-          "learned": "seen"
+          "learned": "told"
         },
         "id": "edge/undercroft-crawl",
         "one_way": "a-to-b",

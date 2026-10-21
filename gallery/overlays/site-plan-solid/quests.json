@@ -364,6 +364,22 @@
           "on": "use"
         },
         "once": false
+      },
+      {
+        "at": "anchor/seam-undercroft-crawl",
+        "audience": "presser",
+        "effects": [
+          {
+            "style": "actionbar",
+            "text": "The cover will not lift from below. The muster holds it shut.",
+            "type": "narrate"
+          }
+        ],
+        "id": "trigger/undercroft-crawl-shut",
+        "on": {
+          "on": "use"
+        },
+        "once": false
       }
     ],
     "waves": [

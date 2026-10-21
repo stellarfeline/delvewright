@@ -1113,6 +1113,7 @@ mod learned_tests {
             "quests": [{
                 "id": "quest/q",
                 "trigger": { "type": "campaign-start" },
+                "on_complete": [],
                 "objectives": [
                     { "type": "reach-anchor", "id": "obj/reach", "anchor": "anchor/ledge", "radius": 2 },
                     { "type": "interact", "id": "obj/touch", "anchor": "anchor/lever" },
