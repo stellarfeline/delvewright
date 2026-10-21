@@ -1,0 +1,24 @@
+{
+  "code": "DW1058",
+  "patch": [
+    {
+      "doc": "site-plan.json",
+      "op": "add",
+      "path": "/content/seams/10/narrowed",
+      "value": [
+        {
+          "across": [
+            0,
+            0
+          ],
+          "block": "minecraft:stone_bricks",
+          "side": "a",
+          "what": "a fallen voussoir"
+        }
+      ]
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "A narrowing declared on the exit arch's far-hall approach, whose two columns are clear: the entry names a fallen voussoir the bytes do not hold. An excuse is confirmed cell for cell against the world, so one that names a column nothing stands in is refused — the stale-excuse rule, which keeps a declaration from outliving the structure it excused. It declares no unit: every field it writes is bound by the domain's own declarations."
+}

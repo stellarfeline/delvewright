@@ -96,7 +96,23 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "node": "node/causeway"
+        "narrowed": [
+          {
+            "across": [
+              5,
+              5
+            ],
+            "along": 19,
+            "block": "minecraft:polished_blackstone_wall",
+            "what": "the lamp post at the road's east edge, two thirds of the way along"
+          }
+        ],
+        "node": "node/causeway",
+        "way": {
+          "at": 0,
+          "axis": "z",
+          "clear": 6
+        }
       }
     ],
     "datums": [
@@ -246,6 +262,17 @@
         "face": "north",
         "form": "a passage at the head of a stone stair, up 5 from the far hall",
         "meets": 1,
+        "narrowed": [
+          {
+            "across": [
+              2,
+              2
+            ],
+            "block": "minecraft:stripped_dark_oak_log",
+            "side": "a",
+            "what": "the newel post at the foot of the loft stair"
+          }
+        ],
         "opening": "passage",
         "stair_in": "node/far-hall"
       },
