@@ -120,6 +120,10 @@ def test_a_first_authoring_hands_the_allocation_the_neighbours_the_seams_and_the
         assert f"### {nb['place']} — on your {nb['face']} side" in text
     assert text.count("### node/") == len(a["neighbours"])
     assert "A low stone porch" in text, "the landing's note is quoted"
+    # The brief's identities that measure this box, with the fact's number and note.
+    assert "`fact/hall-span` eq box-extent on `x` = 12.0 blocks — The hall is twelve blocks wide" in text
+    assert "`fact/hall-height` eq box-height = 8.0 blocks" in text
+    assert "fact/landing-height" not in text, "the landing's fact is not the hall's"
     # Every void with its owner, and the fact that painting one is replaced.
     for v in a["voids"]:
         lo, hi = v["cells"]
@@ -129,6 +133,7 @@ def test_a_first_authoring_hands_the_allocation_the_neighbours_the_seams_and_the
     assert "**You do NOT own the plane**: `node/landing`" in text
     assert "**You own the plane**" in text
     assert "**The bar is yours**" in text
+    assert "whose `bar.region` is `seam-hall-yard`" in text
     # The owed names: the gate region answers through the barred edge, not a mark.
     assert "`anchor/seam-hall-yard` → the `barred` contract edge whose `bar.region` is `seam-hall-yard`" in text
     assert "`anchor/node-hall` → `mark` `node-hall`" in text

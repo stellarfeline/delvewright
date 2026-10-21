@@ -179,6 +179,7 @@ def design_rows(
     a: dict,
     graph: dict,
     plan: dict,
+    brief: dict,
     quests: dict,
     design: dict,
     owed: set[str],
@@ -230,6 +231,20 @@ def design_rows(
     if box:
         n += 1
         rows.append(f"- `site-plan.json` box: {json.dumps(box, separators=(',', ':'), sort_keys=True)}")
+    facts = {f.get("id"): f for f in brief.get("facts", [])}
+    for ident in plan.get("identities", []):
+        measure = ident.get("measure") or {}
+        if measure.get("node") != place:
+            continue
+        n += 1
+        fact = facts.get(ident.get("fact"), {})
+        rows.append(
+            f"- the brief holds this box to a number (`DW0833`): `{ident.get('fact')}` {ident.get('cmp')} "
+            f"{measure.get('of')}" + (f" on `{measure['axis']}`" if measure.get("axis") else "")
+            + f" = {fact.get('value')} {fact.get('unit', '')}".rstrip()
+            + (f" — {fact['note']}" if fact.get("note") else "")
+            + "; the frame is the box plus its ring, so the box's own extent is what stands between the walls you draw on the ring"
+        )
     for s in plan.get("seams", []):
         edge = s.get("edge")
         if any(x.get("edge") == edge for x in a.get("seams", [])):
@@ -354,7 +369,8 @@ def render(
     quests = content(docs.get("quests"))
     design = content(docs.get("design"))
     owed = set(a.get("owed_anchors", []))
-    rows, n_rows = design_rows(place, a, graph, plan, quests, design, owed)
+    brief = content(docs.get("geometry-brief"))
+    rows, n_rows = design_rows(place, a, graph, plan, brief, quests, design, owed)
     nbs, n_nbs = neighbour_summary(a, all_allocations, graph, plan, detailed)
     ex, ey, ez = a["extent"]
     work = handout_path.parent / "work"
@@ -430,7 +446,7 @@ def render(
         else:
             line += f"**You do NOT own the plane**: `{s['other']}` draws that wall, so your frame stops at your own first layer beside it and the opening is answered there — the ring on that side is not yours."
         if s.get("bar"):
-            line += f" **The bar is yours**: fill {cells(s['bar'])} with a palette role of `{s['bar_block']}` inside a `barred` contract edge whose region is `{s['edge'].removeprefix('edge/')}` — it exports as the gate anchor `anchor/seam-{s['edge'].removeprefix('edge/')}` (`DW0845`)."
+            line += f" **The bar is yours**: fill {cells(s['bar'])} with a palette role of `{s['bar_block']}` inside a `barred` contract edge whose `bar.region` is `seam-{s['edge'].removeprefix('edge/')}` — it exports as the gate anchor `anchor/seam-{s['edge'].removeprefix('edge/')}` (`DW0845`)."
         if s.get("ground_y") is not None:
             line += f" The ring's ground under this seam is at y {s['ground_y']}."
         w(line)
@@ -554,7 +570,7 @@ def go(args: argparse.Namespace) -> int:
 
     docs = {
         name: load_json(campaign_dir / f"{name}.json")
-        for name in ("world", "layout-graph", "site-plan", "quests", "design", "detail-plan")
+        for name in ("world", "layout-graph", "site-plan", "geometry-brief", "quests", "design", "detail-plan")
     }
     detailed = {
         row["place"]: row["piece"] for row in content(docs.get("detail-plan")).get("details", [])
