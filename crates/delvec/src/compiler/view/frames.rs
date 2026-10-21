@@ -148,11 +148,13 @@ pub fn sun_direction(daytime_ticks: i64) -> [f64; 3] {
     ]
 }
 
-/// The colours quick mode draws, read off the pinned client
-/// ([`scene::sky_attributes`]): the sky colour, the fog colour, the sun's
-/// direction (placed below the horizon under rain or thunder, where the client
-/// draws no sun) and the lightmap's sky factor.
-pub fn quick_sky(sky: FrameSky) -> QuickSkyColours {
+/// The colours quick mode draws for a camera looking along `look`, read off
+/// the pinned client ([`scene::sky_attributes`]): the sky colour, the clear
+/// colour the client draws behind its sky disc and under the horizon for that
+/// look ([`scene::clear_color`] — the renderer draws a stated fog as given),
+/// the sun's direction (placed below the horizon under rain or thunder, where
+/// the client draws no sun) and the lightmap's sky factor.
+pub fn quick_sky(sky: FrameSky, look: [f64; 3]) -> QuickSkyColours {
     let at = scene::sky_attributes(sky.daytime_ticks, sky.weather);
     let c = |v: [u8; 3]| Vec3::new(v[0] as f32, v[1] as f32, v[2] as f32) / 255.0;
     let sun = if sky.weather == WorldWeather::Clear {
@@ -163,7 +165,7 @@ pub fn quick_sky(sky: FrameSky) -> QuickSkyColours {
     };
     QuickSkyColours {
         sky: c(at.sky_color),
-        fog: c(at.fog_color),
+        fog: c(scene::clear_color(sky.daytime_ticks, sky.weather, look)),
         sun_dir: sun,
         sky_factor: at.sky_light_factor as f32,
     }
@@ -422,7 +424,7 @@ pub fn draw(req: &FrameRequest<'_>, opened: Option<&OpenedWorld>) -> Result<Draw
         },
         hq,
         sky: Sky::Stated(StatedSky {
-            quick: quick_sky(req.sky),
+            quick: quick_sky(req.sky, req.camera.basis().0),
             hq: hq_sky(req.sky),
         }),
     };
@@ -506,16 +508,22 @@ mod tests {
         let rain = quick_sky(FrameSky {
             daytime_ticks: 6000,
             weather: WorldWeather::Rain,
-        });
+        },
+            [0.0, 0.0, 1.0],
+        );
         assert!(rain.sun_dir.y < 0.0);
         let noon = quick_sky(FrameSky {
             daytime_ticks: 6000,
             weather: WorldWeather::Clear,
-        });
+        },
+            [0.0, 0.0, 1.0],
+        );
         let night = quick_sky(FrameSky {
             daytime_ticks: 18000,
             weather: WorldWeather::Clear,
-        });
+        },
+            [0.0, 0.0, 1.0],
+        );
         assert!(night.sky_factor < noon.sky_factor);
         assert!(night.sky.length() < noon.sky.length());
         assert_eq!(
@@ -526,6 +534,53 @@ mod tests {
             .sun_color,
             Vec3::ZERO
         );
+    }
+
+    /// The clear colour is the client's (`AtmosphericFogEnvironment
+    /// .getBaseColor`), never the raw `visual/fog_color`: the renderer draws a
+    /// stated fog as given, so a frame whose fog skipped the lean showed the
+    /// horizon at the fog colour itself. The lean is `Mth.clampedLerp`'s form,
+    /// `1 − (0.25 + 0.75 x)^0.25` at `x = 12 / 32`, not `1 − clamp(x, 0.25,
+    /// 1)^0.25` (0.218 at the same distance).
+    #[test]
+    fn the_clear_colour_is_leaned_as_the_client_leans_it() {
+        let lean = scene::clear_lean(scene::CLIENT_RENDER_DISTANCE);
+        assert!((lean - (1.0 - 0.53125f32.powf(0.25))).abs() < 1e-6, "{lean}");
+        assert!((lean - 0.146).abs() < 5e-4, "{lean}");
+        assert!((lean - (1.0 - 0.375f32.powf(0.25))).abs() > 0.05, "{lean}");
+        // Past 32 chunks the lean is gone; under 8 chunks it holds at the floor.
+        assert!(scene::clear_lean(40.0).abs() < 1e-6);
+        assert_eq!(scene::clear_lean(2.0), 1.0 - (0.25f32 + 0.75 * 2.0 / 32.0).powf(0.25));
+
+        // At noon, clear: the fog colour leaned toward the sky colour, per
+        // 8-bit channel by `Mth.lerpInt`, whichever way the camera looks.
+        let at = scene::sky_attributes(6000, WorldWeather::Clear);
+        let want: [u8; 3] = std::array::from_fn(|i| {
+            let (a, b) = (i32::from(at.fog_color[i]), i32::from(at.sky_color[i]));
+            (a + (lean * (b - a) as f32).floor() as i32) as u8
+        });
+        assert_ne!(want, at.fog_color, "the lean moves the noon fog");
+        for look in [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]] {
+            assert_eq!(scene::clear_color(6000, WorldWeather::Clear, look), want);
+            let q = quick_sky(
+                FrameSky {
+                    daytime_ticks: 6000,
+                    weather: WorldWeather::Clear,
+                },
+                look,
+            );
+            let got = (q.fog * 255.0).round();
+            assert_eq!([got.x as u8, got.y as u8, got.z as u8], want);
+        }
+
+        // At sunset the sun stands west: a camera looking west sees the
+        // sunrise colour in its clear colour, one looking east does not.
+        let t = 12000;
+        let at = scene::sky_attributes(t, WorldWeather::Clear);
+        assert!(at.sunrise[0] > 0, "a sunset glow at tick {t}: {:?}", at.sunrise);
+        let west = scene::clear_color(t, WorldWeather::Clear, [-1.0, 0.0, 0.0]);
+        let east = scene::clear_color(t, WorldWeather::Clear, [1.0, 0.0, 0.0]);
+        assert_ne!(west, east);
     }
 
     #[test]

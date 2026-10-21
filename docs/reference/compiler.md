@@ -3718,7 +3718,15 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   lightmap's sky factor are `scene::sky_attributes(daytime, weather)` — the
   pinned client's `visual/sky_color`, `visual/fog_color` and
   `visual/sky_light_factor` at the tick under the weather layer, read off its
-  day timeline (spec-0081 §4.3) and `WeatherAttributes`' `RAIN`/`THUNDER` maps —
+  day timeline (spec-0081 §4.3) and `WeatherAttributes`' `RAIN`/`THUNDER` maps;
+  the fog colour handed is the clear colour the client draws behind its sky
+  disc and under the horizon for the frame's look vector, `scene::clear_color`
+  (`AtmosphericFogEnvironment.getBaseColor`, **cited**): `visual/fog_color`,
+  leaned toward `visual/sunrise_sunset_color` on the sun's side by the look's
+  dot with the sun's side times the colour's alpha, then toward the sky colour
+  the weather darkens by `1 − Mth.clampedLerp(min(512 / 16, 12) / 32, 0.25,
+  1)^0.25` = 0.146 at the client's default render distance, since the renderer
+  draws a stated fog as given —
   and the sun's direction is `frames::sun_direction` over `scene::sun_at`, the
   pinned day timeline's `visual/sun_angle` eased as the client eases it (minecraft.wiki's
   closed form and the game's pre-timeline `DimensionType.timeOfDay` are the

@@ -497,6 +497,63 @@ pub fn weather_darken(c: [u8; 3], weather: WorldWeather) -> [u8; 3] {
     c.map(|v| v as u8)
 }
 
+/// The client's default render distance, in chunks (`options.renderDistance`).
+/// **Cited.**
+pub const CLIENT_RENDER_DISTANCE: f32 = 12.0;
+
+/// `visual/sky_fog_end_distance` at its registry default, in blocks. **Cited.**
+pub const SKY_FOG_END_DISTANCE: f32 = 512.0;
+
+/// `Mth.clampedLerp(delta, start, end)`: `start + clamp(delta, 0, 1) ×
+/// (end − start)`, in float. **Cited.**
+fn clamped_lerp(delta: f32, start: f32, end: f32) -> f32 {
+    start + delta.clamp(0.0, 1.0) * (end - start)
+}
+
+/// How far the clear colour is leaned toward the sky colour at a render
+/// distance of `render_chunks`: `1 − Mth.clampedLerp(min(sky_fog_end / 16,
+/// render distance) / 32, 0.25, 1)^0.25` (`AtmosphericFogEnvironment
+/// .getBaseColor`). At the client's default, 12 chunks, it is 0.146.
+/// **Cited.**
+pub fn clear_lean(render_chunks: f32) -> f32 {
+    let reach = (SKY_FOG_END_DISTANCE / 16.0).min(render_chunks);
+    1.0 - (clamped_lerp(reach / 32.0, 0.25, 1.0) as f64).powf(0.25) as f32
+}
+
+/// **The clear colour the pinned client draws behind its sky disc and under
+/// the horizon**, for a camera looking along `look` (unit, world axes) at a
+/// tick under a weather (`AtmosphericFogEnvironment.getBaseColor`): the
+/// `visual/fog_color`; at a render distance of at least 4 chunks, when the
+/// look vector has a positive dot with `(∓1, 0, 0)` — toward the side the sun
+/// is on, `−X` while it stands west — lerped toward the opaque
+/// `visual/sunrise_sunset_color` by that dot times the colour's alpha; then
+/// lerped toward the sky colour the weather darkens ([`weather_darken`]) by
+/// [`clear_lean`] at the client's default render distance. Every lerp is
+/// `ARGB.srgbLerp`, per 8-bit channel. **Cited.**
+pub fn clear_color(daytime_ticks: i64, weather: WorldWeather, look: [f64; 3]) -> [u8; 3] {
+    let at = sky_attributes(daytime_ticks, weather);
+    let lerp = |f: f32, a: [u8; 3], b: [u8; 3]| -> [u8; 3] {
+        std::array::from_fn(|i| lerp_int_f32(f, i32::from(a[i]), i32::from(b[i])) as u8)
+    };
+    let mut fog = at.fog_color;
+    let [a, r, g, b] = at.sunrise;
+    let alpha = f32::from(a) / 255.0;
+    let side = if delvewright_dsl::celestial::sun_is_west(daytime_ticks as f64) {
+        -1.0
+    } else {
+        1.0
+    };
+    let dot = (look[0] * side) as f32;
+    if CLIENT_RENDER_DISTANCE >= 4.0 && dot > 0.0 && alpha > 0.0 {
+        fog = lerp(dot * alpha, fog, [r, g, b]);
+    }
+    lerp(
+        clear_lean(CLIENT_RENDER_DISTANCE),
+        fog,
+        weather_darken(at.sky_color, weather),
+    )
+}
+
 // ---- the clear sky: the pinned game's day, at the scene's tick ---------------
 
 /// The visible sky colour of the biome a delve stands in, `#7ba4ff`: the
