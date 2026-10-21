@@ -514,6 +514,108 @@ fn assert_carrying_hold(who: &str, start: u32, patch: impl FnOnce(&mut Value)) {
 }
 
 // ---------------------------------------------------------------------------
+// spec-0108 §3.6 — a cutscene's `then` runs when the camera returns.
+// ---------------------------------------------------------------------------
+
+/// The one-second cutscene with `then`.
+fn cutscene_with_then(then: Value) -> Value {
+    let mut c = cutscene();
+    c["then"] = then;
+    c
+}
+
+/// The lines of the one emitted `cs_end_<bare>` function.
+fn cs_end_lines(out: &Path) -> (String, Vec<String>) {
+    let dir = out.join("datapack/data/ferry/function");
+    let mut found = Vec::new();
+    for e in std::fs::read_dir(&dir).unwrap() {
+        let p = e.unwrap().path();
+        let name = p.file_stem().unwrap().to_string_lossy().to_string();
+        if name.starts_with("cs_end_") {
+            let body = std::fs::read_to_string(&p).unwrap();
+            found.push((name, body.lines().map(str::to_string).collect()));
+        }
+    }
+    assert_eq!(found.len(), 1, "one cutscene, one cs_end: {found:?}");
+    found.pop().unwrap()
+}
+
+/// spec-0108 criterion 6, one fixture and two edits: the carry inside the
+/// cutscene's `then` is dated after the bracket by construction and raises no
+/// `DW0933`; the same carry as the cutscene's sibling does.
+#[test]
+fn a_teleport_in_then_is_not_dw0933_and_the_same_sibling_is() {
+    let run = build(&campaign("then-carry", |q| {
+        trigger_mut(q)["effects"] = json!([cutscene_with_then(json!([teleport_whole_room()]))]);
+    }));
+    assert!(!run.stderr.contains("DW0933"), "{}", run.stderr);
+    run.green();
+    let path = run.json("critical-path.json");
+    assert!(
+        carrying_step(&path).is_some(),
+        "the carry in `then` is the link the path takes"
+    );
+    let run = build(&campaign("then-sibling", |q| {
+        trigger_mut(q)["effects"] = json!([cutscene(), teleport_whole_room()]);
+    }));
+    let line = run.refused("DW0933");
+    assert!(
+        line.contains("`then`"),
+        "the remedy names `then` first: {line}"
+    );
+}
+
+/// spec-0108 criterion 6: the `then` lines are lowered into `cs_end_<bare>`
+/// after its last restore line (`#cs_live` decremented), through the
+/// scheduled-bundle emitter — a party line addresses `@a`, never `@s`.
+#[test]
+fn then_is_lowered_after_the_restore_under_the_scheduled_audience() {
+    let run = build(&campaign("then-order", |q| {
+        trigger_mut(q)["effects"] = json!([cutscene_with_then(json!([
+            {"type": "narrate", "text": "The camera lets go.", "style": "chat"},
+            teleport_whole_room()
+        ]))]);
+    }));
+    run.green();
+    let (_, end) = cs_end_lines(&run.out);
+    let live = end
+        .iter()
+        .position(|l| l == "scoreboard players remove #cs_live dw.sys 1")
+        .unwrap_or_else(|| panic!("no #cs_live line: {end:#?}"));
+    let tell = end
+        .iter()
+        .position(|l| l.starts_with("tellraw "))
+        .unwrap_or_else(|| panic!("no narrate line: {end:#?}"));
+    let tp = end
+        .iter()
+        .rposition(|l| l.starts_with("function ferry:teleport_"))
+        .unwrap_or_else(|| panic!("no carry line: {end:#?}"));
+    assert!(
+        live < tell && tell < tp,
+        "restore, then `then` in order: {end:#?}"
+    );
+    assert!(end[tell].starts_with("tellraw @a "), "{}", end[tell]);
+    assert!(
+        end[live + 1..].iter().all(|l| !l.contains("@s")),
+        "a `then` runs from the server source: {end:#?}"
+    );
+}
+
+/// spec-0108 criterion 6: a cutscene with an empty `then` emits the same
+/// `cs_end_<bare>`, under the same name, as one that omits the field.
+#[test]
+fn an_empty_then_emits_the_same_cs_end_as_none() {
+    let omitted = build(&campaign("then-omitted", |q| cutscene_then_teleport(q, 22)));
+    omitted.green();
+    let empty = build(&campaign("then-empty", |q| {
+        cutscene_then_teleport(q, 22);
+        trigger_mut(q)["effects"][0]["steps"][0]["effects"][0]["then"] = json!([]);
+    }));
+    empty.green();
+    assert_eq!(cs_end_lines(&omitted.out), cs_end_lines(&empty.out));
+}
+
+// ---------------------------------------------------------------------------
 // Criterion 11 — the binding line and the ledger.
 // ---------------------------------------------------------------------------
 
@@ -1021,14 +1123,14 @@ fn branch_link_campaign(who: &str, gate: &str) -> PathBuf {
     dir
 }
 
-/// Every `branch-path-<slug>.json` a build wrote, by slug.
+/// Every `world-path-<k>.json` a build wrote, by `k`.
 fn branch_paths(run: &Run) -> Vec<(String, Value)> {
     let mut out = Vec::new();
     for e in std::fs::read_dir(run.out.join("validation")).unwrap() {
         let p = e.unwrap().path();
         let name = p.file_name().unwrap().to_string_lossy().to_string();
         if let Some(slug) = name
-            .strip_prefix("branch-path-")
+            .strip_prefix("world-path-")
             .and_then(|s| s.strip_suffix(".json"))
         {
             let v: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
@@ -1060,7 +1162,12 @@ fn a_link_live_on_one_branch_is_taken_on_that_branch_alone() {
         1,
         "exactly one branch takes the link: {carried:?}"
     );
-    assert!(carried[0].contains("bolt"), "{carried:?}");
+    let plan = run.json("validation/branch-plan.json");
+    assert_eq!(
+        carried[0],
+        common::world_of_branch(&plan, "branch/bolt").to_string(),
+        "{carried:?}"
+    );
     let step = paths
         .iter()
         .find(|(s, _)| s == carried[0])

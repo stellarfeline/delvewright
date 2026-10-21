@@ -35,6 +35,7 @@ fn floored_with_furniture(
             climb: Default::default(),
             unheld_climb: Default::default(),
             material: Default::default(),
+            footprints: Default::default(),
         },
         Premises {
             ambient: Ambient::Void,
@@ -831,4 +832,90 @@ mod staged_liveness_tests {
             .insert(1, [("state/water".to_string(), None)].into_iter().collect());
         assert_eq!(at(&g, &ev, 2)[1], (true, false));
     }
+}
+
+/// A hall floor at y = 63 with a 2x2 hatch at x 3..4, z 3..4 over a cellar
+/// whose floor is y = 59, the hatch's cells holding `hatch` (air when `None`).
+fn hatch_over_cellar(hatch: Option<&str>) -> World {
+    let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..8 {
+        for z in 0..8 {
+            cells.push(([x, 59, z], "minecraft:stone"));
+            let in_hatch = (3..=4).contains(&x) && (3..=4).contains(&z);
+            if !in_hatch {
+                cells.push(([x, 63, z], "minecraft:stone"));
+            } else if let Some(b) = hatch {
+                cells.push(([x, 63, z], b));
+            }
+        }
+    }
+    crate::compiler::nav::testkit::blocks_world(&cells)
+}
+
+/// **A floor holds a body by its collision, not by holding a block.** Iron bars
+/// laid through a floor are posts a body falls between: the cell over the
+/// hatch is no place to stand, and a body walking onto it lands in the cellar.
+/// A closed iron trapdoor in the same cells covers them and holds the body.
+#[test]
+fn a_body_falls_between_bars_laid_through_a_floor_and_stands_on_a_trapdoor() {
+    let over = [3, 64, 3];
+    let beside = [2, 64, 3];
+    let bars = hatch_over_cellar(Some("minecraft:iron_bars"));
+    assert!(bars.is_sieve([3, 63, 3]), "the hatch's bars are a sieve");
+    assert!(!bars.is_standable(over), "no body stands over bars");
+    assert!(
+        bars.body_edge_cells(beside).contains(&[3, 60, 3]),
+        "a body stepping onto the bars falls into the cellar: {:?}",
+        bars.body_edge_cells(beside)
+    );
+    for lid in [
+        "minecraft:iron_trapdoor[facing=north,half=top,open=false]",
+        "minecraft:iron_trapdoor[facing=north,half=bottom,open=false]",
+        "minecraft:stone",
+    ] {
+        let shut = hatch_over_cellar(Some(lid));
+        assert!(!shut.is_sieve([3, 63, 3]), "{lid}");
+        assert!(shut.is_standable(over), "{lid} holds a body");
+        assert!(
+            !shut.body_edge_cells(beside).iter().any(|c| c[1] < 63),
+            "{lid}: no move below the hatch"
+        );
+    }
+    // One bar set in solid ground holds: every body over it meets the post.
+    let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+    for x in 0..5 {
+        for z in 0..5 {
+            cells.push(([x, 59, z], "minecraft:stone"));
+            cells.push((
+                [x, 63, z],
+                if [x, z] == [2, 2] {
+                    "minecraft:iron_bars"
+                } else {
+                    "minecraft:stone"
+                },
+            ));
+        }
+    }
+    let lone = crate::compiler::nav::testkit::blocks_world(&cells);
+    assert!(!lone.is_sieve([2, 63, 2]));
+    assert!(lone.is_standable([2, 64, 2]));
+}
+
+/// The seal a world-load gate lays is read through its block too: a hatch of
+/// bars sealed over an open shaft is no floor, and the same region sealed
+/// with a block that covers its cells is.
+#[test]
+fn a_seal_of_bars_through_a_floor_is_no_floor() {
+    let open = hatch_over_cellar(None);
+    let cells: BTreeSet<[i32; 3]> =
+        crate::compiler::assembled::region_cells([3, 63, 3], [4, 63, 4]).collect();
+    let bar = delvewright_dsl::blockshape::server_footprint("minecraft:iron_bars");
+    let fps: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16> =
+        cells.iter().map(|c| (*c, bar)).collect();
+    let barred = open.with_sealed_by(&cells, &fps);
+    assert!(!barred.is_standable([3, 64, 3]));
+    assert!(barred.body_edge_cells([2, 64, 3]).contains(&[3, 60, 3]));
+    let shut = open.with_sealed(&cells);
+    assert!(shut.is_standable([3, 64, 3]));
+    assert!(!shut.body_edge_cells([2, 64, 3]).iter().any(|c| c[1] < 63));
 }

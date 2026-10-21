@@ -2,10 +2,8 @@
 
 ## What it is
 
-A published set of `.nbt` prefabs with metadata beside each one, plus
-`pools.json` naming the pools the engine's `areas[]` assembly surface draws
-from — a surface this page does not use. It lives in the
-content repository, `stellarfeline/delvewright-campaigns`, under `prefabs/`, and
+A published set of `.nbt` prefabs with metadata beside each one. It lives in
+the content repository, `stellarfeline/delvewright-campaigns`, under `prefabs/`, and
 it is **an optional input**: a campaign that takes none of it is an ordinary
 campaign, and every original-content path reaches a prefab without it —
 `delvec grammar` expands a corpus that is Rust source inside the binary, and
@@ -45,18 +43,22 @@ The means are yours. These four are not, and each one is checkable in a line:
 2. **Its `.nbt` files are real files, not pointers.** They are git-lfs objects,
    so a clone made on a machine where `git lfs install` has never run leaves
    every one of them a 130-byte text stub, and every tool that reads a piece
-   fails on a file that looks present. `file <clone>/prefabs/hello-room.nbt`
+   fails on a file that looks present. `file <clone>/prefabs/keep-gate-room.nbt`
    must say `gzip compressed data`, never `ASCII text`.
-3. **`pools.json` parses and names at least one pool.** An empty library is
-   indistinguishable from a clone whose LFS never ran, and the first is a real
-   answer while the second is a broken one.
+3. **Its documents read and its pieces open.** `delvec prefab audit` over the
+   `prefabs/` directory (the one postcondition 4 names) exits 0, and its binding line names a non-zero count of
+   documents read and of `.nbt` opened. An empty library is indistinguishable
+   from a clone whose LFS never ran, and the first is a real answer while the
+   second is a broken one; a document this engine cannot read, or a piece that
+   does not open, is refused by name.
 4. **`DELVEWRIGHT_PREFABS` names its `prefabs/` directory**, in
    `~/.delvewright/env.sh`, so every later command reads the same library.
 
 ```sh
 git -C "$LIB_CLONE" rev-parse HEAD          # == $CONTENT_SHA
-file "$LIB_CLONE/prefabs/hello-room.nbt"    # gzip compressed data
-"$DELVEWRIGHT_PYTHON" -c 'import json,sys;print(len(json.load(open(sys.argv[1]))["pools"]), "pool(s)")' "$LIB_CLONE/prefabs/pools.json"
+file "$LIB_CLONE/prefabs/keep-gate-room.nbt"  # gzip compressed data
+delvec --prefabs "$DELVEWRIGHT_PREFABS" prefab audit "$DELVEWRIGHT_PREFABS" -o /dev/null
+                                            # exit 0; "N document(s) read, M `.nbt` opened", N, M > 0
 ```
 
 All four answering is the whole of the postcondition. How the clone got there —

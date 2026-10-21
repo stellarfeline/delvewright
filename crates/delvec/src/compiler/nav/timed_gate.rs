@@ -9,9 +9,8 @@ use std::collections::BTreeSet;
 /// The minimum share of a timed hazard's cycle that must admit passage
 /// (spec-0016 §4). Below this the hazard stops being a timing read and becomes a
 /// coin flip. Expressed as a percentage so the arithmetic below stays in
-/// integers — no float rounding in a proof (ADR-0006). One floor for every timed
-/// hazard: a `timed-gate` (`DW0378`) and a `volley` (`DW0918`) are judged by
-/// [`timing_read`] against this same number.
+/// integers — no float rounding in a proof (ADR-0006). A `timed-gate`
+/// (`DW0378`) is judged by [`timing_read`] against this number.
 pub(in crate::compiler::nav) const TIMING_READ_MIN_ADMIT_PERCENT: u32 = 20;
 
 /// One timing read: a route of `moves` blocks that must be completed inside a
@@ -195,6 +194,44 @@ fn verify_timed_gates(
     Ok(())
 }
 
+/// One way a body can be **caught** by a gate's closing edge: `mouth`, a
+/// standable cell outside the region with the gate SEALED, and `stand`, the
+/// region cell beside it that a body can stand in while the gate is open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GateApproach {
+    /// Where a body waits for the window, outside the fill.
+    pub mouth: [i32; 3],
+    /// Where a body stands in the open span, one horizontal step from `mouth`.
+    pub stand: [i32; 3],
+}
+
+/// **Every side a body can step into a gate region from**, at most one per
+/// side, in a fixed order (x−, x+, z−, z+): the death plan's answer to "where
+/// does a body stand to be caught when this gate shuts". A side is listed only
+/// when its mouth is standable over the world with the region sealed and the
+/// region cell beside it is standable over the world as the proofs read it,
+/// with the gate open. Empty when no body can ever stand in the span.
+pub fn gate_approaches(world: &World, region: ([i32; 3], [i32; 3])) -> Vec<GateApproach> {
+    let cells: BTreeSet<[i32; 3]> =
+        crate::compiler::assembled::region_cells(region.0, region.1).collect();
+    let sealed = world.with_sealed(&cells);
+    let mut out = Vec::new();
+    for axis in [0usize, 2] {
+        for delta in [-1, 1] {
+            let found = cells.iter().find_map(|&stand| {
+                let mut mouth = stand;
+                mouth[axis] += delta;
+                (!cells.contains(&mouth) && sealed.standable(mouth) && world.standable(stand))
+                    .then_some(GateApproach { mouth, stand })
+            });
+            if let Some(a) = found {
+                out.push(a);
+            }
+        }
+    }
+    out
+}
+
 /// The standable footings immediately on either side of a gate region, over the
 /// world with the region SEALED so neither endpoint can land inside it or snap
 /// through. The crossing axis is whichever horizontal axis actually has footing on
@@ -272,6 +309,36 @@ mod tests {
             sets_flag: "flag/gate-jammed".to_string(),
         });
         g
+    }
+
+    // --- where a body is caught (the death plan's crush approaches) ---
+
+    /// A one-cell doorway in a wall: a body can step into it from either face,
+    /// never along the wall, and each mouth is outside the region.
+    #[test]
+    fn a_doorway_is_entered_from_both_faces_and_never_along_the_wall() {
+        let world = shortcut_world(12, 9, 65, 4, 1, None);
+        let got = gate_approaches(&world, ([1, 65, 4], [1, 66, 4]));
+        assert_eq!(
+            got,
+            vec![
+                GateApproach {
+                    mouth: [1, 65, 3],
+                    stand: [1, 65, 4]
+                },
+                GateApproach {
+                    mouth: [1, 65, 5],
+                    stand: [1, 65, 4]
+                },
+            ]
+        );
+    }
+
+    /// A region no body can stand in (the doorway walled shut) has no approach.
+    #[test]
+    fn a_walled_span_has_no_approach() {
+        let world = shortcut_world(12, 9, 65, 4, 1, None);
+        assert!(gate_approaches(&world, ([3, 65, 4], [3, 66, 4])).is_empty());
     }
 
     // --- timed-gate disarm reachability (DW0393) ---

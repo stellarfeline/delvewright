@@ -47,6 +47,7 @@ pub(in crate::compiler::nav) fn floored_with_lethal(
             climb: Default::default(),
             unheld_climb: Default::default(),
             material: Default::default(),
+            footprints: Default::default(),
         },
         // The premises spelled out rather than derived from
         // `Premises::geometry_only()`: a struct literal is what makes a
@@ -197,6 +198,7 @@ pub(in crate::compiler::nav) fn classified(
             climb: Default::default(),
             unheld_climb: Default::default(),
             material: Default::default(),
+            footprints: Default::default(),
         },
         Premises::geometry_only(),
     )

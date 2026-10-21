@@ -3,6 +3,21 @@
 The reference page for `crates/delvec/src/compiler/flow.rs`: the diagnostics-catalog row of every DW code
 this module declares. The catalog's shared rules are in [`compiler.md` §5](../../compiler.md#5-diagnostics-catalog).
 
+## Story worlds (spec-0108)
+
+`Flow` holds two enumerations, each for its own proofs.
+
+**Today's worlds** — one per dialogue selection (one alternative per flag-reading choice group), every elective act performed — with their API (`world_count`, `world_flags`, `world_completed`, `playthrough_in`) decide `DW0201`, `DW0202`, `DW0203`, `DW0879` and the critical-path `DW0204`. A world that performs less can only complete less, so these reachability codes need nothing finer.
+
+**Story worlds** (`Flow::story`, `flow::story`) serve the branch proofs (`compiler::branch`: `realize`, the branch plan, `DW0480`, `DW0482`–`DW0485`, `DW0927`, the branch-path `DW0204`) and the ending proofs (`compiler::ending`: `DW1029`, `DW1030`, `validation/endings.json`, the `ending_<slug>_<k>` PackTests). A story world is a dialogue selection **and a participation**: the set of elective acts performed.
+
+- **Acts.** An elective act is an optional quest (`mandatory: false`, performed whole) or an ambient root fired by a player — a trigger, a trap's payload, a trap's or timed gate's disarm, a shortcut's unlock, a shop offer, an `on_kill` — performed once or not at all. A root the mainline performs is **forced**: a trigger that pays a debt of the exported path (`trigger_debts`), whose bundle opens a way, that writes a datum a mandatory objective's `requires_state` reads, or that is a repeatable carry (a link); an `on_kill` of a wave a mandatory `kill` slays. A forced act fires in every world; its flags are credited wherever their gate holds and its datum writes stay undatable. A loop's `on_cross` is not an act.
+- **Solving.** A world is solved with the producer table restricted to its participation (`solve_with`): an optional quest it skips is never activated, an elective producer it skips credits nothing, an `on_kill` producer credits only where the world performs the kill (today's model credits none).
+- **Dating.** A datum a final scene reads whose every undated writer is an elective ambient act is dated in a story world: a performed act writes once, at its **entry deed** — the first step in front of which its own gate holds — and a skipped act never writes. Every other undatable datum stays undatable.
+- **Runs.** Each world is run: ordered (`dag_order` over what completes, an ending quest last), replayed with its entry deeds performed (`Flow::run_story`, `Walk` with the world's `StoryCtx`), and read at the moment each final scene begins to fire (`ReplayState::scene_at`). A run whose step is illegal where it is taken is **incoherent** and reaches nothing.
+- **Worlds.** Per dialogue selection, in today's order: the *all* world (today's world), the *none* world, then one **witness** per target a candidate participation realizes — a target being one value class per input of a final scene (a flag's two values; a datum's intervals, cut by every `requires_state` term reading it in any final scene). Candidates are the subsets of the elective acts that write some input, by size then act id, at most `MAX_CANDIDATES` (256) per selection; targets past `MAX_TARGETS` (4096) per scene are counted at the bound. Worlds are deduplicated on (selection, participation) and capped at `MAX_WORLDS`; a test drives the cap with `Flow::story_within`. A branch is realized by the first world in that order whose flags satisfy its assignment, so a branch every world of its selection realizes keeps today's world and path.
+- **Paths.** `Flow::story_playthrough(k)` carries the world's participation and deeds (`Playthrough::story`); `journal`, `replay` and `walk_for` play it the way the world plays it, and `plan::path_triggers` performs each trigger deed once, in front of the step its run performed it at.
+
 ## Diagnostics
 
 ### DW02xx — analysis (`compiler::analyze` reachability + `compiler::light` lighting; error; exit 2)
@@ -11,7 +26,7 @@ This module's rows of a section whose prose is on the [`delvec::compiler::analyz
 
 | Code | Meaning |
 |------|---------|
-| `DW0204` | An exported path is not a playthrough any player can walk: some step is not activatable/completable at its position, or `campaign-complete` fires before the final step (the signature of two mutually exclusive endings sharing one path, or of a quest ordered after the ending). Quantifies over the exported critical path and every reachable branch's exported path (`validation/branch-path-<slug>.json`); a branch finding names the branch and that file. Names the first incoherent step. |
+| `DW0204` | An exported path is not a playthrough any player can walk: some step is not activatable/completable at its position, or `campaign-complete` fires before the final step (the signature of two mutually exclusive endings sharing one path, or of a quest ordered after the ending). Quantifies over the exported critical path and every reachable branch's exported path — the path of the story world that realizes it (`validation/world-path-<k>.json`, spec-0108), replayed under that world's participation and entry deeds; a branch finding names the branch and that file. Names the first incoherent step. |
 
 ### DW0879 — a numeric gate the path has already cleared (`compiler::statepath` over `compiler::flow`; error; exit 2)
 

@@ -137,14 +137,18 @@ export const methods = {
     this.triggerPerformances.set(step.trigger, performed + 1);
     const arrivalsBefore = this.markerArrivals.get(step.trigger) ?? 0;
     // spec-0083 §4: a trigger that carries the party is performed from INSIDE
-    // its volume — the compiler names the cell. The bot walks there as a block
+    // its volume, and one performed beside a volume it keeps out of from
+    // OUTSIDE it — the compiler names the cell either way. The bot walks there as a block
     // goal, and then acts without walking again; the sequencer awaits the
     // landing (`transport`) after the fired marker, as for every carried step.
     if (step.stand) {
       await this.walkTo(step.stand, 0, `${label} — to its stand cell`);
       process.stderr.write(
-        `[trigger] ${step.trigger}: standing at [${step.stand.join(", ")}] to be carried to ` +
-          `[${(step.transport ?? []).join(", ")}]\n`,
+        step.transport
+          ? `[trigger] ${step.trigger}: standing at [${step.stand.join(", ")}] to be carried to ` +
+              `[${step.transport.join(", ")}]\n`
+          : `[trigger] ${step.trigger}: standing at [${step.stand.join(", ")}], outside ` +
+              `${(step.keepOut ?? []).map((k) => k.objective).join(", ")}, to perform it\n`,
       );
     }
     if (step.on === "approach") {

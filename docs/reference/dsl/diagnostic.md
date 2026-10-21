@@ -10,7 +10,7 @@ this module declares. The catalog's shared rules are in [`compiler.md` §5](../c
 | Code | Meaning |
 |------|---------|
 | `DW0100` | Document does not conform to its stage schema (unknown field / wrong type / missing required field, incl. persona). Parse-time. |
-| `DW0102` | The document's `dsl_version` is not the one this engine accepts, `0.50.0`; the message names it (ADR-0024). Raised per stage document by `dsl::envelope::envelope_checks`, and for an l10n sidecar under `DW0180`. |
+| `DW0102` | The document's `dsl_version` is not the one this engine accepts, `0.58.0`; the message names it (ADR-0024). Raised per stage document by `dsl::envelope::envelope_checks`, and for an l10n sidecar under `DW0180`. |
 | `DW0110` | Malformed id syntax (not kebab-case / wrong-missing prefix). **The message names the form of the type it rejected**, derived from that id type's own `PREFIX` — `` `dlg/<kebab>` `` for a dialogue node, `` `class/<kebab>` `` for a class — rather than restating the general rule beside three fixed examples. One macro, `dsl::ids::id_syntax!`, is the single path every id type's syntax refusal goes through, so the answer comes from the type at every site: `ids::syntax_form`. The per-section refusals that spell their own prefix by hand (`wave/`, `trigger/`, `trap/`, `shortcut/`, `ambush/`, `timed-gate/`, `loot/`) are the same fact copied, which is why the general path did not have it. |
 | `DW0111` | Duplicate id in namespace (incl. two dialogue trees for one NPC). |
 | `DW0112` | Dangling / forward / undeclared reference (incl. persona relationship to unknown NPC). An **area** reference resolves against the campaign's placement authority and its prescription comes from there (see the remediation contract above): a `Prefabs` campaign is told to declare it in stage-1 `world.areas`, a `SitePlan` campaign is told its one area is `area/site` and explicitly told NOT to declare it, and a campaign with neither is told both branches. Two sets resolve an area id — `dsl::world::declared_area_ids`, which npc and quest-plan references read, and a stage-7 edit script's own for its `batches[].area` (`dsl::world_edits`) — and both prescribe from the same authority. |
@@ -146,8 +146,9 @@ like `critical-path-waypoints.json` — **never** part of the shipped datapack.
   option index is resolved against **the tree of the NPC the step's own
   `talk-to` names** — the same ordinal in another NPC's tree is a different
   option of a different speaker.
-- **`validation/branch-path-<branch>.json`** — one branch's **executable** path,
-  emitted per reachable branch, in the ordinary `critical-path.json` contract
+- **`validation/world-path-<k>.json`** — one story world's **executable** path
+  (spec-0108: the plan's rows are worlds), emitted per world with a path, in the
+  ordinary `critical-path.json` contract
   (`format_version` 2, the same steps, the same `transport`/`sneak`/
   `cutscene_seconds` markers, the same spliced bonfire `rest` steps). Built by
   the *same* `plan::build_critical_path` the exported path is built by, driven by
@@ -166,9 +167,9 @@ like `critical-path-waypoints.json` — **never** part of the shipped datapack.
   branch-only crossing as a flag-gated `teleport` in that objective's
   `complete_<obj>` bundle (`DW0494` above). Not emitted for an
   unreachable branch — there is no world that plays it, and `DW0482` has already
-  failed the build. Each reachable branch also gets its own
-  `validation/branch-waypoints-<branch>.json` ("World / build output" above), whose legs
-  follow the branch path's own step order.
+  failed the build. Each world with a path also gets its own
+  `validation/world-waypoints-<k>.json` ("World / build output" above), whose legs
+  follow the world path's own step order.
 
 **A branch path is NAV-proven as well as FLOW-proven.** `DW0204`'s replay and the
 `DW048x` proofs judge a branch's *story*: its steps are ordered, its gates
@@ -178,7 +179,7 @@ reachable branch path is routed over the assembled world under the branch's own
 causal gate seals, so a route that crosses a gate only a *sibling* branch opens
 is refused at build. `validation/branch-runs.sh` plays each branch on the
 dynamic layer.
-- **`validation/branch-chronicle-<branch>.md`** — the 流水账: every reachable
+- **`validation/world-chronicle-<k>.md`** — the 流水账, one per story world: every reachable
   node's `happening` line in the order the compiled graph plays them, readable
   start to ending, followed by the undated ambient beats and the endings reached.
   The dated account carries four kinds of line — `quest`, `objective`, `choice`

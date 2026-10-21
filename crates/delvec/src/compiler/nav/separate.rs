@@ -24,27 +24,29 @@ const WAYPOINTS: usize = 4;
 pub struct SeparationBinding {
     /// Gates the world resolves (every gate anchor, open or shut at world-load).
     pub gates: usize,
-    /// Barred edges the layout graph declares.
-    pub barred_edges: usize,
-    /// Of them, edges whose seam gate the world resolves.
-    pub barred_bound: usize,
+    /// Gated connections the layout graph declares — every connection the
+    /// world builds shut ([`delvewright_dsl::layout::Edge::shuts`], spec-0107).
+    pub gated_edges: usize,
+    /// Of them, connections whose seam gate the world resolves.
+    pub gated_bound: usize,
     /// Gates not judged because a declaration says a body gets round them: a
-    /// `shortcut`'s door, or a barred edge declared `shortcut`.
+    /// `shortcut`'s door, or a gated connection declared `shortcut`.
     pub shortcuts: usize,
     /// Gates not judged because a clock owns the region (spec-0016 §4).
     pub clocked: usize,
     /// Gates not judged because the story never operates them: no `open-gate`
-    /// or `close-gate` names the anchor and no barred edge bars it, so no beat
+    /// or `close-gate` names the anchor and no gated connection bars it, so no beat
     /// of the story is kept behind it — a barred window, a door nothing opens.
     pub unoperated: usize,
-    /// Gates whose shape names no two faces (no unique thin axis the faces
-    /// decide), counted once each and not judged.
+    /// Gates whose shape names no two faces (no handed axis, and no unique thin
+    /// axis the faces decide), counted once each and not judged.
     pub faceless: usize,
     /// Distinct quest configurations judged.
     pub configurations: usize,
     /// `(gate, configuration)` pairs where the gate is shut.
     pub shut: usize,
-    /// Of them, pairs where a face has no cell a body can stand or float in.
+    /// Of them, pairs where a face has no cell a body can stand, hold on or
+    /// float in.
     pub unstood: usize,
     /// Of them, pairs where the party can get to a face of the shut gate.
     pub reached: usize,
@@ -56,15 +58,15 @@ impl SeparationBinding {
     /// The one line a build prints about this proof.
     pub fn line(&self) -> String {
         format!(
-            "DW1011 binding: {} gate(s) resolved ({} of {} barred edge(s) among them); {} declared \
+            "DW1011 binding: {} gate(s) resolved ({} of {} gated connection(s) among them); {} declared \
              a way round (shortcut), {} clocked, {} operated by no beat, {} with no two faces; over \
              {} quest \
              configuration(s), {} (gate, configuration) pair(s) shut, {} with a face no body can \
              stand at, {} with the party at a face, {} got round by walking, falling, jumping or \
              swimming",
             self.gates,
-            self.barred_bound,
-            self.barred_edges,
+            self.gated_bound,
+            self.gated_edges,
             self.shortcuts,
             self.clocked,
             self.unoperated,
@@ -82,8 +84,8 @@ impl SeparationBinding {
         serde_json::json!({
             "code": DW_GATE_BYPASSED.id(),
             "gates": self.gates,
-            "barred_edges": self.barred_edges,
-            "barred_bound": self.barred_bound,
+            "gated_edges": self.gated_edges,
+            "gated_bound": self.gated_bound,
             "shortcuts": self.shortcuts,
             "clocked": self.clocked,
             "unoperated": self.unoperated,
@@ -101,10 +103,16 @@ impl SeparationBinding {
 /// its two faces opens it when a declaration says so.
 #[derive(Debug, Clone)]
 pub(super) struct GateUnderTest {
-    /// The gate in words: the barred edge it bars, or its anchor and area.
+    /// The gate in words: the gated connection it bars, or its anchor and area.
     pub label: String,
     /// The region's inclusive corners.
     pub region: ([i32; 3], [i32; 3]),
+    /// The axis the gate is thin on, when something states it: a gated
+    /// connection's seam hands its own normal (spec-0107 §6), so a bar one cell
+    /// on two axes — the grating over a one-wide hole — is judged on that axis's
+    /// two faces rather than guessed at. `None` for every other gate, whose axis
+    /// is read off its shape.
+    pub axis: Option<usize>,
     /// `Some(true)` when only the low face (of the thin axis) opens it,
     /// `Some(false)` when only the high face does, `None` when either does.
     pub opens_low: Option<bool>,
@@ -130,9 +138,10 @@ struct Faces {
     high: Vec<[i32; 3]>,
 }
 
-/// Whether a body can be in `c`: standing, or afloat at the top of water.
+/// Whether a body can be in `c`: standing, holding a climbable (spec-0099), or
+/// afloat at the top of water.
 fn can_be(w: &World, c: [i32; 3]) -> bool {
-    w.is_standable(c) || w.is_water_surface(c)
+    w.holds_body(c) || w.is_water_surface(c)
 }
 
 /// The candidate cells on one face of a gate region, for thin axis `axis`.
@@ -172,21 +181,24 @@ fn face_cells(lo: [i32; 3], hi: [i32; 3], axis: usize, high: bool) -> Vec<[i32; 
 }
 
 /// The faces of a gate region over `base` (the world with every gate open), or
-/// `None` when its shape names no two: the thin axis is the unique smallest
-/// extent, or — among axes tied for smallest — the one axis whose two faces
-/// both hold a cell a body can be in.
-fn faces_of(base: &World, region: ([i32; 3], [i32; 3])) -> Option<Faces> {
+/// `None` when its shape names no two: the handed axis when one is stated;
+/// else the thin axis is the unique smallest extent, or — among axes tied for
+/// smallest — the one axis whose two faces both hold a cell a body can be in.
+fn faces_of(base: &World, region: ([i32; 3], [i32; 3]), axis: Option<usize>) -> Option<Faces> {
     let (a, b) = region;
     let lo = [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])];
     let hi = [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])];
     let extent = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
-    let least = *extent.iter().min()?;
-    let tied: Vec<usize> = (0..3).filter(|&i| extent[i] == least).collect();
     let faces = |axis: usize| Faces {
         axis,
         low: face_cells(lo, hi, axis, false),
         high: face_cells(lo, hi, axis, true),
     };
+    if let Some(axis) = axis {
+        return Some(faces(axis));
+    }
+    let least = *extent.iter().min()?;
+    let tied: Vec<usize> = (0..3).filter(|&i| extent[i] == least).collect();
     if tied.len() == 1 {
         return Some(faces(tied[0]));
     }
@@ -384,7 +396,7 @@ fn path_words(w: &World, route: &Path, others: &[NamedGate]) -> String {
     s
 }
 
-/// [`DW_GATE_BYPASSED`] over a campaign's gates and barred edges, judged once
+/// [`DW_GATE_BYPASSED`] over a campaign's gates and gated connections, judged once
 /// per quest configuration the critical path passes through. Returns the
 /// binding beside the verdict so the caller can print it whichever way the
 /// verdict went.
@@ -394,12 +406,19 @@ pub fn check_gates_separate(
 ) -> (SeparationBinding, Result<(), Failure>) {
     let mut binding = SeparationBinding::default();
     let graph = plan.campaign.layout_graph.as_ref().map(|g| &g.content);
-    // The barred edges, keyed by the gate anchor the derivation names for them.
-    let mut barred: BTreeMap<String, &delvewright_dsl::layout::Edge> = BTreeMap::new();
+    // The gated connections (spec-0107), keyed by the gate anchor the
+    // derivation names for them, each with the axis its seam hands.
+    let seams = delvewright_dsl::siteplan::SitePlan::of(plan.campaign).seams;
+    let mut gated: BTreeMap<String, (&delvewright_dsl::layout::Edge, Option<usize>)> =
+        BTreeMap::new();
     for e in graph.map(|g| g.edges.iter()).into_iter().flatten() {
-        if matches!(e, delvewright_dsl::layout::Edge::Barred { .. }) {
-            binding.barred_edges += 1;
-            barred.insert(delvewright_dsl::siteplan::seam_anchor(e.id()), e);
+        if e.shuts() {
+            binding.gated_edges += 1;
+            let axis = seams
+                .iter()
+                .find(|s| &s.edge == e.id())
+                .map(delvewright_dsl::siteplan::PlacedSeam::bar_axis);
+            gated.insert(delvewright_dsl::siteplan::seam_anchor(e.id()), (e, axis));
         }
     }
     let shortcut_regions: BTreeSet<([i32; 3], [i32; 3])> =
@@ -441,14 +460,12 @@ pub fn check_gates_separate(
     });
     for (seal, clocked) in world.every_gate() {
         binding.gates += 1;
-        let edge = barred.get(&seal.anchor).copied();
+        let found = gated.get(&seal.anchor).copied();
+        let edge = found.map(|(e, _)| e);
         if edge.is_some() {
             bound_edges.insert(seal.anchor.clone());
         }
-        let declared_shortcut = matches!(
-            edge,
-            Some(delvewright_dsl::layout::Edge::Barred { shortcut: true, .. })
-        );
+        let declared_shortcut = edge.is_some_and(delvewright_dsl::layout::Edge::shortcut);
         if shortcut_regions.contains(&seal.region) || declared_shortcut {
             binding.shortcuts += 1;
             continue;
@@ -461,40 +478,38 @@ pub fn check_gates_separate(
             binding.unoperated += 1;
             continue;
         }
-        let (label, unlock) = match edge {
-            Some(delvewright_dsl::layout::Edge::Barred {
-                id,
-                opens_from,
-                gating,
-                ..
-            }) => {
-                let mut terms: Vec<String> =
-                    gating.flags.iter().map(|f| format!("`{f}`")).collect();
-                if let Some(q) = &gating.quest {
-                    terms.push(format!("`{q}` complete"));
-                }
-                let unlock = (!matches!(opens_from, delvewright_dsl::layout::OpensFrom::Either))
-                    .then(|| point(&delvewright_dsl::siteplan::seam_unlock_anchor(id)))
-                    .flatten();
+        let (label, unlock, axis) = match found {
+            Some((e, axis)) => {
+                let terms = e.gating().map(|g| g.words()).unwrap_or_default();
+                let unlock = e
+                    .opening_side()
+                    .and_then(|_| point(&delvewright_dsl::siteplan::seam_unlock_anchor(e.id())));
                 (
                     format!(
-                        "barred edge `{id}` (gate `{}`, opened on {})",
+                        "gated {} `{}` (gate `{}`, opened on {terms})",
+                        e.class(),
+                        e.id(),
                         seal.anchor,
-                        terms.join(" and ")
                     ),
                     unlock,
+                    axis,
                 )
             }
-            _ => (format!("gate `{}` of `{}`", seal.anchor, seal.area), None),
+            None => (
+                format!("gate `{}` of `{}`", seal.anchor, seal.area),
+                None,
+                None,
+            ),
         };
         gates.push(GateUnderTest {
             label,
             region: seal.region,
+            axis,
             opens_low: None,
             unlock,
         });
     }
-    binding.barred_bound = bound_edges.len();
+    binding.gated_bound = bound_edges.len();
 
     // One configuration per distinct region state the critical path passes
     // through, carrying the route cells of every leg that arrives under it —
@@ -564,7 +579,10 @@ pub(super) fn verify_gates_separate(
     };
     // Each gate's faces, once, over the world with every gate open; and which
     // face opens it, where a one-sided declaration says.
-    let faces: Vec<Option<Faces>> = gates.iter().map(|g| faces_of(base, g.region)).collect();
+    let faces: Vec<Option<Faces>> = gates
+        .iter()
+        .map(|g| faces_of(base, g.region, g.axis))
+        .collect();
     binding.faceless = faces.iter().filter(|f| f.is_none()).count();
     let opens_low: Vec<Option<bool>> = gates
         .iter()
@@ -733,8 +751,8 @@ pub(super) fn verify_gates_separate(
              edge it climbs, jumps or drops over, until no walk, fall, jump or swim leads from the \
              near face to the far one while the gate is shut. Do not fence walkable-looking ground \
              with an invisible barrier or mark it unwalkable. A gate the party is meant to get \
-             round is declared so: a `shortcut`, or a one-sided barred way whose openable side is \
-             the far one.",
+             round is declared so: a `shortcut`, or a one-sided gated way whose openable side is \
+             the far one (`gating.opens_from`).",
             order.len(),
             named.join("; ")
         ),
@@ -782,8 +800,9 @@ mod separate_tests {
 
     fn door() -> GateUnderTest {
         GateUnderTest {
-            label: "barred edge `edge/yard-door`".to_string(),
+            label: "gated walk `edge/yard-door`".to_string(),
             region: ([6, 1, 10], [6, 2, 10]),
+            axis: None,
             opens_low: None,
             unlock: None,
         }
@@ -1044,6 +1063,101 @@ mod separate_tests {
         assert_eq!((b.shut, b.reached), (1, 0));
     }
 
+    /// spec-0107 §7.3: a handed axis decides the faces. A bar one wide and two
+    /// high standing alone on an open floor is thin on `x` and `z` alike and
+    /// both pairs of faces hold floor, so with no axis stated it names no two
+    /// faces; handed `z`, it is judged on the two faces across `z`.
+    #[test]
+    fn a_handed_axis_names_the_faces_a_tied_shape_cannot() {
+        let mut solid = BTreeSet::new();
+        for x in 0..11 {
+            for z in 0..11 {
+                solid.insert([x, 0, z]);
+            }
+        }
+        let base = World::from_solid_cells(solid);
+        let region = ([5, 1, 5], [5, 2, 5]);
+        assert!(faces_of(&base, region, None).is_none(), "tied, no axis");
+        let f = faces_of(&base, region, Some(2)).expect("a handed axis has faces");
+        assert_eq!(f.axis, 2);
+        assert!(f.low.iter().all(|c| c[2] == 4) && f.high.iter().all(|c| c[2] == 6));
+
+        let gate = |axis: Option<usize>| GateUnderTest {
+            label: "gated walk `edge/post`".to_string(),
+            region,
+            axis,
+            opens_low: None,
+            unlock: None,
+        };
+        let judge = |axis| {
+            verify_gates_separate(
+                &[gate(axis)],
+                &[],
+                &base,
+                &[(&base, "now".to_string(), vec![[1, 1, 1]], vec![0])],
+            )
+        };
+        let (b, _) = judge(None);
+        assert_eq!(b.faceless, 1, "no axis: counted as no two faces");
+        let (b, verdict) = judge(Some(2));
+        assert_eq!(b.faceless, 0, "handed: judged");
+        assert_eq!(b.reached, 1, "the party stands at a face");
+        assert_eq!(
+            verdict
+                .expect_err("an open floor round a post is a way round")
+                .code
+                .id(),
+            "DW1011"
+        );
+    }
+
+    /// spec-0107 §7.3: a cell where a body holds a climbable is a cell it can
+    /// be in. A grating stands in the course above a ladder's hole; its lower
+    /// face is the ladder, where no body stands, and judged by standing alone
+    /// the pair would be counted unstood and the grating never judged.
+    #[test]
+    fn a_body_on_a_rung_stands_at_a_gratings_lower_face() {
+        const LADDER: &str = "minecraft:ladder[facing=east,waterlogged=false]";
+        let build = |shut: bool| {
+            let mut cells: Vec<([i32; 3], &str)> = Vec::new();
+            for x in 0..7 {
+                for z in 0..7 {
+                    cells.push(([x, 0, z], "minecraft:stone"));
+                    if [x, z] != [3, 3] {
+                        cells.push(([x, 5, z], "minecraft:stone"));
+                    }
+                }
+            }
+            // The ladder rises from the lower floor into the hole, on a pillar.
+            for y in 1..=5 {
+                cells.push(([3, y, 3], LADDER));
+                cells.push(([2, y, 3], "minecraft:stone"));
+            }
+            if shut {
+                cells.push(([3, 6, 3], "minecraft:iron_bars"));
+            }
+            crate::compiler::nav::testkit::blocks_world(&cells)
+        };
+        let (base, shut) = (build(false), build(true));
+        let grating = GateUnderTest {
+            label: "gated climb `edge/ladder`".to_string(),
+            region: ([3, 6, 3], [3, 6, 3]),
+            axis: Some(1),
+            opens_low: None,
+            unlock: None,
+        };
+        let (b, verdict) = verify_gates_separate(
+            &[grating],
+            &[],
+            &base,
+            &[(&shut, "now".to_string(), vec![[1, 1, 1]], vec![0])],
+        );
+        assert!(verdict.is_ok(), "{verdict:?}");
+        assert_eq!(b.unstood, 0, "the rung is a cell a body can be in");
+        assert_eq!(b.reached, 1, "counted with the party at a face");
+        assert_eq!(b.bypassed, 0);
+    }
+
     #[test]
     fn a_cube_gate_with_faces_on_two_axes_names_no_two_faces() {
         // A 1x1 column in the open yard: walkable round on both axes.
@@ -1054,6 +1168,6 @@ mod separate_tests {
             }
         }
         let base = World::from_solid_cells(solid);
-        assert!(faces_of(&base, ([5, 1, 5], [5, 2, 5])).is_none());
+        assert!(faces_of(&base, ([5, 1, 5], [5, 2, 5]), None).is_none());
     }
 }

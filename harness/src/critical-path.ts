@@ -18,6 +18,8 @@
 // compiler put here (CLAUDE.md: assertions and navigation, no game logic).
 
 import type { Watcher } from "./watch.ts";
+import type { AftermathEntry } from "./aftermath.ts";
+import type { GateTerm } from "./death-loop.ts";
 
 /**
  * `version` is the `dsl_version` the compiler built the campaign at. The harness
@@ -55,10 +57,22 @@ import type { Watcher } from "./watch.ts";
  *   reason as `3`: the fallback — a literal set of entity names living in the
  *   harness — IS the defect, because it is right only for the campaigns whose
  *   author happened to pick those bodies.
+ * * `5` — a step may carry `keep_out`, the completion volumes of the objectives
+ *   armed while it is performed and not yet due, which every walk of the step keeps
+ *   out of; a `trigger` that carries nobody may name the `stand` outside them; and
+ *   a `mock` step performs an act no step kind drives by the engine's own bundle
+ *   function (spec-0108 §6.5).
+ *
+ * * `5` — a `collect` that takes from an item frame or an armour stand
+ *   (spec-0111) carries `holder: {kind, slot, click_height, stance}`: the act
+ *   that takes the item — a hit on a frame, a click at `click_height` on a
+ *   stand — the slot it is in, and a cell the compiler proved in reach and in
+ *   sight. Required in both directions for `4`'s reason: a bot that guessed the
+ *   act would be the compiler's knowledge written where it cannot be right.
  *
  * Rebuild the delve with a current `delvec` to produce a supported path.
  */
-export const CRITICAL_PATH_FORMAT_VERSION = 4;
+export const CRITICAL_PATH_FORMAT_VERSION = 5;
 
 /** The closed set of critical-path step actions (spec-0002 / spec-0001 enum). */
 export const STEP_ACTIONS = [
@@ -72,6 +86,7 @@ export const STEP_ACTIONS = [
   "trigger",
   "witness-strike",
   "loop",
+  "mock",
   "assert-complete",
 ] as const;
 
@@ -115,6 +130,21 @@ export interface PresentationMarkers {
   readonly sneak?: boolean;
   readonly cutsceneSeconds?: number;
   readonly enRouteCutsceneSeconds?: number;
+  /**
+   * The completion volumes this step's walks keep out of (`keep_out`): every
+   * `reach` objective the compiler reads as armed while the step is performed
+   * and not the step's own. A body inside one completes it out of turn, so the
+   * bot's pathfinder prices every cell such a volume's selector reaches as it
+   * prices a lethal one. Absent when the step keeps out of none.
+   */
+  readonly keepOut?: readonly KeepOut[];
+}
+
+/** One completion volume a step keeps out of: the armed objective, and its box. */
+export interface KeepOut {
+  readonly objective: string;
+  readonly lo: Vec3Tuple;
+  readonly hi: Vec3Tuple;
 }
 
 /** Talk to an NPC at `pos`, then chat the compiler-assigned dialog `/trigger`. */
@@ -193,8 +223,25 @@ export interface KillStep extends PresentationMarkers {
 }
 
 /**
+ * The holder entity a `collect` takes from (spec-0111 §5.4, format 5): its
+ * census `kind`, the `slot` the stack is in, the click height that takes it
+ * from a stand (absent on a frame, which is hit), and a cell the compiler
+ * proved within reach of it and in sight.
+ */
+export interface CollectHolder {
+  readonly kind: "item-frame" | "glow-item-frame" | "armor-stand";
+  readonly slot: string;
+  readonly clickHeight?: number;
+  readonly stance?: Vec3Tuple;
+}
+
+/** The holder kinds a format-5 `collect` may name. */
+export const HOLDER_KINDS = ["item-frame", "glow-item-frame", "armor-stand"] as const;
+
+/**
  * Collect `count` of `item` from a chest at `pos` (v0.3) — or, when
- * `droppedBy` is set, off the ground the named wave died on (v0.9).
+ * `droppedBy` is set, off the ground the named wave died on (v0.9), or, when
+ * `holder` is set, off the frame or stand standing at `pos` (spec-0111).
  */
 export interface CollectStep extends PresentationMarkers {
   readonly action: "collect";
@@ -210,6 +257,8 @@ export interface CollectStep extends PresentationMarkers {
    * a block that is not there.
    */
   readonly droppedBy?: string;
+  /** The holder entity the item is taken from (spec-0111, format 5). */
+  readonly holder?: CollectHolder;
   /** Cross-area teleport destination on completion, if any (gap 8). */
   readonly transport?: Transport;
 }
@@ -292,9 +341,11 @@ export interface TriggerStep extends PresentationMarkers {
   /** An `approach` trigger's radius; present exactly for `approach`. */
   readonly range?: number;
   /**
-   * spec-0083 §4: where the party stands to be carried — a cell inside the
-   * link's volume the act reaches the body from. Present exactly when the step
-   * carries the party, together with {@link transport}.
+   * Where the party stands to perform the act, and acts without walking again:
+   * for a step that carries the party (spec-0083 §4), a cell inside the link's
+   * volume, together with {@link transport}; for one performed beside a volume
+   * it keeps out of ({@link PresentationMarkers.keepOut}), the cell outside every
+   * such volume the compiler proved the act is performed from.
    */
   readonly stand?: Vec3Tuple;
   /** The link's `to`: where performing this trigger puts the party. */
@@ -382,6 +433,33 @@ export interface AssertCompleteStep {
    * ending, which keeps paths that predate the field byte-identical.
    */
   readonly endingTailTicks?: number;
+  /**
+   * spec-0108 §6.3: what the world the ending left looks like — each aftermath
+   * effect of the scene of the ending this path fires, with what it left to
+   * look at. Absent for a path whose ending changes nothing.
+   */
+  readonly aftermath?: readonly AftermathEntry[];
+}
+
+/**
+ * spec-0108 §6.5: perform an elective act no step kind drives — a shop purchase,
+ * a trap's payload, a shortcut's unlock, a fight's `on_kill`, a disarm — by
+ * running exactly the engine's own function for its bundle. Every `before` term
+ * must hold first and every `after` term once it has run: the state change is
+ * asserted, not assumed. Proves no objective and stands nowhere.
+ */
+export interface MockStep {
+  readonly action: "mock";
+  /** The act performed, as the branch plan's `entry_deeds` name it. */
+  readonly act: string;
+  /** Its kind, as the compiler's story model names it (`shop-offer`, `trap`, …). */
+  readonly kind: string;
+  /** The namespaced function the vanilla interaction would have called. */
+  readonly function: string;
+  /** The terms that hold in front of the act — what it changes. */
+  readonly before: readonly GateTerm[];
+  /** The same terms as the act leaves them; never empty. */
+  readonly after: readonly GateTerm[];
 }
 
 export type Step =
@@ -395,6 +473,7 @@ export type Step =
   | TriggerStep
   | WitnessStrikeStep
   | LoopStep
+  | MockStep
   | AssertCompleteStep;
 
 /**
@@ -668,8 +747,13 @@ function transportFields(
 function presentationFields(
   obj: Record<string, unknown>,
   pointer: string,
-): { sneak?: boolean; cutsceneSeconds?: number; enRouteCutsceneSeconds?: number } {
-  const out: { sneak?: boolean; cutsceneSeconds?: number; enRouteCutsceneSeconds?: number } = {};
+): PresentationMarkers {
+  const out: {
+    sneak?: boolean;
+    cutsceneSeconds?: number;
+    enRouteCutsceneSeconds?: number;
+    keepOut?: readonly KeepOut[];
+  } = {};
   const sneak = obj["sneak"];
   if (sneak !== undefined) {
     if (typeof sneak !== "boolean") {
@@ -697,7 +781,57 @@ function presentationFields(
     }
     out.enRouteCutsceneSeconds = enRoute;
   }
+  const keepOut = obj["keep_out"];
+  if (keepOut !== undefined) {
+    if (!Array.isArray(keepOut) || keepOut.length === 0) {
+      fail(`${pointer}/keep_out`, `must be a non-empty array when present, got ${describe(keepOut)}`);
+    }
+    out.keepOut = keepOut.map((k, i) => {
+      const at = `${pointer}/keep_out/${i}`;
+      if (typeof k !== "object" || k === null || Array.isArray(k)) {
+        fail(at, `must be an object, got ${describe(k)}`);
+      }
+      const row = k as Record<string, unknown>;
+      rejectUnknownKeys(row, ["objective", "lo", "hi"], at);
+      const objective = requireObjectiveId(row, at);
+      const lo = requireVec3(row, "lo", at);
+      const hi = requireVec3(row, "hi", at);
+      if (lo.some((v, a) => v > hi[a]!)) {
+        fail(at, `lo [${lo.join(", ")}] must not exceed hi [${hi.join(", ")}] on any axis`);
+      }
+      return { objective, lo, hi };
+    });
+  }
   return out;
+}
+
+/** One scoreboard term of a mock step, in the death plan's `GateTerm` shape. */
+function requireTerm(v: unknown, pointer: string): GateTerm {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) {
+    fail(pointer, `must be an object, got ${describe(v)}`);
+  }
+  const t = v as Record<string, unknown>;
+  rejectUnknownKeys(t, ["objective", "holder", "min", "max", "negate"], pointer);
+  const bound = (key: "min" | "max"): number | undefined => {
+    const b = t[key];
+    if (b === null || b === undefined) return undefined;
+    if (!Number.isInteger(b)) fail(`${pointer}/${key}`, `must be an integer or null, got ${describe(b)}`);
+    return b as number;
+  };
+  const min = bound("min");
+  const max = bound("max");
+  if (min === undefined && max === undefined) {
+    fail(pointer, "a term with both ends open matches every value and asserts nothing");
+  }
+  const negate = t["negate"];
+  if (typeof negate !== "boolean") fail(`${pointer}/negate`, `must be a boolean, got ${describe(negate)}`);
+  return {
+    objective: requireString(t, "objective", pointer),
+    holder: requireString(t, "holder", pointer),
+    min,
+    max,
+    negate,
+  };
 }
 
 /**
@@ -734,6 +868,36 @@ function requireScoreboard(
   };
 }
 
+/**
+ * A format-5 `collect` step's `holder` (spec-0111 §5.4). A stand names the
+ * height to click; a frame, which is hit, names none.
+ */
+function parseHolder(value: unknown, pointer: string): CollectHolder {
+  if (!isRecord(value)) {
+    fail(pointer, `must be an object, got ${describe(value)}`);
+  }
+  rejectUnknownKeys(value, ["kind", "slot", "click_height", "stance"], pointer);
+  const kind = requireString(value, "kind", pointer);
+  if (!(HOLDER_KINDS as readonly string[]).includes(kind)) {
+    fail(`${pointer}/kind`, `must be one of ${HOLDER_KINDS.join(", ")}, got ${JSON.stringify(kind)}`);
+  }
+  const slot = requireString(value, "slot", pointer);
+  const click = value["click_height"];
+  if (click !== undefined && (typeof click !== "number" || !Number.isFinite(click))) {
+    fail(`${pointer}/click_height`, `must be a finite number, got ${describe(click)}`);
+  }
+  if (kind === "armor-stand" && click === undefined) {
+    fail(`${pointer}/click_height`, "is required on an armour stand: which band a click lands in is the compiler's knowledge");
+  }
+  const stance = value["stance"] === undefined ? undefined : requireVec3(value, "stance", pointer);
+  return {
+    kind: kind as CollectHolder["kind"],
+    slot,
+    ...(click === undefined ? {} : { clickHeight: click as number }),
+    ...(stance === undefined ? {} : { stance }),
+  };
+}
+
 function rejectUnknownKeys(
   obj: Record<string, unknown>,
   allowed: readonly string[],
@@ -764,7 +928,7 @@ function parseStep(value: unknown, pointer: string): Step {
     case "talk-to": {
       rejectUnknownKeys(
         obj,
-        ["action", "objective", "npc", "pos", "command", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds"],
+        ["action", "objective", "npc", "pos", "command", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds", "keep_out"],
         pointer,
       );
       return {
@@ -792,6 +956,7 @@ function parseStep(value: unknown, pointer: string): Step {
           "sneak",
           "cutscene_seconds",
           "en_route_cutscene_seconds",
+          "keep_out",
         ],
         pointer,
       );
@@ -824,7 +989,7 @@ function parseStep(value: unknown, pointer: string): Step {
     case "kill": {
       rejectUnknownKeys(
         obj,
-        ["action", "objective", "wave", "pos", "tag", "count", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds"],
+        ["action", "objective", "wave", "pos", "tag", "count", "transport", "sneak", "cutscene_seconds", "en_route_cutscene_seconds", "keep_out"],
         pointer,
       );
       return {
@@ -848,10 +1013,12 @@ function parseStep(value: unknown, pointer: string): Step {
           "count",
           "pos",
           "dropped_by",
+          "holder",
           "transport",
           "sneak",
           "cutscene_seconds",
           "en_route_cutscene_seconds",
+          "keep_out",
         ],
         pointer,
       );
@@ -859,6 +1026,7 @@ function parseStep(value: unknown, pointer: string): Step {
       if (droppedBy !== undefined && typeof droppedBy !== "string") {
         fail(`${pointer}/dropped_by`, `must be a string, got ${describe(droppedBy)}`);
       }
+      const holder = obj["holder"] === undefined ? undefined : parseHolder(obj["holder"], `${pointer}/holder`);
       return {
         action: "collect",
         objective: requireObjectiveId(obj, pointer),
@@ -866,6 +1034,7 @@ function parseStep(value: unknown, pointer: string): Step {
         count: requireInteger(obj, "count", pointer),
         pos: requirePos(obj, pointer),
         ...(droppedBy === undefined ? {} : { droppedBy }),
+        ...(holder === undefined ? {} : { holder }),
         ...transportFields(obj, pointer),
         ...presentationFields(obj, pointer),
       };
@@ -885,6 +1054,7 @@ function parseStep(value: unknown, pointer: string): Step {
           "sneak",
           "cutscene_seconds",
           "en_route_cutscene_seconds",
+          "keep_out",
         ],
         pointer,
       );
@@ -912,7 +1082,7 @@ function parseStep(value: unknown, pointer: string): Step {
     case "rest": {
       rejectUnknownKeys(
         obj,
-        ["action", "bonfire", "anchor", "pos", "command", "sneak", "cutscene_seconds", "en_route_cutscene_seconds"],
+        ["action", "bonfire", "anchor", "pos", "command", "sneak", "cutscene_seconds", "en_route_cutscene_seconds", "keep_out"],
         pointer,
       );
       const bonfire = obj["bonfire"];
@@ -944,6 +1114,7 @@ function parseStep(value: unknown, pointer: string): Step {
           "transport",
           "cutscene_seconds",
           "en_route_cutscene_seconds",
+          "keep_out",
           "block",
         ],
         pointer,
@@ -992,14 +1163,22 @@ function parseStep(value: unknown, pointer: string): Step {
         fail(`${pointer}/range`, `a ${kind} trigger has no range`);
       }
       // spec-0083 §4: a trigger that carries the party says where to stand and
-      // where it lands — both, or neither.
+      // where it lands. A trigger that carries nobody names a stand when it is
+      // performed beside a volume it keeps out of — the cell outside it.
       const carried = transportFields(obj, pointer);
       const stand = obj["stand"] === undefined ? undefined : requireVec3(obj, "stand", pointer);
-      if ((stand === undefined) !== (carried.transport === undefined)) {
+      if (carried.transport !== undefined && stand === undefined) {
         fail(
-          `${pointer}/${stand === undefined ? "stand" : "transport"}`,
-          "a trigger that carries the party names both where to stand (`stand`) and where it " +
+          `${pointer}/stand`,
+          "a trigger that carries the party names where to stand (`stand`) as well as where it " +
             "lands (`transport`)",
+        );
+      }
+      if (stand !== undefined && carried.transport === undefined && obj["keep_out"] === undefined) {
+        fail(
+          `${pointer}/stand`,
+          "a trigger that carries nobody names a stand only when it keeps out of a volume " +
+            "(`keep_out`) — the cell outside it the compiler chose",
         );
       }
       if (stand !== undefined && carried.transport !== undefined) {
@@ -1094,7 +1273,7 @@ function parseStep(value: unknown, pointer: string): Step {
     case "loop": {
       rejectUnknownKeys(
         obj,
-        ["action", "loop", "pos", "cross", "offset", "times", "transport", "cutscene_seconds", "en_route_cutscene_seconds"],
+        ["action", "loop", "pos", "cross", "offset", "times", "transport", "cutscene_seconds", "en_route_cutscene_seconds", "keep_out"],
         pointer,
       );
       const loop = requireString(obj, "loop", pointer);
@@ -1135,8 +1314,39 @@ function parseStep(value: unknown, pointer: string): Step {
         ...presentationFields(obj, pointer),
       };
     }
+    case "mock": {
+      rejectUnknownKeys(obj, ["action", "act", "kind", "function", "before", "after"], pointer);
+      const fn = requireString(obj, "function", pointer);
+      if (!/^[a-z0-9_.-]+:[a-z0-9_./-]+$/.test(fn)) {
+        fail(`${pointer}/function`, `must be a namespaced function id, got ${JSON.stringify(fn)}`);
+      }
+      const terms = (key: "before" | "after"): GateTerm[] => {
+        const raw = obj[key];
+        if (!Array.isArray(raw)) fail(`${pointer}/${key}`, `must be an array, got ${describe(raw)}`);
+        return raw.map((t, i) => requireTerm(t, `${pointer}/${key}/${i}`));
+      };
+      const before = terms("before");
+      const after = terms("after");
+      if (after.length === 0) {
+        fail(
+          `${pointer}/after`,
+          "a mock that changes nothing asserts nothing — the compiler exports no mock for such an act",
+        );
+      }
+      if (before.length !== after.length) {
+        fail(`${pointer}/before`, `must name the same ${after.length} term(s) as \`after\`, got ${before.length}`);
+      }
+      return {
+        action: "mock",
+        act: requireString(obj, "act", pointer),
+        kind: requireString(obj, "kind", pointer),
+        function: fn,
+        before,
+        after,
+      };
+    }
     case "assert-complete": {
-      rejectUnknownKeys(obj, ["action", "scoreboard", "ending_tail_ticks"], pointer);
+      rejectUnknownKeys(obj, ["action", "scoreboard", "ending_tail_ticks", "aftermath"], pointer);
       const board = requireScoreboard(obj, pointer);
       const tail = obj["ending_tail_ticks"];
       if (tail !== undefined) {
@@ -1147,11 +1357,20 @@ function parseStep(value: unknown, pointer: string): Step {
           );
         }
       }
+      const rawAftermath = obj["aftermath"];
+      let aftermath: AftermathEntry[] | undefined;
+      if (rawAftermath !== undefined) {
+        if (!Array.isArray(rawAftermath)) {
+          fail(`${pointer}/aftermath`, `must be an array, got ${describe(rawAftermath)}`);
+        }
+        aftermath = rawAftermath.map((a, i) => parseAftermathEntry(a, `${pointer}/aftermath/${i}`));
+      }
       return {
         action: "assert-complete",
         objective: board.objective,
         value: board.value,
         ...(tail !== undefined ? { endingTailTicks: tail as number } : {}),
+        ...(aftermath !== undefined ? { aftermath } : {}),
       };
     }
     default:
@@ -1389,4 +1608,96 @@ function describe(value: unknown): string {
   if (value === null) return "null";
   if (Array.isArray(value)) return "array";
   return typeof value;
+}
+
+/**
+ * One `assert-complete.aftermath[]` row (spec-0108 §6.3): `path` and `verb`
+ * strings, and an `observable` that is `"emission-only"` or an object naming
+ * its `kind`. The kinds the bot reads are checked for the fields it reads;
+ * every other kind is carried as the server-only reading it is.
+ */
+function parseAftermathEntry(value: unknown, pointer: string): AftermathEntry {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    fail(pointer, `must be an object, got ${describe(value)}`);
+  }
+  const o = value as Record<string, unknown>;
+  const path = o["path"];
+  const verb = o["verb"];
+  if (typeof path !== "string" || typeof verb !== "string") {
+    fail(pointer, "must carry string `path` and `verb`");
+  }
+  const obs = o["observable"];
+  if (obs === "emission-only") return { path, verb, observable: "emission-only" };
+  if (typeof obs !== "object" || obs === null || Array.isArray(obs)) {
+    fail(`${pointer}/observable`, `must be "emission-only" or an object, got ${describe(obs)}`);
+  }
+  const ob = obs as Record<string, unknown>;
+  const kind = ob["kind"];
+  if (typeof kind !== "string") fail(`${pointer}/observable/kind`, "must be a string");
+  const vec = (v: unknown, at: string): [number, number, number] => {
+    if (!Array.isArray(v) || v.length !== 3 || !v.every((n) => typeof n === "number")) {
+      fail(at, `must be an [x, y, z] of numbers, got ${describe(v)}`);
+    }
+    return [v[0] as number, v[1] as number, v[2] as number];
+  };
+  switch (kind) {
+    case "block":
+      if (typeof ob["block"] !== "string") fail(`${pointer}/observable/block`, "must be a string");
+      return {
+        path,
+        verb,
+        observable: {
+          kind,
+          first: vec(ob["first"], `${pointer}/observable/first`),
+          last: vec(ob["last"], `${pointer}/observable/last`),
+          block: ob["block"] as string,
+        },
+      };
+    case "position": {
+      const from = ob["from"] as Record<string, unknown> | undefined;
+      if (typeof from !== "object" || from === null) {
+        fail(`${pointer}/observable/from`, "must be an object with min and max");
+      }
+      return {
+        path,
+        verb,
+        observable: {
+          kind,
+          from: {
+            min: vec(from["min"], `${pointer}/observable/from/min`),
+            max: vec(from["max"], `${pointer}/observable/from/max`),
+          },
+          to: vec(ob["to"], `${pointer}/observable/to`),
+        },
+      };
+    }
+    case "time":
+      if (typeof ob["daytime"] !== "number") {
+        fail(`${pointer}/observable/daytime`, "must be a number");
+      }
+      return { path, verb, observable: { kind, daytime: ob["daytime"] as number } };
+    case "weather":
+      if (typeof ob["weather"] !== "string") {
+        fail(`${pointer}/observable/weather`, "must be a string");
+      }
+      return { path, verb, observable: { kind, weather: ob["weather"] as string } };
+    case "health":
+      return { path, verb, observable: { kind, amount: Number(ob["amount"] ?? 0) } };
+    case "effect":
+      if (typeof ob["effect"] !== "string") {
+        fail(`${pointer}/observable/effect`, "must be a string");
+      }
+      return { path, verb, observable: { kind, effect: ob["effect"] as string } };
+    case "no-effect":
+      return {
+        path,
+        verb,
+        observable: {
+          kind,
+          effect: typeof ob["effect"] === "string" ? (ob["effect"] as string) : null,
+        },
+      };
+    default:
+      return { path, verb, observable: { kind } };
+  }
 }

@@ -591,3 +591,119 @@ fn dirt_path_and_mycelium_pass_and_farmland_is_shown() {
         rep.findings
     );
 }
+
+/// **A refusal names where the block is had instead, or says there is no such
+/// place.** Every block with a row in `ROUTES` is refused with that row's text
+/// in the message; a block with none is refused with the sentence that says so.
+/// The campaign that takes each route builds in `tests/remedy_reachability.rs`.
+#[test]
+fn a_refused_block_names_its_route_or_says_it_has_none() {
+    use delvec::admit::allowlist::ROUTES;
+    use delvec::admit::structure::PaletteEntry;
+    let refusal = |id: &str| {
+        let mut s = fixtures::clean_room();
+        s.set_cell([1, 1, 1], PaletteEntry::simple(id), None);
+        let (rep, _) = audit("route", &s, &Allowlist::default_building());
+        rep.findings
+            .iter()
+            .find(|f| f.code == "DW0730")
+            .unwrap_or_else(|| panic!("{id} was not refused: {:?}", rep.findings))
+            .message
+            .clone()
+    };
+    let mut routed = 0;
+    for (ids, route) in ROUTES {
+        for id in *ids {
+            routed += 1;
+            let m = refusal(id);
+            assert!(
+                m.contains(route),
+                "{id}: the route is not in the message: {m}"
+            );
+            assert!(!m.contains("no DSL surface"), "{id}: {m}");
+        }
+    }
+    assert!(routed > 0, "no routed block was examined");
+    let lever = refusal("minecraft:lever");
+    assert!(
+        lever.contains("`prop`") && lever.contains("minecraft:lever[face=floor,facing=north"),
+        "{lever}"
+    );
+    for id in ["minecraft:tnt", "minecraft:observer", "minecraft:farmland"] {
+        let m = refusal(id);
+        assert!(m.contains("no DSL surface stands in for it"), "{id}: {m}");
+    }
+}
+
+/// **Which container kinds the default allowlist admits**, enumerated from the
+/// container table (spec-0105 §2.1): every block id behind the twelve kinds is
+/// either admitted or shown, and the brewing stand — which a `loot` fill
+/// reaches and the skill furnishes — is admitted.
+#[test]
+fn the_container_kinds_the_allowlist_admits_are_the_ones_a_delve_furnishes() {
+    let allow = Allowlist::default_building();
+    let mut admitted: Vec<&str> = Vec::new();
+    let mut shown: Vec<&str> = Vec::new();
+    let mut ids = 0;
+    for k in delvewright_dsl::blocks::CONTAINER_KINDS_1_21_11 {
+        for id in k.blocks {
+            ids += 1;
+            if allow.permits(id) {
+                admitted.push(id);
+            } else {
+                shown.push(id);
+            }
+        }
+    }
+    assert_eq!(admitted.len() + shown.len(), ids);
+    for id in [
+        "minecraft:chest",
+        "minecraft:trapped_chest",
+        "minecraft:barrel",
+        "minecraft:furnace",
+        "minecraft:smoker",
+        "minecraft:brewing_stand",
+        "minecraft:red_shulker_box",
+    ] {
+        assert!(admitted.contains(&id), "{id} is not admitted: {admitted:?}");
+    }
+    // The sixteen dyed shulker boxes are admitted through the `_shulker_box`
+    // suffix; the undyed one carries no underscore before it and is shown.
+    assert_eq!(
+        admitted
+            .iter()
+            .filter(|b| b.ends_with("_shulker_box"))
+            .count(),
+        16
+    );
+    shown.sort_unstable();
+    assert_eq!(
+        shown,
+        [
+            "minecraft:blast_furnace",
+            "minecraft:crafter",
+            "minecraft:dispenser",
+            "minecraft:dropper",
+            "minecraft:hopper",
+            "minecraft:shulker_box",
+        ],
+        "the redstone-family containers and the undyed shulker box stay shown"
+    );
+    // And a piece standing one passes the audit, written with the bottle
+    // properties its multipart model is assembled from (DW0735 otherwise).
+    use delvec::admit::structure::PaletteEntry;
+    let bottles = [
+        ("has_bottle_0", "false"),
+        ("has_bottle_1", "false"),
+        ("has_bottle_2", "false"),
+    ];
+    let mut s = fixtures::clean_room();
+    s.set_cell(
+        [1, 1, 1],
+        PaletteEntry::with_props("minecraft:brewing_stand", &bottles),
+        None,
+    );
+    let (rep, _) = audit("still-room", &s, &allow);
+    assert!(rep.is_pass(), "{:?}", rep.findings);
+    assert!(rep.palette.iter().any(|b| b == "minecraft:brewing_stand"));
+}

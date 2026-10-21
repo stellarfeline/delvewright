@@ -127,6 +127,13 @@
             {
               "flag": "flag/north-drawn",
               "type": "set-flag"
+            },
+            {
+              "carrier": "one",
+              "count": 1,
+              "item": "minecraft:trial_key",
+              "name": "North Ward Key",
+              "type": "give-item"
             }
           ],
           "obj/ward-south": [
@@ -143,6 +150,6 @@
       }
     ]
   },
-  "dsl_version": "0.50.0",
+  "dsl_version": "0.58.0",
   "stage": "quests"
 }

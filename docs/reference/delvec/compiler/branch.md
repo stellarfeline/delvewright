@@ -22,11 +22,45 @@ the branch set is authored and small — never a combinatorial sweep of every fl
 Each branch carries a **flag assignment**: the flags it lists are pinned SET and
 every other flag of its points' `forks_on` is pinned UNSET. That second half is
 what makes leakage decidable rather than hopeful. An assignment is realized
-against `compiler::flow`'s enumerated worlds — a world realizes a branch when its
-solved flag set holds every pinned-set flag and no pinned-unset one — and the
-branch's own playthrough is rooted at **the branch**, not at the stage-4
-`finale` (a branch running to its own ending never completes the finale, so
-rooting there would say the branch plays nothing).
+against `compiler::flow`'s **story worlds** ([`flow.md`](flow.md#story-worlds-spec-0108),
+spec-0108) — a world realizes a branch when its solved flag set holds every
+pinned-set flag and no pinned-unset one, the first such world in canonical order
+plays it — and the branch's own playthrough is rooted at **the branch**, not at
+the stage-4 `finale` (a branch running to its own ending never completes the
+finale, so rooting there would say the branch plays nothing).
+
+**A world is a participation as well as a selection** (spec-0108 §4). Because
+the story worlds include each selection's *none* world beside its *all* world, a
+flag only elective acts write — an optional quest, a trigger the mainline does
+not press, a trap, a disarm, a purchase, a credited kill — is set in one and not
+the other, so `DW0480` reaches a **deed-made fork** (it can only turn a proof
+red; a branch whose `flags` is empty is the *did not* side), and an ambient
+producer a branch pins unset is realized by the world that does not perform it,
+so it no longer leaks into every branch by construction. A producer every world
+performs — a mandatory quest's bundle, a forced act — still does, and that is
+`DW0484`.
+
+**The branch plan's rows are worlds.** `validation/branch-plan.json` keeps its
+name and its readers; each row of `branches` is one story world: `id`
+(`world/<k>`), `branches` (the declared branches its flags realize), `selection`
+(`index` and the flags each chosen alternative sets), `flags{set,unset}` (over
+every branch point's `forks_on` and every flag a final scene reads),
+`participation{performs[],skips[]}`, `inputs` (the class each scene input is
+left in), `endings`, `entry_choices`, `entry_deeds` (each elective act performed
+and the step it precedes), `path` (`world-path-<k>.json`, or `null` with
+`path_reason` — unreachable, or a witness whose act no harness step drives and
+no `mock` step can perform: a trap, a disarm, a shortcut, a purchase or a credited
+kill whose bundle has no function, or changes nothing the replay can name;
+spec-0108 §6.5), `chronicle`
+(`world-chronicle-<k>.md`: an elective ambient act the world performs as an
+entry deed writes its effects' `happening` lines as dated `deed` lines in front
+of the step it precedes; an elective act the world skips writes none; every
+other trigger and trap beat is listed after the dated account as ambient),
+`reachable`; plus `branches_unrealized`. It is
+emitted when the campaign declares a branch point or its story worlds outnumber
+its dialogue selections. Every world with a path gets its own route proof
+(`DW0311` and the rest, messages naming `branch `X` (world/<k>)`) and
+`world-waypoints-<k>.json`.
 
 Validation-tier (exit 1), like the `DW046x` ledger it extends.
 

@@ -44,7 +44,7 @@ optional declaration.
 ## 2. Algorithm survey
 
 Delvewright already owns a deterministic noise family: **position-addressed
-value noise**, seeded per stream label, used by the island/cave/tidal-keep
+value noise**, seeded per stream label, used by the island/cave
 generators and ported into `crate::edit` (see ACKNOWLEDGEMENTS: the
 frightful_hobgoblin techniques were re-implemented ideas-only). Policy for this
 spec: **compose the in-house family first**; the external citations below are

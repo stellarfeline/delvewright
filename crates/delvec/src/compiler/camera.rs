@@ -885,8 +885,8 @@ fn neg(v: [f64; 3]) -> [f64; 3] {
 /// Scope rules (mirrored by validation's `DW0349`): moves in the same effect
 /// list run from the cutscene's own start (`delta` 0); a `sequence` aligns by
 /// `at_ticks` (moves in any step, and moves in the launching list, offset
-/// accordingly); reaction lists (`on_arrive`/`on_caught`/`on_respawn`) fire at
-/// a statically-unknowable time and start an empty scope.
+/// accordingly); reaction lists (`on_arrive`/`on_caught`/`on_respawn`) and a
+/// cutscene's `then` fire at a moment of their own and start an empty scope.
 pub fn cutscene_units(
     campaign: &delvewright_dsl::Campaign,
 ) -> Vec<(&delvewright_dsl::QuestEffect, Vec<MoveCtx>)> {
@@ -919,7 +919,14 @@ pub fn cutscene_units(
         list_moves(list, 0, &mut local);
         for e in list {
             match &e.verb {
-                Verb::Cutscene { .. } => out.push((e, local.clone())),
+                Verb::Cutscene { .. } => {
+                    out.push((e, local.clone()));
+                    // A `then` (spec-0108 §3.6) runs when the camera returns, at
+                    // a moment of its own: a fresh scope, as a reaction list.
+                    for inner in e.nested_effect_lists() {
+                        scan(inner, &[], out);
+                    }
+                }
                 Verb::Sequence { steps } => {
                     // Timeline moves as (step start tick, move) pairs.
                     let mut timed: Vec<(i32, MoveCtx)> = Vec::new();
@@ -950,7 +957,12 @@ pub fn cutscene_units(
                         }
                         for e2 in &st.effects {
                             match &e2.verb {
-                                Verb::Cutscene { .. } => out.push((e2, step_scope.clone())),
+                                Verb::Cutscene { .. } => {
+                                    out.push((e2, step_scope.clone()));
+                                    for inner in e2.nested_effect_lists() {
+                                        scan(inner, &[], out);
+                                    }
+                                }
                                 _ => {
                                     for inner in e2.nested_effect_lists() {
                                         scan(inner, &[], out);

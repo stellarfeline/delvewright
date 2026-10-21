@@ -442,3 +442,112 @@ fn party_division_is_proven_or_dw0358() {
         "min_players 1 keeps the unchanged single-agent proof"
     );
 }
+
+// ---------------------------------------------------------------------------
+// the party-division binding (spec-0018 criterion 1)
+// ---------------------------------------------------------------------------
+
+/// The fixture's plan, for recomputing the binding over a perturbed output.
+fn plan_of(dir: &Path) -> (delvewright_dsl::Campaign, PrefabRegistry) {
+    let loaded = load_campaign_dir(dir).unwrap();
+    let campaign = parse_campaign(&loaded.raw).expect("valid campaign parses");
+    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
+    (campaign, prefabs)
+}
+
+fn ledger(out: &BuildOutput) -> serde_json::Value {
+    serde_json::from_str(&text(out, "validation/party-division.json")).unwrap()
+}
+
+/// The two-player one-carrier template: a second member, the completing
+/// player drives the real `complete_<obj>`, and exactly one of the two holds
+/// the item.
+#[test]
+fn carrier_one_is_judged_with_two_players() {
+    let out = build_dir(&and_join_dir());
+    let t = text(
+        &out,
+        "packtest-datapack/data/and-join/test/party_carrier_ward_north.mcfunction",
+    );
+    let spawn = t.find("dummy dwc0p1 spawn").expect("a second member");
+    let drive = t
+        .find("execute as @s run function and-join:complete_o_ward_north")
+        .expect("the completing player drives the real completion");
+    let mine = t
+        .find("execute store result score #pc_ward_north_0_a dw.sys run clear @s minecraft:trial_key 0")
+        .expect("the completing player's copies are counted");
+    let theirs = t
+        .find(
+            "execute store result score #pc_ward_north_0_b dw.sys run clear \
+             @a[name=dwc0p1,limit=1] minecraft:trial_key 0",
+        )
+        .expect("the other member's copies are counted");
+    assert!(spawn < drive && drive < mine && drive < theirs, "{t}");
+    assert!(
+        t.contains("assert score #pc_ward_north_0_a dw.sys matches 1"),
+        "{t}"
+    );
+    assert!(
+        t.contains("assert score #pc_ward_north_0_b dw.sys matches 0"),
+        "{t}"
+    );
+    assert!(t.contains("dummy dwc0p1 leave"), "{t}");
+}
+
+/// The build states what the party-division checks bound, with denominators,
+/// and a campaign with none states zero.
+#[test]
+fn party_binding_states_its_counts() {
+    let out = build_dir(&and_join_dir());
+    let l = ledger(&out);
+    assert_eq!(l["and_joins"], 1, "{l:#}");
+    assert_eq!(l["and_joins_bound"], 1, "{l:#}");
+    assert_eq!(l["party_join_templates"], 1, "{l:#}");
+    assert_eq!(l["carrier_one"], 1, "{l:#}");
+    assert_eq!(l["carrier_one_judged"], 1, "{l:#}");
+    assert_eq!(l["gives"], 2, "{l:#}");
+    assert_eq!(l["min_players"], 2, "{l:#}");
+    assert_eq!(l["division"]["join"], "obj/shrine", "{l:#}");
+    assert!(l.get("unbound").is_none(), "{l:#}");
+
+    let hw = ledger(&build_dir(&common::hello_world_dir()));
+    assert_eq!(hw["and_joins"], 0, "{hw:#}");
+    assert_eq!(hw["carrier_one"], 0, "{hw:#}");
+    assert!(hw["division"].is_null(), "{hw:#}");
+    assert!(
+        hw.get("unbound").is_none(),
+        "zero declared is zero bound: {hw:#}"
+    );
+}
+
+/// Perturbation: a declared AND-join whose `party_join` template is missing,
+/// and a `carrier: one` give whose template is missing, each read as unbound.
+#[test]
+fn a_declared_join_or_carrier_without_its_template_is_unbound() {
+    let (campaign, prefabs) = plan_of(&and_join_dir());
+    let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
+    let out = build_dir(&and_join_dir());
+    assert!(emit::party_binding(&plan, &out).complete());
+
+    let mut no_join = out.clone();
+    no_join
+        .remove("packtest-datapack/data/and-join/test/party_join_shrine.mcfunction")
+        .expect("the join's template was emitted");
+    let b = emit::party_binding(&plan, &no_join);
+    assert_eq!((b.and_joins, b.and_joins_bound), (1, 0), "{}", b.line());
+    assert!(!b.complete());
+    assert_eq!(b.to_json()["unbound"], true);
+
+    let mut no_carrier = out.clone();
+    no_carrier
+        .remove("packtest-datapack/data/and-join/test/party_carrier_ward_north.mcfunction")
+        .expect("the carrier template was emitted");
+    let b = emit::party_binding(&plan, &no_carrier);
+    assert_eq!(
+        (b.carrier_one, b.carrier_one_judged),
+        (1, 0),
+        "{}",
+        b.line()
+    );
+    assert_eq!(b.to_json()["unbound"], true);
+}

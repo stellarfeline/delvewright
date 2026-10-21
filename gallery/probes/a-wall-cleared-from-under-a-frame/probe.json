@@ -1,0 +1,23 @@
+{
+  "code": "DW1038",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/2/on_complete/-",
+      "value": {
+        "region": {
+          "anchor": "anchor/map-frame",
+          "extent": [
+            0,
+            0,
+            1
+          ]
+        },
+        "type": "clear-region"
+      }
+    }
+  ],
+  "units": [],
+  "why": "A `clear-region` at the end of the reliquary quest over the glow frame's own cell and the wall it hangs on. Mid-game the edit would pop the frame and drop its map with nobody watching; refused naming the effect, the holder and the cell they share."
+}

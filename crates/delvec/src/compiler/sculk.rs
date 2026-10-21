@@ -42,7 +42,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use delvewright_dsl::blockshape::{
     bare_id, redstone_conductor, redstone_reader, redstone_source, state_value,
 };
-use delvewright_dsl::{DwCode, ExitTier, Verb};
+use delvewright_dsl::{DwCode, ExitTier};
 
 use crate::compiler::blockstate::BlockMap;
 use crate::compiler::failure::Failure;
@@ -172,7 +172,7 @@ impl Write {
         (0..3).all(|i| a[i].min(b[i]) <= c[i] && c[i] <= a[i].max(b[i]))
     }
 
-    fn cells(&self) -> impl Iterator<Item = [i32; 3]> {
+    pub(crate) fn cells(&self) -> impl Iterator<Item = [i32; 3]> {
         let (a, b) = self.region;
         let lo = [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])];
         let hi = [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])];
@@ -180,46 +180,25 @@ impl Write {
     }
 }
 
-/// **Every block a runtime write may lay, and where** — the `fill-region`,
-/// `set-block` and `close-gate` effects at every root and depth, every laid
-/// write the region model carries (a way, a shortcut seal), and both phases of
-/// every timed gate. Sorted and deduplicated (ADR-0006). Clears lay air, which
-/// no rule here reads, so they are not carried.
+/// **Every block a runtime write may lay, and where** — every effect that lays
+/// a block, at every root and depth, read through the one resolution the
+/// region model takes ([`crate::compiler::plan::effect_writes`]: a
+/// `fill-region`, a `set-block`, a `close-gate`, a laid way), every laid write
+/// the region model carries (a shortcut seal, a prop), and both phases of every
+/// timed gate. Sorted and deduplicated (ADR-0006). Clears lay air, which no
+/// rule here reads, so they are not carried.
 pub fn runtime_writes(plan: &Plan) -> Vec<Write> {
     let mut out: BTreeSet<Write> = BTreeSet::new();
     crate::compiler::plan::for_each_gate_effect(plan.campaign, &mut |site, e| {
-        let label = format!("`{}` at `{}`", e.verb.tag(), site.path);
-        match &e.verb {
-            Verb::FillRegion { region, block, .. } => {
-                if let Some(r) = plan.zone_box(region) {
-                    out.insert(Write {
-                        region: r,
-                        block: block.clone(),
-                        label,
-                    });
-                }
+        for (region, _, block) in crate::compiler::plan::effect_writes(e, &plan.anchors, &plan.ways)
+        {
+            if let Some(block) = block {
+                out.insert(Write {
+                    region,
+                    block,
+                    label: format!("`{}` at `{}`", e.verb.tag(), site.path),
+                });
             }
-            Verb::SetBlock { anchor, block, .. } => {
-                if let Some(p) = plan.point_any(anchor.as_str()) {
-                    out.insert(Write {
-                        region: (p, p),
-                        block: block.clone(),
-                        label,
-                    });
-                }
-            }
-            Verb::CloseGate { anchor, .. } => {
-                if let Some((from, to, block)) =
-                    crate::compiler::plan::gate_region_block_any(&plan.anchors, anchor.as_str())
-                {
-                    out.insert(Write {
-                        region: (from, to),
-                        block,
-                        label,
-                    });
-                }
-            }
-            _ => {}
         }
     });
     for ev in plan.region_events.iter() {
@@ -296,7 +275,11 @@ pub fn check_rest(blocks: &BlockMap, writes: &[Write]) -> (RestBinding, Option<F
 
 /// Every block a cell may hold: the as-placed one (air when the map holds
 /// none), then every block a runtime write may lay there.
-fn possible<'a>(blocks: &'a BlockMap, writes: &'a [Write], c: [i32; 3]) -> Vec<(&'a str, String)> {
+pub(crate) fn possible<'a>(
+    blocks: &'a BlockMap,
+    writes: &'a [Write],
+    c: [i32; 3],
+) -> Vec<(&'a str, String)> {
     let mut out = vec![(
         blocks.get(&c).map_or("minecraft:air", |s| s.as_str()),
         "in the world as placed".to_string(),
@@ -309,7 +292,7 @@ fn possible<'a>(blocks: &'a BlockMap, writes: &'a [Write], c: [i32; 3]) -> Vec<(
 
 /// The six face neighbours of `c`, in the fixed order down, up, north, south,
 /// west, east (ADR-0006).
-fn neighbours(c: [i32; 3]) -> [[i32; 3]; 6] {
+pub(crate) fn neighbours(c: [i32; 3]) -> [[i32; 3]; 6] {
     [
         [c[0], c[1] - 1, c[2]],
         [c[0], c[1] + 1, c[2]],

@@ -7,7 +7,7 @@ import pathfinderPkg from "mineflayer-pathfinder";
 import type { ReachStep, Transport, Vec3Tuple } from "../critical-path.ts";
 import { insideCompletion, reachGoal } from "../critical-path.ts";
 import { BotDeathError } from "../death.ts";
-import { lethalStepCost } from "../death-loop.ts";
+import { lethalStepCost, sameBox, spanStepCost } from "../death-loop.ts";
 import { allowNonCollidingEntities, configureLeg, describeStuckNeighbours, parkourFor } from "../movement.ts";
 import {
   nextLegWaypoints,
@@ -44,6 +44,9 @@ import { watchStops } from "../watch.ts";
 import { ControlTakenError } from "./cutscene.ts";
 import { type GateAssist, crossTimedGate } from "./timed-gate.ts";
 import type { MineflayerExecutor } from "../executor.ts";
+
+/** A walk ended because a cutscene gave the body back to a step already settled. */
+export class SceneSettledError extends Error {}
 
 export const { pathfinder, Movements, goals } = pathfinderPkg;
 
@@ -487,6 +490,7 @@ export const methods = {
     sneak = false,
     completion?: StepCompletion,
     explicitWaypoints?: readonly Vec3Tuple[],
+    legTo?: Vec3Tuple,
   ): Promise<void> {
     this.requireBot();
     // A range of exactly 0 is a block goal: a link's stand cell, which the bot
@@ -503,7 +507,7 @@ export const methods = {
       await this.refreshStagedExclusion();
       const watch = !this.controlTaken();
       try {
-        await this.walkLeg(pos, r, label, sneak, completion, explicitWaypoints);
+        await this.walkLeg(pos, r, label, sneak, completion, explicitWaypoints, legTo);
         // A cutscene that took the body as the walk ended (the goal read as
         // reached from wherever the camera held it) is waited out, and the walk
         // is made again from where it returns the bot, before anything is done
@@ -513,7 +517,7 @@ export const methods = {
             throw new Error(`${label}: control was taken by a cutscene ${n} times at the goal`);
           }
           await this.awaitControlEnRoute(label);
-          await this.walkLeg(pos, r, label, sneak, completion, explicitWaypoints);
+          await this.walkLeg(pos, r, label, sneak, completion, explicitWaypoints, legTo);
         }
       } catch (err) {
         const fault = this.takeLoopFault();
@@ -537,6 +541,7 @@ export const methods = {
     sneak: boolean,
     completion: StepCompletion | undefined,
     explicitWaypoints: readonly Vec3Tuple[] | undefined,
+    legTo?: Vec3Tuple,
   ): Promise<void> {
     const bot = this.requireBot();
     const movements = new Movements(bot);
@@ -561,12 +566,25 @@ export const methods = {
     // second time on a leg that has nothing to do with the delve's content, and the
     // run reads as flaky rather than as a navigator that disagreed with the build.
     this.applyLethalExclusion(movements);
+    // The completion volumes this step keeps out of: a walk that enters one
+    // completes an armed objective out of turn, so its cells cost what a lethal
+    // volume's do, by the same hitbox rule. Stated once per walk.
+    if (this.stepKeepOut.length > 0) {
+      const boxes = this.stepKeepOut.map((k) => ({ lo: k.lo, hi: k.hi }));
+      movements.exclusionAreasStep.push((block): number => lethalStepCost(block, boxes));
+      process.stderr.write(
+        `[keep-out] ${label}: ${boxes.length} armed completion volume(s) excluded — ` +
+          `${this.stepKeepOut.map((k) => `${k.objective} [${k.lo.join(", ")}]..[${k.hi.join(", ")}]`).join("; ")}\n`,
+      );
+    }
     bot.pathfinder.setMovements(movements);
     // Long multi-level layouts (e.g. a 5-storey keep, ~90 blocks + 4 staircases)
     // sit at the edge of the default A* budget and fail nondeterministically
     // with "No path to the goal!" — give the search real headroom. With leg-by-leg
     // waypoints each solve is tiny, so this budget is only a safety margin.
     bot.pathfinder.thinkTimeout = 30_000;
+    const outerSettled = this.walkSettled;
+    this.walkSettled = completion ? () => this.stepSettled(completion) : undefined;
     try {
       // When the compiler proved a waypoint polyline for this leg, replay
       // it as short hops so each A* solve is trivial (avoids the single giant solve
@@ -597,10 +615,14 @@ export const methods = {
         // the proven cells itself; it consumes no leg.
         legWaypoints = explicitWaypoints;
       } else if (this.waypoints) {
+        // A proven leg is named by the critical position it walks to; a walk
+        // whose goal is not that position (a holder's stance, spec-0111 §5.2,
+        // where the leg's last cell is the stance and its `to` the holder)
+        // names the leg it walks with `legTo`.
         const match = nextLegWaypoints(
           this.waypoints.legs,
           this.legCursor,
-          [pos[0], pos[1], pos[2]],
+          legTo ?? [pos[0], pos[1], pos[2]],
           this.feetCell(),
         );
         legWaypoints = match.waypoints;
@@ -642,9 +664,19 @@ export const methods = {
         // between two proven cells meets the closing edge blind, which is how a
         // gallery walk to the east bay died at the inner door. A walk that binds
         // the gate stages it at its proven mouth instead.
-        const unstaged = unstagedCrushBoxes(declaredGates, walkGates);
+        // The crush stage's walk to a gate's mouth (`executor/crush.ts`) ends ON
+        // the mouth, a cell that gate's widened keep-out refuses: that one gate is
+        // walled cell for cell instead, which keeps the walk out of its span and
+        // lets it stand where the window is waited for.
+        const mouthOf = this.crushApproachRegion;
+        const unstaged = unstagedCrushBoxes(declaredGates, walkGates).filter(
+          (b) => mouthOf === undefined || !sameBox(b, mouthOf),
+        );
         if (unstaged.length > 0) {
           movements.exclusionAreasStep.push((block): number => lethalStepCost(block, unstaged));
+        }
+        if (mouthOf !== undefined) {
+          movements.exclusionAreasStep.push((block): number => spanStepCost(block, mouthOf));
         }
         // Stated binding count, once per walk, for every campaign that declares a
         // gate at all: how many of the declared gates bind this walk, which they
@@ -813,6 +845,7 @@ export const methods = {
         await this.hearVibrations(label, legVibrations, heardFrom);
       }
     } finally {
+      this.walkSettled = outerSettled;
       restoreControls();
     }
   },
@@ -891,7 +924,8 @@ export const methods = {
    *     put it mid-step (areas sit ~256 blocks apart across void, and the
    *     transport is one-way).
    * Either ⇒ the walk's purpose is fulfilled regardless of where the leg's
-   * remaining hops point. Consulted on walk FAILURE paths only.
+   * remaining hops point. Consulted on walk FAILURE paths, and when a cutscene
+   * gives control back mid-walk (`runGoto`) — never to shortcut a healthy hop.
    */
   stepSettled(this: MineflayerExecutor, completion: StepCompletion): string | undefined {
     if (this.completedObjectives.has(completion.objective)) {
@@ -977,6 +1011,24 @@ export const methods = {
     return bot.entity.position.distanceTo(before);
   },
 
+  /**
+   * After a cutscene gives the body back mid-walk: a step already settled is not
+   * walked again. A scene the step's OWN completion fired (a scene on the reach
+   * that just completed) may have moved the body on purpose — a carry in its
+   * `then` — and walking back to the goal would undo it. The leg ends where the
+   * scene left the bot: this throws, and the leg's failure path ends it on the
+   * same oracle (`legSettledReason`).
+   */
+  endIfSettledByScene(this: MineflayerExecutor, label: string): void {
+    const settledBy = this.walkSettled?.();
+    if (settledBy === undefined) return;
+    process.stderr.write(
+      `[cutscene] ${label}: the step is settled (${settledBy}); the walk ends where the ` +
+        `scene put the bot, at ${fmt(this.requireBot().entity.position)}\n`,
+    );
+    throw new SceneSettledError(`${label}: settled during a cutscene (${settledBy})`);
+  },
+
   async runGoto(this: MineflayerExecutor, spec: GoalSpec, label: string): Promise<void> {
     const bot = this.requireBot();
     const { x, y, z, range } = spec;
@@ -999,7 +1051,10 @@ export const methods = {
         // the bot stood still — a gate stager's wait, the sequencer's) is waited
         // out against the step's declaration before the walk is made; the walk
         // is then watched only if it starts with the body in hand.
-        if (this.controlTaken()) await this.awaitHeldAtStart(label);
+        if (this.controlTaken()) {
+          await this.awaitHeldAtStart(label);
+          this.endIfSettledByScene(label);
+        }
         const watch = !this.controlTaken();
         // Through the navigation owner, never `bot.pathfinder.goto` directly: this
         // wait is abandoned on a death and on the timeout, and an abandoned trip's
@@ -1023,6 +1078,8 @@ export const methods = {
       } catch (err) {
         // A death is terminal for this run — never retry a path across the void.
         if (err instanceof BotDeathError) throw err;
+        // A step a cutscene settled ends the walk; never retried.
+        if (err instanceof SceneSettledError) throw err;
         // A cutscene took the body: wait it out against the step's declared
         // allowance, then walk again from wherever it put the bot back. Not an
         // attempt — the walk did not fail, it was interrupted.
@@ -1036,6 +1093,7 @@ export const methods = {
             );
           }
           await this.awaitControlEnRoute(label);
+          this.endIfSettledByScene(label);
           attempt -= 1;
           continue;
         }

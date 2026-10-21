@@ -636,7 +636,7 @@ number that agrees for the wrong reason.
 The gallery is worse: `prefab-procedure.md` never mentions it at all, and
 `SKILL.md` uses "gallery" once (line 2061) for `delve-admit gallery`, a
 *browse world for reviewers* — a third sense, unrelated to the engine's own
-`gallery/` campaign or to `prefabs/gallery-generator`, both of which exist in
+`gallery/` campaign or to `gallery/prefab-generator`, both of which exist in
 this repository and neither of which either page names.
 
 *What a person concludes:* when §3 says "start from the corpus, never from the

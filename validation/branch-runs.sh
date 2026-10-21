@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Branch runs (spec-0025 §3): walk every branch the tier selects, each in its own
-# FRESH world, and merge the per-branch run reports into one branch report.
+# Branch runs (spec-0025 §3, spec-0108 §6.4): walk every row of the branch plan
+# the tier selects — each row a STORY WORLD, a dialogue selection and a
+# participation (`world/<k>`) — each in its own FRESH world, and merge the
+# per-world run reports into one report. A row the harness cannot walk (its
+# witness needs an act no step kind performs) and a declared branch no world
+# realizes are named in that report with their reasons.
 #
 #   EULA=TRUE validation/branch-runs.sh --project dw-<id>        # release tier: all branches
 #   EULA=TRUE DELVEWRIGHT_BRANCHES=branch/bolt validation/branch-runs.sh --project dw-<id>
@@ -263,8 +267,21 @@ for p in report_paths:
         if row["ran"] or (not current["ran"] and not current.get("infra_failed")):
             rows[row["branch"]] = row
 
+# spec-0108 §4.3: a declared branch no story world realizes is named, never
+# silent — DW0482 already failed the build for it.
+for bid in plan.get("branches_unrealized", []):
+    rows[bid] = {
+        "branch": bid,
+        "ran": False,
+        "passed": False,
+        "reason": "unrealized: no story world realizes this declared branch (see DW0482)",
+        "chronicle": None,
+        "endings": [],
+        "entry_commands": [],
+    }
+order = [b["id"] for b in plan["branches"]] + list(plan.get("branches_unrealized", []))
 merged = {"version": 1, "campaign_id": plan["campaign_id"], "tier": tier,
-          "branches": [rows[b["id"]] for b in plan["branches"]]}
+          "branches": [rows[i] for i in order]}
 with open(merged_path, "w") as fh:
     json.dump(merged, fh, indent=2)
     fh.write("\n")
@@ -278,7 +295,10 @@ for row in merged["branches"]:
         state = "INFRA-FAILED"
     else:
         state = "skipped"
-    print(f"  {row['branch']}: {state}" + ("" if row["ran"] else f" — {row['reason']}"))
+    # spec-0108 §6.5: a world that ran an act by mock says so, with the count.
+    mocked = row.get("mocked") or []
+    mock_note = f" — {len(mocked)} mocked: {', '.join(mocked)}" if mocked else ""
+    print(f"  {row['branch']}: {state}{mock_note}" + ("" if row["ran"] else f" — {row['reason']}"))
 PY
 
 exit "$status"

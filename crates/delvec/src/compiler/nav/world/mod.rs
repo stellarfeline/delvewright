@@ -349,6 +349,14 @@ pub struct World {
     /// difference between `DW0510` and a `DW0311` that sends the author to fix a
     /// prefab that was never wrong.
     lethal_regions: Vec<LethalRegion>,
+    /// The **completion volumes this leg keeps out of** (`DW0311`): each `reach`
+    /// objective armed while the party walks the leg and not yet due, as
+    /// `(objective, box)`. A body may not stand where the objective's selector
+    /// would reach it — the hitbox rule a lethal volume is read by — because a
+    /// body there completes the objective out of the order the path walks it in.
+    /// Not solid and not occupied: a view and a click pass through it. Empty for
+    /// every world but a leg's ([`World::with_region_state`]).
+    pub(in crate::compiler::nav) keep_out: Vec<LethalRegion>,
     /// The declared volumes **live from a story stage** (spec-0088), in
     /// declaration order — absent from `lethal` and `lethal_regions`, because
     /// whether one is there is a fact about a point in the quest DAG and not
@@ -455,6 +463,44 @@ pub struct World {
     /// relation gains ([`World::neighbors_fp`]). A build proves every one before
     /// any route is taken (`DW1041`), so a jump here is one a body on cue makes.
     pub(in crate::compiler::nav) declared_jumps: Vec<([i32; 3], [i32; 3])>,
+    /// **Where the party stands to take from a holder entity** (spec-0111
+    /// §5.2): each `collect`-claimed holder's cell, paired with the stance cell
+    /// the stance pass chose for it ([`crate::compiler::holders::collect_stances`]).
+    /// A leg whose endpoint is that holder's cell ends at the stance
+    /// ([`World::snap_endpoint`]), never in the holder's body, which the block
+    /// model reads as air. A fact of the template bytes, set after the world is
+    /// built ([`World::with_holder_stances`]), for the reason `world_load_seals`
+    /// lives here and not on the plan. Empty on every campaign with no holder
+    /// collect, which keeps every route byte-identical.
+    pub(in crate::compiler::nav) holder_stances: BTreeMap<[i32; 3], [i32; 3]>,
+    /// **Which floors hold a body** ([`Floors`]): the solid cells whose block
+    /// does not cover its cell, and the subset of them a body over falls
+    /// through.
+    pub(in crate::compiler::nav) floors: Floors,
+}
+
+/// **Whether a solid cell holds a body standing over it**, read from the
+/// collision footprints of its block and of the blocks beside it
+/// ([`delvewright_dsl::blockshape::body_falls_through`]) rather than from
+/// whether the cell holds a block.
+///
+/// `footprints` holds every solid cell whose block does not cover its cell —
+/// iron bars, a pane, a chain, a lantern — with its server footprint; a solid
+/// cell absent from it covers its cell. `sieve` is the subset a body over
+/// falls through: the cell under it does not stop a fall (or is itself a
+/// sieve), and a body-wide square of the course, centred over the cell, meets
+/// no box. A sieve cell still stops a body walking into it, as a post does;
+/// it is never a floor, and a falling body passes it.
+///
+/// Every view derives `sieve` from its own cells ([`World::resieve`]), so a
+/// region write that lays or clears a block beside a hatch moves the answer.
+/// Empty for a world with no such block, which keeps every proof over it
+/// byte-identical.
+#[derive(Clone, Debug, Default)]
+pub struct Floors {
+    pub(in crate::compiler::nav) footprints:
+        BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
+    pub(in crate::compiler::nav) sieve: BTreeSet<[i32; 3]>,
 }
 
 /// The block-derived cell sets of a [`World`], as [`World::from_occupancy`]
@@ -470,6 +516,7 @@ struct Cells {
     material: CellMap<delvewright_dsl::metrics::body::Material>,
     climb_holds: ClimbHolds,
     unheld_climb: UnheldClimbs,
+    footprints: BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
 }
 
 /// **Everything a [`World`] carries that is not a block** — the premises the
@@ -783,8 +830,11 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
             declared_jumps: self.declared_jumps.clone(),
+            holder_stances: self.holder_stances.clone(),
+            floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            keep_out: self.keep_out.clone(),
             staged_lethal: self.staged_lethal.clone(),
             loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
@@ -977,6 +1027,43 @@ impl World {
     /// cells to `lethal`. `lethal` stays the declared cells, because that is
     /// what `lethal_cells()` reports as the proof's binding count and what
     /// `is_lethal` answers about.
+    /// Whether a body of this footprint in `c` meets a volume this leg keeps out
+    /// of ([`World::keep_out`]), by the rule a lethal volume is met by.
+    fn meets_keep_out_fp(&self, c: [i32; 3], fp: &Footprint) -> bool {
+        self.keep_out
+            .iter()
+            .any(|(_, (lo, hi))| self.body_can_meet_volume(c, fp, *lo, *hi))
+    }
+
+    /// The armed objectives whose completion volumes a body standing on any of
+    /// `cells` would meet — who to name for a leg that routes only when the
+    /// keep-out is lifted. In the order the leg holds them.
+    pub(in crate::compiler::nav) fn keep_out_over(&self, cells: &[[i32; 3]]) -> Vec<String> {
+        let fp = Footprint::player();
+        self.keep_out
+            .iter()
+            .filter(|(_, (lo, hi))| {
+                cells
+                    .iter()
+                    .any(|c| self.body_can_meet_volume(*c, &fp, *lo, *hi))
+            })
+            .map(|(id, _)| id.clone())
+            .collect()
+    }
+
+    /// Whether this leg keeps out of any completion volume at all.
+    pub(in crate::compiler::nav) fn has_keep_out(&self) -> bool {
+        !self.keep_out.is_empty()
+    }
+
+    /// This world with every keep-out volume lifted — the counterfactual that
+    /// names an armed objective as what closed a leg.
+    pub(in crate::compiler::nav) fn without_keep_out(&self) -> World {
+        let mut w = self.clone_world();
+        w.keep_out = Vec::new();
+        w
+    }
+
     fn meets_lethal_fp(&self, c: [i32; 3], fp: &Footprint) -> bool {
         if self.lethal_regions.is_empty() {
             return false;
@@ -1031,6 +1118,7 @@ impl World {
                 material: occ.material.into(),
                 climb_holds: std::sync::Arc::new(occ.climb),
                 unheld_climb: std::sync::Arc::new(occ.unheld_climb),
+                footprints: occ.footprints,
             },
             premises,
         )
@@ -1053,6 +1141,7 @@ impl World {
                 material: self.material.clone(),
                 climb_holds: self.climb_holds.clone(),
                 unheld_climb: self.unheld_climb.clone(),
+                footprints: self.floors.footprints.clone(),
             },
             premises,
         )
@@ -1064,10 +1153,73 @@ impl World {
     pub fn with_extra_solid(mut self, extra: &BTreeSet<[i32; 3]>) -> World {
         self.solid.extend(extra.iter().copied());
         self.solid.compact();
+        for c in extra {
+            self.floors.footprints.remove(c);
+        }
+        self.resieve()
+    }
+
+    /// This world with [`Floors::sieve`] derived from its own cells — every
+    /// view ends here, so no view answers with another's sieve.
+    ///
+    /// A cell is a sieve when its block does not cover it and a body-wide
+    /// square centred over it meets no box in its own course or the course
+    /// under it ([`delvewright_dsl::blockshape::body_falls_through`]). A cell
+    /// that is not solid is read as empty unless a body would land on it (a
+    /// barrier, a gate leaf), which can only find a gap the world closes, never
+    /// close one it leaves open.
+    pub(in crate::compiler::nav) fn resieve(mut self) -> World {
+        use delvewright_dsl::blockshape::{EMPTY_FOOTPRINT, FULL_FOOTPRINT, body_falls_through};
+        self.floors.sieve.clear();
+        if self.floors.footprints.is_empty() {
+            return self;
+        }
+        let cells: Vec<[i32; 3]> = self.floors.footprints.keys().copied().collect();
+        let mut sieve = BTreeSet::new();
+        // What a falling body meets in cell `n`: a solid block's footprint, a
+        // whole cell for a barrier or a gate leaf it would land on, nothing
+        // for anything a body passes or sinks into.
+        let course = |y: i32, c: [i32; 3]| {
+            let mut layer = [[EMPTY_FOOTPRINT; 3]; 3];
+            for (dz, row) in layer.iter_mut().enumerate() {
+                for (dx, fp) in row.iter_mut().enumerate() {
+                    let n = [c[0] + dx as i32 - 1, y, c[2] + dz as i32 - 1];
+                    if self.solid.contains(&n) {
+                        *fp = self
+                            .floors
+                            .footprints
+                            .get(&n)
+                            .copied()
+                            .unwrap_or(FULL_FOOTPRINT);
+                    } else if self.tall.contains(&n) || self.use_gates.contains(&n) {
+                        *fp = FULL_FOOTPRINT;
+                    }
+                }
+            }
+            layer
+        };
+        for c in cells {
+            if !self.solid.contains(&c) {
+                continue;
+            }
+            if body_falls_through(&course(c[1], c), &course(c[1] - 1, c)) {
+                sieve.insert(c);
+            }
+        }
+        self.floors.sieve = sieve;
         self
     }
 
+    /// Whether a body over `c` falls through it ([`Floors::sieve`]).
+    pub(in crate::compiler::nav) fn is_sieve(&self, c: [i32; 3]) -> bool {
+        self.floors.sieve.contains(&c)
+    }
+
     fn from_cells(cells: Cells, premises: Premises) -> Self {
+        let floors = Floors {
+            footprints: cells.footprints,
+            sieve: BTreeSet::new(),
+        };
         World {
             solid: cells.solid,
             tall: cells.tall,
@@ -1087,6 +1239,7 @@ impl World {
                 .flat_map(|(_, (lo, hi))| crate::compiler::assembled::region_cells(*lo, *hi))
                 .collect(),
             lethal_regions: premises.lethal_regions,
+            keep_out: Vec::new(),
             staged_lethal: premises.staged_lethal,
             loop_slabs: premises.loop_slabs,
             furniture: premises
@@ -1106,7 +1259,10 @@ impl World {
             objective_cells: premises.objective_cells,
             unbounded_fall: premises.unbounded_fall,
             declared_jumps: premises.declared_jumps,
+            holder_stances: BTreeMap::new(),
+            floors,
         }
+        .resieve()
     }
 
     /// This world with its world-generator [`Ambient`] declared (spec-0013) and
@@ -1131,6 +1287,14 @@ impl World {
     /// this (spec-0060 §10.7).
     pub fn base(&self) -> &'static str {
         self.base
+    }
+
+    /// This world with the stance each holder `collect` is taken from
+    /// ([`World::holder_stances`], spec-0111 §5.2): holder cell → stance cell.
+    #[must_use]
+    pub fn with_holder_stances(mut self, stances: BTreeMap<[i32; 3], [i32; 3]>) -> Self {
+        self.holder_stances = stances;
+        self
     }
 
     pub fn with_ambient(mut self, ambient: Ambient, built: Vec<BuiltPiece>) -> Self {
@@ -1180,6 +1344,19 @@ impl World {
     /// model treats every gate cell as passable; sealing a gate for the legs that
     /// occur after it closes makes a path that must re-cross it fail routing.
     pub(in crate::compiler::nav) fn with_sealed(&self, extra: &BTreeSet<[i32; 3]>) -> World {
+        self.with_sealed_by(extra, &BTreeMap::new())
+    }
+
+    /// [`World::with_sealed`] where the sealing block is known per cell: a cell
+    /// in `footprints` holds a block that does not cover it (iron bars laid
+    /// through a floor), and whether a body over it is held is then judged
+    /// from that footprint ([`World::resieve`]) rather than assumed. Every
+    /// other cell of `extra` is a full cube.
+    pub(in crate::compiler::nav) fn with_sealed_by(
+        &self,
+        extra: &BTreeSet<[i32; 3]>,
+        footprints: &BTreeMap<[i32; 3], delvewright_dsl::blockshape::Footprint16>,
+    ) -> World {
         let mut solid = self.solid.clone();
         solid.extend(extra.iter().copied());
         // A sealed gate cell is a full-cube wall, never a partial floor.
@@ -1207,8 +1384,11 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
             declared_jumps: self.declared_jumps.clone(),
+            holder_stances: self.holder_stances.clone(),
+            floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            keep_out: self.keep_out.clone(),
             staged_lethal: self.staged_lethal.clone(),
             loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
@@ -1223,7 +1403,13 @@ impl World {
             built: self.built.clone(),
         };
         w.drop_unheld_climbs(extra);
-        w
+        for c in extra {
+            match footprints.get(c) {
+                Some(fp) => w.floors.footprints.insert(*c, *fp),
+                None => w.floors.footprints.remove(c),
+            };
+        }
+        w.resieve()
     }
 
     /// A copy of this world with `extra` cells **emptied of blocks** — the dual of
@@ -1260,8 +1446,11 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
             declared_jumps: self.declared_jumps.clone(),
+            holder_stances: self.holder_stances.clone(),
+            floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            keep_out: self.keep_out.clone(),
             staged_lethal: self.staged_lethal.clone(),
             loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
@@ -1283,6 +1472,7 @@ impl World {
             w.tall.remove(c);
             w.use_gates.remove(c);
             w.partial.remove(c);
+            w.floors.footprints.remove(c);
         }
         let owned: BTreeSet<[i32; 3]> = extra
             .iter()
@@ -1290,7 +1480,7 @@ impl World {
             .copied()
             .collect();
         w.drop_unheld_climbs(&owned);
-        w
+        w.resieve()
     }
 
     /// A copy of this world with `extra` cells holding **free fluid** — the third
@@ -1325,8 +1515,11 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
             declared_jumps: self.declared_jumps.clone(),
+            holder_stances: self.holder_stances.clone(),
+            floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            keep_out: self.keep_out.clone(),
             staged_lethal: self.staged_lethal.clone(),
             loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
@@ -1348,10 +1541,11 @@ impl World {
             w.flooded.insert(*c);
             w.pinned.insert(*c);
             w.flood_written.insert(*c);
+            w.floors.footprints.remove(c);
         }
         w.flood_regions.extend_from_slice(regions);
         w.drop_unheld_climbs(extra);
-        w
+        w.resieve()
     }
 
     /// A copy of this world with `extra` cells holding a block that **may or may not
@@ -1388,8 +1582,11 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
             declared_jumps: self.declared_jumps.clone(),
+            holder_stances: self.holder_stances.clone(),
+            floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            keep_out: self.keep_out.clone(),
             staged_lethal: self.staged_lethal.clone(),
             loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
@@ -1414,7 +1611,7 @@ impl World {
             w.pinned.insert(*c);
         }
         w.drop_unheld_climbs(extra);
-        w
+        w.resieve()
     }
 
     /// This world as of one point in the quest DAG: every region a runtime write
@@ -1443,10 +1640,17 @@ impl World {
             st.unforced.union(&st.held).copied().collect()
         };
         self.with_cleared(&st.cleared)
-            .with_sealed(&st.solid)
+            .with_sealed_by(&st.solid, &st.fill_footprints)
             .with_unforced(&walled)
             .with_flooded(&st.flooded, &st.flood_regions)
             .with_staged_lethal(&st.lethal, &st.lethal_regions)
+            .with_keep_out(&st.keep_out)
+    }
+
+    /// This world keeping out of `regions` ([`World::keep_out`]).
+    fn with_keep_out(mut self, regions: &[LethalRegion]) -> World {
+        self.keep_out.extend(regions.iter().cloned());
+        self
     }
 
     /// This world with the staged lethal volumes a configuration may hold live
@@ -1498,8 +1702,11 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
             declared_jumps: self.declared_jumps.clone(),
+            holder_stances: self.holder_stances.clone(),
+            floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            keep_out: self.keep_out.clone(),
             staged_lethal: self.staged_lethal.clone(),
             loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
@@ -1581,8 +1788,11 @@ impl World {
             objective_cells: self.objective_cells.clone(),
             unbounded_fall: self.unbounded_fall,
             declared_jumps: self.declared_jumps.clone(),
+            holder_stances: self.holder_stances.clone(),
+            floors: self.floors.clone(),
             lethal: self.lethal.clone(),
             lethal_regions: self.lethal_regions.clone(),
+            keep_out: self.keep_out.clone(),
             staged_lethal: self.staged_lethal.clone(),
             loop_slabs: self.loop_slabs.clone(),
             furniture: self.furniture.clone(),
@@ -1635,6 +1845,7 @@ impl World {
                 climb: BTreeMap::new(),
                 unheld_climb: BTreeMap::new(),
                 material: Default::default(),
+                footprints: BTreeMap::new(),
             },
             Premises::geometry_only(),
         )

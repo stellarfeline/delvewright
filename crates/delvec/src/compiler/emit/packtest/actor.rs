@@ -270,12 +270,12 @@ pub(super) fn emit_v06_actor_packtests(
     // The puppets whose leg drivers carry the supersession guard: a template that
     // invokes one of their drivers directly claims it first ([`walk_claim`]).
     let actor_guarded = supersedable_walkers(actor_moves.iter().map(|m| m.actor.as_str()));
-    // move-actor: fast-forward the driver to its final waypoint (running on_arrive on
-    // that same tick) and assert the puppet is at the destination cell.
+    // move-actor: fast-forward the driver ([`fast_forward_walk`]) and assert the
+    // puppet is at the destination cell — or, for a walk whose own arrival takes
+    // the puppet away, on the waypoint before it.
     if let Some(m) = actor_moves.first() {
         let safe = plan::safe_local(&m.actor);
         let bare = moveactor_bare(&m.actor, &m.to, &m.gate_key);
-        let total = m.ticks();
         let p = m.target;
         let mut b = packtest_header(&format!(
             "{}: move-actor walks its puppet to the destination cell",
@@ -290,12 +290,21 @@ pub(super) fn emit_v06_actor_packtests(
             &safe,
             actor_guarded.contains(m.actor.as_str()),
         ));
-        b.push(format!("scoreboard players set #at_{bare} dw.sys {total}"));
-        b.push(format!("function {ns}:ma_tick_{bare}"));
-        b.push(format!(
-            "execute store result score #arr_mvac dw.sys if entity @e[tag=dw_pup_{safe},x={},dx=0,y={},dy=0,z={},dz=0]",
-            p[0], p[1], p[2]
-        ));
+        let (drive, reached) =
+            fast_forward_walk(plan, Walker::Actor, &m.actor, &m.to, &bare, &m.waypoints);
+        b.extend(drive);
+        match reached {
+            Reached::BeforeArrival(w) => b.push(format!(
+                "execute store result score #arr_mvac dw.sys if entity @e[tag=dw_pup_{safe},x={},y={},z={},distance=..0.01]",
+                fmt_f64(w[0]),
+                fmt_f64(w[1]),
+                fmt_f64(w[2])
+            )),
+            Reached::Arrival => b.push(format!(
+                "execute store result score #arr_mvac dw.sys if entity @e[tag=dw_pup_{safe},x={},dx=0,y={},dy=0,z={},dz=0]",
+                p[0], p[1], p[2]
+            )),
+        }
         b.push("assert score #arr_mvac dw.sys matches 1..".to_string());
         b.push(format!("kill @e[tag=dw_actor_{safe}]"));
         write("v06_move_actor", b);
@@ -312,6 +321,10 @@ pub(super) fn emit_v06_actor_packtests(
     // sealed terrain — the driver is a tp chain, not pathfinding. Gates are
     // re-opened afterwards (fill air replace <block>), so the template leaves
     // no block residue for a sibling (batch model).
+    //
+    // It drives the arrival tick itself rather than through
+    // [`fast_forward_walk`]: its claim IS the arrival's effect, and the
+    // puppet's absence after it is an assertion, not a read of a body.
     let handoff = actor_moves.iter().find_map(|m| {
         all_campaign_effects(c)
             .into_iter()

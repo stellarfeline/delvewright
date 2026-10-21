@@ -275,7 +275,8 @@ spans, and one that catches up shrinks them. A predicted event not heard fails
 the step.
 
 **A game-tick wait fails only on a stopped clock.** Every wait for the server's
-game ticks (the watch line's tick, a pulse station's stand, the sculk tail) has
+game ticks (the watch line's tick, a pulse station's stand, the sculk tail, the
+hatch stand's settle) has
 no wall-clock budget; it fails, `GameTimeStoppedError`, only when the server
 keeps answering and its game time does not move (`GameClockWatch`,
 `harness/src/game-time.ts`). The judge sums, since the last reading at another

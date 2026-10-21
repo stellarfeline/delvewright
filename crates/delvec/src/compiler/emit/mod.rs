@@ -52,9 +52,11 @@ mod cutscene;
 mod dialogue;
 mod economy;
 mod effect;
+mod ending;
 mod equipment;
 mod firework;
 mod functions;
+mod holders;
 mod lane;
 mod lethal;
 mod lightning;
@@ -65,6 +67,7 @@ mod npc;
 mod objective;
 mod onkill;
 mod packtest;
+pub use packtest::{PartyBinding, party_binding};
 mod piece;
 mod proofs;
 mod pulse;
@@ -103,9 +106,11 @@ pub(crate) use cutscene::*;
 pub use dialogue::*;
 use economy::*;
 pub use effect::*;
+use ending::*;
 pub(crate) use equipment::*;
 use firework::*;
 use functions::*;
+use holders::*;
 use lane::*;
 use lethal::*;
 use lightning::*;
@@ -424,8 +429,12 @@ pub fn build_with_warnings(
         .any(|t| matches!(t.on, delvewright_dsl::TriggerOn::Step));
     // A fill whose cell lies in a place still standing in its stand-in is owed by
     // that place's detail: judged by the build that details it, counted here.
+    // spec-0111 §3.1: the holder entities the placed pieces carry, in world
+    // space — read once off the template bytes and handed to every reader.
+    let entity_holders = crate::compiler::holders::placed_holders(plan, structures);
     let (judged_loot, judged_fills, containers) = crate::compiler::loot::split_owed_by_detail(
         &assembled.blocks,
+        &entity_holders,
         plan.blockout.as_ref(),
         &plan.loot,
         &plan.collect_fills,
@@ -445,21 +454,31 @@ pub fn build_with_warnings(
         // to disagree with the first.
         let available = crate::compiler::loot::container_anchors(
             blocks,
+            &entity_holders,
             &plan.anchors,
             &plan.loot,
             &plan.collect_fills,
         );
-        crate::compiler::loot::check_loot_containers(blocks, &judged_loot, &available).map_err(
-            |e| BuildFailure::Diagnostic {
-                code: e.code,
-                message: e.message,
-            },
-        )?;
-        crate::compiler::loot::check_collect_containers(blocks, &judged_fills, &available)
-            .map_err(|e| BuildFailure::Diagnostic {
-                code: e.code,
-                message: e.message,
-            })?;
+        crate::compiler::loot::check_loot_containers(
+            blocks,
+            &entity_holders,
+            &judged_loot,
+            &available,
+        )
+        .map_err(|e| BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        })?;
+        crate::compiler::loot::check_collect_containers(
+            blocks,
+            &entity_holders,
+            &judged_fills,
+            &available,
+        )
+        .map_err(|e| BuildFailure::Diagnostic {
+            code: e.code,
+            message: e.message,
+        })?;
         // DW0917: a trap's trigger is prefab hardware on the same terms as a
         // container, so it is proven off the same block map.
         crate::compiler::trap_trigger::check_trap_triggers(blocks, &plan.traps, &plan.anchors)
@@ -508,8 +527,7 @@ pub fn build_with_warnings(
     // reachable cells and no `lighting` declaration → output byte-identical.
     // The geometry is classified once: relight surveys it as it stands, and the
     // campaign's world below is the same cells under the campaign's premises.
-    let geometry = crate::compiler::light::geometry_world(assembled);
-    let relight = crate::compiler::light::relight_with(plan, assembled, &geometry);
+    let (world, relight) = crate::compiler::light::final_world(plan, assembled);
     if let Some(diag) = relight.diagnostics.first() {
         return Err(BuildFailure::Diagnostic {
             code: diag.code,
@@ -536,12 +554,86 @@ pub fn build_with_warnings(
     // seals, the clocked gate regions and the teleport sources — travel as one
     // value, [`crate::compiler::nav::Premises`], so an edited world and a
     // pristine one carry the identical set.
-    let world = crate::compiler::light::lit_world(
-        assembled,
-        &relight,
-        geometry,
-        crate::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone()),
-    );
+
+    // ---- the holder census (spec-0105, spec-0111) ----
+    //
+    // Every holder of the edited model — the container cells and the holder
+    // entities the pieces carry — is loot, a collect, a device, decoration or
+    // empty, judged after the fills are proven real (DW0431/DW0438) so a fill
+    // into a wall is named for what it is first, and after the world exists so
+    // the stance pass (spec-0111 §5.2) can stand a body. The binding line is
+    // printed before any verdict: `DW1018` (built vs declared), `DW1024`
+    // (arrangement), `DW1037` (a holder the party cannot take from), `DW1038`
+    // (a runtime edit reaches a holder).
+    let owned_holders = crate::compiler::holders::own_holders(plan, &entity_holders);
+    let (container_census, holder_stances) =
+        {
+            let blocks = &assembled.blocks;
+            let claims = crate::compiler::holders::claims_of(plan, blocks, &entity_holders);
+            let place = |cell: [i32; 3]| crate::compiler::holders::place_of(plan, cell);
+            let census = crate::compiler::holders::census(
+                blocks,
+                &entity_holders,
+                &claims,
+                &place,
+                plan.campaign
+                    .quests
+                    .content
+                    .containers
+                    .as_ref()
+                    .and_then(|k| k.decoration_notice.as_ref()),
+            )
+            // The census judges what this build can see, as the fills do: a
+            // place still standing in its stand-in owes its containers to its
+            // detail, so a notice over no scenery is judged there.
+            .deferring(plan.blockout.as_ref().map_or(&[][..], |b| &b.massed[..]));
+            // A stance is where the critical path's leg ends and the bot takes
+            // the item (spec-0111 §5.2): a cell the party walks to on cue, so
+            // the walk relation, not the reach graph (spec-0113 §4.5).
+            let reachable = if owned_holders.iter().any(|o| o.is_filled()) {
+                world.walk_region_rooted(&crate::compiler::edit::anchor_starts(plan))
+            } else {
+                BTreeSet::new()
+            };
+            let (stances, (unsupported, unreachable), stance_verdict) =
+                crate::compiler::holders::check_stance(&world, &owned_holders, &reachable);
+            let census = census.with_stance(unsupported, unreachable);
+            eprintln!("{}", census.line());
+            census
+                .check_declared(&crate::compiler::holders::anchors_by_cell(&plan.anchors))
+                .map_err(|e| BuildFailure::Diagnostic {
+                    code: e.code,
+                    message: e.message,
+                })?;
+            census
+                .check_arrangement()
+                .map_err(|e| BuildFailure::Diagnostic {
+                    code: e.code,
+                    message: e.message,
+                })?;
+            stance_verdict.map_err(|e| BuildFailure::Diagnostic {
+                code: e.code,
+                message: e.message,
+            })?;
+            let edits = crate::compiler::holders::check_runtime_edits(plan, &owned_holders)
+                .map_err(|e| BuildFailure::Diagnostic {
+                    code: e.code,
+                    message: e.message,
+                })?;
+            eprintln!(
+                "holder edits: {edits} runtime edit(s) examined against {} holder entit(y/ies), 0 \
+             reaching a holder (DW1038).",
+                owned_holders.len()
+            );
+            (census, stances)
+        };
+    // A leg that ends at a holder `collect` ends at the stance the pass chose
+    // (spec-0111 §5.2), never inside the holder the block model reads as air:
+    // every route proof, waypoint and the critical-path step read one stance.
+    let world = world.with_holder_stances(crate::compiler::holders::collect_stances(
+        &owned_holders,
+        &holder_stances,
+    ));
 
     // What the camera reads in each carried place (spec-0080 §2.2): its fog
     // and sky are the client's blend over the 4-cells within `BLEND_REACH`, so
@@ -728,6 +820,15 @@ pub fn build_with_warnings(
         "datapack/data/minecraft/tags/function/tick.json",
         &json!({ "values": [format!("{ns}:tick")] }),
     );
+    // spec-0111 §4.3: the two frame kinds the freeze line selects, written
+    // only when a frame holder exists.
+    if frame_freeze_line(ns, &owned_holders).is_some() {
+        put_json(
+            &mut out,
+            &format!("datapack/data/{ns}/tags/entity_type/{FRAMES_TAG}.json"),
+            &json!({ "values": frames_tag_values() }),
+        );
+    }
 
     // structures (one `.nbt` per distinct structure id, even if reused across
     // several placed pieces — the insert is idempotent, same bytes). Each is
@@ -840,6 +941,7 @@ pub fn build_with_warnings(
         stake_table.as_ref(),
         &asm_locks,
         &pulse_gate.rows,
+        &owned_holders,
     );
     // DW1002's write arms over the FINAL function list, read off the shipped
     // commands so what is judged is what is emitted: the load as the server
@@ -975,8 +1077,20 @@ pub fn build_with_warnings(
         &packtest::Proved {
             asm_locks: &asm_locks,
             watch_binding: &watch_binding,
+            containers: &container_census
+                .rows
+                .iter()
+                .filter(|r| r.is_container())
+                .map(|r| (r.cell, r.block.clone()))
+                .collect(),
+            holders: &owned_holders,
         },
     );
+    // spec-0018 criterion 1: the party-division checks state what they bound,
+    // counted off the suite just emitted.
+    let party = packtest::party_binding(plan, &out);
+    eprintln!("{}", party.line());
+    put_json(&mut out, "validation/party-division.json", &party.to_json());
 
     // ---- creator overlay (playtest-only; spec-0006) ----
     // A self-contained module (crate::compiler::creator). Its `.mcfunction`s are plain
@@ -996,6 +1110,9 @@ pub fn build_with_warnings(
         .map(|(_, _, r)| r.as_slice())
         .unwrap_or(&[]);
     let mut cp = emit_critical_path(plan, &moves, &actor_moves, exported_routes);
+    // spec-0111 §5.4: a collect that takes from a frame or a stand says how.
+    let holder_step_hints = holder_steps(&owned_holders, &holder_stances);
+    annotate_holder_steps(&mut cp, &holder_step_hints);
     if let Some(mut b) = assembly_binding {
         if let Some(steps) = cp.get_mut("steps").and_then(Value::as_array_mut) {
             b.witnessed = crate::compiler::assembly::with_witness_steps(
@@ -1061,8 +1178,22 @@ pub fn build_with_warnings(
         .line()
     );
 
+    // ---- a template that takes every body runs alone ----
+    // Read off the finished tree, after every emitter, so it reaches templates
+    // not yet written (`crate::compiler::solo`).
+    let solo = crate::compiler::solo::isolate(&plan.namespace, &mut out);
+    eprintln!("{}", solo.line());
+    put_json(&mut out, "validation/packtest-solo.json", &solo.to_json());
+
     // ---- the checks read off the finished tree ----
-    check_finished_tree(plan, tree, input_bytes, &mut out, &mut warnings)?;
+    check_finished_tree(
+        plan,
+        tree,
+        input_bytes,
+        &mut out,
+        &mut warnings,
+        &owned_holders,
+    )?;
 
     // ---- NPC-skin resource pack (spec-0009) ----
     // A campaign with skinned (mannequin) NPCs ships a deterministic resource-pack
@@ -1142,6 +1273,25 @@ pub fn build_with_warnings(
     // has not opted in. Emitted before the manifest so its hashes cover them,
     // exactly like `critical-path-waypoints.json`.
     out.extend(crate::compiler::branch::artifacts(plan.campaign));
+    // spec-0108 §6.1: the endings ledger — per ending its inputs and their
+    // writers, its aftermath and how each change is observed, the story worlds
+    // that reach it — validation metadata, listed in the manifest like the rest.
+    out.insert("validation/endings.json".to_string(), endings_ledger(plan));
+    // ...and every ending a world reaches with an observable aftermath owes its
+    // `ending_<slug>_<k>` template, wherever its `campaign-complete` stands.
+    let unproven = packtest::ending::unproven_endings(plan);
+    if !unproven.is_empty() {
+        return Err(BuildFailure::Diagnostic {
+            code: plan::DW_BUILD,
+            message: format!(
+                "internal invariant violation: {} ending world(s) fire an observable aftermath \
+                 and got no `ending_<slug>_<k>` PackTest: {}. The template generator does not \
+                 drive this scene's root. This is a compiler bug; stop and escalate",
+                unproven.len(),
+                unproven.join("; ")
+            ),
+        });
+    }
     // ...and, for the harness tier, one EXECUTABLE path per reachable branch:
     // `validation/branch-path-<branch>.json`, in the same `critical-path.json`
     // contract the bot has always consumed. The plan artifact above says WHICH
@@ -1150,6 +1300,31 @@ pub fn build_with_warnings(
     // (each carries the `/trigger` line of the option belonging to that branch),
     // which is the only player-legal way to actuate a server-driven dialog button.
     for (slug, mut path) in branch_paths(plan, &moves, &actor_moves, &branch_takes, &path_legs)? {
+        annotate_holder_steps(&mut path, &holder_step_hints);
+        // spec-0108 §6.5: a mock runs exactly the engine's own function for its
+        // act's bundle — one this datapack ships, or the build is wrong.
+        for m in path["steps"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|s| s["action"] == "mock")
+        {
+            let f = m["function"].as_str().unwrap_or("");
+            let file = f
+                .split_once(':')
+                .map(|(ns, name)| format!("datapack/data/{ns}/function/{name}.mcfunction"));
+            if !file.is_some_and(|k| out.contains_key(&k)) {
+                return Err(BuildFailure::Diagnostic {
+                    code: plan::DW_BUILD,
+                    message: format!(
+                        "internal invariant violation: {slug}'s mock of `{}` runs `{f}`, which \
+                         this datapack does not ship — the act's bundle function and the mock \
+                         disagree on its name. This is a compiler bug; stop and escalate",
+                        m["act"].as_str().unwrap_or("?")
+                    ),
+                });
+            }
+        }
         // The watchers stand in every configuration's world, so a branch's run
         // judges them as the critical path's does (spec-0101 §5.4), and the
         // branch the critical path walks keeps its byte-identical file.
@@ -1163,7 +1338,7 @@ pub fn build_with_warnings(
         }
         put_json(
             &mut out,
-            &format!("validation/branch-path-{slug}.json"),
+            &format!("validation/{}.json", world_file(&slug, "path")),
             &path,
         );
     }
@@ -1174,7 +1349,7 @@ pub fn build_with_warnings(
     for (slug, wp) in &branch_waypoints {
         put_json(
             &mut out,
-            &format!("validation/branch-waypoints-{slug}.json"),
+            &format!("validation/{}.json", world_file(slug, "waypoints")),
             wp,
         );
     }
@@ -1242,6 +1417,14 @@ pub fn build_with_warnings(
     if let Some(ledger) = &gate_seal_ledger {
         put_json(&mut out, "validation/gate-seal.json", ledger);
     }
+    // The holder census ledger (spec-0105 §4.3, spec-0111 §4.4): one row per
+    // holder with its kind, slots and claims, the counts, the notice and the
+    // census input's digest.
+    put_json(
+        &mut out,
+        "validation/holders.json",
+        &container_census.to_json(),
+    );
     // **What the derivation massed** (spec-0098 §8): every place this world
     // stands a stand-in in, by name, beside the binding line that counts them.
     // A stand-in never ships — the staging gate reads this, the one event
@@ -1295,6 +1478,15 @@ pub fn build_with_warnings(
     if pulse_gate.declared > 0 {
         put_json(&mut out, "validation/pulses.json", &pulse_gate.to_json());
     }
+    // spec-0114 §5: what the act check judged over the English titles, so a
+    // build of a campaign that has titles and judged none reads as a zero
+    // binding. Every build writes it, a `--lang` bake included, from the
+    // verdict the run attached over the English (`Plan::act_binding`).
+    let acts = plan
+        .act_binding
+        .clone()
+        .unwrap_or_else(|| crate::compiler::telling::check_acts(plan.campaign).1);
+    put_json(&mut out, "validation/act-gate.json", &acts.to_json());
     // The engine's quest cues and the objectives that owe them, so the bot
     // judges where each one arrives. Every build plays the campaign cue, so
     // every build writes the file.

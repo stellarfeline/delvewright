@@ -147,7 +147,7 @@ fn text(out: &emit::BuildOutput, path: &str) -> String {
     .unwrap()
 }
 
-const ADOPTED: &str = r#", "container": "anchor/exit", "item_name": "Cheese", "fill_count": 2"#;
+const ADOPTED: &str = r#", "holder": "anchor/exit", "item_name": "Cheese", "fill_count": 2"#;
 
 /// Adopting a cell that holds no container fails the build. The alternative is an
 /// `item replace block` that fails SILENTLY on the server and ships an

@@ -192,6 +192,12 @@ pub struct Plan<'a> {
     /// it, so there are no approved image files to find. A run that has one
     /// attaches it with [`Plan::with_design_files`].
     pub design_files: crate::compiler::design::DesignFiles,
+    /// What the act check (`DW1045`, spec-0114) judged over the campaign's
+    /// ENGLISH titles. A `--lang` bake plans a campaign whose titles are
+    /// already in another language, so the run that read the English attaches
+    /// its verdict with [`Plan::with_act_binding`]; absent, the build reads the
+    /// plan's own campaign, which is English.
+    pub act_binding: Option<crate::compiler::telling::ActBinding>,
     /// What the ocean-datum invariant (`DW0344`) examined in this build, printed
     /// as its own line by [`crate::compiler::emit::build`]. `NOT_AN_OCEAN` for
     /// every world that declares another horizon.
@@ -512,12 +518,17 @@ pub struct LinkTakes {
     /// trigger is a link the party stands in: `(link index, stand cell)`. A
     /// performed trigger that carries, carries.
     pub performed: BTreeMap<usize, (usize, [i32; 3])>,
+    /// A `trigger` step the path already performs (unlinked step index) that is
+    /// no link, performed from a cell the route proof chose outside every
+    /// completion volume the step keeps out of (`DW0311`): its `stand`.
+    pub stood: BTreeMap<usize, [i32; 3]>,
 }
 
 impl LinkTakes {
-    /// Whether the path takes no link at all.
+    /// Whether the route proof decided nothing about the path: no link taken
+    /// and no stance chosen.
     pub fn is_empty(&self) -> bool {
-        self.spliced.is_empty() && self.performed.is_empty()
+        self.spliced.is_empty() && self.performed.is_empty() && self.stood.is_empty()
     }
 }
 
@@ -1238,7 +1249,7 @@ impl<'a> Plan<'a> {
 
         let movement = crate::compiler::nav::movement_items(campaign, &cp.steps);
 
-        Ok(Self {
+        let mut plan = Self {
             campaign,
             namespace,
             seed,
@@ -1284,9 +1295,15 @@ impl<'a> Plan<'a> {
             blockout,
             surround,
             design_files: crate::compiler::design::DesignFiles::default(),
+            act_binding: None,
             waterline,
             face_binding: binding,
-        })
+        };
+        // The props the datapack sets at load, which only the finished plan can
+        // list ([`Plan::load_prop_events`]).
+        let props = plan.load_prop_events();
+        plan.region_events.extend(props);
+        Ok(plan)
     }
 
     /// Attach the approved reference images the campaign directory holds
@@ -1299,6 +1316,14 @@ impl<'a> Plan<'a> {
     #[must_use]
     pub fn with_design_files(mut self, files: crate::compiler::design::DesignFiles) -> Self {
         self.design_files = files;
+        self
+    }
+
+    /// Attach what the act check judged over the English campaign
+    /// ([`Plan::act_binding`]).
+    #[must_use]
+    pub fn with_act_binding(mut self, binding: crate::compiler::telling::ActBinding) -> Self {
+        self.act_binding = Some(binding);
         self
     }
 }

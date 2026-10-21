@@ -1,0 +1,13 @@
+{
+  "code": "DW1030",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/1/on_complete/2/when/requires_state/0/value",
+      "value": 99
+    }
+  ],
+  "units": [],
+  "why": "`ending/the-hall-remembers` now needs `state/hearth-struck` at least 99. The datum's only writer is the elective `trigger/strike-the-hearth`, which a story world performs once or not at all (spec-0108 §4.1), so no world leaves it above 1 and no world's run fires the ending. `DW1030` refuses it, naming its gate and the unrealizable targets with their reasons — here the subset-sum one, with the values a world can reach. The same edit also raises `DW0482` for both declared branches: the world that realizes each is its selection's *all* world, which strikes the hearth, and with the remembering ending out of reach its run ends nowhere — the same fact seen from the branches. It declares no unit: the ending's gate is bound by the primary, where a world that strikes the hearth reaches it."
+}

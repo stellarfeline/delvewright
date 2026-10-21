@@ -175,6 +175,16 @@ pub struct WorldContent {
     /// infers no intent from geometry. Absent or empty: no route jumps.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub jumps: Vec<Jump>,
+    /// **This campaign is a demo level**: a small level that puts one queued
+    /// mechanic in the spotlight, whose approved design is its row in the
+    /// engine's demo queue rather than a design record. `true` is written to
+    /// `manifest.json` as `demo_level: true`; nothing a player meets changes.
+    /// `tools/creator/staging-gate.py` stages a declared demo only when its
+    /// build carries the declaration and a queue row names its directory.
+    /// Absent or `false` = a campaign, which carries the design record step 4
+    /// writes.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub demo_level: bool,
 }
 
 /// One declared jump (spec-0113 §6).

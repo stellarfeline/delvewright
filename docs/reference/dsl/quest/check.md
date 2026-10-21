@@ -31,6 +31,7 @@ This module's rows of a section whose prose is on the [`delvewright_dsl::loot` p
 
 | Code | Meaning |
 |------|---------|
+| `DW1046` | **`takes_item` with nothing to take** (spec-0114 §6.3). An `interact` declares `takes_item: true` and no `requires_item`. The take is one of the item the player presents, and nothing is presented, so the declaration binds to nothing. Path `/content/quests/<q>/objectives/<o>/takes_item`. Prescription: state the `requires_item` the player lays down, or drop `takes_item`. Validation tier (exit 1). |
 | `DW0437` | An `interact` declares `missing_item_hint` without a `requires_item`. Validation-tier (exit 1). The hint exists to answer a click that arrives without the required item **in hand**; with no item gate there is no such click, so the authored line is dead content that could never narrate — and an author who wrote one plainly meant to gate the interaction. Prescription: add the `requires_item` the hint is about, or drop the hint. |
 
 ### DW0540–DW0542 and DW0545 — status effects, the region teleport, and the fixture class (`dsl::quest::check` / `compiler::teleport` / `compiler::affordance`; spec-0031)

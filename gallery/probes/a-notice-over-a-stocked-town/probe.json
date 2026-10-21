@@ -1,0 +1,52 @@
+{
+  "code": "DW1018",
+  "patch": [
+    {
+      "doc": "world-edits.json",
+      "op": "add",
+      "path": "/content/batches/-",
+      "value": {
+        "area": "area/long-hall",
+        "edits": [
+          {
+            "name": "region/long-hall-end-chest",
+            "shape": {
+              "frame": {
+                "anchor": "anchor/long-hall-chest",
+                "kind": "anchor-relative"
+              },
+              "kind": "box",
+              "max": [
+                0,
+                -1,
+                0
+              ],
+              "min": [
+                0,
+                -1,
+                0
+              ]
+            },
+            "verb": "select"
+          },
+          {
+            "recipe": {
+              "blocks": [
+                {
+                  "block": "minecraft:stone",
+                  "weight": 1.0
+                }
+              ]
+            },
+            "region": "region/long-hall-end-chest",
+            "verb": "fill"
+          }
+        ],
+        "id": "batch/long-hall-end-chest-walled",
+        "note": "The long hall's end chest is walled in stone, so every container the world holds is claimed."
+      }
+    }
+  ],
+  "units": [],
+  "why": "The long hall's end chest — the gallery's one scenery container — replaced by stone through a stage-7 batch, with the notice left declared. Every container left is loot, a collect or a device, so the notice would tell the party the town is bare where it is not. It declares no unit: the batch verbs are bound in the primary, and the patch reaches the unanchored cell through the anchor standing on top of it."
+}

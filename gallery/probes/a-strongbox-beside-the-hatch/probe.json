@@ -1,0 +1,62 @@
+{
+  "code": "DW1047",
+  "patch": [
+    {
+      "doc": "programs/near-hall.json",
+      "op": "add",
+      "path": "/palette/strongbox",
+      "value": "minecraft:trapped_chest[facing=north,type=single,waterlogged=false]"
+    },
+    {
+      "doc": "programs/near-hall.json",
+      "op": "add",
+      "path": "/rules/strongbox",
+      "value": [
+        {
+          "body": {
+            "material": {
+              "role": "strongbox"
+            },
+            "op": "fill"
+          },
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "doc": "programs/near-hall.json",
+      "op": "replace",
+      "path": "/rules/place/0/body/body/body/body/body/children/0/children/2/children/3",
+      "value": {
+        "op": "call",
+        "symbol": "strongbox"
+      }
+    },
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/containers",
+      "value": {
+        "decoration_notice": {
+          "style": "chat",
+          "text": "The near hall was stripped before you came; its strongboxes hold nothing."
+        }
+      }
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/content/containers.decoration_notice",
+      "value": "你们来之前，近厅已被搬空；里面的保险箱什么也没有。"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "add",
+      "path": "/source/containers.decoration_notice",
+      "value": "The near hall was stripped before you came; its strongboxes hold nothing."
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "Two trapped chests sunk flush in the floor beside the shaft's hatch, a strongbox at the near hall's way down. A trapped chest is a signal source on every face while a player holds it open, and a closed iron trapdoor opens whenever a neighbour signal reaches it, so opening the chest opens the hatch with no beat while the story still holds it shut. `DW1047` names the hatch's cell, the chest beside it and the remedy: move the source or the gate. The two chests are scenery, so the patch also declares the notice that says so (spec-0105); without it the build is refused `DW1018` before the signal proof is reached. It declares no unit: the surface is the floor's block, and what must not compile is a shut gate a signal can open."
+}

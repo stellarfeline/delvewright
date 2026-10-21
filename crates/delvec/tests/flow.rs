@@ -159,6 +159,7 @@ fn pre_fix_mixed_branch_path_fails_replay() {
         ],
         cyclic: false,
         degenerate: false,
+        story: None,
     };
     let err = flow
         .replay(&pre)

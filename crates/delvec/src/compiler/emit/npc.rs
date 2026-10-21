@@ -419,6 +419,65 @@ pub(super) fn walk_claim(
     )]
 }
 
+/// The `on_arrive` bundle the emitter lowers into a walk's arrival function
+/// (`mv_arrive_<bare>` / `ma_arrive_<bare>`): the first-seen `move-npc` /
+/// `move-actor` effect for this body and mark, the planner's dedup order. Both
+/// drivers and every PackTest template that reasons about an arrival read it
+/// here, so a template asks about the bundle the driver actually runs.
+pub(super) fn walk_on_arrive<'c>(
+    c: &'c delvewright_dsl::Campaign,
+    walker: Walker,
+    body: &str,
+    mark: &delvewright_dsl::Mark,
+) -> &'c [QuestEffect] {
+    all_campaign_effects(c)
+        .into_iter()
+        .find_map(|e| match (walker, &e.verb) {
+            (
+                Walker::Npc,
+                Verb::MoveNpc {
+                    npc, to, on_arrive, ..
+                },
+            ) if npc.as_str() == body && to == mark => Some(on_arrive.as_slice()),
+            (
+                Walker::Actor,
+                Verb::MoveActor {
+                    actor,
+                    to,
+                    on_arrive,
+                    ..
+                },
+            ) if actor.as_str() == body && to == mark => Some(on_arrive.as_slice()),
+            _ => None,
+        })
+        .unwrap_or(&[])
+}
+
+/// Whether a walk's arrival takes its own walker out of the world: an effect at
+/// any depth of `on_arrive` whose [`QuestEffect::body_exit`] is this body, of
+/// this walker's class (`despawn-npc` for an NPC; `despawn-actor` or
+/// `unleash-actor` for a puppet). The exit runs in the driver call that makes the
+/// last teleport, so after the arrival tick no body of this walk stands anywhere.
+pub(super) fn arrival_takes_the_body(
+    on_arrive: &[QuestEffect],
+    walker: Walker,
+    body: &str,
+) -> bool {
+    on_arrive.iter().any(|e| {
+        let class = match walker {
+            Walker::Npc => matches!(e.verb, Verb::DespawnNpc { .. }),
+            Walker::Actor => matches!(
+                e.verb,
+                Verb::DespawnActor { .. } | Verb::UnleashActor { .. }
+            ),
+        };
+        (class && e.body_exit() == Some(body))
+            || e.nested_effect_lists_labeled()
+                .into_iter()
+                .any(|(_, _, inner)| arrival_takes_the_body(inner, walker, body))
+    })
+}
+
 /// The scoreboard-safe suffix shared by a move's driver functions/sentinels.
 pub(super) fn movenpc_bare(npc: &str, to: &delvewright_dsl::Mark, gate_key: &str) -> String {
     movenpc_fn(npc, to, gate_key)
@@ -495,17 +554,7 @@ pub(super) fn movenpc_fns(
         // `#mown_<bare> < #mgen_<npc>` ⇔ a later walk for this body has started.
         let (own, gen_) = walk_stamp(Walker::Npc, &bare, &safe);
         let stale = format!("score {own} dw.sys < {gen_} dw.sys");
-        // The on_arrive bundle for this (npc, to) — the first-seen effect,
-        // matching the planner's dedup order (mirrors `actor_fns`).
-        let on_arrive: &[QuestEffect] = all_campaign_effects(plan.campaign)
-            .into_iter()
-            .find_map(|e| match &e.verb {
-                Verb::MoveNpc {
-                    npc, to, on_arrive, ..
-                } if npc.as_str() == m.npc && *to == m.to => Some(on_arrive.as_slice()),
-                _ => None,
-            })
-            .unwrap_or(&[]);
+        let on_arrive = walk_on_arrive(plan.campaign, Walker::Npc, &m.npc, &m.to);
 
         // start: guard re-entry, take the walk generation, reset the tick counter,
         // schedule the driver. The re-entry refusal is generation-aware: a latch left

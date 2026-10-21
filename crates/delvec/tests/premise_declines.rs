@@ -154,6 +154,9 @@ fn the_graph_declines_are_enumerated() {
         // whether the party walks on cue to a cell it strikes from (§4.5);
         // and the bot's spared stand beside it, a cell it walks to on cue.
         ("compiler/emit/proofs.rs", ".walk_region(", 2),
+        // `holders::check_stance`: the stance a holder `collect` is taken
+        // from, where the critical path's leg ends (spec-0111 §5.2).
+        ("compiler/emit/mod.rs", ".walk_region_rooted(", 1),
         // `DW0920`: where the party is walked to engage a fight in water.
         ("compiler/engage.rs", ".walk_region(", 1),
         // `DW0315`/`DW0316`: checkpoints and respawns (§4.5).

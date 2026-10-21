@@ -384,11 +384,11 @@ fn branch_campaign_template_drives_each_branch_coherently() {
 
     // Harness tier: each branch path exports its OWN ending tail.
     let bolt: serde_json::Value =
-        serde_json::from_slice(&out["validation/branch-path-bolt.json"]).unwrap();
+        serde_json::from_slice(&out[&common::world_file_of(&out, "branch/bolt", "path")]).unwrap();
     let last = bolt["steps"].as_array().unwrap().last().unwrap();
     assert_eq!(last["ending_tail_ticks"], 200, "bolt path tail: {last}");
     let hold: serde_json::Value =
-        serde_json::from_slice(&out["validation/branch-path-hold.json"]).unwrap();
+        serde_json::from_slice(&out[&common::world_file_of(&out, "branch/hold", "path")]).unwrap();
     let last = hold["steps"].as_array().unwrap().last().unwrap();
     assert!(
         last.get("ending_tail_ticks").is_none(),

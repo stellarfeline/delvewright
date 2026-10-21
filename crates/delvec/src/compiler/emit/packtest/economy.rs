@@ -50,6 +50,21 @@ pub(super) fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         t.push(format!("function {ns}:setup"));
         t.push(pin);
+        // The offer's gate and the debiting effect's own `when`, driven open as
+        // the buyer: the suite is one batch, and a sibling may hold any `#party`
+        // term the gate reads (the gallery's counter closes once a sibling has
+        // driven `flag/hall-sealed`), so the template owns every one it reads.
+        let debit = off
+            .effects
+            .iter()
+            .find(|e| e.writes_state().is_some())
+            .expect("the offer was chosen for its state write");
+        for line in packtest_gate_drive(plan, off.gate(), true)
+            .into_iter()
+            .chain(packtest_gate_drive(plan, debit.gate(), true))
+        {
+            t.push(format!("execute as {me} run {line}"));
+        }
         // Afford it: the balance the offer's own gate and its effects' gates both
         // read is set high enough for every comparison in the bundle to open.
         t.push(format!("scoreboard players set {me} {obj} 100"));

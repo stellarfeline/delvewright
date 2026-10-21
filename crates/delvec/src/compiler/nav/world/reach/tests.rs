@@ -42,6 +42,7 @@ impl Build {
                 climb: Default::default(),
                 unheld_climb: Default::default(),
                 material: Default::default(),
+                footprints: Default::default(),
             },
             p,
         )

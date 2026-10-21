@@ -96,8 +96,12 @@ gaps, wades or drops into water and floats — from every cell of the proven
 route, and refuses any cell from which no movement leads back. A garden bed
 ringed by a hedge the player can jump onto, a pool whose rim stands two over
 the water, a slot in a wall walk: each is named with the move that gets a body
-in. Repair the place — open a side, lower the rim, add a step, move what the
-player jumps in from — and never answer it with an invisible barrier. A room
+in. A floor is judged by what holds a body, not by what holds a block: iron
+bars or a pane laid through a floor are posts a body falls between, so a hatch
+built of them is named here with the fall through it — build a floor's bar of
+the block the allocation hands as `bar_block`. Repair the place — open a side,
+lower the rim, add a step, move what the player jumps in from — and never
+answer it with an invisible barrier. A room
 the story shuts the party into is not this: its objective is inside it. The
 build prints the leave-proof binding line either way; the counts are in
 `validation/leave-proof.json`.

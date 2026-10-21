@@ -105,6 +105,9 @@
 use delvewright_dsl::Verb;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+mod story;
+pub use story::{Elective, StoryModel, StoryRun, StoryWorld, Target, WorldOrigin};
+
 use delvewright_dsl::{
     Campaign, CompareOp, DialogueEffect, Objective, QuestEffect, StateCompare, StateScope,
     StateWrite, Trigger,
@@ -143,6 +146,21 @@ struct GatedFlag {
     /// it: somebody still has to strike, use, approach or hit it, and
     /// [`Flow::trigger_debts`] is where the path is made to say who and when.
     trigger: Option<String>,
+    /// The ambient act that fires it, by id (spec-0108 §4.3) — a trigger, a
+    /// trap's payload or disarm, a timed gate's disarm, a shortcut's unlock, a
+    /// shop offer, an `on_kill`. `None` for a quest bundle's producer, which
+    /// a story world performs or skips with its quest.
+    act: Option<String>,
+    /// Credited only in a story world that performs its act (spec-0108 §4.1):
+    /// an `on_kill` producer, which today's model never credits (no kill is
+    /// forced) and a story world credits exactly when it performs the kill.
+    story_only: bool,
+}
+
+/// Whether today's model credits `g` at all: every producer but the ones only
+/// a story world can perform.
+fn default_credit(g: &GatedFlag) -> bool {
+    !g.story_only
 }
 
 /// One dialogue option, flattened.
@@ -246,6 +264,20 @@ pub struct Playthrough {
     /// `true` when no branch completes the finale (already `DW0201`) and this is
     /// the degenerate whole-closure fallback rather than a proven playthrough.
     pub degenerate: bool,
+    /// The story world this playthrough walks (spec-0108 §4), when it is one:
+    /// its participation and the elective ambient acts it performs in front of
+    /// which steps. `None` for today's playthroughs.
+    pub story: Option<std::sync::Arc<StoryCtx>>,
+}
+
+/// A story world's run, as a playthrough carries it (spec-0108 §4.1, §4.3).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StoryCtx {
+    /// The elective acts the world performs, by id.
+    pub performs: BTreeSet<String>,
+    /// Each elective ambient act the run performs, with the index of the step
+    /// it is performed in front of — the world's **entry deeds**.
+    pub deeds: Vec<(usize, String)>,
 }
 
 /// The evolving state of one playthrough replay: which flags are set, which
@@ -257,6 +289,13 @@ struct ReplayState {
     done_obj: BTreeSet<String>,
     done_quest: BTreeSet<String>,
     active: BTreeSet<String>,
+    /// Quests a story world does not perform (spec-0108 §4.1): never
+    /// activated, so nothing of them fires. Empty outside a story world.
+    barred: BTreeSet<String>,
+    /// What the party held the moment each final scene began to fire
+    /// (spec-0108 §4.2), keyed by the scene list's pointer — the flags and
+    /// every datum's value, read before the scene's own lines run.
+    scene_at: BTreeMap<String, SceneState>,
     /// Every declared datum's value at this point of the walk. A datum no
     /// ordered walk can date is [`Datum::Undatable`] from the start and stays
     /// that way — see [`Flow::undatable`].
@@ -277,6 +316,15 @@ struct ReplayState {
     /// producer is the unsound direction there), and a proof that asks whether
     /// the line is FORCED must not read it as such. Cleared at each step.
     undecided: Vec<String>,
+}
+
+/// What a final scene read when it began to fire (spec-0108 §4.2).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SceneState {
+    /// The flags held.
+    pub flags: BTreeSet<String>,
+    /// Every declared datum's value; `None` where no ordered walk names it.
+    pub data: BTreeMap<String, Option<i64>>,
 }
 
 /// One datum's value during a replay.
@@ -460,6 +508,10 @@ pub struct JournalStep {
     /// The members of `fired` whose gate held only on an undatable numeric
     /// term — played by the replay, never forced (`plan::firing_of`).
     pub undecided: BTreeSet<String>,
+    /// A story world's entry deeds performed in front of this step (spec-0108
+    /// §4.1), in order: each elective ambient act by id, with the pointer of
+    /// every effect its bundle fired. Empty outside a story world.
+    pub deeds: Vec<(String, Vec<String>)>,
 }
 
 /// One play order under construction ([`Flow::walk`]): the replay state
@@ -479,14 +531,27 @@ pub struct Walk<'f, 'a> {
     /// other ambient producer at all (a trap disarm, a timed gate's disarm, a
     /// purchase are acts nothing forces).
     performed: Option<BTreeSet<String>>,
+    /// The story world this walk plays (spec-0108 §4.1): what it credits, and
+    /// the entry deeds it performs in front of which steps. `None` outside one.
+    story: Option<std::sync::Arc<StoryCtx>>,
 }
 
 impl Walk<'_, '_> {
     /// Whether this walk credits ambient producer `g` now.
     fn credits(&self, g: &GatedFlag) -> bool {
-        match &self.performed {
-            None => true,
+        let stance = match &self.performed {
+            None => default_credit(g),
             Some(done) => g.trigger.as_ref().is_some_and(|t| done.contains(t)),
+        };
+        match &self.story {
+            None => stance,
+            // A story world credits what it performs (spec-0108 §4.1): an
+            // elective act's producer only when the act is in its participation,
+            // a forced one wherever its gate holds, as today.
+            Some(ctx) => match &self.performed {
+                None => self.flow.story_credit(g, &ctx.performs),
+                Some(_) => stance,
+            },
         }
     }
 
@@ -504,6 +569,25 @@ impl Walk<'_, '_> {
         self.st.flags = flags;
     }
 
+    /// Why `step` cannot be completed now, the entry deeds due in front of it
+    /// performed first (on a clone) — the replay's own per-step test.
+    fn blocked_after_deeds(&self, step: &PathStep) -> Option<String> {
+        match &self.story {
+            Some(ctx) if ctx.deeds.iter().any(|(i, _)| *i == self.taken) => {
+                let mut ahead = self.clone();
+                for (_, act) in ctx.deeds.iter().filter(|(i, _)| *i == self.taken) {
+                    self.flow.perform_act(&mut ahead.st, act, self.taken + 1);
+                }
+                let mut flags = std::mem::take(&mut ahead.st.flags);
+                self.flow
+                    .saturate_ambient_with(&mut flags, &|g: &GatedFlag| ahead.credits(g));
+                ahead.st.flags = flags;
+                self.flow.step_blocked(&ahead.st, step)
+            }
+            _ => self.flow.step_blocked(&self.st, step),
+        }
+    }
+
     /// Can `step` be completed now — the replay's own per-step test, and not
     /// already done.
     pub fn legal(&self, step: &PathStep) -> bool {
@@ -514,6 +598,22 @@ impl Walk<'_, '_> {
     /// Complete `step` (its guards are the caller's to have checked) and
     /// return the journal entry for the transition.
     pub fn take(&mut self, step: &PathStep) -> JournalStep {
+        // A story world's entry deeds due in front of this step (spec-0108
+        // §4.1): each elective ambient act it performs, fired once, here.
+        let mut deeds: Vec<(String, Vec<String>)> = Vec::new();
+        if let Some(ctx) = self.story.clone() {
+            for (_, act) in ctx.deeds.iter().filter(|(i, _)| *i == self.taken) {
+                let from = self.st.fired.len();
+                self.flow.perform_act(&mut self.st, act, self.taken + 1);
+                deeds.push((act.clone(), self.st.fired[from..].to_vec()));
+            }
+            if self.performed.is_none() {
+                let mut flags = std::mem::take(&mut self.st.flags);
+                self.flow
+                    .saturate_ambient_with(&mut flags, &|g: &GatedFlag| self.credits(g));
+                self.st.flags = flags;
+            }
+        }
         let before = self.st.clone();
         self.taken += 1;
         let mut st = std::mem::take(&mut self.st);
@@ -543,6 +643,7 @@ impl Walk<'_, '_> {
             fired: self.st.fired.iter().cloned().collect(),
             fired_in_order: self.st.fired.clone(),
             undecided: self.st.undecided.iter().cloned().collect(),
+            deeds,
         }
     }
 
@@ -611,6 +712,73 @@ impl Walk<'_, '_> {
     /// The quests running now.
     pub fn active_quests(&self) -> &BTreeSet<String> {
         &self.st.active
+    }
+
+    /// **Every objective armed now** — the ones whose completion the datapack
+    /// would award this instant to a body that did what it asks: its quest
+    /// running, every `after` complete, its flag gate holding, every numeric
+    /// term holding against the value this walk knows, and not yet done
+    /// (`emit::quest::pending_guard`, read by [`Flow::objective_armed`]). A term
+    /// on a datum the walk cannot date is read as SHUT: the set is what the
+    /// replay proves armed, so a keep-out built on it refuses nothing the replay
+    /// cannot show. In declaration order.
+    pub fn armed_objectives(&self) -> Vec<String> {
+        self.flow
+            .c
+            .quests
+            .content
+            .quests
+            .iter()
+            .flat_map(|q| q.objectives.iter())
+            .filter(|o| self.flow.objective_armed(o.id().as_str(), &self.st))
+            .filter(|o| {
+                o.requires_state()
+                    .iter()
+                    .all(|c| match self.st.state.get(c.state.as_str()) {
+                        Some(Datum::Known(v)) => i32::try_from(*v).is_ok_and(|v| c.holds(v)),
+                        _ => false,
+                    })
+            })
+            .map(|o| o.id().as_str().to_string())
+            .collect()
+    }
+
+    /// This walk with the entry deeds its story world performs in front of the
+    /// next step performed — the state the party holds as it takes that step.
+    /// The walk itself when none is due there.
+    pub fn with_due_deeds(&self) -> Self {
+        let mut ahead = self.clone();
+        if let Some(ctx) = &self.story {
+            for (_, act) in ctx.deeds.iter().filter(|(i, _)| *i == self.taken) {
+                ahead = ahead.performing(act);
+            }
+        }
+        ahead
+    }
+
+    /// This walk with ambient act `act`'s own bundle fired here, once, and no
+    /// ambient producer credited after it — exactly what the act itself writes,
+    /// which is what a mocked act is asserted by (spec-0108 §6.5).
+    pub fn performed_alone(&self, act: &str) -> Self {
+        let mut ahead = self.clone();
+        self.flow.perform_act(&mut ahead.st, act, self.taken + 1);
+        ahead
+    }
+
+    /// This walk with ambient act `act` performed here, once, and nothing
+    /// else — the state a mocked act leaves (spec-0108 §6.4): its bundle fired by
+    /// the replay's one gate test, its producers then credited.
+    pub fn performing(&self, act: &str) -> Self {
+        let mut ahead = self.clone();
+        self.flow.perform_act(&mut ahead.st, act, self.taken + 1);
+        if let Some(done) = ahead.performed.as_mut() {
+            done.insert(act.to_string());
+        }
+        let mut flags = std::mem::take(&mut ahead.st.flags);
+        self.flow
+            .saturate_ambient_with(&mut flags, &|g: &GatedFlag| ahead.credits(g));
+        ahead.st.flags = flags;
+        ahead
     }
 
     /// What a right-click on each NPC can put in front of the player now: every
@@ -837,6 +1005,14 @@ pub struct Flow<'a> {
     /// is ever refused against. See [`Datum::Undatable`] for the reasoning; the
     /// three sources are named where the set is built.
     undatable: BTreeSet<String>,
+    /// Every final scene's list pointer (spec-0108 §3.2): the replay notes what
+    /// the party held the moment each began to fire.
+    scene_roots: BTreeSet<String>,
+    /// The acts a story world may perform or skip, and the forced ones —
+    /// built on first use ([`Self::acts`]).
+    acts: std::sync::OnceLock<story::Acts<'a>>,
+    /// The story worlds (spec-0108 §4) — built on first use ([`Self::story`]).
+    story: std::sync::OnceLock<story::StoryModel>,
 }
 
 impl<'a> Flow<'a> {
@@ -857,6 +1033,8 @@ impl<'a> Flow<'a> {
                 flag: p.flag.to_string(),
                 requires: p.requires,
                 trigger: None,
+                act: p.act,
+                story_only: p.story_only,
             };
             match p.site {
                 delvewright_dsl::producers::ProducerSite::ObjectiveComplete {
@@ -894,6 +1072,9 @@ impl<'a> Flow<'a> {
             worlds,
             initial,
             undatable: undatable_state(c),
+            scene_roots: crate::compiler::ending::Scenes::of(c).scene_paths(),
+            acts: std::sync::OnceLock::new(),
+            story: std::sync::OnceLock::new(),
         }
     }
 
@@ -1008,6 +1189,7 @@ impl<'a> Flow<'a> {
             steps,
             cyclic,
             degenerate,
+            story: None,
         }
     }
 
@@ -1020,7 +1202,7 @@ impl<'a> Flow<'a> {
     /// (one [`Self::advance`], one [`Self::fire`]), so the chronicle can never
     /// describe an order the replay does not admit.
     pub fn journal(&self, p: &Playthrough) -> Vec<JournalStep> {
-        let mut w = self.walk();
+        let mut w = self.walk_for(p);
         p.steps.iter().map(|step| w.take(step)).collect()
     }
 
@@ -1046,7 +1228,8 @@ impl<'a> Flow<'a> {
     pub fn trigger_debts(&self, p: &Playthrough) -> Vec<TriggerDebt> {
         let mut performed: BTreeSet<String> = BTreeSet::new();
         let mut complete_at: Option<(usize, String)> = None;
-        let mut st = self.initial_state_with(&|g: &GatedFlag| g.trigger.is_none());
+        let mut st =
+            self.initial_state_with(&|g: &GatedFlag| g.trigger.is_none() && default_credit(g));
         let mut out: Vec<TriggerDebt> = Vec::new();
         for (i, step) in p.steps.iter().enumerate() {
             let mut reads: Vec<String> = self
@@ -1085,12 +1268,12 @@ impl<'a> Flow<'a> {
                 });
                 let paid = &performed;
                 self.saturate_ambient_with(&mut st.flags, &|g: &GatedFlag| {
-                    g.trigger.as_ref().is_none_or(|t| paid.contains(t))
+                    default_credit(g) && g.trigger.as_ref().is_none_or(|t| paid.contains(t))
                 });
             }
             let paid = &performed;
             self.advance_with(&mut st, step, i + 1, &mut complete_at, &|g: &GatedFlag| {
-                g.trigger.as_ref().is_none_or(|t| paid.contains(t))
+                default_credit(g) && g.trigger.as_ref().is_none_or(|t| paid.contains(t))
             });
         }
         out
@@ -1100,20 +1283,21 @@ impl<'a> Flow<'a> {
     /// `Ok(())` means every step is activatable and completable at its position
     /// and `campaign-complete` fires exactly at the final step.
     pub fn replay(&self, p: &Playthrough) -> Result<(), ReplayFailure> {
-        let mut st8 = self.initial_state();
-        let mut complete_at: Option<(usize, String)> = None;
-
+        // A story world's playthrough replays under its own participation and
+        // entry deeds (spec-0108 §4.4); every other one under today's stance.
+        let mut w = self.walk_for(p);
         for (i, st) in p.steps.iter().enumerate() {
             let pos = i + 1;
-            if let Some(reason) = self.step_blocked(&st8, st) {
+            if let Some(reason) = w.blocked_after_deeds(st) {
                 return Err(ReplayFailure {
                     position: pos,
                     objective: st.objective.clone(),
                     reason,
                 });
             }
-            self.advance(&mut st8, st, pos, &mut complete_at);
+            w.take(st);
         }
+        let complete_at = w.complete_at.clone();
 
         let last = p.steps.len();
         match complete_at {
@@ -1215,6 +1399,7 @@ impl<'a> Flow<'a> {
     pub fn ambient_producers(&self) -> impl Iterator<Item = (&str, &[String])> {
         self.ambient
             .iter()
+            .filter(|g| default_credit(g))
             .map(|g| (g.flag.as_str(), g.requires.as_slice()))
     }
 
@@ -1229,6 +1414,7 @@ impl<'a> Flow<'a> {
             complete_at: None,
             taken: 0,
             performed: None,
+            story: None,
         }
     }
 
@@ -1247,6 +1433,7 @@ impl<'a> Flow<'a> {
             complete_at: None,
             taken: 0,
             performed: Some(BTreeSet::new()),
+            story: None,
         }
     }
 
@@ -1602,7 +1789,7 @@ impl<'a> Flow<'a> {
     /// The replay's starting state: campaign-start quests active, ambient
     /// (trigger / trap payload / trap-disarm) flags saturated.
     fn initial_state(&self) -> ReplayState {
-        self.initial_state_with(&|_| true)
+        self.initial_state_with(&default_credit)
     }
 
     /// [`Self::initial_state`], crediting only the ambient producers `allow`
@@ -1638,7 +1825,7 @@ impl<'a> Flow<'a> {
         pos: usize,
         complete_at: &mut Option<(usize, String)>,
     ) {
-        self.advance_with(st, step, pos, complete_at, &|_| true);
+        self.advance_with(st, step, pos, complete_at, &default_credit);
     }
 
     /// [`Self::advance`], crediting only the ambient producers `allow` admits.
@@ -1701,6 +1888,7 @@ impl<'a> Flow<'a> {
                 for other in &self.c.quests.content.quests {
                     if let Trigger::QuestComplete { quest } = &other.trigger
                         && quest.as_str() == qid
+                        && !st.barred.contains(other.id.as_str())
                     {
                         st.active.insert(other.id.as_str().to_string());
                     }
@@ -1792,22 +1980,28 @@ impl<'a> Flow<'a> {
     fn option_drawn(&self, o: &OptModel, st: &ReplayState) -> bool {
         o.requires.iter().all(|f| st.flags.contains(f))
             && !o.forbids.iter().any(|f| st.flags.contains(f))
-            && o.completes.iter().all(|obj| {
-                !st.done_obj.contains(obj)
-                    && self
-                        .objective_quest(obj)
-                        .is_some_and(|q| st.active.contains(q))
-                    && self.objective(obj).is_none_or(|ob| {
-                        ob.after().iter().all(|a| st.done_obj.contains(a.as_str()))
-                            && ob
-                                .requires_flags()
-                                .iter()
-                                .all(|f| st.flags.contains(f.as_str()))
-                            && !ob
-                                .forbids_flags()
-                                .iter()
-                                .any(|f| st.flags.contains(f.as_str()))
-                    })
+            && o.completes.iter().all(|obj| self.objective_armed(obj, st))
+    }
+
+    /// Whether objective `obj` is armed in state `st` — the model of
+    /// `emit::quest::pending_guard`: not yet done, its quest running, every
+    /// `after` complete, and its gate's flags holding. A numeric term is read as
+    /// open, so the model never disarms an objective the datapack might arm.
+    fn objective_armed(&self, obj: &str, st: &ReplayState) -> bool {
+        !st.done_obj.contains(obj)
+            && self
+                .objective_quest(obj)
+                .is_some_and(|q| st.active.contains(q))
+            && self.objective(obj).is_none_or(|ob| {
+                ob.after().iter().all(|a| st.done_obj.contains(a.as_str()))
+                    && ob
+                        .requires_flags()
+                        .iter()
+                        .all(|f| st.flags.contains(f.as_str()))
+                    && !ob
+                        .forbids_flags()
+                        .iter()
+                        .any(|f| st.flags.contains(f.as_str()))
             })
     }
 
@@ -2051,6 +2245,26 @@ impl<'a> Flow<'a> {
         // cannot date is therefore known, inside this list only, from the line
         // that pins it. Never inherited by a nested list (a `sequence` step or an
         // `on_arrive` runs at a later tick) and never carried past the list.
+        if self.scene_roots.contains(base) && !st.scene_at.contains_key(base) {
+            let data = st
+                .state
+                .iter()
+                .map(|(k, d)| {
+                    let v = match d {
+                        Datum::Known(v) => Some(*v),
+                        Datum::Undatable => None,
+                    };
+                    (k.clone(), v)
+                })
+                .collect();
+            st.scene_at.insert(
+                base.to_string(),
+                SceneState {
+                    flags: st.flags.clone(),
+                    data,
+                },
+            );
+        }
         let mut pinned: BTreeMap<String, i64> = BTreeMap::new();
         let value = |st: &ReplayState, pinned: &BTreeMap<String, i64>, id: &str| match st
             .state
@@ -2150,10 +2364,22 @@ impl<'a> Flow<'a> {
 
     /// The monotone fixpoint, restricted to one branch world.
     fn solve(&self, world: &World) -> Solution {
+        self.solve_with(world, &default_credit, &BTreeSet::new())
+    }
+
+    /// [`Self::solve`] crediting only the ambient producers `credit` admits and
+    /// never activating a quest in `barred` — a story world's fixpoint
+    /// (spec-0108 §4.1): an elective act not performed produces nothing.
+    fn solve_with(
+        &self,
+        world: &World,
+        credit: &dyn Fn(&GatedFlag) -> bool,
+        barred: &BTreeSet<String>,
+    ) -> Solution {
         let mut s = Solution::default();
         loop {
             let mut changed = false;
-            self.saturate_ambient_tracked(&mut s.flags, &mut changed);
+            self.saturate_ambient_tracked(&mut s.flags, &mut changed, credit);
 
             // Dialogue: options reachable from any root this world can put a body
             // in front of — the tree's own and every live `cast` ledger scene —
@@ -2192,7 +2418,7 @@ impl<'a> Flow<'a> {
                     Trigger::CampaignStart => true,
                     Trigger::QuestComplete { quest } => s.completed.contains(quest.as_str()),
                 };
-                if now {
+                if now && !barred.contains(qid) {
                     s.active.insert(qid.to_string());
                     changed = true;
                 }
@@ -2257,9 +2483,17 @@ impl<'a> Flow<'a> {
         s
     }
 
-    fn saturate_ambient_tracked(&self, flags: &mut BTreeSet<String>, changed: &mut bool) {
+    fn saturate_ambient_tracked(
+        &self,
+        flags: &mut BTreeSet<String>,
+        changed: &mut bool,
+        credit: &dyn Fn(&GatedFlag) -> bool,
+    ) {
         for g in &self.ambient {
-            if g.requires.iter().all(|f| flags.contains(f)) && flags.insert(g.flag.clone()) {
+            if credit(g)
+                && g.requires.iter().all(|f| flags.contains(f))
+                && flags.insert(g.flag.clone())
+            {
                 *changed = true;
             }
         }

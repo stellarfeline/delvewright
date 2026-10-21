@@ -703,7 +703,7 @@ pub fn check_danger_is_visible(
                 let Some(widx) = r.world else { continue };
                 // A branch whose path cannot be built is refused by the branch
                 // proofs, with its own message; it has no configurations here.
-                let Ok(cp) = plan.branch_critical_path(&flow, &flow.playthrough_in(widx)) else {
+                let Ok(cp) = plan.branch_critical_path(&flow, &flow.story_playthrough(widx)) else {
                     continue;
                 };
                 let (events, ancestors) = plan.branch_gate_model(&cp);

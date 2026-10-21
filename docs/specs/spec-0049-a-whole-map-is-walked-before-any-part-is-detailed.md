@@ -141,6 +141,8 @@ machinery are the same hour.
 
 ### 3.1 The document
 
+> **Amendment — a gated connection is built shut (spec-0107).** The `barred` class is retired: a door shut by bars is a `walk` whose `gating` names what opens it, and `opens_from` lives inside `gating`. The departure is §9.8 below.
+
 `layout-graph.json`, a new campaign stage document (stage name
 `layout-graph`) with the standard envelope, existing only at `dsl_version` ≥
 0.13.0. It states the campaign's space as a graph **before any coordinate
@@ -200,6 +202,8 @@ awareness from `compiler::flow`'s existing branch enumeration — that is the
 trigger, and before it fires the simple closure is the cheaper instrument.
 
 ### 3.3 Stage-3 checks
+
+> **Amendment (spec-0107).** `DW0818` refuses an empty `gating` on any connection, not on a `barred` one; the opener obligation is `DW1028`, raised at the quest documents over every gated connection. The departure is §9.8 below.
 
 Validation tier (exit 1) unless stated; every check states its binding count.
 
@@ -368,6 +372,8 @@ existing placement machinery" means concretely, and it is why the slice ships
 no second world pipeline.
 
 ### 5.2 Synthesized anchors and gates — how the quest layer lands on massing
+
+> **Amendment (spec-0107).** The derivation stands the bar in every gated connection's seam, at the cells its kind takes, rather than in `barred` seams alone. The departure is §9.8 below.
 
 A blockout world has no prefab-declared anchors, so the derivation
 synthesizes the campaign's spatial vocabulary:
@@ -547,6 +553,14 @@ Each recorded where it is made; collected here so the list is auditable:
    author's copy of it, and one extent edit re-typed every box east of it.
    The two-artifact question of §10 is decided by spec-0059 §10: the graph
    and the plan remain two documents.
+
+8. **A gated connection is built shut** (spec-0107) — `gating` on any
+   traversal connection stands a bar in its seam until the story opens it,
+   the `barred` class is retired from the layout graph, `opens_from` moves into
+   `gating`, and the opener obligation becomes `DW1028`. Reason: the closure
+   honoured `gating` and the derivation built it for one class, so a gated
+   stair, ladder or shaft was open from world load and the route proofs were
+   green over a graph whose order the player could ignore.
 
 ## 10. The two-artifact question, carried
 

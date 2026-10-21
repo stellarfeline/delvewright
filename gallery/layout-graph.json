@@ -23,6 +23,11 @@
         "quest": "quest/near-hall"
       },
       {
+        "node": "node/near-hall",
+        "objective": "obj/lay-an-emerald",
+        "quest": "quest/near-hall"
+      },
+      {
         "node": "node/far-hall",
         "objective": "obj/answer-the-marshal",
         "quest": "quest/far-hall"
@@ -96,6 +101,11 @@
         "node": "node/near-hall",
         "objective": "obj/back-in-the-hall",
         "quest": "quest/far-hall"
+      },
+      {
+        "node": "node/near-hall",
+        "objective": "obj/take-the-seal",
+        "quest": "quest/near-hall"
       }
     ],
     "critical_path": [
@@ -133,35 +143,35 @@
       {
         "a": "node/near-hall",
         "b": "node/far-hall",
-        "class": "barred",
+        "class": "walk",
         "gating": {
+          "opens_from": "a",
           "quest": "quest/near-hall"
         },
-        "id": "edge/west-door",
-        "opens_from": "a"
+        "id": "edge/west-door"
       },
       {
         "a": "node/near-hall",
         "b": "node/far-hall",
-        "class": "barred",
+        "class": "walk",
         "gating": {
+          "opens_from": "either",
           "quest": "quest/near-hall"
         },
-        "id": "edge/centre-door",
-        "opens_from": "either"
+        "id": "edge/centre-door"
       },
       {
         "a": "node/near-hall",
         "b": "node/far-hall",
-        "class": "barred",
+        "class": "walk",
         "gating": {
           "flags": [
             "flag/muster-cleared"
-          ]
+          ],
+          "opens_from": "b"
         },
         "id": "edge/east-door",
         "one_way": "a-to-b",
-        "opens_from": "b",
         "shortcut": true
       },
       {
@@ -339,6 +349,6 @@
       }
     ]
   },
-  "dsl_version": "0.50.0",
+  "dsl_version": "0.58.0",
   "stage": "layout-graph"
 }

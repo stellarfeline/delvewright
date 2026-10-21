@@ -1,0 +1,39 @@
+{
+  "campaign_id": "hello-world",
+  "content": {
+    "dialogues": [
+      {
+        "nodes": [
+          {
+            "id": "dlg/greeting",
+            "options": [
+              {
+                "effects": [
+                  {
+                    "flag": "flag/promised",
+                    "type": "set-flag"
+                  },
+                  {
+                    "objective": "obj/decide",
+                    "type": "complete-objective"
+                  }
+                ],
+                "happening": {
+                  "subject": "npc/keeper",
+                  "text": "The party promises.",
+                  "verb": "believes"
+                },
+                "label": "We promise."
+              }
+            ],
+            "text": "Well?"
+          }
+        ],
+        "npc": "npc/keeper",
+        "root": "dlg/greeting"
+      }
+    ]
+  },
+  "dsl_version": "0.58.0",
+  "stage": "dialogue"
+}

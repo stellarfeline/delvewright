@@ -25,9 +25,12 @@
 //! Still FLAGGED for owner ratification.
 //!
 //! The list is **configurable**: `Allowlist::from_file` loads a JSON
-//! `{ "allow": ["minecraft:...", ...], "allow_suffixes": ["_stairs", ...] }` that
-//! *replaces* the default, so the owner can tighten or widen it without a code
-//! change. `jigsaw` is included by default because sockets are legitimate library
+//! `{ "allow": ["minecraft:...", ...], "allow_suffixes": ["_stairs", ...],
+//! "allow_entities": ["minecraft:item_frame", ...] }` that *replaces* the
+//! default, so the owner can tighten or widen it without a code change. The
+//! entity list is what a template's `entities` may carry (spec-0111 §3.1); its
+//! default is the three item-holder kinds, and `allow_entities` replaces it as
+//! `allow` replaces the block list. `jigsaw` is included by default because sockets are legitimate library
 //! markers (carved during admission); it is NOT a code-injection vector (a jigsaw
 //! block entity cannot carry a `Command`). This too is flagged for owner review.
 
@@ -43,6 +46,9 @@ use crate::admit::structure::PaletteEntry;
 pub struct Allowlist {
     exact: BTreeSet<String>,
     suffixes: Vec<String>,
+    /// The entity types a template's `entities` list may carry (spec-0111
+    /// §3.1): by default the three item-holder kinds.
+    entities: BTreeSet<String>,
 }
 
 /// The on-disk override shape.
@@ -53,6 +59,9 @@ struct AllowlistFile {
     allow: Vec<String>,
     #[serde(default)]
     allow_suffixes: Vec<String>,
+    /// Replaces the default entity list, as `allow` replaces the block list.
+    #[serde(default)]
+    allow_entities: Option<Vec<String>>,
 }
 
 impl Allowlist {
@@ -60,7 +69,11 @@ impl Allowlist {
     pub fn default_building() -> Allowlist {
         let exact: BTreeSet<String> = DEFAULT_EXACT.iter().map(|s| s.to_string()).collect();
         let suffixes: Vec<String> = DEFAULT_SUFFIXES.iter().map(|s| s.to_string()).collect();
-        Allowlist { exact, suffixes }
+        Allowlist {
+            exact,
+            suffixes,
+            entities: default_entities(),
+        }
     }
 
     /// Load a JSON override that fully replaces the default.
@@ -70,7 +83,32 @@ impl Allowlist {
         Ok(Allowlist {
             exact: f.allow.into_iter().collect(),
             suffixes: f.allow_suffixes,
+            entities: f
+                .allow_entities
+                .map_or_else(default_entities, |l| l.into_iter().collect()),
         })
+    }
+
+    /// True when a template may carry an entity of type `id` (spec-0111 §3.1).
+    pub fn permits_entity(&self, id: &str) -> bool {
+        let id = if id.contains(':') {
+            id.to_string()
+        } else {
+            format!("minecraft:{id}")
+        };
+        self.entities.contains(&id)
+    }
+
+    /// The entity list, for a refusal to name.
+    pub fn entity_list(&self) -> String {
+        if self.entities.is_empty() {
+            return "empty: no entity is admitted".to_string();
+        }
+        self.entities
+            .iter()
+            .map(|e| format!("`{e}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     /// True when a block name is permitted (exact id or a suffix family).
@@ -136,6 +174,61 @@ pub struct Judged<'a> {
     pub judged: &'a str,
     /// The id as WRITTEN, when a rename was resolved on the way here.
     pub renamed_from: Option<&'a str>,
+}
+
+/// **Where a refused block is had instead.** A block the allowlist refuses is
+/// not always a block the delve cannot have: for some, the DSL has a first-class
+/// surface the compiler builds from, and a prefab that carries the block by hand
+/// is carrying it through the wrong door. Each row names the blocks and the
+/// surface, read off the DSL's own documentation of that surface; a block with
+/// no row has no such surface, and the refusal says so.
+///
+/// A row is kept honest by [`tests::every_routed_block_is_refused_by_the_default`]:
+/// a block the default list already admits, or one the pinned registry does not
+/// hold, is a row that can never be reached.
+pub const ROUTES: &[(&[&str], &str)] = &[
+    (
+        &["minecraft:lever"],
+        "declare it as the `prop` of an `interact` objective or a `use` trigger \
+         (`\"prop\": {\"block\": \"minecraft:lever[face=floor,facing=north,powered=false]\"}`); \
+         the compiler places the lever and its use is the detector",
+    ),
+    (
+        &["minecraft:note_block", "minecraft:jukebox"],
+        "the sound is a `play-sound` effect on a trigger, objective or trap payload; \
+         the compiler plays it where the party is",
+    ),
+    (
+        &["minecraft:piston", "minecraft:sticky_piston"],
+        "ground that moves on a signal is a `set-block` or `fill-region` effect on a \
+         trigger, objective or trap payload",
+    ),
+    (
+        &["minecraft:spawner", "minecraft:trial_spawner"],
+        "mobs come from a `waves[]` entry fired by a `spawn-wave` effect",
+    ),
+    (
+        &["minecraft:dispenser"],
+        "an arrow trap is a `traps[]` entry whose `payload` is a `volley`; the compiler \
+         owns the detection and the firing, so the piece carries only the trigger block",
+    ),
+];
+
+/// The campaign-side surface that stands in for `id`, when the DSL has one.
+pub fn route_for(id: &str) -> Option<&'static str> {
+    ROUTES
+        .iter()
+        .find(|(ids, _)| ids.contains(&id))
+        .map(|(_, route)| *route)
+}
+
+/// The default entity list: the three item-holder kinds of
+/// [`delvewright_dsl::holders::ENTITY_HOLDERS_1_21_11`].
+fn default_entities() -> BTreeSet<String> {
+    delvewright_dsl::holders::ENTITY_HOLDERS_1_21_11
+        .iter()
+        .map(|k| k.id.to_string())
+        .collect()
 }
 
 impl Default for Allowlist {
@@ -315,6 +408,12 @@ const DEFAULT_EXACT: &[&str] = &[
     "minecraft:crafting_table",
     "minecraft:furnace",
     "minecraft:smoker",
+    // One of the twelve container kinds a `loot` fill reaches (spec-0105 §2.1):
+    // five slots — three bottles, an ingredient, blaze-powder fuel — with no
+    // `Command` or spawner NBT to inject. It brews only with fuel and an
+    // ingredient in it, so a stand the campaign furnishes is still until a
+    // player loads it, the terms a furnace and a smoker are admitted on.
+    "minecraft:brewing_stand",
     "minecraft:cauldron",
     "minecraft:water_cauldron",
     "minecraft:flower_pot",
@@ -489,3 +588,27 @@ const DEFAULT_EXACT: &[&str] = &[
     "minecraft:open_eyeblossom",
     "minecraft:closed_eyeblossom",
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A route row is reachable only for a block the default list refuses and
+    /// the pinned registry holds.
+    #[test]
+    fn every_routed_block_is_refused_by_the_default() {
+        let allow = Allowlist::default_building();
+        let registry = delvewright_dsl::blocks::BlockRegistry::v1_21_11();
+        let mut n = 0;
+        for (ids, route) in ROUTES {
+            assert!(!route.is_empty());
+            for id in *ids {
+                n += 1;
+                assert!(!allow.permits(id), "{id} is admitted; its route is dead");
+                assert!(registry.ids().any(|r| r == *id), "{id} is not in the pin");
+                assert_eq!(route_for(id), Some(*route));
+            }
+        }
+        assert_eq!(n, 8, "the routed blocks counted: {n}");
+    }
+}
