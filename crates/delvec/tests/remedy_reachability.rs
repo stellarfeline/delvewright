@@ -5415,3 +5415,60 @@ fn dw1058_removing_the_stale_entry_or_putting_the_structure_back_is_green() {
     assert!(!back.contains("DW1058 [error]"), "{back}");
     assert_eq!(code, 0, "{back}");
 }
+
+// ---------------------------------------------------------------------------
+// The pair: a shut way's word (spec-0118) and its whole way (spec-0120)
+// ---------------------------------------------------------------------------
+
+/// **A shut way that opens leaves its whole way clear**, judged over the same
+/// gate states the shut-way check reads. The blockout fixture's cell door is
+/// story-shut and declared `seen`. With the loft stair's run walking the
+/// hall's middle row (its arch at 13) one build confirms the word and finds
+/// the door's way whole in both of its states, as built and once its own
+/// gate opens; with the run moved onto the door's approach (at 14) the width
+/// check refuses the door in the open state too, before any shut-way word is
+/// read: opening the bar does not open the way.
+#[test]
+fn a_shut_way_that_opens_leaves_its_whole_way_clear() {
+    let prefabs = tmp("pair-shut-whole-prefabs");
+    let camp = narrowed_by_the_run("pair-shut-whole-green", 13, serde_json::Value::Null);
+    let (code, text) = build("pair-shut-whole-green", &camp, &prefabs);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("(1 seen, 0 told, 0 rewarded)"), "{text}");
+    let ledger: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            Path::new(env!("CARGO_TARGET_TMPDIR"))
+                .join("remedy-out-pair-shut-whole-green/validation/clear-width.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let door = ledger["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["way"] == "edge/hall-cell")
+        .unwrap_or_else(|| panic!("the cell door's way is judged: {ledger}"));
+    assert_eq!(door["verdict"], "whole", "{door}");
+    let states: Vec<&str> = door["stations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|s| s["states"].as_array().unwrap().iter())
+        .filter_map(|s| s.as_str())
+        .collect();
+    assert!(
+        states.iter().any(|s| s.contains("anchor/seam-hall-cell")),
+        "the door is judged once its own gate opens: {states:?}"
+    );
+
+    let camp = narrowed_by_the_run("pair-shut-whole-red", 14, serde_json::Value::Null);
+    let (code, text) = build("pair-shut-whole-red", &camp, &prefabs);
+    assert_eq!(code, 3, "{text}");
+    assert!(
+        text.contains("DW1057 [error]")
+            && text.contains("edge/hall-cell")
+            && text.contains("once `anchor/seam-hall-cell` opens: 1 of 2"),
+        "{text}"
+    );
+}
