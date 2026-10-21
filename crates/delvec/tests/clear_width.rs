@@ -473,3 +473,49 @@ fn the_schema_exports_the_surface() {
     );
     assert!(meta.contains("\"cells\""));
 }
+
+/// **Criterion 2, the zero.** A campaign with no site plan and no contract
+/// way — hello-world, one area bound to a piece that declares no spatial
+/// contract — still writes `validation/clear-width.json`, every count `0`.
+#[test]
+fn a_campaign_with_no_way_writes_its_zeros() {
+    let out = std::env::temp_dir().join(format!("dw-clear-width-hello-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&out);
+    let r = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
+        .args(["build"])
+        .arg(common::hello_world_dir())
+        .arg("-o")
+        .arg(&out)
+        .arg("--prefabs")
+        .arg(common::prefabs_dir())
+        .output()
+        .expect("delvec runs");
+    let log = String::from_utf8_lossy(&r.stderr);
+    assert!(r.status.success(), "{log}");
+    assert!(
+        log.contains("clear width (DW1057/DW1058): 0 way(s) of 0 traversal seam(s), 0 box(es) and 0 contract edge(s)"),
+        "{log}"
+    );
+    let j: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(out.join("validation/clear-width.json"))
+            .expect("the ledger is written"),
+    )
+    .unwrap();
+    for key in [
+        "ways",
+        "examined",
+        "traversal_seams",
+        "boxes",
+        "contract_edges",
+        "portals",
+        "contacts",
+        "way_places",
+        "piece_ways",
+        "plane_columns_left_to_dw0836",
+        "stair_runs_undeclared",
+    ] {
+        assert_eq!(j[key], 0, "{key}: {j}");
+    }
+    assert_eq!(j["states"], 1, "the world as built is the one state judged");
+    let _ = std::fs::remove_dir_all(&out);
+}
