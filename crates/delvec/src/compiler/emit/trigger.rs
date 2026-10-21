@@ -709,3 +709,58 @@ pub(super) fn press_dispatch_fn(
         ]),
     )
 }
+
+#[cfg(test)]
+mod press_criterion_agreement {
+    use super::press_criterion;
+    use delvewright_dsl::TriggerOn;
+
+    /// **One table, two statements** (spec-0119 §5.2): the DSL's
+    /// `attributes_its_actor` admits a presser exactly where the emitter has a
+    /// criterion that names one, or a step's cell selector does — over every
+    /// `TriggerOn` variant. A new variant is a compile error in the match below
+    /// until it is placed in the table.
+    #[test]
+    fn attributes_its_actor_and_the_criterion_table_agree_over_every_variant() {
+        let every = [
+            TriggerOn::Strike,
+            TriggerOn::Use,
+            TriggerOn::Approach { range: 3 },
+            TriggerOn::Step,
+            TriggerOn::StrikeNpc {
+                npc: delvewright_dsl::NpcId("npc/x".to_string()),
+            },
+            TriggerOn::StrikeAssembly {
+                assembly: delvewright_dsl::AssemblyId("assembly/x".to_string()),
+            },
+        ];
+        let mut compared = 0;
+        for on in &every {
+            // Exhaustive by construction: a seventh variant fails to compile here.
+            let named_by_selector = match on {
+                TriggerOn::Step => true,
+                TriggerOn::Strike
+                | TriggerOn::Use
+                | TriggerOn::Approach { .. }
+                | TriggerOn::StrikeNpc { .. }
+                | TriggerOn::StrikeAssembly { .. } => false,
+            };
+            assert_eq!(
+                on.attributes_its_actor(),
+                press_criterion(on).is_some() || named_by_selector,
+                "`{}`: the DSL and the emitter disagree about who is named",
+                on.kind()
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 6);
+        assert_eq!(
+            press_criterion(&TriggerOn::Strike),
+            Some("minecraft:player_hurt_entity")
+        );
+        assert_eq!(
+            press_criterion(&TriggerOn::Use),
+            Some("minecraft:player_interacted_with_entity")
+        );
+    }
+}

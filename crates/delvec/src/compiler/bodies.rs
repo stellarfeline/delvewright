@@ -391,6 +391,27 @@ pub fn body_box(entity: &str, cell: [i32; 3]) -> crate::compiler::nav::BodyBox {
     }
 }
 
+/// **Where a player can stand to strike or press `bx`**: the one stance
+/// question ([`crate::compiler::nav::interaction_stances`]), less the cells the
+/// body itself fills — a player does not stand inside the statue to hit it, as a
+/// holder's stance excludes the cells holder entities fill.
+pub fn reach_cells(
+    world: &crate::compiler::nav::World,
+    bx: &crate::compiler::nav::BodyBox,
+    reachable: &BTreeSet<[i32; 3]>,
+) -> Vec<[i32; 3]> {
+    let filled = |c: [i32; 3]| {
+        (0..3).all(|i| {
+            let lo = f64::from(c[i]);
+            lo < bx.hi[i] && lo + 1.0 > bx.lo[i]
+        })
+    };
+    crate::compiler::nav::interaction_stances(world, bx, reachable)
+        .into_iter()
+        .filter(|c| !filled(*c))
+        .collect()
+}
+
 /// One body's reading.
 struct Reading<'c> {
     body: BodyRef<'c>,
@@ -441,13 +462,9 @@ pub fn check(
                         world.reachable_walkable_rooted(&crate::compiler::edit::anchor_starts(plan))
                     });
                     reading.reach = stations(plan, body).into_iter().find_map(|(cell, why)| {
-                        crate::compiler::nav::interaction_stances(
-                            world,
-                            &body_box(kind, cell),
-                            walk,
-                        )
-                        .first()
-                        .map(|s| (why, cell, *s))
+                        reach_cells(world, &body_box(kind, cell), walk)
+                            .first()
+                            .map(|s| (why, cell, *s))
                     });
                     if reading.reach.is_some() {
                         b.in_reach += 1;
