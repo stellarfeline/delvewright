@@ -5047,3 +5047,168 @@ fn dw1030_loosening_the_interval_lets_a_world_reach_the_ending() {
     );
     assert_eq!(code, 0, "the loosened interval is reached:\n{after}");
 }
+
+// ---------------------------------------------------------------------------
+// DW1053, DW1054 — a shut way declares how it is learned (spec-0118 §6)
+// ---------------------------------------------------------------------------
+
+/// The blockout fixture's gated hall door with its `learned` set to `word`
+/// (`None` removes it), built. The fixture as shipped declares `seen`: the
+/// door's bar is the first thing the eye meets from the junction.
+fn learned_fixture(
+    tag: &str,
+    word: Option<&str>,
+    quests: impl FnOnce(&mut serde_json::Value),
+) -> PathBuf {
+    let word = word.map(str::to_string);
+    gated_fixture(
+        tag,
+        move |v| {
+            for e in v["content"]["edges"].as_array_mut().unwrap() {
+                if e["id"] == "edge/hall-cell" {
+                    let g = e["gating"].as_object_mut().unwrap();
+                    match &word {
+                        Some(w) => {
+                            g.insert("learned".into(), serde_json::json!(w));
+                        }
+                        None => {
+                            g.remove("learned");
+                        }
+                    }
+                }
+            }
+        },
+        |_| {},
+        quests,
+    )
+}
+
+/// **WRITE `seen` where the junction sees the bar.** The door met shut with no
+/// word is refused `DW1053`, naming the three words; the word the message
+/// shows to be true builds.
+#[test]
+fn dw1053_writing_seen_where_the_bar_is_seen_builds() {
+    let camp = learned_fixture("dw1053-none", None, |_| {});
+    let (code, before) = build("dw1053-none", &camp, &common::prefabs_dir());
+    assert_eq!(code, 3, "{before}");
+    assert!(before.contains("DW1053 [error]"), "{before}");
+    assert!(before.contains("`seen` — the bar is seen from"), "{before}");
+    let camp = learned_fixture("dw1053-seen", Some("seen"), |_| {});
+    let (code, after) = build("dw1053-seen", &camp, &common::prefabs_dir());
+    assert_eq!(code, 0, "{after}");
+    assert!(after.contains("(1 seen, 0 told, 0 rewarded)"), "{after}");
+}
+
+/// The trigger a `DW1054` `told` refusal prescribes, parsed out of its message
+/// and given a name.
+fn prescribed_trigger(message: &str) -> serde_json::Value {
+    let json = message
+        .split("Anchor a trigger on the seam — `")
+        .nth(1)
+        .and_then(|t| t.split('`').next())
+        .expect("the refusal carries the trigger it prescribes")
+        .replace("trigger/<name>", "trigger/cell-door-shut");
+    serde_json::from_str(&json).expect("the prescription is JSON")
+}
+
+/// **WRITE the trigger.** The door declared `told` with nothing answering a
+/// press at its seam is refused `DW1054`, carrying the trigger `DW0429`
+/// prescribes; that trigger, parsed out of the message and written, builds —
+/// and the same trigger discharges `DW0429` on the door made a shortcut, so
+/// the two codes name one remedy (spec-0118 acceptance 5).
+#[test]
+fn dw1054_writing_the_prescribed_trigger_clears_both_codes() {
+    let camp = learned_fixture("dw1054-told-red", Some("told"), |_| {});
+    let (code, before) = build("dw1054-told-red", &camp, &common::prefabs_dir());
+    assert_eq!(code, 3, "{before}");
+    assert!(
+        before.contains("DW1054 [error]") && before.contains("declared `told`"),
+        "{before}"
+    );
+    let trigger = prescribed_trigger(&before);
+    let t = trigger.clone();
+    let camp = learned_fixture("dw1054-told-green", Some("told"), move |q| {
+        q["content"]["triggers"] = serde_json::json!([t]);
+    });
+    let (code, after) = build("dw1054-told-green", &camp, &common::prefabs_dir());
+    assert_eq!(code, 0, "{after}");
+    assert!(after.contains("(0 seen, 1 told, 0 rewarded)"), "{after}");
+
+    // The door as a shortcut whose wrong side nothing answers: `DW0429`.
+    let shortcut = |q: &mut serde_json::Value| {
+        q["content"]["shortcuts"] = serde_json::json!([{
+            "id": "shortcut/cell-door", "gate": "anchor/seam-hall-cell",
+            "unlock": "anchor/unlock-hall-cell", "on_unlock": []
+        }]);
+        for quest in q["content"]["quests"].as_array_mut().unwrap() {
+            if let Some(m) = quest["on_objective_complete"].as_object_mut() {
+                for effects in m.values_mut() {
+                    effects
+                        .as_array_mut()
+                        .unwrap()
+                        .retain(|e| e["type"] != "open-gate");
+                }
+            }
+        }
+    };
+    let camp = learned_fixture("dw0429-shortcut-red", Some("told"), shortcut);
+    let (code, red) = validate(&camp);
+    assert_ne!(code, 0, "{red}");
+    assert!(red.contains("DW0429 [error]"), "{red}");
+    let camp = learned_fixture("dw0429-shortcut-green", Some("told"), move |q| {
+        shortcut(q);
+        q["content"]["triggers"] = serde_json::json!([trigger]);
+    });
+    let (_, green) = validate(&camp);
+    assert!(!green.contains("DW0429 [error]"), "{green}");
+}
+
+/// **CHANGE the word to the one that is true.** The door declared `rewarded`
+/// with no pickup, interaction or fight on its branch is refused `DW1054`,
+/// naming the branch's cells; the word its bar makes true, `seen`, builds.
+#[test]
+fn dw1054_changing_the_word_to_the_true_one_builds() {
+    let camp = learned_fixture("dw1054-rewarded-red", Some("rewarded"), |_| {});
+    let (code, before) = build("dw1054-rewarded-red", &camp, &common::prefabs_dir());
+    assert_eq!(code, 3, "{before}");
+    assert!(
+        before.contains("DW1054 [error]")
+            && before.contains("declared `rewarded`, but no pickup, interaction or fight"),
+        "{before}"
+    );
+    let camp = learned_fixture("dw1054-rewarded-seen", Some("seen"), |_| {});
+    let (code, after) = build("dw1054-rewarded-seen", &camp, &common::prefabs_dir());
+    assert_eq!(code, 0, "{after}");
+}
+
+/// **PLACE the reward.** The same `rewarded` door with an `interact` beat at
+/// its unlock anchor, on the hall side by the door — an interaction on the
+/// branch — builds.
+#[test]
+fn dw1054_placing_the_reward_on_the_branch_builds() {
+    let camp = learned_fixture("dw1054-rewarded-placed", Some("rewarded"), |q| {
+        let quest = &mut q["content"]["quests"][0];
+        let objectives = quest["objectives"].as_array_mut().unwrap();
+        objectives.insert(
+            0,
+            serde_json::json!({
+                "type": "interact", "id": "obj/try-the-door",
+                "anchor": "anchor/unlock-hall-cell",
+                "happening": { "text": "The party tries the cell door's latch.", "verb": "learns" }
+            }),
+        );
+        objectives[1]["after"] = serde_json::json!(["obj/try-the-door"]);
+    });
+    common::patch_file(&camp.join("layout-graph.json"), |v| {
+        v["content"]["beats"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "node": "node/hall", "objective": "obj/try-the-door",
+                "quest": "quest/walk-the-whole"
+            }));
+    });
+    let (code, after) = build("dw1054-rewarded-placed", &camp, &common::prefabs_dir());
+    assert_eq!(code, 0, "{after}");
+    assert!(after.contains("(0 seen, 0 told, 1 rewarded)"), "{after}");
+}
