@@ -83,7 +83,7 @@ enum SeenFinding {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RewardFinding {
     /// A reward stands on or beside the branch ground.
-    Rewarded(String),
+    Rewarded(String, &'static str),
     /// None does: the ground's size, and the nearest reward with its distance.
     Bare(usize, Option<(String, i32)>),
 }
@@ -392,7 +392,7 @@ fn reward_on(ground: &BTreeSet<[i32; 3]>, rewards: &[Reward]) -> RewardFinding {
             .any(|d| ground.contains(&[p[0] + d[0], p[1] + d[1], p[2] + d[2]]))
     };
     if let Some(r) = rewards.iter().find(|r| near(r.pos)) {
-        return RewardFinding::Rewarded(r.anchor.clone());
+        return RewardFinding::Rewarded(r.anchor.clone(), r.kind);
     }
     let nearest = rewards
         .iter()
@@ -533,7 +533,7 @@ fn verify_with_eye(
                     }
                     Learned::Rewarded => {
                         binding.rewarded += 1;
-                        matches!(m.reward, RewardFinding::Rewarded(_))
+                        matches!(m.reward, RewardFinding::Rewarded(..))
                     }
                 };
                 if !ok {
@@ -657,7 +657,7 @@ fn told_words(way: &ShutWay) -> String {
 
 fn reward_words(m: &Met) -> String {
     match &m.reward {
-        RewardFinding::Rewarded(a) => format!("`{a}` stands on the branch"),
+        RewardFinding::Rewarded(a, kind) => format!("`{a}` ({kind}) stands on the branch"),
         RewardFinding::Bare(n, nearest) => {
             let mut s = format!("no pickup, interaction or fight within the branch's {n} cell(s)");
             if let Some((a, d)) = nearest {
@@ -728,7 +728,7 @@ fn row(
         None => serde_json::json!({ "answered_by": null, "at": way.seam }),
     };
     let reward = match &m.reward {
-        RewardFinding::Rewarded(a) => serde_json::json!({ "rewarded_by": a }),
+        RewardFinding::Rewarded(a, kind) => serde_json::json!({ "rewarded_by": a, "kind": kind }),
         RewardFinding::Bare(n, nearest) => serde_json::json!({
             "rewarded_by": null,
             "ground_cells": n,
