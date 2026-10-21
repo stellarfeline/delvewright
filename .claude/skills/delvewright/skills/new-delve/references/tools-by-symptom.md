@@ -14,7 +14,7 @@ The full inventory — every binary, script and flag that exists today — is
 - **Judging any visual outcome** (cutscene framing, set dressing, terrain):
   `delvec snapshot` (`--camera x,y,z,yaw,pitch`, `--at <anchor> --dist`,
   `--shot <render-plan id>`, `--labels`) and `delvec blocking-chart` (per-floor
-  cutaways). *Always* for cutscenes: render start, mid and end of every dolly
+  cutaways; the orange corridor is the route `delvec build` proves). *Always* for cutscenes: render start, mid and end of every dolly
   segment and **look at the frames** before calling the step done — `DW0308`
   proves the path is air, not that the shot is pointed at the subject, and an
   inside-out cinematic can be fully DW-green.

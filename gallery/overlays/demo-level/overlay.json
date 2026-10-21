@@ -1,0 +1,6 @@
+{
+  "binds": [
+    "WorldContent.demo_level"
+  ],
+  "note": "The primary as written, declaring itself a demo level. Its own point because the primary is the gallery's stageable build and carries the approved design the design-record rows bind; a declared demo measures those rows zero and is staged only on a demo-queue row, which the gallery has none of. The manifest carries `demo_level: true` and no emitted path moves."
+}

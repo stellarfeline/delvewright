@@ -1200,6 +1200,31 @@ pub fn lit_world(
     )
 }
 
+/// **The world the build's proofs walk, derived once**: the relight pass over
+/// `assembled`, and the nav model of the same cells under the campaign's
+/// premises ([`crate::compiler::nav::Premises::of_plan`]) with the pass's
+/// fixtures standing in it ([`lit_world`]). `delvec build` and every view that
+/// draws what the proofs walked (`blocking-chart`) take their world from this
+/// one entry point, so a route read over it is the route the build proved.
+/// The caller reads `Relight::diagnostics` — a refused pass is the build's
+/// failure to raise, not this derivation's.
+pub fn final_world(
+    plan: &Plan,
+    assembled: &crate::compiler::assembled::Assembled,
+) -> (World, Relight) {
+    // The geometry is classified once: relight surveys it as it stands, and the
+    // campaign's world is the same cells under the campaign's premises.
+    let geometry = geometry_world(assembled);
+    let relight = relight_with(plan, assembled, &geometry);
+    let world = lit_world(
+        assembled,
+        &relight,
+        geometry,
+        crate::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone()),
+    );
+    (world, relight)
+}
+
 /// **The cells a relight fixture may neither stand in nor hang from** — the
 /// one set both relight entry points (the area pass and the `relight` verb)
 /// hand the siting rule.

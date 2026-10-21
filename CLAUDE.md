@@ -52,7 +52,8 @@ docs/reference/      # live behavior records: compiler.md, tools.md, i18n.md, gr
 docs/ROADMAP.md      # where the line stands, and the next blocks
 crates/              # Rust workspace: dsl / delvec
 gallery/             # the ENGINE's own campaign: one instance of every surface the DSL
-                     #   declares, built on every PR, never released or staged
+                     #   declares, and prefab-generator/, the generator of its pieces (a prefabs/
+                     #   workspace member); built on every PR, never released or staged
 prefabs/             # tileset GENERATORS + shared invariants; the .nbt library lives in
                      #   the CONTENT repo, reached through the `campaigns/` dev symlink
 harness/             # mineflayer bot tests (TypeScript)

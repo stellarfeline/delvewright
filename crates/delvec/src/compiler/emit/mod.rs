@@ -528,8 +528,7 @@ pub fn build_with_warnings(
     // reachable cells and no `lighting` declaration → output byte-identical.
     // The geometry is classified once: relight surveys it as it stands, and the
     // campaign's world below is the same cells under the campaign's premises.
-    let geometry = crate::compiler::light::geometry_world(assembled);
-    let relight = crate::compiler::light::relight_with(plan, assembled, &geometry);
+    let (world, relight) = crate::compiler::light::final_world(plan, assembled);
     if let Some(diag) = relight.diagnostics.first() {
         return Err(BuildFailure::Diagnostic {
             code: diag.code,
@@ -556,12 +555,6 @@ pub fn build_with_warnings(
     // seals, the clocked gate regions and the teleport sources — travel as one
     // value, [`crate::compiler::nav::Premises`], so an edited world and a
     // pristine one carry the identical set.
-    let world = crate::compiler::light::lit_world(
-        assembled,
-        &relight,
-        geometry,
-        crate::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone()),
-    );
 
     // ---- the holder census (spec-0105, spec-0111) ----
     //

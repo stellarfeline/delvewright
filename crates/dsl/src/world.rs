@@ -171,6 +171,16 @@ pub struct WorldContent {
     /// back to; `seconds` outside `1..=120`, or no checkpoint, is `DW0925`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub respawn_wait: Option<RespawnWait>,
+    /// **This campaign is a demo level**: a small level that puts one queued
+    /// mechanic in the spotlight, whose approved design is its row in the
+    /// engine's demo queue rather than a design record. `true` is written to
+    /// `manifest.json` as `demo_level: true`; nothing a player meets changes.
+    /// `tools/creator/staging-gate.py` stages a declared demo only when its
+    /// build carries the declaration and a queue row names its directory.
+    /// Absent or `false` = a campaign, which carries the design record step 4
+    /// writes.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub demo_level: bool,
 }
 
 /// One vanilla texture a campaign replaces (spec-0084 §3.1). The row is a

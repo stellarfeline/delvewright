@@ -871,29 +871,21 @@ pub(crate) fn run_blocking_chart(
         Ok(a) => a,
         Err(code) => return ExitCode::from(code),
     };
-    // Every premise the campaign states (`nav::Premises::of_plan`), because the
-    // corridor this chart draws is `critical_path_routes` — the SAME derivation
-    // the build's completability proof takes — and a chart taken over a smaller
-    // premise set draws a corridor no proof ever walked. A route through a
-    // declared lethal volume was exactly that: a line on the blocking chart the
-    // author could read as cleared.
-    let world = walk_world(&plan, &assembled, &structures);
-    let blocks = assembled.blocks;
-    let targets = delvec::compiler::snapshot::collect_targets(&plan);
-    // The build's path: the links the route proof takes spliced in (spec-0083).
-    let relinked = match delvec::compiler::nav::with_links_taken(&plan, &prefabs, &world) {
-        Ok(r) => r,
+    // The corridor is the build's: one derivation (`blocking::walked_corridor`)
+    // over the world the build's proofs walk (relight fixtures, gate seals,
+    // lethal volumes, clocked regions) and the path with the links the route
+    // proof takes spliced in. A chart taken over a smaller premise set draws a
+    // corridor no proof ever walked.
+    let walked = match delvec::compiler::blocking::walked_corridor(&plan, &prefabs, &assembled) {
+        Ok(w) => w,
         Err(f) => {
             eprintln!("{} [error] build: {}", f.code, f.message);
             return ExitCode::from(f.code.exit_tier().exit_status());
         }
     };
-    let corridor: std::collections::BTreeSet<[i32; 3]> =
-        delvec::compiler::nav::critical_path_routes(relinked.as_ref().unwrap_or(&plan), &world)
-            .into_iter()
-            .flat_map(|leg| leg.cells)
-            .collect();
-    let chart = delvec::compiler::blocking::chart(&plan, &blocks, &world, &targets, &corridor);
+    let blocks = assembled.blocks;
+    let targets = delvec::compiler::snapshot::collect_targets(&plan);
+    let chart = delvec::compiler::blocking::chart(&plan, &blocks, &targets, &walked);
     let elapsed = started.elapsed().as_secs_f64() * 1000.0;
 
     let mut index = match serde_json::to_vec_pretty(&chart.index) {

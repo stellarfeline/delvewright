@@ -612,6 +612,15 @@ pub(super) fn emit_manifest(
     // pack carries an `assets/minecraft/` entry. Written once, here, from the
     // archive paths the pack was built from, and read by every host-side script
     // — never re-derived from the zip.
+    // The demo-level declaration (`world.demo_level`), carried so the staging
+    // gate can read that this build was compiled from it. Absent for every
+    // other campaign, which keeps their manifests byte-identical.
+    if plan.campaign.world.content.demo_level {
+        manifest
+            .as_object_mut()
+            .expect("manifest is a JSON object")
+            .insert("demo_level".to_string(), Value::Bool(true));
+    }
     if let Some((sha1, overrides)) = resource_pack {
         let m = manifest.as_object_mut().expect("manifest is a JSON object");
         m.insert(

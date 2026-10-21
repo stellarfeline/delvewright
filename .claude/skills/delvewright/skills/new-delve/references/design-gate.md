@@ -149,7 +149,9 @@ answer to — and holds the skies the rows state to the skies the world can reac
 A campaign that ships no `design.json` has approved no design: validation
 measures that as a zero and says so without refusing, and `"$DELVEWRIGHT_ENGINE/tools/creator/staging-gate.py"`
 is where the zero is a red, so a build nobody can stage is what an unwritten
-record costs.
+record costs. A demo level off the engine's queue is the one campaign that skips
+this step: it declares `demo_level: true` and is staged on its queue row
+(`hand-over.md`, *The staging gate*).
 
 **Every later step that asks anyone to choose reads `design/` first**, and
 presents the choice beside that scene's image, under the approved name, saying
