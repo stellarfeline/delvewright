@@ -3732,19 +3732,36 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   closed form and the game's pre-timeline `DimensionType.timeOfDay` are the
   second method in `the_two_published_sun_angle_formulas_agree`, within 0.056°).
   Under rain or thunder the sun is placed below the horizon, where the client
-  draws none. `crates/delvec/tests/review_frame_sky.rs` measures the same camera
+  draws none. **Under a clear sky the statement stands at the frame's clock**
+  (`frames::stated_sky`: `StatedTick` at `day × 24000 + daytime`, the day
+  `scene::frame_day` reads — a celestial statement's phase, else the world's —
+  with `SkyLook::ByTime` at the client's render distance), so in both modes the
+  renderer draws what the client derives from the tick alone, the sunrise and
+  sunset fan, the moon at the clock's phase and the stars, from the pinned jar;
+  a rain or thunder frame stands at no clock, because the game's look draws no
+  weather and the client draws no moon or stars at full rain. `crates/delvec/tests/review_frame_sky.rs` measures the same camera
   at noon and midnight (mean luma 187.64 against 6.11 on the CPU backend) and
-  holds that the engine calls none of the renderer's own sky. In hq mode the sky
-  is Lumenwright's (`render::sky::hq_sky`, the Preetham sky Chunky traces and
-  its fall through twilight, with a white sun at Chunky's default intensity,
-  **cited** there) along the same direction, its radiance scaled by the light
-  the client's sky casts under the frame's weather as a fraction of the clear
-  sky's at the same tick, and its sun dark while the client draws no disc; the hq exposure is
+  holds that the engine calls none of the renderer's own sky. In hq mode
+  Chunky's part of the sky is Lumenwright's (`render::sky::hq_sky`, the Preetham
+  sky Chunky traces and its fall through twilight, with a white sun at Chunky's
+  default intensity, **cited** there) along the same direction, its radiance
+  scaled by the light the client's sky casts under the frame's weather as a
+  fraction of the clear sky's at the same tick, and its sun dark while the
+  client draws no disc. A clear hq frame is drawn in the game's look by the time
+  of day: that Chunky part on the client's day plateau, the game's own sky and
+  the light it casts at night, mixed between by the lightmap's sky factor
+  (Lumenwright's `SkyLook::ByTime`); a rain or thunder hq frame is the Chunky
+  part alone. The gallery's `dusk-check` camera at tick 12782 measures the
+  sky band beside the sun at hue 28.7° and the frame 1.1% yellow and 38.8%
+  orange, against 28.7°, 1.1% and 39.5% for Lumenwright's own `--sky auto` on
+  the same world and camera (and 48.9°, 93.0% yellow for Chunky's look alone);
+  the hq exposure is
   `frames::HQ_EXPOSURE` (1.0, **authored**) until the showcase standard level is
   re-measured (spec-0112 phase 3). **What no frame shows is named**, in the
   review record's `unchecked` (`review::UNCHECKED`: the
   block entities the renderer has no model for, the weather in the air, the
-  clouds, hq-mode fog and the moon, a night-vision room's lightmap, a body's pose
+  clouds and hq-mode fog, under rain or thunder the sunrise and sunset fan, a
+  night-vision room's lightmap, a body's pose
   at a tick and the party, a cutscene no critical step fires) and in each index
   entry's own `unchecked` for what that frame's state makes apply. A plan
   whose shot states no `world`, `sky` or `mode` is refused by `delvec frames`

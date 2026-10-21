@@ -1318,7 +1318,10 @@ draws, from the `BlockLight` and `SkyLight` the written world carries; an hq
 frame is path-traced at the stated samples. The sky — colour, fog, the sun's
 direction, the lightmap's sky factor — is handed in from `scene::sky_attributes`
 and `scene::sun_at` at the frame's tick and weather (`compiler.md` §4): the
-renderer draws its own of none. Entities it has a model for (villagers,
+renderer draws its own of none. A clear frame's sky also stands at its clock
+with the game's look by the time of day, so the renderer draws the sunrise and
+sunset fan, the moon at the clock's phase and the stars, and lights an hq frame
+as the game lights that tick; a rain or thunder frame stands at no clock. Entities it has a model for (villagers,
 mannequins with their skins, the mobs the engine summons) are drawn, and so are
 items — dropped, displayed, framed, held and worn — and text displays; a body
 the renderer has no model for, or a holder whose item it cannot draw, is named
