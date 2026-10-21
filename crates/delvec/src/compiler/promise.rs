@@ -621,6 +621,17 @@ pub struct ActBinding {
     pub triggers: usize,
     /// `kill` objectives on no walk, judged from the acts that fire their wave.
     pub kills_off_walk: usize,
+    /// Of the acts, announced with a hint but not yet armed when the party
+    /// walks to them, and so judged by sight.
+    pub announced_unarmed: usize,
+    /// Places on a walk that are no act (an `approach` or `step` trigger the
+    /// path walks through) with an act after them, counted once per walk.
+    pub passes: usize,
+    /// Of those, walked to while an announced objective with a hint is armed
+    /// that the walk performs later.
+    pub passes_announced: usize,
+    /// Of those, walked to with the next act in sight.
+    pub passes_in_sight: usize,
     /// Acts refused.
     pub refused: usize,
 }
@@ -630,7 +641,9 @@ impl ActBinding {
     pub fn line(&self) -> String {
         format!(
             "DW0863 binding: {} act(s) over {} walk(s) — {} announced with a hint, {} in sight \
-             ({} kill(s) also in reach), {} trigger(s) judged by sight alone; {} refused; {} \
+             ({} kill(s) also in reach), {} trigger(s) judged by sight alone, {} announced but \
+             not yet armed on the way and judged by sight; {} place(s) walked through — {} with \
+             an announced objective armed, {} with the next act in sight; {} refused; {} \
              kill(s) on no walk judged from the acts that fire their wave",
             self.acts,
             self.walks,
@@ -638,6 +651,10 @@ impl ActBinding {
             self.in_sight,
             self.kills_in_reach,
             self.triggers,
+            self.announced_unarmed,
+            self.passes,
+            self.passes_announced,
+            self.passes_in_sight,
             self.refused,
             self.kills_off_walk
         )
@@ -749,7 +766,7 @@ pub fn judge_acts(
     world: &crate::compiler::nav::World,
     walks: &crate::compiler::acts::ActWalks,
 ) -> (ActBinding, Vec<crate::compiler::failure::Failure>) {
-    use crate::compiler::acts::ActWhat;
+    use crate::compiler::acts::{Act, ActWhat};
     let c = plan.campaign;
     let guidance = &c.quests.content.guidance;
     let mut b = ActBinding::default();
@@ -764,13 +781,26 @@ pub fn judge_acts(
         // earlier steps opened are open and the ones a later beat opens are
         // shut — the walk's own order, not only the order every play is forced
         // into, because sight is a question about this walk.
-        let steps: Vec<usize> = w.acts.iter().map(|a| a.step).collect();
+        let steps: Vec<usize> = w
+            .acts
+            .iter()
+            .map(|a| a.step)
+            .chain(w.passes.iter().map(|p| p.step))
+            .collect();
         let walked = |g: usize, s: usize| g == 0 || g < s;
         let events = match &w.gates {
             None => &plan.region_events,
             Some(gates) => &gates.0,
         };
         let (worlds, at) = crate::compiler::nav::worlds_at(world, events, &walked, &steps);
+        // What the replay holds armed while the party walks to step `k`; a
+        // path the model was handed without a replay arms everything.
+        let armed_at = |k: usize, id: &str| {
+            events.armed.is_empty() || events.armed.get(k).is_some_and(|s| s.contains(id))
+        };
+        let announced_with_hint = |o: &Objective| {
+            o.announced(guidance) && o.hint().map(str::trim).is_some_and(|h| !h.is_empty())
+        };
         for (ai, a) in w.acts.iter().enumerate() {
             let world: &crate::compiler::nav::World = worlds[at[ai]].as_ref().unwrap_or(world);
             b.acts += 1;
@@ -785,12 +815,17 @@ pub fn judge_acts(
             if obj.is_none() {
                 b.triggers += 1;
             }
+            // An announcement guides the walk to its act only from the moment
+            // the objective arms: one whose gate opens at its own place is
+            // not on screen while the party walks there.
             if let Some(o) = obj
-                && o.announced(guidance)
-                && o.hint().map(str::trim).is_some_and(|h| !h.is_empty())
+                && announced_with_hint(o)
             {
-                b.announced += 1;
-                continue;
+                if armed_at(a.step, a.id.as_str()) {
+                    b.announced += 1;
+                    continue;
+                }
+                b.announced_unarmed += 1;
             }
             // The cells the party judges from: for a kill, each act that fires
             // its wave (every one placed, as the reach rule always required);
@@ -864,6 +899,14 @@ pub fn judge_acts(
                 continue;
             }
             let remedy = match obj {
+                Some(o) if announced_with_hint(o) => format!(
+                    "It is announced with a hint, but it is not yet armed while the party \
+                     walks to it, and an announcement is shown when the objective arms: its \
+                     gate opens only at or after its own place. Let `{}` activate before the \
+                     party sets off (and gate its completion instead), or move the act or its \
+                     target into sight of where the party stands.",
+                    a.id
+                ),
                 Some(o) => {
                     let how = if o.title().is_none() {
                         "it has no `title`"
@@ -901,6 +944,76 @@ pub fn judge_acts(
                     w.label,
                     a.kind,
                     a.id,
+                    why.join("; "),
+                ),
+            });
+        }
+        // Every place the walk passes through that is no act — an `approach`
+        // or `step` trigger — ends a leg the party walks too. It is guided
+        // when an announced objective with a hint is armed on the way to it
+        // that this walk performs later, or when the next act is in sight
+        // from where the leg starts. A place after the last act leads to
+        // nothing left to find, and is not judged.
+        for (pi, p) in w.passes.iter().enumerate() {
+            let Some(next) = w.acts.iter().find(|a| a.step > p.step) else {
+                continue;
+            };
+            b.passes += 1;
+            let world: &crate::compiler::nav::World =
+                worlds[at[w.acts.len() + pi]].as_ref().unwrap_or(world);
+            let ahead: Vec<&Act> = w
+                .acts
+                .iter()
+                .filter(|a| a.step > p.step)
+                .filter(|a| match a.what {
+                    ActWhat::Objective {
+                        quest,
+                        objective: oi,
+                    } => announced_with_hint(objective(quest, oi)),
+                    ActWhat::Trigger(_) => false,
+                })
+                .collect();
+            if ahead.iter().any(|a| armed_at(p.step, a.id.as_str())) {
+                b.passes_announced += 1;
+                continue;
+            }
+            let Some(from) = p.from else {
+                continue; // no entry cell: the plan's own refusal
+            };
+            let why = act_unfound(world, from, next.target, next.body, None);
+            if why.is_empty() {
+                b.passes_in_sight += 1;
+                continue;
+            }
+            b.refused += 1;
+            let waiting = if ahead.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " The announced objective(s) after it ({}) are not yet armed on the way: an \
+                     objective's announcement is shown when it arms, so one whose gate opens \
+                     only at or after this place says nothing while the party walks here.",
+                    ahead
+                        .iter()
+                        .map(|a| format!("`{}`", a.id))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            };
+            refusals.push(crate::compiler::failure::Failure {
+                code: DW_FIGHT_UNSIGNED,
+                message: format!(
+                    "on {}, the party walks from {} ({from:?}) to {} ({:?}) with nothing to \
+                     follow: no announced objective with a hint is armed on the way, and the \
+                     next act, `{}`, cannot be seen from where the leg starts: {}.{waiting} Arm \
+                     an announced objective with a `hint` for the walk (let the next objective \
+                     activate before the party sets off, and gate its completion instead), or \
+                     bring the next act into sight of where the party stands.",
+                    w.label,
+                    p.from_what,
+                    p.name,
+                    p.target,
+                    next.id,
                     why.join("; "),
                 ),
             });

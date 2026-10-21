@@ -60,6 +60,23 @@ pub struct Act {
     pub body: bool,
 }
 
+/// A positioned step on a walk that is no act — an `approach` or `step`
+/// trigger the path walks through, a place on the route: the leg that ends at
+/// it is walked all the same, and `DW0863` asks what guides it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Pass {
+    /// Its index among the walk's steps.
+    pub step: usize,
+    /// What it is, for a message: the trigger's id, or `step <i>`.
+    pub name: String,
+    /// The cell the party stands on before it; `None` as for an act.
+    pub from: Option<[i32; 3]>,
+    /// What [`Self::from`] is, for a message.
+    pub from_what: String,
+    /// Its own cell.
+    pub target: [i32; 3],
+}
+
 /// A branch path's own region writes, in its own step space, with its step
 /// ancestry ([`Plan::branch_gate_model`]).
 pub type WalkGates = std::sync::Arc<(
@@ -74,6 +91,8 @@ pub struct ActWalk {
     pub label: String,
     /// Its acts in path order.
     pub acts: Vec<Act>,
+    /// Its positioned steps that are no act, in path order.
+    pub passes: Vec<Pass>,
     /// The region writes the walk's steps make, which decide what blocks a
     /// view at each act; `None` = the plan's own (the exported path's).
     pub gates: Option<WalkGates>,
@@ -129,6 +148,7 @@ pub fn acts_of_from(
     let triggers = c.quests.content.all_triggers();
     let mut from: Option<([i32; 3], String)> = entry.map(|p| (p, "the entry cell".to_string()));
     let mut acts = Vec::new();
+    let mut passes = Vec::new();
     for (i, step) in steps.iter().enumerate() {
         let Some(pos) = step.pos() else { continue };
         let act = if let Some(oid) = step.objective() {
@@ -170,14 +190,21 @@ pub fn acts_of_from(
         } else {
             None
         };
-        if let Some(a) = act {
-            acts.push(a);
-        }
         let name = step
             .objective()
             .map(|o| format!("`{o}`"))
             .or_else(|| step.trigger().map(|t| format!("`{t}`")))
             .unwrap_or_else(|| format!("step {i}"));
+        match act {
+            Some(a) => acts.push(a),
+            None => passes.push(Pass {
+                step: i,
+                name: name.clone(),
+                from: from.as_ref().map(|f| f.0),
+                from_what: from.as_ref().map(|f| f.1.clone()).unwrap_or_default(),
+                target: pos,
+            }),
+        }
         from = Some(match transport.get(i).copied().flatten() {
             Some(dest) => (dest, format!("where {name} carries the party")),
             None => (pos, format!("{name}'s cell")),
@@ -186,6 +213,7 @@ pub fn acts_of_from(
     ActWalk {
         label: label.to_string(),
         acts,
+        passes,
         gates: None,
     }
 }

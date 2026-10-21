@@ -177,6 +177,7 @@ fn one_walk(acts: Vec<Act>) -> ActWalks {
         walks: vec![ActWalk {
             label: "the test walk".into(),
             acts,
+            passes: Vec::new(),
             gates: None,
         }],
     }
@@ -597,8 +598,10 @@ fn every_binding_line_states_its_zeroes() {
     assert_eq!(
         promise::ActBinding::default().line(),
         "DW0863 binding: 0 act(s) over 0 walk(s) — 0 announced with a hint, 0 in sight (0 kill(s) \
-         also in reach), 0 trigger(s) judged by sight alone; 0 refused; 0 kill(s) on no walk judged \
-         from the acts that fire their wave"
+         also in reach), 0 trigger(s) judged by sight alone, 0 announced but not yet armed on the \
+         way and judged by sight; 0 place(s) walked through — 0 with an announced objective armed, \
+         0 with the next act in sight; 0 refused; 0 kill(s) on no walk judged from the acts that \
+         fire their wave"
     );
     assert_eq!(
         telling::HintActBinding::default().line(),

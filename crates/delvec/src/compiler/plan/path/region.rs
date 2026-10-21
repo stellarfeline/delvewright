@@ -380,6 +380,10 @@ pub struct RegionEvents {
     /// Per path step, the completion volumes a leg arriving there keeps out of
     /// ([`PathFiring::keep_out`]). Empty for a path no step of which has one.
     pub keep_out: Vec<Vec<crate::compiler::reach::KeepOut>>,
+    /// Per path step, the objectives armed while the party walks to it
+    /// ([`PathFiring::armed`]). Empty for a path the region model was handed
+    /// without a replay.
+    pub armed: Vec<BTreeSet<String>>,
 }
 
 impl RegionEvents {
@@ -828,6 +832,7 @@ pub(crate) fn region_events_of(
             unforced_writers,
         },
         keep_out: path.keep_out.clone(),
+        armed: path.armed.clone(),
     }
 }
 

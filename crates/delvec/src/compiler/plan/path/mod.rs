@@ -607,6 +607,13 @@ pub(crate) struct PathFiring {
     /// steps; read by the route proof (`DW0311`) through
     /// [`RegionEvents::keep_out`] and exported on the step for the bot.
     pub keep_out: Vec<Vec<crate::compiler::reach::KeepOut>>,
+    /// Per step, every objective armed while the party walks to it — the
+    /// replay's guaranteed armed set in front of the step
+    /// ([`crate::compiler::flow::Walk::armed_objectives`]), after the
+    /// triggers due there for the step's own objective. Aligned 1:1 with the
+    /// path's steps; empty for a step that stands nowhere. Read by `DW0863`
+    /// through [`RegionEvents::armed`].
+    pub armed: Vec<BTreeSet<String>>,
 }
 
 impl PathFiring {
@@ -1272,27 +1279,30 @@ pub(super) fn build_critical_path(
             completion: reach_completion(pos, *radius),
         })
     };
-    let mut armed_by_step: Vec<Vec<crate::compiler::reach::KeepOut>> = (0..steps.len())
+    let mut armed_ids_by_step: Vec<BTreeSet<String>> = (0..steps.len())
         .map(|k| {
             // A step that stands nowhere walks nowhere: a class pick, a mock,
             // the completion assertion.
             if steps[k].pos().is_none() {
-                return Vec::new();
+                return BTreeSet::new();
             }
             si_start
                 .iter()
                 .rposition(|(_, first)| *first <= k)
                 .and_then(|i| Some((path.steps.get(si_start[i].0)?, armed_at.get(i)?)))
                 .map(|(st, (before, taking))| {
-                    let armed = if steps[k].objective() == Some(st.objective.as_str()) {
-                        taking
+                    if steps[k].objective() == Some(st.objective.as_str()) {
+                        taking.clone()
                     } else {
-                        before
-                    };
-                    armed.iter().filter_map(|o| reach_volume(o)).collect()
+                        before.clone()
+                    }
                 })
                 .unwrap_or_default()
         })
+        .collect();
+    let mut armed_by_step: Vec<Vec<crate::compiler::reach::KeepOut>> = armed_ids_by_step
+        .iter()
+        .map(|armed| armed.iter().filter_map(|o| reach_volume(o)).collect())
         .collect();
 
     // ---- the legs the party must cross ----
@@ -1494,6 +1504,7 @@ pub(super) fn build_critical_path(
         let mut new_sneak = Vec::with_capacity(n);
         let mut new_live = Vec::with_capacity(n);
         let mut new_armed = Vec::with_capacity(n);
+        let mut new_armed_ids = Vec::with_capacity(n);
         let mut moved: Vec<usize> = Vec::with_capacity(n);
         let mut spliced_at: Vec<(String, usize)> = Vec::new();
         for (k, step) in steps.into_iter().enumerate() {
@@ -1515,6 +1526,7 @@ pub(super) fn build_critical_path(
                 new_sneak.push(false);
                 new_live.push(live_links_by_step[k].clone());
                 new_armed.push(armed_by_step[k].clone());
+                new_armed_ids.push(armed_ids_by_step[k].clone());
             }
             moved.push(new_steps.len());
             new_steps.push(step);
@@ -1522,6 +1534,7 @@ pub(super) fn build_critical_path(
             new_sneak.push(sneak_by_step[k]);
             new_live.push(std::mem::take(&mut live_links_by_step[k]));
             new_armed.push(std::mem::take(&mut armed_by_step[k]));
+            new_armed_ids.push(std::mem::take(&mut armed_ids_by_step[k]));
         }
         for idx in obj_step.values_mut() {
             *idx = moved[*idx];
@@ -1545,6 +1558,7 @@ pub(super) fn build_critical_path(
         sneak_by_step = new_sneak;
         live_links_by_step = new_live;
         armed_by_step = new_armed;
+        armed_ids_by_step = new_armed_ids;
     }
 
     // Every cutscene a step's completion schedules, at any depth of its
@@ -1603,6 +1617,7 @@ pub(super) fn build_critical_path(
             data_end: replay.data_end,
             branch_excluded,
             keep_out,
+            armed: armed_ids_by_step,
         },
         loops: spliced,
     })
