@@ -271,6 +271,9 @@ pub struct Ground<'a> {
     pub writes: &'a [StateWrite],
     /// Every gate region the world authors shut at load, by anchor.
     pub sealed: &'a [NamedRegion],
+    /// What the engine seated in a cell of the shipped world, in words — a
+    /// relight fixture, a trigger's prop — so a refusal names the object.
+    pub seated: &'a BTreeMap<[i32; 3], String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -394,7 +397,7 @@ impl WayRecord {
                     .iter()
                     .any(|f| f.message.contains(&format!("`{}`", d.path)));
                 json!({
-                    "entry": d.path,
+                    "declared_at": d.path,
                     "what": d.what,
                     "block": d.block,
                     "columns": d.columns.iter().collect::<Vec<_>>(),
@@ -422,6 +425,23 @@ impl WayRecord {
 /// headroom over it.
 fn column_reach(c: &Column) -> ([i32; 3], [i32; 3]) {
     ([c.x, c.ylo - 1, c.z], [c.x, c.yhi + 2, c.z])
+}
+
+/// How far round a way's columns the judgement reads the blocks: as far as
+/// water flows from a source on level ground (vanilla's seven cells, one more
+/// for the cell it reaches) across and above, two below.
+const WINDOW_FLOW: i32 = 8;
+
+/// The window of blocks a judgement over `lo..=hi` reads.
+fn window(lo: [i32; 3], hi: [i32; 3]) -> ([i32; 3], [i32; 3]) {
+    (
+        [lo[0] - WINDOW_FLOW, lo[1] - 2, lo[2] - WINDOW_FLOW],
+        [
+            hi[0] + WINDOW_FLOW,
+            hi[1] + WINDOW_FLOW,
+            hi[2] + WINDOW_FLOW,
+        ],
+    )
 }
 
 /// **Whether a body can be in this column** over `w`, its body cell at `y0`
@@ -508,8 +528,10 @@ pub fn judge(way: Way, ground: &Ground<'_>) -> WayRecord {
     if judged.is_empty() {
         return declarations(empty);
     }
-    // The window the judgement reads: every column's reach, two cells round
-    // so a sieve or a climbable is classified with its neighbours.
+    // The window the judgement reads: every column's reach, grown so every
+    // cell is classified as the whole world classifies it — a sieve or a
+    // climbable with its neighbours, and a cell water reaches with the source
+    // it flows from (`WINDOW_FLOW` across and above).
     let mut lo = [i32::MAX; 3];
     let mut hi = [i32::MIN; 3];
     for c in &judged {
@@ -519,8 +541,7 @@ pub fn judge(way: Way, ground: &Ground<'_>) -> WayRecord {
             hi[i] = hi[i].max(b[i]);
         }
     }
-    let wlo = [lo[0] - 2, lo[1] - 2, lo[2] - 2];
-    let whi = [hi[0] + 2, hi[1] + 2, hi[2] + 2];
+    let (wlo, whi) = window(lo, hi);
     let inside = |c: &[i32; 3]| (0..3).all(|i| wlo[i] <= c[i] && c[i] <= whi[i]);
     let own_open = |m: &mut BlockMap| {
         for (c, b) in &way.own {
@@ -561,6 +582,10 @@ pub fn judge(way: Way, ground: &Ground<'_>) -> WayRecord {
         own_open(&mut m);
         maps.push((w.label.clone(), m));
     }
+    // Geometry only, and the decline is this check's subject: whether a body
+    // can be in a column is a fact of the blocks there in one state. No
+    // horizon, killing volume or gate premise changes the width a structure
+    // takes, and each state already says what is shut.
     let worlds: Vec<World> = maps
         .iter()
         .map(|(_, m)| {
@@ -571,8 +596,12 @@ pub fn judge(way: Way, ground: &Ground<'_>) -> WayRecord {
         })
         .collect();
 
-    // Who took a cell in the shipped world: a gate shut at load, or the build.
+    // Who took a cell in the shipped world: an object the engine seated, a
+    // gate shut at load, or the build.
     let shipped_label = |cell: [i32; 3]| -> String {
+        if let Some(what) = ground.seated.get(&cell) {
+            return format!("as built: {what}");
+        }
         ground
             .sealed
             .iter()
@@ -1026,368 +1055,421 @@ fn seam_ways(
     let pieces = bound_pieces(plan, prefabs);
     for s in &b.seams {
         census.seams += 1;
-        let (Some(pa), Some(pb)) = (
-            by_node.get(s.a.0.as_str()).copied(),
-            by_node.get(s.b.0.as_str()).copied(),
-        ) else {
-            continue;
-        };
-        let decl_src: Vec<delvewright_dsl::siteplan::SeamNarrowing> = site
+        let decl: Vec<delvewright_dsl::siteplan::SeamNarrowing> = site
             .and_then(|p| p.seams.iter().find(|x| x.edge == s.edge))
             .map(|x| x.narrowed.clone())
             .unwrap_or_default();
         let seam_index = site
             .and_then(|p| p.seams.iter().position(|x| x.edge == s.edge))
             .unwrap_or(0);
-        let class_words = if s.shut {
-            format!("shut {}", s.class)
+        let own_gates: Vec<[i32; 3]> = if s.shut {
+            opened_with(plan, &seam_anchor(&s.edge))
+                .iter()
+                .flat_map(|a| gate_cells(plan, a))
+                .collect()
         } else {
-            s.class.to_string()
+            Vec::new()
         };
-        let label = format!("the {class_words} `{}` (\"{}\")", s.edge, s.form);
-        let mut own: BTreeMap<[i32; 3], Option<String>> = BTreeMap::new();
-        if s.shut {
-            if let Some((lo, hi)) = s.bar() {
-                for c in crate::compiler::assembled::region_cells(narrow(lo), narrow(hi)) {
-                    own.insert(c, None);
-                }
-            }
-            for a in opened_with(plan, &seam_anchor(&s.edge)) {
-                for c in gate_cells(plan, &a) {
-                    own.insert(c, None);
-                }
+        let input = SeamInput {
+            s,
+            boxes: &by_node,
+            laid: b.runs.iter().find(|r| r.edge == s.edge),
+            pieces: &pieces,
+            decl: &decl,
+            seam_index,
+            own_gates: &own_gates,
+        };
+        if let Some(w) = seam_way(&input, census, flights) {
+            out.push(w);
+        }
+    }
+}
+
+/// What one seam's way is built from: the seam, the places, the run the
+/// stand-in laid, the bound pieces, the seam's declarations and the gate
+/// regions its own beat opens.
+pub struct SeamInput<'a> {
+    /// The seam.
+    pub s: &'a PlacedSeam,
+    /// Every place, by node.
+    pub boxes: &'a BTreeMap<&'a str, &'a PlacedBox>,
+    /// The run the stand-in laid for it, if it did.
+    pub laid: Option<&'a crate::compiler::blockout::LaidStair>,
+    /// Every bound place's piece, by node.
+    pub pieces: &'a BTreeMap<&'a str, BoundPiece<'a>>,
+    /// The seam's `narrowed[]`.
+    pub decl: &'a [delvewright_dsl::siteplan::SeamNarrowing],
+    /// The seam's index in `seams[]`.
+    pub seam_index: usize,
+    /// The cells of the gate regions the beat that opens this seam opens.
+    pub own_gates: &'a [[i32; 3]],
+}
+
+/// **One seam's way** (spec-0120 §1.3): its portal or contact, and a stair's
+/// run — the stand-in's, or the host piece's flight joined to the face.
+#[allow(clippy::too_many_lines)]
+#[must_use]
+pub fn seam_way(
+    input: &SeamInput<'_>,
+    census: &mut Census,
+    flights: &mut BTreeSet<(String, usize)>,
+) -> Option<Way> {
+    let SeamInput {
+        s,
+        boxes: by_node,
+        laid,
+        pieces,
+        decl: decl_src,
+        seam_index,
+        own_gates,
+    } = *input;
+    let host_piece = |n: &delvewright_dsl::NodeId| pieces.get(n.0.as_str());
+    let pa = by_node.get(s.a.0.as_str()).copied()?;
+    let pb = by_node.get(s.b.0.as_str()).copied()?;
+    let class_words = if s.shut {
+        format!("shut {}", s.class)
+    } else {
+        s.class.to_string()
+    };
+    let label = format!("the {class_words} `{}` (\"{}\")", s.edge, s.form);
+    let mut own: BTreeMap<[i32; 3], Option<String>> = BTreeMap::new();
+    if s.shut {
+        if let Some((lo, hi)) = s.bar() {
+            for c in crate::compiler::assembled::region_cells(narrow(lo), narrow(hi)) {
+                own.insert(c, None);
             }
         }
-        let floor_seam = s.normal_axis == 1;
-        let (olo, ohi) = s.opening;
-        let mut stations: Vec<Station> = Vec::new();
-        let mut run = Run::None;
-        let mut flight_words: Option<String> = None;
-        let width;
-        let kind;
-        // The two sides' places, and which side of the plane each is on.
-        let n_dir = s.face.vector()[s.normal_axis];
-        let side_at = |node: &PlacedBox| -> i64 {
-            if *node == *pa {
-                s.plane - n_dir
-            } else {
-                s.plane + n_dir
+        for c in own_gates {
+            own.insert(*c, None);
+        }
+    }
+    let floor_seam = s.normal_axis == 1;
+    let (olo, ohi) = s.opening;
+    let mut stations: Vec<Station> = Vec::new();
+    let mut run = Run::None;
+    let mut flight_words: Option<String> = None;
+    let width;
+    let kind;
+    // The two sides' places, and which side of the plane each is on.
+    let n_dir = s.face.vector()[s.normal_axis];
+    let side_at = |node: &PlacedBox| -> i64 {
+        if *node == *pa {
+            s.plane - n_dir
+        } else {
+            s.plane + n_dir
+        }
+    };
+    let plane_cells = || -> usize { crate::compiler::blockout::cells_of(olo, ohi).count() };
+    if s.crossing == Crossing::Contact {
+        kind = WayKind::Contact;
+        if floor_seam {
+            width = plane_cells();
+        } else {
+            let u = across_of(s.normal_axis);
+            width = usize::try_from(ohi[u] - olo[u] + 1).unwrap_or(0);
+            let drop = s.class == "drop";
+            let high = if pa.floor >= pb.floor { pa } else { pb };
+            for node in [pa, pb] {
+                if drop && node.node != high.node {
+                    continue; // the low side of a fall is the fall.
+                }
+                let side = side_of(s, &node.node);
+                stations.push(wall_side(
+                    s,
+                    side,
+                    side_at(node),
+                    node.floor,
+                    format!("the approach in `{}`", node.node),
+                ));
+            }
+            let y0 = pa.floor.max(pb.floor);
+            let columns = (olo[u]..=ohi[u])
+                .enumerate()
+                .map(|(i, uu)| column_at(s.normal_axis, s.plane, uu, i, y0))
+                .collect();
+            stations.insert(
+                1.min(stations.len()),
+                Station {
+                    key: StationKey::Plane,
+                    label: "the span".to_string(),
+                    deferred: false,
+                    columns,
+                },
+            );
+        }
+    } else if let Some(host_id) = s.stair_in.as_ref() {
+        kind = WayKind::Portal;
+        let host = by_node.get(host_id.0.as_str()).copied()?;
+        let other = if host.node == pa.node { pb } else { pa };
+        let host_side = side_of(s, &host.node);
+        let other_side = side_of(s, &other.node);
+        // The run: the courses the stand-in laid, or — where a piece hosts
+        // the stair — the plan's own run, which the piece's flight must join.
+
+        let mut flight: Option<Flight> = None;
+        let geom: Option<RunGeom> = match laid {
+            Some(r) => {
+                run = Run::Laid;
+                Some(RunGeom {
+                    run_axis: r.run_axis,
+                    cross: r.cross,
+                    start: r.start,
+                    step: r.step,
+                    clo: r.clo,
+                    chi: r.chi,
+                    body_y: r.body_y.iter().map(|y| Some(*y)).collect(),
+                })
+            }
+            None => {
+                if let Some(bp) = host_piece(&host.node)
+                    && let Some(f) = piece_flight(bp, s)
+                {
+                    run = Run::Piece;
+                    flights.insert((bp.placement.prefab_id.clone(), f.edge));
+                    own.extend(f.own.clone());
+                    flight = Some(f);
+                } else {
+                    run = Run::Undeclared;
+                    census.runs_undeclared += 1;
+                }
+                None
             }
         };
-        let plane_cells = || -> usize { crate::compiler::blockout::cells_of(olo, ohi).count() };
-        if s.crossing == Crossing::Contact {
-            kind = WayKind::Contact;
-            if floor_seam {
-                width = plane_cells();
-            } else {
-                let u = across_of(s.normal_axis);
-                width = usize::try_from(ohi[u] - olo[u] + 1).unwrap_or(0);
-                let drop = s.class == "drop";
-                let high = if pa.floor >= pb.floor { pa } else { pb };
-                for node in [pa, pb] {
-                    if drop && node.node != high.node {
-                        continue; // the low side of a fall is the fall.
-                    }
-                    let side = side_of(s, &node.node);
-                    stations.push(wall_side(
-                        s,
-                        side,
-                        side_at(node),
-                        node.floor,
-                        format!("the approach in `{}`", node.node),
-                    ));
-                }
-                let y0 = pa.floor.max(pb.floor);
-                let columns = (olo[u]..=ohi[u])
-                    .enumerate()
-                    .map(|(i, uu)| column_at(s.normal_axis, s.plane, uu, i, y0))
-                    .collect();
-                stations.insert(
-                    1.min(stations.len()),
-                    Station {
-                        key: StationKey::Plane,
-                        label: "the span".to_string(),
+        let cross = match (&geom, &flight) {
+            (Some(g), _) => g.cross,
+            (None, Some(f)) => across_of(f.travel),
+            (None, None) if floor_seam => 2,
+            (None, None) => across_of(s.normal_axis),
+        };
+        width = usize::try_from(ohi[cross] - olo[cross] + 1).unwrap_or(0);
+        let index = |uu: i64| usize::try_from(uu - olo[cross]).unwrap_or(0);
+        // The head: the other place's approach — beside the hole's top on
+        // the upper floor, or across the wall.
+        if floor_seam {
+            if let Some(g) = &geom {
+                let t = g.start - g.step;
+                stations.push(Station {
+                    key: StationKey::Side(other_side),
+                    label: format!("the head's approach in `{}`", other.node),
+                    deferred: false,
+                    columns: (g.clo..=g.chi)
+                        .map(|uu| column_at(g.run_axis, t, uu, index(uu), other.floor))
+                        .collect(),
+                });
+            }
+        } else {
+            stations.push(wall_side(
+                s,
+                other_side,
+                side_at(other),
+                other.floor,
+                format!("the head's approach in `{}`", other.node),
+            ));
+        }
+        census.plane_columns += plane_cells();
+        stations.push(Station {
+            key: StationKey::Plane,
+            label: "the opening".to_string(),
+            deferred: true,
+            columns: Vec::new(),
+        });
+        match &geom {
+            Some(g) => {
+                // A course's body cell is the tread's, where the run was
+                // laid; over a piece's treads it is measured, between the
+                // host's floor and the cell a body steps off at the top.
+                let top = if floor_seam { s.plane } else { olo[1] };
+                for (k, y) in g.body_y.iter().enumerate() {
+                    let t = g.start + g.step * i64::try_from(k).unwrap_or(0);
+                    let columns = (g.clo..=g.chi)
+                        .map(|uu| {
+                            let mut c = column_at(g.run_axis, t, uu, index(uu), host.floor);
+                            match y {
+                                Some(y) => {
+                                    c.ylo = n32(*y);
+                                    c.yhi = n32(*y);
+                                    c.y0 = Some(n32(*y));
+                                }
+                                None => {
+                                    c.ylo = n32(host.floor);
+                                    c.yhi = n32(top);
+                                    c.y0 = None;
+                                }
+                            }
+                            c
+                        })
+                        .collect();
+                    stations.push(Station {
+                        key: StationKey::Course(u32::try_from(k).unwrap_or(0)),
+                        label: format!("course {k} of the run"),
                         deferred: false,
                         columns,
-                    },
-                );
-            }
-        } else if let Some(host_id) = s.stair_in.as_ref() {
-            kind = WayKind::Portal;
-            let Some(host) = by_node.get(host_id.0.as_str()).copied() else {
-                continue;
-            };
-            let other = if host.node == pa.node { pb } else { pa };
-            let host_side = side_of(s, &host.node);
-            let other_side = side_of(s, &other.node);
-            // The run: the courses the stand-in laid, or — where a piece hosts
-            // the stair — the plan's own run, which the piece's flight must join.
-            let laid = b.runs.iter().find(|r| r.edge == s.edge);
-            let mut flight: Option<Flight> = None;
-            let geom: Option<RunGeom> = match laid {
-                Some(r) => {
-                    run = Run::Laid;
-                    Some(RunGeom {
-                        run_axis: r.run_axis,
-                        cross: r.cross,
-                        start: r.start,
-                        step: r.step,
-                        clo: r.clo,
-                        chi: r.chi,
-                        body_y: r.body_y.iter().map(|y| Some(*y)).collect(),
-                    })
+                    });
                 }
-                None => {
-                    if let Some(bp) = pieces.get(host.node.0.as_str())
-                        && let Some(f) = piece_flight(bp, s)
-                    {
-                        run = Run::Piece;
-                        flights.insert((bp.placement.prefab_id.clone(), f.edge));
-                        own.extend(f.own.clone());
-                        flight = Some(f);
-                    } else {
-                        run = Run::Undeclared;
-                        census.runs_undeclared += 1;
-                    }
-                    None
-                }
-            };
-            let cross = match (&geom, &flight) {
-                (Some(g), _) => g.cross,
-                (None, Some(f)) => across_of(f.travel),
-                (None, None) if floor_seam => 2,
-                (None, None) => across_of(s.normal_axis),
-            };
-            width = usize::try_from(ohi[cross] - olo[cross] + 1).unwrap_or(0);
-            let index = |uu: i64| usize::try_from(uu - olo[cross]).unwrap_or(0);
-            // The head: the other place's approach — beside the hole's top on
-            // the upper floor, or across the wall.
-            if floor_seam {
-                if let Some(g) = &geom {
-                    let t = g.start - g.step;
+                let t = g.start + g.step * i64::try_from(g.body_y.len()).unwrap_or(0);
+                let (flo, fhi) = if g.run_axis == 0 {
+                    (host.foot[0], host.foot[1])
+                } else {
+                    (host.foot[2], host.foot[3])
+                };
+                if t >= flo && t <= fhi {
                     stations.push(Station {
-                        key: StationKey::Side(other_side),
-                        label: format!("the head's approach in `{}`", other.node),
+                        key: StationKey::Side(host_side),
+                        label: format!("the foot's approach in `{}`", host.node),
                         deferred: false,
                         columns: (g.clo..=g.chi)
-                            .map(|uu| column_at(g.run_axis, t, uu, index(uu), other.floor))
+                            .map(|uu| column_at(g.run_axis, t, uu, index(uu), host.floor))
                             .collect(),
                     });
                 }
-            } else {
+            }
+            None if flight.is_some() => {
+                if let Some(f) = &flight {
+                    stations.extend(flight_stations(f, s, host_side));
+                    flight_words = Some(f.words.clone());
+                }
+            }
+            None if !floor_seam => {
+                // No run the piece declares: the host's approach is still
+                // judged, at its floor beside the wall.
                 stations.push(wall_side(
                     s,
-                    other_side,
-                    side_at(other),
-                    other.floor,
-                    format!("the head's approach in `{}`", other.node),
+                    host_side,
+                    side_at(host),
+                    host.floor,
+                    format!("the approach in `{}`", host.node),
                 ));
             }
-            census.plane_columns += plane_cells();
+            None => {
+                // Through a floor with no run declared: the head still
+                // owes the hole's columns free over the upper floor.
+                stations.insert(
+                    0,
+                    Station {
+                        key: StationKey::Side(other_side),
+                        label: format!("the way out of the hole into `{}`", other.node),
+                        deferred: false,
+                        columns: hole_columns(olo, ohi, s.plane + 1, s.plane + 2),
+                    },
+                );
+            }
+        }
+    } else {
+        kind = WayKind::Portal;
+        census.plane_columns += plane_cells();
+        if floor_seam {
+            width = plane_cells();
+            // `a` is the upper place when the seam is on `a`'s floor.
+            let (upper, lower) = if n_dir < 0 { (pa, pb) } else { (pb, pa) };
+            let cols = |ylo: i64, yhi: i64| hole_columns(olo, ohi, ylo, yhi);
             stations.push(Station {
+                key: StationKey::Side(side_of(s, &upper.node)),
+                label: format!("the way into the hole from `{}`", upper.node),
+                deferred: false,
+                columns: cols(s.plane + 1, s.plane + 2),
+            });
+            stations.push(Station {
+                key: StationKey::Plane,
+                label: "the hole".to_string(),
+                deferred: true,
+                columns: Vec::new(),
+            });
+            stations.push(Station {
+                key: StationKey::Side(side_of(s, &lower.node)),
+                label: format!("the way down the hole into `{}`", lower.node),
+                deferred: false,
+                columns: cols(lower.floor, s.plane - 1),
+            });
+        } else {
+            let u = across_of(s.normal_axis);
+            width = usize::try_from(ohi[u] - olo[u] + 1).unwrap_or(0);
+            // A fall and a climb across a wall are walked on one side only:
+            // the high side. Their low side is the fall, or the ladder.
+            let one_sided = s.class == "drop" || s.class == "climb";
+            let high = if pa.floor >= pb.floor { pa } else { pb };
+            let mut sides: Vec<Station> = Vec::new();
+            for node in [pa, pb] {
+                if one_sided && node.node != high.node {
+                    continue;
+                }
+                sides.push(wall_side(
+                    s,
+                    side_of(s, &node.node),
+                    side_at(node),
+                    node.floor,
+                    format!("the approach in `{}`", node.node),
+                ));
+            }
+            let plane = Station {
                 key: StationKey::Plane,
                 label: "the opening".to_string(),
                 deferred: true,
                 columns: Vec::new(),
-            });
-            match &geom {
-                Some(g) => {
-                    // A course's body cell is the tread's, where the run was
-                    // laid; over a piece's treads it is measured, between the
-                    // host's floor and the cell a body steps off at the top.
-                    let top = if floor_seam { s.plane } else { olo[1] };
-                    for (k, y) in g.body_y.iter().enumerate() {
-                        let t = g.start + g.step * i64::try_from(k).unwrap_or(0);
-                        let columns = (g.clo..=g.chi)
-                            .map(|uu| {
-                                let mut c = column_at(g.run_axis, t, uu, index(uu), host.floor);
-                                match y {
-                                    Some(y) => {
-                                        c.ylo = n32(*y);
-                                        c.yhi = n32(*y);
-                                        c.y0 = Some(n32(*y));
-                                    }
-                                    None => {
-                                        c.ylo = n32(host.floor);
-                                        c.yhi = n32(top);
-                                        c.y0 = None;
-                                    }
-                                }
-                                c
-                            })
-                            .collect();
-                        stations.push(Station {
-                            key: StationKey::Course(u32::try_from(k).unwrap_or(0)),
-                            label: format!("course {k} of the run"),
-                            deferred: false,
-                            columns,
-                        });
-                    }
-                    let t = g.start + g.step * i64::try_from(g.body_y.len()).unwrap_or(0);
-                    let (flo, fhi) = if g.run_axis == 0 {
-                        (host.foot[0], host.foot[1])
-                    } else {
-                        (host.foot[2], host.foot[3])
-                    };
-                    if t >= flo && t <= fhi {
-                        stations.push(Station {
-                            key: StationKey::Side(host_side),
-                            label: format!("the foot's approach in `{}`", host.node),
-                            deferred: false,
-                            columns: (g.clo..=g.chi)
-                                .map(|uu| column_at(g.run_axis, t, uu, index(uu), host.floor))
-                                .collect(),
-                        });
-                    }
-                }
-                None if flight.is_some() => {
-                    if let Some(f) = &flight {
-                        stations.extend(flight_stations(f, s, host_side));
-                        flight_words = Some(f.words.clone());
-                    }
-                }
-                None if !floor_seam => {
-                    // No run the piece declares: the host's approach is still
-                    // judged, at its floor beside the wall.
-                    stations.push(wall_side(
-                        s,
-                        host_side,
-                        side_at(host),
-                        host.floor,
-                        format!("the approach in `{}`", host.node),
-                    ));
-                }
-                None => {
-                    // Through a floor with no run declared: the head still
-                    // owes the hole's columns free over the upper floor.
-                    stations.insert(
-                        0,
-                        Station {
-                            key: StationKey::Side(other_side),
-                            label: format!("the way out of the hole into `{}`", other.node),
-                            deferred: false,
-                            columns: hole_columns(olo, ohi, s.plane + 1, s.plane + 2),
-                        },
-                    );
-                }
+            };
+            let mut it = sides.into_iter();
+            if let Some(first) = it.next() {
+                stations.push(first);
             }
-        } else {
-            kind = WayKind::Portal;
-            census.plane_columns += plane_cells();
-            if floor_seam {
-                width = plane_cells();
-                // `a` is the upper place when the seam is on `a`'s floor.
-                let (upper, lower) = if n_dir < 0 { (pa, pb) } else { (pb, pa) };
-                let cols = |ylo: i64, yhi: i64| hole_columns(olo, ohi, ylo, yhi);
-                stations.push(Station {
-                    key: StationKey::Side(side_of(s, &upper.node)),
-                    label: format!("the way into the hole from `{}`", upper.node),
-                    deferred: false,
-                    columns: cols(s.plane + 1, s.plane + 2),
-                });
-                stations.push(Station {
-                    key: StationKey::Plane,
-                    label: "the hole".to_string(),
-                    deferred: true,
-                    columns: Vec::new(),
-                });
-                stations.push(Station {
-                    key: StationKey::Side(side_of(s, &lower.node)),
-                    label: format!("the way down the hole into `{}`", lower.node),
-                    deferred: false,
-                    columns: cols(lower.floor, s.plane - 1),
-                });
-            } else {
-                let u = across_of(s.normal_axis);
-                width = usize::try_from(ohi[u] - olo[u] + 1).unwrap_or(0);
-                // A fall and a climb across a wall are walked on one side only:
-                // the high side. Their low side is the fall, or the ladder.
-                let one_sided = s.class == "drop" || s.class == "climb";
-                let high = if pa.floor >= pb.floor { pa } else { pb };
-                let mut sides: Vec<Station> = Vec::new();
-                for node in [pa, pb] {
-                    if one_sided && node.node != high.node {
-                        continue;
-                    }
-                    sides.push(wall_side(
-                        s,
-                        side_of(s, &node.node),
-                        side_at(node),
-                        node.floor,
-                        format!("the approach in `{}`", node.node),
-                    ));
-                }
-                let plane = Station {
-                    key: StationKey::Plane,
-                    label: "the opening".to_string(),
-                    deferred: true,
-                    columns: Vec::new(),
-                };
-                let mut it = sides.into_iter();
-                if let Some(first) = it.next() {
-                    stations.push(first);
-                }
-                stations.push(plane);
-                stations.extend(it);
-            }
+            stations.push(plane);
+            stations.extend(it);
         }
-        let declared = decl_src
-            .iter()
-            .enumerate()
-            .map(|(k, e)| {
-                let path = format!("/content/seams/{seam_index}/narrowed/{k}");
-                let key = match e.side {
-                    NarrowSide::Run => StationKey::Course(e.course.unwrap_or(0)),
-                    NarrowSide::Plane => StationKey::Plane,
-                    side => StationKey::Side(side),
-                };
-                let station = stations.iter().find(|st| st.key == key && !st.deferred);
-                let columns: BTreeSet<usize> = (e.across[0]..=e.across[1])
-                    .map(|c| usize::try_from(c).unwrap_or(usize::MAX))
-                    .collect();
-                let unplaced = match station {
-                    None => Some(match &key {
-                        StationKey::Course(c) => {
-                            format!("course {c} of a run this way does not have")
-                        }
-                        _ => format!("side `{}`, which this way does not have", e.side.as_str()),
-                    }),
-                    Some(st) => {
-                        let have: BTreeSet<usize> = st.columns.iter().map(|c| c.index).collect();
-                        columns.iter().find(|c| !have.contains(c)).map(|c| {
-                            format!(
-                                "column {c} of {}, which that station does not have",
-                                st.label
-                            )
-                        })
-                    }
-                };
-                Declared {
-                    station: station.map(|st| st.key.clone()),
-                    columns,
-                    unplaced,
-                    block: e.block.clone(),
-                    what: e.what.clone(),
-                    path,
-                }
-            })
-            .collect();
-        let label = match &flight_words {
-            Some(w) => format!("{label}, its run the host piece's flight {w}"),
-            None => label,
-        };
-        out.push(Way {
-            kind,
-            name: s.edge.0.clone(),
-            label,
-            width,
-            stations,
-            own,
-            declared,
-            frame: Frame::Seam(s.edge.0.clone()),
-            run,
-        });
     }
+    let declared = decl_src
+        .iter()
+        .enumerate()
+        .map(|(k, e)| {
+            let path = format!("/content/seams/{seam_index}/narrowed/{k}");
+            let key = match e.side {
+                NarrowSide::Run => StationKey::Course(e.course.unwrap_or(0)),
+                NarrowSide::Plane => StationKey::Plane,
+                side => StationKey::Side(side),
+            };
+            let station = stations.iter().find(|st| st.key == key && !st.deferred);
+            let columns: BTreeSet<usize> = (e.across[0]..=e.across[1])
+                .map(|c| usize::try_from(c).unwrap_or(usize::MAX))
+                .collect();
+            let unplaced = match station {
+                None => Some(match &key {
+                    StationKey::Course(c) => {
+                        format!("course {c} of a run this way does not have")
+                    }
+                    _ => format!("side `{}`, which this way does not have", e.side.as_str()),
+                }),
+                Some(st) => {
+                    let have: BTreeSet<usize> = st.columns.iter().map(|c| c.index).collect();
+                    columns.iter().find(|c| !have.contains(c)).map(|c| {
+                        format!(
+                            "column {c} of {}, which that station does not have",
+                            st.label
+                        )
+                    })
+                }
+            };
+            Declared {
+                station: station.map(|st| st.key.clone()),
+                columns,
+                unplaced,
+                block: e.block.clone(),
+                what: e.what.clone(),
+                path,
+            }
+        })
+        .collect();
+    let label = match &flight_words {
+        Some(w) => format!("{label}, its run the host piece's flight {w}"),
+        None => label,
+    };
+    Some(Way {
+        kind,
+        name: s.edge.0.clone(),
+        label,
+        width,
+        stations,
+        own,
+        declared,
+        frame: Frame::Seam(s.edge.0.clone()),
+        run,
+    })
 }
 
 /// A floor hole's columns between two heights, numbered along `x`, then `z`
@@ -1409,9 +1491,11 @@ fn hole_columns(olo: [i64; 3], ohi: [i64; 3], ylo: i64, yhi: i64) -> Vec<Column>
 }
 
 /// A bound place's piece: its placement and its contract.
-struct BoundPiece<'a> {
-    placement: &'a crate::compiler::plan::PiecePlacement,
-    contract: &'a delvewright_dsl::prefab::SpatialContract,
+pub struct BoundPiece<'a> {
+    /// The piece's placement.
+    pub placement: &'a crate::compiler::plan::PiecePlacement,
+    /// Its spatial contract.
+    pub contract: &'a delvewright_dsl::prefab::SpatialContract,
 }
 
 /// Every place a detail plan binds, with the piece placed for it.
@@ -1760,15 +1844,48 @@ fn piece_ways(
     out: &mut Vec<Way>,
     refusals: &mut Vec<Failure>,
 ) {
-    let site_plan = plan.campaign.site_plan.is_some();
-    for area in &plan.areas {
-        for p in &area.pieces {
-            let Some(contract) = prefabs
+    let placed: Vec<(
+        &crate::compiler::plan::PiecePlacement,
+        &delvewright_dsl::prefab::SpatialContract,
+    )> = plan
+        .areas
+        .iter()
+        .flat_map(|a| a.pieces.iter())
+        .filter_map(|p| {
+            prefabs
                 .get(&p.prefab_id)
                 .and_then(|m| m.spatial_contract.as_ref())
-            else {
-                continue;
-            };
+                .map(|c| (p, c))
+        })
+        .collect();
+    piece_ways_over(
+        &placed,
+        plan.campaign.site_plan.is_some(),
+        flights,
+        census,
+        out,
+        refusals,
+    );
+}
+
+/// [`piece_ways`] over placed pieces and their contracts: every edge of the
+/// five classes counted, every one that answers no plan seam judged, and a
+/// `narrowed` on one that does refused (`DW0888`). `site_plan` says whether
+/// every exterior edge answers a plan seam; `flights` names the edges a stair
+/// seam took as its run.
+pub fn piece_ways_over(
+    placed: &[(
+        &crate::compiler::plan::PiecePlacement,
+        &delvewright_dsl::prefab::SpatialContract,
+    )],
+    site_plan: bool,
+    flights: &BTreeSet<(String, usize)>,
+    census: &mut Census,
+    out: &mut Vec<Way>,
+    refusals: &mut Vec<Failure>,
+) {
+    {
+        for (p, contract) in placed.iter().copied() {
             let space_cells: BTreeMap<&str, BTreeSet<[i32; 3]>> = contract
                 .spaces
                 .iter()
@@ -2304,11 +2421,22 @@ pub fn check(
         .filter(|s| s.sealed())
         .map(|s| (s.anchor.clone(), s.region))
         .collect();
+    let mut seated: BTreeMap<[i32; 3], String> = BTreeMap::new();
+    for f in fixtures {
+        seated.insert(
+            f.pos,
+            "the relight fixture the build sets at setup".to_string(),
+        );
+    }
+    for (id, prop) in crate::compiler::pressable::trigger_props(plan) {
+        seated.insert(prop.pos, format!("the prop of `{id}`"));
+    }
     let ground = Ground {
         shipped: &shipped,
         open_gates: &assembled.open_gates,
         writes: &writes,
         sealed: &sealed,
+        seated: &seated,
     };
     let records: Vec<WayRecord> = ways.into_iter().map(|w| judge(w, &ground)).collect();
     let used: BTreeSet<&StateWrite> = writes
@@ -2335,4 +2463,965 @@ pub fn check(
     let mut out: Vec<Failure> = binding.refusals().into_iter().cloned().collect();
     out.append(&mut refusals);
     (binding, out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const STONE: &str = "minecraft:stone";
+    const MASONRY: &str = "minecraft:stone_bricks";
+    const LOG: &str = "minecraft:stripped_spruce_log[axis=y]";
+
+    /// A stone floor at y 0 over x 0..=20, z 0..=20.
+    fn floor() -> BlockMap {
+        let mut m = BlockMap::new();
+        for x in 0..=20 {
+            for z in 0..=20 {
+                m.insert([x, 0, z], BlockState::new(STONE));
+            }
+        }
+        m
+    }
+
+    fn put(m: &mut BlockMap, cells: impl IntoIterator<Item = [i32; 3]>, b: &str) {
+        for c in cells {
+            m.insert(c, BlockState::new(b));
+        }
+    }
+
+    /// The yard's foot (spec-0120 §2): a three-wide approach row at x 10,
+    /// z 12..=14, the body cell at y 1.
+    fn foot() -> Station {
+        Station {
+            key: StationKey::Side(NarrowSide::B),
+            label: "the foot's approach in `node/yard`".to_string(),
+            deferred: false,
+            columns: (12..=14)
+                .enumerate()
+                .map(|(i, z)| Column {
+                    index: i,
+                    x: 10,
+                    z,
+                    ylo: 1,
+                    yhi: 1,
+                    y0: Some(1),
+                    vertical: false,
+                })
+                .collect(),
+        }
+    }
+
+    fn way(stations: Vec<Station>, declared: Vec<Declared>) -> Way {
+        Way {
+            kind: WayKind::Portal,
+            name: "edge/keeper-stair".to_string(),
+            label: "the stair `edge/keeper-stair`".to_string(),
+            width: 3,
+            stations,
+            own: BTreeMap::new(),
+            declared,
+            frame: Frame::Seam("edge/keeper-stair".to_string()),
+            run: Run::Laid,
+        }
+    }
+
+    fn decl(cols: &[usize], block: &str) -> Declared {
+        Declared {
+            station: Some(StationKey::Side(NarrowSide::B)),
+            columns: cols.iter().copied().collect(),
+            unplaced: None,
+            block: block.to_string(),
+            what: "the jamb of the cart road's mouth".to_string(),
+            path: "/content/seams/0/narrowed/0".to_string(),
+        }
+    }
+
+    const BARRICADE: Region3 = ([10, 1, 13], [12, 3, 13]);
+
+    fn judge_over(
+        w: Way,
+        m: &BlockMap,
+        writes: &[StateWrite],
+        sealed: &[NamedRegion],
+    ) -> WayRecord {
+        let open = BTreeSet::new();
+        let seated = BTreeMap::new();
+        judge(
+            w,
+            &Ground {
+                shipped: m,
+                open_gates: &open,
+                writes,
+                sealed,
+                seated: &seated,
+            },
+        )
+    }
+
+    fn opens_barricade() -> Vec<StateWrite> {
+        vec![StateWrite {
+            region: BARRICADE,
+            block: None,
+            label: "once `anchor/barricade` opens".to_string(),
+        }]
+    }
+
+    fn sealed_barricade() -> Vec<NamedRegion> {
+        vec![("anchor/barricade".to_string(), BARRICADE)]
+    }
+
+    /// The finding's shape (criterion 5): one approach column under fixed
+    /// masonry, one under a foreign gate region — `1 of 3` shut, `2 of 3`
+    /// open, both cells named with their blocks and states.
+    fn yard() -> BlockMap {
+        let mut m = floor();
+        put(&mut m, (1..=3).map(|y| [10, y, 14]), MASONRY);
+        put(
+            &mut m,
+            (10..=12).flat_map(|x| (1..=3).map(move |y| [x, y, 13])),
+            LOG,
+        );
+        m
+    }
+
+    #[test]
+    fn the_yards_foot_is_one_of_three_shut_and_two_of_three_open() {
+        let rec = judge_over(
+            way(vec![foot()], Vec::new()),
+            &yard(),
+            &opens_barricade(),
+            &sealed_barricade(),
+        );
+        let f = rec
+            .undeclared
+            .as_ref()
+            .expect("the foot is narrowed undeclared");
+        assert_eq!(f.code.id(), "DW1057");
+        let m = &f.message;
+        assert!(m.contains("1 of 3"), "{m}");
+        assert!(m.contains("2 of 3"), "{m}");
+        assert!(
+            m.contains("[10, 1, 14] `minecraft:stone_bricks` (as built)"),
+            "{m}"
+        );
+        assert!(
+            m.contains("[10, 1, 13] `minecraft:stripped_spruce_log[axis=y]` (while `anchor/barricade` is shut)"),
+            "{m}"
+        );
+        assert!(m.contains("\"side\": \"b\""), "{m}");
+        assert!(m.contains("\"what\": \"…\""), "{m}");
+        assert_eq!(rec.stations[0].clear, vec![1, 2]);
+        assert_eq!(rec.verdict(), "narrowed");
+    }
+
+    #[test]
+    fn the_yards_foot_with_both_moved_one_column_outward_is_whole() {
+        let mut m = floor();
+        put(&mut m, (1..=3).map(|y| [10, y, 15]), MASONRY);
+        put(
+            &mut m,
+            (10..=12).flat_map(|x| (1..=3).map(move |y| [x, y, 11])),
+            LOG,
+        );
+        let moved = ([10, 1, 11], [12, 3, 11]);
+        let rec = judge_over(
+            way(vec![foot()], Vec::new()),
+            &m,
+            &[StateWrite {
+                region: moved,
+                block: None,
+                label: "once `anchor/barricade` opens".to_string(),
+            }],
+            &[("anchor/barricade".to_string(), moved)],
+        );
+        assert!(rec.undeclared.is_none(), "{:?}", rec.undeclared);
+        assert_eq!(rec.verdict(), "whole");
+    }
+
+    /// Criterion 6: the masonry declared, the gate region moved off the way.
+    fn declared_yard() -> BlockMap {
+        let mut m = floor();
+        put(&mut m, (1..=3).map(|y| [10, y, 14]), MASONRY);
+        m
+    }
+
+    #[test]
+    fn a_declared_jamb_is_confirmed_and_excuses_its_column() {
+        let rec = judge_over(
+            way(vec![foot()], vec![decl(&[2], MASONRY)]),
+            &declared_yard(),
+            &[],
+            &[],
+        );
+        assert!(rec.undeclared.is_none(), "{:?}", rec.undeclared);
+        assert!(rec.not_shown.is_empty(), "{:?}", rec.not_shown);
+        assert_eq!((rec.confirmed, rec.excused), (1, 1));
+        assert_eq!(rec.verdict(), "narrowed-as-declared");
+    }
+
+    #[test]
+    fn the_declaration_removed_reds_dw1057() {
+        let rec = judge_over(way(vec![foot()], Vec::new()), &declared_yard(), &[], &[]);
+        assert_eq!(rec.undeclared.as_ref().map(|f| f.code.id()), Some("DW1057"));
+    }
+
+    #[test]
+    fn the_wrong_block_reds_dw1058() {
+        let rec = judge_over(
+            way(vec![foot()], vec![decl(&[2], "minecraft:oak_planks")]),
+            &declared_yard(),
+            &[],
+            &[],
+        );
+        let f = rec.not_shown.first().expect("refused");
+        assert_eq!(f.code.id(), "DW1058");
+        assert!(
+            f.message.contains("declares `minecraft:oak_planks`, but `minecraft:stone_bricks` stands at [10, 1, 14]"),
+            "{}",
+            f.message
+        );
+        assert!(rec.undeclared.is_none());
+    }
+
+    #[test]
+    fn the_columns_moved_by_one_red_dw1058() {
+        let rec = judge_over(
+            way(vec![foot()], vec![decl(&[1], MASONRY)]),
+            &declared_yard(),
+            &[],
+            &[],
+        );
+        let f = rec.not_shown.first().expect("refused");
+        assert_eq!(f.code.id(), "DW1058");
+        assert!(f.message.contains("column 1"), "{}", f.message);
+        assert!(f.message.contains("clear in every state"), "{}", f.message);
+        // …and the column the post really stands in is undeclared.
+        assert_eq!(rec.undeclared.as_ref().map(|f| f.code.id()), Some("DW1057"));
+    }
+
+    #[test]
+    fn a_stale_excuse_reds_dw1058() {
+        let rec = judge_over(
+            way(vec![foot()], vec![decl(&[2], MASONRY)]),
+            &floor(),
+            &[],
+            &[],
+        );
+        let f = rec
+            .not_shown
+            .first()
+            .expect("the post is gone and the excuse stands");
+        assert_eq!(f.code.id(), "DW1058");
+        assert!(
+            f.message.contains("put the structure back"),
+            "{}",
+            f.message
+        );
+        assert_eq!(rec.verdict(), "whole");
+    }
+
+    #[test]
+    fn a_state_given_only_for_the_block_compares_the_id() {
+        assert!(block_matches(
+            "minecraft:stone_brick_wall",
+            "minecraft:stone_brick_wall[east=none,north=low,up=true]"
+        ));
+        assert!(block_matches(
+            "minecraft:stone_brick_wall[up=true]",
+            "minecraft:stone_brick_wall[east=none,north=low,up=true]"
+        ));
+        assert!(!block_matches(
+            "minecraft:stone_brick_wall[up=false]",
+            "minecraft:stone_brick_wall[east=none,north=low,up=true]"
+        ));
+        assert!(!block_matches("minecraft:stone_bricks", "minecraft:stone"));
+    }
+
+    /// Criterion 4: a gate region of ANOTHER way standing in the approach is
+    /// refused while it is shut; the same region as the way's own is not.
+    #[test]
+    fn a_foreign_gate_in_the_approach_is_refused_and_the_ways_own_is_not() {
+        let mut m = floor();
+        put(&mut m, (1..=3).map(|y| [10, y, 13]), LOG);
+        let region = ([10, 1, 13], [10, 3, 13]);
+        let writes = vec![StateWrite {
+            region,
+            block: None,
+            label: "once `anchor/cart-road` opens".to_string(),
+        }];
+        let sealed = vec![("anchor/cart-road".to_string(), region)];
+        let rec = judge_over(way(vec![foot()], Vec::new()), &m, &writes, &sealed);
+        let f = rec.undeclared.as_ref().expect("refused");
+        assert!(
+            f.message.contains("while `anchor/cart-road` is shut"),
+            "{}",
+            f.message
+        );
+
+        let mut own = way(vec![foot()], Vec::new());
+        for y in 1..=3 {
+            own.own.insert([10, y, 13], None);
+        }
+        let rec = judge_over(own, &m, &writes, &sealed);
+        assert!(rec.undeclared.is_none(), "{:?}", rec.undeclared);
+        assert_eq!(rec.verdict(), "whole");
+    }
+
+    #[test]
+    fn a_set_block_into_an_approach_column_is_refused() {
+        let writes = vec![StateWrite {
+            region: ([10, 1, 12], [10, 1, 12]),
+            block: Some(STONE.to_string()),
+            label: "after `set-block` at `quests[0]/objectives[1]`".to_string(),
+        }];
+        let rec = judge_over(way(vec![foot()], Vec::new()), &floor(), &writes, &[]);
+        let f = rec.undeclared.as_ref().expect("refused");
+        assert!(
+            f.message.contains(
+                "[10, 1, 12] `minecraft:stone` (after `set-block` at `quests[0]/objectives[1]`)"
+            ),
+            "{}",
+            f.message
+        );
+        assert_eq!(rec.stations[0].clear, vec![3, 2]);
+    }
+
+    #[test]
+    fn a_thin_block_or_a_slab_a_body_steps_onto_narrows_nothing() {
+        for block in [
+            "minecraft:torch",
+            "minecraft:white_carpet",
+            "minecraft:stone_slab[type=bottom,waterlogged=false]",
+        ] {
+            let mut m = floor();
+            put(&mut m, [[10, 1, 12]], block);
+            let rec = judge_over(way(vec![foot()], Vec::new()), &m, &[], &[]);
+            assert!(rec.undeclared.is_none(), "{block}: {:?}", rec.undeclared);
+            assert_eq!(rec.verdict(), "whole", "{block}");
+        }
+    }
+
+    #[test]
+    fn a_post_a_wall_or_a_beam_at_head_height_takes_its_column() {
+        for (cells, block) in [
+            (vec![[10, 1, 12]], "minecraft:stone_brick_wall"),
+            (vec![[10, 1, 12]], "minecraft:oak_fence"),
+            (vec![[10, 2, 12]], "minecraft:oak_planks"),
+            (
+                vec![[10, 1, 12]],
+                "minecraft:oak_trapdoor[facing=north,half=top,open=false]",
+            ),
+        ] {
+            let mut m = floor();
+            put(&mut m, cells, block);
+            let rec = judge_over(way(vec![foot()], Vec::new()), &m, &[], &[]);
+            assert_eq!(
+                rec.undeclared.as_ref().map(|f| f.code.id()),
+                Some("DW1057"),
+                "{block}"
+            );
+        }
+        // A beam over a body's head blocks nothing.
+        let mut m = floor();
+        put(&mut m, [[10, 3, 12]], "minecraft:oak_planks");
+        let rec = judge_over(way(vec![foot()], Vec::new()), &m, &[], &[]);
+        assert!(rec.undeclared.is_none(), "{:?}", rec.undeclared);
+    }
+
+    /// Criterion 7, the unit half: a portal's plane is left to `DW0836` and
+    /// judged by nothing here; a contact's span is judged.
+    #[test]
+    fn a_portal_plane_is_deferred_and_a_contacts_span_is_judged() {
+        let mut m = floor();
+        put(&mut m, (1..=3).map(|y| [10, y, 12]), STONE);
+        let mut plane = foot();
+        plane.key = StationKey::Plane;
+        plane.deferred = true;
+        let rec = judge_over(way(vec![plane.clone()], Vec::new()), &m, &[], &[]);
+        assert!(rec.undeclared.is_none());
+        assert_eq!(rec.states, 0, "a deferred plane reads no state at all");
+
+        plane.deferred = false;
+        plane.label = "the span".to_string();
+        let mut contact = way(vec![plane], Vec::new());
+        contact.kind = WayKind::Contact;
+        let rec = judge_over(contact, &m, &[], &[]);
+        let f = rec
+            .undeclared
+            .as_ref()
+            .expect("a half-walled span is narrowed");
+        assert!(f.message.contains("at the span"), "{}", f.message);
+    }
+
+    /// Criterion 10: an engine-seated object in an approach column is named.
+    #[test]
+    fn an_engine_seated_object_is_named_and_moved_outward_is_whole() {
+        let mut m = floor();
+        put(&mut m, [[10, 1, 12]], "minecraft:sea_lantern");
+        let open = BTreeSet::new();
+        let mut seated = BTreeMap::new();
+        seated.insert(
+            [10, 1, 12],
+            "the relight fixture the build sets at setup".to_string(),
+        );
+        let ground = Ground {
+            shipped: &m,
+            open_gates: &open,
+            writes: &[],
+            sealed: &[],
+            seated: &seated,
+        };
+        let rec = judge(way(vec![foot()], Vec::new()), &ground);
+        let f = rec.undeclared.as_ref().expect("refused");
+        assert!(
+            f.message
+                .contains("(as built: the relight fixture the build sets at setup)"),
+            "{}",
+            f.message
+        );
+        let mut m = floor();
+        put(&mut m, [[10, 1, 11]], "minecraft:sea_lantern");
+        let rec = judge_over(way(vec![foot()], Vec::new()), &m, &[], &[]);
+        assert!(rec.undeclared.is_none());
+    }
+
+    /// A tiny deterministic generator, so the agreement test below is a
+    /// fixed population, never a reroll (ADR-0006).
+    struct Lcg(u64);
+    impl Lcg {
+        fn next(&mut self) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            self.0 >> 33
+        }
+    }
+
+    const PALETTE: [&str; 10] = [
+        "minecraft:stone",
+        "minecraft:stone_slab[type=bottom,waterlogged=false]",
+        "minecraft:oak_fence",
+        "minecraft:torch",
+        "minecraft:ladder[facing=east,waterlogged=false]",
+        "minecraft:iron_bars",
+        "minecraft:water",
+        "minecraft:lantern[hanging=false,waterlogged=false]",
+        "minecraft:oak_planks",
+        "minecraft:dirt_path",
+    ];
+
+    /// **Criterion 3: one predicate.** Over generated worlds, the column test
+    /// at a body cell agrees with `nav::can_be` there — clear wherever a body
+    /// can be, and clear only where a body can be in the cell or on the floor
+    /// it steps onto — and the windowed world the judgement builds answers
+    /// `can_be` exactly as the whole world does at every body cell it judges.
+    #[test]
+    fn the_column_test_and_can_be_never_disagree_on_a_body_cell() {
+        let mut rng = Lcg(0x0120);
+        let mut judged = 0usize;
+        for _ in 0..12 {
+            let mut m = BlockMap::new();
+            for x in 0..12 {
+                for z in 0..12 {
+                    m.insert([x, 0, z], BlockState::new(STONE));
+                    for y in 1..5 {
+                        if rng.next().is_multiple_of(4) {
+                            let b = PALETTE[usize::try_from(rng.next() % 10).unwrap()];
+                            m.insert([x, y, z], BlockState::new(b));
+                        }
+                    }
+                }
+            }
+            let open = BTreeSet::new();
+            let whole = World::from_occupancy(
+                crate::compiler::assembled::occupancy_over(&m, &open),
+                Premises::geometry_only(),
+            );
+            for x in 3..9 {
+                for z in 3..9 {
+                    let column = |y: i32| Column {
+                        index: 0,
+                        x,
+                        z,
+                        ylo: y,
+                        yhi: y,
+                        y0: Some(y),
+                        vertical: false,
+                    };
+                    // The window `judge` builds round this column's two body
+                    // cells, against the whole world.
+                    let (lo, _) = column_reach(&column(1));
+                    let (_, hi) = column_reach(&column(2));
+                    let (wlo, whi) = window(lo, hi);
+                    let local_map: BlockMap = m
+                        .range(wlo..=whi)
+                        .filter(|(k, _)| (0..3).all(|i| wlo[i] <= k[i] && k[i] <= whi[i]))
+                        .map(|(k, v)| (*k, *v))
+                        .collect();
+                    let local = World::from_occupancy(
+                        crate::compiler::assembled::occupancy_over(&local_map, &open),
+                        Premises::geometry_only(),
+                    );
+                    for y in 1..3 {
+                        let c = column(y);
+                        let clear = column_clear(&whole, &c, y);
+                        let here = super::super::can_be(&whole, [x, y, z]);
+                        let over = super::super::can_be(&whole, [x, y + 1, z]);
+                        assert!(
+                            !here || clear,
+                            "can_be at {:?} and the column is taken",
+                            [x, y, z]
+                        );
+                        assert!(
+                            !clear || here || over,
+                            "a clear column at {:?} no body can be in",
+                            [x, y, z]
+                        );
+                        assert_eq!(
+                            column_clear(&local, &c, y),
+                            clear,
+                            "the window and the world judge the column at {:?} apart",
+                            [x, y, z]
+                        );
+                        for yy in [y, y + 1] {
+                            assert_eq!(
+                                super::super::can_be(&local, [x, yy, z]),
+                                super::super::can_be(&whole, [x, yy, z]),
+                                "the window and the world disagree at {:?}",
+                                [x, yy, z]
+                            );
+                        }
+                        judged += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            judged,
+            12 * 6 * 6 * 2,
+            "every generated body cell was judged"
+        );
+    }
+
+    /// Criterion 9: a piece way whose `stair` via is three wide, with one
+    /// solid cell in its foot approach, is refused in the piece's frame; the
+    /// cell declared `narrowed` is confirmed.
+    #[test]
+    fn a_piece_flight_narrowed_at_its_foot_is_refused_in_the_piece_frame() {
+        use delvewright_dsl::prefab::{
+            ContractEdge, ContractSpace, ContractVolume, EdgeNarrowing, Region, SpatialContract,
+        };
+        let region = |a: [i32; 3], b: [i32; 3]| Region { from: a, to: b };
+        // A piece at world [100, 64, 100]: a lower floor `room` (z 6..=9) and
+        // a `landing` four up (z 0..=1); the flight climbs z 5..=2, three wide.
+        let mut spaces = BTreeMap::new();
+        spaces.insert(
+            "room".to_string(),
+            ContractSpace {
+                envelope: "enclosed".to_string(),
+                boxes: vec![region([1, 1, 6], [5, 4, 9])],
+            },
+        );
+        spaces.insert(
+            "landing".to_string(),
+            ContractSpace {
+                envelope: "enclosed".to_string(),
+                boxes: vec![region([1, 5, 0], [5, 7, 1])],
+            },
+        );
+        let edge = |narrowed: Vec<EdgeNarrowing>| ContractEdge {
+            a: "room".to_string(),
+            b: "landing".to_string(),
+            class: "stair".to_string(),
+            rise: Some(4),
+            via: Some(ContractVolume {
+                region: "flight".to_string(),
+                boxes: vec![region([2, 1, 2], [4, 5, 5])],
+            }),
+            bar: None,
+            way: None,
+            narrowed,
+        };
+        let contract = |narrowed| SpatialContract {
+            entry: "room".to_string(),
+            spaces: spaces.clone(),
+            no_body: BTreeMap::new(),
+            edges: vec![edge(narrowed)],
+            faces: Vec::new(),
+            no_body_majority_ack: None,
+        };
+        let placement = crate::compiler::plan::PiecePlacement {
+            prefab_id: "prefab/test-flight".to_string(),
+            templates: Vec::new(),
+            pos: [100, 64, 100],
+            size: [7, 8, 10],
+            rotation: crate::compiler::solver::Rotation::None,
+            mated: Vec::new(),
+        };
+        // The bytes: a floor under everything, treads rising toward z 2, and
+        // one stone in the foot's approach row (z 6) at x 3.
+        let mut m = BlockMap::new();
+        for x in 100..=106 {
+            for z in 100..=109 {
+                m.insert([x, 64, z], BlockState::new(STONE));
+            }
+        }
+        for (k, z) in (102..=105).rev().enumerate() {
+            let h = i32::try_from(k).unwrap() + 1;
+            for x in 102..=104 {
+                for y in 65..65 + h {
+                    m.insert([x, y, z], BlockState::new(STONE));
+                }
+            }
+        }
+        for x in 102..=104 {
+            for z in 100..=101 {
+                for y in 65..=68 {
+                    m.insert([x, y, z], BlockState::new(STONE));
+                }
+            }
+        }
+        m.insert([103, 65, 106], BlockState::new(MASONRY));
+        let run = |narrowed: Vec<EdgeNarrowing>| {
+            let c = contract(narrowed);
+            let mut census = Census::default();
+            let mut out = Vec::new();
+            let mut refusals = Vec::new();
+            piece_ways_over(
+                &[(&placement, &c)],
+                false,
+                &BTreeSet::new(),
+                &mut census,
+                &mut out,
+                &mut refusals,
+            );
+            assert_eq!(census.edges, 1);
+            assert_eq!(out.len(), 1, "the flight is one piece way");
+            judge_over(out.remove(0), &m, &[], &[])
+        };
+        let rec = run(Vec::new());
+        let f = rec.undeclared.as_ref().expect("refused");
+        assert_eq!(f.code.id(), "DW1057");
+        assert!(
+            f.message.contains("the approach in `room`"),
+            "{}",
+            f.message
+        );
+        assert!(
+            f.message
+                .contains("[103, 65, 106] `minecraft:stone_bricks`"),
+            "{}",
+            f.message
+        );
+        assert!(
+            f.message.contains("\"cells\": [[3, 1, 6]]"),
+            "{}",
+            f.message
+        );
+
+        let rec = run(vec![EdgeNarrowing {
+            cells: vec![[3, 1, 6]],
+            block: MASONRY.to_string(),
+            what: "a newel at the flight's foot".to_string(),
+        }]);
+        assert!(rec.undeclared.is_none(), "{:?}", rec.undeclared);
+        assert!(rec.not_shown.is_empty(), "{:?}", rec.not_shown);
+        assert_eq!(rec.confirmed, 1);
+
+        // A flight a stair seam took as its run is judged under the seam, once.
+        let c = contract(Vec::new());
+        let mut census = Census::default();
+        let mut out = Vec::new();
+        let mut refusals = Vec::new();
+        let flights: BTreeSet<(String, usize)> = [("prefab/test-flight".to_string(), 0)]
+            .into_iter()
+            .collect();
+        piece_ways_over(
+            &[(&placement, &c)],
+            false,
+            &flights,
+            &mut census,
+            &mut out,
+            &mut refusals,
+        );
+        assert!(
+            out.is_empty(),
+            "the flight is the seam's, not a piece way of its own"
+        );
+        assert_eq!(
+            census.edges, 1,
+            "and it is still counted in the denominator"
+        );
+    }
+
+    /// Criteria 2 and 9: a stair seam whose host piece declares no flight
+    /// joining its face is counted undeclared and its host approach is still
+    /// judged; one whose piece's flight joins the face takes that flight as
+    /// its run, and names it so the piece way is judged once, under the seam.
+    #[test]
+    fn a_host_piece_with_no_flight_is_counted_and_one_with_a_flight_lends_it() {
+        use delvewright_dsl::prefab::{
+            ContractEdge, ContractSpace, ContractVolume, Region, SpatialContract,
+        };
+        use delvewright_dsl::siteplan::{Base, Face};
+        let node = |n: &str| delvewright_dsl::NodeId(n.to_string());
+        let hall = PlacedBox {
+            node: node("node/hall"),
+            foot: [0, 9, 0, 9],
+            floor: 64,
+            clearance: 8,
+            open: false,
+            base: Base::Ground,
+            roof: None,
+        };
+        let loft = PlacedBox {
+            node: node("node/loft"),
+            foot: [11, 18, 0, 9],
+            floor: 69,
+            clearance: 3,
+            open: false,
+            base: Base::Ground,
+            roof: None,
+        };
+        let seam = PlacedSeam {
+            edge: delvewright_dsl::ids::EdgeId("edge/hall-loft".to_string()),
+            class: "stair",
+            a: node("node/hall"),
+            b: node("node/loft"),
+            face: Face::East,
+            normal_axis: 0,
+            plane: 10,
+            opening: ([10, 69, 3], [10, 71, 5]),
+            shared: ([10, 64, 0], [10, 71, 9]),
+            crossing: Crossing::Portal,
+            rise: 5,
+            stair_in: Some(node("node/hall")),
+            form: "a stone stair up to the loft".to_string(),
+            shut: false,
+        };
+        let region = |a: [i32; 3], b: [i32; 3]| Region { from: a, to: b };
+        let space = |a: [i32; 3], b: [i32; 3]| ContractSpace {
+            envelope: "enclosed".to_string(),
+            boxes: vec![region(a, b)],
+        };
+        let edge = |a: &str, b: &str, class: &str, via: Region| ContractEdge {
+            a: a.to_string(),
+            b: b.to_string(),
+            class: class.to_string(),
+            rise: Some(0),
+            via: Some(ContractVolume {
+                region: format!("{a}-{b}"),
+                boxes: vec![via],
+            }),
+            bar: None,
+            way: None,
+            narrowed: Vec::new(),
+        };
+        let placement = crate::compiler::plan::PiecePlacement {
+            prefab_id: "prefab/test-hall".to_string(),
+            templates: Vec::new(),
+            pos: [0, 63, 0],
+            size: [10, 9, 10],
+            rotation: crate::compiler::solver::Rotation::None,
+            mated: Vec::new(),
+        };
+        let by_node: BTreeMap<&str, &PlacedBox> = [("node/hall", &hall), ("node/loft", &loft)]
+            .into_iter()
+            .collect();
+        let run = |contract: &SpatialContract| {
+            let pieces: BTreeMap<&str, BoundPiece<'_>> = [(
+                "node/hall",
+                BoundPiece {
+                    placement: &placement,
+                    contract,
+                },
+            )]
+            .into_iter()
+            .collect();
+            let input = SeamInput {
+                s: &seam,
+                boxes: &by_node,
+                laid: None,
+                pieces: &pieces,
+                decl: &[],
+                seam_index: 0,
+                own_gates: &[],
+            };
+            let mut census = Census::default();
+            let mut flights = BTreeSet::new();
+            let way = seam_way(&input, &mut census, &mut flights).expect("a way");
+            (way, census, flights)
+        };
+
+        // An exterior stair edge whose own `via` is the face: no run.
+        let mut spaces = BTreeMap::new();
+        spaces.insert("room".to_string(), space([0, 1, 0], [3, 8, 9]));
+        let faced = SpatialContract {
+            entry: "room".to_string(),
+            spaces: spaces.clone(),
+            no_body: BTreeMap::new(),
+            edges: vec![edge(
+                "room",
+                "exterior",
+                "stair",
+                region([9, 6, 3], [9, 8, 5]),
+            )],
+            faces: Vec::new(),
+            no_body_majority_ack: None,
+        };
+        let (way, census, flights) = run(&faced);
+        assert_eq!(way.run, Run::Undeclared);
+        assert_eq!(census.runs_undeclared, 1);
+        assert!(flights.is_empty());
+        assert!(
+            way.stations
+                .iter()
+                .any(|s| s.label == "the approach in `node/hall`" && s.columns.len() == 3),
+            "{:?}",
+            way.stations.iter().map(|s| &s.label).collect::<Vec<_>>()
+        );
+
+        // A landing at the face, and a flight from the room to it.
+        spaces.insert("landing".to_string(), space([9, 5, 3], [9, 8, 5]));
+        let flight = SpatialContract {
+            entry: "room".to_string(),
+            spaces,
+            no_body: BTreeMap::new(),
+            edges: vec![
+                edge("landing", "exterior", "walk", region([9, 6, 3], [9, 8, 5])),
+                edge("room", "landing", "stair", region([4, 1, 3], [8, 5, 5])),
+            ],
+            faces: Vec::new(),
+            no_body_majority_ack: None,
+        };
+        let (way, census, flights) = run(&flight);
+        assert_eq!(way.run, Run::Piece);
+        assert_eq!(census.runs_undeclared, 0);
+        assert_eq!(
+            flights,
+            [("prefab/test-hall".to_string(), 1)].into_iter().collect()
+        );
+        let labels: Vec<&str> = way.stations.iter().map(|s| s.label.as_str()).collect();
+        assert_eq!(labels.first(), Some(&"the head's approach in `node/loft`"));
+        assert!(labels.contains(&"course 0 of the run"), "{labels:?}");
+        assert_eq!(
+            labels.last(),
+            Some(&"the foot's approach in `room`"),
+            "{labels:?}"
+        );
+        assert!(way.label.contains("room--stair--landing"), "{}", way.label);
+    }
+
+    /// A `narrowed` on a contract edge that realizes a plan seam is refused by
+    /// the contract's own gate (`DW0888`): the seam's declaration is the one
+    /// authority, and the edge is no piece way of its own.
+    #[test]
+    fn a_narrowing_on_an_edge_that_realizes_a_seam_is_dw0888() {
+        use delvewright_dsl::prefab::{
+            ContractEdge, ContractSpace, ContractVolume, EdgeNarrowing, Region, SpatialContract,
+        };
+        let region = |a: [i32; 3], b: [i32; 3]| Region { from: a, to: b };
+        let mut spaces = BTreeMap::new();
+        spaces.insert(
+            "room".to_string(),
+            ContractSpace {
+                envelope: "enclosed".to_string(),
+                boxes: vec![region([1, 1, 1], [5, 3, 5])],
+            },
+        );
+        let contract = SpatialContract {
+            entry: "room".to_string(),
+            spaces,
+            no_body: BTreeMap::new(),
+            edges: vec![ContractEdge {
+                a: "room".to_string(),
+                b: "exterior".to_string(),
+                class: "walk".to_string(),
+                rise: None,
+                via: Some(ContractVolume {
+                    region: "door".to_string(),
+                    boxes: vec![region([0, 1, 3], [0, 2, 3])],
+                }),
+                bar: None,
+                way: None,
+                narrowed: vec![EdgeNarrowing {
+                    cells: vec![[0, 1, 3]],
+                    block: MASONRY.to_string(),
+                    what: "a jamb".to_string(),
+                }],
+            }],
+            faces: Vec::new(),
+            no_body_majority_ack: None,
+        };
+        let placement = crate::compiler::plan::PiecePlacement {
+            prefab_id: "prefab/test-room".to_string(),
+            templates: Vec::new(),
+            pos: [0, 64, 0],
+            size: [7, 5, 7],
+            rotation: crate::compiler::solver::Rotation::None,
+            mated: Vec::new(),
+        };
+        let mut census = Census::default();
+        let mut out = Vec::new();
+        let mut refusals = Vec::new();
+        piece_ways_over(
+            &[(&placement, &contract)],
+            true,
+            &BTreeSet::new(),
+            &mut census,
+            &mut out,
+            &mut refusals,
+        );
+        assert!(
+            out.is_empty(),
+            "an exterior edge of a site-plan piece answers a seam"
+        );
+        assert_eq!(refusals.len(), 1);
+        assert_eq!(refusals[0].code.id(), "DW0888");
+        assert!(
+            refusals[0].message.contains("realizes a plan seam"),
+            "{}",
+            refusals[0].message
+        );
+        // The same piece placed by `areas[]`: its door is a piece way of its own.
+        let mut refusals = Vec::new();
+        piece_ways_over(
+            &[(&placement, &contract)],
+            false,
+            &BTreeSet::new(),
+            &mut census,
+            &mut out,
+            &mut refusals,
+        );
+        assert!(refusals.is_empty());
+        assert_eq!(out.len(), 1);
+    }
+
+    #[test]
+    fn a_binding_with_nothing_states_its_zeros() {
+        let b = WidthBinding {
+            states: 1,
+            ..WidthBinding::default()
+        };
+        assert_eq!(
+            b.line(),
+            "clear width (DW1057/DW1058): 0 way(s) of 0 traversal seam(s), 0 box(es) and 0 \
+             contract edge(s) — 0 portal(s), 0 stair run(s), 0 contact(s), 0 way place(s), 0 \
+             piece way(s); 0 column(s) at 0 station(s) judged over 1 state(s); 0 way(s) whole, 0 \
+             narrowed undeclared, 0 narrowed as declared (0 column(s) excused by 0 \
+             declaration(s)), 0 declaration(s) not shown; 0 plane column(s) left to DW0836; 0 \
+             stair run(s) undeclared by their piece"
+        );
+        let j = b.to_json();
+        assert_eq!(j["ways"], 0);
+        assert_eq!(j["codes"], json!(["DW1057", "DW1058"]));
+    }
+
+    #[test]
+    fn the_codes_are_their_numbers() {
+        assert_eq!(DW_WAY_NARROWED.id(), "DW1057");
+        assert_eq!(DW_NARROWING_NOT_SHOWN.id(), "DW1058");
+    }
 }
