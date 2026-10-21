@@ -348,6 +348,60 @@ impl<'a> Order<'a> {
     }
 }
 
+impl Order<'_> {
+    /// **A removal of `body` that runs while the cutscene `cutscene` plays**,
+    /// by `ticks` driver ticks after its start (spec-0110 §5.6): its JSON
+    /// pointer, or `None`. A cutscene does not hold its effect list: the list
+    /// runs on at once, so a removal later in the same list runs at the
+    /// cutscene's first driver tick, and one in a later step of the same
+    /// `sequence` runs that step's `at_ticks` after the cutscene's step. Either
+    /// is a removal the shot shows happening (an empty mark), not one ordered
+    /// after it — the cutscene's own `then` is what runs when the camera
+    /// returns, and a removal there is nested inside the cutscene and never a
+    /// sibling of it. Only a removal that runs whenever its list does counts,
+    /// as for every other ordering question.
+    pub fn removed_while(&self, body: &str, cutscene: &QuestEffect, ticks: u32) -> Option<String> {
+        let lc = self.locs.get(&key(cutscene))?;
+        let mut found: Option<String> = None;
+        crate::effects::for_each_campaign_effect(self.campaign, &mut |path, _site, e| {
+            if found.is_some() || removal_of(e) != Some(body) {
+                return;
+            }
+            let Some(lr) = self.locs.get(&key(e)) else {
+                return;
+            };
+            if !lr.certain || lr.root_path != lc.root_path {
+                return;
+            }
+            if let Some(delta) = sibling_delay(&lc.chain, &lr.chain)
+                && delta <= ticks
+            {
+                found = Some(path.to_string());
+            }
+        });
+        found
+    }
+}
+
+/// When `b` is a later sibling of `a` in `a`'s own list (or a later step of
+/// the `sequence` `a` stands in): how many ticks after `a` it runs.
+fn sibling_delay(a: &[Link], b: &[Link]) -> Option<u32> {
+    if a.len() != b.len() || a.is_empty() {
+        return None;
+    }
+    let k = a.len() - 1;
+    if a[..k] != b[..k] {
+        return None;
+    }
+    let (la, lb) = (&a[k], &b[k]);
+    match (la.step, lb.step) {
+        (Some((ta, sa)), Some((tb, sb))) if sa != sb => {
+            (tb > ta || (tb == ta && sb > sa)).then(|| tb - ta)
+        }
+        _ => (lb.index > la.index).then_some(0),
+    }
+}
+
 /// The body an effect puts into the world: `spawn-npc`, `spawn-actor`, or
 /// `spawn-assembly`.
 pub fn placing_of(e: &QuestEffect) -> Option<&str> {

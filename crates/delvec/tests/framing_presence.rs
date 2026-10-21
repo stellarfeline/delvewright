@@ -84,6 +84,64 @@ fn a_despawn_between_is_dw1034_naming_both() {
     assert!(m.contains("placed by") && m.contains("removed by"), "{m}");
 }
 
+/// A cutscene does not hold its list: a despawn after it in the same list
+/// runs at its first driver tick, so the shot frames an empty mark.
+#[test]
+fn a_despawn_after_the_cutscene_in_its_own_list_is_dw1034() {
+    let q = arranged(|b, spawn, cs| {
+        b.push(spawn);
+        b.push(cs);
+        b.push(json!({"type": "despawn-assembly", "assembly": "assembly/limb"}));
+    });
+    let m = ff::refusal(&q, "DW1034");
+    assert!(
+        m.contains("removed by") && m.contains("while the shot plays"),
+        "{m}"
+    );
+    assert!(m.contains("`then`"), "{m}");
+}
+
+/// A later `sequence` step that runs before the shot ends removes the body
+/// on screen; one that runs after the cutscene has ended does not.
+#[test]
+fn a_despawn_in_a_step_while_the_cutscene_plays_is_dw1034_and_after_it_is_present() {
+    let during = arranged(|b, spawn, cs| {
+        b.push(spawn);
+        b.push(json!({"type": "sequence", "steps": [
+            {"at_ticks": 0, "effects": [cs]},
+            {"at_ticks": 20, "effects": [
+                {"type": "despawn-assembly", "assembly": "assembly/limb"}]}
+        ]}));
+    });
+    ff::refusal(&during, "DW1034");
+    let after = arranged(|b, spawn, cs| {
+        b.push(spawn);
+        b.push(json!({"type": "sequence", "steps": [
+            {"at_ticks": 0, "effects": [cs]},
+            {"at_ticks": 200, "effects": [
+                {"type": "despawn-assembly", "assembly": "assembly/limb"}]}
+        ]}));
+    });
+    ff::green(&after);
+}
+
+/// The remedy the refusal names is reachable: the despawn in the cutscene's
+/// own `then` runs when the camera returns, and the body is present.
+#[test]
+fn a_despawn_in_the_cutscenes_then_is_present() {
+    let q = arranged(|b, spawn, mut cs| {
+        cs["then"] = json!([{"type": "despawn-assembly", "assembly": "assembly/limb"}]);
+        b.push(spawn);
+        b.push(cs);
+    });
+    let out = ff::green(&q);
+    let p = ff::ledger(&out)["cutscenes"][0]["shots"][0]["subjects"][0]["presence"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(p.starts_with("placed by") && !p.contains("removed"), "{p}");
+}
+
 #[test]
 fn an_npc_placed_at_setup_is_present_with_no_beat() {
     let out = ff::green(&ff::quests_with_cutscene(ff::cutscene(vec![ff::shot(

@@ -2695,6 +2695,12 @@
               "subject": {
                 "assembly": "assembly/sentinel"
               },
+              "then": [
+                {
+                  "assembly": "assembly/sentinel",
+                  "type": "despawn-assembly"
+                }
+              ],
               "type": "cutscene",
               "when": {
                 "forbids_flags": [
@@ -3250,10 +3256,6 @@
                   "flag/hall-open"
                 ]
               }
-            },
-            {
-              "assembly": "assembly/sentinel",
-              "type": "despawn-assembly"
             },
             {
               "assembly": "assembly/arm",

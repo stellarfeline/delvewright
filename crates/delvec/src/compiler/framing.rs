@@ -877,6 +877,7 @@ pub fn judge(
                     eff,
                     &path,
                     si,
+                    u32::try_from(shot_offset + ex.ticks).unwrap_or(0),
                     &poses,
                     field,
                     subject,
@@ -913,6 +914,7 @@ fn judge_subject(
     eff: &delvewright_dsl::QuestEffect,
     path: &str,
     si: usize,
+    shot_end: u32,
     poses: &[([f64; 3], f64, f64)],
     field: &'static str,
     subject: &CameraSubject,
@@ -949,7 +951,22 @@ fn judge_subject(
         // §5.6: present at the shot's first tick.
         let body_id = subject.id();
         match order.presence(body_id, Beat::Effect(eff)) {
-            Presence::Present(p) => rec.presence = Some(format!("placed by {p}")),
+            Presence::Present(p) => match order.removed_while(body_id, eff, shot_end) {
+                None => rec.presence = Some(format!("placed by {p}")),
+                Some(r) => {
+                    rec.presence = Some(format!("placed by {p}, removed by {r} while it plays"));
+                    fail(
+                        DW_SUBJECT_ABSENT,
+                        format!(
+                            "cutscene {path}: shot {si} frames `{body_id}`, placed by {p} but \
+                             removed by {r}, which follows the cutscene in its own effect list \
+                             and so runs while the shot plays (a cutscene does not hold the list \
+                             it stands in) — the shot shows an empty mark. Move the removal \
+                             into the cutscene's `then`, which runs when the camera returns"
+                        ),
+                    );
+                }
+            },
             Presence::NeverPlaced(found) => {
                 rec.presence = Some("never placed before the cutscene".to_string());
                 let placing = match subject {
@@ -983,8 +1000,8 @@ fn judge_subject(
                     format!(
                         "cutscene {path}: shot {si} frames `{body_id}`, placed by {p} but removed \
                          by {r}, which is ordered between that placing and the cutscene — the \
-                         shot shows an empty mark. Order the removal after the cutscene, or place \
-                         the body again before it"
+                         shot shows an empty mark. Move the removal into the cutscene's `then`, \
+                         which runs when the camera returns, or place the body again before it"
                     ),
                 );
             }
