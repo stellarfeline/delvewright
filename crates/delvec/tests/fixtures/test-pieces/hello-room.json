@@ -1,18 +1,7 @@
 {
-  "prefab_id": "prefab/hello-room",
-  "structure": {
-    "file": "hello-room.nbt",
-    "id": "hello-room",
-    "size": [
-      11,
-      6,
-      11
-    ],
-    "data_version": 4671,
-    "generator": "cargo run -p delvewright-compiler --example gen_hello_room"
-  },
   "anchors": {
     "anchor/door": {
+      "block": "minecraft:iron_bars",
       "region": {
         "from": [
           4,
@@ -24,8 +13,7 @@
           3,
           6
         ]
-      },
-      "block": "minecraft:iron_bars"
+      }
     },
     "anchor/exit": {
       "pos": [
@@ -35,34 +23,46 @@
       ]
     },
     "anchor/keeper-stand": {
+      "facing": "north",
       "pos": [
         5,
         1,
         4
-      ],
-      "facing": "north"
+      ]
     },
     "spawn": {
+      "facing": "south",
       "pos": [
         5,
         1,
         2
       ],
-      "facing": "south",
       "role": "entry"
     }
   },
   "connectors": [],
-  "lighting": {
-    "profile": "lit",
-    "measured_min_light": 8,
-    "measured": "2026-07-30"
-  },
   "license": {
-    "source": "original",
-    "spdx": "GPL-3.0-or-later",
     "note": "Original Delvewright project asset (pipeline-code license per prefabs/LICENSE-ASSETS.md). No third-party material ingested.",
-    "provenance": "Generated deterministically by crates/compiler/examples/gen_hello_room.rs (ADR-0006); regenerating yields byte-identical NBT."
+    "provenance": "Generated deterministically by crates/compiler/examples/gen_hello_room.rs (ADR-0006); regenerating yields byte-identical NBT.",
+    "source": "original",
+    "spdx": "GPL-3.0-or-later"
+  },
+  "lighting": {
+    "measured": "2026-07-30",
+    "measured_min_light": 8,
+    "profile": "lit"
+  },
+  "prefab_id": "prefab/hello-room",
+  "structure": {
+    "data_version": 4671,
+    "file": "hello-room.nbt",
+    "generator": "cargo run -p delvewright-compiler --example gen_hello_room",
+    "id": "hello-room",
+    "size": [
+      11,
+      6,
+      11
+    ]
   },
   "walk_y": 1
 }
