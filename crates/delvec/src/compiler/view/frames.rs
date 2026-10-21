@@ -505,23 +505,26 @@ mod tests {
 
     #[test]
     fn a_rain_sky_draws_no_sun_and_a_midnight_sky_is_dark() {
-        let rain = quick_sky(FrameSky {
-            daytime_ticks: 6000,
-            weather: WorldWeather::Rain,
-        },
+        let rain = quick_sky(
+            FrameSky {
+                daytime_ticks: 6000,
+                weather: WorldWeather::Rain,
+            },
             [0.0, 0.0, 1.0],
         );
         assert!(rain.sun_dir.y < 0.0);
-        let noon = quick_sky(FrameSky {
-            daytime_ticks: 6000,
-            weather: WorldWeather::Clear,
-        },
+        let noon = quick_sky(
+            FrameSky {
+                daytime_ticks: 6000,
+                weather: WorldWeather::Clear,
+            },
             [0.0, 0.0, 1.0],
         );
-        let night = quick_sky(FrameSky {
-            daytime_ticks: 18000,
-            weather: WorldWeather::Clear,
-        },
+        let night = quick_sky(
+            FrameSky {
+                daytime_ticks: 18000,
+                weather: WorldWeather::Clear,
+            },
             [0.0, 0.0, 1.0],
         );
         assert!(night.sky_factor < noon.sky_factor);
@@ -545,12 +548,18 @@ mod tests {
     #[test]
     fn the_clear_colour_is_leaned_as_the_client_leans_it() {
         let lean = scene::clear_lean(scene::CLIENT_RENDER_DISTANCE);
-        assert!((lean - (1.0 - 0.53125f32.powf(0.25))).abs() < 1e-6, "{lean}");
+        assert!(
+            (lean - (1.0 - 0.53125f32.powf(0.25))).abs() < 1e-6,
+            "{lean}"
+        );
         assert!((lean - 0.146).abs() < 5e-4, "{lean}");
         assert!((lean - (1.0 - 0.375f32.powf(0.25))).abs() > 0.05, "{lean}");
         // Past 32 chunks the lean is gone; under 8 chunks it holds at the floor.
         assert!(scene::clear_lean(40.0).abs() < 1e-6);
-        assert_eq!(scene::clear_lean(2.0), 1.0 - (0.25f32 + 0.75 * 2.0 / 32.0).powf(0.25));
+        assert_eq!(
+            scene::clear_lean(2.0),
+            1.0 - (0.25f32 + 0.75 * 2.0 / 32.0).powf(0.25)
+        );
 
         // At noon, clear: the fog colour leaned toward the sky colour, per
         // 8-bit channel by `Mth.lerpInt`, whichever way the camera looks.
@@ -577,7 +586,11 @@ mod tests {
         // sunrise colour in its clear colour, one looking east does not.
         let t = 12000;
         let at = scene::sky_attributes(t, WorldWeather::Clear);
-        assert!(at.sunrise[0] > 0, "a sunset glow at tick {t}: {:?}", at.sunrise);
+        assert!(
+            at.sunrise[0] > 0,
+            "a sunset glow at tick {t}: {:?}",
+            at.sunrise
+        );
         let west = scene::clear_color(t, WorldWeather::Clear, [-1.0, 0.0, 0.0]);
         let east = scene::clear_color(t, WorldWeather::Clear, [1.0, 0.0, 0.0]);
         assert_ne!(west, east);
