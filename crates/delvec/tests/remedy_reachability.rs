@@ -5420,14 +5420,16 @@ fn dw1058_removing_the_stale_entry_or_putting_the_structure_back_is_green() {
 // The pair: a shut way's word (spec-0118) and its whole way (spec-0120)
 // ---------------------------------------------------------------------------
 
-/// **A shut way that opens leaves its whole way clear**, judged over the same
-/// gate states the shut-way check reads. The blockout fixture's cell door is
-/// story-shut and declared `seen`. With the loft stair's run walking the
-/// hall's middle row (its arch at 13) one build confirms the word and finds
-/// the door's way whole in both of its states, as built and once its own
-/// gate opens; with the run moved onto the door's approach (at 14) the width
-/// check refuses the door in the open state too, before any shut-way word is
-/// read: opening the bar does not open the way.
+/// **A shut way that opens leaves its whole way clear**, on one build that
+/// also confirms its word. The blockout fixture's cell door is story-shut and
+/// declared `seen`. Its own gate stands in its plane and nowhere else, so its
+/// approaches stand once it opens exactly as they stand built: the width
+/// check judges them in every state that reaches them and the plane is left
+/// to `DW0836`, whose every-allocated-cell-is-passable claim holds the bar as
+/// the door's own gate. With the loft stair's run walking the hall's middle
+/// row (its arch at 13) the word is confirmed and the door's way is whole;
+/// with the run laid onto the door's approach (at 14) the width check refuses
+/// the door before any word is read: opening the bar does not open the way.
 #[test]
 fn a_shut_way_that_opens_leaves_its_whole_way_clear() {
     let prefabs = tmp("pair-shut-whole-prefabs");
@@ -5450,17 +5452,25 @@ fn a_shut_way_that_opens_leaves_its_whole_way_clear() {
         .find(|r| r["way"] == "edge/hall-cell")
         .unwrap_or_else(|| panic!("the cell door's way is judged: {ledger}"));
     assert_eq!(door["verdict"], "whole", "{door}");
-    let states: Vec<&str> = door["stations"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .flat_map(|s| s["states"].as_array().unwrap().iter())
-        .filter_map(|s| s.as_str())
-        .collect();
+    let stations = door["stations"].as_array().unwrap();
     assert!(
-        states.iter().any(|s| s.contains("anchor/seam-hall-cell")),
-        "the door is judged once its own gate opens: {states:?}"
+        stations
+            .iter()
+            .any(|s| s["station"] == "the opening" && s["verdict"] == "left to DW0836"),
+        "the door's plane is DW0836's: {door}"
     );
+    let approaches: Vec<&serde_json::Value> = stations
+        .iter()
+        .filter(|s| s["station"] != "the opening")
+        .collect();
+    assert_eq!(approaches.len(), 2, "both approaches are judged: {door}");
+    for st in approaches {
+        let columns = st["columns"].as_u64().unwrap();
+        assert_eq!(columns, 2, "{st}");
+        for clear in st["clear"].as_array().unwrap() {
+            assert_eq!(clear.as_u64(), Some(columns), "{st}");
+        }
+    }
 
     let camp = narrowed_by_the_run("pair-shut-whole-red", 14, serde_json::Value::Null);
     let (code, text) = build("pair-shut-whole-red", &camp, &prefabs);
@@ -5468,7 +5478,11 @@ fn a_shut_way_that_opens_leaves_its_whole_way_clear() {
     assert!(
         text.contains("DW1057 [error]")
             && text.contains("edge/hall-cell")
-            && text.contains("once `anchor/seam-hall-cell` opens: 1 of 2"),
+            && text.contains("1 of 2"),
         "{text}"
+    );
+    assert!(
+        !text.contains("DW1053 [error]") && !text.contains("DW1054 [error]"),
+        "the width check refuses first: {text}"
     );
 }
