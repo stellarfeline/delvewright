@@ -3733,7 +3733,7 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   second method in `the_two_published_sun_angle_formulas_agree`, within 0.056°).
   Under rain or thunder the sun is placed below the horizon, where the client
   draws none. `crates/delvec/tests/review_frame_sky.rs` measures the same camera
-  at noon and midnight (mean luma 188.04 against 6.31 on the CPU backend) and
+  at noon and midnight (mean luma 187.64 against 6.11 on the CPU backend) and
   holds that the engine calls none of the renderer's own sky. In hq mode the sky
   is Lumenwright's (`render::sky::hq_sky`, the Preetham sky Chunky traces and
   its fall through twilight, with a white sun at Chunky's default intensity,
