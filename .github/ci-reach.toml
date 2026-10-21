@@ -44,7 +44,6 @@ inputs = [
   { glob = "Cargo.toml", why = "the root workspace manifest and `[workspace.package]` version" },
   { glob = "**/Cargo.toml", why = "`tools/ci/fmt-workspaces.sh --check` derives every workspace from `git ls-files`" },
   { glob = "**/*.rs", why = "`tools/ci/fmt-workspaces.sh --check` formats every workspace's sources" },
-  { glob = "prefabs/**", why = "the prefab workspace, which `fmt-workspaces.sh` formats as one of the tree's workspaces" },
   { glob = "gallery/**", why = "crate tests read the gallery (`detail.rs`, `remedy_reachability.rs`, `site_plan_edit_script.rs`, `prefab_*` tests)" },
   { glob = "tools/ci/fmt-workspaces.sh", why = "the formatting sweep this job runs" },
   { glob = "tools/ci/check-json-canonical.py", why = "the JSON sweep this job runs" },
@@ -53,7 +52,7 @@ inputs = [
   { glob = "tools/ci/gallery_domain.py", why = "`determinism-subject.sh --subject gallery` materialises the gallery primary with it, and `gallery-prefabs.py` imports it" },
   { glob = "tools/lib/delvec_bin.py", why = "`gallery-prefabs.py`, which the gallery determinism subject runs, resolves its `delvec` through it" },
   { glob = "tools/ci/tree-digest.py", why = "`determinism-subject.sh` runs it to write the digest" },
-  { glob = "tools/ci/test-library.sh", why = "`crates/delvec/tests/common/pinned.rs` runs it to lay the engine's test pools over the pinned library" },
+  { glob = "tools/ci/test-library.sh", why = "`crates/delvec/tests/common/pinned.rs` runs it to lay the engine's test pools and test pieces over the pinned library" },
   { glob = "tools/creator/refscore.py", why = "`crates/delvec/tests/view_sheet.rs` runs it" },
   { glob = "tools/creator/skin/tests/fixtures/**", why = "`crates/delvec/tests/skin_parts.rs` judges every committed skin golden against the model its cast sheet names" },
   { glob = "tools/ci/check-dw-codes.py", why = "`crates/delvec/tests/codes.rs` runs it against the built binary's `delvec codes`" },
@@ -92,17 +91,6 @@ inputs = [
 ]
 
 [[group]]
-name = "prefab-generators"
-inputs = [
-  { glob = "prefabs/**", why = "the generator workspace: clippy, tests, and every generator run twice" },
-  { glob = "gallery/prefab-generator/**", why = "the gallery's generator, a member of the `prefabs/` workspace: clippy, tests, and its double run" },
-  { glob = "crates/dsl/**", why = "`prefabs/Cargo.toml` depends on `delvewright-dsl` by path" },
-  { glob = "crates/delvec/data/**", why = "`prefabs/invariants/src/connections.rs` includes `block-classification-1.21.11.json`" },
-  { glob = "Cargo.toml", why = "the root manifest a path dependency inherits workspace keys from" },
-  { glob = "tools/ci/check-generator-preservation.py", why = "the script this job runs" },
-]
-
-[[group]]
 name = "harness"
 inputs = [
   { glob = "harness/**", why = "`npm ci`, `tsc --noEmit` and `node --test` inside `harness/`" },
@@ -119,7 +107,7 @@ inputs = [
 [[group]]
 name = "tool-tests-tree"
 inputs = [
-  { glob = "**", why = "the files `tools/tests/conftest.py` lists in `WHOLE_TREE` read the whole tracked tree: `git ls-files` sweeps (`test_check_ci_reach.py`, `test_check_eol_attributes.py`, `test_check_release_publish_gate.py`, `test_server_heap.py`, `test_version_sites.py`, `test_check_pins.py`, `test_check_shell_bash32.py`, the shell-newline and redirect sweeps, `test_gallery_baseline_tracked.py` — only `warnings.json` is tracked under `gallery/baseline/`), every tracked `*.md` (`test_mdtable.py`, `test_check_doc_dupes.py`), every tracked JSON (`test_check_json_canonical.py`), the plugin under `.claude/` and every engine path the page names (`test_check_skill_page.py`, `test_check_toolchain.py`, `test_fetch_delvec.py`, `test_release_tags.py`), and documents outside the compiler reference (`test_check_stated_counts.py`, `test_check_demo_levels.py`, `test_check_numbered_doc_index.py`)" },
+  { glob = "**", why = "the files `tools/tests/conftest.py` lists in `WHOLE_TREE` read the whole tracked tree: `git ls-files` sweeps (`test_check_ci_reach.py`, `test_check_eol_attributes.py`, `test_check_release_publish_gate.py`, `test_server_heap.py`, `test_version_sites.py`, `test_check_pins.py`, `test_check_shell_bash32.py`, the shell-newline and redirect sweeps, `test_gallery_baseline_tracked.py` — only `warnings.json` is tracked under `gallery/baseline/` —, and `test_check_generator_preservation.py` and `test_staging_gate.py`, whose tools discover every generator workspace over the tracked manifests), every tracked `*.md` (`test_mdtable.py`, `test_check_doc_dupes.py`), every tracked JSON (`test_check_json_canonical.py`), the plugin under `.claude/` and every engine path the page names (`test_check_skill_page.py`, `test_check_toolchain.py`, `test_fetch_delvec.py`, `test_release_tags.py`), and documents outside the compiler reference (`test_check_stated_counts.py`, `test_check_demo_levels.py`, `test_check_numbered_doc_index.py`)" },
 ]
 
 [[group]]
@@ -128,7 +116,6 @@ inputs = [
   { glob = "tools/**", why = "every file this job runs tests a tool under `tools/`, with its fixtures under `tools/tests/`" },
   { glob = "crates/**", why = "`test_check_dw_codes.py` and `test_check_source_dupes.py` scan the crate sources; `test_staging_gate.py`'s `Engine` reads every DW declaration and test; `test_block_appearance.py` reads crate data; `test_far_field.py` reads the far-field threshold in `compiler/loop.rs`; the publish-gate tests copy the crate manifests the version-site rows name" },
   { glob = "Cargo.toml", why = "the publish-gate tests copy the root manifest into their scratch tree" },
-  { glob = "prefabs/**", why = "`test_check_generator_preservation.py`; `test_check_source_dupes.py`; `test_staging_gate.py` reads generator invariants as carriers" },
   { glob = "gallery/**", why = "the gallery tests (`test_gallery_coverage.py`, `test_gallery_domain.py`, `test_gallery_not_shippable.py`, `test_check_gallery_stageable.py`) read the gallery campaign" },
   { glob = "harness/**", why = "`test_check_source_dupes.py` scans the harness; `test_staging_gate.py` reads harness carriers; `test_block_state_parse.py` reads the shared block-state fixture under `harness/test/fixtures/`" },
   { glob = "validation/**", why = "`test_reclaim_ladder_images.py`, `test_render_shots_*.py`, `test_delvec_bin_sh.py`, `test_mutex_lock_dir_default.py` and `test_staging_gate.py` run or read scripts under `validation/`" },
@@ -145,6 +132,7 @@ name = "mecha-crosscheck"
 inputs = [
   { glob = "crates/**", why = "the run's `delvec` (built by `delvec-binary`, which also reads this group) builds `crates/dsl/fixtures/valid/hello-world`, then mecha validates the emitted mcfunction" },
   { glob = "Cargo.toml", why = "the workspace manifest `delvec-binary`'s build resolves" },
+  { glob = "tools/ci/test-library.sh", why = "assembles the test library hello-world builds from (it binds the engine test piece `prefab/hello-room`)" },
 ]
 
 [[group]]
@@ -189,8 +177,7 @@ name = "gallery-pieces"
 inputs = [
   { glob = "crates/**", why = "`delvec-binary` (which also reads this group) builds `delvec`, which `gallery-prefabs.py` runs for `delvec detail` and `delvec sculpt`" },
   { glob = "Cargo.toml", why = "the workspace manifest `delvec-binary`'s build resolves" },
-  { glob = "prefabs/**", why = "the `prefabs/` workspace (its lockfile and `prefab-invariants`) builds `gallery/prefab-generator`, which generates the gallery's piece and skins" },
-  { glob = "gallery/**", why = "the site-plan overlay's programs and detail plan, the forms and form probes, and the design records the generator reads" },
+  { glob = "gallery/**", why = "`gallery/prefab-generator` (its own workspace: clippy, unit tests, and the run that generates the gallery's piece and skins), the site-plan overlay's programs and detail plan, the forms and form probes, and the design records the generator reads" },
   { glob = "tools/**", why = "`gallery-prefabs.py`, `gallery-pieces.py`, `gallery_domain.py`, `tools/lib/*` (`delvec_bin.py`), and `determinism-subject.sh` with `tree-digest.py` for the Linux gallery digest" },
 ]
 
@@ -199,7 +186,6 @@ name = "gallery-coverage"
 inputs = [
   { glob = "crates/**", why = "`delvec-binary` (which also reads this group) builds `delvec`, which analyzes and builds the gallery and which the coverage gate runs" },
   { glob = "Cargo.toml", why = "the workspace manifest `delvec-binary`'s build resolves" },
-  { glob = "prefabs/**", why = "the `prefabs/` workspace (its lockfile and `prefab-invariants`) builds `gallery/prefab-generator`, which generates the gallery's piece and skins this job takes from `gallery-pieces`" },
   { glob = "gallery/**", why = "the gallery campaign and its probes, whose every declared surface the coverage gate binds" },
   { glob = "tools/**", why = "`check-gallery-coverage.py`, `gallery_units.py`, `gallery_domain.py` and `tools/lib/*` (`delvec_bin.py`)" },
 ]
@@ -209,7 +195,6 @@ name = "gallery-views"
 inputs = [
   { glob = "crates/**", why = "`delvec-binary` (which also reads this group) builds `delvec`, which builds the gallery and which the render, seating, whole-map and camera gates run" },
   { glob = "Cargo.toml", why = "the workspace manifest `delvec-binary`'s build resolves" },
-  { glob = "prefabs/**", why = "the `prefabs/` workspace (its lockfile and `prefab-invariants`) builds `gallery/prefab-generator`, which generates the gallery's piece and skins this job takes from `gallery-pieces`" },
   { glob = "gallery/**", why = "the gallery campaign, its render plan, overlays and camera record" },
   { glob = "tools/**", why = "`check-gallery-render.py`, `check-seating-agrees.py`, `check-whole-map-render.py`, `check-gallery-post-beat.py`, `gallery_domain.py` and `tools/lib/*`" },
 ]
@@ -219,7 +204,6 @@ name = "gallery-baseline"
 inputs = [
   { glob = "crates/**", why = "`delvec-binary` (which also reads this group) builds `delvec`, which the baseline, the rebuild and the stageable gate run" },
   { glob = "Cargo.toml", why = "the workspace manifest `delvec-binary`'s build resolves" },
-  { glob = "prefabs/**", why = "the `prefabs/` workspace (its lockfile and `prefab-invariants`) builds `gallery/prefab-generator`, which generates the gallery's piece and skins this job takes from `gallery-pieces`" },
   { glob = "gallery/**", why = "the gallery campaign, its overlays and its committed expected-warnings ledger" },
   { glob = "tools/**", why = "the gallery gates (`gallery-baseline.py` — which also runs the comparison tree's `gallery-prefabs.py`, `gallery_domain.py` and `gallery_units.py` —, `gallery-build.py`, `check-gallery-stageable.py`, `gallery_domain.py`, `gallery_units.py`, `staging-gate.py`, `check-dw-codes.py`, `tools/lib/*`) and the carrier scripts `staging-gate.py` resolves under `tools/`" },
   { glob = "harness/**", why = "`staging-gate.py` reads harness carriers" },
@@ -236,7 +220,6 @@ name = "tier2-validation"
 inputs = [
   { glob = "crates/**", why = "`delvec-binary` (which also reads this group) builds `delvec`; the fixtures under `crates/` are what every PackTest pass boots" },
   { glob = "Cargo.toml", why = "the workspace manifest `delvec-binary`'s build resolves" },
-  { glob = "prefabs/**", why = "the `prefabs/` workspace (its lockfile and `prefab-invariants`) builds `gallery/prefab-generator`, which generates the gallery pass's piece" },
   { glob = "gallery/**", why = "the gallery PackTest pass builds the gallery" },
   { glob = "validation/**", why = "`server-bootstrap-cache.sh`, `Dockerfile.delve`, `compose.yaml`, `packtest-run.sh`, `packtest-matrix.py`, the world-settings entrypoint" },
   { glob = "harness/**", why = "`validation/compose.yaml` builds its bot service from `../harness`" },
@@ -244,7 +227,7 @@ inputs = [
   { glob = "tools/ci/check-written-world.py", why = "the gallery's written-world cross-check (`DW0955`) runs after its world save" },
   { glob = "tools/lib/anvil.py", why = "`check-written-world.py` reads both worlds through it" },
   { glob = "tools/lib/rcon.sh", why = "`validation/world-save.sh` polls the placement sentinel through it" },
-  { glob = "tools/ci/test-library.sh", why = "assembles the test library the keep-trial, souls-bonfire and souls-td-lanes passes build from" },
+  { glob = "tools/ci/test-library.sh", why = "assembles the test library every engine-fixture pass builds from (test pools and the test piece `prefab/hello-room`)" },
 ]
 
 [[group]]
@@ -252,7 +235,6 @@ name = "gallery-bot"
 inputs = [
   { glob = "crates/**", why = "builds `delvec`, which builds the gallery the bot walks and writes the critical path it reads" },
   { glob = "Cargo.toml", why = "the workspace manifest the build resolves" },
-  { glob = "prefabs/**", why = "the `prefabs/` workspace (its lockfile and `prefab-invariants`) builds `gallery/prefab-generator`, which generates the gallery's piece and skins" },
   { glob = "gallery/**", why = "the gallery campaign the bot walks" },
   { glob = "tools/**", why = "`gallery-prefabs.py`, `gallery-build.py`, `gallery_domain.py`, `tools/lib/*` (`delvec_bin.py`, `server-heap.sh`), and `check-written-world.py` with `tools/lib/anvil.py` for the site-plan point's written-world cross-check (`DW0955`)" },
   { glob = "harness/**", why = "`validation/compose.yaml` builds its bot service from `../harness`" },

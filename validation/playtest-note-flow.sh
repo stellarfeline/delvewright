@@ -45,9 +45,16 @@ NOTE_TEXT="这个房间太暗了"   # multilingual (Chinese) fixture note
 cleanup() { validation/fresh-volumes.sh --project "$PROJECT" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
+# The fixture binds `prefab/hello-room`, an engine test piece: it builds from the
+# test library — the content library with the engine's test data laid over it by
+# the one assembler the Rust tests and CI run.
+TEST_LIBRARY="validation/test-library-$PROJECT"
+rm -rf "$TEST_LIBRARY"
+bash tools/ci/test-library.sh campaigns/prefabs "$TEST_LIBRARY"
+
 echo "==> building the delve output (datapack + creator overlay)"
 cargo run -q -p delvec --bin delvec -- \
-  build "$CAMPAIGN" -o "$OUT" --prefabs campaigns/prefabs
+  build "$CAMPAIGN" -o "$OUT" --prefabs "$TEST_LIBRARY"
 
 echo "==> starting the playtest server (delve image + mounted creator overlay)"
 $COMPOSE up -d --build

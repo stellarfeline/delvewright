@@ -82,7 +82,6 @@ campaign 分阶段编写，每个阶段都是一份经过 schema 检查、以前
 | [`crates/`](crates) | Rust 工作区：`dsl`，campaign 格式；以及 `delvec`，面向创作者的每项能力都是这一个二进制的子命令 |
 | [`.claude/skills/delvewright/`](.claude/skills/delvewright) | Claude Code 插件及其 `/new-delve` 页面 |
 | [`gallery/`](gallery) | 引擎自己的 campaign |
-| [`prefabs/`](prefabs) | tileset 生成器；`.nbt` piece 库在[内容仓库](https://github.com/stellarfeline/delvewright-campaigns)里 |
 | [`harness/`](harness) | mineflayer 机器人 |
 | [`packtest/`](packtest) | PackTest 模板 |
 | [`validation/`](validation) | 本地检查、CI 和发布共用的 Docker Compose 环境 |

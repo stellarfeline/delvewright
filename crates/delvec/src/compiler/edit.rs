@@ -1490,7 +1490,7 @@ fn is_dressing_candidate(assembled: &Assembled, c: [i32; 3]) -> bool {
 
 /// The `scatter` verb (spec-0017): seeded dressing over a region's
 /// standable cells, honoring keep-clear envelopes. Ported from the greenfield
-/// meadow's flower/dressing pass (`prefabs/island-terrain-generator`): raw
+/// meadow's flower/dressing pass (the island terrain generator): raw
 /// white-noise gates (dressing wants speckle, not the fill verbs' clustered
 /// patches), weighted item pick per cell, optional both-axes spacing rule and
 /// count cap taken in descending noise order — the generators' spread idiom.
@@ -1575,7 +1575,7 @@ fn scatter(
 
 // ---------------------------------------------------------------------------
 // The lean-or-grow canopy rules, ported from
-// `prefabs/island-terrain-generator` — spec-0017's `plant` verb. The corridor
+// the island terrain generator — spec-0017's `plant` verb. The corridor
 // rule is STRUCTURAL, never a cut: a canopy that would reach a keep-clear
 // column first leans one block away; failing that the tree grows tall enough
 // to arch its whole canopy over the corridor. No leaf is ever sliced.
@@ -2164,7 +2164,8 @@ fn coalesce_commands(writes: &BTreeMap<[i32; 3], String>) -> Vec<String> {
 
 // ---------------------------------------------------------------------------
 // The seeded palette primitive family (ported from the island/cave prefab
-// generators — `prefabs/cave-generator`, `prefabs/island-terrain-generator` —
+// generators — the cave and island terrain generators, kept in the content
+// repository as `prefabs/generators/` provenance records —
 // the repo's proven "palette recipe + value noise" idiom: a smooth noise field
 // keys a cumulative-weight palette, so picks cluster into strata/patches
 // instead of per-cell speckle).

@@ -6,7 +6,7 @@
 //!
 //! 1. Builds a **light-voxel field** over the assembled world (per-cell opacity +
 //!    a block-light emitter table; 1.21.11 values), reusing the same static
-//!    flood-estimate family as `prefabs/cave-generator` (internal code — no
+//!    flood-estimate family as the cave generator (internal code — no
 //!    attribution ledger entry). Block light floods from every emitter, −1 per
 //!    step through light-passing cells; sky light is seeded geometrically at
 //!    sky-open cells under the **darkest reachable (time, weather)** attenuation

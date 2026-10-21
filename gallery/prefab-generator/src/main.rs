@@ -34,9 +34,9 @@ use std::path::Path;
 use flate2::{Compression, GzBuilder};
 use serde::Serialize;
 
-/// The cross-tileset invariants and the connection derivation, shared as a
-/// crate so the rule is compiled once and its own tests run with the
-/// generators' (`prefabs/invariants`).
+/// The rules this generator obeys before it writes bytes, and the connection
+/// derivation (`src/prefab_invariants/`).
+mod prefab_invariants;
 use prefab_invariants::{connections, document, invariants, walkplane, waterline};
 
 /// **The ferry cabin** (spec-0083): a sealed room in the far hall's west corner
