@@ -1515,9 +1515,12 @@ mod health_bar {
     fn a_bar_on_an_unleashed_actor_narrows_to_the_twin_and_captures_everywhere() {
         let out = build(&campaign(None, Some(json!({"range": 16})), true, false));
         let refresh = func(&out, "hb_actor_barrow_warden");
+        // The warden declares `answers` (spec-0119), so its puppet wears an
+        // answer box beside it: the bar excludes the box as it excludes the
+        // puppet, and reads the twin alone.
         assert!(
             refresh.contains(
-                "tag=dw_actor_barrow_warden,tag=!dw_pup_barrow_warden,nbt=!{Health:0.0f}"
+                "tag=dw_actor_barrow_warden,tag=!dw_pup_barrow_warden,tag=!dw_abody_barrow_warden,nbt=!{Health:0.0f}"
             ),
             "{refresh}"
         );

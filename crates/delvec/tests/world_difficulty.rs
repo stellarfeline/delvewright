@@ -286,7 +286,8 @@ fn still_actor_quests(entity: &str) -> String {
       }}
     ],
     "actors": [
-      {{ "id": "actor/the-dry-one", "entity": "{entity}", "anchor": "spawn" }}
+      {{ "id": "actor/the-dry-one", "entity": "{entity}", "anchor": "spawn",
+         "answers": {{ "struck": "Dry as dust. It does not stir.", "touched": "Sand runs from its sleeve." }} }}
     ]
   }}
 }}"#
