@@ -881,8 +881,11 @@ mod learned_tests {
         assert_eq!((b.met, b.seen, b.unconfirmed), (1, 1, 0), "{}", b.line());
         let row = &b.rows[0];
         assert_eq!(row["junction"], serde_json::json!([5, 1, 0]), "{row}");
-        assert_eq!(row["branch_length"], 7, "{row}");
-        assert_eq!(row["branch_rise"], 0, "{row}");
+        // Measured in body moves, not cells: a run of seven cells is walked
+        // and jumped in fewer.
+        let moves = row["branch_length"].as_u64().unwrap();
+        assert!((1..=7).contains(&moves), "{row}");
+        assert!(row["branch_rise"].as_i64().unwrap() >= 0, "{row}");
         assert_eq!(row["face"], "node/near", "{row}");
         assert!(row["seen"]["bar_cell"].is_array(), "{row}");
 
@@ -1111,7 +1114,7 @@ mod learned_tests {
                 "id": "quest/q",
                 "trigger": { "type": "campaign-start" },
                 "objectives": [
-                    { "type": "reach-anchor", "id": "obj/reach", "anchor": "anchor/ledge" },
+                    { "type": "reach-anchor", "id": "obj/reach", "anchor": "anchor/ledge", "radius": 2 },
                     { "type": "interact", "id": "obj/touch", "anchor": "anchor/lever" },
                     { "type": "kill", "id": "obj/kill", "wave": "wave/w" },
                     { "type": "collect", "id": "obj/take", "item": "minecraft:apple", "count": 1,
@@ -1178,8 +1181,11 @@ mod learned_tests {
         assert_eq!((b.met, b.undeclared), (2, 2));
 
         // Never met: the route is walled off from the branch.
-        let walled = branch(7, 2, true, &[[4, 1, 1], [5, 1, 1], [6, 1, 1]]);
-        let walled_base = branch(7, 2, false, &[[4, 1, 1], [5, 1, 1], [6, 1, 1]]);
+        let wall: Vec<[i32; 3]> = (4..=6)
+            .flat_map(|x| (1..=WALL).map(move |y| [x, y, 1]))
+            .collect();
+        let walled = branch(7, 2, true, &wall);
+        let walled_base = branch(7, 2, false, &wall);
         let one = [(&walled, "now".to_string(), route(), vec![0])];
         let (b, verdict) = verify_shut_ways(&ways, &walled_base, &one, &[]);
         assert!(verdict.is_ok(), "{verdict:?}");

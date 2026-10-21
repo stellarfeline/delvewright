@@ -61,7 +61,7 @@
         "b": "node/far-hall",
         "class": "walk",
         "gating": {
-          "learned": "seen",
+          "learned": "told",
           "quest": "quest/near-hall"
         },
         "id": "edge/annex-chute",
@@ -73,7 +73,7 @@
         "b": "node/far-hall",
         "class": "walk",
         "gating": {
-          "learned": "seen",
+          "learned": "told",
           "opens_from": "a",
           "quest": "quest/near-hall"
         },
@@ -84,7 +84,7 @@
         "b": "node/far-hall",
         "class": "walk",
         "gating": {
-          "learned": "seen",
+          "learned": "told",
           "opens_from": "either",
           "quest": "quest/near-hall"
         },
@@ -155,7 +155,7 @@
           "flags": [
             "flag/muster-cleared"
           ],
-          "learned": "seen"
+          "learned": "told"
         },
         "id": "edge/undercroft-shaft",
         "shortcut": true
