@@ -1149,10 +1149,27 @@ fn hung_program(name: &str, hollow: Option<i64>) -> Value {
 fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
     let tmp = tempdir("hung-pair");
     let dir = gallery_site_plan(&tmp);
+    // The causeway is detailed from the gallery's own program, lamp post and
+    // all, so its box keeps the overlay's declaration of the post.
+    let overlay: Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            common::repo_root().join("gallery/overlays/site-plan/site-plan.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let lamp_post = overlay["content"]["boxes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|b| b["node"] == "node/causeway")
+        .map(|b| b["narrowed"].clone())
+        .expect("the overlay declares the causeway's lamp post");
     common::patch_file(&dir.join("site-plan.json"), |v| {
         for b in v["content"]["boxes"].as_array_mut().unwrap() {
             if b["node"] == "node/causeway" {
                 b["base"] = json!({"aloft": 0});
+                b["narrowed"] = lamp_post.clone();
             }
             if b["node"] == "node/beacon" {
                 b["base"] = json!({"aloft": 0});
