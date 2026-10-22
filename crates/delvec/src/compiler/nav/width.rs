@@ -1265,7 +1265,16 @@ pub fn seam_way(
             (None, None) if floor_seam => 2,
             (None, None) => across_of(s.normal_axis),
         };
-        width = usize::try_from(ohi[cross] - olo[cross] + 1).unwrap_or(0);
+        // The declared width is the opening's extent across the way; a run
+        // that travels along the wall (a flight under the opening) is counted
+        // across an axis the opening spans one cell of, so the width is read on
+        // the opening's own in-plane axis, never on the run's.
+        let declared_across = if floor_seam {
+            cross
+        } else {
+            across_of(s.normal_axis)
+        };
+        width = usize::try_from(ohi[declared_across] - olo[declared_across] + 1).unwrap_or(0);
         let index = |uu: i64| usize::try_from(uu - olo[cross]).unwrap_or(0);
         // The head: the other place's approach — beside the hole's top on
         // the upper floor, or across the wall.
@@ -3626,6 +3635,10 @@ mod tests {
         let mut flights = BTreeSet::new();
         let way = seam_way(&input, &mut census, &mut flights).expect("a way");
         assert_eq!(way.run, Run::Piece);
+        assert_eq!(
+            way.width, 3,
+            "the ledger's width is the opening's declared 3 columns, not the one cell the opening spans across a run along the wall"
+        );
         let labels: Vec<&str> = way.stations.iter().map(|s| s.label.as_str()).collect();
         let foot = way
             .stations
