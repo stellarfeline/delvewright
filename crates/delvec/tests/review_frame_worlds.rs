@@ -215,7 +215,7 @@ fn the_ocean_horizon_writes_its_sea() {
     let camp = dir.join("campaign");
     common::copy_dir_all(&common::hello_world_dir(), &camp);
     common::patch_file(&camp.join("world.json"), |v| {
-        v["content"]["horizon"] = serde_json::json!("ocean");
+        v["content"]["horizon"] = common::horizon("ocean");
         v["content"]["boundary"] = serde_json::json!({});
     });
     let out = dir.join("build");

@@ -3926,7 +3926,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   function is named by its class (a region write — `seal_`, `collapse_`,
   `tgate_`, `shortcut_`, the world build — laid by the configuration, or a body
   present only once a player has played — a wave, an unleashed or re-stood
-  actor, a cutscene's stand-in, a volley, a dropped stake).
+  actor, a cutscene's stand-in, a volley, a dropped stake, a block
+  highlight's display copy — `hl_hold_`/`hl_off_`, alive only while a player
+  stands within the highlight's reach).
 - **The worlds the build writes** (`<out>/validation/worlds/<key>/`,
   `compiler::view::review`; spec-0112 §5). One world per distinct
   configuration the plan's shots stand in — `at-load` always, and

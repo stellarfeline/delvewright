@@ -4522,7 +4522,7 @@ fn dolly_campaign(tag: &str, from: [i32; 3], to: [i32; 3]) -> PathBuf {
             {"type": "cutscene", "shots": [{"path": [
                 {"anchor": "anchor/exit", "offset": from},
                 {"anchor": "anchor/exit", "offset": to}
-            ], "seconds": 2}]}
+            ], "seconds": 2, "subject": "landscape"}]}
         ]);
     });
     camp

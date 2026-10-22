@@ -62,6 +62,11 @@ const PLAYED: &[&str] = &[
     "actor_restand_",
     "volley_",
     "stk_",
+    // A block highlight's display copy (spec-0104 §7): summoned by
+    // `hl_hold_<a>` only while a player stands within its reach, removed by
+    // `hl_off_<a>`; no frame's world holds it.
+    "hl_hold_",
+    "hl_off_",
 ];
 
 fn tmp(name: &str) -> PathBuf {

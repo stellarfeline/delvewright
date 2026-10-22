@@ -35,15 +35,15 @@ fn campaign(dir: &Path) -> PathBuf {
                 {"path": [
                     {"anchor": "anchor/exit", "offset": [0, 2, 0]},
                     {"anchor": "anchor/exit", "offset": [1, 2, 0]}
-                ], "seconds": 2},
-                {"path": [{"anchor": "anchor/exit", "offset": [-1, 2, 0]}], "seconds": 1}
+                ], "seconds": 2, "subject": "landscape"},
+                {"path": [{"anchor": "anchor/exit", "offset": [-1, 2, 0]}], "seconds": 1, "subject": "landscape"}
             ]}));
         v["content"]["triggers"] = serde_json::json!([{
             "id": "trigger/peek",
             "at": "anchor/keeper-stand",
             "on": {"on": "approach", "range": 2},
             "effects": [{"type": "cutscene", "shots": [
-                {"path": [{"anchor": "anchor/keeper-stand", "offset": [0, 2, 0]}], "seconds": 1}
+                {"path": [{"anchor": "anchor/keeper-stand", "offset": [0, 2, 0]}], "seconds": 1, "subject": "landscape"}
             ]}]
         }]);
     });
