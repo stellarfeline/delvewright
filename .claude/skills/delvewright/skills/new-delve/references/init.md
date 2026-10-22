@@ -361,7 +361,7 @@ another number is I1b's exit 3.
 `delvec render` draws with **Minecraft's own textures**, and the client jar that
 carries them arrives at I5, two steps below. Asked at this point on a machine
 that has never run this page, `render fidelity-gate` refuses with `DW0723 no
-textures found` and exit 5 — the same code and the same tier it uses when a
+client jar found` and exit 5 — the same code and the same tier it uses when a
 machine genuinely has no GPU adapter. So a stop placed here would fire on every
 clean machine there is, and would tell the creator their hardware cannot render
 when the only thing missing is a download this page has not made yet. The arms
@@ -372,17 +372,21 @@ The subcommand tree is the whole surface, and this page uses all of it:
 
 | subcommand | what it is |
 |---|---|
-| `delvec validate` / `analyze` / `build` / `fmt` / `schema` / `metrics` | the compiler proper |
+| `delvec validate` / `analyze` / `build` / `fmt` / `schema` / `metrics` / `codes` | the compiler proper; `codes` lists every DW code the binary declares |
 | `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames --campaign` / `blocking-chart` / `allocation` / `detail` / `edit` / `calibrate` | the layout loop |
 | `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames` / `panorama` / `viewer` / `palette` / `contact-sheet` | the frames of a build, the release panorama and the review pages |
 | `delvec cameras` / `place-camera` | the showcase cameras, and the one writer of their record |
 | `delvec written-world` | the build's load world, written alone as a save (step 10, `DW0955`, `DW1040`) |
+| `delvec textures` | one comparison sheet per `world.textures[]` row (step 5, step 13) |
 | `delvec render` | the GPU arms (`piece`, `batch`, `fidelity-gate`) |
 | `delvec grammar` | writes a new prefab from a rule program |
+| `delvec sculpt` | writes a new prefab from a form document |
+| `delvec rig` | describes an assembly's rig (`rig describe`) |
 | `delvec prefab` | admits a prefab into the library |
 | `delvec schem` | converts an outside schematic |
 | `delvec harvest` | turns in-game playtest notes into a report |
 | `delvec l10n-inventory` | the transcreation input: each row's English, kind, speaker and situation |
+| `delvec l10n-apply` | writes a language's sidecar from a table of English → translation |
 
 Ask the binary rather than this table when you need the exact shape:
 `delvec --help`, and `delvec <subcommand> --help` for a group's own verbs.
@@ -483,7 +487,7 @@ the disk for them.
 Either way the jar ends at `~/.delvewright/client/minecraft-1.21.11.jar`, the
 last of the three paths every texture-reading tool tries, in this order:
 `--textures <jar>` on the command, `$DELVEWRIGHT_CLIENT_JAR`, then that file.
-Every frame `delvec` draws at steps 7, 12 and 13 reads it.
+Every frame `delvec` draws reads it.
 
 **This step's postcondition is that the file is there**, and on path B nothing
 prints it, so look:
@@ -680,11 +684,10 @@ a named library all at once, and no earlier step has all three. Run every line
 through `env.sh`, so that a line failing because the environment was lost cannot
 be mistaken for a missing tool.
 
-`mkdir -p .out` before the last two is not decoration: `palette` writes its
-`-o` file and does **not** create its parent, so a missing directory comes back as
-`DW0722 … No such file or directory` at exit 3 — a write error that reads like a
-missing prefab. (`delvec grammar expand` and `delvec render` do create their
-output trees; the subcommands are not consistent.)
+`.out/` is scratch, and every subcommand on those lines creates the directory
+it writes into — `palette` its `-o` file's parent, `grammar expand` and `render`
+their output trees. A `DW0722` at exit 3 is a write that failed outright (a
+read-only or full disk), not a missing prefab.
 
 | the line | a non-zero, and what it actually means |
 |---|---|
@@ -693,8 +696,8 @@ output trees; the subcommands are not consistent.)
 | the I1b line | anything but exit 0 means the toolchain is not the pin's: take I1b's table, not this one |
 | `delvec --version` | no answer: the binary on `PATH` is not the one I3a unpacked or I3b built — check the `PATH` line `env.sh` carries. **An answer whose number is not the pin's is the same failure**, and I1b's line above has already said which step repairs it |
 | `delvec grammar list` | the binary answers about itself but its compiled-in corpus does not load: a broken archive. Re-run I3a; a second failure is a refusal, not a retry |
-| `delvec render fidelity-gate` | **this is the GPU-arms proof, and by here it means what it says.** `DW0723 no textures found` means I5 did not land the jar — go back to I5, this is not a verdict on the machine. Any other `DW0723` (`gpu init: …`) is the GPU arms failing on this hardware: **stop**, because the visual half of the run cannot be reviewed and nothing downstream would say so. `DW0720` at exit 4 is a third thing again — the fixture rendered and a block came out untextured, which is a jar that is not 1.21.11 |
-| `grammar expand` then `palette` | the texture ladder. A `DW0723` here says the same thing it says on the line above; a `DW0722` says `.out/` is missing |
+| `delvec render fidelity-gate` | **this is the GPU-arms proof, and by here it means what it says.** `DW0723 no client jar found` means I5 did not land the jar — go back to I5, this is not a verdict on the machine. Any other `DW0723` (`gpu init: …`) is the GPU arms failing on this hardware: **stop**, because the visual half of the run cannot be reviewed and nothing downstream would say so. `DW0720` at exit 4 is a third thing again — the fixture rendered and a block came out untextured, which is a jar that is not 1.21.11 |
+| `grammar expand` then `palette` | the texture ladder. A `DW0723` here says the same thing it says on the line above; a `DW0722` says the output could not be written |
 | `docker info` | steps 10 and 13 cannot run. Halt |
 | `docker compose version` | the daemon is fine and the **Compose plugin** is not installed for this user — `docker info` above already passed and says nothing about it. Step 10 cannot run: halt for it. `docker: unknown command: docker compose` is the whole message you get |
 

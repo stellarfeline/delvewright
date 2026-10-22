@@ -85,7 +85,8 @@ Set your render distance to at least <view_distance> chunks (Options → Video
 Settings) — the far views this delve was designed with are not drawn below it.
 ```
 
-Then prove it:
+Then prove the engine-version marker — the check reads the marker and every
+other version literal, not the render-distance line:
 
 ```sh
 "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/check-storybook-version.py" --campaigns campaigns

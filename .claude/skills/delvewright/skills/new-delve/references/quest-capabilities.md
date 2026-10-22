@@ -110,14 +110,18 @@ this section is what they are *for* and the traps in each.
   three: it is what the player reads on the stack, it translates like every
   other player-visible string, and an unnamed generic item says nothing about
   what the quest asked for.
-  1. **`container: <anchor>`** — adopt a chest or barrel **the piece already
-     placed**. The compiler fills that container and places nothing of its own;
+  1. **`holder: <anchor>`** — adopt a container (a chest, a barrel, any of the
+     container kinds), an item frame or an armour stand **the piece already
+     placed**. The compiler fills that holder and places nothing of its own;
      a floating chest conjured beside the barrel the player has been walking
-     past is the defect this avoids. Set `fill_count` so the container reads
-     plausibly full — it counts padding SLOTS after the objective's own stack,
-     and `1 + fill_count` must fit the container's 27. The container must really
-     be there in the piece (`DW0438`) and must not also be filled by a `loot`
-     entry or another `collect` (`DW0435`). A container inside a place still
+     past is the defect this avoids. `slot` says where in the holder the item
+     lands (`container.<n>`, a frame's `contents`, a stand's `armor.*` or
+     `weapon.*`); on an armour stand it is required. Set `fill_count` on a
+     container so it reads plausibly full — it counts padding SLOTS after the
+     objective's own stack, and they must fit the container; a frame or a
+     stand takes no padding (`DW1035`). The holder must really be there in the
+     piece (`DW0438`) and must not also be filled by a `loot` entry or another
+     `collect` (`DW0435`). A container inside a place still
      standing in its stand-in is deferred to
      that place's detail at step 9 — counted on the build's `container binding`
      line, never refused before the step that places the furniture — and judged
@@ -334,7 +338,7 @@ this section is what they are *for* and the traps in each.
   and how far the client blends it, is in *Step 2 — placement*.
 - **A sound can beat over a place for as long as the story holds it.**
   `pulses[] {id, sound, at {anchor, offset?}, region | place, every, floor,
-  pitch?, when?}` on stage 5 sounds a vanilla sound event from a mark every
+  pitch?, category?, when?}` on stage 5 sounds a vanilla sound event from a mark every
   `every` ticks to every player standing in the place, loudest at the mark — a
   heartbeat under the floor, a drip in the cistern, a bell tolling while the
   siege lasts. A one-off sound is `play-sound`; a pulse is the recurring one.
@@ -448,8 +452,8 @@ this section is what they are *for* and the traps in each.
   player must act on is also told by a `narrate`, a changed block or a gate;
   write **`hide_particles: true`** on every grant, so a blinding reads as the
   world rather than a potion; and know what the engine fixed for you — every
-  particle is written in force mode, every sound in the `master` category, and
-  every grant ends by its duration. **A blinding near a killing volume or a
+  particle is written in force mode, a sound with no `category` plays in
+  `master`, and every grant ends by its duration. **A blinding near a killing volume or a
   deadly drop is refused** (`DW0943`): a blinded player cannot see the hazard
   beside them.
   Shorten `seconds`, draw `in` farther from the hazard, or use
