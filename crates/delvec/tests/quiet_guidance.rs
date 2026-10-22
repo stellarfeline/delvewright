@@ -1,6 +1,7 @@
-//! Quiet guidance (spec-0093): an objective says whether it is marked and
-//! whether it is announced, the campaign states the default, and the proofs
-//! that stood on the marker and the announcement stand on the act instead.
+//! Quiet guidance (spec-0093, spec-0104 §7.6): an objective says whether it is
+//! announced, the campaign states the default, no marker is summoned, and the
+//! proofs that stood on the marker and the announcement stand on the act
+//! instead.
 //!
 //! Every test here builds a small hello-world-shaped campaign end to end and
 //! reads the emitted bytes, or builds its plan and asks the rule that needs
@@ -234,8 +235,22 @@ fn guided_quests(guidance: Option<Value>, press: Value, stand: Value) -> Value {
     json!({ "campaign_id": NS, "stage": "quests", "content": content })
 }
 
+/// The press stands on a block the piece authored at the exit: a prop-less
+/// `interact` on air is `DW0963` (spec-0104 §7.6).
+/// [`guided_quests`] with no press: the talk, then the stand. A test that puts
+/// its own thing at the exit cell uses this, so the press does not stand on it.
+fn unpressed_quests() -> Value {
+    let mut q = guided_quests(None, json!({}), json!({}));
+    let objs = q["content"]["quests"][0]["objectives"]
+        .as_array_mut()
+        .unwrap();
+    objs.remove(1);
+    objs[1]["after"] = json!(["obj/talk"]);
+    q
+}
+
 fn guided(name: &str, guidance: Option<Value>, press: Value, stand: Value) -> BuildOutput {
-    guided_with(name, guidance, press, stand, json!({}))
+    guided_with(name, guidance, press, stand, exit_cell_filled())
 }
 
 fn guided_with(
@@ -253,64 +268,27 @@ fn guided_with(
     ))
 }
 
-/// A marker is the objective's to hide and the campaign's to default: the
-/// interact's lantern and the reach's end rod each follow the objective's own
-/// `marker`, else `guidance.markers`; the interact's hitbox stands either way.
+/// No objective summons a marker (spec-0104 §7.6): a prop-less `interact`
+/// keeps its hitbox over the authored block and nothing glows beside it; a
+/// `reach-anchor` places nothing and has no activation function.
 #[test]
-fn a_marker_follows_the_objective_and_then_the_campaign() {
-    // Default: both markers.
-    let out = guided("markers-default", None, json!({}), json!({}));
+fn no_objective_summons_a_marker() {
+    let out = guided("no-marker", None, json!({}), json!({}));
     let all = all_functions(&out);
-    assert!(
-        all.contains("minecraft:lantern"),
-        "the interact's lantern: {all}"
-    );
-    assert!(
-        all.contains("minecraft:end_rod"),
-        "the reach's end rod: {all}"
-    );
+    for item in ["minecraft:lantern", "minecraft:end_rod"] {
+        assert!(
+            !all.lines()
+                .any(|l| l.contains("summon minecraft:item_display") && l.contains(item)),
+            "no {item} display for an objective: {all}"
+        );
+    }
     assert!(
         all.contains("summon minecraft:interaction"),
         "the hitbox: {all}"
     );
-
-    // The interact hides its own marker; the reach keeps the default.
-    // An unmarked interact on air is `DW0963` (below), so this one stands on an
-    // authored block.
-    let out = guided_with(
-        "markers-press-hidden",
-        None,
-        json!({ "marker": "hidden" }),
-        json!({}),
-        exit_cell_filled(),
-    );
-    let all = all_functions(&out);
-    assert!(!all.contains("minecraft:lantern"), "no lantern: {all}");
     assert!(
-        all.contains("summon minecraft:interaction"),
-        "the hitbox stays: {all}"
-    );
-    assert!(
-        all.contains("minecraft:end_rod"),
-        "the reach keeps its rod: {all}"
-    );
-
-    // The campaign hides markers; the reach opts back in.
-    let out = guided_with(
-        "markers-campaign-hidden",
-        Some(json!({ "markers": "hidden" })),
-        json!({}),
-        json!({ "marker": "shown" }),
-        exit_cell_filled(),
-    );
-    let all = all_functions(&out);
-    assert!(
-        !all.contains("minecraft:lantern"),
-        "no lantern under the default: {all}"
-    );
-    assert!(
-        all.contains("minecraft:end_rod"),
-        "`marker: shown` wins over the default: {all}"
+        fn_body(&out, "activate_o_stand").is_none(),
+        "a reach places nothing"
     );
 }
 
@@ -358,12 +336,6 @@ fn an_announcement_follows_the_objective_and_then_the_campaign() {
         complete.contains("[dw:complete"),
         "the bot's marker stays: {complete}"
     );
-    // The title still names the marker.
-    let all = all_functions(&out);
-    assert!(
-        all.contains("CustomName:\"Press the plate\""),
-        "the nameplate stays: {all}"
-    );
 
     let out = guided(
         "announce-campaign-hidden",
@@ -385,25 +357,27 @@ fn an_announcement_follows_the_objective_and_then_the_campaign() {
 // A pressable thing sits on a visible object (spec-0093 §6.5, §7 — DW0963)
 // ---------------------------------------------------------------------------
 
-/// An unmarked interact with no prop whose cell is air asks the party to press
-/// empty space, and is refused where the bytes are known; the same objective on
-/// an authored block, or with its marker shown, builds.
+/// An interact with no prop whose cell is air asks the party to press empty
+/// space, and is refused where the bytes are known, with no marker hatch
+/// (spec-0104 §7.6, the tightening); the same objective on an authored block
+/// builds.
 #[test]
-fn an_unmarked_interact_on_air_is_dw0963() {
+fn an_interact_on_air_is_dw0963() {
     let dir = variant(
         "unmarked-on-air",
-        guided_quests(None, json!({ "marker": "hidden" }), json!({})),
+        guided_quests(None, json!({}), json!({})),
         dialogue_completing("obj/talk"),
     );
-    let msg = try_build_dir(&dir).expect_err("an unmarked interact on air is refused");
+    let msg = try_build_dir(&dir).expect_err("an interact on air is refused");
     assert!(msg.starts_with("DW0963"), "{msg}");
     assert!(
         msg.contains("obj/press") && msg.contains("anchor/exit"),
         "{msg}"
     );
     assert!(msg.contains("`prop`"), "the remedy names the object: {msg}");
-    // Shown, the lantern is what the party sees, and it builds.
-    guided("marked-on-air", None, json!({}), json!({}));
+    assert!(!msg.contains("marker"), "no marker hatch: {msg}");
+    // On an authored block, it builds.
+    guided("on-a-block", None, json!({}), json!({}));
 }
 
 /// A lever prop is the whole body: the block is placed, no hitbox is summoned,
@@ -479,7 +453,7 @@ fn a_prop_vanilla_reports_binds_the_interact_to_the_blocks_own_use() {
 #[test]
 fn a_use_trigger_with_a_bell_prop_is_the_bell() {
     let with_prop = |prop: Option<Value>| {
-        let mut q = guided_quests(None, json!({}), json!({}));
+        let mut q = unpressed_quests();
         let mut t = json!({
             "id": "trigger/the-bell", "at": "anchor/exit", "on": { "on": "use" },
             "effects": [{ "type": "set-flag", "flag": "flag/rung" }]
@@ -553,8 +527,6 @@ fn a_use_trigger_with_a_bell_prop_is_the_bell() {
         json!({ "block": "minecraft:bell[attachment=floor,facing=north]" }),
     ));
     struck["content"]["triggers"][0]["on"] = json!({ "on": "strike" });
-    struck["content"]["quests"][0]["objectives"][1]["prop"] =
-        json!({ "block": "minecraft:lever[face=floor,facing=north]" });
     let out = build_dir(&variant(
         "trigger-bell-struck",
         struck,
@@ -567,12 +539,9 @@ fn a_use_trigger_with_a_bell_prop_is_the_bell() {
         "the struck bell is placed and its hitbox stands over it: {all}"
     );
 
-    // The same trigger with no prop, alone on the exit's open air (the interact
-    // beside it is given a lever, so no second hitbox contests the cell and
-    // `DW0878` stays out of the way): nothing visible stands there.
-    let mut on_air = with_prop(None);
-    on_air["content"]["quests"][0]["objectives"][1]["prop"] =
-        json!({ "block": "minecraft:lever[face=floor,facing=north]" });
+    // The same trigger with no prop, alone on the exit's open air: nothing
+    // visible stands there.
+    let on_air = with_prop(None);
     let dir = variant("trigger-on-air", on_air, dialogue_completing("obj/talk"));
     let msg = try_build_dir(&dir).expect_err("a use trigger on open air with no prop is refused");
     assert!(
@@ -783,16 +752,23 @@ fn the_button_guard_and_a_gated_press_answer_each_read_their_one_authority() {
 }
 
 // ---------------------------------------------------------------------------
-// DW0863 — a fight the party cannot find (spec-0093 §5)
+// DW0863 — a fight the party cannot find (spec-0093 §5, widened by spec-0104 §4)
 // ---------------------------------------------------------------------------
 
-fn signposts(name: &str, quests: Value) -> (promise::FightBinding, Result<(), String>) {
+/// The plan of a beach variant, judged by `DW0863` over an empty world — every
+/// line clear, so what these tests move is the reach and the lines.
+fn signposts(name: &str, quests: Value) -> (promise::ActBinding, Result<(), String>) {
     let dir = variant(name, quests, beach_dialogue());
     let (_, campaign) = load(&dir);
     let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
     let plan = Plan::build(&campaign, &prefabs).expect("plan builds");
-    let (b, v) = promise::check_fight_signposts(&plan);
-    (b, v.map_err(|f| format!("{}: {}", f.code, f.message)))
+    let world = delvec::compiler::nav::World::from_solid_cells(Default::default());
+    let (b, v) = promise::check_acts_found(&plan, &world);
+    let v = match v.first() {
+        None => Ok(()),
+        Some(f) => Err(format!("{}: {}", f.code, f.message)),
+    };
+    (b, v)
 }
 
 /// An untitled kill whose wave arrives where the act is — the keeper's post is
@@ -803,21 +779,15 @@ fn signposts(name: &str, quests: Value) -> (promise::FightBinding, Result<(), St
 fn a_fight_is_found_by_the_party_when_it_arrives_within_reach_of_the_act() {
     let (b, v) = signposts("found", beach_quests(surf(None), json!({})));
     assert!(v.is_ok(), "{v:?}");
-    assert_eq!(
-        (b.kills, b.announced, b.found, b.sites, b.unplaced),
-        (1, 0, 1, 1, 0)
-    );
+    assert_eq!((b.announced, b.kills_in_reach, b.refused), (0, 1, 0));
 
     let (b, v) = signposts("out-of-reach", beach_quests(surf(Some(2.0)), json!({})));
     let msg = v.expect_err("a wave out of reach of its act is DW0863");
     assert!(msg.starts_with("DW0863"), "{msg}");
-    assert!(
-        msg.contains("4.0 blocks from the anchor"),
-        "the distance: {msg}"
-    );
-    assert!(msg.contains("2 blocks here"), "the reach: {msg}");
+    assert!(msg.contains("4.0 blocks away"), "the distance: {msg}");
+    assert!(msg.contains("reach of 2 blocks"), "the reach: {msg}");
     assert!(msg.contains("obj/muster"), "the firing site: {msg}");
-    assert_eq!((b.kills, b.announced, b.found), (1, 0, 0));
+    assert_eq!((b.announced, b.kills_in_reach, b.refused), (0, 0, 1));
 }
 
 /// The announced arm: a title and a hint make the same out-of-reach fight
@@ -840,7 +810,7 @@ fn an_announced_fight_is_found_by_its_lines_unless_its_announcement_is_hidden() 
     };
     let (b, v) = signposts("announced", announced(json!({}), None));
     assert!(v.is_ok(), "{v:?}");
-    assert_eq!((b.kills, b.announced, b.found), (1, 1, 0));
+    assert_eq!((b.announced, b.kills_in_reach), (1, 0));
 
     let (_, v) = signposts(
         "announced-hidden",
@@ -870,7 +840,7 @@ fn a_wave_fired_from_a_placeless_root_is_not_found_by_the_party() {
     let msg = v.expect_err("a death-fired wave places the party nowhere");
     assert!(msg.contains("places the party nowhere"), "{msg}");
     assert!(msg.contains("/content/on_death"), "{msg}");
-    assert_eq!((b.sites, b.unplaced), (2, 1));
+    assert_eq!(b.refused, 1);
 }
 
 /// spec-0093 meets the plate's `step` trigger: a wave a stepped plate fires is
@@ -898,8 +868,8 @@ fn a_wave_a_stepped_plate_fires_is_found_where_the_plate_is() {
     let (b, v) = signposts("stepped", q);
     assert!(v.is_ok(), "{v:?}");
     assert_eq!(
-        (b.kills, b.announced, b.found, b.sites, b.unplaced),
-        (1, 0, 1, 1, 0),
+        (b.kills_in_reach, b.refused),
+        (1, 0),
         "one site, the plate, placed and within reach"
     );
 }
@@ -986,12 +956,12 @@ fn a_checkpoint_set_by_an_approach_trigger_builds_and_names_its_trigger() {
 /// and the command tree — all pass over the one datapack.
 #[test]
 fn a_bell_that_plays_a_cutscene_is_rung_by_a_player_and_shows_the_party() {
-    let mut q = guided_quests(None, json!({}), json!({}));
+    let mut q = unpressed_quests();
     q["content"]["triggers"] = json!([{
         "id": "trigger/the-bell", "at": "anchor/exit", "on": { "on": "use" },
         "prop": { "block": "minecraft:bell[attachment=floor,facing=north]" },
         "effects": [{
-            "type": "cutscene", "seconds": 2,
+            "type": "cutscene", "subject": "landscape", "seconds": 2,
             "path": [ { "anchor": "anchor/exit", "offset": [-2, 2, 0] },
                       { "anchor": "anchor/exit", "offset": [2, 2, 0] } ]
         }]
@@ -1028,7 +998,7 @@ fn a_bell_that_plays_a_cutscene_is_rung_by_a_player_and_shows_the_party() {
 /// a block the datapack places at load and the model does not lay is the class.
 #[test]
 fn every_block_setup_places_stands_in_the_picture_base() {
-    let mut q = guided_quests(None, json!({}), json!({}));
+    let mut q = unpressed_quests();
     q["content"]["triggers"] = json!([{
         "id": "trigger/the-bell", "at": "anchor/exit", "on": { "on": "use" },
         "prop": { "block": "minecraft:bell[attachment=floor,facing=north]" },

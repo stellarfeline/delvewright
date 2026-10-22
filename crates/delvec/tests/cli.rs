@@ -854,6 +854,8 @@ fn lang_build_localizes_only_strings_and_is_deterministic() {
             p.contains("/dialog/")
                 || p.contains("/function/")
                 || p.contains("/advancement/")
+                // The journal's pages (spec-0104 §8.3) are text components.
+                || p.contains("/item_modifier/")
                 || p.contains("packtest-datapack/")
                 // render-plan.json embeds each NPC's display name in its
                 // `expect` checklist ("NPC named X faces the camera"); the vision
@@ -1471,7 +1473,7 @@ fn v06_ocean_boundary_builds_byte_identical_and_wires_return() {
     "target_minutes": 5,
     "time": "noon",
     "weather": "clear",
-    "horizon": "ocean",
+    "horizon": { "base": "ocean", "attributes": { "audio/background_music": {} } },
     "boundary": { "margin": 20 },
     "areas": [
       { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" }
@@ -1508,10 +1510,16 @@ fn v06_ocean_boundary_builds_byte_identical_and_wires_return() {
 
     // Ocean superflat generator-settings shipped (bedrock/stone/water).
     let props = String::from_utf8(a["server/server.properties"].clone()).unwrap();
+    // spec-0109 §3.2: the ocean ground is the delve's own `<ns>:ocean` — the
+    // pinned `minecraft:ocean` under the delve's id, carrying the declared
+    // music — named in the generator settings, and no vanilla biome is
+    // overridden.
     assert!(
-        props.contains("generator-settings={\"biome\":\"minecraft:ocean\""),
+        props.contains("generator-settings={\"biome\":\"hello-world:ocean\""),
         "expected ocean generator-settings, got:\n{props}"
     );
+    assert!(a.contains_key("datapack/data/hello-world/worldgen/biome/ocean.json"));
+    assert!(!a.contains_key("datapack/data/minecraft/worldgen/biome/ocean.json"));
     assert!(
         props.contains("minecraft:water"),
         "ocean must layer water: {props}"
@@ -1734,7 +1742,7 @@ fn ocean_areas_sit_on_the_sea_level_datum_void_unchanged() {
         if let Some(h) = horizon {
             world["dsl_version"] = serde_json::json!(DSL_VERSION);
             let content = world["content"].as_object_mut().unwrap();
-            content.insert("horizon".into(), serde_json::json!(h));
+            content.insert("horizon".into(), common::horizon(h));
             content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
         }
         std::fs::write(
@@ -1840,11 +1848,10 @@ fn shore_prefabs(tag: &str) -> std::path::PathBuf {
 
 /// `DW0318`, both horizons, one placement of [`shore_cells`].
 ///
-/// Placed under `horizon: ocean` the water meets the sea the piece depicts and
-/// the build is green. Placed under `horizon: void` — the default, and what any
-/// campaign that never declares a horizon gets — the identical geometry pours
-/// water off the edge of the world, forever, and before this check existed the
-/// build was **green** and shipped it.
+/// Placed on an `ocean` horizon base the water meets the sea the piece depicts
+/// and the build is green. Placed on a `void` base — the base a delve that wants
+/// nothing around its map writes — the identical geometry pours water off the
+/// edge of the world, forever.
 fn beach_camp_campaign(name: &str, ocean: bool) -> std::path::PathBuf {
     let camp = tmp(name);
     copy_dir(&common::hello_world_dir(), &camp);
@@ -1862,7 +1869,7 @@ fn beach_camp_campaign(name: &str, ocean: bool) -> std::path::PathBuf {
         d["content"]["areas"][0]["prefab"] = serde_json::json!("prefab/test-shore");
         if ocean {
             let c = d["content"].as_object_mut().unwrap();
-            c.insert("horizon".into(), serde_json::json!("ocean"));
+            c.insert("horizon".into(), common::horizon("ocean"));
             c.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
         }
     });
@@ -2010,7 +2017,7 @@ fn ocean_waterline_off_sea_level_is_refused_at_validation_with_dw0344() {
         serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
     world["dsl_version"] = serde_json::json!(DSL_VERSION);
     let content = world["content"].as_object_mut().unwrap();
-    content.insert("horizon".into(), serde_json::json!("ocean"));
+    content.insert("horizon".into(), common::horizon("ocean"));
     content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
     std::fs::write(
         camp.join("world.json"),
@@ -2141,7 +2148,7 @@ fn an_ocean_world_whose_shore_declares_no_waterline_is_refused_dw0886() {
             .unwrap();
     world["dsl_version"] = serde_json::json!(DSL_VERSION);
     let content = world["content"].as_object_mut().unwrap();
-    content.insert("horizon".into(), serde_json::json!("ocean"));
+    content.insert("horizon".into(), common::horizon("ocean"));
     content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
     std::fs::write(
         ocean_camp.join("world.json"),

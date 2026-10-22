@@ -340,7 +340,7 @@ fn a_link_between_two_areas_is_dw0932() {
 /// A one-second cutscene in the west room.
 fn cutscene() -> Value {
     json!({
-        "type": "cutscene", "seconds": 1,
+        "type": "cutscene", "subject": "landscape", "seconds": 1,
         "path": [
             {"anchor": "anchor/boat", "offset": [0, 2, 1]},
             {"anchor": "anchor/boat", "offset": [2, 2, 1]}
@@ -1111,6 +1111,16 @@ fn branch_link_campaign(who: &str, gate: &str) -> PathBuf {
         assert_eq!(hold["id"], "quest/hold");
         hold["on_objective_complete"]["obj/watch"] = json!([]);
         hold["objectives"][1]["anchor"] = json!("spawn");
+        // The bolt is out of sight of the decision once the vault's sign
+        // stands at spawn, so it is announced with a hint (DW0863).
+        for quest in q["content"]["quests"].as_array_mut().unwrap() {
+            for o in quest["objectives"].as_array_mut().unwrap() {
+                if o["id"] == "obj/bolt" {
+                    o["title"] = json!("Go to the bolt");
+                    o["hint"] = json!("Past the door, by the far wall.");
+                }
+            }
+        }
         q["content"]["triggers"] = json!([{
             "id": "trigger/vault", "at": "spawn", "on": {"on": "use"}, "once": false,
             "prop": {"block": "minecraft:oak_sign[rotation=0]"},

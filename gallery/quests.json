@@ -234,6 +234,7 @@
         "id": "assembly/sentinel",
         "initial": "idle",
         "rig": "rig/gallery-sentinel",
+        "seen_from": 96,
         "strikes": {
           "aim": {
             "facings": 4
@@ -259,6 +260,7 @@
                     "anchor": "anchor/plinth",
                     "at": "anchor"
                   },
+                  "category": "block",
                   "sound": "minecraft:block.anvil.land",
                   "type": "play-sound"
                 }
@@ -319,6 +321,7 @@
                     "anchor": "anchor/reach",
                     "at": "anchor"
                   },
+                  "category": "block",
                   "sound": "minecraft:block.anvil.land",
                   "type": "play-sound"
                 }
@@ -394,6 +397,16 @@
         "sound": "minecraft:block.chest.close",
         "style": "chat",
         "text": "The long hall was emptied long ago, and the chest in its end room holds nothing. What this hall keeps, it keeps for you."
+      }
+    },
+    "guidance": {
+      "compass": "shown",
+      "manual": {
+        "pages": [
+          "Things in this hall answer to a hand: stand close and [[key|use]] on a case, a lever, a valve.",
+          "The Curator keeps the cases. Ask before you touch the glass, and do not keep what you take."
+        ],
+        "title": "The Curator's Notes"
       }
     },
     "lethal_volumes": [
@@ -754,6 +767,7 @@
         "at": {
           "anchor": "anchor/annex-second-bay"
         },
+        "category": "ambient",
         "every": 40,
         "floor": 0.2,
         "id": "pulse/the-drip",
@@ -846,6 +860,7 @@
           {
             "after": [],
             "announcement": "shown",
+            "compass": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -853,6 +868,9 @@
               "subject": "npc/curator",
               "text": "The Curator tells them what the hall is for.",
               "verb": "learns"
+            },
+            "highlight": {
+              "within": 6
             },
             "hint": "The Curator stands at the lectern.",
             "id": "obj/hear-the-curator",
@@ -866,7 +884,7 @@
               }
             ],
             "stealth": false,
-            "title": "Hear the Curator",
+            "title": "Talk to the Curator",
             "type": "talk-to"
           },
           {
@@ -875,6 +893,7 @@
             ],
             "anchor": "anchor/pedestal",
             "announcement": "shown",
+            "compass": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -882,6 +901,9 @@
               "subject": "anchor/pedestal",
               "text": "The case opens under their hand.",
               "verb": "opens"
+            },
+            "highlight": {
+              "within": 6
             },
             "hint": "The case stands in the middle of the near hall.",
             "id": "obj/press-the-case",
@@ -907,6 +929,7 @@
               "obj/press-the-case"
             ],
             "anchor": "anchor/pedestal",
+            "compass": "shown",
             "count": 4,
             "fill_count": 4,
             "forbids_flags": [
@@ -916,6 +939,9 @@
               "subject": "anchor/pedestal",
               "text": "They take the emeralds out of the case.",
               "verb": "gains"
+            },
+            "highlight": {
+              "within": 6
             },
             "hint": "Four of them, in the case.",
             "holder": "anchor/case",
@@ -948,7 +974,7 @@
               "text": "They reach the counter.",
               "verb": "arrives"
             },
-            "hint": "The Factor keeps the counter in the near hall.",
+            "hint": "The Factor, the hall's trader, keeps the counter in the near hall.",
             "id": "obj/reach-the-counter",
             "radius": 3,
             "requires_flags": [
@@ -1016,6 +1042,9 @@
               "subject": "anchor/seal-frame",
               "text": "They knock the seal out of its frame.",
               "verb": "gains"
+            },
+            "highlight": {
+              "within": 6
             },
             "hint": "It hangs in a frame on the wall, beside an empty one.",
             "holder": "anchor/seal-frame",
@@ -1216,6 +1245,15 @@
                 ]
               },
               "type": "clear-region"
+            },
+            {
+              "actor": "actor/standard-bearer",
+              "happening": {
+                "subject": "actor/standard-bearer",
+                "text": "The standard-bearer takes the march with the colours.",
+                "verb": "arrives"
+              },
+              "type": "spawn-actor"
             }
           ],
           "obj/press-the-case": [
@@ -1274,6 +1312,7 @@
                 "anchor": "anchor/pedestal",
                 "at": "anchor"
               },
+              "category": "block",
               "pitch": 1.2,
               "sound": "minecraft:block.chest.open",
               "type": "play-sound",
@@ -1368,6 +1407,7 @@
                         ]
                       },
                       "audience": "actor",
+                      "category": "hostile",
                       "pitch": 0.5,
                       "sound": "minecraft:entity.warden.nearby_closest",
                       "type": "play-sound",
@@ -1570,28 +1610,42 @@
                   "at_ticks": 10,
                   "effects": [
                     {
+                      "hears": null,
                       "look_at": {
                         "anchor": "anchor/stall"
+                      },
+                      "music": {
+                        "audio/background_music": {
+                          "default": {
+                            "max_delay": 0,
+                            "min_delay": 0,
+                            "replace_current_music": true,
+                            "sound": "minecraft:music_disc.pigstep"
+                          }
+                        }
                       },
                       "path": [
                         {
                           "anchor": "anchor/stall",
                           "offset": [
                             0,
-                            14,
-                            -24
+                            28,
+                            -16
                           ]
                         },
                         {
                           "anchor": "anchor/stall",
                           "offset": [
                             0,
-                            16,
-                            -24
+                            30,
+                            -16
                           ]
                         }
                       ],
                       "seconds": 6,
+                      "subject": {
+                        "place": "area/hall"
+                      },
                       "type": "cutscene"
                     }
                   ]
@@ -1609,6 +1663,7 @@
                           0
                         ]
                       },
+                      "category": "master",
                       "sound": "minecraft:block.chest.close",
                       "type": "play-sound",
                       "when": {
@@ -1784,7 +1839,7 @@
             "npc": "npc/marshal",
             "requires_flags": [],
             "stealth": false,
-            "title": "Answer the Marshal",
+            "title": "Report to the Marshal",
             "type": "talk-to"
           },
           {
@@ -1792,6 +1847,7 @@
               "obj/answer-the-marshal"
             ],
             "announcement": "shown",
+            "compass": "shown",
             "forbids_flags": [
               "flag/hall-sealed"
             ],
@@ -1799,6 +1855,9 @@
               "subject": "actor/sergeant",
               "text": "The muster is put down.",
               "verb": "dies"
+            },
+            "highlight": {
+              "within": 8
             },
             "hint": "They are at the muster line.",
             "id": "obj/clear-the-muster",
@@ -1884,7 +1943,6 @@
               "verb": "arrives"
             },
             "id": "obj/reach-the-end",
-            "marker": "hidden",
             "radius": 1,
             "requires_flags": [
               "flag/muster-cleared"
@@ -1912,12 +1970,11 @@
               "verb": "arrives"
             },
             "id": "obj/board-the-ferry",
-            "marker": "shown",
             "radius": 1,
             "requires_flags": [
               "flag/muster-cleared"
             ],
-            "title": "Board the ferry",
+            "title": "Step onto the ferry",
             "type": "reach-anchor"
           },
           {
@@ -1930,6 +1987,7 @@
               "text": "They step off the ferry into the sealed cabin.",
               "verb": "arrives"
             },
+            "hint": "Cross on the ferry to the cabin on the far shore.",
             "id": "obj/cross-the-strait",
             "radius": 1,
             "requires_flags": [
@@ -1986,8 +2044,10 @@
               "text": "the party is set back down in the gallery hall",
               "verb": "arrives"
             },
+            "hint": "Back through the arch you came in by.",
             "id": "obj/back-in-the-hall",
             "radius": 2,
+            "title": "Return to the hall",
             "type": "reach-anchor"
           }
         ],
@@ -2123,6 +2183,9 @@
               }
             ],
             "seconds": 2,
+            "subject": {
+              "anchor": "anchor/exit"
+            },
             "then": [
               {
                 "from": {
@@ -2185,6 +2248,15 @@
                   }
                 ]
               }
+            },
+            {
+              "category": "music",
+              "type": "stop-sound"
+            },
+            {
+              "atmosphere": "atmosphere/the-reckoning",
+              "place": "area/hall",
+              "type": "set-atmosphere"
             }
           ],
           "obj/back-in-the-hall": [
@@ -2600,28 +2672,35 @@
               "type": "end-stealth"
             },
             {
-              "look_at": {
-                "anchor": "anchor/exit"
-              },
+              "hears": "atmosphere/the-reckoning",
               "path": [
                 {
-                  "anchor": "anchor/muster",
+                  "anchor": "anchor/plinth",
                   "offset": [
-                    0,
-                    2,
-                    0
+                    -6,
+                    3,
+                    -3
                   ]
                 },
                 {
-                  "anchor": "anchor/vantage",
+                  "anchor": "anchor/plinth",
                   "offset": [
-                    0,
-                    2,
-                    0
+                    -6,
+                    3,
+                    1
                   ]
                 }
               ],
               "seconds": 4,
+              "subject": {
+                "assembly": "assembly/sentinel"
+              },
+              "then": [
+                {
+                  "assembly": "assembly/sentinel",
+                  "type": "despawn-assembly"
+                }
+              ],
               "type": "cutscene",
               "when": {
                 "forbids_flags": [
@@ -2646,12 +2725,7 @@
                   "bearing": 45.0,
                   "dist": 3.0,
                   "look_at": {
-                    "anchor": "anchor/exit",
-                    "offset": [
-                      0,
-                      1,
-                      0
-                    ]
+                    "anchor": "anchor/muster"
                   },
                   "path": [
                     {
@@ -2678,12 +2752,11 @@
                   }
                 },
                 {
-                  "bearing": 180.0,
-                  "dist": 3.0,
+                  "bearing": -90.0,
                   "seconds": 2,
                   "shot_style": "two-shot",
                   "subject": {
-                    "actor": "actor/hall-moth",
+                    "npc": "npc/curator",
                     "offset": [
                       0,
                       1,
@@ -2691,16 +2764,11 @@
                     ]
                   },
                   "subject_b": {
-                    "npc": "npc/curator",
-                    "offset": [
-                      0,
-                      1,
-                      0
-                    ]
+                    "anchor": "anchor/label"
                   }
                 },
                 {
-                  "bearing": 90.0,
+                  "bearing": 0.0,
                   "dist": 3.0,
                   "seconds": 2,
                   "shot_style": "insert",
@@ -2728,7 +2796,7 @@
                   }
                 },
                 {
-                  "bearing": 180.0,
+                  "bearing": 90.0,
                   "dist": 3.0,
                   "seconds": 2,
                   "shot_style": "low-follow",
@@ -2760,7 +2828,7 @@
                   "seconds": 2,
                   "shot_style": "push-in",
                   "subject": {
-                    "actor": "actor/sergeant",
+                    "actor": "actor/standard-bearer",
                     "offset": [
                       0,
                       1,
@@ -2769,7 +2837,7 @@
                   }
                 },
                 {
-                  "bearing": 180.0,
+                  "bearing": 90.0,
                   "dist": 3.0,
                   "seconds": 2,
                   "shot_style": "side-track",
@@ -3072,6 +3140,7 @@
               "at": {
                 "at": "players"
               },
+              "category": "music",
               "sound": "minecraft:entity.wither.spawn",
               "type": "play-sound",
               "when": {
@@ -3187,10 +3256,6 @@
                   "flag/hall-open"
                 ]
               }
-            },
-            {
-              "assembly": "assembly/sentinel",
-              "type": "despawn-assembly"
             },
             {
               "assembly": "assembly/arm",
@@ -3371,6 +3436,7 @@
               "text": "The east bay keeps what the hall has stopped showing.",
               "verb": "arrives"
             },
+            "hint": "Through the arch at the side of the reliquary.",
             "id": "obj/look-in-the-east-bay",
             "radius": 3,
             "title": "Look into one side bay",
@@ -3394,15 +3460,17 @@
               "obj/look-in-the-west-bay"
             ],
             "anchor": "anchor/west-pit",
-            "announcement": "hidden",
+            "announcement": "shown",
+            "compass": "hidden",
             "happening": {
               "subject": "anchor/west-pit",
               "text": "They come to the rim of the well and look down it.",
               "verb": "arrives"
             },
+            "hint": "The well is in a corner of the reliquary.",
             "id": "obj/look-into-the-well",
             "radius": 3,
-            "title": "Look into the well",
+            "title": "Go to the mouth of the well",
             "type": "reach-anchor"
           }
         ],
@@ -3538,6 +3606,7 @@
               "text": "the party reaches the lit end of the long hall",
               "verb": "arrives"
             },
+            "hint": "Run the long hall to its far end.",
             "id": "obj/reach-the-hall-end",
             "radius": 2,
             "title": "Reach the light",
@@ -3554,6 +3623,31 @@
                 "verb": "arrives"
               },
               "type": "set-checkpoint"
+            },
+            {
+              "category": "ambient",
+              "sound": "minecraft:ambient.cave",
+              "type": "stop-sound"
+            },
+            {
+              "sound": "minecraft:entity.warden.heartbeat",
+              "type": "stop-sound"
+            },
+            {
+              "category": "record",
+              "type": "stop-sound"
+            },
+            {
+              "category": "weather",
+              "type": "stop-sound"
+            },
+            {
+              "category": "neutral",
+              "type": "stop-sound"
+            },
+            {
+              "category": "voice",
+              "type": "stop-sound"
             }
           ]
         },
@@ -4066,6 +4160,7 @@
               "anchor": "anchor/hearth",
               "at": "anchor"
             },
+            "category": "ambient",
             "sound": "minecraft:block.campfire.crackle",
             "type": "play-sound",
             "when": {
@@ -4223,6 +4318,7 @@
               "anchor": "anchor/annex-second-bay",
               "at": "anchor"
             },
+            "category": "player",
             "sound": "minecraft:block.stone.step",
             "type": "play-sound"
           }
@@ -4262,6 +4358,16 @@
                       }
                     ],
                     "seconds": 1,
+                    "subject": {
+                      "region": {
+                        "anchor": "anchor/ferry-deck",
+                        "extent": [
+                          1,
+                          0,
+                          1
+                        ]
+                      }
+                    },
                     "type": "cutscene"
                   }
                 ]
@@ -4289,6 +4395,9 @@
             "type": "sequence"
           }
         ],
+        "highlight": {
+          "within": 5
+        },
         "id": "trigger/ferry-tiller",
         "on": {
           "on": "use"
@@ -4402,6 +4511,7 @@
               }
             ],
             "seconds": 10,
+            "subject": "landscape",
             "type": "cutscene"
           }
         ],
@@ -4479,7 +4589,7 @@
         },
         "once": false,
         "prop": {
-          "block": "minecraft:lever[face=floor,facing=south]"
+          "block": "minecraft:oak_button[face=floor,facing=south]"
         }
       },
       {
@@ -4534,7 +4644,7 @@
         },
         "once": false,
         "prop": {
-          "block": "minecraft:lever[face=floor,facing=south]"
+          "block": "minecraft:stone_button[face=floor,facing=south]"
         }
       },
       {
@@ -4555,6 +4665,9 @@
             }
           }
         ],
+        "highlight": {
+          "within": 5
+        },
         "id": "trigger/valve-first",
         "on": {
           "on": "use"
@@ -4712,6 +4825,7 @@
               "at": {
                 "at": "players"
               },
+              "category": "ui",
               "sound": "minecraft:entity.experience_orb.pickup",
               "type": "play-sound",
               "when": {
@@ -4731,6 +4845,6 @@
       }
     ]
   },
-  "dsl_version": "0.55.0",
+  "dsl_version": "0.56.0",
   "stage": "quests"
 }

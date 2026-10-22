@@ -856,8 +856,8 @@ fn the_load_world_is_written_without_a_camera_record() {
     }
 }
 
-/// **A cell no write reached holds the generator's block** (`DW0955`). Under
-/// `horizon: ocean` the server is a superflat — bedrock at the build floor,
+/// **A cell no write reached holds the generator's block** (`DW0955`). On
+/// an `ocean` base the server is a superflat — bedrock at the build floor,
 /// stone to the sea floor (54), water to sea level (62) — and the datapack
 /// writes over it, so wherever no write reaches, the generator's block is what
 /// the server shows: under a piece standing over open sea, beside it, down to
@@ -916,7 +916,7 @@ fn a_cell_no_write_reached_holds_the_horizon_generators_block() {
     common::copy_dir_all(&common::hello_world_dir(), &camp);
     let mut doc: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
-    doc["content"]["horizon"] = serde_json::json!("ocean");
+    doc["content"]["horizon"] = common::horizon("ocean");
     doc["content"]["boundary"] = serde_json::json!({});
     std::fs::write(camp.join("world.json"), doc.to_string()).unwrap();
     let written = tmp("ww-ocean-world");
@@ -1335,7 +1335,7 @@ fn a_camera_after_a_repaint_and_a_strike_names_the_biomes_it_does_not_lay() {
     common::patch_file(&camp.join("world.json"), |w| {
         w["content"]["atmospheres"] = serde_json::json!([{
             "id": "atmosphere/hush", "precipitation": "none",
-            "attributes": { "visual/fog_end_distance": 26.0, "visual/sky_color": "#3b4a1e" }
+            "attributes": { "visual/fog_end_distance": 26.0, "visual/sky_color": "#3b4a1e", "audio/background_music": {} }
         }]);
     });
     common::patch_file(&camp.join("quests.json"), |q| {

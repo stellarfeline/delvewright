@@ -358,6 +358,7 @@ pub(super) fn kill_pays_watch_claim(plan: &Plan) -> crate::compiler::watch::Clai
     let content = &plan.campaign.quests.content;
     crate::compiler::watch::Claim {
         mechanic: "kill-pays",
+        kind: crate::compiler::watch::ClaimKind::Body,
         families: vec!["on_kill_w_".to_string(), "on_kill_a_".to_string()],
         declared: content
             .waves

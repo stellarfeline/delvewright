@@ -36,7 +36,7 @@ order a player would:
 
 | Where | What it holds |
 | --- | --- |
-| `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages, and its sky stated in a designer's words: a new moon just risen (`{"moon": "just-risen", "phase": "new-moon"}`, day 4 — every build's `clock:` lines say where each stated time puts the sun and the moon); and two atmospheres (spec-0080): `atmosphere/frost-hall`, which sets every one of the twenty attributes an atmosphere admits and is carried by the hall from the first tick, and `atmosphere/still-air`, which the vantage trigger paints over the east bay and the counter paints back off the whole hall; and and the one vanilla texture the delve replaces — stone bricks, the annex tiles' walls and the hall's tread courses, drawn in one flat colour from `textures/hall-stone.png` so a render shows which block the pack changed — with the pack declared required, and the drowned's outer layer, painted from `textures/drowned-wrap.png` on the boxes that model really builds — the base positions, grown — which is where a mob's second layer reads (spec-0097); and the seconds a fallen player waits before rejoining the party |
+| `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages, and its sky stated in a designer's words: a new moon just risen (`{"moon": "just-risen", "phase": "new-moon"}`, day 4 — every build's `clock:` lines say where each stated time puts the sun and the moon); and three atmospheres (spec-0080): `atmosphere/frost-hall`, which sets every one of the twenty attributes an atmosphere admits — a spaced `music.overworld.frozen_peaks` among them — and is carried by the hall from the first tick; `atmosphere/the-reckoning`, the frost hall's sky with one difference, its music, a single-file disc that replaces whatever plays and loops back to back, which the marshal's beat paints over the whole hall after a `stop-sound music` cuts the frost hall's track (spec-0109: a story stage moves the music by repainting the place); and `atmosphere/still-air`, a declared silence that fades whatever plays, which the vantage trigger paints over the east bay and the counter paints back off the whole hall; its ground states its music too, a silence that lets a playing track run out (`horizon: {base: void, attributes}`), and every build's `music binding:` line counts what each of those biomes plays; and and the one vanilla texture the delve replaces — stone bricks, the annex tiles' walls and the hall's tread courses, drawn in one flat colour from `textures/hall-stone.png` so a render shows which block the pack changed — with the pack declared required, and the drowned's outer layer, painted from `textures/drowned-wrap.png` on the boxes that model really builds — the base positions, grown — which is where a mob's second layer reads (spec-0097); and the seconds a fallen player waits before rejoining the party |
 | `npcs.json` | five speaking parts — a quest-giver, a gatekeeper, a counter, a drill officer and a copyist at the wall desk who never looks up; the quest-giver is a mannequin that hides its cape layer, and the standard bearer in `quests.json` hides the other six, so every overlay layer a mannequin can hide is written once (spec-0097) |
 | `classes.json` | two kits, one carrying a flask (what a bonfire rest refills) |
 | `quest-plan.json` | three quests and the branch point the fork opens |
@@ -207,8 +207,8 @@ holding them at once.
 | `a-bar-over-a-body-nothing-can-hurt` | `DW0909` | `validate` | hanging a health bar over the usher, a body nothing unleashes and nothing can hurt |
 | `a-bar-with-nothing-to-draw` | `DW0910` | `validate` | removing the muster's bar `title`, when the wave fields two kinds of body and no one name is the fight's |
 | `a-body-two-areas-answer-for` | `DW0884` | `validate` | casting the curator at `anchor/lectern` when the annex is bound to the hall's piece and both areas answer to that name |
-| `a-face-nothing-stands-in-front-of` | `DW0886` | `validate` | placing the open-topped yard as its own area under `horizon: void`, with sides nothing buries and nothing declares shown |
-| `a-floor-carved-down-to-the-sea` | `DW0344` | `build` | a world edit cutting a three-by-three hole in the hall's plinth course down to the sea's own plane, under `horizon: ocean` |
+| `a-face-nothing-stands-in-front-of` | `DW0886` | `validate` | placing the open-topped yard as its own area on a `void` base, with sides nothing buries and nothing declares shown |
+| `a-floor-carved-down-to-the-sea` | `DW0344` | `build` | a world edit cutting a three-by-three hole in the hall's plinth course down to the sea's own plane, on an `ocean` base |
 | `a-gate-the-party-walks-back-through-after-it-is-sealed` | `DW0485` | `validate` | giving the last mainline beat the main gate as its subject, three beats after that gate is sealed |
 | `a-strand-walked-after-the-gate-it-crosses-is-sealed` | `DW0485` | `validate` | giving the optional reliquary's first beat the main gate as its subject: the exported path walks it before the seal, and a player may walk it after |
 | `a-key-that-charges-more-than-it-asks` | `DW0901` | `validate` | charging five tokens at the counter that gates on four |
@@ -217,7 +217,7 @@ holding them at once.
 | `a-picture-nobody-looks-at` | `DW0900` | `build` | re-aiming the only camera that answers `concept/morning-quay` at a picture two other cameras already answer |
 | `a-picture-nobody-recorded` | `DW0890` | `validate` | deleting the night row from `design.json` while its image stays under `design/concept/` |
 | `a-piece-with-no-walk-plane` | `DW0886` | `validate` | seating the shard, which declares no walk plane, on an `ocean` horizon |
-| `a-place-cut-below-the-sea` | `DW0886` | `validate` | standing a site-plan place two courses under the sea plane, under `horizon: ocean` |
+| `a-place-cut-below-the-sea` | `DW0886` | `validate` | standing a site-plan place two courses under the sea plane, on an `ocean` base |
 | `a-pool-of-two-walk-planes` | `DW0886` | `validate` | seating a pool whose members declare two different walk planes on the base that derives an origin from it |
 | `a-program-asking-for-a-seam-the-whole-does-not-hand` | `DW0882` | `detail` | declaring a `handed/` parameter for a seam the allocation does not hand |
 | `a-program-that-marks-no-place-to-stand` | `DW0845` | `detail` | removing the program's one `mark`, so nothing answers the anchor the quests bound to the place |
@@ -680,6 +680,56 @@ The probes are the ways a pulse is refused: `probes/a-beat-with-no-interval`,
 (`DW0993`), `probes/a-beat-heard-both-here-and-there` (`DW0929`),
 `probes/a-beat-in-solid-rock` (`DW0994`) and
 `probes/a-beat-the-game-never-heard` (`DW0326`).
+
+## The music each scene plays
+
+Every biome a camera can stand in states its music (spec-0109): the three
+atmospheres and the ground. The frost hall plays a spaced track that never
+interrupts; the still air is a silence that fades whatever plays; the ground is
+a silence that lets a playing track run out; and the reckoning, the frost
+hall's sky with only its music changed, plays one disc that replaces whatever
+plays and loops back to back. The story moves the music by repainting the
+place: at `obj/answer-the-marshal` a `stop-sound music` cuts the frost hall's
+track and a `set-atmosphere` paints the reckoning over the whole hall, so the
+muster's flyover a step later hears the reckoning — and says so
+(`hears: atmosphere/the-reckoning`); the build reads every 4-cell its camera
+passes in the configuration the forced route reaches it in and confirms it. The
+emeralds' wide shot, whose camera hangs in the void above the hall's sky, says
+it hears the ground (`hears: null`) — and scores itself (spec-0109 §3.6): its
+`music` names a single-file disc that replaces whatever plays and loops, so for
+the shot's length every 4-cell its camera can be in wears a variant of the
+ground carrying that disc, and when it ends every cell wears the ground again. The porch at the long hall's mouth cuts the
+cave's ambient mood and the warden's heartbeat by name, and silences the
+jukebox, weather, friendly-creature and voice categories, and the played sounds
+carry their own categories — the anvil and the case in `block`, the warden
+behind you in `hostile`, the wither's cry a `music` stinger, the hearth and the
+drip in `ambient`, the stone step in `player`, the kill chime in `ui`, the
+chest's close stated `master` — so every one of the eleven categories is
+written.
+
+The build says what it read on its `music binding:` line and writes
+`validation/music.json`: each biome's music, the word for what a playing track
+does when the camera enters (`replaces`, `plays-out`, `fades`,
+`plays-out-at-gain`); each
+cutscene's judged cells and verdict; each `stop-sound`'s biome where it fires
+and what it cuts there; and for the scored wide shot its painted cells, its one
+paint line, its variant (`gallery:music/<digest>/void`) and the way out at the
+ground. PackTest runs the wide shot's real paint, restore, interrupt and restart
+functions and reads every painted cell's biome after each
+(`cutscene_music_<n>`).
+
+The probes are the ways a scene's music is refused:
+`probes/a-sky-that-leaves-the-music-to-the-game`,
+`probes/a-ground-that-leaves-the-music-to-the-game`,
+`probes/music-for-a-builder-nobody-is`,
+`probes/a-ground-that-paints-its-own-sky`,
+`probes/a-cutscene-scored-with-nothing`,
+`probes/a-cutscene-scored-for-a-builder-nobody-is` and
+`probes/a-cutscene-that-paints-its-own-sky` (`DW1031`),
+`probes/a-cutscene-that-hears-the-wrong-place` (`DW1032`),
+`probes/a-cutscene-that-hears-a-sky-nobody-declared` (`DW0112`),
+`probes/a-sound-stopped-in-a-category-the-game-lacks` (`DW0100`) and
+`probes/a-sound-stopped-that-the-game-never-heard` (`DW0326`).
 
 ## The ferry, and what a link is
 

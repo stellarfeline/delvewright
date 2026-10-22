@@ -120,6 +120,7 @@ impl PressAnswer {
             at: Some(delvewright_dsl::AnchorId(self.anchor.clone())),
             // A seal's press answer rides the seal's own bodies; no block.
             prop: None,
+            highlight: None,
             on: delvewright_dsl::TriggerOn::Use,
             requires_flags: Vec::new(),
             forbids_flags: Vec::new(),

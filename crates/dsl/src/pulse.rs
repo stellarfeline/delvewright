@@ -49,6 +49,10 @@ pub struct Pulse {
     /// The pitch, `[0, 2]` (`DW0993`); default 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pitch: Option<f64>,
+    /// The beat's sound category (spec-0109 §3.4), the same
+    /// [`crate::SoundCategory`] a `play-sound` names. Absent = `master`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<crate::SoundCategory>,
     /// **When it beats**: the one [`Guard`] every gated object carries. Absent,
     /// the pulse beats from world load to the end; present, it beats while the
     /// gate holds. `when: {}` and a term on a `player`-scoped datum are refused

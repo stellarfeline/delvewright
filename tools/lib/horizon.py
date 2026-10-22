@@ -1,9 +1,10 @@
 """The horizon of a stage-1 document, read the way the compiler reads it.
 
-`horizon` is declared in one of two spellings that name the same variant: the
-bare base (`"ocean"`) or the object form (`{"base": "ocean", ...params}`). The
-compiler desugars both (`Horizon::resolved`, `horizon_base` in `crates/dsl`);
-every Python reader goes through `base_of` so a second parse rule cannot exist.
+`horizon` is written in the object form (`{"base": "ocean", ...params}`). The
+bare base (`"ocean"`) names the same variant; the compiler reads it only to
+refuse it (`DW1031`), and a ledger row's match may still spell it. Both resolve
+to one base (`Horizon::resolved`, `horizon_base` in `crates/dsl`); every Python
+reader goes through `base_of` so a second parse rule cannot exist.
 """
 
 # The default base when `horizon` is not declared (`HorizonBase::default`).

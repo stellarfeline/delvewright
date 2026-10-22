@@ -7,9 +7,11 @@ be written is in *Reference: writing craft*** — apply its section F as each
 line is written, and run its section A over every line before calling this step
 done.
 
-The order inside `quests.json` matters: **write the `cast` block first, before
-the objectives.** Every quest declares, for every NPC live in it,
-`{at, doing, dialogue}` — position first, story second.
+The order inside `quests.json` matters: **write the `cast` block first, then
+the campaign's `guidance` block, then the objectives.** Every quest declares,
+for every NPC live in it, `{at, doing, dialogue}` — position first, story
+second. `guidance` is usually omitted: write it only to hide the compass or
+announcements by default, or to give the journal a `manual`.
 
 Then `dialogue.json`. Three rules that are not style preferences:
 

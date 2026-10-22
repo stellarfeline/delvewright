@@ -594,6 +594,36 @@ pub fn configuration_at(
     }
 }
 
+/// **The world each of `steps` is judged in** (spec-0104 §4): for every
+/// arrival, the configuration [`configuration_at`] gives it — `None` where it
+/// writes nothing and the base world stands — with arrivals under one region
+/// state sharing one world, so a sight proof over many acts builds each
+/// configuration once. Returns, per step in `steps`' order, an index into the
+/// returned worlds.
+pub fn worlds_at(
+    world: &World,
+    events: &RegionEvents,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+    steps: &[usize],
+) -> (Vec<Option<World>>, Vec<usize>) {
+    let mut states: Vec<RegionState> = Vec::new();
+    let mut worlds: Vec<Option<World>> = Vec::new();
+    let mut index = Vec::with_capacity(steps.len());
+    for &step in steps {
+        let st = world.region_state_at(events, step, ancestor);
+        let i = match states.iter().position(|s| *s == st) {
+            Some(i) => i,
+            None => {
+                worlds.push((!st.is_empty()).then(|| world.with_region_state(&st)));
+                states.push(st);
+                states.len() - 1
+            }
+        };
+        index.push(i);
+    }
+    (worlds, index)
+}
+
 /// **The configuration a walked leg is walked under** (spec-0112 §5 item 1):
 /// the region state the route proof walks the leg `from_step → to_step` in
 /// ([`World::walked_leg_region_state`]) — every write the arrival's ancestors,

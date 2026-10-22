@@ -18,7 +18,7 @@
             "hint": "Step down into the ferry's hull.",
             "id": "obj/board",
             "radius": 1,
-            "title": "Board the ferry",
+            "title": "Step onto the ferry",
             "type": "reach-anchor"
           },
           {
@@ -30,7 +30,7 @@
               "text": "They climb out onto the far jetty.",
               "verb": "arrives"
             },
-            "hint": "Pull the tiller from inside the hull.",
+            "hint": "Cross in the hull; its tiller is inside.",
             "id": "obj/far-shore",
             "radius": 1,
             "title": "Cross to the far jetty",
@@ -48,7 +48,7 @@
             "hint": "The far ferry is moored beside you.",
             "id": "obj/board-back",
             "radius": 1,
-            "title": "Board the far ferry",
+            "title": "Step onto the far ferry",
             "type": "reach-anchor"
           },
           {
@@ -60,10 +60,10 @@
               "text": "They are back on the near jetty.",
               "verb": "arrives"
             },
-            "hint": "Pull the far tiller from inside its hull.",
+            "hint": "Cross back in the far hull; its tiller is inside.",
             "id": "obj/home",
             "radius": 1,
-            "title": "Ride home",
+            "title": "Return home",
             "type": "reach-anchor"
           }
         ],
@@ -191,6 +191,6 @@
       }
     ]
   },
-  "dsl_version": "0.55.0",
+  "dsl_version": "0.56.0",
   "stage": "quests"
 }

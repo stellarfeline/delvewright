@@ -62,6 +62,11 @@ const PLAYED: &[&str] = &[
     "actor_restand_",
     "volley_",
     "stk_",
+    // A block highlight's display copy (spec-0104 §7): summoned by
+    // `hl_hold_<a>` only while a player stands within its reach, removed by
+    // `hl_off_<a>`; no frame's world holds it.
+    "hl_hold_",
+    "hl_off_",
 ];
 
 fn tmp(name: &str) -> PathBuf {
@@ -243,7 +248,11 @@ fn every_placing_line_is_one_row_and_every_row_is_one_line() {
         ("an interact prop", &|c: &str| {
             c.contains("minecraft:stone_button")
         }),
-        ("a marked reach", &|c: &str| c.contains("\"dw_r_")),
+        // An objective stands no marker (spec-0104 §6), so the summon class
+        // a marked reach held is an item holder's body.
+        ("an item holder's body", &|c: &str| {
+            c.contains("\"dw_holder\"")
+        }),
         ("a collect chest's item", &|c: &str| {
             c.starts_with("item replace block ")
         }),

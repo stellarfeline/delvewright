@@ -9,6 +9,10 @@
 //! Lumenwright's ([`crate::compiler::view::frames`]); nothing here draws a
 //! block.
 //!
+//! **A shot frames its subject** (spec-0110) is the same question asked of a
+//! cutscene: [`shot`] judges every shot per tick (`DW1033`, `DW1034`) and
+//! derives every assembly's `view_range`, through the sight rule below.
+//!
 //! ## Camera convention
 //!
 //! `yaw`/`pitch` are **Minecraft** degrees, identical to the cutscene aim and
@@ -18,15 +22,23 @@
 //!
 //! ## One sight rule
 //!
-//! A target is occluded when all nine of its probe points
-//! ([`Target::probe_points`]) are hidden by a block that is not the target's
-//! own ([`VoxelGrid::occluded_target`]). [`resolve_targets`] is the one place a
-//! target is put on a frame, and the one public entry point to the question
-//! "is this target inside this camera's frame, and hidden there". Its building
-//! blocks are private to this module — the ray walk ([`VoxelGrid::cast`] and its
-//! `Hit`), the probe points, the projection ([`Camera::project`], `ray`), the
-//! screen box — and a [`ResolvedTarget`]'s fields are private, so no other
-//! module can assemble or state a second answer. Every consumer is held to this
+//! Whether an eye sees a box is answered once, by [`in_sight`] (spec-0110
+//! §5.5): of the nine lines from the eye to the box — its centre and its eight
+//! corners inset ([`CellBox`]'s private sight points) — how many cross no cell
+//! the world's [`Occupancy`] stops a line at, the box's own cells excluded. A
+//! frame's world is its [`VoxelGrid`]; the build's proofs read the nav world's
+//! camera-blocking cells. A target is occluded when no line is clear
+//! (`occluded_target`). Three questions ask the rule, and nothing else answers
+//! it: a review frame ([`resolve_targets`]), a cutscene shot ([`shot`],
+//! `DW1033`) and an act's sight from where the party stands (`DW0863`,
+//! `promise`), the last two inside the crate. [`resolve_targets`] is the one
+//! place a target is put on a frame, and the one public entry point to the
+//! question "is this target inside this camera's frame, and hidden there". Its
+//! building blocks are private to this module — the ray walk
+//! ([`VoxelGrid::cast`] and its `Hit`), the sight points, `occluded_target`,
+//! the projection ([`Camera::project`], `ray`), the screen box — and a
+//! [`ResolvedTarget`]'s fields are private, so no other module can assemble or
+//! state a second answer. Every consumer is held to this
 //! one by the agreement test `every_consumer_of_the_sight_rule_agrees_with_it`
 //! (`crates/delvec/src/cli/sight_agreement.rs`).
 //!
@@ -50,7 +62,7 @@
 //! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
 //! let grid = VoxelGrid::build(&Default::default());
 //! let t = Target::point("t".into(), "anchor", String::new(), [0, 0, 0]);
-//! grid.occluded_target([0.5, 0.5, -4.0], &t);
+//! delvec::compiler::framing::occluded_target(&grid, [0.5, 0.5, -4.0], &t);
 //! ```
 //!
 //! ```compile_fail
@@ -61,8 +73,8 @@
 //!
 //! ```compile_fail
 //! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
-//! let t = Target::point("t".into(), "anchor", String::new(), [0, 0, 0]);
-//! t.probe_points();
+//! let b = delvec::compiler::framing::CellBox::cell([0, 0, 0]);
+//! b.sight_points();
 //! ```
 //!
 //! ```compile_fail
@@ -104,8 +116,12 @@ use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
+use crate::compiler::nav::walk_cells;
 use crate::compiler::plan::{Plan, ResolvedAnchor};
 use crate::compiler::raster::ScreenBox;
+
+pub mod shot;
+pub use shot::*;
 
 /// Default vertical field of view in degrees (vanilla's default is 70).
 pub const DEFAULT_FOV: f64 = 70.0;
@@ -427,41 +443,152 @@ impl VoxelGrid {
         let dir = [d[0] / len, d[1] / len, d[2] / len];
         self.cast(from, dir, len).is_some()
     }
+}
 
-    /// The manifest's `occluded` test: does anything **other than the target
-    /// itself** stand between the camera and it?
-    ///
-    /// Two subtleties, both learned from the island build:
-    ///
-    /// - **Exclude the target's own cells.** A marker routinely *is* a block —
-    ///   `anchor/fire-pit` names the campfire, an interact anchor names the lever
-    ///   — so a probe that stops at "the first block before the centre point"
-    ///   reports the most visible object in the frame as occluded. A probe that
-    ///   ends inside the target's own cell box counts as having reached it.
-    /// - **Probe more than the centre.** One centre ray grazing the rim of the
-    ///   platform a fire pit stands on calls the whole fire pit hidden. Nine
-    ///   samples ([`Target::probe_points`]) make the answer "can *any part* of it
-    ///   be seen", which is what a reviewer means by visible — and nine rays per
-    ///   target is a few hundred cell probes.
-    fn occluded_target(&self, from: [f64; 3], t: &Target) -> bool {
-        t.probe_points()
-            .into_iter()
-            .all(|to| self.sight_line_blocked(from, to, t))
+// ---------------------------------------------------------------------------
+// The sight rule
+// ---------------------------------------------------------------------------
+
+/// How far inside its box a corner sight line ends, clamped so a one-cell box
+/// still yields eight distinct points.
+pub const SIGHT_INSET: f64 = 0.3;
+
+/// An inclusive box of cells.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CellBox {
+    /// Inclusive minimum cell.
+    pub min: [i32; 3],
+    /// Inclusive maximum cell.
+    pub max: [i32; 3],
+}
+
+impl CellBox {
+    /// The box of one cell.
+    pub fn cell(c: [i32; 3]) -> CellBox {
+        CellBox { min: c, max: c }
     }
 
-    /// Whether the segment `from → to` meets a block that is not part of `t`.
-    fn sight_line_blocked(&self, from: [f64; 3], to: [f64; 3], t: &Target) -> bool {
-        let d = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
-        let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-        if len < 1e-9 {
-            return false;
-        }
-        let dir = [d[0] / len, d[1] / len, d[2] / len];
-        match self.cast(from, dir, len) {
-            Some(h) => !(0..3).all(|a| h.cell[a] >= t.min[a] && h.cell[a] <= t.max[a]),
-            None => false,
+    /// The box spanning two corners in any order.
+    pub fn spanning(a: [i32; 3], b: [i32; 3]) -> CellBox {
+        CellBox {
+            min: [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])],
+            max: [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])],
         }
     }
+
+    /// The box's centre in world coordinates (cell centres).
+    pub fn centre(&self) -> [f64; 3] {
+        [
+            (self.min[0] + self.max[0] + 1) as f64 / 2.0,
+            (self.min[1] + self.max[1] + 1) as f64 / 2.0,
+            (self.min[2] + self.max[2] + 1) as f64 / 2.0,
+        ]
+    }
+
+    /// Whether `c` is inside the box.
+    pub fn contains(&self, c: [i32; 3]) -> bool {
+        (0..3).all(|a| c[a] >= self.min[a] && c[a] <= self.max[a])
+    }
+
+    /// The nine points sight lines end at: the centre, then the eight corners
+    /// inset by [`SIGHT_INSET`] (clamped to 0.2 of a half-extent).
+    fn sight_points(&self) -> [[f64; 3]; 9] {
+        let c = self.centre();
+        let half = |a: usize| ((self.max[a] - self.min[a] + 1) as f64 / 2.0 - SIGHT_INSET).max(0.2);
+        let h = [half(0), half(1), half(2)];
+        let mut out = [c; 9];
+        for (i, p) in out.iter_mut().skip(1).enumerate() {
+            *p = [
+                c[0] + if i & 1 == 0 { -h[0] } else { h[0] },
+                c[1] + if i & 2 == 0 { -h[1] } else { h[1] },
+                c[2] + if i & 4 == 0 { -h[2] } else { h[2] },
+            ];
+        }
+        out
+    }
+}
+
+/// What an eye sees of a box past the cells that stop a line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Lines {
+    /// How many of the nine lines cross no blocking cell outside the box.
+    pub clear: u8,
+    /// The first blocking cell on the centre line, when it is blocked.
+    pub centre_block: Option<[i32; 3]>,
+}
+
+impl Lines {
+    /// At least one line is clear.
+    pub fn seen(&self) -> bool {
+        self.clear > 0
+    }
+}
+
+/// **The one "in sight" rule** (spec-0110 §5.5): of the nine lines from `eye`
+/// to `sight_box` (its centre and its eight corners inset,
+/// `CellBox::sight_points`), how many cross no cell `blocks` holds for, the
+/// box's own cells excluded. A review frame asks it of its eye over its grid
+/// ([`resolve_targets`]); a shot asks it of its lens (`shot::sight`); `DW0863`
+/// (`promise`, spec-0104 §4) asks it of a standing body's eye, with no frame,
+/// because a player turns to look.
+pub(crate) fn in_sight(
+    eye: [f64; 3],
+    sight_box: &CellBox,
+    blocks: &dyn Fn([i32; 3]) -> bool,
+) -> Lines {
+    let blocked = |to: [f64; 3]| walk_cells(eye, to, |c| blocks(c) && !sight_box.contains(c));
+    let pts = sight_box.sight_points();
+    let centre_block = blocked(pts[0]);
+    let clear = pts
+        .iter()
+        .enumerate()
+        .filter(|(i, p)| {
+            if *i == 0 {
+                centre_block.is_none()
+            } else {
+                blocked(**p).is_none()
+            }
+        })
+        .count() as u8;
+    Lines {
+        clear,
+        centre_block,
+    }
+}
+
+/// The cells of a world that stop a sight line: what [`in_sight`] is asked
+/// over. A frame's [`VoxelGrid`] stops a line at every cell it holds; the
+/// build's nav world at its camera-blocking cells
+/// ([`crate::compiler::nav::World::blocks_camera`]).
+pub trait Occupancy {
+    /// Whether a sight line stops at `c`.
+    fn stops_sight(&self, c: [i32; 3]) -> bool;
+}
+
+impl Occupancy for VoxelGrid {
+    fn stops_sight(&self, c: [i32; 3]) -> bool {
+        self.at(c) != 0
+    }
+}
+
+impl Occupancy for crate::compiler::nav::World {
+    fn stops_sight(&self, c: [i32; 3]) -> bool {
+        self.blocks_camera(c)
+    }
+}
+
+/// The manifest's `occluded` test: no sight line from `from` reaches the
+/// target ([`in_sight`] over `world`). The target's own cells are excluded —
+/// a marker routinely *is* a block (`anchor/fire-pit` names the campfire, an
+/// interact anchor the lever) — and nine lines are asked, not the centre's
+/// alone, so one ray grazing the rim of a platform does not hide what stands
+/// on it.
+fn occluded_target<O: Occupancy + ?Sized>(world: &O, from: [f64; 3], t: &Target) -> bool {
+    let b = CellBox {
+        min: t.min,
+        max: t.max,
+    };
+    !in_sight(from, &b, &|c| world.stops_sight(c)).seen()
 }
 
 // ---------------------------------------------------------------------------
@@ -609,11 +736,6 @@ pub struct Target {
     pub max: [i32; 3],
 }
 
-/// How far inside its own box a visibility probe point sits (see
-/// [`Target::probe_points`]) — enough to clear the surface of the block the
-/// marker may coincide with, small enough to stay within a 1-cell target.
-const PROBE_INSET: f64 = 0.3;
-
 impl Target {
     pub fn point(id: String, kind: &'static str, area: String, pos: [i32; 3]) -> Target {
         Target {
@@ -654,28 +776,6 @@ impl Target {
                 if i & 1 == 0 { lo[0] } else { hi[0] },
                 if i & 2 == 0 { lo[1] } else { hi[1] },
                 if i & 4 == 0 { lo[2] } else { hi[2] },
-            ];
-        }
-        out
-    }
-
-    /// Nine visibility probe points: the box centre plus the corners of the box
-    /// inset by [`PROBE_INSET`] on every side (clamped so a 1-cell target still
-    /// yields eight distinct interior points). See [`VoxelGrid::occluded_target`]
-    /// for why one centre ray is not enough.
-    fn probe_points(&self) -> [[f64; 3]; 9] {
-        let c = self.centre();
-        let half = [
-            ((self.max[0] - self.min[0] + 1) as f64 / 2.0 - PROBE_INSET).max(0.2),
-            ((self.max[1] - self.min[1] + 1) as f64 / 2.0 - PROBE_INSET).max(0.2),
-            ((self.max[2] - self.min[2] + 1) as f64 / 2.0 - PROBE_INSET).max(0.2),
-        ];
-        let mut out = [c; 9];
-        for (i, p) in out.iter_mut().skip(1).enumerate() {
-            *p = [
-                c[0] + if i & 1 == 0 { -half[0] } else { half[0] },
-                c[1] + if i & 2 == 0 { -half[1] } else { half[1] },
-                c[2] + if i & 4 == 0 { -half[2] } else { half[2] },
             ];
         }
         out
@@ -853,9 +953,9 @@ pub fn collect_targets(plan: &Plan) -> Vec<Target> {
 
 /// **The body a target is drawn as**, by entity id without its namespace, when
 /// the target is a body the datapack summons: an NPC's post is its mannequin
-/// (a skinned NPC) or its declared entity; an actor's post its puppet; a
-/// marked `interact` objective with no prop is its glowing lantern
-/// `item_display`. `None` for every other target. A review frame reads the
+/// (a skinned NPC) or its declared entity; an actor's post its puppet. `None`
+/// for every other target: an `interact` objective is marked by no body
+/// (spec-0104 §6 — a highlight copy exists only while it is lit). A review frame reads the
 /// renderer's own statistics for that kind ([`crate::compiler::view::frames::Stats`])
 /// to say whether the body was drawn (`DW1039`).
 pub fn body_of(plan: &Plan, t: &Target) -> Option<String> {
@@ -888,15 +988,6 @@ pub fn body_of(plan: &Plan, t: &Target) -> Option<String> {
                     short(&a.entity)
                 }
             }),
-        "interact" => c
-            .quests
-            .content
-            .quests
-            .iter()
-            .flat_map(|q| q.objectives.iter())
-            .find(|o| interact_of(o).is_some_and(|(id, _)| id == t.id))
-            .filter(|o| o.prop().is_none() && o.marker_shown(&c.quests.content.guidance))
-            .map(|_| "item_display".to_string()),
         _ => None,
     }
 }
@@ -971,8 +1062,8 @@ pub struct ResolvedTarget<'a> {
     target: &'a Target,
     /// Screen-space bbox in pixels.
     bbox: ScreenBox,
-    /// Whether every probe line from the eye meets a block that is not the
-    /// target's own ([`VoxelGrid::occluded_target`]).
+    /// Whether no sight line from the eye reaches the target
+    /// (`occluded_target`, the one sight rule).
     occluded: bool,
     /// Eye→centre distance in blocks.
     distance: f64,
@@ -1017,8 +1108,8 @@ impl<'a> ResolvedTarget<'a> {
 /// Resolve every target against a camera, returning `(in frustum, out of frame
 /// ids)`. Input order is preserved, so the manifest inherits
 /// [`collect_targets`]'s deterministic sort.
-pub fn resolve_targets<'a>(
-    grid: &VoxelGrid,
+pub fn resolve_targets<'a, O: Occupancy + ?Sized>(
+    grid: &O,
     cam: &Camera,
     width: u32,
     height: u32,
@@ -1038,7 +1129,7 @@ pub fn resolve_targets<'a>(
                 inside.push(ResolvedTarget {
                     target: t,
                     bbox,
-                    occluded: grid.occluded_target(cam.pos, t),
+                    occluded: occluded_target(grid, cam.pos, t),
                     distance: (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt(),
                 });
             }
@@ -1395,31 +1486,14 @@ mod tests {
         let eye = [0.5, 3.0, 0.5];
         let at = |c: [i32; 3]| Target::point("t".into(), "anchor", String::new(), c);
         // Behind the wall → occluded.
-        assert!(g.occluded_target(eye, &at([9, 3, 0])));
+        assert!(occluded_target(&g, eye, &at([9, 3, 0])));
         // In the open on this side → not occluded.
-        assert!(!g.occluded_target(eye, &at([3, 3, 0])));
+        assert!(!occluded_target(&g, eye, &at([3, 3, 0])));
         // A marker standing ON the floor is NOT occluded by the floor itself.
-        assert!(!g.occluded_target(eye, &at([3, 1, 0])));
+        assert!(!occluded_target(&g, eye, &at([3, 1, 0])));
         // The plain segment test still reports the wall.
         assert!(g.blocked(eye, [9.5, 3.0, 0.5]));
         assert!(!g.blocked(eye, [3.5, 3.0, 0.5]));
-    }
-
-    #[test]
-    fn probe_points_stay_inside_a_one_cell_target() {
-        let t = Target::point("a".into(), "anchor", String::new(), [4, 70, -3]);
-        let ps = t.probe_points();
-        assert_eq!(ps[0], t.centre(), "the first probe is the centre");
-        for p in ps {
-            for a in 0..3 {
-                let (lo, hi) = (t.min[a] as f64, t.max[a] as f64 + 1.0);
-                assert!(p[a] > lo && p[a] < hi, "probe {p:?} escaped the cell");
-            }
-        }
-        // Distinct points, so nine rays really sample nine sight lines.
-        for i in 1..9 {
-            assert_ne!(ps[i], ps[0]);
-        }
     }
 
     #[test]
@@ -1439,13 +1513,13 @@ mod tests {
         );
         let eye = [0.5, 0.5, 0.0];
         assert!(
-            !g.occluded_target(eye, &fire),
+            !occluded_target(&g, eye, &fire),
             "the marker's own block must not occlude it"
         );
         m.insert([0, 0, 5], "minecraft:stone".to_string());
         let g2 = VoxelGrid::build(&crate::compiler::blockstate::interned(m.clone()));
         assert!(
-            g2.occluded_target(eye, &fire),
+            occluded_target(&g2, eye, &fire),
             "a block in front of it must occlude it"
         );
     }

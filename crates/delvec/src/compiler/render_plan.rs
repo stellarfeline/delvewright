@@ -87,7 +87,7 @@
 //! "sea_level": 62}`, or a valley's extent) as a fact of the campaign. The
 //! review worlds carry the generator's own ground in every chunk they write
 //! (spec-0112 §5.3), and a valley's extent widens the box a frame loads
-//! ([`loaded_extent`]). `horizon: void` (the default) emits no key.
+//! ([`loaded_extent`]). A `void` base (the default) emits no key.
 //!
 //! ## `sky` (the declared hour reaches the renderer)
 //!
@@ -275,9 +275,16 @@ pub fn eye_cell(eye: [f64; 3]) -> [i32; 3] {
 /// critical-path routes: one camera at eye height on every corner-thinned waypoint
 /// (the same thinning the harness replays — turns + endpoints, never every cell),
 /// oriented along the walk toward the next waypoint, and — at each leg's final
-/// waypoint — toward the objective anchor it arrives at. Pure and deterministic
-/// (route order → waypoint order; no RNG/clock), so it rides the ADR-0006 gate.
-pub fn pov_shots(plan: &Plan, routes: &[LegRoute]) -> Vec<PovShot> {
+/// waypoint — toward the objective anchor it arrives at. A walking frame whose
+/// aim frames nothing the campaign declares looks farther along the leg
+/// ([`walking_aim`]). Pure and deterministic (route order → waypoint order; no
+/// RNG/clock), so it rides the ADR-0006 gate.
+pub fn pov_shots(
+    plan: &Plan,
+    routes: &[LegRoute],
+    world: &crate::compiler::nav::World,
+) -> Vec<PovShot> {
+    let targets = crate::compiler::framing::collect_targets(plan);
     let mut shots = Vec::new();
     for (leg, route) in routes.iter().enumerate() {
         // The cells a climb holds in between its ends are no stop (spec-0099):
@@ -320,15 +327,12 @@ pub fn pov_shots(plan: &Plan, routes: &[LegRoute]) -> Vec<PovShot> {
                         .climbs
                         .iter()
                         .any(|r| r.from == wps[wp + 1] && r.to == wps[wp + 2]);
-                let n = if into_climb { wps[wp + 2] } else { wps[wp + 1] };
-                (
-                    [
-                        n[0] as f64 + 0.5,
-                        n[1] as f64 + EYE_HEIGHT,
-                        n[2] as f64 + 0.5,
-                    ],
-                    Arrival::Walking,
-                )
+                let ahead = if into_climb {
+                    &wps[wp + 2..]
+                } else {
+                    &wps[wp + 1..]
+                };
+                (walking_aim(world, &targets, eye, ahead), Arrival::Walking)
             } else {
                 // Leg's final waypoint: the frame is of the objective it arrives
                 // at, and [`arrival_aim`] is what decides where to point.
@@ -360,6 +364,75 @@ pub fn pov_shots(plan: &Plan, routes: &[LegRoute]) -> Vec<PovShot> {
         }
     }
     shots
+}
+
+/// Where a walking frame looks: the next waypoint's eye (past a climb's
+/// take-hold, where the climb lands), the way the player walks, when that
+/// frame holds a declared target in frame by
+/// [`crate::compiler::framing::resolve_targets`] at the review frame's size —
+/// the question `tools/ci/check-gallery-render.py` asks of every view. Whether
+/// a target is in sight is the one sight rule over the build's nav world. When it holds none,
+/// the eye of the first later waypoint of the leg whose frame holds a declared
+/// target both in frame and in sight: the player looking farther along the
+/// walk, to the next thing there is to see. A turned frame owes a clear line
+/// as well, so a camera never turns to face a wall a target stands behind.
+/// When no later waypoint answers, the nearest declared target ahead of the
+/// walk (on the walked side of the eye, horizontally) whose frame holds it in
+/// sight: the player glancing at the nearest thing ahead there is to see.
+/// When nothing answers, the frame keeps the next waypoint, and the view gate
+/// names it as framing nothing.
+fn walking_aim(
+    world: &crate::compiler::nav::World,
+    targets: &[crate::compiler::framing::Target],
+    eye: [f64; 3],
+    ahead: &[[i32; 3]],
+) -> [f64; 3] {
+    let eye_of = |c: &[i32; 3]| {
+        [
+            c[0] as f64 + 0.5,
+            c[1] as f64 + EYE_HEIGHT,
+            c[2] as f64 + 0.5,
+        ]
+    };
+    let frames = |look_at: [f64; 3], in_sight: bool| {
+        let cam = crate::compiler::framing::Camera::looking_at(
+            eye,
+            look_at,
+            crate::compiler::framing::DEFAULT_FOV,
+        );
+        let (inside, _) = crate::compiler::framing::resolve_targets(
+            world,
+            &cam,
+            crate::compiler::view::frames::REVIEW_SIZE,
+            crate::compiler::view::frames::REVIEW_SIZE,
+            targets,
+        );
+        inside.iter().any(|r| !in_sight || !r.occluded())
+    };
+    let next = eye_of(&ahead[0]);
+    if frames(next, false) {
+        return next;
+    }
+    if let Some(a) = ahead[1..].iter().map(eye_of).find(|a| frames(*a, true)) {
+        return a;
+    }
+    let heading = [next[0] - eye[0], next[2] - eye[2]];
+    let mut glances: Vec<(f64, usize, [f64; 3])> = targets
+        .iter()
+        .enumerate()
+        .filter_map(|(i, t)| {
+            let c = t.centre();
+            let d = [c[0] - eye[0], c[1] - eye[1], c[2] - eye[2]];
+            (d[0] * heading[0] + d[2] * heading[1] > 0.0)
+                .then(|| ((d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt(), i, c))
+        })
+        .collect();
+    glances.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    glances
+        .into_iter()
+        .map(|(_, _, c)| c)
+        .find(|c| frames(*c, true))
+        .unwrap_or(next)
 }
 
 /// What a POV frame is a frame OF, which is also what its `expect` line may
@@ -1194,7 +1267,7 @@ pub fn render_plan(
         let step = plan.objective_steps.get(&obj_id).copied();
         let world = step.map_or(at_load, |s| s.min(frames.arrivals.len() - 1));
         let mut expect = find_objective(c, &obj_id)
-            .map(|o| interact_expect(c, o, step.is_some()))
+            .map(|o| interact_expect(o, step.is_some()))
             .unwrap_or_default();
         if let Some(h) = hint {
             expect.push(Value::String(format!(
@@ -1474,7 +1547,7 @@ fn sky_fact(c: &Campaign) -> Value {
 }
 
 /// The world-generator horizon (spec-0013) as the render layer needs it, or
-/// `None` for `horizon: void`.
+/// `None` for a `void` base.
 ///
 /// The level generator is a *fact of the campaign*, so the compiler states it
 /// (`{"kind": "ocean", "sea_level": 62}`) rather than leaving a reader to infer
@@ -1588,7 +1661,7 @@ fn piece_is_lit(prefabs: &PrefabRegistry, prefab_id: &str) -> Option<bool> {
 /// prop a hand presses that stands in its place (spec-0093 §6.5). `on_path`
 /// is whether a critical-path step does the objective: when none does, the
 /// frame stands at load, before its quest has placed anything, and says so.
-fn interact_expect(c: &Campaign, o: &Objective, on_path: bool) -> Vec<Value> {
+fn interact_expect(o: &Objective, on_path: bool) -> Vec<Value> {
     let mut out = Vec::new();
     if !on_path {
         out.push(Value::String(
@@ -1606,13 +1679,8 @@ fn interact_expect(c: &Campaign, o: &Objective, on_path: bool) -> Vec<Value> {
             "`{}` is placed at the interact anchor when its quest activates — not in this frame",
             p.block
         ))),
-        None if o.marker_shown(&c.quests.content.guidance) => out.push(Value::String(
-            "glowing lantern marker visible at the interact anchor".into(),
-        )),
         None => out.push(Value::String(
-            "no marker at the interact anchor (the objective is unmarked) — the place itself is \
-             what the player finds"
-                .into(),
+            "no marker at the interact anchor — the place itself is what the player finds".into(),
         )),
     }
     out.push(Value::String(

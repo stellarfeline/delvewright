@@ -723,6 +723,19 @@ impl Walk<'_, '_> {
     /// replay proves armed, so a keep-out built on it refuses nothing the replay
     /// cannot show. In declaration order.
     pub fn armed_objectives(&self) -> Vec<String> {
+        self.armed_where(false)
+    }
+
+    /// [`Self::armed_objectives`] with a term on a datum the walk cannot date
+    /// read as OPEN: every objective that may be armed now, its flags,
+    /// `after` and quest decided and its numeric terms not shown shut. Read by
+    /// `DW0863`, which withholds a line's credit only where the replay shows
+    /// the objective is not yet armed.
+    pub fn armed_objectives_unless_shut(&self) -> Vec<String> {
+        self.armed_where(true)
+    }
+
+    fn armed_where(&self, undated_open: bool) -> Vec<String> {
         self.flow
             .c
             .quests
@@ -736,7 +749,7 @@ impl Walk<'_, '_> {
                     .iter()
                     .all(|c| match self.st.state.get(c.state.as_str()) {
                         Some(Datum::Known(v)) => i32::try_from(*v).is_ok_and(|v| c.holds(v)),
-                        _ => false,
+                        _ => undated_open,
                     })
             })
             .map(|o| o.id().as_str().to_string())

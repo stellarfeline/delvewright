@@ -42,7 +42,7 @@ fn quests_doc(extra: &str) -> String {
         "trigger": {{ "type": "campaign-start" }},
         "objectives": [
           {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
-          {{ "type": "interact", "id": "obj/pry", "anchor": "anchor/exit",
+          {{ "type": "interact", "id": "obj/pry", "anchor": "anchor/exit", "prop": {{ "block": "minecraft:torch" }},
              "requires_item": "{ITEM}", "after": ["obj/talk"]{extra} }}
         ],
         "on_objective_complete": {{

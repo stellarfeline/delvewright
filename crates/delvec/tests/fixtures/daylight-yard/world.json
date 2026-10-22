@@ -8,6 +8,12 @@
         "prefab": "prefab/hello-room"
       }
     ],
+    "horizon": {
+      "attributes": {
+        "audio/background_music": {}
+      },
+      "base": "void"
+    },
     "premise": "The garrison still musters in the yard, and the sun has not forgiven them.",
     "seed": 20260805,
     "target_minutes": 5,
@@ -16,6 +22,6 @@
     "title": "The Open Yard",
     "weather": "clear"
   },
-  "dsl_version": "0.55.0",
+  "dsl_version": "0.56.0",
   "stage": "world"
 }

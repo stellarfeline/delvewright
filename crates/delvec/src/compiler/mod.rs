@@ -7,6 +7,7 @@
 //! were the ones a reader happened to add. `the_module_list_names_every_module`
 //! (`tests/module_list.rs`) is what keeps it whole.
 //!
+//! - [`acts`]: the acts on every walked path — what the party must do, where, and from where it stands (spec-0104), read by `DW0863`.
 //! - [`affordance`]: affordance hardware — the visible half of every right-click target the compiler owns (`DW0420`/`DW0421`).
 //! - [`analyze`]: deep quest/objective reachability (`DW02xx`, exit 2).
 //! - [`approach`]: a body the party talks to faces their approach, or watches it (`DW1025`).
@@ -51,7 +52,7 @@
 //! - [`failure`]: the one type a compiler pass fails with — a DW code and the message that goes with it.
 //! - [`firework`]: `DW0899` — a rocket bursts in open air, clear of every posted body (spec-0068).
 //! - [`flow`]: the branch-coherent flag/quest flow model and the critical-path extraction (`DW0204`).
-//! - [`framing`]: what a frame frames — the camera, the occupancy grid a sight line is asked of, the targets a review names, and the frame manifest.
+//! - [`framing`]: what a frame frames — the camera, the occupancy grid a sight line is asked of, the one sight rule, the targets a review names and the frame manifest; and a shot frames its subject — the per-tick shot proof (`DW1033`, `DW1034`) and every assembly's derived `view_range` (spec-0110).
 //! - [`gates`]: `close-gate` gate-block validation — the physical dual of `open-gate`.
 //! - [`gatesignal`]: no redstone signal opens a shut gate — a source powering a shut seam's trapdoor is refused (`DW1047`).
 //! - [`guarantee`]: which anchors an area's binding guarantees, answered before anything is placed (`DW0889`).
@@ -70,6 +71,7 @@
 //! - [`loot`]: container-fill proofs over the assembled world (`DW0431`/`DW0438`).
 //! - [`mark`]: a mark stays in the room its anchor names — an offset that leaves its anchor's piece is refused (`DW0897`).
 //! - [`massing`]: the L2 massing verbs — declarative control of a pool area's solved jigsaw layout.
+//! - [`music`]: what every biome a camera can stand in plays, what each cutscene hears and what each `stop-sound` cuts — the music ledger and `DW1032`.
 //! - [`muster`]: what a wave declares, phrased as questions the live bodies are asked.
 //! - [`nav`]: compile-time navigation over the solved voxel grid.
 //! - [`observer`]: a watching player is out of play everywhere — the positional-selector census a respawn wait owes (`DW0926`).
@@ -116,6 +118,7 @@
 //! - [`ways`]: what a campaign does with a piece's contingent ways.
 //! - [`wrongside`]: which side of a sealed shortcut door a player is standing on.
 
+pub mod acts;
 pub mod affordance;
 pub mod analyze;
 pub mod approach;
@@ -179,6 +182,7 @@ pub mod r#loop;
 pub mod loot;
 pub mod mark;
 pub mod massing;
+pub mod music;
 pub mod muster;
 pub mod nav;
 pub(crate) mod nbtread;

@@ -251,6 +251,8 @@ pub fn validate_campaign_with(
     // spec-0081: the shape of every celestial time the documents state
     // (`DW0931`). Empty for a campaign of keywords.
     crate::celestial::check(c, &mut d);
+    // spec-0109: every biome a camera can stand in states its music (`DW1031`).
+    crate::music::check(c, &mut d);
 
     d
 }

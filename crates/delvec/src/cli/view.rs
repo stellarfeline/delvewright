@@ -593,7 +593,12 @@ pub(crate) fn run_blocking_chart(
     // lethal volumes, clocked regions) and the path with the links the route
     // proof takes spliced in. A chart taken over a smaller premise set draws a
     // corridor no proof ever walked.
-    let walked = match delvec::compiler::blocking::walked_corridor(&plan, &prefabs, &assembled) {
+    let walked = match delvec::compiler::blocking::walked_corridor(
+        &plan,
+        &prefabs,
+        &assembled,
+        &delvec::compiler::holders::placed_holders(&plan, &structures),
+    ) {
         Ok(w) => w,
         Err(f) => {
             eprintln!("{} [error] build: {}", f.code, f.message);

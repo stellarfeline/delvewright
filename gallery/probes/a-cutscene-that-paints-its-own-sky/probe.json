@@ -1,0 +1,13 @@
+{
+  "code": "DW1031",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/on_objective_complete/obj~1take-the-emeralds/1/steps/1/effects/0/music/visual~1sky_color",
+      "value": "#7ba4ff"
+    }
+  ],
+  "units": [],
+  "why": "One edit: a `visual/sky_color` under the emeralds' wide shot's `music`. A cutscene's `music` admits exactly `audio/background_music` and `audio/music_volume`: its score is played by variant biomes that differ from the places only in their music, so the look of the cells the camera passes stays the places' own. `DW1031` refuses the line. It declares no unit."
+}

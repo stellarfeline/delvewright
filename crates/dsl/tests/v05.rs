@@ -24,6 +24,7 @@ static WORLD_V05: LazyLock<String> = LazyLock::new(|| {
     "seed": 20260729,
     "target_minutes": 5,
     "time": "midnight",
+    "horizon": { "base": "void", "attributes": { "audio/background_music": {} } },
     "weather": "thunder",
     "areas": [
       {

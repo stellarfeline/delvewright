@@ -17,6 +17,7 @@ mod creator;
 mod dialogue;
 mod economy;
 pub(super) mod ending;
+mod guidance;
 mod healthbar;
 mod holders;
 mod lane;
@@ -24,6 +25,7 @@ mod lethal;
 mod lightning;
 mod r#loop;
 mod loot;
+mod music;
 mod npc;
 mod objective;
 mod onkill;
@@ -56,6 +58,10 @@ pub(super) struct Proved<'a> {
     pub(super) containers: &'a BTreeMap<[i32; 3], String>,
     /// Every holder entity with what the engine owns about it (spec-0111).
     pub(super) holders: &'a [crate::compiler::holders::OwnedHolder],
+    /// The campaign's guidance (spec-0104 §6–§8).
+    pub(super) guide: &'a super::guidance::Guide,
+    /// The build's chrome, for the keys the journal's pages carry.
+    pub(super) chrome: &'a delvewright_dsl::Chrome,
 }
 
 /// Emit the compiler-generated PackTest suite (spec-0003). PackTest (misode,
@@ -79,6 +85,8 @@ pub(super) fn emit_packtest(
         watch_binding,
         containers,
         holders,
+        guide,
+        chrome,
     } = *proved;
     let ns = &plan.namespace;
     put_json(
@@ -109,6 +117,9 @@ pub(super) fn emit_packtest(
     // spec-0080 §5.2: the server holds the biome each carried place declares,
     // and every repaint moves it — inside the volume and not outside.
     atmosphere::emit_atmosphere_packtests(plan, out);
+    // spec-0109 §5.3: a cutscene's own music — its paint, restore, interrupt
+    // and restart functions leave every painted cell at its base.
+    music::emit_music_packtests(plan, out, moves, actor_moves);
 
     creator::emit_creator_packtests(plan, out);
 
@@ -218,6 +229,13 @@ pub(super) fn emit_packtest(
     // two `fires` values apart. Emits nothing for a campaign with no bundle.
     onkill::emit_kill_pays_packtests(plan, out, waves.placements);
     objective::emit_objective_activation_packtests(plan, out, proved.holders);
+    // spec-0104 §6–§8: the compass, the journal and every highlight, driven on
+    // the dummy. Each emits nothing for a campaign without its surface.
+    guidance::emit_compass_packtests(plan, out, guide);
+    guidance::emit_compass_wave_packtest(plan, out, guide);
+    guidance::emit_journal_packtests(plan, out, guide, chrome);
+    guidance::emit_highlight_packtests(plan, out, guide);
+    guidance::emit_highlight_spent_packtests(plan, out, guide);
     class::emit_class_apply_packtests(plan, out);
     npc::emit_npc_talk_packtests(plan, out);
     // Every environment trigger's own bundle, plus a presser's dispatch and
@@ -293,6 +311,7 @@ pub(super) fn watch_claims(
         cast::cast_ladder_watch_claim(plan),
         pulse::pulse_watch_claim(plan),
         holders::holder_watch_claim(holders),
+        music::cutscene_music_watch_claim(plan),
     ];
     watch_claims.extend(trigger::env_trigger_watch_claims(plan));
     watch_claims.extend(dialogue::dialogue_mask_watch_claims(plan));

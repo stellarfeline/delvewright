@@ -9,6 +9,12 @@
       }
     ],
     "difficulty": "normal",
+    "horizon": {
+      "attributes": {
+        "audio/background_music": {}
+      },
+      "base": "void"
+    },
     "premise": "The room's labels are read one at a time, and the door out only opens for a party that has read at least one of them.",
     "seed": 20260729,
     "target_minutes": 5,
@@ -17,6 +23,6 @@
     "title": "The Reading Room",
     "weather": "clear"
   },
-  "dsl_version": "0.55.0",
+  "dsl_version": "0.56.0",
   "stage": "world"
 }

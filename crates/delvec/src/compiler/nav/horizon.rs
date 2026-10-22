@@ -392,7 +392,7 @@ fn boundary_ocean(world: &World, reachable: &BTreeSet<[i32; 3]>, sea: &Sea) -> R
     Err(Failure {
         code: DW_EDIT_BORDERS_VOID,
         message: format!(
-            "boundary safety (spec-0017, `horizon: ocean`): {shores} reachable walkable cell(s) \
+            "boundary safety (spec-0017, an `ocean` base): {shores} reachable walkable cell(s) \
              let the player into {} body/bodies of water ({} surface cell(s)) with NO way back \
              ashore — nothing in an ocean world falls out of the world, but a swimmer who cannot \
              climb out is stranded there for the rest of the delve:{}\n\
@@ -612,8 +612,8 @@ mod tests {
 
     /// Ocean horizon (spec-0013), the false-premise fix: the pinned superflat
     /// puts bedrock under *every* column, so a coastline is not a void drop —
-    /// the identical geometry is `DW0322` under `horizon: void` and clean under
-    /// `horizon: ocean`, because its shore is a canonical beach (land top flush
+    /// the identical geometry is `DW0322` on a `void` base and clean on
+    /// an `ocean` base, because its shore is a canonical beach (land top flush
     /// with the sea surface, walk plane at `sea_level + 1`).
     #[test]
     fn boundary_safety_ocean_beach_is_not_a_void_drop_dw0322() {

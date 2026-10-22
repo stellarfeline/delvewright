@@ -52,14 +52,16 @@ pub(super) fn pulse_tick(plan: &Plan, rows: &[crate::compiler::pulse::PulseRow])
 
 /// The one `playsound` a beat speaks: every player standing in the box, but
 /// a player watching a cutscene, at the source cell's centre, at the derived
-/// volume and the declared pitch, on `master` as `play-sound` writes it.
+/// volume and the declared pitch, in its declared category (spec-0109; `master`
+/// when none is declared, as `play-sound` writes it).
 pub(super) fn pulse_playsound(r: &crate::compiler::pulse::PulseRow) -> String {
     let p = &r.plan;
     let (lo, hi) = p.heard;
     let at = p.point();
     format!(
-        "playsound {} master @a[{},tag=!{CUTSCENE_TAG}] {} {} {} {} {}",
+        "playsound {} {} @a[{},tag=!{CUTSCENE_TAG}] {} {} {} {} {}",
         p.sound,
+        p.category.token(),
         box_selector_args(lo, hi),
         fmt_f64(at[0]),
         fmt_f64(at[1]),

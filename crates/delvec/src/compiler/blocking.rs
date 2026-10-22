@@ -258,8 +258,9 @@ pub struct Chart {
 /// The world the build's proofs walked, and the corridor its critical-path
 /// routes cover in it — what the chart draws as the proven path.
 pub struct Walked {
-    /// [`crate::compiler::light::final_world`]: the assembled cells under every
-    /// premise the campaign states, relight fixtures standing in them.
+    /// [`crate::compiler::holders::final_walk`]: the assembled cells under every
+    /// premise the campaign states, relight fixtures standing in them, each
+    /// holder `collect`'s leg ending at the build's stance.
     pub world: World,
     /// Every cell of every leg of [`crate::compiler::nav::critical_path_routes`]
     /// over [`Walked::world`], on the path with the links the route proof takes
@@ -270,19 +271,24 @@ pub struct Walked {
 }
 
 /// **The one derivation of the corridor**: `delvec build` takes its world from
-/// [`crate::compiler::light::final_world`] and its routes from
+/// [`crate::compiler::holders::final_walk`] and its routes from
 /// `critical_path_routes` over the path with the links taken
 /// ([`crate::compiler::nav::with_links_taken`]); this takes the same three
 /// steps over the same entry points, so the chart's line is the route the build
-/// proved and not a route over a smaller premise set. A relight pass that
-/// refuses is the build's to raise; the world is still the one it would have
-/// walked.
+/// proved and not a route over a smaller premise set. A relight pass or a
+/// stance pass that refuses is the build's to raise; the world is still the one
+/// it would have walked. `holders` are the holder entities the placed pieces
+/// carry ([`crate::compiler::holders::placed_holders`]).
 pub fn walked_corridor(
     plan: &Plan,
     prefabs: &crate::compiler::registry::PrefabRegistry,
     assembled: &crate::compiler::assembled::Assembled,
+    holders: &[crate::compiler::holders::PlacedHolder],
 ) -> Result<Walked, crate::compiler::failure::Failure> {
-    let (world, _relight) = crate::compiler::light::final_world(plan, assembled);
+    let owned = crate::compiler::holders::own_holders(plan, holders);
+    let world = crate::compiler::holders::final_walk(plan, assembled, &owned)
+        .0
+        .world;
     let relinked = crate::compiler::nav::with_links_taken(plan, prefabs, &world)?;
     let routes =
         crate::compiler::nav::critical_path_routes(relinked.as_ref().unwrap_or(plan), &world);

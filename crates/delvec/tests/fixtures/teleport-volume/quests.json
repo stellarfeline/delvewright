@@ -33,8 +33,10 @@
               "text": "You hear what the toll is.",
               "verb": "learns"
             },
+            "hint": "He keeps the gate room.",
             "id": "obj/talk",
             "npc": "npc/keeper",
+            "title": "Talk to the keeper",
             "type": "talk-to"
           }
         ],
@@ -140,8 +142,10 @@
               "text": "You reach the doorway.",
               "verb": "arrives"
             },
+            "hint": "Past the keeper, through the door he opens.",
             "id": "obj/exit",
             "radius": 2,
+            "title": "Go through the door",
             "type": "reach-anchor"
           }
         ],
@@ -177,6 +181,6 @@
       }
     ]
   },
-  "dsl_version": "0.55.0",
+  "dsl_version": "0.56.0",
   "stage": "quests"
 }

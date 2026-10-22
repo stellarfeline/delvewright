@@ -74,6 +74,9 @@
               "verb": "opens"
             },
             "id": "obj/bolt",
+            "prop": {
+              "block": "minecraft:lever"
+            },
             "requires_flags": [
               "flag/flee"
             ],
@@ -177,6 +180,6 @@
       }
     ]
   },
-  "dsl_version": "0.55.0",
+  "dsl_version": "0.56.0",
   "stage": "quests"
 }

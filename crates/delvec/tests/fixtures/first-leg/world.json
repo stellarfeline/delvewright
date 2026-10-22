@@ -13,6 +13,12 @@
         "prefab": "prefab/keep-room-small-b"
       }
     ],
+    "horizon": {
+      "attributes": {
+        "audio/background_music": {}
+      },
+      "base": "void"
+    },
     "premise": "The bell is rung in the hall; what it answers for is kept in the vault.",
     "seed": 20260825,
     "target_minutes": 5,
@@ -21,6 +27,6 @@
     "title": "The Long Yard",
     "weather": "clear"
   },
-  "dsl_version": "0.55.0",
+  "dsl_version": "0.56.0",
   "stage": "world"
 }

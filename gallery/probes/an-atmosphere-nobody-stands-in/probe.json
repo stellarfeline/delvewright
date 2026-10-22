@@ -6,6 +6,9 @@
       "op": "add",
       "path": "/content/atmospheres/-",
       "value": {
+        "attributes": {
+          "audio/background_music": {}
+        },
         "id": "atmosphere/forgotten",
         "precipitation": "none"
       }

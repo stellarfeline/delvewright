@@ -38,6 +38,12 @@ pub struct EnvTrigger {
     /// `strike-assembly` — is `DW0964`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prop: Option<Prop>,
+    /// The proximity highlight (spec-0104 §7): the block this trigger is
+    /// pressed on, or the body it strikes, glows while a player is within
+    /// `within` blocks and the trigger is armed. An `approach`, a `step` and a
+    /// `strike-assembly` have nothing to light (`DW1016`). Absent = none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<crate::Highlight>,
     /// The event that fires it.
     pub on: TriggerOn,
     /// Flags that must be set before the trigger can fire (DSL v0.4).

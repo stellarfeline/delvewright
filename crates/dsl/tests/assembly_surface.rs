@@ -58,7 +58,16 @@ fn the_quests_stage_declares_assemblies() {
     );
     assert_eq!(
         props(&s, "Assembly"),
-        ["at", "facing", "hitbox", "id", "initial", "rig", "strikes"]
+        [
+            "at",
+            "facing",
+            "hitbox",
+            "id",
+            "initial",
+            "rig",
+            "seen_from",
+            "strikes"
+        ]
     );
     assert_eq!(props(&s, "AssemblyHitbox"), ["height", "offset", "width"]);
     assert_eq!(props(&s, "AssemblyStrikes"), ["aim", "pattern", "while_in"]);
@@ -92,7 +101,7 @@ fn the_effect_union_gains_three_verbs() {
     let s = quests();
     let verbs = tags(&s, "QuestEffect", "type");
     // The union's size is stated once, by `v29_firework`'s
-    // `the_effect_union_names_forty_five_verbs`; this test owns only that the
+    // `the_effect_union_names_forty_six_verbs`; this test owns only that the
     // three assembly verbs are in it.
     for v in ["spawn-assembly", "despawn-assembly", "play-clip"] {
         assert!(verbs.contains(&v.to_string()), "{v} missing: {verbs:?}");

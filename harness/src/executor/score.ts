@@ -74,14 +74,6 @@ export const methods = {
     // not read rather than passing.
     const client = bot._client as Bot["_client"] | undefined;
     if (typeof client?.on !== "function") return;
-    // spec-0080 §5.2: every chunk packet, for the repaint ledger. Off the raw
-    // stream for the reason the score observer is: mineflayer's world model
-    // applies a biome update without saying so.
-    client.on("packet", (data: unknown, meta: { name?: unknown }) => {
-      if (this.repaintWatch && typeof meta?.name === "string") {
-        this.repaintWatch.packet(meta.name, data, Date.now());
-      }
-    });
     client.on("scoreboard_score", (packet: unknown) => {
       if (typeof packet !== "object" || packet === null) return;
       const p = packet as { itemName?: unknown; scoreName?: unknown; value?: unknown };

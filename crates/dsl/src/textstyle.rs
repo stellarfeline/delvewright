@@ -88,6 +88,48 @@ pub fn span_key(line_key: &str, index: usize) -> String {
     format!("{line_key}.span.{index}")
 }
 
+/// The inputs a key span may name (spec-0104 §8.9), each with the vanilla
+/// key-mapping identifier the client resolves it through and the longest name
+/// the pinned client's default bindings show for it — the width a line
+/// carrying the span is measured at (`DW0330`), so the estimate can only be
+/// wider than any default rendering, never narrower.
+///
+/// Identifiers and default names: the pinned client's `options` key mappings
+/// and its `en_us` language file (`key.mouse.right` is `Right Button`,
+/// `key.mouse.left` is `Left Button`, `key.keyboard.left.shift` is `Left
+/// Shift`, `key.keyboard.left.control` is `Left Control`). `swap` is the
+/// off-hand swap, whose identifier is `key.swapOffhand`.
+pub const KEY_INPUTS: [(&str, &str, &str); 8] = [
+    ("use", "key.use", "Right Button"),
+    ("attack", "key.attack", "Left Button"),
+    ("jump", "key.jump", "Space"),
+    ("sneak", "key.sneak", "Left Shift"),
+    ("sprint", "key.sprint", "Left Control"),
+    ("inventory", "key.inventory", "E"),
+    ("drop", "key.drop", "Q"),
+    ("swap", "key.swapOffhand", "F"),
+];
+
+/// The style word that makes a span a key span: `[[key|<input>]]`.
+pub const KEY_STYLE: &str = "key";
+
+/// The `keybind` identifier for a key span's input, when the input is one of
+/// [`KEY_INPUTS`].
+pub fn keybind_of(input: &str) -> Option<&'static str> {
+    KEY_INPUTS
+        .iter()
+        .find(|(i, _, _)| *i == input)
+        .map(|(_, k, _)| *k)
+}
+
+/// The longest default key name the pinned client shows for `input`.
+pub fn default_key_name(input: &str) -> Option<&'static str> {
+    KEY_INPUTS
+        .iter()
+        .find(|(i, _, _)| *i == input)
+        .map(|(_, _, n)| *n)
+}
+
 /// The style a span sets on top of the line it sits in.
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SpanStyle {
@@ -95,10 +137,16 @@ pub struct SpanStyle {
     pub flags: Vec<&'static str>,
     /// `color`, lower-case: a vanilla name or `#rrggbb`.
     pub color: Option<String>,
+    /// A **key span** (spec-0104 §8.9): the input whose bound key the client
+    /// draws here (`use`, `attack`, …). A key span sets no other style, and its
+    /// text is the input itself.
+    pub key: Option<&'static str>,
 }
 
 impl SpanStyle {
-    /// The component keys this style sets, as `(key, value)`.
+    /// The component keys this style sets, as `(key, value)`. A key span sets
+    /// none: it lowers to a `keybind` component of its own
+    /// ([`Self::keybind`]).
     pub fn fields(&self) -> Vec<(&'static str, serde_json::Value)> {
         let mut out: Vec<(&'static str, serde_json::Value)> = self
             .flags
@@ -111,9 +159,20 @@ impl SpanStyle {
         out
     }
 
+    /// The `keybind` identifier a key span lowers to (`key.use`), or `None`
+    /// for a styled span.
+    pub fn keybind(&self) -> Option<&'static str> {
+        self.key.and_then(keybind_of)
+    }
+
     /// The canonical spelling of this style: flags in [`FLAGS`] order, then
-    /// `color=<c>`. Two spans have the same style iff their signatures are equal.
+    /// `color=<c>`; a key span is `key=<input>`. Two spans have the same style
+    /// iff their signatures are equal — so a translation that names another
+    /// input than its English is a different span (`DW0976`).
     pub fn signature(&self) -> String {
+        if let Some(k) = self.key {
+            return format!("{KEY_STYLE}={k}");
+        }
         let mut parts: Vec<String> = self.flags.iter().map(|f| (*f).to_string()).collect();
         if let Some(c) = &self.color {
             parts.push(format!("color={c}"));
@@ -235,11 +294,44 @@ pub fn parse(s: &str) -> Result<Vec<Segment<'_>>, MarkupError> {
                         what: "a span has no `|` between its styles and its text".to_string(),
                     });
                 };
-                let style = parse_styles(&inner[..bar]).map_err(|what| MarkupError {
+                let text = &inner[bar + 1..];
+                let spec = &inner[..bar];
+                if spec == KEY_STYLE {
+                    let Some(&(input, _, _)) = KEY_INPUTS.iter().find(|(i, _, _)| *i == text)
+                    else {
+                        return Err(MarkupError {
+                            at: char_at(s, body_at + bar + 1),
+                            what: format!(
+                                "`{text}` is not an input a key span can name: write one of {}",
+                                KEY_INPUTS
+                                    .iter()
+                                    .map(|(i, _, _)| *i)
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ),
+                        });
+                    };
+                    out.push(Segment::Span(
+                        SpanStyle {
+                            key: Some(input),
+                            ..SpanStyle::default()
+                        },
+                        text,
+                    ));
+                    rest = body_at + end + CLOSE.len();
+                    continue;
+                }
+                if spec.split(',').any(|p| p == KEY_STYLE) {
+                    return Err(MarkupError {
+                        at: char_at(s, body_at),
+                        what: "`key` takes no other style: a key span is `[[key|<input>]]`"
+                            .to_string(),
+                    });
+                }
+                let style = parse_styles(spec).map_err(|what| MarkupError {
                     at: char_at(s, body_at),
                     what,
                 })?;
-                let text = &inner[bar + 1..];
                 if text.trim().is_empty() {
                     return Err(MarkupError {
                         at: char_at(s, body_at + bar + 1),
@@ -265,7 +357,32 @@ pub fn visible(s: &str) -> Cow<'_, str> {
         Ok(segs) => Cow::Owned(
             segs.iter()
                 .map(|g| match g {
-                    Segment::Text(t) | Segment::Span(_, t) => *t,
+                    Segment::Span(st, t) if st.key.is_some() => format!("[{t}]"),
+                    Segment::Text(t) | Segment::Span(_, t) => (*t).to_string(),
+                })
+                .collect(),
+        ),
+        Err(_) => Cow::Borrowed(s),
+    }
+}
+
+/// The text a width check measures: [`visible`], except that a key span is
+/// the longest default key name the pinned client shows for its input
+/// ([`default_key_name`]: `Right Button` for `use`), so a line is measured at
+/// the widest rendering a default player can see. A line that does not parse
+/// is returned unchanged.
+pub fn measured(s: &str) -> Cow<'_, str> {
+    if !has_markup(s) {
+        return Cow::Borrowed(s);
+    }
+    match parse(s) {
+        Ok(segs) => Cow::Owned(
+            segs.iter()
+                .map(|g| match g {
+                    Segment::Span(st, t) if st.key.is_some() => {
+                        st.key.and_then(default_key_name).unwrap_or(t).to_string()
+                    }
+                    Segment::Text(t) | Segment::Span(_, t) => (*t).to_string(),
                 })
                 .collect(),
         ),
@@ -291,6 +408,7 @@ pub fn legible(s: &str) -> Cow<'_, str> {
                         .chars()
                         .map(|c| if c.is_whitespace() { c } else { '\u{FFFD}' })
                         .collect::<String>(),
+                    Segment::Span(st, t) if st.key.is_some() => format!("[{t}]"),
                     Segment::Text(t) | Segment::Span(_, t) => (*t).to_string(),
                 })
                 .collect(),
@@ -475,7 +593,8 @@ impl InlineStyleBinding {
 
 const GRAMMAR: &str = "a span is `[[<styles>|<text>]]`, <styles> one or more of bold, italic, \
      underlined, strikethrough, obfuscated, color=<name or #rrggbb>, comma-separated with no \
-     spaces";
+     spaces; a key span is `[[key|<input>]]`, <input> one of use, attack, jump, sneak, sprint, \
+     inventory, drop, swap";
 
 /// `DW0975` over every English line and every sidecar row, and `DW0976` over
 /// every sidecar row whose spans are not its English's (spec-0096 §4).
@@ -581,7 +700,8 @@ mod tests {
                 Segment::Span(
                     SpanStyle {
                         flags: vec![f],
-                        color: None
+                        color: None,
+                        key: None,
                     },
                     "y"
                 )
@@ -670,6 +790,39 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(l.format, "%1$s%2$s");
+    }
+
+    /// spec-0104 §8.9: a key span parses, names an input the client knows,
+    /// reads as its input in brackets, is measured at the widest default key
+    /// name, and a translation must keep it byte for byte.
+    #[test]
+    fn a_key_span_is_an_input() {
+        let line = "Things answer to a touch: [[key|use]] on them.";
+        let segs = parse(line).unwrap();
+        assert_eq!(segs.len(), 3);
+        let Segment::Span(st, t) = &segs[1] else {
+            panic!("{segs:?}")
+        };
+        assert_eq!(st.key, Some("use"));
+        assert_eq!(*t, "use");
+        assert_eq!(st.keybind(), Some("key.use"));
+        assert_eq!(visible(line), "Things answer to a touch: [use] on them.");
+        assert_eq!(legible(line), "Things answer to a touch: [use] on them.");
+        assert_eq!(
+            measured(line),
+            "Things answer to a touch: Right Button on them."
+        );
+        assert_eq!(measured("[[key|attack]]"), "Left Button");
+        assert_eq!(signatures(line), vec!["key=use".to_string()]);
+        let e = parse("[[key|fly]]").expect_err("fly is no input");
+        assert!(e.what.contains("not an input"), "{}", e.what);
+        assert!(parse("[[key,bold|use]]").is_err());
+        assert!(lower_aligned(line, "轻触即可：对它们按[[key|use]]。").is_ok());
+        assert!(lower_aligned(line, "轻触即可：对它们按右键。").is_err());
+        assert!(lower_aligned(line, "轻触即可：对它们按[[key|attack]]。").is_err());
+        let l = lower(line).unwrap();
+        assert_eq!(l.format, "Things answer to a touch: %1$s on them.");
+        assert_eq!(l.spans[0].0.keybind(), Some("key.use"));
     }
 
     #[test]

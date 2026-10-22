@@ -46,7 +46,7 @@ fn campaign(dir: &Path, one_side: bool) -> PathBuf {
             {"type": "cutscene", "shots": [{"path": [
                 {"anchor": "anchor/exit", "offset": from},
                 {"anchor": "anchor/exit", "offset": to}
-            ], "seconds": 2}]}
+            ], "seconds": 2, "subject": "landscape"}]}
         ]);
     });
     camp
@@ -115,7 +115,7 @@ fn a_dolly_through_a_gate_its_step_opens_flies() {
             .push(serde_json::json!({"type": "cutscene", "shots": [{"path": [
                 {"anchor": "anchor/exit", "offset": [0, 2, -4]},
                 {"anchor": "anchor/exit", "offset": [0, 2, 0]}
-            ], "seconds": 2}]}));
+            ], "seconds": 2, "subject": "landscape"}]}));
     });
     let (code, log) = build(&camp, &dir.join("build"));
     assert_eq!(code, 0, "{log}");

@@ -42,12 +42,70 @@ pub struct Assembly {
     /// The blows it deals. Absent: it never strikes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strikes: Option<AssemblyStrikes>,
+    /// How far it is seen from (spec-0110 §4.4): the farthest, in whole blocks
+    /// (`1..=512`), a player's eye may stand from the mark and still see the
+    /// thing. It only raises what the engine derives: the emitted `view_range`
+    /// already covers every shot that frames the assembly and every standable
+    /// cell of the place it stands in. Absent: the derived floor alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seen_from: Option<SeenFrom>,
 }
 
 impl Assembly {
     /// The declared facing, `south` when absent.
     pub fn facing(&self) -> Facing {
         self.facing.unwrap_or(Facing::South)
+    }
+}
+
+/// An assembly's [`Assembly::seen_from`]: whole blocks in `1..=512`. A value
+/// outside the range is refused where it is parsed (`DW0100`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub struct SeenFrom(u32);
+
+impl SeenFrom {
+    /// The largest distance a `seen_from` may state.
+    pub const MAX: u32 = 512;
+
+    /// The distance in blocks.
+    pub fn blocks(self) -> u32 {
+        self.0
+    }
+}
+
+impl TryFrom<u32> for SeenFrom {
+    type Error = String;
+    fn try_from(v: u32) -> Result<Self, Self::Error> {
+        if (1..=Self::MAX).contains(&v) {
+            Ok(SeenFrom(v))
+        } else {
+            Err(format!(
+                "`seen_from` {v} is outside 1..={} blocks",
+                Self::MAX
+            ))
+        }
+    }
+}
+
+impl From<SeenFrom> for u32 {
+    fn from(v: SeenFrom) -> u32 {
+        v.0
+    }
+}
+
+impl JsonSchema for SeenFrom {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SeenFrom".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "Whole blocks, 1..=512: the farthest a player's eye may stand from \
+                            the mark and still see the assembly.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": SeenFrom::MAX,
+        })
     }
 }
 

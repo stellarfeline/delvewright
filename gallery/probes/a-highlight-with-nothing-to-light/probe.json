@@ -1,0 +1,15 @@
+{
+  "code": "DW1016",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/1/objectives/2/highlight",
+      "value": {
+        "within": 6
+      }
+    }
+  ],
+  "units": [],
+  "why": "A highlight added to taking the bone, whose item falls from the muster's last body: no container stands for the glow to light. Refused naming the objective, with the remedy: drop the field, or put the highlight on the fight that drops it."
+}

@@ -1176,7 +1176,7 @@ pub struct Assembled {
     /// cannot say this — a written air and a cell nothing wrote are both
     /// absent from it — and the server tells them apart: a cell nothing wrote
     /// holds what the level generator laid there
-    /// ([`crate::compiler::plan::ocean_layer_at`] under `horizon: ocean`).
+    /// ([`crate::compiler::plan::ocean_layer_at`] on an `ocean` horizon base).
     pub reached: Reached,
 }
 

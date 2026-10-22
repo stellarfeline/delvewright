@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 pub mod assembly_fixture;
 pub mod corridor;
 pub mod ferry;
+pub mod framing_fixture;
 pub mod pinned;
 pub mod sculpt;
 pub mod source_scan;
@@ -871,9 +872,9 @@ pub enum OceanRoom {
 }
 
 /// A copy of the prefab library in which `hello-room` is a piece that can stand
-/// on an ocean, for every fixture that declares `horizon: ocean`.
+/// on an ocean, for every fixture that declares an `ocean` base.
 ///
-/// The shipped `hello-room` cannot. `horizon: ocean` puts an area origin at
+/// The shipped `hello-room` cannot. An `ocean` base puts an area origin at
 /// y=60 under a sea at 62, and a piece with its floor at local y=0 then stands
 /// its walk plane at y=61 — a block under the surface — while declaring nothing
 /// about where it meets the sea. That is not a modelling nicety: the room
@@ -1083,10 +1084,13 @@ pub fn shown_prefabs_dir(tag: &str) -> PathBuf {
     // several threads, and a helper that deletes and rewrites one shared path
     // is two tests reading a library while a third is halfway through copying
     // it — an intermittent red, which is an under-specified test rather than
-    // something to re-run.
+    // something to re-run. The process id is in the name too: the counter is
+    // per process, and two test processes over one target directory (two
+    // binaries, or two runs) share `CARGO_TARGET_TMPDIR`.
     static NTH: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let nth = NTH.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("shown-{tag}-{nth}"));
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("shown-{tag}-{}-{nth}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     copy_dir_all(&prefabs_dir(), &dir);
@@ -1548,4 +1552,11 @@ pub fn world_file_of(out: &delvec::compiler::emit::BuildOutput, id: &str, what: 
         "validation/world-{what}-{}.json",
         world_of_branch(&plan, id)
     )
+}
+/// A `horizon` of `base` in the object form, its ground a declared silence
+/// that lets a playing track run out (spec-0109: every ground states its
+/// music). For a case about something other than music.
+#[allow(dead_code)]
+pub fn horizon(base: &str) -> serde_json::Value {
+    serde_json::json!({ "base": base, "attributes": { "audio/background_music": {} } })
 }
