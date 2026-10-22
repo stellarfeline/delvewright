@@ -85,4 +85,4 @@ wall-clock time, or absolute paths.
 
 ## Licence
 
-GPL-3.0-only.
+GPL-3.0-or-later.

@@ -130,4 +130,4 @@ use delvec::compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
 
 ## Licence
 
-GPL-3.0-only.
+GPL-3.0-or-later.
