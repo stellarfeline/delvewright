@@ -152,7 +152,7 @@ flowchart TD
     classDef human fill:#ffd76e,stroke:#a9761a,color:#241a00
 ```
 
-The staging gate holds the only key to the play port: `validation/owner-play.yaml` is the one file that publishes 25565, and it refuses a tree with no token minted for it. A red gate lists the defect classes the player is not yet protected from, item by item, and the hand-over names each one, so the first play is never spent on one.
+The staging gate holds the only key to the play port: 25565 is published only by `validation/owner-play.yaml` and `tools/creator/playtest-server.sh`, and both refuse a tree with no token minted for it. A red gate lists the defect classes the player is not yet protected from, item by item, and the hand-over names each one, so the first play is never spent on one.
 
 Every picture that has to look like Minecraft is drawn by `delvec` itself, in-process, with the game's own textures (`delvec frames`, `delvec cameras`, `delvec panorama`); `delvec viewer`, `delvec contact-sheet` and the GPU arm `delvec render` serve the pieces. The documents are the artifact of record: the finished delve rebuilds byte-identically from them, with no model in the loop.
 
@@ -237,7 +237,7 @@ flowchart TD
 | staged JSON documents | `world` · `npcs` · `classes` · `quest-plan` · `quests` · `dialogue`, plus `geometry-brief` · `layout-graph` · `site-plan` · `detail-plan` · `design` | 2–5 | the agent writes them |
 | `delvec` | the Rust engine, one binary: `schema` · `validate` · `analyze` · `build` · `fmt` · `metrics` · `allocation` · `detail` · `l10n-inventory` · `l10n-apply` | 2–4 | the agent |
 | `delvec` picture surface | `frames` · `panorama` · `cameras` (through Lumenwright, GPU or CPU) · `blocking-chart` · `viewer` · `palette` · `place-camera` · `contact-sheet`, `render` (GPU, through Nucleation and wgpu) | 3, 5 | the agent |
-| `delvec` pieces | `grammar` (the box-split grammar) · `prefab` (admission, jigsaw sockets, anchors, lighting) · `schem` (outside schematics) | 2, 4 | the agent |
+| `delvec` pieces | `grammar` (the box-split grammar) · `prefab` (admission, jigsaw sockets, anchors, lighting) · `sculpt` (a piece from a form of implicit solids) · `schem` (outside schematics) | 2, 4 | the agent |
 | `delvec harvest` · `calibrate` | in-game notes and hand-placed shots, turned back into reports and patches | 5 | the agent, after a human plays |
 | `tools/creator/refimg.py` | concept art from a configured image provider | 2 | the agent; the human judges it |
 | `tools/creator/staging-gate.py` + `docs/playtest-findings.json` | the gate on the findings ledger; the only key to the play port | 5 | the agent |
