@@ -175,10 +175,10 @@ horizon, anchors, gate regions, lit by profile; the campaign has four classes an
 a combat plan around it.
 
 **Do not copy**: its placement. It binds the piece through `areas[]`, which the
-engine now refuses beside a site plan (`DW0839`); a campaign today draws this as
+engine refuses beside a site plan (`DW0839`); a campaign draws this as
 a site plan of one box and no seam, whose one piece is the whole site. Its record
 says a site plan was dropped because the derived walls and roofs could not give
-the castle a designed exterior; today a site plan's one piece draws its own
+the castle a designed exterior; a site plan's one piece draws its own
 walls and roof inside the frame the plan hands it (step 9), so the reason is
 one to re-check, not to repeat. The program is stored through
 git-lfs: `git lfs pull` after a checkout, or the raw URL returns a pointer.

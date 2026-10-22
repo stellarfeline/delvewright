@@ -40,8 +40,8 @@ the page's own discipline everywhere else — *author from the image, judge
 against it, present every choice beside it*, the sentence step 4 wrote into
 `design/README.md` — and step 12 is where the two are finally in the same hand.
 Nothing upstream compares them: the gate confirms a design, the build assembles
-whatever the jigsaw seated from the pool, and until this step they have never
-been introduced. So for each POV frame, name the approved image it answers to
+the pieces the detail plan binds, and until this step they have never been
+introduced. So for each POV frame, name the approved image it answers to
 and write one of two things — *this is that place*, or a finding saying which
 element of the image is not there. A frame with no approved image to answer to
 is itself the finding: the design gate approved something the build does not
