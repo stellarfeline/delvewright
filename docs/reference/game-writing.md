@@ -346,7 +346,7 @@ How a quest plan is shaped as a web rather than a chain, how an ending reads the
 ## Sources
 
 - Aarseth, E. From Hunt the Wumpus to EverQuest: Introduction to Quest Theory. ICEC 2005, LNCS 3711; as read in Karlsen, F. Quests in Context: A Comparative Analysis of Discworld and World of Warcraft. Game Studies 8(1), 2008.
-- bg3.wiki. *Container* (community wiki, CC BY-NC-SA; ideas and counts only).
+- bg3.wiki. *Container* (community wiki, CC BY-NC-SA 4.0 or CC BY-SA 4.0 per its footer; ideas and counts only).
 - Callison-Burch, Fordyce, Koehn, Monz, Schroeder. (Meta-) Evaluation of Machine Translation. WMT 2007.
 - Chung, B. *Level Design: Readability*. blendogames.com.
 - Doran, J. & Parberry, I. A Prototype Quest Generator Based on a Structural Analysis of Quests from Four MMORPGs. PCGames 2011. ianparberry.com/pubs/pcg2011.pdf.
