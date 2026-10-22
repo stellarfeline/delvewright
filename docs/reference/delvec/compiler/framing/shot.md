@@ -1,11 +1,11 @@
-# `delvec::compiler::framing`
+# `delvec::compiler::framing::shot`
 
-The reference page for `crates/delvec/src/compiler/framing.rs` and its `framing/shot.rs`: the diagnostics-catalog row of every DW code
-this module declares. The catalog's shared rules are in [`compiler.md` §5](../../compiler.md#5-diagnostics-catalog).
+The reference page for `crates/delvec/src/compiler/framing/shot.rs`: the diagnostics-catalog row of every DW code
+this module declares. The catalog's shared rules are in [`compiler.md` §5](../../../compiler.md#5-diagnostics-catalog).
 
 ## Diagnostics
 
-### DW1033–DW1034 — a shot frames its subject (`compiler::framing`; error; exit 3)
+### DW1033–DW1034 — a shot frames its subject (`compiler::framing::shot`; error; exit 3)
 
 Asked in the world block right after the cutscene clip, served-distance and pan proofs (`DW0308`, `DW0956`, `DW0347`), so a camera inside a wall is named for that first (`emit::routes::prove_world`). Every shot of every cutscene is judged at every driver tick against **the proof frame** — the client the game ships: vertical field of view 70° on an 854 × 480 window, 60° at a tick the lens's cell holds water or lava, entity distance 1.0, `entity-broadcast-range-percentage` 100 — over the poses the client draws: the keyframes `ExpandedShot::frames` emits and the linear tween between them (`ExpandedShot::client_poses`). A body subject is asked first whether it is there to be seen (`DW1034`), then whether the frame shows it (`DW1033`). Every refusal is printed, the first per judged subject; the build stops on the first.
 
