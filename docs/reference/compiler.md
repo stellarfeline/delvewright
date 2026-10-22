@@ -3417,7 +3417,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
 - `<out>/validation/clear-width.json`: the clear-width check's **binding
   ledger** (`compiler::nav::width::WidthBinding`, spec-0120): the ways judged
   and their denominators, the states, the plane columns left to `DW0836`, the
-  stair runs undeclared by their piece, and one row per way with every station's
+  stair runs undeclared by their piece, and one row per way with its declared `width` (the author's
+  opening, span or `clear`; a station's `columns` is what that station is judged
+  against) and every station's
   columns, clear counts per state, taken cells and verdict, and every
   `narrowed[]` entry's confirmation —
   `docs/reference/delvec/compiler/nav/width.md` has the fields. Written on every
