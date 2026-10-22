@@ -38,8 +38,8 @@ already `DW0500`–`DW0503`: the datum must be declared, must be written somewhe
 must be read somewhere, and must be reachable at the scope the site evaluates at. A
 shop that had grown a `price` field would have needed all four rules written a
 second time, and the fifth consumer would have needed a fifth copy. `ShopOffer` is
-therefore the **seventh gate consumer**, carrying `requires_flags` /
-`forbids_flags` / `requires_state` like the other six and nothing of its own;
+therefore one of the ten gate consumers (`GateConsumer::ALL`), carrying `requires_flags` /
+`forbids_flags` / `requires_state` like the other nine and nothing of its own;
 `crates/dsl/tests/gate_consumers.rs` asserts the positive half from the generated
 schema and `crates/delvec/tests/v10_economy.rs` the negative half (no `price`,
 `cost` or `compare` field exists anywhere in the shop's types).
