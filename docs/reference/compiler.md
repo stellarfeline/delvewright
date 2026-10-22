@@ -5607,6 +5607,8 @@ page, so a code whose declaration moves and whose row does not is a red;
 through. A page may say more than its rows; nothing on it is a row for another
 module's code.
 
+**A command a message names is one the binary has.** Every backticked `` `delvec <sub> [<sub>]` `` in the workspace's Rust sources — a remedy, a help line, a doc comment — resolves against the command tree the built binary prints under `--help`, walked recursively (`crates/delvec/tests/named_commands_exist.rs`; it prints `named-command binding:` with its mention, file and command-path counts, and reds on a dead mention or on a scan that binds fewer than 100).
+
 **A code is declared inside `dw_code!`, and nowhere else.** The macro
 (`delvewright_dsl::dw_code!`) expands to the constant as written —
 `pub const NAME: DwCode = DwCode::new("DWxxxx", ExitTier::…);`, or
