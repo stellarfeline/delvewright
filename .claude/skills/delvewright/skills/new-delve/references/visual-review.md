@@ -71,8 +71,10 @@ names the lightmap: judge their legibility in the game. Never move an hour to
 make a picture come out, and never type a camera's exposure: the engine derives
 it. A place that reads dark in a quick frame is dark in the game — a quick frame
 is the lightmap the client draws from the light the world carries — so light it
-where the room is designed
-([new-pieces.md](new-pieces.md#light-inside-a-cave-or-a-body)).
+where the room is designed: natural sources set in the walls and the vault,
+artificial ones recessed behind a partial block of the surface's own family,
+staggered at uneven spacings and heights, each on a face that holds it
+(`DW1002`).
 
 **A change to how frames are rendered is judged on the standard level first:
 The Glasshouse** (content `demo/the-glasshouse`), its seven showcase cameras

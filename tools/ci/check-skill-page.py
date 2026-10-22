@@ -1193,8 +1193,19 @@ def check(
         others = {
             f"references/{p.name}" for p in refs if p != path
         }
+        # A reference is reached as a bundled path (`references/x.md`) or, as a
+        # reader follows a link, as a markdown link resolved from the file's own
+        # directory (`](x.md#…)`): both are an onward pointer.
+        linked = set()
+        for m in LINK_RE.finditer(text):
+            target = m.group("target").split("#", 1)[0]
+            if not target or "://" in target:
+                continue
+            resolved = (path.parent / target).resolve()
+            if resolved.parent == path.parent.resolve():
+                linked.add(f"references/{resolved.name}")
         for other in sorted(others):
-            if other in text:
+            if other in text or other in linked:
                 rep.find(
                     f"{rel(path)} sends the reader on to `{other}`. "
                     f"File references are one level deep from `SKILL.md`: a chain "
