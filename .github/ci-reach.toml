@@ -54,6 +54,8 @@ inputs = [
   { glob = "tools/ci/tree-digest.py", why = "`determinism-subject.sh` runs it to write the digest" },
   { glob = "tools/ci/test-library.sh", why = "`crates/delvec/tests/common/pinned.rs` runs it to lay the engine's test pools and test pieces over the pinned library" },
   { glob = "tools/creator/refscore.py", why = "`crates/delvec/tests/view_sheet.rs` runs it" },
+  { glob = ".claude/skills/delvewright/skills/new-delve/scripts/handout.py", why = "`crates/delvec/tests/handout_script.rs` runs it against the built binary" },
+  { glob = "tools/tests/fixtures/handout/**", why = "`crates/delvec/tests/handout_script.rs` holds the recorded allocations to the built binary's answer over the fixture campaign" },
   { glob = "tools/creator/skin/tests/fixtures/**", why = "`crates/delvec/tests/skin_parts.rs` judges every committed skin golden against the model its cast sheet names" },
   { glob = "tools/ci/check-dw-codes.py", why = "`crates/delvec/tests/codes.rs` runs it against the built binary's `delvec codes`" },
   { glob = "tools/lib/mdtable.py", why = "`check-dw-codes.py`, which `crates/delvec/tests/codes.rs` runs, reads the catalog through it" },
@@ -107,7 +109,7 @@ inputs = [
 [[group]]
 name = "tool-tests-tree"
 inputs = [
-  { glob = "**", why = "the files `tools/tests/conftest.py` lists in `WHOLE_TREE` read the whole tracked tree: `git ls-files` sweeps (`test_check_ci_reach.py`, `test_check_eol_attributes.py`, `test_check_release_publish_gate.py`, `test_server_heap.py`, `test_version_sites.py`, `test_check_pins.py`, `test_check_shell_bash32.py`, the shell-newline and redirect sweeps, `test_gallery_baseline_tracked.py` — only `warnings.json` is tracked under `gallery/baseline/` —, and `test_check_generator_preservation.py` and `test_staging_gate.py`, whose tools discover every generator workspace over the tracked manifests), every tracked `*.md` (`test_mdtable.py`, `test_check_doc_dupes.py`), every tracked JSON (`test_check_json_canonical.py`), the plugin under `.claude/` and every engine path the page names (`test_check_skill_page.py`, `test_check_toolchain.py`, `test_fetch_delvec.py`, `test_release_tags.py`), and documents outside the compiler reference (`test_check_stated_counts.py`, `test_check_demo_levels.py`, `test_check_numbered_doc_index.py`)" },
+  { glob = "**", why = "the files `tools/tests/conftest.py` lists in `WHOLE_TREE` read the whole tracked tree: `git ls-files` sweeps (`test_check_ci_reach.py`, `test_check_eol_attributes.py`, `test_check_release_publish_gate.py`, `test_server_heap.py`, `test_version_sites.py`, `test_check_pins.py`, `test_check_shell_bash32.py`, the shell-newline and redirect sweeps, `test_gallery_baseline_tracked.py` — only `warnings.json` is tracked under `gallery/baseline/` —, and `test_check_generator_preservation.py` and `test_staging_gate.py`, whose tools discover every generator workspace over the tracked manifests), every tracked `*.md` (`test_mdtable.py`, `test_check_doc_dupes.py`), every tracked JSON (`test_check_json_canonical.py`), the plugin under `.claude/` and every engine path the page names (`test_check_skill_page.py`, `test_check_toolchain.py`, `test_fetch_delvec.py`, `test_handout.py`, `test_release_tags.py`), and documents outside the compiler reference (`test_check_stated_counts.py`, `test_check_demo_levels.py`, `test_check_numbered_doc_index.py`)" },
 ]
 
 [[group]]

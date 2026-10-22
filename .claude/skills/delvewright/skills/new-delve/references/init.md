@@ -68,7 +68,7 @@ without it.
 | | why | check |
 |---|---|---|
 | `git` | I2 clones the engine tree, in creator mode | `git --version` |
-| **Python 3.11+** | `tomllib` is stdlib from 3.11, and I3a's selector reads the pin with it. The four scripts in the skill root are stdlib Python | see below |
+| **Python 3.11+** | `tomllib` is stdlib from 3.11, and I3a's selector reads the pin with it. The five scripts in the skill root are stdlib Python | see below |
 | **Java 21+** | **the pinned game's own requirement** — 1.21.11 declares `javaVersion.majorVersion: 21` in Mojang's version manifest, and every jar-reading checker runs under it | `java -version` |
 | Docker | the play server at step 13, which drives `docker run` directly | `docker info` |
 | **Compose v2** | **a second install, and the whole of step 10 needs it** — every ladder entry point builds a `docker compose -p …` command line | `docker compose version` |
