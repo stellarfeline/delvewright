@@ -20,8 +20,8 @@ The table has two halves:
                rule cannot see them, each with its reason. These are the
                engine's statement and are confirmed by eye on the demo level.
 
-The jar is REFUSED unless its sha256 is `versions.toml` `[render]
-textures_sha256` (the client jar the texture census pins). The table states
+The jar is REFUSED unless its sha256 is `versions.toml` `[minecraft]
+client_jar_sha256` (the pinned client jar). The table states
 that sha256 in its header.
 
     python3 tools/maintenance/extract-block-entity-renderers.py <client jar>
@@ -110,10 +110,10 @@ def main() -> int:
 
     pin = versions.load()
     mc = pin["minecraft"]["version"]
-    want = pin["render"]["textures_sha256"]
+    want = pin["minecraft"]["client_jar_sha256"]
     got = hashlib.sha256(Path(args.jar).read_bytes()).hexdigest()
     if got != want:
-        die(f"{args.jar} has sha256 {got}; versions.toml [render] textures_sha256 is {want}")
+        die(f"{args.jar} has sha256 {got}; versions.toml [minecraft] client_jar_sha256 is {want}")
     with zipfile.ZipFile(args.jar) as jar:
         derived = derive(jar)
     if not derived:
