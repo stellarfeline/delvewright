@@ -288,6 +288,22 @@ ROWS: dict[str, list[dict[str, object]]] = {
 # the number moves on.
 COUNTEREXAMPLES: dict[str, dict[str, object]] = {}
 
+# Documents that declare a `dsl_version` OTHER than the authority's, on purpose.
+# The sweep above only ever asks which files state the CURRENT number, so a
+# document stating the previous minor was invisible to it: it is not a carrier,
+# and nothing else compared it to the authority. `_envelopes` closes that: every
+# `dsl_version` value in a tracked JSON document must equal the authority's, and
+# this table is the only way a document may state another. An entry names the
+# file, the exact values it may state, and the reason; it excuses those values in
+# that file and nothing else, and an entry whose file no longer states one of its
+# values is reported, so it cannot rot into a licence.
+OLDER_DOCUMENTS: dict[str, dict[str, object]] = {
+    "crates/dsl/fixtures/invalid/DW0102-bad-dsl-version.json": {
+        "values": ["9.9.9"],
+        "reason": "the DW0102 specimen: it states a surface the engine must refuse",
+    },
+}
+
 # Decision records, outside the sweep's population as a CLASS. A spec or an ADR
 # records the number its surface was allocated, or the number it does not move;
 # that is history (CLAUDE.md, Methodology: specs and ADRs are historical decision
@@ -306,13 +322,17 @@ def _is_record(rel: str) -> bool:
 
 
 def files_named() -> list[str]:
-    """Every file this module names — each row's, and each counter-example's.
+    """Every file this module names — each row's, each counter-example's and each older document's.
 
     One derivation for the trees a test builds to run `verify` in: a tree missing
     a row's file fails the row, and a tree missing an allowlisted file reports the
     entry stale, so both halves travel together or the fixture manufactures a red.
     """
-    return sorted({str(r["path"]) for rows in ROWS.values() for r in rows} | set(COUNTEREXAMPLES))
+    return sorted(
+        {str(r["path"]) for rows in ROWS.values() for r in rows}
+        | set(COUNTEREXAMPLES)
+        | set(OLDER_DOCUMENTS)
+    )
 
 
 def _declared(root: Path) -> dict[str, str]:
@@ -510,6 +530,101 @@ def _classify(root: Path, rel: str, text: str, version: str, by_path: dict[str, 
     )
 
 
+def _dsl_version_all(node: object) -> list[object]:
+    """Every value of every `dsl_version` key, in document order."""
+    out: list[object] = []
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k == "dsl_version":
+                out.append(v)
+            else:
+                out.extend(_dsl_version_all(v))
+    elif isinstance(node, list):
+        for v in node:
+            out.extend(_dsl_version_all(v))
+    return out
+
+
+_ENVELOPE_KEY = re.compile(r'"dsl_version"\s*:')
+
+
+def _lt(a: str, b: str) -> bool:
+    def key(x: str) -> tuple[int, ...]:
+        try:
+            return tuple(int(t) for t in x.split("."))
+        except ValueError:
+            return (-1,)
+
+    return key(a) < key(b)
+
+
+def _envelopes(
+    root: Path, population: list[str], version: str
+) -> tuple[int, int, int, list[str]]:
+    """Every `dsl_version` a tracked JSON document states must be `version`.
+
+    Returns (documents examined, statements, statements equal to the authority,
+    findings). The documents are those with at least one `dsl_version` key, out
+    of every tracked `.json` outside `RECORDS` (`tracked_json` is the
+    denominator). A statement of a LOWER number is the stale site a bump missed;
+    a HIGHER one is a document ahead of its engine. Both are refused with file
+    and line unless `OLDER_DOCUMENTS` declares them.
+    """
+    docs = statements = current = 0
+    findings: list[str] = []
+    for rel in population:
+        if not rel.endswith(".json"):
+            continue
+        p = root / rel
+        if p.is_symlink() or not p.is_file():
+            continue
+        try:
+            text = p.read_text(encoding="utf-8")
+            doc = json.loads(text)
+        except (UnicodeDecodeError, OSError, json.JSONDecodeError):
+            continue  # `_classify` reports an unparseable document that states the number
+        values = _dsl_version_all(doc)
+        if not values:
+            continue
+        docs += 1
+        lines = [i for i, ln in enumerate(text.splitlines(), 1) if _ENVELOPE_KEY.search(ln)]
+        allowed = {str(v) for v in OLDER_DOCUMENTS.get(rel, {}).get("values", [])}  # type: ignore[union-attr]
+        for n, v in enumerate(values):
+            statements += 1
+            if v == version:
+                current += 1
+                continue
+            if isinstance(v, str) and v in allowed:
+                continue
+            where = f"{rel}:{lines[n]}" if len(lines) == len(values) else rel
+            older = isinstance(v, str) and _lt(v, version)
+            findings.append(
+                f"  {where}: states `dsl_version` {v!r} ({'older than' if older else 'not'} the "
+                f"authority's `{version}`). A stale site a bump missed: run `delvec fmt {rel}` "
+                "if the document is tool-written, or declare it in OLDER_DOCUMENTS with its reason"
+            )
+    for rel in sorted(OLDER_DOCUMENTS):
+        if rel not in population:
+            findings.append(f"  OLDER_DOCUMENTS names {rel!r}, which git does not track — remove it")
+            continue
+        try:
+            stated = {str(v) for v in _dsl_version_all(json.loads((root / rel).read_text(encoding="utf-8")))}
+        except (OSError, ValueError):
+            stated = set()
+        for want in OLDER_DOCUMENTS[rel]["values"]:  # type: ignore[union-attr]
+            if want not in stated:
+                findings.append(
+                    f"  OLDER_DOCUMENTS names {rel!r} stating {want!r}, which it no longer "
+                    "states — the entry measures nothing; remove it"
+                )
+    return docs, statements, current, findings
+
+
+def tracked_json(root: Path) -> list[str]:
+    """The envelope check's denominator: tracked JSON outside the decision records."""
+    return [r for r in _tracked_text(root) if r.endswith(".json") and not _is_record(r)]
+
+
 def _states(root: Path, rel: str, version: str) -> bool:
     p = root / rel
     if p.is_symlink() or not p.is_file():
@@ -522,11 +637,12 @@ def _states(root: Path, rel: str, version: str) -> bool:
 
 def sweep(
     root: Path, version: str
-) -> tuple[int, tuple[int, int], int, dict[str, list[str]], list[str]]:
+) -> tuple[int, tuple[int, int], int, dict[str, list[str]], list[str], tuple[int, int, int]]:
     """Every tracked file that states `version`, sorted into shapes.
 
     Returns (population, (records skipped, of which state the number), carriers,
-    shape -> files, findings). `population` counts the files examined, which is
+    shape -> files, findings, (envelope documents, statements, statements equal
+    to the number)). `population` counts the files examined, which is
     every tracked file outside `RECORDS`.
     """
     tracked = _tracked_text(root)
@@ -584,13 +700,16 @@ def sweep(
                 "the entry measures nothing"
             )
 
+    env_docs, env_stmts, env_ok, env_findings = _envelopes(root, population, version)
+    findings.extend(env_findings)
+
     if carriers == 0:
         raise SystemExit(
             f"version-sites: no tracked file states `{version}` at all — not even the "
             "authority. The sweep examined the whole tree and matched nothing, which is "
             "the measurement failing, not a clean tree."
         )
-    return len(population), skipped, carriers, shapes, findings
+    return len(population), skipped, carriers, shapes, findings, (env_docs, env_stmts, env_ok)
 
 
 HAND = ("authority", "hand-edited")
@@ -599,7 +718,7 @@ HAND = ("authority", "hand-edited")
 def blast_radius(root: Path) -> tuple[list[str], dict[str, list[str]]]:
     """The files a person edits to move the number, and everything a tool rewrites."""
     version = _declared(root)["dsl"]
-    _, _, _, shapes, _ = sweep(root, version)
+    _, _, _, shapes, _, _ = sweep(root, version)
     hand = sorted({f for s in HAND for f in shapes.get(s, [])})
     return hand, shapes
 
@@ -641,11 +760,12 @@ def verify(root: Path) -> int:
         print(f"  Fix the rows in {__file__}.", file=sys.stderr)
         return 1
 
-    population, skipped, carriers, shapes, sweep_findings = sweep(root, declared["dsl"])
+    population, skipped, carriers, shapes, sweep_findings, envelopes = sweep(root, declared["dsl"])
     if sweep_findings:
         print(
             f"version-sites: a file states the `dsl_version` `{declared['dsl']}` and is "
-            "none of the three shapes a version literal may take.",
+            "none of the three shapes a version literal may take, or a document states a "
+            "`dsl_version` that is not the authority's.",
             file=sys.stderr,
         )
         print(
@@ -676,6 +796,11 @@ def verify(root: Path) -> int:
     print(
         f"    skipped as decision records ({', '.join(RECORDS)}): {skipped[0]} tracked "
         f"file(s), {skipped[1]} of which state `{declared['dsl']}` — a record, never a site"
+    )
+    print(
+        f"    envelope check: {envelopes[0]} of {len(tracked_json(root))} tracked JSON file(s) "
+        f"state a `dsl_version`; {envelopes[2]} of {envelopes[1]} statement(s) equal "
+        f"`{declared['dsl']}`, {envelopes[1] - envelopes[2]} declared in OLDER_DOCUMENTS"
     )
     for shape in sorted(shapes):
         files = sorted(shapes[shape])
