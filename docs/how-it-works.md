@@ -11,7 +11,7 @@ flowchart LR
     S["1 · Setup<br/>the plugin and its toolchain"] --> D["2 · Design<br/>placement, story,<br/>the design gate 🖐"]
     D --> B["3 · Content and build<br/>quests, dialogue,<br/>delvec build"]
     B --> V["4 · Detail and ladder<br/>delvec detail, PackTest,<br/>the bot ladder"]
-    V --> R["5 · Review and hand-over<br/>Chunky renders, the storybook,<br/>the first play 🖐"]
+    V --> R["5 · Review and hand-over<br/>delvec frames, the storybook,<br/>the first play 🖐"]
     R --> P["6 · Release<br/>GitHub Actions, GHCR"]
     P --> H["7 · Host<br/>the production host"]
     E["The engine's own line<br/>CI, releases"] -.->|"delvec, the plugin, the images"| S
@@ -34,10 +34,10 @@ flowchart TD
     I3A -->|"no archive for this machine"| I3B["I3b · the source floor<br/>cargo build --release -p delvec"]
     I3A --> I4["I3c–I4 · delvec --version answers the pin<br/>~/.delvewright/env.sh written"]
     I3B --> I4
-    I4 --> I5{{"🖐 I5 · the Minecraft client jar<br/>fetch-client-jar.py, or a copy you name<br/>→ ~/.chunky/resources/minecraft.jar"}}:::human
+    I4 --> I5{{"🖐 I5 · the Minecraft client jar<br/>fetch-client-jar.py, or a copy you name<br/>→ ~/.delvewright/client/minecraft-1.21.11.jar"}}:::human
     I1B -->|"exit 0: I2–I4 skipped"| I5
     I5 --> I6["I6 · the prefab library<br/>DELVEWRIGHT_PREFABS"]
-    I6 --> I7["I7 · Chunky's source and a JDK 17 named<br/>refimg.py --dry-run on the drawing path"]
+    I6 --> I7["I7 · named, not installed<br/>refimg.py --dry-run on the drawing path"]
     I7 --> I8["I8 · the checklist, through env.sh<br/>delvec grammar list · render fidelity-gate<br/>grammar expand · palette · docker"]
     I8 -.->|"a line answers wrongly"| STOP(["Init is not finished: stop and say so"])
 
@@ -139,10 +139,8 @@ The first time a human plays the delve, it is the finished first version. Nothin
 
 ```mermaid
 flowchart TD
-    G(["the ladder, green"]) --> WS2["validation/world-save.sh<br/>boots the build so its world exists on disk"]
-    WS2 --> RS["validation/render-shots.sh<br/>delvec scene · delvec panorama · delvec index<br/>first-person frames along the proven route"]
-    RS --> CK["validation/chunky-install.sh · validation/chunky.sh<br/>Chunky renders, pinned core"]
-    CK --> VR["12 · visual review<br/>the player's-eye frames in route order,<br/>each against design/concept/ and its expect line"]
+    G(["the ladder, green"]) --> RS["delvec frames<br/>every review frame, drawn in-process from the worlds the build wrote<br/>first-person frames along the proven route, cutscenes where each shot starts"]
+    RS --> VR["12 · visual review<br/>the player's-eye frames in route order,<br/>each against design/concept/ and its expect line"]
     VR -.->|"finding"| BACK(["back to the documents"])
     VR --> SG["the staging gate<br/>tools/creator/staging-gate.py reads every class in<br/>docs/playtest-findings.json and mints an admission token<br/>for this exact tree"]
     SG --> UP["tools/creator/playtest-server.sh up<br/>build · gate · a kept image of the admitted build, its world placed, run on localhost:25565<br/>the datapack's load verified over rcon"]
@@ -156,7 +154,7 @@ flowchart TD
 
 The staging gate holds the only key to the play port: `validation/owner-play.yaml` is the one file that publishes 25565, and it refuses a tree with no token minted for it. A red gate lists the defect classes the player is not yet protected from, item by item, and the hand-over names each one, so the first play is never spent on one.
 
-Drafts come from the CPU renderers (`delvec snapshot`, `delvec viewer`, `delvec contact-sheet`) and the GPU arm (`delvec render`); every picture that has to look like Minecraft is a Chunky render. The documents are the artifact of record: the finished delve rebuilds byte-identically from them, with no model in the loop.
+Every picture that has to look like Minecraft is drawn by `delvec` itself, in-process, with the game's own textures (`delvec frames`, `delvec cameras`, `delvec panorama`); `delvec viewer`, `delvec contact-sheet` and the GPU arm `delvec render` serve the pieces. The documents are the artifact of record: the finished delve rebuilds byte-identically from them, with no model in the loop.
 
 ## 6 · Release — GitHub Actions and GHCR
 
@@ -238,7 +236,7 @@ flowchart TD
 | [`/new-delve`](../.claude/skills/delvewright/skills/new-delve/SKILL.md) | the skill page: Init and thirteen steps, with a reference file per step | 1–5 | the agent |
 | staged JSON documents | `world` · `npcs` · `classes` · `quest-plan` · `quests` · `dialogue`, plus `geometry-brief` · `layout-graph` · `site-plan` · `detail-plan` · `design` | 2–5 | the agent writes them |
 | `delvec` | the Rust engine, one binary: `schema` · `validate` · `analyze` · `build` · `fmt` · `metrics` · `allocation` · `detail` · `l10n-inventory` · `l10n-apply` | 2–4 | the agent |
-| `delvec` render surface | `snapshot` · `blocking-chart` · `viewer` · `palette` · `scene` · `panorama` · `cameras` · `place-camera` · `contact-sheet` · `index` (CPU), `render` (GPU, through Nucleation and wgpu) | 3, 5 | the agent |
+| `delvec` picture surface | `frames` · `panorama` · `cameras` (through Lumenwright, GPU or CPU) · `blocking-chart` · `viewer` · `palette` · `place-camera` · `contact-sheet`, `render` (GPU, through Nucleation and wgpu) | 3, 5 | the agent |
 | `delvec` pieces | `grammar` (the box-split grammar) · `prefab` (admission, jigsaw sockets, anchors, lighting) · `schem` (outside schematics) | 2, 4 | the agent |
 | `delvec harvest` · `calibrate` | in-game notes and hand-placed shots, turned back into reports and patches | 5 | the agent, after a human plays |
 | `tools/creator/refimg.py` | concept art from a configured image provider | 2 | the agent; the human judges it |
@@ -249,7 +247,7 @@ flowchart TD
 | `validation/` Docker Compose rig | `compose.yaml` with the `play`, `playtest`, `validate` and `packtest` profiles; `owner-play.yaml` | 4–6 | the agent and CI |
 | PackTest on Fabric | mechanism tests on a tool server; never in a shipped delve | 4, 6 | the agent and CI |
 | `harness/` | the mineflayer bot (TypeScript): critical path, die-retry, death-loop, branch runs | 4, 6 | the agent and CI |
-| Chunky | every picture that has to look like Minecraft | 5 | the agent |
+| Lumenwright, inside `delvec` | every picture that has to look like Minecraft | 3, 5 | the agent |
 | GitHub Actions | `ci.yml`, `engine-release.yml`, `dsl-crate-publish.yml`, `plugin-release.yml`, `infra-images.yml`, `gpu-probe.yml` here; `release.yml` in the content repository | engine line, 6 | CI, dispatched by a human |
 | GHCR | multi-arch delve images, the mirrored server base and the tool server | 6, 7 | CI |
 | crates.io and GitHub Releases | `delvec` and `delvewright-dsl`; the per-platform archives | engine line, 1 | CI |

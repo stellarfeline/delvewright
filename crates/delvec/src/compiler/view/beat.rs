@@ -163,18 +163,14 @@ pub struct StandAfter {
 }
 
 impl Stand {
-    /// The per-camera binding line (spec-0089 §7), with the holder entities
-    /// inside the frame the picture does not draw (spec-0111 §5.1).
-    pub fn line(&self, block_entities_omitted: usize, holders_not_drawn: usize) -> String {
+    /// The per-camera binding line (spec-0089 §7).
+    pub fn line(&self, block_entities_omitted: usize) -> String {
         match &self.after {
-            None => format!(
-                "after: {} at load; {holders_not_drawn} holder(s) not drawn",
-                self.camera
-            ),
+            None => format!("after: {} at load", self.camera),
             Some(a) => format!(
                 "after: {} after {} (step {} of {} on {}): {} cells moved from load, {} unforced \
                  write(s) not laid, {block_entities_omitted} block entit(ies) omitted; biomes: at \
-                 load; clock: as the picture; {holders_not_drawn} holder(s) not drawn",
+                 load; clock: as the picture",
                 self.camera, a.step, a.index, a.of, a.path, self.cells_moved, self.unforced
             ),
         }
@@ -273,47 +269,36 @@ fn trap_shut_at_load(plan: &Plan, t: &crate::compiler::plan::TrapPlan) -> bool {
     })
 }
 
-/// Where a run's cameras stand, with what the world writer needs beside the
-/// block maps: which biome a cell stands in, and the spawn `level.dat` names.
+/// Where a run's cameras stand, with the one writer of their worlds
+/// ([`crate::compiler::view::review::WorldMaker`]) and the clock a world is
+/// written at: the world's own, arriving at the critical path's first step.
 pub struct Stood {
     pub stands: Stands,
-    /// The build's biome answer ([`crate::compiler::horizon::biome_map`]).
-    pub biome: Box<dyn Fn([i32; 3]) -> String>,
-    /// The campaign's start cell.
-    pub spawn: [i32; 3],
-    /// What a cell no write reached holds ([`crate::compiler::view::world::Ground`]):
-    /// the horizon's generator, held out of every cell the assembled world and
-    /// the shipped setup reach. A world's own laid writes ([`Stands::laid`])
-    /// are held out by the writer.
-    pub ground: crate::compiler::view::world::Ground,
-    /// The centre of every holder entity's body the pieces carry (spec-0111
-    /// §5.1): the pinned core draws no entity the engine summons, so a camera
-    /// states how many it leaves out of its frame.
-    pub holders: Vec<[f64; 3]>,
+    pub maker: crate::compiler::view::review::WorldMaker,
+    /// `level.dat`'s `DayTime` for every world written.
+    pub day_time: i64,
+    /// The plan's causal ancestry of critical-path steps
+    /// ([`Plan::gate_fired_before`]'s relation), so a world can lay the
+    /// placements ledger rows its arrival holds.
+    pub ancestors: BTreeMap<usize, BTreeSet<usize>>,
 }
 
-/// How many of `holders` (body centres) lie inside `cam`'s frame — the count a
-/// per-camera binding line states as `holder(s) not drawn` (spec-0111 §5.1).
-#[must_use]
-pub fn holders_in_frame(
-    cam: &crate::compiler::view::camera::Camera,
-    holders: &[[f64; 3]],
-) -> usize {
-    let lens = crate::compiler::snapshot::Camera {
-        pos: cam.pos,
-        yaw: cam.yaw,
-        pitch: cam.pitch,
-        fov: cam.fov,
-    };
-    holders
-        .iter()
-        .filter(|p| {
-            lens.project(cam.width, cam.height, **p)
-                .is_some_and(|([x, y], _)| {
-                    x >= 0.0 && y >= 0.0 && x < f64::from(cam.width) && y < f64::from(cam.height)
-                })
-        })
-        .count()
+impl Stood {
+    /// The critical-path arrival world `key` stands at: 0 at load, the step
+    /// after the camera's `after` on the critical path, `None` on a branch's.
+    pub fn arrival_of(&self, key: &str) -> Option<usize> {
+        if key == AT_LOAD {
+            return Some(0);
+        }
+        let s = self.stands.stands.iter().find(|s| s.key == key)?;
+        let a = s.after.as_ref()?;
+        (a.path == "the critical path").then_some(a.index)
+    }
+
+    /// Whether step `g` fires before arrival `s` ([`Plan::gate_fired_before`]).
+    pub fn fired_before(&self, g: usize, s: usize) -> bool {
+        g == 0 || self.ancestors.get(&s).is_some_and(|a| a.contains(&g))
+    }
 }
 
 /// The load configuration's bytes: the critical path's arrival at step 0 over

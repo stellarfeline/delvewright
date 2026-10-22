@@ -624,8 +624,9 @@ fn a_long_roster_stamps_one_short_line_per_shot_and_harvests_back() {
     let shots: Vec<String> = (0..16)
         .map(|k| {
             format!(
-                r#"{{ "path": [ {{ "anchor": "anchor/exit", "offset": [0, 2, {}] }} ], "seconds": 2 }}"#,
-                k % 3
+                r#"{{ "path": [ {{ "anchor": "anchor/exit", "offset": [{}, 2, 0] }} ], "seconds": 2 }}"#,
+                // Three still cameras across the room, each in open air.
+                (k % 3) - 1
             )
         })
         .collect();

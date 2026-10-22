@@ -67,14 +67,14 @@ def test_a_consumer_that_compiles_the_engine_again_is_refused(tmp_path, capsys):
 
 
 def test_a_script_that_can_build_its_own_engine_is_refused(tmp_path, capsys):
-    """`render-shots.sh` sources `tools/lib/delvec-bin.sh`, whose fallback compiles."""
+    """`playtest-server.sh` sources `tools/lib/delvec-bin.sh`, whose fallback compiles."""
     wf = perturbed(tmp_path, MECHA_TAKE, MECHA_TAKE.replace(
         "      # A DIFFERENT interpreter line",
-        "      - run: bash validation/render-shots.sh --help\n      # A DIFFERENT interpreter line",
+        "      - run: bash tools/creator/playtest-server.sh --help\n      # A DIFFERENT interpreter line",
     ))
     code, out = run_gate(capsys, wf)
     assert code == 1
-    assert "`validation/render-shots.sh` → `tools/lib/delvec-bin.sh` compiles the root workspace" in out
+    assert "`tools/creator/playtest-server.sh` → `tools/lib/delvec-bin.sh` compiles the root workspace" in out
 
 
 def test_another_workspace_may_be_compiled(tmp_path, capsys):

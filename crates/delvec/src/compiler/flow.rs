@@ -1109,7 +1109,7 @@ impl<'a> Flow<'a> {
     /// there is no coherent playthrough to pick; the model then **degenerates to
     /// the pre-branch behavior** — the finale's whole stage-4 `depends_on`
     /// closure, each `talk-to` left to the first completing option — so the
-    /// geometry-only commands (`chart`, `snapshot`) that deliberately run on an
+    /// geometry-only commands (`chart`, `frames --campaign`) that deliberately run on an
     /// unanalyzable campaign keep working. [`Playthrough::degenerate`] marks it.
     pub fn playthrough(&self) -> Playthrough {
         let finale = self.c.quest_plan.content.finale.as_str();

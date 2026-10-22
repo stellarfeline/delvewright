@@ -75,7 +75,7 @@ def bare_tree(tmp_path: Path, stub: str = STUB) -> tuple[Path, Path]:
 
 
 def run(root: Path, engine: Path, out: Path) -> subprocess.CompletedProcess:
-    # An empty HOME too: a fresh runner has no `~/.chunky`, no caches, nothing
+    # An empty HOME too: a fresh runner has no client jar, no caches, nothing
     # a developer's machine quietly supplies.
     home = root.parent / "home"
     home.mkdir(exist_ok=True)

@@ -379,5 +379,5 @@ pub(crate) fn run_l10n_apply(
 }
 
 // ---------------------------------------------------------------------------
-// `snapshot` (spec-0015: the visual authoring loop)
+// `frames --campaign` (spec-0015: the visual authoring loop)
 // ---------------------------------------------------------------------------

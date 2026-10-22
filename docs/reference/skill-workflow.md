@@ -110,7 +110,7 @@ flowchart TD
     HB --> WS
     SH --> IN
     HB --> IN
-    IN[["Init — one binary, delvec,<br/>client jar, Chunky, reference-image path,<br/>content symlink"]]
+    IN[["Init — one binary, delvec,<br/>client jar, reference-image path,<br/>content symlink"]]
     IN --> WS
     WS[["1 · workspace in the CONTENT repo<br/>campaigns/campaigns/id/<br/>documents + GENERATION.md + DESIGN.md"]]
 
@@ -383,13 +383,7 @@ Not a proposal — an inventory.
    sequence a whole subject needs is a workflow step with its anchor and its
    per-view frame written down — but it needs a human iterating on the prompt,
    and it composes nothing.
-3. **Chunky is a separate process, not wired into CI** — storybook art is a
-   two-pass manual flow (`delvec snapshot` to judge layout, Chunky for the
-   shipped frame). The page installs it at step 12 with
-   `validation/chunky-install.sh`, which builds the pinned core from Chunky's
-   source at the pinned revision and installs it only when its content is the
-   pin's, and every render goes through `validation/chunky.sh`, which refuses a
-   Chunky home that does not hold the pin (`docs/reference/tools.md` §4a).
+3. **Storybook art is a two-pass flow the agent drives** — `delvec cameras --preview` to judge layout, then `delvec cameras` and `delvec panorama` for the shipped frames, drawn by `delvec` itself (`docs/reference/tools.md` §4a); choosing the frame is still a person's judgement, and nothing composes the page.
 4. **The ladder's project id is chosen by hand** (`dw-<campaign>-r<round>`).
    Required everywhere, defaulted nowhere — deliberately, since a shared default
    is a collision between ladders.

@@ -16,7 +16,12 @@ use crate::cli::campaign::{
     has_error, load_or_refuse, read_skins, read_structures, validate_loaded,
 };
 use crate::cli::report::{print_build_error, print_diags, write_file};
-use crate::cli::view::{manifest_path_for, pull_into_open_air, sea_level_of};
+use crate::cli::view::{camera_base, camera_world, manifest_path_for, pull_into_open_air};
+
+/// The size of a batch's frame, 16:9.
+const FRAME_WIDTH: u32 = 960;
+/// See [`FRAME_WIDTH`].
+const FRAME_HEIGHT: u32 = 540;
 
 #[derive(Subcommand)]
 pub(crate) enum EditAction {
@@ -30,7 +35,8 @@ pub(crate) enum EditAction {
         /// the script. Persisted only if the whole replay is green.
         #[arg(long)]
         batch: Option<PathBuf>,
-        /// Directory for the per-batch snapshot PNGs + manifests.
+        /// Directory for the per-batch frames, their manifests and the edited
+        /// load world they are drawn from.
         #[arg(short, long, default_value = "edit-shots")]
         out: PathBuf,
     },
@@ -43,17 +49,18 @@ pub(crate) enum EditAction {
         /// the script for this replay only.
         #[arg(long)]
         batch: Option<PathBuf>,
-        /// Directory for the per-batch snapshot PNGs + manifests.
+        /// Directory for the per-batch frames, their manifests and the edited
+        /// load world they are drawn from.
         #[arg(short, long, default_value = "edit-shots")]
         out: PathBuf,
     },
 }
 
-/// `delvec edit apply|preview` (spec-0017): the edit → replay → snapshot loop.
+/// `delvec edit apply|preview` (spec-0017): the edit → replay → frame loop.
 ///
 /// Replays the stage-7 edit script — with an optional `--batch` candidate
 /// appended — through full validation, the deterministic replay with its
-/// per-batch invariant proofs, and one auto-rendered snapshot per batch
+/// per-batch invariant proofs, and one frame per batch
 /// (framing the batch's edited region over the final edited world). `apply`
 /// additionally persists the candidate into `world-edits.json` (canonical
 /// form) once the whole replay is green; `preview` never writes to the
@@ -68,8 +75,28 @@ pub(crate) enum EditAction {
 /// script `build` rejects could be written into the campaign. Both verbs now run
 /// the **whole** build-tier proof set (`analyze` + `emit::build`, output
 /// discarded) before anything is persisted; measured cost is ~0.3 s on the
-/// largest content campaign against a ~0.34 s snapshot render, so there is no
+/// largest content campaign against a fraction of a second a frame, so there is no
 /// reason for a cheaper tier to exist.
+/// What one batch's frame shows: the targets in and out of it by the one sight
+/// rule ([`delvec::compiler::framing::resolve_targets`]), and the manifest's
+/// entries its labels are stamped from.
+#[allow(clippy::type_complexity)]
+pub(crate) fn batch_frame<'a>(
+    grid: &delvec::compiler::framing::VoxelGrid,
+    cam: &delvec::compiler::framing::Camera,
+    (width, height): (u32, u32),
+    targets: &'a [delvec::compiler::framing::Target],
+) -> (
+    Vec<delvec::compiler::framing::ResolvedTarget<'a>>,
+    Vec<&'a delvec::compiler::framing::Target>,
+    Vec<serde_json::Value>,
+) {
+    let (inside, outside) =
+        delvec::compiler::framing::resolve_targets(grid, cam, width, height, targets);
+    let shows = inside.iter().map(|r| r.entry()).collect();
+    (inside, outside, shows)
+}
+
 pub(crate) fn run_edit(
     campaign_dir: &Path,
     prefabs_dir: &Path,
@@ -78,8 +105,8 @@ pub(crate) fn run_edit(
     persist: bool,
     json: bool,
 ) -> ExitCode {
+    use delvec::compiler::framing::{self, Camera, DEFAULT_FOV};
     use delvec::compiler::load::WORLD_EDITS_FILE;
-    use delvec::compiler::snapshot::{self, Camera, DEFAULT_FOV, DEFAULT_HEIGHT, DEFAULT_WIDTH};
 
     let mut loaded = match load_or_refuse(campaign_dir, json) {
         Ok(l) => l,
@@ -205,29 +232,54 @@ pub(crate) fn run_edit(
         return ExitCode::SUCCESS;
     };
 
-    // One snapshot per batch: frame the batch's edited region over the FINAL
-    // edited world (a dollhouse view pulled into open air, like `--at`).
-    let grid = snapshot::VoxelGrid::build(&replay.assembled.blocks);
-    snapshot::report_unpainted(&grid);
-    let targets = snapshot::collect_targets(&plan);
+    // One frame per batch: frame the batch's edited region over the FINAL
+    // edited world (a dollhouse view pulled into open air, like `--at`), drawn
+    // by the renderer every frame goes through, from the edited load world
+    // written under `<out>/world/`.
+    let assembled = &replay.assembled;
+    let (nav, relight) = camera_world(&plan, assembled);
+    let base = camera_base(&plan, assembled, &relight);
+    let load = delvec::compiler::view::beat::load_blocks(&plan, &nav, &base);
+    let grid = framing::VoxelGrid::build(&load);
+    let targets = framing::collect_targets(&plan);
     // The solved layout, hoisted out of the per-batch loop: it is a property of
     // the plan, identical in every batch's manifest.
-    let pieces = snapshot::collect_pieces(&plan);
-    let opts = snapshot::FrameOpts {
-        width: DEFAULT_WIDTH,
-        height: DEFAULT_HEIGHT,
-        sea_level: sea_level_of(&v.campaign),
-        labels: true,
+    let pieces = framing::collect_pieces(&plan);
+    let maker =
+        delvec::compiler::view::review::WorldMaker::new(&plan, assembled, &base, &structures);
+    let clock = delvec::compiler::view::review::Clock::at(&plan, 0);
+    let (_, written) = maker.encode_blocks(
+        &load,
+        &delvec::compiler::view::beat::load_laid(&plan, &nav),
+        clock.day_time(&plan),
+        &[],
+    );
+    let world_dir = out_dir.join("world");
+    if let Err(e) = delvec::compiler::view::world::write_files(&written, &world_dir) {
+        eprintln!("internal error: cannot write {}: {e}", world_dir.display());
+        return ExitCode::from(EXIT_INTERNAL);
+    }
+    let jar = match delvec::compiler::view::cli::resolve_textures(None) {
+        Ok(j) => j,
+        Err(d) => {
+            d.print(json);
+            return ExitCode::from(delvec::compiler::view::diag::exit::RENDER);
+        }
     };
+    let (lo, hi) = maker.extent;
     let mut shots: Vec<(String, String)> = Vec::new(); // (batch id, png path)
     for b in &replay.batches {
-        let Some((lo, hi)) = b.bounds else { continue };
+        let Some((lo_b, hi_b)) = b.bounds else {
+            continue;
+        };
         let centre = [
-            (lo[0] + hi[0]) as f64 / 2.0,
-            (lo[1] + hi[1]) as f64 / 2.0,
-            (lo[2] + hi[2]) as f64 / 2.0,
+            (lo_b[0] + hi_b[0]) as f64 / 2.0,
+            (lo_b[1] + hi_b[1]) as f64 / 2.0,
+            (lo_b[2] + hi_b[2]) as f64 / 2.0,
         ];
-        let span = ((hi[0] - lo[0]).max(hi[1] - lo[1]).max(hi[2] - lo[2])) as f64;
+        let span = ((hi_b[0] - lo_b[0])
+            .max(hi_b[1] - lo_b[1])
+            .max(hi_b[2] - lo_b[2])) as f64;
         let d = (span * 1.1).max(12.0);
         let eye = [
             centre[0] + d * 0.75,
@@ -235,31 +287,62 @@ pub(crate) fn run_edit(
             centre[2] + d * 0.75,
         ];
         let cam = Camera::looking_at(pull_into_open_air(&grid, centre, eye), centre, DEFAULT_FOV);
-
-        let mut frame = snapshot::render_frame(&grid, &cam, &opts);
-        let (inside, outside) = snapshot::resolve_targets(&grid, &cam, &opts, &targets);
-        snapshot::draw_labels(&mut frame, &grid, &cam, &inside);
-        let png = delvec::compiler::png::encode_rgba(
-            frame.canvas.width,
-            frame.canvas.height,
-            &frame.canvas.rgba,
+        let drawn = match delvec::compiler::view::frameset::draw_frame(
+            &delvec::compiler::view::frames::FrameRequest {
+                world: &world_dir,
+                chunks: delvec::compiler::view::scene::chunk_rect(lo, hi),
+                jar: Path::new(&jar),
+                packs: &[],
+                camera: cam,
+                sky: delvec::compiler::view::frames::FrameSky {
+                    day: clock.clock(&plan).day,
+                    daytime_ticks: clock.daytime_ticks(),
+                    weather: clock.weather,
+                },
+                mode: delvec::compiler::view::frames::Mode::Quick,
+                backend: delvec::compiler::view::frames::Backend::Auto,
+                width: FRAME_WIDTH,
+                height: FRAME_HEIGHT,
+            },
+            None,
+        ) {
+            Ok(d) => d,
+            Err(d) => {
+                d.print(json);
+                return ExitCode::from(delvec::compiler::view::diag::exit::RENDER);
+            }
+        };
+        let (inside, outside, shows) =
+            batch_frame(&grid, &cam, (drawn.width, drawn.height), &targets);
+        let mut rgba = drawn.rgba.clone();
+        delvec::compiler::view::frameset::stamp_labels(
+            &mut rgba,
+            drawn.width,
+            drawn.height,
+            &shows,
         );
+        let png = delvec::compiler::png::encode_rgba(drawn.width, drawn.height, &rgba);
         let name = b.id.strip_prefix("batch/").unwrap_or(&b.id);
         let image_name = format!("{name}.png");
         let png_path = out_dir.join(&image_name);
-        let doc = snapshot::manifest(
+        let mut doc = framing::manifest(
             v.campaign.world.campaign_id.as_str(),
             &image_name,
             &cam,
-            &opts,
+            &framing::Picture {
+                width: drawn.width,
+                height: drawn.height,
+                rgba: &rgba,
+            },
             &grid,
-            snapshot::Scene {
+            framing::Scene {
                 pieces: &pieces,
                 inside: &inside,
                 outside: &outside,
             },
-            &frame.canvas,
         );
+        doc["renderer"] = serde_json::json!(delvec::compiler::view::frames::renderer());
+        doc["backend"] = serde_json::json!(drawn.backend_name());
         let mut manifest_bytes = match serde_json::to_vec_pretty(&doc) {
             Ok(b) => b,
             Err(e) => {
@@ -271,7 +354,7 @@ pub(crate) fn run_edit(
         if let Err(e) = write_file(&png_path, &png)
             .and_then(|()| write_file(&manifest_path_for(&png_path), &manifest_bytes))
         {
-            eprintln!("internal error: cannot write snapshot: {e}");
+            eprintln!("internal error: cannot write the frame: {e}");
             return ExitCode::from(EXIT_INTERNAL);
         }
         shots.push((b.id.clone(), png_path.display().to_string()));
@@ -344,7 +427,7 @@ pub(crate) fn run_edit(
             serde_json::json!({
                 "batches": replay.batches.iter().map(|b| &b.id).collect::<Vec<_>>(),
                 "commands": replay.commands.len(),
-                "snapshots": shots.iter().map(|(id, p)| serde_json::json!({
+                "frames": shots.iter().map(|(id, p)| serde_json::json!({
                     "batch": id, "png": p,
                 })).collect::<Vec<_>>(),
                 "persisted": persisted,

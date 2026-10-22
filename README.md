@@ -6,7 +6,7 @@ English · [简体中文](README.zh-CN.md)
 
 ![Vesperhold as Delvewright built it: the whole hold on its crag from high in the south-west, the causeway running down to the wayside shrine](docs/media/vesperhold/01-hero-whole-map-southwest.jpg)
 
-The pictures are renders of the built world, path-traced with [Chunky](https://chunky-dev.github.io/docs/); in the game it looks like vanilla Minecraft unless you add a shader or a resource pack of your own.
+The pictures are frames of the built world drawn by [Lumenwright](https://github.com/stellarfeline/lumenwright) with Minecraft's own textures; in the game it looks like vanilla Minecraft unless you add a shader or a resource pack of your own.
 
 **[Inside Vesperhold](docs/media/vesperhold/README.md)** — the approach, the ward, the garden, the cloister, the chapel, the pool under it, the bell tower and the throne hall. **[More campaigns](docs/media/README.md)**: The Treehouse Camp and Doune Castle.
 
@@ -59,7 +59,7 @@ What each rung proves, and what it does not: [what each gate actually proves](do
 
 ## The map
 
-Every map is a site plan, designed whole-first — a geometry brief, a layout graph, then every place's box, datum and seams, and what fills the ground between them — and walked as a blockout before any place is detailed. Each place is then one piece that draws its own walls, roof and ground inside the frame the plan hands it, written by the box-split grammar from a rule program; a map that is one building is a plan of one box. Vesperhold, the castle above, is a single grammar piece holding the whole site, 172 × 104 × 292 blocks. Light is placed while a room is designed, and the build refuses reachable floor that measures dark (`DW0210`). Every scene is rendered with Chunky and reviewed against the concept image it answers.
+Every map is a site plan, designed whole-first — a geometry brief, a layout graph, then every place's box, datum and seams, and what fills the ground between them — and walked as a blockout before any place is detailed. Each place is then one piece that draws its own walls, roof and ground inside the frame the plan hands it, written by the box-split grammar from a rule program; a map that is one building is a plan of one box. Vesperhold, the castle above, is a single grammar piece holding the whole site, 172 × 104 × 292 blocks. Light is placed while a room is designed, and the build refuses reachable floor that measures dark (`DW0210`). Every scene is drawn from the world the build writes and reviewed against the concept image it answers.
 
 Read on: [placing the map](.claude/skills/delvewright/skills/new-delve/references/placement.md) · [one map route](docs/adr/0032-one-map-route.md) · [the map is planned before it is built](docs/adr/0022-the-map-is-planned-before-it-is-built.md) · [the grammar](docs/reference/grammar.md) · [admitting a piece](docs/reference/prefab-procedure.md) · [interior lighting](docs/reference/interior-lighting.md) · [visual review](.claude/skills/delvewright/skills/new-delve/references/visual-review.md)
 

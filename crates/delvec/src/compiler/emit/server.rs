@@ -274,7 +274,7 @@ pub(super) fn pack_note(
                 licence.push_str(&format!("; attribution: {a}"));
             }
             let shown = if t.is_block() {
-                "shown by Chunky, the viewer and the palette".to_string()
+                "shown by every frame, the viewer and the palette".to_string()
             } else {
                 "sheet only — no frame this engine renders draws it".to_string()
             };

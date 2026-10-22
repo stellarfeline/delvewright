@@ -1,233 +1,116 @@
-//! `delvec snapshot` — the visual authoring loop's viewport (spec-0015 pillars 1+2).
+//! **What a frame frames** (spec-0112 §7.5): the camera, the occupancy grid a
+//! sight line is asked of, the targets a review names, and the manifest that
+//! says per target where it stands on the frame and whether it can be seen.
 //!
-//! A voxel raycaster over the shared assembled-world model
-//! ([`crate::compiler::assembled`]), so the designing agent can **look at its own build**
-//! from any camera it chooses, mid-authoring, in well under a second — the
-//! screenshot half of the dual-channel loop. The other half is the scene
-//! manifest ([`manifest`]): the same frame described structurally, so review
-//! feedback and edits reference ids and screen boxes instead of prose.
-//!
-//! ## What it is (and is not)
-//!
-//! This is a **draft** renderer, deliberately: flat block-palette colours, face
-//! shading, block-edge relief, distance fade. It answers "is the thing where I
-//! think it is, is it visible, is it framed" — layout questions — in one process
-//! with no GPU, no resource pack and no server. It does **not** answer "does it
-//! look good": Chunky (`delvec render`, spec-0007) remains the beauty pass, and
-//! nothing here competes with it.
-//!
-//! Three consequences worth knowing before reading a frame:
-//!
-//! 1. **There is no lighting model.** The raycaster sees geometry regardless of
-//!    block light, so a pitch-black cavern renders exactly as legibly as a lit
-//!    meadow. That is the point for dark-area review — the owner's round-3/4
-//!    "an entire invisible cavern" finding is a *rendering* artifact of the
-//!    beauty tier, not a geometry defect, and this tier separates the two.
-//!    Emissive blocks (glowstone, lantern, campfire, torch) still render at full
-//!    brightness so a fire pit reads as a fire pit.
-//! 2. **Only the assembled model exists.** Placed prefabs, solver seals, gate
-//!    clears, gravity settling — everything [`crate::compiler::assembled`] models, and
-//!    nothing else. Entities (NPC mannequins, actors, item displays) are not
-//!    blocks and so are not drawn; their *posts* are in the manifest and, with
-//!    `--labels`, stamped on the frame. The one world-generation element drawn
-//!    is the `ocean` horizon's sea plane (see [`SEA_PLANE_NOTE`]).
-//! 3. **Screen space is the vocabulary.** Every manifest entry carries a
-//!    screen-space bbox in pixels, so "the shelf is behind the pillar" becomes
-//!    `{"id": "anchor/shelf", "occluded": true}` and "raise it" becomes a
-//!    coordinate edit.
+//! One definition of each, read by every surface that describes a frame:
+//! `delvec frames` (each review frame's `shows` and `out_of_frame`), the per-batch
+//! frames of `delvec edit`, the blocking chart's labels and the prefab viewer's
+//! eye-level measurements ([`crate::compiler::view::sight`]). The pixels are
+//! Lumenwright's ([`crate::compiler::view::frames`]); nothing here draws a
+//! block.
 //!
 //! ## Camera convention
 //!
-//! `yaw`/`pitch` are **Minecraft** degrees, identical to the cutscene aim
-//! ([`crate::compiler::emit`]'s `mc_aim`): `yaw = 0` faces +Z (south), `90` faces −X
-//! (west), `180` north, `270` east; `pitch` is positive looking **down**, `0`
-//! level. `fov` is the **vertical** field of view in degrees.
+//! `yaw`/`pitch` are **Minecraft** degrees, identical to the cutscene aim and
+//! to `render-plan.json`: `yaw = 0` faces +Z (south), `90` faces −X (west),
+//! `180` north, `270` east; `pitch` is positive looking **down**, `0` level.
+//! `fov` is the **vertical** field of view in degrees.
 //!
-//! Note this is NOT the `render-plan.json` convention (`crate::compiler::render_plan` uses
-//! `yaw = atan2(-dz, dx)`, `0` = +X, for Chunky). `--shot` bridges them by
-//! reading the shot's `pos`/`look_at` — plain world coordinates both conventions
-//! agree on — and re-deriving Minecraft yaw/pitch from them.
+//! ## One sight rule
+//!
+//! A target is occluded when all nine of its probe points
+//! ([`Target::probe_points`]) are hidden by a block that is not the target's
+//! own ([`VoxelGrid::occluded_target`]). [`resolve_targets`] is the one place a
+//! target is put on a frame, and the one public entry point to the question
+//! "is this target inside this camera's frame, and hidden there". Its building
+//! blocks are private to this module — the ray walk ([`VoxelGrid::cast`] and its
+//! `Hit`), the probe points, the projection ([`Camera::project`], `ray`), the
+//! screen box — and a [`ResolvedTarget`]'s fields are private, so no other
+//! module can assemble or state a second answer. Every consumer is held to this
+//! one by the agreement test `every_consumer_of_the_sight_rule_agrees_with_it`
+//! (`crates/delvec/src/cli/sight_agreement.rs`).
+//!
+//! The entry point, asked from outside the crate:
+//!
+//! ```
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let grid = VoxelGrid::build(&Default::default());
+//! let cam = Camera::looking_at([0.5, 0.5, -4.0], [0.5, 0.5, 0.5], 70.0);
+//! let t = [Target::point("t".into(), "anchor", String::new(), [0, 0, 0])];
+//! let (inside, outside) = resolve_targets(&grid, &cam, 64, 64, &t);
+//! assert!(outside.is_empty() && !inside[0].occluded());
+//! ```
+//!
+//! and each building block refused, the same code with one call changed. Stable
+//! rustdoc does not check a `compile_fail` error code, so each refusal is bound
+//! by perturbation instead: the item made `pub` (the ray walk with its `Hit`)
+//! turns its doctest red.
+//!
+//! ```compile_fail
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let grid = VoxelGrid::build(&Default::default());
+//! let t = Target::point("t".into(), "anchor", String::new(), [0, 0, 0]);
+//! grid.occluded_target([0.5, 0.5, -4.0], &t);
+//! ```
+//!
+//! ```compile_fail
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let grid = VoxelGrid::build(&Default::default());
+//! grid.cast([0.5, 0.5, -4.0], [0.0, 0.0, 1.0], 8.0);
+//! ```
+//!
+//! ```compile_fail
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let t = Target::point("t".into(), "anchor", String::new(), [0, 0, 0]);
+//! t.probe_points();
+//! ```
+//!
+//! ```compile_fail
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let cam = Camera::looking_at([0.5, 0.5, -4.0], [0.5, 0.5, 0.5], 70.0);
+//! cam.project(64, 64, [0.5, 0.5, 0.5]);
+//! ```
+//!
+//! ```compile_fail
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let cam = Camera::looking_at([0.5, 0.5, -4.0], [0.5, 0.5, 0.5], 70.0);
+//! cam.ray(64, 64, 32, 32);
+//! ```
+//!
+//! ```compile_fail
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let t = Target::point("t".into(), "anchor", String::new(), [0, 0, 0]);
+//! t.corners();
+//! ```
+//!
+//! ```compile_fail
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets, screen_box};
+//! ```
+//!
+//! ```compile_fail
+//! use delvec::compiler::framing::{ResolvedTarget, Target};
+//! let t = Target::point("t".into(), "anchor", String::new(), [0, 0, 0]);
+//! let bbox = delvec::compiler::raster::ScreenBox { x: 0, y: 0, w: 1, h: 1 };
+//! let _ = ResolvedTarget { target: &t, bbox, occluded: false, distance: 1.0 };
+//! ```
 //!
 //! ## Determinism (ADR-0006)
 //!
-//! No RNG, no clock, no parallelism, no hash-order iteration: the voxel palette
-//! is built from a `BTreeMap` walk, targets are sorted by `(kind, area, id)`,
-//! floats in the manifest are rounded to 3 decimals, and the PNG encoder
-//! ([`crate::compiler::png`]) pins its DEFLATE level. Two runs on one input are
-//! byte-identical in both the PNG and the manifest.
+//! No RNG, no clock, no parallelism, no hash-order iteration: the grid's
+//! palette is built from a `BTreeMap` walk, targets are sorted by
+//! `(kind, area, id)`, and floats in the manifest are rounded to 3 decimals.
 
 use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
 use crate::compiler::plan::{Plan, ResolvedAnchor};
-use crate::compiler::raster::{Canvas, GLYPH_ROWS, LabelPlacer, ScreenBox, kind_color, text_width};
-use crate::compiler::view::blockcolor::ROUGHNESS_FULL;
+use crate::compiler::raster::ScreenBox;
 
-/// Default frame size — 16:9, big enough to read a label, small enough to render
-/// in a fraction of a second.
-pub const DEFAULT_WIDTH: u32 = 960;
-/// See [`DEFAULT_WIDTH`].
-pub const DEFAULT_HEIGHT: u32 = 540;
-/// Default vertical field of view in degrees (vanilla's default is ~70).
+/// Default vertical field of view in degrees (vanilla's default is 70).
 pub const DEFAULT_FOV: f64 = 70.0;
-/// How far a primary ray travels before it is treated as a miss (blocks). The
-/// largest campaign layouts span a few hundred blocks, so this reaches the far
-/// side of any of them while bounding the worst-case DDA step count.
-pub const MAX_RAY_DISTANCE: f64 = 512.0;
 /// Default `--dist` for `--at`/`--orbit` framing (blocks from the subject).
 pub const DEFAULT_ORBIT_DIST: f64 = 14.0;
-
-/// Why a sea plane appears in an `ocean`-horizon frame even though water is not
-/// in the assembled block model: the shipped delve's superflat generator pins
-/// bedrock/stone/water so the sea tops out at [`crate::compiler::plan::SEA_LEVEL`]
-/// (spec-0013). Drawing it makes the beach read like the delve a player joins
-/// instead of an island floating over void — without it, every shoreline frame
-/// lies about the one thing shoreline framing is for. It is an analytic plane in
-/// the background pass only: it never enters the voxel model, never occludes a
-/// manifest target, and is skipped entirely for `void`-horizon campaigns.
-pub const SEA_PLANE_NOTE: &str = "ocean-horizon sea plane drawn at world-gen sea level";
-
-// ---------------------------------------------------------------------------
-// Block → colour
-// ---------------------------------------------------------------------------
-
-/// The colour a block the pinned version does not have renders as: full
-/// magenta, the same missing-texture key `delvec render`'s fidelity gate scans
-/// for (`delvec::render::detect`). Deliberately loud — a block the draft
-/// rasteriser cannot paint must be *obvious* in the frame rather than quietly
-/// shaded as generic stone — and never silent: every surface that draws a grid
-/// reports what it fell back on ([`VoxelGrid::unpainted`]).
-pub const FALLBACK_COLOR: [u8; 3] = [255, 0, 255];
-
-/// Flat draft colour for a block id, plus whether it renders emissive (drawn at
-/// full brightness, ignoring face shading and distance fade).
-///
-/// **The colour is the pinned client jar's**, read off the vendored table
-/// [`PaletteTable::pinned`] derives from it — the same derivation the
-/// interactive viewer runs live and the same jar the GPU path textures with, so
-/// the draft and the render do not hold two opinions about what a block looks
-/// like. The table is keyed by bare id at the default state, which is what this
-/// surface can use: the grid draws every cell as a full cube, so a blockstate's
-/// own geometry has nowhere to go.
-///
-/// The only ids without a colour are the two authoring markers and anything the
-/// pinned version does not have.
-pub fn block_color(name: &str) -> ([u8; 3], bool) {
-    // The assembled map carries full blockstates — the table is keyed by id, so
-    // `oak_slab[type=top]` and `oak_slab` are one entry.
-    let bare = crate::compiler::assembled::base_id(name);
-    let id = bare.strip_prefix("minecraft:").unwrap_or(bare);
-    // `jigsaw` / `structure_block` are authoring markers: vanilla deletes the
-    // former at placement and the latter is a tool, not scenery. They should
-    // never reach the model (the solver strips them), so they keep the fallback
-    // as an alarm even though the jar paints them.
-    if matches!(id, "jigsaw" | "structure_block") {
-        return (FALLBACK_COLOR, false);
-    }
-    let key = if bare.contains(':') {
-        bare.to_string()
-    } else {
-        format!("minecraft:{bare}")
-    };
-    match crate::compiler::view::blockcolor::PaletteTable::pinned()
-        .entries
-        .get(&key)
-    {
-        Some(a) => (a.rgb, is_emissive(id)),
-        None => (FALLBACK_COLOR, false),
-    }
-}
-
-/// The block's roughness: how far its texture's brightness strays from its own
-/// mean, as a fraction of that mean x255. A block the pinned version does not
-/// have is smooth.
-///
-/// Separate from [`block_color`] because the surfaces that draw a PLAN —
-/// `delvec blocking-chart`'s cutaways — want the colour and not the variation:
-/// a floor plan is read for where things are, and a top-down cell is one pixel.
-pub fn block_roughness(name: &str) -> u8 {
-    let bare = crate::compiler::assembled::base_id(name);
-    let key = if bare.contains(':') {
-        bare.to_string()
-    } else {
-        format!("minecraft:{bare}")
-    };
-    crate::compiler::view::blockcolor::PaletteTable::pinned()
-        .entries
-        .get(&key)
-        .map_or(0, |a| a.roughness)
-}
-
-/// Sub-cells per side of a face the grain pattern is drawn on. Four reads as
-/// blockwork at the distance a room is judged from; sixteen reads as noise.
-pub const GRAIN_CELLS: i64 = 4;
-
-/// A deterministic value in `0..=255` for one sub-cell of one face of one world
-/// cell.
-///
-/// **Integer arithmetic, keyed on the world and never on the camera**: the
-/// pattern belongs to the wall, so it does not crawl when the camera moves and
-/// two runs of the same scene give the same bytes (ADR-0006). The mix is
-/// FNV-1a's, which is a hash and not a random number generator: there is no
-/// state, no seed and nothing to re-roll.
-fn grain_hash(cell: [i32; 3], axis: usize, sign: i32, u: i64, v: i64) -> u8 {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for word in [
-        cell[0] as i64,
-        cell[1] as i64,
-        cell[2] as i64,
-        axis as i64,
-        sign as i64,
-        u,
-        v,
-    ] {
-        for byte in (word as u64).to_le_bytes() {
-            h ^= u64::from(byte);
-            h = h.wrapping_mul(0x0000_0100_0000_01b3);
-        }
-    }
-    ((h >> 24) & 0xff) as u8
-}
-
-/// Whether a block renders emissive/// Whether a block renders emissive — a drawing decision, not an asset fact, so
-/// it is this surface's own and not the jar's: an id is emissive if it
-/// *contains* an [`EMISSIVE`] stem, which catches the placement variants vanilla
-/// spells separately (`wall_torch`, `soul_wall_torch`, `redstone_wall_torch`)
-/// without listing each.
-///
-/// `torchflower` (a plant) is the one id the substring rule would over-match, so
-/// it is excluded by name.
-fn is_emissive(id: &str) -> bool {
-    !id.starts_with("torchflower") && EMISSIVE.iter().any(|e| id.contains(e))
-}
-
-/// Stems of blocks drawn at full brightness (see [`is_emissive`]). Kept small
-/// and literal: only light *sources* a designer uses to read a dark room belong
-/// here.
-const EMISSIVE: &[&str] = &[
-    "glowstone",
-    "lantern",
-    "soul_lantern",
-    "torch",
-    "soul_torch",
-    "campfire",
-    "soul_campfire",
-    "sea_lantern",
-    "shroomlight",
-    "glow_lichen",
-    "magma_block",
-    "jack_o_lantern",
-    "redstone_lamp",
-    "ochre_froglight",
-    "verdant_froglight",
-    "pearlescent_froglight",
-    "lava",
-    "fire",
-    "beacon",
-    "end_rod",
-    "light",
-];
 
 // ---------------------------------------------------------------------------
 // Voxel grid
@@ -238,11 +121,11 @@ const CHUNK: i32 = 16;
 /// Cells per storage chunk.
 const CHUNK_CELLS: usize = (CHUNK * CHUNK * CHUNK) as usize;
 
-/// A dense-chunked voxel view of the assembled world, built once per snapshot.
+/// A dense-chunked occupancy view of a block map, built once per world.
 ///
-/// The assembled model is a `BTreeMap<[i32;3], String>`; a raycaster does tens of
-/// millions of cell probes, and a `BTreeMap` lookup per DDA step is roughly two
-/// orders of magnitude too slow for the sub-second budget. This flattens it into
+/// The block map is a `BTreeMap<[i32;3], BlockState>`; a sight line probes a
+/// cell per DDA step, and a review set asks nine lines per target per frame, so
+/// a `BTreeMap` lookup per step is too slow. This flattens it into
 /// a palette plus 16³ chunk arrays: probes are O(1) array indexing, memory stays
 /// proportional to *occupied* chunks (a layout spanning `AREA_SPACING`-separated
 /// areas allocates nothing for the void between them), and the palette walk is a
@@ -250,10 +133,6 @@ const CHUNK_CELLS: usize = (CHUNK * CHUNK * CHUNK) as usize;
 pub struct VoxelGrid {
     /// Palette entry 0 is always "air"; block ids follow in `BTreeMap` order.
     palette: Vec<String>,
-    /// Per-palette-entry `(colour, emissive)`, precomputed.
-    shading: Vec<([u8; 3], bool)>,
-    /// Per-palette-entry texture roughness, precomputed beside the colour.
-    roughness: Vec<u8>,
     /// Chunk-space origin and dimensions.
     cmin: [i32; 3],
     cdim: [usize; 3],
@@ -261,10 +140,6 @@ pub struct VoxelGrid {
     chunks: Vec<Option<Box<[u16; CHUNK_CELLS]>>>,
     /// Inclusive world-cell bounds of the occupied region.
     bounds: Option<([i32; 3], [i32; 3])>,
-    /// Palette ids this grid will draw with [`FALLBACK_COLOR`], sorted and
-    /// unique — computed while the palette is built, so no surface has to
-    /// remember to look for them.
-    unpainted: Vec<String>,
 }
 
 /// Floor-divide `v` by [`CHUNK`] (correct for negatives, unlike `/`).
@@ -273,7 +148,7 @@ fn chunk_of(v: i32) -> i32 {
 }
 
 impl VoxelGrid {
-    /// Flatten an assembled cell→block map into the raycasting grid.
+    /// Flatten a cell→block map into the occupancy grid.
     pub fn build(blocks: &crate::compiler::blockstate::BlockMap) -> VoxelGrid {
         let mut palette: Vec<String> = vec!["minecraft:air".to_string()];
         let mut index: BTreeMap<&str, u16> = BTreeMap::new();
@@ -289,28 +164,13 @@ impl VoxelGrid {
                 hi[a] = hi[a].max(cell[a]);
             }
         }
-        let shading: Vec<([u8; 3], bool)> = palette.iter().map(|n| block_color(n)).collect();
-        let roughness: Vec<u8> = palette.iter().map(|n| block_roughness(n)).collect();
-        // Palette index 0 is the air sentinel, which is never drawn.
-        let mut unpainted: Vec<String> = palette
-            .iter()
-            .zip(shading.iter())
-            .skip(1)
-            .filter(|(_, (c, _))| *c == FALLBACK_COLOR)
-            .map(|(n, _)| n.clone())
-            .collect();
-        unpainted.sort();
-        unpainted.dedup();
         if blocks.is_empty() {
             return VoxelGrid {
                 palette,
-                shading,
-                roughness,
                 cmin: [0; 3],
                 cdim: [0; 3],
                 chunks: Vec::new(),
                 bounds: None,
-                unpainted,
             };
         }
         let cmin = [chunk_of(lo[0]), chunk_of(lo[1]), chunk_of(lo[2])];
@@ -324,13 +184,10 @@ impl VoxelGrid {
             (0..cdim[0] * cdim[1] * cdim[2]).map(|_| None).collect();
         let mut grid = VoxelGrid {
             palette,
-            shading,
-            roughness,
             cmin,
             cdim,
             chunks,
             bounds: Some((lo, hi)),
-            unpainted,
         };
         for (cell, name) in blocks {
             let id = *index.get(name.as_str()).expect("palette holds every id");
@@ -389,63 +246,30 @@ impl VoxelGrid {
     pub fn block_kinds(&self) -> usize {
         self.palette.len() - 1
     }
-
-    /// The block ids this grid draws as [`FALLBACK_COLOR`], sorted.
-    pub fn unpainted(&self) -> &[String] {
-        &self.unpainted
-    }
 }
 
-/// What a grid will paint magenta, as one sentence carrying the count and every
-/// id — or `None` when it will paint none.
-///
-/// A frame whose material is wrong is worth nothing to the creator judging it,
-/// and the placeholder is a colour in a picture: a reader who does not recognise
-/// it reads the frame as the truth. So the frame says so in words. One sentence
-/// for every surface that draws a grid, so none of them can word it differently
-/// or forget to say it.
-pub fn unpainted_report(grid: &VoxelGrid) -> Option<String> {
-    if grid.unpainted().is_empty() {
-        return None;
-    }
-    Some(format!(
-        "unpainted: {} of {} block kind(s) here have no colour in the pinned {} table and are \
-         drawn as the missing-texture magenta — {}. The material in this draft is wrong for them; \
-         the GPU render is not affected.",
-        grid.unpainted().len(),
-        grid.block_kinds(),
-        crate::schem::blocks::MC_VERSION,
-        grid.unpainted().join(", ")
-    ))
-}
-
-/// Print [`unpainted_report`] on stderr — how every drawing surface says it.
-pub fn report_unpainted(grid: &VoxelGrid) {
-    if let Some(line) = unpainted_report(grid) {
-        eprintln!("{line}");
-    }
-}
-
-/// One primary-ray intersection.
+/// One ray intersection. Private to this module: a ray walk is a building
+/// block of the sight rule, and a module that could cast one could assemble a
+/// second answer to whether a target is hidden.
 #[derive(Debug, Clone, Copy)]
-pub struct Hit {
+#[allow(dead_code)] // `block`, `sign` and `uv` are read by this module's tests only.
+struct Hit {
     /// The cell the ray entered.
-    pub cell: [i32; 3],
+    cell: [i32; 3],
     /// Palette index of the block there.
-    pub block: u16,
+    block: u16,
     /// Which axis the ray crossed to enter (`0`=X, `1`=Y, `2`=Z).
-    pub axis: usize,
+    axis: usize,
     /// Sign of the entered face's normal along `axis` (+1 or −1).
-    pub sign: i32,
+    sign: i32,
     /// Distance from the ray origin, in blocks.
-    pub t: f64,
-    /// Where on the entered face the ray landed, both coordinates in `0.0..1.0`
-    /// (used for the block-edge relief).
-    pub uv: [f64; 2],
+    t: f64,
+    /// Where on the entered face the ray landed, both coordinates in `0.0..1.0`.
+    uv: [f64; 2],
 }
 
 /// The in-face coordinates (both in `0.0..1.0`) of a hit point on a face whose
-/// normal runs along `axis` — the block-edge relief's input.
+/// normal runs along `axis`.
 fn face_uv(axis: usize, hp: [f64; 3]) -> [f64; 2] {
     let (u_ax, v_ax) = match axis {
         0 => (2, 1),
@@ -461,7 +285,7 @@ impl VoxelGrid {
     ///
     /// `dir` must be normalised. The traversal is exact integer-cell stepping —
     /// no sampling, so a one-block-thick wall can never be missed.
-    pub fn cast(&self, origin: [f64; 3], dir: [f64; 3], max_t: f64) -> Option<Hit> {
+    fn cast(&self, origin: [f64; 3], dir: [f64; 3], max_t: f64) -> Option<Hit> {
         let (lo, hi) = self.bounds?;
         // Skip the empty space before the model's AABB: for a camera far outside
         // a small build this is the difference between stepping 500 cells of void
@@ -593,7 +417,8 @@ impl VoxelGrid {
 
     /// Whether the straight segment from `from` to `to` meets any block before
     /// reaching `to`.
-    pub fn blocked(&self, from: [f64; 3], to: [f64; 3]) -> bool {
+    #[cfg(test)]
+    fn blocked(&self, from: [f64; 3], to: [f64; 3]) -> bool {
         let d = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
         let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
         if len < 1e-9 {
@@ -617,8 +442,8 @@ impl VoxelGrid {
     ///   platform a fire pit stands on calls the whole fire pit hidden. Nine
     ///   samples ([`Target::probe_points`]) make the answer "can *any part* of it
     ///   be seen", which is what a reviewer means by visible — and nine rays per
-    ///   target is nothing beside the half-million the frame already casts.
-    pub fn occluded_target(&self, from: [f64; 3], t: &Target) -> bool {
+    ///   target is a few hundred cell probes.
+    fn occluded_target(&self, from: [f64; 3], t: &Target) -> bool {
         t.probe_points()
             .into_iter()
             .all(|to| self.sight_line_blocked(from, to, t))
@@ -643,7 +468,6 @@ impl VoxelGrid {
 // Camera
 // ---------------------------------------------------------------------------
 
-/// A pinhole camera in Minecraft yaw/pitch degrees (see the module note).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Camera {
     /// Eye position in world coordinates.
@@ -696,7 +520,7 @@ impl Camera {
     }
 
     /// The normalised ray direction through pixel centre `(px, py)`.
-    pub fn ray(&self, width: u32, height: u32, px: u32, py: u32) -> [f64; 3] {
+    fn ray(&self, width: u32, height: u32, px: u32, py: u32) -> [f64; 3] {
         let (f, r, u) = self.basis();
         let aspect = width as f64 / height as f64;
         let ty = (self.fov.to_radians() * 0.5).tan();
@@ -712,7 +536,7 @@ impl Camera {
 
     /// Project a world point to pixel coordinates plus camera-space depth.
     /// `None` when the point is at or behind the eye plane.
-    pub fn project(&self, width: u32, height: u32, p: [f64; 3]) -> Option<([f64; 2], f64)> {
+    fn project(&self, width: u32, height: u32, p: [f64; 3]) -> Option<([f64; 2], f64)> {
         let (f, r, u) = self.basis();
         let c = [p[0] - self.pos[0], p[1] - self.pos[1], p[2] - self.pos[2]];
         let z = dot(c, f);
@@ -775,7 +599,7 @@ pub struct Target {
     /// trigger id), or `<beat>/<zone-anchor>` for a stealth zone.
     pub id: String,
     /// Kind tag: `anchor` · `gate` · `npc-post` · `actor-post` · `interact` ·
-    /// `stealth-zone` · `trigger`.
+    /// `stealth-zone` · `trigger` · `body` (an entity a frame's world holds).
     pub kind: &'static str,
     /// Owning area id (empty when the thing is not area-scoped).
     pub area: String,
@@ -791,7 +615,7 @@ pub struct Target {
 const PROBE_INSET: f64 = 0.3;
 
 impl Target {
-    fn point(id: String, kind: &'static str, area: String, pos: [i32; 3]) -> Target {
+    pub fn point(id: String, kind: &'static str, area: String, pos: [i32; 3]) -> Target {
         Target {
             id,
             kind,
@@ -817,7 +641,7 @@ impl Target {
     }
 
     /// The eight world-space corners of the box.
-    pub fn corners(&self) -> [[f64; 3]; 8] {
+    fn corners(&self) -> [[f64; 3]; 8] {
         let lo = [self.min[0] as f64, self.min[1] as f64, self.min[2] as f64];
         let hi = [
             self.max[0] as f64 + 1.0,
@@ -839,7 +663,7 @@ impl Target {
     /// inset by [`PROBE_INSET`] on every side (clamped so a 1-cell target still
     /// yields eight distinct interior points). See [`VoxelGrid::occluded_target`]
     /// for why one centre ray is not enough.
-    pub fn probe_points(&self) -> [[f64; 3]; 9] {
+    fn probe_points(&self) -> [[f64; 3]; 9] {
         let c = self.centre();
         let half = [
             ((self.max[0] - self.min[0] + 1) as f64 / 2.0 - PROBE_INSET).max(0.2),
@@ -1027,6 +851,56 @@ pub fn collect_targets(plan: &Plan) -> Vec<Target> {
     out
 }
 
+/// **The body a target is drawn as**, by entity id without its namespace, when
+/// the target is a body the datapack summons: an NPC's post is its mannequin
+/// (a skinned NPC) or its declared entity; an actor's post its puppet; a
+/// marked `interact` objective with no prop is its glowing lantern
+/// `item_display`. `None` for every other target. A review frame reads the
+/// renderer's own statistics for that kind ([`crate::compiler::view::frames::Stats`])
+/// to say whether the body was drawn (`DW1039`).
+pub fn body_of(plan: &Plan, t: &Target) -> Option<String> {
+    let short = |e: &str| e.strip_prefix("minecraft:").unwrap_or(e).to_string();
+    let c = plan.campaign;
+    match t.kind {
+        "npc-post" => c
+            .npcs
+            .content
+            .npcs
+            .iter()
+            .find(|n| n.id.as_str() == t.id)
+            .map(|n| {
+                if n.skin.is_some() {
+                    "mannequin".to_string()
+                } else {
+                    short(&n.base_entity)
+                }
+            }),
+        "actor-post" => c
+            .quests
+            .content
+            .actors
+            .iter()
+            .find(|a| a.id.as_str() == t.id)
+            .map(|a| {
+                if a.skin.is_some() {
+                    "mannequin".to_string()
+                } else {
+                    short(&a.entity)
+                }
+            }),
+        "interact" => c
+            .quests
+            .content
+            .quests
+            .iter()
+            .flat_map(|q| q.objectives.iter())
+            .find(|o| interact_of(o).is_some_and(|(id, _)| id == t.id))
+            .filter(|o| o.prop().is_none() && o.marker_shown(&c.quests.content.guidance))
+            .map(|_| "item_display".to_string()),
+        _ => None,
+    }
+}
+
 /// `(objective id, anchor id)` for an `interact` objective, else `None`.
 fn interact_of(o: &delvewright_dsl::Objective) -> Option<(&str, &str)> {
     match o {
@@ -1052,213 +926,12 @@ fn local_of(id: &str) -> &str {
 }
 
 // ---------------------------------------------------------------------------
-// Frame rendering
-// ---------------------------------------------------------------------------
-
-/// Per-face brightness multipliers, indexed by `axis * 2 + (sign < 0) as usize`.
-/// The cheap "ambient occlusion by face orientation" spec-0015 asks for: a
-/// top face reads brightest, a bottom face darkest, and the two horizontal axes
-/// differ so a corner between two walls is legible without a light model.
-const FACE_SHADE: [f64; 6] = [
-    0.66, // +X
-    0.58, // −X
-    1.00, // +Y (top)
-    0.42, // −Y (bottom)
-    0.86, // +Z
-    0.76, // −Z
-];
-
-/// Distance (blocks) over which a surface fades toward the horizon colour. Pure
-/// depth cueing — flat colours alone make a long cavern read as a single wall.
-const FOG_DISTANCE: f64 = 190.0;
-
-/// Rendering knobs for one frame.
-#[derive(Debug, Clone, Copy)]
-pub struct FrameOpts {
-    /// Frame width in pixels.
-    pub width: u32,
-    /// Frame height in pixels.
-    pub height: u32,
-    /// Draw the ocean-horizon sea plane in the background pass
-    /// (see [`SEA_PLANE_NOTE`]).
-    pub sea_level: Option<i32>,
-    /// Burn in labels + the ground coordinate grid.
-    pub labels: bool,
-}
-
-impl Default for FrameOpts {
-    fn default() -> Self {
-        FrameOpts {
-            width: DEFAULT_WIDTH,
-            height: DEFAULT_HEIGHT,
-            sea_level: None,
-            labels: false,
-        }
-    }
-}
-
-/// A rendered frame: the pixel canvas plus the per-pixel ray distance the label
-/// pass uses to hide overlays the camera cannot actually see.
-pub struct Frame {
-    /// The pixel buffer (drawing primitives live on [`crate::compiler::raster::Canvas`]).
-    pub canvas: Canvas,
-    /// Row-major ray distance in blocks (`f64::INFINITY` = background).
-    pub depth: Vec<f64>,
-}
-
-impl Frame {
-    /// Frame width in pixels.
-    pub fn width(&self) -> u32 {
-        self.canvas.width
-    }
-
-    /// Frame height in pixels.
-    pub fn height(&self) -> u32 {
-        self.canvas.height
-    }
-
-    /// Ray distance at a pixel (`INFINITY` for background / off-frame).
-    fn depth_at(&self, x: i64, y: i64) -> f64 {
-        if x < 0 || y < 0 || x >= self.canvas.width as i64 || y >= self.canvas.height as i64 {
-            return f64::INFINITY;
-        }
-        self.depth[(y as usize) * self.canvas.width as usize + x as usize]
-    }
-}
-
-/// Raycast one frame of the assembled world.
-pub fn render_frame(grid: &VoxelGrid, cam: &Camera, opts: &FrameOpts) -> Frame {
-    let (w, h) = (opts.width, opts.height);
-    let mut canvas = Canvas::filled(w, h, [0, 0, 0]);
-    let mut depth = vec![f64::INFINITY; (w as usize) * (h as usize)];
-    for py in 0..h {
-        for px in 0..w {
-            let dir = cam.ray(w, h, px, py);
-            let (color, d) = match grid.cast(cam.pos, dir, MAX_RAY_DISTANCE) {
-                Some(hit) => {
-                    let mut c = shade(grid, &hit);
-                    // The ground coordinate grid rides the primary ray: tinting
-                    // here costs nothing, where a second full-frame cast to find
-                    // the same top faces would double the render.
-                    if opts.labels
-                        && let Some(a) = grid_tint(&hit)
-                    {
-                        c = mix(
-                            [c[0] as f64, c[1] as f64, c[2] as f64],
-                            [120.0, 235.0, 235.0],
-                            a,
-                        );
-                    }
-                    (c, hit.t)
-                }
-                None => (background(cam, dir, opts), f64::INFINITY),
-            };
-            canvas.set(px as i64, py as i64, color);
-            depth[(py as usize) * w as usize + px as usize] = d;
-        }
-    }
-    Frame { canvas, depth }
-}
-
-/// Sky colour at the zenith / at the horizon / below the horizon (void).
-const SKY_ZENITH: [f64; 3] = [96.0, 146.0, 214.0];
-const SKY_HORIZON: [f64; 3] = [178.0, 204.0, 232.0];
-const VOID_COLOR: [f64; 3] = [20.0, 20.0, 26.0];
-/// Sea colour used only for the `ocean` horizon backdrop plane.
-const SEA_COLOR: [f64; 3] = [46.0, 82.0, 152.0];
-
-/// Background colour for a ray that hits no block: a sky gradient above the
-/// horizon, the void below — plus, for an `ocean`-horizon campaign, the
-/// world-generation sea plane (see [`SEA_PLANE_NOTE`]).
-fn background(cam: &Camera, dir: [f64; 3], opts: &FrameOpts) -> [u8; 3] {
-    if let Some(sea) = opts.sea_level {
-        // Analytic intersection with the plane y = sea + 1 (the water surface is
-        // the top face of the topmost water block).
-        let surface = sea as f64 + 1.0;
-        if dir[1] < -1e-9 && cam.pos[1] > surface {
-            let t = (surface - cam.pos[1]) / dir[1];
-            if t > 0.0 && t < MAX_RAY_DISTANCE {
-                let f = fog_factor(t);
-                return mix(SEA_COLOR, SKY_HORIZON, f);
-            }
-        }
-    }
-    if dir[1] >= 0.0 {
-        mix(SKY_HORIZON, SKY_ZENITH, dir[1].powf(0.6))
-    } else {
-        mix(SKY_HORIZON, VOID_COLOR, (-dir[1]).powf(0.35))
-    }
-}
-
-/// How much a surface at distance `t` has faded into the horizon.
-fn fog_factor(t: f64) -> f64 {
-    1.0 - (-t / FOG_DISTANCE).exp()
-}
-
-/// Flat-shade one hit: palette colour × face brightness, block-edge relief, then
-/// distance fade. Emissive blocks skip all three.
-fn shade(grid: &VoxelGrid, hit: &Hit) -> [u8; 3] {
-    let (base, emissive) = grid.shading[hit.block as usize];
-    let b = [base[0] as f64, base[1] as f64, base[2] as f64];
-    if emissive {
-        return [base[0], base[1], base[2]];
-    }
-    let face = FACE_SHADE[hit.axis * 2 + usize::from(hit.sign < 0)];
-    // Block-edge relief: darken the outermost 1/16 of the face. This is what
-    // makes a flat-coloured wall read as *blocks* rather than as a paint swatch —
-    // the cheapest possible substitute for texture detail.
-    let edge = hit.uv[0]
-        .min(1.0 - hit.uv[0])
-        .min(hit.uv[1].min(1.0 - hit.uv[1]));
-    let relief = if edge < 0.0625 { 0.86 } else { 1.0 };
-    // The face's own grain. Without it every face of one material is a single
-    // rectangle of one value, and a draft of a wall carries as much information
-    // as a paint swatch — which is what a flat-shaded near-black stone comes out
-    // as. The PATTERN is this renderer's, made from the world position; its
-    // AMPLITUDE is the block's measured roughness, so a smooth block reads
-    // smooth and a rubbly one reads rubbly, and the committed table holds no
-    // texture's layout.
-    let roughness = f64::from(grid.roughness[hit.block as usize]) / ROUGHNESS_FULL;
-    let u = (hit.uv[0] * GRAIN_CELLS as f64) as i64;
-    let v = (hit.uv[1] * GRAIN_CELLS as f64) as i64;
-    let noise = f64::from(grain_hash(
-        hit.cell,
-        hit.axis,
-        hit.sign,
-        u.clamp(0, GRAIN_CELLS - 1),
-        v.clamp(0, GRAIN_CELLS - 1),
-    ));
-    // `noise / 255` is uniform on 0..1, whose standard deviation is 1/sqrt(12);
-    // scaling by sqrt(12) makes the drawn face's spread the spread the texture
-    // measured, rather than a decorative amount somebody chose.
-    let grain = (1.0 + (noise / 255.0 - 0.5) * 12f64.sqrt() * roughness).max(0.0);
-    let lit = [
-        b[0] * face * relief * grain,
-        b[1] * face * relief * grain,
-        b[2] * face * relief * grain,
-    ];
-    let f = fog_factor(hit.t);
-    let c = mix(lit, SKY_HORIZON, f * 0.85);
-    [c[0], c[1], c[2]]
-}
-
-/// Linearly blend two float colours and clamp to bytes.
-fn mix(a: [f64; 3], b: [f64; 3], t: f64) -> [u8; 3] {
-    let t = t.clamp(0.0, 1.0);
-    let mut out = [0u8; 3];
-    for k in 0..3 {
-        out[k] = (a[k] + (b[k] - a[k]) * t).round().clamp(0.0, 255.0) as u8;
-    }
-    out
-}
-
-// ---------------------------------------------------------------------------
 // Screen-space geometry + the manifest
 // ---------------------------------------------------------------------------
 
 /// Project a target's box to a clipped screen bbox, or `None` when it is wholly
 /// behind the camera or wholly off-frame (i.e. outside the frustum).
-pub fn screen_box(cam: &Camera, w: u32, h: u32, t: &Target) -> Option<ScreenBox> {
+fn screen_box(cam: &Camera, w: u32, h: u32, t: &Target) -> Option<ScreenBox> {
     let mut lo = [f64::INFINITY; 2];
     let mut hi = [f64::NEG_INFINITY; 2];
     let mut any_front = false;
@@ -1289,18 +962,56 @@ pub fn screen_box(cam: &Camera, w: u32, h: u32, t: &Target) -> Option<ScreenBox>
     })
 }
 
-/// A target resolved against one camera: its screen footprint and whether the
-/// straight line from the eye to its centre is blocked.
+/// A target resolved against one camera: its screen footprint and whether it
+/// is hidden. Its fields are private, so the one way to hold one is to ask
+/// [`resolve_targets`]: no other module can state an answer of its own.
 #[derive(Debug, Clone)]
 pub struct ResolvedTarget<'a> {
     /// The target itself.
-    pub target: &'a Target,
+    target: &'a Target,
     /// Screen-space bbox in pixels.
-    pub bbox: ScreenBox,
-    /// Whether geometry stands between the camera and the target centre.
-    pub occluded: bool,
+    bbox: ScreenBox,
+    /// Whether every probe line from the eye meets a block that is not the
+    /// target's own ([`VoxelGrid::occluded_target`]).
+    occluded: bool,
     /// Eye→centre distance in blocks.
-    pub distance: f64,
+    distance: f64,
+}
+
+impl<'a> ResolvedTarget<'a> {
+    /// The target itself.
+    pub fn target(&self) -> &'a Target {
+        self.target
+    }
+
+    /// Screen-space bbox in pixels.
+    pub fn bbox(&self) -> ScreenBox {
+        self.bbox
+    }
+
+    /// Whether the target is hidden from the eye (the one sight rule).
+    pub fn occluded(&self) -> bool {
+        self.occluded
+    }
+
+    /// Eye→centre distance in blocks.
+    pub fn distance(&self) -> f64 {
+        self.distance
+    }
+
+    /// The entry every surface lists an in-frame target as: the world-space
+    /// half ([`target_json`]) plus `screen_bbox`, `occluded` and `distance`.
+    /// One writer, so the manifest's `targets` and a shot's `shows` cannot
+    /// state the answer two ways.
+    pub fn entry(&self) -> Value {
+        let mut v = target_json(self.target);
+        v["screen_bbox"] = json!({
+            "x": self.bbox.x, "y": self.bbox.y, "w": self.bbox.w, "h": self.bbox.h,
+        });
+        v["occluded"] = json!(self.occluded);
+        v["distance"] = json!(round3(self.distance));
+        v
+    }
 }
 
 /// Resolve every target against a camera, returning `(in frustum, out of frame
@@ -1309,13 +1020,14 @@ pub struct ResolvedTarget<'a> {
 pub fn resolve_targets<'a>(
     grid: &VoxelGrid,
     cam: &Camera,
-    opts: &FrameOpts,
+    width: u32,
+    height: u32,
     targets: &'a [Target],
 ) -> (Vec<ResolvedTarget<'a>>, Vec<&'a Target>) {
     let mut inside = Vec::new();
     let mut outside = Vec::new();
     for t in targets {
-        match screen_box(cam, opts.width, opts.height, t) {
+        match screen_box(cam, width, height, t) {
             Some(bbox) => {
                 let centre = t.centre();
                 let d = [
@@ -1336,6 +1048,37 @@ pub fn resolve_targets<'a>(
     (inside, outside)
 }
 
+/// How many of the `samples`² rays through the pixel centres of a square frame
+/// taken by `cam` first meet, within `reach` blocks, a face turned toward the
+/// camera — its normal within `acos(across_cos)` of the view axis — or start
+/// inside a block. The measurement `DW0893` reads
+/// ([`crate::compiler::view::sight::Sight`]): how much of a frame is a near
+/// surface across the view. It names no target, so it is no answer to whether
+/// one is hidden; that is [`resolve_targets`]'s alone.
+pub fn near_surface_rays(
+    grid: &VoxelGrid,
+    cam: &Camera,
+    samples: u32,
+    reach: f64,
+    across_cos: f64,
+) -> u32 {
+    let (forward, _, _) = cam.basis();
+    let mut near = 0u32;
+    for py in 0..samples {
+        for px in 0..samples {
+            let dir = cam.ray(samples, samples, px, py);
+            let Some(hit) = grid.cast(cam.pos, dir, reach) else {
+                continue;
+            };
+            // A ray that starts inside a block is all block.
+            if hit.t <= 0.0 || forward[hit.axis].abs() >= across_cos {
+                near += 1;
+            }
+        }
+    }
+    near
+}
+
 /// What the manifest describes about the world, as opposed to the camera and the
 /// image: the solved layout (`pieces`) plus the targets in and out of frame.
 /// Grouped so [`manifest`] takes one scene rather than three parallel slices.
@@ -1348,12 +1091,21 @@ pub struct Scene<'a> {
     pub outside: &'a [&'a Target],
 }
 
-/// Build the scene manifest — the structured half of the dual-channel loop.
+/// The picture a manifest describes: its size and its pixels, read for the
+/// `featureless` verdict and never hashed.
+pub struct Picture<'a> {
+    pub width: u32,
+    pub height: u32,
+    /// RGBA8, row major.
+    pub rgba: &'a [u8],
+}
+
+/// Build the frame manifest — the structured half of a frame.
 ///
-/// Schema (v2):
+/// Schema (v3):
 /// ```text
 /// { manifest_version, campaign_id, delvec, image{path,width,height},
-///   camera{pos,yaw,pitch,fov,convention}, world{blocks,block_kinds,bounds},
+///   camera{pos,yaw,pitch,fov,convention}, world{block_kinds,bounds},
 ///   pieces[ {area,index,prefab,origin,size,rotation,box{min,max}} ],
 ///   targets[ {id,kind,area,pos|box,screen_bbox{x,y,w,h},occluded,distance} ],
 ///   out_of_frame[ {id,kind,area,pos|box} ] }
@@ -1369,10 +1121,9 @@ pub fn manifest(
     campaign_id: &str,
     image_path: &str,
     cam: &Camera,
-    opts: &FrameOpts,
+    picture: &Picture<'_>,
     grid: &VoxelGrid,
     scene: Scene<'_>,
-    canvas: &crate::compiler::raster::Canvas,
 ) -> Value {
     let Scene {
         pieces,
@@ -1383,13 +1134,13 @@ pub fn manifest(
         .bounds()
         .map(|(lo, hi)| json!({ "min": lo, "max": hi }));
     json!({
-        "manifest_version": 2,
+        "manifest_version": 3,
         "campaign_id": campaign_id,
         "delvec": crate::compiler::DELVEC_VERSION,
         "image": {
             "path": image_path,
-            "width": opts.width,
-            "height": opts.height,
+            "width": picture.width,
+            "height": picture.height,
         },
         "camera": {
             "pos": [round3(cam.pos[0]), round3(cam.pos[1]), round3(cam.pos[2])],
@@ -1402,7 +1153,6 @@ pub fn manifest(
         "world": {
             "block_kinds": grid.block_kinds(),
             "bounds": bounds,
-            "sea_plane": opts.sea_level,
         },
         "pieces": pieces.iter().map(|p| json!({
             "area": p.area,
@@ -1413,15 +1163,7 @@ pub fn manifest(
             "rotation": p.rotation,
             "box": { "min": p.min, "max": p.max },
         })).collect::<Vec<_>>(),
-        "targets": inside.iter().map(|r| {
-            let mut v = target_json(r.target);
-            v["screen_bbox"] = json!({
-                "x": r.bbox.x, "y": r.bbox.y, "w": r.bbox.w, "h": r.bbox.h,
-            });
-            v["occluded"] = json!(r.occluded);
-            v["distance"] = json!(round3(r.distance));
-            v
-        }).collect::<Vec<_>>(),
+        "targets": inside.iter().map(ResolvedTarget::entry).collect::<Vec<_>>(),
         "out_of_frame": outside.iter().map(|t| target_json(t)).collect::<Vec<_>>(),
         // What this frame is worth to a reviewer, judged by the arm that drew
         // it. Two numbers, and both are the CLAUDE.md binding rule applied to a
@@ -1436,9 +1178,9 @@ pub fn manifest(
             "targets_in_frame": inside.len(),
             "targets_out_of_frame": outside.len(),
             "featureless": crate::compiler::view::detect::is_featureless(
-                &canvas.rgba,
-                canvas.width,
-                canvas.height,
+                picture.rgba,
+                picture.width,
+                picture.height,
             )
             .map(|f| json!({ "distinct_colors": f.distinct }))
             .unwrap_or(Value::Null),
@@ -1448,7 +1190,7 @@ pub fn manifest(
 
 /// The world-space half of a manifest entry (shared by `targets` and
 /// `out_of_frame`).
-fn target_json(t: &Target) -> Value {
+pub fn target_json(t: &Target) -> Value {
     let mut v = json!({
         "id": t.id,
         "kind": t.kind,
@@ -1466,162 +1208,6 @@ fn target_json(t: &Target) -> Value {
 
 // ---------------------------------------------------------------------------
 // Label / grid overlay
-// ---------------------------------------------------------------------------
-
-/// Burn the `--labels` overlay into a frame: a coordinate grid on the ground, a
-/// marker box per in-frustum target, and its id.
-///
-/// Labels are placed greedily in manifest order (which is deterministic), each
-/// nudged straight down until it clears every label already placed — so the
-/// overlay is a pure function of the frame, and a crowded corner degrades into a
-/// legible stack instead of illegible overprint.
-pub fn draw_labels(f: &mut Frame, grid: &VoxelGrid, cam: &Camera, inside: &[ResolvedTarget<'_>]) {
-    draw_ground_grid(f, grid, cam);
-    let scale = 1i64;
-    // Every in-frustum target gets its outline (dim when occluded). Names are
-    // stamped VISIBLE-FIRST: an interior camera has the whole rest of the layout
-    // inside its frustum but behind rock, and letting those names compete for
-    // space with what the camera can actually see would bury the shot's subject.
-    // An occluded name is stamped only where it lands clear on the first try —
-    // the manifest always carries the full list either way.
-    for r in inside {
-        f.canvas.stroke_rect(
-            r.bbox,
-            kind_color(r.target.kind),
-            if r.occluded { 0.45 } else { 0.95 },
-        );
-    }
-    let width = f.width() as i64;
-    let mut placer = LabelPlacer::default();
-    for pass_occluded in [false, true] {
-        for r in inside.iter().filter(|r| r.occluded == pass_occluded) {
-            let color = kind_color(r.target.kind);
-            let text = r.target.label();
-            let tw = text_width(&text, scale);
-            let th = GLYPH_ROWS * scale;
-            let lx = (r.bbox.x).min(width - tw - 2).max(2);
-            let ly = if r.bbox.y - th - 3 < 2 {
-                r.bbox.y + r.bbox.h + 3
-            } else {
-                r.bbox.y - th - 3
-            };
-            let want = ScreenBox {
-                x: lx,
-                y: ly,
-                w: tw + 2,
-                h: th + 2,
-            };
-            // Occluded names get no nudges: they are stamped only where they land
-            // clear on the first try, and are otherwise crowded out (the manifest
-            // still names them).
-            let nudges = if pass_occluded { 0 } else { 24 };
-            let Some(box_) = placer.place(want, th + 4, nudges) else {
-                continue;
-            };
-            f.canvas.stamp_text(lx, box_.y, &text, scale, color);
-        }
-    }
-}
-
-/// Grid spacing in blocks for the ground coordinate grid.
-const GRID_SPACING: i32 = 16;
-
-/// Blend strength of the coordinate lattice on a hit's surface, or `None` when
-/// the hit is not a top face on a [`GRID_SPACING`] line. Intersections read
-/// brighter than the lines, so a corner is countable at a glance.
-fn grid_tint(hit: &Hit) -> Option<f64> {
-    if hit.axis != 1 || hit.sign != 1 {
-        return None; // top faces only — the "ground plane", whatever its height
-    }
-    let on_x = hit.cell[0].rem_euclid(GRID_SPACING) == 0;
-    let on_z = hit.cell[2].rem_euclid(GRID_SPACING) == 0;
-    match (on_x, on_z) {
-        (true, true) => Some(0.55),
-        (true, _) | (_, true) => Some(0.3),
-        _ => None,
-    }
-}
-
-/// Tint every visible **top** face whose cell sits on a 16-block X or Z line, and
-/// label the visible grid intersections with their `x,z`.
-///
-/// Drawing the grid on the surfaces the frame already shows (rather than on an
-/// invented flat plane) means it follows the terrain: a beach, a cavern floor and
-/// a ramp all get the same lattice at the same world coordinates, so a reviewer
-/// can read a position off any of them.
-fn draw_ground_grid(f: &mut Frame, grid: &VoxelGrid, cam: &Camera) {
-    let (w, h) = (f.width(), f.height());
-    // The lattice itself is tinted during the primary raycast (see
-    // [`render_frame`]); this pass only adds the coordinate readouts.
-    // Coordinate readouts at the grid intersections nearest the camera, so the
-    // frame carries an absolute reference without becoming a wall of numbers.
-    let Some((lo, hi)) = grid.bounds() else {
-        return;
-    };
-    let mut marks: Vec<([i32; 3], f64)> = Vec::new();
-    let x0 = lo[0].div_euclid(GRID_SPACING) * GRID_SPACING;
-    let z0 = lo[2].div_euclid(GRID_SPACING) * GRID_SPACING;
-    let mut x = x0;
-    while x <= hi[0] {
-        let mut z = z0;
-        while z <= hi[2] {
-            // The topmost solid cell in this column is where the label belongs.
-            let mut y = hi[1];
-            while y >= lo[1] && !grid.solid([x, y, z]) {
-                y -= 1;
-            }
-            if y >= lo[1] {
-                let c = [x as f64 + 0.5, y as f64 + 1.0, z as f64 + 0.5];
-                let d = ((c[0] - cam.pos[0]).powi(2)
-                    + (c[1] - cam.pos[1]).powi(2)
-                    + (c[2] - cam.pos[2]).powi(2))
-                .sqrt();
-                marks.push(([x, y, z], d));
-            }
-            z += GRID_SPACING;
-        }
-        x += GRID_SPACING;
-    }
-    marks.sort_by(|a, b| {
-        a.1.partial_cmp(&b.1)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.0.cmp(&b.0))
-    });
-    let mut drawn = 0;
-    for (cell, dist) in marks {
-        if drawn >= 10 {
-            break;
-        }
-        let c = [
-            cell[0] as f64 + 0.5,
-            cell[1] as f64 + 1.0,
-            cell[2] as f64 + 0.5,
-        ];
-        let Some((s, _)) = cam.project(w, h, c) else {
-            continue;
-        };
-        let (sx, sy) = (s[0].round() as i64, s[1].round() as i64);
-        if sx < 0 || sy < 0 || sx >= w as i64 || sy >= h as i64 {
-            continue;
-        }
-        // Depth test against the rendered frame: a readout on a surface the
-        // camera cannot see would be a lie.
-        if f.depth_at(sx, sy) + 1.5 < dist {
-            continue;
-        }
-        f.canvas.stamp_text(
-            sx + 3,
-            sy + 3,
-            &format!("{},{}", cell[0], cell[2]),
-            1,
-            [150, 245, 245],
-        );
-        drawn += 1;
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -1865,90 +1451,6 @@ mod tests {
     }
 
     #[test]
-    fn unknown_blocks_render_as_the_loud_fallback() {
-        let (c, e) = block_color("minecraft:totally_made_up_block");
-        assert_eq!(c, FALLBACK_COLOR);
-        assert!(!e);
-    }
-
-    #[test]
-    fn a_blockstate_shades_as_its_block() {
-        // The table is keyed by id, and the grid draws every cell as a full
-        // cube, so the properties on a palette entry change nothing.
-        assert_eq!(
-            block_color("minecraft:oak_slab[type=top,waterlogged=false]").0,
-            block_color("minecraft:oak_slab").0
-        );
-        assert_eq!(
-            block_color("oak_slab").0,
-            block_color("minecraft:oak_slab").0
-        );
-        assert_ne!(block_color("minecraft:oak_slab").0, FALLBACK_COLOR);
-    }
-
-    #[test]
-    fn the_colour_is_the_jar_s_and_not_a_family_guess() {
-        // Two deepslate surfaces that share every substring a material rule
-        // could key on. Each carries its own texture, so each has its own
-        // colour, and neither borrows a family's.
-        let polished = block_color("minecraft:polished_deepslate").0;
-        let tiles = block_color("minecraft:deepslate_tiles").0;
-        assert_ne!(polished, FALLBACK_COLOR);
-        assert_ne!(tiles, FALLBACK_COLOR);
-        assert_ne!(polished, tiles);
-    }
-
-    #[test]
-    fn an_id_the_pin_does_not_have_is_unpainted_and_named() {
-        // `minecraft:chain` is the id 1.21.11 renames to `iron_chain`, so the
-        // pin has no such block and the table has no colour for it. A template
-        // carrying it is named on stderr rather than shaded from a guess, which
-        // is the whole difference between a draft and an invention.
-        assert_eq!(block_color("minecraft:chain").0, FALLBACK_COLOR);
-        assert_ne!(block_color("minecraft:iron_chain").0, FALLBACK_COLOR);
-        let mut m = BTreeMap::new();
-        m.insert([0, 0, 0], "minecraft:chain".to_string());
-        m.insert([0, 1, 0], "minecraft:stone".to_string());
-        let g = VoxelGrid::build(&crate::compiler::blockstate::interned(m.clone()));
-        assert_eq!(g.unpainted(), ["minecraft:chain".to_string()]);
-        let said = super::unpainted_report(&g).expect("the grid says what it could not paint");
-        assert!(said.contains("1 of 2 block kind(s)"), "{said}");
-        assert!(said.contains("minecraft:chain"), "{said}");
-        assert!(said.contains("1.21.11"), "{said}");
-        // A grid with nothing to report says nothing.
-        m.remove(&[0, 0, 0]);
-        assert!(
-            super::unpainted_report(&VoxelGrid::build(&crate::compiler::blockstate::interned(
-                m.clone()
-            )))
-            .is_none()
-        );
-    }
-
-    #[test]
-    fn the_authoring_markers_keep_their_alarm() {
-        // The jar paints both; the draft must not, because neither may reach
-        // the model at all.
-        for id in ["minecraft:jigsaw", "minecraft:structure_block"] {
-            assert_eq!(block_color(id).0, FALLBACK_COLOR, "{id}");
-        }
-    }
-
-    #[test]
-    fn light_sources_are_emissive() {
-        for id in [
-            "minecraft:glowstone",
-            "minecraft:lantern",
-            "minecraft:campfire",
-            "minecraft:torch",
-            "minecraft:wall_torch",
-        ] {
-            assert!(block_color(id).1, "{id} must be emissive");
-        }
-        assert!(!block_color("minecraft:stone").1);
-    }
-
-    #[test]
     fn target_boxes_and_centres_cover_whole_cells() {
         let p = Target::point("anchor/x".into(), "anchor", "area/a".into(), [4, 70, -3]);
         assert!(p.is_point());
@@ -1988,103 +1490,5 @@ mod tests {
         // Far to the side → in front but off-frame.
         let aside = Target::point("c".into(), "anchor", String::new(), [400, 0, 5]);
         assert!(screen_box(&cam, 960, 540, &aside).is_none());
-    }
-
-    #[test]
-    fn frame_render_is_byte_stable_and_fills_every_pixel() {
-        let mut m = BTreeMap::new();
-        for x in -4..4 {
-            for z in -4..4 {
-                m.insert([x, 0, z], "minecraft:grass_block".to_string());
-            }
-        }
-        m.insert([0, 1, 0], "minecraft:glowstone".to_string());
-        let g = VoxelGrid::build(&crate::compiler::blockstate::interned(m.clone()));
-        // yaw 315 aims +X/+Z (north-west corner looking south-east), so the
-        // camera at (−8, −8) actually faces the patch of ground it renders.
-        let cam = Camera {
-            pos: [-8.0, 5.0, -8.0],
-            yaw: 315.0,
-            pitch: 25.0,
-            fov: 70.0,
-        };
-        let opts = FrameOpts {
-            width: 64,
-            height: 36,
-            ..FrameOpts::default()
-        };
-        let a = render_frame(&g, &cam, &opts);
-        let b = render_frame(&g, &cam, &opts);
-        assert_eq!(
-            a.canvas.rgba, b.canvas.rgba,
-            "ADR-0006: rendering is deterministic"
-        );
-        assert!(a.canvas.rgba.chunks(4).all(|p| p[3] == 255), "opaque frame");
-        // The lit block renders at its full emissive colour somewhere in frame.
-        let want = block_color("minecraft:glowstone").0;
-        assert!(
-            a.canvas.rgba.chunks(4).any(|p| p[..3] == want),
-            "emissive block must render unshaded"
-        );
-    }
-
-    #[test]
-    fn a_camera_inside_a_block_sees_that_block() {
-        let g = one_block("minecraft:stone");
-        let h = g
-            .cast([0.5, 0.5, 0.5], [0.0, 0.0, 1.0], 100.0)
-            .expect("inside a block");
-        assert_eq!((h.cell, h.t), ([0, 0, 0], 0.0));
-    }
-
-    #[test]
-    fn ocean_backdrop_only_appears_below_the_horizon_for_ocean_campaigns() {
-        let cam = Camera {
-            pos: [0.0, 80.0, 0.0],
-            yaw: 0.0,
-            pitch: 0.0,
-            fov: 70.0,
-        };
-        let down = normalize([0.0, -1.0, 1.0]);
-        let sea = FrameOpts {
-            sea_level: Some(62),
-            ..FrameOpts::default()
-        };
-        let void = FrameOpts::default();
-        assert_ne!(
-            background(&cam, down, &sea),
-            background(&cam, down, &void),
-            "the sea plane must change a downward background ray"
-        );
-        let up = normalize([0.0, 1.0, 1.0]);
-        assert_eq!(
-            background(&cam, up, &sea),
-            background(&cam, up, &void),
-            "the sea plane must not touch the sky"
-        );
-    }
-
-    #[test]
-    fn text_stamping_stays_inside_the_frame() {
-        // A label placed off the edges must clip rather than panic or wrap.
-        let g = one_block("minecraft:stone");
-        let cam = Camera {
-            pos: [0.5, 0.5, -5.0],
-            yaw: 0.0,
-            pitch: 0.0,
-            fov: 70.0,
-        };
-        let mut f = render_frame(
-            &g,
-            &cam,
-            &FrameOpts {
-                width: 32,
-                height: 24,
-                ..FrameOpts::default()
-            },
-        );
-        f.canvas.stamp_text(-20, -20, "EDGE", 1, [255, 255, 255]);
-        f.canvas.stamp_text(100, 100, "EDGE", 2, [255, 255, 255]);
-        assert_eq!(f.canvas.rgba.len(), 32 * 24 * 4);
     }
 }

@@ -6,7 +6,7 @@
 
 ![Delvewright 建成的 Vesperhold：从西南高处望去，整座要塞立在峭岩上，堤道一路延伸到路边神龛](docs/media/vesperhold/01-hero-whole-map-southwest.jpg)
 
-这些图是用 [Chunky](https://chunky-dev.github.io/docs/) 对建成的世界做路径追踪渲染出来的；在游戏里，它就是原版 Minecraft 的样子，除非你自己另装了光影或资源包。
+这些图是 [Lumenwright](https://github.com/stellarfeline/lumenwright) 用 Minecraft 自己的贴图画出的建成世界；在游戏里，它就是原版 Minecraft 的样子，除非你自己另装了光影或资源包。
 
 **[走进 Vesperhold](docs/media/vesperhold/README.md)** —— 来路、外庭、花园、回廊、礼拜堂、礼拜堂下的水池、钟楼与王座厅。**[更多战役](docs/media/README.zh-CN.md)**：树屋营地、杜恩城堡。
 
@@ -59,7 +59,7 @@ flowchart TD
 
 ## 地图
 
-每张地图都是一份 site plan，先整体后局部：先是 geometry brief，再是 layout graph，然后是每个地点的包围盒、基准面和接缝，以及地点之间的地面由什么填充；在任何地点细化之前，先作为 blockout 走一遍。之后每个地点就是一个 piece，在规划交给它的框里画出自己的墙、屋顶和地面，由 box-split 语法根据规则程序写出；只有一栋建筑的地图，就是只有一个包围盒的规划。上图的城堡 Vesperhold 就是单独一个语法 piece，装下整片场地，172 × 104 × 292 格。光照在设计房间时就放好，构建会拒绝测得昏暗的可到达地面（`DW0210`）。每个场景都用 Chunky 渲染，并对照它所回应的概念图进行审查。
+每张地图都是一份 site plan，先整体后局部：先是 geometry brief，再是 layout graph，然后是每个地点的包围盒、基准面和接缝，以及地点之间的地面由什么填充；在任何地点细化之前，先作为 blockout 走一遍。之后每个地点就是一个 piece，在规划交给它的框里画出自己的墙、屋顶和地面，由 box-split 语法根据规则程序写出；只有一栋建筑的地图，就是只有一个包围盒的规划。上图的城堡 Vesperhold 就是单独一个语法 piece，装下整片场地，172 × 104 × 292 格。光照在设计房间时就放好，构建会拒绝测得昏暗的可到达地面（`DW0210`）。每个场景都从构建写出的世界里画出来，并对照它所回应的概念图进行审查。
 
 延伸阅读：[摆放地图](.claude/skills/delvewright/skills/new-delve/references/placement.md) · [唯一的地图路线](docs/adr/0032-one-map-route.md) · [地图先规划后建造](docs/adr/0022-the-map-is-planned-before-it-is-built.md) · [语法](docs/reference/grammar.md) · [收录一个 piece](docs/reference/prefab-procedure.md) · [室内照明](docs/reference/interior-lighting.md) · [视觉审查](.claude/skills/delvewright/skills/new-delve/references/visual-review.md)
 

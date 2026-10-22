@@ -199,7 +199,7 @@ the ending is walked before it. `compiler::plan`'s gate-aware reachability (`DW0
 sequence, so the static proofs and the exported bot contract agree by
 construction. When no world completes the finale the campaign is already
 `DW0201`; the model then degenerates to the whole closure so the geometry-only
-commands (`chart`, `snapshot`) still run on an unanalyzable campaign.
+commands (`chart`, `frames --campaign`) still run on an unanalyzable campaign.
 
 **Optional participation can never gate the mainline.** The contract is that
 *the mainline must be completable with zero optional participation*. Optionality

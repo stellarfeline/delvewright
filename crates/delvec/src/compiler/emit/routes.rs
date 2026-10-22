@@ -26,7 +26,7 @@ pub(super) struct WorldProofs {
     pub(super) lethal_gate: Option<crate::compiler::lethal::LethalGate>,
     pub(super) loop_gate: Option<crate::compiler::r#loop::LoopBinding>,
     pub(super) firework_gate: Option<crate::compiler::firework::FireworkGate>,
-    pub(super) cutscene_shots_judged: usize,
+    pub(super) cutscene_proof: crate::compiler::nav::CutsceneProof,
     pub(super) lightning_gate: Option<crate::compiler::lightning::LightningGate>,
     pub(super) stake_table: Option<crate::compiler::stake::StakeTable>,
     pub(super) death_plan: Option<Value>,
@@ -49,6 +49,7 @@ pub(super) fn prove_world(
     out: &mut BuildOutput,
     warnings: &mut Vec<delvewright_dsl::Diagnostic>,
     pacing: &mut Vec<delvewright_dsl::Diagnostic>,
+    frame_worlds: &crate::compiler::view::review::FrameWorlds,
 ) -> Result<WorldProofs, BuildFailure> {
     // Visual-tier player-POV shots (spec-0003): first-person cameras along the
     // proven critical-path routes. Filled inside the world block below (they need
@@ -118,8 +119,9 @@ pub(super) fn prove_world(
     // opted in; a ledger that exists and reports zero columns is a finding.
     let mut firework_gate: Option<crate::compiler::firework::FireworkGate> = None;
     // spec-0091: how many cutscene shots were judged against the served view
-    // distance, for the binding line printed beside the render plan.
-    let mut cutscene_shots_judged = 0usize;
+    // distance, for the binding line printed beside the render plan; and
+    // spec-0112 §7.2: the frames of every shot a critical step fires.
+    let mut cutscene_proof = crate::compiler::nav::CutsceneProof::default();
     // The strike proofs' binding ledger (`compiler::lightning`, spec-0092 §5),
     // filled beside the firework's: `None` for a campaign that declares no
     // strike, so nobody who has not opted in moves a byte.
@@ -555,8 +557,8 @@ pub(super) fn prove_world(
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
                 // unroutable. Planned alongside move-npc from the same occupancy model.
                 let am = crate::compiler::nav::plan_actor_moves(plan, world)?;
-                cutscene_shots_judged =
-                    crate::compiler::nav::check_cutscenes(plan, world, &m, &am)?;
+                cutscene_proof =
+                    crate::compiler::nav::check_cutscenes(plan, world, &m, &am, frame_worlds)?;
                 // spec-0031: the one lethal-volume obligation routing cannot see.
                 // A respawn SEAT inside a volume is reached by teleport and routes
                 // perfectly while killing the party on arrival, forever. The wave
@@ -1242,7 +1244,7 @@ pub(super) fn prove_world(
         lethal_gate,
         loop_gate,
         firework_gate,
-        cutscene_shots_judged,
+        cutscene_proof,
         lightning_gate,
         stake_table,
         death_plan,

@@ -635,6 +635,47 @@ impl LightModel {
     }
 }
 
+/// **The two light arrays a chunk stores** (spec-0112 §5.6), as the engine's one
+/// flood computes them: the sky term seeded at 15 at every sky-open
+/// light-passing cell with no emitter lit, and the block term seeded at every
+/// emitter with the sky dark — the two terms [`LightModel::flood`] takes the
+/// maximum of. Dense over the box they were computed over.
+pub struct LightArrays {
+    sky: LightField,
+    block: LightField,
+}
+
+impl LightArrays {
+    /// Flood both terms over the inclusive box `min..=max` holding `cells`
+    /// (every other cell of the box is air). Nothing outside the box exists, so
+    /// its top face is open sky.
+    pub fn over<'c>(
+        min: [i32; 3],
+        max: [i32; 3],
+        cells: impl Iterator<Item = ([i32; 3], &'c str)> + Clone,
+    ) -> LightArrays {
+        LightArrays {
+            sky: LightField::over(min, max, 15, false, cells.clone()),
+            block: LightField::over(min, max, 0, true, cells),
+        }
+    }
+
+    /// The sky light at a cell (15 above the box, where nothing stands; 0
+    /// beside or under it).
+    pub fn sky(&self, c: [i32; 3]) -> u8 {
+        match self.sky.index(c) {
+            Some(i) => self.sky.light[i],
+            None if c[1] >= self.sky.min[1] + self.sky.dim[1] as i32 - 2 => 15,
+            None => 0,
+        }
+    }
+
+    /// The block light at a cell (0 outside the box).
+    pub fn block(&self, c: [i32; 3]) -> u8 {
+        self.block.light_at(c)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The flooded field, densely
 // ---------------------------------------------------------------------------
@@ -701,6 +742,25 @@ impl LightField {
     /// Build and flood the field of `model` under `effective_sky`.
     fn new(model: &LightModel, effective_sky: u8) -> Self {
         let (min, max) = model.field_box();
+        Self::over(
+            min,
+            max,
+            effective_sky,
+            true,
+            model.blocks.iter().map(|(c, b)| (*c, b.as_str())),
+        )
+    }
+
+    /// Build and flood the field over the inclusive box `min..=max` holding
+    /// `cells` (every other cell is air), under `effective_sky`, with the
+    /// emitters' block light seeded when `emit` holds.
+    fn over<'c>(
+        min: [i32; 3],
+        max: [i32; 3],
+        effective_sky: u8,
+        emit: bool,
+        blocks: impl Iterator<Item = ([i32; 3], &'c str)>,
+    ) -> Self {
         let dim = [
             (max[0] - min[0]) as usize + 3,
             (max[1] - min[1]) as usize + 3,
@@ -723,11 +783,12 @@ impl LightField {
         // Resolve each DISTINCT block id once. The assembled world is overwhelmingly
         // repeated ids, and `emission`/`passes_light` are a pair of string matches.
         let mut resolved: BTreeMap<&str, u8> = BTreeMap::new();
-        for (c, name) in model.blocks.iter() {
-            let Some(i) = f.index(*c) else { continue };
-            let packed = *resolved
-                .entry(name.as_str())
-                .or_insert_with(|| Self::pack(name));
+        for (c, name) in blocks {
+            let Some(i) = f.index(c) else { continue };
+            let packed = *resolved.entry(name).or_insert_with(|| {
+                let p = Self::pack(name);
+                if emit { p } else { p & !P_EMISSION }
+            });
             f.prop[i] = packed;
         }
 

@@ -62,9 +62,9 @@ pub const DERIVED: &[Derived] = &[
         writer: "validation/world-save.sh",
     },
     Derived {
-        name: "shots",
+        name: "frames",
         kind: DerivedKind::Dir,
-        writer: "validation/render-shots.sh",
+        writer: "delvec frames",
     },
     Derived {
         name: "staging-admission.json",
