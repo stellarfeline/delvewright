@@ -61,9 +61,10 @@ built and the next run silently re-tests the mutation. Every restore below is
 `cp` **followed by `touch`**:
 
 ```sh
-cp crates/delvec/src/compiler/emit.rs "$SCRATCH/emit.orig"     # never /tmp
+F=crates/delvec/src/compiler/emit/lethal.rs                    # or emit/stake.rs
+cp "$F" "$SCRATCH/emit.orig"                                    # never /tmp
 # …mutate, build, run…
-cp "$SCRATCH/emit.orig" crates/delvec/src/compiler/emit.rs && touch crates/delvec/src/compiler/emit.rs
+cp "$SCRATCH/emit.orig" "$F" && touch "$F"
 ```
 
 Each cycle is: mutate → `delvec build` → `bot-run.sh` → restore + `touch`.
@@ -100,15 +101,15 @@ manual test that dies twice had passed for months. Fixed in `cp_respawn_check`,
 which now seeds each acknowledgement it reads ahead of the comparison;
 `v06_checkpoints` and `v10_on_death` assert the ORDER, not merely the presence.
 
-**Only the instance was turned into a test.** The general form — *no emitted
-`execute if score @s A > @s B` may compare against a per-player score nothing has
-written yet* — is a real, findable class and does **not** yet have a diagnostic.
-Recorded here as an open finding and a risk item at the next staging review
-(CLAUDE.md: a finding is not closed until its general form is a diagnostic).
+The general form — *no emitted comparison may read a score entry the emitted
+pack never creates* — is the compile-time diagnostic `DW0495`
+(`compiler::seeding`); the measurement it rests on is
+`docs/notes/score-entry-existence-1.21.11.md`.
 
 ## The planted mutations
 
-Each is one edit to `crates/delvec/src/compiler/emit.rs`, and each was run end to end.
+Each is one edit to `crates/delvec/src/compiler/emit/lethal.rs` (M1, M2) or
+`crates/delvec/src/compiler/emit/stake.rs` (M3–M5), and each was run end to end.
 
 ### M1 — the volume deals no damage
 

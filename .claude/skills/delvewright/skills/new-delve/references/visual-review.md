@@ -40,8 +40,8 @@ the page's own discipline everywhere else — *author from the image, judge
 against it, present every choice beside it*, the sentence step 4 wrote into
 `design/README.md` — and step 12 is where the two are finally in the same hand.
 Nothing upstream compares them: the gate confirms a design, the build assembles
-whatever the jigsaw seated from the pool, and until this step they have never
-been introduced. So for each POV frame, name the approved image it answers to
+the pieces the detail plan binds, and until this step they have never been
+introduced. So for each POV frame, name the approved image it answers to
 and write one of two things — *this is that place*, or a finding saying which
 element of the image is not there. A frame with no approved image to answer to
 is itself the finding: the design gate approved something the build does not
@@ -71,8 +71,10 @@ names the lightmap: judge their legibility in the game. Never move an hour to
 make a picture come out, and never type a camera's exposure: the engine derives
 it. A place that reads dark in a quick frame is dark in the game — a quick frame
 is the lightmap the client draws from the light the world carries — so light it
-where the room is designed
-([new-pieces.md](new-pieces.md#light-inside-a-cave-or-a-body)).
+where the room is designed: natural sources set in the walls and the vault,
+artificial ones recessed behind a partial block of the surface's own family,
+staggered at uneven spacings and heights, each on a face that holds it
+(`DW1002`).
 
 **A change to how frames are rendered is judged on the standard level first:
 The Glasshouse** (content `demo/the-glasshouse`), its seven showcase cameras

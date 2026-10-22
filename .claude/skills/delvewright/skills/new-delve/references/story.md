@@ -12,7 +12,7 @@ Write them in that order; each conditions the next. Get each one's shape from
 `delvec schema --stage <name>` first, and a **worked example** of it from
 `delvec metrics --gym <dir>`, which writes nine complete documents that build —
 these three among them. Reach for the gym whenever the schema alone is slow to
-read: `--stage all` is half a megabyte in which every stage's `content` is a
+read: `--stage all` is about 700 kB of JSON in which every stage's `content` is a
 `$ref`, so one document's required fields are several dereferences away, while
 the gym hands you that document filled in. The schema stays the authority on
 form; the gym is what shows you one. Then run

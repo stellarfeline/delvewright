@@ -417,8 +417,10 @@ pub fn is_no_collision_plant(id: &str) -> bool {
 /// answer is consumed by proofs that would credit the step. Reading them as walls
 /// over-blocks, which is the direction this module's errors are allowed to run.
 ///
-/// Also excluded because their shapes were not read out of the pin: lanterns,
-/// chains, end rods, ladders. The full-cube default keeps them sound.
+/// Chains and end rods are also excluded, because their shapes were not read
+/// out of the pin; the full-cube default keeps them sound. A lantern is a
+/// partial floor ([`collision_top_16`]) and a ladder is climbable
+/// ([`climbable`]), answered there rather than here.
 ///
 /// Takes a **bare** id ([`bare_id`]), not a full block name.
 pub fn is_no_collision_fixture(id: &str) -> bool {

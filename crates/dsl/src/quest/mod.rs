@@ -33,36 +33,33 @@ pub struct QuestsContent {
     #[serde(default, skip_serializing_if = "Guidance::is_default")]
     pub guidance: Guidance,
     /// Combat waves (DSL v0.3). Each wave is spawned by a `spawn-wave` effect and
-    /// slain to complete a `kill` objective. Empty/absent in v0.2 campaigns.
+    /// slain to complete a `kill` objective. Empty/absent = none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub waves: Vec<Wave>,
     /// Environment triggers (DSL v0.4, spec-0008 §7): "the world answers". Each
     /// watches an anchor for a strike / use / approach event and fires a bundle
-    /// of [`QuestEffect`]s. Empty/absent in v0.2/v0.3 campaigns.
+    /// of [`QuestEffect`]s. Empty/absent = none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub triggers: Vec<EnvTrigger>,
     /// Scripted actors (DSL v0.6, spec-0014): NoAI/Silent/no-loot puppets moved by
     /// compiler-emitted per-tick teleport. Distinct from stage-2 NPCs
     /// (no dialogue, any mob type). Summoned/removed/moved/unleashed by the actor
-    /// staging effects. Empty/absent before v0.6.
+    /// staging effects. Empty/absent = none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub actors: Vec<Actor>,
     /// Traps (DSL v0.6, spec-0011; command payloads spec-0022): environmental
     /// hazards, each at one point anchor an area's prefab provides. Each says
     /// what springs the trap, what it then does (a command `payload`, a legacy
     /// dispenser `effect`, or both), how dangerous it is, how it is disarmed and
-    /// whether it re-arms. Empty/absent in pre-0.6 campaigns, so a v0.5-or-earlier campaign that declares none stays
-    /// byte-identical.
+    /// whether it re-arms. Empty/absent = none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub traps: Vec<Trap>,
     /// Shortcut doors (spec-0016 §2): a gate that is sealed from world-load and
-    /// is opened — permanently — from the FAR side. Empty/absent in pre-0.6
-    /// campaigns, so a campaign that declares none stays
-    /// byte-identical.
+    /// is opened — permanently — from the FAR side. Empty/absent = none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shortcuts: Vec<Shortcut>,
     /// Ambushes (spec-0016 §3): sugar over "deferred actors + a trigger that
-    /// springs them". Empty/absent in pre-0.6 campaigns.
+    /// springs them". Empty/absent = none.
     ///
     /// **Never serialized.** [`parse_campaign`](crate::parse_campaign) expands
     /// each ambush into `triggers`, so the canonical form of a campaign is its
@@ -73,12 +70,11 @@ pub struct QuestsContent {
     /// downstream needing to know it was ever there. The list itself is kept in
     /// memory so diagnostics can name the ambush the author wrote.
     /// Timed gates (spec-0016 §4): gates on a deterministic open/close clock.
-    /// Empty/absent in pre-0.6 campaigns.
+    /// Empty/absent = none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub timed_gates: Vec<TimedGate>,
     /// Container fills (spec-0021): pre-placed chests/barrels in the prefabs
-    /// given contents at world init. Empty/absent in pre-0.6 campaigns
-    ///.
+    /// given contents at world init. Empty/absent = none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub loot: Vec<Loot>,
     /// **The container class** (spec-0105): what this campaign says about the
@@ -122,18 +118,15 @@ pub struct QuestsContent {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub on_death: Vec<QuestEffect>,
     /// Lethal volumes (DSL v0.10, spec-0031): declared boxes that kill whatever
-    /// enters them. Empty/absent in pre-0.10 campaigns, so a
-    /// campaign that declares none stays byte-identical.
+    /// enters them. Empty/absent = none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lethal_volumes: Vec<LethalVolume>,
     /// Shops (DSL v0.10, spec-0032): interaction points that open a list of
-    /// gated offers. Empty/absent in pre-0.10 campaigns, so a
-    /// campaign that declares none stays byte-identical.
+    /// gated offers. Empty/absent = none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shops: Vec<Shop>,
     /// Recovery stakes (DSL v0.10, spec-0032): what a death forfeits, where the
-    /// marker lands, and how it comes back. Empty/absent in pre-0.10 campaigns
-    ///, so a campaign that declares none stays byte-identical.
+    /// marker lands, and how it comes back. Empty/absent = none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stakes: Vec<Stake>,
     /// Assemblies (spec-0082): fixed things built of display entities that

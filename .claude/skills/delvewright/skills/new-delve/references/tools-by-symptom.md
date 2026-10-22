@@ -8,7 +8,7 @@ Two classes, one rule each:
   the marked point, say in one line that the tool exists and what it would catch
   — then keep going. Never block or wait on a use/don't-use answer.
 
-The full inventory — every binary, script and flag that exists today — is
+The full inventory — every binary, script and flag that exists — is
 `$DELVEWRIGHT_ENGINE/docs/reference/tools.md`. Check it before assuming a capability is missing.
 
 - **Judging any visual outcome** (cutscene framing, set dressing, terrain):
@@ -83,13 +83,13 @@ The full inventory — every binary, script and flag that exists today — is
   manifest shows as one building. Pass a directory to put a whole library on one
   page. Human-optional; read its fidelity list first (step 12).
 - **A picture of the whole map** (storybook hero image, release asset): `delvec --prefabs "$DELVEWRIGHT_PREFABS" 
-  panorama <build-dir> -o <dir> [--bearing se|sw|ne|nw] [--spp N]` — a 45° oblique
+  panorama <build-dir> -o <dir> [--bearing se|sw|ne|nw|n|e|s|w] [--spp N]` — a 45° oblique (`--pitch` changes it)
   scene framing the entire layout, computed from the plan. Never hand-edit a scene JSON to get one.
 - **An NPC needs a look no vanilla mob gives you**: the skin toolchain,
   `PYTHONPATH="$DELVEWRIGHT_ENGINE/tools/creator/skin" .venv-skin/bin/python -m delve_skin all <cast.json>
-  --skins-dir … --preview-dir … --catalog-dir …`, in the venv *NPC skins* establishes at step 5. **Look at the previews**, and
-  always set `model` (`wide`/`slim`) — an omitted model renders slim and distorts
-  a wide skin. The compiler bakes the PNG into the delve's resource pack from
+  --skins-dir … --preview-dir … --catalog-dir …`, in the venv *NPC skins* establishes at step 5. **Look at the previews**. A mannequin's
+  entry must set `model` (`wide`/`slim`): the composer refuses one without it,
+  because an omitted model renders slim and distorts a wide skin. The compiler bakes the PNG into the delve's resource pack from
   `campaigns/<id>/skins/`. A mob's retexture is drawn to that mob's own boxes (`delve_skin parts <model>`; *NPC skins*).
 - **Cleaning up a ladder or a play session by hand**: `$DELVEWRIGHT_ENGINE/validation/fresh-volumes.sh
   --project <id>`. `--project` is required everywhere and there is no daemon-wide

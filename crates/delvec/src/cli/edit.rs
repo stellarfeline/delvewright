@@ -66,17 +66,16 @@ pub(crate) enum EditAction {
 /// form) once the whole replay is green; `preview` never writes to the
 /// campaign directory. Editing sessions leave no state outside the script.
 ///
-/// **One proof tier, not two** (map-editor audit finding 3). The per-batch
-/// invariants are a *subset* of what `build` proves — they cover gravity,
-/// relight, critical-path/checkpoint walkability and boundary safety, but not
-/// cutscene clipping (`DW0308`), stealth zones (`DW0327`), trap completability
-/// (`DW0342`), wave seating (`DW0312`), `move-npc`/`move-actor` routability, or
-/// the exported-route self-check. `apply` used to persist on that subset, so a
-/// script `build` rejects could be written into the campaign. Both verbs now run
-/// the **whole** build-tier proof set (`analyze` + `emit::build`, output
-/// discarded) before anything is persisted; measured cost is ~0.3 s on the
-/// largest content campaign against a fraction of a second a frame, so there is no
-/// reason for a cheaper tier to exist.
+/// **One proof tier, not two.** The per-batch invariants are a *subset* of what
+/// `build` proves — they cover gravity, relight, critical-path/checkpoint
+/// walkability and boundary safety, but not cutscene clipping (`DW0308`),
+/// stealth zones (`DW0327`), trap completability (`DW0342`), wave seating
+/// (`DW0312`), `move-npc`/`move-actor` routability, or the exported-route
+/// self-check. Persisting on that subset would write a script `build` rejects
+/// into the campaign, so both verbs run the **whole** build-tier proof set
+/// (`analyze` + `emit::build`, output discarded) before anything is persisted;
+/// measured cost is ~0.3 s on the largest content campaign against a fraction of
+/// a second a frame, so there is no reason for a cheaper tier to exist.
 /// What one batch's frame shows: the targets in and out of it by the one sight
 /// rule ([`delvec::compiler::framing::resolve_targets`]), and the manifest's
 /// entries its labels are stamped from.
@@ -360,7 +359,7 @@ pub(crate) fn run_edit(
         shots.push((b.id.clone(), png_path.display().to_string()));
     }
 
-    // ---- the FULL build-tier proof set (map-editor audit finding 3) ----
+    // ---- the FULL build-tier proof set ----
     // Everything `delvec build` proves, over the same edited model: the DW02xx
     // reachability analysis, then `emit::build` (cutscene clip DW0308, stealth
     // zones DW0327, trap completability DW0342, wave seating DW0312, move

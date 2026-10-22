@@ -24,7 +24,7 @@ Delvewright 自动化的是繁琐的劳动和验证，而不是设计：它会�
 /delvewright:new-delve a guided tour of a real castle, nine rooms, no combat
 ```
 
-第一次运行会自行搭建工具链。之后它只问你两件事——从哪里获取 Minecraft 客户端 jar，以及设计是否正确——其余的都由它完成。你第一次玩到的，就是完成的第一版。最终交付的是这个 campaign 的文档、一份不剧透的 storybook，以及一条命令：构建、检查并在 `localhost:25565` 上运行这个 delve。它需要 git、Python 3.11 或更新版本、Java 21 或更新版本，以及带 Compose v2 的 Docker（[第一次运行检查的全部内容](.claude/skills/delvewright/skills/new-delve/references/init.md)）。
+第一次运行会自行搭建工具链。之后它只问你三件事——从哪里获取 Minecraft 客户端 jar；如果你的机器上还没有绘图服务的密钥，要一把用来画设计参考图的密钥（Google Gemini 或 Ideogram）；以及设计是否正确——其余的都由它完成。你第一次玩到的，就是完成的第一版。最终交付的是这个 campaign 的文档、一份不剧透的 storybook，以及一条命令：构建、检查并在 `localhost:25565` 上运行这个 delve。它需要 git、Python 3.11 或更新版本、Java 21 或更新版本，以及带 Compose v2 的 Docker（[第一次运行检查的全部内容](.claude/skills/delvewright/skills/new-delve/references/init.md)）。
 
 ## 工作原理
 

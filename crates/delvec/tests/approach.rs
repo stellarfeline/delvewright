@@ -221,6 +221,11 @@ fn a_held_keeper_facing_the_wall_is_told_the_facing_that_faces_the_room() {
         message.contains("Declare `anchor/keeper-stand`'s facing `south`"),
         "{message}"
     );
+    // The remedy names a command the binary has: the anchor verb is `prefab`'s.
+    assert!(
+        message.contains("`delvec prefab anchor <piece>.nbt --name anchor/keeper-stand"),
+        "{message}"
+    );
 }
 
 #[test]

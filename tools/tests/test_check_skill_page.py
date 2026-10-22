@@ -305,6 +305,17 @@ def test_a_reference_that_sends_the_reader_to_another_reds(mod, tree, engine):
     assert has(run(mod, engine), "sends the reader on to")
 
 
+def test_a_markdown_link_to_a_sibling_reference_reds(mod, tree, engine):
+    """A link resolved from the reference's own directory is the pointer a
+    reader follows, whether or not the text spells `references/`."""
+    path = tree / "references" / "when-red.md"
+    path.write_text(
+        path.read_text(encoding="utf-8") + "\nSee [the pitfalls](pitfalls.md#top).\n",
+        encoding="utf-8",
+    )
+    assert has(run(mod, engine), "sends the reader on to `references/pitfalls.md`")
+
+
 # ------------------------------------------------------------------- rule 9, --prefabs --
 
 

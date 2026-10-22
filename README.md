@@ -24,7 +24,7 @@ In [Claude Code](https://claude.com/claude-code):
 /delvewright:new-delve a guided tour of a real castle, nine rooms, no combat
 ```
 
-The first run sets up its own toolchain. After that it asks you two things — where to get the Minecraft client jar, and whether the design is right — and does the rest. The first time you play it is the finished first version. What arrives is the campaign's documents, a spoiler-free storybook, and one command that builds, checks and serves the delve on `localhost:25565`. It needs git, Python 3.11 or newer, Java 21 or newer, and Docker with Compose v2 ([everything the first run checks](.claude/skills/delvewright/skills/new-delve/references/init.md)).
+The first run sets up its own toolchain. After that it asks you three things — where to get the Minecraft client jar, a key for the image service that draws the design reference (Google Gemini or Ideogram) if your machine has none, and whether the design is right — and does the rest. The first time you play it is the finished first version. What arrives is the campaign's documents, a spoiler-free storybook, and one command that builds, checks and serves the delve on `localhost:25565`. It needs git, Python 3.11 or newer, Java 21 or newer, and Docker with Compose v2 ([everything the first run checks](.claude/skills/delvewright/skills/new-delve/references/init.md)).
 
 ## How it works
 

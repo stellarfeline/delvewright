@@ -389,8 +389,7 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             }
             // Stage 5 — v0.7 `interact.missing_item_hint`: narrated in chat to the
             // player who clicks without the required item in hand, so it is as
-            // player-visible as `hint` and translates like it. Absent on every
-            // pre-0.7 objective → inventory unchanged.
+            // player-visible as `hint` and translates like it. Absent → no key.
             if let crate::Objective::Interact {
                 missing_item_hint: Some(m),
                 ..
@@ -401,8 +400,7 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
             // Stage 5 — v0.8 `collect.item_name`: the display name the
             // collected item carries as a `custom_name` component. A player reads
             // it off the stack in the barrel and off their own hotbar, so it is as
-            // player-visible as a `title` and translates like one. Absent on every
-            // pre-0.8 objective → inventory unchanged.
+            // player-visible as a `title` and translates like one. Absent → no key.
             if let crate::Objective::Collect {
                 item_name: Some(n), ..
             } = o

@@ -1,9 +1,11 @@
 # Jump-arc navigation model — spike findings + proposal (phase 1)
 
 Status: **spike note + model proposal**, written 2026-08-01 as the input the M4
-expressiveness spec consumes. Nothing here is implemented: the shipped nav model
-still admits walking steps of at most ±1 block of rise and never a horizontal
-gap. Souls-mode parkour needs provable jump gaps; this note supplies (a) the
+expressiveness spec consumes. The diagnostics, codes and file names it proposes
+are proposals, not the engine's: the engine's player movement relation admits
+gap jumps over `dsl::metrics::jump_max_gap` (`compiler::nav::world::body`), and
+its DW codes are the ones `docs/reference/compiler.md` lists. Souls-mode parkour
+needs provable jump gaps; this note supplies (a) the
 empirical 1.21.11 jump kinematics the model must respect, measured on the pinned
 server, and (b) the proposed compiler/nav/harness shape. Water and ladder edge
 cases are explicitly **out of scope** (so are momentum tricks: ice, head-hitter

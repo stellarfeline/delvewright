@@ -66,7 +66,7 @@ pub struct Actor {
     pub attributes: Option<MobAttributes>,
     /// How hard this actor's fight is *meant* to be (DSL v0.8, spec-0023) — the
     /// same [`EncounterTier`] vocabulary a [`Wave`] declares. Absent =
-    /// [`EncounterTier::Ordinary`], byte-identical to every pre-0.8 campaign.
+    /// [`EncounterTier::Ordinary`].
     ///
     /// A wave is not the only shape an elite takes. The set-piece souls fight —
     /// the armoured thing kneeling among the graves that stands up when you hit

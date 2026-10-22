@@ -22,6 +22,7 @@ mod healthbar;
 mod holders;
 mod lane;
 mod lethal;
+pub(super) use lethal::emitted_lethal_templates;
 mod lightning;
 mod r#loop;
 mod loot;
@@ -156,7 +157,8 @@ pub(super) fn emit_packtest(
     // spec-0014). Emits nothing when the campaign uses neither.
     checkpoint::emit_v06_packtests(plan, out);
 
-    // spec-0031 lethal volumes: the runtime half, one template per volume.
+    // spec-0031 lethal volumes: the runtime half — per volume its kill and
+    // wording templates, and a staged volume's shut half.
     lethal::emit_lethal_packtests(plan, out);
     r#loop::emit_loop_packtests(plan, out);
     // spec-0102: a pulse's open edge, its cut and its re-arm. Emits nothing for

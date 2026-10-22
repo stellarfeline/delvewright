@@ -290,8 +290,7 @@ impl QuestEffect {
 
     /// The declared `carrier` if this is a `give-item` that states one (v0.6,
     /// spec-0018). `None` for any other effect **and** for a `give-item` that
-    /// leaves it absent — absent reads as [`Carrier::All`], and the distinction
-    /// matters only for the pre-0.6 reserved-field gate.
+    /// leaves it absent — absent reads as [`Carrier::All`].
     pub fn give_carrier(&self) -> Option<Carrier> {
         match &self.verb {
             Verb::GiveItem { carrier, .. } => *carrier,

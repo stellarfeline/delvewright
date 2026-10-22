@@ -1,7 +1,9 @@
 # DSL validation fixtures
 
-The corpus `tests/matrix.rs` and `tests/schema.rs` run against. Every `DW01xx`
-diagnostic has at least one fixture here that asserts its code.
+The corpus `tests/matrix.rs` and `tests/schema.rs` run against. Every
+`DW01xx` diagnostic below `DW0180` has at least one fixture here that asserts
+its code; the codes from `DW0180` up are asserted by their own test files under
+`tests/`.
 
 ## `valid/hello-world/`
 

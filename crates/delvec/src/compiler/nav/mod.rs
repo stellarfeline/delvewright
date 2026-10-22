@@ -544,7 +544,7 @@ delvewright_dsl::dw_code! {
     /// * an `ocean` base — a reachable walkable cell borders **water the player
     ///   cannot get out of**: the pinned superflat puts bedrock under every column,
     ///   so nothing can fall out of an ocean world and the void premise is vacuous;
-    ///   the real hazard the ocean horizon introduced (`plan::OCEAN_BASE_Y`) is
+    ///   the real hazard the ocean horizon introduces (the sea at `plan::SEA_LEVEL`) is
     ///   *stranding* — a player who ends up in the sea with no shoreline to climb
     ///   back onto is out of the delve just as permanently as one who fell out of a
     ///   void world. See [`verify_boundary_safety`] for the exact model.

@@ -75,7 +75,7 @@ pub struct KitItem {
     /// it to exactly `count`. A campaign that places a `bonfire` and declares no
     /// flask anywhere in its kits is `DW0476` — the estus loop is what makes
     /// dying an investment, so a souls campaign without one is a build error, not
-    /// a design choice. Absent on every pre-0.8 kit → emission byte-identical.
+    /// a design choice. Absent = not the flask.
     #[serde(default, skip_serializing_if = "is_false")]
     pub flask: bool,
     /// **What is in the bottle** (DSL v0.8, spec-0016 §1): the vanilla

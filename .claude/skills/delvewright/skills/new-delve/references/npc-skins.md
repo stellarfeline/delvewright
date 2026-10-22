@@ -152,8 +152,10 @@ in the **dialogue and the brief**, dress the figure well, and do not expect the
 skin to carry the reading on its own — and never quietly recast a character
 because the texture will not say it.
 
-**Look at the previews** before accepting a skin, and always set `model`
-(`wide`/`slim`) — an omitted model renders slim and distorts a wide skin.
+**Look at the previews** before accepting a skin. A mannequin's cast entry must
+set `model` (`wide`/`slim`): the composer refuses one without it, because an
+omitted model renders slim and distorts a wide skin. A mob's entry (`entity`)
+carries no `model`.
 
 ## Replacing a vanilla texture
 

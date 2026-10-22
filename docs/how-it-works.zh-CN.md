@@ -152,7 +152,7 @@ flowchart TD
     classDef human fill:#ffd76e,stroke:#a9761a,color:#241a00
 ```
 
-staging gate 握着游玩端口唯一的钥匙：`validation/owner-play.yaml` 是唯一发布 25565 端口的文件，它拒绝启动没有为之签发令牌的构建树。红色的关卡结果逐项列出玩家尚未受到保护的缺陷类别，交付时一类一类点明，第一次游玩的时间就不会耗在这些问题上。
+staging gate 握着游玩端口唯一的钥匙：能发布 25565 端口的只有 `validation/owner-play.yaml` 和 `tools/creator/playtest-server.sh` 两处，凡是没有为之签发令牌的构建树，两者都拒绝启动。红色的关卡结果逐项列出玩家尚未受到保护的缺陷类别，交付时一类一类点明，第一次游玩的时间就不会耗在这些问题上。
 
 每一张必须看起来像 Minecraft 的图，都由 `delvec` 自己在进程内用游戏本身的贴图画出（`delvec frames`、`delvec cameras`、`delvec panorama`）；`delvec viewer`、`delvec contact-sheet` 和 GPU 渲染 `delvec render` 服务于各个 piece。文档是记录在案的产物：完成的 delve 能从它们逐字节相同地重建出来，整个过程不需要模型。
 
@@ -237,7 +237,7 @@ flowchart TD
 | 分阶段的 JSON 文档 | `world` · `npcs` · `classes` · `quest-plan` · `quests` · `dialogue`，以及 `geometry-brief` · `layout-graph` · `site-plan` · `detail-plan` · `design` | 2–5 | 由智能体编写 |
 | `delvec` | Rust 引擎，一个二进制：`schema` · `validate` · `analyze` · `build` · `fmt` · `metrics` · `allocation` · `detail` · `l10n-inventory` · `l10n-apply` | 2–4 | 智能体 |
 | `delvec` 画面表面 | `frames` · `panorama` · `cameras`（经由 Lumenwright，GPU 或 CPU）· `blocking-chart` · `viewer` · `palette` · `place-camera` · `contact-sheet`，`render`（GPU，经由 Nucleation 和 wgpu） | 3、5 | 智能体 |
-| `delvec` 构件 | `grammar`（box-split 语法） · `prefab`（收录、jigsaw 接口、锚点、照明） · `schem`（外部 schematic） | 2、4 | 智能体 |
+| `delvec` 构件 | `grammar`（box-split 语法） · `prefab`（收录、jigsaw 接口、锚点、照明） · `sculpt`（用隐式实体描述的形体雕出一个 piece） · `schem`（外部 schematic） | 2、4 | 智能体 |
 | `delvec harvest` · `calibrate` | 把游戏内笔记和手动放置的镜头转回报告和补丁 | 5 | 人玩过之后由智能体运行 |
 | `tools/creator/refimg.py` | 由配置的图像服务生成概念图 | 2 | 智能体；由人评判 |
 | `tools/creator/staging-gate.py` + `docs/playtest-findings.json` | 基于问题台账的关卡；游玩端口唯一的钥匙 | 5 | 智能体 |

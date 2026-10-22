@@ -27,7 +27,6 @@ Surfaces do fail when something first reaches them, which is the whole reason
 this campaign exists: an ambush and a named mob drop could not compile at all, a
 generated flag-gate test could not pass, and a one-waypoint lane emitted a march
 test asserting an index it had no way to reach — each found here, by binding it.
-One is still open: nothing refuses an objective gated on a state an earlier forced beat clears.
 
 ## Reading it
 
@@ -39,12 +38,12 @@ order a player would:
 | `world.json` | the hall, its lighting and mitigation, the boundary, the declared languages, and its sky stated in a designer's words: a new moon just risen (`{"moon": "just-risen", "phase": "new-moon"}`, day 4 — every build's `clock:` lines say where each stated time puts the sun and the moon); and three atmospheres (spec-0080): `atmosphere/frost-hall`, which sets every one of the twenty attributes an atmosphere admits — a spaced `music.overworld.frozen_peaks` among them — and is carried by the hall from the first tick; `atmosphere/the-reckoning`, the frost hall's sky with one difference, its music, a single-file disc that replaces whatever plays and loops back to back, which the marshal's beat paints over the whole hall after a `stop-sound music` cuts the frost hall's track (spec-0109: a story stage moves the music by repainting the place); and `atmosphere/still-air`, a declared silence that fades whatever plays, which the vantage trigger paints over the east bay and the counter paints back off the whole hall; its ground states its music too, a silence that lets a playing track run out (`horizon: {base: void, attributes}`), and every build's `music binding:` line counts what each of those biomes plays; and and the one vanilla texture the delve replaces — stone bricks, the annex tiles' walls and the hall's tread courses, drawn in one flat colour from `textures/hall-stone.png` so a render shows which block the pack changed — with the pack declared required, and the drowned's outer layer, painted from `textures/drowned-wrap.png` on the boxes that model really builds — the base positions, grown — which is where a mob's second layer reads (spec-0097); and the seconds a fallen player waits before rejoining the party |
 | `npcs.json` | five speaking parts — a quest-giver, a gatekeeper, a counter, a drill officer and a copyist at the wall desk who never looks up; the quest-giver is a mannequin that hides its cape layer, and the standard bearer in `quests.json` hides the other six, so every overlay layer a mannequin can hide is written once (spec-0097) |
 | `classes.json` | two kits, one carrying a flask (what a bonfire rest refills) |
-| `quest-plan.json` | three quests and the branch point the fork opens |
-| `quests.json` | the bulk: objectives, effects, waves, actors (a barded and saddled horse among them), traps, triggers, a shop, a shortcut, a stake, a timed gate, three killing volumes — one of them the pit under the terrace annex, live from the beat that clears the lid over it (spec-0088) — and six named datums of which one — the tokens — stands on the sidebar (`display: sidebar`, spec-0076); the hearth's two buttons, like every shop offer and some dialogue options, hover a tooltip saying what pressing them does (spec-0078); and the guidance surface (spec-0093): every objective kind states its `announcement`, the two reach objectives at the end of the hall and over the well are quiet (`announcement: hidden`, the first unmarked too), the ferry deck states both `shown`, and the valley overlay's whole campaign is quiet by `guidance` with its far corner opting its marker back in; the ferry's tiller and the cabin's are levers (`triggers[].prop`), the block the party uses and vanilla reports, so no hitbox stands there; the label under the case is a sign, a visible thing vanilla reports no use of, so its hit area is fitted over the sign; the stone beside the hearth is a stone slab, the thing the `strike` hits, and since the slab's sides lie on its cell's faces its hit area stands one hundredth of a block past them, so a swing at the slab reaches the hit area and not the slab (`DW1013` judges every hit area the gallery places); and the counter's third bark carries two styled spans, one obfuscated and one coloured, which its zh-cn row places in the Chinese order (spec-0096); and the item holders the hall carries (spec-0111): a glow frame on the reliquary wall holding a named map (`loot/map-frame`, its `slot` `contents`), an armour stand beside it wearing a helmet and holding a sword (`loot/sword-stand`, each stack naming its slot), a plain frame on the near hall's south wall the critical path's `obj/take-the-seal` takes from (`holder`), an empty frame beside it that the census prints frozen, and an empty brewing stand beside the long gallery's filled one — two holders whose contents show, exempt from the scenery rules |
+| `quest-plan.json` | four quests and the branch point the fork opens |
+| `quests.json` | the bulk: objectives, effects, waves, actors (a barded and saddled horse among them), traps, triggers, a shop, a shortcut, a stake, a timed gate, three killing volumes — one of them the pit under the terrace annex, live from the beat that clears the lid over it (spec-0088) — and eleven named datums of which one — the tokens — stands on the sidebar (`display: sidebar`, spec-0076); the hearth's two buttons, like every shop offer and some dialogue options, hover a tooltip saying what pressing them does (spec-0078); and the guidance surface (spec-0093): every objective kind states its `announcement`, the two reach objectives at the end of the hall and over the well are quiet (`announcement: hidden`, the first unmarked too), the ferry deck states both `shown`, and the valley overlay's whole campaign is quiet by `guidance` with its far corner opting its marker back in; the ferry's tiller and the cabin's are levers (`triggers[].prop`), the block the party uses and vanilla reports, so no hitbox stands there; the label under the case is a sign, a visible thing vanilla reports no use of, so its hit area is fitted over the sign; the stone beside the hearth is a stone slab, the thing the `strike` hits, and since the slab's sides lie on its cell's faces its hit area stands one hundredth of a block past them, so a swing at the slab reaches the hit area and not the slab (`DW1013` judges every hit area the gallery places); and the counter's third bark carries two styled spans, one obfuscated and one coloured, which its zh-cn row places in the Chinese order (spec-0096); and the item holders the hall carries (spec-0111): a glow frame on the reliquary wall holding a named map (`loot/map-frame`, its `slot` `contents`), an armour stand beside it wearing a helmet and holding a sword (`loot/sword-stand`, each stack naming its slot), a plain frame on the near hall's south wall the critical path's `obj/take-the-seal` takes from (`holder`), an empty frame beside it that the census prints frozen, and an empty brewing stand beside the long gallery's filled one — two holders whose contents show, exempt from the scenery rules |
 | `dialogue.json` | one tree per NPC; the Curator's carries the fork, and the Marshal's carries the two scenes it leads to — a pair of nodes no option leads to, reached only because the quest's `cast` ledger opens one of them per branch; the Curator says what the Long Hall is before the Marshal sends the party to it, the one told name a later line uses (`DW0982` binds to it) |
 | `world-edits.json` | the annex's piece-verb batches, the shards stamped by `fragment`, the barrier course, and the batches that dress the floor, lay the hearth, open the vault and rough the lane |
 | `geometry-brief.json` | four numbers out of the hall's own brief, the kind a site plan is later held to |
-| `layout-graph.json` | the same hall stated as six places and twelve connections, before any coordinate — three doors shut by bars through the wall because the hall really has three — each a `walk` whose `gating` names what opens it, a stair and a drop that close a loop, a sightline to the loft, and one place deliberately off the mandatory spine |
+| `layout-graph.json` | the same hall stated as nine places and seventeen connections, before any coordinate — three doors shut by bars through the wall because the hall really has three — each a `walk` whose `gating` names what opens it, a stair and a drop that close a loop, a sightline to the loft, and one place deliberately off the mandatory spine |
 | `overlays/site-plan/` | the same places given geometry, and then a whole map DERIVED from it: a region, a box each stating only its extent and plane, ONE pinned corner, a seam per connection stating which face of its `a` box it sits on, where along it and what the crossing is (the compiler derives every other corner and every sill — spec-0059; `delvec validate` prints the corners), an `open` fill over a generated heightmap with the rock and the sky the whole owns, a declared roof over the annex, whose program draws its own walls and gable while the yard stands as a faced plinth over the falling terrain (spec-0098), a plank gantry hung over the yard (`base: {"aloft": 0}`) that owns no ground, climbed from the yard on a ladder through its deck and walked to a small lookout hung at its far end, and eight comparisons holding all of it to its own written brief. It carries its own world, cast, quest layer and translations, because a campaign has ONE placement authority and the primary's is `areas[]` — so at this point of the campaign nothing describes a block, and everything a body meets is derived: the floors it walks, the doors it is stopped by, the stair it climbs, the anchors the quests bind to. Inside one place, too: the causeway's program raises a lookout on a stone stand and a crow's nest over it, reached by two ladders stacked one on the other — the first tops out on the foot of the second — which its spatial contract declares as three spaces and two `climb` edges: two floors of one place are two spaces, each ladder is proved both ways on the body's climb moves, and the critical path climbs the stack to the crow's nest (`obj/climb-the-crow`), so the exported route carries two one-column climbs each way. Its factor, whom the route brings the party to from behind the annex stand's facing, declares a watch of the nearest player within 4 blocks, so it turns to the party as they come into reach to talk (`DW1025`); declaring none, it would watch within 8 by default. The curator declares one too: the party reaches the near hall's stand side-on, at the edge of what `DW1025` admits, and a detailed variant of the place puts it behind. Every connection the graph gates is built shut (spec-0107), one of each kind: the annex chute's arch barred until the near hall's quest is done, the loft stair's head barred until the muster is cleared (opened from the far hall's side), the shaft's hatch in the near hall's floor (a closed iron trapdoor in the hole's upper half) and the cover over the undercroft ladder's hole (a closed iron trapdoor lying on the course above the hole, so the ladder keeps its top rung) — each a floor that holds the body standing on it, which iron bars laid flat are not (probe `a-hatch-of-bars-a-body-falls-through`) — shut until the same beat; each piece that owns a bar ships it as a gate. So the far hall is not reached round the story doors, and `DW1011` judges the west and centre doors rather than counting them as a way round; the chute, the crawl, the shaft and `east-door` close loops and are declared `shortcut`, and the same holds in the solid overlay |
 | `overlays/site-plan-solid/` | the same seven places carved in rock: the plan states `fill: solid`, so every cell no place claims is deepslate and the exit's sky is a declared clearance well, and a one-cell clearance keeps the vista's air open through the rock between the near hall and the loft. It is its own campaign (`gallery-rock`), so its places — every one detailed from `programs/` by `delvec detail`, because a stand-in never ships — are frozen as `gallery-rock-<place>` and never share a name with the open point's pieces. Beside its open sibling it shows that the kind of site is the plan's declaration (spec-0098); its factor and curator declare their watches for the same reasons as the open point's (`DW1025`) |
 | `overlays/valley-site/` | a SITE placed: one area bound to one prefab on `horizon: valley`, which is the other way a campaign states how big its map is — the map IS that piece, so its declared region is the extent the surround rings. `gallery-bank` is what a site is: three courses of island mass, a bank of grass out to the box's own edge, a walled court on top. It is seated by its WALK PLANE, so the bank's top course is the valley's gap floor and a body walks off the piece onto ground the horizon built; and it carries both halves of `DW0885` at once, the courses under the bank buried by earth and the parapet above it answered by four `shown_faces`. It carries its own cast and quest layer, because its one area is not the primary's two |
@@ -509,7 +508,7 @@ opt-out from "reachable as built", and stranding supplies severance for free —
 so the generator runs its own walk over the blocks it is about to write, twice:
 once as shipped and once with the tread cells filled. The mezzanine must be
 unreachable in the first and reachable in the second, or nothing is written at
-all. It prints both counts (`390 stance(s) reachable shut, 406 laid`), so a
+all. It prints both counts (`409 stance(s) reachable shut, 425 laid`), so a
 claim that stopped binding says so rather than going quiet.
 
 **The way lives on the traversal edge, not on the effect.** `broken-flight` is
@@ -536,8 +535,8 @@ gate the completability proof credits and the delve does not honour, because
 forcedness is decided at the effect's ROOT and not by its conditions.
 
 The build publishes the ledger at `validation/ways.json`: one way staged across
-one piece of four, four cells behind it, opened by a forced beat at critical-path
-step 6, and twelve required elements examined against it.
+one piece of five, four cells behind it, opened by a forced beat at critical-path
+step 19, and twenty-three required elements examined against it.
 
 **The treads are tested where every walk onto the loft steps.** Taking the bone
 also sets `flag/flight-relaid`, and `trigger/test-the-treads` — an `approach`
@@ -754,8 +753,8 @@ pull the tiller again and follow. The build splices the pull into the path —
 `critical-path.json` carries a `trigger` step with `stand` (the deck cell the
 tiller is pulled from, inside the volume) and `transport` (the landing) — and
 the `DW0311 binding:` line counts the leg as carried by a link. The hall's
-other teleport, on `obj/take-the-bone`'s completion, is a **gather**: whoever is
-in the march's box travels, once, and no proof leans on it.
+other two teleports, on `obj/take-the-bone`'s completion and on `quest/far-hall`'s,
+are **gathers**: whoever is in the box travels, once, and no proof leans on it.
 
 The teleport fires first and the cutscene plays at the landing one tick
 later. A cutscene's end puts every player on the cell the presser stood on, so
@@ -781,7 +780,7 @@ cabin to `node/exit` (the exit anchor is its station). `obj/reach-the-end` is th
 last beat and comes after the crossing, and the return lands inside its volume
 too, so the final step of the path is a reach a landing completes — the shape
 whose campaign marker is due at the carrying step. `validation/teleport-gate.json`
-reads two links and one gather.
+reads two links and two gathers.
 
 Five probes show what the engine refuses about it:
 `a-way-onward-that-fires-once` (the teleport on the cabin beat's own completion
@@ -798,7 +797,7 @@ skin and gear: the party is in its own cutscenes by default, and the ferry
 spells the default out (`"party": "present"`). The second muster
 cutscene, the parade shot style by style, declares `"party": "absent"`: the
 scene is the muster's, and its functions are `cs_muster_3_2_12687a8f_absent`
-with no stand-in line. `validation/stand-in-gate.json` reads two present and
+with no stand-in line. `validation/stand-in-gate.json` reads five present and
 one absent (`DW0971`).
 
 ## The long gallery
@@ -816,7 +815,7 @@ carries a `loop` step that crosses twice.
 The build publishes `validation/loop-gate.json`. Its row for this loop holds 24
 eyes (the landing's standing eyes and the catch band, where a walking body is
 when the poll finds it), a span of 325 cells, 155 visible cells, all of them in
-the near field and compared as blocks and as light at two skies over 10
+the near field and compared as blocks and as light at two skies over 13
 configurations, no far differences, and one exercise step. The eight probes above
 whose names start with a landing, a lamp, a light, a slab, a crossing, a release,
 a figure and a hall are each this gallery plus one edit, and each is refused by
@@ -870,17 +869,15 @@ the region — a spider is 1.4 blocks wide, so it is inside a box while its feet
 are still 0.7 blocks outside it, and the cell immediately beside a volume is
 fatal to anything standing at that cell's near edge. Distance does not answer
 this, because a fight does not stay where it is staged: the ladder's own census
-found a re-seated cohort spread 14.4 blocks from its anchor. So both killing
-volumes live in the NEAR hall — the west corner and the north wall — and the
+found a re-seated cohort spread 14.4 blocks from its anchor. So all three killing
+volumes live in the NEAR hall, and the
 muster forms up beyond the dividing wall, in the far hall the quest's beat
 names — the Marshal's answer, so no body of it stands while the party walks to
 her. The wall is the guarantee; the generator checks the sides, not a radius.
 
 **The pits sit where nothing walks.** Each is four blocks clear of every anchor
 and of every cell the piece's own bodies are teleported through on their way to
-the pocket, and neither touches a gate mouth. Both are three cells square,
-because a volume one cell deep has no interior — the death loop walks a body
-to a cell inside the box, and every cell inside it was also its edge.
+the pocket, and none touches a gate mouth.
 
 **The muster keeps two cells of air on every side.** A wave takes the standable
 cells NEAREST its anchor, and standable is judged for a body one cell wide, so
@@ -894,8 +891,7 @@ which stands three courses up and one cell wide along the dais's west face —
 a jump inside it finishes a later objective during this one.
 
 **The patrol comes down the hall as the party leaves it.** A lane squad's
-`follow_range` is its lane's `aggro_radius` verbatim — eight — and `DW0477`
-records in writing that nothing measures `wave/lane`. Eight blocks of
+`follow_range` is its lane's `aggro_radius` verbatim — eight. Eight blocks of
 perception in a hall fourteen deep covers the hall, so there is no line the
 patrol can walk that the party's route stays clear of: moved to the back wall,
 the crossbows stopped reaching the muster and killed the bot on its way to the
@@ -908,39 +904,11 @@ ordering is the half a later edit can undo without moving a coordinate.
 The generator holds the geometry of all of it, on every run, and prints what it examined:
 
 ```
-gallery-hall: muster clearance bound — 3 killing volume(s), all across the wall at z=15 from the muster: anchor/west-pit 20.62, anchor/lid-pit 17.80, anchor/east-pit 22.80 (floor 8.0 block(s))
+gallery-hall: muster clearance bound — 3 killing volume(s), all across the wall at z=15 from the muster: anchor/west-pit 20.62, anchor/lid-pit 15.65, anchor/east-pit 22.80 (floor 8.0 block(s))
 gallery-hall: lane clearance bound — the patrol line passes `anchor/muster` at [15, 1, 29], 10.00 block(s) away (floor 10.0)
 ```
 
-## Open findings
-
-
-
-**An objective can be gated on a state an earlier forced beat clears, and
-nothing says so.** `obj/reach-the-end` requires `state/labels-read` `at-least`
-1; `obj/clear-the-muster`, four objectives ahead of it on the mandatory spine,
-clears that state to zero. Every static proof passes — the reachability model
-walks objectives and flags, not the arithmetic of the states their `requires_state`
-compares — and the delve is unfinishable: the bot stands inside the finale's
-own completion box and no marker arrives.
-`DW0527` sees the same write and says nothing about this, because it is a rule
-about one bundle and these are two. The gallery lives with it by setting the
-count again on the bone's beat, LAST in its bundle so no reader follows the
-write; the general form has no diagnostic.
-
-**Nothing refuses a wave seated inside a killing volume.** `DW0511` is the
-rule that a body put somewhere by DECLARATION rather than by walking must not
-be put inside a lethal volume — no route proof can see it — and
-`lethal::posted_places` enumerates the entry cell, every checkpoint, every
-NPC, every per-quest `cast` placement and every actor. A wave's seated cells
-are not in that list, so a muster standing between two pits compiles green and
-loses bodies to the world at runtime. The clearances above are the strongest
-form a piece generator can carry, and they are weaker than the diagnostic
-would be twice over: the generator cannot see the campaign's own `extent`
-values, so its constants state that half as a premise, and it compares anchor
-to anchor where the real question is hitbox to box.
-
 ## Why the jobs gate
 
-The gallery's four jobs — pieces, coverage, views, baseline — are each a required status check. `tools/ci/check-required-contexts.py`
+The gallery's five jobs — pieces, coverage, views, baseline, bot — are each a required status check. `tools/ci/check-required-contexts.py`
 holds the manifest and `ci.yml` in lockstep.

@@ -26,7 +26,7 @@ edition = "2024"
 # what anybody has run is an untested claim, and `cargo install` is where a
 # stranger discovers it.
 rust-version = "1.97.1"
-license = "GPL-3.0-only"
+license = "GPL-3.0-or-later"
 repository = "https://github.com/stellarfeline/delvewright"
 
 # The one in-tree dependency, declared once so the engine says

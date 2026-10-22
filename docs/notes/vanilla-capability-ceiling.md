@@ -61,8 +61,9 @@ mode with `can_break`/`can_place_on` item scoping.
   (equipment, names, sizes via attributes, display-entity costumes) — laborious and
   never as good as a modeled mod entity.
 - **No custom mob AI.** We can gate, buff, equip, and teleport vanilla AI, not write
-  new goals. Scripted NPC *movement* (walk this path, act this scene) is particularly
-  clumsy — expect stationary NPCs.
+  new goals. Scripted NPC *movement* (walk this path, act this scene) has no AI
+  goal to drive it: the engine's `move-npc` / `move-actor` walk a body along an
+  A*-planned path by per-tick teleports.
 - **No client input beyond vanilla.** No keybinds; interaction is clicks, movement,
   chat/dialog buttons, item use.
 - **Tick-granularity scripting.** Everything runs in 50ms steps under

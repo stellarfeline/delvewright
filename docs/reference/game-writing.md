@@ -213,7 +213,7 @@ names that reach dialogue, is `DW0982`: the declared names (the inventory's
 `name` and item-name rows, the fact check's set) placed in the compiler's play
 order against what has told them (N1, N3). A question without an answer is
 `DW0981`: an option that asks and opens no line. A name tag on a crowd is
-`DW0983` (N6, [`compiler::telling` § DW0983](delvec/compiler/telling.md#dw0983--a-name-tag-marks-a-person-compilertelling-error-exit-1)). An objective title headed by an act its completion does not perform is `DW1045` (F7, [`compiler::telling` § DW1045](delvec/compiler/telling.md#dw1045--an-objective-says-the-act-that-completes-it-compilertelling-error-exit-1)). All four refuse at `delvec validate` ([`compiler::telling` § DW0981/DW0982](delvec/compiler/telling.md#dw0981dw0982--what-the-dialogue-tells-the-player-compilertelling-error-exit-1)).
+`DW0983` (N6, [`compiler::telling` § DW0983](delvec/compiler/telling.md#dw0983--a-name-tag-marks-a-person-compilertelling-error-exit-1)). An objective title headed by an act its completion does not perform is `DW1045` (F7, [`compiler::telling` § DW1045](delvec/compiler/telling.md#dw1045--an-objective-says-the-act-that-completes-it-compilertelling-error-on-a-title-exit-1-a-warning-on-a-hint-exit-0)). All four refuse at `delvec validate` ([`compiler::telling` § DW0981/DW0982](delvec/compiler/telling.md#dw0981dw0982--what-the-dialogue-tells-the-player-compilertelling-error-exit-1)).
 A hint that names an act other than its objective's is the `DW1045` warning, for the creator to adjudicate; an act the party can see from where it stands, or that is announced with a hint, is `DW0863` (spec-0104, [`compiler::promise`](delvec/compiler/promise.md)); and `DW0982` reads an announced objective's title and hint as well as dialogue. The rest is not built.
 
 | Check | What it reads | Estimated precision on Vesperhold |
@@ -346,7 +346,7 @@ How a quest plan is shaped as a web rather than a chain, how an ending reads the
 ## Sources
 
 - Aarseth, E. From Hunt the Wumpus to EverQuest: Introduction to Quest Theory. ICEC 2005, LNCS 3711; as read in Karlsen, F. Quests in Context: A Comparative Analysis of Discworld and World of Warcraft. Game Studies 8(1), 2008.
-- bg3.wiki. *Container* (community wiki, CC BY-NC-SA; ideas and counts only, as in `docs/ACKNOWLEDGEMENTS.md`).
+- bg3.wiki. *Container* (community wiki, CC BY-NC-SA 4.0 or CC BY-SA 4.0 per its footer; ideas and counts only).
 - Callison-Burch, Fordyce, Koehn, Monz, Schroeder. (Meta-) Evaluation of Machine Translation. WMT 2007.
 - Chung, B. *Level Design: Readability*. blendogames.com.
 - Doran, J. & Parberry, I. A Prototype Quest Generator Based on a Structural Analysis of Quests from Four MMORPGs. PCGames 2011. ianparberry.com/pubs/pcg2011.pdf.
