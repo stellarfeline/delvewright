@@ -49,7 +49,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import subprocess
 import sys
 from pathlib import Path
@@ -69,26 +68,19 @@ def die(msg: str) -> None:
     raise SystemExit(1)
 
 
-def planned_aim(camera: dict) -> tuple[list[float], float, float]:
-    """The build's camera as Minecraft pos/yaw/pitch: `framing::Camera::looking_at`
-    over the render plan's `pos`/`look_at`."""
-    pos, look = camera["pos"], camera["look_at"]
-    d = [look[i] - pos[i] for i in range(3)]
-    horiz = math.hypot(d[0], d[2])
-    if horiz < 1e-9 and abs(d[1]) < 1e-9:
-        return pos, 0.0, 0.0
-    return pos, math.degrees(math.atan2(-d[0], d[2])), math.degrees(math.atan2(-d[1], horiz))
-
-
 def same_camera(planned: dict, drawn: dict) -> bool:
-    """Whether the manifest's camera (rounded to 3 decimals) is the build's."""
-    pos, yaw, pitch = planned_aim(planned)
-    dyaw = (drawn["yaw"] - yaw + 180.0) % 360.0 - 180.0
-    return (
-        all(abs(drawn["pos"][i] - pos[i]) <= 0.002 for i in range(3))
-        and abs(dyaw) <= 0.002
-        and abs(drawn["pitch"] - pitch) <= 0.002
-    )
+    """Whether the manifest's camera is the one the build's render plan states:
+    its `pos`, Minecraft `yaw`/`pitch` and `fov`, each written to 3 decimals."""
+    try:
+        dyaw = (drawn["yaw"] - planned["yaw"] + 180.0) % 360.0 - 180.0
+        return (
+            all(abs(drawn["pos"][i] - planned["pos"][i]) <= 0.002 for i in range(3))
+            and abs(dyaw) <= 0.002
+            and abs(drawn["pitch"] - planned["pitch"]) <= 0.002
+            and abs(drawn["fov"] - planned["fov"]) <= 0.002
+        )
+    except (KeyError, TypeError, IndexError):
+        return False
 
 
 def main() -> int:
@@ -238,8 +230,8 @@ def main() -> int:
         else:
             findings.append(
                 f"{v['id']}: the frame was drawn at a camera the build did not plan "
-                f"(build {cam and cam.get('pos')} → {cam and cam.get('look_at')}; "
-                f"frame {doc.get('camera', {}).get('pos')} yaw "
+                f"(build {cam and cam.get('pos')} yaw {cam and cam.get('yaw')} pitch "
+                f"{cam and cam.get('pitch')}; frame {doc.get('camera', {}).get('pos')} yaw "
                 f"{doc.get('camera', {}).get('yaw')} pitch "
                 f"{doc.get('camera', {}).get('pitch')})"
             )
