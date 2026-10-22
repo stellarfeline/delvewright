@@ -471,6 +471,8 @@ the class is HERE and nothing this build carries would catch the defect again.
 | `UNBOUND` | the check matched zero objects, and objects that could have carried the defect are there — or nobody has measured whether they are | rule 1's coverage ledger, nineteen rounds |
 | `NO-SOURCE` | the campaign has no stage JSON, so nothing can be measured | a campaign directory holding design records and no stage documents |
 
+One more red is not a way a green lied but what a demo level owes: `DEMO-UNQUEUED`. A campaign whose `world.json` declares `demo_level: true` carries no design record, and the declaration excuses the design-record rows only when the build's `manifest.json` carries the same declaration and a row of `docs/demo-levels.md` names the campaign's directory, `campaigns/<id>`, in its Status cell; otherwise it is one more red row, counted by `--acknowledge-red` and admitted by `--stage-anyway` like any other.
+
 **The refusal is on presence, not on absence.** `INAPPLICABLE` — zero binding
 **and** a MEASURED zero precondition, so the campaign declares none of the
 objects the class needs — is counted, never refused. The island has no trap, so
@@ -561,11 +563,11 @@ so a site-plan campaign whose only geometry is the derived massing (spec-0049)
 is never handed to one. The gate refuses such a subject before any row is
 adjudicated, with or without `--strict`, and `--stage-anyway` does not reach
 the refusal, because the override admits a red list and this is not one. The
-subject is a blockout when EITHER instrument says so — the campaign places by
+subject is a blockout when ANY of three instruments says so — the campaign places by
 site plan (`site-plan.json`; DW0839 makes the placement authorities exclusive)
-with no `detail-plan.json`, or the build's **compiler-written manifest** lists
-the site plan among its inputs and no detail plan — so a build compiled before
-the campaign was detailed is refused too.
+with no `detail-plan.json`; the build's **compiler-written manifest** lists
+the site plan among its inputs and no detail plan, so a build compiled before
+the campaign was detailed is refused too; or the build's own `validation/blockout.json` counts a place still standing in its stand-in, names one, or is missing or unreadable on a site-plan build.
 
 One consequence, stated because it is measured rather than hidden: an
 unemitted validation artifact whose row declares an `applies_when` that
