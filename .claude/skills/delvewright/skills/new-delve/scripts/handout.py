@@ -470,7 +470,7 @@ def render(
         w("## The plan views that see this place")
         w("")
         for v in a["views"]:
-            w(f"- `{v['id']}`: {v.get('note', '')} — `{v['snapshot']}`")
+            w(f"- `{v['id']}`: {v.get('note', '')} — `{v['frame']}`")
         w("")
     if refusal is not None:
         w("## The refusal this attempt repairs")
