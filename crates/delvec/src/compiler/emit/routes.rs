@@ -765,14 +765,6 @@ pub(super) fn prove_world(
                         world.lethal_cells(),
                         lethal_seats,
                         crate::compiler::nav::critical_leg_count(plan),
-                        // One template per resolved volume, and a `_shut` one
-                        // more per staged volume (see `emit_lethal_packtests`).
-                        plan.lethal_volumes.len()
-                            + plan
-                                .lethal_volumes
-                                .iter()
-                                .filter(|v| v.staged.is_some())
-                                .count(),
                         danger,
                     ));
                     if let Some(g) = lethal_gate.as_mut() {

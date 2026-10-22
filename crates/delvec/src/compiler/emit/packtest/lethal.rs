@@ -1,5 +1,28 @@
 use super::*;
 
+/// The kill template's stem suffix: `lethal_<id>`.
+const KILL: &str = "";
+/// The wording guard's: `lethal_<id>_claim`.
+const CLAIM: &str = "_claim";
+/// A staged volume's shut half: `lethal_<id>_shut`.
+const SHUT: &str = "_shut";
+
+fn template_path(ns: &str, safe: &str, suffix: &str) -> String {
+    format!("packtest-datapack/data/{ns}/test/lethal_{safe}{suffix}.mcfunction")
+}
+
+/// How many lethal-volume PackTest templates the build really wrote, counted
+/// from the emission: every template path any volume can get, kept when `out`
+/// holds it. What `validation/lethal-gate.json` reports as `packtest_templates`.
+pub(in crate::compiler::emit) fn emitted_lethal_templates(plan: &Plan, out: &BuildOutput) -> usize {
+    let ns = &plan.namespace;
+    plan.lethal_volumes
+        .iter()
+        .flat_map(|v| [KILL, CLAIM, SHUT].map(|s| template_path(ns, &v.safe, s)))
+        .filter(|p| out.contains_key(p))
+        .count()
+}
+
 pub(super) fn emit_lethal_packtests(plan: &Plan, out: &mut BuildOutput) {
     let ns = &plan.namespace;
     let title = artifact_title(plan.campaign);
@@ -81,21 +104,9 @@ pub(super) fn emit_lethal_packtests(plan: &Plan, out: &mut BuildOutput) {
             sh.push("assert score #hp_lshut dw.sys matches 20".to_string());
             sh.push(format!("kill @e[tag={stag}]"));
             sh.extend(lethal_gate_reset(gate));
-            out.insert(
-                format!(
-                    "packtest-datapack/data/{ns}/test/lethal_{}_shut.mcfunction",
-                    v.safe
-                ),
-                lines(&sh).into_bytes(),
-            );
+            out.insert(template_path(ns, &v.safe, SHUT), lines(&sh).into_bytes());
         }
-        out.insert(
-            format!(
-                "packtest-datapack/data/{ns}/test/lethal_{}.mcfunction",
-                v.safe
-            ),
-            lines(&t).into_bytes(),
-        );
+        out.insert(template_path(ns, &v.safe, KILL), lines(&t).into_bytes());
 
         // --- the wording guard, on a real player object ---
         //
@@ -146,12 +157,6 @@ pub(super) fn emit_lethal_packtests(plan: &Plan, out: &mut BuildOutput) {
         // that examines the wrong object and reports green.
         p.push(format!("function {ns}:lethal_{}", v.safe));
         p.push(format!("assert score {LETHAL_HP} matches 1.."));
-        out.insert(
-            format!(
-                "packtest-datapack/data/{ns}/test/lethal_{}_claim.mcfunction",
-                v.safe
-            ),
-            lines(&p).into_bytes(),
-        );
+        out.insert(template_path(ns, &v.safe, CLAIM), lines(&p).into_bytes());
     }
 }

@@ -223,7 +223,9 @@ fn the_exported_schema_promises_nothing_the_validators_refuse() {
     );
 
     let base = defs_of(Stage::World, "HorizonBase");
-    let text = base["description"].as_str().expect("HorizonBase is described");
+    let text = base["description"]
+        .as_str()
+        .expect("HorizonBase is described");
     assert!(
         text.contains("refused") && text.contains("DW1031") && !text.contains("shorthand"),
         "{text}"

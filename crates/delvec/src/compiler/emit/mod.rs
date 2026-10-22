@@ -1595,6 +1595,10 @@ pub fn build_with_warnings(
         put_json(&mut out, "validation/teleport-gate.json", &gate.to_json());
     }
     if let Some(gate) = &lethal_gate {
+        // Counted from the emission, like the teleport ledger above: every
+        // template a volume got (kill, wording guard, a staged volume's shut half).
+        let mut gate = gate.clone();
+        gate.packtests = packtest::emitted_lethal_templates(plan, &out);
         put_json(&mut out, "validation/lethal-gate.json", &gate.to_json());
     }
     if let Some(gate) = &loop_gate {

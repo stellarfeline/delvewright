@@ -224,8 +224,8 @@ needs such a lane is a room that needs another way.
 Binding (playtest-methodology rule 1): a campaign with a volume emits
 `validation/lethal-gate.json` — volumes declared vs. resolved, world cells closed,
 posted places examined (`respawn_seats_examined`, which counts both families),
-critical-path legs routed, PackTest templates (`packtest_templates`: one per volume, and a
-`lethal_<id>_shut` one more per staged volume; each volume's `lethal_<id>_claim` template is not counted), `staged[]` (spec-0088: per staged
+critical-path legs routed, PackTest templates (`packtest_templates`, counted from the emission: per volume
+`lethal_<id>` and `lethal_<id>_claim`, and `lethal_<id>_shut` for a staged one), `staged[]` (spec-0088: per staged
 volume its gate terms and how many configurations judged / may hold it live /
 hold it live / exist), and `danger_visibility`: the walked population, one row
 per (volume, configuration) with its caught and shown cells, and how many

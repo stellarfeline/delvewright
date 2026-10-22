@@ -3203,7 +3203,8 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   actually made impassable), `respawn_seats_examined` (every posted place tested
   against `DW0511` — respawn seats and posted bodies alike),
   `critical_path_legs_examined` (legs routed with lethality applied) and
-  `packtest_templates` (the runtime half, one per volume; a compile-time-only
+  `packtest_templates` (the runtime half, counted from the emission: per volume
+  `lethal_<id>` and `lethal_<id>_claim`, and `lethal_<id>_shut` for a staged one; a compile-time-only
   green over a runtime mechanism is exactly the vacuity this number exposes).
   `blind_reach` is `DW0943`'s (spec-0085 §6.3): `grants_examined`, `caught`, and
   per blinding grant its `path`, `effect`, `seconds`, `standing` (`|S|`),
