@@ -1642,7 +1642,7 @@ pub fn build_with_warnings(
     }
     // spec-0080 §5.3: which biome each carried place stands in at the first
     // tick, as the biome map states it, so a reader that draws a scene inside
-    // a place (`delvec view palette --build … --place …`) tints it under that
+    // a place (`delvec palette --build … --place …`) tints it under that
     // place's own biome rather than a guess. Emitted only when a place carries
     // an atmosphere.
     {

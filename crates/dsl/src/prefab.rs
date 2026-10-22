@@ -80,7 +80,7 @@ use crate::split::TileSet;
 /// the pool declaration (`{"pools": {...}}`), read by the compiler's registry.
 ///
 /// Named once because more than one tool walks the library directory — the
-/// registry, `delvec view`'s page builder, `delvec render batch` — and each of
+/// registry, `delvec viewer`'s page builder, `delvec render batch` — and each of
 /// them opens every `.json` it finds. A walker that does not know this name
 /// hands a pool file to [`PrefabMeta::from_json`] and reports it as a malformed
 /// prefab, which is a true statement about the bytes and a wrong one about the

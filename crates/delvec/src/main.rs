@@ -288,7 +288,7 @@ enum Command {
     /// The render arms (ADR-0021 §1): `frames`, `cameras`, `place-camera`,
     /// `panorama`, `viewer`, `contact-sheet` and `palette`. Flattened in rather
     /// than nested under a group, because these are ordinary subcommands of the
-    /// one binary — `delvec frames …`, not `delvec render frames …`. The
+    /// one binary — `delvec frames …`, with no `render` group above it. The
     /// prefab-piece arms are `delvec render …` below.
     #[command(flatten)]
     View(delvec::compiler::view::cli::ViewCommand),
