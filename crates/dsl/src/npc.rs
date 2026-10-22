@@ -54,7 +54,7 @@ pub struct Npc {
     /// `despawn-npc`: a character with a scripted entrance must not stand at its
     /// mark as a statue from minute one. A deferred NPC that no `spawn-npc` ever
     /// spawns is unreachable content (`DW0197`). Default `false` = summoned at
-    /// init, byte-identical to pre-0.6.
+    /// init.
     #[serde(default, skip_serializing_if = "is_false")]
     pub deferred: bool,
     /// What this body can do when it moves (DSL v0.11, spec-0034). Absent = the

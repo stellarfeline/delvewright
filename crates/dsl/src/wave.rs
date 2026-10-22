@@ -39,12 +39,11 @@ pub struct Wave {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lane: Option<WaveLane>,
     /// Where the wave's mobs materialize (spec-0016 §6). Absent =
-    /// [`WaveSummon::Anchor`], the pre-0.6 behaviour: standable cells around the
-    /// wave `anchor`.
+    /// [`WaveSummon::Anchor`]: standable cells around the wave `anchor`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summon: Option<WaveSummon>,
     /// How hard this encounter is *meant* to be (DSL v0.7, spec-0023). Absent =
-    /// [`EncounterTier::Ordinary`], byte-identical to every pre-0.7 campaign.
+    /// [`EncounterTier::Ordinary`].
     ///
     /// This is a **declaration, not a knob**: the compiler never scales content
     /// from it (spec-0023 "Out of scope"). It exists because the validation
@@ -119,8 +118,8 @@ impl EncounterTier {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum WaveSummon {
-    /// Standable cells around the wave `anchor`, nearest first — the pre-0.6
-    /// behaviour and the default.
+    /// Standable cells around the wave `anchor`, nearest first — the
+    /// default.
     Anchor,
     /// **Spirit-summoned at the edge of perception**:
     /// each mob appears on the ring at its own `attributes.follow_range` from

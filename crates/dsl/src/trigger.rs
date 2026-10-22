@@ -61,7 +61,7 @@ pub struct EnvTrigger {
     /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison must
     /// hold for this gate to be open. The third field of the one gate, carried by
     /// every gate consumer — never by the verb that first wanted it. Default
-    /// empty, so a pre-0.10 campaign is byte-identical.
+    /// empty: no numeric term.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requires_state: Vec<StateCompare>,
     /// Fire at most once (default `true`, mirroring objective completion). Set
@@ -131,7 +131,7 @@ impl EnvTrigger {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum TriggerAudience {
-    /// The whole party (the default, and what every trigger did before v0.11).
+    /// The whole party (the default).
     #[default]
     Party,
     /// The one player whose press fired it: the right-click of a `use`, the
@@ -140,8 +140,8 @@ pub enum TriggerAudience {
 }
 
 impl TriggerAudience {
-    /// Serde skip predicate: the default needs no field on the wire, so a
-    /// canonical round-trip of a pre-0.11 campaign is byte-identical.
+    /// Serde skip predicate: the default needs no field on the wire, so the
+    /// canonical form of a trigger that states the default carries none.
     fn is_party(&self) -> bool {
         *self == TriggerAudience::Party
     }

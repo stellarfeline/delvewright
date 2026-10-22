@@ -130,12 +130,11 @@ pub struct WorldContent {
     /// player-visible sentence of the delve (DSL v0.6). Player-visible, so it is
     /// l10n-inventoried as `world.outro` and sidecars translate it. Absent = the
     /// finale quest's `goal`, which is already both campaign-derived and
-    /// inventoried; the description was previously the hardcoded English
-    /// "You left the keep." on *every* delve, whatever its theme or language.
+    /// inventoried.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outro: Option<String>,
     /// The party size this delve **requires** (DSL v0.6, spec-0018). Absent = 1: a
-    /// party of one is always legal and every pre-0.6 campaign keeps that reading.
+    /// party of one is always legal.
     /// A design whose beats genuinely need `n` players — two rooms whose switches
     /// are two arms of one AND-join — declares `min_players: n` (max 4), and the
     /// lobby then refuses to start below it: the class-selection dialog stays shut
@@ -680,12 +679,12 @@ pub enum Horizon {
 
 /// What surrounds the map.
 ///
-/// **One enumeration of bases, reachable two ways.** The shorthand
-/// `horizon: "ocean"` and the object form `horizon: {base: "ocean"}` name this
-/// same variant, which is what stops a base from existing in one spelling and
-/// not the other. A separate list of "names" beside this one would be two
-/// enumerations of the same thing, and the second base added would land in
-/// whichever of them its author was looking at.
+/// **One enumeration of bases.** The authorable form is the object
+/// `horizon: {base: "ocean", …}`. A bare string `horizon: "ocean"` parses to the
+/// same variant only so that it is refused by name (`DW1031`: the string form
+/// has no room for the ground's music); it does not build. A separate list of
+/// "names" beside this one would be two enumerations of the same thing, and the
+/// second base added would land in whichever of them its author was looking at.
 ///
 /// What is deliberately NOT here is a name that stands for a base plus a set of
 /// params. Such a name reads as a thing, and the whole claim of this design is
@@ -984,9 +983,8 @@ fn default_min_light() -> u8 {
 /// what satisfies the `DW0210` darkness gate — one declaration, one mechanism, no
 /// gap between the check and the feature.
 ///
-/// It replaces the pre-0.6 heuristic that read a class kit item's display *name*
-/// for `night vision`: that accepted a renamed water bottle, so the gate passed
-/// while nothing in the world granted night vision (owner, island QA).
+/// A class kit item's display *name* never satisfies the gate: a name grants
+/// nothing, so only a declared mitigation the build emits does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum AreaMitigation {

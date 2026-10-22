@@ -60,7 +60,7 @@ pub enum Objective {
         /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
         /// must hold for this gate to be open. The third field of the one gate,
         /// carried by every gate consumer — never by the verb that first wanted
-        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        /// it. Default empty: no numeric term.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_state: Vec<StateCompare>,
         /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
@@ -114,7 +114,7 @@ pub enum Objective {
         /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
         /// must hold for this gate to be open. The third field of the one gate,
         /// carried by every gate consumer — never by the verb that first wanted
-        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        /// it. Default empty: no numeric term.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_state: Vec<StateCompare>,
         /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
@@ -171,7 +171,7 @@ pub enum Objective {
         /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
         /// must hold for this gate to be open. The third field of the one gate,
         /// carried by every gate consumer — never by the verb that first wanted
-        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        /// it. Default empty: no numeric term.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_state: Vec<StateCompare>,
         /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
@@ -323,7 +323,7 @@ pub enum Objective {
         /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
         /// must hold for this gate to be open. The third field of the one gate,
         /// carried by every gate consumer — never by the verb that first wanted
-        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        /// it. Default empty: no numeric term.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_state: Vec<StateCompare>,
         /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
@@ -420,7 +420,7 @@ pub enum Objective {
         /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison
         /// must hold for this gate to be open. The third field of the one gate,
         /// carried by every gate consumer — never by the verb that first wanted
-        /// it. Default empty, so a pre-0.10 campaign is byte-identical.
+        /// it. Default empty: no numeric term.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requires_state: Vec<StateCompare>,
         /// Bot stealth hint (DSL v0.4): mark this leg as one the critical-path
