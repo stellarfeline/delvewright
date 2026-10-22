@@ -346,8 +346,9 @@ pub(super) fn emit_server(plan: &Plan, out: &mut BuildOutput) {
     // Horizon (DSL v0.6, spec-0013). `void` (default/absent) is the empty-layer
     // superflat over the delve's own void biome. `ocean` swaps in a
     // pinned bedrock/stone/water superflat: from the -64 build floor, 1+118+8
-    // layers top the water at y=62 (= sea level); areas are placed on that datum
-    // (`plan::OCEAN_BASE_Y` = 60) so island pieces read as land ringed by the sea. No structures (generate-structures=false) or mobs (gamerule
+    // layers top the water at y=62 (`plan::SEA_LEVEL`); an area's walk plane
+    // stands at `horizon::OCEAN_WALK_REF_Y`, one above the sea, so island pieces
+    // read as land ringed by the sea. No structures (generate-structures=false) or mobs (gamerule
     // spawn_mobs false); the sea is pure backdrop. The string is a fixed literal,
     // so both horizons stay deterministic (ADR-0006).
     let ocean = delvewright_dsl::horizon_base(&plan.campaign.world.content.horizon)

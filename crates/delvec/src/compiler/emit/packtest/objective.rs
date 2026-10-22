@@ -232,16 +232,13 @@ fn activation_fixture(cmds: &[String]) -> Option<ActivationFixture> {
     let summons = cmds.iter().filter(|c| c.starts_with("summon ")).count();
     if summons > 0 {
         // Every entity `activation_commands` summons carries the objective's own
-        // tag (`dw_i_<obj>` / `dw_r_<obj>`), which is what `completion_cleanup`
+        // tag (`dw_i_<obj>`), which is what `completion_cleanup`
         // kills them by. Read it off the first summon rather than recomputing it
         // from the objective kind.
         let tag = cmds
             .iter()
             .find(|c| c.starts_with("summon "))
-            .and_then(|c| {
-                c.split('"')
-                    .find(|s| s.starts_with("dw_i_") || s.starts_with("dw_r_"))
-            })?
+            .and_then(|c| c.split('"').find(|s| s.starts_with("dw_i_")))?
             .to_string();
         return Some(ActivationFixture::Entities {
             tag,

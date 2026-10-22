@@ -84,8 +84,8 @@ pub struct WorldContent {
     /// The scenic horizon: the ground and the sky the map stands in
     /// (spec-0026). `void` is the void world. `ocean` swaps the world
     /// generator for a deterministic superflat sea (bedrock/stone/water, sea
-    /// level y=62) and drops the area datum to y=60 so island pieces meet the
-    /// sea at their authored waterline. `valley` rings the map in a generated
+    /// level y=62) and seats each area so its walk plane stands one block above
+    /// the sea, the beach a body climbs out onto. `valley` rings the map in a generated
     /// mountain annulus — the one base that builds terrain rather than picking
     /// a generator. **Required, in the object form** `{base, …params,
     /// attributes}` (spec-0109 §3.2): the ground is a biome a camera can stand

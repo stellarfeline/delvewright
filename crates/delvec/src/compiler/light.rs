@@ -410,9 +410,9 @@ fn lit(name: &str, default_lit: &str, bright: u8) -> u8 {
 /// collision cube. Every empty-collision and thin block is in the second group;
 /// verified against the pinned `minecraft-data` block table
 /// (`harness/node_modules/minecraft-data/.../pc/1.21.9/blocks.json`, the newest
-/// vendored dump; block light opacity is unchanged across 1.21.x) for all 16
-/// `*_pressure_plate`, `tripwire`, `tripwire_hook`, all 20 carpets, `snow` (the
-/// layer block) and all 12 `*_fence_gate`, against `filterLight = 15` for the
+/// vendored dump; block light opacity is unchanged across 1.21.x) for every
+/// `*_pressure_plate`, `tripwire`, `tripwire_hook`, every carpet, `snow` (the
+/// layer block) and every `*_fence_gate`, against `filterLight = 15` for the
 /// control set `stone` / `dirt` / `oak_planks` / `cobblestone` / `deepslate` /
 /// `sand` / `gravel` / `obsidian` / `snow_block`.
 ///
@@ -3276,8 +3276,8 @@ mod tests {
     ///
     /// Evidence: `filterLight` in the pinned `minecraft-data` 1.21.9 block dump
     /// (`harness/node_modules/minecraft-data/.../pc/1.21.9/blocks.json`) — 0 for
-    /// all 16 pressure plates, `tripwire`, `tripwire_hook`, all 20 carpets, `snow`
-    /// (the layer block) and all 12 fence gates; 15 for the control cubes below.
+    /// every pressure plate, `tripwire`, `tripwire_hook`, every carpet, `snow`
+    /// (the layer block) and every fence gate; 15 for the control cubes below.
     #[test]
     fn passes_light_matches_vanilla_filter_light() {
         // Trap triggers — the reported false-dark class (DW0342 needs these cells
@@ -3322,8 +3322,8 @@ mod tests {
         ] {
             assert!(passes_light(id), "{id} is filterLight=0 in vanilla");
         }
-        // Fence gates — open = a passable threshold, closed = passable-with-use.
-        // Previously only `oak_fence_gate` passed light; every wood does now.
+        // Fence gates — open = a passable threshold, closed = passable-with-use;
+        // every wood passes light.
         for id in [
             "minecraft:oak_fence_gate",
             "minecraft:spruce_fence_gate[open=true]",
