@@ -325,8 +325,16 @@ fn every_v04_verb_emitted() {
     );
 
     // generated driver functions (move / cutscene / triggers).
+    // The walk runs from `obj/slay` (gated on `flag/summoned`): its driver
+    // carries that branch's key after the content key.
+    assert_eq!(
+        out.keys()
+            .filter(|p| p.starts_with("datapack/data/v04-showcase/function/mv_keeper_objective_b"))
+            .count(),
+        1,
+        "missing generated fn mv_keeper_objective_b<key>"
+    );
     for name in [
-        "mv_keeper_objective",
         "cs_objective_2_2",
         "cs_tick_objective_2_2",
         "cs_end_objective_2_2",

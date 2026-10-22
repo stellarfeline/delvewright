@@ -1092,10 +1092,14 @@ fn v04_showcase_double_build_is_byte_identical() {
         assert_eq!(bytes, &b[path], "showcase byte mismatch in {path}");
     }
     // The A*-planned walked path shipped a multi-waypoint per-tick driver.
-    let tick = String::from_utf8(
-        a["datapack/data/v04-showcase/function/mv_tick_keeper_objective.mcfunction"].clone(),
-    )
-    .unwrap();
+    // The walk runs from `obj/slay`, gated on `flag/summoned`, so its driver
+    // carries that branch's key: the one driver to `anchor/objective`.
+    let drivers: Vec<&String> = a
+        .keys()
+        .filter(|p| p.starts_with("datapack/data/v04-showcase/function/mv_tick_keeper_objective"))
+        .collect();
+    assert_eq!(drivers.len(), 1, "one walk driver: {drivers:?}");
+    let tick = String::from_utf8(a[drivers[0]].clone()).unwrap();
     let tps = tick.matches("run tp @e[tag=dw_npc_keeper]").count();
     assert!(
         tps > 20,
@@ -1139,10 +1143,19 @@ fn walked_move_npc_tps_carry_the_segment_bearing() {
         "showcase build: {}",
         String::from_utf8_lossy(&r.stderr)
     );
-    let tick = std::fs::read_to_string(
-        out.join("datapack/data/v04-showcase/function/mv_tick_keeper_objective.mcfunction"),
-    )
-    .unwrap();
+    // One driver to `anchor/objective`, named with its objective's branch key.
+    let fn_dir = out.join("datapack/data/v04-showcase/function");
+    let drivers: Vec<std::path::PathBuf> = std::fs::read_dir(&fn_dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("mv_tick_keeper_objective"))
+        })
+        .collect();
+    assert_eq!(drivers.len(), 1, "one walk driver: {drivers:?}");
+    let tick = std::fs::read_to_string(&drivers[0]).unwrap();
 
     // (x, y, z, yaw, pitch) per tp line, in tick order.
     let mut wp: Vec<(f64, f64, f64, i32, i32)> = Vec::new();

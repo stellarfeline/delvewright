@@ -683,7 +683,11 @@ pub(super) fn emit_quest_effect(
         Verb::MoveNpc { npc, to, .. } => {
             body.push(format!(
                 "function {ns}:{}",
-                movenpc_fn(npc.as_str(), to, &crate::compiler::nav::gate_key(eff),)
+                movenpc_fn(
+                    npc.as_str(),
+                    to,
+                    &crate::compiler::nav::gate_key(plan.campaign, eff),
+                )
             ));
         }
         Verb::Cutscene { .. } => {
@@ -828,7 +832,11 @@ pub(super) fn emit_quest_effect(
         Verb::MoveActor { actor, to, .. } => {
             body.push(format!(
                 "function {ns}:{}",
-                moveactor_fn(actor.as_str(), to, &crate::compiler::nav::gate_key(eff),)
+                moveactor_fn(
+                    actor.as_str(),
+                    to,
+                    &crate::compiler::nav::gate_key(plan.campaign, eff),
+                )
             ));
         }
         Verb::UnleashActor { actor, .. } => {
