@@ -18,7 +18,7 @@
 //! carries a site plan, and pushes the result as an ordinary
 //! [`AreaPlacement`](crate::compiler::plan::AreaPlacement). **That is the tooth.** There is
 //! no flag, no subcommand and no second entry point: a `Plan` is the only thing
-//! `build`, `analyze`, `snapshot`, `viewer`, `blocking-chart` and `edit` can
+//! `build`, `analyze`, `frames --campaign`, `viewer`, `blocking-chart` and `edit` can
 //! reach a world through, and a `Plan` built from a site-plan campaign has the
 //! blockout in it. Someone who "forgot" to derive would have to have built a
 //! `Plan` some other way, and there is no other way.

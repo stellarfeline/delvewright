@@ -1028,10 +1028,16 @@ fn the_render_arms_survey_a_piece_before_they_resolve_textures() {
         vec!["batch", dir.to_str().unwrap()],
     ] {
         let arm = args[0].to_string();
-        // **Every fallback closed**: `resolve_textures` tries `--textures`, then
-        // `$DELVEWRIGHT_CLIENT_JAR`, then `$HOME/.chunky/resources/minecraft.jar`,
-        // so all three point at the same absent path and the run cannot render
-        // on any machine.
+        // **Every fallback closed, or this test only discriminates on a machine
+        // with no client jar.** `resolve_textures` tries `--textures`, then
+        // `$DELVEWRIGHT_CLIENT_JAR`, then Init I5's `$HOME/.delvewright/client/` jar
+        // — so on a developer's own machine it succeeds whatever `--textures`
+        // says, the run reaches the gate either way, and the assertion below
+        // passes for both orderings. Measured: with the gate deliberately moved
+        // behind `resolve_textures`, this test stayed green here and would have
+        // reddened only in CI. Pointing all three at the same absent path makes
+        // the ordering the only thing that decides the exit code, on every
+        // machine.
         let r = Command::new(BIN)
             .arg("render")
             .arg("--textures")

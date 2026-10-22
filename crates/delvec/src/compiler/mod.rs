@@ -52,7 +52,7 @@
 //! - [`failure`]: the one type a compiler pass fails with — a DW code and the message that goes with it.
 //! - [`firework`]: `DW0899` — a rocket bursts in open air, clear of every posted body (spec-0068).
 //! - [`flow`]: the branch-coherent flag/quest flow model and the critical-path extraction (`DW0204`).
-//! - [`framing`]: a shot frames its subject — the one sight rule, the per-tick shot proof (`DW1033`, `DW1034`) and every assembly's derived `view_range` (spec-0110).
+//! - [`framing`]: what a frame frames — the camera, the occupancy grid a sight line is asked of, the one sight rule, the targets a review names and the frame manifest; and a shot frames its subject — the per-tick shot proof (`DW1033`, `DW1034`) and every assembly's derived `view_range` (spec-0110).
 //! - [`gates`]: `close-gate` gate-block validation — the physical dual of `open-gate`.
 //! - [`gatesignal`]: no redstone signal opens a shut gate — a source powering a shut seam's trapdoor is refused (`DW1047`).
 //! - [`guarantee`]: which anchors an area's binding guarantees, answered before anything is placed (`DW0889`).
@@ -76,6 +76,7 @@
 //! - [`nav`]: compile-time navigation over the solved voxel grid.
 //! - [`observer`]: a watching player is out of play everywhere — the positional-selector census a respawn wait owes (`DW0926`).
 //! - [`onkill`]: whether a fight comes back, and the `on_kill.fires` judgement it owes (`DW0914`/`DW0915`).
+//! - [`placed`]: the placements ledger — every block, container item and body the datapack places outside the templates, and every removal, one record each, the command written from the record (spec-0112 §4).
 //! - [`plan`]: resolve a validated campaign into the placement + naming model emission reads.
 //! - [`png`]: the deterministic hand-rolled PNG writer.
 //! - [`pool`]: a pool draw that seats the same anchored prefab twice (`DW0498`).
@@ -83,7 +84,7 @@
 //! - [`pressable`]: what a player's click reaches at an anchor — the one authority every `strike`/`use` trigger dispatches from.
 //! - [`promise`]: an objective keeps the promise its prompt makes (`DW0860`–`DW0863`).
 //! - [`pulse`]: a sound that beats over a place — its derived range and listening stations (`DW0994`, `DW0995`).
-//! - [`raster`]: the shared RGBA canvas and bitmap-text primitives both renderers draw on.
+//! - [`raster`]: the shared RGBA canvas and bitmap-text primitives the blocking chart, the contact sheet and a labelled frame draw on.
 //! - [`reach`]: what completes a `reach` — the one authority for the volume a body has to be in.
 //! - [`registry`]: the full pinned-MC item registry and the prefab/anchor metadata.
 //! - [`rehearsal`]: the compile-time inventory of every rehearsable cutscene beat and every shot inside it.
@@ -95,7 +96,6 @@
 //! - [`seeding`]: no emitted comparison reads a score entry the emitted pack never creates (`DW0495`).
 //! - [`served`]: what the declared view distance costs the host — the pinned server's chunk set, the fitted live heap, the ceiling stated in `server/resources.properties` (spec-0091).
 //! - [`skinparts`]: the model-part table every skin and entity texture is drawn to, and the one rule that refuses paint no box samples (`DW0978`) or nobody standing level sees (`DW0979`) — spec-0097.
-//! - [`snapshot`]: `delvec snapshot` — the voxel raycaster and scene manifest an authoring agent looks at its own build through.
 //! - [`solo`]: a generated PackTest whose drive takes every player's body runs alone, in its own test environment.
 //! - [`solver`]: the jigsaw layout solver.
 //! - [`stairs`]: the stair-orientation proof over the assembled world (`DW0430`).
@@ -188,6 +188,7 @@ pub mod nav;
 pub(crate) mod nbtread;
 pub mod observer;
 pub mod onkill;
+pub mod placed;
 pub mod plan;
 pub mod png;
 pub mod pool;
@@ -207,7 +208,6 @@ pub mod seating;
 pub mod seeding;
 pub mod served;
 pub mod skinparts;
-pub mod snapshot;
 pub mod solo;
 pub mod solver;
 pub mod stairs;

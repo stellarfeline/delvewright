@@ -10,7 +10,7 @@
 //!   are hashed into a shipped resource pack; keeping it uncompressed keeps that
 //!   hash a pure function of this repo's source.
 //! - [`encode_rgba`] — real DEFLATE via `flate2` at a **pinned** compression
-//!   level. Used by the visual-authoring-loop renders ([`crate::compiler::snapshot`]),
+//!   level. Used by the review frames ([`crate::compiler::view::frameset`]),
 //!   which are review artifacts measured in megapixels: a 960×540 frame is ~2 MB
 //!   stored and ~100 KB deflated. `flate2`'s miniz_oxide backend is a pure-Rust
 //!   deterministic compressor (the same property the pinned-mtime gzip emission

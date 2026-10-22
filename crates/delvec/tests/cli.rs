@@ -862,6 +862,14 @@ fn lang_build_localizes_only_strings_and_is_deterministic() {
                 // tier verifies the localized in-game name tag, so it localizes
                 // with the build (unlike the bot-facing critical-path.json).
                 || p.as_str() == "render-plan.json"
+                // The placements ledger is the placing lines of the functions,
+                // each summon's compound (a body's `CustomName`) included, and
+                // the review worlds hold those bodies: both localize with the
+                // functions they are read off; the review record names each
+                // world by its sha256.
+                || p.as_str() == "validation/placed.json"
+                || p.starts_with("validation/worlds/")
+                || p.as_str() == "validation/review-frames.json"
                 || p.as_str() == "manifest.json",
             "unexpected non-string file differs between en and zh-cn: {p}"
         );
@@ -1549,8 +1557,8 @@ fn v06_ocean_boundary_builds_byte_identical_and_wires_return() {
     );
 
     // The render layer must be TOLD the horizon, never guess it from blocks:
-    // an ocean-horizon delve's frames need Chunky's ambient water plane, and its
-    // height is the compiler's sea-level datum.
+    // an ocean-horizon delve's written worlds carry the generator's sea up to
+    // the compiler's sea-level datum.
     let rp: serde_json::Value = serde_json::from_slice(&a["render-plan.json"]).unwrap();
     assert_eq!(rp["horizon"]["kind"], "ocean", "render plan horizon: {rp}");
     assert_eq!(rp["horizon"]["sea_level"], 62);

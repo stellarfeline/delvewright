@@ -89,11 +89,6 @@ fn copy_dir(src: &Path, dst: &Path) {
 /// `tools/ci/check-json-canonical.py` is its sibling and takes its population the
 /// same way.
 ///
-/// `crates/delvec/tests/golden/` is excluded for the reason
-/// `view::scene::golden_scene_matches` gives: those bytes are pinned to emitter
-/// output, and `every_golden_is_emitter_output` closes the directory so nothing
-/// authored can hide there.
-///
 /// Fails loudly if git cannot answer. A fallback to a hand-written list here
 /// would reintroduce exactly the defect above, at the moment nobody is looking.
 fn all_authored_files() -> Vec<PathBuf> {
@@ -118,7 +113,7 @@ fn all_authored_files() -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = String::from_utf8(out.stdout)
         .unwrap()
         .split('\0')
-        .filter(|p| !p.is_empty() && !p.starts_with("crates/delvec/tests/golden/"))
+        .filter(|p| !p.is_empty())
         .map(|p| root.join(p))
         .collect();
     files.sort();

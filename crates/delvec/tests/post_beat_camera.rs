@@ -574,6 +574,10 @@ fn cameras(build: &Path, camp: &Path, out: &Path, extra: &[&str]) -> (i32, Strin
         camp.to_str().unwrap(),
         "-o",
         out.to_str().unwrap(),
+        // Every frame here is drawn on the CPU backend, whose bytes are a
+        // function of the inputs alone.
+        "--backend",
+        "cpu",
     ];
     args.extend_from_slice(extra);
     run(&args)
@@ -631,22 +635,11 @@ fn cameras_print_where_every_camera_stands() {
         "{log}"
     );
     assert!(log.contains("world: after-obj-talk "), "{log}");
-    let door = json(&scenes.join("hello-world_camera_door.json"));
-    assert!(
-        door["world"]["path"]
-            .as_str()
-            .unwrap()
-            .ends_with("worlds/after-obj-talk"),
-        "{door}"
-    );
-    let hero = json(&scenes.join("hello-world_camera_hero.json"));
-    assert!(
-        hero["world"]["path"]
-            .as_str()
-            .unwrap()
-            .ends_with("worlds/at-load"),
-        "{hero}"
-    );
+    let door = json(&scenes.join("hello-world_camera_door.manifest.json"));
+    assert_eq!(door["world"]["key"], "after-obj-talk", "{door}");
+    assert_eq!(door["world"]["path"], "worlds/after-obj-talk", "{door}");
+    let hero = json(&scenes.join("hello-world_camera_hero.manifest.json"));
+    assert_eq!(hero["world"]["key"], "at-load", "{hero}");
     // The six cells are the door's, read back from the two written worlds.
     let load = read_back(&scenes.join("worlds/at-load"));
     let after = read_back(&scenes.join("worlds/after-obj-talk"));
@@ -660,20 +653,11 @@ fn cameras_print_where_every_camera_stands() {
     assert_eq!(moved.len(), 6, "{moved:?}");
 }
 
-/// **Criterion 7 — byte identity across the pin.** Two runs over one record,
-/// plan and prefabs write byte-identical scenes and worlds; and a camera with
-/// no `after` writes the scene the engine wrote before this change for the same
-/// record, but for `world.path` (`tests/fixtures/post-beat-camera/
-/// base-scene-hero.json`, emitted by the engine at the merge base, its path
-/// masked) and for the keys the clear cell and the post-process own — `sky`,
-/// `fog`, the sun's `intensity`, `color` and `drawTexture`, `postprocess`, its
-/// `postprocessSettings`, the `emitterIntensity` the lantern scale owns and the
-/// sky map's `delvewrightSky` marker
-/// (`compiler.md` §4), which the fixture predates. **A loosening of what this
-/// criterion asserts**: those keys are compared here to nothing; the clear
-/// cell's own tests and the view goldens hold them.
+/// **Criterion 7 — byte identity.** Two runs over one record, plan and
+/// prefabs draw byte-identical frames and manifests and write byte-identical
+/// worlds.
 #[test]
-fn a_scene_is_the_scene_it_was_but_for_its_world() {
+fn a_camera_frame_is_the_same_bytes_twice() {
     let camp = hello("c7", &[("hero", None)]);
     let out = built("c7", &camp);
     let mut runs = Vec::new();
@@ -681,50 +665,14 @@ fn a_scene_is_the_scene_it_was_but_for_its_world() {
         let scenes = tmp(&format!("c7-{r}"));
         let (code, log) = cameras(&out, &camp, &scenes, &[]);
         assert_eq!(code, 0, "{log}");
-        let mut scene = json(&scenes.join("hello-world_camera_hero.json"));
-        assert!(
-            scene["world"]["path"]
-                .as_str()
-                .unwrap()
-                .ends_with(&format!("post-beat-c7-{r}/worlds/at-load"))
-        );
-        scene["world"]["path"] = serde_json::json!("<masked>");
         runs.push((
-            scene,
+            std::fs::read(scenes.join("hello-world_camera_hero.png")).unwrap(),
+            std::fs::read(scenes.join("hello-world_camera_hero.manifest.json")).unwrap(),
             std::fs::read(scenes.join("worlds/at-load/level.dat")).unwrap(),
             std::fs::read(scenes.join("worlds/at-load/region/r.0.0.mca")).unwrap(),
         ));
     }
     assert_eq!(runs[0], runs[1], "two runs, one set of bytes");
-    let mut base = json(
-        &common::repo_root()
-            .join("crates/delvec/tests/fixtures/post-beat-camera/base-scene-hero.json"),
-    );
-    base["world"]["path"] = serde_json::json!("<masked>");
-    let unsky = |v: &mut serde_json::Value| {
-        let o = v.as_object_mut().unwrap();
-        for k in [
-            "sky",
-            "fog",
-            "postprocess",
-            "postprocessSettings",
-            "emitterIntensity",
-            "delvewrightSky",
-        ] {
-            o.remove(k);
-        }
-        let sun = o["sun"].as_object_mut().unwrap();
-        for k in ["intensity", "color", "drawTexture"] {
-            sun.remove(k);
-        }
-    };
-    let mut scene = runs[0].0.clone();
-    unsky(&mut scene);
-    unsky(&mut base);
-    assert_eq!(
-        scene, base,
-        "the scene moved by more than its world and its sky"
-    );
 }
 
 /// **Criterion 1 — the surface.** `delvec schema cameras` exports `after`;
@@ -804,8 +752,7 @@ fn the_record_carries_after_through_every_writer() {
 
 /// **Criterion 10 — the plan states each shot's configuration.** Every POV
 /// shot carries `after: {step, cells_moved}`; the legs walked once the door is
-/// open stand in its configuration; `delvec scene` prints the limit with the
-/// two counts the plan states.
+/// open stand in its configuration, and the build wrote that world.
 #[test]
 fn the_plan_states_where_every_review_frame_stands() {
     let camp = hello("c10", &[("hero", None)]);
@@ -840,22 +787,19 @@ fn the_plan_states_where_every_review_frame_stands() {
         }
     }
     assert!(moved > 0 && moved < pov.len(), "{moved} of {}", pov.len());
-    let world = out.join("world");
-    std::fs::create_dir_all(world.join("region")).unwrap();
-    std::fs::write(world.join("level.dat"), b"stub").unwrap();
-    std::fs::write(world.join("region/r.0.0.mca"), b"stub").unwrap();
-    let (code, log) = run(&[
-        "scene",
-        out.to_str().unwrap(),
-        "-o",
-        tmp("c10-scenes").to_str().unwrap(),
-    ]);
-    assert_eq!(code, 0, "{log}");
-    let want = format!(
-        "review frames render the world at load; {moved} of {} POV shots stand in a configuration other than load",
-        pov.len()
-    );
-    assert!(log.contains(&want), "`{want}` in:\n{log}");
+    // A shot that stands after a step that moved cells stands in that step's
+    // world; a shot at load stands in the load world.
+    for s in &pov {
+        let at_load = s["after"]["cells_moved"] == 0;
+        assert_eq!(s["world"] == "at-load", at_load, "{s}");
+        assert!(
+            out.join("validation/worlds")
+                .join(s["world"].as_str().unwrap())
+                .join("level.dat")
+                .is_file(),
+            "the build wrote the world the shot names: {s}"
+        );
+    }
 }
 
 /// `delvec written-world <campaign> -o <dir>`: the load world, no camera record.
@@ -1052,6 +996,114 @@ fn cells_written_below_sea(back: &BTreeMap<String, String>, cells: &[([i32; 3], 
 /// moved in a copy of the written world reds it, a gravel column the server
 /// settled lands in the gravity class and does not. The written world is
 /// `delvec written-world`'s, on a campaign with no camera record.
+/// Copy `from`'s bodies (`entities/r.*.mca`) into `into`: a "server" world a
+/// cell perturbation writes holds the same bodies the written world does, so
+/// the placed-object comparison judges nothing but what the case perturbs.
+fn bodies_of(from: &Path, into: &Path) {
+    let src = from.join("entities");
+    let dst = into.join("entities");
+    std::fs::create_dir_all(&dst).unwrap();
+    for e in std::fs::read_dir(&src).unwrap() {
+        let p = e.unwrap().path();
+        std::fs::copy(&p, dst.join(p.file_name().unwrap())).unwrap();
+    }
+}
+
+/// **`DW1040` — the placed-object cross-check** (spec-0112 §8.2): the written
+/// load world against a copy whose keeper carries another tag reds under the
+/// engine's own code, naming the body; a copy whose keeper carries a key the
+/// server writes for itself (`Motion`) is the bookkeeping class, not red.
+#[test]
+fn the_written_world_cross_check_reds_on_a_body_the_server_does_not_hold() {
+    use delvec::compiler::view::world::{EntityRecord, Nbt, WorldInput};
+    let camp = tmp("dw1040-camp");
+    common::copy_dir_all(&common::hello_world_dir(), &camp);
+    let out = built("dw1040", &camp);
+    let written = tmp("dw1040-written");
+    let (code, log) = written_world(&camp, &written);
+    assert_eq!(code, 0, "{log}");
+    let gate = common::repo_root().join("tools/ci/check-written-world.py");
+    let check = |server: &Path| {
+        let o = Command::new("python3")
+            .arg(&gate)
+            .arg(&out)
+            .arg(&written)
+            .arg(server)
+            .output()
+            .unwrap();
+        (
+            o.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&o.stdout).to_string(),
+        )
+    };
+    let (code, said) = check(&written);
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("objects binding: "), "{said}");
+    // The keeper as the build summons it, re-written into a copy with one
+    // field moved: its tag, then its UUID.
+    let blocks: BlockMap = read_back(&written)
+        .into_iter()
+        .map(|(k, v)| {
+            let c: Vec<i32> = k.split(',').map(|n| n.parse().unwrap()).collect();
+            (
+                [c[0], c[1], c[2]],
+                delvec::compiler::blockstate::BlockState::new(&v),
+            )
+        })
+        .collect();
+    let ledger: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(out.join("validation/placed.json")).unwrap())
+            .unwrap();
+    let rows = delvec::compiler::placed::Ledger::from_json(&ledger);
+    let bodies: Vec<EntityRecord> = rows
+        .rows
+        .iter()
+        .filter(|r| r.fired == delvec::compiler::placed::Firing::Setup)
+        .filter_map(|r| r.entity_record())
+        .collect();
+    assert!(!bodies.is_empty(), "the hello world summons a keeper");
+    let write_with = |dir: &Path, bodies: &[EntityRecord]| {
+        let none = BTreeMap::new();
+        world::write_world(
+            &WorldInput {
+                blocks: &blocks,
+                biome: &|_| "minecraft:plains".into(),
+                spawn: [5, 65, 2],
+                ground: &world::Ground::void(),
+                extent: None,
+                block_entities: &none,
+                entities: bodies,
+                day_time: None,
+            },
+            dir,
+        )
+        .unwrap();
+    };
+    let mut retagged = bodies.clone();
+    retagged[0].tags = vec!["dw_npc".into(), "dw_npc_stranger".into()];
+    retagged[0].nbt.set("Tags", Nbt::List(Vec::new()));
+    let moved = tmp("dw1040-retagged");
+    write_with(&moved, &retagged);
+    let (code, said) = check(&moved);
+    assert_eq!(code, 1, "{said}");
+    assert!(
+        said.contains(world::DW_WRITTEN_OBJECTS.id()) && said.contains("DW1040"),
+        "{said}"
+    );
+    assert!(said.contains("written, not in the server save"), "{said}");
+    // A key the server writes for itself (`Motion`): bookkeeping, not a finding.
+    let mut reuuid = bodies.clone();
+    reuuid[0].nbt.set(
+        "Motion",
+        Nbt::List(vec![Nbt::Double(0.0), Nbt::Double(-0.08), Nbt::Double(0.0)]),
+    );
+    let other = tmp("dw1040-uuid");
+    write_with(&other, &reuuid);
+    let (code, said) = check(&other);
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("bookkeeping: "), "{said}");
+}
+
 #[test]
 fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
     let camp = tmp("dw0955-camp");
@@ -1104,6 +1156,7 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
         &moved,
     )
     .unwrap();
+    bodies_of(&written, &moved);
     let (code, said) = check(&moved);
     assert_eq!(code, 1, "{said}");
     assert!(
@@ -1130,6 +1183,7 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
         &settled,
     )
     .unwrap();
+    bodies_of(&written, &settled);
     let (code, said) = check(&settled);
     assert_eq!(code, 0, "{said}");
     assert!(said.contains("gravity: 1 differing cell(s)"), "{said}");
@@ -1225,6 +1279,7 @@ fn the_written_world_cross_check_reds_on_a_cell_the_server_does_not_hold() {
         &voided,
     )
     .unwrap();
+    bodies_of(&written, &voided);
     let record = tmp("dw0955-record").join("written-world.json");
     let o = Command::new("python3")
         .arg(&gate)
@@ -1366,7 +1421,7 @@ fn a_filled_brewing_stand_is_written_with_its_bottles() {
         q["content"]["loot"] = serde_json::json!([{
             "id": "loot/two-bottles", "anchor": "anchor/filled-stand",
             "items": [
-                {"item": "minecraft:glass_bottle", "count": 1},
+                {"item": "minecraft:glass_bottle", "count": 1, "slot": "container.0"},
                 {"item": "minecraft:potion", "count": 1, "slot": "container.2"}
             ]
         }]);
@@ -1398,7 +1453,7 @@ fn a_filled_brewing_stand_is_written_with_its_bottles() {
     assert_eq!(
         at("1"),
         Some("minecraft:brewing_stand[has_bottle_0=true,has_bottle_1=false,has_bottle_2=true]"),
-        "the filled stand shows the two bottles its loot lands in slot 0 and the named slot 2"
+        "the filled stand shows the two bottles its loot lands in the named slots 0 and 2"
     );
     assert_eq!(
         at("9"),

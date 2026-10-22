@@ -3,6 +3,121 @@
   "note": "The view set the gallery declares. Committed so that a shot VANISHING is a red naming it rather than a shorter directory listing. Cameras are not committed: they are derived from the campaign and belong to the build, and duplicating them here would be a second authority on where a camera stands.",
   "views": [
     {
+      "area": "",
+      "id": "cutscene/obj-clear-the-muster/0/shot0/t0",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-clear-the-muster/0/shot0/t71",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-clear-the-muster/1/shot0/t0",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-clear-the-muster/1/shot0/t51",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-clear-the-muster/1/shot1/t0",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-clear-the-muster/1/shot2/t0",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-clear-the-muster/1/shot3/t0",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-clear-the-muster/1/shot4/t0",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-clear-the-muster/1/shot4/t31",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-clear-the-muster/1/shot5/t0",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-clear-the-muster/1/shot5/t36",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-clear-the-muster/1/shot6/t0",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-clear-the-muster/1/shot6/t31",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-clear-the-muster/1/shot7/t0",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-clear-the-muster/1/shot7/t31",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-clear-the-muster/1/shot8/t0",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-clear-the-muster/1/shot8/t31",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-reach-the-end/0/shot0/t0",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-reach-the-end/0/shot0/t31",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-take-the-emeralds/0/shot0/t0",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/obj-take-the-emeralds/0/shot0/t111",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/trigger-ferry-tiller/0/shot0/t0",
+      "kind": "cutscene"
+    },
+    {
+      "area": "",
+      "id": "cutscene/trigger-ferry-tiller/0/shot0/t11",
+      "kind": "cutscene"
+    },
+    {
       "area": "area/hall",
       "id": "gate/hall/gate_main/a",
       "kind": "gate"

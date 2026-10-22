@@ -42,6 +42,29 @@ pub(crate) fn anchor_offset_point(plan: &Plan, anchor: &str, offset: [i32; 3]) -
     ]
 }
 
+/// One cutscene shot as its frames are drawn (spec-0112 §7.2): the firing step,
+/// the cutscene's index among that step's, the shot's index, its length, and
+/// the keyframe poses at the ticks a frame is drawn at — tick 0, and the last
+/// keyframe's tick for a shot whose camera or aim moves.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CutsceneShotFrames {
+    pub step: usize,
+    pub n: usize,
+    pub shot: usize,
+    pub seconds: f64,
+    pub keyframes: Vec<crate::compiler::camera::Frame>,
+}
+
+/// What [`check_cutscenes`] judged: how many shots, the frames of every shot a
+/// critical step fires, and the cutscenes no critical step fires, by where they
+/// are declared.
+#[derive(Debug, Clone, Default)]
+pub struct CutsceneProof {
+    pub judged: usize,
+    pub frames: Vec<CutsceneShotFrames>,
+    pub unfired: Vec<String>,
+}
+
 /// Validate every cutscene camera dolly (per shot: a multi-shot cutscene
 /// hard-cuts between shots, so only the within-shot dolly is a corridor the
 /// camera actually flies):
@@ -59,32 +82,91 @@ pub(crate) fn anchor_offset_point(plan: &Plan, anchor: &str, offset: [i32; 3]) -
 ///   provably nauseating shot — an error, not a warning: the fix (more camera
 ///   distance, a longer shot, or a hard cut between two shots) is always
 ///   available, and a red check is information (CLAUDE.md debug doctrine).
+///
+/// Each shot is judged in the configuration the step that fires it arrives
+/// under (spec-0112 §7.4), and every shot a critical step fires is returned
+/// with its keyframes for the review frames.
 pub fn check_cutscenes(
     plan: &Plan,
     world: &World,
     moves: &[MovePlan],
     actor_moves: &[ActorMovePlan],
-) -> Result<usize, Failure> {
-    let mut judged = 0usize;
+    frame_worlds: &crate::compiler::view::review::FrameWorlds,
+) -> Result<CutsceneProof, Failure> {
+    let mut proof = CutsceneProof::default();
+    let fired = crate::compiler::camera::critical_cutscenes(plan);
+    let mut sites: Vec<(*const delvewright_dsl::QuestEffect, String)> = Vec::new();
+    delvewright_dsl::for_each_campaign_effect(plan.campaign, &mut |path, _site, e| {
+        sites.push((e as *const _, path.to_string()));
+    });
     for (eff, ctx) in crate::compiler::camera::cutscene_units(plan.campaign) {
         let Some(shots) = eff.cutscene_shots() else {
             continue;
         };
+        // spec-0112 §7.4: a cutscene a critical step fires is flown through
+        // the configuration that step's completion arrives under; one no
+        // critical step fires through the base world, and is named.
+        let firing = fired.iter().find(|f| std::ptr::eq(f.effect, eff));
+        let owned;
+        let (world, key): (&World, String) = match firing {
+            Some(f) => {
+                let arrival = (f.step + 1).min(frame_worlds.arrivals.len() - 1);
+                let key = frame_worlds.at(arrival).key.clone();
+                match frame_worlds.arrivals[arrival].world(world) {
+                    Some(w) => {
+                        owned = w;
+                        (&owned, key)
+                    }
+                    None => (world, key),
+                }
+            }
+            None => {
+                proof.unfired.push(
+                    sites
+                        .iter()
+                        .find(|(p, _)| std::ptr::eq(*p, eff))
+                        .map_or_else(|| "a cutscene".to_string(), |(_, path)| path.clone()),
+                );
+                (world, "the base world".to_string())
+            }
+        };
+        let in_world = match firing {
+            Some(_) => {
+                format!(" in world `{key}`, the configuration its firing step arrives under")
+            }
+            None => String::new(),
+        };
         let mut offset: i32 = 0;
         for (si, shot) in shots.iter().enumerate() {
-            judged += 1;
+            proof.judged += 1;
             let ex =
                 crate::compiler::camera::expand_shot(plan, moves, actor_moves, shot, &ctx, offset);
             offset += ex.ticks + 1;
             let pts = ex.clip_polyline();
-            if let Some((seg, cell)) = first_clip(world, pts) {
+            if let [p] = pts
+                && let Some((_, cell)) = first_clip(world, pts)
+            {
+                return Err(Failure {
+                    code: DW_CUTSCENE_CLIP,
+                    message: format!(
+                        "cutscene: shot {si} is a still camera at {:?}, which stands inside a \
+                         solid block at {cell:?}{in_world} — the frame would render the inside of \
+                         the block; move the shot's `bearing`/`dist` (or its waypoint \
+                         `anchor`/`offset`) so the camera stands in open air",
+                        round3(*p),
+                    ),
+                });
+            }
+            if pts.len() > 1
+                && let Some((seg, cell)) = first_clip(world, pts)
+            {
                 return Err(Failure {
                     code: DW_CUTSCENE_CLIP,
                     message: format!(
                         "cutscene: shot {si} camera dolly segment {seg} (from {:?} to {:?}) clips \
-                         a solid block at {cell:?} — cameras must fly through open air; move the \
-                         segment's waypoint `anchor`/`offset` (or the shot's `bearing`/`dist` for \
-                         a styled shot) so the whole path clears solid blocks",
+                         a solid block at {cell:?}{in_world} — cameras must fly through open air; \
+                         move the segment's waypoint `anchor`/`offset` (or the shot's \
+                         `bearing`/`dist` for a styled shot) so the whole path clears solid blocks",
                         round3(pts[seg]),
                         round3(pts[seg + 1]),
                     ),
@@ -92,18 +174,35 @@ pub fn check_cutscenes(
             }
             let frames = ex.frames();
             let chord: Vec<[f64; 3]> = frames.frames.iter().map(|f| f.pos).collect();
-            if let Some((seg, cell)) = first_clip(world, &chord) {
+            if chord.len() > 1
+                && let Some((seg, cell)) = first_clip(world, &chord)
+            {
                 return Err(Failure {
                     code: DW_CUTSCENE_CLIP,
                     message: format!(
                         "cutscene: shot {si} client-rendered dolly chord {seg} (keyframe {:?} to \
-                         {:?}) clips a solid block at {cell:?} — the client tweens straight \
-                         between keyframes, cutting inside the authored waypoint corner; move the \
-                         nearby waypoint `anchor`/`offset` a block outward so the smoothed path \
-                         also clears",
+                         {:?}) clips a solid block at {cell:?}{in_world} — the client tweens \
+                         straight between keyframes, cutting inside the authored waypoint corner; \
+                         move the nearby waypoint `anchor`/`offset` a block outward so the \
+                         smoothed path also clears",
                         round3(chord[seg]),
                         round3(chord[seg + 1]),
                     ),
+                });
+            }
+            if let Some(f) = firing {
+                let mut keyframes = vec![frames.frames[0].clone()];
+                if frames.frames.len() > 1
+                    && let Some(last) = frames.frames.last()
+                {
+                    keyframes.push(last.clone());
+                }
+                proof.frames.push(CutsceneShotFrames {
+                    step: f.step,
+                    n: f.n,
+                    shot: si,
+                    seconds: f64::from(ex.ticks) / 20.0,
+                    keyframes,
                 });
             }
             // spec-0091 (`DW0956`): what the shot looks at is served to the
@@ -162,7 +261,7 @@ pub fn check_cutscenes(
             }
         }
     }
-    Ok(judged)
+    Ok(proof)
 }
 
 /// The first `(segment index, block cell)` where a camera dolly polyline passes
@@ -181,6 +280,16 @@ pub fn check_cutscenes(
 /// (a segment passing exactly through a cell corner) resolve on the fixed axis
 /// order x, y, z.
 fn first_clip(world: &World, pts: &[[f64; 3]]) -> Option<(usize, [i32; 3])> {
+    // A still camera is one point and no segment: the cell it stands in is
+    // the whole of its path.
+    if let [p] = pts {
+        let cell = [
+            p[0].floor() as i32,
+            p[1].floor() as i32,
+            p[2].floor() as i32,
+        ];
+        return world.blocks_camera(cell).then_some((0, cell));
+    }
     for (seg, w) in pts.windows(2).enumerate() {
         if let Some(cell) = walk_cells(w[0], w[1], |c| world.blocks_camera(c)) {
             return Some((seg, cell));
@@ -243,5 +352,17 @@ mod tests {
         // A parallel path that never enters the cell stays clean.
         let clear = [[0.9, 0.5, 0.9], [0.9, 0.5, 2.5]];
         assert_eq!(first_clip(&world, &clear), None);
+    }
+
+    #[test]
+    fn a_still_camera_inside_a_block_clips() {
+        // A still shot is one point and no segment; the cell it stands in is
+        // judged, so a camera parked inside a block is caught.
+        let world = World::from_solid_cells([[1, 0, 1]].into_iter().collect());
+        assert_eq!(
+            first_clip(&world, &[[1.5, 0.5, 1.5]]).map(|(_, c)| c),
+            Some([1, 0, 1])
+        );
+        assert_eq!(first_clip(&world, &[[2.5, 0.5, 1.5]]), None);
     }
 }

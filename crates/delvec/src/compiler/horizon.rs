@@ -20,7 +20,7 @@
 //!
 //! That difference is the whole design. A surround that entered as a new
 //! `Ambient` variant would owe a new branch to gravity settling, the occupancy
-//! model, relight, boundary safety, the fluid model and the snapshot renderer,
+//! model, relight, boundary safety, the fluid model and the world writer,
 //! and each of those branches would be a second model of the same ground that
 //! could disagree with the first. A surround that enters as **placed blocks**
 //! owes none of them: every proof already knows how to read a placed block.

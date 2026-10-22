@@ -137,7 +137,7 @@ fn sight_points_stay_inside_a_one_cell_box_and_are_distinct() {
 // --- criterion 8: sent ------------------------------------------------------
 
 fn display() -> EntityBody {
-    body_of("minecraft:item_display").expect("pinned table")
+    entity_body("minecraft:item_display").expect("pinned table")
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn an_assembly_root_161_blocks_off_is_not_sent_and_at_159_it_is() {
 
 #[test]
 fn a_mannequin_100_blocks_off_is_sent_and_refused_as_not_drawn() {
-    let m = body_of("minecraft:mannequin").expect("pinned table");
+    let m = entity_body("minecraft:mannequin").expect("pinned table");
     assert_eq!(m.tracking_blocks().min(320.0), 320.0, "512 capped at 320");
     let msg = sent_and_drawn(
         0,
@@ -173,4 +173,151 @@ fn a_mannequin_100_blocks_off_is_sent_and_refused_as_not_drawn() {
     .expect_err("beyond the cull radius");
     assert!(msg.contains("cull radius of 64"), "{msg}");
     assert!(!msg.contains("tracking range"), "{msg}");
+}
+
+// --- one "in sight" rule, held by agreement ------------------------------
+//
+// Whether an eye sees a box past the cells that stop a line is
+// `framing::in_sight` (CLAUDE.md, *one question, one implementation*), and
+// every consumer of that question gives its answer: a cutscene shot's sight
+// (`shot::sight`, `DW1033`), an act's sight from where the party stands
+// (`promise::act_unfound`, `DW0863`), and a review frame's manifest
+// (`framing::resolve_targets`, over a grid of the same cells). The same
+// generated cases are asked of each, red on any difference.
+
+/// A deterministic generator (ADR-0006): a 64-bit LCG, seeded.
+struct Lcg(u64);
+
+impl Lcg {
+    fn next(&mut self) -> u64 {
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        self.0 >> 33
+    }
+    fn below(&mut self, n: u64) -> i32 {
+        (self.next() % n) as i32
+    }
+}
+
+#[test]
+fn every_consumer_of_in_sight_answers_alike() {
+    let mut rng = Lcg(0x5167_4a6e);
+    let cases = 2000;
+    let (mut seen, mut hidden, mut framed) = (0usize, 0usize, 0usize);
+    let mut differ = Vec::new();
+    for case in 0..cases {
+        // A 12 × 6 × 12 room with a floor at y = 0, some of it filled.
+        let mut solid = BTreeSet::new();
+        for x in 0..12 {
+            for z in 0..12 {
+                solid.insert([x, 0, z]);
+            }
+        }
+        let density = 4 + rng.below(20) as u64;
+        for x in 0..12 {
+            for y in 1..6 {
+                for z in 0..12 {
+                    if (rng.next() % 100) < density {
+                        solid.insert([x, y, z]);
+                    }
+                }
+            }
+        }
+        let from = [rng.below(12), 1, rng.below(12)];
+        solid.remove(&from);
+        solid.remove(&[from[0], 2, from[2]]);
+        let target = [rng.below(12), 1 + rng.below(3), rng.below(12)];
+        let body = rng.below(2) == 1;
+        if target == from {
+            continue;
+        }
+        let world = World::from_solid_cells(solid.clone());
+        let blocks = |c: [i32; 3]| world.blocks_camera(c);
+        let eye = [from[0] as f64 + 0.5, 1.0 + 1.62, from[2] as f64 + 0.5];
+        let sight_box = if body {
+            CellBox::spanning(target, [target[0], target[1] + 1, target[2]])
+        } else {
+            CellBox::cell(target)
+        };
+        let rule = in_sight(eye, &sight_box, &blocks).seen();
+        let camera = !sight(
+            &Pose {
+                pos: eye,
+                yaw: 0.0,
+                pitch: 0.0,
+            },
+            70.0,
+            854.0 / 480.0,
+            sight_box.centre(),
+            &sight_box,
+            &blocks,
+        )
+        .occluded();
+        let act = !crate::compiler::promise::act_unfound(&world, from, target, body, None)
+            .iter()
+            .any(|why| why.contains("hidden"));
+        // A review frame over a grid of the same cells, aimed at the box: the
+        // manifest's `occluded` ([`super::super::resolve_targets`]).
+        let grid = super::super::VoxelGrid::build(
+            &solid
+                .iter()
+                .map(|c| {
+                    (
+                        *c,
+                        crate::compiler::blockstate::BlockState::new("minecraft:stone"),
+                    )
+                })
+                .collect(),
+        );
+        let t = [super::super::Target {
+            id: "t".into(),
+            kind: "anchor",
+            area: String::new(),
+            min: sight_box.min,
+            max: sight_box.max,
+        }];
+        let cam = super::super::Camera::looking_at(eye, sight_box.centre(), 70.0);
+        let (inside, _) = super::super::resolve_targets(&grid, &cam, 128, 128, &t);
+        let manifest = inside.first().map(|r| !r.occluded());
+        if rule {
+            seen += 1;
+        } else {
+            hidden += 1;
+        }
+        if camera != rule {
+            differ.push(format!(
+                "case {case}: shot::sight says {camera}, the rule {rule}"
+            ));
+        }
+        if act != rule {
+            differ.push(format!("case {case}: DW0863 says {act}, the rule {rule}"));
+        }
+        if let Some(m) = manifest {
+            framed += 1;
+            if m != rule {
+                differ.push(format!(
+                    "case {case}: the review frame's manifest says {m}, the rule {rule}"
+                ));
+            }
+        }
+    }
+    println!(
+        "in-sight agreement: {} case(s), {seen} seen and {hidden} hidden; 3 consumer(s): \
+         framing::shot::sight and promise::act_unfound asked every case, the review frame's \
+         manifest (framing::resolve_targets) {framed}",
+        seen + hidden
+    );
+    assert!(seen > 0 && hidden > 0, "the cases exercise both answers");
+    assert!(
+        framed * 2 > seen + hidden,
+        "the review frame is asked most cases, not a handful: {framed}"
+    );
+    assert!(
+        differ.is_empty(),
+        "{} difference(s):\n{}",
+        differ.len(),
+        differ.join("\n")
+    );
 }

@@ -866,16 +866,22 @@ fn edit_apply_rejects_a_red_candidate_without_persisting() {
     );
 }
 
-/// `delvec snapshot` shows the EDITED world (view mode): the corner terrace
-/// raised by the fixture's morph batch is present in the assembled snapshot
-/// state — the loop's read half sees what the write half did.
+/// `delvec frames --campaign` shows the EDITED world (view mode): the corner
+/// terrace raised by the fixture's morph batch is present in the assembled
+/// state the frame is drawn from — the loop's read half sees what the write
+/// half did.
 #[test]
-fn snapshot_renders_the_edited_world() {
+fn a_campaign_frame_draws_the_edited_world() {
     let dir = edits_fixture_dir();
-    let png = tmp("edits-snap").with_extension("png");
+    let png = tmp("edits-snap").join("frame.png");
     let r = delvec(&[
-        "snapshot",
+        "frames",
+        "--campaign",
         dir.to_str().unwrap(),
+        "--size",
+        "48",
+        "--backend",
+        "cpu",
         "--camera",
         // Straight down over the raised outer corner (world [1..2, 65, 1..2]).
         "1.5,72,1.5,0,90",
@@ -886,7 +892,7 @@ fn snapshot_renders_the_edited_world() {
     ]);
     assert!(
         r.status.success(),
-        "snapshot failed:\n{}{}",
+        "frames failed:\n{}{}",
         String::from_utf8_lossy(&r.stdout),
         String::from_utf8_lossy(&r.stderr)
     );
@@ -1413,7 +1419,7 @@ fn edit_inside_a_close_gate_region_warns_dw0353() {
 
 /// **Finding 5b, now refused (`DW1002`).** `scatter` dropping flowers onto
 /// bare stone: the server pops every one of them off at the first shape
-/// update, so the dressing the author sees in `delvec snapshot` never reaches
+/// update, so the dressing the author sees in `delvec frames --campaign` never reaches
 /// players. It was an advisory (`DW0354`) the build shipped past; the build
 /// that would ship them is now refused, naming each flower's cell and the soil
 /// it lacks.

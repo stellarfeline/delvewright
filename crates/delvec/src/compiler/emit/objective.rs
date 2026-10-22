@@ -44,6 +44,38 @@ pub(super) fn activation_commands(
     area: &str,
     o: &Objective,
 ) -> Vec<String> {
+    activation_lines(plan, holders, area, o)
+        .into_iter()
+        .map(|l| match activation_row(&l) {
+            Some(r) => r.command(),
+            None => {
+                assert!(
+                    l.starts_with("item replace entity ") || l.starts_with("data merge entity "),
+                    "an activation places blocks, items and bodies, or fills a holder: {l}"
+                );
+                l
+            }
+        })
+        .collect()
+}
+
+/// The ledger row one activation line states (spec-0112 §4): a block, a
+/// container item or a body, fired at setup here (the ledger re-reads the
+/// function at its own firing). `None` for a line that places nothing the
+/// ledger records — a holder entity's `item replace entity` fill and a
+/// frame's unfreezing (spec-0111 §3.4) — which is written as it was made.
+fn activation_row(line: &str) -> Option<crate::compiler::placed::Placed> {
+    let f = crate::compiler::placed::Firing::Setup;
+    crate::compiler::placed::Placed::of_summon(f.clone(), line)
+        .or_else(|| crate::compiler::placed::Placed::of_block_line(f, line))
+}
+
+fn activation_lines(
+    plan: &Plan,
+    holders: &[crate::compiler::holders::OwnedHolder],
+    area: &str,
+    o: &Objective,
+) -> Vec<String> {
     let mut cmds = Vec::new();
     match o {
         Objective::Collect {
@@ -165,6 +197,31 @@ pub(super) fn activation_commands(
 /// (chest block only), `talk-to`, `kill` and `reach-anchor` summon no
 /// per-objective entity, so they contribute nothing.
 pub(super) fn completion_cleanup(o: &Objective) -> Vec<String> {
+    completion_rows(o)
+        .iter()
+        .map(crate::compiler::placed::Placed::command)
+        .collect()
+}
+
+/// The ledger rows of [`completion_cleanup`]: one removal per objective tag.
+pub(super) fn completion_rows(o: &Objective) -> Vec<crate::compiler::placed::Placed> {
+    completion_lines(o)
+        .into_iter()
+        .map(|l| {
+            let tag = l
+                .trim_start_matches("kill @e[tag=")
+                .trim_end_matches(']')
+                .to_string();
+            crate::compiler::placed::Placed::removed(
+                crate::compiler::placed::Firing::Setup,
+                &tag,
+                &l,
+            )
+        })
+        .collect()
+}
+
+fn completion_lines(o: &Objective) -> Vec<String> {
     match o {
         Objective::Interact { id, .. } => {
             vec![format!("kill @e[tag={}]", interact_entity_tag(id.as_str()))]

@@ -323,6 +323,45 @@ impl RegionEvent {
     }
 }
 
+/// **One clock write the campaign can perform** (spec-0112 §7.6): a `set-time`
+/// or `set-weather` effect, the critical-path step it fires at, and whether the
+/// party is forced to cause it — dated by the same [`firing_of`] the region
+/// writes are. A configuration's clock is the latest forced one of each kind
+/// whose step is a causal ancestor of the arrival, else the world's own.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClockEvent {
+    /// The `critical_path` step at which it fires.
+    pub fire_step: usize,
+    /// Whether the party is guaranteed to cause it.
+    pub forced: bool,
+    /// The time the effect sets, for a `set-time`.
+    pub time: Option<delvewright_dsl::WorldTime>,
+    /// The weather it sets, for a `set-weather`.
+    pub weather: Option<delvewright_dsl::WorldWeather>,
+}
+
+/// Every clock write a path's effects perform, in the walk's order
+/// ([`for_each_gate_effect`]). A dialogue's `set-time` is no effect root of the
+/// quest graph and is not dated here: no configuration lays it.
+pub(crate) fn collect_clock_events(campaign: &Campaign, path: &PathFiring) -> Vec<ClockEvent> {
+    let optional = campaign.quest_plan.content.optional();
+    let mut out = Vec::new();
+    for_each_gate_effect(campaign, &mut |site, e| {
+        let (time, weather) = (e.set_time(), e.set_weather());
+        if time.is_none() && weather.is_none() {
+            return;
+        }
+        let (fire_step, forced) = firing_of(site, path, &optional);
+        out.push(ClockEvent {
+            fire_step,
+            forced,
+            time,
+            weather,
+        });
+    });
+    out
+}
+
 /// One `set-flag` the campaign can perform (spec-0088 §4.2): the flag, the
 /// critical-path step it fires at, and whether the party is forced to cause it —
 /// read by [`firing_of`] for an effect, off the path's own `talk-to` choice for

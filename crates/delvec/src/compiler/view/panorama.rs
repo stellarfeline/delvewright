@@ -6,23 +6,21 @@
 //! the framing needs — so the shot is a first-class emission rather than a
 //! hand-edited scene JSON.
 //!
-//! ## Why its own subcommand, not another shot in `scene`
+//! ## Why its own subcommand, not another shot in `frames`
 //!
-//! `scene` emits exactly one Chunky scene per shot in the compiler's plan, and
-//! `index` pairs each of those scenes with the plan's machine `expect` lines for
-//! the vision reviewer. The panorama has no `expect` pair and no plan shot: it is
-//! a release artifact, not a review frame. Folding it into `scene` would break
-//! the shot↔scene correspondence both commands rest on and push a release
-//! decision (bearing, pitch, frame size, sample budget) into the review path.
-//! Those are a creator's choices at render time, which are CLI flags, not
-//! compiled constants.
+//! `delvec frames` draws exactly one frame per shot in the compiler's plan and
+//! pairs each with the plan's machine `expect` lines for the reviewer. The
+//! panorama has no `expect` pair and no plan shot: it is a release artifact,
+//! not a review frame. Its bearing, pitch, frame size and sample budget are a
+//! creator's choices at render time, which are CLI flags, not compiled
+//! constants.
 //!
 //! ## The subject is the placed areas; the horizon is loaded, never framed
 //!
 //! The camera frames the **layout AABB** — the union of the placed areas, which
 //! is what the campaign declares it built — on every horizon. The ground a
-//! `valley` builds around it is loaded (`scene::loaded_extent` feeds the chunk
-//! list and the Y clip) so the place stands in its landform, but that landform is
+//! `valley` builds around it is loaded (`scene::loaded_extent` gives the chunk
+//! rectangle) so the place stands in its landform, but that landform is
 //! not part of the subject. Framing the union instead put a castle a fifth of the
 //! frame wide inside its mountains: on `doune-castle-tour` the valley's box is
 //! 260×300 blocks around a 104×120 layout, and the frame was mostly slopes and
@@ -41,10 +39,8 @@
 //! view. A narrow FOV keeps the perspective close to the oblique "model on a
 //! table" look and away from wide-angle distortion.
 //!
-//! Chunky's `fov` is the **vertical** field of view: the pinned core's
-//! `PathTracingRenderer` maps a pixel to `x ∈ [−w/2h, w/2h]`, `y ∈ [−½, ½]`, and
-//! `PinholeProjector` scales both by `2·tan(fov/2)` (read from the pinned core's
-//! bytecode). So the horizontal half-extent is `aspect · tan(fov/2)`.
+//! The renderer's `fov` is the **vertical** field of view, so the horizontal
+//! half-extent is `aspect · tan(fov/2)`.
 //!
 //! How much of the frame the subject covers is measured from the emitted camera
 //! and returned ([`SubjectSpan`]); a corner bearing puts any subject's box over
@@ -53,19 +49,16 @@
 //!
 //! ## What is behind the subject
 //!
-//! Every ray that leaves the loaded world samples the sky. The simulated sky of
-//! the pinned core (`PreethamSky.calcIncidentLight`) clamps a downward ray's
-//! elevation to the horizon, so below the horizon it returns one bright,
-//! desaturated haze colour. At any pitch steeper than half the vertical FOV no
-//! ray in the frame points above the horizon at all: the flat grey around a
-//! whole-map frame was never sky, it was the void outside the loaded chunks.
-//! Framing the subject is what keeps it out of the picture; nothing here paints
-//! it.
+//! Every ray that leaves the loaded world samples the sky. At any pitch
+//! steeper than half the vertical FOV no ray in the frame points above the
+//! horizon at all, so what surrounds the place is the void outside the loaded
+//! chunks. Framing the subject is what keeps it out of the picture; nothing
+//! here paints it.
 //!
 //! ## The sky is the campaign's, and the bearing is the creator's choice
 //!
-//! The sky is `scene::sky_of` of the plan's declared hour and weather — the same
-//! one every review scene gets (spec-0079 §5): it answers no `design.json` row,
+//! The sky is the plan's declared hour and weather (spec-0079 §5): it answers
+//! no `design.json` row,
 //! so it is the delve at its declared sky, under its rain or thunder when it
 //! declares one. So the bearing is purely a choice of which side is in shot,
 //! and choosing it is the creator's job: at a given hour the sun stands east or
@@ -191,8 +184,8 @@ impl Bearing {
     }
 }
 
-/// A solved camera, in the render-plan convention (`yaw = atan2(-dz,dx)`,
-/// positive `pitch` looks down).
+/// A solved camera, in Minecraft's convention (yaw 0 south, 90 west; positive
+/// `pitch` looks down).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PanoramaCamera {
     pub pos: [f64; 3],
@@ -374,9 +367,9 @@ pub fn frame(
 
     let camera = PanoramaCamera {
         pos: [round6(pos[0]), round6(pos[1]), round6(pos[2])],
-        // Re-derived from the view vector in the render-plan convention rather
+        // Re-derived from the view vector in Minecraft's convention rather
         // than restated, so the two can never drift.
-        yaw_deg: round6((-f[2]).atan2(f[0]).to_degrees()),
+        yaw_deg: round6((-f[0]).atan2(f[2]).to_degrees()),
         pitch_deg: round6(
             (-f[1])
                 .atan2((f[0] * f[0] + f[2] * f[2]).sqrt())
@@ -393,13 +386,9 @@ pub fn frame(
     (camera, span)
 }
 
-/// Options for panorama emission.
+/// Options for a panorama.
 #[derive(Debug, Clone)]
 pub struct PanoramaOptions {
-    /// Path Chunky should load the delve world from. Chunky resolves it against
-    /// the rendering process's working directory, so the CLI hands an absolute
-    /// path it has checked holds a world save.
-    pub world_path: String,
     pub width: u32,
     pub height: u32,
     /// Path-tracing sample target ([`DEFAULT_SPP`] for release art).
@@ -509,7 +498,6 @@ pub fn subject_box(
 impl Default for PanoramaOptions {
     fn default() -> Self {
         PanoramaOptions {
-            world_path: "world".to_string(),
             width: DEFAULT_WIDTH,
             height: DEFAULT_HEIGHT,
             spp_target: DEFAULT_SPP,
@@ -521,12 +509,17 @@ impl Default for PanoramaOptions {
     }
 }
 
-/// One emitted panorama scene.
+/// One solved panorama.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Panorama {
-    /// `<stem>.json`; the stem is also the Chunky scene `name`.
-    pub file_name: String,
-    pub bytes: Vec<u8>,
+    /// The frame's file stem: `<campaign>_panorama_<bearing>_<pitch>…`.
+    pub stem: String,
+    /// The frame drawn.
+    pub frame: Frame,
+    /// The plan's declared sky.
+    pub sky: scene::SceneSky,
+    /// The chunk rectangle loaded: the layout and the ground its horizon built.
+    pub chunks: ([i32; 2], [i32; 2]),
     /// The subject box the camera was solved for.
     pub subject: ([i32; 3], [i32; 3]),
     /// How much of the frame that box occupies from the emitted camera.
@@ -537,9 +530,9 @@ pub struct Panorama {
     pub record: camera::Camera,
 }
 
-/// Emit the panorama scene for a `render-plan.json`. `anchors` is the build's
+/// Solve the panorama of a `render-plan.json`. `anchors` is the build's
 /// resolved anchors ([`resolved_anchors`]), read only by an anchor subject.
-/// Byte-deterministic like [`crate::compiler::view::scene`].
+/// Deterministic (ADR-0006).
 pub fn panorama_from_plan(
     plan_json: &[u8],
     anchors: &[(String, [i32; 3])],
@@ -579,7 +572,7 @@ pub fn panorama_from_plan(
         ));
     }
     // The subject is what the creator names — the placed areas by default. The
-    // ground a horizon built around them is loaded (chunk list, Y clip) but never
+    // ground a horizon built around them is loaded but never
     // framed — see the module docs.
     let subject = subject_box(
         &opts.subject,
@@ -595,10 +588,9 @@ pub fn panorama_from_plan(
         f64::from(opts.fov_deg),
         aspect,
     );
-    // File name == scene `name`, so Chunky's own save lands back on this file and
-    // its caches share the stem (see `scene::scene_file_stem`). Every choice that
-    // makes a different picture is in the stem: the bearing, the pitch, and — when
-    // not the default — the field of view and a named subject.
+    // Every choice that makes a different picture is in the stem: the bearing,
+    // the pitch, and — when not the default — the field of view and a named
+    // subject.
     let mut shot = format!("panorama_{}_{}", opts.bearing.name(), opts.pitch_deg);
     if f64::from(opts.fov_deg) != FOV_DEG {
         shot.push_str(&format!("_fov{}", opts.fov_deg));
@@ -606,22 +598,26 @@ pub fn panorama_from_plan(
     if opts.subject != Subject::Layout {
         shot.push_str("_anchors");
     }
-    let stem = scene::scene_file_stem(&plan.campaign_id, &shot);
-
+    let stem = format!(
+        "{}_{}",
+        crate::compiler::view::frames::frame_stem(&plan.campaign_id),
+        shot
+    );
     let frame = Frame {
         pos: cam.pos,
-        plan_yaw_deg: cam.yaw_deg,
+        yaw_deg: cam.yaw_deg,
         pitch_deg: cam.pitch_deg,
         fov_deg: cam.fov_deg,
         width: opts.width,
         height: opts.height,
         spp: opts.spp_target,
     };
-    let scene = camera::world_scene(&plan, &stem, &frame, &opts.world_path, sky)?;
-
+    let (lmin, lmax) = scene::loaded_extent(&plan.layout_aabb, plan.horizon);
     Ok(Panorama {
-        file_name: format!("{stem}.json"),
-        bytes: scene.to_bytes()?,
+        stem,
+        frame,
+        sky,
+        chunks: scene::chunk_rect(lmin, lmax),
         subject,
         span,
         record: camera::Camera {
@@ -638,7 +634,7 @@ pub fn panorama_from_plan(
             source: camera::Source::Estimated,
             spp: opts.spp_target,
             width: opts.width,
-            yaw: scene::round6(camera::minecraft_yaw(cam.yaw_deg)),
+            yaw: cam.yaw_deg,
         },
     })
 }
@@ -657,7 +653,7 @@ mod tests {
     fn view_of(c: &PanoramaCamera) -> ([f64; 3], [f64; 3], [f64; 3]) {
         let p = c.pitch_deg.to_radians();
         let yaw = c.yaw_deg.to_radians();
-        let f = [yaw.cos() * p.cos(), -p.sin(), -yaw.sin() * p.cos()];
+        let f = [-yaw.sin() * p.cos(), -p.sin(), yaw.cos() * p.cos()];
         let right = {
             let n = (f[2] * f[2] + f[0] * f[0]).sqrt();
             [-f[2] / n, 0.0, f[0] / n]
@@ -682,13 +678,13 @@ mod tests {
         let mut seen = 0;
         for (b, yaw, sx, sz) in [
             (Bearing::Se, 135.0, 1.0, 1.0),
-            (Bearing::Sw, 45.0, -1.0, 1.0),
-            (Bearing::Ne, -135.0, 1.0, -1.0),
+            (Bearing::Sw, -135.0, -1.0, 1.0),
+            (Bearing::Ne, 45.0, 1.0, -1.0),
             (Bearing::Nw, -45.0, -1.0, -1.0),
-            (Bearing::N, -90.0, 0.0, -1.0),
-            (Bearing::E, 180.0, 1.0, 0.0),
-            (Bearing::S, 90.0, 0.0, 1.0),
-            (Bearing::W, 0.0, -1.0, 0.0),
+            (Bearing::N, 0.0, 0.0, -1.0),
+            (Bearing::E, 90.0, 1.0, 0.0),
+            (Bearing::S, 180.0, 0.0, 1.0),
+            (Bearing::W, -90.0, -1.0, 0.0),
         ] {
             let (c, _) = frame(MIN, MAX, b, 30, FOV_DEG, WIDE);
             assert_eq!(c.yaw_deg.abs(), f64::abs(yaw), "{b:?}: {c:?}");
@@ -818,43 +814,30 @@ mod tests {
           "sky":{"time":"day","daytime_ticks":1000,"weather":"clear"},"shots":[]}"#;
 
     /// The subject is the placed areas on a valley too: the camera is the one
-    /// solved for the layout box alone, while the chunk list still loads every
-    /// column of the landform so the place does not stand in a void.
+    /// solved for the layout box alone, while the chunk rectangle still loads
+    /// every column of the landform so the place does not stand in a void.
     #[test]
     fn a_valley_frames_the_layout_and_loads_the_landform() {
         let p = panorama_from_plan(VALLEY, &[], &PanoramaOptions::default()).unwrap();
-        let v: serde_json::Value = serde_json::from_slice(&p.bytes).unwrap();
         let aspect = f64::from(DEFAULT_WIDTH) / f64::from(DEFAULT_HEIGHT);
         let (want, span) = frame([0, 60, 0], [31, 79, 31], Bearing::Se, 45, FOV_DEG, aspect);
-        assert_eq!(v["camera"]["position"]["x"], serde_json::json!(want.pos[0]));
-        assert_eq!(v["camera"]["position"]["y"], serde_json::json!(want.pos[1]));
-        assert_eq!(v["camera"]["position"]["z"], serde_json::json!(want.pos[2]));
+        assert_eq!(p.frame.pos, want.pos);
         assert_eq!(p.span, span);
         assert_eq!(p.subject, ([0, 60, 0], [31, 79, 31]));
-        let chunks: Vec<[i64; 2]> = v["chunkList"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|c| [c[0].as_i64().unwrap(), c[1].as_i64().unwrap()])
-            .collect();
-        let mut columns = 0;
-        for cx in (-80i64).div_euclid(16)..=111i64.div_euclid(16) {
-            for cz in (-80i64).div_euclid(16)..=111i64.div_euclid(16) {
-                assert!(
-                    chunks.contains(&[cx, cz]),
-                    "landform chunk [{cx},{cz}] not loaded"
-                );
-                columns += 1;
-            }
-        }
-        assert_eq!(columns, 12 * 12);
+        assert_eq!(
+            p.chunks,
+            (
+                [(-80i32).div_euclid(16), (-80i32).div_euclid(16)],
+                [111i32.div_euclid(16), 111i32.div_euclid(16)]
+            ),
+            "every landform chunk is loaded"
+        );
     }
 
-    /// The sun is the campaign's hour and nothing else — the same bytes `scene`
-    /// writes for the same plan, whatever bearing the frame is shot from.
+    /// The sky is the campaign's hour and nothing else, whatever bearing the
+    /// frame is shot from.
     #[test]
-    fn the_sun_is_the_declared_hour_and_the_bearing_never_moves_it() {
-        let expected = scene::sun_at(12000); // the mini fixture declares dusk
+    fn the_sky_is_the_declared_hour_and_the_bearing_never_moves_it() {
         let mut seen = 0;
         for b in Bearing::ALL {
             let opts = PanoramaOptions {
@@ -862,16 +845,14 @@ mod tests {
                 ..Default::default()
             };
             let p = panorama_from_plan(MINI, &[], &opts).unwrap();
-            let v: serde_json::Value = serde_json::from_slice(&p.bytes).unwrap();
-            assert_eq!(v["sun"]["altitude"], serde_json::json!(expected.altitude));
-            assert_eq!(v["sun"]["azimuth"], serde_json::json!(expected.azimuth));
+            // The mini fixture declares dusk.
+            assert_eq!(p.sky.daytime_ticks, 12000);
             seen += 1;
         }
         assert_eq!(seen, Bearing::ALL.len(), "every bearing was examined");
     }
 
-    /// A plan with no hour is refused rather than rendered under Chunky's own
-    /// midday default — the panorama half of the rule `scene` enforces.
+    /// A plan with no hour is refused rather than drawn under a default sky.
     #[test]
     fn a_panorama_of_a_plan_with_no_hour_is_refused() {
         let no_sky = br#"{"campaign_id":"c","layout_aabb":{"min":[0,64,0],"max":[1,65,1]},
@@ -919,37 +900,21 @@ mod tests {
     #[test]
     fn the_frame_size_is_the_one_asked_for() {
         let p = panorama_from_plan(MINI, &[], &PanoramaOptions::default()).unwrap();
-        let v: serde_json::Value = serde_json::from_slice(&p.bytes).unwrap();
-        assert_eq!(v["width"], serde_json::json!(DEFAULT_WIDTH));
-        assert_eq!(v["height"], serde_json::json!(DEFAULT_HEIGHT));
+        assert_eq!(
+            (p.frame.width, p.frame.height),
+            (DEFAULT_WIDTH, DEFAULT_HEIGHT)
+        );
         let opts = PanoramaOptions {
             width: 1024,
             height: 1024,
             ..Default::default()
         };
         let p = panorama_from_plan(MINI, &[], &opts).unwrap();
-        let v: serde_json::Value = serde_json::from_slice(&p.bytes).unwrap();
-        assert_eq!(v["width"], serde_json::json!(1024));
-        assert_eq!(v["height"], serde_json::json!(1024));
+        assert_eq!((p.frame.width, p.frame.height), (1024, 1024));
     }
 
     #[test]
-    fn the_water_plane_is_raised_only_for_an_ocean_horizon() {
-        let ocean = panorama_from_plan(OCEAN, &[], &PanoramaOptions::default()).unwrap();
-        let v: serde_json::Value = serde_json::from_slice(&ocean.bytes).unwrap();
-        assert_eq!(v["waterWorldEnabled"], serde_json::json!(true));
-        assert_eq!(v["waterWorldHeight"], serde_json::json!(62.875));
-        assert_eq!(v["waterWorldHeightOffsetEnabled"], serde_json::json!(false));
-        assert_eq!(v["waterWorldClipEnabled"], serde_json::json!(true));
-
-        let void = panorama_from_plan(MINI, &[], &PanoramaOptions::default()).unwrap();
-        let v: serde_json::Value = serde_json::from_slice(&void.bytes).unwrap();
-        assert!(v.get("waterWorldEnabled").is_none());
-        assert!(v.get("waterWorldHeight").is_none());
-    }
-
-    #[test]
-    fn bearing_and_pitch_name_the_file_and_the_scene_identically() {
+    fn bearing_and_pitch_name_the_file() {
         let mut seen = 0;
         for b in Bearing::ALL {
             for pitch in [30u8, 45] {
@@ -959,14 +924,7 @@ mod tests {
                     ..Default::default()
                 };
                 let p = panorama_from_plan(OCEAN, &[], &opts).unwrap();
-                // One stem for the file, the Chunky scene `name`, its caches and
-                // the rendered PNG.
-                assert_eq!(
-                    p.file_name,
-                    format!("isle_panorama_{}_{pitch}.json", b.name())
-                );
-                let v: serde_json::Value = serde_json::from_slice(&p.bytes).unwrap();
-                assert_eq!(v["name"], format!("isle_panorama_{}_{pitch}", b.name()));
+                assert_eq!(p.stem, format!("isle_panorama_{}_{pitch}", b.name()));
                 seen += 1;
             }
         }
@@ -974,11 +932,10 @@ mod tests {
     }
 
     #[test]
-    fn emission_is_byte_deterministic() {
+    fn the_solve_is_deterministic() {
         let a = panorama_from_plan(OCEAN, &[], &PanoramaOptions::default()).unwrap();
         let b = panorama_from_plan(OCEAN, &[], &PanoramaOptions::default()).unwrap();
         assert_eq!(a, b);
-        assert!(a.bytes.ends_with(b"\n"));
     }
 
     #[test]

@@ -26,8 +26,8 @@ pub(super) struct WorldProofs {
     pub(super) lethal_gate: Option<crate::compiler::lethal::LethalGate>,
     pub(super) loop_gate: Option<crate::compiler::r#loop::LoopBinding>,
     pub(super) firework_gate: Option<crate::compiler::firework::FireworkGate>,
-    pub(super) cutscene_shots_judged: usize,
     pub(super) shot_ledger: Option<crate::compiler::framing::ShotLedger>,
+    pub(super) cutscene_proof: crate::compiler::nav::CutsceneProof,
     pub(super) lightning_gate: Option<crate::compiler::lightning::LightningGate>,
     pub(super) stake_table: Option<crate::compiler::stake::StakeTable>,
     pub(super) death_plan: Option<Value>,
@@ -50,6 +50,7 @@ pub(super) fn prove_world(
     out: &mut BuildOutput,
     warnings: &mut Vec<delvewright_dsl::Diagnostic>,
     pacing: &mut Vec<delvewright_dsl::Diagnostic>,
+    frame_worlds: &crate::compiler::view::review::FrameWorlds,
 ) -> Result<WorldProofs, BuildFailure> {
     // Visual-tier player-POV shots (spec-0003): first-person cameras along the
     // proven critical-path routes. Filled inside the world block below (they need
@@ -119,8 +120,9 @@ pub(super) fn prove_world(
     // opted in; a ledger that exists and reports zero columns is a finding.
     let mut firework_gate: Option<crate::compiler::firework::FireworkGate> = None;
     // spec-0091: how many cutscene shots were judged against the served view
-    // distance, for the binding line printed beside the render plan.
-    let mut cutscene_shots_judged = 0usize;
+    // distance, for the binding line printed beside the render plan; and
+    // spec-0112 §7.2: the frames of every shot a critical step fires.
+    let mut cutscene_proof = crate::compiler::nav::CutsceneProof::default();
     // spec-0110: what every cutscene shot frames, judged per tick. `None` for a
     // campaign with no cutscene — no line, no ledger.
     let mut shot_ledger: Option<crate::compiler::framing::ShotLedger> = None;
@@ -573,8 +575,8 @@ pub(super) fn prove_world(
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
                 // unroutable. Planned alongside move-npc from the same occupancy model.
                 let am = crate::compiler::nav::plan_actor_moves(plan, world)?;
-                cutscene_shots_judged =
-                    crate::compiler::nav::check_cutscenes(plan, world, &m, &am)?;
+                cutscene_proof =
+                    crate::compiler::nav::check_cutscenes(plan, world, &m, &am, frame_worlds)?;
                 // spec-0110: a shot frames its subject (`DW1033`) and a body
                 // subject is there to be seen (`DW1034`) — after the clip, served
                 // distance and pan proofs, so a camera inside a wall is named for
@@ -1281,8 +1283,8 @@ pub(super) fn prove_world(
         lethal_gate,
         loop_gate,
         firework_gate,
-        cutscene_shots_judged,
         shot_ledger,
+        cutscene_proof,
         lightning_gate,
         stake_table,
         death_plan,

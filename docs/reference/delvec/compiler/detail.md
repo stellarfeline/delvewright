@@ -66,7 +66,7 @@ named absence before step 9), `sheet` (the record's `reference/` rows), the
 frame's `extent`, `datum_y`, `world_min` and `space` (the play space,
 piece-local), `neighbours` (each place whose claim meets this one's, by side,
 with its kind, floor, roof and the seams joining them), `views` (each plan view
-whose eye sees the place, with the `delvec snapshot --camera` that frames it),
+whose eye sees the place, with the `delvec frames --campaign --camera` that frames it),
 `ground` (the fill kind, the claim's bottom and the floor piece-local, the
 terrain along the perimeter with its min and max, every fixed ring cell with its
 block, and the terrain-shaped columns under the plot), `roof` (courses, eaves,

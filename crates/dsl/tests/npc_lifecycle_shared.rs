@@ -186,7 +186,8 @@ fn the_ordering_function_has_one_definition_and_three_callers() {
     let dw0198 = npc.split("fn deferred_npc_checks").nth(1).unwrap();
     let dw0198 = dw0198.split("\npub(crate) fn ").next().unwrap();
     assert!(dw0198.contains("ordered_before"), "DW0198 calls the rule");
-    let framing = std::fs::read_to_string(root.join("delvec/src/compiler/framing.rs")).unwrap();
+    let framing =
+        std::fs::read_to_string(root.join("delvec/src/compiler/framing/shot.rs")).unwrap();
     assert!(
         framing.contains("order.presence("),
         "DW1034 calls it through presence"

@@ -1440,9 +1440,8 @@ pub struct Walked {
 /// premise the campaign states, relight fixtures standing in them), the stance
 /// pass over it for the holders `owned`, and that world ending each holder
 /// `collect`'s leg at the stance the pass chose. `delvec build` and every tool
-/// that reads the critical path (`delvec snapshot --shot …`,
-/// `delvec blocking-chart`) take their world here and nowhere else, so a leg
-/// ends where the build's does. The caller reads `Relight::diagnostics` and
+/// that reads the critical path (`delvec blocking-chart`) take their world
+/// here and nowhere else, so a leg ends where the build's does. The caller reads `Relight::diagnostics` and
 /// [`Walked::verdict`] — a refused pass is the build's failure to raise, not
 /// this derivation's.
 pub fn final_walk(

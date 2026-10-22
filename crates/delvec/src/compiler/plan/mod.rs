@@ -237,6 +237,9 @@ pub struct Plan<'a> {
     /// `close-gate` completability model in `crate::compiler::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
     pub region_events: RegionEvents,
+    /// Every `set-time` and `set-weather` the quest graph performs, dated on
+    /// the critical path ([`collect_clock_events`], spec-0112 §7.6).
+    pub clock_events: Vec<ClockEvent>,
     /// **Every contingent way the placed world stages** (spec-0042 §2.4), in
     /// area → placement → declaration order, with its world cells, its block and
     /// its direction read from the carrying piece's metadata. Empty for every
@@ -276,7 +279,7 @@ pub struct Plan<'a> {
     /// the same plan with those steps added and nothing else changed.
     pub perturb: Perturb,
     /// Per-batch affected world AABBs from the stage-7 L2 massing verbs
-    /// (spec-0017), keyed by batch id — the editor's per-batch snapshot
+    /// (spec-0017), keyed by batch id — the editor's per-batch frame
     /// framing for massing batches. Empty for a campaign without massing.
     pub massing_bounds: BTreeMap<String, ([i32; 3], [i32; 3])>,
     /// For each `critical_path` **arrival** step, the set of steps of its **strict
@@ -590,7 +593,7 @@ impl<'a> Plan<'a> {
         // trap hardware.
         let mut dispenser_cells: BTreeMap<(String, String), [i32; 3]> = BTreeMap::new();
         // Per-batch affected AABBs from L2 massing (spec-0017), for the
-        // editor's per-batch snapshots. Empty without massing verbs.
+        // editor's per-batch frames. Empty without massing verbs.
         let mut massing_bounds: BTreeMap<String, ([i32; 3], [i32; 3])> = BTreeMap::new();
         // Socket doorways severed by `rewire-socket sealed`, per area — the
         // DW0306 connectivity graph must not count those edges.
@@ -667,7 +670,7 @@ impl<'a> Plan<'a> {
                 // piece's anchors and its own sill deletes the finding while
                 // leaving the hole. Correcting such a flood is what exposes it,
                 // which is the worst possible time to first meet it. And the
-                // stray jigsaw never surfaces in the datapack at all: `snapshot`
+                // stray jigsaw never surfaces in the datapack at all: the blocking chart
                 // colours it the magenta fallback precisely as an alarm, on the
                 // stated premise that "the solver strips them" — true of every
                 // piece a solver had placed, and of no other.
@@ -838,7 +841,7 @@ impl<'a> Plan<'a> {
         // file — so the single path from a site plan to blockout bytes runs
         // through `crate::compiler::blockout::derive`, and the single path to that runs
         // through this function. Every `delvec` verb that reaches a world (build,
-        // analyze, snapshot, viewer, blocking-chart, edit) reaches it through a
+        // analyze, frames --campaign, viewer, blocking-chart, edit) reaches it through a
         // `Plan`, and there is no other constructor. Someone doing the guarded
         // thing without calling this would have to have built a `Plan` some other
         // way, and there is none.
@@ -1162,6 +1165,7 @@ impl<'a> Plan<'a> {
             region_events_of(campaign, region_events, &path_firing, &npcs),
             &loop_spliced,
         );
+        let clock_events = collect_clock_events(campaign, &path_firing);
 
         // ---- what became of every staged way (spec-0042 §2.5, DW0548) ----
         //
@@ -1264,6 +1268,7 @@ impl<'a> Plan<'a> {
             seal_hints,
             press_answers,
             region_events,
+            clock_events,
             ways,
             way_gate,
             strict_ancestor_steps,

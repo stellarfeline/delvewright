@@ -8,7 +8,7 @@ mod common;
 
 use common::framing_fixture as ff;
 use delvec::compiler::framing::{
-    ShotLedger, ShotRecord, SubjectRecord, body_of, derive_range, sent_and_drawn,
+    ShotLedger, ShotRecord, SubjectRecord, derive_range, entity_body, sent_and_drawn,
 };
 use serde_json::json;
 
@@ -74,7 +74,7 @@ fn an_assembly_no_shot_frames_carries_the_floor_from_its_place() {
 
 #[test]
 fn a_villager_70_blocks_off_is_not_drawn_and_60_off_is() {
-    let v = body_of("minecraft:villager").unwrap();
+    let v = entity_body("minecraft:villager").unwrap();
     assert!((v.cull_radius() - 67.2).abs() < 1e-9);
     let lens = [0.0, 70.0, 0.0];
     let m = sent_and_drawn(

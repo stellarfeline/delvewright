@@ -6,12 +6,13 @@
 
 Runs `delvec cameras` over the gallery's own build — a cargo test cannot build
 the gallery, whose pieces the gallery job generates — and asserts, from the
-binding lines the command prints and the worlds it writes:
+binding lines the command prints, the worlds it writes and the manifest
+beside each frame (previews, on the CPU backend):
 
 1. exactly two worlds are written, `at-load` and `after-obj-clear-the-muster`,
    and the camera `east-bay-after-the-muster` stands in the second with a
    positive `cells moved from load`;
-2. removing that camera's `after` moves its scene's `world.path` to `at-load`,
+2. removing that camera's `after` moves its frame's `world.path` to `at-load`,
    the after-world's hash out of the run, and its count to 0;
 3. moving it to `obj/take-the-bone` moves the world's hash and the count.
 
@@ -40,7 +41,9 @@ STEP = "obj/clear-the-muster"
 KEY = "after-obj-clear-the-muster"
 
 WORLD = re.compile(
-    r"^world: (\S+) (\d+) chunk\(s\), (\d+) cell\(s\), (\d+) ground cell\(s\), sha256 ([0-9a-f]{64}) -> (.+)$", re.M
+    r"^world: (\S+) (\d+) chunk\(s\), (\d+) cell\(s\), (\d+) ground cell\(s\), \d+ block entit\(ies\), "
+    r"\d+ entit\(ies\), light arrays over \d+ chunk\(s\), sha256 ([0-9a-f]{64}) -> (.+), written in \d+ ms$",
+    re.M,
 )
 AFTER = re.compile(rf"^after: {re.escape(CAMERA)} (?:at load|after (\S+) .*?: (\d+) cells moved from load)", re.M)
 
@@ -54,7 +57,8 @@ def run(delvec: Path, prefabs: Path, build: Path, campaign: Path, out: Path) -> 
     if out.exists():
         shutil.rmtree(out)
     r = subprocess.run(
-        [str(delvec), "--prefabs", str(prefabs), "cameras", str(build), "--campaign", str(campaign), "-o", str(out)],
+        [str(delvec), "--prefabs", str(prefabs), "cameras", str(build), "--campaign", str(campaign), "-o", str(out),
+         "--preview", "--backend", "cpu"],
         capture_output=True,
         text=True,
     )
@@ -67,7 +71,7 @@ def run(delvec: Path, prefabs: Path, build: Path, campaign: Path, out: Path) -> 
     m = AFTER.search(r.stderr)
     if not m:
         fail(f"`delvec cameras` printed no `after:` line for `{CAMERA}`:\n{r.stderr}")
-    scene = json.loads((out / f"gallery_camera_{CAMERA}.json").read_text())
+    scene = json.loads((out / f"gallery_camera_{CAMERA}_preview.manifest.json").read_text())
     return {
         "worlds": worlds,
         "step": m.group(1),

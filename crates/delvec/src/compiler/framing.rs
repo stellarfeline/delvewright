@@ -1,106 +1,457 @@
-//! **A shot frames its subject** (spec-0110): every cutscene shot declares what
-//! it shows, and the build proves the subject is in the frame, in sight,
-//! present and drawn for the whole shot.
+//! **What a frame frames** (spec-0112 §7.5): the camera, the occupancy grid a
+//! sight line is asked of, the targets a review names, and the manifest that
+//! says per target where it stands on the frame and whether it can be seen.
 //!
-//! The frame and the sight line are properties of a shot, so they live here and
-//! not in the verb that first needed them: [`sight`] is the one function that
-//! answers "is this inside the picture and in view", and `delvec snapshot`'s
-//! manifest computes its `occluded` / `out_of_frame` fields by calling it.
+//! One definition of each, read by every surface that describes a frame:
+//! `delvec frames` (each review frame's `shows` and `out_of_frame`), the per-batch
+//! frames of `delvec edit`, the blocking chart's labels and the prefab viewer's
+//! eye-level measurements ([`crate::compiler::view::sight`]). The pixels are
+//! Lumenwright's ([`crate::compiler::view::frames`]); nothing here draws a
+//! block.
 //!
-//! ## The proof frame (§5.1)
+//! **A shot frames its subject** (spec-0110) is the same question asked of a
+//! cutscene: [`shot`] judges every shot per tick (`DW1033`, `DW1034`) and
+//! derives every assembly's `view_range`, through the sight rule below.
 //!
-//! Every shot is judged against the client the game ships: a vertical field of
-//! view of [`PROOF_FOV_DEG`] on an 854 × 480 window ([`PROOF_ASPECT`]),
-//! narrowed to [`PROOF_FOV_FLUID_DEG`] at any tick the lens's cell holds water
-//! or lava; `entityDistanceScaling` 1.0 and the `viewScale` floor 1.0 for a body
-//! with no `view_range`; `entity-broadcast-range-percentage` 100. Cited from the
-//! pinned 1.21.11 jar (`Options`, `GameRenderer.getFov`, `Main`), spec-0110 §2.
+//! ## Camera convention
 //!
-//! ## What is judged per shot, per tick (§5.2–§5.8)
+//! `yaw`/`pitch` are **Minecraft** degrees, identical to the cutscene aim and
+//! to `render-plan.json`: `yaw = 0` faces +Z (south), `90` faces −X (west),
+//! `180` north, `270` east; `pitch` is positive looking **down**, `0` level.
+//! `fov` is the **vertical** field of view in degrees.
 //!
-//! - **In frame** — the subject's reference point projects in front of the near
-//!   plane and inside the action-safe rectangle, `|x|, |y| ≤` [`ACTION_SAFE`] in
-//!   normalised device coordinates (EBU R 95). `DW1033`.
-//! - **In sight** — of nine lines from the lens to the subject's sight box (its
-//!   centre and its eight corners inset), at least one crosses no cell
-//!   `World::blocks_camera` holds for, the subject's own box excluded. `DW1033`.
-//! - **Present** — a body subject is placed before the cutscene on every path
-//!   and not removed between: the one ordering rule,
-//!   [`delvewright_dsl::ordering::Order`]. `DW1034`.
-//! - **Sent** — the horizontal distance from the lens to the body is within its
-//!   type's tracking range, capped by the served chunk distance. `DW1034`.
-//! - **Drawn** — an NPC or actor body is within `size × 64` of the lens (its
-//!   type's box, [`body_of`]); an assembly is drawn because the engine writes
-//!   its `view_range` ([`view_ranges`]). `DW1034`.
+//! ## One sight rule
 //!
-//! A `"landscape"` passes the frame and sight proofs with zero objects stated.
+//! Whether an eye sees a box is answered once, by [`in_sight`] (spec-0110
+//! §5.5): of the nine lines from the eye to the box — its centre and its eight
+//! corners inset ([`CellBox`]'s private sight points) — how many cross no cell
+//! the world's [`Occupancy`] stops a line at, the box's own cells excluded. A
+//! frame's world is its [`VoxelGrid`]; the build's proofs read the nav world's
+//! camera-blocking cells. A target is occluded when no line is clear
+//! (`occluded_target`). Three questions ask the rule, and nothing else answers
+//! it: a review frame ([`resolve_targets`]), a cutscene shot ([`shot`],
+//! `DW1033`) and an act's sight from where the party stands (`DW0863`,
+//! `promise`), the last two inside the crate. [`resolve_targets`] is the one
+//! place a target is put on a frame, and the one public entry point to the
+//! question "is this target inside this camera's frame, and hidden there". Its
+//! building blocks are private to this module — the ray walk
+//! ([`VoxelGrid::cast`] and its `Hit`), the sight points, `occluded_target`,
+//! the projection ([`Camera::project`], `ray`), the screen box — and a
+//! [`ResolvedTarget`]'s fields are private, so no other module can assemble or
+//! state a second answer. Every consumer is held to this
+//! one by the agreement test `every_consumer_of_the_sight_rule_agrees_with_it`
+//! (`crates/delvec/src/cli/sight_agreement.rs`).
+//!
+//! The entry point, asked from outside the crate:
+//!
+//! ```
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let grid = VoxelGrid::build(&Default::default());
+//! let cam = Camera::looking_at([0.5, 0.5, -4.0], [0.5, 0.5, 0.5], 70.0);
+//! let t = [Target::point("t".into(), "anchor", String::new(), [0, 0, 0])];
+//! let (inside, outside) = resolve_targets(&grid, &cam, 64, 64, &t);
+//! assert!(outside.is_empty() && !inside[0].occluded());
+//! ```
+//!
+//! and each building block refused, the same code with one call changed. Stable
+//! rustdoc does not check a `compile_fail` error code, so each refusal is bound
+//! by perturbation instead: the item made `pub` (the ray walk with its `Hit`)
+//! turns its doctest red.
+//!
+//! ```compile_fail
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let grid = VoxelGrid::build(&Default::default());
+//! let t = Target::point("t".into(), "anchor", String::new(), [0, 0, 0]);
+//! delvec::compiler::framing::occluded_target(&grid, [0.5, 0.5, -4.0], &t);
+//! ```
+//!
+//! ```compile_fail
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let grid = VoxelGrid::build(&Default::default());
+//! grid.cast([0.5, 0.5, -4.0], [0.0, 0.0, 1.0], 8.0);
+//! ```
+//!
+//! ```compile_fail
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let b = delvec::compiler::framing::CellBox::cell([0, 0, 0]);
+//! b.sight_points();
+//! ```
+//!
+//! ```compile_fail
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let cam = Camera::looking_at([0.5, 0.5, -4.0], [0.5, 0.5, 0.5], 70.0);
+//! cam.project(64, 64, [0.5, 0.5, 0.5]);
+//! ```
+//!
+//! ```compile_fail
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let cam = Camera::looking_at([0.5, 0.5, -4.0], [0.5, 0.5, 0.5], 70.0);
+//! cam.ray(64, 64, 32, 32);
+//! ```
+//!
+//! ```compile_fail
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets};
+//! let t = Target::point("t".into(), "anchor", String::new(), [0, 0, 0]);
+//! t.corners();
+//! ```
+//!
+//! ```compile_fail
+//! use delvec::compiler::framing::{Camera, Target, VoxelGrid, resolve_targets, screen_box};
+//! ```
+//!
+//! ```compile_fail
+//! use delvec::compiler::framing::{ResolvedTarget, Target};
+//! let t = Target::point("t".into(), "anchor", String::new(), [0, 0, 0]);
+//! let bbox = delvec::compiler::raster::ScreenBox { x: 0, y: 0, w: 1, h: 1 };
+//! let _ = ResolvedTarget { target: &t, bbox, occluded: false, distance: 1.0 };
+//! ```
+//!
+//! ## Determinism (ADR-0006)
+//!
+//! No RNG, no clock, no parallelism, no hash-order iteration: the grid's
+//! palette is built from a `BTreeMap` walk, targets are sorted by
+//! `(kind, area, id)`, and floats in the manifest are rounded to 3 decimals.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::OnceLock;
+use std::collections::BTreeMap;
 
-use delvewright_dsl::ordering::{Beat, Order, Presence};
-use delvewright_dsl::{CameraSubject, DwCode, ExitTier};
 use serde_json::{Value, json};
 
-use crate::compiler::camera::{MoveCtx, SubjectGeom, expand_shot, resolve_subject};
-use crate::compiler::failure::Failure;
-use crate::compiler::nav::{ActorMovePlan, MovePlan, World, walk_cells};
-use crate::compiler::plan::Plan;
+use crate::compiler::nav::walk_cells;
+use crate::compiler::plan::{Plan, ResolvedAnchor};
+use crate::compiler::raster::ScreenBox;
 
-delvewright_dsl::dw_code! {
-    /// `DW1033` (spec-0110 §6.1): a cutscene shot does not show its subject —
-    /// at some judged tick the subject (or `subject_b`) is out of frame (its
-    /// reference point outside the action-safe rectangle of the proof frame)
-    /// or occluded (all nine sight lines blocked). Never fires on
-    /// `"landscape"`.
-    pub const DW_SHOT_UNFRAMED: DwCode = DwCode::new("DW1033", ExitTier::Build);
+pub mod shot;
+pub use shot::*;
+
+/// Default vertical field of view in degrees (vanilla's default is 70).
+pub const DEFAULT_FOV: f64 = 70.0;
+/// Default `--dist` for `--at`/`--orbit` framing (blocks from the subject).
+pub const DEFAULT_ORBIT_DIST: f64 = 14.0;
+
+// ---------------------------------------------------------------------------
+// Voxel grid
+// ---------------------------------------------------------------------------
+
+/// Edge length of one storage chunk (matching vanilla's section size).
+const CHUNK: i32 = 16;
+/// Cells per storage chunk.
+const CHUNK_CELLS: usize = (CHUNK * CHUNK * CHUNK) as usize;
+
+/// A dense-chunked occupancy view of a block map, built once per world.
+///
+/// The block map is a `BTreeMap<[i32;3], BlockState>`; a sight line probes a
+/// cell per DDA step, and a review set asks nine lines per target per frame, so
+/// a `BTreeMap` lookup per step is too slow. This flattens it into
+/// a palette plus 16³ chunk arrays: probes are O(1) array indexing, memory stays
+/// proportional to *occupied* chunks (a layout spanning `AREA_SPACING`-separated
+/// areas allocates nothing for the void between them), and the palette walk is a
+/// `BTreeMap` iteration so palette indices are deterministic.
+pub struct VoxelGrid {
+    /// Palette entry 0 is always "air"; block ids follow in `BTreeMap` order.
+    palette: Vec<String>,
+    /// Chunk-space origin and dimensions.
+    cmin: [i32; 3],
+    cdim: [usize; 3],
+    /// `cdim`-indexed chunk storage; `None` = wholly air.
+    chunks: Vec<Option<Box<[u16; CHUNK_CELLS]>>>,
+    /// Inclusive world-cell bounds of the occupied region.
+    bounds: Option<([i32; 3], [i32; 3])>,
 }
 
-delvewright_dsl::dw_code! {
-    /// `DW1034` (spec-0110 §6.2): a body subject is not there to be seen — not
-    /// present at the shot's first tick (no placing ordered before the
-    /// cutscene, or an unconditional removal between), not sent to the viewer
-    /// at some tick (farther than its type's tracking range), or, for an NPC or
-    /// actor, not drawn at the proof frame (farther than its cull radius).
-    pub const DW_SUBJECT_ABSENT: DwCode = DwCode::new("DW1034", ExitTier::Build);
+/// Floor-divide `v` by [`CHUNK`] (correct for negatives, unlike `/`).
+fn chunk_of(v: i32) -> i32 {
+    v.div_euclid(CHUNK)
 }
 
-/// The proof frame's vertical field of view, degrees: `options.fov`'s default.
-pub const PROOF_FOV_DEG: f64 = 70.0;
-/// The vertical field of view at a tick the lens's cell holds water or lava:
-/// `70 × 6/7` (`GameRenderer.getFov`, `fovEffectScale` 1.0).
-pub const PROOF_FOV_FLUID_DEG: f64 = 60.0;
-/// The proof frame's aspect: the default 854 × 480 window.
-pub const PROOF_ASPECT: f64 = 854.0 / 480.0;
-/// The action-safe rectangle's half-extent in normalised device coordinates:
-/// 3.5% in from each edge (EBU R 95).
-pub const ACTION_SAFE: f64 = 0.93;
-/// The client's near plane, blocks (`GameRenderer.getProjectionMatrix`).
-pub const NEAR_PLANE: f64 = 0.05;
-/// How far inside its box a corner sight line ends (the snapshot's rule,
-/// clamped so a one-cell box still yields eight distinct points).
-pub const SIGHT_INSET: f64 = 0.3;
-/// Blocks per unit of `size` (or of `view_range`) a body is drawn within at
-/// `viewScale` 1.0 (`Entity.shouldRenderAtSqrDistance`).
-pub const CULL_PER_SIZE: f64 = 64.0;
-/// The lowest `entityDistanceScaling` the client offers; an assembly's derived
-/// `view_range` holds at it.
-pub const ENTITY_DISTANCE_FLOOR: f64 = 0.5;
-/// What the engine cannot control and does not check (§5.9).
-pub const UNCHECKED: [&str; 8] = [
-    "options.fov",
-    "window aspect",
-    "options.entityDistanceScaling",
-    "options.fovEffectScale",
-    "client render distance",
-    "client occlusion culling of the section a body stands in",
-    "a body hidden by another entity, a stand-in, a particle or weather",
-    "the client's frame rate between ticks",
-];
+impl VoxelGrid {
+    /// Flatten a cell→block map into the occupancy grid.
+    pub fn build(blocks: &crate::compiler::blockstate::BlockMap) -> VoxelGrid {
+        let mut palette: Vec<String> = vec!["minecraft:air".to_string()];
+        let mut index: BTreeMap<&str, u16> = BTreeMap::new();
+        let mut lo = [i32::MAX; 3];
+        let mut hi = [i32::MIN; 3];
+        for (cell, name) in blocks {
+            if !index.contains_key(name.as_str()) {
+                index.insert(name.as_str(), palette.len() as u16);
+                palette.push(name.to_string());
+            }
+            for a in 0..3 {
+                lo[a] = lo[a].min(cell[a]);
+                hi[a] = hi[a].max(cell[a]);
+            }
+        }
+        if blocks.is_empty() {
+            return VoxelGrid {
+                palette,
+                cmin: [0; 3],
+                cdim: [0; 3],
+                chunks: Vec::new(),
+                bounds: None,
+            };
+        }
+        let cmin = [chunk_of(lo[0]), chunk_of(lo[1]), chunk_of(lo[2])];
+        let cmax = [chunk_of(hi[0]), chunk_of(hi[1]), chunk_of(hi[2])];
+        let cdim = [
+            (cmax[0] - cmin[0] + 1) as usize,
+            (cmax[1] - cmin[1] + 1) as usize,
+            (cmax[2] - cmin[2] + 1) as usize,
+        ];
+        let chunks: Vec<Option<Box<[u16; CHUNK_CELLS]>>> =
+            (0..cdim[0] * cdim[1] * cdim[2]).map(|_| None).collect();
+        let mut grid = VoxelGrid {
+            palette,
+            cmin,
+            cdim,
+            chunks,
+            bounds: Some((lo, hi)),
+        };
+        for (cell, name) in blocks {
+            let id = *index.get(name.as_str()).expect("palette holds every id");
+            let Some((ci, oi)) = grid.slot(*cell) else {
+                continue;
+            };
+            grid.chunks[ci].get_or_insert_with(|| Box::new([0u16; CHUNK_CELLS]))[oi] = id;
+        }
+        grid
+    }
+
+    /// `(chunk slot index, offset in chunk)` for a world cell, or `None` when the
+    /// cell lies outside the grid's chunk box.
+    fn slot(&self, cell: [i32; 3]) -> Option<(usize, usize)> {
+        let c = [chunk_of(cell[0]), chunk_of(cell[1]), chunk_of(cell[2])];
+        let mut idx = 0usize;
+        for (a, &ca) in c.iter().enumerate() {
+            let k = ca - self.cmin[a];
+            if k < 0 || k as usize >= self.cdim[a] {
+                return None;
+            }
+            idx = idx * self.cdim[a] + k as usize;
+        }
+        let o = [
+            cell[0].rem_euclid(CHUNK) as usize,
+            cell[1].rem_euclid(CHUNK) as usize,
+            cell[2].rem_euclid(CHUNK) as usize,
+        ];
+        Some((idx, (o[1] * CHUNK as usize + o[2]) * CHUNK as usize + o[0]))
+    }
+
+    /// The palette index at a cell (`0` = air / outside the grid).
+    pub fn at(&self, cell: [i32; 3]) -> u16 {
+        match self.slot(cell) {
+            Some((ci, oi)) => self.chunks[ci].as_ref().map_or(0, |c| c[oi]),
+            None => 0,
+        }
+    }
+
+    /// Whether a cell holds a block.
+    pub fn solid(&self, cell: [i32; 3]) -> bool {
+        self.at(cell) != 0
+    }
+
+    /// The block id behind a palette index.
+    pub fn name(&self, id: u16) -> &str {
+        &self.palette[id as usize]
+    }
+
+    /// Inclusive world-cell bounds of the occupied region, or `None` if empty.
+    pub fn bounds(&self) -> Option<([i32; 3], [i32; 3])> {
+        self.bounds
+    }
+
+    /// Number of distinct block ids (excluding the air sentinel).
+    pub fn block_kinds(&self) -> usize {
+        self.palette.len() - 1
+    }
+}
+
+/// One ray intersection. Private to this module: a ray walk is a building
+/// block of the sight rule, and a module that could cast one could assemble a
+/// second answer to whether a target is hidden.
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)] // `block`, `sign` and `uv` are read by this module's tests only.
+struct Hit {
+    /// The cell the ray entered.
+    cell: [i32; 3],
+    /// Palette index of the block there.
+    block: u16,
+    /// Which axis the ray crossed to enter (`0`=X, `1`=Y, `2`=Z).
+    axis: usize,
+    /// Sign of the entered face's normal along `axis` (+1 or −1).
+    sign: i32,
+    /// Distance from the ray origin, in blocks.
+    t: f64,
+    /// Where on the entered face the ray landed, both coordinates in `0.0..1.0`.
+    uv: [f64; 2],
+}
+
+/// The in-face coordinates (both in `0.0..1.0`) of a hit point on a face whose
+/// normal runs along `axis`.
+fn face_uv(axis: usize, hp: [f64; 3]) -> [f64; 2] {
+    let (u_ax, v_ax) = match axis {
+        0 => (2, 1),
+        1 => (0, 2),
+        _ => (0, 1),
+    };
+    [hp[u_ax] - hp[u_ax].floor(), hp[v_ax] - hp[v_ax].floor()]
+}
+
+impl VoxelGrid {
+    /// Walk a ray through the grid (Amanatides–Woo DDA) and return the first
+    /// block it enters within `max_t`, or `None`.
+    ///
+    /// `dir` must be normalised. The traversal is exact integer-cell stepping —
+    /// no sampling, so a one-block-thick wall can never be missed.
+    fn cast(&self, origin: [f64; 3], dir: [f64; 3], max_t: f64) -> Option<Hit> {
+        let (lo, hi) = self.bounds?;
+        // Skip the empty space before the model's AABB: for a camera far outside
+        // a small build this is the difference between stepping 500 cells of void
+        // and starting at the geometry.
+        let mut t = 0.0f64;
+        // Which slab the ray entered last — the face of the AABB it crossed, and
+        // therefore the face of the *first cell* if that cell turns out to be
+        // solid (a silhouette-edge hit the stepping loop below never revisits).
+        let mut entry_axis = 1usize;
+        let mut entry_sign = 1i32;
+        for a in 0..3 {
+            let (slab_lo, slab_hi) = (lo[a] as f64, hi[a] as f64 + 1.0);
+            if dir[a].abs() < 1e-12 {
+                if origin[a] < slab_lo || origin[a] > slab_hi {
+                    return None;
+                }
+                continue;
+            }
+            let t0 = (slab_lo - origin[a]) / dir[a];
+            let t1 = (slab_hi - origin[a]) / dir[a];
+            let enter = t0.min(t1);
+            if enter > t {
+                t = enter;
+                entry_axis = a;
+                entry_sign = if dir[a] > 0.0 { -1 } else { 1 };
+            }
+        }
+        // Re-verify: the per-axis max of entry times can still exit another slab.
+        let mut t_exit = max_t;
+        for a in 0..3 {
+            if dir[a].abs() < 1e-12 {
+                continue;
+            }
+            let t0 = (lo[a] as f64 - origin[a]) / dir[a];
+            let t1 = (hi[a] as f64 + 1.0 - origin[a]) / dir[a];
+            t_exit = t_exit.min(t0.max(t1));
+        }
+        if t > t_exit {
+            return None;
+        }
+        // Nudge inside so the starting cell is unambiguous on a slab boundary.
+        let start_t = if t > 0.0 { t + 1e-6 } else { 0.0 };
+        let p = [
+            origin[0] + dir[0] * start_t,
+            origin[1] + dir[1] * start_t,
+            origin[2] + dir[2] * start_t,
+        ];
+        let mut cell = [
+            p[0].floor() as i32,
+            p[1].floor() as i32,
+            p[2].floor() as i32,
+        ];
+        // The starting cell must be tested before any stepping: the DDA loop below
+        // only ever examines cells it *steps into*, so a ray that enters the AABB
+        // directly onto a solid cell would otherwise pass straight through it.
+        // Two cases: the eye sits inside a block (t == 0 — report its interior),
+        // or the ray met the model's hull here (report the crossed AABB face).
+        {
+            let b = self.at(cell);
+            if b != 0 {
+                let (axis, sign, uv) = if t > 0.0 {
+                    let hp = [
+                        origin[0] + dir[0] * t,
+                        origin[1] + dir[1] * t,
+                        origin[2] + dir[2] * t,
+                    ];
+                    (entry_axis, entry_sign, face_uv(entry_axis, hp))
+                } else {
+                    (1, 1, [0.5, 0.5])
+                };
+                return Some(Hit {
+                    cell,
+                    block: b,
+                    axis,
+                    sign,
+                    t,
+                    uv,
+                });
+            }
+        }
+        let mut step = [0i32; 3];
+        let mut t_max = [f64::INFINITY; 3];
+        let mut t_delta = [f64::INFINITY; 3];
+        for a in 0..3 {
+            if dir[a] > 1e-12 {
+                step[a] = 1;
+                t_delta[a] = 1.0 / dir[a];
+                t_max[a] = start_t + ((cell[a] + 1) as f64 - p[a]) / dir[a];
+            } else if dir[a] < -1e-12 {
+                step[a] = -1;
+                t_delta[a] = -1.0 / dir[a];
+                t_max[a] = start_t + (cell[a] as f64 - p[a]) / dir[a];
+            }
+        }
+        loop {
+            // Advance along whichever axis crosses next (ties break X→Y→Z, which
+            // only decides which face a corner-exact ray is credited to).
+            let axis = if t_max[0] <= t_max[1] && t_max[0] <= t_max[2] {
+                0
+            } else if t_max[1] <= t_max[2] {
+                1
+            } else {
+                2
+            };
+            let t_cur = t_max[axis];
+            if t_cur > t_exit || t_cur > max_t {
+                return None;
+            }
+            cell[axis] += step[axis];
+            t_max[axis] += t_delta[axis];
+            let b = self.at(cell);
+            if b != 0 {
+                let hp = [
+                    origin[0] + dir[0] * t_cur,
+                    origin[1] + dir[1] * t_cur,
+                    origin[2] + dir[2] * t_cur,
+                ];
+                return Some(Hit {
+                    cell,
+                    block: b,
+                    axis,
+                    sign: -step[axis],
+                    t: t_cur,
+                    uv: face_uv(axis, hp),
+                });
+            }
+        }
+    }
+
+    /// Whether the straight segment from `from` to `to` meets any block before
+    /// reaching `to`.
+    #[cfg(test)]
+    fn blocked(&self, from: [f64; 3], to: [f64; 3]) -> bool {
+        let d = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
+        let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        if len < 1e-9 {
+            return false;
+        }
+        let dir = [d[0] / len, d[1] / len, d[2] / len];
+        self.cast(from, dir, len).is_some()
+    }
+}
 
 // ---------------------------------------------------------------------------
 // The sight rule
 // ---------------------------------------------------------------------------
+
+/// How far inside its box a corner sight line ends, clamped so a one-cell box
+/// still yields eight distinct points.
+pub const SIGHT_INSET: f64 = 0.3;
 
 /// An inclusive box of cells.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -141,7 +492,7 @@ impl CellBox {
 
     /// The nine points sight lines end at: the centre, then the eight corners
     /// inset by [`SIGHT_INSET`] (clamped to 0.2 of a half-extent).
-    pub fn sight_points(&self) -> [[f64; 3]; 9] {
+    fn sight_points(&self) -> [[f64; 3]; 9] {
         let c = self.centre();
         let half = |a: usize| ((self.max[a] - self.min[a] + 1) as f64 / 2.0 - SIGHT_INSET).max(0.2);
         let h = [half(0), half(1), half(2)];
@@ -157,74 +508,9 @@ impl CellBox {
     }
 }
 
-/// A camera pose in Minecraft degrees: `yaw 0` faces +Z, pitch positive looks
-/// down.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Pose {
-    /// The lens.
-    pub pos: [f64; 3],
-    /// Minecraft yaw, degrees.
-    pub yaw: f64,
-    /// Minecraft pitch, degrees.
-    pub pitch: f64,
-}
-
-/// What one camera sees of one subject.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Sight {
-    /// The reference point lies in front of the near plane and inside the
-    /// action-safe rectangle.
-    pub in_frame: bool,
-    /// How many of the nine sight lines cross no camera-blocking cell outside
-    /// the subject's own box.
-    pub lines_clear: u8,
-    /// The first blocking cell on the centre line, when it is blocked.
-    pub centre_block: Option<[i32; 3]>,
-}
-
-impl Sight {
-    /// All nine lines blocked.
-    pub fn occluded(&self) -> bool {
-        self.lines_clear == 0
-    }
-}
-
-/// **The one sight rule** (spec-0110 §5.3–§5.5): is `reference` inside the
-/// picture a camera at `pose` takes with vertical field of view `fov_v` and
-/// aspect `aspect`, and how many of the nine lines from the lens to `sight_box`
-/// cross no cell `blocks` holds for — the box's own cells excluded, because a
-/// mark that is a block must not hide itself and a place's walls must not hide
-/// the place.
-pub fn sight(
-    pose: &Pose,
-    fov_v: f64,
-    aspect: f64,
-    reference: [f64; 3],
-    sight_box: &CellBox,
-    blocks: &dyn Fn([i32; 3]) -> bool,
-) -> Sight {
-    let cam = crate::compiler::snapshot::Camera {
-        pos: pose.pos,
-        yaw: pose.yaw,
-        pitch: pose.pitch,
-        fov: fov_v,
-    };
-    let in_frame = ndc(&cam, aspect, reference)
-        .is_some_and(|[x, y]| round6(x.abs()) <= ACTION_SAFE && round6(y.abs()) <= ACTION_SAFE);
-    let Lines {
-        clear: lines_clear,
-        centre_block,
-    } = in_sight(pose.pos, sight_box, blocks);
-    Sight {
-        in_frame,
-        lines_clear,
-        centre_block,
-    }
-}
-
 /// What an eye sees of a box past the cells that stop a line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Lines {
+pub(crate) struct Lines {
     /// How many of the nine lines cross no blocking cell outside the box.
     pub clear: u8,
     /// The first blocking cell on the centre line, when it is blocked.
@@ -240,11 +526,16 @@ impl Lines {
 
 /// **The one "in sight" rule** (spec-0110 §5.5): of the nine lines from `eye`
 /// to `sight_box` (its centre and its eight corners inset,
-/// [`CellBox::sight_points`]), how many cross no cell `blocks` holds for, the
-/// box's own cells excluded. [`sight`] asks it of a camera's lens; `DW0863`
+/// `CellBox::sight_points`), how many cross no cell `blocks` holds for, the
+/// box's own cells excluded. A review frame asks it of its eye over its grid
+/// ([`resolve_targets`]); a shot asks it of its lens (`shot::sight`); `DW0863`
 /// (`promise`, spec-0104 §4) asks it of a standing body's eye, with no frame,
 /// because a player turns to look.
-pub fn in_sight(eye: [f64; 3], sight_box: &CellBox, blocks: &dyn Fn([i32; 3]) -> bool) -> Lines {
+pub(crate) fn in_sight(
+    eye: [f64; 3],
+    sight_box: &CellBox,
+    blocks: &dyn Fn([i32; 3]) -> bool,
+) -> Lines {
     let blocked = |to: [f64; 3]| walk_cells(eye, to, |c| blocks(c) && !sight_box.contains(c));
     let pts = sight_box.sight_points();
     let centre_block = blocked(pts[0]);
@@ -265,1008 +556,1013 @@ pub fn in_sight(eye: [f64; 3], sight_box: &CellBox, blocks: &dyn Fn([i32; 3]) ->
     }
 }
 
-/// A point's normalised device coordinates through `cam`, or `None` when it is
-/// not in front of the near plane.
-fn ndc(cam: &crate::compiler::snapshot::Camera, aspect: f64, p: [f64; 3]) -> Option<[f64; 2]> {
-    let (f, r, u) = cam.basis();
-    let c = [p[0] - cam.pos[0], p[1] - cam.pos[1], p[2] - cam.pos[2]];
-    let z = dot(c, f);
-    if z <= NEAR_PLANE {
-        return None;
+/// The cells of a world that stop a sight line: what [`in_sight`] is asked
+/// over. A frame's [`VoxelGrid`] stops a line at every cell it holds; the
+/// build's nav world at its camera-blocking cells
+/// ([`crate::compiler::nav::World::blocks_camera`]).
+pub trait Occupancy {
+    /// Whether a sight line stops at `c`.
+    fn stops_sight(&self, c: [i32; 3]) -> bool;
+}
+
+impl Occupancy for VoxelGrid {
+    fn stops_sight(&self, c: [i32; 3]) -> bool {
+        self.at(c) != 0
     }
-    let ty = (cam.fov.to_radians() * 0.5).tan();
-    Some([dot(c, r) / (z * ty * aspect), dot(c, u) / (z * ty)])
+}
+
+impl Occupancy for crate::compiler::nav::World {
+    fn stops_sight(&self, c: [i32; 3]) -> bool {
+        self.blocks_camera(c)
+    }
+}
+
+/// The manifest's `occluded` test: no sight line from `from` reaches the
+/// target ([`in_sight`] over `world`). The target's own cells are excluded —
+/// a marker routinely *is* a block (`anchor/fire-pit` names the campfire, an
+/// interact anchor the lever) — and nine lines are asked, not the centre's
+/// alone, so one ray grazing the rim of a platform does not hide what stands
+/// on it.
+fn occluded_target<O: Occupancy + ?Sized>(world: &O, from: [f64; 3], t: &Target) -> bool {
+    let b = CellBox {
+        min: t.min,
+        max: t.max,
+    };
+    !in_sight(from, &b, &|c| world.stops_sight(c)).seen()
+}
+
+// ---------------------------------------------------------------------------
+// Camera
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Camera {
+    /// Eye position in world coordinates.
+    pub pos: [f64; 3],
+    /// Minecraft yaw in degrees (`0` = south/+Z, `90` = west/−X).
+    pub yaw: f64,
+    /// Minecraft pitch in degrees (positive looks down).
+    pub pitch: f64,
+    /// Vertical field of view in degrees.
+    pub fov: f64,
+}
+
+impl Camera {
+    /// The forward/right/up orthonormal basis. `right` is derived from yaw alone,
+    /// so it stays well-defined when the camera looks straight up or down.
+    pub fn basis(&self) -> ([f64; 3], [f64; 3], [f64; 3]) {
+        let (y, p) = (self.yaw.to_radians(), self.pitch.to_radians());
+        let (sy, cy) = (y.sin(), y.cos());
+        let (sp, cp) = (p.sin(), p.cos());
+        let forward = [-sy * cp, -sp, cy * cp];
+        let right = [-cy, 0.0, -sy];
+        let up = cross(right, forward);
+        (forward, right, up)
+    }
+
+    /// Aim a camera at `look_at` from `pos`, in Minecraft degrees — the exact
+    /// formula [`crate::compiler::emit`]'s cutscene `mc_aim` uses, so a camera derived from
+    /// a `render-plan.json` shot points where the shipped cutscene points.
+    pub fn looking_at(pos: [f64; 3], look_at: [f64; 3], fov: f64) -> Camera {
+        let d = [
+            look_at[0] - pos[0],
+            look_at[1] - pos[1],
+            look_at[2] - pos[2],
+        ];
+        let horiz = (d[0] * d[0] + d[2] * d[2]).sqrt();
+        let (yaw, pitch) = if horiz < 1e-9 && d[1].abs() < 1e-9 {
+            (0.0, 0.0)
+        } else {
+            (
+                (-d[0]).atan2(d[2]).to_degrees(),
+                (-d[1]).atan2(horiz).to_degrees(),
+            )
+        };
+        Camera {
+            pos,
+            yaw,
+            pitch,
+            fov,
+        }
+    }
+
+    /// The normalised ray direction through pixel centre `(px, py)`.
+    fn ray(&self, width: u32, height: u32, px: u32, py: u32) -> [f64; 3] {
+        let (f, r, u) = self.basis();
+        let aspect = width as f64 / height as f64;
+        let ty = (self.fov.to_radians() * 0.5).tan();
+        let ndc_x = ((px as f64 + 0.5) / width as f64) * 2.0 - 1.0;
+        let ndc_y = 1.0 - ((py as f64 + 0.5) / height as f64) * 2.0;
+        let d = [
+            f[0] + r[0] * ndc_x * ty * aspect + u[0] * ndc_y * ty,
+            f[1] + r[1] * ndc_x * ty * aspect + u[1] * ndc_y * ty,
+            f[2] + r[2] * ndc_x * ty * aspect + u[2] * ndc_y * ty,
+        ];
+        normalize(d)
+    }
+
+    /// Project a world point to pixel coordinates plus camera-space depth.
+    /// `None` when the point is at or behind the eye plane.
+    fn project(&self, width: u32, height: u32, p: [f64; 3]) -> Option<([f64; 2], f64)> {
+        let (f, r, u) = self.basis();
+        let c = [p[0] - self.pos[0], p[1] - self.pos[1], p[2] - self.pos[2]];
+        let z = dot(c, f);
+        if z <= 1e-6 {
+            return None;
+        }
+        let aspect = width as f64 / height as f64;
+        let ty = (self.fov.to_radians() * 0.5).tan();
+        let ndc_x = dot(c, r) / (z * ty * aspect);
+        let ndc_y = dot(c, u) / (z * ty);
+        Some((
+            [
+                (ndc_x * 0.5 + 0.5) * width as f64,
+                (0.5 - ndc_y * 0.5) * height as f64,
+            ],
+            z,
+        ))
+    }
+}
+
+fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
 }
 
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
-fn round6(v: f64) -> f64 {
-    (v * 1e6).round() / 1e6
+fn normalize(v: [f64; 3]) -> [f64; 3] {
+    let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    if l < 1e-12 {
+        [0.0, 0.0, 1.0]
+    } else {
+        [v[0] / l, v[1] / l, v[2] / l]
+    }
 }
 
-fn round3(v: f64) -> f64 {
+/// Round to 3 decimals — the same stabilisation `render_plan` uses so float
+/// formatting cannot drift between platforms under the byte-identity gate.
+pub fn round3(v: f64) -> f64 {
     let r = (v * 1000.0).round() / 1000.0;
     if r == 0.0 { 0.0 } else { r }
 }
 
-fn round3v(p: [f64; 3]) -> [f64; 3] {
-    [round3(p[0]), round3(p[1]), round3(p[2])]
-}
-
 // ---------------------------------------------------------------------------
-// Bodies: the pinned entity table
+// Targets (the manifest's subjects)
 // ---------------------------------------------------------------------------
 
-/// One entity type's body as the pinned server registers it.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct EntityBody {
-    /// Bounding-box width, blocks.
-    pub width: f64,
-    /// Bounding-box height, blocks.
-    pub height: f64,
-    /// `clientTrackingRange`, chunks.
-    pub tracking_range: u32,
-}
-
-impl EntityBody {
-    /// `AABB.getSize()`: the mean of the box's three extents.
-    pub fn size(&self) -> f64 {
-        (2.0 * self.width + self.height) / 3.0
-    }
-
-    /// The distance beyond which the client does not draw the body at the
-    /// proof frame: `size × 64`.
-    pub fn cull_radius(&self) -> f64 {
-        self.size() * CULL_PER_SIZE
-    }
-
-    /// The distance the server sends the body within, blocks, before the
-    /// served chunk distance caps it.
-    pub fn tracking_blocks(&self) -> f64 {
-        f64::from(self.tracking_range) * 16.0
-    }
-}
-
-/// The pinned entity table (`crates/delvec/data/entity-bodies-1.21.11.json`,
-/// written by `tools/maintenance/extract-entity-bodies.py`).
-pub fn body_of(entity: &str) -> Option<EntityBody> {
-    static TABLE: OnceLock<BTreeMap<String, EntityBody>> = OnceLock::new();
-    let table = TABLE.get_or_init(|| {
-        let raw: BTreeMap<String, Value> =
-            serde_json::from_str(include_str!("../../data/entity-bodies-1.21.11.json"))
-                .expect("the vendored entity-body table parses");
-        raw.into_iter()
-            .map(|(k, v)| {
-                (
-                    k,
-                    EntityBody {
-                        width: v["width"].as_f64().unwrap_or(0.0),
-                        height: v["height"].as_f64().unwrap_or(0.0),
-                        tracking_range: v["tracking_range"].as_u64().unwrap_or(0) as u32,
-                    },
-                )
-            })
-            .collect()
-    });
-    let id = if entity.contains(':') {
-        entity.to_string()
-    } else {
-        format!("minecraft:{entity}")
-    };
-    table.get(&id).copied()
-}
-
-// ---------------------------------------------------------------------------
-// Subject geometry
-// ---------------------------------------------------------------------------
-
-/// The box a subject's sight lines end in, for every kind with a fixed box:
-/// a mark's cell, an assembly's envelope, a place's box, a region's box, a
-/// standing body's feet and head cells. `None` for a `"landscape"` and for a
-/// reference that does not resolve (`DW0112`/`DW0360` report it).
-pub fn subject_box(plan: &Plan, subject: &CameraSubject) -> Option<CellBox> {
-    match subject {
-        CameraSubject::Landscape(_) => None,
-        CameraSubject::Anchor(m) => {
-            let p = crate::compiler::nav::anchor_offset_point(plan, m.anchor.as_str(), m.offset);
-            Some(CellBox::cell(cell_of(p)))
-        }
-        CameraSubject::Assembly(s) => assembly_envelope(plan, s.assembly.as_str()),
-        CameraSubject::Place(s) => crate::compiler::horizon::place_bounds(plan, &s.place)
-            .map(|(lo, hi)| CellBox::spanning(lo, hi)),
-        CameraSubject::Region(s) => plan
-            .zone_box(&s.region)
-            .map(|(lo, hi)| CellBox::spanning(lo, hi)),
-        CameraSubject::Npc(_) | CameraSubject::Actor(_) => {
-            let feet = body_feet_static(plan, subject)?;
-            Some(body_cells(feet))
-        }
-    }
-}
-
-/// An assembly's envelope (spec-0110 §4.1): the bounding box of the union of
-/// its parts' cells over its spawn pose and every frame of every clip, turned
-/// to its facing.
-pub fn assembly_envelope(plan: &Plan, id: &str) -> Option<CellBox> {
-    let placed = crate::compiler::assembly::placed(plan);
-    let p = placed.iter().find(|p| p.decl.id.as_str() == id)?;
-    let mut cells: BTreeSet<[i32; 3]> = p.world_cells(&p.spawn_pose());
-    for clip in p.rig.clips.values() {
-        for frame in &clip.frames {
-            cells.extend(p.world_cells(frame));
-        }
-    }
-    cells.insert(p.mark);
-    let mut it = cells.iter();
-    let first = *it.next()?;
-    let mut b = CellBox::cell(first);
-    for c in it {
-        b = CellBox::spanning(
-            [b.min[0].min(c[0]), b.min[1].min(c[1]), b.min[2].min(c[2])],
-            [b.max[0].max(c[0]), b.max[1].max(c[1]), b.max[2].max(c[2])],
-        );
-    }
-    Some(b)
-}
-
-/// An assembly's root position: the mark cell's centre at its floor plane.
-fn assembly_root(plan: &Plan, id: &str) -> Option<[f64; 3]> {
-    crate::compiler::assembly::placed(plan)
-        .iter()
-        .find(|p| p.decl.id.as_str() == id)
-        .map(|p| {
-            [
-                p.mark[0] as f64 + 0.5,
-                p.mark[1] as f64,
-                p.mark[2] as f64 + 0.5,
-            ]
-        })
-}
-
-fn cell_of(p: [f64; 3]) -> [i32; 3] {
-    [
-        p[0].floor() as i32,
-        p[1].floor() as i32,
-        p[2].floor() as i32,
-    ]
-}
-
-/// A standing body's two cells.
-fn body_cells(feet: [i32; 3]) -> CellBox {
-    CellBox {
-        min: feet,
-        max: [feet[0], feet[1] + 1, feet[2]],
-    }
-}
-
-/// A static npc/actor body's feet cell: its declared mark.
-fn body_feet_static(plan: &Plan, subject: &CameraSubject) -> Option<[i32; 3]> {
-    let c = plan.campaign;
-    match subject {
-        CameraSubject::Npc(s) => c
-            .npcs
-            .content
-            .npcs
-            .iter()
-            .find(|n| n.id == s.npc)
-            .and_then(|n| plan.body_point(delvewright_dsl::BodyRef::Npc(n))),
-        CameraSubject::Actor(s) => c
-            .quests
-            .content
-            .actors
-            .iter()
-            .find(|a| a.id == s.actor)
-            .and_then(|a| plan.body_point(delvewright_dsl::BodyRef::Actor(a))),
-        _ => None,
-    }
-}
-
-/// The entity type a body subject wears.
-fn body_entity(plan: &Plan, subject: &CameraSubject) -> Option<String> {
-    let c = plan.campaign;
-    match subject {
-        CameraSubject::Npc(s) => c
-            .npcs
-            .content
-            .npcs
-            .iter()
-            .find(|n| n.id == s.npc)
-            .map(crate::compiler::nav::npc_body_entity),
-        CameraSubject::Actor(s) => c
-            .quests
-            .content
-            .actors
-            .iter()
-            .find(|a| a.id == s.actor)
-            .map(crate::compiler::nav::actor_body_entity),
-        CameraSubject::Assembly(_) => Some("minecraft:item_display".to_string()),
-        _ => None,
-    }
-}
-
-/// A subject resolved over one shot window: per tick (`len == ticks + 1`, or
-/// one entry for a fixed subject), its reference point, its sight box and —
-/// for a body — the position its entity stands at.
-struct Track {
-    reference: Vec<[f64; 3]>,
-    boxes: Vec<CellBox>,
-    body: Vec<[f64; 3]>,
-}
-
-impl Track {
-    fn at<T: Copy>(v: &[T], t: i32) -> T {
-        v[(t.max(0) as usize).min(v.len() - 1)]
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn track_of(
-    plan: &Plan,
-    moves: &[MovePlan],
-    actor_moves: &[ActorMovePlan],
-    subject: &CameraSubject,
-    ctx: &[MoveCtx],
-    shot_offset: i32,
-    ticks: i32,
-) -> Option<Track> {
-    match subject {
-        CameraSubject::Landscape(_) => None,
-        CameraSubject::Npc(_) | CameraSubject::Actor(_) => {
-            let geom = resolve_subject(plan, moves, actor_moves, subject, ctx, shot_offset, ticks)?;
-            let o = subject.offset();
-            let lift = [o[0] as f64, o[1] as f64 + 1.0, o[2] as f64];
-            let refs = match geom {
-                SubjectGeom::Static(p) => vec![p],
-                SubjectGeom::Moving(track) => track,
-            };
-            let feet: Vec<[i32; 3]> = refs
-                .iter()
-                .map(|r| cell_of([r[0] - lift[0], r[1] - lift[1], r[2] - lift[2]]))
-                .collect();
-            Some(Track {
-                boxes: feet.iter().map(|f| body_cells(*f)).collect(),
-                body: feet
-                    .iter()
-                    .map(|f| [f[0] as f64 + 0.5, f[1] as f64, f[2] as f64 + 0.5])
-                    .collect(),
-                reference: refs,
-            })
-        }
-        _ => {
-            let b = subject_box(plan, subject)?;
-            let reference = match subject {
-                CameraSubject::Anchor(m) => {
-                    crate::compiler::nav::anchor_offset_point(plan, m.anchor.as_str(), m.offset)
-                }
-                _ => b.centre(),
-            };
-            let body = match subject {
-                CameraSubject::Assembly(s) => assembly_root(plan, s.assembly.as_str())?,
-                _ => reference,
-            };
-            Some(Track {
-                reference: vec![reference],
-                boxes: vec![b],
-                body: vec![body],
-            })
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// The proof
-// ---------------------------------------------------------------------------
-
-/// One judged subject of one shot: what the ledger keeps.
-#[derive(Clone, Debug)]
-pub struct SubjectRecord {
-    /// `subject` or `subject_b`.
-    pub field: &'static str,
-    /// The subject's kind token.
-    pub kind: &'static str,
-    /// The subject's canonical rendering.
-    pub canon: String,
-    /// Its reference point at tick 0.
-    pub reference: [f64; 3],
-    /// Per tick: in the action-safe frame.
-    pub in_frame: Vec<bool>,
-    /// Per tick: clear sight lines of nine.
-    pub lines_clear: Vec<u8>,
-    /// For a body: the presence derivation.
-    pub presence: Option<String>,
-    /// For a body: the farthest horizontal distance (sent), blocks.
-    pub farthest_horizontal: Option<f64>,
-    /// For a body: the farthest lens-to-body distance (drawn), blocks.
-    pub farthest: Option<f64>,
-    /// For a body: the type's tracking range, capped by the served distance.
-    pub tracking_range: Option<f64>,
-    /// For an NPC or actor: its cull radius at the proof frame.
-    pub cull_radius: Option<f64>,
-    /// For a body: the entity type a client sees (an assembly's root is an
-    /// `item_display`).
-    pub entity: Option<String>,
-    /// For a body: where its entity stands at the shot's first tick.
-    pub body_at: Option<[f64; 3]>,
-}
-
-/// One judged shot.
-#[derive(Clone, Debug)]
-pub struct ShotRecord {
-    /// Shot index within its cutscene.
-    pub index: usize,
-    /// Driver ticks into the cutscene at which the shot starts.
-    pub start_tick: i32,
-    /// Driver ticks.
-    pub ticks: i32,
-    /// The subjects judged (empty for a `"landscape"`).
-    pub subjects: Vec<SubjectRecord>,
-    /// The declared subject's kind token.
-    pub kind: &'static str,
-}
-
-/// One cutscene's shots.
-#[derive(Clone, Debug)]
-pub struct CutsceneRecord {
-    /// JSON pointer of the `cutscene` effect.
-    pub path: String,
-    /// The canonical hash of the shot list measured.
-    pub digest: String,
-    /// Where the lens stands at the cutscene's first tick — where a watching
-    /// client is snapped to.
-    pub start_lens: [f64; 3],
-    /// The shots.
-    pub shots: Vec<ShotRecord>,
-}
-
-/// Every judged cutscene, plus what the assemblies' `view_range` reads from it.
-#[derive(Clone, Debug, Default)]
-pub struct ShotLedger {
-    /// The cutscenes, in emission order.
-    pub cutscenes: Vec<CutsceneRecord>,
-    /// Per assembly id: the greatest lens-to-root distance over every shot
-    /// framing it, every tick.
-    pub assembly_reach: BTreeMap<String, f64>,
-}
-
-/// One assembly's emitted `view_range` and the terms it is the maximum of.
-#[derive(Clone, Debug, PartialEq)]
-pub struct AssemblyRange {
-    /// The assembly id.
+/// One addressable thing in the world the manifest can describe: an anchor, a
+/// gate region, an NPC or actor post, an interact marker, a stealth zone, or a
+/// trigger region. Every target is an inclusive cell box (`min == max` for a
+/// point), so screen bboxes and occlusion probes have one code path.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Target {
+    /// Stable id — the DSL id of the thing (anchor / npc / actor / objective /
+    /// trigger id), or `<beat>/<zone-anchor>` for a stealth zone.
     pub id: String,
-    /// The emitted value (two decimals, rounded up).
-    pub view_range: f64,
-    /// `seen_from / 32`, when declared.
-    pub seen_from: Option<f64>,
-    /// The farthest shot distance / 32, when a shot frames it.
-    pub shots: Option<f64>,
-    /// The farthest standable cell of its place / 32.
-    pub place: f64,
-    /// Which term won: `floor`, `seen_from`, `shots` or `place`.
-    pub won: &'static str,
+    /// Kind tag: `anchor` · `gate` · `npc-post` · `actor-post` · `interact` ·
+    /// `stealth-zone` · `trigger` · `body` (an entity a frame's world holds).
+    pub kind: &'static str,
+    /// Owning area id (empty when the thing is not area-scoped).
+    pub area: String,
+    /// Inclusive minimum cell of the target's box.
+    pub min: [i32; 3],
+    /// Inclusive maximum cell of the target's box.
+    pub max: [i32; 3],
 }
 
-impl ShotLedger {
-    fn counts(&self) -> Counts {
-        let mut n = Counts {
-            cutscenes: self.cutscenes.len(),
-            ..Counts::default()
-        };
-        for c in &self.cutscenes {
-            for s in &c.shots {
-                n.shots += 1;
-                match s.kind {
-                    "landscape" => n.landscape += 1,
-                    "anchor" => n.marks += 1,
-                    "npc" | "actor" => n.bodies += 1,
-                    "assembly" => n.assemblies += 1,
-                    "place" => n.places += 1,
-                    "region" => n.regions += 1,
-                    _ => {}
-                }
-                if s.kind != "none" {
-                    n.declared += 1;
-                }
-                for r in &s.subjects {
-                    let t = r.in_frame.len();
-                    n.ticks += t;
-                    n.out_of_frame += r.in_frame.iter().filter(|f| !**f).count();
-                    n.occluded += r.lines_clear.iter().filter(|c| **c == 0).count();
-                    n.clear += r.lines_clear.iter().map(|c| *c as usize).sum::<usize>();
-                    if let Some(f) = r.farthest {
-                        n.body_subjects += 1;
-                        n.farthest = n.farthest.max(f);
-                    }
-                    if let (Some(f), Some(cr)) = (r.farthest, r.cull_radius) {
-                        let s = f / cr;
-                        n.slack = Some(n.slack.map_or(s, |x: f64| x.max(s)));
-                    }
-                }
-            }
+impl Target {
+    pub fn point(id: String, kind: &'static str, area: String, pos: [i32; 3]) -> Target {
+        Target {
+            id,
+            kind,
+            area,
+            min: pos,
+            max: pos,
         }
-        n
     }
 
-    /// The binding line (spec-0110 §7), every figure computed from the
-    /// declarations, zeroes included.
-    pub fn line(&self) -> String {
-        let n = self.counts();
-        format!(
-            "shot subjects: {} shot(s) in {} cutscene(s), {} declare a subject ({} landscape, {} \
-             marks, {} bodies, {} assemblies, {} places, {} regions); {} tick(s) judged, {} out of \
-             frame, {} occluded, clear lines {} of {}; bodies: {} present, sent, drawn — farthest \
-             {:.1} blocks, hidden below entity distance {}",
-            n.shots,
-            n.cutscenes,
-            n.declared,
-            n.landscape,
-            n.marks,
-            n.bodies,
-            n.assemblies,
-            n.places,
-            n.regions,
-            n.ticks,
-            n.out_of_frame,
-            n.occluded,
-            n.clear,
-            9 * n.ticks,
-            n.body_subjects,
-            n.farthest,
-            n.slack
-                .map(|s| format!("{:.2}", (s * 100.0).ceil() / 100.0))
-                .unwrap_or_else(|| "none (no npc or actor framed)".to_string()),
-        )
+    /// Whether this target is a single cell (rendered as a point, not a box).
+    pub fn is_point(&self) -> bool {
+        self.min == self.max
     }
 
-    /// `validation/shot-subjects.json`.
-    pub fn to_json(&self, ranges: &[AssemblyRange]) -> Value {
-        let n = self.counts();
-        json!({
-            "proof_frame": {
-                "fov_vertical_degrees": PROOF_FOV_DEG,
-                "fov_in_fluid_degrees": PROOF_FOV_FLUID_DEG,
-                "window": [854, 480],
-                "action_safe_ndc": ACTION_SAFE,
-                "entity_distance_scaling": 1.0,
-                "view_scale": 1.0,
-                "entity_broadcast_range_percentage": 100,
-            },
-            "counts": {
-                "cutscenes": n.cutscenes,
-                "shots": n.shots,
-                "declared": n.declared,
-                "landscape": n.landscape,
-                "marks": n.marks,
-                "bodies": n.bodies,
-                "assemblies": n.assemblies,
-                "places": n.places,
-                "regions": n.regions,
-                "ticks_judged": n.ticks,
-                "out_of_frame": n.out_of_frame,
-                "occluded": n.occluded,
-                "clear_lines": n.clear,
-                "clear_lines_of": 9 * n.ticks,
-            },
-            "cutscenes": self.cutscenes.iter().map(|c| json!({
-                "path": c.path,
-                "cutscene_digest": c.digest,
-                "start_lens": round3v(c.start_lens),
-                "shots": c.shots.iter().map(|s| json!({
-                    "index": s.index,
-                    "start_tick": s.start_tick,
-                    "ticks": s.ticks,
-                    "kind": s.kind,
-                    "subjects": s.subjects.iter().map(|r| json!({
-                        "field": r.field,
-                        "kind": r.kind,
-                        "subject": r.canon,
-                        "reference": round3v(r.reference),
-                        "in_frame": r.in_frame,
-                        "lines_clear": r.lines_clear,
-                        "presence": r.presence,
-                        "farthest_horizontal": r.farthest_horizontal.map(round3),
-                        "farthest": r.farthest.map(round3),
-                        "tracking_range": r.tracking_range,
-                        "cull_radius": r.cull_radius.map(round3),
-                        "entity": r.entity,
-                        "body_at": r.body_at.map(round3v),
-                    })).collect::<Vec<_>>(),
-                })).collect::<Vec<_>>(),
-            })).collect::<Vec<_>>(),
-            "assemblies": ranges.iter().map(|r| json!({
-                "id": r.id,
-                "view_range": r.view_range,
-                "terms": {
-                    "floor": 1.0,
-                    "seen_from": r.seen_from.map(round3),
-                    "shots": r.shots.map(round3),
-                    "place": round3(r.place),
-                },
-                "won": r.won,
-            })).collect::<Vec<_>>(),
-            "unchecked": UNCHECKED,
-        })
+    /// The box centre in world coordinates (cell centres, so a point target's
+    /// centre is the middle of its block).
+    pub fn centre(&self) -> [f64; 3] {
+        [
+            (self.min[0] + self.max[0] + 1) as f64 / 2.0,
+            (self.min[1] + self.max[1] + 1) as f64 / 2.0,
+            (self.min[2] + self.max[2] + 1) as f64 / 2.0,
+        ]
+    }
+
+    /// The eight world-space corners of the box.
+    fn corners(&self) -> [[f64; 3]; 8] {
+        let lo = [self.min[0] as f64, self.min[1] as f64, self.min[2] as f64];
+        let hi = [
+            self.max[0] as f64 + 1.0,
+            self.max[1] as f64 + 1.0,
+            self.max[2] as f64 + 1.0,
+        ];
+        let mut out = [[0.0; 3]; 8];
+        for (i, c) in out.iter_mut().enumerate() {
+            *c = [
+                if i & 1 == 0 { lo[0] } else { hi[0] },
+                if i & 2 == 0 { lo[1] } else { hi[1] },
+                if i & 4 == 0 { lo[2] } else { hi[2] },
+            ];
+        }
+        out
+    }
+
+    /// The short display label burned into a `--labels` frame: the id's local
+    /// part, upper-cased (the bitmap font is caps-only).
+    pub fn label(&self) -> String {
+        self.id
+            .rsplit('/')
+            .next()
+            .unwrap_or(&self.id)
+            .to_ascii_uppercase()
     }
 }
 
-#[derive(Default)]
-struct Counts {
-    cutscenes: usize,
-    shots: usize,
-    declared: usize,
-    landscape: usize,
-    marks: usize,
-    bodies: usize,
-    assemblies: usize,
-    places: usize,
-    regions: usize,
-    ticks: usize,
-    out_of_frame: usize,
-    occluded: usize,
-    clear: usize,
-    body_subjects: usize,
-    farthest: f64,
-    slack: Option<f64>,
+/// One placed structure piece, as the manifest reports it — the **layout** half
+/// of the scene description, beside the point/region [`Target`]s.
+///
+/// A `piece-local` edit frame (`{"kind":"piece-local","piece":N,"prefab":…}`) is
+/// resolved by the replay as `piece.origin + rotation.transform(local)` against
+/// `area.pieces[N]` (`edit::resolve_frame_point`). Before this listing existed
+/// the manifest carried area bounds and anchors only, so an editor authoring a
+/// piece-local frame had to *back-solve* N, the prefab guard and the transform
+/// by hand from the rendered geometry. Every input to that resolution is now
+/// stated in-band.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PieceEntry {
+    /// Owning area id.
+    pub area: String,
+    /// Index **within that area's** placed pieces — exactly the `piece` field of
+    /// a `piece-local` edit frame (entry piece is 0).
+    pub index: usize,
+    /// Bound prefab id (`prefab/…`) — the frame's `prefab` guard value.
+    pub prefab: String,
+    /// The `/place template` position: where prefab-local `(0,0,0)` lands.
+    pub origin: [i32; 3],
+    /// Unrotated prefab size `[sx, sy, sz]`.
+    pub size: [i32; 3],
+    /// Placement rotation, in the `/place template` vocabulary (`none`,
+    /// `clockwise_90`, `180`, `counterclockwise_90`).
+    pub rotation: &'static str,
+    /// Inclusive minimum cell of the placed AABB.
+    pub min: [i32; 3],
+    /// Inclusive maximum cell of the placed AABB.
+    pub max: [i32; 3],
 }
 
-/// Judge every cutscene shot (spec-0110 §5): returns the ledger, and every
-/// refusal — the first per judged subject — when a shot does not show its
-/// subject (`DW1033`) or a body subject is not there to be seen (`DW1034`).
-/// The caller prints the binding line before taking the verdict.
-pub fn judge(
-    plan: &Plan,
-    world: &World,
-    moves: &[MovePlan],
-    actor_moves: &[ActorMovePlan],
-) -> (ShotLedger, Vec<Failure>) {
-    let order = Order::of(plan.campaign);
-    let served = delvewright_dsl::viewdistance::served_radius_blocks(
-        delvewright_dsl::viewdistance::chunks(plan.campaign),
-    );
-    let blocks = |c: [i32; 3]| world.blocks_camera(c);
-    let mut ledger = ShotLedger::default();
-    let mut failures: Vec<Failure> = Vec::new();
-    for (eff, ctx) in crate::compiler::camera::cutscene_units(plan.campaign) {
-        let Some(shots) = eff.cutscene_shots() else {
-            continue;
-        };
-        if shots.is_empty() {
-            continue;
-        }
-        let path = order.path_of(eff).unwrap_or("").to_string();
-        let mut record = CutsceneRecord {
-            path: path.clone(),
-            digest: crate::compiler::emit::cutscene_digest(&shots),
-            start_lens: [0.0; 3],
-            shots: Vec::new(),
-        };
-        let mut offset: i32 = 0;
-        for (si, shot) in shots.iter().enumerate() {
-            let ex = expand_shot(plan, moves, actor_moves, shot, &ctx, offset);
-            let shot_offset = offset;
-            offset += ex.ticks + 1;
-            let poses = ex.client_poses();
-            if si == 0 {
-                record.start_lens = poses.first().map_or([0.0; 3], |p| p.0);
-            }
-            let mut sr = ShotRecord {
-                index: si,
-                start_tick: shot_offset,
-                ticks: ex.ticks,
-                subjects: Vec::new(),
-                kind: shot.subject.as_ref().map_or("none", CameraSubject::kind),
-            };
-            for (field, subject) in [("subject", &shot.subject), ("subject_b", &shot.subject_b)] {
-                let Some(subject) = subject else { continue };
-                let Some(track) = track_of(
-                    plan,
-                    moves,
-                    actor_moves,
-                    subject,
-                    &ctx,
-                    shot_offset,
-                    ex.ticks,
-                ) else {
-                    continue;
-                };
-                let rec = judge_subject(
-                    plan,
-                    world,
-                    &order,
-                    eff,
-                    &path,
-                    si,
-                    u32::try_from(shot_offset + ex.ticks).unwrap_or(0),
-                    &poses,
-                    field,
-                    subject,
-                    &track,
-                    served,
-                    &blocks,
-                    &mut failures,
-                );
-                if let (CameraSubject::Assembly(s), Some(f)) = (subject, rec.farthest) {
-                    let e = ledger
-                        .assembly_reach
-                        .entry(s.assembly.as_str().to_string())
-                        .or_insert(0.0);
-                    *e = e.max(f);
-                }
-                sr.subjects.push(rec);
-            }
-            record.shots.push(sr);
-        }
-        ledger.cutscenes.push(record);
-    }
-    (ledger, failures)
-}
-
-/// Judge one subject of one shot. A body is asked first whether it is there
-/// to be seen (`DW1034`: present, sent, drawn) and only then whether the frame
-/// shows it (`DW1033`), because the frame of a body that is not there is not
-/// the defect to name.
-#[allow(clippy::too_many_arguments)]
-fn judge_subject(
-    plan: &Plan,
-    world: &World,
-    order: &Order<'_>,
-    eff: &delvewright_dsl::QuestEffect,
-    path: &str,
-    si: usize,
-    shot_end: u32,
-    poses: &[([f64; 3], f64, f64)],
-    field: &'static str,
-    subject: &CameraSubject,
-    track: &Track,
-    served: f64,
-    blocks: &dyn Fn([i32; 3]) -> bool,
-    failures: &mut Vec<Failure>,
-) -> SubjectRecord {
-    let canon = subject.canon();
-    let mut rec = SubjectRecord {
-        field,
-        kind: subject.kind(),
-        canon: canon.clone(),
-        reference: track.reference[0],
-        in_frame: Vec::new(),
-        lines_clear: Vec::new(),
-        presence: None,
-        farthest_horizontal: None,
-        farthest: None,
-        tracking_range: None,
-        cull_radius: None,
-        entity: None,
-        body_at: None,
-    };
-    // The first refusal per judged subject: a subject that leaves the frame
-    // for forty ticks is one finding, not forty.
-    let mut failure: Option<Failure> = None;
-    let mut fail = |code: DwCode, message: String| {
-        if failure.is_none() {
-            failure = Some(Failure { code, message });
-        }
-    };
-    if subject.is_body() {
-        // §5.6: present at the shot's first tick.
-        let body_id = subject.id();
-        match order.presence(body_id, Beat::Effect(eff)) {
-            Presence::Present(p) => match order.removed_while(body_id, eff, shot_end) {
-                None => rec.presence = Some(format!("placed by {p}")),
-                Some(r) => {
-                    rec.presence = Some(format!("placed by {p}, removed by {r} while it plays"));
-                    fail(
-                        DW_SUBJECT_ABSENT,
-                        format!(
-                            "cutscene {path}: shot {si} frames `{body_id}`, placed by {p} but \
-                             removed by {r}, which follows the cutscene in its own effect list \
-                             and so runs while the shot plays (a cutscene does not hold the list \
-                             it stands in) — the shot shows an empty mark. Move the removal \
-                             into the cutscene's `then`, which runs when the camera returns"
-                        ),
-                    );
-                }
-            },
-            Presence::NeverPlaced(found) => {
-                rec.presence = Some("never placed before the cutscene".to_string());
-                let placing = match subject {
-                    CameraSubject::Assembly(_) => "spawn-assembly",
-                    CameraSubject::Actor(_) => "spawn-actor",
-                    _ => "spawn-npc",
-                };
-                fail(
-                    DW_SUBJECT_ABSENT,
-                    format!(
-                        "cutscene {path}: shot {si} frames `{body_id}`, which no beat places \
-                         before the cutscene on every path ({}) — the shot shows an empty mark. \
-                         Put a `{placing}` ahead of the cutscene: earlier in the same effect list, \
-                         in an earlier `sequence` step, or in a beat the quest graph orders before \
-                         it, outside any flag gate and any reaction bundle",
-                        if found.is_empty() {
-                            "nothing places it at all".to_string()
-                        } else {
-                            format!(
-                                "placings found at {}, none ordered before",
-                                found.join(", ")
-                            )
-                        }
-                    ),
-                );
-            }
-            Presence::Removed(p, r) => {
-                rec.presence = Some(format!("placed by {p}, removed by {r}"));
-                fail(
-                    DW_SUBJECT_ABSENT,
-                    format!(
-                        "cutscene {path}: shot {si} frames `{body_id}`, placed by {p} but removed \
-                         by {r}, which is ordered between that placing and the cutscene — the \
-                         shot shows an empty mark. Move the removal into the cutscene's `then`, \
-                         which runs when the camera returns, or place the body again before it"
-                    ),
-                );
-            }
-        }
-        // §5.7 / §5.8: sent and drawn, every tick.
-        let entity = body_entity(plan, subject).unwrap_or_default();
-        rec.entity = Some(entity.clone());
-        rec.body_at = Some(Track::at(&track.body, 0));
-        if let Some(body) = body_of(&entity) {
-            rec.tracking_range = Some(body.tracking_blocks().min(served));
-            let drawn_by_type = !matches!(subject, CameraSubject::Assembly(_));
-            if drawn_by_type {
-                rec.cull_radius = Some(body.cull_radius());
-            }
-            let mut far_h: f64 = 0.0;
-            let mut far: f64 = 0.0;
-            for (t, (pos, ..)) in poses.iter().enumerate() {
-                let b = Track::at(&track.body, t as i32);
-                let (dh, d) = distances(*pos, b);
-                far_h = far_h.max(dh);
-                far = far.max(d);
-                if let Err(why) =
-                    sent_and_drawn(t as i32, *pos, b, &entity, body, served, drawn_by_type)
-                {
-                    fail(
-                        DW_SUBJECT_ABSENT,
-                        format!(
-                            "cutscene {path}: shot {si} frames `{body_id}`, and {why}. \
-                             Bring the camera nearer the subject"
-                        ),
-                    );
-                }
-            }
-            rec.farthest_horizontal = Some(far_h);
-            rec.farthest = Some(far);
+/// Collect every placed piece of a compiled plan, in **plan order** — areas as
+/// the plan holds them, pieces entry-first within each area — so `index` is the
+/// piece-local frame's index and the ordering is deterministic (ADR-0006).
+pub fn collect_pieces(plan: &Plan) -> Vec<PieceEntry> {
+    let mut out = Vec::new();
+    for area in &plan.areas {
+        for (index, piece) in area.pieces.iter().enumerate() {
+            let (min, max) = piece.bbox();
+            out.push(PieceEntry {
+                area: area.area_id.clone(),
+                index,
+                prefab: piece.prefab_id.clone(),
+                origin: piece.pos,
+                size: piece.size,
+                rotation: piece.rotation.token().unwrap_or("none"),
+                min,
+                max,
+            });
         }
     }
-    // §5.4–§5.5: in frame and in sight, every tick.
-    let judged = frame_and_sight(
-        poses,
-        &track.reference,
-        &track.boxes,
-        &|c| world.is_flooded(c),
-        blocks,
-    );
-    rec.in_frame = judged.in_frame;
-    rec.lines_clear = judged.lines_clear;
-    if let Some(m) = judged.first_failure {
-        fail(
-            DW_SHOT_UNFRAMED,
-            format!("cutscene {path}: shot {si} does not show its {field} `{canon}` {m}"),
-        );
+    out
+}
+
+/// Collect every manifest-addressable target from a compiled plan, sorted by
+/// `(kind, area, id)` so the manifest's ordering is deterministic (ADR-0006).
+///
+/// A single world position may legitimately appear under two kinds — an
+/// `interact` objective's marker and the `anchor` it binds to are the same cell
+/// but different *things*, addressed by different ids, and a review that says
+/// "the interact is occluded" means something different from "the anchor is". No
+/// deduplication is applied.
+pub fn collect_targets(plan: &Plan) -> Vec<Target> {
+    let c = plan.campaign;
+    let mut out: Vec<Target> = Vec::new();
+
+    // Anchors + gate regions (BTreeMap order).
+    for ((area, name), resolved) in &plan.anchors {
+        match resolved {
+            ResolvedAnchor::Point { pos, .. } => {
+                out.push(Target::point(name.clone(), "anchor", area.clone(), *pos));
+            }
+            ResolvedAnchor::Gate { from, to, .. } => out.push(Target {
+                id: name.clone(),
+                kind: "gate",
+                area: area.clone(),
+                min: [from[0].min(to[0]), from[1].min(to[1]), from[2].min(to[2])],
+                max: [from[0].max(to[0]), from[1].max(to[1]), from[2].max(to[2])],
+            }),
+        }
     }
-    failures.extend(failure);
-    rec
-}
 
-/// What [`frame_and_sight`] measured over one shot's ticks.
-#[derive(Clone, Debug, PartialEq)]
-pub struct FrameJudgement {
-    /// Per tick: the reference point is inside the action-safe frame.
-    pub in_frame: Vec<bool>,
-    /// Per tick: clear sight lines of nine.
-    pub lines_clear: Vec<u8>,
-    /// The first failing tick, worded: `at tick T — the lens stands at …,
-    /// and the subject is out of frame / occluded … Move the camera …`.
-    pub first_failure: Option<String>,
-}
-
-/// **In frame and in sight at every tick** (spec-0110 §5.4–§5.5): per client
-/// pose (`poses`, `(lens, yaw, pitch)`), the subject's reference point and
-/// sight box at that tick (a one-entry slice holds still), judged against the
-/// proof frame — [`PROOF_FOV_DEG`], or [`PROOF_FOV_FLUID_DEG`] at a tick the
-/// lens's cell is `fluid` — over the cells `blocks` holds for.
-pub fn frame_and_sight(
-    poses: &[([f64; 3], f64, f64)],
-    references: &[[f64; 3]],
-    boxes: &[CellBox],
-    fluid: &dyn Fn([i32; 3]) -> bool,
-    blocks: &dyn Fn([i32; 3]) -> bool,
-) -> FrameJudgement {
-    let mut out = FrameJudgement {
-        in_frame: Vec::new(),
-        lines_clear: Vec::new(),
-        first_failure: None,
-    };
-    for (t, (pos, yaw, pitch)) in poses.iter().enumerate() {
-        let t = t as i32;
-        let fov = if fluid(cell_of(*pos)) {
-            PROOF_FOV_FLUID_DEG
-        } else {
-            PROOF_FOV_DEG
-        };
-        let pose = Pose {
-            pos: *pos,
-            yaw: *yaw,
-            pitch: *pitch,
-        };
-        let reference = Track::at(references, t);
-        let sbox = Track::at(boxes, t);
-        let s = sight(&pose, fov, PROOF_ASPECT, reference, &sbox, blocks);
-        out.in_frame.push(s.in_frame);
-        out.lines_clear.push(s.lines_clear);
-        if (!s.in_frame || s.occluded()) && out.first_failure.is_none() {
-            let what = if !s.in_frame {
-                format!(
-                    "out of frame: its reference point {:?} projects outside the action-safe \
-                     rectangle (|x|, |y| <= {ACTION_SAFE} in normalised device coordinates) of the \
-                     proof frame ({fov}° vertical, 854 × 480)",
-                    round3v(reference)
-                )
-            } else {
-                format!(
-                    "occluded: all nine sight lines to it are blocked, the centre line first by \
-                     the block at {:?}",
-                    s.centre_block.unwrap_or_default()
-                )
-            };
-            out.first_failure = Some(format!(
-                "at tick {t} — the lens stands at {:?} aiming yaw {:.1}, pitch {:.1}, and the \
-                 subject is {what}. Move the camera `path`, aim it with `look_at`, adjust \
-                 `bearing`/`dist` on a styled shot, or cut the shot in two where the subject \
-                 leaves it",
-                round3v(*pos),
-                yaw,
-                pitch
+    // NPC posts: where a mannequin stands.
+    for npc in &c.npcs.content.npcs {
+        let area = plan.npc_area(npc.id.as_str()).unwrap_or("").to_string();
+        if let Some(pos) = plan
+            .point(&area, npc.anchor.as_str())
+            .map(|p| delvewright_dsl::offset_cell(p, npc.offset))
+        {
+            out.push(Target::point(
+                npc.id.as_str().to_string(),
+                "npc-post",
+                area,
+                pos,
             ));
         }
     }
-    out
-}
 
-/// `(horizontal, straight)` distance from the lens to a body.
-fn distances(lens: [f64; 3], body: [f64; 3]) -> (f64, f64) {
-    let dh = ((body[0] - lens[0]).powi(2) + (body[2] - lens[2]).powi(2)).sqrt();
-    (dh, (dh * dh + (body[1] - lens[1]).powi(2)).sqrt())
-}
-
-/// **Sent and drawn** at one tick (spec-0110 §5.7, §5.8): the body at `body`
-/// is within its type's tracking range (capped by the `served` radius)
-/// horizontally from the lens, and — when `judged_drawn`, an NPC or actor — it
-/// is nearer the lens than its cull radius at the proof frame. `Err` says
-/// which failed, with the distance and the bound.
-pub fn sent_and_drawn(
-    tick: i32,
-    lens: [f64; 3],
-    body: [f64; 3],
-    entity: &str,
-    kind: EntityBody,
-    served: f64,
-    judged_drawn: bool,
-) -> Result<(), String> {
-    let (dh, d) = distances(lens, body);
-    let tracking = kind.tracking_blocks().min(served);
-    if round3(dh) > tracking {
-        return Err(format!(
-            "at tick {tick} the body stands {} blocks from the lens horizontally — beyond its tracking range \
-             of {tracking} blocks (`{entity}` is tracked {} chunks, capped by the served {served} \
-             blocks), so the server never sends it to the player watching",
-            round3(dh),
-            kind.tracking_range
-        ));
-    }
-    if judged_drawn && round3(d) >= round3(kind.cull_radius()) {
-        return Err(format!(
-            "at tick {tick} the body stands {} blocks from the lens — at or beyond its cull radius of {} blocks \
-             (`{entity}`, box size {} × 64 at the default entity distance), so the client does \
-             not draw it",
-            round3(d),
-            round3(kind.cull_radius()),
-            round3(kind.size())
-        ));
-    }
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// The assemblies' view range (§5.8)
-// ---------------------------------------------------------------------------
-
-/// Per assembly id: the farthest a standing player's eye in the place the
-/// assembly's mark stands in is from its root — the floor its `view_range`
-/// is derived to. `population` is the walked population: the cells the party
-/// can stand in.
-pub fn place_reach(plan: &Plan, population: &BTreeSet<[i32; 3]>) -> BTreeMap<String, f64> {
-    let eye = delvewright_dsl::metrics::PLAYER_EYE_HEIGHT;
-    let mut out = BTreeMap::new();
-    for p in crate::compiler::assembly::placed(plan) {
-        let root = [
-            p.mark[0] as f64 + 0.5,
-            p.mark[1] as f64,
-            p.mark[2] as f64 + 0.5,
-        ];
-        let reach = crate::compiler::horizon::place_bounds(plan, &p.area)
-            .map(|(lo, hi)| {
-                let b = CellBox::spanning(lo, hi);
-                population
-                    .iter()
-                    .filter(|c| b.contains(**c))
-                    .map(|c| {
-                        let e = [c[0] as f64 + 0.5, c[1] as f64 + eye, c[2] as f64 + 0.5];
-                        ((e[0] - root[0]).powi(2)
-                            + (e[1] - root[1]).powi(2)
-                            + (e[2] - root[2]).powi(2))
-                        .sqrt()
-                    })
-                    .fold(0.0_f64, f64::max)
-            })
-            .unwrap_or(0.0);
-        out.insert(p.decl.id.as_str().to_string(), reach);
-    }
-    out
-}
-
-/// Every placed assembly's emitted `view_range` (spec-0110 §5.8):
-/// `max(1.0, seen_from / 32, d_max / 32)` rounded up to two decimals, `d_max`
-/// the greatest of the shot reach ([`ShotLedger::assembly_reach`]) and the
-/// place reach ([`place_reach`]). The divisor is `64 × 0.5`, so the range holds
-/// at the client's lowest entity distance.
-pub fn view_ranges(
-    plan: &Plan,
-    shot_reach: &BTreeMap<String, f64>,
-    place: &BTreeMap<String, f64>,
-) -> Vec<AssemblyRange> {
-    let div = CULL_PER_SIZE * ENTITY_DISTANCE_FLOOR;
-    crate::compiler::assembly::placed(plan)
-        .iter()
-        .map(|p| {
-            let id = p.decl.id.as_str().to_string();
-            let seen_from = p.decl.seen_from.map(|s| f64::from(s.blocks()) / div);
-            let shots = shot_reach.get(&id).map(|d| d / div);
-            let place = place.get(&id).copied().unwrap_or(0.0) / div;
-            let (view_range, won) = derive_range(seen_from, shots, place);
-            AssemblyRange {
-                id,
-                view_range,
-                seen_from,
-                shots,
-                place,
-                won,
-            }
-        })
-        .collect()
-}
-
-/// `max(1.0, seen_from, shots, place)` over terms already divided by 32,
-/// rounded up to two decimals, and the name of the term that won (`floor`
-/// on a tie with it).
-pub fn derive_range(seen_from: Option<f64>, shots: Option<f64>, place: f64) -> (f64, &'static str) {
-    let mut won = "floor";
-    let mut v = 1.0_f64;
-    for (name, term) in [
-        ("seen_from", seen_from),
-        ("shots", shots),
-        ("place", Some(place)),
-    ] {
-        if let Some(x) = term
-            && round6(x) > round6(v)
-        {
-            v = x;
-            won = name;
+    // Actor posts: where a scripted puppet is summoned (v0.6, spec-0014).
+    for actor in &c.quests.content.actors {
+        if let Some((area, pos)) = resolve_any_area(plan, actor.anchor.as_str()) {
+            out.push(Target::point(
+                actor.id.as_str().to_string(),
+                "actor-post",
+                area,
+                delvewright_dsl::offset_cell(pos, actor.offset),
+            ));
         }
     }
-    ((round6(v * 100.0)).ceil() / 100.0, won)
+
+    // Interact markers: the objective's own id at its anchor cell.
+    for q in &c.quests.content.quests {
+        for o in &q.objectives {
+            if let Some((obj_id, anchor)) = interact_of(o)
+                && let Some((area, pos)) = resolve_any_area(plan, anchor)
+            {
+                out.push(Target::point(obj_id.to_string(), "interact", area, pos));
+            }
+        }
+    }
+
+    // Stealth zones: `begin-stealth` boxes (centre + half-extents).
+    for beat in &plan.stealth_beats {
+        for (anchor, centre, half) in &beat.zones {
+            let h = [half[0] as i32, half[1] as i32, half[2] as i32];
+            out.push(Target {
+                id: format!("stealth-{}/{}", beat.index, local_of(anchor)),
+                kind: "stealth-zone",
+                area: String::new(),
+                min: [centre[0] - h[0], centre[1] - h[1], centre[2] - h[2]],
+                max: [centre[0] + h[0], centre[1] + h[1], centre[2] + h[2]],
+            });
+        }
+    }
+
+    // Trigger regions: an `approach` trigger is a box of its range; `strike`/
+    // `use` triggers are the single interaction-entity cell.
+    for t in &c.quests.content.triggers {
+        let Some((area, pos)) = t.at_anchor().and_then(|at| resolve_any_area(plan, at)) else {
+            continue;
+        };
+        let r = match t.on {
+            delvewright_dsl::TriggerOn::Approach { range } => range as i32,
+            _ => 0,
+        };
+        out.push(Target {
+            id: t.id.as_str().to_string(),
+            kind: "trigger",
+            area,
+            min: [pos[0] - r, pos[1] - r, pos[2] - r],
+            max: [pos[0] + r, pos[1] + r, pos[2] + r],
+        });
+    }
+
+    out.sort_by(|a, b| (a.kind, &a.area, &a.id).cmp(&(b.kind, &b.area, &b.id)));
+    out
 }
 
+/// **The body a target is drawn as**, by entity id without its namespace, when
+/// the target is a body the datapack summons: an NPC's post is its mannequin
+/// (a skinned NPC) or its declared entity; an actor's post its puppet. `None`
+/// for every other target: an `interact` objective is marked by no body
+/// (spec-0104 §6 — a highlight copy exists only while it is lit). A review frame reads the
+/// renderer's own statistics for that kind ([`crate::compiler::view::frames::Stats`])
+/// to say whether the body was drawn (`DW1039`).
+pub fn body_of(plan: &Plan, t: &Target) -> Option<String> {
+    let short = |e: &str| e.strip_prefix("minecraft:").unwrap_or(e).to_string();
+    let c = plan.campaign;
+    match t.kind {
+        "npc-post" => c
+            .npcs
+            .content
+            .npcs
+            .iter()
+            .find(|n| n.id.as_str() == t.id)
+            .map(|n| {
+                if n.skin.is_some() {
+                    "mannequin".to_string()
+                } else {
+                    short(&n.base_entity)
+                }
+            }),
+        "actor-post" => c
+            .quests
+            .content
+            .actors
+            .iter()
+            .find(|a| a.id.as_str() == t.id)
+            .map(|a| {
+                if a.skin.is_some() {
+                    "mannequin".to_string()
+                } else {
+                    short(&a.entity)
+                }
+            }),
+        _ => None,
+    }
+}
+
+/// `(objective id, anchor id)` for an `interact` objective, else `None`.
+fn interact_of(o: &delvewright_dsl::Objective) -> Option<(&str, &str)> {
+    match o {
+        delvewright_dsl::Objective::Interact { id, anchor, .. } => {
+            Some((id.as_str(), anchor.as_str()))
+        }
+        _ => None,
+    }
+}
+
+/// Resolve an anchor name in whichever area declares it (first in `BTreeMap`
+/// order), returning `(area id, cell)`. Point anchors only.
+fn resolve_any_area(plan: &Plan, anchor: &str) -> Option<(String, [i32; 3])> {
+    plan.anchors.iter().find_map(|((area, name), r)| match r {
+        ResolvedAnchor::Point { pos, .. } if name == anchor => Some((area.clone(), *pos)),
+        _ => None,
+    })
+}
+
+/// The local (post-`/`) part of an id.
+fn local_of(id: &str) -> &str {
+    id.rsplit('/').next().unwrap_or(id)
+}
+
+// ---------------------------------------------------------------------------
+// Screen-space geometry + the manifest
+// ---------------------------------------------------------------------------
+
+/// Project a target's box to a clipped screen bbox, or `None` when it is wholly
+/// behind the camera or wholly off-frame (i.e. outside the frustum).
+fn screen_box(cam: &Camera, w: u32, h: u32, t: &Target) -> Option<ScreenBox> {
+    let mut lo = [f64::INFINITY; 2];
+    let mut hi = [f64::NEG_INFINITY; 2];
+    let mut any_front = false;
+    for c in t.corners() {
+        if let Some((s, _)) = cam.project(w, h, c) {
+            any_front = true;
+            lo[0] = lo[0].min(s[0]);
+            lo[1] = lo[1].min(s[1]);
+            hi[0] = hi[0].max(s[0]);
+            hi[1] = hi[1].max(s[1]);
+        }
+    }
+    if !any_front {
+        return None;
+    }
+    let x0 = lo[0].floor().max(0.0) as i64;
+    let y0 = lo[1].floor().max(0.0) as i64;
+    let x1 = hi[0].ceil().min(w as f64) as i64;
+    let y1 = hi[1].ceil().min(h as f64) as i64;
+    if x1 <= x0 || y1 <= y0 {
+        return None;
+    }
+    Some(ScreenBox {
+        x: x0,
+        y: y0,
+        w: (x1 - x0).max(1),
+        h: (y1 - y0).max(1),
+    })
+}
+
+/// A target resolved against one camera: its screen footprint and whether it
+/// is hidden. Its fields are private, so the one way to hold one is to ask
+/// [`resolve_targets`]: no other module can state an answer of its own.
+#[derive(Debug, Clone)]
+pub struct ResolvedTarget<'a> {
+    /// The target itself.
+    target: &'a Target,
+    /// Screen-space bbox in pixels.
+    bbox: ScreenBox,
+    /// Whether no sight line from the eye reaches the target
+    /// (`occluded_target`, the one sight rule).
+    occluded: bool,
+    /// Eye→centre distance in blocks.
+    distance: f64,
+}
+
+impl<'a> ResolvedTarget<'a> {
+    /// The target itself.
+    pub fn target(&self) -> &'a Target {
+        self.target
+    }
+
+    /// Screen-space bbox in pixels.
+    pub fn bbox(&self) -> ScreenBox {
+        self.bbox
+    }
+
+    /// Whether the target is hidden from the eye (the one sight rule).
+    pub fn occluded(&self) -> bool {
+        self.occluded
+    }
+
+    /// Eye→centre distance in blocks.
+    pub fn distance(&self) -> f64 {
+        self.distance
+    }
+
+    /// The entry every surface lists an in-frame target as: the world-space
+    /// half ([`target_json`]) plus `screen_bbox`, `occluded` and `distance`.
+    /// One writer, so the manifest's `targets` and a shot's `shows` cannot
+    /// state the answer two ways.
+    pub fn entry(&self) -> Value {
+        let mut v = target_json(self.target);
+        v["screen_bbox"] = json!({
+            "x": self.bbox.x, "y": self.bbox.y, "w": self.bbox.w, "h": self.bbox.h,
+        });
+        v["occluded"] = json!(self.occluded);
+        v["distance"] = json!(round3(self.distance));
+        v
+    }
+}
+
+/// Resolve every target against a camera, returning `(in frustum, out of frame
+/// ids)`. Input order is preserved, so the manifest inherits
+/// [`collect_targets`]'s deterministic sort.
+pub fn resolve_targets<'a, O: Occupancy + ?Sized>(
+    grid: &O,
+    cam: &Camera,
+    width: u32,
+    height: u32,
+    targets: &'a [Target],
+) -> (Vec<ResolvedTarget<'a>>, Vec<&'a Target>) {
+    let mut inside = Vec::new();
+    let mut outside = Vec::new();
+    for t in targets {
+        match screen_box(cam, width, height, t) {
+            Some(bbox) => {
+                let centre = t.centre();
+                let d = [
+                    centre[0] - cam.pos[0],
+                    centre[1] - cam.pos[1],
+                    centre[2] - cam.pos[2],
+                ];
+                inside.push(ResolvedTarget {
+                    target: t,
+                    bbox,
+                    occluded: occluded_target(grid, cam.pos, t),
+                    distance: (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt(),
+                });
+            }
+            None => outside.push(t),
+        }
+    }
+    (inside, outside)
+}
+
+/// How many of the `samples`² rays through the pixel centres of a square frame
+/// taken by `cam` first meet, within `reach` blocks, a face turned toward the
+/// camera — its normal within `acos(across_cos)` of the view axis — or start
+/// inside a block. The measurement `DW0893` reads
+/// ([`crate::compiler::view::sight::Sight`]): how much of a frame is a near
+/// surface across the view. It names no target, so it is no answer to whether
+/// one is hidden; that is [`resolve_targets`]'s alone.
+pub fn near_surface_rays(
+    grid: &VoxelGrid,
+    cam: &Camera,
+    samples: u32,
+    reach: f64,
+    across_cos: f64,
+) -> u32 {
+    let (forward, _, _) = cam.basis();
+    let mut near = 0u32;
+    for py in 0..samples {
+        for px in 0..samples {
+            let dir = cam.ray(samples, samples, px, py);
+            let Some(hit) = grid.cast(cam.pos, dir, reach) else {
+                continue;
+            };
+            // A ray that starts inside a block is all block.
+            if hit.t <= 0.0 || forward[hit.axis].abs() >= across_cos {
+                near += 1;
+            }
+        }
+    }
+    near
+}
+
+/// What the manifest describes about the world, as opposed to the camera and the
+/// image: the solved layout (`pieces`) plus the targets in and out of frame.
+/// Grouped so [`manifest`] takes one scene rather than three parallel slices.
+pub struct Scene<'a> {
+    /// Every placed piece of the plan ([`collect_pieces`]).
+    pub pieces: &'a [PieceEntry],
+    /// Targets inside the frustum, with their screen boxes.
+    pub inside: &'a [ResolvedTarget<'a>],
+    /// Targets outside it.
+    pub outside: &'a [&'a Target],
+}
+
+/// The picture a manifest describes: its size and its pixels, read for the
+/// `featureless` verdict and never hashed.
+pub struct Picture<'a> {
+    pub width: u32,
+    pub height: u32,
+    /// RGBA8, row major.
+    pub rgba: &'a [u8],
+}
+
+/// Build the frame manifest — the structured half of a frame.
+///
+/// Schema (v3):
+/// ```text
+/// { manifest_version, campaign_id, delvec, image{path,width,height},
+///   camera{pos,yaw,pitch,fov,convention}, world{block_kinds,bounds},
+///   pieces[ {area,index,prefab,origin,size,rotation,box{min,max}} ],
+///   targets[ {id,kind,area,pos|box,screen_bbox{x,y,w,h},occluded,distance} ],
+///   out_of_frame[ {id,kind,area,pos|box} ] }
+/// ```
+/// `pos` is present for point targets, `box` (`{min,max}`, inclusive cells) for
+/// region targets — never both. `out_of_frame` is the complement of `targets`:
+/// it is what makes "the subject is absent entirely" (spec-0015 pillar 4)
+/// machine-visible rather than something a reviewer must notice. `pieces`
+/// ([`PieceEntry`]) is the layout half: the placed structure pieces of the whole
+/// plan (not only the ones in frame), which is what a `piece-local` edit frame
+/// addresses.
+pub fn manifest(
+    campaign_id: &str,
+    image_path: &str,
+    cam: &Camera,
+    picture: &Picture<'_>,
+    grid: &VoxelGrid,
+    scene: Scene<'_>,
+) -> Value {
+    let Scene {
+        pieces,
+        inside,
+        outside,
+    } = scene;
+    let bounds = grid
+        .bounds()
+        .map(|(lo, hi)| json!({ "min": lo, "max": hi }));
+    json!({
+        "manifest_version": 3,
+        "campaign_id": campaign_id,
+        "delvec": crate::compiler::DELVEC_VERSION,
+        "image": {
+            "path": image_path,
+            "width": picture.width,
+            "height": picture.height,
+        },
+        "camera": {
+            "pos": [round3(cam.pos[0]), round3(cam.pos[1]), round3(cam.pos[2])],
+            "yaw": round3(cam.yaw),
+            "pitch": round3(cam.pitch),
+            "fov": round3(cam.fov),
+            "convention": "minecraft degrees: yaw 0 = south (+Z), 90 = west (-X); \
+                           pitch positive looks down; fov is vertical",
+        },
+        "world": {
+            "block_kinds": grid.block_kinds(),
+            "bounds": bounds,
+        },
+        "pieces": pieces.iter().map(|p| json!({
+            "area": p.area,
+            "index": p.index,
+            "prefab": p.prefab,
+            "origin": p.origin,
+            "size": p.size,
+            "rotation": p.rotation,
+            "box": { "min": p.min, "max": p.max },
+        })).collect::<Vec<_>>(),
+        "targets": inside.iter().map(ResolvedTarget::entry).collect::<Vec<_>>(),
+        "out_of_frame": outside.iter().map(|t| target_json(t)).collect::<Vec<_>>(),
+        // What this frame is worth to a reviewer, judged by the arm that drew
+        // it. Two numbers, and both are the CLAUDE.md binding rule applied to a
+        // picture: `targets` is what the shot was aimed at and `featureless` is
+        // whether it shows anything at all. A render that succeeds, writes a
+        // file, and is a rectangle of flat background looks exactly like one
+        // more shot taken — to a directory listing, to a contact sheet, and to
+        // a reviewer skimming. The producer answers it here because a verdict
+        // computed by whoever consumes the file later is a second authority on
+        // one question.
+        "frame": {
+            "targets_in_frame": inside.len(),
+            "targets_out_of_frame": outside.len(),
+            "featureless": crate::compiler::view::detect::is_featureless(
+                picture.rgba,
+                picture.width,
+                picture.height,
+            )
+            .map(|f| json!({ "distinct_colors": f.distinct }))
+            .unwrap_or(Value::Null),
+        },
+    })
+}
+
+/// The world-space half of a manifest entry (shared by `targets` and
+/// `out_of_frame`).
+pub fn target_json(t: &Target) -> Value {
+    let mut v = json!({
+        "id": t.id,
+        "kind": t.kind,
+    });
+    if !t.area.is_empty() {
+        v["area"] = json!(t.area);
+    }
+    if t.is_point() {
+        v["pos"] = json!(t.min);
+    } else {
+        v["box"] = json!({ "min": t.min, "max": t.max });
+    }
+    v
+}
+
+// ---------------------------------------------------------------------------
+// Label / grid overlay
+// ---------------------------------------------------------------------------
+
 #[cfg(test)]
-mod tests;
+mod tests {
+    use super::*;
+
+    /// A 1-block world at the origin cell.
+    fn one_block(name: &str) -> VoxelGrid {
+        let mut m = BTreeMap::new();
+        m.insert([0, 0, 0], name.to_string());
+        VoxelGrid::build(&crate::compiler::blockstate::interned(m.clone()))
+    }
+
+    #[test]
+    fn grid_round_trips_cells_including_negative_coordinates() {
+        let mut m = BTreeMap::new();
+        m.insert([0, 64, 0], "minecraft:stone".to_string());
+        m.insert([-33, -5, -17], "minecraft:sand".to_string());
+        m.insert([200, 70, 120], "minecraft:water".to_string());
+        let g = VoxelGrid::build(&crate::compiler::blockstate::interned(m.clone()));
+        assert_eq!(g.name(g.at([0, 64, 0])), "minecraft:stone");
+        assert_eq!(g.name(g.at([-33, -5, -17])), "minecraft:sand");
+        assert_eq!(g.name(g.at([200, 70, 120])), "minecraft:water");
+        assert_eq!(g.at([1, 64, 0]), 0, "an empty cell is air");
+        assert_eq!(g.at([9999, 9999, 9999]), 0, "outside the grid is air");
+        assert_eq!(g.bounds(), Some(([-33, -5, -17], [200, 70, 120])));
+        assert_eq!(g.block_kinds(), 3);
+    }
+
+    #[test]
+    fn empty_world_casts_nothing() {
+        let g = VoxelGrid::build(&BTreeMap::new());
+        assert!(g.bounds().is_none());
+        assert!(g.cast([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 100.0).is_none());
+        assert!(!g.blocked([0.0, 0.0, 0.0], [10.0, 0.0, 0.0]));
+    }
+
+    #[test]
+    fn dda_hits_the_expected_face_from_each_direction() {
+        let g = one_block("minecraft:stone");
+        // From −Z looking +Z: enters the −Z face (axis 2, sign −1).
+        let h = g
+            .cast([0.5, 0.5, -5.0], [0.0, 0.0, 1.0], 100.0)
+            .expect("hits");
+        assert_eq!((h.cell, h.axis, h.sign), ([0, 0, 0], 2, -1));
+        assert!((h.t - 5.0).abs() < 1e-6, "t = {}", h.t);
+        // From above looking down: enters the +Y (top) face.
+        let h = g
+            .cast([0.5, 9.0, 0.5], [0.0, -1.0, 0.0], 100.0)
+            .expect("hits");
+        assert_eq!((h.axis, h.sign), (1, 1));
+        // From +X looking −X: enters the +X face.
+        let h = g
+            .cast([7.0, 0.5, 0.5], [-1.0, 0.0, 0.0], 100.0)
+            .expect("hits");
+        assert_eq!((h.axis, h.sign), (0, 1));
+    }
+
+    #[test]
+    fn dda_never_tunnels_through_a_one_block_wall() {
+        // A diagonal ray across a full 1-thick plane must always hit. Sampling
+        // renderers miss this; exact cell stepping cannot.
+        let mut m = BTreeMap::new();
+        for x in -20..20 {
+            for y in -20..20 {
+                m.insert([x, y, 0], "minecraft:stone".to_string());
+            }
+        }
+        let g = VoxelGrid::build(&crate::compiler::blockstate::interned(m.clone()));
+        for k in 0..64 {
+            let a = k as f64 * 0.09;
+            let dir = normalize([a.sin() * 0.4, a.cos() * 0.4, 1.0]);
+            assert!(
+                g.cast([0.5, 0.5, -12.0], dir, 100.0).is_some(),
+                "ray {k} tunnelled through the wall"
+            );
+        }
+    }
+
+    #[test]
+    fn cast_misses_a_ray_pointed_away_from_the_model() {
+        let g = one_block("minecraft:stone");
+        assert!(g.cast([0.5, 0.5, -5.0], [0.0, 0.0, -1.0], 100.0).is_none());
+    }
+
+    #[test]
+    fn cast_respects_max_distance() {
+        let g = one_block("minecraft:stone");
+        assert!(g.cast([0.5, 0.5, -50.0], [0.0, 0.0, 1.0], 10.0).is_none());
+        assert!(g.cast([0.5, 0.5, -50.0], [0.0, 0.0, 1.0], 100.0).is_some());
+    }
+
+    #[test]
+    fn camera_basis_matches_minecraft_yaw() {
+        // yaw 0 = south (+Z); 90 = west (−X); 180 = north (−Z); 270 = east (+X).
+        for (yaw, want) in [
+            (0.0, [0.0, 0.0, 1.0]),
+            (90.0, [-1.0, 0.0, 0.0]),
+            (180.0, [0.0, 0.0, -1.0]),
+            (270.0, [1.0, 0.0, 0.0]),
+        ] {
+            let c = Camera {
+                pos: [0.0; 3],
+                yaw,
+                pitch: 0.0,
+                fov: 70.0,
+            };
+            let (f, _, _) = c.basis();
+            for a in 0..3 {
+                assert!(
+                    (f[a] - want[a]).abs() < 1e-9,
+                    "yaw {yaw} forward {f:?} != {want:?}"
+                );
+            }
+        }
+        // Positive pitch looks DOWN.
+        let c = Camera {
+            pos: [0.0; 3],
+            yaw: 0.0,
+            pitch: 90.0,
+            fov: 70.0,
+        };
+        let (f, r, u) = c.basis();
+        assert!(f[1] < -0.999, "pitch +90 must look down: {f:?}");
+        // The basis stays orthonormal at the pole (right is derived from yaw).
+        assert!(dot(r, f).abs() < 1e-9 && dot(u, f).abs() < 1e-9 && dot(r, u).abs() < 1e-9);
+    }
+
+    #[test]
+    fn looking_at_matches_the_cutscene_aim_convention() {
+        // Straight south → yaw 0; straight west → yaw 90; straight down → +90 pitch.
+        let c = Camera::looking_at([0.0, 0.0, 0.0], [0.0, 0.0, 5.0], 70.0);
+        assert!(c.yaw.abs() < 1e-9 && c.pitch.abs() < 1e-9, "{c:?}");
+        let c = Camera::looking_at([0.0, 0.0, 0.0], [-5.0, 0.0, 0.0], 70.0);
+        assert!((c.yaw - 90.0).abs() < 1e-9, "{c:?}");
+        let c = Camera::looking_at([0.0, 10.0, 0.0], [0.0, 0.0, 0.0], 70.0);
+        assert!((c.pitch - 90.0).abs() < 1e-9, "{c:?}");
+    }
+
+    #[test]
+    fn projection_and_ray_are_mutual_inverses() {
+        // Project a point, cast the ray through the pixel it lands on, and the ray
+        // must point back at the point. This is the property the manifest's screen
+        // bboxes depend on being true.
+        let cam = Camera {
+            pos: [3.0, 70.0, -12.0],
+            yaw: 25.0,
+            pitch: 12.0,
+            fov: 70.0,
+        };
+        let p = [8.0, 66.0, 20.0];
+        let (s, _) = cam.project(960, 540, p).expect("in front");
+        let dir = cam.ray(960, 540, s[0] as u32, s[1] as u32);
+        let to = normalize([p[0] - cam.pos[0], p[1] - cam.pos[1], p[2] - cam.pos[2]]);
+        assert!(dot(dir, to) > 0.9999, "dir {dir:?} vs {to:?}");
+    }
+
+    #[test]
+    fn projection_rejects_points_behind_the_camera() {
+        let cam = Camera {
+            pos: [0.0, 0.0, 0.0],
+            yaw: 0.0,
+            pitch: 0.0,
+            fov: 70.0,
+        };
+        assert!(cam.project(960, 540, [0.0, 0.0, -5.0]).is_none());
+        assert!(cam.project(960, 540, [0.0, 0.0, 5.0]).is_some());
+    }
+
+    #[test]
+    fn occlusion_sees_a_wall_but_not_the_floor_a_marker_rests_on() {
+        let mut m = BTreeMap::new();
+        // A wall plane at x = 5 and a floor at y = 0.
+        for y in -2..8 {
+            for z in -8..8 {
+                m.insert([5, y, z], "minecraft:stone".to_string());
+            }
+        }
+        for x in -8..5 {
+            for z in -8..8 {
+                m.insert([x, 0, z], "minecraft:stone".to_string());
+            }
+        }
+        let g = VoxelGrid::build(&crate::compiler::blockstate::interned(m.clone()));
+        let eye = [0.5, 3.0, 0.5];
+        let at = |c: [i32; 3]| Target::point("t".into(), "anchor", String::new(), c);
+        // Behind the wall → occluded.
+        assert!(occluded_target(&g, eye, &at([9, 3, 0])));
+        // In the open on this side → not occluded.
+        assert!(!occluded_target(&g, eye, &at([3, 3, 0])));
+        // A marker standing ON the floor is NOT occluded by the floor itself.
+        assert!(!occluded_target(&g, eye, &at([3, 1, 0])));
+        // The plain segment test still reports the wall.
+        assert!(g.blocked(eye, [9.5, 3.0, 0.5]));
+        assert!(!g.blocked(eye, [3.5, 3.0, 0.5]));
+    }
+
+    #[test]
+    fn a_marker_that_is_itself_a_block_is_not_reported_occluded_by_itself() {
+        // The island field case: `anchor/fire-pit` names the campfire cell, so a
+        // naive "did the ray hit anything before the centre" probe called the
+        // most visible object in the frame occluded. The target's own box is
+        // excluded, so it reads visible — and a block in front of it still hides it.
+        let mut m = BTreeMap::new();
+        m.insert([0, 0, 10], "minecraft:campfire".to_string());
+        let g = VoxelGrid::build(&crate::compiler::blockstate::interned(m.clone()));
+        let fire = Target::point(
+            "anchor/fire-pit".into(),
+            "anchor",
+            String::new(),
+            [0, 0, 10],
+        );
+        let eye = [0.5, 0.5, 0.0];
+        assert!(
+            !occluded_target(&g, eye, &fire),
+            "the marker's own block must not occlude it"
+        );
+        m.insert([0, 0, 5], "minecraft:stone".to_string());
+        let g2 = VoxelGrid::build(&crate::compiler::blockstate::interned(m.clone()));
+        assert!(
+            occluded_target(&g2, eye, &fire),
+            "a block in front of it must occlude it"
+        );
+    }
+
+    #[test]
+    fn target_boxes_and_centres_cover_whole_cells() {
+        let p = Target::point("anchor/x".into(), "anchor", "area/a".into(), [4, 70, -3]);
+        assert!(p.is_point());
+        assert_eq!(p.centre(), [4.5, 70.5, -2.5]);
+        assert_eq!(p.label(), "X");
+        let r = Target {
+            id: "trigger/t".into(),
+            kind: "trigger",
+            area: String::new(),
+            min: [0, 0, 0],
+            max: [1, 1, 1],
+        };
+        assert!(!r.is_point());
+        assert_eq!(r.centre(), [1.0, 1.0, 1.0]);
+        // Corners span the full outer surface of the inclusive cell box.
+        let cs = r.corners();
+        assert!(cs.contains(&[0.0, 0.0, 0.0]) && cs.contains(&[2.0, 2.0, 2.0]));
+    }
+
+    #[test]
+    fn screen_box_clips_to_the_frame_and_rejects_offscreen_targets() {
+        // Eye at the centre of cell [0,0,0], so a cell straight down +Z is
+        // symmetric about the optical axis.
+        let cam = Camera {
+            pos: [0.5, 0.5, 0.5],
+            yaw: 0.0,
+            pitch: 0.0,
+            fov: 70.0,
+        };
+        // Straight ahead → a box around screen centre.
+        let ahead = Target::point("a".into(), "anchor", String::new(), [0, 0, 20]);
+        let b = screen_box(&cam, 960, 540, &ahead).expect("in frustum");
+        assert!(b.x < 480 && b.x + b.w > 480, "centred: {b:?}");
+        // Directly behind → out of frustum entirely.
+        let behind = Target::point("b".into(), "anchor", String::new(), [0, 0, -20]);
+        assert!(screen_box(&cam, 960, 540, &behind).is_none());
+        // Far to the side → in front but off-frame.
+        let aside = Target::point("c".into(), "anchor", String::new(), [400, 0, 5]);
+        assert!(screen_box(&cam, 960, 540, &aside).is_none());
+    }
+}

@@ -33,7 +33,7 @@ repository's contents, and `delvec build` output trees are absent for the same
 reason `delvewright_dsl::fmt::BUILD_OUTPUT_MARKER` skips them. None of those is
 a rule written here that could go stale.
 
-## Authored and generated, and why there is exactly ONE exemption
+## Authored and generated, and why there is no exemption
 
 "It's generated" is precisely what someone would say about a file nobody
 canonicalised, so an exemption an author can simply assert is a hatch the defect
@@ -55,36 +55,13 @@ remove the need for the hatch rather than to secure it:
   `cargo fmt` has with hand-written Rust, self-announcing and one command to
   discharge. It does not cost a class of file nobody checks.
 
-That leaves one exemption, and it is not a judgement this file makes. It is a
-POINTER to a machine fact that already exists:
-
-    crates/delvec/tests/golden/
-
-Those files are RECORDINGS of emitter output, asserted byte-for-byte by
-`golden_scene_matches`; one of them is another program's schema in that
-program's key order, so canonical form would break the byte equality the test
-exists to make. And the directory's membership is CLOSED by
-`every_golden_is_emitter_output`, which refuses any file appearing there that no
-test pins to live emitter output.
-
-**Could the defect produce that proof?** No — and that is the whole argument for
-this being the only entry. The defect is *nobody canonicalised this document*.
-To hide such a document here you would have to make a Rust test demand that it
-equal live emitter output byte for byte, which requires the emitter to actually
-emit it. Nobody reaches that state by forgetting to run a formatter. Contrast
-the exemption this design refused — a marker file, or a name in a list — either
-of which a forgetful author can produce in one line.
+Nothing else is exempt: every tracked `.json` is swept.
 
 ## Binding count, with its denominator
 
-Every run states files swept **against the tracked-JSON population**, and the
-exempt count beside it. Three ways to be vacuous are refused rather than
-reported: a population of zero, a swept set of zero (`delvec fmt` itself would
-also say `DW0774`), and an exemption that matches zero tracked files — that last
-one is a stale entry measuring nothing, which is how an exclusion rots into a
-green no-op after its directory is renamed. The pin that admits the exemption is
-checked to still exist, so deleting `every_golden_is_emitter_output` reds here
-instead of silently converting a bound exemption into an unbound one.
+Every run states files swept **against the tracked-JSON population**. Two ways
+to be vacuous are refused rather than reported: a population of zero, and a
+swept set of zero (`delvec fmt` itself would also say `DW0774`).
 
 Deterministic, offline, stdlib-only python3.
 """
@@ -97,15 +74,6 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-
-# The one exemption. Not a name this file judges to be generated — a pointer to
-# the test that pins these bytes to emitter output, and to the test that closes
-# the directory's membership. Both are asserted to still exist below: an
-# exemption whose proof has been deleted is an unbound exemption wearing a bound
-# one's clothes.
-GOLDEN_DIR = "crates/delvec/tests/golden/"
-GOLDEN_BINDING_FILE = "crates/delvec/src/compiler/view/scene.rs"
-GOLDEN_BINDINGS = ("golden_scene_matches", "every_golden_is_emitter_output")
 
 # `delvec fmt --check` takes the paths as arguments. Chunked so the population
 # can grow without meeting ARG_MAX, and the exit status of every chunk counts.
@@ -161,34 +129,10 @@ def main() -> int:
             "is a vacuous pass rather than a pass."
         )
 
-    exempt = [p for p in population if p.startswith(GOLDEN_DIR)]
-    swept = [p for p in population if p not in set(exempt)]
-
-    if not exempt:
-        return die(
-            f"the one exemption, `{GOLDEN_DIR}`, matches ZERO tracked files. A "
-            "stale exclusion measures nothing and hides the day it stops being "
-            "true — delete it, or point it at where the goldens moved."
-        )
-    binding_src = (repo / GOLDEN_BINDING_FILE).read_text(encoding="utf-8")
-    missing = [b for b in GOLDEN_BINDINGS if b not in binding_src]
-    if missing:
-        return die(
-            f"`{GOLDEN_DIR}` is exempt from canonical form ONLY because "
-            f"{' and '.join(GOLDEN_BINDINGS)} pin its bytes to emitter output and "
-            f"close its membership. {', '.join(missing)} is no longer in "
-            f"{GOLDEN_BINDING_FILE}, so the exemption is now bound to nothing."
-        )
-    if not swept:
-        return die(
-            "every tracked .json is exempt, so this check formats nothing. That "
-            "is vacuous, not a pass."
-        )
-
+    swept = population
     print(
         f"canonical-form sweep: {len(swept)} of {len(population)} tracked JSON "
-        f"document(s) swept; {len(exempt)} exempt "
-        f"(`{GOLDEN_DIR}`, pinned by {' + '.join(GOLDEN_BINDINGS)})."
+        "document(s) swept; 0 exempt."
     )
 
     failed = False
