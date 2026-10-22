@@ -1,10 +1,13 @@
 //! **What a frame shows, and what the renderer did not draw — one sight rule**
 //! (spec-0112 §7.5, §8.1; criteria 12, 13 and 17, and criterion 4's mannequin).
 //!
-//! The fixture is the gallery's primary: its curator is a mannequin, and its
-//! marked `reach` objectives stand an end-rod marker (an `item_display`) in
-//! frame on the legs to them — a holder the pinned renderer draws, with its
-//! end rod, so it leaves `undrawn` (criterion 17).
+//! The fixture is the gallery's primary: its curator is a mannequin, and the
+//! hall's hardware stands glowing `item_display`s (a lever on the trap, the
+//! side door and the inner door) in frame on the legs to `obj/reach-the-end`
+//! — a holder the pinned renderer draws, with its item, so it leaves
+//! `undrawn` (criterion 17). The standard bearer's banner, an item the pinned
+//! renderer cannot draw, is taken out of its hand by the test's one declared
+//! edit, so a frame's `undrawn` is about the holders alone.
 
 mod common;
 
@@ -24,9 +27,9 @@ fn json(p: &Path) -> serde_json::Value {
     serde_json::from_slice(&std::fs::read(p).unwrap()).unwrap()
 }
 
-/// The objective whose end-rod marker the report is asked about.
-const MARKED: &str = "obj/board-the-ferry";
-const MARKER: &str = "dw_r_board_the_ferry";
+/// The objective on whose legs the hall's hardware is in frame.
+const MARKED: &str = "obj/reach-the-end";
+const MARKER: &str = "dw_hw_";
 
 /// Build the gallery's primary under `dir` (with `edit` applied to its
 /// quests), and draw every frame on the legs to [`MARKED`] and to the
@@ -85,7 +88,19 @@ fn marker_frames(index: &serde_json::Value) -> Vec<&serde_json::Value> {
 #[test]
 fn a_holder_the_renderer_draws_leaves_undrawn_and_the_curator_is_drawn() {
     let dir = tmp("rfs-shows");
-    let (frames, log) = gallery_frames(&dir, |_| {});
+    let (frames, log) = gallery_frames(&dir, |v| {
+        let bearer = v["content"]["actors"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|a| a["id"] == "actor/standard-bearer")
+            .expect("the gallery's standard bearer");
+        bearer["equipment"]
+            .as_object_mut()
+            .unwrap()
+            .remove("main_hand")
+            .expect("the bearer holds its banner");
+    });
     let index = json(&frames.join("shot-index.json"));
 
     // Criterion 12: every entry's `shows` and `out_of_frame` are the frame
@@ -125,9 +140,9 @@ fn a_holder_the_renderer_draws_leaves_undrawn_and_the_curator_is_drawn() {
         "{curator}"
     );
 
-    // Criterion 17: a frame on the leg to the marked objective with its
-    // end-rod marker in sight lists nothing undrawn, and the renderer's own
-    // statistics for that frame count the item display and its end rod drawn.
+    // Criterion 17: a frame on the leg to the objective with a hardware
+    // display in sight lists nothing undrawn, and the renderer's own
+    // statistics for that frame count the item display and its lever drawn.
     let seen = marker_frames(&index)
         .into_iter()
         .find(|s| {
@@ -137,7 +152,7 @@ fn a_holder_the_renderer_draws_leaves_undrawn_and_the_curator_is_drawn() {
                     && t["occluded"] == false
             })
         })
-        .expect("a frame with the marker in sight");
+        .expect("a frame with a hardware display in sight");
     let id = seen["id"].as_str().unwrap();
     assert_eq!(seen["undrawn"], serde_json::json!([]), "{seen}");
     let m = json(
@@ -155,7 +170,7 @@ fn a_holder_the_renderer_draws_leaves_undrawn_and_the_curator_is_drawn() {
     );
     assert!(ents["skipped"].get("item_display").is_none(), "{ents}");
     assert!(
-        ents["items_rendered"]["end_rod"].as_u64().unwrap_or(0) >= 1,
+        ents["items_rendered"]["lever"].as_u64().unwrap_or(0) >= 1,
         "{ents}"
     );
     assert_eq!(ents["items_skipped"], serde_json::json!({}), "{ents}");
@@ -171,15 +186,13 @@ fn a_holder_the_renderer_draws_leaves_undrawn_and_the_curator_is_drawn() {
 }
 
 /// A campaign with no body the renderer cannot draw prints the measured zero:
-/// hello-world with its exit unmarked, so the keeper is its one body.
+/// hello-world, whose keeper is its one body (an objective stands no marker,
+/// spec-0104 §6).
 #[test]
 fn a_campaign_whose_bodies_are_all_drawn_says_zero() {
     let dir = tmp("rfs-zero");
     let camp = dir.join("campaign");
     common::copy_dir_all(&common::hello_world_dir(), &camp);
-    common::patch_file(&camp.join("quests.json"), |v| {
-        v["content"]["quests"][0]["objectives"][1]["marker"] = serde_json::json!("hidden");
-    });
     let out = dir.join("build");
     let o = Command::new(BIN)
         .arg("build")
