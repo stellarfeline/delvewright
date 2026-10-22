@@ -27,7 +27,7 @@ committed tree.
 **`delvec` itself is ~9 MB to download and ~24 MB installed**, and it is the
 whole creator: compiler, prefab authoring and admission, schematic conversion,
 playtest harvesting, and both render arms — the CPU surface and the GPU stack
-(Nucleation, wgpu). Nothing the authoring loop needs is large. The two big
+(Nucleation, Lumenwright, wgpu). Nothing the authoring loop needs is large. The two big
 numbers belong to things that are either *a way of obtaining* the binary (a
 Rust toolchain) or *a different tier* (validation), and both are avoidable —
 see §2.
@@ -48,17 +48,17 @@ cache and copies the plugin out, and their own filesystem gets no working tree.
 
 | item | download | on disk | how it is obtained |
 |---|---|---|---|
-| the plugin (31 files) | 341,303 B | same | `/plugin install delvewright@delvewright` |
-| — of which `SKILL.md`, the spine | 27,922 B | same | always in context once the skill loads |
-| — of which `references/` (24 files) | 274,171 B | same | level 3: costs nothing until a step reads one |
-| — of which `scripts/` (4 files) | 37,237 B | same | level 3: run through bash, only the output enters context |
+| the plugin (32 files) | 453,851 B | same | `/plugin install delvewright@delvewright` |
+| — of which `SKILL.md`, the spine | 28,607 B | same | always in context once the skill loads |
+| — of which `references/` (24 files) | 352,302 B | same | level 3: costs nothing until a step reads one |
+| — of which `scripts/` (5 files) | 70,967 B | same | level 3: run through bash, only the output enters context |
 | `delvec` binary | 9,256,047 B | 24,489,840 B | release shelf (default), `cargo install`, or a checkout (ADR-0023 §1–§2) |
 | `LICENSE` (travels in every archive) | — | 35,149 B | inside the archive |
 | prefab library (`campaigns/prefabs`) | 95,355 B | 479,232 B, 74 files | the content repo — **OPTIONAL** (ADR-0027 §1): taken at step 2 by a campaign that seats shipped pieces, and by no other |
 
 ```
 git ls-tree -r -l HEAD -- .claude/skills/delvewright | awk '{n++; s+=$4} END{print n, s}'
-                                                             → 31 341303 (plugin; same per subdirectory)
+                                                             → 32 453851 (plugin; same per subdirectory)
 bash tools/ci/build-release-binaries.sh --target aarch64-apple-darwin
 ls -l dist/delvec-v1.1.0-aarch64-apple-darwin.tar.gz        → 9,256,047 B
 ls -l target/aarch64-apple-darwin/release/delvec             → 24,489,840 B
@@ -72,9 +72,8 @@ against 24,489,840 B for the shelf binary at 1.1.0 above — re-measure the shel
 archive with the commands above before quoting a download size for a later
 engine.
 
-The **harvested game-registry data is not a separate download**: 1,280,075 B of
-`crates/{delvec,dsl}/data/*.json` is `include_str!`-ed into the binary and is
-already inside the numbers above (§4).
+The **harvested game-registry data is not a separate download**: 4,065,934 B of
+`crates/{delvec,dsl}/data/` is `include_str!`-ed into the binary (§4.3).
 
 ### Required, but only as a *way of getting* `delvec`
 
@@ -99,7 +98,7 @@ that guarantees every capability on every machine (§2 there). This is the 2.1 G
 ### Required by the page's later steps, sized in §5
 
 - **Docker with Compose v2, and a JDK 21+.** The page's Init I1 requires both:
-  step 9's play server and step 10's ladder run in Docker, and the Minecraft
+  step 13's play server and step 10's ladder run in Docker, and the Minecraft
   server jar is fetched at run time.
 
 
@@ -198,41 +197,42 @@ budget**: binary size under 100 MB is not a decision input (ADR-0023 §1), and
 the alternative is a second binary a creator has to find, build
 and keep in step.
 
-### 4.3 Embedded harvested registry data: 1,280,075 B
+### 4.3 Embedded harvested registry data: 4,065,934 B
 
 Every file under `crates/delvec/data/` and `crates/dsl/data/` that an
-`include_str!`/`include_bytes!` site names — **19 files over 20 sites**. The
-population is the sites, not the directories: `block-classification-1.21.11.json`
-(128,644 B) sits beside these and is read by a tool rather than embedded, so it
-is not here.
+`include_str!`/`include_bytes!` site outside a `#[cfg(test)]` module names, each
+path resolved against its own source file — **37 files over 37 sites**. The
+population is the sites, not the directories: the command lists 40 sites, and
+the three inside test modules (`compiler/registry.rs` ×2, `compiler/traversal.rs`)
+are excluded; `block-classification-1.21.11.json` (128,644 B) is named only by
+one of them and is otherwise read by a tool, so it is not here.
 
 ```
-grep -rEoh 'include_(str|bytes)!\("[^"]*"\)' crates/delvec/src crates/dsl/src \
-  | sed -E 's/include_(str|bytes)!\("//; s/"\)//' | grep data/ \
-  | xargs -n1 basename | sort -u \
-  | while read f; do ls -l crates/*/data/"$f" 2>/dev/null; done
+perl -0777 -ne 'while(/include_(?:str|bytes)!\(\s*"([^"]*data\/[^"]*)"/g){print "$ARGV $1\n"}' \
+  $(git ls-files 'crates/delvec/src/*.rs' 'crates/dsl/src/*.rs')
 ```
 
 | file | bytes |
 |---|---|
+| `collision-footprints-1.21.11.tsv` (dsl) | 889,738 |
+| `textures-1.21.11.json` | 664,346 |
 | `commands-1.21.11.json` | 474,604 |
+| `collision-tops-1.21.11.tsv` (dsl) | 420,670 |
+| `faces-1.21.11.tsv` (dsl) | 281,328 |
 | `block-appearance-1.21.11.json` | 278,817 |
+| `support-bases-1.21.11.tsv` (dsl) | 203,292 |
 | `blocks-1.21.11.json` | 178,040 |
+| `support-1.21.11.tsv` (dsl) | 153,062 |
 | `block-defaults-1.21.11.json` | 89,343 |
 | `sounds-1.21.11.json` | 71,582 |
+| `redstone-1.21.11.tsv` (dsl) | 53,613 |
 | `item-stack-sizes-1.21.11.json` | 52,762 |
+| `model-parts-1.21.11.json` | 52,601 |
 | `items-1.21.11.json` (delvec) | 46,986 |
-| `entity-slots-1.21.11.json` | 22,829 |
-| `item-combat-1.21.11.json` | 19,982 |
-| `item-equippable-1.21.11.json` | 17,443 |
-| `blockstate-shape-props-1.21.11.json` | 8,814 |
-| `entity-tags-1.21.11.json` | 8,503 |
-| `damage-types-1.21.11.json` | 5,472 |
-| `entities-1.21.11.json` (delvec) | 4,042 |
-| the remaining 5 (dsl `entities`, `items`, `anchors`, `block-renames`, `pools`) | 856 |
-| **total** | **1,280,075** |
+| the remaining 22, each under 40,000 B | 155,150 |
+| **total** | **4,065,934** |
 
-The second-largest row is the block-appearance table: it is what lets the blocking chart paint from the pinned client jar on a machine that has no jar (`compiler.md`, `delvec blocking-chart`).
+The block-appearance table: it is what lets the blocking chart paint from the pinned client jar on a machine that has no jar (`compiler.md`, `delvec blocking-chart`).
 
 Embedding it is correct — it is what makes `delvec` a single self-contained
 download with no data directory to lose (ADR-0006 reproducibility).
