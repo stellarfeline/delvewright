@@ -12,7 +12,7 @@ For the agent deciding what each scene of a campaign plays: a track, or silence,
 
 - **S1 — Declare silence; never leave it to the game.** A biome that says nothing inherits the dimension's calm overworld music (**cited**: `dimension_type/overworld.json`, spec-0109 §1). Every atmosphere and the ground declare `audio/background_music` — `{}` is the word for silence (**cited**: the pinned `pale_garden` biome, which declares `{}` with `music_volume: 0.0`).
 - **S2 — Silence is a weight, spent where the place must carry itself.** The *Dark Souls* line scores bosses, hubs and endings and leaves exploration to its own ambience, so the places without music feel hostile and alone and the music, when it comes, lands (**cited**: Canela, *The Sound of Dark Souls*; Freitas, *From epic fail to epic music*, JoSSIT 3). A hidden room with music is a reward for finding it (**cited**: Canela). A delve's exploration spaces may be silent by design; the ambience (`audio/ambient_sounds`, spec-0080) is what the player hears there.
-- **S3 — A fade is a threshold; a cut is a shock.** Walking into a silent place fades the music out over about fifteen seconds when the place declares `music_volume: 0.0`; a sudden hush is `stop-sound music` at the beat, or at a trigger on the threshold (**authored**, on the pinned fade curve of spec-0109 §2.1 and on A2's transition kinds: the game offers exactly these two shapes, and which one a scene needs is the creator's call).
+- **S3 — A fade is a threshold; a cut is a shock.** Walking into a silent place fades the music out over about fifteen seconds when the place declares `music_volume: 0.0`; a sudden hush is `stop-sound {category: music}` at the beat, or at a trigger on the threshold (**authored**, on the pinned fade curve of spec-0109 §2.1 and on A2's transition kinds: the game offers exactly these two shapes, and which one a scene needs is the creator's call).
 
 ## 3. Tracks
 
@@ -31,7 +31,7 @@ For the agent deciding what each scene of a campaign plays: a track, or silence,
 ## Sources
 
 - Audiokinetic. *Wwise* interactive music: switch containers, states, transitions and stingers — the Wwise Help pages *Understanding stingers* and the transition matrix, and Audiokinetic's *Creating Stingers* tutorial.
-- Canela, D. *The Sound of Dark Souls*. Game Developer (ideas only, as in `docs/ACKNOWLEDGEMENTS.md`).
+- Canela, D. *The Sound of Dark Souls*. Game Developer (ideas only).
 - Collins, K. *Game Sound: An Introduction to the History, Theory, and Practice of Video Game Music and Sound Design*. MIT Press, 2008.
 - Freitas, J. *From epic fail to epic music: music, silence and failure on "Dark Souls 3"*. Journal of Sound, Silence, Image and Technology 3, 55–74, 2020.
 - Sweet, M. *Writing Interactive Music for Video Games: A Composer's Guide*. Addison-Wesley, 2014 — chapters 8 and 10, read from the published table of contents.

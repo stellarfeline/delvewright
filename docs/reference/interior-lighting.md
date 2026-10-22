@@ -78,16 +78,17 @@ inside a plan's box under the whole's roof and meets none. A piece declaring an 
 
 ## 2. Where a lamp may physically go
 
-Passability is one table, `delvewright_dsl::blockshape` (spec-0056;
-`crates/dsl/src/blockshape.rs:1-11`), read by the grammar walk
-(`crates/delvec/src/grammar/nav.rs:44-61`, `:96-102`), the prefab light probe
-(`crates/delvec/src/admit/light.rs:342-352`) and the compiler's occupancy model
-(`crates/delvec/src/compiler/assembled.rs:39-45`). It classifies a block state by its collision
-box (`crates/dsl/src/blockshape.rs:498-534`): a torch, a carpet, a candle, a pressure plate or
+Passability is one table, `delvewright_dsl::blockshape` (spec-0056; the module doc of
+`crates/dsl/src/blockshape.rs`), read by the grammar walk
+(`impl Voxels for VoxelModel` in `crates/delvec/src/grammar/nav.rs`), the prefab light probe
+(`crates/delvec/src/admit/light.rs`, through `blockshape::passes_body`/`supports_body`) and the
+compiler's occupancy model (`crates/delvec/src/compiler/assembled.rs`, through
+`blockshape::collision_class`). It classifies a block state by its collision box
+(`blockshape::collision_class` and `collision_top_16`): a torch, a carpet, a candle, a pressure plate or
 a tuft of grass is **thin** — a body passes through its cell, and it is not a floor level; a full
 cube or a partial floor (a bottom slab, a snow drift) is stood on; a fence or a wall is a tall
 barrier a body neither passes nor stands on. The grammar walk adds one convention of its own: a
-skull on a floor cell is passable (`crates/delvec/src/grammar/nav.rs:56-61`).
+skull on a floor cell is passable (`is_floor_skull` in `crates/delvec/src/grammar/nav.rs`).
 
 So a thin emitter on a floor does not sever a walk, and a full-cube emitter — glowstone, a sea
 lantern, a froglight — is a wall or a floor like any other block. Where a lamp goes is a craft
