@@ -188,8 +188,10 @@ delvec prefab anchors [--pool <id>]        # which anchors does a pool guarantee
 delvec l10n-inventory <dir> [--lang <c>]   # l10n key inventory as JSON (transcreation input)
 delvec l10n-apply <dir> --lang <c> --table <f>
                                            # write the sidecar from an English → translation table
-delvec allocation <dir> [<place>|--all]    # the handed allocation for a site-plan place
+delvec allocation <dir> [<place>|--all]    # the handed allocation for a site-plan place;
+                                           #   --all also prints the wave bound on stderr
 delvec detail   <dir> [<place>|--all]      # detail a place inside its allocation (spec-0058)
+delvec detail   --check <dir> <place>      # judge one place against the whole on disk; writes nothing
 delvec frames <build-dir> [-o dir]         # every review frame of a build, drawn by Lumenwright (§7)
 delvec frames --campaign <dir> [framing]   # one frame of a campaign's load world (§7)
 delvec blocking-chart <dir> [-o dir]       # per-elevation cutaway floor plans (§7)
@@ -259,6 +261,18 @@ at exit 10, naming the path or document. The verbs that read a campaign
 directory — `validate` and everything built on it, `l10n-inventory`,
 `l10n-apply`, `edit`, `allocation`, `detail` — answer both the same way, from
 one place.
+
+**A prefab library that is not there is refused, not faulted.** Every verb
+that reads pieces — `validate` and everything built on it, `detail` (commit and
+`--check`), `rig describe` — refuses a `--prefabs` path that does not exist at
+exit 1 with one sentence naming `--prefabs` and `DELVEWRIGHT_PREFABS`
+(`compiler::registry::missing_library`, the one wording); the admission verbs
+that read a whole library (`prefab anchors`, the library audit) carry the same
+sentence in their input diagnostic, `DW0732`, at their own exit. That state —
+the default `campaigns/prefabs` from a creator's working directory — is never
+`internal error: cannot read prefabs dir`, which stays the message for a
+directory that exists and cannot be read. `delvec detail` reads the library and
+never creates it.
 
 **`--json` diagnostic shape**:
 `{ "code":"DW####", "severity":"error|warning", "stage":"<stage>",
@@ -654,6 +668,41 @@ every target is prepared and before any is written. A frame change answered by
 one `delvec detail --all` therefore passes whatever the order of the places it
 moved, and a row whose place the run does not re-detail is still refused
 (`DW0843`) when its piece no longer fits.
+
+**Check and commit are two runs of one verb** (spec-0122 §6.1). `delvec detail
+--check <dir> <place>` runs the commit's own preparation (bind, expand, void,
+the place's gates, the audit, the light probe) and the same bindings check,
+against the whole **as committed on disk** — the detail plan and the library as
+they stand — and writes nothing: no piece, no report, no row, and no battery.
+Exit 0 says the program would commit against the whole as it stands now; any
+other exit is the verdict the commit would give, in the same words. Its
+binding line ends `peak rss: <n> bytes` (`getrusage`). `--check` beside `--all`
+is refused at exit 2: `--all` is a commit by nature. The commit, `delvec detail
+<dir> <place>`, writes the piece, its gate report and the row, then runs the
+battery — the whole validated and built in memory over what it wrote — so a
+place whose own gates pass is written, and the run then exits on the whole.
+`crates/delvec/tests/detail_check_agrees.rs` holds the two to one verdict: over
+every program place of the gallery's site-plan point and three perturbations
+(`DW0843`, `DW0844`, `DW0845`) the DW codes each prints up to the commit's write
+are equal, and `--check` leaves the library and `detail-plan.json`
+byte-identical. The battery's codes are outside the comparison because
+`--check` does not run it.
+
+**A commit's writes are never seen half done** (spec-0122 §6.4): each file —
+the piece's structure file(s), its metadata, its gate report and
+`detail-plan.json` — is written to a temporary file in its own directory and
+moved into place with `rename`, so a `--check` reading at that instant reads
+the old file or the new one (`detail_atomic_write.rs`).
+
+**The wave bound** (spec-0122 §6.2): `delvec allocation --all` prints, on
+stderr after the JSON document, exactly one line `concurrency: N = min(P, max(1,
+C / 2))` with the numbers substituted. `C` is `std::thread::available_parallelism()`
+read at that moment; `P` is the number of boxes the plan allocates with **no
+`details[]` row** — a row is written only by a commit whose program passed, so a
+row is the evidence of a passing program readable without running one, and a
+program file with no row counts as unauthored. Zero places is `N = 0`. The
+divisor 2 is authored until a measured peak replaces it
+(`compiler::detail::concurrency_bound`, `allocation_concurrency.rs`).
 
 **The frame** a piece must exactly fill is its place's claim (spec-0098 §2): the
 bounding box of the cells the place owns — the ground under its plot, its floor
