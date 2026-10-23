@@ -114,7 +114,7 @@
     },
     {
       "area": "",
-      "id": "cutscene/trigger-ferry-tiller/0/shot0/t19",
+      "id": "cutscene/trigger-ferry-tiller/0/shot0/t59",
       "kind": "cutscene"
     },
     {
@@ -390,21 +390,6 @@
     {
       "area": "area/hall",
       "id": "pov/leg14/wp10",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg14/wp11",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg14/wp12",
-      "kind": "pov"
-    },
-    {
-      "area": "area/hall",
-      "id": "pov/leg14/wp13",
       "kind": "pov"
     },
     {
