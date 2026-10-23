@@ -88,34 +88,6 @@ fn exit_cell_filled() -> Value {
 }
 
 /// [`build_dir`] as a result, for the tests that expect a refusal.
-fn try_build_dir(dir: &Path) -> Result<BuildOutput, String> {
-    let (loaded, campaign) = load(dir);
-    let prefabs = PrefabRegistry::load_dir(&common::prefabs_dir()).unwrap();
-    let plan = Plan::build(&campaign, &prefabs).map_err(|e| format!("{e:?}"))?;
-    let mut structures: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    for area in &plan.areas {
-        for piece in &area.pieces {
-            for t in &piece.templates {
-                let bytes = std::fs::read(common::prefabs_dir().join(&t.structure_file)).unwrap();
-                structures.insert(t.structure_file.clone(), bytes);
-            }
-        }
-    }
-    emit::build(
-        &plan,
-        &loaded.inputs,
-        &structures,
-        &CommandTree::v1_21_11(),
-        &prefabs,
-        None,
-        &BTreeMap::new(),
-    )
-    .map_err(|e| match e {
-        emit::BuildFailure::Diagnostic { code, message } => format!("{code}: {message}"),
-        other => format!("{other:?}"),
-    })
-}
-
 fn load(dir: &Path) -> (delvec::compiler::load::LoadedCampaign, Campaign) {
     let loaded = load_campaign_dir(dir).expect("variant loads");
     let campaign = parse_campaign(&loaded.raw).expect("variant parses");

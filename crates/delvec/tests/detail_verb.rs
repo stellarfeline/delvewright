@@ -1462,13 +1462,21 @@ fn an_unlit_leafy_scenery_room_is_never_surveyed_for_light() {
     );
     let prefabs = tmp.join("prefabs");
     std::fs::create_dir_all(&prefabs).unwrap();
+    // The near hall first: its piece carries the east door's own answer.
+    let hall = delvec(&[
+        "--prefabs",
+        prefabs.to_str().unwrap(),
+        "detail",
+        dir.to_str().unwrap(),
+        "node/near-hall",
+    ]);
+    assert_eq!(code(&hall), 0, "{}", text(&hall));
     let out = delvec(&[
         "--prefabs",
         prefabs.to_str().unwrap(),
         "detail",
         dir.to_str().unwrap(),
         "node/beacon",
-        "node/near-hall",
     ]);
     let t = text(&out);
     assert_eq!(code(&out), 0, "{t}");

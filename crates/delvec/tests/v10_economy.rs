@@ -987,12 +987,10 @@ fn two_stake_source() -> String {
         .replace(
             r#"      { "id": "stake/embers", "state": "state/embers",
         "collected_message": "You take back what the drop took." }"#,
-            &format!(
-                r#"      {{ "id": "stake/embers", "state": "state/embers",
-        "collected_message": "You take back what the drop took." }},
-      {{ "id": "stake/relics", "state": "state/relics",
-        "collected_message": "You take back the relics." }}"#
-            ),
+            r#"      { "id": "stake/embers", "state": "state/embers",
+        "collected_message": "You take back what the drop took." },
+      { "id": "stake/relics", "state": "state/relics",
+        "collected_message": "You take back the relics." }"#,
         )
         .replace(
             r#"    "on_death": [ { "type": "drop-stake", "stake": "stake/embers" } ],"#,
