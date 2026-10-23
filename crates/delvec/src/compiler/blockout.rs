@@ -3178,12 +3178,16 @@ fn crossings(
     let commons: &BTreeSet<[i32; 3]> = &unclaimed;
     let massed: BTreeSet<&str> = b.massed.iter().map(String::as_str).collect();
     let mut outside_reported = false;
-    let flood = |starts: &[[i32; 3]], through_commons: bool| -> BTreeSet<[i32; 3]> {
+    let flood_without = |starts: &[[i32; 3]],
+                         through_commons: bool,
+                         without: &BTreeSet<[i32; 3]>|
+     -> BTreeSet<[i32; 3]> {
         let mut queue: std::collections::VecDeque<[i32; 3]> = starts.iter().copied().collect();
         let mut component: BTreeSet<[i32; 3]> = starts.iter().copied().collect();
         while let Some(cur) = queue.pop_front() {
             for next in world.neighbors(cur) {
                 if open.contains(&next)
+                    && !without.contains(&next)
                     && (through_commons || !commons.contains(&next))
                     && component.insert(next)
                 {
@@ -3192,6 +3196,10 @@ fn crossings(
             }
         }
         component
+    };
+    let no_cells = BTreeSet::new();
+    let flood = |starts: &[[i32; 3]], through_commons: bool| -> BTreeSet<[i32; 3]> {
+        flood_without(starts, through_commons, &no_cells)
     };
     let inside = |c: &[i32; 3], y: &PlacedBox| {
         let (ylo, yhi) = y.space();
@@ -3228,9 +3236,23 @@ fn crossings(
         // engine's closed shell, with no opening but the seams, so a stand-in
         // reaching the commons is the derivation's own leak.
         let leak_out = !binding.commons || massed.contains(x.node.0.as_str());
+        // A side the plan declares open is a stand-in's opening onto the
+        // commons as a seam is (spec-0123 §5.4, the commons rule of spec-0098
+        // §14): the leak is asked with the place's own open sides closed.
+        let sides: BTreeSet<[i32; 3]> = x
+            .open_sides()
+            .iter()
+            .flat_map(|s| cells_of(s.cells.0, s.cells.1))
+            .map(narrow)
+            .collect();
+        let leaking = if leak_out && binding.commons && !sides.is_empty() {
+            flood_without(&starts, true, &sides)
+        } else {
+            wide.clone()
+        };
         if leak_out
             && !outside_reported
-            && let Some(witness) = wide.iter().find(|c| commons.contains(*c))
+            && let Some(witness) = leaking.iter().find(|c| commons.contains(*c))
         {
             outside_reported = true;
             let message = if binding.commons {

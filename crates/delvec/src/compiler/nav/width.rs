@@ -341,6 +341,9 @@ impl WayRecord {
                     .collect();
                 let verdict = if s.deferred {
                     "left to DW0836"
+                } else if s.columns.is_empty() {
+                    // Every column is a seam's, and judged once, under it.
+                    "judged under its seam"
                 } else if v.clear.iter().all(|c| *c == 0) {
                     "shut"
                 } else if v.narrowed(s.columns.len()) {
@@ -3408,6 +3411,16 @@ mod tests {
         let rec = judge_over(open_side(), &m, &[], &[]);
         assert_eq!(rec.refusal.as_ref().map(|f| f.code.id()), Some("DW1057"));
         assert_eq!(rec.to_json()["kind"], "open side");
+        // A station every column of which a seam covers is judged under the
+        // seam, and the ledger says so rather than calling it shut.
+        let mut covered = open_side();
+        covered.stations[0].columns.clear();
+        let rec = judge_over(covered, &floor(), &[], &[]);
+        assert!(rec.refusal.is_none());
+        assert_eq!(
+            rec.to_json()["stations"][0]["verdict"],
+            "judged under its seam"
+        );
     }
 
     /// A hedge along the whole run leaves no column: `DW1065`, naming every

@@ -2875,3 +2875,47 @@ fn an_open_side_raises_no_wall_above_the_floor_course() {
     assert!(moved.iter().all(|c| opened.contains(c)), "{moved:?}");
     assert!(!opened.is_empty());
 }
+
+/// **spec-0123 §5.4 rule 4: an open side is a stand-in's opening onto the
+/// commons.** The landing stands massed with its north side open onto the
+/// fixture's open terrain: a body walks out across it, and no `DW0838` names
+/// the stand-in, because the side is an opening the plan declared, as a seam
+/// is. The walls built low everywhere, the same open side does not excuse the
+/// leak the broken shell makes.
+#[test]
+fn an_open_side_is_a_stand_ins_opening_onto_the_commons() {
+    let open = common::campaign_at(&variant(
+        "sides-commons",
+        |v| {
+            let boxes = v["content"]["boxes"].as_array_mut().unwrap();
+            let landing = boxes
+                .iter_mut()
+                .find(|b| b["node"] == "node/landing")
+                .unwrap();
+            landing["sides"] = serde_json::json!({"north": "open"});
+        },
+        None,
+    ));
+    let b = battery_of(&open);
+    assert!(
+        !errors(&b).contains(&"DW0838".to_string()),
+        "an open side onto the commons is declared: {:?}",
+        b.findings
+            .iter()
+            .filter(|(_, d)| d.code == "DW0838")
+            .map(|(_, d)| d.message.clone())
+            .collect::<Vec<_>>()
+    );
+    let low = battery_of_with(
+        &open,
+        Perturb {
+            short_walls: true,
+            ..Perturb::none()
+        },
+    );
+    assert!(
+        errors(&low).contains(&"DW0838".to_string()),
+        "a broken shell still leaks: {:?}",
+        errors(&low)
+    );
+}
