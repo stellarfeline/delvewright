@@ -11,7 +11,7 @@
         "a": "room",
         "b": "exterior",
         "bar": {
-          "block": "bar",
+          "block": "door",
           "region": "seam-west-door"
         },
         "class": "barred"
@@ -83,6 +83,8 @@
   "palette": {
     "bar": "minecraft:iron_bars[east=false,north=false,south=false,waterlogged=false,west=false]",
     "cover": "minecraft:iron_trapdoor[facing=north,half=bottom,open=false,powered=false,waterlogged=false]",
+    "door": "minecraft:iron_door[facing=south,half=lower,hinge=left,open=false,powered=false]",
+    "door-top": "minecraft:iron_door[facing=south,half=upper,hinge=left,open=false,powered=false]",
     "floor": "minecraft:polished_andesite",
     "furniture": "minecraft:chiseled_stone_bricks",
     "hatch": "minecraft:iron_trapdoor[facing=north,half=top,open=false,powered=false,waterlogged=false]",
@@ -538,6 +540,96 @@
             {
               "op": "call",
               "symbol": "seam-west-door-bar"
+            },
+            {
+              "op": "call",
+              "symbol": "wall"
+            },
+            {
+              "op": "call",
+              "symbol": "seam-centre-door-bar"
+            },
+            {
+              "op": "call",
+              "symbol": "wall"
+            },
+            {
+              "op": "call",
+              "symbol": "seam-east-door-bar"
+            },
+            {
+              "op": "call",
+              "symbol": "wall"
+            }
+          ],
+          "op": "split",
+          "sizes": [
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 3
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 6
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 1
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 2
+              },
+              "size": "absolute"
+            },
+            {
+              "blocks": {
+                "expr": "int",
+                "value": 2
+              },
+              "size": "absolute"
+            },
+            {
+              "size": "relative",
+              "weight": {
+                "expr": "int",
+                "value": 1
+              }
+            }
+          ]
+        },
+        "weight": 1
+      }
+    ],
+    "part-6-top": [
+      {
+        "body": {
+          "axis": "x",
+          "children": [
+            {
+              "op": "call",
+              "symbol": "wall"
+            },
+            {
+              "op": "call",
+              "symbol": "seam-west-door-bar-top"
             },
             {
               "op": "call",
@@ -1290,7 +1382,7 @@
                         },
                         {
                           "op": "call",
-                          "symbol": "part-6"
+                          "symbol": "part-6-top"
                         }
                       ],
                       "op": "split",
@@ -2035,7 +2127,22 @@
         "body": {
           "body": {
             "material": {
-              "role": "bar"
+              "role": "door"
+            },
+            "op": "fill"
+          },
+          "op": "claim",
+          "region": "seam-west-door"
+        },
+        "weight": 1
+      }
+    ],
+    "seam-west-door-bar-top": [
+      {
+        "body": {
+          "body": {
+            "material": {
+              "role": "door-top"
             },
             "op": "fill"
           },

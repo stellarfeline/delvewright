@@ -297,7 +297,7 @@
         "at": 2,
         "edge": "edge/west-door",
         "face": "south",
-        "form": "a doorway shut by iron bars, opened from the near hall",
+        "form": "a doorway shut by an iron door, opened from the near hall",
         "meets": 2,
         "opening": "door"
       },
