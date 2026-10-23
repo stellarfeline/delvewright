@@ -49,7 +49,7 @@ The run stops for the user at these points and at no other:
 |---|---|---|---|
 | **A1** | [the opening check](#the-opening-check--one-message-before-step-1), once, before step 1 | one message carrying only the items that apply: the delve itself when the prompt is too thin, the languages, the image-service key, the translation key | one answer, read for each item; an item the prompt already pins is not asked |
 | **A2** | [step 4, the design gate](#4-the-design-gate--the-user-says-yes); [`references/design-gate.md`, the stop](references/design-gate.md#the-stop) | the design walkthrough — every scene, a near view and a far view, each under its hour and weather — and the one line: *Is this the delve you want built?* | an explicit yes; silence is not one; a yes to the pictures is a yes to the hour they were drawn under |
-| **H** | [step 13, the hand-over](#13-hand-it-over) | the storybook, the connect line, what the machine could not check, and the report | nothing: the run ends |
+| **H** | [the hand-over's report](references/hand-over.md#the-report), at step 13 | the storybook, the connect line, what the machine could not check, and the report | nothing: the run ends |
 
 At A1 and A2: say what you have done, hand over the thing, say what you need
 back, and the turn is over. Do not proceed on silence, do not substitute your
@@ -430,7 +430,7 @@ not a render one: place that one by hand in the running game
 step 11 where it applies, and your step 12 visual review done — and the staging
 gate run against that build. **Produces**: `campaigns/<id>/README.md` — the
 storybook — its localized editions, and the report that ends the run (H). Hand
-it over and end your turn: nothing comes back, and the first time the user
+it over: nothing comes back, and the first time the user
 plays the delve it is the finished first version. With debug on, the report closes with
 *Technical decisions and engine limits*, rendered by `scripts/debug-report.py`
 and appended to `GENERATION.md`. **Read**: `references/hand-over.md`, and

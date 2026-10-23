@@ -369,7 +369,11 @@ def test_a_row_deleted_while_its_ask_stands_reds(mod, tree, engine):
 
 def test_a_row_no_page_executes_is_unbound(mod, tree, engine):
     """The unrun shape: H's one stop removed, the row still listed."""
-    edit(tree / "SKILL.md", "Hand\nit over and end your turn: nothing comes back", "Hand\nit over: nothing comes back")
+    edit(
+        tree / "references" / "hand-over.md",
+        "**Then report to the user and end your turn**",
+        "**Then report to the user**",
+    )
     rep = run(mod, engine)
     assert has(rep, "the ask table's row H is bound by no stop")
     assert any(w == "listed row(s) bound" and b < o for w, b, o in rep.bindings), rep.bindings

@@ -261,7 +261,7 @@ override, not a new finding.
 
 ## The report
 
-**Then report to the user** — this hand-over ends the run: the campaign
+**Then report to the user and end your turn** — this hand-over (H) ends the run: the campaign
 summary, the playtime estimate, the validation results, anything still open,
 **what the delve asks of its
 host** — the view distance it serves and the heap the build stated for it
