@@ -44,6 +44,29 @@ pub(super) fn npc_summon_commands(
         .collect()
 }
 
+/// The entity kinds whose saved data carries `VillagerData`: a villager and a
+/// zombie villager, the two bodies whose look and trades read it. Every other
+/// kind discards the key on summon, so the save holds no such field and the
+/// written world must not model one (`DW1040`). [measured: the gallery's
+/// pinned-server save of a `minecraft:husk` NPC summoned with `VillagerData`
+/// holds none; a villager's holds it.]
+pub const VILLAGER_DATA_KINDS: [&str; 2] = ["minecraft:villager", "minecraft:zombie_villager"];
+
+/// The `,VillagerData:{…}` an NPC summon of `base` carries: a profession-less
+/// plains villager for a kind in [`VILLAGER_DATA_KINDS`], nothing otherwise.
+pub fn villager_data_nbt(base: &str) -> &'static str {
+    let kind = if base.contains(':') {
+        base.to_string()
+    } else {
+        format!("minecraft:{base}")
+    };
+    if VILLAGER_DATA_KINDS.contains(&kind.as_str()) {
+        ",VillagerData:{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}"
+    } else {
+        ""
+    }
+}
+
 /// The ledger rows of [`npc_summon_commands`]: the body and its hitbox
 /// (spec-0112 §4), fired at setup; the caller states another firing when the
 /// rows are a `spawn-npc`'s.
@@ -106,8 +129,8 @@ pub(super) fn npc_summon_rows(
         let cname_field = snbt_component(name);
         let pose = mannequin_pose_nbt(base);
         out.push(format!(
-            "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"{watch_tag}],CustomName:{},CustomNameVisible:1b,VillagerData:{{profession:\"minecraft:none\",type:\"minecraft:plains\",level:1}}}}",
-            p[0], p[1], p[2], npc.tag, cname_field
+            "summon {base} {} {} {} {{NoAI:1b,Invulnerable:1b,Silent:1b,PersistenceRequired:1b,NoGravity:1b{pose},Rotation:[{yaw}f,0f],Tags:[\"dw_npc\",\"{}\"{watch_tag}],CustomName:{},CustomNameVisible:1b{}}}",
+            p[0], p[1], p[2], npc.tag, cname_field, villager_data_nbt(base)
         ));
     }
     // The interaction hitbox also carries the tag of every left-click trigger

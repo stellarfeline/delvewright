@@ -567,6 +567,32 @@ fn the_hitbox_the_summon_stands_is_the_hitbox_dw1025_judges() {
     );
 }
 
+/// An NPC's body summon states `VillagerData` only on a kind whose save keeps
+/// it: the pinned server drops the key from a husk, so a husk summon carrying
+/// it would write a world (`delvec written-world`) the server does not build
+/// (`DW1040`). A villager keeps its plains, profession-less data.
+#[test]
+fn only_a_kind_that_keeps_villager_data_is_summoned_with_it() {
+    let body = |kind: &str| -> String {
+        let out = build(&campaign(&keeper_as(kind)));
+        function(&out, "setup_finish")
+            .lines()
+            .find(|l| l.starts_with(&format!("summon {kind} ")))
+            .unwrap_or_else(|| panic!("{kind}: the keeper's body"))
+            .to_string()
+    };
+    for kind in ["minecraft:villager", "minecraft:zombie_villager"] {
+        assert!(
+            body(kind).contains(",VillagerData:{profession:\"minecraft:none\""),
+            "{kind}"
+        );
+    }
+    for kind in ["minecraft:husk", "minecraft:zombie", "minecraft:warden"] {
+        let line = body(kind);
+        assert!(!line.contains("VillagerData"), "{kind}: {line}");
+    }
+}
+
 /// A warden-sized NPC's box is taller than the `1.0 × 2.0` the reach once
 /// assumed, so a player above the old top is in reach of the box that ships —
 /// a cell the constants would have left unjudged.
