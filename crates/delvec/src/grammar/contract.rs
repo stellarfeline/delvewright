@@ -2264,6 +2264,10 @@ impl Confined {
         let model = &delta;
         // Every standable cell of every element, minus the out-of-walk regions
         // nested in them — judged over the blocks as they are in THIS state.
+        // A cell a body stands in is the reach graph's to say as well: a cell
+        // the voxel rule calls standable over a sieve (bars laid flat) holds no
+        // body, and is not owed.
+        let world = body_world(model);
         let free = nav::standable_cells(model);
         let mut targets: BTreeSet<[i32; 3]> = BTreeSet::new();
         for element in &self.elements {
@@ -2271,7 +2275,12 @@ impl Confined {
                 element
                     .cells
                     .iter()
-                    .filter(|c| free.contains(*c) && !self.excluded.contains(*c))
+                    .filter(|c| {
+                        free.contains(*c)
+                            && !self.excluded.contains(*c)
+                            && world.rest_kind(**c)
+                                == Some(crate::compiler::nav::RestKind::Standing)
+                    })
                     .copied(),
             );
         }
@@ -2284,7 +2293,6 @@ impl Confined {
         // across elements must be a `drop`'s. A private step rule here would be a
         // second answer to "can a body get there", and it was one: it stepped a
         // full block up under any ceiling and crossed no gap a jump clears.
-        let world = body_world(model);
         // The cells of an element a body holds in on a climbable — a `climb`
         // edge's volume, or a ladder down into a space from its way in:
         // passed through, never owed — a target is a cell a body stands in.
