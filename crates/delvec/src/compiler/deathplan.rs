@@ -285,21 +285,22 @@ fn currency(c: &Campaign, state_id: &str) -> Value {
 /// party** — the bot tier's key for "the checkpoint that governs a death here".
 ///
 /// `-1` for the entry spawn (in force from the start). A plain `set-checkpoint`
-/// is in force once the step that fires it completes; a bonfire once the party
-/// rests at it, which the exported path does in the `rest` step spliced straight
-/// after the beat that arms it ([`Plan::exported_step`]). `null` for a
-/// checkpoint a trigger sets: it moves on the party's own act, at no step the
-/// path can name, so the bot accepts it as in force whenever it is met.
-fn in_force_after(plan: &Plan, cp: i32) -> Value {
+/// is in force once the step that fires it completes — during the carry before
+/// it, for a `reach` that completes on landing ([`Plan::completes_at`]); a
+/// bonfire once the party rests at it, which is the `rest` step itself. Both indices are read off the
+/// exported path's layout ([`crate::compiler::plan::Plan::exported_layout`]),
+/// the one place the exported coordinates are decided — never counted here.
+/// `null` for a checkpoint a trigger sets (it moves on the party's own act, at
+/// no step the path can name, so the bot accepts it as in force whenever it is
+/// met), and for a bonfire the path never rests at.
+fn in_force_after(plan: &Plan, cp: i32, layout: &crate::compiler::plan::ExportedLayout) -> Value {
     if cp < 0 {
         return json!(-1);
     }
     match plan.checkpoints.iter().find(|k| k.index as i32 == cp) {
         Some(k) if k.trigger.is_some() => Value::Null,
-        Some(k) => {
-            let after = plan.exported_step(k.fire_step) + usize::from(k.rest);
-            json!(after)
-        }
+        Some(k) if k.rest => layout.rest(k.index).map_or(Value::Null, |i| json!(i)),
+        Some(k) => json!(plan.completes_at(layout, k.fire_step)),
         None => Value::Null,
     }
 }
@@ -311,7 +312,12 @@ fn in_force_after(plan: &Plan, cp: i32) -> Value {
 /// that keeps the closing edge live (a disarm's flag, unset), and `crossed_at`:
 /// the exported index of the first critical-path step whose proven leg crosses
 /// the gate, `null` when no proven leg does. Declaration order (ADR-0006).
-fn crush_gates(plan: &Plan, world: &World, routes: &[LegRoute]) -> Vec<Value> {
+fn crush_gates(
+    plan: &Plan,
+    world: &World,
+    routes: &[LegRoute],
+    layout: &crate::compiler::plan::ExportedLayout,
+) -> Vec<Value> {
     plan.timed_gates
         .iter()
         .filter(|g| g.crush)
@@ -324,7 +330,7 @@ fn crush_gates(plan: &Plan, world: &World, routes: &[LegRoute]) -> Vec<Value> {
             let crossed_at = routes
                 .iter()
                 .find(|leg| crate::compiler::waypoints::leg_crosses_gate(&leg.cells, region))
-                .map(|leg| plan.exported_step(leg.to_step));
+                .map(|leg| layout.step(leg.to_step));
             // A disarm stops the clock for good, so the closing edge is live only
             // while the disarm's flag is unset — the declaration, never the
             // engine's jam bookkeeping.
@@ -372,11 +378,12 @@ pub fn build(
     entry: Option<[i32; 3]>,
     table: Option<&StakeTable>,
     routes: &[LegRoute],
+    layout: &crate::compiler::plan::ExportedLayout,
 ) -> Option<Value> {
     let c = plan.campaign;
     let on_death = plan.on_death();
     let stakes = &c.quests.content.stakes;
-    let crush = crush_gates(plan, world, routes);
+    let crush = crush_gates(plan, world, routes, layout);
     if plan.lethal_volumes.is_empty()
         && on_death.is_empty()
         && stakes.is_empty()
@@ -478,7 +485,7 @@ pub fn build(
                 "cp": s.cp,
                 "label": s.label,
                 "cell": s.cell,
-                "in_force_after": in_force_after(plan, s.cp),
+                "in_force_after": in_force_after(plan, s.cp, layout),
             })
         })
         .collect();

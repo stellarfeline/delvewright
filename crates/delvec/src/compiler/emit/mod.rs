@@ -695,6 +695,20 @@ pub fn build_with_warnings(
     // step fires is flown through (`DW0308`).
     let frame_worlds = crate::compiler::view::review::frame_worlds(plan, &world);
 
+    // The exported path's layout (`Plan::exported_layout`): the one answer to
+    // which index each step, rest and witness carries in `critical-path.json`,
+    // read by the emitter that writes the path and by every harness document
+    // that names one of its steps (the death plan, the combat plan).
+    let witnesses = assembly_binding
+        .as_ref()
+        .map(crate::compiler::assembly::witness_steps)
+        .unwrap_or_default();
+    let witness_counts: Vec<(String, usize)> = witnesses
+        .iter()
+        .map(|(id, ws)| (id.clone(), ws.len()))
+        .collect();
+    let layout = plan.exported_layout(&plan.critical_path, &witness_counts);
+
     // ---- the world block: every proof over the assembled world ----
     let WorldProofs {
         moves,
@@ -733,6 +747,7 @@ pub fn build_with_warnings(
         &mut warnings,
         &mut pacing,
         &frame_worlds,
+        &layout,
     )?;
 
     // ---- `DW1025`: a body that holds its facing faces every approach ----
@@ -1208,17 +1223,24 @@ pub fn build_with_warnings(
         .find(|(slug, _, _)| slug == "critical-path")
         .map(|(_, _, r)| r.as_slice())
         .unwrap_or(&[]);
-    let mut cp = emit_critical_path(plan, &moves, &actor_moves, exported_routes);
+    let mut cp = emit_critical_path(
+        plan,
+        &moves,
+        &actor_moves,
+        exported_routes,
+        &layout,
+        &witnesses,
+    );
     // spec-0111 §5.4: a collect that takes from a frame or a stand says how.
     let holder_step_hints = holder_steps(&owned_holders, &holder_stances);
     annotate_holder_steps(&mut cp, &holder_step_hints);
     if let Some(mut b) = assembly_binding {
-        if let Some(steps) = cp.get_mut("steps").and_then(Value::as_array_mut) {
-            b.witnessed = crate::compiler::assembly::with_witness_steps(
-                steps,
-                crate::compiler::assembly::witness_steps(&b),
-            );
-        }
+        let laid = layout.witnessed();
+        b.witnessed = witnesses
+            .iter()
+            .map(|(id, _)| id.clone())
+            .filter(|id| laid.contains(id))
+            .collect();
         if b.declared > 0 {
             put_json(&mut out, "validation/assembly.json", &b.to_json());
         }

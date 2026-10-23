@@ -51,6 +51,7 @@ pub(super) fn prove_world(
     warnings: &mut Vec<delvewright_dsl::Diagnostic>,
     pacing: &mut Vec<delvewright_dsl::Diagnostic>,
     frame_worlds: &crate::compiler::view::review::FrameWorlds,
+    layout: &plan::ExportedLayout,
 ) -> Result<WorldProofs, BuildFailure> {
     // Visual-tier player-POV shots (spec-0003): first-person cameras along the
     // proven critical-path routes. Filled inside the world block below (they need
@@ -882,6 +883,7 @@ pub(super) fn prove_world(
                     campaign_spawn(plan),
                     stake_table.as_ref(),
                     &routes,
+                    layout,
                 );
                 // spec-0065 §4.3: what the furniture exclusion bound, over the
                 // same world and the same legs the proofs above walked. Printed
@@ -1240,7 +1242,9 @@ pub(super) fn prove_world(
                 put_json(
                     out,
                     "validation/combat-plan.json",
-                    &crate::compiler::combat::combat_plan_json(plan, &mandatory, &run_backs),
+                    &crate::compiler::combat::combat_plan_json(
+                        plan, &mandatory, &run_backs, layout,
+                    ),
                 );
             }
             // spec-0016 §1: the RESPAWN-POINT safe zone

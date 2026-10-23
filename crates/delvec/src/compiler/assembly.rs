@@ -1717,7 +1717,7 @@ pub struct AssemblyBinding {
     /// no such cell.
     pub spared: Vec<(String, Option<[i32; 3]>)>,
     /// The assemblies whose blow the critical path's bot witnesses
-    /// ([`with_witness_steps`]); filled when the path is written.
+    /// (`Plan::exported_layout`'s witness entries); filled when the path is written.
     pub witnessed: Vec<String>,
 }
 
@@ -1948,29 +1948,6 @@ pub fn witness_steps(b: &AssemblyBinding) -> Vec<(String, Vec<serde_json::Value>
         out.push((id.clone(), ws));
     }
     out
-}
-
-/// Put each assembly's witness steps on the critical path, just before the
-/// first step that strikes that assembly — the last moment the thing is
-/// certainly standing. Returns the assemblies witnessed.
-pub fn with_witness_steps(
-    steps: &mut Vec<serde_json::Value>,
-    witnesses: Vec<(String, Vec<serde_json::Value>)>,
-) -> Vec<String> {
-    let mut placed = Vec::new();
-    for (id, ws) in witnesses {
-        let Some(at) = steps
-            .iter()
-            .position(|s| s["action"] == "trigger" && s["assembly"] == id.as_str())
-        else {
-            continue;
-        };
-        for (k, w) in ws.into_iter().enumerate() {
-            steps.insert(at + k, w);
-        }
-        placed.push(id);
-    }
-    placed
 }
 
 // ---------------------------------------------------------------------------
