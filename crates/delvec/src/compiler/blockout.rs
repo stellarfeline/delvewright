@@ -2095,10 +2095,8 @@ fn seal_unopened(
 /// walking ground is two-way and a front a body can only enter is not a
 /// hand-off. For a `drop` contact only the **high** side is required, because
 /// the far side of a fall is precisely what the step rule does not model — a
-/// router that could fall would prove routes a body cannot come back from — and
-/// `DW0837` already treats a declared drop by seeding rather than walking. The
-/// same policy, in the same words, so this engine has one answer about drops and
-/// not two.
+/// router that could fall would prove routes a body cannot come back from; the
+/// far side is `DW0837`'s, which reaches it by the reach graph's fall.
 ///
 /// The step rule is `nav::World::neighbors`, unmodified and unwidened.
 fn contact_profile(s: &PlacedSeam, world: &crate::compiler::nav::World) -> Vec<i64> {

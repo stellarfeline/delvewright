@@ -4977,7 +4977,9 @@ A world with no campaign behind it says `nav::Premises::geometry_only` by name,
 with its reason in a comment at the call site, and every production decline is
 enumerated by `tests/premise_declines.rs`: the stage-5 blockout
 battery's two massing worlds (they carry their own sealing authority, from the
-quest graph's monotone closure) and its stairwell pass (one step between two
+quest graph's monotone closure; the sealed one carries the body's own premises,
+`Premises::with_body_of` — the declared jumps and the fall bound — because
+`DW0837` asks where the player can be) and its stairwell pass (one step between two
 courses of a stair, a question about geometry inside the stair's own box); the
 synthetic constructor every unit-test world goes through; the two relight darkness
 surveys (`light::relight_over` and a `relight` verb's own — applying the premises
