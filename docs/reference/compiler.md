@@ -3391,8 +3391,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
   (`compiler::clickbox`): `summons` (every `summon minecraft:interaction` in the
   shipped functions), `judged` and `placed` (the fixture-class boxes at absolute
   coordinates whose faces were judged off the block grid, by tag family),
-  `borne` (NPC dialogue hitboxes) and `runtime` (relative-position stake
-  markers), counted and not judged, and the `margin` and `min_protrusion` in
+  `borne` (boxes a body carries) with `borne_by` (how many are NPC dialogue
+  hitboxes and how many actor answer boxes, read off each box's own tags) and
+  `runtime` (relative-position stake markers), counted and not judged, and the `margin` and `min_protrusion` in
   blocks. The build prints `DW1013 binding: …` before the verdict.
 - `<out>/validation/fixture-gate.json`: the fixture-class proof's **binding
   ledger** (`compiler::affordance`, `DW0545`, playtest-methodology.md rule 1).
