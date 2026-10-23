@@ -302,6 +302,26 @@ fn every_consumer_of_a_door_gate_lays_the_halves_region_fill_derives() {
         .map(|(c, b)| (c, b.unwrap_or_else(|| "minecraft:air".to_string())))
         .collect();
     assert_eq!(laid, want, "the configuration after the close");
+
+    // 5. The opening: one clear over the whole region, filtered to the door's
+    // id, and a configuration between the open and the close holding every
+    // cell of both halves empty.
+    let (lo, hi) = region;
+    let clear = format!(
+        "fill {} {} {} {} {} {} minecraft:air replace minecraft:iron_door",
+        lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]
+    );
+    assert!(
+        functions.lines().any(|l| l.trim() == clear),
+        "the open-gate clears both halves in one command: {clear}"
+    );
+    let model = delvec::compiler::view::beat::PathModel::critical(&plan);
+    let opened = (0..plan.critical_path.len()).any(|arrival| {
+        let laid = model.at(&plan, &world, arrival).laid();
+        want.keys()
+            .all(|c| laid.get(c).is_some_and(Option::is_none))
+    });
+    assert!(opened, "some configuration holds the opened doorway empty");
 }
 
 /// **The planted red.** The old shape — the declared state in every cell of
