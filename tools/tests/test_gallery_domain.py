@@ -23,6 +23,7 @@ import importlib.util
 import json
 import pathlib
 import re
+import shutil
 
 import pytest
 
@@ -445,3 +446,32 @@ def test_a_probe_of_an_overlay_point_is_that_point_plus_its_edit(tmp_path):
     (p / "probe.json").write_text(json.dumps({"code": "DW0818", "point": "no-such", "patch": []}))
     with pytest.raises(gallery_domain.PatchError, match="not an overlay"):
         gallery_domain.materialise(dest, p)
+
+
+def test_a_clean_checkout_materialises_with_every_generated_input(tmp_path, monkeypatch):
+    """The gallery's skins, textures, design pictures and heightmap are generated
+    and gitignored, so a clean checkout holds none of them. A point materialised
+    from one carries them all anyway, produced by the generator, not read from
+    whatever an earlier job left in the tree."""
+    clean = tmp_path / "gallery"
+    shutil.copytree(
+        gallery_domain.GALLERY,
+        clean,
+        ignore=shutil.ignore_patterns(
+            "prefab-generator", "skins", "textures", "terrain", "concept", "baseline", "probes",
+            "gallery-out*",
+        ),
+    )
+    for entry in (clean / "design").iterdir():
+        if entry.name != "cameras.json":
+            shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
+    assert not (clean / "skins").exists() and not (clean / "textures").exists()
+    monkeypatch.setattr(gallery_domain, "GALLERY", clean)
+    monkeypatch.setattr(gallery_domain, "_GENERATED", None, raising=False)
+    dest = tmp_path / "camp"
+    gallery_domain.materialise(dest, clean / "overlays" / "site-plan")
+    for rel in ("skins", "textures", "design/concept"):
+        d = dest / rel
+        assert d.is_dir() and any(d.iterdir()), f"`{rel}/` is missing from a clean materialisation"
+    assert (dest / "design" / "cameras.json").is_file(), "the authored camera record was lost"
+    assert (dest / "terrain" / "site.png").is_file(), "the site plan's heightmap was not produced"

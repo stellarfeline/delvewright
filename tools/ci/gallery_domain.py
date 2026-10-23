@@ -84,8 +84,13 @@ come from the overlay on every run, and the edit is the probe's whole content.
 
 from __future__ import annotations
 
+import atexit
 import json
+import os
 import shutil
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -353,6 +358,88 @@ def probes() -> list[str]:
     return sorted(p.name for p in d.iterdir() if p.is_dir()) if d.is_dir() else []
 
 
+GENERATOR = GALLERY / "prefab-generator" / "Cargo.toml"
+_GENERATED: Path | None = None
+
+
+def generated_inputs() -> dict[str, Path]:
+    """Where the gallery's generated, gitignored inputs are: a map of `skins`,
+    `textures`, `design` and `terrain` to the directory holding each.
+
+    They are build output of `gallery/prefab-generator`, which
+    `tools/ci/gallery-prefabs.py` runs into the working tree before every gallery
+    job, so a tree where that has run already holds them and they are used as
+    they stand. A clean checkout holds none of them: the generator is then run
+    HERE, once per process, with the arguments `gallery-prefabs.py` gives it, so
+    a materialised point never depends on whether something ran first.
+    """
+    global _GENERATED
+    in_tree = {
+        "skins": GALLERY / "skins",
+        "textures": GALLERY / "textures",
+        "design": GALLERY / "design",
+        "terrain": GALLERY / "overlays" / "site-plan" / "terrain",
+    }
+    if (
+        in_tree["skins"].is_dir()
+        and in_tree["textures"].is_dir()
+        and (in_tree["design"] / "concept").is_dir()
+        and (in_tree["terrain"] / "site.png").is_file()
+    ):
+        return in_tree
+    if _GENERATED is not None and _GENERATED.is_dir():
+        return {n: _GENERATED / n for n in in_tree}
+    scratch = Path(tempfile.mkdtemp(prefix="dw-gallery-generated-"))
+    atexit.register(shutil.rmtree, scratch, ignore_errors=True)
+    pieces = scratch / "pieces"
+    for d in ("pieces", "skins", "textures", "design", "terrain"):
+        (scratch / d).mkdir()
+    r = subprocess.run(
+        [
+            os.environ.get("CARGO", "cargo"), "run", "-q", "--locked", "--release",
+            "--manifest-path", str(GENERATOR), "--", str(pieces),
+            "--skins", str(scratch / "skins"),
+            "--design", str(scratch / "design"),
+            "--textures", str(scratch / "textures"),
+            "--terrain", str(scratch / "terrain"),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if r.returncode != 0:
+        sys.stderr.write(r.stderr)
+        raise SystemExit(f"error: the gallery generator exited {r.returncode}\n{r.stdout}")
+    shutil.rmtree(pieces, ignore_errors=True)
+    _GENERATED = scratch
+    return {n: scratch / n for n in in_tree}
+
+
+def _lay_generated_inputs(dest: Path) -> None:
+    """Replace the copied (possibly absent, possibly stale) generated inputs in
+    `dest` with the generator's. `design/cameras.json` is authored and stays."""
+    gen = generated_inputs()
+    for name in ("skins", "textures"):
+        shutil.rmtree(dest / name, ignore_errors=True)
+        shutil.copytree(gen[name], dest / name)
+    design = dest / "design"
+    design.mkdir(exist_ok=True)
+    for entry in list(design.iterdir()):
+        if entry.name == "cameras.json":
+            continue
+        shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
+    for entry in gen["design"].iterdir():
+        if entry.name == "cameras.json":
+            continue
+        if entry.is_dir():
+            shutil.copytree(entry, design / entry.name)
+        else:
+            shutil.copy2(entry, design / entry.name)
+    # The heightmap is read by a site plan (`terrain/site.png`).
+    if (dest / "site-plan.json").is_file():
+        shutil.rmtree(dest / "terrain", ignore_errors=True)
+        shutil.copytree(gen["terrain"], dest / "terrain")
+
+
 def materialise(dest: Path, point: Path | None = None) -> int:
     """Write the campaign for one build point to `dest`; return the file count.
 
@@ -441,6 +528,7 @@ def materialise(dest: Path, point: Path | None = None) -> int:
             except PatchError as e:
                 raise PatchError(f"`{rel}`: {e}") from None
             target.write_text(json.dumps(doc, indent=2, ensure_ascii=False, sort_keys=True) + "\n")
+    _lay_generated_inputs(dest)
     return sum(1 for p in dest.rglob("*") if p.is_file())
 
 
