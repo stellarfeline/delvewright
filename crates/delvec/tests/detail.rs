@@ -2762,3 +2762,129 @@ fn a_detailed_campaign_with_a_notice_and_no_container_is_dw1018() {
     );
     assert!(!err.contains("still stand in their stand-in"), "{err}");
 }
+
+/// The blockout fixture with its plan's `lighting` declaration removed, so
+/// every reachable cell the whole owns is judged by the `DW0210` gate.
+fn unlit_blockout(root: &Path) -> PathBuf {
+    let src = root.join("unlit-src");
+    common::copy_dir_all(&blockout_dir(), &src);
+    common::patch_file(&src.join("site-plan.json"), |p| {
+        p["content"]
+            .as_object_mut()
+            .unwrap()
+            .remove("lighting")
+            .expect("the fixture declares lighting");
+    });
+    src
+}
+
+/// `(E, M)` off the build's `DW0210` binding line.
+fn standin_binding(stderr: &str) -> (usize, usize) {
+    let line = stderr
+        .lines()
+        .find(|l| l.starts_with("DW0210 binding: "))
+        .unwrap_or_else(|| panic!("no DW0210 binding line:\n{stderr}"));
+    let tail = line.split("; ").nth(1).expect("two clauses");
+    let words: Vec<&str> = tail.split_whitespace().collect();
+    assert_eq!(&words[1..3], ["cell(s)", "under"], "{line}");
+    assert!(line.ends_with("stand-in(s) not judged"), "{line}");
+    (words[0].parse().unwrap(), words[3].parse().unwrap())
+}
+
+/// The place left massed in [`a_stand_in_is_not_judged_and_its_detail_is`]:
+/// a roofed box whose stand-in interior is reachable and dark.
+const DARK_STANDIN: &str = "node/hall";
+
+const PLACES: [&str; 7] = [
+    "node/cell",
+    "node/exit",
+    "node/hall",
+    "node/landing",
+    "node/loft",
+    "node/tunnel",
+    "node/undercroft",
+];
+
+/// **Light is judged where a place has been built** (spec-0122 §7.4). Six
+/// places detailed and lit beside one left massed: the stand-in's dark interior
+/// is not judged, the build exits 0 and its binding line counts the cells left
+/// to the one stand-in (E > 0, M = 1). Then the same place detailed with no
+/// light: it is judged, `DW0210` refuses it, and nothing is left to a stand-in
+/// (E = 0, M = 0).
+#[test]
+fn a_stand_in_is_not_judged_and_its_detail_is() {
+    let tmp = tempdir("standin-light");
+    let src = unlit_blockout(&tmp);
+    let lit: Vec<&str> = PLACES
+        .iter()
+        .copied()
+        .filter(|p| *p != DARK_STANDIN)
+        .collect();
+    let d = detailed_from(&src, &tmp.join("massed"), &lit, &|_, _| None);
+    let out = delvec(&[
+        "--prefabs",
+        d.prefabs.to_str().unwrap(),
+        "build",
+        d.campaign.to_str().unwrap(),
+        "--out",
+        tmp.join("out-massed").to_str().unwrap(),
+    ]);
+    let s = String::from_utf8_lossy(&out.stderr).to_string();
+    assert_eq!(out.status.code(), Some(0), "{s}");
+    let (e, m) = standin_binding(&s);
+    assert!(e > 0, "the stand-in's interior is reachable and left out: {s}");
+    assert_eq!(m, 1, "{s}");
+
+    let dark = DARK_STANDIN;
+    let d = detailed_from(&src, &tmp.join("detailed"), &PLACES, &|_, _| None);
+    // Put the dark place's own lights out.
+    let c = campaign_at(&d.campaign);
+    let a = detail::allocation(&c, &NodeId(dark.into())).unwrap();
+    let mass = unbound_massing(&c);
+    let cells: Vec<([i32; 3], String)> = piece_cells(&c, &a, &mass)
+        .into_iter()
+        .map(|(p, b)| {
+            if b == "minecraft:torch" {
+                (p, "minecraft:air".to_string())
+            } else {
+                (p, b)
+            }
+        })
+        .collect();
+    write_piece(&d.prefabs, dark.split('/').nth(1).unwrap(), &a, &cells);
+    let out = delvec(&[
+        "--prefabs",
+        d.prefabs.to_str().unwrap(),
+        "build",
+        d.campaign.to_str().unwrap(),
+        "--out",
+        tmp.join("out-detailed").to_str().unwrap(),
+    ]);
+    let s = String::from_utf8_lossy(&out.stderr).to_string();
+    assert_eq!(out.status.code(), Some(2), "{s}");
+    assert!(s.contains("DW0210"), "{s}");
+    assert_eq!(standin_binding(&s), (0, 0), "{s}");
+}
+
+/// Exploration: the binding per massed place. Temporary.
+#[test]
+fn explore_standin_bindings() {
+    let tmp = tempdir("standin-explore");
+    let src = unlit_blockout(&tmp);
+    for x in PLACES {
+        let lit: Vec<&str> = PLACES.iter().copied().filter(|p| *p != x).collect();
+        let d = detailed_from(&src, &tmp.join(x.replace('/', "-")), &lit, &|_, _| None);
+        let out = delvec(&[
+            "--prefabs",
+            d.prefabs.to_str().unwrap(),
+            "build",
+            d.campaign.to_str().unwrap(),
+            "--out",
+            tmp.join(format!("out-{}", x.replace('/', "-"))).to_str().unwrap(),
+        ]);
+        let s = String::from_utf8_lossy(&out.stderr).to_string();
+        let line = s.lines().find(|l| l.starts_with("DW0210 binding")).unwrap_or("none");
+        let codes: Vec<&str> = s.split_whitespace().filter(|w| w.starts_with("DW")).take(4).collect();
+        println!("EXPLORE {x}: exit {:?} {line} {codes:?}", out.status.code());
+    }
+}
