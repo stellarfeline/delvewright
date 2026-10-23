@@ -577,30 +577,17 @@ pub fn each_string(c: &mut Campaign, f: &mut dyn FnMut(&str, &mut String)) {
     // window — a trigger, a shortcut (its sealed door from the far side, its
     // thrown unlock), a spent disarm. Each is a `Refusal` line on the presser's
     // action bar. Absent → no key.
-    for t in &mut c.quests.content.triggers {
-        let tl = local(t.id.as_str()).to_string();
-        if let Some(a) = t.answers.as_mut() {
-            answer_strings(a, &format!("trigger.{tl}.answers"), f);
-        }
-    }
-    for sc in &mut c.quests.content.shortcuts {
-        let sl = local(sc.id.as_str()).to_string();
-        if let Some(a) = sc.answers.as_mut() {
-            answer_strings(a, &format!("shortcut.{sl}.answers"), f);
-        }
-    }
-    for t in &mut c.quests.content.traps {
-        let tl = local(t.id.as_str()).to_string();
-        if let Some(a) = t.disarm.as_mut().and_then(|d| d.answers.as_mut()) {
-            answer_strings(a, &format!("trap.{tl}.disarm.answers"), f);
-        }
-    }
-    for g in &mut c.quests.content.timed_gates {
-        let gl = local(g.id.as_str()).to_string();
-        if let Some(a) = g.disarm.as_mut().and_then(|d| d.answers.as_mut()) {
-            answer_strings(a, &format!("timed_gate.{gl}.disarm.answers"), f);
-        }
-    }
+    crate::trigger::answers_mut(&mut c.quests.content, &mut |kind, id, a| {
+        let base = match kind {
+            crate::PressKind::Shortcut => format!("shortcut.{}.answers", local(id)),
+            crate::PressKind::TrapDisarm => format!("trap.{}.disarm.answers", local(id)),
+            crate::PressKind::TimedGateDisarm => {
+                format!("timed_gate.{}.disarm.answers", local(id))
+            }
+            _ => format!("trigger.{}.answers", local(id)),
+        };
+        answer_strings(a, &base, f);
+    });
     // v0.4 effect strings — `narrate` text, a named `give-item`, a bonfire's rest
     // dialog, a seal's answer — over **every** root emission can lower an effect
     // from, not just the quests stage's three ([`effect_roots_mut`]).

@@ -368,7 +368,9 @@ fn tally(extra: Vec<Value>) -> Campaign {
         json!({
             "state": [{"id": "state/tally", "scope": "party"}],
             "triggers": [{
-                "id": "trigger/bell", "at": "anchor/door", "on": {"on": "use"},
+                "id": "trigger/bell", "at": "anchor/door-knock", "on": {"on": "use"},
+                "prop": {"block": "minecraft:bell[attachment=floor,facing=north]"},
+                "answers": {"done": "The bell has rung."},
                 "effects": [{"type": "add-state", "state": "state/tally", "amount": 1}]
             }],
             "quests": [decide_quest(), tally_q, end],

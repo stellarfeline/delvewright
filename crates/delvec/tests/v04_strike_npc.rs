@@ -220,8 +220,8 @@ fn strike_trigger_off_an_npc_anchor_keeps_its_standalone_hitbox() {
     let all = all_functions(&build(away));
     assert!(
         all.lines()
-            .any(|l| l.starts_with("summon minecraft:interaction")
-                && l.contains(r#"Tags:["dw_fixture","dw_trig_ward"]"#)),
+            .any(|l| l.contains("summon minecraft:interaction")
+                && l.contains(r#"Tags:["dw_fixture","dw_trig_ward""#)),
         "an off-NPC strike trigger still summons its own hitbox:\n{all}"
     );
 }
@@ -282,6 +282,7 @@ fn use_trigger_on_an_npc_anchor_is_rejected() {
       "id": "trigger/press",
       "at": "anchor/keeper-stand",
       "on": { "on": "use" },
+      "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
       "once": true,
       "effects": [ { "type": "narrate", "style": "chat", "text": "He nods." } ]
     }"#;

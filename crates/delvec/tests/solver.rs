@@ -234,27 +234,26 @@ fn keep_trial_builds_all_verbs_and_is_deterministic() {
         );
     }
 
-    // Mechanics wired: wave spawn function + countdown. The interaction entity and
-    // collect chest are placed at objective ACTIVATION now (gap 13), not at setup —
-    // so late props are not visible/lootable early — and setup_finish no longer
-    // carries them.
+    // Mechanics wired: wave spawn function + countdown. The interact's block
+    // stands from world init (spec-0117 §5.1); a conjured collect chest is still
+    // placed at objective ACTIVATION (gap 13), so it is not lootable early.
     let setup = text(
         &a,
         "datapack/data/keep-trial/function/setup_finish.mcfunction",
     );
-    // (NPC bodies + their own interaction hitboxes still summon at setup; only the
-    // objective props moved — assert on the objective-specific tags/blocks.)
     assert!(
-        !setup.contains("dw_i_door") && !setup.contains("minecraft:chest"),
-        "collect/interact objective props must not be placed at setup (gap 13)"
+        setup.contains("minecraft:lever[face=floor,facing=north]")
+            && !setup.contains("minecraft:chest"),
+        "the interact's lever stands from world init; the collect chest does not (gap 13)"
     );
+    // A gated lever is boxed until its step; activation takes the box away.
     let act_door = text(
         &a,
         "datapack/data/keep-trial/function/activate_o_door.mcfunction",
     );
     assert!(
-        act_door.contains("setblock") && act_door.contains("minecraft:lever"),
-        "the door's lever is placed at activation: {act_door}"
+        act_door.contains("kill @e[tag=dw_i_door]"),
+        "the door's lever is handed to the press at activation: {act_door}"
     );
     let act_key = text(
         &a,
@@ -416,16 +415,15 @@ fn keep_trial_m2_presentation_fixes() {
         "wave mob CustomName is a plain SNBT string"
     );
 
-    // spec-0104 §7.6: no objective summons a marker. The door's lever is the
-    // whole affordance and nothing glows beside it; the reach places nothing,
-    // so it has no activation function.
+    // spec-0117: no objective summons a marker; the reach places nothing, so it
+    // has no activation function.
     let act_door = text(
         &a,
         "datapack/data/keep-trial/function/activate_o_door.mcfunction",
     );
     assert!(
-        act_door.contains("minecraft:lever") && !act_door.contains("summon minecraft:item_display"),
-        "the interact's activation is its lever alone: {act_door}"
+        !act_door.contains("summon minecraft:item_display"),
+        "nothing glows beside the lever: {act_door}"
     );
     assert!(
         !a.contains_key("datapack/data/keep-trial/function/activate_o_shrine.mcfunction"),

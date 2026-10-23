@@ -266,3 +266,54 @@ fn a_removed_field_is_an_unknown_field() {
     let fields = format!(r#"{BELL}{ANSWERED}, "missing_item_hint": "old""#);
     assert!(parse_campaign(&campaign_with(quests(&fields, ""))).is_err());
 }
+
+/// `DW0427`, narrowed (spec-0117 criterion 7): the striker of a left-click is
+/// named, so `audience: presser` and `answers` pass on every press kind and are
+/// refused on an `approach` alone — over every `TriggerOn` the schema has, so a
+/// new kind cannot slip past the table; and no message the code raises claims a
+/// left-click cannot be attributed.
+#[test]
+fn dw0427_names_every_kind_but_the_approach() {
+    use delvewright_dsl::TriggerOn;
+    let kinds: Vec<TriggerOn> = [
+        r#"{ "on": "use" }"#,
+        r#"{ "on": "strike" }"#,
+        r#"{ "on": "step" }"#,
+        r#"{ "on": "approach", "range": 3 }"#,
+        r#"{ "on": "strike-npc", "npc": "npc/keeper" }"#,
+        r#"{ "on": "strike-assembly", "assembly": "assembly/a" }"#,
+    ]
+    .iter()
+    .map(|j| serde_json::from_str(j).expect("a trigger kind"))
+    .collect();
+    for k in &kinds {
+        // The exhaustive match: a new variant is a compile error here.
+        let expected = match k {
+            TriggerOn::Use | TriggerOn::Strike | TriggerOn::Step => true,
+            TriggerOn::StrikeNpc { .. } | TriggerOn::StrikeAssembly { .. } => true,
+            TriggerOn::Approach { .. } => false,
+        };
+        assert_eq!(k.attributes_its_actor(), expected, "{}", k.kind());
+    }
+    let approach = r#"{ "id": "trigger/near", "at": "anchor/exit", "on": { "on": "approach", "range": 3 },
+        "audience": "presser", "answers": { "not_yet": "a" },
+        "effects": [ { "type": "narrate", "text": "Near." } ] }"#;
+    let ds = check_campaign(&campaign_with(quests(
+        &format!("{BELL}{ANSWERED}"),
+        approach,
+    )));
+    let msgs: Vec<&str> = ds
+        .iter()
+        .filter(|d| d.code == "DW0427")
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(msgs.len(), 2, "audience and answers each refused: {ds:#?}");
+    for m in msgs {
+        let lower = m.to_lowercase();
+        assert!(
+            !(lower.contains("left-click")
+                && (lower.contains("cannot") || lower.contains("no command"))),
+            "DW0427 claims a left-click cannot be attributed: {m}"
+        );
+    }
+}

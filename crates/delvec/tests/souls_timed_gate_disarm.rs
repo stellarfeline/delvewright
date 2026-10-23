@@ -51,7 +51,7 @@ fn build_fixture() -> BuildOutput {
         None,
         &BTreeMap::new(),
     )
-    .expect("every emitted command validates; DW0378/DW0388/DW0393/DW0420 all hold")
+    .expect("every emitted command validates; DW0378/DW0388/DW0393 all hold")
 }
 
 fn fn_body<'a>(out: &'a BuildOutput, name: &str) -> &'a str {
@@ -129,8 +129,8 @@ fn a_disarmed_gate_can_never_crush() {
 }
 
 /// The jam function itself, and the order that IS the semantics: latch, raise the
-/// party flag, clear the span once (the portcullis comes to rest OPEN), retire the
-/// affordance's visible hardware.
+/// party flag, clear the span once (the portcullis comes to rest OPEN). The jam
+/// is a button, pressed on its own, so no box returns over it.
 #[test]
 fn the_jam_latches_flags_opens_and_retires_its_hardware() {
     let out = build_fixture();
@@ -142,7 +142,6 @@ fn the_jam_latches_flags_opens_and_retires_its_hardware() {
             "scoreboard players set #tgdis_inner_door dw.sys 1",
             "scoreboard players set #party dw.f_portcullis_jammed 1",
             "fill 4 65 6 5 67 6 minecraft:air replace minecraft:iron_bars",
-            "kill @e[tag=dw_hw_dw_tgdis_inner_door]",
         ],
     );
     // No emitted function anywhere re-arms the clock: nothing but the jam itself
@@ -160,34 +159,28 @@ fn the_jam_latches_flags_opens_and_retires_its_hardware() {
     }
 }
 
-/// The affordance is a right-click target **plus compiler-owned visible
-/// hardware** — the `DW0420` obligation a trap disarm and a shortcut unlock
-/// already carry. A bare `minecraft:interaction` is a lever nobody can see, which
-/// is the drowned-bell soft-lock; the whole build fails rather than shipping one,
-/// so reaching this assertion at all is the proof.
+/// The jam is a real block (spec-0117 §3a): a button placed at world init,
+/// whose own press the game reports, firing the jam once behind its sentinel.
 #[test]
-fn the_jam_lever_is_summoned_with_visible_hardware() {
+fn the_jam_is_a_real_block_pressed_on_its_own() {
     let out = build_fixture();
     let setup = fn_body(&out, "setup_finish");
     assert!(
-        setup.contains("summon minecraft:interaction") && setup.contains("\"dw_tgdis_inner_door\""),
-        "the interaction hitbox is summoned: {setup}"
+        setup.contains("minecraft:stone_button[face=floor,facing=north]"),
+        "the jam's block stands from world init: {setup}"
     );
     assert!(
-        setup.contains("summon minecraft:item_display")
-            && setup.contains("\"dw_hw_dw_tgdis_inner_door\""),
-        "…and the visible hardware paired with it (DW0420): {setup}"
+        !setup.contains("\"dw_tgdis_inner_door\""),
+        "no box over a button: {setup}"
     );
-    // Detection is the same one-shot poll a shortcut/trap disarm uses.
-    let tick = fn_body(&out, "tick");
+    let press = fn_body(&out, "tgdis_press_inner_door");
     assert!(
-        tick.contains(&format!(
-            "execute unless score #tgdis_inner_door dw.sys matches 1 if entity \
-             @e[tag=dw_tgdis_inner_door,nbt={{interaction:{{}}}}] run function \
-             {NS}:tgate_disarm_inner_door"
+        press.contains(&format!(
+            "execute unless score #tgdis_inner_door dw.sys matches 1 run function {NS}:tgate_disarm_inner_door"
         )),
-        "the jam fires once, off the interaction primitive: {tick}"
+        "the jam fires once, off the button's own press: {press}"
     );
+    let tick = fn_body(&out, "tick");
     // The clock itself still costs nothing per tick.
     assert!(
         !tick.contains("tgate_open_") && !tick.contains("tgate_close_"),

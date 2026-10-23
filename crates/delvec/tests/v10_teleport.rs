@@ -125,8 +125,10 @@ fn quests(teleport_extent: &str) -> String {
     "triggers": [
       {{
         "id": "trigger/door-latch",
-        "at": "anchor/door",
+        "at": "anchor/latch",
         "on": {{ "on": "use" }},
+        "prop": {{ "block": "minecraft:stone_button[face=floor,facing=north]" }},
+        "answers": {{ "done": "The latch is already tried." }},
         "effects": [ {{ "type": "narrate", "text": "The latch will not give." }} ]
       }}
     ],

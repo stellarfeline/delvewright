@@ -923,6 +923,35 @@ fn a_gate_report_beside_a_piece_is_skipped_by_name_and_a_malformed_metadata_file
 
 /// The gallery's site-plan overlay point, materialised as
 /// `tools/ci/gallery_domain.py` does it.
+/// The site-plan point with the east door's shortcut taken out (spec-0117): a
+/// test that drops every detail leaves the near hall a stand-in, and the door's
+/// own answer is anchored at a mark only the hall's program places.
+fn without_the_east_door(dir: &Path) {
+    common::patch_file(&dir.join("quests.json"), |v| {
+        v["content"]["shortcuts"] = json!([]);
+        v["content"]["triggers"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|t| t["id"] != "trigger/east-door-wrong-side");
+    });
+    common::patch_file(&dir.join("layout-graph.json"), |v| {
+        for e in v["content"]["edges"].as_array_mut().unwrap() {
+            if e["id"] == "edge/east-door" {
+                let o = e.as_object_mut().unwrap();
+                o.remove("shortcut");
+                o.remove("gating");
+                o.remove("one_way");
+            }
+        }
+    });
+    common::patch_file(&dir.join("l10n/zh-cn.json"), |v| {
+        for half in ["content", "source"] {
+            let m = v[half].as_object_mut().unwrap();
+            m.retain(|k, _| !k.contains("east-door"));
+        }
+    });
+}
+
 fn gallery_site_plan(root: &Path) -> PathBuf {
     let dir = root.join("site-plan");
     common::gallery_site_plan_at(&dir);
@@ -1326,6 +1355,7 @@ fn leafy_beacon() -> Value {
 fn a_leafy_scenery_crown_owes_no_floor_and_no_light_and_a_reached_one_is_judged() {
     let tmp = tempdir("leafy-crown");
     let dir = gallery_site_plan(&tmp);
+    without_the_east_door(&dir);
     common::patch_file(&dir.join("detail-plan.json"), |v| {
         v["content"]["details"] = json!([]);
     });
@@ -1420,6 +1450,7 @@ fn a_leafy_scenery_crown_owes_no_floor_and_no_light_and_a_reached_one_is_judged(
 fn an_unlit_leafy_scenery_room_is_never_surveyed_for_light() {
     let tmp = tempdir("unlit-scenery");
     let dir = gallery_site_plan(&tmp);
+    without_the_east_door(&dir);
     common::patch_file(&dir.join("detail-plan.json"), |v| {
         v["content"]["details"] = json!([]);
     });

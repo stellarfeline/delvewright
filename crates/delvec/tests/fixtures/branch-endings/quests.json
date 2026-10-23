@@ -68,14 +68,14 @@
         "id": "quest/bolt",
         "objectives": [
           {
-            "anchor": "anchor/keeper-stand",
+            "anchor": "anchor/latch",
             "happening": {
               "text": "the party completes obj/bolt",
               "verb": "opens"
             },
             "id": "obj/bolt",
             "prop": {
-              "block": "minecraft:lever"
+              "block": "minecraft:stone_button[face=floor,facing=north]"
             },
             "requires_flags": [
               "flag/flee"

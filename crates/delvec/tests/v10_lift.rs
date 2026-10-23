@@ -455,18 +455,19 @@ fn the_car_exists_at_every_tick_of_the_ride() {
 ///   trigger already had. Not a destroy-and-recreate, which would drop the
 ///   occupants for a tick.
 /// * *A pull during a ride is ignored, not queued* — the `ride_in_progress`
-///   term closes the gate, and the interaction record is removed on the SAME
-///   tick regardless of whether the gate opened. That second line is what makes
-///   it "ignored" rather than "deferred": nothing survives to be replayed.
+///   term closes the gate, and the press's advancement is revoked on the same
+///   press regardless of whether the gate opened. That is what makes it
+///   "ignored" rather than "deferred": nothing survives to be replayed.
 #[test]
 fn the_call_gate_is_the_shared_gate_on_the_tick_line() {
     let out = build("gate");
-    let tick = func(&out, "tick");
     for (trig, floor) in [("call_lower", 1), ("call_upper", 2)] {
-        let dispatch = tick
+        // A press is dispatched by its advancement (spec-0117), as the presser.
+        let press = func(&out, &format!("press_{trig}"));
+        let dispatch = press
             .lines()
             .find(|l| l.contains(&format!("run function {NS}:trig_{trig}")))
-            .unwrap_or_else(|| panic!("no dispatch line for `{trig}`:\n{tick}"));
+            .unwrap_or_else(|| panic!("no dispatch line for `{trig}`:\n{press}"));
         assert!(
             dispatch.contains(&format!(
                 "unless score #party dw.s_car_at_floor matches {floor}"
@@ -478,12 +479,12 @@ fn the_call_gate_is_the_shared_gate_on_the_tick_line() {
             "a pull during a ride must not open the gate: {dispatch}"
         );
         assert!(
-            tick.lines().any(|l| l
-                == format!(
-                    "execute as @e[tag=dw_trig_{trig}] run data remove entity @s interaction"
-                )),
-            "the interaction record must be discarded UNCONDITIONALLY — that is what makes a \
-             pull during a ride *ignored* rather than queued:\n{tick}"
+            press
+                .lines()
+                .next()
+                .is_some_and(|l| l.starts_with("advancement revoke @s only ")),
+            "the press is revoked UNCONDITIONALLY, before the gate is read — that is what \
+             makes a pull during a ride *ignored* rather than queued:\n{press}"
         );
     }
 }
@@ -606,6 +607,8 @@ fn the_in_car_lever_is_refused() {
             "id": "trigger/car-lever",
             "at": "anchor/keeper-stand",
             "on": { "on": "use" },
+            "prop": { "block": "minecraft:lever[face=floor,facing=north]" },
+            "answers": { "not_yet": "The cage is moving." },
             "once": false,
             "requires_state": [
                 { "state": "state/car-at-floor", "op": "equals", "value": 1 },

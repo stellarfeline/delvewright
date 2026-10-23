@@ -241,6 +241,10 @@ pub(crate) struct Affordance {
     /// `DW0359` and `DW0422` judge an affordance's PLACE, which does not depend
     /// on when it is armed.
     pub(crate) arming: Arming,
+    /// For a block pressed on its own, the block: two such presses of one
+    /// block on one cell are one body that one press reaches (spec-0117
+    /// criterion 2), not a contest.
+    pub(crate) own_block: Option<String>,
 }
 
 /// When an affordance's `minecraft:interaction` box exists.
@@ -432,12 +436,10 @@ fn bodies(plan: &Plan) -> Vec<Body> {
 /// [`affordances`] builds, flattened for a consumer that only needs to ask *what
 /// stands where*.
 ///
-/// Public so a proof outside this module can assert its own membership in it. That
-/// is not a convenience: there are TWO affordance authorities in the compiler —
-/// [`crate::compiler::affordance`], which `DW0420`/`DW0421` read for visibility and
-/// retirement, and this one, which carries a resolved CELL — and a new affordance
-/// class registered with only one of them is invisible to every proof on the other
-/// side. spec-0032's shop shipped exactly that way until a test asked.
+/// Public so a proof outside this module can assert its own membership in it. The
+/// pressable class ([`crate::compiler::pressable`]) is the authority every
+/// interaction point is read from; this is its cell-resolved view, and an
+/// affordance it misses is invisible to every proof built on it.
 pub fn affordance_cells(plan: &Plan) -> Vec<(&'static str, String, [i32; 3])> {
     affordances(plan)
         .into_iter()
@@ -525,6 +527,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             anchor: p.anchor.clone(),
             pos: p.cell,
             arming,
+            own_block: (p.click_box.is_none() && p.form == Form::Own).then(|| p.block.clone()),
         });
     }
     // spec-0082 assemblies: a declared hitbox is a compiler-summoned
@@ -544,6 +547,7 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
             // Between a `spawn-assembly` and a `despawn-assembly`; held to the
             // persistent reading, the conservative direction for a contest.
             arming: Arming::Persistent,
+            own_block: None,
         });
     }
     // spec-0032 recovery stakes are deliberately ABSENT, and that is a decision
@@ -656,6 +660,7 @@ pub fn check_seal_collisions(plan: &Plan) -> Result<(), Failure> {
                 anchor: b.anchor,
                 pos: b.pos,
                 arming: Arming::Persistent,
+                own_block: None,
             }),
     );
     for body in pressable_bodies(plan) {
@@ -663,7 +668,9 @@ pub fn check_seal_collisions(plan: &Plan) -> Result<(), Failure> {
             let sbox = seal_box(cell);
             for a in &affordances {
                 // The gate's own answer is the body itself.
-                if a.pos == cell && body.cells.contains(&a.pos) {
+                // The gate's own answers are the body itself; a second answer
+                // on one cell is two presses on one cell (`DW0896`).
+                if a.kind == "trigger" && body.answers.contains(&a.id) {
                     continue;
                 }
                 let abox = a.boxed();
@@ -706,7 +713,8 @@ pub fn check_affordance_contests(plan: &Plan) -> Result<(), Failure> {
                 let (x, y) = (a.boxed(), b.boxed());
                 (0..3).all(|i| x[i].overlaps(y[i]))
             };
-            if contest && can_share_a_moment(a, b, order) {
+            let one_body = a.own_block.is_some() && a.own_block == b.own_block && a.pos == b.pos;
+            if contest && !one_body && can_share_a_moment(a, b, order) {
                 return Err(affordance_contest_error(a, b));
             }
         }
@@ -837,6 +845,9 @@ struct PressableBody {
     anchor: String,
     /// The cells its boxes stand in.
     cells: Vec<[i32; 3]>,
+    /// The triggers whose boxes these are: the gate's own answers, the
+    /// affordances that are the body rather than a contest with it.
+    answers: Vec<String>,
 }
 
 /// **Every compiler-owned press hitbox set in the campaign**, seals then shortcut
@@ -881,16 +892,21 @@ fn pressable_bodies(plan: &Plan) -> Vec<PressableBody> {
         } else {
             "close-gate seal"
         };
+        let crate::compiler::pressable::Owner::GateAnswer { id, .. } = &p.owner else {
+            continue;
+        };
         match out.iter_mut().find(|b| &b.anchor == gate) {
             Some(b) => {
                 if !b.cells.contains(&p.cell) {
                     b.cells.push(p.cell);
                 }
+                b.answers.push(id.clone());
             }
             None => out.push(PressableBody {
                 kind,
                 anchor: gate.clone(),
                 cells: vec![p.cell],
+                answers: vec![id.clone()],
             }),
         }
     }

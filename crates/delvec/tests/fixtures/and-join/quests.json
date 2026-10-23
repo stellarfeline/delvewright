@@ -74,7 +74,7 @@
             "hint": "A lever in the room off the hall.",
             "id": "obj/ward-north",
             "prop": {
-              "block": "minecraft:lever"
+              "block": "minecraft:lever[face=floor,facing=north]"
             },
             "title": "Draw the North Ward",
             "type": "interact",
@@ -92,7 +92,7 @@
             "hint": "Its twin, a room away.",
             "id": "obj/ward-south",
             "prop": {
-              "block": "minecraft:lever"
+              "block": "minecraft:lever[face=floor,facing=north]"
             },
             "title": "Draw the South Ward",
             "type": "interact",

@@ -509,7 +509,7 @@ mod tests {
         assert!(why.contains("inert"), "{why}");
     }
 
-    /// A tag-narrowed selector is `DW0421`'s business, not this rule's — the
+    /// A tag-narrowed selector names its own subject and is not this rule's — the
     /// obligation is on the verbs that quantify over a REGION, and widening it to
     /// every selector in the datapack would be an obligation with no defect
     /// behind it.

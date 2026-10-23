@@ -269,6 +269,7 @@ const PURSE_AND_STAKE: &str = r#",
     "on_death": [ { "type": "drop-stake", "stake": "stake/embers" } ],
     "shops": [
       { "id": "shop/brazier", "anchor": "spawn", "title": "The brazier",
+        "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
         "offers": [
           { "label": "Bank an ember", "tooltip": "Costs one ember.",
             "effects": [
@@ -562,8 +563,8 @@ fn a_shop_offer_declares_no_comparison_field_of_its_own() {
     }
 }
 
-/// A shop rides the machinery that already ships: an interaction hitbox, a
-/// player-interaction advancement that supplies the acting player, a
+/// A shop rides the machinery that already ships: a real block (here a button,
+/// whose own use the game reports), an advancement that supplies the acting player, a
 /// `minecraft:multi_action` dialog whose buttons run `/trigger`, and tick dispatch.
 ///
 /// Binding: the offer count is asserted, so a shop that emitted zero buttons could
@@ -574,10 +575,8 @@ fn a_shop_is_the_rest_flow_with_different_buttons() {
 
     let setup = fnc(&out, "setup_finish") + &fnc(&out, "setup");
     assert!(
-        setup.contains("summon minecraft:interaction")
-            && setup.contains("dw_shop_0")
-            && setup.contains("dw_hw_dw_shop_0"),
-        "the hitbox and its VISIBLE marker are both armed"
+        setup.contains("setblock 5 65 2 minecraft:stone_button[face=floor,facing=north]"),
+        "the shop is its own real block, placed at the shop's anchor: {setup}"
     );
     assert!(
         setup.contains("scoreboard objectives add dw.shop trigger"),
@@ -591,7 +590,8 @@ fn a_shop_is_the_rest_flow_with_different_buttons() {
     .unwrap();
     assert_eq!(
         adv["criteria"]["interact"]["trigger"],
-        serde_json::json!("minecraft:player_interacted_with_entity")
+        serde_json::json!("minecraft:default_block_use"),
+        "a button reports its own press"
     );
     assert_eq!(
         adv["rewards"]["function"],
@@ -665,17 +665,9 @@ fn an_offer_gate_is_inert_to_a_direct_trigger() {
 
 /// **A shop's interaction point is visible to the body-eclipse proof** (`DW0359`).
 ///
-/// This is the instance fix's general form, and it is here because the gap was
-/// real and shipped: there are TWO affordance authorities — `emit::affordances`,
-/// which `DW0420`/`DW0421` read, and `eclipse::affordances`, which carries a
-/// resolved cell and is read by `DW0359`, and by any later proof that needs to
-/// know where an affordance stands. Registering the shop with only the first left
-/// its hitbox invisible
-/// to every proof that reasons about WHERE an affordance stands, and this PR's own
-/// two fixtures both put a shop on an anchor an NPC was standing on. Both compiled
-/// green.
-///
-/// A body on the shop's anchor must now be a build failure naming the shop.
+/// A shop is a pressable (spec-0117), so the press authority the eclipse proof
+/// reads carries its cell. A body on the shop's anchor is a build failure naming
+/// the shop.
 #[test]
 fn a_body_standing_on_a_shop_eclipses_it() {
     // `npc/keeper` stands at `anchor/keeper-stand` in the hello-world base, so a
@@ -1237,7 +1229,7 @@ fn collecting_restores_the_amount_and_is_idempotent() {
          press in the same tick a no-op:\n{take}"
     );
 
-    // `DW0421` — exactly one function may kill the hardware.
+    // Exactly one function retires the marker.
     let mut killers = Vec::new();
     for (path, bytes) in &out {
         if !path.ends_with(".mcfunction") || path.starts_with("packtest-datapack/") {
@@ -1245,7 +1237,7 @@ fn collecting_restores_the_amount_and_is_idempotent() {
         }
         if String::from_utf8(bytes.clone())
             .unwrap()
-            .contains("kill @e[tag=dw_hw_dw_stk")
+            .contains("kill @e[tag=dw_stk")
         {
             killers.push(path.clone());
         }
@@ -1513,6 +1505,7 @@ const ENCHANTED_SHOP: &str = r#",
     ],
     "shops": [
       { "id": "shop/smithy", "anchor": "spawn", "title": "The smithy",
+        "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
         "offers": [
           { "label": "A keen blade, three embers",
             "requires_state": [ { "state": "state/embers", "op": "at-least", "value": 3 } ],

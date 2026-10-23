@@ -73,8 +73,8 @@ pub struct TimedGate {
 /// exact shape a trap's [`TrapDisarm`] takes, and deliberately so: one affordance
 /// grammar for every mechanism the party can switch off.
 ///
-/// The player acts on the `via` anchor (a compiler-emitted interaction entity
-/// plus its visible hardware, `DW0420`) to jam the gate. The clock stops with the
+/// The player presses the disarm's `prop`, a real block at the `via` anchor
+/// (spec-0117 §3a), to jam the gate. The clock stops with the
 /// span cleared, `sets_flag` is raised party-wide, and nothing in the delve can
 /// put the gate back.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

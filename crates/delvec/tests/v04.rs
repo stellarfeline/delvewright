@@ -530,27 +530,26 @@ fn killless_spawn_wave_emits_function_and_packtest() {
     );
 }
 
-/// Objective-marker lifecycle. Completing an interact objective kills
-/// the `minecraft:interaction` hitbox + wayfinding marker it summoned (both carry
-/// `dw_i_<obj>`); completing a reach objective kills its `dw_r_<obj>` marker. The
-/// prop BLOCK (lever) is scenery and is NOT removed. A regression PackTest proves
-/// the interaction count drops to 0 on completion.
+/// Objective-marker lifecycle. An interact's box goes at activation and returns
+/// at completion (spec-0117 §3a); a reach summons nothing. The prop BLOCK (the
+/// lever) stands for the whole delve and is NOT removed.
 #[test]
 fn completed_objectives_despawn_their_summoned_markers() {
     let out = build_showcase();
 
-    // interact obj/door: complete kills its interaction-hitbox tag (dw_i_door);
-    // the prop lever setblock stays in the world (affordance scenery, not killed).
+    // interact obj/door: its lever is boxed outside its window (spec-0117 §3a) —
+    // activation takes the box away so the press is the lever's own, and
+    // completion returns it (the door is not released) for its `done` answer.
+    // The lever itself stands for the whole delve.
     let door = fn_body(&out, "complete_o_door");
     assert!(
-        door.contains("kill @e[tag=dw_i_door]"),
-        "interact completion despawns its summoned interaction entity: {door}"
+        door.contains("summon minecraft:interaction") && door.contains("\"dw_i_door\""),
+        "interact completion returns the box over its lever: {door}"
     );
     assert!(
         !door.contains("setblock") || !door.contains("minecraft:air"),
         "interact completion does not remove the prop block: {door}"
     );
-
     // reach obj/shrine summons nothing (spec-0104 §7.6), so its completion
     // kills nothing.
     let shrine = fn_body(&out, "complete_o_shrine");
@@ -566,20 +565,10 @@ fn completed_objectives_despawn_their_summoned_markers() {
         "talk-to completion emits no marker cleanup: {talk}"
     );
 
-    // The door's lever is a block vanilla reports the use of (spec-0093 §6.5):
-    // no hitbox is ever summoned for it, so there is none to clean and the
-    // interact-cleanup PackTest — which asserts a hitbox exists, then is gone —
-    // is not written for this campaign.
-    assert!(
-        !out.contains_key(
-            "packtest-datapack/data/v04-showcase/test/v04_interact_cleanup.mcfunction"
-        ),
-        "a block-bound interact owes no hitbox-cleanup PackTest"
-    );
     let activate = fn_body(&out, "activate_o_door");
     assert!(
-        activate.contains("setblock") && !activate.contains("summon minecraft:interaction"),
-        "the lever is placed and no hitbox stands in it: {activate}"
+        activate.contains("kill @e[tag=dw_i_door]"),
+        "activation hands the lever to the press: {activate}"
     );
 }
 

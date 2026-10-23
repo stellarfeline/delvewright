@@ -38,6 +38,14 @@
         8
       ]
     },
+    "anchor/far-knock": {
+      "note": "the cell beside the door on the exit's side: a knocker standing there is on the far side of a shortcut sealed toward the spawn",
+      "pos": [
+        5,
+        1,
+        7
+      ]
+    },
     "anchor/keeper-stand": {
       "facing": "north",
       "pos": [

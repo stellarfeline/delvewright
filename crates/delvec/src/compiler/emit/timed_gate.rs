@@ -154,8 +154,8 @@ pub(super) fn emit_timed_gate_functions(plan: &Plan) -> Vec<(String, String)> {
 ///    "the party switched it off" (`requires_flags`, a dialogue gate, a quest);
 /// 3. clear the span **once** — the jammed portcullis comes to rest OPEN, which
 ///    is what a disarm means and what a player who pulls a lever expects to see;
-/// 4. retire the affordance's visible hardware. This is the ONE function allowed
-///    to do that — `DW0421` fails the build if anything else reaches it.
+/// 4. return the jam's click box for its `done` answer unless it is released
+///    (spec-0117 §3a).
 ///
 /// There is deliberately **no** `schedule clear`. A close already in flight fires
 /// into the guard and does nothing — including not scheduling the next open — so

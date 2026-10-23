@@ -57,7 +57,9 @@ fn quests_doc(trigger: &str, on_complete: &str) -> String {
 
 /// The bars fall to a strike once the keeper has spoken.
 const STRIKE_THE_BARS: &str = r#"{
-  "id": "trigger/break-the-bars", "at": "anchor/door", "on": { "on": "strike" },
+  "id": "trigger/break-the-bars", "at": "anchor/door-knock", "on": { "on": "strike" },
+  "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
+  "answers": { "not_yet": "The bars do not give yet.", "done": "The bars are down." },
   "requires_flags": ["flag/told"],
   "effects": [ { "type": "open-gate", "anchor": "anchor/door" } ]
 }"#;
@@ -66,7 +68,9 @@ const STRIKE_THE_BARS: &str = r#"{
 /// the exit, so no point of the path both holds the flag and precedes the leg
 /// through the door.
 const STRIKE_THE_BARS_TOO_LATE: &str = r#"{
-  "id": "trigger/break-the-bars", "at": "anchor/door", "on": { "on": "strike" },
+  "id": "trigger/break-the-bars", "at": "anchor/door-knock", "on": { "on": "strike" },
+  "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
+  "answers": { "not_yet": "The bars do not give yet.", "done": "The bars are down." },
   "requires_flags": ["flag/out"],
   "effects": [ { "type": "open-gate", "anchor": "anchor/door" } ]
 }"#;
@@ -178,7 +182,7 @@ fn a_path_through_a_struck_gate_strikes_it() {
     let strike = &path["steps"][2];
     assert_eq!(strike["trigger"], "trigger/break-the-bars");
     assert_eq!(strike["on"], "strike");
-    assert_eq!(strike["anchor"], "anchor/door");
+    assert_eq!(strike["anchor"], "anchor/door-knock");
     assert!(
         strike["pos"].is_array(),
         "a strike is done somewhere: {strike}"
@@ -263,6 +267,7 @@ fn a_flag_only_a_trigger_sets_is_paid_by_a_trigger_step() {
     "triggers": [
       { "id": "trigger/light-the-stone", "at": "spawn", "on": { "on": "use" },
         "prop": { "block": "minecraft:oak_sign[rotation=0]" },
+        "answers": { "done": "Already done." },
         "effects": [ { "type": "set-flag", "flag": "flag/lit" } ] }
     ]
   }
@@ -315,6 +320,7 @@ fn strike_the_stone_doc() -> String {
     "triggers": [
       { "id": "trigger/strike-the-stone", "at": "spawn", "on": { "on": "strike" },
         "prop": { "block": "minecraft:oak_sign[rotation=0]" },
+        "answers": { "not_yet": "Not yet.", "done": "Already done." },
         "requires_flags": ["flag/told"],
         "effects": [ { "type": "open-gate", "anchor": "anchor/door" } ] }
     ]
@@ -357,6 +363,7 @@ fn press_beyond_the_door_doc() -> String {
     "triggers": [
       { "id": "trigger/light-the-lamp", "at": "anchor/exit", "on": { "on": "use" },
         "prop": { "block": "minecraft:oak_sign[rotation=0]" },
+        "answers": { "not_yet": "Not yet.", "done": "Already done." },
         "requires_flags": ["flag/told"],
         "effects": [ { "type": "set-flag", "flag": "flag/lit" } ] }
     ]
@@ -483,6 +490,7 @@ fn stone_then_barred_exit_doc() -> String {
     "triggers": [
       { "id": "trigger/light-the-stone", "at": "spawn", "on": { "on": "use" },
         "prop": { "block": "minecraft:oak_sign[rotation=0]" },
+        "answers": { "not_yet": "Not yet.", "done": "Already done." },
         "requires_flags": ["flag/told"],
         "effects": [ { "type": "set-flag", "flag": "flag/lit" } ] }
     ]
@@ -517,6 +525,7 @@ fn lamp_beyond_a_barred_door_doc() -> String {
     "triggers": [
       { "id": "trigger/light-the-lamp", "at": "anchor/exit", "on": { "on": "use" },
         "prop": { "block": "minecraft:oak_sign[rotation=0]" },
+        "answers": { "not_yet": "Not yet.", "done": "Already done." },
         "requires_flags": ["flag/told"],
         "effects": [ { "type": "set-flag", "flag": "flag/lit" } ] }
     ]
@@ -555,7 +564,9 @@ fn the_leg_into_a_trigger_step_is_judged_against_a_shut_door() {
 /// run only while that word has NOT been given — a line the strike reaches and
 /// never runs.
 const STRIKE_THE_BARS_LINE_SHUT: &str = r#"{
-  "id": "trigger/break-the-bars", "at": "anchor/door", "on": { "on": "strike" },
+  "id": "trigger/break-the-bars", "at": "anchor/door-knock", "on": { "on": "strike" },
+  "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
+  "answers": { "not_yet": "The bars do not give yet.", "done": "The bars are down." },
   "requires_flags": ["flag/told"],
   "effects": [ { "type": "open-gate", "anchor": "anchor/door",
                  "when": { "forbids_flags": ["flag/told"] } } ]

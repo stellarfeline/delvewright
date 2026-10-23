@@ -71,10 +71,14 @@ fn quests(guidance: Value) -> Value {
                     { "type": "interact", "id": "obj/pull", "anchor": "anchor/exit",
                       "prop": { "block": "minecraft:lever[face=floor,facing=north]" },
                       "title": "Pull the lever", "hint": "It is set in the floor by the door.",
+                      "answers": { "not_yet": "The lever is locked until he has spoken.",
+                                   "done": "The lever is already pulled." },
                       "after": ["obj/talk"] },
-                    { "type": "interact", "id": "obj/press", "anchor": "anchor/keeper-stand",
+                    { "type": "interact", "id": "obj/press", "anchor": "anchor/latch",
                       "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
-                      "title": "Press the button", "hint": "It is set in the floor at his post.",
+                      "title": "Press the button", "hint": "It is set in the floor by the wall.",
+                      "answers": { "not_yet": "The button is stiff until the lever is pulled.",
+                                   "done": "The button is already pressed." },
                       "after": ["obj/pull"] }
                 ],
                 "on_objective_complete": {

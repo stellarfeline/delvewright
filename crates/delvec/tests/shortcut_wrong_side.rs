@@ -1,29 +1,12 @@
-//! A click trigger gets the body of the **object** at its anchor.
+//! A sealed shortcut door is pressed from both sides, and its sides are the
+//! compiler's to derive (`compiler::wrongside`, spec-0117 §3a).
 //!
-//! ## The finding
-//!
-//! `EnvTrigger` is already the campaign's general "click a thing, run anything"
-//! verb — any anchor, both clicks, the full effect vocabulary, flag gates and
-//! `once`. Nothing was missing at the response layer. What was missing is
-//! underneath: **the trigger's body is a point at a cell, and an object in the
-//! scene is a shape.**
-//!
-//! Measured on the `souls-shortcut` fixture before this change. A `use` trigger
-//! anchored on the shortcut's gate compiled with **zero diagnostics** and emitted
-//!
-//! ```text
-//! summon minecraft:interaction 4.5 65.0 6.5 {width:1.0f,height:2.0f,…,Tags:["dw_trig_…"]}
-//! ```
-//!
-//! whose AABB is `[4.0,65.0,6.0]..[5.0,67.0,7.0]` — inside a doorway slab
-//! occupying `[4.0,65.0,6.0]..[6.0,68.0,7.0]`. Flush with the block on the faces
-//! it touches, strictly interior on the rest. Vanilla bounds its entity raycast
-//! by the block hit and takes the entity only when it is *strictly* nearer, so
-//! **that trigger is pressable from no angle at all** — and one box would have
-//! covered one of the doorway's six cells even if it were.
-//!
-//! `close-gate` had solved this privately (shell cells + `CLICK_MARGIN`); nothing
-//! else could reach that machinery. These tests pin the general form.
+//! The door's body is its own block: the gate's own answer, a `use` trigger with
+//! `serves: {gate}` at a cell of the bars, is a click box fitted over that cell,
+//! armed at world-load and taken down by `shortcut_open_<id>`. A presser on the
+//! sealed side hears the trigger's line; one on the far side hears the
+//! shortcut's `answers.not_yet`. Which side is which is derived from the
+//! geometry (`DW0425` when it cannot be), never typed.
 
 mod common;
 
@@ -88,165 +71,33 @@ fn function(out: &BuildOutput, name: &str) -> String {
         .unwrap_or_else(|| panic!("no shipped function `{name}`"))
 }
 
-/// Every `summon minecraft:interaction` line in the shipped pack carrying `tag`,
-/// as `(x, y, z, width, height)`.
-fn bodies(out: &BuildOutput, tag: &str) -> Vec<(f64, f64, f64, f64, f64)> {
-    let mut v = Vec::new();
-    for (path, bytes) in out {
-        if !path.starts_with("datapack/") || !path.ends_with(".mcfunction") {
-            continue;
-        }
-        for line in std::str::from_utf8(bytes).unwrap().lines() {
-            if !line.starts_with("summon minecraft:interaction") || !line.contains(tag) {
-                continue;
-            }
-            let t: Vec<&str> = line.split_whitespace().collect();
-            let grab = |k: &str| {
-                line.split(k)
-                    .nth(1)
-                    .and_then(|r| r.split('f').next())
-                    .and_then(|r| r.parse::<f64>().ok())
-                    .unwrap_or_else(|| panic!("no {k} in {line}"))
-            };
-            v.push((
-                t[2].parse().unwrap(),
-                t[3].parse().unwrap(),
-                t[4].parse().unwrap(),
-                grab("width:"),
-                grab("height:"),
-            ));
-        }
-    }
-    v
-}
-
-/// The gate slab's solid AABB: cell `c` occupies `[c, c+1]` on each axis.
-const SLAB_LO: [f64; 3] = [4.0, 65.0, 6.0];
-const SLAB_HI: [f64; 3] = [6.0, 68.0, 7.0];
-
-// ---------------------------------------------------------------------------
-// The general fix: a region anchor gets the object's shape
-// ---------------------------------------------------------------------------
-
-/// **The regression, stated as geometry.** Every body a click trigger on the
-/// barred door is dispatched from must have at least one face strictly outside
-/// the solid slab — otherwise vanilla can never find it nearer than the block and
-/// the press reaches nothing. On `origin/main` the single emitted body failed
-/// this on all six faces.
+/// The door's own answer, from the sealed side; the shortcut's far-side line,
+/// from the other. Both read one derived side volume, in complement.
 #[test]
-fn the_doors_bodies_are_reachable_from_outside_the_block() {
+fn the_door_answers_each_side_with_its_own_line() {
     let out = build();
-    let bs = bodies(&out, "dw_trig_bars_wont_give");
-    assert!(!bs.is_empty(), "the trigger must have a body at all");
-    for (x, y, z, w, h) in bs {
-        let lo = [x - w / 2.0, y, z - w / 2.0];
-        let hi = [x + w / 2.0, y + h, z + w / 2.0];
-        let protrudes = (0..3).any(|i| lo[i] < SLAB_LO[i] || hi[i] > SLAB_HI[i]);
-        assert!(
-            protrudes,
-            "body {lo:?}..{hi:?} is sealed inside the door {SLAB_LO:?}..{SLAB_HI:?} \
-             and no press can reach it"
-        );
-    }
+    let own = function(&out, "press_inner_door_barred");
+    let far = function(&out, "press_dw_answer_sc_inner_door_not_yet");
+    let vol = |body: &str, word: &str| {
+        body.split_whitespace()
+            .collect::<Vec<_>>()
+            .windows(3)
+            .find(|w| w[0] == word && w[1] == "entity" && w[2].starts_with("@s[x="))
+            .map(|w| w[2].to_string())
+    };
+    let sealed = vol(&own, "if")
+        .unwrap_or_else(|| panic!("the own answer is held to the sealed side: {own}"));
+    let not_sealed = vol(&far, "unless")
+        .unwrap_or_else(|| panic!("the far-side line is held off the sealed side: {far}"));
+    assert_eq!(sealed, not_sealed, "one derived volume, read both ways");
+    // The sealed side is the spawn's (z < 6): the volume's z ends at 5.
+    assert!(sealed.contains("z=") && !sealed.contains("z=7"), "{sealed}");
 }
 
-/// …and the object is answered over its whole clickable surface, not at one
-/// corner of it. The doorway is six cells.
+/// The box retires with the bars: an opened doorway that still intercepts a
+/// press would swallow right-clicks aimed through it.
 #[test]
-fn every_cell_of_the_doorway_answers() {
-    let out = build();
-    assert_eq!(
-        bodies(&out, "dw_trig_bars_wont_give").len(),
-        6,
-        "one body per doorway cell"
-    );
-}
-
-/// The general form, on an anchor with no shortcut and no seal: a trigger on a
-/// plain **gate region** anchor now gets that region's clickable shell instead of
-/// one buried point box. This is the half that fixes objects nobody has thought
-/// about yet.
-#[test]
-fn a_plain_region_anchor_also_gets_a_region_body() {
-    let mut c = fixture();
-    // Drop the shortcut so `anchor/door` is an ordinary gate region, and put a
-    // `use` trigger on it.
-    c.quests.content.shortcuts.clear();
-    c.quests.content.triggers = vec![
-        serde_json::from_str::<EnvTrigger>(
-            r#"{ "id": "trigger/press-the-door", "at": "anchor/door", "on": { "on": "use" },
-                 "once": false,
-                 "effects": [ { "type": "narrate", "text": "Cold iron.", "style": "chat" } ] }"#,
-        )
-        .expect("trigger parses"),
-    ];
-    let out = try_build(&c).expect("builds");
-    let bs = bodies(&out, "dw_trig_press_the_door");
-    assert_eq!(bs.len(), 6, "the region's whole shell is armed: {bs:?}");
-    assert!(
-        bs.iter().all(|&(_, _, _, w, h)| w > 1.0 && h > 1.0),
-        "each body protrudes past the block it stands in: {bs:?}"
-    );
-}
-
-/// A trigger anchored on a point gets the standard press column — one block
-/// across, two tall, standing in the point's cell — built by the one click-box
-/// rule (`compiler::clickbox`): every face one margin past the block grid, so the
-/// sign its `prop` places (or any block in either cell) never ties the pick.
-#[test]
-fn a_point_anchor_is_the_standard_column() {
-    let mut c = fixture();
-    c.quests.content.shortcuts.clear();
-    c.quests.content.triggers = vec![
-        serde_json::from_str::<EnvTrigger>(
-            r#"{ "id": "trigger/at-the-exit", "at": "anchor/exit", "on": { "on": "use" },
-                 "prop": { "block": "minecraft:oak_sign[rotation=0]" },
-                 "effects": [ { "type": "narrate", "text": "Air.", "style": "chat" } ] }"#,
-        )
-        .expect("trigger parses"),
-    ];
-    let out = try_build(&c).expect("builds");
-    assert_eq!(
-        bodies(&out, "dw_trig_at_the_exit"),
-        vec![(5.5, 64.99, 8.5, 1.02, 2.02)],
-        "the point body is the column bracketing its cell and the one above"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Sidedness, as a property of the object
-// ---------------------------------------------------------------------------
-
-/// **The answer must never fire where it would be false.** The owner's line is
-/// "the door cannot be opened from this side"; said to a player standing where it
-/// *does* open, that is a lie, and a lie teaches something wrong where silence
-/// teaches nothing.
-///
-/// The mechanism is placement, not a player test: the bodies stand in the open
-/// air on the sealed side (`z = 5`), so a near-side ray reaches them before the
-/// block and a far-side ray hits the door and stops. No DSL surface, and no
-/// presser identity needed — which matters, because a trigger is dispatched from
-/// the tick under the server command source and never knows who pressed it.
-#[test]
-fn the_door_answers_only_from_the_sealed_side() {
-    let out = build();
-    let bs = bodies(&out, "dw_trig_bars_wont_give");
-    assert!(
-        bs.iter().all(|&(_, _, z, ..)| z < 6.0),
-        "every body stands in front of the bars on the sealed side: {bs:?}"
-    );
-    // The unlock is at z=8, so the far side is z>=7: nothing may stand there.
-    assert!(
-        bs.iter().all(|&(_, _, z, ..)| z < 7.0),
-        "nothing on the side the door opens from: {bs:?}"
-    );
-}
-
-/// The bodies retire with the bars. An opened doorway that still answers "it will
-/// not open" is a lie, and an invisible box left standing in a now-walkable
-/// threshold swallows right-clicks aimed through it.
-#[test]
-fn opening_the_shortcut_takes_the_bodies_down() {
+fn opening_the_shortcut_takes_the_box_down() {
     let open = function(&build(), "shortcut_open_inner_door");
     let fill = open
         .lines()
@@ -254,41 +105,19 @@ fn opening_the_shortcut_takes_the_bodies_down() {
         .expect("the unlock clears the gate region");
     let kill = open
         .lines()
-        .position(|l| l == "kill @e[tag=dw_ws_inner_door]")
-        .expect("the unlock retires the door's bodies");
-    assert!(kill > fill, "the bars go first, their body after: {open}");
+        .position(|l| l == "kill @e[tag=dw_gate_door]")
+        .expect("the unlock retires the door's box");
+    assert!(kill > fill, "the bars go first, their box after: {open}");
 }
 
-/// One cell, one hitbox. The trigger **rides** the door's bodies rather than
-/// summoning its own co-located set — a second box there is the exact ray-pick
-/// tie `DW0422` exists to forbid, and the one that killed the island's boulder.
-#[test]
-fn the_trigger_rides_the_door_rather_than_contesting_it() {
-    let out = build();
-    let arm = function(&out, "ws_arm_inner_door");
-    assert_eq!(
-        arm.matches("\"dw_ws_inner_door\",\"dw_trig_bars_wont_give\"")
-            .count(),
-        6,
-        "the trigger's tag rides every one of the door's bodies: {arm}"
-    );
-    assert!(
-        !function(&out, "setup_finish")
-            .contains("Tags:[\"dw_fixture\",\"dw_trig_bars_wont_give\"]"),
-        "and it summons nothing of its own"
-    );
-}
-
-/// The author's own effects are what a press produces — prose and sound, gated by
-/// the author's own flags. The compiler supplies the body; the campaign supplies
-/// the answer, and the compiler writes no player-facing prose here at all.
+/// The author's own effects are what a press produces; the compiler writes no
+/// player-facing prose for the door.
 #[test]
 fn the_answer_is_the_campaigns_own() {
-    let body = function(&build(), "trig_bars_wont_give");
+    let body = function(&build(), "trig_inner_door_barred");
     assert!(
-        body.contains("You set your shoulder to the bars")
-            && body.contains("playsound minecraft:block.chain.hit"),
-        "the author's prose and sound are what the press runs: {body}"
+        body.contains("The door is barred from the other side."),
+        "the author's line is what the press runs: {body}"
     );
 }
 
@@ -348,7 +177,7 @@ fn a_campaign_without_shortcuts_emits_no_door_bodies() {
     c.quests.content.triggers.clear();
     let out = try_build(&c).expect("builds");
     assert!(
-        !out.keys().any(|p| p.contains("/ws_")),
+        !out.keys().any(|p| p.contains("/seal_arm_")),
         "no door machinery without a shortcut"
     );
 }
@@ -381,10 +210,10 @@ fn the_press_ledger_names_every_click_and_the_body_it_landed_on() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|p| p["anchor"] == "anchor/door")
+        .find(|p| p["anchor"] == "anchor/door-leaf")
         .unwrap_or_else(|| panic!("the door's own press is in the ledger: {l}"));
     assert!(
-        door["body"].as_str().unwrap().contains("shortcut door"),
+        door["body"].as_str().unwrap().contains("gate"),
         "the ledger records WHICH body the click landed on, not merely that it landed: {door}"
     );
 }
@@ -396,6 +225,7 @@ fn the_press_ledger_names_every_click_and_the_body_it_landed_on() {
 fn a_campaign_that_arms_no_click_states_its_own_zero() {
     let mut c = fixture();
     c.quests.content.triggers.clear();
+    c.quests.content.shortcuts.clear();
     let out = try_build(&c).expect("a campaign with no trigger builds");
     let l = press_ledger(&out);
     assert_eq!(l["examined"], 0);

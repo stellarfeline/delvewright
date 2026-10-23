@@ -134,7 +134,7 @@
     ],
     "triggers": [
       {
-        "at": "anchor/door",
+        "at": "anchor/door-knock",
         "effects": [
           {
             "flag": "flag/rang",
@@ -150,10 +150,10 @@
           "on": "use"
         },
         "prop": {
-          "block": "minecraft:stone_button[face=floor,facing=north]"
+          "block": "minecraft:bell[attachment=floor,facing=north]"
         },
         "answers": {
-          "done": "Already done."
+          "done": "The bell has rung; its note is still in the stone."
         }
       }
     ]

@@ -137,6 +137,7 @@ pub fn quests() -> Value {
             "on": { "on": "strike-assembly", "assembly": "assembly/limb" },
             "once": false,
             "forbids_flags": ["flag/struck"],
+            "answers": { "not_yet": "The limb has drawn back; it takes no more blows." },
             "effects": [
                 { "type": "add-state", "state": "state/hits", "amount": 1 },
                 { "type": "play-clip", "assembly": "assembly/limb", "clip": "retract",

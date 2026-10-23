@@ -1438,5 +1438,38 @@ pub fn check_highlights(c: &Campaign) -> (Vec<Diagnostic>, HighlightBinding) {
             ),
         ));
     }
+    // spec-0117 §3b: every other pressable, and a stake's place, lights a block.
+    let q = &c.quests.content;
+    let others = q
+        .shortcuts
+        .iter()
+        .map(|s| s.highlight.is_some())
+        .chain(q.shops.iter().map(|s| s.highlight.is_some()))
+        .chain(q.stakes.iter().map(|s| s.highlight.is_some()))
+        .chain(
+            q.traps
+                .iter()
+                .filter_map(|t| t.disarm.as_ref())
+                .map(|d| d.highlight.is_some()),
+        )
+        .chain(
+            q.timed_gates
+                .iter()
+                .filter_map(|g| g.disarm.as_ref())
+                .map(|d| d.highlight.is_some()),
+        );
+    let mut bonfires = Vec::new();
+    delvewright_dsl::for_each_campaign_effect(c, &mut |_, _, eff| {
+        if let delvewright_dsl::Verb::Bonfire { highlight, .. } = &eff.verb {
+            bonfires.push(highlight.is_some());
+        }
+    });
+    for lit in others.chain(bonfires) {
+        b.acts += 1;
+        if lit {
+            b.highlights += 1;
+            b.on_block += 1;
+        }
+    }
     (d, b)
 }

@@ -128,7 +128,7 @@
             "hint": "Pull the lever on the barred door.",
             "id": "obj/door",
             "prop": {
-              "block": "minecraft:lever"
+              "block": "minecraft:lever[face=floor,facing=north]"
             },
             "requires_item": "minecraft:tripwire_hook",
             "title": "Open the Inner Door",
@@ -269,7 +269,7 @@
         ]
       },
       {
-        "at": "anchor/gate",
+        "at": "spawn",
         "effects": [
           {
             "style": "chat",

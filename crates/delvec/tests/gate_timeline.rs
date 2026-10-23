@@ -385,7 +385,8 @@ fn walk_yields_every_effect_including_nested_ones() {
     let flags = seal_flags(&c);
     let names: Vec<&str> = flags.iter().map(|(n, _)| n.as_str()).collect();
     // The objective bundle (open-gate, set-flag), then `on_complete`: the sequence
-    // node, its two nested steps in declaration order, then campaign-complete.
+    // node, its two nested steps in declaration order, then campaign-complete;
+    // then the door's own answer, a trigger root (its `narrate`).
     assert_eq!(
         names,
         vec![
@@ -394,7 +395,8 @@ fn walk_yields_every_effect_including_nested_ones() {
             "sequence",
             "close-gate",
             "move-actor",
-            "campaign-complete"
+            "campaign-complete",
+            "other"
         ],
         "pre-order: each effect ahead of its nested effects"
     );

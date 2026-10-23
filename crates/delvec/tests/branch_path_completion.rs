@@ -120,7 +120,8 @@ fn a_branch_path_that_runs_past_the_ending_does_not_replay() {
         .steps
         .drain(..)
         .partition(|s| s.quest == "quest/the-reliquary");
-    assert_eq!(strand.len(), 3, "branch `{id}`");
+    // The reliquary's three looks, its bay door and its chest (spec-0117 §7).
+    assert_eq!(strand.len(), 5, "branch `{id}`");
     p.steps = rest.into_iter().chain(strand).collect();
     let err = flow
         .replay(&p)

@@ -1041,6 +1041,8 @@ fn dw0542_a_bonfire_seat_inside_the_slab_names_the_loop() {
                 "obj/porch": [{
                     "type": "bonfire",
                     "anchor": "anchor/in-the-slab",
+                    "prop": { "block": "minecraft:candle[candles=4,lit=false]" },
+                    "answers": { "not_yet": "No fire has been lit here yet." },
                     "happening": { "text": "a fire is lit in the gallery", "verb": "opens" }
                 }]
             });

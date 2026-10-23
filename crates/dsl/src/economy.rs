@@ -263,9 +263,9 @@ impl CollectBy {
 /// # It is hardware, so it inherits the hardware rules
 ///
 /// The marker is an invisible `minecraft:interaction` for the hitbox plus a
-/// glowing `minecraft:item_display` for the rendering — the same pair every other
-/// affordance in the engine uses, and therefore the same invisible-affordance
-/// (`DW0420`) and hardware-erasure (`DW0421`) proofs. It is deliberately **not**
+/// `minecraft:item_display` showing [`STAKE_MARKER_ITEM`] — the one interaction
+/// point that is still an entity (spec-0117 §3a), because its cell is chosen at
+/// runtime. It is deliberately **not**
 /// a dropped item entity: an item despawns after 6000 ticks, burns in lava, sinks
 /// in the void, and can be picked up by anyone.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

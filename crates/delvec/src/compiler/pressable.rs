@@ -401,7 +401,7 @@ pub fn region_anchor_refusal(plan: &Plan, t: &delvewright_dsl::EnvTrigger) -> Op
         return None;
     }
     Some(format!(
-        "trigger `{}` is anchored at `{at}`, a gate **region** (arm d): a region is many cells, \
+        "trigger `{}` is anchored at `{at}`, a gate **region**: a region is many cells, \
          and a press lands on one real block. Prescription: anchor the trigger at a point anchor \
          on the door's own cell — its body is then the gate's block there under a click box \
          fitted to it — and give it `\"serves\": {{\"gate\": \"{at}\"}}` if it is the gate's \
@@ -1365,7 +1365,7 @@ pub fn check(
                     PRESS_TARGET_UNREAL,
                     format!(
                         "trigger `{}` serves the gate `{g}` from {cell:?}, outside it, and names no \
-                         block: a knocker is a real block beside the gate (arm a). Prescription: \
+                         block: a knocker is a real block beside the gate. Prescription: \
                          give it `\"prop\": {{\"block\": \"minecraft:bell[attachment=floor]\"}}` (or a \
                          button), or anchor it at the door's own cell to answer through the gate's \
                          block",

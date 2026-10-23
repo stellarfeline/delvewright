@@ -17,8 +17,7 @@
 //!   never detects an attack on (Minecraft Wiki, *Interaction*, *Usage*: within
 //!   3.3 blocks of its position toward −X/−Z, 19.3 toward +X/+Z, 22.6 above).
 //!   The box must meet the footprint of what spawns — the initial clip's first
-//!   frame, or the rest pose — so the player hits what the player sees (the
-//!   `DW0420` rule, on this hardware). And a `strike-assembly` on an assembly
+//!   frame, or the rest pose — so the player hits what the player sees. And a `strike-assembly` on an assembly
 //!   with no hitbox is a beat that can never happen.
 //! * **`DW0937` — reach.** A `strike-assembly` the critical path performs owes a
 //!   standable cell of the party's population within

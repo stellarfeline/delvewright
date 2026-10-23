@@ -124,7 +124,14 @@ fn respell_as_checkpoint(quests: &mut serde_json::Value, anchor: Option<&str>) {
                     if let Some(rest) = o.remove("on_rest") {
                         o.insert("on_respawn".into(), rest);
                     }
-                    for k in ["prompt", "rest_label", "save_label"] {
+                    for k in [
+                        "prompt",
+                        "rest_label",
+                        "save_label",
+                        "prop",
+                        "answers",
+                        "highlight",
+                    ] {
                         o.remove(k);
                     }
                     if let Some(a) = anchor {

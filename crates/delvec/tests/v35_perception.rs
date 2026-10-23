@@ -146,6 +146,10 @@ fn with_trigger(on: Value, audience: Option<&str>, effects: Vec<Value>) -> Campa
         if let Some(a) = audience {
             t["audience"] = json!(a);
         }
+        // A press that settles answers its settled state (spec-0117).
+        if t["on"]["on"] == "use" || t["on"]["on"] == "strike" {
+            t["answers"] = json!({ "done": "Already done." });
+        }
         d["content"]["triggers"] = json!([t]);
     }))
 }

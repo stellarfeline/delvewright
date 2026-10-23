@@ -51,7 +51,7 @@ pub(super) const STK_COLLECT_FN: &str = "stk_collect";
 /// The one live-wager count at `#stk_x/y/z`, over every declared stake.
 pub(super) const STK_REF_FN: &str = "stk_ref";
 
-/// The one function permitted to retire a marker (`DW0421`).
+/// The one function that retires a marker.
 pub(super) const STK_GC_FN: &str = "stk_gc";
 
 /// The per-player objective holding slot `k`'s **amount** for stake `s`.
@@ -183,7 +183,7 @@ pub(super) fn stake_forfeit_lines(plan: &Plan, st: &delvewright_dsl::Stake) -> V
 /// | `stk_place` | the corpse, positioned | summon the marker if this place has none |
 /// | `stk_collect` | the collecting player | read the marker's position, then offer it to every stake |
 /// | `stk_ref` | each player | count live wagers at `#stk_x/y/z`, over every stake |
-/// | `stk_gc` | each marker | retire a marker nobody has a wager at — **the one legal killer of its hardware** (`DW0421`) |
+/// | `stk_gc` | each marker | retire a marker nobody has a wager at — **the one killer of its hardware** |
 /// | `stk_drop_<s>` | the corpse | apply the retention policy, compute and debit the forfeit, then route |
 /// | `stk_route_<s>` | the corpse | **the compile-time table**, as one `execute if` chain — the death region test, the respawn-seat test, and the anchor each pair resolved to |
 /// | `stk_put_<s>_<n>` | the corpse | position at table anchor `n` |

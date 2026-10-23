@@ -562,6 +562,13 @@ fn firings_of(plan: &crate::compiler::plan::Plan, name: &str) -> Option<Vec<Firi
     if name == "setup_finish" {
         return Some(vec![Firing::Setup]);
     }
+    if name == "tick" {
+        // A boxed press's reconciliation pair (spec-0117 §3a): the box returns
+        // while its press is not open, which no configuration is held to lay.
+        return Some(vec![Firing::Unforced(
+            "a press's click box the tick returns while the press is not open".to_string(),
+        )]);
+    }
     let objectives = || {
         plan.campaign
             .quests

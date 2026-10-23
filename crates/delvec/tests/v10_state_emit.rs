@@ -170,8 +170,10 @@ static QUESTS: LazyLock<String> = LazyLock::new(|| {
     "triggers": [
       {
         "id": "trigger/coin-slot",
-        "at": "anchor/door",
+        "at": "anchor/latch",
         "on": { "on": "use" },
+        "prop": { "block": "minecraft:stone_button[face=floor,facing=north]" },
+        "answers": { "not_yet": "The slot wants a coin.", "done": "The slot has taken its coin." },
         "requires_state": [ { "state": "state/toll", "op": "at-least", "value": 1 } ],
         "effects": [ { "type": "add-state", "state": "state/toll", "amount": -1 } ]
       }
@@ -484,12 +486,13 @@ fn the_comparison_reaches_every_consumers_guard() {
         "a gated effect's command must be wrapped in the comparison:\n{talk}"
     );
 
-    // 3. trigger — the arming gate on the tick.
+    // 3. trigger — the arming gate on the press's dispatch (spec-0117).
+    let press = body(&out, "press_coin_slot");
     assert!(
-        all.contains(
+        press.contains(
             "if score #party dw.s_toll matches 1.. run function cast-ledger:trig_coin_slot"
         ),
-        "a trigger's arming gate must carry the comparison:\n{all}"
+        "a trigger's arming gate must carry the comparison:\n{press}"
     );
 
     // 4. trap — armed and disarmed on the numeric transition.

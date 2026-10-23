@@ -1157,6 +1157,42 @@ pub fn press_site<'c>(c: &'c Campaign, id: &str) -> Option<PressSite<'c>> {
     press_sites(c).into_iter().find(|s| s.id == id)
 }
 
+/// **Every declared answer of a pressable that is not an objective**, mutably,
+/// in declaration order (ADR-0006): a trigger's, a shortcut's and each
+/// disarm's, with the kind and the owner's id — the one walk a writer of the
+/// lines (the l10n inventory) reads. An `interact`'s answers are its
+/// objective's and a bonfire's its effect's; each is walked with its owner.
+pub fn answers_mut(
+    quests: &mut crate::QuestsContent,
+    f: &mut dyn FnMut(PressKind, &str, &mut Answers),
+) {
+    for t in &mut quests.triggers {
+        let kind = match t.on {
+            TriggerOn::Use => PressKind::Use,
+            TriggerOn::Step => PressKind::Step,
+            _ => PressKind::Strike,
+        };
+        if let Some(a) = t.answers.as_mut() {
+            f(kind, t.id.as_str(), a);
+        }
+    }
+    for sc in &mut quests.shortcuts {
+        if let Some(a) = sc.answers.as_mut() {
+            f(PressKind::Shortcut, sc.id.as_str(), a);
+        }
+    }
+    for t in &mut quests.traps {
+        if let Some(a) = t.disarm.as_mut().and_then(|d| d.answers.as_mut()) {
+            f(PressKind::TrapDisarm, t.id.as_str(), a);
+        }
+    }
+    for g in &mut quests.timed_gates {
+        if let Some(a) = g.disarm.as_mut().and_then(|d| d.answers.as_mut()) {
+            f(PressKind::TimedGateDisarm, g.id.as_str(), a);
+        }
+    }
+}
+
 /// **Every interaction point the document declares** (spec-0117 §3a), with its
 /// states: `interact` objectives, triggers (every kind but `approach`), shortcut
 /// unlocks, bonfires, shops and both disarms. Deterministic: declaration order,
@@ -1499,7 +1535,7 @@ pub fn press_checks(c: &Campaign) -> (Vec<Diagnostic>, PressBinding) {
                         "{} `{}` asks the party to press a thing and names no block for it: a \
                          press target is a real block the player sees, drawn and occluded like \
                          the world, and an invisible box in the air is nothing a player can \
-                         find (arm a). Prescription: {remedy}",
+                         find. Prescription: {remedy}",
                         site.kind.word(),
                         site.id
                     ),
@@ -1517,7 +1553,7 @@ pub fn press_checks(c: &Campaign) -> (Vec<Diagnostic>, PressBinding) {
                     "quests",
                     format!("{}/prop/block", site.path),
                     format!(
-                        "{} `{}` names the door `{}` by its upper half (arm c). A door is one \
+                        "{} `{}` names the door `{}` by its upper half. A door is one \
                          block in two cells and is named by its lower half: the compiler places \
                          both halves and fits one box over the two cells. Prescription: write \
                          `half=lower`, or leave `half` out",
@@ -1541,7 +1577,7 @@ pub fn press_checks(c: &Campaign) -> (Vec<Diagnostic>, PressBinding) {
                     "quests",
                     format!("{}/prop/block", site.path),
                     format!(
-                        "{} `{}` declares the prop `{}`, and {why} (arm b). A click box may stand \
+                        "{} `{}` declares the prop `{}`, and {why}. A click box may stand \
                          over a real block only, never in the air. Prescription: name a block \
                          that reads as the thing — a lever, a bell, a door, a chest, a campfire",
                         site.kind.word(),

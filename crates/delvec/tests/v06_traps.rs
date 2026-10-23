@@ -255,7 +255,9 @@ fn trap_dispense_and_disarm_emit_end_to_end() {
         "trigger": "trapped-chest",
         "effect": { "dispense": { "item": "minecraft:arrow", "count": 8 } },
         "lethality": "harmful",
-        "disarm": { "via": "anchor/lever", "sets_flag": "flag/darts-off" }
+        "disarm": { "via": "anchor/lever", "sets_flag": "flag/darts-off",
+            "prop": { "block": "minecraft:lever[face=floor,facing=north]" },
+            "answers": { "done": "The darts are already stopped." } }
     });
     let out = build_with_trap("trap-clean", trap).expect("harmful trap builds");
 
@@ -367,7 +369,9 @@ fn gated_trap() -> serde_json::Value {
         "trigger": "pressure-plate",
         "effect": { "dispense": { "item": "minecraft:arrow", "count": 8 } },
         "lethality": "harmful",
-        "disarm": { "via": "anchor/lever", "sets_flag": "flag/darts-off" },
+        "disarm": { "via": "anchor/lever", "sets_flag": "flag/darts-off",
+            "prop": { "block": "minecraft:lever[face=floor,facing=north]" },
+            "answers": { "done": "The darts are already stopped." } },
         "forbids_flags": ["flag/darts-off"]
     })
 }
