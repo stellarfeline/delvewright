@@ -376,12 +376,11 @@ pub(super) fn prove_world(
                     format!(" ({})", body_starts.excluded.join(", "))
                 },
             );
-            crate::compiler::nav::verify_boundary_safety_of(plan, world, &body_starts.roots).map_err(
-                |e| BuildFailure::Diagnostic {
+            crate::compiler::nav::verify_boundary_safety_of(plan, world, &body_starts.roots)
+                .map_err(|e| BuildFailure::Diagnostic {
                     code: e.code,
                     message: e.message,
-                },
-            )?;
+                })?;
 
             // spec-0092 §10: the boundary and the world agree (`DW0960`) — every
             // place a body is put stands inside a region that returns, and a
