@@ -736,6 +736,43 @@ fn a_presser_strike_and_strike_npc_pass_and_dispatch_by_player_hurt_entity_with_
     }
 }
 
+/// **A lit blow is still the striker's** (spec-0119 §5.3 beside spec-0104 §7):
+/// a presser `strike` that also declares a proximity `highlight` is admitted by
+/// both checks, dispatched by `player_hurt_entity` with no tick poll, and lit
+/// by its own poll — the glow reads the trigger's guards, never the dispatch.
+#[test]
+fn a_presser_strike_with_a_highlight_is_lit_and_dispatched_as_the_striker() {
+    let r = raw_with(
+        Vec::new(),
+        Vec::new(),
+        |_| {},
+        |q| {
+            let mut t = presser_trigger(json!({ "on": "strike" }), Some("anchor/exit"));
+            t["highlight"] = json!({ "within": 5 });
+            q["content"]["triggers"] = json!([t]);
+        },
+    );
+    let c = campaign(&r);
+    let cs = codes(&c);
+    assert!(
+        !cs.contains(&"DW0427".to_string()) && !cs.contains(&"DW1016".to_string()),
+        "{cs:?}"
+    );
+    let out = build(&c);
+    let adv = advancement(&out, "press_answer_me");
+    assert_eq!(
+        adv["criteria"]["interact"]["trigger"], "minecraft:player_hurt_entity",
+        "{adv}"
+    );
+    // `function` panics when the body is absent: the blow's block is lit.
+    let poll = function(&out, "hl_poll_t_answer_me");
+    assert!(!poll.is_empty(), "the highlight polls its own nearness");
+    assert!(
+        !function(&out, "tick").contains("dw_trig_answer_me"),
+        "the highlight does not bring the blow's poll back"
+    );
+}
+
 #[test]
 fn a_presser_approach_is_dw0427() {
     let r = raw_with(
