@@ -116,13 +116,15 @@ That anchor may stand in the piece's `no_body` region. `DW0845` refuses it only
 when something else (an NPC, an objective, a wave) names the same station, and
 it names that use: give the volume a station of its own.
 
-**`DW0438`: a `collect` container "holds `minecraft:air`, not a container".**
-The anchor you pointed at is not standing on a chest or barrel — an anchor named
-`anchor/chest` is not evidence there is one, and two shipped pieces declare
-exactly that over air. Read *Reference: what a quest can do* → *Items,
-containers and loot*: use `dropped_by`, or drop the `container` field and let the
-compiler place one, or make a piece that carries the container. Do not point the
-field at a different anchor and hope.
+**`DW0438`: a `collect` "adopts a holder that is not there" — the anchor
+"holds `minecraft:air`, not a holder".** The anchor the collect's `holder` names
+is not standing on a container, an item frame or an armour stand — an anchor
+named `anchor/chest` is not evidence there is one. The message lists every
+anchor in the assembled world whose cell holds a container nothing else fills:
+point `holder` at one of those. When it lists none, the holder is furniture a
+piece must carry — detail the place with a piece that places one. Dropping
+`holder` is not the fix: the compiler then conjures its own chest beside the
+anchor. Read *Reference: what a quest can do* → *Items, containers and loot*.
 
 ## Run and stage
 
@@ -156,7 +158,7 @@ approved `design/` directory you are on path A and do not need this at all.
 step 13. Read it item by item into the round summary; override deliberately if
 the session needs a red build.
 
-**`delvec metrics` "prints 341 lines of JSON, not a table".** It prints the
+**`delvec metrics` "prints 223 lines of JSON, not a table".** It prints the
 table as JSON on stdout and its human summary and binding counts on stderr.
 Redirect them separately: `delvec metrics > table.json`.
 

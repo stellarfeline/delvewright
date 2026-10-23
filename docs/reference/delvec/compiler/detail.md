@@ -5,16 +5,16 @@ this module declares. The catalog's shared rules are in [`compiler.md` §5](../.
 
 ## Diagnostics
 
-### DW0842–DW0845 and DW0882 — the detail plan (`compiler::detail` + `dsl::prefab` + `delvec detail`; spec-0050, spec-0058)
+### DW0842–DW0845 and DW0987 — the detail plan (`compiler::detail` + `dsl::prefab` + `delvec detail`; spec-0050, spec-0058)
 
 Stage 6 of the map pipeline: a place is detailed inside the box the whole gave
 it. The document is `detail-plan.json` (§2); this is what judges it.
 
-**What invokes each check, and what happens without it.** `DW0842`–`DW0845` run
+**What invokes each check, and what happens without it.** `DW0842`–`DW0845` and `DW0987` run
 in `validate_loaded`, the one funnel every `delvec` subcommand's validation goes
 through — `build` included — so a defect cannot reach a datapack by skipping
-`delvec validate`. `delvec detail` (spec-0058) runs `DW0843`–`DW0845`
-once more, through the same `check`, over the piece it is about to write and the
+`delvec validate`. `delvec detail` (spec-0058) runs `DW0842`–`DW0845`
+once more, through the same `check` (its own refusal, `DW0882`, is on the [`delvec::detail` page](../detail.md)), over the piece it is about to write and the
 row it is about to write — an in-memory registry holding the library plus that
 piece — so every one of them refuses **before any file is written**, in the
 words validation prints afterwards. The
@@ -66,7 +66,7 @@ named absence before step 9), `sheet` (the record's `reference/` rows), the
 frame's `extent`, `datum_y`, `world_min` and `space` (the play space,
 piece-local), `neighbours` (each place whose claim meets this one's, by side,
 with its kind, floor, roof and the seams joining them), `views` (each plan view
-whose eye sees the place, with the `delvec snapshot --camera` that frames it),
+whose eye sees the place, with the `delvec frames --campaign --camera` that frames it),
 `ground` (the fill kind, the claim's bottom and the floor piece-local, the
 terrain along the perimeter with its min and max, every fixed ring cell with its
 block, and the terrain-shaped columns under the plot), `roof` (courses, eaves,

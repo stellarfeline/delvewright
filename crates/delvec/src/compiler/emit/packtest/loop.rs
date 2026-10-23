@@ -7,8 +7,9 @@ use super::*;
 /// kills; the two halves are independent, and a green over the first alone is the
 /// vacuous pass CLAUDE.md names. So the runtime half is bound per volume, not once
 /// per campaign: `validation/lethal-gate.json` reports the template count beside
-/// the volume count, and a campaign with N volumes and fewer than N templates is
-/// legible as such without re-deriving it.
+/// the volume count, counted from the emission (each volume's kill and wording
+/// templates, and a staged volume's shut half), so a volume with a template
+/// missing is legible as such without re-deriving it.
 ///
 /// The body drives the volume's real generated function on a summoned NoAI dummy
 /// and asserts its `Health` reached zero. Zero-health rather than

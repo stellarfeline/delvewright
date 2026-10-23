@@ -104,6 +104,7 @@ pub(super) fn emit_pulse_packtests(plan: &Plan, out: &mut BuildOutput) {
 pub(super) fn pulse_watch_claim(plan: &Plan) -> crate::compiler::watch::Claim {
     crate::compiler::watch::Claim {
         mechanic: "pulse",
+        kind: crate::compiler::watch::ClaimKind::Body,
         families: vec!["pulse_".to_string()],
         declared: crate::compiler::pulse::declared_safe(plan),
     }

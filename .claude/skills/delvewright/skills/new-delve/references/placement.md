@@ -276,7 +276,7 @@ anchored on the gate.
 gym has been walked, and every build says so (`DW0813`). That is the gym's
 second job: `delvec metrics --gym <dir>` builds a site-plan campaign out of the
 table itself — a spine of bays chained by one seam per standard opening, two
-climbs to one rise whose hosts differ only in the run they afford (so one takes
+stairs to one rise whose hosts differ only in the run they afford (so one takes
 the gentlest standard pitch and the other the steepest), and a designed fall
 with a stair back out of it. It reports what the table defines that it could
 not instantiate (`DW0840`) — read that line, not just the green.

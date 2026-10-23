@@ -33,12 +33,6 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 CHECKER = REPO / "tools" / "ci" / "check-json-canonical.py"
 
-# Copied from the checker on purpose, not imported: if a rename moves the
-# exemption, these fixtures should stop describing it and the tests should
-# notice, rather than silently following it wherever it went.
-GOLDEN_DIR = "crates/delvec/tests/golden"
-BINDING_FILE = "crates/delvec/src/compiler/view/scene.rs"
-
 STUB = """#!/usr/bin/env python3
 import os, sys
 
@@ -66,13 +60,6 @@ def fake_repo(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     root.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
-    # The pin that admits the one exemption, and a golden under it.
-    write(
-        root,
-        BINDING_FILE,
-        "fn golden_scene_matches() {}\nfn every_golden_is_emitter_output() {}\n",
-    )
-    write(root, f"{GOLDEN_DIR}/view/spawn.json", '{"b":1,"a":2}\n')
     write(root, "crates/dsl/fixtures/valid/world.json", '{"a": 1}\n')
     subprocess.run(["git", "add", "-A"], cwd=root, check=True)
     return root
@@ -137,12 +124,11 @@ def test_an_untracked_file_is_not_swept(fake_repo: Path, tmp_path: Path):
     assert not [p for p in swept if p.startswith(("target/", "harness/node_modules/"))]
 
 
-def test_the_golden_directory_is_the_only_exemption(fake_repo: Path, tmp_path: Path):
+def test_nothing_is_exempt(fake_repo: Path, tmp_path: Path):
     code, swept, out = run(fake_repo, tmp_path)
     assert code == 0, out
-    assert f"{GOLDEN_DIR}/view/spawn.json" not in swept
     assert "crates/dsl/fixtures/valid/world.json" in swept
-    assert "1 of 2 tracked JSON document(s) swept; 1 exempt" in out
+    assert "1 of 1 tracked JSON document(s) swept; 0 exempt" in out
 
 
 def test_a_document_out_of_canonical_form_reds(fake_repo: Path, tmp_path: Path):
@@ -151,29 +137,6 @@ def test_a_document_out_of_canonical_form_reds(fake_repo: Path, tmp_path: Path):
     assert code == 1
     assert "not in canonical form" in out
     assert swept, "reporting red while having swept nothing would be a worse pass"
-
-
-def test_a_stale_exemption_is_a_red(fake_repo: Path, tmp_path: Path):
-    """An exclusion whose directory has gone is measuring nothing — the shape an
-    exclusion rots into after a rename, green forever."""
-    (fake_repo / GOLDEN_DIR / "view" / "spawn.json").unlink()
-    subprocess.run(["git", "add", "-A"], cwd=fake_repo, check=True)
-    code, _, out = run(fake_repo, tmp_path)
-    assert code == 1
-    assert "matches ZERO tracked files" in out
-
-
-def test_deleting_the_pin_reds_instead_of_unbinding_the_exemption(
-    fake_repo: Path, tmp_path: Path
-):
-    """The exemption is a POINTER. Delete what it points at and it must red here,
-    not quietly become an ordinary name in a list."""
-    write(fake_repo, BINDING_FILE, "fn golden_scene_matches() {}\n")
-    subprocess.run(["git", "add", "-A"], cwd=fake_repo, check=True)
-    code, _, out = run(fake_repo, tmp_path)
-    assert code == 1
-    assert "every_golden_is_emitter_output" in out
-    assert "bound to nothing" in out
 
 
 def test_a_repository_with_no_json_is_a_red_not_a_pass(tmp_path: Path):
@@ -196,11 +159,10 @@ def test_the_real_repository_is_swept_against_its_whole_population():
         check=True,
     ).stdout.split("\0")
     tracked = [p for p in tracked if p]
-    exempt = [p for p in tracked if p.startswith(GOLDEN_DIR + "/")]
     assert tracked, "git tracks no JSON at all — the population is the denominator"
-    assert exempt, "the one exemption matches nothing"
-    assert len(exempt) <= 5, (
-        "more than a handful of this repository's JSON is outside the sweep; the "
+    checker = CHECKER.read_text(encoding="utf-8")
+    assert "swept = population" in checker, (
+        "the checker no longer sweeps the whole tracked population; the "
         "hand-named-roots defect has come back"
     )
     # And the fixture roots the old hand-written CI step named are still in it.

@@ -57,7 +57,7 @@ fn log(o: &Output) -> String {
     )
 }
 
-/// An ocean campaign: hello-world with `horizon: ocean`.
+/// An ocean campaign: hello-world with an `ocean` base.
 fn ocean_campaign(tag: &str) -> PathBuf {
     let camp = tmp(&format!("camp-{tag}"));
     common::copy_dir_all(&common::hello_world_dir(), &camp);
@@ -65,7 +65,7 @@ fn ocean_campaign(tag: &str) -> PathBuf {
         serde_json::from_str(&std::fs::read_to_string(camp.join("world.json")).unwrap()).unwrap();
     world["dsl_version"] = serde_json::json!(DSL_VERSION);
     let content = world["content"].as_object_mut().unwrap();
-    content.insert("horizon".into(), serde_json::json!("ocean"));
+    content.insert("horizon".into(), common::horizon("ocean"));
     content.insert("boundary".into(), serde_json::json!({ "margin": 20 }));
     std::fs::write(
         camp.join("world.json"),

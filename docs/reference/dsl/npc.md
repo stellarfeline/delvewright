@@ -11,9 +11,9 @@ This module's rows of a section whose prose is on the [`delvewright_dsl::diagnos
 
 | Code | Meaning |
 |------|---------|
-| `DW0195` | A `talk-to` targets an NPC despawned by a prerequisite quest. |
+| `DW0195` | A `talk-to` targets an NPC that a removal ordered before the objective activates has taken out of the world, with no `spawn-npc` ordered between them. "Ordered before" is the one ordering rule, `dsl::ordering::Order::ordered_before` (shared with `DW0198` and `DW1034`): a quest-graph ancestor's bundle or a prerequisite objective's bundle, through effects certain to run — a flag- or state-gated effect and a reaction bundle (`on_respawn`, `on_rest`, `on_caught`) count for nothing. |
 | `DW0197` | A stage-2 NPC declares `deferred: true` but **no** `spawn-npc` effect anywhere (quest, trigger, nested timeline, or dialogue) summons it — the NPC never enters the world, so its dialogue tree and any `talk-to` on it are unreachable content. The staging dual of `DW0195`. Prescription: add the `spawn-npc` at the entrance beat, or drop `deferred`. |
-| `DW0198` | A `talk-to` on a `deferred` NPC provably activates before the NPC exists: every `spawn-npc` for it fires in a quest that is a **strict DAG descendant** of the objective's quest. Conservative by construction — a spawn from a trigger, from dialogue, or from the objective's own quest is not DAG-ordered and suppresses the proof rather than risking a false positive (see §4 "Deferred-NPC staging order"). |
+| `DW0198` | A `talk-to` on a `deferred` NPC provably activates before the NPC exists: the objective's activation is ordered before every `spawn-npc` for it (the one ordering rule, `dsl::ordering::Order::ordered_before`) — every spawn fires in a quest that depends on the objective's quest, in the objective's own completion bundle, or in the bundle of an objective that waits on it. Conservative by construction — a spawn from a trigger or from dialogue has no place on the quest graph and suppresses the proof rather than risking a false positive (see §4 "Deferred-NPC staging order"). |
 
 ### DW0978/DW0979/DW0980 — a sheet is drawn to its own model's boxes (`compiler::skinparts` + `dsl::npc`; error)
 

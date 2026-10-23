@@ -92,8 +92,11 @@
       },
       {
         "anchor": "anchor/usher",
+        "answers": {
+          "struck": "Dry as old vellum. The copyist does not look up from the page."
+        },
         "area": "area/hall",
-        "base_entity": "minecraft:villager",
+        "base_entity": "minecraft:husk",
         "id": "npc/copyist",
         "name": "The Copyist",
         "offset": [

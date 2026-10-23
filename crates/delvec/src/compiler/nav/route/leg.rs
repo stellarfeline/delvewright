@@ -404,6 +404,26 @@ pub fn stance_cells(
     out
 }
 
+/// **Where a player can stand to act on `body` with a hand** — a click, a
+/// blow, a take: [`stance_cells`] at
+/// [`crate::compiler::crosshair::INTERACTION_REACH`], the entity reach vanilla
+/// bounds both the attack and the use by. The one entry point for that
+/// question: the holder stance pass (`DW1037`) and the body-answer reach
+/// (`DW1055`) both ask it here.
+#[must_use]
+pub fn interaction_stances(
+    w: &World,
+    body: &BodyBox,
+    reachable: &BTreeSet<[i32; 3]>,
+) -> Vec<[i32; 3]> {
+    stance_cells(
+        w,
+        body,
+        crate::compiler::crosshair::INTERACTION_REACH,
+        reachable,
+    )
+}
+
 /// Whether an eye standing in `p` is within `reach` of the nearest point of
 /// `body` — [`crate::compiler::strand::eye_reaches_box`]'s measure with the
 /// reach a parameter.

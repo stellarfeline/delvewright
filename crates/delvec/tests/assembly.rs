@@ -194,17 +194,38 @@ fn a_strike_reads_and_clears_the_hitbox_and_counts_in_order() {
     );
 }
 
-/// `audience: presser` on a left-click is `DW0427`; `at` on a
+/// `audience: presser` on a `strike-assembly` is admitted and dispatched as
+/// the striker by `minecraft:player_hurt_entity` on the assembly's own hitbox,
+/// with no tick poll and no `attack` clear (spec-0119); `at` on a
 /// `strike-assembly` is `DW0194`.
 #[test]
-fn presser_and_at_are_refused_on_a_strike_assembly() {
-    let q = quests_with(|q| trigger(q)["audience"] = json!("presser"));
+fn presser_on_a_strike_assembly_dispatches_as_the_striker_and_at_is_refused() {
+    let q = quests_with(|q| {
+        trigger(q)["audience"] = json!("presser");
+        trigger(q)["once"] = json!(false);
+    });
+    let codes = validation_codes(&q, rig());
+    assert!(!codes.iter().any(|(c, _, _)| c == "DW0427"), "{codes:?}");
+    let out = try_build(&campaign(&q), &prefabs_with(rig()))
+        .unwrap_or_else(|e| panic!("a presser blow on the limb builds: {e:?}"));
+    let adv: serde_json::Value = serde_json::from_slice(
+        out.get("datapack/data/hello-world/advancement/press_limb_struck.json")
+            .expect("the press advancement"),
+    )
+    .unwrap();
+    assert_eq!(
+        adv["criteria"]["interact"]["trigger"],
+        "minecraft:player_hurt_entity"
+    );
+    assert_eq!(
+        adv["criteria"]["interact"]["conditions"]["entity"]["nbt"],
+        "{Tags:[\"dw_asm_limb_hit\"]}"
+    );
+    let tick = function(&out, "tick");
     assert!(
-        validation_codes(&q, rig())
-            .iter()
-            .any(|(c, p, _)| c == "DW0427" && p.ends_with("/audience")),
-        "{:?}",
-        validation_codes(&q, rig())
+        !tick.contains("run function hello-world:trig_limb_struck")
+            && !tick.contains("run data remove entity @s attack"),
+        "a presser blow is neither polled nor cleared: {tick}"
     );
     let q = quests_with(|q| trigger(q)["at"] = json!("anchor/exit"));
     let codes = validation_codes(&q, rig());
@@ -897,6 +918,22 @@ fn reaching_rig() -> Rig {
 /// `far`; its blow derived.
 fn locked_quests() -> Value {
     quests_with(|q| {
+        // The thing stands round the doorway's corner from the keeper's post,
+        // out of his sight: the party steps into the room first, and strikes
+        // it from there (spec-0104 §4 — an act is in sight of where the party
+        // stands).
+        let quest = &mut q["content"]["quests"][0];
+        quest["objectives"].as_array_mut().unwrap().insert(
+            1,
+            json!({ "type": "reach-anchor", "id": "obj/step-in", "anchor": "anchor/exit",
+                    "radius": 1, "after": ["obj/talk"],
+                    "title": "Go through the door", "hint": "Past the keeper.",
+                    "happening": { "verb": "arrives", "text": "the party steps in" } }),
+        );
+        quest["objectives"][2]["after"] = json!(["obj/step-in"]);
+        quest["on_objective_complete"]["obj/step-in"] = json!([{ "type": "set-flag", "flag": "flag/stepped-in",
+                     "happening": { "verb": "learns", "text": "the room is open" } }]);
+        trigger(q)["requires_flags"] = json!(["flag/stepped-in"]);
         let a = assembly(q);
         a["at"] = json!({ "anchor": "anchor/exit", "offset": [-4, 0, 0] });
         a["facing"] = json!("east");
@@ -1154,5 +1191,29 @@ fn an_aimed_wind_up_chooses_its_target_from_the_mark() {
             .lines()
             .all(|l| !(l.contains("x=") && l.contains("sort="))),
         "{begin}"
+    );
+}
+
+/// spec-0110 §5.8: every display the summon stands — the root and each part —
+/// carries one `view_range`, the derived floor for an assembly no shot frames.
+#[test]
+fn every_display_of_an_assembly_carries_its_view_range() {
+    let out = common::assembly_fixture::build_fixture();
+    let key = out
+        .keys()
+        .find(|k| k.ends_with("/asm_summon_limb.mcfunction"))
+        .expect("the limb's summon");
+    let body = String::from_utf8(out[key].clone()).unwrap();
+    let displays: Vec<&str> = body
+        .lines()
+        .filter(|l| {
+            l.starts_with("summon minecraft:item_display")
+                || l.starts_with("summon minecraft:block_display")
+        })
+        .collect();
+    assert_eq!(displays.len(), 4, "root + 3 parts");
+    assert!(
+        displays.iter().all(|l| l.contains("view_range:1.00f")),
+        "{displays:#?}"
     );
 }

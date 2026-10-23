@@ -41,7 +41,6 @@
     "Floor.datum",
     "Floor.y",
     "HorizonBase::valley",
-    "HorizonSpec.base",
     "HorizonSpec.ratio",
     "HorizonSpec.rim_height",
     "Identity.cmp",

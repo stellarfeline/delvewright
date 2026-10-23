@@ -39,6 +39,18 @@ pub(super) fn center(cell: i32) -> String {
     format!("{:.1}", cell as f64 + 0.5)
 }
 
+/// The low corner of a block cell on one axis, as an absolute command
+/// coordinate: always written with its decimal point.
+///
+/// A position argument (`summon`, `tp`, `execute positioned`) adds `0.5` to an
+/// absolute x or z written without a `.` (the pinned server's
+/// `WorldCoordinate.parseDouble`; `docs/reference/compiler.md`, *Entity
+/// placement*), so a bare integer names the cell's centre, never its corner.
+/// `x.0` cannot be centred.
+pub(super) fn corner(cell: i32) -> String {
+    format!("{cell}.0")
+}
+
 /// A `@a`-selector volume covering an inclusive block region — the same box
 /// model `damage-players`' `within` filter uses. `dx/dy/dz` are spans, so a
 /// one-block region is `dx=0` and still selects the whole block.

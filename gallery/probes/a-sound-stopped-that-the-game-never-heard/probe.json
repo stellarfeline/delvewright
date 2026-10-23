@@ -1,0 +1,13 @@
+{
+  "code": "DW0326",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/3/on_objective_complete/obj~1arrive-at-the-porch/1/sound",
+      "value": "minecraft:ambient.caves"
+    }
+  ],
+  "units": [],
+  "why": "One edit: the porch's cave hush names `minecraft:ambient.caves`, an id the pinned sound-event registry does not hold. A `stop-sound`'s sound is read by the one rule every sound id is (`DW0326`). It declares no unit."
+}

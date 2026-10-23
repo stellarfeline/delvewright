@@ -434,7 +434,7 @@ impl<'a> Plan<'a> {
     /// branch's own objective→step map instead of the default playthrough's.
     ///
     /// A branch path is a *different sequence* of steps, so the default path's
-    /// step indices cannot be carried across (the same trap `rest_step_index`
+    /// step indices cannot be carried across (the same trap [`Plan::rest_after`]
     /// documents for bonfires): a seal attributed through the default indices
     /// would inherit another branch's ordering. Shortcut gates are sealed from
     /// world-load (`fire_step: 0`) here for the same reason they are in
@@ -487,42 +487,166 @@ impl<'a> Plan<'a> {
                 .is_some_and(|anc| anc.contains(&g))
     }
 
-    /// Translate a [`Self::critical_path`] index into the index the SAME step
-    /// carries in the **exported** `critical-path.json`.
+    /// **After which step of `walked` the party rests at bonfire `b`** — the one
+    /// answer to where a bonfire's `rest` step stands on an exported path
+    /// (spec-0016 §1). `None` when the path never arms it or never stands in its
+    /// area again.
     ///
-    /// Two coordinate systems came into existence the moment spec-0016 §1's rest
-    /// splice landed: `critical_path` is the compiler's own list — what every
-    /// `CheckpointPlan::fire_step`, every nav proof and every internal index
-    /// means — while the exported path additionally carries one `rest` step
-    /// after the beat that arms each bonfire. They drift by exactly one per
-    /// bonfire armed strictly earlier, and a consumer that mixed them read the
-    /// wrong step (the combat plan's `step` claimed to be a `critical-path.json`
-    /// index while being a `critical_path` one).
+    /// The rest is performed where the party can walk to the fire: after the
+    /// step that arms it, unless a crossing carries the party out of the fire's
+    /// area right after that step (a crossing is the only move between areas,
+    /// so the next positioned step then stands in another area) — then after
+    /// the first later step after which the party stands in the fire's area
+    /// again. On a route that stays in one area this is the arming step.
     ///
-    /// **Every artifact a harness reads states EXPORTED coordinates**, and this
-    /// is where that translation lives for the MAIN path.
+    /// `walked` is the main critical path or one branch's path (spec-0025): a
+    /// branch is a different sequence of the same steps, so the arming step is
+    /// found through the **objective** it names, never by its index; on the
+    /// main path that translation is the identity.
+    pub fn rest_after(&self, walked: &[Step], b: &CheckpointPlan) -> Option<usize> {
+        let armed = match self
+            .critical_path
+            .get(b.fire_step)
+            .and_then(Step::objective)
+        {
+            // `fire_step: 0` is the class-select / conservative "before
+            // everything" index; it precedes every path the same way.
+            None => (b.fire_step < walked.len()).then_some(b.fire_step)?,
+            Some(obj) => walked.iter().position(|s| s.objective() == Some(obj))?,
+        };
+        let area_of = |c: [i32; 3]| {
+            self.areas.iter().position(|a| {
+                let (lo, hi) = a.bounds();
+                lo[0] <= c[0] && c[0] <= hi[0] && lo[2] <= c[2] && c[2] <= hi[2]
+            })
+        };
+        let Some(home) = area_of(b.pos) else {
+            return Some(armed);
+        };
+        // Where the party stands after step `i`: the last step at or before it
+        // that names a position; a step that names none (a class pick, the
+        // completion assert) leaves it where it was.
+        let stands_home = |i: usize| {
+            let here = walked[..=i]
+                .iter()
+                .rev()
+                .find_map(|s| s.pos().and_then(area_of));
+            let next = walked[i + 1..]
+                .iter()
+                .find_map(|s| s.pos().and_then(area_of));
+            here == Some(home) && next.is_none_or(|a| a == home)
+        };
+        (armed..walked.len()).find(|&i| stands_home(i))
+    }
+
+    /// **The exported path's layout**: every entry of the `critical-path.json`
+    /// written for `walked`, in order — each step of `walked`, each bonfire's
+    /// `rest` after the step [`Self::rest_after`] names (bonfires armed after the
+    /// same step in bonfire order), and each witnessed assembly's `n` witness
+    /// steps right before the first step that strikes it (spec-0082 §5.4).
     ///
-    /// **Scope — the main `critical-path.json` only.** spec-0025's per-branch
-    /// paths are a different *sequence* of the same steps, so an index cannot be
-    /// carried across at all; `emit::rest_step_index` is the general translation
-    /// and goes through the **objective** the arming beat names, because a fire
-    /// is armed by a beat rather than by a position. On the main path that
-    /// translation is the identity (an objective appears at exactly one step),
-    /// which is precisely what makes the count below correct here and nowhere
-    /// else. A branch-path consumer must use `rest_step_index`, never this.
+    /// The one place the exported coordinates are decided: the emitter writes
+    /// the path by walking this layout, and every harness document that names
+    /// an exported step (the death plan's seats and crush gates, the combat
+    /// plan's encounters) reads its index from the same layout, so no document
+    /// can name a step the path does not carry there. `witnesses` is
+    /// `(assembly id, witness step count)`, empty for a branch path.
+    pub fn exported_layout(
+        &self,
+        walked: &[Step],
+        witnesses: &[(String, usize)],
+    ) -> ExportedLayout {
+        let rests: Vec<(usize, usize)> = self
+            .bonfires()
+            .filter_map(|b| Some((self.rest_after(walked, b)?, b.index)))
+            .collect();
+        let strike_at = |id: &str| {
+            walked
+                .iter()
+                .position(|s| matches!(s, Step::Trigger { assembly_id: Some(a), .. } if a == id))
+        };
+        let mut entries: Vec<Exported> = Vec::new();
+        for i in 0..walked.len() {
+            for (id, n) in witnesses {
+                if strike_at(id) == Some(i) {
+                    entries.extend((0..*n).map(|k| Exported::Witness {
+                        assembly: id.clone(),
+                        k,
+                    }));
+                }
+            }
+            entries.push(Exported::Step(i));
+            entries.extend(
+                rests
+                    .iter()
+                    .filter(|(at, _)| *at == i)
+                    .map(|(_, cp)| Exported::Rest(*cp)),
+            );
+        }
+        ExportedLayout { entries }
+    }
+}
+
+impl Plan<'_> {
+    /// **The exported step during which main-path step `i` completes**: `i`'s
+    /// own index in `layout`, or — for a `reach` the carry before it completes
+    /// on landing ([`completed_on_landing`]) — the carrying step's, since the
+    /// server completes the objective on arrival, during that step. What a beat
+    /// the step's completion fires (a `set-checkpoint`) is in force after.
+    pub fn completes_at(&self, layout: &ExportedLayout, i: usize) -> usize {
+        if completed_on_landing(&self.critical_path, &self.critical_path_transport, i) {
+            layout.step(i - 1)
+        } else {
+            layout.step(i)
+        }
+    }
+}
+
+/// One entry of an exported path ([`Plan::exported_layout`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Exported {
+    /// Step `i` of the walked path.
+    Step(usize),
+    /// The `rest` at bonfire `CheckpointPlan::index`.
+    Rest(usize),
+    /// Witness step `k` of an assembly's blow (spec-0082 §5.4).
+    Witness { assembly: String, k: usize },
+}
+
+/// An exported path's entries, in the order `critical-path.json` carries them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportedLayout {
+    pub entries: Vec<Exported>,
+}
+
+impl ExportedLayout {
+    /// The exported index of walked step `i`.
     ///
-    /// The arithmetic mirrors `emit::with_bonfire_rest_steps` by construction —
-    /// a rest for bonfire `b` is pushed after the step at `b.fire_step`, so a
-    /// step at index `i` is preceded by one rest per bonfire with
-    /// `fire_step < i`. That agreement is not left to inspection:
-    /// `the_combat_plan_step_indexes_the_exported_path` pins the two together
-    /// against the real emitted documents (the step the plan points at must BE
-    /// the encounter's kill), so a future change to the splice fails the test
-    /// rather than silently desynchronising this.
-    ///
-    /// Identity for a campaign with no bonfire.
-    pub fn exported_step(&self, step: usize) -> usize {
-        step + self.bonfires().filter(|b| b.fire_step < step).count()
+    /// # Panics
+    /// When `i` is not a step of the walked path the layout was built for.
+    pub fn step(&self, i: usize) -> usize {
+        self.entries
+            .iter()
+            .position(|e| *e == Exported::Step(i))
+            .expect("a step of the walked path is in its layout")
+    }
+
+    /// The exported index of the `rest` at bonfire `cp`, when the path performs it.
+    pub fn rest(&self, cp: usize) -> Option<usize> {
+        self.entries.iter().position(|e| *e == Exported::Rest(cp))
+    }
+
+    /// The assemblies whose witness steps the path carries, in first-appearance order.
+    pub fn witnessed(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for e in &self.entries {
+            if let Exported::Witness { assembly, .. } = e
+                && !out.contains(assembly)
+            {
+                out.push(assembly.clone());
+            }
+        }
+        out
     }
 }
 
@@ -607,6 +731,14 @@ pub(crate) struct PathFiring {
     /// steps; read by the route proof (`DW0311`) through
     /// [`RegionEvents::keep_out`] and exported on the step for the bot.
     pub keep_out: Vec<Vec<crate::compiler::reach::KeepOut>>,
+    /// Per step, every objective that may be armed while the party walks to
+    /// it — the replay's guaranteed armed set in front of the step, a term on
+    /// a datum no ordered walk dates read as open
+    /// ([`crate::compiler::flow::Walk::armed_objectives_unless_shut`]), after
+    /// the triggers due there for the step's own objective. Aligned 1:1 with the
+    /// path's steps; empty for a step that stands nowhere. Read by `DW0863`
+    /// through [`RegionEvents::armed`].
+    pub armed: Vec<BTreeSet<String>>,
 }
 
 impl PathFiring {
@@ -654,6 +786,8 @@ pub(super) fn build_critical_path(
     // acts in front of that path step, and as it takes the step itself — what
     // each step's keep-out volumes are read from.
     let mut armed_at: Vec<(BTreeSet<String>, BTreeSet<String>)> = Vec::new();
+    // The same, with a term on an undatable datum read as open (`DW0863`).
+    let mut armed_open_at: Vec<(BTreeSet<String>, BTreeSet<String>)> = Vec::new();
     let mut guaranteed = flow.walk_for_performing(path);
     // (objective id, physical area, step index) in critical-path order, for the
     // transport map and the per-step transport marker.
@@ -791,15 +925,19 @@ pub(super) fn build_critical_path(
             // Taking it: once every trigger due there is performed and every
             // entry deed due there has fired.
             let before: BTreeSet<String> = guaranteed.armed_objectives().into_iter().collect();
+            let before_open: BTreeSet<String> = guaranteed
+                .armed_objectives_unless_shut()
+                .into_iter()
+                .collect();
             for t in due.get(&si).into_iter().flatten().filter_map(Step::trigger) {
                 guaranteed = guaranteed.performing(t);
             }
-            let taking: BTreeSet<String> = guaranteed
-                .with_due_deeds()
-                .armed_objectives()
-                .into_iter()
-                .collect();
+            let ahead = guaranteed.with_due_deeds();
+            let taking: BTreeSet<String> = ahead.armed_objectives().into_iter().collect();
+            let taking_open: BTreeSet<String> =
+                ahead.armed_objectives_unless_shut().into_iter().collect();
             armed_at.push((before, taking));
+            armed_open_at.push((before_open, taking_open));
             guaranteed.take(st);
         }
         let qid = st.quest.as_str();
@@ -1272,28 +1410,36 @@ pub(super) fn build_critical_path(
             completion: reach_completion(pos, *radius),
         })
     };
-    let mut armed_by_step: Vec<Vec<crate::compiler::reach::KeepOut>> = (0..steps.len())
-        .map(|k| {
-            // A step that stands nowhere walks nowhere: a class pick, a mock,
-            // the completion assertion.
-            if steps[k].pos().is_none() {
-                return Vec::new();
-            }
-            si_start
-                .iter()
-                .rposition(|(_, first)| *first <= k)
-                .and_then(|i| Some((path.steps.get(si_start[i].0)?, armed_at.get(i)?)))
-                .map(|(st, (before, taking))| {
-                    let armed = if steps[k].objective() == Some(st.objective.as_str()) {
-                        taking
-                    } else {
-                        before
-                    };
-                    armed.iter().filter_map(|o| reach_volume(o)).collect()
-                })
-                .unwrap_or_default()
-        })
+    // Per step, the armed set in front of it: `taking` at the step of the
+    // objective the replay takes there, `before` at every other.
+    let per_step = |sets: &[(BTreeSet<String>, BTreeSet<String>)]| -> Vec<BTreeSet<String>> {
+        (0..steps.len())
+            .map(|k| {
+                // A step that stands nowhere walks nowhere: a class pick, a
+                // mock, the completion assertion.
+                if steps[k].pos().is_none() {
+                    return BTreeSet::new();
+                }
+                si_start
+                    .iter()
+                    .rposition(|(_, first)| *first <= k)
+                    .and_then(|i| Some((path.steps.get(si_start[i].0)?, sets.get(i)?)))
+                    .map(|(st, (before, taking))| {
+                        if steps[k].objective() == Some(st.objective.as_str()) {
+                            taking.clone()
+                        } else {
+                            before.clone()
+                        }
+                    })
+                    .unwrap_or_default()
+            })
+            .collect()
+    };
+    let mut armed_by_step: Vec<Vec<crate::compiler::reach::KeepOut>> = per_step(&armed_at)
+        .iter()
+        .map(|armed| armed.iter().filter_map(|o| reach_volume(o)).collect())
         .collect();
+    let mut armed_ids_by_step: Vec<BTreeSet<String>> = per_step(&armed_open_at);
 
     // ---- the legs the party must cross ----
     //
@@ -1494,6 +1640,7 @@ pub(super) fn build_critical_path(
         let mut new_sneak = Vec::with_capacity(n);
         let mut new_live = Vec::with_capacity(n);
         let mut new_armed = Vec::with_capacity(n);
+        let mut new_armed_ids = Vec::with_capacity(n);
         let mut moved: Vec<usize> = Vec::with_capacity(n);
         let mut spliced_at: Vec<(String, usize)> = Vec::new();
         for (k, step) in steps.into_iter().enumerate() {
@@ -1515,6 +1662,7 @@ pub(super) fn build_critical_path(
                 new_sneak.push(false);
                 new_live.push(live_links_by_step[k].clone());
                 new_armed.push(armed_by_step[k].clone());
+                new_armed_ids.push(armed_ids_by_step[k].clone());
             }
             moved.push(new_steps.len());
             new_steps.push(step);
@@ -1522,6 +1670,7 @@ pub(super) fn build_critical_path(
             new_sneak.push(sneak_by_step[k]);
             new_live.push(std::mem::take(&mut live_links_by_step[k]));
             new_armed.push(std::mem::take(&mut armed_by_step[k]));
+            new_armed_ids.push(std::mem::take(&mut armed_ids_by_step[k]));
         }
         for idx in obj_step.values_mut() {
             *idx = moved[*idx];
@@ -1545,6 +1694,7 @@ pub(super) fn build_critical_path(
         sneak_by_step = new_sneak;
         live_links_by_step = new_live;
         armed_by_step = new_armed;
+        armed_ids_by_step = new_armed_ids;
     }
 
     // Every cutscene a step's completion schedules, at any depth of its
@@ -1603,6 +1753,7 @@ pub(super) fn build_critical_path(
             data_end: replay.data_end,
             branch_excluded,
             keep_out,
+            armed: armed_ids_by_step,
         },
         loops: spliced,
     })

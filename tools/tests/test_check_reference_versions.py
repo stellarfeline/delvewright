@@ -415,7 +415,7 @@ def test_a_version_literal_the_build_does_not_own_is_red(gate):
 # still told a visitor `delvewright-dsl = "0.19"`. `VERSION_LITERAL_RE` already
 # matched that `0.19` fine; a `literal.count(".") != 2` filter right after it
 # discarded every two-part match before it could be judged, on the theory that
-# the only two-part shape on a page was `GPL-3.0-only`. It was not: a cargo
+# the only two-part shape on a page was `GPL-3.0-or-later`. It was not: a cargo
 # dependency requirement is two-part BY CONVENTION.
 
 
@@ -472,11 +472,11 @@ def test_a_prefix_of_the_crates_own_major_minor_is_still_red(gate):
 
 
 def test_an_spdx_license_id_is_not_a_version_literal(gate):
-    """`GPL-3.0-only` embeds a two-part number, `3.0`, inside a hyphenated
+    """`GPL-3.0-or-later` embeds a two-part number, `3.0`, inside a hyphenated
     identifier — a real false positive on all eight published pages today,
     once a two-part literal is no longer discarded by dot-count alone."""
     page = README_TEMPLATE.format(mc="1.21.11", prose_mc="1.21.11", dsl="0.19.0", rust="1.97.1")
-    page += "\nLicensed GPL-3.0-only.\n"
+    page += "\nLicensed GPL-3.0-or-later.\n"
     assert run(gate, page_text=page) == 0
 
 

@@ -392,7 +392,7 @@ def render(
     w(f"- **Ask the tool again whenever you want it**: `\"{delvec}\" allocation \"{campaign_dir}\" {place}` prints the same allocation this handout carries; type nothing from it anywhere — your program reads every handed value through a `handed/…` parameter (below).")
     w(f"- **Check** with the one verb that judges a place: `{delvec_p} detail \"{campaign_dir}\" {place}`. It binds the handing into your program, expands it at the frame, voids every cell you do not own, runs every gate, and refuses with the cause named BEFORE any file is written. Run it as often as you like. When it exits 0 it has written the piece and the plan row — that is the finished state, and the session that launched you re-runs it to confirm.")
     w(f"- **Look** with `{delvec_p} grammar expand --file \"{program}\" --region {ex}x{ey}x{ez} -o \"{work}/expand\"` (your `handed/…` defaults are the handed values, so no `--param` is needed) and the render commands the *new pieces* reference names. Scratch goes under `{work}/`, never `/tmp`.")
-    w(f"- **Measure the palette, never guess it**: `python3 \"{engine / 'tools' / 'creator' / 'block-appearance.py'}\" --screen …` / `--mix …` / `--sheet` is yours to run (the *new pieces* reference, step 2); it needs the pinned client jar at `~/.chunky/resources/minecraft.jar` and says so by name when it is absent, in which case take role names from the corpus and record where each came from in your return.")
+    w(f"- **Measure the palette, never guess it**: `python3 \"{engine / 'tools' / 'creator' / 'block-appearance.py'}\" --screen …` / `--mix …` / `--sheet` is yours to run (the *new pieces* reference, step 2); it needs the pinned client jar at `~/.delvewright/client/minecraft-1.21.11.jar` and says so by name when it is absent, in which case take role names from the corpus and record where each came from in your return.")
     w("- **Never**: read another place's program, the design record (`DESIGN.md`, `GENERATION.md`, `design.json`, `design/`), the site plan, the layout graph, the quest documents or another handout — what you need of them is quoted here, and the rest is the whole's; edit any document but your program; run `delvec detail --all`, `delvec build`, a server, or `git`; retype a handed number as a literal; weaken a check or reroll a seed to get green.")
     w("- **A capability you need and the grammar lacks** is reported in your return in one sentence, with the closest thing you could build; it is never faked with adjacent constructs.")
     w("")
@@ -470,7 +470,7 @@ def render(
         w("## The plan views that see this place")
         w("")
         for v in a["views"]:
-            w(f"- `{v['id']}`: {v.get('note', '')} — `{v['snapshot']}`")
+            w(f"- `{v['id']}`: {v.get('note', '')} — `{v['frame']}`")
         w("")
     if refusal is not None:
         w("## The refusal this attempt repairs")

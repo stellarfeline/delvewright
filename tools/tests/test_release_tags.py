@@ -138,6 +138,39 @@ def test_each_release_derives_its_tag_through_the_grammar(line, path):
     assert f"tools/lib/release_tags.py tag {line} " in _runs(path), f"{path.name} does not derive its tag"
 
 
+# ------------------------------------------------------------------ the notes --
+@pytest.mark.parametrize("line,path", sorted(RELEASE_WORKFLOWS.items()))
+def test_each_release_publishes_the_judged_notes_and_never_the_generated_list(line, path):
+    """A Release's notes are the summary `release-notes.py` reads from the tree
+    and judges, never GitHub's generated list of merged pull-request titles: no
+    `--generate-notes`, no generate-notes endpoint, and the judged notes written
+    before anything is published."""
+    runs = _runs(path)
+    assert "--generate-notes" not in runs, f"{path.name} still asks GitHub for the merged list"
+    assert "generate-notes" not in runs and "github_releases.py notes" not in runs, f"{path.name} reaches the generated list"
+    assert f"tools/ci/release-notes.py {line} --commit " in runs, f"{path.name} does not read the notes from the tree"
+    assert '--repository "$GITHUB_REPOSITORY"' in runs, f"{path.name} hands no repository for the compare link"
+    for command in ("gh release create", "gh release edit"):
+        for i, step in enumerate(runs.split("\n")):
+            if command in step:
+                assert f"tools/ci/release-notes.py {line} " in "\n".join(runs.split("\n")[:i]), (
+                    f"{path.name}: `{command}` runs before the notes are read and judged"
+                )
+
+
+def test_the_engine_release_judges_the_notes_in_identity_before_anything_builds():
+    doc = load(RELEASE_WORKFLOWS["delvec"].read_text(encoding="utf-8"))
+    identity = doc["jobs"]["identity"]
+    runs = "\n".join(s["run"] for s in identity["steps"] if isinstance(s, dict) and isinstance(s.get("run"), str))
+    assert "tools/ci/release-notes.py delvec --commit HEAD" in runs, "identity does not judge the notes"
+    uploads = [s for s in identity["steps"] if isinstance(s, dict) and "upload-artifact" in str(s.get("uses", ""))]
+    assert any(s.get("with", {}).get("name") == "release-notes" for s in uploads), "identity hands no notes artifact on"
+    shelf = doc["jobs"]["shelf"]
+    assert "identity" in shelf["needs"]
+    downloads = [s for s in shelf["steps"] if isinstance(s, dict) and "download-artifact" in str(s.get("uses", ""))]
+    assert any(s.get("with", {}).get("name") == "release-notes" for s in downloads), "shelf does not take identity's notes"
+
+
 def test_no_workflow_starts_on_a_tag_push():
     """Every workflow in the directory, not only the three: a tag push starts
     nothing, so creating a release tag can never be what publishes."""

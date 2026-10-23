@@ -27,7 +27,7 @@
 # is somewhere for the shelf to end up half-built. Windows 10 1803+ ships bsdtar;
 # Windows 11 Explorer opens `.tar.gz` natively.
 #
-# LICENSE travels inside every archive: the binary is a GPL-3.0-only work and
+# LICENSE travels inside every archive: the binary is a GPL-3.0-or-later work and
 # §4 requires the license text to accompany it (the tag body and the crates.io
 # page are not "accompanying" a downloaded tarball).
 #

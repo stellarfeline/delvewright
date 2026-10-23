@@ -9,6 +9,7 @@ import type { PackPush } from "../resource-pack.ts";
 import { traceLoadWindows, type LoadWindowRecord, type TracedBot } from "../load-window.ts";
 import { serverAge } from "./death.ts";
 import { answersTrigger } from "./trigger.ts";
+import { chunkKey } from "../shot-subjects.ts";
 import { pathfinder } from "./walk.ts";
 import { holdWalkedClimbableNodes, type ClimbHoldBot } from "../movement.ts";
 import type { MineflayerExecutor } from "../executor.ts";
@@ -63,6 +64,10 @@ export function botConfigFromEnv(
 
 /** Recent chat lines retained for death-cause diagnosis. */
 const CHAT_BUFFER = 256;
+
+/** The pause (ms) between one shot-clock reading and the next: several land
+ * in each gap between server ticks, so nearly every driver tick has one. */
+const SHOT_CLOCK_PACE_MS = 10;
 
 export function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -239,6 +244,12 @@ export const methods = {
     // the last objective step, so both must be buffered as they arrive. The same
     // stream feeds the recent-chat ring the death diagnostic mines for a cause.
     bot.on("messagestr", (message: string) => {
+      // spec-0110 §7: a game-time reading is a place in the packet stream; the
+      // table is read the moment its line arrives (`harness/src/shot-subjects.ts`).
+      if (this.shotSubjects?.watching) {
+        const m = /\[dw:clock \d+ (-?\d+)\]/.exec(message);
+        if (m) this.shotSubjects.clock(Number(m[1]), this.clientView());
+      }
       // A bracket marker is protocol, not speech: nothing else reads it.
       if (this.brackets.observe(message)) return;
       this.observeMarker(message);
@@ -353,6 +364,30 @@ export const methods = {
     });
     const client = (bot as unknown as { _client?: { on: (e: string, f: (p: unknown) => void) => void } })
       ._client;
+    // spec-0110 §7: the framed bodies, watched on the server's clock
+    // (`harness/src/shot-subjects.ts`). The first `camera` packet naming a lens
+    // names the cutscene by where the bot stands; one naming the bot itself is
+    // the return from spectator. Leaving spectator is the end function's work.
+    client?.on("camera", (packet: unknown) => {
+      const id = (packet as { cameraId?: number }).cameraId;
+      const p = bot.entity?.position;
+      if (!this.shotSubjects || !p || id === undefined || id === bot.entity?.id) return;
+      this.shotSubjects.lensTick(this.gameModeNow(), [p.x, p.y, p.z]);
+    });
+    bot.on("game", () => {
+      if (!this.shotSubjects) return;
+      this.shotSubjects.gameModeChanged(this.gameModeNow(), this.clientView());
+      if (this.shotSubjects.watching) void this.readShotClock();
+    });
+    bot.on("entityGone", (entity: Entity) => {
+      if (entity) this.shotSubjects?.entityChanged(entity.id, entity.name ?? "");
+    });
+    // A framed body's chunk column sent to or dropped by the client: the
+    // server sends no entity in a chunk the client does not hold.
+    const chunkChanged = (corner: { x: number; z: number }) =>
+      this.shotSubjects?.chunkChanged(chunkKey(corner.x, corner.z));
+    bot.on("chunkColumnLoad", chunkChanged);
+    bot.on("chunkColumnUnload", chunkChanged);
     client?.on("world_event", (packet: unknown) => {
       const p = packet as { effectId?: number; location?: { x: number; y: number; z: number } };
       if (typeof p.effectId !== "number" || !p.location) return;
@@ -366,7 +401,55 @@ export const methods = {
     });
     bot.on("entitySpawn", (entity: Entity) => {
       this.sculk.onSpawn(entity?.name);
+      if (entity) this.shotSubjects?.entityChanged(entity.id, entity.name ?? "");
     });
+  },
+
+  /** Every entity the client tracks but itself, as the shot observer reads it. */
+  trackedEntities(this: MineflayerExecutor): import("../shot-subjects.ts").SeenEntity[] {
+    const bot = this.bot;
+    if (!bot) return [];
+    return Object.values(bot.entities)
+      .filter((e) => e !== bot.entity && e.position !== undefined)
+      .map((e) => ({
+        id: e.id,
+        name: e.name ?? "",
+        pos: [e.position.x, e.position.y, e.position.z] as const,
+      }));
+  },
+
+  /** What the client holds now, as the shot observer reads it: every entity
+   * it tracks, and which framed bodies' chunk columns it has been sent. */
+  clientView(this: MineflayerExecutor): import("../shot-subjects.ts").ClientView {
+    const seen = this.trackedEntities();
+    const world = this.bot?.world as unknown as { getColumn?: (cx: number, cz: number) => unknown } | undefined;
+    const chunks = new Set<string>();
+    for (const key of this.shotSubjects?.chunks ?? []) {
+      const [cx, cz] = key.split(",").map(Number) as [number, number];
+      if (world?.getColumn?.(cx, cz)) chunks.add(key);
+    }
+    return { seen, chunks };
+  },
+
+  /**
+   * spec-0110 §7: read the server's game time over and over while a cutscene
+   * the shot observer watches plays, and once after it ends — the reading
+   * that places the end. One loop at a time; a reading that fails ends the
+   * loop, and the observer then reports the cutscene unplaced.
+   */
+  async readShotClock(this: MineflayerExecutor): Promise<void> {
+    if (this.shotClockRunning) return;
+    this.shotClockRunning = true;
+    try {
+      while (this.shotSubjects?.watching) {
+        await this.readGameTime("shot subjects: the server's clock");
+        await delay(SHOT_CLOCK_PACE_MS);
+      }
+    } catch (err) {
+      process.stderr.write(`shot subjects: the server's clock stopped answering (${String(err)})\n`);
+    } finally {
+      this.shotClockRunning = false;
+    }
   },
 
   /**

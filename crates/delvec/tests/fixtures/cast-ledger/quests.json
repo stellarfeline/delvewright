@@ -32,8 +32,10 @@
               "text": "the party completes obj/talk",
               "verb": "learns"
             },
+            "hint": "He keeps the gate room.",
             "id": "obj/talk",
             "npc": "npc/keeper",
+            "title": "Talk to the keeper",
             "type": "talk-to"
           }
         ],
@@ -76,8 +78,10 @@
               "text": "the party completes obj/exit",
               "verb": "arrives"
             },
+            "hint": "Past the keeper, through the door he opens.",
             "id": "obj/exit",
             "radius": 2,
+            "title": "Go through the door",
             "type": "reach-anchor"
           }
         ],

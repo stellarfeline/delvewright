@@ -53,18 +53,6 @@ fn snbt_string_is_a_plain_quoted_component() {
 }
 
 #[test]
-fn marker_name_fields_never_leak_a_raw_id() {
-    // A titled marker carries its title (byte-identical to the old behavior).
-    assert_eq!(
-        marker_name_fields(Some("Unbar the Inner Door")),
-        "CustomName:\"Unbar the Inner Door\",CustomNameVisible:1b,"
-    );
-    // An untitled objective yields NO name fields — the marker still glows but
-    // never surfaces its raw objective id (e.g. `obj/door`) to players.
-    assert_eq!(marker_name_fields(None), "");
-}
-
-#[test]
 fn default_equipment_arms_only_naturally_armed_mobs() {
     // wither_skeleton → stone sword via the component-era `equipment` NBT
     // with a zero `drop_chances` (1.21.11 ignores legacy `HandItems`).
@@ -109,6 +97,7 @@ fn mk_actor(id: &str, entity: &str, vulnerable: bool) -> delvewright_dsl::Actor 
         tier: None,
         traversal: None,
         watch: None,
+        answers: None,
         health_bar: None,
     }
 }

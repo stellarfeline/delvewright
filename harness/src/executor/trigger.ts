@@ -88,6 +88,28 @@ export function answersTrigger(message: string, objective: string): boolean {
   return message.includes(objective) || /trigger/i.test(message);
 }
 
+/**
+ * The most a body standing anywhere in a cell is from the cell's centre,
+ * horizontally: half the cell's diagonal.
+ */
+export const CELL_HALF_DIAGONAL = Math.SQRT1_2;
+
+/**
+ * The walk goal's range for an `approach` trigger of radius `range`.
+ *
+ * The tick fires on `positioned <anchor> if entity @a[distance=..range]`;
+ * `positioned` centres an integer x and z (`Vec3Argument`'s centre
+ * correction), so the server measures from the middle of the anchor cell's
+ * floor. The walk's goal accepts any cell within `k` blocks of the anchor
+ * cell, and a body stands anywhere inside the cell it arrives in, so the
+ * farthest it can stop is `k` plus half a cell's diagonal. The goal is the
+ * widest `k` for which that is still inside `range`: the anchor cell itself
+ * (a block goal) for range 1, one block for range 2, and so on.
+ */
+export function approachGoalRange(range: number): number {
+  return Math.max(0, Math.floor(range - CELL_HALF_DIAGONAL));
+}
+
 /** The executor's methods this file holds; `executor.ts` installs them on its prototype. */
 export const methods = {
   /**
@@ -152,10 +174,8 @@ export const methods = {
       );
     }
     if (step.on === "approach") {
-      // The tick fires on `distance=..range` from the anchor cell; aim a block
-      // inside it so the goal's own tolerance cannot leave the bot on the rim.
       if (!step.stand) {
-        await this.walkTo(step.pos, Math.max(1, (step.range ?? 1) - 1), label);
+        await this.walkTo(step.pos, approachGoalRange(step.range ?? 1), label);
       }
     } else if (step.on === "step") {
       // The tick fires on a body in the plate's own cell: a block goal on it.

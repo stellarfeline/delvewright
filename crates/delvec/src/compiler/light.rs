@@ -410,9 +410,9 @@ fn lit(name: &str, default_lit: &str, bright: u8) -> u8 {
 /// collision cube. Every empty-collision and thin block is in the second group;
 /// verified against the pinned `minecraft-data` block table
 /// (`harness/node_modules/minecraft-data/.../pc/1.21.9/blocks.json`, the newest
-/// vendored dump; block light opacity is unchanged across 1.21.x) for all 16
-/// `*_pressure_plate`, `tripwire`, `tripwire_hook`, all 20 carpets, `snow` (the
-/// layer block) and all 12 `*_fence_gate`, against `filterLight = 15` for the
+/// vendored dump; block light opacity is unchanged across 1.21.x) for every
+/// `*_pressure_plate`, `tripwire`, `tripwire_hook`, every carpet, `snow` (the
+/// layer block) and every `*_fence_gate`, against `filterLight = 15` for the
 /// control set `stone` / `dirt` / `oak_planks` / `cobblestone` / `deepslate` /
 /// `sand` / `gravel` / `obsidian` / `snow_block`.
 ///
@@ -635,6 +635,47 @@ impl LightModel {
     }
 }
 
+/// **The two light arrays a chunk stores** (spec-0112 §5.6), as the engine's one
+/// flood computes them: the sky term seeded at 15 at every sky-open
+/// light-passing cell with no emitter lit, and the block term seeded at every
+/// emitter with the sky dark — the two terms [`LightModel::flood`] takes the
+/// maximum of. Dense over the box they were computed over.
+pub struct LightArrays {
+    sky: LightField,
+    block: LightField,
+}
+
+impl LightArrays {
+    /// Flood both terms over the inclusive box `min..=max` holding `cells`
+    /// (every other cell of the box is air). Nothing outside the box exists, so
+    /// its top face is open sky.
+    pub fn over<'c>(
+        min: [i32; 3],
+        max: [i32; 3],
+        cells: impl Iterator<Item = ([i32; 3], &'c str)> + Clone,
+    ) -> LightArrays {
+        LightArrays {
+            sky: LightField::over(min, max, 15, false, cells.clone()),
+            block: LightField::over(min, max, 0, true, cells),
+        }
+    }
+
+    /// The sky light at a cell (15 above the box, where nothing stands; 0
+    /// beside or under it).
+    pub fn sky(&self, c: [i32; 3]) -> u8 {
+        match self.sky.index(c) {
+            Some(i) => self.sky.light[i],
+            None if c[1] >= self.sky.min[1] + self.sky.dim[1] as i32 - 2 => 15,
+            None => 0,
+        }
+    }
+
+    /// The block light at a cell (0 outside the box).
+    pub fn block(&self, c: [i32; 3]) -> u8 {
+        self.block.light_at(c)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The flooded field, densely
 // ---------------------------------------------------------------------------
@@ -701,6 +742,25 @@ impl LightField {
     /// Build and flood the field of `model` under `effective_sky`.
     fn new(model: &LightModel, effective_sky: u8) -> Self {
         let (min, max) = model.field_box();
+        Self::over(
+            min,
+            max,
+            effective_sky,
+            true,
+            model.blocks.iter().map(|(c, b)| (*c, b.as_str())),
+        )
+    }
+
+    /// Build and flood the field over the inclusive box `min..=max` holding
+    /// `cells` (every other cell is air), under `effective_sky`, with the
+    /// emitters' block light seeded when `emit` holds.
+    fn over<'c>(
+        min: [i32; 3],
+        max: [i32; 3],
+        effective_sky: u8,
+        emit: bool,
+        blocks: impl Iterator<Item = ([i32; 3], &'c str)>,
+    ) -> Self {
         let dim = [
             (max[0] - min[0]) as usize + 3,
             (max[1] - min[1]) as usize + 3,
@@ -723,11 +783,12 @@ impl LightField {
         // Resolve each DISTINCT block id once. The assembled world is overwhelmingly
         // repeated ids, and `emission`/`passes_light` are a pair of string matches.
         let mut resolved: BTreeMap<&str, u8> = BTreeMap::new();
-        for (c, name) in model.blocks.iter() {
-            let Some(i) = f.index(*c) else { continue };
-            let packed = *resolved
-                .entry(name.as_str())
-                .or_insert_with(|| Self::pack(name));
+        for (c, name) in blocks {
+            let Some(i) = f.index(c) else { continue };
+            let packed = *resolved.entry(name).or_insert_with(|| {
+                let p = Self::pack(name);
+                if emit { p } else { p & !P_EMISSION }
+            });
             f.prop[i] = packed;
         }
 
@@ -1203,11 +1264,11 @@ pub fn lit_world(
 /// **The world the build's proofs walk, derived once**: the relight pass over
 /// `assembled`, and the nav model of the same cells under the campaign's
 /// premises ([`crate::compiler::nav::Premises::of_plan`]) with the pass's
-/// fixtures standing in it ([`lit_world`]). `delvec build` and every view that
-/// draws what the proofs walked (`blocking-chart`) take their world from this
-/// one entry point, so a route read over it is the route the build proved.
-/// The caller reads `Relight::diagnostics` — a refused pass is the build's
-/// failure to raise, not this derivation's.
+/// fixtures standing in it ([`lit_world`]). The build and every reader of the
+/// critical path take it through [`crate::compiler::holders::final_walk`],
+/// which stands the holder stances in it; a view that stands a camera in the
+/// build's world (`delvec frames --campaign`, `cameras`, `written-world`,
+/// `edit`) takes it here.
 pub fn final_world(
     plan: &Plan,
     assembled: &crate::compiler::assembled::Assembled,
@@ -3215,8 +3276,8 @@ mod tests {
     ///
     /// Evidence: `filterLight` in the pinned `minecraft-data` 1.21.9 block dump
     /// (`harness/node_modules/minecraft-data/.../pc/1.21.9/blocks.json`) — 0 for
-    /// all 16 pressure plates, `tripwire`, `tripwire_hook`, all 20 carpets, `snow`
-    /// (the layer block) and all 12 fence gates; 15 for the control cubes below.
+    /// every pressure plate, `tripwire`, `tripwire_hook`, every carpet, `snow`
+    /// (the layer block) and every fence gate; 15 for the control cubes below.
     #[test]
     fn passes_light_matches_vanilla_filter_light() {
         // Trap triggers — the reported false-dark class (DW0342 needs these cells
@@ -3261,8 +3322,8 @@ mod tests {
         ] {
             assert!(passes_light(id), "{id} is filterLight=0 in vanilla");
         }
-        // Fence gates — open = a passable threshold, closed = passable-with-use.
-        // Previously only `oak_fence_gate` passed light; every wood does now.
+        // Fence gates — open = a passable threshold, closed = passable-with-use;
+        // every wood passes light.
         for id in [
             "minecraft:oak_fence_gate",
             "minecraft:spruce_fence_gate[open=true]",

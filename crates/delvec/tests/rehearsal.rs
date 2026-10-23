@@ -103,10 +103,10 @@ fn build(cutscene: &str) -> (Plan<'static>, BuildOutput) {
 const TWO_SHOT: &str = r#"{ "type": "cutscene", "shots": [
     { "path": [ { "anchor": "anchor/exit", "offset": [-2, 2, 0] },
                 { "anchor": "anchor/exit", "offset": [2, 2, 0] } ],
-      "seconds": 6,
+      "seconds": 6, "subject": "landscape",
       "look_at": { "anchor": "anchor/keeper-stand", "offset": [0, 2, 0] } },
     { "path": [ { "anchor": "anchor/keeper-stand", "offset": [0, 2, 1] } ],
-      "seconds": 4 } ] }"#;
+      "seconds": 4, "subject": "landscape" } ] }"#;
 
 fn overlay(out: &BuildOutput, name: &str) -> String {
     let key = format!("creator-datapack/data/{NS}/function/creator/{name}.mcfunction");
@@ -317,10 +317,10 @@ fn both_cutscene_spellings_identify_a_shot_the_same_way() {
     let path = r#""path": [ { "anchor": "anchor/exit", "offset": [-2, 2, 0] },
                             { "anchor": "anchor/exit", "offset": [2, 2, 0] } ]"#;
     let (_, legacy) = build(&format!(
-        r#"{{ "type": "cutscene", "seconds": 2, {path} }}"#
+        r#"{{ "type": "cutscene", "subject": "landscape", "seconds": 2, {path} }}"#
     ));
     let (_, shots) = build(&format!(
-        r#"{{ "type": "cutscene", "shots": [ {{ "seconds": 2, {path} }} ] }}"#
+        r#"{{ "type": "cutscene", "shots": [ {{ "seconds": 2, "subject": "landscape", {path} }} ] }}"#
     ));
     let stamp = overlay(&legacy, "rehearsal/stamp_1");
     assert!(
@@ -624,8 +624,9 @@ fn a_long_roster_stamps_one_short_line_per_shot_and_harvests_back() {
     let shots: Vec<String> = (0..16)
         .map(|k| {
             format!(
-                r#"{{ "path": [ {{ "anchor": "anchor/exit", "offset": [0, 2, {}] }} ], "seconds": 2 }}"#,
-                k % 3
+                r#"{{ "path": [ {{ "anchor": "anchor/exit", "offset": [{}, 2, 0] }} ], "seconds": 2, "subject": "landscape" }}"#,
+                // Three still cameras across the room, each in open air.
+                (k % 3) - 1
             )
         })
         .collect();

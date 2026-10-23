@@ -19,6 +19,9 @@ a reviewer cannot check by eye across thirty-five frames:
   from its manifest. A render that succeeds, writes a file and is a rectangle of
   flat background looks like one more shot taken to a directory listing, to a
   contact sheet, and to a reviewer skimming.
+- **every frame is drawn at the build's camera.** Each frame manifest's camera
+  is compared with the camera the build's `render-plan.json` states, so a frame
+  judged here is a frame the build planned and never a second opinion about it.
 - **every view manifest states a non-zero binding** (`DW0726` discipline): a
   shot that framed no target is a camera aimed at nothing, and the count is the
   only thing that separates it from a good one.
@@ -28,12 +31,12 @@ ADR-0006's byte guarantee across drivers, so the manifests are the machine truth
 and the frames are for eyes. The frames are uploaded as a CI artifact for the
 human half of the review and are never diffed.
 
-## The arms this uses
+## The arm this uses
 
-The CPU arms only (`delvec snapshot`), which run anywhere — no GPU, no client
-jar, no `nucleation`. Whether CI runners can drive the GPU arms through a
-software adapter is a separate question and a separate job; either answer moves
-where frames come from, never what the engine can do.
+`delvec frames <build>` on the CPU backend, which runs anywhere: Lumenwright
+draws every shot in-process from the world the build wrote for it, with the
+pinned client jar's textures (`validation/client-jar-cache.sh` fetches it in
+CI). Its first line names the renderer and the backend, and is printed here.
 
 ## Binding count
 
@@ -45,19 +48,19 @@ is vacuous, not a pass.
 from __future__ import annotations
 
 import argparse
-import contextlib
 import json
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
-import parallel  # noqa: E402
 from delvec_bin import resolve as resolve_delvec  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 GALLERY = REPO / "gallery"
 PLAN = GALLERY / "render-plan.json"
+# The frame's side, in pixels: the manifests are judged, not the pixels.
+SIZE = 256
 
 
 def die(msg: str) -> None:
@@ -65,8 +68,19 @@ def die(msg: str) -> None:
     raise SystemExit(1)
 
 
-def safe(shot_id: str) -> str:
-    return shot_id.replace("/", "_")
+def same_camera(planned: dict, drawn: dict) -> bool:
+    """Whether the manifest's camera is the one the build's render plan states:
+    its `pos`, Minecraft `yaw`/`pitch` and `fov`, each written to 3 decimals."""
+    try:
+        dyaw = (drawn["yaw"] - planned["yaw"] + 180.0) % 360.0 - 180.0
+        return (
+            all(abs(drawn["pos"][i] - planned["pos"][i]) <= 0.002 for i in range(3))
+            and abs(dyaw) <= 0.002
+            and abs(drawn["pitch"] - planned["pitch"]) <= 0.002
+            and abs(drawn["fov"] - planned["fov"]) <= 0.002
+        )
+    except (KeyError, TypeError, IndexError):
+        return False
 
 
 def main() -> int:
@@ -91,6 +105,7 @@ def main() -> int:
         for s in emitted.get("shots", [])
     ]
     declared.sort(key=lambda s: s["id"])
+    planned = {s["id"]: s.get("camera") for s in emitted.get("shots", [])}
 
     if args.write:
         PLAN.write_text(
@@ -168,71 +183,77 @@ def main() -> int:
         )
 
     # ------------------------------------------------------------ produce ----
-    frames.mkdir(parents=True, exist_ok=True)
-    produced, refused, findings = 0, [], []
-    def shoot(v: dict) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            [
-                str(delvec), "--prefabs", args.prefabs, "snapshot", str(GALLERY),
-                "--shot", v["id"], "-o", str(frames / f"{safe(v['id'])}.png"),
-            ],
-            capture_output=True,
-            text=True,
-        )
-
-    # Every view is its own frame and manifest, so the shots run on the shared
-    # pool (`tools/lib/parallel.py`) and are READ in id order, as the serial walk
-    # read them.
-    views = sorted(committed, key=lambda v: v["id"])
-    files = [safe(v["id"]) for v in views]
-    if len(set(files)) != len(files):
-        die(
-            "two declared views write the same frame file ("
-            + ", ".join(sorted({f for f in files if files.count(f) > 1}))
-            + "), so one shot's frame would be judged as the other's."
-        )
-    with contextlib.closing(parallel.ordered(shoot, views)) as shots:
-        for v, outcome in zip(views, shots):
-            png = frames / f"{safe(v['id'])}.png"
-            r = outcome.get()
-            if r.returncode != 0:
-                # A refusal is legitimate — it is the loud half of "produced or
-                # refused". What is not legitimate is silence, so it is recorded by
-                # name with the renderer's own reason.
-                refused.append((v["id"], (r.stderr or r.stdout).strip().splitlines()[-1:] or [""]))
-                continue
-            produced += 1
-            man = png.with_suffix("").with_suffix(".manifest.json")
-            if not man.is_file():
-                man = Path(str(png)[: -len(".png")] + ".manifest.json")
-            if not man.is_file():
-                findings.append(f"{v['id']}: produced a frame and no manifest — nothing states what it shows")
-                continue
-            doc = json.loads(man.read_text())
-            frame = doc.get("frame")
-            if frame is None:
-                die(
-                    f"{man} carries no `frame` block. The producer states the verdict; a "
-                    "consumer computing its own would be a second authority on it."
-                )
-            if frame.get("featureless") is not None:
-                findings.append(
-                    f"{v['id']}: the frame is FEATURELESS "
-                    f"({frame['featureless']['distinct_colors']} distinct colours) — it "
-                    "shows no scene at all, and a blank rectangle must not count as a shot "
-                    "of a room"
-                )
-            if frame.get("targets_in_frame", 0) == 0:
-                findings.append(
-                    f"{v['id']}: the view manifest binds ZERO targets — the camera framed "
-                    "nothing the campaign declares, so nothing about this shot is checked "
-                    "by having taken it (DW0726 discipline)"
-                )
+    # One `delvec frames` over the build draws every shot of its plan, each
+    # from the world the build wrote for it, on the CPU backend; the frames are
+    # small because what is judged is each frame's manifest, not its pixels.
+    r = subprocess.run(
+        [str(delvec), "frames", str(out), "-o", str(frames), "--backend", "cpu", "--size", str(SIZE)],
+        capture_output=True,
+        text=True,
+    )
+    first = (r.stderr.splitlines() or [""])[0]
+    print(first)
+    produced, refused, findings, agreed = 0, [], [], 0
+    if r.returncode != 0:
+        refused = [(v["id"], (r.stderr or r.stdout).strip().splitlines()[-1:] or [""]) for v in committed]
+    elif not first.startswith("renderer: lumenwright "):
+        die(f"`delvec frames`' first line names no renderer: {first!r}")
+    index = json.loads((frames / "shot-index.json").read_text()) if r.returncode == 0 else {"shots": []}
+    by_id = {e["id"]: e for e in index.get("shots", [])}
+    for v in sorted(committed, key=lambda v: v["id"]) if r.returncode == 0 else []:
+        e = by_id.get(v["id"])
+        if e is None:
+            refused.append((v["id"], ["the index lists no frame of this shot"]))
+            continue
+        png = frames / e["image"]
+        if not png.is_file():
+            findings.append(f"{v['id']}: the index names {e['image']} and no such frame was written")
+            continue
+        produced += 1
+        man = frames / e["image"].replace(".png", ".manifest.json")
+        if not man.is_file():
+            findings.append(f"{v['id']}: produced a frame and no manifest — nothing states what it shows")
+            continue
+        doc = json.loads(man.read_text())
+        frame = doc.get("frame")
+        if frame is None:
+            die(
+                f"{man} carries no `frame` block. The producer states the verdict; a "
+                "consumer computing its own would be a second authority on it."
+            )
+        # The frame judged is the build's frame: a camera the build never
+        # planned is a second authority on where a camera stands, and every
+        # count below would be about a picture nobody ships.
+        cam = planned.get(v["id"])
+        if cam is not None and same_camera(cam, doc.get("camera", {})):
+            agreed += 1
+        else:
+            findings.append(
+                f"{v['id']}: the frame was drawn at a camera the build did not plan "
+                f"(build {cam and cam.get('pos')} yaw {cam and cam.get('yaw')} pitch "
+                f"{cam and cam.get('pitch')}; frame {doc.get('camera', {}).get('pos')} yaw "
+                f"{doc.get('camera', {}).get('yaw')} pitch "
+                f"{doc.get('camera', {}).get('pitch')})"
+            )
+        if frame.get("featureless") is not None:
+            findings.append(
+                f"{v['id']}: the frame is FEATURELESS "
+                f"({frame['featureless']['distinct_colors']} distinct colours) — it "
+                "shows no scene at all, and a blank rectangle must not count as a shot "
+                "of a room"
+            )
+        if frame.get("targets_in_frame", 0) == 0:
+            findings.append(
+                f"{v['id']}: the view manifest binds ZERO targets — the camera framed "
+                "nothing the campaign declares, so nothing about this shot is checked "
+                "by having taken it (DW0726 discipline)"
+            )
 
     print(
         f"gallery render: {len(committed)} view(s) declared, {produced} produced, "
         f"{len(refused)} refused, {len(findings)} finding(s)."
     )
+    print(f"  {agreed} of {produced} produced frame(s) drawn at the build's camera.")
     for rid, why in refused:
         print(f"  refused: {rid} — {why[0] if why else 'no reason given'}")
 

@@ -21,15 +21,15 @@ Point the same walk at `downloads.server` instead and it reproduces that same
 file's committed `server_jar_url` and `server_jar_sha1` exactly, which is how a
 reader knows the walk lands on the right game rather than merely on *a* jar.
 
-**The client half has no committed pin to agree with.** The sha1 checked below
-is Mojang's own, verified on the bytes: it proves the transfer and the version,
-and nothing in this project would notice if Mojang republished. Say that when
-you report; do not write a pin of your own onto the page.
+**The bytes are checked twice.** Mojang's own sha1, verified as they arrive,
+proves the transfer; the engine's `[minecraft].client_jar_sha256` — the pin every
+frame `delvec` draws is drawn against — proves they are the jar this engine
+pins, so a jar Mojang republished is refused rather than drawn from.
 
-    0  the jar is in place and its sha1 is Mojang's
+        0  the jar is in place, its sha1 Mojang's and its sha256 the engine's pin
     2  the engine checkout or its pin is unusable
     4  the download failed
-    5  the sha1 does not match — a REFUSAL: nothing is written, nothing retried
+        5  a digest does not match — a REFUSAL: nothing is written, nothing retried
 
     python3 scripts/fetch-client-jar.py --engine ~/.delvewright/engine
 """
@@ -69,6 +69,12 @@ def get(url: str) -> bytes:
 
 def pinned_version(engine: pathlib.Path) -> str:
     """`[minecraft].version` in the engine checkout — the game this project pins."""
+    return pinned(engine)["version"]
+
+
+def pinned(engine: pathlib.Path) -> dict:
+    """The engine checkout's `[minecraft]` table: `version`, and the client
+    jar's `client_jar_sha256` when the engine pins one."""
     manifest = engine / "versions.toml"
     try:
         data = tomllib.loads(manifest.read_text(encoding="utf-8"))
@@ -79,10 +85,11 @@ def pinned_version(engine: pathlib.Path) -> str:
             f"lives (ADR-0009); a version written on the page instead would be a "
             f"literal nothing checks.",
         ) from exc
-    version = data.get("minecraft", {}).get("version")
+    table = data.get("minecraft", {})
+    version = table.get("version")
     if not isinstance(version, str) or not version:
         raise Refusal(EXIT_UNUSABLE, f"{manifest} has no `[minecraft].version`")
-    return version
+    return table
 
 
 def client_download(version: str, fetch=get) -> dict:
@@ -99,8 +106,16 @@ def client_download(version: str, fetch=get) -> dict:
     return json.loads(fetch(entry["url"]))["downloads"]["client"]
 
 
-def run(engine: pathlib.Path, out: pathlib.Path, fetch=get) -> int:
-    version = pinned_version(engine)
+def default_out(version: str) -> pathlib.Path:
+    """Where the jar lands by default — the last rung of every `delvec` arm's jar
+    ladder (`--textures`, `$DELVEWRIGHT_CLIENT_JAR`, then this file)."""
+    return pathlib.Path("~/.delvewright/client").expanduser() / f"minecraft-{version}.jar"
+
+
+def run(engine: pathlib.Path, out: pathlib.Path | None, fetch=get) -> int:
+    pin = pinned(engine)
+    version = pin["version"]
+    out = out if out is not None else default_out(version)
     download = client_download(version, fetch)
     raw = fetch(download["url"])
     got = hashlib.sha1(raw).hexdigest()
@@ -111,6 +126,16 @@ def run(engine: pathlib.Path, out: pathlib.Path, fetch=get) -> int:
             f"{download['sha1']}. **Refused** — nothing is written and nothing is "
             f"downloaded again. Every texture in every picture below would come "
             f"from bytes nobody can name.",
+        )
+    want = pin.get("client_jar_sha256")
+    got256 = hashlib.sha256(raw).hexdigest()
+    if want and got256 != want:
+        raise Refusal(
+            EXIT_DIGEST,
+            f"the client jar for {version} hashes sha256 {got256} and the engine "
+            f"pins {want} (`[minecraft].client_jar_sha256`). **Refused** — nothing "
+            f"is written: Mojang's own sha1 matched, so these are bytes Mojang "
+            f"publishes now and not the bytes this engine draws its frames with.",
         )
     out.parent.mkdir(parents=True, exist_ok=True)  # or 31 MB dies on the last line
     out.write_bytes(raw)
@@ -131,15 +156,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--out",
         type=pathlib.Path,
-        default=pathlib.Path("~/.chunky/resources/minecraft.jar"),
+        default=None,
         help=(
-            "where the jar lands (default: ~/.chunky/resources/minecraft.jar — "
-            "the last of the three paths every texture-reading tool tries)"
+            "where the jar lands (default: ~/.delvewright/client/minecraft-<version>.jar "
+            "— the last of the three paths every texture-reading tool tries)"
         ),
     )
     args = ap.parse_args(argv)
     try:
-        return run(args.engine.expanduser(), args.out.expanduser())
+        return run(
+            args.engine.expanduser(),
+            None if args.out is None else args.out.expanduser(),
+        )
     except Refusal as refusal:
         print(f"fetch-client-jar: {refusal}", file=sys.stderr)
         return refusal.code

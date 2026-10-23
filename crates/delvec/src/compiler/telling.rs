@@ -1,8 +1,10 @@
 //! What the text tells the player: a question gets an answer (`DW0981`), a
 //! name reaches a line only after the player has been told it (`DW0982`), a
 //! name tag marks a person, never one of a crowd (`DW0983`), an objective's
-//! title says the act that completes it (`DW1045`, spec-0114), and a hidden
-//! way's secret is kept until the shot that shows it (`DW1060`, spec-0118).
+//! title says the act that completes it (`DW1045`, spec-0114), a hint that
+//! names an act names that one (a `DW1045` warning, spec-0104 §5), and a
+//! hidden way's secret is kept until the shot that shows it (`DW1060`,
+//! spec-0118).
 //!
 //! Both are `docs/reference/game-writing.md` rules made mechanical: §2 S1/S5 (the
 //! critical path is plain) for the first, §3 N1/N3 (introduce a name before you
@@ -75,8 +77,9 @@ delvewright_dsl::dw_code! {
 }
 
 delvewright_dsl::dw_code! {
-    /// `DW0982`: a declared name reaches an NPC's line or an option before the
-    /// play order has told the player what it is.
+    /// `DW0982`: a declared name reaches an NPC's line, an option, or an
+    /// announced objective's title or hint (spec-0104 §7) before the play order
+    /// has told the player what it is.
     pub const DW_NAME_UNTOLD: DwCode = DwCode::new("DW0982", ExitTier::Build);
 }
 
@@ -615,6 +618,11 @@ pub struct NameBinding {
     pub dialogue_read: usize,
     /// Dialogue strings the documents declare.
     pub dialogue_declared: usize,
+    /// Objective titles and hints of announced objectives the walks put on
+    /// screen, counted once each (spec-0104 §7).
+    pub objective_read: usize,
+    /// Objective titles and hints of announced objectives the documents declare.
+    pub objective_declared: usize,
     /// Uses of a declared name in those strings, counted per string and name.
     pub uses: usize,
     /// Uses refused: the name was not told before it on some walk.
@@ -626,11 +634,14 @@ impl NameBinding {
     pub fn line(&self) -> String {
         format!(
             "name-told binding (DW0982): {} declared name(s); {} walk(s); {} of {} dialogue \
-             string(s) on screen on some walk; {} use(s) of a name in them, {} untold",
+             string(s) and {} of {} objective string(s) on screen on some walk; {} use(s) of a \
+             name in them, {} untold",
             self.names,
             self.walks,
             self.dialogue_read,
             self.dialogue_declared,
+            self.objective_read,
+            self.objective_declared,
             self.uses,
             self.untold
         )
@@ -681,8 +692,34 @@ pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
     let Sites { dlg, npc_local, .. } = &placed.sites;
 
     bind.walks = placed.walks.len();
+    // spec-0104 §7: an announced objective's title and hint are uses too —
+    // what the party reads as its instruction names only what it has been
+    // told. Keyed like the dialogue map: the key → (quest id, objective id,
+    // pointer). An unannounced objective's strings never reach a screen.
+    let guidance = &c.quests.content.guidance;
+    let mut obj_strings: BTreeMap<String, (String, String)> = BTreeMap::new();
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        let ql = local_id(q.id.as_str());
+        for (oi, o) in q.objectives.iter().enumerate() {
+            if !o.announced(guidance) {
+                continue;
+            }
+            let ol = local_id(o.id().as_str());
+            for f in ["title", "hint"] {
+                obj_strings.insert(
+                    format!("obj.{ql}.{ol}.{f}"),
+                    (
+                        o.id().as_str().to_string(),
+                        format!("/content/quests/{qi}/objectives/{oi}/{f}"),
+                    ),
+                );
+            }
+        }
+    }
     bind.dialogue_declared = dlg.keys().filter(|k| inv.contains_key(*k)).count();
+    bind.objective_declared = obj_strings.keys().filter(|k| inv.contains_key(*k)).count();
     let mut read_dialogue: BTreeSet<String> = BTreeSet::new();
+    let mut read_objective: BTreeSet<String> = BTreeSet::new();
     let mut all_uses: BTreeSet<(String, usize)> = BTreeSet::new();
     let mut worst: BTreeMap<(String, usize), Untold> = BTreeMap::new();
     for walk in &placed.walks {
@@ -726,13 +763,21 @@ pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
                 }
             }
         }
-        // Every use in a dialogue line or option, against when it was told.
+        // Every use in a dialogue line or option, or in an announced
+        // objective's title or hint, against when it was told.
         for (key, &at) in &first {
-            if !dlg.contains_key(*key) {
+            if dlg.contains_key(*key) {
+                if inv.contains_key(*key) {
+                    read_dialogue.insert(key.to_string());
+                }
+            } else if obj_strings.contains_key(*key) {
+                if inv.contains_key(*key) {
+                    read_objective.insert(key.to_string());
+                }
+            } else {
                 continue;
             }
             let Some(text) = inv.get(*key) else { continue };
-            read_dialogue.insert(key.to_string());
             for (i, s, e) in mentions(text, &names) {
                 if !is_use(text, &names[i].core, names[i].text != names[i].core, s, e)
                     || introduces(text, s, e)
@@ -767,19 +812,36 @@ pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
     }
 
     bind.dialogue_read = read_dialogue.len();
+    bind.objective_read = read_objective.len();
     bind.uses = all_uses.len();
     bind.untold = worst.len();
     let mut d = Vec::new();
     for ((key, i), u) in worst {
         let n = &names[i];
-        let Some((npc, node, opt, pointer)) = dlg.get(&key) else {
+        let (whose, stage, pointer) = if let Some((npc, node, opt, pointer)) = dlg.get(&key) {
+            (
+                match opt {
+                    None => format!("`{npc}`'s line in `{node}`"),
+                    Some(o) => format!("option {o} of `{node}` (the player's own words)"),
+                },
+                "dialogue",
+                pointer,
+            )
+        } else if let Some((oid, pointer)) = obj_strings.get(&key) {
+            let field = if key.ends_with(".hint") {
+                "hint"
+            } else {
+                "title"
+            };
+            (
+                format!("the {field} of objective `{oid}` (the party's instruction)"),
+                "quests",
+                pointer,
+            )
+        } else {
             continue;
         };
         let text = inv.get(&key).cloned().unwrap_or_default();
-        let whose = match opt {
-            None => format!("`{npc}`'s line in `{node}`"),
-            Some(o) => format!("option {o} of `{node}` (the player's own words)"),
-        };
         let when = if u.at == 0 {
             "before the first step".to_string()
         } else {
@@ -811,7 +873,7 @@ pub fn check_names_told_bound(c: &Campaign) -> (Vec<Diagnostic>, NameBinding) {
         };
         d.push(Diagnostic::error(
             DW_NAME_UNTOLD,
-            "dialogue",
+            stage,
             pointer.clone(),
             format!(
                 "{whose} uses `{}` (declared by `{}`) {when}, and the player has not been told \
@@ -1778,6 +1840,20 @@ impl Lexicon {
         })
     }
 
+    /// The head of every clause of a line (spec-0104 §5, the hint arm): the
+    /// line as drawn (`dsl::l10n::plain`) is cut at every `.` `,` `;` `:` `!`
+    /// `?` and dash, and each clause is read by [`Lexicon::head`] — the rule a
+    /// title is read by, so *Past the bell, left of the arch: pull the lever*
+    /// names `pull` and *At the far end of the nave* names nothing. A clause
+    /// whose head the lexicon does not know contributes nothing.
+    pub fn clause_heads(&self, line: &str) -> Vec<(String, &BTreeSet<Act>)> {
+        let drawn = delvewright_dsl::l10n::plain(line);
+        drawn
+            .split(['.', ',', ';', ':', '!', '?', '\u{2014}', '\u{2013}'])
+            .filter_map(|clause| self.head(clause))
+            .collect()
+    }
+
     /// Up to `n` example heads for an act set: each act's own name first (every
     /// act's name is one of its heads), then its one-word heads in order,
     /// taken round-robin across the acts.
@@ -1991,6 +2067,100 @@ pub fn check_acts_with(c: &Campaign, lex: &Lexicon) -> (Vec<Diagnostic>, ActBind
                     o.id(),
                     acts_line(said),
                     acts_line(&done),
+                ),
+            ));
+        }
+    }
+    (d, bind)
+}
+
+/// What the hint arm of `DW1045` read, zeroes included.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HintActBinding {
+    /// Objectives in the campaign.
+    pub objectives: usize,
+    /// Objectives carrying a non-blank English hint.
+    pub hinted: usize,
+    /// Of those, hints naming at least one act the lexicon knows — the judged ones.
+    pub naming: usize,
+    /// Judged hints naming only acts the completion does not perform.
+    pub warned: usize,
+}
+
+impl HintActBinding {
+    /// The binding line `delvec validate` prints.
+    pub fn line(&self) -> String {
+        format!(
+            "hint act binding (DW1045): {} of {} English hint(s) name an act, over {} \
+             objective(s); {} warned",
+            self.naming, self.hinted, self.objectives, self.warned
+        )
+    }
+}
+
+/// **A hint that names an act names this objective's** (spec-0104 §5): the
+/// hint arm of `DW1045`, a **warning**. A hint may be a place with no act at
+/// all, and passes; one whose every clause head, read in its English by the
+/// one act lexicon ([`Lexicon::clause_heads`]), states an act the completion
+/// does not perform is reported for the creator to adjudicate. A hint is free
+/// prose, where a closed lexicon cannot tell a noun from a verb or reported
+/// speech from an instruction, so this arm never refuses; a title's head is
+/// read by [`check_acts`], which does.
+pub fn check_hint_acts(c: &Campaign) -> (Vec<Diagnostic>, HintActBinding) {
+    check_hint_acts_with(c, Lexicon::english())
+}
+
+/// [`check_hint_acts`] against a given lexicon.
+pub fn check_hint_acts_with(c: &Campaign, lex: &Lexicon) -> (Vec<Diagnostic>, HintActBinding) {
+    let mut bind = HintActBinding::default();
+    let mut d = Vec::new();
+    for (qi, q) in c.quests.content.quests.iter().enumerate() {
+        for (oi, o) in q.objectives.iter().enumerate() {
+            bind.objectives += 1;
+            let Some(hint) = o
+                .hint()
+                .map(|t| delvewright_dsl::l10n::plain(t).into_owned())
+                .filter(|t| !t.trim().is_empty())
+            else {
+                continue;
+            };
+            bind.hinted += 1;
+            let found = lex.clause_heads(&hint);
+            if found.is_empty() {
+                continue;
+            }
+            bind.naming += 1;
+            let done = q.objective_acts(o);
+            if found
+                .iter()
+                .any(|(_, said)| said.intersection(&done).next().is_some())
+            {
+                continue;
+            }
+            bind.warned += 1;
+            let (phrase, said) = &found[0];
+            let words = lex.examples(&done, 3);
+            d.push(Diagnostic::warning(
+                DW_ACT_UNTRUE,
+                "quests",
+                format!("/content/quests/{qi}/objectives/{oi}/hint"),
+                format!(
+                    "the hint of objective `{}` (\"{hint}\") reads as another act: `{phrase}` → \
+                     {}, and its completion `{}` → {}, and the hint names none of those. \
+                     Decide whether it sends the party to do something the game does not \
+                     reward: if the word is a noun or reported speech, keep it; if not, name \
+                     the act the completion performs ({}), or write the hint as a place \
+                     (`Past the bell, left of the arch.`). The lexicon reads words, not \
+                     meaning, so a hint is a question for you, never a refusal.",
+                    o.id(),
+                    acts_line(said),
+                    q.objective_shape(o),
+                    acts_line(&done),
+                    words
+                        .iter()
+                        .map(|w| format!("`{w}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
             ));
         }

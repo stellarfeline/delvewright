@@ -1068,9 +1068,9 @@
     ],
     "views": [
       {
+        "frame": "delvec frames --campaign <campaign> --camera 24,84,44,168.7,27.6",
         "id": "view/the-approach",
-        "note": "The silhouette as a body walking in from the south first meets it.",
-        "snapshot": "delvec snapshot <campaign> --camera 24,84,44,168.7,27.6"
+        "note": "The silhouette as a body walking in from the south first meets it."
       }
     ],
     "voids": [
@@ -3595,9 +3595,9 @@
     ],
     "views": [
       {
+        "frame": "delvec frames --campaign <campaign> --camera 24,84,44,168.7,27.6",
         "id": "view/the-approach",
-        "note": "The silhouette as a body walking in from the south first meets it.",
-        "snapshot": "delvec snapshot <campaign> --camera 24,84,44,168.7,27.6"
+        "note": "The silhouette as a body walking in from the south first meets it."
       }
     ],
     "voids": [
@@ -4671,9 +4671,9 @@
     ],
     "views": [
       {
+        "frame": "delvec frames --campaign <campaign> --camera 24,84,44,168.7,27.6",
         "id": "view/the-approach",
-        "note": "The silhouette as a body walking in from the south first meets it.",
-        "snapshot": "delvec snapshot <campaign> --camera 24,84,44,168.7,27.6"
+        "note": "The silhouette as a body walking in from the south first meets it."
       }
     ],
     "voids": [

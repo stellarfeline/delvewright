@@ -1,0 +1,17 @@
+{
+  "code": "DW1031",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "add",
+      "path": "/content/horizon/attributes/audio~1background_music/creative",
+      "value": {
+        "max_delay": 24000,
+        "min_delay": 12000,
+        "sound": "minecraft:music.creative"
+      }
+    }
+  ],
+  "units": [],
+  "why": "One edit: the ground's silence gains a `creative` track. The pinned client plays it only to a player in creative mode, and no delve body is ever in creative mode — adventure and spectator never select it — so it is a declaration nothing can hear. `DW1031` refuses it. It declares no unit: the `creative` field is vanilla's record shape, not DSL surface."
+}

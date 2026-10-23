@@ -104,7 +104,7 @@ fn build_two_trigger(entity: &str) -> BuildOutput {
               ] }
         ]);
         d["content"]["actors"] = serde_json::json!([
-            { "id": "actor/giant", "entity": entity, "name": "The Sleeper",
+            { "id": "actor/giant", "entity": entity, "answers": { "struck": "It does not stir.", "touched": "Cold, and still." }, "name": "The Sleeper",
               "anchor": "spawn", "facing": "east" }
         ]);
     });

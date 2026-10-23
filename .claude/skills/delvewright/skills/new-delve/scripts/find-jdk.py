@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Print the newest JDK 21+ already on this machine, or exit 1 having found none.
 
-`--major N` asks for a JDK of exactly that major instead: the pinned Chunky core
-is built at step 12 under the JDK its own build declares
-(`versions.toml [render] chunky_build_java`), and a newer one cannot run that
-build.
+`--major N` asks for a JDK of exactly that major instead, for a tool whose build
+declares one.
 
 WHY THIS IS A SCRIPT
 

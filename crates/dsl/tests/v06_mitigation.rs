@@ -24,6 +24,7 @@ fn world_doc(mitigation: bool) -> String {
     "seed": 20260729,
     "target_minutes": 5,
     "time": "noon",
+    "horizon": {{ "base": "void", "attributes": {{ "audio/background_music": {{}} }} }},
     "weather": "clear",
     "areas": [
       {{
