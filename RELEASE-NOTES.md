@@ -1,0 +1,7 @@
+# Release notes
+
+The notes of the release being prepared: what the next release of `delvec`, `delvewright-dsl` or the `delvewright` plugin changes for the people who use it. One entry per line the release names, headed by the release's title (`## delvec 1.15.0`); the release workflow publishes the entry as that Release's notes, below the opening it reads from the tree, with a link to everything merged since the previous release of the same line. Every change ever merged is in that link; an entry holds the ones worth telling.
+
+The pull request that prepares a release replaces this file wholesale with that release's entries, written from the changes merged since the previous release of each line. The published GitHub Release keeps each version's text; nothing accumulates here, and a release whose version has no entry here is refused.
+
+An entry is a summary, and `tools/ci/check-release-notes.py` holds it to that: a short `### Highlights` section, then the changes as bullets under at least one `### <group>` — the Keep a Changelog kinds (`Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`) or the areas of the engine they touch — within the ceilings `tools/lib/release_notes.py` states, every line written for the reader: a line that is a merged change's own title is refused, and so is an entry for a version the tree has moved past. A closing paragraph may say what the entry leaves out.
