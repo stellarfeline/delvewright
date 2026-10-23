@@ -1,0 +1,13 @@
+{
+  "code": "DW1052",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/2/objectives/3/answers/done",
+      "value": "The door stands open."
+    }
+  ],
+  "units": [],
+  "why": "A `done` line added to the bay door, which is released: once it opens its box goes and the door is pressed as a door, so no press ever reaches a done line. DW1052 refuses the dead line naming the state. It declares no unit: `Answers.done` is bound where the press keeps a box after it settles."
+}

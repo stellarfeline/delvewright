@@ -9,7 +9,7 @@
     {
       "doc": "quests.json",
       "op": "remove",
-      "path": "/content/quests/0/objectives/1/missing_item_hint"
+      "path": "/content/quests/0/objectives/1/answers/missing_item"
     },
     {
       "doc": "quests.json",
@@ -20,14 +20,14 @@
     {
       "doc": "l10n/zh-cn.json",
       "op": "remove",
-      "path": "/content/obj.near-hall.press-the-case.missing_item_hint"
+      "path": "/content/obj.near-hall.press-the-case.answers.missing_item"
     },
     {
       "doc": "l10n/zh-cn.json",
       "op": "remove",
-      "path": "/source/obj.near-hall.press-the-case.missing_item_hint"
+      "path": "/source/obj.near-hall.press-the-case.answers.missing_item"
     }
   ],
   "units": [],
-  "why": "The case's button, an interact, asked to take the item it is shown while showing it nothing: its `requires_item` is gone (with the empty-hand line that answered it, and that line's Chinese row), and `takes_item: true` is set. A take is one of the presented item, and nothing is presented, so the declaration could never take anything; DW1046 refuses it where it is written and names both ways out, state the `requires_item` the player lays down or drop `takes_item`. It declares no unit: `takes_item` is bound in the gallery proper by the emerald laid on the Factor's tray, and what must not compile is a take with nothing to take."
+  "why": "The case's button, an interact, asked to take the item it is shown while showing it nothing: its `requires_item` is gone (with the `missing_item` line that answered an empty hand, and that line's Chinese row), and `takes_item: true` is set. A take is one of the presented item, and nothing is presented, so the declaration could never take anything; DW1046 refuses it where it is written and names both ways out, state the `requires_item` the player lays down or drop `takes_item`. It declares no unit: `takes_item` is bound in the gallery proper by the emerald laid on the Factor's tray, and what must not compile is a take with nothing to take."
 }

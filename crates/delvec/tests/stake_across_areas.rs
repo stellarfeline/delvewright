@@ -79,7 +79,7 @@ fn campaign(tag: &str, stake: bool) -> PathBuf {
                 "id": "stake/tokens", "state": "state/tokens", "collect_by": "anyone",
                 "collected_message": "You take back what the landing took.",
                 "forfeit": { "kind": "proportion", "percent": 50 },
-                "marker_item": "minecraft:lantern", "max_live": 2, "on_full": "keep"
+                "max_live": 2, "on_full": "keep"
             }]);
         }
         q["content"] = content;

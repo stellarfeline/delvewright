@@ -1,0 +1,13 @@
+{
+  "code": "DW1052",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/objectives/4/release",
+      "value": true
+    }
+  ],
+  "units": [],
+  "why": "`release: true` added to the Factor's bell interact. A bell is pressed on its own: the game reports its press with no click box over it, so there is no box to release and the field would do nothing. DW1052 refuses it naming the field. It declares no unit: `Objective.release` is bound by the bay door, a boxed door released when it opens."
+}

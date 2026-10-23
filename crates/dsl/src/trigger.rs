@@ -1244,6 +1244,15 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
         });
     }
     for (si, sc) in quests.shortcuts.iter().enumerate() {
+        // The sealed door's far-side line is the shortcut's `not_yet`, said by
+        // the door's own leaf: owed where the gate answers for itself (a
+        // `serves: {gate}` `use` trigger with no block of its own), inert where a
+        // knocker answers instead and no leaf is boxed to say it.
+        let door_answers = quests.triggers.iter().any(|t| {
+            matches!(&t.serves, Some(Serves::Gate(g)) if g == &sc.gate)
+                && t.prop.is_none()
+                && matches!(t.on, TriggerOn::Use)
+        });
         out.push(PressSite {
             kind: PressKind::Shortcut,
             id: sc.id.as_str().to_string(),
@@ -1252,8 +1261,7 @@ pub fn press_sites(c: &Campaign) -> Vec<PressSite<'_>> {
             prop_owed: true,
             answers: sc.answers.as_ref(),
             release: sc.release,
-            // The sealed door's far-side line is the shortcut's `not_yet`.
-            shut: true,
+            shut: door_answers,
             settled: true,
             missing_item: false,
             only_open: false,

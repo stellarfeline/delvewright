@@ -982,7 +982,7 @@ fn a_stake_with_no_route_back_fails_to_compile() {
 
 /// A campaign whose one death forfeits TWO datums: two stakes, two `drop-stake`
 /// effects in one `on_death` bundle, and nothing else changed.
-fn two_stake_source(second_marker: &str) -> String {
+fn two_stake_source() -> String {
     let src = PURSE_AND_STAKE
         .replace(
             r#"      { "id": "state/embers", "scope": "player", "initial": 5, "name": "Embers",
@@ -997,10 +997,8 @@ fn two_stake_source(second_marker: &str) -> String {
         "collected_message": "You take back what the drop took." }"#,
             &format!(
                 r#"      {{ "id": "stake/embers", "state": "state/embers",
-        "marker_item": "minecraft:lantern",
         "collected_message": "You take back what the drop took." }},
       {{ "id": "stake/relics", "state": "state/relics",
-        "marker_item": "{second_marker}",
         "collected_message": "You take back the relics." }}"#
             ),
         )
@@ -1035,10 +1033,7 @@ fn two_stake_source(second_marker: &str) -> String {
 /// second summon reintroduced anywhere reds — the emitter is the population.
 #[test]
 fn one_death_two_datums_leave_one_interaction_box() {
-    let out = build(&parse_hw(&quests_doc(
-        &two_stake_source("minecraft:lantern"),
-        "",
-    )));
+    let out = build(&parse_hw(&quests_doc(&two_stake_source(), "")));
 
     let mut summons: Vec<String> = Vec::new();
     let mut examined = 0usize;
@@ -1110,37 +1105,19 @@ fn one_death_two_datums_leave_one_interaction_box() {
     );
 }
 
-/// `DW0880`: two stakes that can each leave a marker must agree what a place
-/// looks like.
-///
-/// A place holds one marker and one glowing display, so the display renders one
-/// item — and two declarations cannot both be it. Without the refusal, whichever
-/// stake happened to fill the place first would silently decide what every other
-/// stake's marker looks like, and the losing declaration would be read, emitted
-/// nowhere, and disagree with what the player sees.
-///
-/// Both directions, so the refusal cannot be passing for some other reason: the
-/// same campaign with the same item on both stakes builds.
+/// Two stakes that each leave a marker share one place, and the place wears the
+/// engine's one marker item: no stake declares a face of its own (spec-0117
+/// §3a), so two declarations can never disagree about what a place looks like.
 #[test]
-fn dw0880_refuses_two_faces_at_one_place() {
-    let code = failure_code(&parse_hw(&quests_doc(
-        &two_stake_source("minecraft:soul_lantern"),
-        "",
-    )));
-    assert_eq!(
-        code,
-        delvec::compiler::stake::DW_STAKE_TWO_FACES,
-        "a place wears one face"
-    );
-
-    let agreed = build(&parse_hw(&quests_doc(
-        &two_stake_source("minecraft:lantern"),
-        "",
-    )));
+fn two_stakes_at_one_place_wear_the_one_marker() {
+    let agreed = build(&parse_hw(&quests_doc(&two_stake_source(), "")));
     let place = fnc(&agreed, "stk_place");
     assert!(
-        place.contains("item:{id:\"minecraft:lantern\",count:1}"),
-        "…and with both stakes agreeing, the place wears the item they named:\n{place}"
+        place.contains(&format!(
+            "item:{{id:\"{}\",count:1}}",
+            delvewright_dsl::STAKE_MARKER_ITEM
+        )),
+        "the place wears the engine's one marker item:\n{place}"
     );
 
     // The binding the proof states: a campaign whose every stake is `max_live: 0`
@@ -1150,7 +1127,7 @@ fn dw0880_refuses_two_faces_at_one_place() {
     assert_eq!(
         ledger["marker_leaving_stakes"],
         serde_json::json!(2),
-        "the face proof examined both stakes: {ledger}"
+        "the place ledger counts both stakes: {ledger}"
     );
     let none = PURSE_AND_STAKE.replace(
         r#"      { "id": "stake/embers", "state": "state/embers","#,

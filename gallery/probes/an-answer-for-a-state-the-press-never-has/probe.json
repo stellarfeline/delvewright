@@ -1,0 +1,15 @@
+{
+  "code": "DW1052",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/triggers/13/answers",
+      "value": {
+        "done": "The first valve is already turned."
+      }
+    }
+  ],
+  "units": [],
+  "why": "A `done` line added to the first valve, a `use` trigger that is repeatable, ungated and serves nothing. Such a press is open on every press and never settles, so the line could never be said; DW1052 refuses the dead line naming the state. It declares no unit: `Answers.done` is bound where a press does settle."
+}

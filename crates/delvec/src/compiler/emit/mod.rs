@@ -70,6 +70,7 @@ mod packtest;
 pub use packtest::{PartyBinding, party_binding};
 mod piece;
 mod press;
+pub use press::gate_blocks;
 mod proofs;
 mod pulse;
 mod quest;

@@ -1445,7 +1445,9 @@ pub fn check(
                     }
                 }
                 own += 1;
-            } else if face_adjacent(cell, (from, to)) && !*shortcut {
+            } else if face_adjacent(cell, (from, to))
+                && (!*shortcut || on_sealed_side(plan, gate, cell))
+            {
                 knock += 1;
             } else {
                 return (
@@ -1454,19 +1456,19 @@ pub fn check(
                         SEALED_GATE_UNANSWERED,
                         format!(
                             "trigger `{}` serves the gate `{gate}` from {cell:?}, which is {}: a \
-                             gate's answer is its own block inside the region{}. Prescription: \
-                             anchor it at the door's own cell",
+                             gate's answer is its own block inside the region, or a knocker \
+                             face-adjacent to it{}. Prescription: anchor it at the door's own \
+                             cell, or beside the door on the side that owes the line",
                             t.id,
-                            if *shortcut {
-                                "outside the shortcut's door"
+                            if *shortcut && face_adjacent(cell, (from, to)) {
+                                "beside the shortcut's door on its far side"
                             } else {
                                 "neither inside the region nor face-adjacent to it"
                             },
                             if *shortcut {
-                                " — a shortcut's door is pressed from both sides, so its own leaf \
-                                 is what answers"
+                                " on the sealed side, where the party meets the barred door"
                             } else {
-                                ", or a knocker face-adjacent to it"
+                                ""
                             }
                         ),
                     ),
@@ -1547,6 +1549,23 @@ pub fn check(
         }
     }
     (b, Ok(()))
+}
+
+/// Whether `cell` lies on shortcut gate `gate`'s sealed side
+/// ([`crate::compiler::wrongside`]): beyond the door's slab on the side the
+/// unlock is not.
+fn on_sealed_side(plan: &Plan, gate: &str, cell: [i32; 3]) -> bool {
+    plan.shortcuts
+        .iter()
+        .find(|s| s.gate_anchor == gate)
+        .and_then(|s| s.sealed_side.as_ref())
+        .is_some_and(|sd| {
+            if sd.dir < 0 {
+                cell[sd.axis] < sd.gate_lo[sd.axis]
+            } else {
+                cell[sd.axis] > sd.gate_hi[sd.axis]
+            }
+        })
 }
 
 /// [`check`]'s `DW0429` code, re-exported where its callers look.

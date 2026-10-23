@@ -508,7 +508,7 @@ pub(super) fn gate_has_answer_box(plan: &Plan, anchor: &str) -> bool {
 /// The cells a gate's own answer boxes stand over, with the gate's block —
 /// what `DW1013` judges those boxes against (the block is the gate's, laid by
 /// the prefab or the `close-gate`, not by `setup_finish`).
-pub(super) fn gate_blocks(plan: &Plan) -> BTreeMap<[i32; 3], String> {
+pub fn gate_blocks(plan: &Plan) -> BTreeMap<[i32; 3], String> {
     plan.presses()
         .iter()
         .filter(|p| matches!(p.owner, Owner::GateAnswer { .. }))

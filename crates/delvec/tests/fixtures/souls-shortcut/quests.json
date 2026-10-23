@@ -71,35 +71,19 @@
             "type": "narrate"
           }
         ],
-        "unlock": "anchor/exit"
+        "unlock": "anchor/exit",
+        "prop": {
+          "block": "minecraft:stone_button[face=floor,facing=north]"
+        },
+        "answers": {
+          "not_yet": "Barred. The bar is on this side.",
+          "done": "The bar is thrown."
+        }
       }
     ],
     "triggers": [
       {
-        "at": "anchor/door",
-        "effects": [
-          {
-            "style": "chat",
-            "text": "You set your shoulder to the bars. They do not give, and nothing on this side of them will.",
-            "type": "narrate"
-          },
-          {
-            "at": {
-              "anchor": "anchor/door",
-              "at": "anchor"
-            },
-            "sound": "minecraft:block.chain.hit",
-            "type": "play-sound"
-          }
-        ],
-        "id": "trigger/bars-wont-give",
-        "on": {
-          "on": "strike"
-        },
-        "once": false
-      },
-      {
-        "at": "anchor/door",
+        "at": "anchor/door-leaf",
         "audience": "presser",
         "effects": [
           {
@@ -112,7 +96,10 @@
         "on": {
           "on": "use"
         },
-        "once": false
+        "once": false,
+        "serves": {
+          "gate": "anchor/door"
+        }
       }
     ]
   },

@@ -70,11 +70,12 @@ delvewright_dsl::dw_code! {
     /// `close-gate` target and every shortcut `gate` owes an answer trigger — a
     /// `use` trigger with `serves: {gate: <that anchor>}` anchored either at a
     /// cell **inside** the region that holds a block while sealed (the gate's own
-    /// answer: its body is that block under a click box) or, for a `close-gate`
-    /// target, at a cell **face-adjacent** to the region with its own `prop` (a
-    /// knocker). A shortcut's door is answered by its own leaf, pressed from the
-    /// sealed side as the presser (the far side hears the shortcut's
-    /// `answers.not_yet` from the same leaf). The compiler never writes the
-    /// words: a push on a sealed door is otherwise silent.
+    /// answer: its body is that block under a click box) or at a cell
+    /// **face-adjacent** to the region with its own `prop` (a knocker) — for a
+    /// shortcut's gate, on its sealed side. A shortcut's own leaf is pressed from
+    /// both sides: its answer speaks to a presser on the sealed side, and the far
+    /// side hears the shortcut's `answers.not_yet` from the same leaf. The
+    /// compiler never writes the words: a push on a sealed door is otherwise
+    /// silent.
     pub const SEALED_GATE_UNANSWERED: DwCode = DwCode::new("DW0429", ExitTier::Build);
 }

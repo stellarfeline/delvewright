@@ -15,6 +15,22 @@
         ]
       }
     },
+    "anchor/door-knock": {
+      "note": "the cell beside the door on the keeper's side: where a knocker stands (spec-0117)",
+      "pos": [
+        5,
+        1,
+        5
+      ]
+    },
+    "anchor/door-leaf": {
+      "note": "a cell of the door's own bars: where a gate's own answer is anchored (spec-0117)",
+      "pos": [
+        4,
+        1,
+        6
+      ]
+    },
     "anchor/exit": {
       "pos": [
         5,

@@ -524,7 +524,7 @@ fn dw1030_refuses_an_ending_read_against_a_datum_a_stake_forfeits() {
     let c = tally(Vec::new());
     let mut quests: Value = serde_json::to_value(&c.quests).unwrap();
     quests["content"]["stakes"] = json!([{
-        "id": "stake/tally", "state": "state/tally", "marker_item": "minecraft:lantern",
+        "id": "stake/tally", "state": "state/tally",
         "collect_by": "anyone", "collected_message": "You take it back.",
         "forfeit": {"kind": "proportion", "percent": 50}
     }]);

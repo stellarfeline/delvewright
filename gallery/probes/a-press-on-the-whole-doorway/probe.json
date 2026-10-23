@@ -1,0 +1,13 @@
+{
+  "code": "DW1059",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/triggers/15/at",
+      "value": "anchor/gate-main"
+    }
+  ],
+  "units": [],
+  "why": "The main gate's own answer anchored at the gate's region anchor instead of a cell of its bars. A region is the whole doorway, not a block a hand can be on; the answer's body is one cell of the gate's own block. DW1059 refuses the region anchor naming the arm and the remedy (anchor it at a cell of the door). It declares no unit: `EnvTrigger.serves` with a gate is bound by the gallery's two sealed doors."
+}
