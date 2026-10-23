@@ -1099,15 +1099,32 @@ fn judge_runtime(
                 continue;
             }
             r.pairs += 1;
-            // **The writes that end this block's standing**: each writes this
-            // cell over it, so what it leaves beside is never beside this
-            // block — one command that clears a door takes both its halves.
-            // A write that lays this block again is judged as its own origin.
+            // **The writes that take a two-high block whole**: one command
+            // that writes an upper half's cell over it and its lower half's
+            // cell too (an `open-gate`'s clear of a door) removes the block,
+            // and what it leaves below is never under this half. Whichever
+            // cell it reaches first, the upper half goes without an item: the
+            // pinned jar's loot tables give an upper half's item only through
+            // its lower half, or only while its lower half stands under it, for
+            // every block with a `half` of `lower`/`upper`
+            // (`docs/reference/compiler.md`, `region_fill`). Only that block:
+            // a torch whose floor one `fill` clears with it is shape-updated as
+            // its floor goes, and drops.
+            let below = step(cell, Face::Down);
+            let upper_half = crate::compiler::region_fill::two_high(name)
+                && delvewright_dsl::blockshape::state_value(name, "half") == Some("upper");
             let ends: BTreeSet<usize> = may
                 .get(&cell)
                 .into_iter()
                 .flatten()
-                .filter(|(_, k, filter)| Some(*k) != origin && filter.lays_over(name))
+                .filter(|(_, k, filter)| {
+                    upper_half
+                        && Some(*k) != origin
+                        && filter.lays_over(name)
+                        && may
+                            .get(&below)
+                            .is_some_and(|e| e.iter().any(|(_, o, _)| o == k))
+                })
                 .map(|(_, k, _)| *k)
                 .collect();
             let mut why: Option<String> = None;
@@ -1530,6 +1547,65 @@ mod tests {
             ],
         ));
         assert!(w.runtime.refusal().is_some(), "{}", w.runtime.line());
+    }
+
+    /// A door gate the story opens and shuts: its clear takes both halves in
+    /// one command, so the upper half never stands over the air it leaves
+    /// below; the close lays the lower half before the upper. A torch whose
+    /// floor one `fill` clears with it is still dropped: the torch is
+    /// shape-updated as its floor goes, and leaves its item.
+    #[test]
+    fn a_door_gate_cleared_whole_is_held_and_a_torch_cleared_with_its_floor_is_not() {
+        let lower =
+            "minecraft:iron_door[facing=south,half=lower,hinge=left,open=false,powered=false]";
+        let upper =
+            "minecraft:iron_door[facing=south,half=upper,hinge=left,open=false,powered=false]";
+        let f = load(
+            &[
+                "fill 0 63 0 1 63 0 minecraft:stone",
+                &format!("fill 0 64 0 1 64 0 {lower}"),
+                &format!("fill 0 65 0 1 65 0 {upper}"),
+            ],
+            &[
+                (
+                    "open",
+                    &["fill 0 64 0 1 65 0 minecraft:air replace minecraft:iron_door"],
+                ),
+                (
+                    "close",
+                    &[
+                        &format!("fill 0 64 0 1 64 0 {lower}"),
+                        &format!("fill 0 65 0 1 65 0 {upper}"),
+                    ],
+                ),
+            ],
+        );
+        let w = writes(&f);
+        assert!(w.runtime.refusal().is_none(), "{}", w.runtime.line());
+        // The same clear over the lower course alone leaves the upper half
+        // over air: refused.
+        let f = load(
+            &[
+                "fill 0 63 0 1 63 0 minecraft:stone",
+                &format!("fill 0 64 0 1 64 0 {lower}"),
+                &format!("fill 0 65 0 1 65 0 {upper}"),
+            ],
+            &[(
+                "open",
+                &["fill 0 64 0 1 64 0 minecraft:air replace minecraft:iron_door"],
+            )],
+        );
+        assert!(writes(&f).runtime.refusal().is_some());
+        // A torch on a stone one `fill` clears with it.
+        let f = load(
+            &[
+                "setblock 3 64 3 minecraft:stone",
+                "setblock 3 65 3 minecraft:torch",
+            ],
+            &[("clear", &["fill 3 64 3 3 65 3 minecraft:air"])],
+        );
+        let why = writes(&f).runtime.refusal().expect("refused");
+        assert!(why.contains("minecraft:torch"), "{why}");
     }
 
     /// A gate the story opens and shuts: a block hung on the gate's own cell

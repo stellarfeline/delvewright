@@ -345,5 +345,12 @@ fn one_state_across_a_door_gate_is_refused_and_the_halves_are_held() {
         upper,
         "one state across the doorway drops the lower half standing in each upper cell"
     );
-    assert!(planted.refusal().is_some_and(|r| r.contains("DW1002")));
+    // The judge whose refusal the build raises as `DW1002`.
+    assert!(
+        planted
+            .refusal()
+            .is_some_and(|r| r.contains("minecraft:iron_door")),
+        "{}",
+        planted.line()
+    );
 }
