@@ -1,0 +1,22 @@
+# A door a body opens by hand
+
+What the pinned game does when a player in adventure mode uses a door, a trapdoor or a fence gate with an empty hand. Reader: the engine work that decides which blocks the nav model walks through and which a `barred` edge may be made of (spec-0123 §3.1). Established once against the pinned jar and treated as constant (CLAUDE.md, *A check guards only what our toolchain owns*); the read site is stated so the reading can be repeated when the pin moves.
+
+## The read site
+
+- The server jar `versions.toml [minecraft].server_jar_url`, sha256 `f83b8e093865806f931c7e34aae41b177d4c076335263dd124c75d6d65dd1726` (the pin), its inner `META-INF/versions/1.21.11/server-1.21.11.jar`.
+- The ProGuard mappings piston-meta publishes for the version, `downloads.server_mappings`, sha1 `5621e9253f05fd57872bbe7f8ddf5f9a7d525955`, which give every class and member below its Mojang name; no obfuscated name is written here.
+- `javap -p -c` from a JDK 21, over the classes `BlockSetType`, `DoorBlock`, `TrapDoorBlock`, `FenceGateBlock`, `ServerPlayerGameMode`, `ServerGamePacketListenerImpl`, `ServerPlayer`, `Player`, `GameType` and `InteractionResult`. The method the maintenance tool `tools/maintenance/extract-peaceful-despawn.py` reads the same jar by.
+
+## What the bytecode says
+
+1. **`BlockSetType` carries `canOpenByHand`** as the second constructor argument, stored in its own field and returned by `canOpenByHand()`. In the static initialiser: `iron` is constructed with `canOpenByHand = false` (and `gold`, which no door uses); `copper`, `stone`, `polished_blackstone` and every wood type (`oak`, `cherry`, `crimson`, `warped`, `bamboo` and the rest, through the one-argument constructor whose three flags default to `true`) with `true`.
+2. **`DoorBlock.useWithoutItem`** returns `InteractionResult.PASS` when `type.canOpenByHand()` is false, and otherwise cycles the `OPEN` property, sets the block with flags `10`, plays the open or close sound and emits the game event, returning `SUCCESS`. **`TrapDoorBlock.useWithoutItem`** has the same first branch: `PASS` unless `canOpenByHand()`, then the toggle. **`FenceGateBlock.useWithoutItem`** consults no `BlockSetType`: it toggles `OPEN` in every case (turning the gate to face the player when opening) and returns `SUCCESS`.
+3. **`ServerPlayerGameMode.useItemOn`** (the server's handling of a use-on-block packet, called from `ServerGamePacketListenerImpl`'s handler after the position and reach checks) reads the game mode **once**: `SPECTATOR` opens a menu provider and returns. Every other mode — adventure included — calls `BlockState.useItemOn` with the held stack, and when that answers *try the empty hand*, `BlockState.useWithoutItem`, which is where the door, the trapdoor and the gate toggle. The field `GameType.ADVENTURE` is read nowhere in `ServerPlayerGameMode`, the packet handler, `ServerPlayer`, the three block classes or `GameType` itself except through `GameType.isBlockPlacingRestricted()` (true for `ADVENTURE` and `SPECTATOR`), whose one caller among them is `Player.blockActionRestricted` — the breaking and placing rule, not the use path.
+
+## What follows, for this engine
+
+- **An adventure-mode body opens by hand**: every wooden door and wooden trapdoor, the copper door and copper trapdoor, and every fence gate. It does **not** open an iron door or an iron trapdoor by hand; those move only by redstone.
+- So in the nav model a door, trapdoor or gate block whose set type `canOpenByHand` is true is a cell a body passes — it opens the block and walks through, in either state the block stands in — and one whose set type is `iron` is a barrier in its closed state and a passage in its open state, exactly as a bar is.
+- A `barred` edge's `bar.block` must therefore be a block a hand does not open: iron bars, an iron door, an iron trapdoor, a wall of any solid; a wooden door standing as a bar is a gate the player opens before the story does.
+- The set type of a door, trapdoor or gate block is read from the pinned block-state registry's block id (`*_door`, `*_trapdoor`, `*_fence_gate` by material), with `iron_door` and `iron_trapdoor` the two the hand does not open; the engine states the list it derived in its binding line and never writes it by hand.
