@@ -15,19 +15,19 @@
 //! `GameRenderer.pick`, which compares the entity hit against the block hit and
 //! keeps the entity only when nearer.]
 //!
-//! ## The rule ([`ClickBox`])
+//! ## The rule ([`ClickBox::fitted_to`])
 //!
-//! A box placed at a cell is the box the emitter asks for — one block across and
-//! `n` tall for every press body, the declared size for an assembly's hitbox —
-//! with **each face that lies within [`CLICK_MARGIN`] of a block-grid plane
-//! pushed outward to [`CLICK_MARGIN`] past that plane**. A face already further
-//! from the grid is left where it was asked for. So every whole cell the box
-//! covers is covered with a margin on every face, and the box is entered strictly
-//! before any block outline inside those cells from every eye outside the box —
-//! and an eye inside the box picks the box at distance zero. The margin is one
-//! hundredth of a block: enough to be strictly nearer at every angle (the ray
-//! meets the box face at least the margin before the block face behind it), and
-//! never enough to reach into a neighbouring cell's own affordances.
+//! A click box stands over **one real block** — a door's two cells — and is
+//! fitted to the block's own outline (spec-0117 §3a; the outline is the pinned
+//! jar's `getShape`, read from [`delvewright_dsl::blockshape::outline`]). With
+//! the outline's envelope `E` and `m` = [`CLICK_MARGIN`]: the box is
+//! `max(x extent, z extent) + 2m` wide (an `interaction` is a square in plan,
+//! one `width` for both horizontal axes) and `y extent + 2m` tall, its floor
+//! `m` under `E`'s; on the longer horizontal axis it is centred on `E`, on the
+//! other on `E` moved by the least amount that keeps it inside the body's cells
+//! expanded by `m`. An assembly's declared hitbox is sized by
+//! [`ClickBox::sized`]: each face within [`CLICK_MARGIN`] of a grid plane is
+//! pushed out to [`CLICK_MARGIN`] past it.
 //!
 //! The rule is stated once, here. Every emitter that summons a click box at a
 //! compile-time cell builds it through [`ClickBox`]; none writes a width, a
@@ -35,32 +35,33 @@
 //!
 //! ## The check ([`check`])
 //!
-//! Read off the finished tree, like `DW0545`: every `summon minecraft:interaction`
-//! in every shipped function is a subject, whichever emitter wrote it. Three
-//! kinds, each determined by the summon itself:
+//! Read off the finished tree: every `summon minecraft:interaction` in every
+//! shipped function is a subject, whichever emitter wrote it. Four kinds, each
+//! determined by the summon itself:
 //!
-//! * **placed** — absolute coordinates and the fixture class: a place the party
-//!   clicks. Judged: every face of the box, as the server reads it (position as a
-//!   double, width and height as the `f` floats they are written as), lies at
-//!   least [`MIN_PROTRUSION`] off the block grid. A face on the grid is the tie,
-//!   and the build is refused under `DW1013`.
-//! * **borne** — the borne class: an NPC's dialogue hitbox, which stands in the
-//!   air the NPC's own body stands in and travels with it (`tp`), so no grid
-//!   holds still under it. Counted, not judged.
+//! * **placed over a block** — absolute coordinates and the fixture class: a
+//!   pressable's click box. Judged against the block it stands over (read from
+//!   the shipped `setup_finish`, or the gate's block for a gate's own answer),
+//!   with the box as the server reads it (position as a double, width and
+//!   height as the `f` floats they are written as): every box of the outline
+//!   lies inside the click box by at least [`MIN_PROTRUSION`] on every face, and
+//!   the click box lies inside the body's cells expanded by [`CLICK_MARGIN`].
+//!   A box over air, or over a block with no outline, is refused too.
+//! * **an assembly hitbox** (`dw_asm`) — judged against the block grid: every
+//!   face at least [`MIN_PROTRUSION`] off it.
+//! * **borne** — an NPC's dialogue hitbox or an actor's answer box, which stands
+//!   in the air its body stands in and travels with it. Counted, not judged.
 //! * **runtime-positioned** — relative coordinates (`~`): a recovery stake's
-//!   marker, placed where a player died. No compile-time cell exists to judge.
-//!   Counted, not judged.
+//!   marker. Counted, not judged.
 //!
-//! The lemma that makes the face test the whole proof: if a box covers a cell
-//! and none of its faces is within [`MIN_PROTRUSION`] of a grid plane, the cell's
-//! unit cube lies strictly inside the box, and every block outline lies inside
-//! its unit cube, so every ray from an eye outside the box that reaches the
-//! block's outline has already crossed the box's surface — at least
-//! [`MIN_PROTRUSION`] earlier along the ray. That is every click ray from every
-//! cell, not a sample of them. Reach is a separate fact: the entity ray is
-//! traced only 3.0 blocks against the block ray's 4.5, so from between those
-//! distances the block is picked whatever the box does; the cells a box "can be
-//! clicked from" are the cells within the entity reach.
+//! The lemma that makes the face test the whole proof: if every box of the
+//! block's outline lies strictly inside the click box, every ray from an eye
+//! outside the click box that reaches the block's outline has crossed the click
+//! box's surface first — at least [`MIN_PROTRUSION`] earlier along the ray — so
+//! the client's pick (the entity when strictly nearer) takes the box. That is
+//! every click ray from every cell, not a sample of them. Reach is a separate
+//! fact: the entity ray is traced only 3.0 blocks against the block ray's 4.5,
+//! so from between those distances the block is picked whatever the box does.
 
 use std::collections::BTreeMap;
 
@@ -73,10 +74,12 @@ use crate::compiler::emit::BuildOutput;
 use crate::compiler::failure::Failure;
 
 delvewright_dsl::dw_code! {
-    /// `DW1013`: a click box placed at a cell has a face on the block grid, so a
-    /// block it stands in ties the crosshair's pick and wins it. An **engine
-    /// self-check**: the emitter that summoned the box owes building it through
-    /// `compiler::clickbox::ClickBox`.
+    /// `DW1013`: a click box placed at a cell does not enclose the outline of
+    /// the block it stands over by [`MIN_PROTRUSION`] on every face, reaches
+    /// past that block's cells, or stands over no block at all — so the block
+    /// ties the crosshair's pick and wins it, or the box takes a neighbour's
+    /// press. An **engine self-check**: the emitter that summoned the box owes
+    /// building it through `compiler::clickbox::ClickBox::fitted_to`.
     pub const DW_CLICK_BOX_FLUSH: DwCode = DwCode::new("DW1013", ExitTier::Build);
 }
 
@@ -156,6 +159,16 @@ impl Dec {
         })
     }
 
+    /// A bound in sixteenths of a block, exact where it can be and rounded
+    /// outward (down for a minimum, up for a maximum) where it cannot.
+    fn sixteenths(s: delvewright_dsl::blockshape::Sixteenths, up: bool) -> Self {
+        let num = i128::from(s.num) * UNIT;
+        let den = 16 * i128::from(s.den);
+        let q = num.div_euclid(den);
+        let r = num.rem_euclid(den);
+        Dec(if up && r != 0 { q + 1 } else { q })
+    }
+
     /// The decimal text: `68.99`, `-44.5`, `7.0`, `1.02`.
     fn text(self) -> String {
         let sign = if self.0 < 0 { "-" } else { "" };
@@ -206,18 +219,82 @@ pub struct ClickBox {
 }
 
 impl ClickBox {
-    /// The press-body column: one block across, `cells` tall, standing in `cell`.
-    pub fn column(cell: [i32; 3], cells: u32) -> Self {
-        Self::fitted(cell, Dec::int(1), Dec::int(i64::from(cells)))
+    /// **The fitted rule** (spec-0117 §3a): the click box over `block` standing
+    /// at `cell` — a door's lower half spans its two cells — fitted to the
+    /// block's own outline ([`delvewright_dsl::blockshape::outline`]).
+    ///
+    /// With the outline's envelope `E` over the body's cells and `m` =
+    /// [`CLICK_MARGIN`]: the box is `max(x extent, z extent) + 2m` wide and
+    /// `y extent + 2m` tall, its floor `m` under `E`'s; on the longer horizontal
+    /// axis it is centred on `E`; on the other it is centred on `E` moved by the
+    /// least amount that keeps it inside the body's cells expanded by `m`. So
+    /// every box of the outline lies inside the click box by at least `m` on
+    /// every face, and the click box reaches no neighbouring cell. `None` when
+    /// the block has no outline or one that leaves its cells (`DW1059`).
+    pub fn fitted_to(cell: [i32; 3], block: &str) -> Option<Self> {
+        let boxes = delvewright_dsl::blockshape::outline(block)?;
+        if boxes.is_empty() {
+            return None;
+        }
+        let cells: i64 = if crate::compiler::pressable::is_door(block) {
+            2
+        } else {
+            1
+        };
+        let mut lo = [Dec(i128::MAX); 3];
+        let mut hi = [Dec(i128::MIN); 3];
+        for k in 0..cells {
+            for b in boxes {
+                for a in 0..3 {
+                    let base = Dec::int(i64::from(cell[a]) + if a == 1 { k } else { 0 });
+                    lo[a] = lo[a].min(base + Dec::sixteenths(b.min[a], false));
+                    hi[a] = hi[a].max(base + Dec::sixteenths(b.max[a], true));
+                }
+            }
+        }
+        let cell_lo = [
+            Dec::int(i64::from(cell[0])),
+            Dec::int(i64::from(cell[1])),
+            Dec::int(i64::from(cell[2])),
+        ];
+        let cell_hi = [
+            cell_lo[0] + Dec::int(1),
+            cell_lo[1] + Dec::int(cells),
+            cell_lo[2] + Dec::int(1),
+        ];
+        if (0..3).any(|a| lo[a] < cell_lo[a] || hi[a] > cell_hi[a]) {
+            return None;
+        }
+        let m = Dec::centi(CLICK_MARGIN_CENTI);
+        let ex = hi[0] - lo[0];
+        let ez = hi[2] - lo[2];
+        let width = ex.max(ez) + m + m;
+        let height = (hi[1] - lo[1]) + m + m;
+        let floor = lo[1] - m;
+        let centre = |a: usize, longer: bool| {
+            let c = Dec((lo[a].0 + hi[a].0) / 2);
+            if longer {
+                return c;
+            }
+            let half = width.half();
+            let min_c = cell_lo[a] - m + half;
+            let max_c = cell_hi[a] + m - half;
+            c.max(min_c).min(max_c)
+        };
+        Some(ClickBox {
+            pos: [centre(0, ex >= ez), floor, centre(2, ez >= ex)],
+            width,
+            height,
+        })
     }
 
     /// A declared size, `width` across and `height` tall, its bottom centre on
     /// `cell`'s floor centre (an assembly's hitbox).
     pub fn sized(cell: [i32; 3], width: f64, height: f64) -> Self {
-        Self::fitted(cell, Dec::of_f64(width), Dec::of_f64(height))
+        Self::snapped(cell, Dec::of_f64(width), Dec::of_f64(height))
     }
 
-    fn fitted(cell: [i32; 3], width: Dec, height: Dec) -> Self {
+    fn snapped(cell: [i32; 3], width: Dec, height: Dec) -> Self {
         let half_cell = Dec::centi(50);
         let horizontal = |c: i32| {
             let centre = Dec::int(i64::from(c)) + half_cell;
@@ -255,6 +332,27 @@ impl ClickBox {
             "width:{}f,height:{}f",
             self.width.text(),
             self.height.text()
+        )
+    }
+
+    /// The width as the decimal the summon writes (`0.395`).
+    pub fn width_text(&self) -> String {
+        self.width.text()
+    }
+
+    /// The height as the decimal the summon writes (`2.02`).
+    pub fn height_text(&self) -> String {
+        self.height.text()
+    }
+
+    /// The box as the server builds it: `(min, max)` corners, in blocks.
+    pub fn aabb(&self) -> ([f64; 3], [f64; 3]) {
+        let f = |d: Dec| d.0 as f64 / UNIT as f64;
+        let (x, y, z) = (f(self.pos[0]), f(self.pos[1]), f(self.pos[2]));
+        let (w, h) = (f(self.width), f(self.height));
+        (
+            [x - w / 2.0, y, z - w / 2.0],
+            [x + w / 2.0, y + h, z + w / 2.0],
         )
     }
 
@@ -320,6 +418,10 @@ pub struct ClickBoxBinding {
     pub borne_by: BTreeMap<Bearer, usize>,
     /// Of them, at a runtime position (`~`): not judged.
     pub runtime: usize,
+    /// Of the judged, fitted to a two-cell body (a door).
+    pub two_cell: usize,
+    /// Assembly hitboxes (`dw_asm`), judged against the block grid.
+    pub assembly: usize,
 }
 
 impl ClickBoxBinding {
@@ -356,11 +458,15 @@ impl ClickBoxBinding {
             .collect::<Vec<_>>()
             .join(", ");
         format!(
-            "DW1013 binding: {} of {} interaction summon(s) placed at a cell and judged ({families}); \
-             {} borne by a body ({bearers}), {} at a runtime position — every judged box's faces \
-             at least {MIN_PROTRUSION} block off the block grid",
+            "DW1013 binding: {} of {} interaction summon(s) placed at a cell and judged against \
+             its block ({families}); {} fitted to a two-cell body; {} assembly hitbox(es) judged \
+             against the grid; {} borne by a body ({bearers}), {} at a runtime position — every \
+             judged box encloses its block's outline by at least {MIN_PROTRUSION} and lies within \
+             its cells by at most {CLICK_MARGIN}",
             self.judged(),
             self.summons,
+            self.two_cell,
+            self.assembly,
             self.borne,
             self.runtime
         )
@@ -380,6 +486,8 @@ impl ClickBoxBinding {
                 .map(|(k, v)| (k.name().to_string(), json!(v)))
                 .collect::<serde_json::Map<String, Value>>(),
             "runtime": self.runtime,
+            "two_cell": self.two_cell,
+            "assembly": self.assembly,
             "margin": CLICK_MARGIN,
             "min_protrusion": MIN_PROTRUSION,
         })
@@ -472,9 +580,67 @@ fn flush_face(s: &Summoned) -> Option<(&'static str, &'static str, f64)> {
         .find(|(_, _, v)| (v - v.round()).abs() < MIN_PROTRUSION)
 }
 
-/// Prove every click box placed at a cell is strictly nearer than any block it
-/// stands in, from every eye outside it (`DW1013`). Reads the shipped functions.
-pub fn check(out: &BuildOutput) -> Result<ClickBoxBinding, Failure> {
+/// The `setblock` lines `setup_finish` ships, by cell: the one list of placed
+/// props the written world also lays.
+fn setup_blocks(out: &BuildOutput) -> BTreeMap<[i32; 3], String> {
+    let mut m = BTreeMap::new();
+    for (name, body) in shipped_functions(out) {
+        if name != "setup_finish" {
+            continue;
+        }
+        for line in body.lines() {
+            let Ok((t, _)) = tokenize(line.trim()) else {
+                continue;
+            };
+            if t.len() >= 5 && t[0] == "setblock" {
+                let p: Option<Vec<i32>> = t[1..4].iter().map(|v| v.parse().ok()).collect();
+                if let Some(p) = p {
+                    m.insert([p[0], p[1], p[2]], t[4].clone());
+                }
+            }
+        }
+    }
+    m
+}
+
+/// The first face on which the box `(lo, hi)` fails to enclose the outline box
+/// `(olo, ohi)` by at least [`MIN_PROTRUSION`]: `(face, the box's bound, the
+/// outline's bound)`.
+fn uncovered_face(
+    lo: [f64; 3],
+    hi: [f64; 3],
+    olo: [f64; 3],
+    ohi: [f64; 3],
+) -> Option<(&'static str, f64, f64)> {
+    const LO: [&str; 3] = ["west", "floor", "north"];
+    const HI: [&str; 3] = ["east", "top", "south"];
+    for a in 0..3 {
+        if lo[a] > olo[a] - MIN_PROTRUSION {
+            return Some((LO[a], lo[a], olo[a]));
+        }
+        if hi[a] < ohi[a] + MIN_PROTRUSION {
+            return Some((HI[a], hi[a], ohi[a]));
+        }
+    }
+    None
+}
+
+/// Prove every click box placed at a cell encloses the outline of the block it
+/// stands over and stays within that block's cells (`DW1013`). Reads the
+/// shipped functions.
+///
+/// The block under a box is read from the shipped `setup_finish` (the one
+/// `setblock` list the written world also lays; a door's two cells from its
+/// lower half), or, for a gate's own answer, from `gate_blocks` — the gate's
+/// block at the cell, which the prefab or a `close-gate` lays. A box over a
+/// cell neither names, or over a block with no outline, has nothing under it
+/// and is refused. An assembly's declared hitbox (`dw_asm`) is judged against
+/// the block grid, because the assembly is an entity and not a block.
+pub fn check(
+    out: &BuildOutput,
+    gate_blocks: &BTreeMap<[i32; 3], String>,
+) -> Result<ClickBoxBinding, Failure> {
+    let placed_blocks = setup_blocks(out);
     let mut b = ClickBoxBinding::default();
     for (name, body) in shipped_functions(out) {
         for line in body.lines() {
@@ -512,20 +678,127 @@ pub fn check(out: &BuildOutput) -> Result<ClickBoxBinding, Failure> {
                 .find(|t| *t != FIXTURE_TAG)
                 .map(|t| family(t))
                 .unwrap_or_else(|| "untagged".to_string());
-            if let Some((axis, which, v)) = flush_face(&s) {
+            if fam == "dw_asm" {
+                if let Some((axis, which, v)) = flush_face(&s) {
+                    return Err(Failure::new(
+                        DW_CLICK_BOX_FLUSH,
+                        format!(
+                            "`{name}` places an assembly hitbox whose {which} face lies on the \
+                             block grid ({axis} = {v}). The crosshair takes the box only when it \
+                             is strictly nearer than the block the same ray hits; a block in the \
+                             cell it stands in shares that face and wins the click. The emitter \
+                             must build the box through `compiler::clickbox::ClickBox::sized`. \
+                             Command: `{}`.",
+                            line.trim()
+                        ),
+                    ));
+                }
+                b.assembly += 1;
+                continue;
+            }
+            let num = |i: usize| s.coords[i].parse::<f64>().ok();
+            let (Some(x), Some(y), Some(z)) = (num(0), num(1), num(2)) else {
                 return Err(Failure::new(
                     DW_CLICK_BOX_FLUSH,
                     format!(
-                        "`{name}` places a click box whose {which} face lies on the block grid \
-                         ({axis} = {v}). The crosshair takes the box only when it is strictly \
-                         nearer than the block the same ray hits; a block in the cell this box \
-                         stands in shares that face, ties every ray that reaches it, and wins \
-                         the click — the prop takes many presses, or none. The emitter must \
-                         build the box through `compiler::clickbox::ClickBox`, which pushes \
-                         each face {CLICK_MARGIN} past the grid. Command: `{}`.",
+                        "`{name}` places a click box at coordinates this check cannot read. \
+                         Command: `{}`.",
                         line.trim()
                     ),
                 ));
+            };
+            let w = float_field(&s.nbt, "width");
+            let h = float_field(&s.nbt, "height");
+            let lo = [x - w / 2.0, y, z - w / 2.0];
+            let hi = [x + w / 2.0, y + h, z + w / 2.0];
+            let cell = [
+                x.floor() as i32,
+                (y + CLICK_MARGIN + 1e-6).floor() as i32,
+                z.floor() as i32,
+            ];
+            let block = placed_blocks
+                .get(&cell)
+                .or_else(|| gate_blocks.get(&cell))
+                .filter(|b| !delvewright_dsl::blockshape::is_air(b));
+            let Some(block) = block else {
+                return Err(Failure::new(
+                    DW_CLICK_BOX_FLUSH,
+                    format!(
+                        "`{name}` places a click box over {cell:?}, and `setup_finish` places no \
+                         block there and no gate's block stands there: the box stands in the \
+                         air, an invisible thing a player cannot find. A click box stands over \
+                         a real block only (spec-0117 §3a). Command: `{}`.",
+                        line.trim()
+                    ),
+                ));
+            };
+            let Some(outline) =
+                delvewright_dsl::blockshape::outline(block).filter(|o| !o.is_empty())
+            else {
+                return Err(Failure::new(
+                    DW_CLICK_BOX_FLUSH,
+                    format!(
+                        "`{name}` places a click box over `{block}` at {cell:?}, a blockstate the \
+                         pinned game gives no outline: there is nothing under the box to \
+                         press. Command: `{}`.",
+                        line.trim()
+                    ),
+                ));
+            };
+            let door = crate::compiler::pressable::is_door(block);
+            let cells = if door { 2 } else { 1 };
+            let six = |v: delvewright_dsl::blockshape::Sixteenths| {
+                f64::from(v.num) / (16.0 * f64::from(v.den))
+            };
+            for k in 0..cells {
+                for ob in outline {
+                    let olo = [
+                        f64::from(cell[0]) + six(ob.min[0]),
+                        f64::from(cell[1] + k) + six(ob.min[1]),
+                        f64::from(cell[2]) + six(ob.min[2]),
+                    ];
+                    let ohi = [
+                        f64::from(cell[0]) + six(ob.max[0]),
+                        f64::from(cell[1] + k) + six(ob.max[1]),
+                        f64::from(cell[2]) + six(ob.max[2]),
+                    ];
+                    if let Some((face, at, outline_at)) = uncovered_face(lo, hi, olo, ohi) {
+                        let sixteenth = ((outline_at - outline_at.floor()) * 16.0).round();
+                        return Err(Failure::new(
+                            DW_CLICK_BOX_FLUSH,
+                            format!(
+                                "`{name}` places a click box over `{block}` at {cell:?} whose \
+                                 {face} face ({at}) does not cover the block's outline there \
+                                 ({outline_at}, sixteenth {sixteenth}) by {MIN_PROTRUSION}: a \
+                                 ray reaching that face of the block meets the block first, and \
+                                 the press goes to the block. The box must be built by \
+                                 `compiler::clickbox::ClickBox::fitted_to`. Command: `{}`.",
+                                line.trim()
+                            ),
+                        ));
+                    }
+                }
+            }
+            let cell_lo = [f64::from(cell[0]), f64::from(cell[1]), f64::from(cell[2])];
+            let cell_hi = [
+                cell_lo[0] + 1.0,
+                cell_lo[1] + f64::from(cells),
+                cell_lo[2] + 1.0,
+            ];
+            let tol = CLICK_MARGIN + 1e-6;
+            if (0..3).any(|a| lo[a] < cell_lo[a] - tol || hi[a] > cell_hi[a] + tol) {
+                return Err(Failure::new(
+                    DW_CLICK_BOX_FLUSH,
+                    format!(
+                        "`{name}` places a click box over `{block}` at {cell:?} that reaches \
+                         past its cell(s) by more than {CLICK_MARGIN}: it would take the press \
+                         meant for the block beside it. Command: `{}`.",
+                        line.trim()
+                    ),
+                ));
+            }
+            if door {
+                b.two_cell += 1;
             }
             *b.placed.entry(fam).or_insert(0) += 1;
         }
@@ -540,74 +813,146 @@ mod tests {
     fn tree(lines: &[&str]) -> BuildOutput {
         let mut out = BuildOutput::new();
         out.insert(
-            "datapack/data/t/function/setup.mcfunction".to_string(),
+            "datapack/data/t/function/setup_finish.mcfunction".to_string(),
             format!("{}\n", lines.join("\n")).into_bytes(),
         );
         out
     }
 
+    fn fit(cell: [i32; 3], block: &str) -> ClickBox {
+        ClickBox::fitted_to(cell, block).unwrap_or_else(|| panic!("{block} has an outline"))
+    }
+
+    /// spec-0117 criterion 17: the fitted rule's values, derived from §2b by
+    /// hand and asserted as exact decimal text.
     #[test]
-    fn the_column_brackets_its_cell_on_every_face() {
-        let b = ClickBox::column([4, 65, -7], 2);
-        assert_eq!(b.xyz(), "4.5 64.99 -6.5");
-        assert_eq!(b.size_nbt(), "width:1.02f,height:2.02f");
-        let seal = ClickBox::column([68, 0, -45], 1);
-        assert_eq!(seal.xyz(), "68.5 -0.01 -44.5");
-        assert_eq!(seal.size_nbt(), "width:1.02f,height:1.02f");
+    fn the_fitted_rule_gives_each_kind_its_box() {
+        let lever = fit(
+            [4, 65, 6],
+            "minecraft:lever[face=floor,facing=north,powered=false]",
+        );
+        assert_eq!(lever.size_nbt(), "width:0.52f,height:0.395f");
+        assert_eq!(lever.xyz(), "4.5 64.99 6.5");
+        let button = fit(
+            [4, 65, 6],
+            "minecraft:stone_button[face=wall,facing=north,powered=false]",
+        );
+        assert_eq!(button.size_nbt(), "width:0.395f,height:0.27f");
+        // Its outline's centre is z 6.9375; the box moves 0.125 toward the cell.
+        assert_eq!(button.xyz(), "4.5 65.365 6.8125");
+        for facing in ["north", "east", "south", "west"] {
+            let door = fit(
+                [4, 65, 6],
+                &format!("minecraft:spruce_door[facing={facing},half=lower,hinge=left,open=false]"),
+            );
+            assert_eq!(door.size_nbt(), "width:1.02f,height:2.02f", "{facing}");
+            assert_eq!(door.xyz(), "4.5 64.99 6.5", "{facing}");
+        }
+        let campfire = fit([4, 65, 6], "minecraft:campfire[lit=true]");
+        assert_eq!(campfire.size_nbt(), "width:1.02f,height:0.4575f");
+        let chest = fit([4, 65, 6], "minecraft:chest[facing=west,type=single]");
+        assert_eq!(chest.size_nbt(), "width:0.895f,height:0.895f");
+        assert_eq!(chest.xyz(), "4.5 64.99 6.5");
+    }
+
+    /// Every box the rule builds lies within its cells expanded by the margin
+    /// and encloses every outline box by at least `MIN_PROTRUSION` — the two
+    /// facts `DW1013` proves, over a spread of kinds and cells.
+    #[test]
+    fn every_fitted_box_passes_the_check() {
+        let mut lines = Vec::new();
+        let blocks = [
+            "minecraft:lever[face=wall,facing=east,powered=false]",
+            "minecraft:lever[face=ceiling,facing=south,powered=true]",
+            "minecraft:oak_button[face=floor,facing=west,powered=false]",
+            "minecraft:bell[attachment=single_wall,facing=north]",
+            "minecraft:spruce_door[facing=east,half=lower,hinge=right,open=true]",
+            "minecraft:chest[facing=north,type=left]",
+            "minecraft:campfire",
+            "minecraft:cobbled_deepslate",
+            "minecraft:oak_trapdoor[facing=south,half=top,open=false]",
+        ];
+        for (i, block) in blocks.iter().enumerate() {
+            let cell = [-16 + 3 * i as i32, -1 + i as i32, 7 - 2 * i as i32];
+            lines.push(format!(
+                "setblock {} {} {} {block}",
+                cell[0], cell[1], cell[2]
+            ));
+            lines.push(fit(cell, block).summon(&format!(
+                "response:1b,Invulnerable:1b,Tags:[\"dw_fixture\",\"dw_i_k{i}\"]"
+            )));
+        }
+        let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
+        let b = check(&tree(&refs), &BTreeMap::new()).expect("the rule's own boxes enclose");
+        assert_eq!(b.judged(), blocks.len());
+        assert_eq!(b.two_cell, 1);
+    }
+
+    /// The perturbation only this check catches: a lever's box built one
+    /// margin short on one face. Fitted, its south face stands at z 6.76, the
+    /// margin past the outline's 12/16; moved 0.01 north it meets the outline at
+    /// 6.75 exactly. Every face is off the grid, so the old face-off-the-grid
+    /// check passes it; it reds here naming the face.
+    #[test]
+    fn a_box_one_margin_short_of_its_outline_is_refused() {
+        let block = "minecraft:lever[face=floor,facing=north,powered=false]";
+        let fitted = fit([4, 65, 6], block);
+        assert_eq!(fitted.xyz(), "4.5 64.99 6.5");
+        let out = tree(&[
+            &format!("setblock 4 65 6 {block}"),
+            "summon minecraft:interaction 4.5 64.99 6.49 {width:0.52f,height:0.395f,response:1b,Invulnerable:1b,Tags:[\"dw_fixture\",\"dw_trig_x\"]}",
+        ]);
+        let e = check(&out, &BTreeMap::new()).expect_err("a short box loses the pick");
+        assert_eq!(e.code, DW_CLICK_BOX_FLUSH);
+        assert!(e.message.contains("south face"), "{}", e.message);
+        assert!(e.message.contains("sixteenth 12"), "{}", e.message);
+    }
+
+    /// A box over a cell `setup_finish` leaves as air has nothing under it.
+    #[test]
+    fn a_box_over_air_is_refused() {
+        let out = tree(&[
+            "summon minecraft:interaction 4.5 64.99 6.5 {width:1.02f,height:1.02f,response:1b,Invulnerable:1b,Tags:[\"dw_fixture\",\"dw_trig_x\"]}",
+        ]);
+        let e = check(&out, &BTreeMap::new()).expect_err("a box in the air");
+        assert!(e.message.contains("[4, 65, 6]"), "{}", e.message);
+    }
+
+    /// A gate's own answer stands over the gate's block, which the prefab or a
+    /// `close-gate` lays: judged against it.
+    #[test]
+    fn a_gate_box_is_judged_against_the_gate_block() {
+        let bars = "minecraft:iron_bars";
+        let b = fit([4, 65, 6], bars);
+        let out = tree(&[&b.summon("Tags:[\"dw_fixture\",\"dw_gate_door\"]")]);
+        let mut gates = BTreeMap::new();
+        gates.insert([4, 65, 6], bars.to_string());
+        assert_eq!(check(&out, &gates).unwrap().judged(), 1);
     }
 
     #[test]
     fn a_declared_size_moves_only_the_faces_on_the_grid() {
-        // 1.5 wide: faces a quarter block off the grid, left where declared; the
-        // floor sits on the grid and the 2.5 top does not.
         let b = ClickBox::sized([0, 64, 0], 1.5, 2.5);
         assert_eq!(b.xyz(), "0.5 63.99 0.5");
         assert_eq!(b.size_nbt(), "width:1.5f,height:2.51f");
-        // 0.98 wide: faces 0.01 inside the cell, within the margin, pushed out.
         let n = ClickBox::sized([0, 64, 0], 0.98, 1.0);
         assert_eq!(n.size_nbt(), "width:1.02f,height:1.02f");
-        // 3.0 wide: faces on the grid two cells out.
         let w = ClickBox::sized([-3, 64, 2], 3.0, 2.0);
         assert_eq!(w.xyz(), "-2.5 63.99 2.5");
         assert_eq!(w.size_nbt(), "width:3.02f,height:2.02f");
     }
 
+    /// An assembly's hitbox is judged against the grid, as before.
     #[test]
-    fn every_box_the_rule_builds_passes_the_check() {
-        let mut lines = Vec::new();
-        for cell in [[0, 64, 0], [-16, -1, 7], [1000, 300, -1000]] {
-            lines.push(ClickBox::column(cell, 2).summon("Tags:[\"dw_fixture\",\"dw_i_a\"]"));
-            lines.push(ClickBox::column(cell, 1).summon("Tags:[\"dw_fixture\",\"dw_seal_a\"]"));
-            lines.push(
-                ClickBox::sized(cell, 0.98, 2.5).summon("Tags:[\"dw_fixture\",\"dw_asm_a_hit\"]"),
-            );
-        }
-        let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
-        let b = check(&tree(&refs)).expect("the rule's own boxes are strictly nearer");
-        assert_eq!(b.judged(), 9);
-        assert_eq!(b.summons, 9);
-    }
-
-    /// The perturbation: the shape every interact objective shipped with — a
-    /// `1.0 × 2.0` box at the cell centre, flush with a full-cube prop.
-    #[test]
-    fn a_flush_box_is_refused() {
+    fn an_assembly_box_flush_with_the_grid_is_refused() {
         let out = tree(&[
-            "summon minecraft:interaction 4.5 65.0 6.5 {width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[\"dw_fixture\",\"dw_i_o_open\"]}",
+            "summon minecraft:interaction 4.5 65.0 6.5 {width:1.0f,height:2.0f,Tags:[\"dw_fixture\",\"dw_asm_crane_hit\"]}",
         ]);
-        let e = check(&out).expect_err("a flush box ties the block");
-        assert_eq!(e.code, DW_CLICK_BOX_FLUSH);
+        let e = check(&out, &BTreeMap::new()).expect_err("a flush box ties the block");
         assert!(e.message.contains("west face"), "{}", e.message);
-    }
-
-    /// Only the floor on the grid is still a tie with a block's bottom face.
-    #[test]
-    fn a_box_flush_on_one_face_is_refused() {
-        let out = tree(&[
-            "execute unless entity @e[tag=dw_shop_0] run summon minecraft:interaction 4.5 65.0 6.5 {width:1.02f,height:2.02f,Tags:[\"dw_fixture\",\"dw_shop_0\"]}",
-        ]);
-        let e = check(&out).expect_err("the floor is on the grid");
-        assert!(e.message.contains("floor face"), "{}", e.message);
+        let ok = ClickBox::sized([4, 65, 6], 0.98, 2.5)
+            .summon("Tags:[\"dw_fixture\",\"dw_asm_crane_hit\"]");
+        assert_eq!(check(&tree(&[&ok]), &BTreeMap::new()).unwrap().assembly, 1);
     }
 
     #[test]
@@ -616,7 +961,7 @@ mod tests {
             "summon minecraft:interaction 4.5 65.0 6.5 {width:1.0f,height:2.0f,Tags:[\"dw_borne\",\"dw_npc_keeper\"]}",
             "execute unless entity @e[tag=dw_stk,distance=..1] run summon minecraft:interaction ~ ~ ~ {width:1.0f,height:2.0f,Tags:[\"dw_fixture\",\"dw_stk\"]}",
         ]);
-        let b = check(&out).expect("neither kind is judged");
+        let b = check(&out, &BTreeMap::new()).expect("neither kind is judged");
         assert_eq!((b.summons, b.borne, b.runtime, b.judged()), (2, 1, 1, 0));
     }
 
@@ -629,7 +974,7 @@ mod tests {
             "summon minecraft:interaction 8.5 65.0 6.5 {width:1.0f,height:2.0f,Tags:[\"dw_borne\",\"dw_npc_clerk\",\"dw_trig_dw_answer_npc_clerk_struck\"]}",
             "execute at @e[tag=dw_pup_statue,limit=1] unless entity @e[tag=dw_abody_statue] run summon minecraft:interaction ~ ~ ~ {width:1.0f,height:2.0f,Tags:[\"dw_borne\",\"dw_actor_statue\",\"dw_abody_statue\"]}",
         ]);
-        let b = check(&out).expect("borne boxes are counted");
+        let b = check(&out, &BTreeMap::new()).expect("borne boxes are counted");
         assert_eq!(b.borne, 3);
         assert_eq!(b.borne_by.get(&Bearer::Npc), Some(&2));
         assert_eq!(b.borne_by.get(&Bearer::ActorAnswer), Some(&1));
@@ -639,21 +984,11 @@ mod tests {
             "{line}"
         );
         assert_eq!(b.to_json()["borne_by"]["actor answer box(es)"], 1);
-        // With none borne, the zeroes are stated.
-        let none = check(&tree(&[])).unwrap().line();
+        let none = check(&tree(&[]), &BTreeMap::new()).unwrap().line();
         assert!(
             none.contains("0 borne by a body (0 NPC dialogue hitbox(es), 0 actor answer box(es))"),
             "{none}"
         );
-    }
-
-    #[test]
-    fn the_size_defaults_are_vanillas() {
-        // No width/height: vanilla's 1.0 × 1.0, on the grid.
-        let out =
-            tree(&["summon minecraft:interaction 4.5 64.99 6.5 {Tags:[\"dw_fixture\",\"dw_x\"]}"]);
-        let e = check(&out).expect_err("a default-sized box is flush");
-        assert!(e.message.contains("west face"), "{}", e.message);
     }
 
     #[test]

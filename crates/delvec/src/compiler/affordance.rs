@@ -1,43 +1,10 @@
-//! Affordance hardware — the visible half of every right-click target the
-//! compiler owns (`DW0420` / `DW0421`).
+//! The engine's fixtures and the region verbs that must not move them
+//! (`DW0545`).
 //!
-//! ## The defect this module exists to make impossible
+//! # Only the owner may disturb a place (`DW0545`)
 //!
-//! The drowned-bell playtest soft-locked on a shortcut whose unlock "lever
-//! vanished". Reproduced live on pinned 1.21.11: the lever never existed. The
-//! compiler emitted the shortcut unlock as a bare, **invisible**
-//! `minecraft:interaction` entity and documented the gap away — *"the physical
-//! lever may also be in the prefab"* — delegating the affordance's visibility to
-//! tileset folklore. The tileset carried no lever, so `anchor/l3-unlock` was an
-//! air cell holding one invisible entity.
-//!
-//! What the player saw and then lost belonged to *unrelated machinery*: a
-//! `reach-anchor` objective declared on the SAME anchor summoned a glowing,
-//! named marker at the identical coordinates. Walking into its completion box
-//! ran that objective's `kill @e[tag=dw_r_…]`, so the glow the player was
-//! walking toward disappeared at the instant of arrival — leaving a right-click
-//! target with no visible representation and the gate still sealed.
-//!
-//! Two independent failures, hence two proofs:
-//!
-//! * **`DW0420`** — an affordance with no compiler-owned visible hardware at
-//!   all. The engine may never again ship a right-click target the player
-//!   cannot see, whatever the tileset does or does not happen to carry.
-//! * **`DW0421`** — an affordance whose hardware is destroyed by machinery that
-//!   does not own it. Only the affordance's own consumption may retire its
-//!   hardware; an unrelated `kill` reaching it (a tag collision, a cleanup pass
-//!   widened by a later change) is the erasure class caught here.
-//!
-//! Both are **emission self-checks**: they read the finished datapack rather
-//! than the plan, so they judge the commands that actually ship. Neither can
-//! fire on a correct build — that is the point. They are the standing proof that
-//! the fix stays fixed, in the same family as the exported-waypoint and
-//! POV-camera self-checks.
-//!
-//! # The third proof: the same rule, one verb wider (`DW0545`)
-//!
-//! `DW0421` says *only the owner may **retire** an affordance's hardware*, and it
-//! decides that by reading the **tag** in a `kill` selector. A region verb does
+//! A fixture's position is engine state, and a `kill` that selects it by **tag**
+//! is a choice its owner makes. A region verb does
 //! not select by tag — it selects by a **box** — and it does not destroy, it
 //! **moves**. So a `teleport` whose volume happens to cover a recovery stake's
 //! marker carries it away, and every tag-keyed proof in this module looks
@@ -59,9 +26,8 @@
 //! Every entity the compiler summons declares which of two things it is:
 //!
 //! * [`FIXTURE_TAG`] (`dw_fixture`) — **a place.** Its position IS engine state:
-//!   an affordance's `minecraft:interaction` hitbox, the visible hardware beside
-//!   it, a stake marker left at a death, the mark a cutscene records to put a
-//!   player back. Moving it does not move a thing, it *rewrites a fact*.
+//!   a pressable's click box, a stake marker left at a death, the mark a
+//!   cutscene records to put a player back. Moving it does not move a thing, it *rewrites a fact*.
 //! * [`BORNE_TAG`] (`dw_borne`) — **carried by a body.** An NPC is a body plus a
 //!   co-located dialogue hitbox; the hitbox's position is the NPC's, and the two
 //!   travel together or the delve silently loses its speaker: everyone
@@ -90,35 +56,10 @@ use crate::compiler::emit::{BuildFailure, BuildOutput};
 use delvewright_dsl::{DwCode, ExitTier};
 
 delvewright_dsl::dw_code! {
-    /// `DW0420`: a compiler-owned interact affordance with **no visible hardware**.
-    ///
-    /// The player is expected to right-click a point in the world; nothing the
-    /// compiler emits makes that point visible. Vanilla's `minecraft:interaction`
-    /// is an invisible hitbox by design, so an affordance built from one alone is
-    /// findable only by luck. This is an error and not a warning because the
-    /// failure mode is a soft-lock: the drowned bell's shortcut was the only route
-    /// back, and an unfindable lever is an unopenable door.
-    pub const DW_AFFORDANCE_INVISIBLE: DwCode = DwCode::new("DW0420", ExitTier::Build);
-}
-
-delvewright_dsl::dw_code! {
-    /// `DW0421`: an affordance's visible hardware is destroyed by a function that
-    /// does not own the affordance.
-    ///
-    /// Hardware may be retired by exactly one thing — the affordance's own
-    /// consumption (a shortcut's `shortcut_open_*`, a trap's `trap_disarm_*`).
-    /// Anything else reaching it (a cleanup pass whose selector widened, a tag
-    /// collision of the `DW0361` family) erases the player's only way to find a
-    /// live affordance, which is how the drowned bell read as a vanished lever.
-    pub const DW_AFFORDANCE_HARDWARE_ERASED: DwCode = DwCode::new("DW0421", ExitTier::Build);
-}
-
-delvewright_dsl::dw_code! {
     /// `DW0545`: an engine **fixture** — an entity whose position is engine state —
     /// is reachable by a selector that quantifies over a **box**.
     ///
-    /// `DW0421`'s rule, one verb wider and one binding wider: only an affordance's
-    /// owner may disturb its hardware, and *moving* it is disturbing it. The rule is
+    /// Only a fixture's owner may disturb it, and *moving* it is disturbing it. The rule is
     /// stated over the emitted datapack, from its two ends, because either end alone
     /// is a green that binds to nothing:
     ///
@@ -134,8 +75,7 @@ delvewright_dsl::dw_code! {
 }
 
 /// The class tag on every engine-summoned entity whose position **is** engine
-/// state — an affordance hitbox, its visible hardware, a stake marker, a
-/// cutscene's return mark. Region verbs that move entities exclude it.
+/// state — a click box, a stake marker, a cutscene's return mark. Region verbs that move entities exclude it.
 pub const FIXTURE_TAG: &str = "dw_fixture";
 
 /// The class tag on every engine-summoned entity **carried by a body**: today,
@@ -147,12 +87,6 @@ pub const BORNE_TAG: &str = "dw_borne";
 /// fixture. One negated tag, not a roster of types: the roster grows with the
 /// engine, the class does not.
 pub const FIXTURE_EXCLUDE: &str = "tag=!dw_fixture";
-
-/// The entity tag carried by an affordance's visible hardware, derived from the
-/// affordance's own tag so the pairing is structural and needs no bookkeeping.
-pub fn hardware_tag(affordance_tag: &str) -> String {
-    format!("dw_hw_{affordance_tag}")
-}
 
 /// The binding ledger for the fixture-class proof
 /// (`docs/reference/playtest-methodology.md` rule 1).
@@ -232,92 +166,10 @@ impl FixtureGate {
     }
 }
 
-/// A compiler-owned interact affordance: a point the player must right-click for
-/// the delve to progress (or to rest).
-#[derive(Debug, Clone)]
-pub struct Affordance {
-    /// The authored id this affordance came from, for diagnostics
-    /// (`shortcut/chapel-door`, `trap/dart-gallery`, `anchor/barrow-fire`).
-    pub id: String,
-    /// What kind of affordance it is, for diagnostics ("shortcut unlock", …).
-    pub kind: &'static str,
-    /// The affordance's own interaction-entity tag (`dw_sc_…`, `dw_trapdis_…`,
-    /// `dw_bonfire_…`).
-    pub tag: String,
-    /// The unqualified name of the one function allowed to retire this
-    /// affordance's hardware — its own consumption. `None` for hardware that is
-    /// never retired (a bonfire is permanent scenery: it is rested at, never
-    /// used up).
-    pub retired_by: Option<String>,
-}
-
-/// Prove every affordance in `affordances` is visible in the shipped datapack
-/// and that nothing but its owner destroys it (`DW0420` / `DW0421`).
-///
-/// Reads the emitted tree so the proof is about shipped commands, not intent.
-/// Only the delve's own datapack is examined: `packtest-datapack/` is tooling
-/// that never runs in a player's world and legitimately kills whatever it needs
-/// in order to set a fixture up (`ADR-0003`).
-pub fn check(affordances: &[Affordance], out: &BuildOutput) -> Result<(), BuildFailure> {
-    let fns = shipped_functions(out);
-    for a in affordances {
-        let hw = hardware_tag(&a.tag);
-        // DW0420 — something must MAKE it visible. A `summon` carrying the
-        // hardware tag is the compiler's own visible display; a `setblock` at
-        // the cell is the block form. Either satisfies the obligation.
-        let visible = fns
-            .iter()
-            .any(|(_, body)| body.lines().any(|l| is_summon_of(l, &hw)));
-        if !visible {
-            return Err(BuildFailure::Diagnostic {
-                code: DW_AFFORDANCE_INVISIBLE,
-                message: format!(
-                    "{} `{}` has no visible hardware: the datapack summons its \
-                     `minecraft:interaction` hitbox (tag `{}`) but never a display \
-                     tagged `{}`, so the player is asked to right-click a point \
-                     nothing marks. An invisible affordance is a soft-lock \
-                     (the drowned-bell shortcut); the compiler owns the \
-                     affordance's visibility and must never leave it to the \
-                     tileset.",
-                    a.kind, a.id, a.tag, hw
-                ),
-            });
-        }
-        // DW0421 — only the owner may retire it.
-        for (name, body) in &fns {
-            if Some(name.as_str()) == a.retired_by.as_deref() {
-                continue;
-            }
-            if let Some(line) = body.lines().find(|l| is_kill_of(l, &hw)) {
-                return Err(BuildFailure::Diagnostic {
-                    code: DW_AFFORDANCE_HARDWARE_ERASED,
-                    message: format!(
-                        "{} `{}` has its visible hardware (tag `{}`) destroyed by \
-                         `{}`, which does not own it — only {} may retire it. \
-                         Command: `{}`. Machinery that erases a live affordance's \
-                         hardware leaves the player a right-click target they \
-                         cannot see (the drowned-bell soft-lock).",
-                        a.kind,
-                        a.id,
-                        hw,
-                        name,
-                        match a.retired_by.as_deref() {
-                            Some(f) => format!("`{f}`"),
-                            None => "nothing (this hardware is permanent)".to_string(),
-                        },
-                        line.trim()
-                    ),
-                });
-            }
-        }
-    }
-    Ok(())
-}
-
 /// Prove that no selector narrowed by a **positional box** can reach an engine
 /// fixture, and return the binding ledger (`DW0545`).
 ///
-/// Reads the shipped datapack, like [`check`], so the verdict is about commands
+/// Reads the shipped datapack, so the verdict is about commands
 /// that ship rather than about intent — and so it covers every engine-summoned
 /// hitbox, including the ones neither affordance authority knows by name (a
 /// `close-gate` seal answer, a shortcut's wrong-side answer). A rule stated over
@@ -335,8 +187,8 @@ pub fn check_fixtures(out: &BuildOutput) -> Result<FixtureGate, BuildFailure> {
                         message: format!(
                             "`{name}` summons {kind} that declares {} class tag. Every entity \
                              the engine summons must say whether its position IS engine state \
-                             (`{FIXTURE_TAG}` — an affordance hitbox, its hardware, a stake \
-                             marker, a cutscene return mark) or belongs to a body that carries \
+                             (`{FIXTURE_TAG}` — a click box, a stake marker, a cutscene \
+                             return mark) or belongs to a body that carries \
                              it (`{BORNE_TAG}` — an NPC's dialogue hitbox, which travels with \
                              its speaker). Region verbs \
                              quantify over a box and cannot ask a type; the class is the only \
@@ -364,8 +216,8 @@ pub fn check_fixtures(out: &BuildOutput) -> Result<FixtureGate, BuildFailure> {
                              marker at a death, a bonfire's hitbox, a shortcut lever. A verb \
                              that MOVES them carries a fact away from the position that \
                              recorded it (`stk_gc_<s>` then deletes the marker and the wager \
-                             with it); a verb that HARMS them erases hardware `DW0421` says \
-                             only its owner may retire. Add `{FIXTURE_EXCLUDE}` to the \
+                             with it); a verb that HARMS them erases a press only its owner \
+                             may retire. Add `{FIXTURE_EXCLUDE}` to the \
                              selector. Do NOT reach for a `type=!…` roster instead: it grows \
                              with the engine, and on a moving verb it would also strip an NPC's \
                              dialogue hitbox off its body. Command: `{}`.",
@@ -384,8 +236,8 @@ pub fn check_fixtures(out: &BuildOutput) -> Result<FixtureGate, BuildFailure> {
 ///
 /// `minecraft:interaction` and `minecraft:marker` are engine machinery wherever
 /// they appear: the compiler is the only thing that summons either. An
-/// `item_display` is judged by `dw_marker`, the tag the engine already puts on
-/// every piece of visible affordance hardware — which deliberately leaves the
+/// `item_display` is judged by the stake marker's own tag (`dw_stk`), the one
+/// display the engine leaves at a place — which deliberately leaves the
 /// cutscene camera (an `item_display` with no such tag) out, because its own
 /// driver re-asserts its position every tick.
 fn summoned_class_subject(line: &str) -> Option<&'static str> {
@@ -393,9 +245,7 @@ fn summoned_class_subject(line: &str) -> Option<&'static str> {
     match rest.split_whitespace().next()? {
         "minecraft:interaction" => Some("an interaction hitbox"),
         "minecraft:marker" => Some("an engine mark"),
-        "minecraft:item_display" if mentions_tag_in_nbt(line, "dw_marker") => {
-            Some("affordance hardware")
-        }
+        "minecraft:item_display" if line.contains("\"dw_stk") => Some("a stake marker's display"),
         // A cutscene's stand-in (spec-0095) stands where its player stood for
         // the cutscene's length: its position is engine state, not a body a
         // region verb moves or a loop counts. An NPC's skinned body is a
@@ -501,40 +351,9 @@ pub(crate) fn shipped_functions(out: &BuildOutput) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Does this line summon a display carrying `tag`?
-fn is_summon_of(line: &str, tag: &str) -> bool {
-    line.contains("summon ") && mentions_tag_in_nbt(line, tag)
-}
-
-/// Does this line `kill` entities selected by `tag`?
-///
-/// Matches the tag inside a selector rather than anywhere in the line, so a
-/// `kill @e[tag=dw_hw_x_extra]` is not mistaken for one targeting `dw_hw_x`.
-fn is_kill_of(line: &str, tag: &str) -> bool {
-    line.contains("kill @") && selector_mentions_tag(line, tag)
-}
-
 /// `Tags:["…","<tag>"]` — the summon NBT form.
 fn mentions_tag_in_nbt(line: &str, tag: &str) -> bool {
     line.contains(&format!("\"{tag}\""))
-}
-
-/// `tag=<tag>` bounded by a selector delimiter, so `dw_hw_a` never matches
-/// `tag=dw_hw_ab`.
-fn selector_mentions_tag(line: &str, tag: &str) -> bool {
-    let needle = format!("tag={tag}");
-    let mut from = 0;
-    while let Some(i) = line[from..].find(&needle) {
-        let at = from + i;
-        let after = line[at + needle.len()..].chars().next();
-        // A selector argument ends at `,` or `]`; anything else means the tag
-        // continues and this is a different, longer tag.
-        if matches!(after, Some(',') | Some(']') | None) {
-            return true;
-        }
-        from = at + needle.len();
-    }
-    false
 }
 
 #[cfg(test)]
@@ -551,105 +370,6 @@ mod tests {
             );
         }
         out
-    }
-
-    fn shortcut() -> Affordance {
-        Affordance {
-            id: "shortcut/chapel-door".to_string(),
-            kind: "shortcut unlock",
-            tag: "dw_sc_chapel_door".to_string(),
-            retired_by: Some("shortcut_open_chapel_door".to_string()),
-        }
-    }
-
-    /// The drowned-bell defect itself: an affordance emitted as nothing but an
-    /// invisible `minecraft:interaction`.
-    #[test]
-    fn dw0420_invisible_affordance() {
-        let out = out_with(&[(
-            "setup_finish",
-            "summon minecraft:interaction 82.5 71.0 -102.5 {Tags:[\"dw_sc_chapel_door\"]}",
-        )]);
-        let err = check(&[shortcut()], &out).unwrap_err();
-        let BuildFailure::Diagnostic { code, message } = err else {
-            panic!("expected a coded diagnostic");
-        };
-        assert_eq!(code, DW_AFFORDANCE_INVISIBLE);
-        assert!(message.contains("shortcut/chapel-door"), "{message}");
-        assert!(message.contains("dw_hw_dw_sc_chapel_door"), "{message}");
-    }
-
-    /// With compiler-owned hardware alongside the hitbox, the build is clean.
-    #[test]
-    fn visible_affordance_passes() {
-        let out = out_with(&[(
-            "setup_finish",
-            "summon minecraft:interaction 82.5 71.0 -102.5 {Tags:[\"dw_sc_chapel_door\"]}\n\
-             summon minecraft:item_display 82.5 71.0 -102.5 {Glowing:1b,Tags:[\"dw_marker\",\"dw_hw_dw_sc_chapel_door\"]}",
-        )]);
-        check(&[shortcut()], &out).unwrap();
-    }
-
-    /// The owner MAY retire its own hardware — that is the shortcut opening.
-    #[test]
-    fn owner_may_retire_its_own_hardware() {
-        let out = out_with(&[
-            (
-                "setup_finish",
-                "summon minecraft:item_display 1 2 3 {Tags:[\"dw_hw_dw_sc_chapel_door\"]}",
-            ),
-            (
-                "shortcut_open_chapel_door",
-                "kill @e[tag=dw_hw_dw_sc_chapel_door]",
-            ),
-        ]);
-        check(&[shortcut()], &out).unwrap();
-    }
-
-    /// The erasure class: unrelated machinery kills a live affordance's hardware.
-    #[test]
-    fn dw0421_foreign_machinery_erases_hardware() {
-        let out = out_with(&[
-            (
-                "setup_finish",
-                "summon minecraft:item_display 1 2 3 {Tags:[\"dw_hw_dw_sc_chapel_door\"]}",
-            ),
-            ("complete_o_the_bar", "kill @e[tag=dw_hw_dw_sc_chapel_door]"),
-        ]);
-        let err = check(&[shortcut()], &out).unwrap_err();
-        let BuildFailure::Diagnostic { code, message } = err else {
-            panic!("expected a coded diagnostic");
-        };
-        assert_eq!(code, DW_AFFORDANCE_HARDWARE_ERASED);
-        assert!(message.contains("complete_o_the_bar"), "{message}");
-        assert!(
-            message.contains("shortcut_open_chapel_door"),
-            "names the only legitimate retirer: {message}"
-        );
-    }
-
-    /// Permanent hardware (a bonfire) may be retired by nothing at all.
-    #[test]
-    fn dw0421_permanent_hardware_has_no_legitimate_killer() {
-        let bonfire = Affordance {
-            id: "anchor/barrow-fire".to_string(),
-            kind: "bonfire",
-            tag: "dw_bonfire_0".to_string(),
-            retired_by: None,
-        };
-        let out = out_with(&[
-            (
-                "setup_finish",
-                "summon minecraft:item_display 1 2 3 {Tags:[\"dw_hw_dw_bonfire_0\"]}",
-            ),
-            ("some_cleanup", "kill @e[tag=dw_hw_dw_bonfire_0]"),
-        ]);
-        let err = check(&[bonfire], &out).unwrap_err();
-        let BuildFailure::Diagnostic { code, message } = err else {
-            panic!("expected a coded diagnostic");
-        };
-        assert_eq!(code, DW_AFFORDANCE_HARDWARE_ERASED);
-        assert!(message.contains("permanent"), "{message}");
     }
 
     // -----------------------------------------------------------------------
@@ -741,7 +461,7 @@ mod tests {
                 "stk_fill_embers",
                 "summon minecraft:interaction ~ ~ ~ {Tags:[\"dw_fixture\",\"dw_stk_embers\"]}\n\
                  summon minecraft:item_display ~ ~ ~ \
-                 {Glowing:1b,Tags:[\"dw_fixture\",\"dw_marker\",\"dw_hw_dw_stk_embers\"]}",
+                 {Tags:[\"dw_fixture\",\"dw_stk_display\"]}",
             ),
             (
                 "npc_keeper",
@@ -890,31 +610,5 @@ mod tests {
             );
             assert!(selector_has_term(&sels[0], FIXTURE_EXCLUDE), "{sels:?}");
         }
-    }
-
-    /// A longer tag sharing our prefix is a different affordance, not a hit —
-    /// the `DW0361` name-collision lesson applied to the matcher itself.
-    #[test]
-    fn tag_matching_is_exact_not_prefix() {
-        assert!(selector_mentions_tag("kill @e[tag=dw_hw_a]", "dw_hw_a"));
-        assert!(selector_mentions_tag(
-            "kill @e[tag=dw_hw_a,type=x]",
-            "dw_hw_a"
-        ));
-        assert!(!selector_mentions_tag("kill @e[tag=dw_hw_ab]", "dw_hw_a"));
-    }
-
-    /// PackTest fixtures set themselves up destructively and are not the delve.
-    #[test]
-    fn packtest_functions_are_not_judged() {
-        let mut out = out_with(&[(
-            "setup_finish",
-            "summon minecraft:item_display 1 2 3 {Tags:[\"dw_hw_dw_sc_chapel_door\"]}",
-        )]);
-        out.insert(
-            "packtest-datapack/data/ns/test/t.mcfunction".to_string(),
-            b"kill @e[tag=dw_hw_dw_sc_chapel_door]".to_vec(),
-        );
-        check(&[shortcut()], &out).unwrap();
     }
 }

@@ -1293,9 +1293,10 @@ pub fn shipped_blocks(
             m.insert(p.pos, BlockState::new(&p.block));
         }
     }
-    // Then every trigger's prop: `setup_finish` sets them after the relight
-    // fixtures, from the same list ([`crate::compiler::pressable::trigger_props`]).
-    for (_, p) in crate::compiler::pressable::trigger_props(plan) {
+    // Then every pressable's block (spec-0117 §5.1): `setup_finish` sets them
+    // after the relight fixtures, from the same list
+    // ([`crate::compiler::pressable::props`]), a door's two halves included.
+    for (_, p) in crate::compiler::pressable::props(plan) {
         if inside(p.pos) {
             m.insert(p.pos, BlockState::new(&p.block));
         }

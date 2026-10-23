@@ -421,9 +421,6 @@ pub(super) fn validate_loaded(
                 &campaign,
             ));
             diags.extend(delvec::compiler::link::check_carry_realised(&campaign));
-            // v0.8 seal answers (DW0423): one gate anchor, one `sealed_hint`
-            // wording. No-op for a campaign that authors none.
-            diags.extend(delvec::compiler::gates::check_seal_hints(&campaign));
             // spec-0073 §8.3 (DW0911): a health bar's colour and style are the
             // literals the pinned command tree lists, and that tree is this
             // crate's data, so the check runs here (validation tier). No-op for a
@@ -514,6 +511,12 @@ pub(super) fn validate_loaded(
                 let (hd, hbind) = delvec::compiler::promise::check_highlights(&campaign);
                 examined.push(hbind.line());
                 diags.extend(hd);
+                // spec-0117: the press bodies (DW1059) and their answers
+                // (DW1051/DW1052). The diagnostics are the validator's; the
+                // binding is stated here, zeroes included.
+                let (_, press) = delvewright_dsl::press_checks(&campaign);
+                examined.push(press.bodies_line());
+                examined.push(press.answers_line());
             }
             // spec-0050 (DSL v0.15): the detail plan. `DW0842`-`DW0845` (the
             // binding binds, the piece is the shape of its allocation, its

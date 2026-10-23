@@ -531,6 +531,8 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
     for h in &g.highlights {
         // Where the dummy stands to be near, and where it stands to be far.
         let at = match &h.body {
+            // A runtime marker has no compile-time cell to stand a dummy by.
+            HlBody::Runtime { .. } => continue,
             HlBody::Blocks { at, .. } | HlBody::Holder { at, .. } => *at,
             HlBody::Bodies { .. } => {
                 let Some(npc) = h
@@ -562,6 +564,7 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
             HlBody::Holder { tag, .. } => {
                 format!("@e[tag={tag},team=dw_hl,nbt={{Glowing:1b}}]")
             }
+            HlBody::Runtime { .. } => continue,
         };
         let mut arm: Vec<String> = Vec::new();
         // `None`: the act cannot be shut without changing what it is (a
@@ -642,10 +645,22 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
         let near = i32::from(h.within) - 1;
         let far = i32::from(h.within) + 2;
         let pos = |dx: i32| format!("{} {} {}", center(at[0] + dx), corner(at[1]), center(at[2]));
+        // spec-0117 §3b: a pressable's highlight is lit from its lit set; the
+        // dummy stands in its first cell to be near. An empty set lights from
+        // nowhere, and there is nothing to stand in.
+        let near_pos = match &h.body {
+            HlBody::Blocks {
+                lit: Some(boxes), ..
+            } => match boxes.first() {
+                Some((lo, _)) => format!("{} {} {}", center(lo[0]), corner(lo[1]), center(lo[2])),
+                None => continue,
+            },
+            _ => pos(near),
+        };
         // Start dark, whatever a sibling or the tick left lit.
         b.push(format!("scoreboard players set {hl} {GUIDE} 1"));
         b.push(format!("function {ns}:hl_off_{s}"));
-        b.push(format!("tp {me} {}", pos(near)));
+        b.push(format!("tp {me} {near_pos}"));
         // Not armed: dark, however near.
         if let Some(dis) = &disarm {
             b.extend(dis.iter().cloned());
@@ -688,6 +703,7 @@ pub(super) fn emit_highlight_packtests(plan: &Plan, out: &mut BuildOutput, g: &G
                     i32::from(h.within) + 1
                 )
             }
+            HlBody::Runtime { .. } => continue,
         };
         b.push(probe);
         b.push(format!("tag @a[tag={hold}] add {CUTSCENE_TAG}"));

@@ -1,26 +1,23 @@
-//! Seals: the sealed-hint record and the shell cells a seal arms.
+//! Seals: the gates a `close-gate` seals, and the shell of a region.
 
 use super::*;
 
-/// A gate anchor that some `close-gate` seals, and the line the seal answers a
-/// right-click with (DSL v0.8). One entry per **anchor**: the seal is
-/// a place, not an event, so two `close-gate`s on one anchor share its hitboxes
-/// and must agree on the wording (`DW0423`).
+/// A gate anchor that some `close-gate` seals. One entry per **anchor**: the
+/// seal is a place, not an event, so two `close-gate`s on one anchor share its
+/// state and its answer (spec-0117: the answer is a trigger that `serves` the
+/// gate, `DW0429`).
 #[derive(Clone, Debug)]
 pub struct SealHintPlan {
     /// The gate anchor name (`anchor/boulder`).
     pub anchor: String,
-    /// The function/tag-safe local id, used for `dw_seal_<safe>`.
+    /// The function/tag-safe local id, used for `dw_gate_<safe>` and the seal
+    /// state `#gseal_<safe>`.
     pub safe: String,
     /// The gate region's inclusive corners (absolute world coords).
     pub region: ([i32; 3], [i32; 3]),
     /// The block the region is filled with while sealed (the generated PackTest
     /// stages and un-stages the seal with it).
     pub block: String,
-    /// The line the seal answers with: the campaign's `sealed_hint`. `None`
-    /// when the `close-gate` states none; the compiler never supplies one
-    /// (`DW0429`).
-    pub text: Option<String>,
 }
 
 impl SealHintPlan {
@@ -69,9 +66,7 @@ pub(super) fn shell_cells_of(region: ([i32; 3], [i32; 3])) -> Vec<[i32; 3]> {
 /// v0.8), in first-firing order.
 ///
 /// A repeat of an anchor already collected is dropped: the seal is a **place**,
-/// so its hitboxes and its answer belong to the anchor, not to each firing. When
-/// two firings disagree about the wording, `gates::check_seal_hints` (`DW0423`)
-/// has already rejected the campaign — here the first-firing text wins.
+/// so its state and its answer belong to the anchor, not to each firing.
 ///
 /// A `close-gate` whose anchor is not a resolvable gate region carries no entry
 /// (`DW0343` owns that).
@@ -96,7 +91,6 @@ pub(super) fn collect_seal_hints(
             safe: safe_local(name),
             region: (from, to),
             block,
-            text: e.close_gate_sealed_hint().map(str::to_string),
         });
     });
     out

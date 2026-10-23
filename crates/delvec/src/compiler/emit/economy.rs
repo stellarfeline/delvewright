@@ -67,37 +67,6 @@ pub(super) fn economy_setup(plan: &Plan) -> Vec<String> {
     out
 }
 
-/// `setup_finish` lines arming every shop's affordance: the invisible
-/// `minecraft:interaction` the player right-clicks and the glowing
-/// `minecraft:item_display` that says there is something here.
-///
-/// Armed at world init rather than at a beat, because a shop is furniture — the
-/// same reasoning that arms a shortcut's unlock lever at world init. Guarded by an
-/// absence test so a `/reload` cannot stack a second hitbox in one cell (`DW0422`).
-pub(super) fn shop_setup(plan: &Plan) -> Vec<String> {
-    let mut out = Vec::new();
-    for (i, sh, pos) in shops(plan) {
-        let v = ent_xyz(pos);
-        let tag = format!("dw_shop_{i}");
-        out.push(format!(
-            "execute unless entity @e[tag={tag}] run {}",
-            crate::compiler::clickbox::ClickBox::column(pos, 2).summon(&format!(
-                "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{tag}\"]"
-            ))
-        ));
-        let hw = crate::compiler::affordance::hardware_tag(&tag);
-        out.push(format!(
-            "execute unless entity @e[tag={hw}] run {}",
-            affordance_hardware(
-                v.clone(),
-                &tag,
-                sh.marker_item.as_deref().unwrap_or("minecraft:emerald")
-            )
-        ));
-    }
-    out
-}
-
 /// `tick` lines for the economy.
 ///
 /// Two dispatches, both the shape the rest of the engine already uses:

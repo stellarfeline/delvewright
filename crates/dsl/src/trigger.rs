@@ -1079,6 +1079,18 @@ impl PressSite<'_> {
         press_form(&prop.block, self.only_open)
     }
 
+    /// Whether a press in the **open** state lands on the block itself — no
+    /// click box stands over it then, and the block's own report detects the
+    /// press: a block pressed on its own, or one that acts on its own whose open
+    /// state holds no refusal (`requires_item`) the block's act would bypass.
+    pub fn open_unboxed(&self) -> bool {
+        match self.form() {
+            Some(PressForm::Own) => true,
+            Some(PressForm::ActsOnOwn) => !self.missing_item && !self.struck,
+            _ => false,
+        }
+    }
+
     /// The answer states owed (`DW1051`), in [`AnswerState::ALL`] order.
     pub fn owed(&self) -> Vec<AnswerState> {
         if self.kind == PressKind::Step {
@@ -1138,6 +1150,13 @@ pub(crate) fn close_gate_anchors(c: &Campaign) -> BTreeSet<String> {
         }
     });
     out
+}
+
+/// The interaction point `id` names (an objective, a trigger, a shortcut, a
+/// trap, a timed gate, a shop or a bonfire's anchor), if the document declares
+/// one.
+pub fn press_site<'c>(c: &'c Campaign, id: &str) -> Option<PressSite<'c>> {
+    press_sites(c).into_iter().find(|s| s.id == id)
 }
 
 /// **Every interaction point the document declares** (spec-0117 §3a), with its

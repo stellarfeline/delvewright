@@ -105,7 +105,7 @@ use crate::compiler::failure::Failure;
 use delvewright_dsl::Verb;
 use std::collections::BTreeSet;
 
-use delvewright_dsl::{Campaign, Diagnostic, Objective, TriggerOn};
+use delvewright_dsl::{Campaign, Diagnostic};
 
 use crate::compiler::nav::entity_dims;
 use crate::compiler::plan::Plan;
@@ -451,6 +451,19 @@ pub fn affordance_cells(plan: &Plan) -> Vec<(&'static str, String, [i32; 3])> {
         .collect()
 }
 
+/// The `(width, height)` of a block's outline envelope, in blocks: the square
+/// in plan an `interaction` of the same reach would be.
+fn outline_size(block: &str) -> (f64, f64) {
+    let Some(boxes) = delvewright_dsl::blockshape::outline(block).filter(|b| !b.is_empty()) else {
+        return AFFORDANCE_SIZE;
+    };
+    let v =
+        |s: delvewright_dsl::blockshape::Sixteenths| f64::from(s.num) / (16.0 * f64::from(s.den));
+    let lo = |a: usize| boxes.iter().map(|b| v(b.min[a])).fold(f64::MAX, f64::min);
+    let hi = |a: usize| boxes.iter().map(|b| v(b.max[a])).fold(f64::MIN, f64::max);
+    ((hi(0) - lo(0)).max(hi(2) - lo(2)), hi(1) - lo(1))
+}
+
 /// Every interaction affordance the compiler will summon, in a deterministic
 /// order (objectives, triggers, bonfires, shortcut unlocks, trap disarms, shops).
 ///
@@ -462,144 +475,56 @@ pub fn affordance_cells(plan: &Plan) -> Vec<(&'static str, String, [i32; 3])> {
 /// retirement) and NOT here, so it was invisible to every proof that asks where an
 /// affordance stands, and two fixtures shipped a brazier behind an NPC's body.
 pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
+    use crate::compiler::pressable::{Form, Owner, State};
     let c = plan.campaign;
     let mut out = Vec::new();
-    for (qi, q) in c.quests.content.quests.iter().enumerate() {
-        let area = plan.quest_area(q.id.as_str()).unwrap_or("");
-        for o in &q.objectives {
-            let Objective::Interact { id, anchor, .. } = o else {
-                continue;
-            };
-            // spec-0093 §6.5: a prop vanilla reports the use of summons no
-            // hitbox — the block is the affordance, and a block contests nothing
-            // a ray picks among entities.
-            if crate::compiler::pressable::interact_block(o).is_some() {
-                continue;
+    // spec-0117: every interaction point is a real block, and a block contests
+    // nothing a ray picks among entities. Its click box, where it has one, is
+    // the affordance — fitted to the block, standing in the states the press
+    // table says.
+    for p in plan.presses() {
+        // A block pressed on its own is pressed at its outline; a body that
+        // stands nearer the eye takes the click from it exactly as from a box.
+        let size = match &p.click_box {
+            Some(b) => {
+                let (lo, hi) = b.aabb();
+                (hi[0] - lo[0], hi[1] - lo[1])
             }
-            // Mirrors `emit::activation_commands`: an interact objective's
-            // affordance is resolved within its quest's area.
-            let Some(pos) = plan.point(area, anchor.as_str()) else {
-                continue;
-            };
-            let gate = o.gate();
-            out.push(Affordance {
-                size: AFFORDANCE_SIZE,
-                kind: "interact objective",
-                id: id.as_str().to_string(),
-                anchor: anchor.as_str().to_string(),
-                pos,
-                arming: Arming::Objective {
-                    quest: qi,
+            None => outline_size(&p.block),
+        };
+        let (kind, id) = match &p.owner {
+            Owner::Interact { id, .. } => ("interact objective", id.clone()),
+            Owner::Trigger { id } | Owner::GateAnswer { id, .. } => ("trigger", id.clone()),
+            Owner::Shortcut { id } => ("shortcut unlock", id.clone()),
+            Owner::Bonfire { index } => ("bonfire", format!("bonfire #{index}")),
+            Owner::Shop { index } => ("shop", format!("shop #{index}")),
+            Owner::TrapDisarm { id } => ("trap disarm", id.clone()),
+            Owner::TimedGateDisarm { id } => ("timed-gate disarm", id.clone()),
+        };
+        // An `interact`'s box that goes at activation stands only while the
+        // objective is not pending; every other box is held to the persistent
+        // reading, the conservative direction for a contest.
+        let arming = match &p.owner {
+            Owner::Interact {
+                quest, objective, ..
+            } if p.form == Form::ActsOnOwn && !p.boxed_in(State::Open) => {
+                let o = &c.quests.content.quests[*quest].objectives[*objective];
+                let gate = o.gate();
+                Arming::Objective {
+                    quest: *quest,
                     requires: gate.requires_flags.iter().map(|f| f.to_string()).collect(),
                     forbids: gate.forbids_flags.iter().map(|f| f.to_string()).collect(),
-                },
-            });
-        }
-    }
-    for t in &plan.emitted_triggers_unlocalized() {
-        // `approach` and `step` triggers are a per-tick position test, not an
-        // entity.
-        if !t.on.is_click() {
-            continue;
-        }
-        // `strike-npc` (DSL v0.6) has no cell at all — it rides the NPC's own
-        // hitbox by construction, so eclipse is its *mechanism*, not a defect.
-        let Some(at) = t.at_anchor() else {
-            continue;
-        };
-        // The same shape spelled the old way: a `strike` trigger on an NPC's own
-        // anchor rides that NPC's hitbox and summons nothing (see the module
-        // docs). No second entity, nothing to eclipse.
-        if matches!(t.on, TriggerOn::Strike) && npc_stands_at(plan, at) {
-            continue;
-        }
-        // …and the general form of the same merge: wherever a
-        // compiler-owned interaction set already covers the anchor — a
-        // `close-gate` seal, a sealed shortcut door — the trigger rides it and
-        // summons nothing. Read from `crate::compiler::pressable`, the same authority the
-        // emitter uses, so the two can never disagree about whether a body exists.
-        // …and the general form again (spec-0093 §6.5): a trigger whose prop
-        // vanilla reports the use of has no hitbox; the block is the body.
-        if matches!(
-            crate::compiler::pressable::trigger_body(plan, t),
-            crate::compiler::pressable::Body::Rides { .. }
-                | crate::compiler::pressable::Body::Block { .. }
-        ) {
-            continue;
-        }
-        let Some(pos) = plan.point_any(at) else {
-            continue;
+                }
+            }
+            _ => Arming::Persistent,
         };
         out.push(Affordance {
-            size: AFFORDANCE_SIZE,
-            kind: "trigger",
-            id: t.id.as_str().to_string(),
-            anchor: at.to_string(),
-            pos,
-            // `env_trigger_setup` summons it in `setup_finish` and nothing ever
-            // kills it: a click trigger's body is there for the whole run.
-            arming: Arming::Persistent,
-        });
-    }
-    for bf in plan.bonfires() {
-        out.push(Affordance {
-            size: AFFORDANCE_SIZE,
-            kind: "bonfire",
-            id: format!("bonfire #{}", bf.index),
-            anchor: bf.anchor.clone(),
-            pos: bf.pos,
-            arming: Arming::Persistent,
-        });
-    }
-    for sc in &plan.shortcuts {
-        out.push(Affordance {
-            size: AFFORDANCE_SIZE,
-            kind: "shortcut unlock",
-            id: sc.id.clone(),
-            anchor: sc.unlock_anchor.clone(),
-            pos: sc.unlock,
-            arming: Arming::Persistent,
-        });
-    }
-    for tr in &plan.traps {
-        if let Some(d) = &tr.disarm {
-            out.push(Affordance {
-                size: AFFORDANCE_SIZE,
-                kind: "trap disarm",
-                id: tr.id.clone(),
-                anchor: d.via_anchor.clone(),
-                pos: d.via_cell,
-                arming: Arming::Persistent,
-            });
-        }
-    }
-    for g in &plan.timed_gates {
-        if let Some(d) = &g.disarm {
-            out.push(Affordance {
-                size: AFFORDANCE_SIZE,
-                kind: "timed-gate disarm",
-                id: g.id.clone(),
-                anchor: d.via_anchor.clone(),
-                pos: d.via_cell,
-                arming: Arming::Persistent,
-            });
-        }
-    }
-    // spec-0032 shops. A shop's interaction point is a compiler-summoned hitbox on
-    // a declared prefab anchor — the same object class as a bonfire's, and a body
-    // parked in front of it is the same defect: a brazier the player can see and
-    // reach that answers nothing.
-    for (i, sh) in plan.campaign.quests.content.shops.iter().enumerate() {
-        let Some(pos) = plan.point_any(sh.anchor.as_str()) else {
-            continue;
-        };
-        out.push(Affordance {
-            size: AFFORDANCE_SIZE,
-            kind: "shop",
-            id: format!("{} (#{i})", sh.id),
-            anchor: sh.anchor.as_str().to_string(),
-            pos,
-            arming: Arming::Persistent,
+            size,
+            kind,
+            id,
+            anchor: p.anchor.clone(),
+            pos: p.cell,
+            arming,
         });
     }
     // spec-0082 assemblies: a declared hitbox is a compiler-summoned
@@ -634,16 +559,6 @@ pub(crate) fn affordances(plan: &Plan) -> Vec<Affordance> {
     // anchor is walkable, is reachable from the respawn point in force, and stands
     // on ground the runtime does not rewrite (`crate::compiler::stake`, `DW0525`/`DW0526`).
     out
-}
-
-/// Whether a stage-2 NPC declares `anchor` as its standing anchor.
-fn npc_stands_at(plan: &Plan, anchor: &str) -> bool {
-    plan.campaign
-        .npcs
-        .content
-        .npcs
-        .iter()
-        .any(|n| n.anchor.as_str() == anchor && n.offset == [0, 0, 0])
 }
 
 /// Prove no body eclipses an interaction affordance (`DW0359`).

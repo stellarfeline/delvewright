@@ -562,6 +562,9 @@ pub(super) fn emit_bonfire_functions(plan: &Plan) -> Vec<(String, String)> {
             format!("bonfire_open_{i}"),
             lines(&[
                 format!("advancement revoke @s only {ns}:bf_{i}"),
+                // spec-0117: the rest point's block stands from load; before its
+                // arming beat a press is answered `not_yet` and opens nothing.
+                format!("execute unless score #bf_{i} dw.sys matches 1 run return fail"),
                 format!("scoreboard players set @s dw.rest_at {i}"),
                 "scoreboard players reset @s dw.rest".to_string(),
                 "scoreboard players enable @s dw.rest".to_string(),

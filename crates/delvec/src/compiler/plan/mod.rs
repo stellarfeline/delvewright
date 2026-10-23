@@ -228,11 +228,13 @@ pub struct Plan<'a> {
     /// in first-firing order — the seal the party can press for an answer. Empty
     /// for a campaign that never seals a gate.
     pub seal_hints: Vec<SealHintPlan>,
-    /// **What every compiler-owned sealed body answers a press with** (DSL v0.11).
-    /// One entry per pressable body the campaign does not answer itself — a
-    /// `close-gate` seal, a sealed `shortcut` door — in that order. Empty for a
-    /// campaign with neither.
-    pub press_answers: Vec<PressAnswer>,
+    /// **Every interaction point this build places** (spec-0117 §3a), derived
+    /// once from the finished plan ([`crate::compiler::pressable::derive`]) and
+    /// read through [`Plan::presses`].
+    pub presses: std::sync::OnceLock<Vec<crate::compiler::pressable::PressPlan>>,
+    /// **Every declared answer** (spec-0117 §5.2), derived once from
+    /// [`Plan::presses`] and read through [`Plan::answers`].
+    pub answer_plans: std::sync::OnceLock<Vec<crate::compiler::pressable::AnswerPlan>>,
     /// Resolved gate open/close firings (DSL v0.6), content-ordered — drives the
     /// `close-gate` completability model in `crate::compiler::nav`. Empty when the campaign
     /// uses no gate effects (byte-identical routing to pre-close-gate behavior).
@@ -1079,12 +1081,6 @@ impl<'a> Plan<'a> {
         // ---- v0.8 seal hints: what a sealed gate answers ----
         let seal_hints = collect_seal_hints(campaign, &anchors);
 
-        // ---- the press answers (DSL v0.11): what every sealed body answers ----
-        // Collected AFTER both `shortcuts` and `seal_hints`, because it is derived
-        // from the union of the two — one rule over the pressable class, not one
-        // rule per verb.
-        let press_answers = collect_press_answers(campaign, &seal_hints, &shortcuts);
-
         // ---- the contingent ways the placed world stages (spec-0042 §2.4) ----
         //
         // Before the region-write model, because an `open-way`'s geometry IS a
@@ -1266,7 +1262,8 @@ impl<'a> Plan<'a> {
             ambushes,
             timed_gates,
             seal_hints,
-            press_answers,
+            presses: std::sync::OnceLock::new(),
+            answer_plans: std::sync::OnceLock::new(),
             region_events,
             clock_events,
             ways,

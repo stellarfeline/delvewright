@@ -164,52 +164,56 @@ pub(super) fn emit_v04_packtests(
         }
     }
 
-    // interact-marker lifecycle: a completed interact objective leaves
-    // NO `minecraft:interaction` hitbox behind — it must not stay clickable, and a
-    // leaked hitbox congests the critical-path bot. Activate the first interact
-    // objective (summons the hitbox), assert it exists, complete it, assert the
-    // interaction count under its tag is 0.
-    'cleanup: for q in &c.quests.content.quests {
-        let area = plan.quest_area(q.id.as_str()).unwrap_or("");
-        for o in &q.objectives {
-            // A prop vanilla reports the use of summons no hitbox (spec-0093
-            // §6.5), so there is nothing of it to clean; the template is about
-            // the hitbox-carrying kind.
-            if let Objective::Interact { id, anchor, .. } = o
-                && plan.point(area, anchor.as_str()).is_some()
-                && crate::compiler::pressable::interact_block(o).is_none()
-            {
-                let tag = interact_entity_tag(id.as_str());
-                let (pin, sel) = pin_dummy("dw_t_iclr");
-                let mut b = packtest_header(&format!(
-                    "{}: completing interact `{id}` removes its interaction hitbox",
-                    artifact_title(c)
-                ));
-                b.push(format!("function {ns}:setup"));
-                // Pin this test's own dummy (see `pin_dummy`): the completion runs
-                // as it alone — an `@a`-wide completion would also complete the
-                // objective on every sibling test's dummy.
-                b.push(pin);
-                b.push(format!(
-                    "function {ns}:activate_{}",
-                    safe_obj_fn(id.as_str())
-                ));
-                b.push(format!(
-                    "execute store result score #before_iclr dw.sys if entity @e[type=minecraft:interaction,tag={tag}]"
-                ));
-                b.push("assert score #before_iclr dw.sys matches 1..".to_string());
-                b.push(format!(
-                    "execute as {sel} run function {ns}:complete_{}",
-                    safe_obj_fn(id.as_str())
-                ));
-                b.push(format!(
-                    "execute store result score #after_iclr dw.sys if entity @e[type=minecraft:interaction,tag={tag}]"
-                ));
-                b.push("assert score #after_iclr dw.sys matches 0".to_string());
-                write("v04_interact_cleanup", b);
-                break 'cleanup;
-            }
+    // spec-0117 §5.1: an interact's block stands before its quest is armed and
+    // after it completes; a block that acts on its own loses its click box at
+    // activation and has it back at completion (unless released). The first
+    // boxed interact whose box moves is the subject.
+    'window: for p in plan.presses() {
+        let crate::compiler::pressable::Owner::Interact { id, .. } = &p.owner else {
+            continue;
+        };
+        use crate::compiler::pressable::State;
+        if !(p.boxed_in(State::Shut) && !p.boxed_in(State::Open)) {
+            continue;
         }
+        let tag = &p.tag;
+        let (pin, sel) = pin_dummy("dw_t_iclr");
+        let mut b = packtest_header(&format!(
+            "{}: interact `{id}`'s block stands in every state, and its click box stands aside \
+             only inside its window",
+            artifact_title(c)
+        ));
+        b.push(format!("function {ns}:setup"));
+        b.push(pin);
+        let [x, y, z] = p.cell;
+        let base = crate::compiler::pressable::block_id(&p.block);
+        b.push(format!("assert block {x} {y} {z} {base}"));
+        b.push(format!(
+            "execute store result score #before_iclr dw.sys if entity @e[type=minecraft:interaction,tag={tag}]"
+        ));
+        b.push("assert score #before_iclr dw.sys matches 1".to_string());
+        b.push(format!(
+            "function {ns}:activate_{}",
+            safe_obj_fn(id.as_str())
+        ));
+        b.push(format!(
+            "execute store result score #open_iclr dw.sys if entity @e[type=minecraft:interaction,tag={tag}]"
+        ));
+        b.push("assert score #open_iclr dw.sys matches 0".to_string());
+        b.push(format!(
+            "execute as {sel} run function {ns}:complete_{}",
+            safe_obj_fn(id.as_str())
+        ));
+        b.push(format!("assert block {x} {y} {z} {base}"));
+        b.push(format!(
+            "execute store result score #after_iclr dw.sys if entity @e[type=minecraft:interaction,tag={tag}]"
+        ));
+        b.push(format!(
+            "assert score #after_iclr dw.sys matches {}",
+            if p.release { 0 } else { 1 }
+        ));
+        write("v04_interact_window", b);
+        break 'window;
     }
 
     // despawn-npc removes body + interaction hitbox (both carry the id tag), and

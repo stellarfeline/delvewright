@@ -114,12 +114,25 @@ pub(super) enum HlBody {
     Blocks {
         cells: Vec<([i32; 3], String)>,
         at: [i32; 3],
-        /// The cells hold a block the objective's activation places (an
-        /// interact's prop, a collect's chest), not one the world carries.
+        /// The cells hold a block the objective's activation places (a
+        /// collect's chest), not one the world carries.
         staged: bool,
+        /// **The lit set** (spec-0117 §3b): the boxes of walkable cells within
+        /// range from which the block is in sight, computed at build and
+        /// tested by the poll in place of a sphere. `None` for a block whose
+        /// set this build does not compute (a `collect`'s container).
+        lit: Option<Vec<([i32; 3], [i32; 3])>>,
     },
     /// Every body carrying this tag (a wave), or the NPC's body.
     Bodies { tag: String, npc: bool },
+    /// Every runtime marker carrying this tag (a recovery stake's display,
+    /// spec-0117 §3b): each lit by its own `Glowing` flag while a player is
+    /// within range of it. Its cell is chosen at runtime, so its lit set is a
+    /// sphere about it.
+    Runtime {
+        /// The markers' tag.
+        tag: String,
+    },
     /// A holder entity a `collect` takes from (spec-0111): an item frame or
     /// an armour stand, lit by its own `Glowing` flag (`Entity.load` reads it
     /// on every entity) in the highlight team's colour. Not a living body, so
@@ -233,6 +246,7 @@ pub(super) fn guide(
     plan: &Plan,
     blocks: &crate::compiler::blockstate::BlockMap,
     holders: &[crate::compiler::holders::OwnedHolder],
+    world: &crate::compiler::nav::World,
 ) -> Guide {
     let c = plan.campaign;
     let guidance = &c.quests.content.guidance;
@@ -281,7 +295,7 @@ pub(super) fn guide(
     }
     g.compass = ordinal > 0;
     g.journal = g.watched.iter().any(|w| w.announced) || guidance.manual.is_some();
-    g.highlights = highlight_acts(plan, blocks, holders, &g);
+    g.highlights = highlight_acts(plan, blocks, holders, &g, world);
     g
 }
 
@@ -290,8 +304,9 @@ fn highlight_acts(
     blocks: &crate::compiler::blockstate::BlockMap,
     holders: &[crate::compiler::holders::OwnedHolder],
     g: &Guide,
+    world: &crate::compiler::nav::World,
 ) -> Vec<HlAct> {
-    use crate::compiler::pressable::Body;
+    use crate::compiler::pressable::Owner;
     use delvewright_dsl::TriggerOn;
     let c = plan.campaign;
     let block_at = |cell: [i32; 3]| -> Option<String> {
@@ -299,6 +314,23 @@ fn highlight_acts(
             .get(&cell)
             .map(|b| b.as_str().to_string())
             .filter(|b| !delvewright_dsl::blockshape::is_air(b))
+    };
+    // A pressable's block: its cells and the state each draws, and the lit set
+    // its highlight is tested against (spec-0117 §3b).
+    let press_body = |p: &crate::compiler::pressable::PressPlan, within: u8| -> HlBody {
+        let mut cells = vec![(p.cell, p.block.clone())];
+        if crate::compiler::pressable::is_door(&p.block) {
+            cells.push((
+                [p.cell[0], p.cell[1] + 1, p.cell[2]],
+                crate::compiler::pressable::upper_half(&p.block),
+            ));
+        }
+        HlBody::Blocks {
+            cells,
+            at: p.cell,
+            staged: false,
+            lit: Some(lit_set(plan, world, p, within)),
+        }
     };
     let mut out = Vec::new();
     for w in &g.watched {
@@ -311,21 +343,12 @@ fn highlight_acts(
                 .or_else(|| plan.point_any(anchor))
         };
         let body = match o {
-            Objective::Interact { anchor, prop, .. } => {
-                let Some(cell) = at(anchor.as_str()) else {
+            Objective::Interact { id, .. } => {
+                let Some(p) = crate::compiler::pressable::press_of_objective(plan, id.as_str())
+                else {
                     continue;
                 };
-                let state = prop
-                    .as_ref()
-                    .map(|p| namespaced(&p.block))
-                    .or_else(|| block_at(cell));
-                let staged = prop.is_some();
-                let Some(state) = state else { continue };
-                HlBody::Blocks {
-                    cells: vec![(cell, state)],
-                    at: cell,
-                    staged,
-                }
+                press_body(p, h.within)
             }
             Objective::Collect {
                 id,
@@ -364,6 +387,7 @@ fn highlight_acts(
                         cells: vec![(cell, state)],
                         at: cell,
                         staged,
+                        lit: None,
                     }
                 }
             }
@@ -395,54 +419,16 @@ fn highlight_acts(
         let armed = format!("{once}{forbid}{flags}");
         let body = match &t.on {
             TriggerOn::Use | TriggerOn::Strike => {
-                let cells: Vec<([i32; 3], String)> =
-                    match crate::compiler::pressable::trigger_body(plan, t) {
-                        Body::Block { cell, block } => vec![(cell, namespaced(&block))],
-                        Body::Point(cell) => match t
-                            .prop
-                            .as_ref()
-                            .map(|p| namespaced(&p.block))
-                            .or_else(|| block_at(cell))
-                        {
-                            Some(s) => vec![(cell, s)],
-                            None => Vec::new(),
+                match crate::compiler::pressable::press_of_trigger(plan, t.id.as_str()) {
+                    Some(p) => press_body(p, h.within),
+                    // A strike at an NPC's stand lights the NPC it rides.
+                    None => match npc_ridden_by(plan, t) {
+                        Some(n) => HlBody::Bodies {
+                            tag: n.tag.clone(),
+                            npc: true,
                         },
-                        Body::Region(cells) => cells
-                            .iter()
-                            .filter_map(|c| block_at(*c).map(|s| (*c, s)))
-                            .collect(),
-                        Body::Rides { .. } => match t.at_anchor().and_then(|a| {
-                            plan.anchors.iter().find_map(|((_, n), r)| match r {
-                                ResolvedAnchor::Gate { from, to, .. } if n == a => {
-                                    Some((*from, *to))
-                                }
-                                _ => None,
-                            })
-                        }) {
-                            Some((from, to)) => {
-                                let mut v = Vec::new();
-                                for x in from[0].min(to[0])..=from[0].max(to[0]) {
-                                    for y in from[1].min(to[1])..=from[1].max(to[1]) {
-                                        for z in from[2].min(to[2])..=from[2].max(to[2]) {
-                                            if let Some(s) = block_at([x, y, z]) {
-                                                v.push(([x, y, z], s));
-                                            }
-                                        }
-                                    }
-                                }
-                                v
-                            }
-                            None => Vec::new(),
-                        },
-                        Body::Nothing => Vec::new(),
-                    };
-                let Some(at) = cells.first().map(|c| c.0) else {
-                    continue;
-                };
-                HlBody::Blocks {
-                    cells,
-                    at,
-                    staged: false,
+                        None => continue,
+                    },
                 }
             }
             TriggerOn::StrikeNpc { npc } => HlBody::Bodies {
@@ -461,6 +447,44 @@ fn highlight_acts(
             armed,
         });
     }
+    // spec-0117 §3b: every other pressable — a shortcut's unlock, a bonfire, a
+    // shop, each disarm — lit while open, from where its block is in sight.
+    for p in plan.presses() {
+        let Some(h) = p.highlight else { continue };
+        let armed = match &p.owner {
+            Owner::Interact { .. } | Owner::Trigger { .. } | Owner::GateAnswer { .. } => continue,
+            other => super::press::owner_guards(plan, other).0,
+        };
+        out.push(HlAct {
+            safe: format!("p_{}", p.owner.safe()),
+            objective: None,
+            trigger: None,
+            within: h.within,
+            body: press_body(p, h.within),
+            armed,
+        });
+    }
+    // A recovery stake's marker: lit near, never from afar.
+    if let Some(within) = c
+        .quests
+        .content
+        .stakes
+        .iter()
+        .filter(|s| s.max_live() > 0)
+        .filter_map(|s| s.highlight.map(|h| h.within))
+        .max()
+    {
+        out.push(HlAct {
+            safe: "stake".to_string(),
+            objective: None,
+            trigger: None,
+            within,
+            body: HlBody::Runtime {
+                tag: super::stake::STK_DISPLAY_TAG.to_string(),
+            },
+            armed: String::new(),
+        });
+    }
     // Every display draws the complete state, and the same string is what its
     // cell is held to, so the copy and the check cannot disagree.
     for h in &mut out {
@@ -470,6 +494,142 @@ fn highlight_acts(
             }
         }
     }
+    out
+}
+
+/// **The lit set of a pressable's highlight** (spec-0117 §3b): every walkable
+/// cell within `within` blocks of the block from which the block is in sight
+/// (the one sight rule, [`crate::compiler::framing::in_sight`], over the nav
+/// world's camera-blocking cells, from a standing body's eye), and — for a
+/// shortcut's unlock or a shortcut door's own answer — on the side the press is
+/// made from. Returned as boxes of cells, each one row along x merged across z,
+/// in ascending order (ADR-0006).
+pub(super) fn lit_set(
+    plan: &Plan,
+    world: &crate::compiler::nav::World,
+    p: &crate::compiler::pressable::PressPlan,
+    within: u8,
+) -> Vec<([i32; 3], [i32; 3])> {
+    use crate::compiler::pressable::Owner;
+    let r = i32::from(within);
+    let target =
+        crate::compiler::framing::CellBox::spanning(p.cell, *p.cells().last().unwrap_or(&p.cell));
+    // The side the press is made from, where the press has one.
+    let side: Option<(usize, i32, i32)> = match &p.owner {
+        Owner::Shortcut { id } => plan
+            .shortcuts
+            .iter()
+            .find(|s| &s.id == id)
+            .and_then(|s| s.sealed_side.as_ref())
+            .map(|sd| {
+                // The far side: opposite the sealed one.
+                let (lo, hi) = (sd.gate_lo[sd.axis], sd.gate_hi[sd.axis]);
+                if sd.dir < 0 {
+                    (sd.axis, 1, hi)
+                } else {
+                    (sd.axis, -1, lo)
+                }
+            }),
+        Owner::GateAnswer { gate, .. } => plan
+            .shortcuts
+            .iter()
+            .find(|s| &s.gate_anchor == gate)
+            .and_then(|s| s.sealed_side.as_ref())
+            .map(|sd| {
+                let (lo, hi) = (sd.gate_lo[sd.axis], sd.gate_hi[sd.axis]);
+                if sd.dir < 0 {
+                    (sd.axis, -1, lo)
+                } else {
+                    (sd.axis, 1, hi)
+                }
+            }),
+        _ => None,
+    };
+    let on_side = |c: [i32; 3]| match side {
+        Some((axis, 1, bound)) => c[axis] > bound,
+        Some((axis, _, bound)) => c[axis] < bound,
+        None => true,
+    };
+    let centre = [
+        f64::from(p.cell[0]) + 0.5,
+        f64::from(p.cell[1]) + 0.5,
+        f64::from(p.cell[2]) + 0.5,
+    ];
+    let mut cells: Vec<[i32; 3]> = Vec::new();
+    for x in p.cell[0] - r..=p.cell[0] + r {
+        for y in p.cell[1] - r..=p.cell[1] + r {
+            for z in p.cell[2] - r..=p.cell[2] + r {
+                let c = [x, y, z];
+                let d = ((f64::from(x) + 0.5 - centre[0]).powi(2)
+                    + (f64::from(y) + 0.5 - centre[1]).powi(2)
+                    + (f64::from(z) + 0.5 - centre[2]).powi(2))
+                .sqrt();
+                if d > f64::from(within) || !on_side(c) || !world.is_standable(c) {
+                    continue;
+                }
+                let eye = [
+                    f64::from(x) + 0.5,
+                    world.feet_y(c) + delvewright_dsl::metrics::PLAYER_EYE_HEIGHT,
+                    f64::from(z) + 0.5,
+                ];
+                // The vantage is no occluder (the rule `DW0863` reads): the
+                // cell the body stands in and its eye's own cell never stop a
+                // line; the block's own cells are the target's.
+                let eye_cell = [
+                    eye[0].floor() as i32,
+                    eye[1].floor() as i32,
+                    eye[2].floor() as i32,
+                ];
+                if crate::compiler::framing::in_sight(eye, &target, &|q| {
+                    q != c && q != eye_cell && world.blocks_camera(q)
+                })
+                .seen()
+                {
+                    cells.push(c);
+                }
+            }
+        }
+    }
+    cells.sort();
+    boxes_of(&cells)
+}
+
+/// Cells as boxes: each `(y, z)` row's runs along x, then runs equal in x and
+/// y merged across consecutive z. Deterministic: ascending.
+fn boxes_of(cells: &[[i32; 3]]) -> Vec<([i32; 3], [i32; 3])> {
+    use std::collections::BTreeMap;
+    let mut rows: BTreeMap<(i32, i32), Vec<i32>> = BTreeMap::new();
+    for c in cells {
+        rows.entry((c[1], c[2])).or_default().push(c[0]);
+    }
+    // (y, x0, x1) -> list of z, in order
+    let mut runs: BTreeMap<(i32, i32, i32), Vec<i32>> = BTreeMap::new();
+    for ((y, z), mut xs) in rows {
+        xs.sort();
+        let mut i = 0;
+        while i < xs.len() {
+            let mut j = i;
+            while j + 1 < xs.len() && xs[j + 1] == xs[j] + 1 {
+                j += 1;
+            }
+            runs.entry((y, xs[i], xs[j])).or_default().push(z);
+            i = j + 1;
+        }
+    }
+    let mut out = Vec::new();
+    for ((y, x0, x1), mut zs) in runs {
+        zs.sort();
+        let mut i = 0;
+        while i < zs.len() {
+            let mut j = i;
+            while j + 1 < zs.len() && zs[j + 1] == zs[j] + 1 {
+                j += 1;
+            }
+            out.push(([x0, y, zs[i]], [x1, y, zs[j]]));
+            i = j + 1;
+        }
+    }
+    out.sort();
     out
 }
 
@@ -921,6 +1081,22 @@ pub(super) fn functions(
         let near = format!("@a[distance=..{w},tag=!{CUTSCENE_TAG}]");
         let mut poll = vec![format!("scoreboard players set {hin} {GUIDE} 0")];
         match &h.body {
+            // spec-0117 §3b: a pressable's block is lit from its lit set — the
+            // walkable cells in range that see it — tested box by box.
+            HlBody::Blocks { lit: Some(boxes), .. } => {
+                for (lo, hi) in boxes {
+                    poll.push(format!(
+                        "execute {}if entity @a[x={},y={},z={},dx={},dy={},dz={},tag=!{CUTSCENE_TAG}] run scoreboard players set {hin} {GUIDE} 1",
+                        h.armed,
+                        lo[0],
+                        lo[1],
+                        lo[2],
+                        hi[0] - lo[0],
+                        hi[1] - lo[1],
+                        hi[2] - lo[2]
+                    ));
+                }
+            }
             HlBody::Blocks { at, .. } => poll.push(format!(
                 "execute {}positioned {} {} {} if entity {near} run scoreboard players set {hin} {GUIDE} 1",
                 h.armed,
@@ -928,6 +1104,9 @@ pub(super) fn functions(
                 center(at[1]),
                 center(at[2])
             )),
+            // Each marker lights itself, whoever stands near it: its cell is a
+            // runtime fact.
+            HlBody::Runtime { .. } => {}
             HlBody::Bodies { tag, npc } => poll.push(format!(
                 "execute {}as {} at @s if entity {near} run scoreboard players set {hin} {GUIDE} 1",
                 h.armed,
@@ -963,8 +1142,26 @@ pub(super) fn functions(
                 h.safe
             ));
         }
+        if let HlBody::Runtime { tag } = &h.body {
+            // A runtime marker is lit and darkened by its own neighbourhood,
+            // every tick, one marker at a time.
+            poll = vec![
+                format!(
+                    "execute as @e[tag={tag}] at @s if entity {near} run data merge entity @s {{Glowing:1b,glow_color_override:{HL_RGB}}}"
+                ),
+                format!(
+                    "execute as @e[tag={tag}] at @s unless entity {near} run data merge entity @s {{Glowing:0b}}"
+                ),
+            ];
+        }
         fns.push((format!("hl_poll_{}", h.safe), lines(&poll)));
         let (on, off) = match &h.body {
+            HlBody::Runtime { tag } => (
+                Vec::new(),
+                vec![format!(
+                    "execute as @e[tag={tag}] run data merge entity @s {{Glowing:0b}}"
+                )],
+            ),
             HlBody::Blocks { .. } => (
                 vec![format!("function {ns}:hl_hold_{}", h.safe)],
                 vec![format!("kill @e[tag=dw_hl_{}]", h.safe)],
@@ -1563,6 +1760,7 @@ mod tests {
                 cells: vec![([1, 2, 3], state.clone())],
                 at: [1, 2, 3],
                 staged: false,
+                lit: None,
             },
             armed: String::new(),
         };

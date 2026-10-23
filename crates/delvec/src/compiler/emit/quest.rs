@@ -69,6 +69,7 @@ pub(super) fn cue_ledger(plan: &Plan) -> Value {
             "announce": CUE_ANNOUNCE,
             "complete": CUE_COMPLETE,
             "campaign": CUE_CAMPAIGN,
+            "refused": super::press::CUE_REFUSED,
         },
         "objectives": objectives,
     })
@@ -349,7 +350,7 @@ pub(super) fn quest_completion_fns(
             // summon (a non-empty activation) so objectives with no summon emit
             // nothing here.
             if !activation_commands(plan, holders, q_area, o).is_empty() {
-                body.extend(completion_cleanup(o));
+                body.extend(completion_cleanup(plan, o));
             }
             // spec-0104 §7.3: the highlight goes out with the act.
             body.extend(guidance::completion_lines(guide, ns, oid));

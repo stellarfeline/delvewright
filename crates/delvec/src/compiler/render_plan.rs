@@ -1670,27 +1670,27 @@ fn interact_expect(o: &Objective, on_path: bool) -> Vec<Value> {
                 .into(),
         ));
     }
-    match o.prop() {
-        Some(p) if on_path => out.push(Value::String(format!(
+    // spec-0117: the block stands from load, in every frame, whatever the step.
+    let _ = on_path;
+    if let Some(p) = o.prop() {
+        out.push(Value::String(format!(
             "`{}` stands at the interact anchor — the thing the objective is done to",
             p.block
-        ))),
-        Some(p) => out.push(Value::String(format!(
-            "`{}` is placed at the interact anchor when its quest activates — not in this frame",
-            p.block
-        ))),
-        None => out.push(Value::String(
-            "no marker at the interact anchor — the place itself is what the player finds".into(),
-        )),
+        )));
+        out.push(Value::String(
+            match delvewright_dsl::press_form(&p.block, false) {
+                Some(delvewright_dsl::PressForm::Own) => format!(
+                    "pressing the `{}` completes the objective — the block reports its own press",
+                    p.block
+                ),
+                _ => format!(
+                    "the `{}` is pressed through a click box fitted to it, so it does not act \
+                     before its step",
+                    p.block
+                ),
+            },
+        ));
     }
-    out.push(Value::String(
-        match crate::compiler::pressable::interact_block(o) {
-            Some(b) => format!(
-                "pressing the `{b}` completes the objective — no hitbox stands in front of it"
-            ),
-            None => "interaction hitbox present — objective is completable here".to_string(),
-        },
-    ));
     out
 }
 

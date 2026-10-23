@@ -736,7 +736,9 @@ pub(super) fn emit_verb_packtests(
         // spec-0093 §6.5: a block a hand presses has no hitbox and no chat
         // command; its press is the advancement, so the test GRANTS it — which
         // runs the reward as the dummy — and the reward is what sets the score.
-        if crate::compiler::pressable::interact_block(o).is_some() {
+        if crate::compiler::pressable::press_of_objective(plan, id.as_str())
+            .is_some_and(|p| p.block_detects(crate::compiler::pressable::State::Open))
+        {
             b.push(format!(
                 "advancement grant {sel} only {ns}:i_{}",
                 plan::safe_local(id.as_str())

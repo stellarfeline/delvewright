@@ -3,16 +3,11 @@
 use super::*;
 
 /// `setup_finish` commands for timed gates (spec-0016 §4): start each gate's
-/// clock, and summon the disarm affordance of any gate that
-/// declares one. The gate is physically sealed by the prefab at world-load, so
+/// clock. A disarm's block and box are placed with every pressable's
+/// ([`press_setup`]). The gate is physically sealed by the prefab at world-load, so
 /// the clock's first act is always an OPEN — a `phase` of 0 opens immediately, a
 /// larger one holds the gate shut that many ticks first. Empty for a campaign
 /// with no timed gate.
-///
-/// The affordance is the same pair a shortcut unlock and a trap disarm emit: an
-/// invisible `minecraft:interaction` hitbox **plus** compiler-owned visible
-/// hardware, because a hitbox alone is a lever the player cannot see — the
-/// drowned-bell soft-lock class `DW0420` exists to make impossible.
 pub(super) fn timed_gate_setup(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
@@ -26,23 +21,6 @@ pub(super) fn timed_gate_setup(plan: &Plan) -> Vec<String> {
             ));
         }
     }
-    for g in &plan.timed_gates {
-        let Some(dis) = &g.disarm else {
-            continue;
-        };
-        let v = ent_xyz(dis.via_cell);
-        out.push(
-            crate::compiler::clickbox::ClickBox::column(dis.via_cell, 2).summon(&format!(
-                "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"dw_tgdis_{}\"]",
-                g.safe
-            )),
-        );
-        out.push(affordance_hardware(
-            v,
-            &format!("dw_tgdis_{}", g.safe),
-            "minecraft:lever",
-        ));
-    }
     out
 }
 
@@ -55,7 +33,7 @@ pub(super) fn timed_gate_tick(plan: &Plan) -> Vec<String> {
     let ns = &plan.namespace;
     let mut out = Vec::new();
     for g in &plan.timed_gates {
-        if g.disarm.is_none() {
+        if g.disarm.is_none() || !disarm_by_box(plan, &g.id, true) {
             continue;
         }
         let id = &g.safe;
@@ -192,7 +170,7 @@ pub(super) fn emit_timed_gate_disarm_functions(plan: &Plan) -> Vec<(String, Stri
         };
         let id = &g.safe;
         let (from, to) = g.gate_region;
-        let body = vec![
+        let mut body = vec![
             format!("scoreboard players set #tgdis_{id} dw.sys 1"),
             format!(
                 "scoreboard players set {} {} 1",
@@ -209,11 +187,15 @@ pub(super) fn emit_timed_gate_disarm_functions(plan: &Plan) -> Vec<(String, Stri
                 to[2],
                 replace_filter(&g.gate_block)
             ),
-            format!(
-                "kill @e[tag={}]",
-                crate::compiler::affordance::hardware_tag(&format!("dw_tgdis_{id}"))
-            ),
         ];
+        // The disarm is spent (spec-0117): its box returns over the thrown
+        // block, unless released to the player's hand.
+        if let Some(p) = super::press::press_of_owner(
+            plan,
+            &crate::compiler::pressable::Owner::TimedGateDisarm { id: g.id.clone() },
+        ) {
+            body.extend(super::press::settle_lines(plan, p));
+        }
         out.push((format!("tgate_disarm_{id}"), lines(&body)));
     }
     out

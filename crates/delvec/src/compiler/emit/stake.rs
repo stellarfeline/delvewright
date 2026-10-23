@@ -199,6 +199,10 @@ pub(super) fn stake_forfeit_lines(plan: &Plan, st: &delvewright_dsl::Stake) -> V
 /// timed: `stk_take_<s>_<k>` sets the slot's live flag to 0 as part of taking it, so
 /// a second pass in the same tick matches no slot and does nothing. There is no
 /// second-click window to lose a race in.
+/// The tag the recovery stake's marker display wears (spec-0117: no glow, no
+/// marker class — a place the engine left, read by `DW0545` as a fixture).
+pub(super) const STK_DISPLAY_TAG: &str = "dw_stk_display";
+
 pub(super) fn emit_stake_functions(
     plan: &Plan,
     table: Option<&crate::compiler::stake::StakeTable>,
@@ -206,7 +210,7 @@ pub(super) fn emit_stake_functions(
     let ns = &plan.namespace;
     let mut fns: Vec<(String, String)> = Vec::new();
     let tag = stk_tag();
-    let hw = crate::compiler::affordance::hardware_tag(&tag);
+    let hw = STK_DISPLAY_TAG;
     // Every stake that can actually leave a marker. `max_live: 0` is the
     // no-death-cost configuration and places nothing, so it owns no part of the
     // shared hardware either.
@@ -216,9 +220,9 @@ pub(super) fn emit_stake_functions(
         .collect();
 
     // --- stk_place: the place, made once --------------------------------------
-    // The item every marker renders as is `DW0880`'s subject: a place wears one
-    // face, so every stake that can leave a marker has been proved to declare the
-    // same one and reading the first is reading all of them.
+    // spec-0117 §3a: the marker is the one interaction point still an entity. It
+    // renders the engine's one marker item and carries no glow: a stake's
+    // `highlight` is its only light, lit only near.
     if let Some((first, _)) = marking.first() {
         fns.push((
             STK_PLACE_FN.to_string(),
@@ -227,7 +231,7 @@ pub(super) fn emit_stake_functions(
                     "execute unless entity @e[tag={tag},distance=..1] run summon minecraft:interaction ~ ~ ~ {{width:1.0f,height:2.0f,response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{tag}\"]}}"
                 ),
                 format!(
-                    "execute unless entity @e[tag={hw},distance=..1] run summon minecraft:item_display ~ ~ ~ {{Glowing:1b,Tags:[{FIXTURE_NBT}\"dw_marker\",\"{hw}\"],billboard:\"center\",item:{{id:\"{}\",count:1}}}}",
+                    "execute unless entity @e[tag={hw},distance=..1] run summon minecraft:item_display ~ ~ ~ {{Tags:[{FIXTURE_NBT}\"{hw}\"],billboard:\"center\",item:{{id:\"{}\",count:1}}}}",
                     first.marker_item()
                 ),
             ]),

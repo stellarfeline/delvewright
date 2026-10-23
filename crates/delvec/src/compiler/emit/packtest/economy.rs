@@ -196,7 +196,7 @@ pub(super) fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
         ));
         t.push(format!(
             "execute at {me} run kill @e[tag={},distance=..1]",
-            crate::compiler::affordance::hardware_tag(&tag)
+            STK_DISPLAY_TAG
         ));
         for k in 0..st.max_live() {
             t.push(format!(
@@ -294,7 +294,7 @@ pub(super) fn emit_economy_packtests(plan: &Plan, out: &mut BuildOutput) {
         && a.state != b.state
     {
         let tag = stk_tag();
-        let hw = crate::compiler::affordance::hardware_tag(&tag);
+        let hw = STK_DISPLAY_TAG;
         let (oa, ob) = (
             plan::state_score(a.state.as_str()),
             plan::state_score(b.state.as_str()),

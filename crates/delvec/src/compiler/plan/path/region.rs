@@ -472,8 +472,8 @@ impl std::ops::DerefMut for RegionEvents {
 /// step. Feeds the `close-gate` completability model in `crate::compiler::nav`
 /// (`DW0311`/`DW0315`/`DW0342`/`DW0410`).
 ///
-/// Walks [`for_each_gate_effect`] — the **same** traversal the seal planner and
-/// `gates::check_seal_hints` walk — so the model and the emission cannot disagree
+/// Walks [`for_each_gate_effect`] — the **same** traversal the seal planner
+/// walks — so the model and the emission cannot disagree
 /// about which firings exist. A model that saw only three of the five roots
 /// emission reaches would leave a `close-gate` in a `traps[].payload` or a
 /// dialogue option's `on_respawn` bundle filled in the datapack while every nav
@@ -660,7 +660,8 @@ pub(in crate::compiler::plan) fn collect_region_events(
         }
     });
     // The props an objective places when it ACTIVATES (gap 13): a conjured
-    // `collect` chest, an `interact` prop. A runtime write like any other, read
+    // `collect` chest — the one activation write left; an `interact`'s block
+    // stands from load (spec-0117 §5.1). A runtime write like any other, read
     // off the same one place the emitter reads it ([`activation_prop`]).
     //
     // Activation has no step of its own: the objective is placed the tick its
@@ -709,9 +710,9 @@ pub(in crate::compiler::plan) fn collect_region_events(
 /// **The block an objective places when it activates, and where** (gap 13):
 /// a `collect` conjures a `minecraft:chest` at its anchor unless it adopts a
 /// holder already in the world (a container, a frame or a stand) or its item
-/// is dropped by a fight; an
-/// `interact` places its `prop` at its anchor. `None` for every other
-/// objective and for an anchor that is not a point in the quest's area.
+/// is dropped by a fight. `None` for every other objective — an `interact`'s
+/// block stands from load (spec-0117 §5.1, [`Plan::load_prop_events`]) — and
+/// for an anchor that is not a point in the quest's area.
 ///
 /// The one list: the activation function the datapack runs
 /// (`emit::objective::activation_commands`) and the region model
@@ -737,10 +738,6 @@ pub(crate) fn activation_prop(
                 return None;
             }
             point(anchor.as_str()).map(|p| (p, "minecraft:chest".to_string()))
-        }
-        Objective::Interact { anchor, .. } => {
-            let prop = o.prop()?;
-            point(anchor.as_str()).map(|p| (p, prop.block.clone()))
         }
         _ => None,
     }
@@ -1030,9 +1027,10 @@ pub(crate) fn collect_way_openings(
 
 impl Plan<'_> {
     /// **The props the datapack sets at load, as region writes** — every
-    /// trigger's `prop` ([`crate::compiler::pressable::trigger_props`], the list
-    /// `setup_finish` writes), forced at step 0: nobody plays a beat for a lever
-    /// to stand where the world was shipped with it. What each leaves is read
+    /// pressable's block (spec-0117 §5.1; [`crate::compiler::pressable::props`],
+    /// the list `setup_finish` writes, a door's two halves included), forced at
+    /// step 0: nobody plays a beat for a lever to stand where the world was
+    /// shipped with it. What each leaves is read
     /// off its block ([`RegionWrite::of_block`]), so a lever or a button is a
     /// pass and a chiselled block is a wall.
     ///
@@ -1040,7 +1038,7 @@ impl Plan<'_> {
     /// [`Plan::branch_gate_model`]) once the plan exists, because the list is the
     /// plan's: the synthesized press answers join the author's triggers there.
     pub(crate) fn load_prop_events(&self) -> Vec<RegionEvent> {
-        crate::compiler::pressable::trigger_props(self)
+        crate::compiler::pressable::props(self)
             .into_iter()
             .map(|(_, p)| {
                 let write = RegionWrite::of_block(&p.block);

@@ -88,97 +88,6 @@ pub(super) fn campaign_captures_striker(c: &delvewright_dsl::Campaign) -> bool {
         .any(|t| trigger_is_click(t) && trigger_unleashes(t))
 }
 
-/// Environment-trigger interaction-entity summons (strike/use) for
-/// `setup_finish`. Approach triggers need no entity. Empty for a campaign with no
-/// triggers (byte-identical v0.2/v0.3).
-///
-/// A left-click trigger that rides an NPC — `strike-npc` (DSL v0.6), or the
-/// pre-0.6 `strike` on the NPC's own stand anchor — gets **no entity of its
-/// own**: the NPC's interaction hitbox is the trigger's sole carrier
-/// ([`npc_hitbox_trigger_tags`]). Emitting a second, exactly co-located hitbox
-/// here made the vanilla client's entity ray-pick ambiguous — an exact tie
-/// resolves to whichever entity the pick iterates first, in practice this
-/// world-init summon — so every right-click landed on an entity without the
-/// `dw_npc_<n>` tag and the `player_interacted_with_entity` dialogue
-/// advancement never fired (round-6 island QA: after the boulder seal,
-/// Polyphemus could not be talked to at all). One cell, one hitbox. The
-/// trigger's lifecycle therefore follows the NPC's presence — which is also
-/// its meaning: the thing being struck is the NPC.
-pub(super) fn env_trigger_setup(plan: &Plan, chrome: &delvewright_dsl::Chrome) -> Vec<String> {
-    use delvewright_dsl::TriggerOn;
-    let mut out = Vec::new();
-    let props: BTreeMap<String, crate::compiler::light::Placement> =
-        crate::compiler::pressable::trigger_props(plan)
-            .into_iter()
-            .collect();
-    for t in &plan.emitted_triggers(chrome) {
-        // An `approach` and a `step` read a body's position; nothing is summoned.
-        if !t.on.is_click() {
-            continue;
-        }
-        // `strike-npc` never has a cell of its own; a `strike` on an NPC's stand
-        // anchor gives its cell up to that NPC's hitbox. Either way, no summon.
-        let Some(at) = t.at_anchor() else {
-            continue;
-        };
-        if matches!(t.on, TriggerOn::Strike) && crate::compiler::pressable::npc_stands_at(plan, at)
-        {
-            continue;
-        }
-        // spec-0093 §6.5: the trigger's `prop` is placed at its cell — a lever
-        // or a button is then the whole body (vanilla reports its press, so
-        // nothing is summoned); any other block stands under the hitbox.
-        // The one list of prop cells ([`crate::compiler::pressable::trigger_props`]),
-        // which the written world lays too.
-        if let Some(p) = props.get(t.id.as_str()) {
-            out.push(format!(
-                "setblock {} {} {} {}",
-                p.pos[0], p.pos[1], p.pos[2], p.block
-            ));
-        }
-        // Same rule, one layer out: a click trigger anchored on a gate
-        // the campaign SEALS rides that seal's own hitboxes — `seal_arm_<safe>`
-        // summons them wearing this trigger's tag. A second entity here would be
-        // exactly co-located with them, and the ray-pick tie is what killed the
-        // island's boulder hint (`DESIGN.md` round 13). One cell, one hitbox.
-        let tag = format!("dw_trig_{}", plan::safe_local(t.id.as_str()));
-        match crate::compiler::pressable::trigger_body(plan, t) {
-            // The block is the body; vanilla reports its press.
-            crate::compiler::pressable::Body::Block { .. } => {}
-            // An existing set covers this anchor; `seal_fns` / `ws_arm_fns` put
-            // this trigger's tag on those entities. One cell, one hitbox.
-            crate::compiler::pressable::Body::Rides { .. } => {}
-            // The anchor is a REGION. A point body here is buried in the solid
-            // block and reachable from nowhere (see `crate::compiler::pressable`), so the
-            // object gets the clickable shape it actually has: one protruding box
-            // per shell cell, exactly as a `close-gate` seal has always done.
-            crate::compiler::pressable::Body::Region(cells) => {
-                for c in cells {
-                    out.push(
-                        crate::compiler::clickbox::ClickBox::column(c, 1).summon(&format!(
-                            "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{tag}\"]"
-                        )),
-                    );
-                }
-            }
-            // A point in open space: the ordinary body, byte-identical.
-            // A point: the standard column, bracketing the cell and the one above
-            // it, so a `prop` or an authored block standing there never ties the
-            // pick ([`crate::compiler::clickbox`]).
-            crate::compiler::pressable::Body::Point(p) => {
-                out.push(
-                    crate::compiler::clickbox::ClickBox::column(p, 2).summon(&format!(
-                        "response:1b,Invulnerable:1b,Tags:[{FIXTURE_NBT}\"{tag}\"]"
-                    )),
-                );
-            }
-            // `DW0426` has already failed the build.
-            crate::compiler::pressable::Body::Nothing => {}
-        }
-    }
-    out
-}
-
 /// `DW0426`: every click trigger must be anchored somewhere a player can click.
 ///
 /// Build tier (exit 3), raised before any function is emitted. The trigger
@@ -189,11 +98,14 @@ pub(super) fn check_trigger_bodies(
     plan: &Plan,
 ) -> Result<crate::compiler::pressable::PressLedger, BuildFailure> {
     use delvewright_dsl::TriggerOn;
-    let mut ledger = crate::compiler::pressable::PressLedger::default();
-    // Every trigger this build EMITS, not only the campaign's own: a press answer
-    // the compiler synthesizes lands on a body exactly as an authored click does,
-    // and a proof that walked the authored list alone would leave the compiler's
-    // own presses unexamined and the ledger's count short of what shipped.
+    let mut ledger = crate::compiler::pressable::PressLedger {
+        bodies: crate::compiler::pressable::PressLedger::bodies_of(plan),
+        presses: Vec::new(),
+    };
+    // Every trigger this build EMITS, not only the campaign's own: an answer
+    // the compiler synthesizes lands on a body exactly as an authored click
+    // does, and a proof that walked the authored list alone would leave the
+    // compiler's own presses unexamined and the ledger's count short.
     for t in &plan.emitted_triggers_unlocalized() {
         // A position trigger has no body to press; a `step`'s cell is judged by
         // `DW0917` against the assembled world instead.
@@ -213,8 +125,6 @@ pub(super) fn check_trigger_bodies(
             continue;
         }
         // A `strike-assembly` (spec-0082) lands on the assembly's own hitbox.
-        // An assembly with none is `DW0936`, and one out of reach `DW0937`;
-        // what is recorded here is the body the press resolved to.
         if let Some(a) = t.on.assembly_target() {
             let placed = crate::compiler::assembly::placed(plan);
             if let Some(p) = placed.iter().find(|p| p.decl.id == *a)
@@ -234,19 +144,20 @@ pub(super) fn check_trigger_bodies(
             }
             continue;
         }
-        let Some(at) = t.at_anchor() else {
-            continue;
-        };
-        if matches!(t.on, TriggerOn::Strike) && crate::compiler::pressable::npc_stands_at(plan, at)
-        {
+        // A `strike-npc`, and a `strike` at an NPC's stand, ride the NPC.
+        if npc_ridden_by(plan, t).is_some() {
             ledger.push(
                 t.id.as_str(),
                 t.on.kind(),
-                at,
+                t.at_anchor().unwrap_or("-"),
                 "rides the NPC's dialogue hitbox",
             );
             continue;
         }
+        let Some(at) = t.at_anchor() else {
+            continue;
+        };
+        let _ = TriggerOn::Use;
         let body = crate::compiler::pressable::trigger_body(plan, t);
         if body != crate::compiler::pressable::Body::Nothing {
             ledger.push(
@@ -261,15 +172,15 @@ pub(super) fn check_trigger_bodies(
             code: crate::compiler::pressable::DW_TRIGGER_UNPRESSABLE,
             message: format!(
                 "trigger `{}` watches a `{}` on anchor `{}`, but nothing at that anchor is \
-                 clickable: it resolves to no placed piece, so the compiler has no cell to give \
-                 the trigger a body at and the press can never land. The trigger's effects would \
-                 simply never run, with every check green. Prescription: {}, or drop the \
-                 trigger.",
+                 pressable: it resolves to no placed point with a block, so the compiler has no \
+                 cell to put the trigger's block at and the press can never land. The trigger's \
+                 effects would simply never run, with every check green. Prescription: {}, or \
+                 drop the trigger.",
                 t.id,
                 t.on.kind(),
                 at,
                 delvewright_dsl::Placement::of(plan.campaign).anchor_remedy(
-                    "anchor it on a place a prefab provides (anchor names come from prefab \
+                    "anchor it on a point a prefab provides (anchor names come from prefab \
                      metadata; do NOT invent one)"
                 ),
             ),
@@ -326,6 +237,36 @@ pub(super) fn trigger_poll_guards(
             )
         })
         .collect();
+    // spec-0117 §5.3: a trigger that `serves` a thing is open only while that
+    // thing is open — its objective pending (the objective's own
+    // `pending_guard`, read, not restated) or its gate sealed.
+    let mut flag_guard = flag_guard;
+    match &t.serves {
+        Some(delvewright_dsl::Serves::Objective(o)) => {
+            if let Some((q, obj)) = plan.campaign.quests.content.quests.iter().find_map(|q| {
+                q.objectives
+                    .iter()
+                    .find(|x| x.id().as_str() == o.as_str())
+                    .map(|x| (q, x))
+            }) {
+                let pg = pending_guard(plan, obj, &quest_active_score(q.id.as_str()));
+                flag_guard.push_str(&format!("{} ", pg.trim()));
+            }
+        }
+        Some(delvewright_dsl::Serves::Gate(g)) => {
+            flag_guard.push_str(&super::press::gate_terms(plan, g.as_str()).0);
+            // A shortcut door's own answer speaks only to a presser on its
+            // sealed side; the far side hears the shortcut's `not_yet`.
+            if t.addresses_presser() {
+                flag_guard.push_str(&super::press::side_term(plan, g.as_str(), true));
+            }
+        }
+        None => {}
+    }
+    // spec-0117 §5.2: an answer is held to the one state it answers.
+    if let Some((_, g)) = super::press::answer_guard(plan, t) {
+        flag_guard.push_str(&g);
+    }
     (once_guard, forbid_guard, flag_guard)
 }
 
@@ -567,10 +508,12 @@ pub(super) fn step_dispatch_fn(
     } else {
         format!("execute {conds} run function {ns}:trig_{id}")
     };
-    (
-        format!("step_{id}"),
-        lines(&[format!("tag @s add {STEP_TAG}{id}"), dispatch]),
-    )
+    let mut body = vec![format!("tag @s add {STEP_TAG}{id}")];
+    if let Some((prelude, _)) = super::press::answer_guard(plan, t) {
+        body.push(prelude);
+    }
+    body.push(dispatch);
+    (format!("step_{id}"), lines(&body))
 }
 
 /// Environment-trigger effect functions (`trig_<id>`). A trigger is a **party
@@ -652,6 +595,10 @@ pub(super) fn env_trigger_fns(
                 "data remove storage {STRIKER_STORAGE} {STRIKER_PATH}"
             ));
         }
+        // spec-0117 §5.2: an answer writes its trace and plays the refusal cue.
+        if let Some(a) = crate::compiler::pressable::answer_of(plan, t.id.as_str()) {
+            body.extend(super::press::answer_body_tail(a));
+        }
         out.push((format!("trig_{id}"), lines(&body)));
     }
     out
@@ -701,13 +648,29 @@ pub(super) fn press_dispatch_fn(
     } else {
         format!("execute {once_guard}{forbid_guard}{flag_guard}run function {ns}:trig_{id}")
     };
-    (
-        format!("press_{id}"),
-        lines(&[
-            format!("advancement revoke @s only {ns}:press_{id}"),
-            dispatch,
-        ]),
-    )
+    let mut body = vec![format!("advancement revoke @s only {ns}:press_{id}")];
+    // An answer reads its owner's state, computed as the presser, first.
+    if let Some((prelude, _)) = super::press::answer_guard(plan, t) {
+        body.push(prelude);
+    } else if plan.answers().iter().any(|a| {
+        a.owner
+            == crate::compiler::pressable::Owner::Trigger {
+                id: t.id.as_str().to_string(),
+            }
+    }) {
+        // The act: a press that acts marks its presser for this tick, so the
+        // trigger's `done` answer on the same report stays quiet.
+        let tag = super::press::acted_tag(&format!("trig_{id}"));
+        body.push(
+            if once_guard.is_empty() && forbid_guard.is_empty() && flag_guard.is_empty() {
+                format!("tag @s add {tag}")
+            } else {
+                format!("execute {once_guard}{forbid_guard}{flag_guard}run tag @s add {tag}")
+            },
+        );
+    }
+    body.push(dispatch);
+    (format!("press_{id}"), lines(&body))
 }
 
 #[cfg(test)]
