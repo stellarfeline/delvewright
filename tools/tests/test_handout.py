@@ -178,6 +178,31 @@ def test_a_delvec_that_states_no_wave_bound_is_refused(rig: Rig):
     assert rig.handouts("hall") == []
 
 
+def test_a_starter_and_its_allocation_stand_beside_the_handout(rig: Rig):
+    """Step 1 is a program that already passes, never research (spec-0122 §6.3)."""
+    out = rig.run()
+    assert out.returncode == 0, out.stderr
+    handout = rig.handouts("hall")[0]
+    starter = handout.with_name("starter.py")
+    allocation_file = handout.with_name("allocation.json")
+    assert starter.read_bytes() == (SKILL / "scripts" / "starter.py").read_bytes()
+    assert json.loads(allocation_file.read_text(encoding="utf-8")) == allocation("node/hall")
+    text = handout.read_text(encoding="utf-8")
+    assert "## Step 1: start from the starter" in text
+    assert f'--allocation "{allocation_file}" --out "{rig.campaign / "programs" / "hall.json"}"' in text
+    assert str(rig.campaign / "design" / "generator" / "hall.py") in text
+    assert "It passes `detail --check` as it stands." in text
+    assert "not the engine's source, not the engine's gallery, not another campaign" in text
+    assert "gallery/overlays/site-plan/programs" not in text, "the gallery is not on the reading list"
+    # The starter, run on the handed allocation, writes a program for this place.
+    prog = rig.root / "hall.json"
+    r = subprocess.run([sys.executable, "-I", str(starter), "--allocation", str(allocation_file), "--out", str(prog)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    doc = json.loads(prog.read_text(encoding="utf-8"))
+    assert doc["params"]["handed/datum-y"] == allocation("node/hall")["datum_y"]
+    assert {e.get("via") or e["bar"]["region"] for e in doc["contract"]["edges"]} == {"landing-hall-way", "seam-hall-yard"}
+
+
 def test_the_entry_place_is_told_it_owes_the_spawn(rig: Rig):
     out = rig.run(place="node/landing")
     assert out.returncode == 0, out.stderr

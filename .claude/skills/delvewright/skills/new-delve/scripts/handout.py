@@ -69,11 +69,12 @@ SKILL_REFERENCES = (
 ENGINE_REFERENCES = (
     ("docs/reference/grammar.md", "§2 is the program surface, §2b `mark`, §2c the idiom index, §2d the spatial contract"),
     ("docs/reference/prefab-procedure.md", "the procedure a piece is made by; §3 the program, §4 the gates, §5 looking at it"),
-    (
-        "gallery/overlays/site-plan/programs",
-        "one finished program per place of the engine's own gallery — a hall with barred doors, a roofed annex, an open causeway, an aloft gantry; read them as worked examples and never copy a rule to change its paint",
-    ),
 )
+
+# The starter generator copied beside every handout (spec-0122 §6.3): an
+# empty-but-correct program for any allocation, so an author starts from a
+# program that already passes `detail --check` rather than from research.
+STARTER = SKILL_ROOT / "scripts" / "starter.py"
 
 
 class Refusal(Exception):
@@ -372,6 +373,8 @@ def render(
     handout_path: pathlib.Path,
     delvec: str,
     concurrency: str,
+    starter: pathlib.Path,
+    allocation_file: pathlib.Path,
 ) -> tuple[str, dict[str, int]]:
     stem = stem_of(place)
     world = content(docs.get("world"))
@@ -398,6 +401,17 @@ def render(
     w("")
     w(f"Places are authored concurrently, up to the bound the engine states — `{concurrency}` — and committed one at a time by the orchestrating session. **Which neighbours are detailed is as of this handout**: your check reads the whole as it stands on disk when the check runs, so a neighbour may have landed since this file was written, and a check that passed may be answered differently once it has.")
     w("")
+    generator = campaign_dir / "design" / "generator" / f"{stem}.py"
+    w("## Step 1: start from the starter")
+    w("")
+    w(f"Beside this handout stand `{starter}` — a ready-to-run generator for this place — and `{allocation_file}`, this place's allocation as `delvec allocation` prints it. The starter reads every handed value from the allocation (datum, ground, each seam's cells and rise, the roof, the owed names) and emits an empty-but-correct program: the floor, the ring wall, the lid where the place is roofed, every seam's opening answered, every owed name marked, sconces for the light probe. **It passes `detail --check` as it stands.** So:")
+    w("")
+    w(f"1. Copy it to `{generator}` and run it: `\"$DELVEWRIGHT_PYTHON\" \"{generator}\" --allocation \"{allocation_file}\" --out \"{program}\"`.")
+    w(f"2. Check it — `{delvec_p} detail --check \"{campaign_dir}\" {place}` — and see it green before you build anything.")
+    w("3. Build the place at the points marked `# ── BUILD HERE` in your copy, each of which names the idiom (the grammar reference's §2c) and the step of the *new pieces* reference it reaches for; re-run the generator and check after every edit.")
+    w("")
+    w("**Nothing outside this handout's reading list is needed, and nothing outside it is read**: not the engine's source, not the engine's gallery, not another campaign. Everything the starter does not already do is in the references listed below.")
+    w("")
     w("## What you may do, and what you may not")
     w("")
     w(f"- **Write** exactly one document: `{program}` (and, if you emit it from a script, that script beside it under `{campaign_dir / 'design' / 'generator'}` — the JSON is the artifact of record). Create the `{PROGRAMS_DIR}/` directory if it is absent.")
@@ -416,6 +430,7 @@ def render(
         w(f"- `{SKILL_ROOT / rel}`")
     for rel, gloss in ENGINE_REFERENCES:
         w(f"- `{engine / rel}` — {gloss}")
+    w(f"- `{starter}` — your starting program's generator, and the shape every generator takes")
     w("")
     w("The *detail* reference's section *The program's contract* is the contract your program has to meet: every handed value used is declared as a parameter under the `handed/` prefix with the allocation's value as its default (`handed/datum-y`; `handed/ground/{min-y,max-y,bottom-y}`; `handed/roof/…` on a declared roof; `handed/seam/<edge stem>/{x0,y0,z0,x1,y1,z1,rise}`); every seam is answered with an opening at the handed cells and a contract edge to `exterior` whose `via` is that opening; every owed name is answered with a `mark` of that stem; a bar this place owns is a `barred` contract edge over exactly the bar's cells, its region named by the seam's stem; the piece is EXACTLY the frame's shape. `delvec detail --check` names every handed name it offers when your program asks for one it does not (`DW0882`).")
     w("")
@@ -617,6 +632,10 @@ def go(args: argparse.Namespace) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     attempt = len(list(out_dir.glob("handout-*.md"))) + 1
     handout_path = out_dir / f"handout-{attempt}.md"
+    starter = out_dir / "starter.py"
+    shutil.copyfile(STARTER, starter)
+    allocation_file = out_dir / "allocation.json"
+    allocation_file.write_text(json.dumps(a, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     text, counts = render(
         campaign_dir=campaign_dir,
         place=place,
@@ -633,6 +652,8 @@ def go(args: argparse.Namespace) -> int:
         handout_path=handout_path,
         delvec=delvec,
         concurrency=concurrency,
+        starter=starter,
+        allocation_file=allocation_file,
     )
     handout_path.write_text(text, encoding="utf-8")
     if refusal is not None:

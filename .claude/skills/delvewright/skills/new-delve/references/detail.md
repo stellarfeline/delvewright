@@ -99,7 +99,15 @@ agent: *Reference: when the prefab library has no piece you need* and
    It runs `delvec allocation` itself, writes
    `<campaign-dir>/.out/handouts/<place stem>/handout-<n>.md` — `n` is the
    attempt, counted from the files already there — and prints two lines: the
-   handout's path, and the one-line prompt you launch the agent with. Where the
+   handout's path, and the one-line prompt you launch the agent with. Beside the
+   handout it writes `allocation.json`, the place's allocation, and
+   `starter.py`, the starter generator: run on that allocation it writes an
+   empty-but-correct program — floor, ring wall, lid, every seam answered,
+   every owed name marked, sconces — that passes `detail --check` as it
+   stands, with the places to build marked inside it. The handout makes it the
+   author's step 1, so an author starts from a passing program and never from
+   research: nothing outside the handout's reading list — the engine's
+   source, its gallery, another campaign — is needed or read. Where the
    place already has a program it runs `detail --check` on it: a program
    that passes is **exit 3** and no handout (commit it, step 3), a refused one
    puts the verdict into the handout verbatim as the refusal the next attempt
@@ -119,7 +127,9 @@ agent: *Reference: when the prefab library has no piece you need* and
    added. **Never a fork**: a fork inherits this session's whole context, every
    other place and the design included, which is the one thing the agent must
    not hold. The handout tells the agent what it may read (the handout, its
-   own program, the authoring references, the grammar corpus), what it may run
+   own program, the starter, the authoring references, the grammar corpus),
+   that it starts by copying the starter to `design/generator/<place stem>.py`,
+   running it and checking it green before it builds, what it may run
    (`delvec allocation` for the same facts again; `delvec grammar expand` at
    the frame and a render to look; `detail --check` to check), what it
    writes (`programs/<place stem>.json`, and a generator script beside it under
