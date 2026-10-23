@@ -7,11 +7,14 @@ changes the module's surface updates it in the same PR.
 It is a library **and** a tool: `delvec grammar` ([`tools.md`](tools.md) §2a) is
 its entry point, and the procedure that drives it is
 [`prefab-procedure.md`](prefab-procedure.md). Nothing here ships in a delve —
-generation-time only (ADR-0003). The compiler's build path never reaches it;
-inside the engine its one consumer is prefab admission (`delvec::admit`),
-which judges a hand-built piece's spatial contract with the same checker an
-expansion is judged by (spec-0036 §1c), and the export seam of §7 is tested
-from both sides in `crates/delvec/tests/grammar_prefab.rs`.
+generation-time only (ADR-0003). The compiler never expands a program; inside
+the engine its consumers are prefab admission (`delvec::admit`), which judges a
+hand-built piece's spatial contract with the same checker an expansion is judged
+by (spec-0036 §1c), `delvec detail` and `delvec sculpt`, which run its gates and
+its export, and the compiler's piece-claim checks (`compiler::seating`,
+`compiler::claims`), which read a frozen piece's blocks into its `VoxelModel` and
+ask `settle` for its fluid bodies. The export seam of §6 is tested from both sides
+in `crates/delvec/tests/grammar_prefab.rs`.
 
 Two library modules exist for the tool and are public for it:
 
@@ -147,7 +150,7 @@ Program ─ expand(program, region, {seed, limits, orientation}) ─▶ VoxelMod
 | `palette` | role → paint | style controls; a paint is a block-state string or a weighted list. Also a frame — `bind` overrides it over a subtree |
 | `include` | `[{program, prefix, rename_anchors}]` | other program **files** composed into this one (§5c); resolved by the loader before anything reads the program |
 | `rules` | name → `[alternative]` | each alternative is `{weight, when, body}` |
-| `contract` | `{entry, spaces, no_body, edges}` | the spatial contract (§2d); omitted by a program that makes no spatial claim |
+| `contract` | `{entry, spaces, no_body, edges, no_body_majority_ack}` | the spatial contract (§2d); omitted by a program that makes no spatial claim |
 | `shown_faces` | `["north"\|"south"\|"east"\|"west"\|"up"\|"down"]` | which of this building's own six sides are finished exterior surface (§2f); written into the exported prefab's `shown_faces` on every expansion, and read there by `DW0885` |
 
 **Rule bodies** (`op`): `fill` (a role or an inline paint), `void` (air), `skip`
@@ -464,7 +467,7 @@ the declaration is all that is wanted.
 | `at` | which cell (flattened into the mark object, see below) |
 | `facing` | `north`/`south`/`east`/`west`. Omitted, it is **derived** as the direction of *decreasing local `Z`* — the way §5b's frame says travel runs. Which world direction that is depends on both halves of the frame: `north`/`south` when local `Z` names world `Z`, `west`/`east` when it names world `X`, the second of each pair when local `Z` is reflected. All four cardinals are reachable. A scope whose local `Z` is *vertical* has no cardinal facing and says so rather than guessing. |
 | `index` | `unique` (default) → `anchor/<stem>`; `auto` → `anchor/<stem>-<n>`, `n` counting from 1 per stem in expansion order — how a rule that runs once per tower gives every tower an anchor without knowing how many there are. Matches the hand-built `anchor/alcove-1…` convention. |
-| `role` | what the anchor is **for**, written through to the exported anchor's metadata. One term: `entry` — the cell a body arrives at when it enters the area this piece is placed in. The exported KEY is unaffected and stays `anchor/<stem>`; the role is what lets a program declare an entry point without needing to write a name it structurally cannot write. One anchor per area may carry it (`DW0804`), and a campaign still binds every other anchor by name. |
+| `role` | what the anchor is **for**, written through to the exported anchor's metadata, from the engine's closed anchor-role vocabulary (`entry`, `furniture`). `entry` is the cell a body arrives at when it enters the area this piece is placed in. `furniture` names a set of blocks through an anchor's `region`, which a mark does not write, so a marked `furniture` anchor is refused by `DW0888`. The exported KEY is unaffected and stays `anchor/<stem>`; the role is what lets a program declare an entry point without needing to write a name it structurally cannot write. One anchor per area may carry it (`DW0804`), and a campaign still binds every other anchor by name. |
 | `holder` (`1.12.0`) | an **item holder** standing at the anchor (spec-0111): `{"kind": "item-frame" \| "glow-item-frame" \| "armor-stand", …}` with the kind's scene properties — a frame's `rotation` (its item's eighth-turn, `0`–`7`) and `invisible`; a stand's `pose` (`head`, `body`, `left_arm`, `right_arm`, `left_leg`, `right_leg` → `[x, y, z]` degrees), `small`, `show_arms`, `no_base_plate` and `invisible`. The export writes the entity into the piece's `entities` list at the mark's cell: a frame **faces the mark's facing** and hangs on the block behind it; a stand stands on the cell's floor **turned to the facing**. Nothing the engine owns is writable here — the item, the lock flags, the tags — and the entity is judged by the admission's entity judge before a byte is written. The anchor is the holder's anchor, so a `loot` entry or a `collect`'s `holder` on it fills the holder. A property the kind does not carry (`pose` on a frame, `rotation` on a stand, a frame rotation past 7) is a `Program::validate` error. |
 
 `at` is one of:
@@ -843,11 +846,11 @@ two taper across world `X` and two across world `Z`. Three rules.
   "body": { "op": "call", "symbol": "head" } }
 ```
 
-**Written without arguments the same four heads are eight rules.** The paint is
+**Written without arguments the same four heads are nine rules.** The paint is
 filled by `shoulders`, the second rule of the recursion — so a glazed head needs
 a copy of `shoulders`, which needs a copy of `head` to call it, twice over for
 the two axes. Nothing keeps four copies in step and no gate reads the
-difference: `crates/delvec/tests/grammar_arguments.rs` builds the eight-rule program, edits one copy's
+difference: `crates/delvec/tests/grammar_arguments.rs` builds the nine-rule program, edits one copy's
 taper, and all five always-on gates — `blocks-exist`, `shape-complete`,
 `states-complete`, `oriented-fills`, `non-empty` — plus the coverage report and
 the determinism
@@ -1247,7 +1250,8 @@ ceiling, so the top plane is air, and the underside is what the ground covers.
 ## 3. Determinism (ADR-0006)
 
 Same program + same region + same seed → byte-identical `VoxelModel`, asserted by
-a double-expand test over every library program at five seeds, plus a
+a double-expand test over every vocabulary piece of the library (its 22 `Piece`
+entries) at five seeds, plus a
 seed-sensitivity test over a probabilistic program, over the declared
 anchors (names, cells and per-stem numbering alike), and over the resolved
 spatial contract — in two processes as well as twice in one, since a process
@@ -1282,11 +1286,15 @@ a non-repeating split, zero weights, a `rounding` on a
 split with no relative piece — nowhere to put the remainder — `split_axis` named
 outside a split, an `orientation` guard that is not a
 permutation — a guard nothing could ever match — a `mark` whose anchor stem
-is not kebab-case, a `bind` that binds nothing, and a `bind` naming a parameter
-or role the program does not declare). During expansion: `NoApplicableRule`,
-`Split{Overflow|ZeroStride}`, `Orient`, `BadSize`, `Eval`, `PaletteFull` (more
-than 65 536 distinct block states in one model), `MarkOutsideScope`,
-`MarkFacingNotCardinal`, `AnchorCollision`, and the `DepthLimit` / `ScopeLimit` /
+is not kebab-case, a `holder` property its kind does not carry, a `bind` that
+binds nothing, a `bind` naming a parameter or role the program does not declare,
+an unsupported or reserved `version` and a construct above it (§2e), a bad or
+repeated `shown_faces` side (§2f), the contract's reference-integrity refusals
+(§2d), and an include list still unresolved). During expansion:
+`NoApplicableRule`, `Split{Overflow|ZeroStride}`, `Orient`, `BadSize`, `Eval`,
+`PaletteFull` (more than 65 536 distinct block states in one model),
+`MarkOutsideScope`, `MarkFacingNotCardinal`, `AnchorCollision`,
+`LocalFrameUnresolvable` (`DW0738`, §4b), and the `DepthLimit` / `ScopeLimit` /
 `VolumeLimit` budgets. Errors carry the rule name and print as prose, never as a
 `Debug` struct.
 
@@ -1668,8 +1676,9 @@ which optional gates the zone claims (`traversable`, `allow_falls`,
 `reachable_floor`, `symmetric`). That file exists because a grammar program is
 region-polymorphic — a program alone cannot be expanded, and while the region
 lived in a design page nothing could check a zone program at all. The mapping is
-a bijection: a programs directory with no manifest is a finding, a program file
-no entry names is a finding, and an entry naming no file is a finding. Without
+a bijection, and each break of it reds the run (exit 4): a programs directory
+with no manifest, a program file no entry names and no zone program composes,
+and an entry naming no file. Without
 those three, "add a zone program" and "add a zone program nothing will ever
 check" are the same action.
 
@@ -1770,7 +1779,7 @@ over whichever of the four spacings the remaining path has room for).
 
 | | |
 |---|---|
-| Controls | `spacing_min` (6), `niche_height` (2), `watch_back` (3); roles `rock` (the corpse prop is per-frame guarded inline states, `corpse_prop` — its yaw follows the recess's frame, one alternative for each of the four frames a caller can reach: the two horizontal permutations and the half-turn of each. A role in the scope's own axes would say the same in one binding, and this piece is one of the corpus's two remaining demonstrations of the `orientation` guard, §7) |
+| Controls | `spacing_min` (6), `niche_height` (2), `watch_back` (3); roles `rock` (the corpse prop is per-frame guarded inline states, `corpse_prop` — its yaw follows the recess's frame, one alternative for each of the four frames a caller can reach: the two horizontal permutations and the half-turn of each. A role in the scope's own axes would say the same in one binding, and this piece is one of the corpus's three demonstrations of the `orientation` guard, with `broken_grate` and `church`, §7) |
 | Smallest region | 3 × (`niche_height` + 2) × 3, and at least as long as it is wide |
 | Anchors | `anchor/niche-<i>` — inside each recess, facing the ledge (derived through a `reorient` that names the across-path axis as local `Z`; this is why the ledge is at local `X`-min). `anchor/niche-watch-<i>` — a ledge cell `watch_back` up-path, facing down-path. |
 | Variants | weighted alternatives per slot: teach (2) — one recess with a corpse prop, no occupant; test (3) — one empty recess; twist (1) — two adjacent recesses, each with its own anchor pair |
@@ -2057,8 +2066,8 @@ Gates:
    (`crates/delvec/tests/grammar_staging.rs`) — the ±1-step walk `cliff_path` uses, plus a one-way
    **fall** edge: stepping off a standable cell into an adjacent column with
    nothing underfoot, landing on the first solid floor below however far that
-   is. Deliberately more permissive than `crate::nav`'s NPC pathing
-   (`walk_region`, ±1 only) — a player can walk off a ledge, an escorted
+   is. Deliberately more permissive than the compiler's NPC pathing
+   (`compiler::nav::World::walk_region`, ±1 only) — a player can walk off a ledge, an escorted
    NPC never has to.
 2. **`anchor/landing` does *not* reach `anchor/spill`**, under the *plain* ±1
    step walk (no fall edge helps a climb). Proving the negative under gate 1's
@@ -2100,7 +2109,7 @@ left open — not a narrower door, a **barred** one.
 |---|---|
 | Controls | `head` (3), `door_height` (2), `unbarred` (0 — a test knob); roles `rock` and `bar`, the second written in the scope's own axis frame (`{"local": …}`) so its connections span the wall's local `X` whichever way the piece is laid, reflections included |
 | Smallest region | 3 × (`head + 2`) × 3, and at least as long as it is wide |
-| Anchors | `anchor/gate` — the barred opening's own floor cell. A point, not a region: a region anchor (`region` + `block`, the shape a `close-gate` / `shortcut` fill actually needs) is not expressible by a rule (§7) — the same limitation `watch_bay`'s `anchor/gate` accepts. `anchor/unlock` — the far room's floor centre, where a campaign's `shortcut.unlock` binds |
+| Anchors | `anchor/gate` — the barred opening's own floor cell. A point, not a region: a region anchor (`region` + `block`, the shape a `close-gate` / `shortcut` fill actually needs) is what a contract's `barred` edge exports (§2b), and this piece declares no contract — the same limitation `watch_bay`'s `anchor/gate` accepts. `anchor/unlock` — the far room's floor centre, where a campaign's `shortcut.unlock` binds |
 
 Gates:
 
@@ -3073,8 +3082,8 @@ A structure template is local-coordinate, so the region's **origin** does not
 reach the output; its **size** does, and is the declared `structure.size`.
 
 The metadata is the hand-built shape, minus what expansion cannot know. Its
-shape is defined once, in `delvec::schem::prefab` — the crate that also
-writes the `.nbt` half — and every tool that produces or edits a prefab reads and
+shape is defined once, in `delvewright_dsl::prefab` (re-exported beside the
+`.nbt` writer as `delvec::schem::prefab`), and every tool that produces or edits a prefab reads and
 writes it through that one type, so an admission step cannot drop the parts it
 does not itself model:
 
@@ -3281,10 +3290,11 @@ program's `entry` reaches the exported metadata and is what makes a generated
 zone a place a party can arrive in). What it does not declare is a **trap**
 anchor's pre-wired hardware (`dispenser`, `trigger_block`), which is expressible
 in prefab metadata but not by a rule — that needs its own declaration, not a
-widened `mark`. A rule can name a *region* (§2d), and a `barred` edge's bar
-region is the cells a campaign's `shortcut` / `close-gate` / `lift` addresses;
-what is missing is the export half, since a claimed region reaches the metadata's
-`spatial_contract` block and not its `anchors` map.
+widened `mark`. A rule can name a *region* (§2d); a `barred` edge's bar region,
+the cells a campaign's `shortcut` / `close-gate` / `lift` addresses, is exported
+as a gate anchor when its claimed boxes fill one box (§2b), and every other
+claimed region reaches the metadata's `spatial_contract` block and not its
+`anchors` map.
 
 **Three pieces spell out per-frame variants a local-frame role would replace.**
 An orientation-dependent block can be a palette role in the local axis frame

@@ -1,0 +1,39 @@
+{
+  "code": "DW1034",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/content/view_distance",
+      "value": 20
+    },
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/1/on_objective_complete/obj~1clear-the-muster/18/shots/2",
+      "value": {
+        "path": [
+          {
+            "anchor": "anchor/lectern",
+            "offset": [
+              0,
+              2,
+              -200
+            ]
+          }
+        ],
+        "seconds": 2,
+        "subject": {
+          "npc": "npc/curator",
+          "offset": [
+            0,
+            1,
+            0
+          ]
+        }
+      }
+    }
+  ],
+  "units": [],
+  "why": "The Curator's insert, taken from two hundred blocks off under a served distance of twenty chunks (320 blocks): her mannequin is tracked to 320 blocks, so the server sends her, and every client stops drawing a body of her size at 64 blocks. Validation names the tick, the distance and the cull radius. The remedy is the camera's distance; an NPC has no knob that draws it farther."
+}

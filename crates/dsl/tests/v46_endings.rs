@@ -236,9 +236,10 @@ fn every_verb_is_in_exactly_one_aftermath_class() {
         "arm-strikes",
         "play-clip",
     ];
-    const SAYS: [&str; 7] = [
+    const SAYS: [&str; 8] = [
         "narrate",
         "play-sound",
+        "stop-sound",
         "firework",
         "particle",
         "cutscene",
@@ -250,7 +251,7 @@ fn every_verb_is_in_exactly_one_aftermath_class() {
     let before = named.len();
     named.dedup();
     assert_eq!(named.len(), before, "a verb is named in both classes");
-    assert_eq!(named.len(), 45);
+    assert_eq!(named.len(), 46);
     // Every effect the gallery declares (spec-0039: one instance of every
     // surface, probes included), parsed as the engine parses it. A verb the
     // lists above do not name fails here the day its gallery element lands.

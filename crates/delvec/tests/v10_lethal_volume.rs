@@ -635,7 +635,13 @@ fn the_binding_ledger_states_its_counts() {
         serde_json::from_str(&text(&out, "validation/lethal-gate.json")).unwrap();
     assert_eq!(gate["volumes"]["declared"], 1);
     assert_eq!(gate["volumes"]["resolved"], 1);
-    assert_eq!(gate["packtest_templates"], 1);
+    // Counted from the emission: the kill template and the wording guard.
+    assert_eq!(gate["packtest_templates"], 2, "{gate}");
+    let emitted = out
+        .keys()
+        .filter(|k| k.starts_with("packtest-datapack/data/hello-world/test/lethal_"))
+        .count();
+    assert_eq!(gate["packtest_templates"], emitted as u64, "{gate}");
     assert_eq!(gate["unbound"], false);
     assert!(
         gate["cells"].as_u64().unwrap() >= 1,

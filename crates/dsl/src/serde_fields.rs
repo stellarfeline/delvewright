@@ -21,3 +21,15 @@ pub(crate) fn is_zero(n: &u32) -> bool {
 pub(crate) fn is_zero3(v: &[i32; 3]) -> bool {
     *v == [0, 0, 0]
 }
+
+/// serde `deserialize_with` helper for a field whose `null` is a statement:
+/// absent reads `None` (with `#[serde(default)]`), `null` reads `Some(None)`
+/// and a value reads `Some(Some(v))` (spec-0109 `cutscene.hears`, where `null`
+/// names the ground).
+pub(crate) fn present<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    <Option<T> as serde::Deserialize>::deserialize(d).map(Some)
+}

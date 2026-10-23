@@ -224,10 +224,10 @@ const UNGATED: &str = r#"{ "id": "pulse/the-drip", "sound": "block.pointed_drips
     "every": 40, "floor": 0.2, "pitch": 1.5 }"#;
 
 /// Criterion 1: `delvec schema --stage quests` exports `pulses[]` with
-/// exactly the nine fields, and one `PlaceRef` names the `region` / `place`
+/// exactly the ten fields, and one `PlaceRef` names the `region` / `place`
 /// pair for both carriers.
 #[test]
-fn the_surface_is_nine_fields_and_one_place_ref() {
+fn the_surface_is_ten_fields_and_one_place_ref() {
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
         .args(["schema", "--stage", "quests"])
         .output()
@@ -253,7 +253,7 @@ fn the_surface_is_nine_fields_and_one_place_ref() {
     assert_eq!(
         keys,
         [
-            "at", "every", "floor", "id", "pitch", "place", "region", "sound", "when"
+            "at", "category", "every", "floor", "id", "pitch", "place", "region", "sound", "when"
         ]
     );
     // One declaration of the pair under crates/dsl/src: the `PlaceRef` struct.

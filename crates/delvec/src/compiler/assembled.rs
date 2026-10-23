@@ -70,7 +70,7 @@ pub use delvewright_dsl::blockshape::{
 /// the affected properties before, which is why it never surfaced — the
 /// occupancy classifiers read only `type`/`layers`/`open`/`waterlogged`/`bottom`,
 /// every one of them rotation-invariant, so this correction leaves nav, seating,
-/// relight, snapshots and every emitted command byte-identical (ADR-0006). The
+/// relight, frames and every emitted command byte-identical (ADR-0006). The
 /// stair-orientation proof (`DW0430`) is the first consumer that reads `facing`,
 /// and without this it would report a false defect on every rotated piece.
 ///
@@ -810,6 +810,68 @@ pub(crate) fn template_writes(
         .collect()
 }
 
+/// **Every block entity the placed templates carry** (spec-0112 §5.4): per world
+/// cell, the template block's rotated state and its `nbt` compound, in the
+/// order [`placed_blocks`] writes templates, so a later template's cell — with
+/// or without a compound — replaces an earlier one's. A block entity is a
+/// picture only where the world still holds the template's block there, which
+/// the caller asks of the configuration it writes.
+pub fn template_block_entities(
+    plan: &Plan,
+    structures: &BTreeMap<String, Vec<u8>>,
+) -> BTreeMap<[i32; 3], (BlockState, crate::compiler::view::world::Nbt)> {
+    let mut out: BTreeMap<[i32; 3], (BlockState, crate::compiler::view::world::Nbt)> =
+        BTreeMap::new();
+    for area in &plan.areas {
+        for piece in &area.pieces {
+            for template in &piece.templates {
+                let Some(bytes) = structures.get(&template.structure_file) else {
+                    continue;
+                };
+                let Some(raw) = gunzip(bytes) else { continue };
+                let Some(root) = crate::compiler::nbtread::root(&raw) else {
+                    continue;
+                };
+                let palette: Vec<Option<String>> = decode_template(bytes, true)
+                    .palette
+                    .iter()
+                    .map(|e| e.as_ref().map(|(n, _)| n.clone()))
+                    .collect();
+                for b in root.blocks.iter().flatten() {
+                    let (Some(local), Some(state)) = (b.pos3(), &b.state) else {
+                        continue;
+                    };
+                    let Some(Some(name)) = palette.get(state.0 as usize) else {
+                        continue;
+                    };
+                    if base_id(name) == STRUCTURE_VOID {
+                        continue;
+                    }
+                    let t = piece.rotation.transform(local);
+                    let cell = [
+                        template.pos[0] + t[0],
+                        template.pos[1] + t[1],
+                        template.pos[2] + t[2],
+                    ];
+                    match b.nbt() {
+                        Some(v) => {
+                            let rotated = BlockState::new(&rotate_state(name, piece.rotation));
+                            out.insert(
+                                cell,
+                                (rotated, crate::compiler::view::world::Nbt::from_value(v)),
+                            );
+                        }
+                        None => {
+                            out.remove(&cell);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed {
     let mut blocks: BlockMap = BTreeMap::new();
     let mut open_gates: BTreeSet<[i32; 3]> = BTreeSet::new();
@@ -896,7 +958,7 @@ fn placed_blocks(plan: &Plan, structures: &BTreeMap<String, Vec<u8>>) -> Placed 
     // generated rather than a prefab an author bound, entering the voxel model
     // on exactly the terms a placed piece does — so gravity settling, the
     // occupancy model, relight, the fluid model, boundary safety and the
-    // snapshot renderer all see the landform without one of them being taught a
+    // frame worlds all see the landform without one of them being taught a
     // new horizon.
     //
     // AFTER, not before: the surround stands OUTSIDE the map's declared
@@ -1114,7 +1176,7 @@ pub struct Assembled {
     /// cannot say this — a written air and a cell nothing wrote are both
     /// absent from it — and the server tells them apart: a cell nothing wrote
     /// holds what the level generator laid there
-    /// ([`crate::compiler::plan::ocean_layer_at`] under `horizon: ocean`).
+    /// ([`crate::compiler::plan::ocean_layer_at`] on an `ocean` horizon base).
     pub reached: Reached,
 }
 

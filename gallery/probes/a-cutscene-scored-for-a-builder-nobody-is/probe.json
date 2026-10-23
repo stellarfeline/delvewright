@@ -1,0 +1,17 @@
+{
+  "code": "DW1031",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/0/on_objective_complete/obj~1take-the-emeralds/1/steps/1/effects/0/music/audio~1background_music/creative",
+      "value": {
+        "max_delay": 24000,
+        "min_delay": 12000,
+        "sound": "minecraft:music.creative"
+      }
+    }
+  ],
+  "units": [],
+  "why": "One edit: the emeralds' wide shot's score gains a `creative` track. The pinned client plays it only to a player in creative mode, and no delve body is ever in creative mode, so it is a declaration nothing can hear. `DW1031` refuses it. It declares no unit: the `creative` field is vanilla's record shape, not DSL surface."
+}

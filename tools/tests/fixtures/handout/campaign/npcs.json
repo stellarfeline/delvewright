@@ -1,0 +1,25 @@
+{
+  "campaign_id": "three-places",
+  "content": {
+    "npcs": [
+      {
+        "anchor": "anchor/node-hall",
+        "area": "area/site",
+        "base_entity": "minecraft:villager",
+        "id": "npc/keeper",
+        "name": "The Keeper",
+        "persona": {
+          "archetype": "stoic gatekeeper",
+          "backstory": "He was set to watch the barred arch before the hall had walls, and he has not been relieved since.",
+          "demeanor": "Wary and unmoving at first; yields only to a traveler who asks rather than demands.",
+          "motivation": "Keep the yard shut until someone proves they mean to walk out into it.",
+          "secret": "He has never once looked through the door he guards.",
+          "speech_style": "Terse, formal, archaic; clipped declarations and no contractions."
+        },
+        "role": "quest-giver"
+      }
+    ]
+  },
+  "dsl_version": "0.61.0",
+  "stage": "npcs"
+}

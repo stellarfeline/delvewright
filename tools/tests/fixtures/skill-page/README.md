@@ -11,7 +11,7 @@ version through it, and it is never re-fetched.
 It is here because it is the only artifact that carries **both** forms coreutils
 writes a checksum row in. Four of its five rows are the text form
 (`<digest>  <name>`) and the Windows row is the binary form
-(`<digest> *<name>`), and that one row is what the page's old shell extraction —
-`grep " $ARCHIVE\$"` — could not match. A hand-written fixture would have
+(`<digest> *<name>`), and that one row is what a shell extraction such as
+`grep " $ARCHIVE\$"` cannot match. A hand-written fixture would have
 carried whichever form its author remembered; this one carries what was
 actually published, which is the whole point of driving the parser with it.

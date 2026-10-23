@@ -21,8 +21,10 @@
               "text": "the party completes obj/talk",
               "verb": "learns"
             },
+            "hint": "He keeps the gate room.",
             "id": "obj/talk",
             "npc": "npc/keeper",
+            "title": "Talk to the keeper",
             "type": "talk-to"
           }
         ],
@@ -93,11 +95,13 @@
               "text": "the party completes obj/key",
               "verb": "gains"
             },
+            "hint": "It waits in the upper hall.",
             "id": "obj/key",
             "item": "minecraft:tripwire_hook",
             "requires_flags": [
               "flag/cleared"
             ],
+            "title": "Take the key",
             "type": "collect"
           },
           {
@@ -109,8 +113,13 @@
               "text": "the party completes obj/door",
               "verb": "opens"
             },
+            "hint": "Back down at the foot of the stair.",
             "id": "obj/door",
+            "prop": {
+              "block": "minecraft:lever"
+            },
             "requires_item": "minecraft:tripwire_hook",
+            "title": "Open the door",
             "type": "interact"
           },
           {
@@ -122,11 +131,13 @@
               "text": "the party completes obj/shrine",
               "verb": "arrives"
             },
+            "hint": "Through the door you opened.",
             "id": "obj/shrine",
             "radius": 2,
             "requires_flags": [
               "flag/opened"
             ],
+            "title": "Reach the shrine",
             "type": "reach-anchor"
           }
         ],
@@ -177,6 +188,6 @@
       }
     ]
   },
-  "dsl_version": "0.58.0",
+  "dsl_version": "0.61.0",
   "stage": "quests"
 }

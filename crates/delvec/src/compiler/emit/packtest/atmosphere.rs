@@ -78,7 +78,13 @@ fn restore_first_tick(volumes: &[(usize, CellBox)], ground: &str) -> Vec<String>
 /// One `execute if|unless biome` reading bridged onto a score the template
 /// owns, and the assertion over it (`assert score`, the PackTest condition
 /// every generated template uses).
-fn biome_assert(holder: &str, cell: [i32; 3], biome: &str, holds: bool, out: &mut Vec<String>) {
+pub(super) fn biome_assert(
+    holder: &str,
+    cell: [i32; 3],
+    biome: &str,
+    holds: bool,
+    out: &mut Vec<String>,
+) {
     let mode = if holds { "if" } else { "unless" };
     out.push(format!("scoreboard players set {holder} dw.sys 0"));
     out.push(format!(
@@ -86,6 +92,31 @@ fn biome_assert(holder: &str, cell: [i32; 3], biome: &str, holds: bool, out: &mu
         cell[0], cell[1], cell[2]
     ));
     out.push(format!("assert score {holder} dw.sys matches 1"));
+}
+
+/// The lines that re-establish the first tick's biome map wherever a build's
+/// templates paint: the ground under every repaint volume, then every carried
+/// place through the bootstrap function. The start every biome template reads
+/// from (spec-0080 §5.2, spec-0109 §5.2).
+pub(super) fn first_tick_lines(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    let map = crate::compiler::horizon::biome_map(plan);
+    let volumes: Vec<(usize, CellBox)> =
+        crate::compiler::atmosphere::set_atmospheres(plan.campaign)
+            .into_iter()
+            .enumerate()
+            .filter_map(|(n, (_, _, eff))| {
+                let (min, max) = crate::compiler::horizon::repaint_volume(plan, eff)?;
+                Some((n, (min, max)))
+            })
+            .collect();
+    restore_first_tick(&volumes, &map.ground.id)
+        .into_iter()
+        .chain(
+            (map.places().next().is_some())
+                .then(|| format!("function {ns}:{ATMOSPHERE_BOOTSTRAP_FN}")),
+        )
+        .collect()
 }
 
 /// spec-0080 §5.2: PackTest asserts the server's own reading of the biome map.

@@ -513,6 +513,8 @@ fn a_staged_pit_builds_green_and_is_judged_in_two_configurations() {
     let staged = gate["staged"].as_array().unwrap();
     assert_eq!(staged.len(), 1, "{gate}");
     assert_eq!(staged[0]["configurations"]["judged"], 2, "{gate}");
+    // A staged volume gets three templates: kill, wording guard, shut half.
+    assert_eq!(gate["packtest_templates"], 3, "{gate}");
     let rows = gate["danger_visibility"]["volumes"].as_array().unwrap();
     assert_eq!(rows.len(), 2, "K = 2: {gate}");
     assert_eq!(gate["danger_visibility"]["pairs"], 2);

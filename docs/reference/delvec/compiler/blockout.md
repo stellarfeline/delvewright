@@ -5,16 +5,15 @@ this module declares. The catalog's shared rules are in [`compiler.md` §5](../.
 
 ## Diagnostics
 
-### DW0821/DW0836–DW0839 — the derived blockout (`compiler::blockout`; error + two advisories)
+### DW0821, DW0836–DW0838, DW0877, DW0986, DW0990 — the derived blockout (`compiler::blockout`; error, and `DW0821` a warning until every node is detailed)
 
 Stage 5 of the map pipeline: the whole map's mass, derived from the site plan and
 the metrics table, and then **judged against the plan it was derived from**.
 
 **There is no authored form.** No document, no schema, no file. The only path to
-blockout bytes is `compiler::blockout::derive`, whose input is a validated site
-plan, and the only caller is `Plan::build` — which is the only constructor
-`build`, `snapshot`, `blocking-chart`, `edit`, `detail` and `cameras --preview`
-can reach a world through. That is what makes *blockout before site plan* uncompilable rather
+blockout bytes is `compiler::blockout::derive_with` (`derive` is it with no perturbation), whose input is a validated site
+plan, and the only caller is `Plan`'s constructor (`Plan::build`, or `Plan::build_with` for a `--perturb` run) — which is the only constructor
+`build`, `frames --campaign`, `blocking-chart`, `edit`, `detail` and `cameras --preview` can reach a world through. That is what makes *blockout before site plan* uncompilable rather
 than forbidden: there is nothing to author early.
 
 **The mass is region writes, not a structure template.** A blockout box is a
@@ -23,9 +22,9 @@ packaging of it would be tens of thousands of mostly-air cells split across tile
 past vanilla's 48-per-axis cap, and would need a template writer this crate
 cannot reach. A derived piece is therefore a `PiecePlacement` with **no
 templates** whose blocks live in `AreaPlacement::mass`, applied in
-`assembled::placed_blocks` one step ahead of the socket seals that already had
+`assembled::placed_blocks` one step ahead of the socket seals, which have
 that shape. Nothing downstream special-cases it: `bbox()` answers for forceload
-and relight off `pos`/`size` exactly as before, and a piece the prefab registry
+and relight off `pos`/`size`, and a piece the prefab registry
 has never heard of contributes no face contract and no anchors — which is
 correct, because a derived box makes no claim about mating with anything. Each
 write is split at the point of writing so none exceeds what one vanilla `fill`
@@ -51,7 +50,7 @@ which the staging gate refuses.
 else — no RNG, no clock, no hash-order iteration — so the same plan derives the
 same mass, and changing `world.seed` changes no blockout byte.
 
-**The synthesized vocabulary** (what makes the unchanged quest layer land on
+**The synthesized vocabulary** (what makes the quest layer land on
 massing nobody authored):
 
 | Name | What it is |
@@ -79,7 +78,7 @@ the plan declares with what the assembled bytes are. It does not know where the
 derivation put a floor course, how it chose a pitch, or which cells it cleared —
 it knows the plan, resolved by the same `dsl::siteplan` code stage 4 judged, and
 it knows the world. That claim is demonstrated rather than asserted: each of
-`DW0833`, `DW0836`, `DW0837`, `DW0838`, `DW0877` and `DW0986` is reddened in test by a **deliberately
+`DW0833`, `DW0836`, `DW0837`, `DW0838`, `DW0877`, `DW0986` and `DW0990` is reddened in test by a **deliberately
 perturbed derivation** (`blockout::Perturb`), never by hand-authored bytes, and the
 production path passes `Perturb::none()` as a literal with a test asserting it.
 `low_ceiling` closes one place a course under its plan's ceiling and moves nothing
@@ -101,7 +100,7 @@ observer over the result, so the claim above is something a creator watches
 happen on their own campaign rather than something they take from a test
 transcript. The knobs are every field of `Perturb`, offered under
 `--help` from `blockout::Knob` — `slide-openings`, `sink`, `short-walls`,
-`brick-up`, `low-ceiling`, `wall-contacts`, `open-stairwells`, `bury-barred` — and the three that damage one place
+`brick-up`, `low-ceiling`, `wall-contacts`, `open-stairwells`, `bury-barred`, `hollow-edge` — and the three that damage one place
 (`sink`, `brick-up`, `low-ceiling`) take `--perturb-place <place>`, checked
 against the site plan's own boxes before anything derives. One knob per run: two
 at once and the code that fires says nothing about which defect it saw.
@@ -111,8 +110,8 @@ declared as conflicting arguments, so the invocation carrying both is refused by
 the parser; a perturbed run has no output path at all, rather than a decision not
 to use one. No tree means no `manifest.json`, which is the file
 `tools/creator/staging-gate.py` hashes to give a build the identity an admission token
-binds to — so a perturbed tree is unadmittable by construction. The exit is the
-build tier whatever happens, and a perturbed derivation that NOTHING refuses is
+binds to — so a perturbed tree is unadmittable by construction. The exit is
+non-zero whatever happens (the refusing code's own tier, or exit 3 when nothing refuses), and a perturbed derivation that NOTHING refuses is
 itself a refusal, in those words: that outcome is precisely the failure the
 facility exists to be able to see, and it also occurs honestly when a campaign
 has nothing for that defect to damage (the metrics gym allocates no contact, so
@@ -126,8 +125,8 @@ after the first, capped at twenty. Walls a course tall are the standing example:
 they open every wall above its allocation (`DW0836`, which stops the build) and
 join two places nothing connected (`DW0838`).
 
-The step rule is the compiler's own (`nav::World::neighbors`), whose visibility
-was widened for this rather than copied — a second step rule would make this the
+The step rule is the compiler's own (`nav::World::neighbors`), shared
+rather than copied — a second step rule would make this the
 one proof in the compiler taken under different physics.
 
 | Code | Rule |
@@ -138,7 +137,7 @@ one proof in the compiler taken under different physics.
 | `DW0986` | **A portal nothing crosses.** Every cell of the opening is clear (`DW0836`'s first claim holds) and the hole still leads nowhere: massing stands flush behind it, so a body that opens the bar meets a wall and, where another way joins the two places, every route proof goes round by it and stays green. **The quantifier**: some body standing in the opening steps, under `nav::World::neighbors` at the player's footprint, onto standable ground on **both** sides of the wall — the opening's standable cells taken as one floor a body may walk across first, with the stairwell `DW0836` admits beside a stair's hole in the same wall (a stair through a floor arrives in its hole on one tread and leaves from the next, so no single cell of it need step both ways) — measured over the world with every bar open. A `drop` owes only its **high** side, the policy `DW0877` and `DW0837` hold: a body walks into the opening from the higher place or, through a floor, to the brink, where the cell over the hole has room for a body and a body stands level beside it. A portal whose opening `DW0836` found solid is left to `DW0836` and counted apart. **Remedy**: move the seam along its face (`at`, with `meets` where the far box should stay put), or move what stands flush behind it — a stair laid in either place moves with its own edge's `at`/`meets`, a detailed place's piece is re-detailed. The remedy is taken in test (`tests/blockout.rs`: the same door at `at` 7 refused and at `at` 2 green). The `bury-barred` perturbation reddens it alone. Build tier (exit 3). **Binding: portals measured, standable opening cells, portals left to `DW0836` as solid** (`blockout battery binding:`). |
 | `DW0838` | **A place leaks.** Delete every allocated opening from the world — and, on an `open` site, the **commons** — and no two places may still be walk-connected: a body reaching another place's space that way crosses a wall nothing allocated (a hole in a party wall, a wall the massing left low, a corner two shells did not close). **The commons** (spec-0098 §14, a ruling): on a `fill: open` site every standable cell of the region outside every claim is ordinary walkable ground, an implicit commons every place may open onto through its own openings with no declaration — a narrow gap between two houses is simply ground. Two places that both open onto it are joined through it, and the binding counts the pairs. It is **not** a node of the layout graph: the graph holds the connections the design states, and the route proofs over the assembled world (`DW0311` reach, `DW0306` gate-aware reach, `DW0921` pockets, the critical path's legs) read commons cells as the ordinary world cells they are — none of them reads a claim, so a route through the commons is a route they walk and a pocket in the commons is a pocket. Two shapes stay refused beside the crossing: a **stand-in** — the engine's closed shell, whose only openings are its seams — reaching the commons (the derivation's own leak: detail the place, or find what broke the shell); and, on a `solid` site, which has no commons, any place reaching ground outside every claim (close the edge on the ring the place owns, make the ground a place with seams, or declare the fill `open`). **Departure from spec-0049 §5.3, recorded**: the spec states the first shape as *every legal step between a cell owned by one box and a cell owned by another*, and read literally that rule is vacuous by construction — the plan's own `DW0828` puts exactly one cell between any two boxes, so no cell of one is ever a cardinal neighbour of a cell of the other and the rule quantifies over an empty set forever. The claim is therefore made over **paths**, which is the same claim and can fail: it catches the crossings the step form was reaching for and could not see — a wall the massing left low, a corner two shells did not close, a roof one open place lets a body onto — none of which is a single step between two owned cells either. Build tier (exit 3). **Binding: standable cells classified, place pairs tested, standable cells outside every claim (the commons on an open site), and place pairs joined through the commons.** |
 | `DW0990` | **The plot does not stitch** (spec-0098 §2c, §7). Three shapes of one claim — that a place meets the ground the whole gave it, and only the place that stands on ground has any. *A piece writes a fixed ring cell*: its template holds a block (air included) at a cell of the ring's fixed ground, read off the piece's own `.nbt` at validation beside `DW0987` (`compiler::detail::check_voids`, on `DW0886`'s precedent), named per cell with the terrain block it displaced. *A crack*: along a plot's edge — each column just inside the footprint beside the ring column just outside it — the two ground surfaces (each column's lowest standable cell from the claim's bottom to the top of the play space) differ by more than one block with air under the higher edge, and no seam crosses the ring there; measured over the assembled bytes, so a stand-in and a piece are judged alike, and named with both columns and both heights. A step of one passes; a higher edge standing on a solid face down to the lower surface (a plinth's face, a retaining wall, the fixed ground under a sunken yard) passes. The crack shape judges ground places only: an aloft place stands on no ground and is counted, never judged. *An aloft place stands in the earth*: a place declaring `base: {"aloft": n}` whose footprint or ring has a terrain column with its surface at or above the claim's bottom (`floor − 1 − n`) — read off the plan and its terrain at validation (`compiler::detail::check_aloft`), named with the place, its bottom and the columns (the first six and a count), with the remedies `base: "ground"`, raising the floor, or lowering the terrain; on a `solid` site every claim is carved from the rock and no column is judged. The `hollow-edge` perturbation reddens it alone over a sloped terrain. Declared build tier; the first and third shapes are raised at validation. **Binding: fixed ring ground cells handed and examined; plot-edge columns examined, cracks, aloft places not stitched; aloft places of all places, terrain columns under them examined, columns in the earth** (`void binding:`, `blockout battery binding:` and `aloft binding:`). |
-| `DW0821` | **A sightline is blocked.** The DDA walk of a declared `vision` edge's segment — `nav::walk_cells`, the same exact grid traversal the cutscene clip is proven with — naming **every** blocking cell rather than the first, because a walk sheet that names one cell of a wall has not said where the wall is. **Warning (exit 0) while any box is unbound; an error (exit 3) once `details[]` binds every graph node.** Derived massing has no landform, so a vista the detail pass will carve a ridge for is blocked here by the shells themselves, and refusing it then would force hand-shaped massing into a derivation whose whole property is that nobody shapes it. A fully detailed map has nothing left to carve, so the same world becomes a refusal. The severity is **computed from the artifact** — `compiler::detail::fully_detailed` — rather than set by a stage marker or an author flag, so there is nothing to set, nothing to forget, and no author who can choose the lenient reading. **Binding: sightlines walked.** |
+| `DW0821` | **A sightline is blocked.** The DDA walk of a declared `vision` edge's segment — `nav::walk_cells`, the same exact grid traversal the cutscene clip is proven with — counting **every** blocking cell and naming the first twelve, with the count of the rest, rather than the first, because a walk sheet that names one cell of a wall has not said where the wall is. **Warning (exit 0) while any box is unbound; an error (exit 3) once `details[]` binds every graph node.** Derived massing has no landform, so a vista the detail pass will carve a ridge for is blocked here by the shells themselves, and refusing it then would force hand-shaped massing into a derivation whose whole property is that nobody shapes it. A fully detailed map has nothing left to carve, so the same world becomes a refusal. The severity is **computed from the artifact** — `compiler::detail::fully_detailed` — rather than set by a stage marker or an author flag, so there is nothing to set, nothing to forget, and no author who can choose the lenient reading. **Binding: sightlines walked.** |
 
 `DW0833` and `DW0822` run their **second call sites** here, and the pair is the
 point of each:
@@ -181,8 +180,9 @@ point of each:
 **Binding line.** Every build of a site-plan campaign prints two: what the
 derivation massed (places, how many detailed and how many massed by the
 derivation, roof zones massed, fixed ring ground cells laid, seams with their
-stair, climb and shut counts (`N shut`: every seam built shut, zero stated as zero), whole-owned volumes, anchors synthesized, region writes
-and the cells they cover) and what the battery examined (seams, walls, places,
+stair, climb and shut counts (`N shut`: every seam built shut, zero stated as zero), stairwell cells cut over through-floor runs, whole-owned volumes, anchors synthesized, region writes
+and the cells they cover) and what the battery examined (seams, walls, places with the scenery among them,
+contacts and their crossable columns, portals and their standable opening cells,
 standable cells, place pairs, sightlines, identities with the declaration-only
 count, critical-path legs, fixed ring cells handed, plot-edge columns and
-cracks, standable cells outside every claim — the commons on an open site — and the place pairs joined through it).
+cracks, aloft places, standable cells outside every claim — the commons on an open site — and the place pairs joined through it).

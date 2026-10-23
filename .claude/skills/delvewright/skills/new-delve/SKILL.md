@@ -196,9 +196,9 @@ Read it now and run from it. The table below is the order and the postconditions
 | **I3b · the floor** | Only after exit 3 or 4, and in dev mode always. `cargo build --release -p delvec` **from inside** the engine tree, with `cargo --version` and `rustc --version` equal to the channel `rust-toolchain.toml` names. No `cargo`: hand over `rustup` and wait |
 | **I3c · the binary** | `delvec --version` answers **the number I1b holds it to**. **Write down the `dsl` number** — step 1 needs it on every document. The GPU arms are **not** asked here: they draw with the client jar I5 fetches, so a gate run now refuses on every clean machine there is, for a reason this page created |
 | **I4 · environment** | `~/.delvewright/env.sh` carries `JAVA_HOME`, `DELVEWRIGHT_MODE`, `DELVEWRIGHT_ENGINE`, `DELVEWRIGHT_PYTHON`, `DELVEWRIGHT_SKILL`, `DELVEWRIGHT_PREFABS` and `PATH`, this run's values in the lines I4 owns and every other line kept. Every later command runs as `. ~/.delvewright/env.sh && <command>` |
-| **I5 · client jar** | **STOP — the user's choice.** Download by default, or a copy from a directory they name. Either way the jar lands at `~/.chunky/resources/minecraft.jar` and you have looked at it there. That it *reads* is I8's line |
+| **I5 · client jar** | **STOP — the user's choice.** Download by default, or a copy from a directory they name. Either way the jar lands at `~/.delvewright/client/minecraft-1.21.11.jar` and you have looked at it there. That it *reads* is I8's line |
 | **I6 · the library** | `DELVEWRIGHT_PREFABS` names a prefabs directory and you have said which of the four cases produced it. **Nothing is cloned here** — step 2 takes the shipped library, if the campaign wants one |
-| **I7 · named, not installed** | Chunky's source answers and a JDK of the major `[render].chunky_build_java` names is found for its build (a miss is said out loud, not a stop). On the drawing path only: `refimg.py --dry-run` exits 0. The skin toolchain is not mentioned |
+| **I7 · named, not installed** | On the drawing path only: `refimg.py --dry-run` exits 0. The skin toolchain is not mentioned. Nothing is installed for frames: `delvec` draws them itself, with the jar I5 placed |
 | **I8 · finished when** | Every line of the checklist below answers, through `env.sh`. This is the one place the toolchain is exercised end to end, because three of those lines need the jar, the binary and the library at once |
 
 ### I8 — Init is finished when every one of these answers
@@ -323,8 +323,7 @@ is — then draw it against the tree step 8 built and move it until the picture 
 in the frame. An approved picture with no camera stops the next build, naming
 the pictures, and stops the staging gate in step 13, so this is before the
 hand-over and not after it. A camera answers one picture: never re-aim one at a second,
-write another row. `delvec cameras` draws the record against that tree and
-renders its scenes; `delvec place-camera` is the record's one writer. A row no
+write another row. `delvec cameras` draws the record's frames against that tree; `delvec place-camera` is the record's one writer. A row no
 camera answers is `DW0900`; a camera whose subject is farther than the served
 view distance is refused, and the remedy it names is `world.view_distance`
 (the picture promises a view no player gets otherwise). The craft — which
@@ -337,7 +336,13 @@ hand, in the running game, is `$DELVEWRIGHT_ENGINE/docs/reference/tools.md`
 
 Required for every place: the staging gate at step 13 refuses a build with no
 detail plan, or with any place still standing in its stand-in. **Needs**:
-step 8. **Produces**: `detail-plan.json`, one place at a time. **Read**:
+step 8. **Produces**: `detail-plan.json`, one place at a time. **You write no
+program**: each place's program is written by a **fresh agent** handed only
+that place's handout — `scripts/handout.py` writes it from the campaign, you
+launch the agent with the Agent tool on the one-line prompt the script prints,
+and `delvec detail` on your side is the verdict; a refusal goes back into a
+fresh agent's handout, never into your own edit. One agent at a time, in
+critical-path order. **Read**:
 `references/detail.md`; a piece the library does not have is
 `references/new-pieces.md`; a row that binds a piece the shipped library holds
 takes the library through `references/the-shipped-library.md`.
@@ -365,9 +370,7 @@ skip it and the campaign is not verified, however green the ladder is.
 
 **Needs**: step 10 green. **Produces**: your judgement of the POV sequence in
 route order, read against `campaigns/<id>/design/concept/`, scene by scene.
-Yours to do, not a checklist to hand off: judging a frame is the whole task.
-**Read**: `references/visual-review.md` — its cost section before you run its
-first command. **A POV frame that is the wrong picture** is a camera question,
+Yours to do, not a checklist to hand off: judging a frame is the whole task. `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames` draws the whole set from the worlds the build wrote; quote its first line. **Read**: `references/visual-review.md`. **A POV frame that is the wrong picture** is a camera question,
 not a render one: place that one by hand in the running game
 (`references/tools-by-symptom.md`, *a render camera nobody is satisfied with*).
 
@@ -416,8 +419,8 @@ reference means the file listed here.
 | `references/build.md` | `fmt`, `analyze`, `build`, and what the build writes | steps 6-8 |
 | `references/ladder.md` | PackTest, the bot, branch runs, and how to triage a red | step 10 |
 | `references/chronicle.md` | reading a branch's chronicle against the design | step 11 |
-| `references/visual-review.md` | the POV sequence, Chunky, and what the set costs | step 12 |
-| `references/detail.md` | `detail-plan.json`, one place at a time | step 9 |
+| `references/visual-review.md` | the POV sequence, `delvec --prefabs "$DELVEWRIGHT_PREFABS" frames`, and what the set costs | step 12 |
+| `references/detail.md` | `detail-plan.json`, one place at a time, each by its own fresh agent | step 9 |
 | `references/new-pieces.md` | making a piece the library does not have | step 9 |
 | `references/hand-over.md` | the storybook, its marker, the play server, the staging gate, and the report | step 13 |
 | `references/playtest-rounds.md` | every round after the first | step 13 |
@@ -428,3 +431,4 @@ reference means the file listed here.
 | `scripts/fetch-delvec.py` | run at I3a: the archive, verified and unpacked | I3a |
 | `scripts/find-jdk.py` | run at I1: the newest JDK 21+ already on this machine | I1 |
 | `scripts/fetch-client-jar.py` | run at I5, on the download path | I5 |
+| `scripts/handout.py` | run at step 9, once per place per attempt: the handout a fresh agent authors that place's program from | step 9 |

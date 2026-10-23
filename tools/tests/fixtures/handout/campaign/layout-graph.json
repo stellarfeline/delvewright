@@ -1,0 +1,63 @@
+{
+  "campaign_id": "three-places",
+  "content": {
+    "beats": [
+      {
+        "node": "node/hall",
+        "objective": "obj/ask",
+        "quest": "quest/walk-the-whole"
+      },
+      {
+        "node": "node/yard",
+        "objective": "obj/walk-out",
+        "quest": "quest/walk-the-whole"
+      }
+    ],
+    "critical_path": [
+      "node/landing",
+      "node/hall",
+      "node/yard"
+    ],
+    "edges": [
+      {
+        "a": "node/landing",
+        "b": "node/hall",
+        "class": "walk",
+        "id": "edge/landing-hall"
+      },
+      {
+        "a": "node/hall",
+        "b": "node/yard",
+        "class": "walk",
+        "gating": {
+          "flags": [
+            "flag/keeper-yields"
+          ],
+          "opens_from": "a"
+        },
+        "id": "edge/hall-yard"
+      }
+    ],
+    "entry": "node/landing",
+    "goal": "node/yard",
+    "nodes": [
+      {
+        "id": "node/landing",
+        "intent": "arrival",
+        "note": "A low stone porch a body arrives in: four blocks to its ceiling, one way on, the hall's arch ahead. It reads as a threshold, not a room."
+      },
+      {
+        "id": "node/hall",
+        "intent": "hub",
+        "note": "The keeper's hall: a tall stone room with a timber ceiling, the keeper standing in the middle with his back to the barred south arch. The landing opens in from the west; the yard lies beyond the bars."
+      },
+      {
+        "id": "node/yard",
+        "intent": "goal-chamber",
+        "note": "A walled yard open to the sky, paved in stone, entered through the hall's barred arch on its north side. The whole ends here."
+      }
+    ]
+  },
+  "dsl_version": "0.61.0",
+  "stage": "layout-graph"
+}

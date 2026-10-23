@@ -5,13 +5,13 @@
       "doc": "quests.json",
       "op": "replace",
       "path": "/content/quests/0/objectives/3/hint",
-      "value": "The Factor keeps the counter on the east side of the near hall."
+      "value": "The Factor, the hall's trader, keeps the counter on the east side of the near hall."
     },
     {
       "doc": "l10n/zh-cn.json",
       "op": "replace",
       "path": "/source/obj.near-hall.reach-the-counter.hint",
-      "value": "The Factor keeps the counter on the east side of the near hall."
+      "value": "The Factor, the hall's trader, keeps the counter on the east side of the near hall."
     }
   ],
   "units": [],

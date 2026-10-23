@@ -25,7 +25,7 @@ use crate::cli::edit::{EditAction, run_edit};
 use crate::cli::l10n::{run_l10n_apply, run_l10n_inventory};
 use crate::cli::metrics::{RigAction, run_calibrate, run_metrics, run_rig_describe};
 use crate::cli::view::{
-    SnapshotArgs, camera_stands, load_stood, run_blocking_chart, run_cameras_preview, run_snapshot,
+    FramesCampaignArgs, camera_stands, run_blocking_chart, run_frames_campaign,
 };
 
 /// Internal-error exit code (spec-0002: ≥10).
@@ -177,58 +177,9 @@ enum Command {
     /// sorted by code. The list is the registry every `dw_code!` declaration
     /// writes itself into, so it is what this binary can print.
     Codes,
-    /// Draft-render one frame of the assembled world + a scene manifest
-    /// (spec-0015: the visual authoring loop). Stops after placement +
-    /// assembly — it never emits a datapack.
-    Snapshot {
-        /// Campaign directory.
-        campaign_dir: PathBuf,
-        /// Explicit camera: `x,y,z,yaw,pitch[,fov]` in Minecraft degrees
-        /// (yaw 0 = south/+Z, 90 = west/−X; pitch positive looks down).
-        #[arg(long, conflicts_with_all = ["at", "shot"])]
-        camera: Option<String>,
-        /// Frame an anchor (e.g. `anchor/fire-pit`, or `area/island:anchor/pen`
-        /// to disambiguate) from `--dist` blocks away.
-        #[arg(long, conflicts_with = "shot")]
-        at: Option<String>,
-        /// Compass bearing (degrees) the `--at` camera stands on: 0 = due south
-        /// of the subject looking north, 90 = due west looking east.
-        #[arg(long, requires = "at", default_value_t = 0.0)]
-        orbit: f64,
-        /// Distance in blocks from the `--at` subject.
-        #[arg(long, requires = "at")]
-        dist: Option<f64>,
-        /// Reuse the camera of a `render-plan.json` shot id (e.g. `spawn`,
-        /// `npc/perimedes`, `pov/leg0/wp0`), read from the render plan the
-        /// build at `--build` emitted.
-        #[arg(long, requires = "build")]
-        shot: Option<String>,
-        /// The `delvec build` output of this campaign that `--shot` reads its
-        /// camera from; refused unless it is a build of the campaign as it
-        /// stands, by this delvec.
-        #[arg(long, requires = "shot")]
-        build: Option<PathBuf>,
-        /// Output PNG path (the manifest is written beside it — see `--help`
-        /// of the reference doc; default `snapshot.png`).
-        #[arg(short, long, default_value = "snapshot.png")]
-        out: PathBuf,
-        /// Burn in anchor/NPC/actor/interact labels and the ground coordinate grid.
-        #[arg(long)]
-        labels: bool,
-        /// Frame width in pixels.
-        #[arg(long, default_value_t = delvec::compiler::snapshot::DEFAULT_WIDTH)]
-        width: u32,
-        /// Frame height in pixels.
-        #[arg(long, default_value_t = delvec::compiler::snapshot::DEFAULT_HEIGHT)]
-        height: u32,
-        /// Print the render wall-clock time to stderr (profiling aid; never
-        /// enters the output, so determinism is unaffected).
-        #[arg(long)]
-        timing: bool,
-    },
     /// Per-elevation cutaway floor plans of every area (spec-0015 pillar 3):
     /// one orthographic top-down PNG per detected walkable band, plus an index.
-    /// Like `snapshot`, it stops after placement + assembly.
+    /// Like `frames --campaign`, it stops after placement + assembly.
     BlockingChart {
         /// Campaign directory.
         campaign_dir: PathBuf,
@@ -240,8 +191,8 @@ enum Command {
         timing: bool,
     },
     /// The map editor (spec-0017): replay the stage-7 `world-edits.json` edit
-    /// script, enforce the post-batch invariants, and render one snapshot per
-    /// batch — the edit → replay → snapshot loop.
+    /// script, enforce the post-batch invariants, and draw one frame per batch
+    /// — the edit → replay → frame loop.
     Edit {
         #[command(subcommand)]
         action: EditAction,
@@ -300,8 +251,8 @@ enum Command {
         /// Output directory; one `<id>.png` per row.
         #[arg(short, long, default_value = "review/textures")]
         out: PathBuf,
-        /// The 1.21.11 client jar. Overrides the `$DELVEWRIGHT_CLIENT_JAR` /
-        /// `~/.chunky` fallbacks.
+        /// The 1.21.11 client jar. Overrides `$DELVEWRIGHT_CLIENT_JAR` and the
+        /// location Init I5 writes it to.
         #[arg(long)]
         textures: Option<String>,
     },
@@ -320,12 +271,12 @@ enum Command {
         out: String,
     },
     /// Write the world the engine models at load — the configuration arriving
-    /// at the critical path's first step, every world-load seal in place, no
-    /// beat fired — as an Anvil save (`level.dat` + `region/`) under `-o`,
-    /// from the campaign and `--prefabs` alone: no camera record, no server
-    /// boot. It is the world `delvec cameras` writes as `worlds/at-load`,
-    /// through the same writer, and the written half of `DW0955`
-    /// (`tools/ci/check-written-world.py`).
+    /// at the critical path's first step, every world-load seal in place, the
+    /// datapack's setup placements laid, no beat fired — as an Anvil save
+    /// (`level.dat`, `region/`, `entities/`) under `-o`, from the campaign and
+    /// `--prefabs` alone: the build runs in memory and no server boots. It is
+    /// the world `delvec build` writes as `validation/worlds/at-load`, byte for
+    /// byte, and the written half of `DW0955` (`tools/ci/check-written-world.py`).
     WrittenWorld {
         /// Campaign directory.
         campaign_dir: PathBuf,
@@ -334,11 +285,11 @@ enum Command {
         #[arg(short, long)]
         out: PathBuf,
     },
-    /// The CPU render arms (ADR-0021 §1): `viewer`, `scene`, `panorama`,
-    /// `contact-sheet`, `palette` and `index`. Flattened in rather than nested
-    /// under a group, because these are ordinary subcommands of the one
-    /// binary — `delvec viewer …`, not `delvec render viewer …`. The arms that
-    /// need a GPU are `delvec render …` below.
+    /// The render arms (ADR-0021 §1): `frames`, `cameras`, `place-camera`,
+    /// `panorama`, `viewer`, `contact-sheet` and `palette`. Flattened in rather
+    /// than nested under a group, because these are ordinary subcommands of the
+    /// one binary — `delvec frames …`, with no `render` group above it. The
+    /// prefab-piece arms are `delvec render …` below.
     #[command(flatten)]
     View(delvec::compiler::view::cli::ViewCommand),
     /// Grammar programs: list the corpus, show or check one, expand it into a
@@ -425,37 +376,6 @@ fn main() -> ExitCode {
         ),
         Command::Metrics { gym } => run_metrics(cli.json, gym.as_deref()),
         Command::Codes => run_codes(),
-        Command::Snapshot {
-            campaign_dir,
-            camera,
-            at,
-            orbit,
-            dist,
-            shot,
-            build,
-            out,
-            labels,
-            width,
-            height,
-            timing,
-        } => run_snapshot(
-            campaign_dir,
-            &cli.prefabs,
-            SnapshotArgs {
-                camera: camera.as_deref(),
-                at: at.as_deref(),
-                orbit: *orbit,
-                dist: *dist,
-                shot: shot.as_deref(),
-                build: build.as_deref(),
-                out,
-                labels: *labels,
-                width: *width,
-                height: *height,
-                timing: *timing,
-            },
-            cli.json,
-        ),
         Command::BlockingChart {
             campaign_dir,
             out,
@@ -498,11 +418,7 @@ fn main() -> ExitCode {
             textures,
         } => run_textures(campaign_dir, out, textures.as_deref(), cli.json),
         Command::WrittenWorld { campaign_dir, out } => {
-            delvec::compiler::view::cli::run_written_world(
-                out,
-                cli.json,
-                load_stood(campaign_dir, &cli.prefabs, cli.json),
-            )
+            crate::cli::campaign::run_written_world(campaign_dir, out, &cli.prefabs, cli.json)
         }
         Command::View(delvec::compiler::view::cli::ViewCommand::Cameras {
             build_dir,
@@ -510,37 +426,48 @@ fn main() -> ExitCode {
             out,
             only,
             bracket,
-            preview: true,
-            ..
-        }) => run_cameras_preview(
-            build_dir,
-            campaign,
-            &cli.prefabs,
-            out,
-            only,
-            bracket.as_ref(),
-            cli.json,
-        ),
-        Command::View(delvec::compiler::view::cli::ViewCommand::Cameras {
-            build_dir,
-            campaign,
-            out,
-            only,
-            bracket,
             draft,
-            preview: false,
+            preview,
+            draw,
         }) => delvec::compiler::view::cli::run_cameras(
             build_dir,
             campaign,
             out,
             cli.json,
             delvec::compiler::view::camera::EmitOptions {
-                world_paths: Default::default(),
                 only: only.clone(),
                 bracket: *bracket,
                 draft: *draft,
             },
+            *preview,
+            draw,
             &mut |cams| camera_stands(campaign, &cli.prefabs, cli.json, cams),
+        ),
+        Command::View(delvec::compiler::view::cli::ViewCommand::Frames {
+            campaign: Some(campaign),
+            out,
+            labels,
+            size,
+            draw,
+            camera,
+            at,
+            orbit,
+            dist,
+            ..
+        }) => run_frames_campaign(
+            campaign,
+            &cli.prefabs,
+            FramesCampaignArgs {
+                camera: camera.as_deref(),
+                at: at.as_deref(),
+                orbit: *orbit,
+                dist: *dist,
+                out: out.as_deref(),
+                labels: *labels,
+                size: *size,
+                draw,
+            },
+            cli.json,
         ),
         Command::View(delvec::compiler::view::cli::ViewCommand::PlaceCamera {
             campaign,

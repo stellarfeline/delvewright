@@ -115,15 +115,15 @@ not third-party reconstructions.
   thumbnail — nothing from which any part of a texture can be recovered. That is
   what makes it committable when the jar is not (ADR-0013, CLAUDE.md forbidden
   zones), the same footing the font metrics and the shape-carrying property
-  table stand on, and it is why the draft rasteriser makes its own positional
+  table stand on, and it is why the blocking chart makes its own positional
   pattern and takes only the AMPLITUDE from here.
   **Why it exists**: what a block looks like is the client jar's answer, and the
   jar is EULA-bound and never committed — the same rule as the shape-carrying
   property table above and the font metrics below. This file carries that answer
-  to every machine without one, so the CPU draft rasteriser (`delvec snapshot`,
-  `delvec cameras --preview`, `delvec edit preview`) and the GPU path paint from
-  one derivation rather than holding two opinions about a question with one
-  answer. Consumed by `delvec::compiler::snapshot::block_color`. Its one
+  to every machine without one, so the blocking chart (`delvec blocking-chart`)
+  and the GPU path paint from one derivation rather than holding two opinions
+  about a question with one answer. Consumed by
+  `delvec::compiler::blocking::block_color`. Its one
   derivation is `delvec::compiler::view::blockcolor::Deriver`, which resolves a
   blockstate to its model chain and its textures as the client does and which the
   interactive viewer runs live against a jar.
@@ -243,6 +243,28 @@ not third-party reconstructions.
   `tools/maintenance/collision/RedstoneDump.java` names no obfuscated member; the
   dumper's state count must equal the rows' coverage; two runs give the same
   bytes.
+- **`block-entities-1.21.11.tsv`** — the block entity type of every 1.21.11
+  block that carries one (200 of 1,166 blocks over 29,671 states, 48 types;
+  same jar sha256 and mappings sha1 as the collision table, both recorded in
+  the file's header): the game's own `EntityBlock.newBlockEntity(BlockPos.ZERO,
+  state).getType()` named by `BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey`, over
+  every state, a block whose states disagree refused. `moving_piston` makes
+  none and has no row. **Why it exists**: the server makes a block entity for
+  every such block it places, whether or not the write carries a compound,
+  and saves it with the chunk; the world writer
+  (`compiler::view::review::WorldMaker::block_entities`) reads
+  `compiler::registry::block_entity_type` to write the same one (`DW1040`).
+  **Cross-checked** against the pinned server's own data generator
+  (`java -DbundlerMainClass=net.minecraft.data.Main -jar server.jar --reports`,
+  `reports/registries.json`, `minecraft:block_entity_type`: 49 entries, the
+  table's 48 plus `minecraft:piston`) by
+  `registry::tests::the_block_entity_table_is_the_pinned_registry`.
+  **Reproduce it**: `python3 tools/maintenance/dump-block-entities.py [--check]
+  [--work DIR]` (JDK ≥ 21 on `PATH`, network for the mappings). Its pin, fetch
+  and mapping steps are `dump-collision-tops.py`'s own, imported;
+  `tools/maintenance/blockentity/BlockEntityDump.java` names no obfuscated
+  member; the dumper's state count must equal the rows' coverage; two runs give
+  the same bytes.
 - **`support-1.21.11.tsv`** and **`support-bases-1.21.11.tsv`** (in
   `crates/dsl/data/`) — what every 1.21.11 blockstate needs beside it to
   survive, asked inside the pinned server jar (same jar sha256 and mappings
@@ -577,6 +599,21 @@ not third-party reconstructions.
   a second method — a type registered by `register(String, boolean)` returns a
   `SimpleParticleType`; at 1.21.11, 115 types, 97 simple, 18 taking options —
   and refuses when that reading disagrees with the table in any id or answer.
+- **`entity-bodies-1.21.11.json`** — every registered entity type (157) with its
+  bounding box (`width`, `height`, from `EntityType#getWidth()`/`#getHeight()`) and
+  the distance the server tracks it at (`tracking_range`, chunks, from
+  `EntityType#clientTrackingRange()`). Read for spec-0110 by
+  `tools/maintenance/extract-entity-bodies.py` from the pinned server jar's bundled
+  `META-INF/versions/1.21.11/server-1.21.11.jar` through Mojang's official 1.21.11
+  server mappings (piston-meta `server_mappings`, sha1
+  `5621e9253f05fd57872bbe7f8ddf5f9a7d525955`). Two methods: (1) a dumper boots the
+  registries and asks every type; (2) `EntityType.<clinit>` is disassembled and each
+  registration's `sized(FF)` and `clientTrackingRange(I)` arguments are read. At
+  1.21.11 all 157 chains state a box and 156 a tracking range (the one that states
+  none, `minecraft:dolphin`, takes the builder's default — every unstated value must
+  be one value or the script refuses), and every stated value equals the runtime
+  answer. Feeds `DW1034` (a body subject sent and drawn) and the assembly
+  `view_range` derivation.
 
 ### The item-holder table, read from the jar and written in source
 
@@ -663,9 +700,11 @@ What it establishes, all verified against 1.21.11 client bytecode rather than as
 | `collision-tops-1.21.11.tsv` | `f4ea1e01f4463272ef527bafcbb36dbe4d8669e58fabfda5ec54c307469196bc` |
 | `faces-1.21.11.tsv` | `ba718f855a73609ebd15f9ede83b43fec9f2bc1db2f53de0ba10ad8289ce8ad4` |
 | `redstone-1.21.11.tsv` | `8a2ca8673d01d420125e1bb0b288533d72d5847d0f69a7f51286593f6bc6d496` |
+| `block-entities-1.21.11.tsv` | `0c302bdc0e3830886accc0c7f1305e65cceae0faf7b936050e1db635ddab2ca0` |
 | `support-1.21.11.tsv` | `c70c0fab67a9c236b7df85f7107a667f4c56f9142f3c1300f7ead807ca45cd4b` |
 | `support-bases-1.21.11.tsv` | `c6769b88424488fe1b82888989f4d291890efe786381571eec406afc576a53d4` |
 | `particles-1.21.11.json` | `a64121b11f5fe66ea4a03a16d655cd09dfe590e5434ea142688078b780b027c7` |
+| `entity-bodies-1.21.11.json` | `77fd204e55ec3212359dd2bbca5124c403c76c25953924a38d07dcfdb27b14a9` |
 
 ## Not committed
 

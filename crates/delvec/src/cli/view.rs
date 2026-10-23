@@ -1,10 +1,11 @@
-//! `delvec snapshot`, `cameras --preview`, the camera stand check and
-//! `blocking-chart`: the view arms that read the binary's campaign loader.
+//! `delvec frames --campaign`, the camera stand check and `blocking-chart`:
+//! the view arms that read the binary's campaign loader.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use delvec::compiler::framing;
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 
@@ -12,44 +13,68 @@ use crate::EXIT_INTERNAL;
 use crate::cli::campaign::{read_structures, validate_stage};
 use crate::cli::report::{print_build_error, print_diags, write_file};
 
-/// The `snapshot` subcommand's arguments, bundled so the dispatcher stays legible.
-pub(crate) struct SnapshotArgs<'a> {
+/// What a `frames --campaign` frame shows: the targets in and out of its frame
+/// by the one sight rule ([`framing::resolve_targets`]), and the `shows` its
+/// labels are stamped from — each entry the manifest's, with the body a post
+/// names (`body`).
+#[allow(clippy::type_complexity)]
+pub(crate) fn snapshot_frame<'a>(
+    grid: &framing::VoxelGrid,
+    cam: &framing::Camera,
+    (width, height): (u32, u32),
+    targets: &'a [framing::Target],
+    body: &dyn Fn(&framing::Target) -> Option<String>,
+) -> (
+    Vec<framing::ResolvedTarget<'a>>,
+    Vec<&'a framing::Target>,
+    Vec<serde_json::Value>,
+) {
+    let (inside, outside) = framing::resolve_targets(grid, cam, width, height, targets);
+    let shows = inside
+        .iter()
+        .map(|r| {
+            let mut v = r.entry();
+            if let Some(b) = body(r.target()) {
+                v["body"] = serde_json::json!(b);
+            }
+            v
+        })
+        .collect();
+    (inside, outside, shows)
+}
+
+/// The `frames --campaign` arguments, bundled so the dispatcher stays legible.
+pub(crate) struct FramesCampaignArgs<'a> {
     pub(crate) camera: Option<&'a str>,
     pub(crate) at: Option<&'a str>,
     pub(crate) orbit: f64,
     pub(crate) dist: Option<f64>,
-    pub(crate) shot: Option<&'a str>,
-    /// The `delvec build` output of this campaign `--shot` reads its camera from.
-    pub(crate) build: Option<&'a Path>,
-    pub(crate) out: &'a Path,
+    pub(crate) out: Option<&'a Path>,
     pub(crate) labels: bool,
-    pub(crate) width: u32,
-    pub(crate) height: u32,
-    pub(crate) timing: bool,
+    pub(crate) size: u32,
+    pub(crate) draw: &'a delvec::compiler::view::cli::DrawArgs,
 }
 
-/// `delvec snapshot <campaign-dir> …` — draft-render one frame of the assembled
-/// world plus its scene manifest.
+/// `delvec frames --campaign <dir> (--camera … | --at …)` — the authoring
+/// loop's viewport (spec-0015): one quick frame of the campaign's load world,
+/// drawn by Lumenwright, with its manifest beside it.
 ///
 /// ## Which pipeline stages this needs
 ///
-/// Exactly three, and no more (spec-0015: "works on a partial build"): parse the
-/// campaign → [`Plan::build`] (placement) → read the placed `.nbt` structures →
-/// [`assembled::assembled_blocks`]. **No emission**: no command tree, no
-/// datapack, no relight, no nav proofs — so a campaign that fails `DW03xx`
-/// geometry checks, or one whose quests are half-written, still renders. That is
-/// the point: the loop exists to look at builds that are not finished.
-///
-/// Validation diagnostics are printed but never gate the render. Only an
-/// unparseable campaign (exit 1) or a placement failure (exit 3) stops it — in
-/// both cases there is no world to look at.
-pub(crate) fn run_snapshot(
+/// Placement and assembly, and no more (spec-0015: "works on a partial
+/// build"): parse the campaign → [`Plan::build`] → read the placed `.nbt`
+/// structures → the assembled world, its load configuration written in this
+/// process under the output's directory (`world/`). **No emission**: no
+/// datapack, no nav proofs — so a campaign whose quests are half-written still
+/// draws. Validation diagnostics are printed but never gate the frame. Only an
+/// unparseable campaign (exit 1) or a placement failure (exit 3) stops it.
+pub(crate) fn run_frames_campaign(
     campaign_dir: &Path,
     prefabs_dir: &Path,
-    args: SnapshotArgs<'_>,
+    args: FramesCampaignArgs<'_>,
     json: bool,
 ) -> ExitCode {
-    use delvec::compiler::snapshot;
+    use delvec::compiler::view::frameset;
 
     let (campaign, prefabs) = match load_for_view(campaign_dir, prefabs_dir, json) {
         Ok(v) => v,
@@ -58,81 +83,133 @@ pub(crate) fn run_snapshot(
     let plan = match Plan::build(&campaign, &prefabs) {
         Ok(p) => p,
         Err(e) => {
-            // Advisories raised before the failure and explaining it (`DW0498`:
-            // the pool draw behind an ambiguous-anchor `DW0305`) print first —
-            // the cause above the symptom.
             print_diags(&e.warnings, json);
             print_build_error(e.failure.code, &e.failure.message, json);
             return ExitCode::from(3);
         }
     };
-    // The placement stage's own advisories (`DW0498`). `build`/`edit` get these
-    // through `emit::build_with_warnings`; the view commands never emit, so they
-    // report them here — a draw that repeats an anchored piece is exactly what a
-    // reviewer is looking at in a snapshot.
     print_diags(&plan.warnings.clone(), json);
     let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
         Ok(s) => s,
         Err(code) => return ExitCode::from(code),
     };
-
-    let started = std::time::Instant::now();
     let assembled = match edited_assembled(&plan, &prefabs, &structures, json) {
         Ok(a) => a,
         Err(code) => return ExitCode::from(code),
     };
-    let blocks = assembled.blocks;
-    let grid = snapshot::VoxelGrid::build(&blocks);
-    snapshot::report_unpainted(&grid);
-    let assembled_ms = started.elapsed().as_secs_f64() * 1000.0;
-
-    let cam = match resolve_camera(&plan, &grid, campaign_dir, &args) {
+    let (world, relight) = camera_world(&plan, &assembled);
+    let base = camera_base(&plan, &assembled, &relight);
+    let load = delvec::compiler::view::beat::load_blocks(&plan, &world, &base);
+    let grid = framing::VoxelGrid::build(&load);
+    let cam = match resolve_camera(&plan, &grid, &args) {
         Ok(c) => c,
         Err(msg) => {
             eprintln!("error: {msg}");
             return ExitCode::from(1);
         }
     };
-    let opts = snapshot::FrameOpts {
-        width: args.width,
-        height: args.height,
-        sea_level: sea_level_of(&campaign),
-        labels: args.labels,
-    };
-
-    let render_started = std::time::Instant::now();
-    let mut frame = snapshot::render_frame(&grid, &cam, &opts);
-    let targets = snapshot::collect_targets(&plan);
-    let (inside, outside) = snapshot::resolve_targets(&grid, &cam, &opts, &targets);
-    if args.labels {
-        snapshot::draw_labels(&mut frame, &grid, &cam, &inside);
-    }
-    let png = delvec::compiler::png::encode_rgba(
-        frame.canvas.width,
-        frame.canvas.height,
-        &frame.canvas.rgba,
-    );
-    let render_ms = render_started.elapsed().as_secs_f64() * 1000.0;
-
-    let image_name = args
+    let png_path = args
         .out
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("frame.png"));
+    let dir = png_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let world_dir = dir.join("world");
+    let maker =
+        delvec::compiler::view::review::WorldMaker::new(&plan, &assembled, &base, &structures);
+    let laid = delvec::compiler::view::beat::load_laid(&plan, &world);
+    let day_time = delvec::compiler::view::review::Clock::at(&plan, 0).day_time(&plan);
+    let (_, written) = maker.encode_blocks(&load, &laid, day_time, &[]);
+    if let Err(e) = delvec::compiler::view::world::write_files(&written, &world_dir) {
+        eprintln!("internal error: cannot write {}: {e}", world_dir.display());
+        return ExitCode::from(EXIT_INTERNAL);
+    }
+    eprintln!(
+        "{}",
+        delvec::compiler::view::review::world_line(
+            delvec::compiler::view::beat::AT_LOAD,
+            &written,
+            &world_dir.display().to_string(),
+            0
+        )
+    );
+    let jar = match delvec::compiler::view::cli::resolve_textures(args.draw.textures.as_deref()) {
+        Ok(j) => j,
+        Err(d) => {
+            d.print(json);
+            return ExitCode::from(delvec::compiler::view::diag::exit::RENDER);
+        }
+    };
+    let clock = delvec::compiler::view::review::Clock::at(&plan, 0);
+    let (lo, hi) = maker.extent;
+    let drawn = match frameset::draw_frame(
+        &delvec::compiler::view::frames::FrameRequest {
+            world: &world_dir,
+            chunks: delvec::compiler::view::scene::chunk_rect(lo, hi),
+            jar: Path::new(&jar),
+            packs: &[],
+            camera: cam,
+            sky: delvec::compiler::view::frames::FrameSky {
+                day: clock.clock(&plan).day,
+                daytime_ticks: clock.daytime_ticks(),
+                weather: clock.weather,
+            },
+            mode: delvec::compiler::view::frames::Mode::Quick,
+            backend: args.draw.backend,
+            width: args.size,
+            height: args.size,
+        },
+        args.draw.threads,
+    ) {
+        Ok(d) => d,
+        Err(d) => {
+            d.print(json);
+            return ExitCode::from(delvec::compiler::view::diag::exit::RENDER);
+        }
+    };
+    eprintln!("{}", frameset::renderer_line(&drawn, args.draw.backend));
+    let targets = framing::collect_targets(&plan);
+    let (inside, outside, shows) =
+        snapshot_frame(&grid, &cam, (drawn.width, drawn.height), &targets, &|t| {
+            framing::body_of(&plan, t)
+        });
+    let gone = frameset::undrawn(&shows, &drawn.stats);
+    let mut rgba = drawn.rgba.clone();
+    if args.labels {
+        frameset::stamp_labels(&mut rgba, drawn.width, drawn.height, &shows);
+    }
+    let png = delvec::compiler::png::encode_rgba(drawn.width, drawn.height, &rgba);
+    let image_name = png_path
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| "snapshot.png".to_string());
-    let doc = snapshot::manifest(
+        .unwrap_or_else(|| "frame.png".to_string());
+    let doc = framing::manifest(
         campaign.world.campaign_id.as_str(),
         &image_name,
         &cam,
-        &opts,
+        &framing::Picture {
+            width: drawn.width,
+            height: drawn.height,
+            rgba: &rgba,
+        },
         &grid,
-        snapshot::Scene {
-            pieces: &snapshot::collect_pieces(&plan),
+        framing::Scene {
+            pieces: &framing::collect_pieces(&plan),
             inside: &inside,
             outside: &outside,
         },
-        &frame.canvas,
     );
-    let manifest_path = manifest_path_for(args.out);
+    let mut doc = doc;
+    doc["renderer"] = serde_json::json!(delvec::compiler::view::frames::renderer());
+    doc["backend"] = serde_json::json!(drawn.backend_name());
+    doc["mode"] = serde_json::json!("quick");
+    doc["world"]["key"] = serde_json::json!(delvec::compiler::view::beat::AT_LOAD);
+    doc["undrawn"] = serde_json::json!(gone);
+    doc["renderer_stats"] = drawn.stats.to_json();
+    let manifest_path = manifest_path_for(&png_path);
     let mut manifest_bytes = match serde_json::to_vec_pretty(&doc) {
         Ok(b) => b,
         Err(e) => {
@@ -142,40 +219,34 @@ pub(crate) fn run_snapshot(
     };
     manifest_bytes.push(b'\n');
     if let Err(e) =
-        write_file(args.out, &png).and_then(|()| write_file(&manifest_path, &manifest_bytes))
+        write_file(&png_path, &png).and_then(|()| write_file(&manifest_path, &manifest_bytes))
     {
-        eprintln!("internal error: cannot write snapshot: {e}");
+        eprintln!("internal error: cannot write the frame: {e}");
         return ExitCode::from(EXIT_INTERNAL);
-    }
-
-    if args.timing {
-        eprintln!(
-            "snapshot timing: assemble+grid {assembled_ms:.0} ms, render+manifest {render_ms:.0} ms \
-             ({}×{}, {} block kinds)",
-            args.width,
-            args.height,
-            grid.block_kinds()
-        );
     }
     if json {
         println!(
             "{}",
             serde_json::json!({
-                "png": args.out.display().to_string(),
+                "png": png_path.display().to_string(),
                 "manifest": manifest_path.display().to_string(),
                 "in_frame": inside.len(),
                 "out_of_frame": outside.len(),
+                "undrawn": gone.len(),
             })
         );
     } else {
         println!(
-            "{} ({}×{}) + {} — {} target(s) in frame, {} out",
-            args.out.display(),
-            args.width,
-            args.height,
+            "{} ({}×{}, quick, {:.2} s) + {} — {} target(s) in frame, {} out, {} not drawn by the \
+             renderer",
+            png_path.display(),
+            drawn.width,
+            drawn.height,
+            drawn.seconds(),
             manifest_path.display(),
             inside.len(),
-            outside.len()
+            outside.len(),
+            gone.len()
         );
     }
     ExitCode::SUCCESS
@@ -205,33 +276,6 @@ pub(crate) fn camera_stands(
                 )),
                 2,
             )
-        })
-    })
-}
-
-/// **The world at load, with no camera record** (`delvec written-world`): the
-/// campaign assembled exactly as [`camera_stands`] assembles it, and the one
-/// configuration [`delvec::compiler::view::beat::load_blocks`] derives — the
-/// world a camera with no `after` stands in, under the same key.
-pub(crate) fn load_stood(
-    campaign_dir: &Path,
-    prefabs_dir: &Path,
-    json: bool,
-) -> Result<
-    delvec::compiler::view::beat::Stood,
-    (Option<delvec::compiler::view::diag::Diagnostic>, u8),
-> {
-    stood_over(campaign_dir, prefabs_dir, json, |plan, world, base| {
-        Ok(delvec::compiler::view::beat::Stands {
-            stands: Vec::new(),
-            worlds: vec![(
-                delvec::compiler::view::beat::AT_LOAD.to_string(),
-                delvec::compiler::view::beat::load_blocks(plan, world, base),
-            )],
-            laid: vec![(
-                delvec::compiler::view::beat::AT_LOAD.to_string(),
-                delvec::compiler::view::beat::load_laid(plan, world),
-            )],
         })
     })
 }
@@ -269,7 +313,7 @@ fn stood_over(
     };
     let structures = read_structures(&plan, &prefabs, prefabs_dir, json).map_err(|c| (None, c))?;
     let assembled = edited_assembled(&plan, &prefabs, &structures, json).map_err(|c| (None, c))?;
-    let world = camera_world(&plan, &assembled);
+    let (world, relight) = camera_world(&plan, &assembled);
     // The path the build's proofs read: the links the route proof takes
     // spliced in (spec-0083), so a step is the step `critical-path.json` names.
     let relinked = match delvec::compiler::nav::with_links_taken(&plan, &prefabs, &world) {
@@ -280,260 +324,48 @@ fn stood_over(
         }
     };
     let plan = relinked.as_ref().unwrap_or(&plan);
-    let base = camera_base(plan, &assembled);
+    let base = camera_base(plan, &assembled, &relight);
     let stands = configure(plan, &world, &base)?;
-    let biomes = delvec::compiler::horizon::biome_map(plan);
-    // What a cell no write reached holds: the horizon's generator, held out of
-    // every cell a build write reached and every cell the shipped setup
-    // writes (the picture base's own cells).
-    let mut ground = delvec::compiler::view::world::Ground::of_base(
-        delvewright_dsl::horizon_base(&plan.campaign.world.content.horizon),
-        assembled.reached.clone(),
-    );
-    for c in base.keys() {
-        ground.mark(*c);
-    }
-    let holders = delvec::compiler::holders::placed_holders(plan, &structures)
-        .iter()
-        .map(|h| {
-            let b = h.body_box();
-            [
-                (b.lo[0] + b.hi[0]) / 2.0,
-                (b.lo[1] + b.hi[1]) / 2.0,
-                (b.lo[2] + b.hi[2]) / 2.0,
-            ]
-        })
-        .collect();
     Ok(delvec::compiler::view::beat::Stood {
         stands,
-        biome: Box::new(move |c| biomes.at(c).0.to_string()),
-        spawn: plan.campaign_start().map_or([0, 64, 0], |(_, p)| p),
-        ground,
-        holders,
+        maker: delvec::compiler::view::review::WorldMaker::new(
+            plan,
+            &assembled,
+            &base,
+            &structures,
+        ),
+        day_time: delvec::compiler::view::review::Clock::at(plan, 0).day_time(plan),
+        ancestors: plan.strict_ancestor_steps.clone(),
     })
 }
 
-/// The world a camera's configuration is asked of: the assembled occupancy
-/// under the premises the build's proofs carry — the measured world-load
-/// seals among them, which is what makes a gate the prefab built shut a
-/// step-0 write (`nav::Premises::of_plan`).
-fn camera_world(
+/// **The world a view stands its cameras in, and the bytes its pictures
+/// start from — the build's own, derived through the build's entry points.**
+/// The world is [`delvec::compiler::light::final_world`]: the assembled cells
+/// under the campaign's premises with the relight pass's fixtures standing in
+/// them, the world `delvec build` walks. The bytes are
+/// [`delvec::compiler::view::beat::picture_base`] over the same pass's
+/// placements, asked of `path_plan` — the plan with the links the route proof
+/// takes spliced in where the caller has taken them, as the build asks it. A
+/// relight pass that refuses is the build's to raise; a view still draws the
+/// world it would have walked.
+pub(crate) fn camera_world(
     plan: &Plan,
     assembled: &delvec::compiler::assembled::Assembled,
-) -> delvec::compiler::nav::World {
-    delvec::compiler::nav::World::from_occupancy(
-        delvec::compiler::assembled::occupancy_over(&assembled.blocks, &assembled.open_gates),
-        delvec::compiler::nav::Premises::of_plan(plan, assembled.gate_seals.clone()),
-    )
+) -> (
+    delvec::compiler::nav::World,
+    delvec::compiler::light::Relight,
+) {
+    delvec::compiler::light::final_world(plan, assembled)
 }
 
-/// The bytes a camera's world starts from
-/// ([`delvec::compiler::view::beat::picture_base`]): the relight pass is run
-/// as the build runs it, so a fixture the datapack sets is in the picture.
-fn camera_base(
-    plan: &Plan,
+/// See [`camera_world`]: the picture base over the relight `relight` placed.
+pub(crate) fn camera_base(
+    path_plan: &Plan,
     assembled: &delvec::compiler::assembled::Assembled,
+    relight: &delvec::compiler::light::Relight,
 ) -> delvec::compiler::blockstate::BlockMap {
-    let relight = delvec::compiler::light::relight_over(plan, assembled);
-    delvec::compiler::view::beat::picture_base(plan, assembled, &relight.placements)
-}
-
-/// `delvec cameras --preview`: every stated camera of `design/cameras.json` (and
-/// its bracket candidates) drawn by the snapshot rasteriser over the assembled
-/// world — the same world, the same Minecraft camera convention, flat-lit and in
-/// seconds — so a camera is placed before the path tracer is asked about light.
-/// The record is read by the one reader (`compiler::view::camera`); nothing here
-/// restates where a camera is.
-pub(crate) fn run_cameras_preview(
-    build_dir: &Path,
-    campaign_dir: &Path,
-    prefabs_dir: &Path,
-    out: &Path,
-    only: &[String],
-    bracket: Option<&delvec::compiler::view::camera::Bracket>,
-    json: bool,
-) -> ExitCode {
-    use delvec::compiler::snapshot;
-    use delvec::compiler::view::camera;
-
-    use delvec::compiler::view::diag::{DW_INPUT, Diagnostic};
-    let read = |path: PathBuf| {
-        std::fs::read(&path)
-            .map_err(|e| Diagnostic::error(DW_INPUT, format!("read {}: {e}", path.display())))
-    };
-    let selected = read(build_dir.join("render-plan.json")).and_then(|plan| {
-        let id = camera::plan_campaign_id(&plan)?;
-        let sheet =
-            read(campaign_dir.join(camera::CAMERAS_FILE)).and_then(|b| camera::parse_sheet(&b))?;
-        let approved =
-            read(campaign_dir.join("design.json")).and_then(|b| camera::reference_rows(&b))?;
-        let rows: Vec<String> = approved.iter().map(|r| r.name.clone()).collect();
-        // The record's own rules still hold here (`DW0721`), and the answered
-        // count is REPORTED and never refused: this is the instrument a creator
-        // closes the hole with, so a rule that refused it would refuse the
-        // repair it prescribes (spec-0070 §3).
-        let answers = camera::tally(&sheet, &rows);
-        if let Some((name, a)) = answers.stray.first() {
-            return Err(delvec::compiler::view::diag::Diagnostic::error(
-                delvec::compiler::view::diag::DW_INPUT,
-                camera::stray_message(name, a, &rows),
-            ));
-        }
-        let cams = camera::selected(&id, &sheet, only, bracket)?;
-        // The sky rule too (spec-0079 §6): a flat-lit preview draws no sky, but
-        // the record it reads is the record `delvec cameras` reads.
-        if let Some(why) = camera::skies(&cams, &approved).refusal {
-            return Err(Diagnostic::error(DW_INPUT, why));
-        }
-        Ok((id, cams, answers))
-    });
-    let (campaign_id, cameras, answers) = match selected {
-        Ok(v) => v,
-        Err(d) => return delvec::compiler::view::cli::fail(d, json, 2),
-    };
-
-    let (campaign, prefabs) = match load_for_view(campaign_dir, prefabs_dir, json) {
-        Ok(v) => v,
-        Err(code) => return ExitCode::from(code),
-    };
-    let plan = match Plan::build(&campaign, &prefabs) {
-        Ok(p) => p,
-        Err(e) => {
-            print_diags(&e.warnings, json);
-            print_build_error(e.failure.code, &e.failure.message, json);
-            return ExitCode::from(3);
-        }
-    };
-    let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
-        Ok(s) => s,
-        Err(code) => return ExitCode::from(code),
-    };
-    let assembled = match edited_assembled(&plan, &prefabs, &structures, json) {
-        Ok(a) => a,
-        Err(code) => return ExitCode::from(code),
-    };
-    // Each camera is drawn in the configuration it stands in (spec-0089 §4):
-    // one grid per distinct world, the record's `after` rules refused here as
-    // `delvec cameras` refuses them.
-    let world = camera_world(&plan, &assembled);
-    let relinked = match delvec::compiler::nav::with_links_taken(&plan, &prefabs, &world) {
-        Ok(r) => r,
-        Err(f) => {
-            print_build_error(f.code, &f.message, json);
-            return ExitCode::from(3);
-        }
-    };
-    let plan = relinked.as_ref().unwrap_or(&plan);
-    let base = camera_base(plan, &assembled);
-    let stood = match delvec::compiler::view::beat::stands(plan, &world, &base, &cameras) {
-        Ok(s) => s,
-        Err(why) => {
-            return delvec::compiler::view::cli::fail(
-                Diagnostic::error(camera::DW_RECORD_AT_BUILD.id(), why),
-                json,
-                2,
-            );
-        }
-    };
-    let grids: BTreeMap<String, snapshot::VoxelGrid> = stood
-        .worlds
-        .iter()
-        .map(|(k, b)| (k.clone(), snapshot::VoxelGrid::build(b)))
-        .collect();
-    for g in grids.values() {
-        snapshot::report_unpainted(g);
-    }
-    // spec-0111 §5.1: the holder entities each frame holds and does not draw.
-    let holder_centres: Vec<[f64; 3]> =
-        delvec::compiler::holders::placed_holders(plan, &structures)
-            .iter()
-            .map(|h| {
-                let b = h.body_box();
-                [
-                    (b.lo[0] + b.hi[0]) / 2.0,
-                    (b.lo[1] + b.hi[1]) / 2.0,
-                    (b.lo[2] + b.hi[2]) / 2.0,
-                ]
-            })
-            .collect();
-    for (cam, s) in cameras.iter().zip(&stood.stands) {
-        eprintln!(
-            "{}",
-            s.line(
-                0,
-                delvec::compiler::view::beat::holders_in_frame(cam, &holder_centres)
-            )
-        );
-    }
-    if let Err(e) = std::fs::create_dir_all(out) {
-        eprintln!("internal error: mkdir {}: {e}", out.display());
-        return ExitCode::from(EXIT_INTERNAL);
-    }
-    let mut obstructed = 0usize;
-    for (cam, st) in cameras.iter().zip(&stood.stands) {
-        let grid = &grids[&st.key];
-        if let Some(cell) = camera::lens_obstruction(cam.pos, |c| grid.solid(c)) {
-            obstructed += 1;
-            eprintln!(
-                "camera `{}`: the lens at {:?} is inside or within {} block of `{}` at {cell:?}. A \
-                 pinhole camera has no near plane, so the frame shows that block's inside faces or a \
-                 sliver of it across a corner: move the camera",
-                cam.name,
-                cam.pos,
-                camera::LENS_CLEARANCE,
-                grid.name(grid.at(cell))
-            );
-        }
-        let frame = snapshot::render_frame(
-            grid,
-            &snapshot::Camera {
-                pos: cam.pos,
-                yaw: cam.yaw,
-                pitch: cam.pitch,
-                fov: cam.fov,
-            },
-            &snapshot::FrameOpts {
-                width: (cam.width / camera::PREVIEW_DIVISOR).max(1),
-                height: (cam.height / camera::PREVIEW_DIVISOR).max(1),
-                sea_level: sea_level_of(&campaign),
-                labels: false,
-            },
-        );
-        let png = delvec::compiler::png::encode_rgba(
-            frame.canvas.width,
-            frame.canvas.height,
-            &frame.canvas.rgba,
-        );
-        let path = out.join(camera::preview_file(&campaign_id, &cam.name));
-        if let Err(e) = write_file(&path, &png) {
-            eprintln!("internal error: cannot write {}: {e}", path.display());
-            return ExitCode::from(EXIT_INTERNAL);
-        }
-    }
-    if bracket.is_some() {
-        let path = out.join(camera::CANDIDATES_FILE);
-        let written = camera::candidates_bytes(&campaign_id, &cameras)
-            .map_err(|d| d.message)
-            .and_then(|b| write_file(&path, &b).map_err(|e| e.to_string()));
-        if let Err(msg) = written {
-            eprintln!("internal error: cannot write {}: {msg}", path.display());
-            return ExitCode::from(EXIT_INTERNAL);
-        }
-    }
-    eprintln!(
-        "previewed {} camera frame(s) -> {} (flat-lit CPU drafts for placing a camera; the \
-         light is judged in the Chunky scene `delvec cameras` emits without --preview)",
-        cameras.len(),
-        out.display()
-    );
-    eprintln!(
-        "lens: {} of {} camera(s) clear of every block by {} block, {obstructed} flagged",
-        cameras.len() - obstructed,
-        cameras.len(),
-        camera::LENS_CLEARANCE
-    );
-    eprintln!("{}", answers.line());
-    ExitCode::SUCCESS
+    delvec::compiler::view::beat::picture_base(path_plan, assembled, &relight.placements)
 }
 
 /// The manifest sidecar path for an output image: the image path with its
@@ -563,18 +395,9 @@ fn edited_assembled(
     }
 }
 
-/// The `ocean`-horizon sea level to draw as a background plane, or `None` for a
-/// `void`-horizon campaign (see `snapshot::SEA_PLANE_NOTE`).
-pub(super) fn sea_level_of(campaign: &delvewright_dsl::Campaign) -> Option<i32> {
-    match delvewright_dsl::horizon_base(&campaign.world.content.horizon) {
-        delvewright_dsl::HorizonBase::Ocean => Some(delvec::compiler::plan::SEA_LEVEL),
-        _ => None,
-    }
-}
-
 /// Parse + validate a campaign for a **view-only** command: diagnostics are
 /// printed, but only a parse failure stops the run (exit 1). See
-/// [`run_snapshot`] for why a view command must not gate on validation.
+/// [`run_frames_campaign`] for why a view command must not gate on validation.
 fn load_for_view(
     campaign_dir: &Path,
     prefabs_dir: &Path,
@@ -584,18 +407,16 @@ fn load_for_view(
     Ok((v.campaign, v.prefabs))
 }
 
-/// Decide the snapshot camera from the mutually-exclusive framing flags.
+/// Decide the frame's camera from the mutually-exclusive framing flags.
 ///
-/// Precedence: `--camera` (explicit) → `--at` (subject framing) → `--shot`
-/// (reuse a render-plan camera) → the default layout overview. Clap already
-/// rejects combining the first three.
+/// Precedence: `--camera` (explicit) → `--at` (subject framing) → the default
+/// layout overview. Clap already rejects combining the first two.
 fn resolve_camera(
     plan: &Plan,
-    grid: &delvec::compiler::snapshot::VoxelGrid,
-    campaign_dir: &Path,
-    args: &SnapshotArgs<'_>,
-) -> Result<delvec::compiler::snapshot::Camera, String> {
-    use delvec::compiler::snapshot::{Camera, DEFAULT_FOV, DEFAULT_ORBIT_DIST};
+    grid: &delvec::compiler::framing::VoxelGrid,
+    args: &FramesCampaignArgs<'_>,
+) -> Result<delvec::compiler::framing::Camera, String> {
+    use delvec::compiler::framing::{Camera, DEFAULT_FOV, DEFAULT_ORBIT_DIST};
 
     if let Some(spec) = args.camera {
         let parts: Vec<&str> = spec.split(',').map(str::trim).collect();
@@ -638,7 +459,7 @@ fn resolve_camera(
             pos[2] as f64 + 0.5,
         ];
         // An interior subject (a cavern fire pit, an alcove) would otherwise put
-        // the orbit eye inside the mountain and render the inside of the rock.
+        // the orbit eye inside the mountain and draw the inside of the rock.
         // Pull the eye along its own sight line until it stands in open air, so
         // `--at` frames an interior without the author having to guess a distance.
         return Ok(Camera::looking_at(
@@ -648,22 +469,11 @@ fn resolve_camera(
         ));
     }
 
-    if let Some(id) = args.shot {
-        let Some(build) = args.build else {
-            return Err(
-                "--shot reads its camera from a build: pass `--build <dir>`, the \
-                        `delvec build` output of this campaign"
-                    .to_string(),
-            );
-        };
-        return camera_from_shot(build, campaign_dir, id);
-    }
-
     // Default: a dollhouse overview of the whole layout from the south-east,
     // high enough that the full AABB fits the vertical FOV.
     let (lo, hi) = grid
         .bounds()
-        .ok_or_else(|| "the assembled world is empty — nothing to snapshot".to_string())?;
+        .ok_or_else(|| "the assembled world is empty — nothing to draw".to_string())?;
     let centre = [
         (lo[0] + hi[0]) as f64 / 2.0,
         (lo[1] + hi[1]) as f64 / 2.0,
@@ -688,10 +498,9 @@ fn resolve_camera(
 /// mountain has no exterior vantage, so the requested distance is honoured only
 /// as far as the rock allows and the camera then sits in the room with its
 /// subject. The walk itself is `camera::stand_in_open_air`, shared with the
-/// render plan's own cameras — it used to live here, private to this one flag,
-/// while every derived camera in `render-plan.json` went without it.
+/// render plan's own cameras.
 pub(super) fn pull_into_open_air(
-    grid: &delvec::compiler::snapshot::VoxelGrid,
+    grid: &delvec::compiler::framing::VoxelGrid,
     subject: [f64; 3],
     eye: [f64; 3],
 ) -> [f64; 3] {
@@ -734,104 +543,10 @@ fn resolve_subject(plan: &Plan, subject: &str) -> Result<[i32; 3], String> {
     }
 }
 
-/// Reuse a `render-plan.json` shot's camera by id, read from the render plan
-/// `delvec build` emitted for this campaign.
-///
-/// Which cameras a campaign has is answered once, by the build: a `pov/…` shot
-/// stands on the critical path the build proved over its final world (the
-/// relight fixtures standing, every premise applied, the links taken), and its
-/// eye is proven clear there (`DW0724`). Re-deriving the plan here would be a
-/// second answer over a different world, and it was: it numbered the legs
-/// differently and refused the build's own shots. So this reads the build's
-/// plan, after checking that the build is of this campaign as it stands — every
-/// input `manifest.json` records hashes to the file in `campaign_dir` — and was
-/// written by this engine.
-///
-/// The render plan states cameras as `pos` + `look_at` world coordinates (its
-/// own yaw convention differs from Minecraft's — see `snapshot`'s module note),
-/// so the bridge reads those two points and re-derives Minecraft yaw/pitch.
-fn camera_from_shot(
-    build_dir: &Path,
-    campaign_dir: &Path,
-    id: &str,
-) -> Result<delvec::compiler::snapshot::Camera, String> {
-    use delvec::compiler::snapshot::{Camera, DEFAULT_FOV};
-    use sha2::{Digest, Sha256};
-
-    let read_json = |name: &str| -> Result<serde_json::Value, String> {
-        let path = build_dir.join(name);
-        let bytes = std::fs::read(&path).map_err(|e| {
-            format!(
-                "--build `{}` has no `{name}` ({e}): pass the `delvec build` output of this \
-                 campaign",
-                build_dir.display()
-            )
-        })?;
-        serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display()))
-    };
-    let manifest = read_json("manifest.json")?;
-    let built_by = manifest["delvec_version"].as_str().unwrap_or("");
-    if built_by != delvec::compiler::DELVEC_VERSION {
-        return Err(format!(
-            "--build `{}` was written by delvec {built_by:?}, not this delvec {}: rebuild it",
-            build_dir.display(),
-            delvec::compiler::DELVEC_VERSION
-        ));
-    }
-    let inputs = manifest["inputs"].as_object().cloned().unwrap_or_default();
-    if inputs.is_empty() {
-        return Err(format!(
-            "--build `{}`'s manifest records no input, so nothing says it is a build of `{}`",
-            build_dir.display(),
-            campaign_dir.display()
-        ));
-    }
-    for (rel, sha) in &inputs {
-        let now = std::fs::read(campaign_dir.join(rel))
-            .map(|b| format!("{:x}", Sha256::digest(&b)))
-            .unwrap_or_default();
-        if Some(now.as_str()) != sha.as_str() {
-            return Err(format!(
-                "--build `{}` is not a build of `{}` as it stands: `{rel}` differs from the file \
-                 the build read. Rebuild with `delvec build`",
-                build_dir.display(),
-                campaign_dir.display()
-            ));
-        }
-    }
-    let doc = read_json("render-plan.json")?;
-    let shots = doc["shots"].as_array().cloned().unwrap_or_default();
-    let Some(shot) = shots.iter().find(|s| s["id"].as_str() == Some(id)) else {
-        let mut ids: Vec<&str> = shots.iter().filter_map(|s| s["id"].as_str()).collect();
-        ids.sort_unstable();
-        return Err(format!(
-            "--shot `{id}` is not in this campaign's render plan. Available: {}{}",
-            ids.iter().take(24).copied().collect::<Vec<_>>().join(", "),
-            if ids.len() > 24 { ", …" } else { "" }
-        ));
-    };
-    let read3 = |v: &serde_json::Value| -> Option<[f64; 3]> {
-        let a = v.as_array()?;
-        Some([
-            a.first()?.as_f64()?,
-            a.get(1)?.as_f64()?,
-            a.get(2)?.as_f64()?,
-        ])
-    };
-    let cam = &shot["camera"];
-    let (Some(pos), Some(look)) = (read3(&cam["pos"]), read3(&cam["look_at"])) else {
-        return Err(format!(
-            "--shot `{id}` has no usable camera in the render plan"
-        ));
-    };
-    let fov = cam["fov"].as_f64().unwrap_or(DEFAULT_FOV);
-    Ok(Camera::looking_at(pos, look, fov))
-}
-
 /// `delvec blocking-chart <campaign-dir> [-o dir]` — the spec-0015 pillar-3
 /// cutaway floor plans.
 ///
-/// Needs the same three stages `snapshot` does (parse → placement → assembled
+/// Needs the same three stages `frames --campaign` does (parse → placement → assembled
 /// blocks) plus the nav occupancy model, because "walkable" is what the bands
 /// are found from and the corridor overlay is the DW0311-proven critical path.
 /// Routing is best-effort: a campaign whose critical path does not route yet
@@ -861,7 +576,7 @@ pub(crate) fn run_blocking_chart(
     // The placement stage's own advisories (`DW0498`). `build`/`edit` get these
     // through `emit::build_with_warnings`; the view commands never emit, so they
     // report them here — a draw that repeats an anchored piece is exactly what a
-    // reviewer is looking at in a snapshot.
+    // reviewer is looking at in a frame.
     print_diags(&plan.warnings.clone(), json);
     let structures = match read_structures(&plan, &prefabs, prefabs_dir, json) {
         Ok(s) => s,
@@ -878,7 +593,12 @@ pub(crate) fn run_blocking_chart(
     // lethal volumes, clocked regions) and the path with the links the route
     // proof takes spliced in. A chart taken over a smaller premise set draws a
     // corridor no proof ever walked.
-    let walked = match delvec::compiler::blocking::walked_corridor(&plan, &prefabs, &assembled) {
+    let walked = match delvec::compiler::blocking::walked_corridor(
+        &plan,
+        &prefabs,
+        &assembled,
+        &delvec::compiler::holders::placed_holders(&plan, &structures),
+    ) {
         Ok(w) => w,
         Err(f) => {
             eprintln!("{} [error] build: {}", f.code, f.message);
@@ -886,7 +606,7 @@ pub(crate) fn run_blocking_chart(
         }
     };
     let blocks = assembled.blocks;
-    let targets = delvec::compiler::snapshot::collect_targets(&plan);
+    let targets = delvec::compiler::framing::collect_targets(&plan);
     let chart = delvec::compiler::blocking::chart(&plan, &blocks, &targets, &walked);
     let elapsed = started.elapsed().as_secs_f64() * 1000.0;
 

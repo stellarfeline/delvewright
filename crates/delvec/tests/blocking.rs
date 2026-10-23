@@ -200,7 +200,7 @@ fn chart_is_byte_identical_across_runs() {
 
 #[test]
 fn chart_needs_only_placement_not_emission() {
-    // Like `snapshot`: a campaign that fails quest-graph analysis still charts,
+    // Like `frames --campaign`: a campaign that fails quest-graph analysis still charts,
     // because blocking is a question about geometry, not about the quest graph.
     let dir = tmp("chart-partial");
     let campaign = dir.join("campaign");

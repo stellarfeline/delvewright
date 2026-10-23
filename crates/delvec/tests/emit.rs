@@ -310,14 +310,20 @@ fn the_render_plan_states_what_the_clear_eye_proof_examined() {
     let pulled = proof["pulled_in"].as_u64().unwrap() as usize;
     // hello-world is a small room, so its NPC and gate stand-offs are inside the
     // wall: the count is a real reading, not a structural zero.
-    assert_eq!(
-        pulled, 2,
-        "hello-world's two buried stand-offs are pulled in: {proof}"
-    );
     let moved: Vec<&serde_json::Value> = shots
         .iter()
         .filter(|s| !s["camera"]["requested_pos"].is_null())
         .collect();
+    let ids: Vec<&str> = moved.iter().map(|s| s["id"].as_str().unwrap()).collect();
+    // The spawn camera stands outside the hall, so its sight line crosses the
+    // hall's wall: a frame drawn from real geometry would show the wall, and
+    // it is pulled in to the farthest point that sees the spawn (spec-0112
+    // §7.4).
+    assert_eq!(
+        ids,
+        ["spawn", "npc/keeper", "gate/keep/door/a"],
+        "hello-world's two buried stand-offs and its walled-off spawn camera are pulled in: {proof}"
+    );
     assert_eq!(
         moved.len(),
         pulled,
@@ -2045,8 +2051,18 @@ fn an_interior_overview_stands_over_a_place_stacked_over_its_eye() {
     plan.areas[0].pieces.push(upper);
     let world =
         delvec::compiler::nav::World::from_plan(&plan, &structures).with_extra_solid(&solid);
-    let (rp, _) = delvec::compiler::render_plan::render_plan(&plan, &prefabs, &[], &world, None)
-        .expect("every camera's eye is proven clear");
+    let frames = delvec::compiler::view::review::frame_worlds(&plan, &world);
+    let picture = delvec::compiler::blockstate::BlockMap::new();
+    let (rp, _) = delvec::compiler::render_plan::render_plan(
+        &plan,
+        &prefabs,
+        &[],
+        &[],
+        &world,
+        &frames,
+        &picture,
+    )
+    .expect("every camera's eye is proven clear");
     let shot = rp["shots"]
         .as_array()
         .unwrap()

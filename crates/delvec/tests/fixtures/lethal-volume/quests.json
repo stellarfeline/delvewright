@@ -43,8 +43,10 @@
               "text": "The Keeper warns them the road's edge has gone, and lifts the gate.",
               "verb": "learns"
             },
+            "hint": "He keeps the gate room.",
             "id": "obj/talk",
             "npc": "npc/keeper",
+            "title": "Talk to the keeper",
             "type": "talk-to"
           },
           {
@@ -56,8 +58,10 @@
               "text": "They reach the road's edge and stop short of the drop.",
               "verb": "survives"
             },
+            "hint": "Past the keeper, through the door he opens.",
             "id": "obj/exit",
             "radius": 2,
+            "title": "Go through the door",
             "type": "reach-anchor"
           }
         ],
@@ -93,6 +97,6 @@
       }
     ]
   },
-  "dsl_version": "0.58.0",
+  "dsl_version": "0.61.0",
   "stage": "quests"
 }

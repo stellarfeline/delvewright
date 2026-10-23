@@ -28,11 +28,11 @@ This module's rows of a section whose prose is on the [`delvec::compiler::analyz
 |------|---------|
 | `DW0204` | An exported path is not a playthrough any player can walk: some step is not activatable/completable at its position, or `campaign-complete` fires before the final step (the signature of two mutually exclusive endings sharing one path, or of a quest ordered after the ending). Quantifies over the exported critical path and every reachable branch's exported path — the path of the story world that realizes it (`validation/world-path-<k>.json`, spec-0108), replayed under that world's participation and entry deeds; a branch finding names the branch and that file. Names the first incoherent step. |
 
-### DW0879 — a numeric gate the path has already cleared (`compiler::statepath` over `compiler::flow`; error; exit 2)
+### DW0879 — a numeric gate the path has already cleared (`compiler::statepath` over `compiler::flow`; error; exit 1)
 
 | Code | Meaning |
 |------|---------|
-| `DW0879` | **A forced-path numeric gate the path itself has made unsatisfiable.** An objective's `requires_state` term evaluated at that objective's own position on a walked path, against the value every state write the path performed has left the datum holding. Analysis tier (exit 2); it judges what the document says, and a campaign that declares no `state[]` reads no gate this rule can see. Names the objective, the datum, the comparison, the value held, the beat whose write left it there, and the two remedies: move the write past the beat that reads the datum, or move the gate. |
+| `DW0879` | **A forced-path numeric gate the path itself has made unsatisfiable.** An objective's `requires_state` term evaluated at that objective's own position on a walked path, against the value every state write the path performed has left the datum holding. Declared analysis tier, raised in the validation funnel (`cli::campaign::validate_stage`), so a refusal exits 1 from every subcommand; it judges what the document says, and a campaign that declares no `state[]` reads no gate this rule can see. Names the objective, the datum, the comparison, the value held, the beat whose write left it there, and the two remedies: move the write past the beat that reads the datum, or move the gate. |
 
 **The quantifier is the whole rule.** `DW0501` asks whether a datum is written
 anywhere, `DW0502` whether it is read anywhere, `DW0847` whether the gate's own

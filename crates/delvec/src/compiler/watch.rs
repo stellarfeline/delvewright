@@ -469,6 +469,9 @@ delvewright_dsl::dw_code! {
 pub struct Claim {
     /// The mechanic as an author names it, for the message only.
     pub mechanic: &'static str,
+    /// What a family names: an emitted campaign body the suite must drive, or
+    /// a generated template the suite must hold.
+    pub kind: ClaimKind,
     /// The emitted body families this claim covers, e.g. `tgate_open_`.
     ///
     /// Owned rather than `&'static [&'static str]` because a family prefix may
@@ -480,6 +483,19 @@ pub struct Claim {
     pub families: Vec<String>,
     /// Every declared object's function-safe id, from the plan's authored list.
     pub declared: BTreeSet<String>,
+}
+
+/// What a [`Claim`]'s families name, and so what discharges it per object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClaimKind {
+    /// A per-object campaign body (`<family><id>` under `function/`): judged
+    /// where it was written, discharged when a template invokes it.
+    Body,
+    /// A per-object PackTest template (`<family><id>` under `test/`) — a
+    /// reading of the server's state that drives no campaign body, such as a
+    /// cutscene's judged biomes (spec-0109 §5.2): every declared object owes
+    /// its template, discharged when the suite holds it.
+    Template,
 }
 
 /// One declared object whose emitted body the claiming suite does not drive.
@@ -564,6 +580,15 @@ pub fn check_claims(
     claims: &[Claim],
 ) -> (ClaimBinding, Vec<ClaimBreach>) {
     let (functions, invoked) = emitted_and_invoked(ns, out);
+    let test_prefix = format!("packtest-datapack/data/{ns}/test/");
+    let templates: BTreeSet<String> = out
+        .keys()
+        .filter_map(|p| {
+            p.strip_prefix(&test_prefix)
+                .and_then(|r| r.strip_suffix(".mcfunction"))
+                .map(str::to_string)
+        })
+        .collect();
     let mut binding = ClaimBinding {
         claims: claims.len(),
         ..ClaimBinding::default()
@@ -574,11 +599,19 @@ pub fn check_claims(
         for family in &c.families {
             for id in &c.declared {
                 let f = format!("{family}{id}");
-                if !functions.contains(&f) {
-                    continue;
-                }
+                let discharged = match c.kind {
+                    ClaimKind::Body => {
+                        if !functions.contains(&f) {
+                            continue;
+                        }
+                        invoked.contains(&f)
+                    }
+                    // A template owed per declared object: its absence is
+                    // the breach, so every declared object is judged.
+                    ClaimKind::Template => templates.contains(&f),
+                };
                 binding.bodies_judged += 1;
-                if invoked.contains(&f) {
+                if discharged {
                     binding.bodies_watched += 1;
                 } else {
                     breaches.push(ClaimBreach {

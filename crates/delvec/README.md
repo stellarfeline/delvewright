@@ -54,29 +54,32 @@ one with `--prefabs <dir>`.
 | `analyze` | Reachability and dialogue deadlocks. |
 | `build` | The full deterministic build. |
 | `fmt` | Rewrite authored JSON in canonical form; `--check` reports instead. |
-| `schema` | Export a document's JSON Schema (`--stage` takes `1`–`7`, `geometry-brief`, `layout-graph`, `site-plan`, `detail-plan`, `prefab-metadata`, `cameras`, `sculpt-form`, or `all`). |
+| `schema` | Export a document's JSON Schema (`--stage` takes `1`–`7` or any stage by name — `world`, `npcs`, `classes`, `quest-plan`, `quests`, `dialogue`, `world-edits`, `geometry-brief`, `layout-graph`, `site-plan`, `detail-plan`, `design` — or `prefab-metadata`, `cameras`, `sculpt-form`, or `all`). |
 | `l10n-inventory` | The translatable-string inventory as JSON. |
 | `l10n-apply` | Write a language sidecar from a table of English → translation. |
 | `metrics` | The metrics standard — player facts and building standards — as JSON. |
+| `codes` | Every `DW` code this binary declares, one JSON object per line. |
 | `allocation` | The frame, datum, seams and owed anchors a site plan hands one place. |
 | `detail` | Detail a place inside its allocation: bind, expand, gate and freeze its piece. |
-| `snapshot` | Render one frame of the assembled world plus a scene manifest. |
+| `frames` | Draw every review frame of a build from the worlds it wrote, or one frame of a campaign's load world, each with its manifest. |
 | `blocking-chart` | Per-elevation cutaway floor plans of every area. |
 | `edit` | Replay the world-edit script, re-proving the invariants per batch. |
 | `calibrate` | Turn a harvested rehearsal report into camera DSL patches. |
-| `viewer` | One self-contained HTML page per room or zone: a camera you drive, drawn from the game's own block models and textures. |
+| `written-world` | Write the world the engine models at load as an Anvil save, with no server booted. |
+| `textures` | One side-by-side sheet per `world.textures[]` row: vanilla's texture beside the campaign's. |
+| `viewer` | One self-contained HTML page for one or more rooms or zones: a camera you drive, drawn from the game's own block models and textures. |
 | `palette` | The per-blockstate colour and shape table a room is built from, as JSON. |
-| `scene` | Chunky scene descriptions for every planned shot of a build. |
-| `panorama` | One oblique exterior scene framed on the placed areas — the storybook shot. |
-| `cameras` | A Chunky scene per showcase camera the campaign's `design/cameras.json` states. |
+| `panorama` | One oblique exterior frame of the placed areas — the storybook shot. |
+| `cameras` | A frame per showcase camera the campaign's `design/cameras.json` states. |
 | `place-camera` | Write one row of `design/cameras.json`: a hand-placed pose, an estimate, or a deletion. |
 | `contact-sheet` | Many candidate renders laid out on one page to choose from. |
-| `index` | The shot list as (image, expectation) pairs, for review. |
 | `grammar` | Prefab authoring from a rule program: `list`, `show`, `check`, `expand`, `coverage`, `audit`. |
 | `prefab` | Prefab admission: `audit`, `seating`, `anchors`, `socket`, `resolve-jigsaw`, `anchor`, `planes`, `lighting`, `catalog`, `gallery`, `curate`, `curate-merge`. |
+| `sculpt` | Sculpt a piece from a form document: a body stated as implicit solids over its own ground. |
 | `schem` | `convert` a Sponge schematic into a structure template. |
 | `harvest` | Turn a playtest server log into `playtest-report.json`, plus the rehearsal and camera reports its stamps carry. |
 | `render` | GPU renders through your own GPU: `piece`, `batch`, and the texture `fidelity-gate`. |
+| `rig` | `describe` an assembly's rig: its parts, and every clip with its length and last-frame footprint. |
 
 The render commands read textures from your own Minecraft client jar, which is
 never downloaded, bundled or redistributed by this tool. Point them at it with
@@ -96,13 +99,13 @@ the server.
 ## As a library
 
 The same crate is the engine as a library: `delvec::compiler` is the compiler
-behind the verbs above, and `grammar`, `schem`, `admit`, `orchestrator` and
-`render` are the modules behind the other subcommands. The campaign format is
+behind the verbs above, and `grammar`, `sculpt`, `schem`, `admit`,
+`orchestrator` and `render` are the modules behind the other subcommands. The campaign format is
 [`delvewright-dsl`](https://crates.io/crates/delvewright-dsl):
 
 ```toml
 [dependencies]
-delvec = "1.13"
+delvec = "1.14"
 ```
 
 ```rust
@@ -112,7 +115,7 @@ use delvec::compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
 ## Compatibility
 
 - **Minecraft**: Java Edition 1.21.11. Output targets that version and no other.
-- **Campaign format**: `dsl_version` `0.58.0`, the one number this engine accepts.
+- **Campaign format**: `dsl_version` `0.61.0`, the one number this engine accepts.
 - **Rust**: 1.97.1 or newer.
 - The binary is self-contained: no JVM, no runtime dependencies.
 
@@ -127,4 +130,4 @@ use delvec::compiler::{DELVEC_VERSION, DSL_VERSION, MC_VERSION};
 
 ## Licence
 
-GPL-3.0-only.
+GPL-3.0-or-later.

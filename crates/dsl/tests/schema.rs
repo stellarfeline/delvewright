@@ -181,3 +181,53 @@ fn every_stage_document_is_exportable_by_its_own_name() {
     );
     assert!(exported > 0, "a zero binding here would be a vacuous pass");
 }
+
+/// Every `description` string anywhere in a stage's exported schema.
+fn descriptions(v: &serde_json::Value, out: &mut Vec<String>) {
+    match v {
+        serde_json::Value::Object(m) => {
+            for (k, x) in m {
+                match (k.as_str(), x) {
+                    ("description", serde_json::Value::String(s)) => out.push(s.clone()),
+                    _ => descriptions(x, out),
+                }
+            }
+        }
+        serde_json::Value::Array(a) => a.iter().for_each(|x| descriptions(x, out)),
+        _ => {}
+    }
+}
+
+/// **The schema says what the validators accept.** The engine accepts one
+/// `dsl_version` (`DW0102`), so no description may tell an author that a
+/// campaign of an earlier version reads some way; and the bare-string horizon is
+/// refused (`DW1031`), so the base's description says so instead of calling it a
+/// valid shorthand.
+#[test]
+fn the_exported_schema_promises_nothing_the_validators_refuse() {
+    let mut all = Vec::new();
+    for stage in Stage::ALL {
+        descriptions(&stage_schema(stage), &mut all);
+    }
+    assert!(all.len() > 1000, "only {} description(s) read", all.len());
+    let earlier: Vec<&String> = all
+        .iter()
+        .filter(|d| {
+            d.contains("pre-0.") || d.contains("-or-earlier campaign") || d.contains("before v0.")
+        })
+        .collect();
+    assert!(
+        earlier.is_empty(),
+        "{} description(s) speak of an earlier dsl_version's campaign:\n{earlier:#?}",
+        earlier.len()
+    );
+
+    let base = defs_of(Stage::World, "HorizonBase");
+    let text = base["description"]
+        .as_str()
+        .expect("HorizonBase is described");
+    assert!(
+        text.contains("refused") && text.contains("DW1031") && !text.contains("shorthand"),
+        "{text}"
+    );
+}

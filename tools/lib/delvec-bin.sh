@@ -11,9 +11,9 @@
 #   and, finding nothing there, compiled the whole workspace — 1 min 33 s on the
 #   third end-to-end drill — while the binary Init had already verified sat on
 #   `PATH` unused.
-# - `validation/render-shots.sh` did the opposite and took `PATH` FIRST, with no
-#   check at all: a `delvec` of any version, from any release, silently produced
-#   the scene set a delve is judged on.
+# - another step did the opposite and took `PATH` FIRST, with no check at all: a
+#   `delvec` of any version, from any release, silently produced the pictures a
+#   delve is judged on.
 #
 # The two failures look opposite and are the same one: a step used an instrument
 # nobody chose, and said nothing.

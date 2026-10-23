@@ -24,7 +24,7 @@ rule, and the rule's domain is the more useful thing for the number to say.
 | `DW0739` | `delvec prefab` | **A whole-piece command was handed ONE TILE of a tiled zone** (exit 2). A zone past the 48-per-axis cap ships as several `.nbt` plus one manifest; every command that takes a single `.nbt` will otherwise answer confidently about a fragment — `audit` returns `pass` over a fifth of a zone, `lighting` measures a fifth of a building, `socket` edits one tile of a set, `gallery` puts slices of one building on separate plinths. A tile is recognised by the name `<base>.x<i>y<j>z<k>.nbt` that `split::part_filename` gave it, which is carried by the bytes through any copy or move; the manifest beside it only enriches the message. Pass the manifest instead — **and every door that prints this sentence takes one**: `audit` and `lighting` measure the reassembled zone, and `gallery` shows it as one whole building placed from every template the manifest declares — a door that refused a tile and could not take the manifest it prescribes would be the pair defect `CLAUDE.md` names. `crates/delvec/tests/remedy_reachability.rs` takes the move at the door that printed it and asserts it reaches a whole zone rather than merely a zero exit. **Which commands owe this refusal is enumerated from the parser, not listed**: `crates/delvec/tests/prefab_fragment_doors.rs` walks `delvec::admit::cli::PrefabCommand`, requires every command it finds to be classified exactly once — piece door, or exempt with its reason — and separately requires that **no** command exits 0 when handed a tile, so an exemption cannot hide a door. A command added and classified nowhere is a red. |
 | `DW0740` | `delvec prefab` | Catalog card schema/field validation failure. |
 | `DW0750` | `delvec prefab` | Admission tooling (socket/anchor/lighting) failure. |
-| `DW0752` | `delvec prefab` | **The lighting probe bound to ZERO cells** (exit 1): nothing was measured, so there is no profile to declare and `--write` writes nothing. The probe's binding is the floor a body can walk to from a ground-level entrance, and each filter can empty it for a different reason — no standable cell at all, no entrance on any vertical face (a piece whose way in is a jigsaw socket must be socketed before it is probed), or nothing reachable. The diagnostic says which. Zero binding is a **finding, not a pass** (CLAUDE.md): a measurement over nothing is not a measurement. There is no *nothing roofed* case: roofedness was a proxy for indoors that only a probe without a sky term needs, and it made every open-air piece — a courtyard, a jetty, a meadow — ungradeable. |
+| `DW0752` | `delvec prefab` | **A prefab measurement bound to ZERO objects** (exit 1). `seating` and `anchors` refuse a verdict that examined zero pools, and `seating` one that opened fewer `.nbt` than it read documents; `planes` refuses a piece with no standable cell anywhere, so no walk plane is invented. **The lighting probe bound to ZERO cells**: nothing was measured, so there is no profile to declare and `--write` writes nothing. The probe's binding is the floor a body can walk to from a ground-level entrance, and each filter can empty it for a different reason — no standable cell at all, no entrance on any vertical face (a piece whose way in is a jigsaw socket must be socketed before it is probed), or nothing reachable. The diagnostic says which. Zero binding is a **finding, not a pass** (CLAUDE.md): a measurement over nothing is not a measurement. There is no *nothing roofed* case: roofedness was a proxy for indoors that only a probe without a sky term needs, and it made every open-air piece — a courtyard, a jetty, a meadow — ungradeable. |
 | `DW0753` | `delvec prefab` | **`lighting --write` has no prefab metadata to write the measurement into** (exit 2), and will not invent one. A manufactured skeleton — `source: unknown`, `spdx: UNKNOWN`, no `generated_by` row and `anchors: {}` — would be a document asserting that nothing is known about an asset, written silently and afterwards indistinguishable from a real admission record. A tool that cannot establish where something came from refuses. The measurement is still printed; create the metadata first, then re-run with `--write`. |
 | `DW0760` | `delvec prefab` | Gallery emission / curation failure. |
 | `DW0782` | `delvec prefab audit` | **A piece's declared spatial contract disagrees with its own blocks** (spec-0036 §2) — the second of the contract checker's two doors; the first is `delvec grammar expand`, which writes no `.nbt` when a gate is red. Each failed obligation is reported as one error line naming the gate, **its binding count** and what it found; each opt-out instance (an open envelope, a sightline, an out-of-walk region with its computed kind, a declared way with its sign and cell count, a way or bar the walk had to open, an exterior face) is reported as one advisory line, always, because a list is what a reviewer reads and a count is what a blind script satisfies. One enumeration, both doors: this is the same list `delvec grammar expand` prints, because it is the same checker. Raised for a piece that declares a contract, whichever way it is packaged: a single structure template, and a **tile-set manifest**, whose contract and anchors are zone-relative and are therefore judged against the assembled zone rather than against any tile — including a **contingent edge whose cells straddle a tiling seam**, which is judged over the reassembled zone and over no tile alone. A piece that declares no contract is not judged here and says so as `DW0783`. Exit 1. |
@@ -33,24 +33,12 @@ rule, and the rule's domain is the more useful thing for the number to say.
 `delvec render` exit codes: `0` ok · `2` input · `3` output · `4` fidelity-gate
 failure · `5` renderer/GPU · `10` internal.
 
-#### `delvec render` dark-shot REVIEW POLICY (night-vision emulation)
+#### A dark shot's frame (night vision)
 
-For shots stamped `{"profile": "dark", "mitigation": "night-vision"}` — and only
-those — `delvec scene` emits the Chunky scene with a review-only
-`materials` override: every non-light-emitting block of the build's shipped
-structure palettes (union over `datapack/data/*/structure/*.nbt`, sorted,
-deduped, state brackets stripped) gets a low uniform emittance
-(`scene::REVIEW_EMITTANCE` = 0.05), and the scene carries
-`"delvewrightReviewPolicy": "night-vision-emulated — review only"` (Chunky
-ignores unknown keys). `delvec index` marks the same shots with
-`review_policy` and passes the `lighting` stamp through. **This is an honest
-approximation, not ground truth**: faint uniform self-glow is the closest
-Chunky analogue of Minecraft night vision (which renders every block at full,
-flat brightness), where an exposure boost cannot recover a dark cavern; real
-emitters are deny-listed out of the override so a placed fixture
-still reads as a genuine glow. Legibility of geometry/layout in an emulated
-frame is reviewable; its *lighting* is not — the compiler's measured light
-model remains the only light-truth. Lit-stamped and unstamped shots are
-byte-untouched; a dark-stamped shot with no structure palette available is a
-`DW0721` error (a silently-black "reviewable" scene would re-blind the review).
-Deterministic throughout (`BTreeMap`-sorted override keys, sorted file walk).
+A shot stamped `{"profile": "dark", "mitigation": "night-vision"}` is drawn by
+`delvec frames` under the light its written world carries, without the
+night-vision effect, and its index entry and manifest name the lightmap under
+`unchecked` ("judge in game under night vision"): the pinned renderer draws no
+night-vision lightmap yet (spec-0112 phase 2). Its geometry is judged in a
+frame lit by the room's own fixtures; its legibility under night vision is
+judged in the game. Lit-stamped and unstamped shots carry no such line.

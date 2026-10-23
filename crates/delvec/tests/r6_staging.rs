@@ -39,7 +39,7 @@ static QUESTS_V06: LazyLock<String> = LazyLock::new(|| {
         "trigger": { "type": "campaign-start" },
         "objectives": [
           { "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" },
-          { "type": "interact", "id": "obj/lever", "anchor": "anchor/keeper-stand",
+          { "type": "interact", "id": "obj/lever", "anchor": "anchor/keeper-stand", "prop": { "block": "minecraft:torch" },
             "after": ["obj/talk"], "forbids_flags": ["flag/blocked"] },
           { "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit", "radius": 2,
             "after": ["obj/lever"] }

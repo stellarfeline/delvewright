@@ -615,7 +615,7 @@ fn keep_out_of(region_events: &RegionEvents, step: usize) -> Vec<LethalRegion> {
 /// `from_step → to_step` ([`World::leg_region_state`]), in the
 /// `(fire_step, arrival)` shape [`World::region_state_at`] asks it in. The
 /// arrival argument is ignored: the leg's own two ends decide.
-fn leg_fired(
+pub(in crate::compiler::nav) fn leg_fired(
     ancestor: &dyn Fn(usize, usize) -> bool,
     from_step: usize,
     to_step: usize,

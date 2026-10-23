@@ -1,0 +1,15 @@
+{
+  "campaign_id": "three-places",
+  "content": {
+    "areas": [],
+    "premise": "Three places and no authored geometry. The keeper stands in the hall and the yard door is his to open.",
+    "seed": 20260821,
+    "target_minutes": 5,
+    "theme": "Three places: a landing, a hall, a yard.",
+    "time": "noon",
+    "title": "Three Places",
+    "weather": "clear"
+  },
+  "dsl_version": "0.61.0",
+  "stage": "world"
+}

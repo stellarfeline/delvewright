@@ -8,7 +8,7 @@
 //! player is meant to walk up to and look at. Nothing in the pair of files a
 //! prefab ships as told the difference, and nothing at placement asked.
 //!
-//! So a `horizon: ocean` world — a superflat floor at y=54, water to y=62, and
+//! So a world on an `ocean` horizon base — a superflat floor at y=54, water to y=62, and
 //! sky above — laid a cave piece on the shore and buried none of it. What
 //! shipped was a fifty-two cell stone-and-grass slab standing in open air over
 //! the beach, with the party walking underneath it. Every other check was

@@ -1,0 +1,13 @@
+{
+  "code": "DW1031",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "replace",
+      "path": "/content/quests/0/on_objective_complete/obj~1take-the-emeralds/1/steps/1/effects/0/music",
+      "value": {}
+    }
+  ],
+  "units": [],
+  "why": "One edit: the emeralds' wide shot declares `music: {}`. A cutscene that declares music is a scene, and a scene states a track or silence: a `music` without `audio/background_music` states nothing, so `DW1031` refuses it, naming both spellings — `{}` for silence inside `audio/background_music`, or a `default` track. It declares no unit: `cutscene.music` is bound by the primary."
+}

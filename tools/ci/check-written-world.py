@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """The world the engine writes is the world the pinned server builds
-(spec-0089 §5.4, `DW0955`).
+(spec-0089 §5.4, `DW0955`; its placed objects, spec-0112 §8.2, `DW1040`).
 
     python3 tools/ci/check-written-world.py <build-dir> <written-world> <server-save>
 
 Two methods that share no configuration: the written world is the compiler's
 model of the world at load (`delvec written-world <campaign> -o <dir>` writes
-it from the campaign and `--prefabs`, no camera record needed; `delvec cameras`
-writes the same world through the same writer as `<out>/worlds/at-load`), and
+it from the campaign and `--prefabs`, the build run in memory; `delvec build`
+writes the same world as `validation/worlds/at-load`), and
 the server save is the pinned game executing the
 compiler's datapack (`validation/world-save.sh <build-dir>` writes it to
 `<build-dir>/world`). Both are read through the one reader, `tools/lib/anvil.py`,
@@ -58,6 +58,27 @@ functions (`setup`, the ground and world-build steps, `place_all`,
 `setup_finish`) are the only declarations that can put one there, as a `summon
 minecraft:item`; an item entity beyond what they summon reds as `DW0955`,
 with its position and item.
+
+**Placed objects** (spec-0112 §8.2, `DW1040`). Beside the cells, the block
+entities of the two worlds (`anvil.block_entities`) are compared by cell and
+compound, and their entities (`anvil.entities`) by kind, cell and tag set. A
+difference is either one of these classes — each counted and printed with its
+objects, never an allowlist — or it reds as `DW1040`, naming the object:
+
+- **bookkeeping** — a key the server writes for itself: `UUID`, `Motion`,
+  `Fire`, `Air`, `OnGround`, `PortalCooldown`, `Health`, `Attributes`,
+  `Brain`, `Rotation`'s second component, the order of `Tags` (the server
+  saves a body's tags as a set, in its own order), and any key the server's save holds
+  that the written compound does not state (the server's own default for that
+  kind). A key the written compound states and the save lacks, or holds at
+  another value, is in no class.
+- **loot** — a container whose `LootTable` the server rolled: its `Items`,
+  `LootTable` and `LootTableSeed` are not compared.
+- **played** — a body present only once a player has played (a wave's member,
+  a cutscene's stand-in), on the server side alone.
+
+Both denominators are printed: the block entities and the entities each world
+holds.
 
 `--record <path>` also writes the verdict as JSON, named by the sha256 of the
 build's `manifest.json` — the fingerprint the staging gate binds an admission
@@ -298,6 +319,131 @@ def compare(build: Path, written: Path, server: Path) -> tuple[int, list[str], d
     return 0, lines, summary
 
 
+OBJECTS_CODE = "DW1040"
+# Keys the server writes for itself on an entity (spec-0112 §8.2).
+BOOKKEEPING = {
+    "UUID", "Motion", "Fire", "Air", "OnGround", "PortalCooldown", "Health", "Attributes", "Brain",
+    "FallDistance", "fall_distance",
+}
+LOOT_KEYS = {"Items", "LootTable", "LootTableSeed"}
+PLAYED_TAGS = ("dw_wave_", "dw_cs_", "dw_standin")
+
+
+def _same(a, b) -> bool:
+    if isinstance(a, float) or isinstance(b, float):
+        try:
+            return abs(float(a) - float(b)) < 1e-6
+        except (TypeError, ValueError):
+            return False
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_same(x, y) for x, y in zip(a, b))
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_same(a[k], b[k]) for k in a)
+    return a == b
+
+
+def _compound_diff(written: dict, server: dict, skip: set[str]) -> tuple[list[str], list[str]]:
+    """`(server-only keys, keys the written compound states that the save
+    lacks or holds at another value)`, `skip` aside."""
+    server_only = sorted(k for k in server if k not in written and k not in skip)
+    wrong = []
+    for k, v in sorted(written.items()):
+        if k in skip:
+            continue
+        # The server holds an entity's tags as a set and saves them in its
+        # own order (the gallery's save writes `dw_watch` first where the
+        # summon wrote it last): a tag list is compared as a set.
+        if k == "Tags" and isinstance(v, list) and isinstance(server.get(k), list):
+            if sorted(map(str, v)) == sorted(map(str, server[k])):
+                continue
+        if k == "Rotation" and isinstance(v, list) and isinstance(server.get(k), list):
+            if v and server[k] and _same(v[0], server[k][0]):
+                continue
+        if k not in server or not _same(v, server[k]):
+            wrong.append(k)
+    return server_only, wrong
+
+
+def objects(written: Path, server: Path) -> tuple[int, list[str], dict]:
+    """The placed-object comparison (`DW1040`)."""
+    lines: list[str] = []
+    counts = collections.Counter()
+    findings: list[str] = []
+    bw, bs = anvil.block_entities(written), anvil.block_entities(server)
+    for cell in sorted(set(bw) | set(bs), key=lambda c: tuple(-1 << 30 if v is None else v for v in c)):
+        a, b = bw.get(cell), bs.get(cell)
+        if a is None or b is None:
+            findings.append(
+                f"block entity at {list(cell)}: {'written' if b is None else 'server'} side only "
+                f"({(a or b).get('id')})"
+            )
+            continue
+        skip = {"x", "y", "z", "id"}
+        if "LootTable" in b or "LootTable" in a:
+            skip |= LOOT_KEYS
+            counts["loot"] += 1
+        server_only, wrong = _compound_diff(a, b, skip)
+        if a.get("id") != b.get("id"):
+            wrong.append("id")
+        if server_only:
+            counts["bookkeeping"] += 1
+        if wrong:
+            findings.append(f"block entity {a.get('id')} at {list(cell)}: {', '.join(wrong)} differ")
+    ew, es = anvil.entities(written), anvil.entities(server)
+
+    def key(e: dict):
+        pos = e.get("Pos") or [0, 0, 0]
+        return (e.get("id"), tuple(int(float(p) // 1) for p in pos), frozenset(e.get("Tags") or []))
+
+    left = collections.defaultdict(list)
+    for e in es:
+        left[key(e)].append(e)
+    for e in ew:
+        k = key(e)
+        if not left.get(k):
+            findings.append(
+                f"entity {k[0]} at {list(k[1])} tags {sorted(k[2])}: written, not in the server save"
+            )
+            continue
+        b = left[k].pop(0)
+        server_only, wrong = _compound_diff(e, b, BOOKKEEPING)
+        if server_only or any(x in b for x in BOOKKEEPING):
+            counts["bookkeeping"] += 1
+        if wrong:
+            findings.append(f"entity {k[0]} at {list(k[1])}: {', '.join(wrong)} differ")
+    for k, rest in sorted(left.items(), key=lambda kv: str(kv[0])):
+        for _ in rest:
+            if any(t.startswith(PLAYED_TAGS) for t in k[2]):
+                counts["played"] += 1
+            else:
+                findings.append(
+                    f"entity {k[0]} at {list(k[1])} tags {sorted(k[2])}: in the server save, not written"
+                )
+    lines.append(
+        f"objects binding: {len(bw)} block entit(ies) written, {len(bs)} in the server save; "
+        f"{len(ew)} entit(ies) written, {len(es)} in the server save"
+    )
+    for c in ("bookkeeping", "loot", "played"):
+        lines.append(f"  {c}: {counts[c]} object(s)")
+    summary = {
+        "block_entities": {"written": len(bw), "server": len(bs)},
+        "entities": {"written": len(ew), "server": len(es)},
+        "classes": {c: counts[c] for c in ("bookkeeping", "loot", "played")},
+        "differing": len(findings),
+        "sample": findings[:SHOWN],
+        "verdict": "fail" if findings else "pass",
+    }
+    if findings:
+        lines.append(
+            f"{OBJECTS_CODE} the objects the engine writes are not the objects the pinned server places: "
+            f"{len(findings)} in no class — " + "; ".join(findings[:SHOWN])
+            + ". The ledger or the writer is wrong at the objects named; fix the engine, never this comparison"
+        )
+        return 1, lines, summary
+    lines.append("written world: every placed object is the server's outside the named classes")
+    return 0, lines, summary
+
+
 def manifest_sha256(build: Path) -> str | None:
     """The build's identity: the sha256 of its `manifest.json`, the same
     fingerprint `tools/creator/staging-gate.py` stamps into an admission."""
@@ -345,6 +491,12 @@ def main(argv: list[str]) -> int:
             )
             return 2
     code, lines, summary = compare(a.build, a.written, a.server)
+    summary["cells_verdict"] = "pass" if code == 0 else "fail"
+    if (a.written / "level.dat").is_file() and (a.server / "level.dat").is_file():
+        ocode, olines, osummary = objects(a.written, a.server)
+        lines += olines
+        summary["objects"] = osummary
+        code = code or ocode
     if (a.server / "level.dat").is_file():
         icode, ilines, isummary = item_findings(a.build, a.server)
         lines += ilines

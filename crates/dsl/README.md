@@ -6,8 +6,10 @@ export for the staged JSON documents that describe a **Minecraft Java Edition
 1.21.11** adventure map.
 
 A campaign is six documents — `world`, `npcs`, `classes`, `quest-plan`,
-`quests`, `dialogue` — plus an optional `world-edits` script and one
-`l10n/<code>.json` sidecar per translated language. Each is an envelope
+`quests`, `dialogue` — plus an optional `world-edits` script, the optional
+map-pipeline documents (`geometry-brief`, `layout-graph`, `site-plan`,
+`detail-plan`), an optional `design` record, and one `l10n/<code>.json` sidecar
+per translated language. Each is an envelope
 `{ dsl_version, campaign_id, stage, content }` wrapping that stage's payload.
 Later stages reference earlier ones and never the other way round, so a campaign
 can be written and checked one stage at a time.
@@ -19,14 +21,18 @@ authored against and the parser that reads it cannot disagree.
 
 ```toml
 [dependencies]
-delvewright-dsl = "0.58"
+delvewright-dsl = "0.61"
 ```
 
 ```rust
 use delvewright_dsl::{RawCampaign, check_campaign, parse_campaign, stage_schema};
 
-// Six JSON strings in, diagnostics out.
-let raw = RawCampaign { world, npcs, classes, quest_plan, quests, dialogue, world_edits: None };
+// Six JSON strings in (the optional documents as `Option<String>`), diagnostics out.
+let raw = RawCampaign {
+    world, npcs, classes, quest_plan, quests, dialogue,
+    world_edits: None, geometry_brief: None, layout_graph: None,
+    site_plan: None, detail_plan: None, design: None,
+};
 let diagnostics = check_campaign(&raw);   // parse, then validate
 
 // Or in two steps.
@@ -49,14 +55,15 @@ let schema = stage_schema(delvewright_dsl::Stage::World);
   dialogue reachability, quest-graph cycles, cross-stage completeness, item and
   entity ids, translation coverage. `validate_campaign_with` takes registries so
   ids resolve against a real Minecraft registry and a real prefab library.
-- **Canonical form** — `to_canonical_string` and `fmt`: two-space indent, sorted
-  map keys, declaration field order, one trailing newline. Array order is
+- **Canonical form** — `to_canonical_string` and `fmt`, one form: two-space
+  indent, every object's keys sorted, non-ASCII written raw, one trailing
+  newline. Array order is
   semantic and is never reordered. Round-tripping a valid document is
   byte-identical, so an edit is a small diff instead of a whole-file rewrite.
 - **JSON Schema** — `stage_schema` exports one full-envelope draft 2020-12
   schema per stage.
 - **Registries** — `ItemRegistry`, `EntityRegistry`, `BlockRegistry`,
-  `EffectRegistry` and `AnchorRegistry` traits, with small vendored
+  `EffectRegistry`, `EnchantmentRegistry` and `AnchorRegistry` traits, with small vendored
   implementations so the crate validates standalone, and injection points for
   the full ones.
 
@@ -65,7 +72,7 @@ wall-clock time, or absolute paths.
 
 ## Compatibility
 
-- **Campaign format**: `dsl_version` `0.58.0`, the one number this crate accepts;
+- **Campaign format**: `dsl_version` `0.61.0`, the one number this crate accepts;
   any other is refused at the envelope.
 - **Minecraft**: Java Edition 1.21.11.
 - **Rust**: 1.97.1 or newer.
@@ -78,4 +85,4 @@ wall-clock time, or absolute paths.
 
 ## Licence
 
-GPL-3.0-only.
+GPL-3.0-or-later.

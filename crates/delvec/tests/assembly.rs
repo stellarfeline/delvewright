@@ -897,6 +897,22 @@ fn reaching_rig() -> Rig {
 /// `far`; its blow derived.
 fn locked_quests() -> Value {
     quests_with(|q| {
+        // The thing stands round the doorway's corner from the keeper's post,
+        // out of his sight: the party steps into the room first, and strikes
+        // it from there (spec-0104 §4 — an act is in sight of where the party
+        // stands).
+        let quest = &mut q["content"]["quests"][0];
+        quest["objectives"].as_array_mut().unwrap().insert(
+            1,
+            json!({ "type": "reach-anchor", "id": "obj/step-in", "anchor": "anchor/exit",
+                    "radius": 1, "after": ["obj/talk"],
+                    "title": "Go through the door", "hint": "Past the keeper.",
+                    "happening": { "verb": "arrives", "text": "the party steps in" } }),
+        );
+        quest["objectives"][2]["after"] = json!(["obj/step-in"]);
+        quest["on_objective_complete"]["obj/step-in"] = json!([{ "type": "set-flag", "flag": "flag/stepped-in",
+                     "happening": { "verb": "learns", "text": "the room is open" } }]);
+        trigger(q)["requires_flags"] = json!(["flag/stepped-in"]);
         let a = assembly(q);
         a["at"] = json!({ "anchor": "anchor/exit", "offset": [-4, 0, 0] });
         a["facing"] = json!("east");
@@ -1154,5 +1170,29 @@ fn an_aimed_wind_up_chooses_its_target_from_the_mark() {
             .lines()
             .all(|l| !(l.contains("x=") && l.contains("sort="))),
         "{begin}"
+    );
+}
+
+/// spec-0110 §5.8: every display the summon stands — the root and each part —
+/// carries one `view_range`, the derived floor for an assembly no shot frames.
+#[test]
+fn every_display_of_an_assembly_carries_its_view_range() {
+    let out = common::assembly_fixture::build_fixture();
+    let key = out
+        .keys()
+        .find(|k| k.ends_with("/asm_summon_limb.mcfunction"))
+        .expect("the limb's summon");
+    let body = String::from_utf8(out[key].clone()).unwrap();
+    let displays: Vec<&str> = body
+        .lines()
+        .filter(|l| {
+            l.starts_with("summon minecraft:item_display")
+                || l.starts_with("summon minecraft:block_display")
+        })
+        .collect();
+    assert_eq!(displays.len(), 4, "root + 3 parts");
+    assert!(
+        displays.iter().all(|l| l.contains("view_range:1.00f")),
+        "{displays:#?}"
     );
 }

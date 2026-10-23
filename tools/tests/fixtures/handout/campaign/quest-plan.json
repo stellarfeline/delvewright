@@ -1,0 +1,21 @@
+{
+  "campaign_id": "three-places",
+  "content": {
+    "finale": "quest/walk-the-whole",
+    "quests": [
+      {
+        "act": 1,
+        "area": "area/site",
+        "depends_on": [],
+        "goal": "Get the keeper to open the barred arch and walk out into the yard.",
+        "id": "quest/walk-the-whole",
+        "mandatory": true,
+        "npcs": [
+          "npc/keeper"
+        ]
+      }
+    ]
+  },
+  "dsl_version": "0.61.0",
+  "stage": "quest-plan"
+}

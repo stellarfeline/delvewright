@@ -12,6 +12,12 @@
         "prefab_pool": "pool/stone-keep"
       }
     ],
+    "horizon": {
+      "attributes": {
+        "audio/background_music": {}
+      },
+      "base": "void"
+    },
     "languages": [
       "zh-cn"
     ],
@@ -23,6 +29,6 @@
     "title": "Trial of the Keep",
     "weather": "clear"
   },
-  "dsl_version": "0.58.0",
+  "dsl_version": "0.61.0",
   "stage": "world"
 }

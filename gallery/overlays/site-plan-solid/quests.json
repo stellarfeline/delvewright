@@ -40,7 +40,7 @@
             },
             "id": "obj/read-the-label",
             "radius": 2,
-            "title": "Read the label at the desk",
+            "title": "Go to the label at the desk",
             "type": "reach-anchor"
           },
           {
@@ -64,7 +64,7 @@
             "hint": "The Curator stands in the middle of the near hall.",
             "id": "obj/hear-the-curator",
             "npc": "npc/curator",
-            "title": "Hear the Curator",
+            "title": "Talk to the Curator",
             "type": "talk-to"
           }
         ],
@@ -177,6 +177,7 @@
               "text": "The party walks out the far side and the hall is behind them.",
               "verb": "departs"
             },
+            "hint": "Back down off the causeway; the door is past the far hall.",
             "id": "obj/reach-the-end",
             "radius": 1,
             "title": "Leave by the far door",
@@ -326,6 +327,6 @@
       }
     ]
   },
-  "dsl_version": "0.58.0",
+  "dsl_version": "0.61.0",
   "stage": "quests"
 }

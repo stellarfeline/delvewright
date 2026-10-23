@@ -32,10 +32,27 @@ this section is what they are *for* and the traps in each.
   previous objective completed** — a different room, down a corridor, across an
   area. Read the "may omit" allowance narrowly: an off-screen NPC 60 blocks away
   through an unfamiliar cave leaves the player with nothing.
-- **Hint wording**: landmark-relative directions from places the player already
-  knows — the entrance hall, the gate, a named NPC. Never room-shape jargon
-  ("corner room", "L-shaped hall") and never solver-internal terms (anchor,
-  piece or socket ids).
+- **A hint says where to go and what to do**: it names the act as the player
+  performs it and a place the player can find from where they stand — a
+  landmark they can see and a position relative to it or to themselves (*Past
+  the bell, left of the arch: pull the lever by the gate.*). Never a compass
+  point, never room-shape jargon ("corner room", "L-shaped hall"), never
+  solver-internal terms (anchor, piece or socket ids), never a thing the player
+  has not been told. Every player carries a journal that lists the open
+  objectives with their hints and the done ones, rewritten by the engine, so a
+  hint is written to be re-read as well as heard.
+- **The compass** each player carries follows an announced objective; with
+  several open, using it (right-click) opens a list of the open ones to pick. `compass: hidden`
+  on an objective keeps a secret off it; `guidance.compass: hidden` with no
+  objective opting in carries no compass at all.
+- **A `highlight {within}`** is declared on an act whose block or body does not
+  read as the thing its text names, and only there: it glows while a player is
+  within `within` blocks and the act is open. The first remedy is a better block
+  or a better scene; a lever, a bell or a door that reads as itself carries none.
+- **The journal's `manual`** (`guidance.manual {title?, pages[]}`) is written only
+  for a setting that contradicts vanilla behaviour or an item that needs
+  instructions; most delves write none. Each page carries the key span for any
+  key it names (`[[key|use]]`). The compass page is the engine's.
 - **`interact.requires_item` is HELD, not carried**: the player must have the
   item in their **main hand** when they click — presenting it is the action.
   Author `missing_item_hint` whenever the empty-handed click deserves diegetic
@@ -93,14 +110,18 @@ this section is what they are *for* and the traps in each.
   three: it is what the player reads on the stack, it translates like every
   other player-visible string, and an unnamed generic item says nothing about
   what the quest asked for.
-  1. **`container: <anchor>`** — adopt a chest or barrel **the piece already
-     placed**. The compiler fills that container and places nothing of its own;
+  1. **`holder: <anchor>`** — adopt a container (a chest, a barrel, any of the
+     container kinds), an item frame or an armour stand **the piece already
+     placed**. The compiler fills that holder and places nothing of its own;
      a floating chest conjured beside the barrel the player has been walking
-     past is the defect this avoids. Set `fill_count` so the container reads
-     plausibly full — it counts padding SLOTS after the objective's own stack,
-     and `1 + fill_count` must fit the container's 27. The container must really
-     be there in the piece (`DW0438`) and must not also be filled by a `loot`
-     entry or another `collect` (`DW0435`). A container inside a place still
+     past is the defect this avoids. `slot` says where in the holder the item
+     lands (`container.<n>`, a frame's `contents`, a stand's `armor.*` or
+     `weapon.*`); on an armour stand it is required. Set `fill_count` on a
+     container so it reads plausibly full — it counts padding SLOTS after the
+     objective's own stack, and they must fit the container; a frame or a
+     stand takes no padding (`DW1035`). The holder must really be there in the
+     piece (`DW0438`) and must not also be filled by a `loot` entry or another
+     `collect` (`DW0435`). A container inside a place still
      standing in its stand-in is deferred to
      that place's detail at step 9 — counted on the build's `container binding`
      line, never refused before the step that places the furniture — and judged
@@ -317,7 +338,7 @@ this section is what they are *for* and the traps in each.
   and how far the client blends it, is in *Step 2 — placement*.
 - **A sound can beat over a place for as long as the story holds it.**
   `pulses[] {id, sound, at {anchor, offset?}, region | place, every, floor,
-  pitch?, when?}` on stage 5 sounds a vanilla sound event from a mark every
+  pitch?, category?, when?}` on stage 5 sounds a vanilla sound event from a mark every
   `every` ticks to every player standing in the place, loudest at the mark — a
   heartbeat under the floor, a drip in the cistern, a bell tolling while the
   siege lasts. A one-off sound is `play-sound`; a pulse is the recurring one.
@@ -431,8 +452,8 @@ this section is what they are *for* and the traps in each.
   player must act on is also told by a `narrate`, a changed block or a gate;
   write **`hide_particles: true`** on every grant, so a blinding reads as the
   world rather than a potion; and know what the engine fixed for you — every
-  particle is written in force mode, every sound in the `master` category, and
-  every grant ends by its duration. **A blinding near a killing volume or a
+  particle is written in force mode, a sound with no `category` plays in
+  `master`, and every grant ends by its duration. **A blinding near a killing volume or a
   deadly drop is refused** (`DW0943`): a blinded player cannot see the hazard
   beside them.
   Shorten `seconds`, draw `in` farther from the hazard, or use
@@ -538,7 +559,7 @@ this section is what they are *for* and the traps in each.
   fall must be fatal, a lava pit, an acid pool, an out-of-bounds plane: all one
   declaration, `lethal_volumes[] {id, region{anchor,extent}, message,
   damage_type?}`. Never obtain the behaviour by changing the world instead —
-  making the horizon `void` so the fall kills serves exactly one fiction and is
+  making the horizon's `base` `void` so the fall kills serves exactly one fiction and is
   never the move here. `message` is REQUIRED and is what the player reads as
   they die (blank is `DW0512`); `damage_type` words vanilla's own broadcast
   (`fall`, `on_fire`, …). The volume is geometry the completability proof

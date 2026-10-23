@@ -41,7 +41,7 @@ This module's rows of a section whose prose is on the [`delvec::compiler::cast` 
 **A mob may wear many pieces, but what it leaves behind is a declared subset —
 usually one piece, never automatically everything.** The
 DSL says WHICH pieces drop; quest items may be declared as drops too. All four
-codes are validation-tier (exit 1), in `dsl::validate::check_drops`. An
+codes are validation-tier (exit 1), in `dsl::wave::check_drops`. An
 undeclared slot keeps drop chance `0.0f`.
 
 | Code | Meaning |
