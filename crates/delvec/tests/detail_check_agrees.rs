@@ -59,26 +59,44 @@ fn snapshot(dir: &Path) -> BTreeSet<(String, String)> {
     out
 }
 
-/// The DW codes a run printed, in order, up to the commit's write line.
-fn codes(out: &Output) -> Vec<String> {
-    let stderr = String::from_utf8_lossy(&out.stderr);
+/// Every `DWnnnn` in `text`, in order.
+fn dw_codes(text: &str) -> Vec<String> {
     let mut found = Vec::new();
-    for line in stderr.lines() {
-        if line.starts_with("detail: ") && line.contains("place(s) detailed of") {
-            break;
-        }
-        let bytes = line.as_bytes();
-        let mut i = 0;
-        while i + 6 <= bytes.len() {
-            if &bytes[i..i + 2] == b"DW" && bytes[i + 2..i + 6].iter().all(u8::is_ascii_digit) {
-                found.push(line[i..i + 6].to_string());
-                i += 6;
-            } else {
-                i += 1;
-            }
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i + 6 <= bytes.len() {
+        if &bytes[i..i + 2] == b"DW" && bytes[i + 2..i + 6].iter().all(u8::is_ascii_digit) {
+            found.push(text[i..i + 6].to_string());
+            i += 6;
+        } else {
+            i += 1;
         }
     }
     found
+}
+
+/// What a run said, as two code lists: the diagnostics it printed on stdout,
+/// in order, and the codes its stderr names up to the commit's write line —
+/// and whether it reached that line (wrote).
+fn codes(out: &Output) -> (Vec<String>, Vec<String>, bool) {
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let diags: Vec<String> = stdout
+        .lines()
+        .filter_map(|l| l.get(..7))
+        .filter(|head| head.ends_with(' '))
+        .flat_map(|head| dw_codes(&head[..6]))
+        .collect();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let mut said = Vec::new();
+    let mut wrote = false;
+    for line in stderr.lines() {
+        if line.starts_with("detail: ") && line.contains("place(s) detailed of") {
+            wrote = true;
+            break;
+        }
+        said.extend(dw_codes(line));
+    }
+    (diags, said, wrote)
 }
 
 /// One place, checked then committed: the check writes nothing, and the two
@@ -95,14 +113,22 @@ fn agree(campaign: &Path, prefabs: &Path, place: &str) -> (Vec<String>, i32, i32
         text(&check)
     );
     let commit = delvec(&["--prefabs", ps, "detail", cs, place]);
-    let (c, k) = (codes(&check), codes(&commit));
-    assert_eq!(
-        c,
-        k,
+    let ((c_diags, c_said, _), (k_diags, k_said, wrote)) = (codes(&check), codes(&commit));
+    // stdout is one stream in print order: the shared stage's diagnostics
+    // come first, and a commit that wrote adds only the battery's after them.
+    let k_shared = if wrote {
+        &k_diags[..c_diags.len().min(k_diags.len())]
+    } else {
+        &k_diags[..]
+    };
+    assert!(
+        c_said == k_said && c_diags.as_slice() == k_shared,
         "{place}: `--check` and the commit disagree\n--check: {}\ncommit: {}",
         text(&check),
         text(&commit)
     );
+    let mut c = c_diags.clone();
+    c.extend(c_said);
     let check_exit = check.status.code().unwrap_or(-1);
     let commit_exit = commit.status.code().unwrap_or(-1);
     if check_exit == 0 {
