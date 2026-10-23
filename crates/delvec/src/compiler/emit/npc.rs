@@ -130,8 +130,10 @@ pub(super) fn npc_summon_rows(
     // spec-0119 §3: the box encloses the body that ships, so a blow on the body
     // lands on the box vanilla names the striker for. A body up to `1.0 × 2.0`
     // wears the box it always wore.
-    let shipped = dsl_npc.map_or_else(|| base.to_string(), crate::compiler::nav::npc_body_entity);
-    let (w, h) = crate::compiler::bodies::answer_box_dims(&shipped);
+    let (w, h) = dsl_npc.map_or_else(
+        || crate::compiler::bodies::answer_box_dims(base),
+        crate::compiler::bodies::npc_hitbox_dims,
+    );
     out.push(format!(
         "summon minecraft:interaction {} {} {} {{width:{}f,height:{}f,response:1b,Invulnerable:1b,Tags:[{BORNE_NBT}{tag_list}]}}",
         p[0],

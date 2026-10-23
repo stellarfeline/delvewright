@@ -508,6 +508,82 @@ fn an_npc_larger_than_its_box_wears_one_that_encloses_it_and_a_villager_keeps_it
     );
 }
 
+/// The keeper re-bodied as `kind`, answering a blow so a monster kind is not
+/// refused for its silence.
+fn keeper_as(kind: &str) -> RawCampaign {
+    raw_with(
+        Vec::new(),
+        Vec::new(),
+        |n| {
+            n["content"]["npcs"][0]["base_entity"] = json!(kind);
+            n["content"]["npcs"][0]["answers"] = json!({ "struck": "It does not stir." });
+        },
+        |_| {},
+    )
+}
+
+/// **One question, one implementation**: the box an NPC's summon stands and the
+/// box `DW1025`'s reach judges are one size, asked of the same kinds — every
+/// row of the body table, a kind it does not list, and the floor's villager.
+#[test]
+fn the_hitbox_the_summon_stands_is_the_hitbox_dw1025_judges() {
+    let kinds = [
+        "minecraft:warden",
+        "minecraft:iron_golem",
+        "minecraft:ravager",
+        "minecraft:hoglin",
+        "minecraft:sheep",
+        "minecraft:villager",
+        "minecraft:zombie",
+        "minecraft:husk",
+        "minecraft:skeleton",
+        "minecraft:creeper",
+        "minecraft:enderman",
+        "minecraft:allay",
+        "minecraft:armor_stand",
+        "minecraft:blaze",
+    ];
+    let mut compared = 0;
+    for kind in kinds {
+        let c = campaign(&keeper_as(kind));
+        let out = build(&c);
+        let line = function(&out, "setup_finish")
+            .lines()
+            .find(|l| l.contains("summon minecraft:interaction") && l.contains("dw_npc_keeper"))
+            .unwrap_or_else(|| panic!("{kind}: the keeper's hitbox"))
+            .to_string();
+        let shipped = dims(&line);
+        let judged = delvec::compiler::approach::judged_hitbox(&c.npcs.content.npcs[0]);
+        assert_eq!(
+            shipped, judged,
+            "{kind}: shipped {shipped:?}, judged {judged:?}"
+        );
+        compared += 1;
+    }
+    assert_eq!(
+        compared,
+        kinds.len(),
+        "binding: {compared} kind(s) compared"
+    );
+}
+
+/// A warden-sized NPC's box is taller than the `1.0 × 2.0` the reach once
+/// assumed, so a player above the old top is in reach of the box that ships —
+/// a cell the constants would have left unjudged.
+#[test]
+fn a_warden_sized_npc_is_in_reach_above_the_old_constant_top() {
+    use delvec::compiler::approach::within_interaction_reach;
+    let c = campaign(&keeper_as("minecraft:warden"));
+    let warden = delvec::compiler::approach::judged_hitbox(&c.npcs.content.npcs[0]);
+    assert_eq!(warden, (1.0, 2.91));
+    let feet = [0.5, 64.0, 0.5];
+    // Two blocks out and three up: the eye stands at 68.62, 2.62 over the old
+    // top (66.0) and 1.71 over the shipped one (66.91); 1.5 out horizontally.
+    let cell = [2, 67, 0];
+    assert!(within_interaction_reach(warden, feet, cell));
+    assert!(!within_interaction_reach((1.0, 2.0), feet, cell));
+}
+
 // ---------------------------------------------------------------------------
 // The answers dispatch as the player (criterion 4)
 // ---------------------------------------------------------------------------

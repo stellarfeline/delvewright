@@ -341,23 +341,30 @@ impl HeldBinding {
     }
 }
 
+/// The hitbox `DW1025` judges an NPC's reach against: the box that ships,
+/// asked of the one sizing entry point
+/// ([`crate::compiler::bodies::npc_hitbox_dims`]).
+pub fn judged_hitbox(decl: &delvewright_dsl::Npc) -> (f64, f64) {
+    crate::compiler::bodies::npc_hitbox_dims(decl)
+}
+
 /// Whether a player standing on `cell` can right-click a body whose feet are
 /// at `feet`: the distance from the player's eye to the nearest point of the
-/// body's interaction hitbox ([`crate::compiler::emit::NPC_HITBOX_WIDTH`] wide,
-/// [`crate::compiler::emit::NPC_HITBOX_HEIGHT`] tall, on the body's feet) is
-/// within [`crate::compiler::crosshair::INTERACTION_REACH`] — the length of the
-/// pick ray the client traces from the eye.
-pub fn within_interaction_reach(feet: [f64; 3], cell: [i32; 3]) -> bool {
+/// body's interaction hitbox (`hitbox` = `(width, height)` on the body's feet,
+/// the size [`crate::compiler::bodies::npc_hitbox_dims`] gives the box that
+/// ships) is within [`crate::compiler::crosshair::INTERACTION_REACH`] — the
+/// length of the pick ray the client traces from the eye.
+pub fn within_interaction_reach(hitbox: (f64, f64), feet: [f64; 3], cell: [i32; 3]) -> bool {
     let stand = feet_point(cell);
     let eye = [
         stand[0],
         stand[1] + delvewright_dsl::metrics::PLAYER_EYE_HEIGHT,
         stand[2],
     ];
-    let half = crate::compiler::emit::NPC_HITBOX_WIDTH / 2.0;
+    let half = hitbox.0 / 2.0;
     let dx = ((eye[0] - feet[0]).abs() - half).max(0.0);
     let dz = ((eye[2] - feet[2]).abs() - half).max(0.0);
-    let top = feet[1] + crate::compiler::emit::NPC_HITBOX_HEIGHT;
+    let top = feet[1] + hitbox.1;
     let dy = if eye[1] < feet[1] {
         feet[1] - eye[1]
     } else if eye[1] > top {
@@ -433,6 +440,7 @@ pub fn check_held(
         }
         bind.bodies += 1;
         let id = decl.id.as_str();
+        let hitbox = judged_hitbox(decl);
         for s in every_stance(plan, moves, decl) {
             bind.stances += 1;
             let judged: Vec<([i32; 3], f64)> = population
@@ -443,7 +451,7 @@ pub fn check_held(
                     let horizontal =
                         ((p[0] - s.feet[0]).powi(2) + (p[2] - s.feet[2]).powi(2)).sqrt();
                     horizontal >= 1.0
-                        && within_interaction_reach(s.feet, c)
+                        && within_interaction_reach(hitbox, s.feet, c)
                         && !crate::compiler::watching::in_lethal_volume(plan, c)
                 })
                 .map(|c| (c, bearing(s.feet, feet_point(c))))
