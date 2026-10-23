@@ -27,6 +27,9 @@
 
 use std::borrow::Cow;
 
+/// An inclusive world box, any corner order.
+pub type Region = ([i32; 3], [i32; 3]);
+
 /// The byte range of the `half` value in `block`'s state list, when that value
 /// is `lower` or `upper` — the two halves of a two-high block.
 fn half_value(block: &str) -> Option<(usize, usize)> {
@@ -95,7 +98,7 @@ pub fn cells<'a>(
 pub fn boxes<'a>(
     region: ([i32; 3], [i32; 3]),
     block: &'a str,
-) -> Vec<(([i32; 3], [i32; 3]), Cow<'a, str>)> {
+) -> Vec<(Region, Cow<'a, str>)> {
     if !two_high(block) {
         return vec![(region, Cow::Borrowed(block))];
     }

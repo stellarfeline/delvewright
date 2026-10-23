@@ -210,7 +210,7 @@ fn laid_by(lines: &str, region: ([i32; 3], [i32; 3])) -> BTreeMap<[i32; 3], Stri
     };
     let mut out = BTreeMap::new();
     for line in lines.lines() {
-        let t: Vec<&str> = line.trim().split_whitespace().collect();
+        let t: Vec<&str> = line.split_whitespace().collect();
         if t.first() != Some(&"fill") || t.len() != 8 || t[7] == "minecraft:air" {
             continue;
         }
