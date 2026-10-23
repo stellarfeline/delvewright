@@ -23,15 +23,23 @@
 //! ## One sight rule
 //!
 //! Whether an eye sees a box is answered once, by [`in_sight`] (spec-0110
-//! §5.5): of the nine lines from the eye to the box — its centre and its eight
-//! corners inset ([`CellBox`]'s private sight points) — how many cross no cell
-//! the world's [`Occupancy`] stops a line at, the box's own cells excluded. A
-//! frame's world is its [`VoxelGrid`]; the build's proofs read the nav world's
-//! camera-blocking cells. A target is occluded when no line is clear
-//! (`occluded_target`). Three questions ask the rule, and nothing else answers
-//! it: a review frame ([`resolve_targets`]), a cutscene shot ([`shot`],
-//! `DW1033`) and an act's sight from where the party stands (`DW0863`,
-//! `promise`), the last two inside the crate. [`resolve_targets`] is the one
+//! §5.5, `docs/reference/sight-through-blocks.md` §2): of the nine lines from
+//! the eye to the box — its centre and its eight corners inset ([`CellBox`]'s
+//! private sight points) — how many cross no cell that **hides** what is behind
+//! it, the box's own cells and the caller's vantage cells excluded. A cell
+//! hides exactly when its block occludes with a full-cube shape in the pinned
+//! jar ([`delvewright_dsl::blockshape::hides`]): glass, panes, bars, fences,
+//! leaves, doors and slabs are looked through, as the game draws them. The
+//! stopping rule is the [`Occupancy`] trait's, fixed per world and never
+//! handed in by a caller: a frame's world is its [`VoxelGrid`], the build's
+//! proofs read the nav world ([`crate::compiler::nav::World::hides`]), and
+//! both read the one occlusion table. A target is occluded when no line is
+//! clear (`occluded_target`). Every "can a player at this eye see this
+//! target" asks the rule, and nothing else answers it: a review frame, the
+//! frames manifest and the stand-back camera ([`resolve_targets`]), a cutscene
+//! shot ([`shot`], `DW1033`), an act's sight from where the party stands
+//! (`DW0863`, `promise`) and the shut-way eye (`DW1053`/`DW1054`,
+//! `nav::learned`), the last three inside the crate. [`resolve_targets`] is the one
 //! place a target is put on a frame, and the one public entry point to the
 //! question "is this target inside this camera's frame, and hidden there". Its
 //! building blocks are private to this module — the ray walk
@@ -149,6 +157,9 @@ const CHUNK_CELLS: usize = (CHUNK * CHUNK * CHUNK) as usize;
 pub struct VoxelGrid {
     /// Palette entry 0 is always "air"; block ids follow in `BTreeMap` order.
     palette: Vec<String>,
+    /// Per palette entry: whether the block hides what is behind it
+    /// ([`delvewright_dsl::blockshape::hides`]), read once per block state.
+    hides: Vec<bool>,
     /// Chunk-space origin and dimensions.
     cmin: [i32; 3],
     cdim: [usize; 3],
@@ -180,9 +191,14 @@ impl VoxelGrid {
                 hi[a] = hi[a].max(cell[a]);
             }
         }
+        let hides: Vec<bool> = palette
+            .iter()
+            .map(|n| delvewright_dsl::blockshape::hides(n))
+            .collect();
         if blocks.is_empty() {
             return VoxelGrid {
                 palette,
+                hides,
                 cmin: [0; 3],
                 cdim: [0; 3],
                 chunks: Vec::new(),
@@ -200,6 +216,7 @@ impl VoxelGrid {
             (0..cdim[0] * cdim[1] * cdim[2]).map(|_| None).collect();
         let mut grid = VoxelGrid {
             palette,
+            hides,
             cmin,
             cdim,
             chunks,
@@ -526,17 +543,25 @@ impl Lines {
 
 /// **The one "in sight" rule** (spec-0110 §5.5): of the nine lines from `eye`
 /// to `sight_box` (its centre and its eight corners inset,
-/// `CellBox::sight_points`), how many cross no cell `blocks` holds for, the
-/// box's own cells excluded. A review frame asks it of its eye over its grid
+/// `CellBox::sight_points`), how many cross no cell `world` hides at
+/// ([`Occupancy::hides`]), the box's own cells and the `vantage` cells
+/// excluded. A review frame asks it of its eye over its grid
 /// ([`resolve_targets`]); a shot asks it of its lens (`shot::sight`); `DW0863`
 /// (`promise`, spec-0104 §4) asks it of a standing body's eye, with no frame,
-/// because a player turns to look.
-pub(crate) fn in_sight(
+/// because a player turns to look; the shut-way eye (`nav::learned`,
+/// spec-0118) asks it of every eye cell in the party's reach. `vantage` names
+/// the cells the eye stands in, which never stop its own line.
+pub(crate) fn in_sight<O: Occupancy + ?Sized>(
+    world: &O,
     eye: [f64; 3],
     sight_box: &CellBox,
-    blocks: &dyn Fn([i32; 3]) -> bool,
+    vantage: &[[i32; 3]],
 ) -> Lines {
-    let blocked = |to: [f64; 3]| walk_cells(eye, to, |c| blocks(c) && !sight_box.contains(c));
+    let blocked = |to: [f64; 3]| {
+        walk_cells(eye, to, |c| {
+            world.hides(c) && !sight_box.contains(c) && !vantage.contains(&c)
+        })
+    };
     let pts = sight_box.sight_points();
     let centre_block = blocked(pts[0]);
     let clear = pts
@@ -556,24 +581,27 @@ pub(crate) fn in_sight(
     }
 }
 
-/// The cells of a world that stop a sight line: what [`in_sight`] is asked
-/// over. A frame's [`VoxelGrid`] stops a line at every cell it holds; the
-/// build's nav world at its camera-blocking cells
-/// ([`crate::compiler::nav::World::blocks_camera`]).
+/// A world a sight line is asked over: what [`in_sight`] reads. Its one
+/// question is whether a cell **hides** what stands behind it from the eye —
+/// the pinned jar's occlusion table (`docs/reference/sight-through-blocks.md`
+/// §2), the same answer for a frame's [`VoxelGrid`] and for the build's nav
+/// world. A cutscene camera flying into a fence post is the collision
+/// question, [`crate::compiler::nav::World::blocks_camera`], and no sight line
+/// reads it.
 pub trait Occupancy {
-    /// Whether a sight line stops at `c`.
-    fn stops_sight(&self, c: [i32; 3]) -> bool;
+    /// Whether the block at `c` hides what is behind it.
+    fn hides(&self, c: [i32; 3]) -> bool;
 }
 
 impl Occupancy for VoxelGrid {
-    fn stops_sight(&self, c: [i32; 3]) -> bool {
-        self.at(c) != 0
+    fn hides(&self, c: [i32; 3]) -> bool {
+        self.hides[self.at(c) as usize]
     }
 }
 
 impl Occupancy for crate::compiler::nav::World {
-    fn stops_sight(&self, c: [i32; 3]) -> bool {
-        self.blocks_camera(c)
+    fn hides(&self, c: [i32; 3]) -> bool {
+        crate::compiler::nav::World::hides(self, c)
     }
 }
 
@@ -588,7 +616,7 @@ fn occluded_target<O: Occupancy + ?Sized>(world: &O, from: [f64; 3], t: &Target)
         min: t.min,
         max: t.max,
     };
-    !in_sight(from, &b, &|c| world.stops_sight(c)).seen()
+    !in_sight(world, from, &b, &[]).seen()
 }
 
 // ---------------------------------------------------------------------------

@@ -1149,6 +1149,8 @@ fn hung_program(name: &str, hollow: Option<i64>) -> Value {
 fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
     let tmp = tempdir("hung-pair");
     let dir = gallery_site_plan(&tmp);
+    // The causeway is detailed from the gallery's own program, lamp post and
+    // all: the post stands on the verge, outside the way's clear columns.
     common::patch_file(&dir.join("site-plan.json"), |v| {
         for b in v["content"]["boxes"].as_array_mut().unwrap() {
             if b["node"] == "node/causeway" {

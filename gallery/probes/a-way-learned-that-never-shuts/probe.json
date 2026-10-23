@@ -1,0 +1,16 @@
+{
+  "code": "DW0818",
+  "patch": [
+    {
+      "doc": "layout-graph.json",
+      "op": "add",
+      "path": "/content/edges/10/gating",
+      "value": {
+        "learned": "seen"
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The exit arch given a word for how it is learned shut and nothing to wait on: `gating: {\"learned\": \"seen\"}`. A `gating` is what builds a way shut, and one that names no term is passable from world load, so there is no bar to learn of. `DW0818` refuses the empty gating where it is written and names `learned` beside `opens_from`, the sibling of the side named for a way that never shuts. It declares no unit: `gating.learned` is bound on the overlay's gated connections."
+}

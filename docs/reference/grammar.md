@@ -956,6 +956,8 @@ on a sightline is not writable in the first place:
 | `barred` | `rise` (default 0), **required** `bar` (`{region, block}`), optional `via` |
 | `vision` | **required** `via`; no traversal claim, so no rise |
 
+A key the metadata's edge does not model — `narrowed` among them, the excuse surface spec-0120 withdrew — is kept on read and refused by name by `contract-well-formed` (*`<key>` is not a field of a contract edge*): a contract edge is a claim the engine proves, and a claim it cannot read is never carried through as proven. Nothing excuses a structure standing inside a piece way's region; a newel or a rail stands beside it, outside the `via`.
+
 `via`, `bar.region` and `way.region` name regions some rule claims, exactly as
 `spaces` and `no_body` do. `bar.block` and `way.block` are palette roles, and a
 role bound to a weighted mix is refused under one diagnostic for both: a bar and

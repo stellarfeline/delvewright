@@ -83,6 +83,7 @@ mod pack;
 mod place;
 mod region;
 mod seam;
+mod way;
 
 pub use check::*;
 pub use claim::*;
@@ -92,6 +93,7 @@ pub use pack::*;
 pub use place::*;
 use region::*;
 pub use seam::*;
+pub use way::*;
 
 crate::dw_code! {
     /// `DW0824`: the graph and the plan do not agree exactly.
@@ -809,6 +811,13 @@ pub struct PlanBox {
     /// place (`DW0988`); its eaves stop at a neighbour's wall.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub roof: Option<Roof>,
+    /// **This place is a way** (spec-0120 §1.4): a road, a street, a bridge, a
+    /// causeway, whose run travels along `axis` and is `clear` columns wide.
+    /// The clear-width check judges its run column by column at every station
+    /// along its whole length (`DW1057`). Absent: a room, which the check never
+    /// enters. A way wider than its place is `DW0826`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub way: Option<BoxWay>,
 }
 
 /// The roof a roofed place carries above its lid (spec-0098 §3).

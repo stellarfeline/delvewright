@@ -571,6 +571,30 @@ pub(super) fn prove_world(
                     });
                 }
             }
+            // DW1057 (spec-0120): every way's declared clear width is clear
+            // along the whole way, in every state its cells can take, and
+            // nothing excuses a column that is not. It reads the plan, the blocks as shipped and the runtime
+            // writes, never a route. The line prints before the verdict,
+            // zeroes included, and the ledger is written beside it.
+            {
+                let (binding, refused) = crate::compiler::nav::width::check(
+                    plan,
+                    prefabs,
+                    assembled,
+                    &relight.placements,
+                );
+                eprintln!("{}", binding.line());
+                put_json(out, "validation/clear-width.json", &binding.to_json());
+                if let Some((first, rest)) = refused.split_first() {
+                    for extra in rest {
+                        eprintln!("{} [error] build: {}", extra.code, extra.message);
+                    }
+                    return Err(BuildFailure::Diagnostic {
+                        code: first.code,
+                        message: first.message.clone(),
+                    });
+                }
+            }
             let (moves, actor_moves) = if crate::compiler::nav::needs_world(plan) {
                 let m = crate::compiler::nav::plan_moves(plan, world)?;
                 // move-actor (spec-0014): A* over the actor's footprint; DW0325 if
@@ -739,6 +763,17 @@ pub(super) fn prove_world(
                     "validation/separation-proof.json",
                     &separation.to_json(),
                 );
+                // DW1053/DW1054 (spec-0118): every shut way the party meets
+                // says how the player learns it is shut, and the world
+                // confirms the word — over the configurations, faces and reach
+                // DW1011 just judged. The binding is printed and the ledger
+                // written before the verdict is taken.
+                let (shut_ways, shut_ways_verdict) =
+                    crate::compiler::nav::check_shut_ways_learned(plan, world, prefabs);
+                eprintln!("{}", shut_ways.line());
+                put_json(out, "validation/shut-ways.json", &shut_ways.to_json());
+                shut_ways_verdict?;
+                warnings.extend(shut_ways.findings());
                 // DW0924: a body a `kill` objective waits on cannot get to a
                 // place it survives and the party cannot strike it from. After
                 // DW0921 because it reads the same playable region and a party

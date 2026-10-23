@@ -52,7 +52,15 @@ form and the commands are in *Reference: drawing the map's reference*.
    layer opens `anchor/seam-<edge>`. A door shut by bars is a `walk` with a
    `gating`; a stair, a ladder or a shaft the story opens later is a gated
    `stair`, `climb` or `drop`. `opens_from` (`a`, `b`, default either) names
-   the side a one-sided way opens from. Plus `entry`,
+   the side a one-sided way opens from. **A structure that hides a shut way
+   stands only in that way's own width; it never enters the width of a door, a
+   stair or a road beside it** — a fireplace that hides a passage is built round
+   the passage's opening, its cheeks beside it and its mantel above, and what
+   stands inside the opening is the way's own gate, cleared when the way opens.
+   **A thing meant to stand beside a way stands outside its declared width**:
+   a newel stands on the floor beside the bottom tread, a lamp post on the
+   verge of a street — never in a column of the width the way was declared.
+   Plus `entry`,
    `goal`, an authored `critical_path[]`, and `beats[]` binding every
    place-bound quest beat to the node it happens in.
    - **A place carries no size class.** Its size is its box's `extent` in the
@@ -72,6 +80,30 @@ form and the commands are in *Reference: drawing the map's reference*.
      Scenery still owns its outside and stitches to the ground, owes no node
      anchor and no play light, and its piece is judged sealed. Absent means
      reached.
+   - **Where a shut way is shut is craft, and this is the craft.** A long way
+     that joins two areas and that the story opens later is shut at the end
+     the player reaches first — its mouth by the earlier area — never at its
+     far end: shut at the exit, the whole corridor is walked to find a dead
+     end, and the walk back is the player's. Hide the shut way with structure
+     that belongs to the setting — a fallen arch, a portcullis in its housing,
+     a stacked barricade — rather than a bare block in a doorway. When it
+     opens, show the opened place: a short close-up shot of the changed mouth
+     tells the player the way is open better than a line does. Advice, never a
+     check.
+   - **A way the player is not meant to know of hides behind something the eye
+     cannot see through.** A grille, a pane, a fence, a door, a trapdoor, a
+     stair or a slab is looked through or past in the game; a hearth's back, a
+     bookcase, a plug of the wall's own stone is not. The shutter of a hidden
+     way is a block the game draws as a full opaque cube, and nothing the
+     player can stand on has a line past it into the place behind. The bars
+     the engine stands in a plain seam are looked through, so a hidden way's
+     mouth belongs to a piece that shuts it in a block that hides. The beat
+     that opens it carries the close-up shot of the opened mouth: the shot is
+     what tells the player. The mechanism that opens it is placed to be
+     found by looking — out of the obvious line, plain to the eye, often in
+     another room from the mouth — never a lever beside the way it opens.
+     The text before the shot keeps the secret too —
+     *Step 5 — quests and dialogue* says how.
    - Every seam `opening` that names a standard names an entry in the **metrics
      table**. `delvec metrics` prints it — 223 lines of JSON on stdout, and a
      summary plus its binding counts on stderr, so read them separately:

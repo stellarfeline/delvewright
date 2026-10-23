@@ -422,6 +422,19 @@ pub(crate) fn press_answer_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
     }
 }
 
+/// **The trigger that answers a press at `anchor`**, as `DW0429` prescribes it
+/// and `DW1054` repeats it for a way declared `told` (spec-0118 §6.2): one
+/// remedy, written once, in backticks — the JSON of a `use` trigger at the
+/// anchor whose one effect narrates what `thing` says.
+#[must_use]
+pub fn press_answer_prescription(anchor: &str, thing: &str) -> String {
+    format!(
+        "`{{\"id\": \"trigger/<name>\", \"at\": \"{anchor}\", \"on\": {{\"on\": \"use\"}}, \
+         \"once\": false, \"audience\": \"presser\", \"effects\": [{{\"type\": \"narrate\", \
+         \"style\": \"actionbar\", \"text\": \"<what {thing} says>\"}}]}}`"
+    )
+}
+
 /// `DW0429`: **a sealed body the campaign never answers** (DSL v0.11),
 /// uniformly over the pressable class.
 ///
@@ -480,10 +493,9 @@ pub(crate) fn press_obligation_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                  baked default decides this wall's tone on your behalf and never tells you it \
                  did. Two ways to say it, and either is enough: add `\"sealed_hint\": \"<what the \
                  wall says>\"` to this effect, or anchor a trigger on the gate — \
-                 `{{\"id\": \"trigger/<name>\", \"at\": \"{anchor}\", \"on\": {{\"on\": \"use\"}}, \
-                 \"once\": false, \"audience\": \"presser\", \"effects\": [{{\"type\": \"narrate\", \
-                 \"style\": \"actionbar\", \"text\": \"<what the wall says>\"}}]}}`. The trigger form \
-                 is the general one and can carry a sound, a flag gate or any other effect"
+                 {}. The trigger form is the general one and can carry a sound, a flag gate or any \
+                 other effect",
+                press_answer_prescription(anchor, "the wall")
             ),
         ));
     }
@@ -505,12 +517,11 @@ pub(crate) fn press_obligation_checks(c: &Campaign, d: &mut Vec<Diagnostic>) {
                  for you: a baked default would be the engine deciding this door's tone and \
                  never saying that it had. A `shortcut` carries no wording field, deliberately — \
                  the line is a trigger. Prescription: add a trigger anchored on the gate — \
-                 `{{\"id\": \"trigger/<name>\", \"at\": \"{gate}\", \"on\": {{\"on\": \"use\"}}, \
-                 \"once\": false, \"audience\": \"presser\", \"effects\": [{{\"type\": \"narrate\", \
-                 \"style\": \"actionbar\", \"text\": \"<what the door says>\"}}]}}` — which rides \
-                 the door's own hitboxes, fires only from the sealed side, and retires when the \
-                 door opens. Any `use` trigger on `{gate}` discharges this, whatever it does",
-                sc.id
+                 {} — which rides the door's own hitboxes, fires only from the sealed side, and \
+                 retires when the door opens. Any `use` trigger on `{gate}` discharges this, \
+                 whatever it does",
+                sc.id,
+                press_answer_prescription(gate, "the door")
             ),
         ));
     }

@@ -406,6 +406,57 @@ pub struct EdgeGating {
     /// Absent means either side.
     #[serde(default, skip_serializing_if = "OpensFrom::is_either")]
     pub opens_from: OpensFrom,
+    /// How the player learns this way is shut (spec-0118): `seen` from the
+    /// junction where its branch leaves the route, `told` by a pressable answer
+    /// at its face, `rewarded` by a pickup, interaction or fight on its branch,
+    /// or `hidden` — not at all, until the shot that opens it shows it. Owed
+    /// by `DW1053` wherever a body meets the way shut or an eye sees it, and
+    /// confirmed over the world by `DW1054`. Like `opens_from`, it can only be
+    /// named for a way that shuts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub learned: Option<Learned>,
+    /// **The words that would give a hidden way away** (spec-0118 §4): present
+    /// exactly when `learned` is `hidden`, a non-empty list of non-empty words
+    /// or phrases. No player-facing string the play order places before the
+    /// shot that opens the way may mention one, and some string at or after it
+    /// must (`DW1060`). The author's to know: never read from a place's name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secret: Vec<String>,
+}
+
+/// How the player learns a shut way is shut (spec-0118 §4): the four ways the
+/// engine confirms, and no fifth.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum Learned {
+    /// The bar is the first thing the player's eye meets from the junction
+    /// where the branch to it leaves the open route.
+    Seen,
+    /// A `use` trigger answers a press at the way's seam,
+    /// `anchor/seam-<edge>`.
+    Told,
+    /// A pickup, interaction or fight stands on the branch's ground.
+    Rewarded,
+    /// The player does not learn of the way until the shot that opens it
+    /// shows it: no eye in the party's reach sees it while it is shut, the
+    /// beat that opens it carries a `cutscene` of its seam, and no text before
+    /// that shot tells its `secret`.
+    Hidden,
+}
+
+impl Learned {
+    /// The word as the document spells it.
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Learned::Seen => "seen",
+            Learned::Told => "told",
+            Learned::Rewarded => "rewarded",
+            Learned::Hidden => "hidden",
+        }
+    }
 }
 
 /// What a `carry` connection waits on before its link is armed (spec-0083 §7).
@@ -740,6 +791,24 @@ impl Edge {
         self.way_gating()
             .filter(|g| !g.terms().is_empty())
             .map(|g| g.opens_from)
+    }
+
+    /// How a shut connection declares it is learned shut, or `None` for one
+    /// that never shuts or declares nothing (spec-0118).
+    #[must_use]
+    pub fn learned(&self) -> Option<Learned> {
+        self.way_gating()
+            .filter(|g| !g.terms().is_empty())
+            .and_then(|g| g.learned)
+    }
+
+    /// The words a hidden shut connection keeps (`gating.secret`), empty for
+    /// every other connection (spec-0118 §4).
+    #[must_use]
+    pub fn secret(&self) -> &[String] {
+        self.way_gating()
+            .filter(|g| !g.terms().is_empty() && g.learned == Some(Learned::Hidden))
+            .map_or(&[], |g| g.secret.as_slice())
     }
 
     /// The place on the side a one-sided shut connection opens from, where its
@@ -1607,17 +1676,22 @@ fn mission(c: &Campaign, graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
             ));
         }
         if !matches!(e, Edge::Carry { .. }) && g.is_empty() {
-            let side = match e.way_gating().map(|w| w.opens_from) {
-                Some(OpensFrom::A) => {
-                    " It names a side (`opens_from: a`) for a way that never \
+            let mut side = match e.way_gating().map(|w| w.opens_from) {
+                Some(OpensFrom::A) => " It names a side (`opens_from: a`) for a way that never \
                                        shuts, which is a door with no bar in it."
-                }
-                Some(OpensFrom::B) => {
-                    " It names a side (`opens_from: b`) for a way that never \
+                    .to_string(),
+                Some(OpensFrom::B) => " It names a side (`opens_from: b`) for a way that never \
                                        shuts, which is a door with no bar in it."
-                }
-                _ => "",
+                    .to_string(),
+                _ => String::new(),
             };
+            if let Some(l) = e.way_gating().and_then(|w| w.learned) {
+                side.push_str(&format!(
+                    " It says how the way is learned shut (`learned: {}`) beside `opens_from`, \
+                     for a way that never shuts: only a way with a bar in it can be learned shut.",
+                    l.word()
+                ));
+            }
             d.push(Diagnostic::error(
                 DW_GRAPH_MISSION,
                 "layout-graph",
@@ -1632,6 +1706,59 @@ fn mission(c: &Campaign, graph: &LayoutGraphContent, d: &mut Vec<Diagnostic>) {
                     e_id = e.id(),
                 ),
             ));
+        }
+        // spec-0118 §4: a hidden way names the words that would give it away,
+        // and only a hidden way does.
+        if let Some(w) = e.way_gating() {
+            let at = format!("/content/edges/{i}/gating");
+            let hidden = w.learned == Some(Learned::Hidden);
+            if hidden && w.secret.is_empty() {
+                d.push(Diagnostic::error(
+                    DW_GRAPH_MISSION,
+                    "layout-graph",
+                    at.clone(),
+                    format!(
+                        "connection `{e_id}` declares `learned: hidden` and names no `secret`. A \
+                         hidden way is one the player does not know of until the shot that opens \
+                         it, and the engine holds the text before that shot to the words that \
+                         would give it away — which only the author can name. Write them in \
+                         `gating.secret` (`[\"passage\", \"behind the hearth\"]`), or write the \
+                         word that is true.",
+                        e_id = e.id(),
+                    ),
+                ));
+            }
+            if !hidden && !w.secret.is_empty() {
+                let word = w.learned.map_or_else(
+                    || "no `learned`".to_string(),
+                    |l| format!("`learned: {}`", l.word()),
+                );
+                d.push(Diagnostic::error(
+                    DW_GRAPH_MISSION,
+                    "layout-graph",
+                    format!("{at}/secret"),
+                    format!(
+                        "connection `{e_id}` names a `secret` beside {word}. A secret is the \
+                         words a hidden way keeps until the shot that opens it, and only a way \
+                         declared `learned: hidden` keeps one: a way the player sees, is told \
+                         of or is paid for has nothing to keep. Remove `secret`, or declare the \
+                         way `hidden`.",
+                        e_id = e.id(),
+                    ),
+                ));
+            }
+            if let Some(k) = w.secret.iter().position(|s| s.trim().is_empty()) {
+                d.push(Diagnostic::error(
+                    DW_GRAPH_MISSION,
+                    "layout-graph",
+                    format!("{at}/secret/{k}"),
+                    format!(
+                        "connection `{e_id}`'s `secret[{k}]` is empty: a word nothing can mention \
+                         keeps nothing. Write the word or remove the entry.",
+                        e_id = e.id(),
+                    ),
+                ));
+            }
         }
     }
 
