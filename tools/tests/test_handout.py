@@ -1,7 +1,7 @@
 """`scripts/handout.py`, the per-place handout, perturbed toward each refusal it owes.
 
 The script's whole verdict comes from `delvec` — `allocation --all` for the
-facts, `detail` for the refusal a repair hands on — so every test here runs it
+facts and the wave bound, `detail --check` for the refusal a repair hands on — so every test here runs it
 against a stub `delvec` that answers with the recorded allocations of
 `tools/tests/fixtures/handout/` (held equal to the real binary's output by
 `crates/delvec/tests/handout_script.rs`) and with whatever `detail` verdict the
@@ -36,8 +36,12 @@ if "allocation" in args:
     if "--all" not in args:
         sys.exit(99)
     sys.stdout.write((here / "allocations.json").read_text())
+    bound = here / "concurrency.txt"
+    sys.stderr.write(bound.read_text() if bound.is_file() else "concurrency: 2 = min(3, max(1, 4 / 2))\n")
     sys.exit(0)
 if "detail" in args:
+    if "--check" not in args:
+        sys.exit(97)  # the handout never commits
     verdict = here / "detail-verdict.txt"
     sys.stderr.write(verdict.read_text() if verdict.is_file() else "")
     sys.exit(int((here / "detail-exit.txt").read_text()) if (here / "detail-exit.txt").is_file() else 0)
@@ -140,7 +144,13 @@ def test_a_first_authoring_hands_the_allocation_the_neighbours_the_seams_and_the
     assert "`anchor/node-hall` → `mark` `node-hall`" in text
     # The frame's extent and the exact check command, the instrument named by path.
     assert "extent **14×10×18**" in text
-    assert f'"{rig.delvec}" --prefabs "{rig.prefabs}" detail "{rig.campaign}" node/hall' in text
+    assert f'"{rig.delvec}" --prefabs "{rig.prefabs}" detail --check "{rig.campaign}" node/hall' in text
+    # The wave bound, quoted from the engine; the freshness line; the absent operating half.
+    assert "`concurrency: 2 = min(3, max(1, 4 / 2))`" in text
+    assert "**Which neighbours are detailed is as of this handout**" in text
+    assert "a neighbour may have landed since" in text
+    assert "`CLAUDE.local.md`" in text and "binds you in nothing" in text
+    assert "The commit, `delvec detail` without `--check`, is the orchestrating session's, never yours." in text
     assert "--region 14x10x18" in text
     # No refusal section on a first authoring.
     assert "## The refusal this attempt repairs" not in text
@@ -149,6 +159,23 @@ def test_a_first_authoring_hands_the_allocation_the_neighbours_the_seams_and_the
     assert lines == [str(handouts[0]), f"Read and execute {handouts[0]}. Report, then exit."]
     assert "handout binding: `node/hall` attempt 1" in out.stderr
     assert "neighbours 2; seams 2; voids 5; owed names 3; refusal lines 0" in out.stderr
+    assert "concurrency 2; design rows" in out.stderr
+    assert "handout: concurrency: 2 = min(3, max(1, 4 / 2))" in out.stderr
+
+
+def test_the_wave_bound_is_read_from_the_engine_never_assumed(rig: Rig):
+    (rig.bin / "concurrency.txt").write_text("concurrency: 1 = min(3, max(1, 1 / 2))\n", encoding="utf-8")
+    out = rig.run()
+    assert out.returncode == 0, out.stderr
+    assert "`concurrency: 1 = min(3, max(1, 1 / 2))`" in rig.handouts("hall")[0].read_text(encoding="utf-8")
+
+
+def test_a_delvec_that_states_no_wave_bound_is_refused(rig: Rig):
+    (rig.bin / "concurrency.txt").write_text("", encoding="utf-8")
+    out = rig.run()
+    assert out.returncode == 2
+    assert "stated no `concurrency:` line" in out.stderr
+    assert rig.handouts("hall") == []
 
 
 def test_the_entry_place_is_told_it_owes_the_spawn(rig: Rig):
@@ -187,7 +214,8 @@ def test_a_program_that_already_passes_owes_no_handout(rig: Rig):
     rig.plant_detail(0, "node/hall: `prefab/three-places-hall` written\n")
     out = rig.run()
     assert out.returncode == 3
-    assert "already passes `delvec detail`" in out.stderr
+    assert "already passes `delvec detail --check`" in out.stderr
+    assert "commit it with `delvec detail`" in out.stderr
     assert rig.handouts("hall") == []
 
 
@@ -210,11 +238,17 @@ def test_a_refused_program_puts_the_verdict_into_the_next_attempt(rig: Rig):
     for line in verdict.strip().split("\n"):
         assert line in text
     assert "exit status 1" in text
+    assert "detail --check" in refusal_cmd(text)
     refusal = handouts[1].with_name("refusal-2.txt")
     assert refusal.is_file()
     assert verdict in refusal.read_text(encoding="utf-8")
     assert "refusal lines 4" in second.stderr
     assert "a repair of the program the last agent left" in second.stderr
+
+
+def refusal_cmd(text: str) -> str:
+    """The `$ …` line the refusal section quotes: the command that gave the verdict."""
+    return next(line for line in text.split("\n") if line.startswith("$ "))
 
 
 def test_a_detailed_neighbour_is_named_with_its_piece(rig: Rig):

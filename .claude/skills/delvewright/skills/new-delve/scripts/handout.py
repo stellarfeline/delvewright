@@ -6,8 +6,9 @@ written by a new agent that holds nothing but its handout. The handout is
 derived here from the campaign on every invocation and typed by nobody: the
 place's own allocation as `delvec allocation` prints it, that place's rows of
 the campaign's design, a summary of every adjacent box drawn from the
-neighbours' design rows and the seam forms, and — on a repair — the refusal
-`delvec detail` gave the program the last agent left.
+neighbours' design rows and the seam forms, the wave bound `delvec allocation
+--all` states, and — on a repair — the refusal `delvec detail --check` gives
+the program the last agent left.
 
     "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_SKILL/scripts/handout.py" <campaign-dir> <place> \\
         --engine "$DELVEWRIGHT_ENGINE" --prefabs "$DELVEWRIGHT_PREFABS"
@@ -18,14 +19,17 @@ WHAT IT REFUSES, SO A MISTAKE IS AN ERROR WHERE IT IS ENTERED
   tool passes the refusal through (exit 1) — it never invents a frame;
 - a campaign with no site plan, or one `delvec` cannot parse (exit 1, delvec's
   own words);
-- a place whose program ALREADY passes `delvec detail` (exit 3): there is
-  nothing to author, and a handout would send an agent to rewrite a program
-  nobody refused;
+- a place whose program ALREADY passes `delvec detail --check` (exit 3):
+  there is nothing to author, and a handout would send an agent to rewrite a
+  program nobody refused — the orchestrator commits it with `delvec detail`;
+- a `delvec` whose `allocation --all` states no concurrency line (exit 2): the
+  wave bound is the engine's to state, never this tool's to assume;
 - an engine tree or a prefab directory that is not there (exit 2).
 
 The refusal a repair hands on is never passed in by hand: when the place has a
-program, this tool runs `delvec detail` on it and the verdict it captures is the
-refusal — of this place, of this program, from the one verb that judges it.
+program, this tool runs `delvec detail --check` on it — the commit's own judge,
+writing nothing — and the verdict it captures is the refusal: of this place, of
+this program, against the whole as it stands on disk now.
 
 Prints the handout's path and the one-line prompt the orchestrator launches the
 agent with. Stderr carries the binding counts. Standard library only.
@@ -36,6 +40,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -46,6 +51,11 @@ EXIT_UNUSABLE = 2
 EXIT_ALREADY_DETAILED = 3
 
 HANDOUTS_DIR = pathlib.Path(".out") / "handouts"
+
+# The line `delvec allocation --all` prints on stderr (spec-0122 §6.2): the
+# number of place authors that run at once, with the three numbers it is
+# computed from. Read, never recomputed.
+CONCURRENCY_RE = re.compile(r"^concurrency: (\d+) = min\((\d+), max\(1, (\d+) / 2\)\)$", re.M)
 PROGRAMS_DIR = "programs"
 
 # The references a per-place author may read, by their path under the skill
@@ -361,6 +371,7 @@ def render(
     version: str,
     handout_path: pathlib.Path,
     delvec: str,
+    concurrency: str,
 ) -> tuple[str, dict[str, int]]:
     stem = stem_of(place)
     world = content(docs.get("world"))
@@ -385,15 +396,18 @@ def render(
     w("")
     w(f"You author ONE place: **{place}** of the campaign at `{campaign_dir}`, by writing its grammar program at `{program}`. Another agent authors every other place; none of them is yours to read or touch. The orchestrating session that launched you never edits a program, so the program is yours alone.")
     w("")
+    w(f"Places are authored concurrently, up to the bound the engine states — `{concurrency}` — and committed one at a time by the orchestrating session. **Which neighbours are detailed is as of this handout**: your check reads the whole as it stands on disk when the check runs, so a neighbour may have landed since this file was written, and a check that passed may be answered differently once it has.")
+    w("")
     w("## What you may do, and what you may not")
     w("")
     w(f"- **Write** exactly one document: `{program}` (and, if you emit it from a script, that script beside it under `{campaign_dir / 'design' / 'generator'}` — the JSON is the artifact of record). Create the `{PROGRAMS_DIR}/` directory if it is absent.")
     w(f"- **Read**: this handout; your own program; the authoring references below; the engine's grammar corpus through `\"{delvec}\" grammar list` and `{delvec_p} grammar show --program <id>`.")
     w(f"- **Ask the tool again whenever you want it**: `\"{delvec}\" allocation \"{campaign_dir}\" {place}` prints the same allocation this handout carries; type nothing from it anywhere — your program reads every handed value through a `handed/…` parameter (below).")
-    w(f"- **Check** with the one verb that judges a place: `{delvec_p} detail \"{campaign_dir}\" {place}`. It binds the handing into your program, expands it at the frame, voids every cell you do not own, runs every gate, and refuses with the cause named BEFORE any file is written. Run it as often as you like. When it exits 0 it has written the piece and the plan row — that is the finished state, and the session that launched you re-runs it to confirm.")
+    w(f"- **Check** with the one verb that judges a place: `{delvec_p} detail --check \"{campaign_dir}\" {place}`. It binds the handing into your program, expands it at the frame, voids every cell you do not own, runs every gate of the place and the bindings check over the whole as committed, and refuses with the cause named; it **writes nothing**. Run it as often as you like. Exit 0 says your program would commit against the whole as it stands now — that is your finished state. The commit, `delvec detail` without `--check`, is the orchestrating session's, never yours.")
     w(f"- **Look** with `{delvec_p} grammar expand --file \"{program}\" --region {ex}x{ey}x{ez} -o \"{work}/expand\"` (your `handed/…` defaults are the handed values, so no `--param` is needed) and the render commands the *new pieces* reference names. Scratch goes under `{work}/`, never `/tmp`.")
     w(f"- **Measure the palette, never guess it**: `python3 \"{engine / 'tools' / 'creator' / 'block-appearance.py'}\" --screen …` / `--mix …` / `--sheet` is yours to run (the *new pieces* reference, step 2); it needs the pinned client jar at `~/.delvewright/client/minecraft-1.21.11.jar` and says so by name when it is absent, in which case take role names from the corpus and record where each came from in your return.")
-    w("- **Never**: read another place's program, the design record (`DESIGN.md`, `GENERATION.md`, `design.json`, `design/`), the site plan, the layout graph, the quest documents or another handout — what you need of them is quoted here, and the rest is the whole's; edit any document but your program; run `delvec detail --all`, `delvec build`, a server, or `git`; retype a handed number as a literal; weaken a check or reroll a seed to get green.")
+    w("- **The engine's operating half is absent here, and binds you in nothing**: the engine constitution names a `CLAUDE.local.md` beside it; on a creator's machine that file does not exist, and nothing in it governs a place program. Do not stop on its absence and do not ask about it.")
+    w("- **Never**: read another place's program, the design record (`DESIGN.md`, `GENERATION.md`, `design.json`, `design/`), the site plan, the layout graph, the quest documents or another handout — what you need of them is quoted here, and the rest is the whole's; edit any document but your program; run `delvec detail` without `--check`, `delvec detail --all`, `delvec build`, a server, or `git`; retype a handed number as a literal; weaken a check or reroll a seed to get green.")
     w("- **A capability you need and the grammar lacks** is reported in your return in one sentence, with the closest thing you could build; it is never faked with adjacent constructs.")
     w("")
     w("## The authoring references")
@@ -403,7 +417,7 @@ def render(
     for rel, gloss in ENGINE_REFERENCES:
         w(f"- `{engine / rel}` — {gloss}")
     w("")
-    w("The *detail* reference's section *The program's contract* is the contract your program has to meet: every handed value used is declared as a parameter under the `handed/` prefix with the allocation's value as its default (`handed/datum-y`; `handed/ground/{min-y,max-y,bottom-y}`; `handed/roof/…` on a declared roof; `handed/seam/<edge stem>/{x0,y0,z0,x1,y1,z1,rise}`); every seam is answered with an opening at the handed cells and a contract edge to `exterior` whose `via` is that opening; every owed name is answered with a `mark` of that stem; a bar this place owns is a `barred` contract edge over exactly the bar's cells, its region named by the seam's stem; the piece is EXACTLY the frame's shape. `delvec detail` names every handed name it offers when your program asks for one it does not (`DW0882`).")
+    w("The *detail* reference's section *The program's contract* is the contract your program has to meet: every handed value used is declared as a parameter under the `handed/` prefix with the allocation's value as its default (`handed/datum-y`; `handed/ground/{min-y,max-y,bottom-y}`; `handed/roof/…` on a declared roof; `handed/seam/<edge stem>/{x0,y0,z0,x1,y1,z1,rise}`); every seam is answered with an opening at the handed cells and a contract edge to `exterior` whose `via` is that opening; every owed name is answered with a `mark` of that stem; a bar this place owns is a `barred` contract edge over exactly the bar's cells, its region named by the seam's stem; the piece is EXACTLY the frame's shape. `delvec detail --check` names every handed name it offers when your program asks for one it does not (`DW0882`).")
     w("")
     w("## The campaign, in one breath")
     w("")
@@ -475,7 +489,7 @@ def render(
     if refusal is not None:
         w("## The refusal this attempt repairs")
         w("")
-        w(f"A previous agent left the program at `{program}`. `delvec detail` refuses it; the verdict below is verbatim. Read the program, repair the cause the verdict names, and check again. Do not start from nothing unless the program is beyond repair.")
+        w(f"A previous agent left the program at `{program}`. `delvec detail --check` refuses it against the whole as it stood when this handout was written; the verdict below is verbatim. Read the program, repair the cause the verdict names, and check again. Do not start from nothing unless the program is beyond repair.")
         w("")
         w("```text")
         lines.extend(refusal.rstrip("\n").split("\n"))
@@ -491,8 +505,9 @@ def render(
     w("")
     w("## Your return")
     w("")
-    w(f"Report, then exit. The report is short: the place; the program's path; the exit status of your last `delvec detail` run and its summary line (`… written from … — frame …; … handed name(s) bound; … face(s) answering … seam(s); … owed name(s) bound; light …`); what you built, in three lines a reviewer can picture; any capability you needed and the grammar lacks, in one sentence. Nothing else — no transcript, no design proposal for another place.")
+    w(f"Report, then exit. The report is short: the place; the program's path; the exit status of your last `delvec detail --check` run and its binding line; what you built, in three lines a reviewer can picture; any capability you needed and the grammar lacks, in one sentence. Nothing else — no transcript, no design proposal for another place.")
     counts = {
+        "concurrency": int(CONCURRENCY_RE.search(concurrency).group(1)),
         "design rows": n_rows,
         "neighbours": n_nbs,
         "seams": len(a.get("seams", [])),
@@ -559,6 +574,14 @@ def go(args: argparse.Namespace) -> int:
         all_list = json.loads(allocated.stdout)
     except ValueError as e:
         raise Refusal(1, f"`delvec allocation --all` printed something that is not JSON: {e}") from e
+    bound = CONCURRENCY_RE.search(allocated.stderr)
+    if bound is None:
+        raise Refusal(
+            EXIT_UNUSABLE,
+            f"`{delvec} allocation --all` stated no `concurrency:` line on stderr; the wave bound "
+            "is the engine's to state (spec-0122), so this `delvec` predates the page — run Init I1b",
+        )
+    concurrency = bound.group(0)
     all_allocations = {x["place"]: x for x in all_list}
     if place not in all_allocations:
         raise Refusal(
@@ -580,15 +603,15 @@ def go(args: argparse.Namespace) -> int:
     program = campaign_dir / PROGRAMS_DIR / f"{stem}.json"
     refusal: str | None = None
     if program.is_file():
-        verdict = run([args.delvec, "--prefabs", str(prefabs), "detail", str(campaign_dir), place])
+        verdict = run([args.delvec, "--prefabs", str(prefabs), "detail", "--check", str(campaign_dir), place])
         if verdict.returncode == 0:
             print(
-                f"handout: `{place}` already passes `delvec detail` from `{program}`; nothing is owed "
-                f"and no handout is written.",
+                f"handout: `{place}` already passes `delvec detail --check` from `{program}`; nothing is "
+                f"owed and no handout is written — commit it with `delvec detail`.",
                 file=sys.stderr,
             )
             return EXIT_ALREADY_DETAILED
-        refusal = f"$ {delvec} --prefabs {prefabs} detail {campaign_dir} {place}\n{verdict.stdout}{verdict.stderr}exit status {verdict.returncode}\n"
+        refusal = f"$ {delvec} --prefabs {prefabs} detail --check {campaign_dir} {place}\n{verdict.stdout}{verdict.stderr}exit status {verdict.returncode}\n"
 
     out_dir = campaign_dir / HANDOUTS_DIR / stem
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -609,6 +632,7 @@ def go(args: argparse.Namespace) -> int:
         version=instrument,
         handout_path=handout_path,
         delvec=delvec,
+        concurrency=concurrency,
     )
     handout_path.write_text(text, encoding="utf-8")
     if refusal is not None:
@@ -620,6 +644,7 @@ def go(args: argparse.Namespace) -> int:
         f"instrument {instrument}",
         file=sys.stderr,
     )
+    print(f"handout: {concurrency}", file=sys.stderr)
     print(str(handout_path))
     print(f"Read and execute {handout_path}. Report, then exit.")
     return 0
