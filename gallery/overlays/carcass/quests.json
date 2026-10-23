@@ -35,8 +35,10 @@
               "text": "They stand inside the body, under its ribs.",
               "verb": "arrives"
             },
+            "hint": "Through the gap in the ribs.",
             "id": "obj/inside",
             "radius": 2,
+            "title": "Go inside",
             "type": "reach-anchor"
           },
           {
@@ -49,8 +51,10 @@
               "text": "They come out on the carcass's back.",
               "verb": "arrives"
             },
+            "hint": "From the belly up to the ridge of the back.",
             "id": "obj/back",
             "radius": 2,
+            "title": "Climb up the spine",
             "type": "reach-anchor"
           }
         ],

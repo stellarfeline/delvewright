@@ -416,6 +416,7 @@ fn world_doc() -> String {
     "seed": 20260729,
     "target_minutes": 5,
     "time": "noon",
+    "horizon": { "base": "void", "attributes": { "audio/background_music": {} } },
     "weather": "clear",
     "areas": [
       { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" },
@@ -1025,6 +1026,7 @@ fn an_open_way_in_a_world_that_stages_no_way_is_still_dw0547() {
     "seed": 20260729,
     "target_minutes": 5,
     "time": "noon",
+    "horizon": { "base": "void", "attributes": { "audio/background_music": {} } },
     "weather": "clear",
     "areas": [ { "id": "area/keep", "name": "The Keep", "prefab": "prefab/hello-room" } ]
   }

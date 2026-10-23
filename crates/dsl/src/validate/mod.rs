@@ -93,6 +93,9 @@ pub fn validate_campaign_with(
     // spec-0101: a watch names a class stage 3 declares. Empty for a campaign
     // whose bodies declare no class watch.
     crate::body::body_watch_checks(c, &mut d);
+    // spec-0119: a body answers only a press it can show. Empty for a campaign
+    // whose bodies declare no answers.
+    crate::body::body_answer_checks(c, &mut d);
     // spec-0097: which overlay layers a skinned body hides. Empty for a campaign
     // that hides none.
     crate::npc::skin_layer_checks(c, &mut d);
@@ -251,6 +254,8 @@ pub fn validate_campaign_with(
     // spec-0081: the shape of every celestial time the documents state
     // (`DW0931`). Empty for a campaign of keywords.
     crate::celestial::check(c, &mut d);
+    // spec-0109: every biome a camera can stand in states its music (`DW1031`).
+    crate::music::check(c, &mut d);
 
     d
 }

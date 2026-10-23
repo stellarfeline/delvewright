@@ -1,8 +1,8 @@
 //! `delvec blocking-chart` — per-elevation cutaway floor plans (spec-0015
 //! pillar 3).
 //!
-//! The viewport ([`crate::compiler::snapshot`]) answers "what does it look like from
-//! here". This answers the question a viewport structurally cannot: **is there
+//! A frame (`delvec frames`, [`crate::compiler::view::frameset`]) answers "what
+//! does it look like from here". This answers the question a viewport structurally cannot: **is there
 //! room**. Crowding, an NPC standing in a doorway, a stealth zone that overlaps
 //! the only walk corridor, a fire pit with no clearance around it — those are
 //! *plan* defects, and a plan is what you read them off.
@@ -25,7 +25,7 @@
 //!
 //! For band floor `Y`, every column of the area is drawn from the topmost block
 //! in `[Y-1, Y+3)` — the floor the player stands on plus anything up to head
-//! height — flat-shaded with [`crate::compiler::snapshot::block_color`] and lightened with
+//! height — flat-shaded with [`block_color`] and lightened with
 //! height so a step reads as a step. Over that: a walkable wash on standable
 //! cells, the DW0311-proven critical-path corridor as a tint, and a labelled
 //! marker for every anchor, gate, NPC/actor post, interact marker, stealth zone
@@ -34,7 +34,7 @@
 //! ## Determinism (ADR-0006)
 //!
 //! Band detection reads a `BTreeMap` histogram with fixed tie-breaks, targets
-//! arrive pre-sorted from [`crate::compiler::snapshot::collect_targets`], label placement
+//! arrive pre-sorted from [`crate::compiler::framing::collect_targets`], label placement
 //! is the deterministic greedy placer, and the PNG encoder pins its DEFLATE
 //! level. Two runs produce byte-identical PNGs and index.
 
@@ -42,10 +42,42 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Value, json};
 
+use crate::compiler::framing::Target;
 use crate::compiler::nav::World;
 use crate::compiler::plan::Plan;
 use crate::compiler::raster::{Canvas, GLYPH_ROWS, LabelPlacer, ScreenBox, kind_color, text_width};
-use crate::compiler::snapshot::{Target, block_color};
+
+/// The colour a block the pinned version does not have is drawn as: full
+/// magenta, the missing-texture key — loud, so a block the chart cannot paint
+/// is obvious rather than quietly shaded as stone.
+pub const FALLBACK_COLOR: [u8; 3] = [255, 0, 255];
+
+/// Flat chart colour for a block id, plus whether it is a light source (drawn
+/// at full brightness, unshaded by height).
+///
+/// **The colour is the pinned client jar's**, read off the vendored table
+/// [`crate::compiler::view::blockcolor::PaletteTable::pinned`] derives from it,
+/// keyed by bare id at the default state. The two authoring markers keep the
+/// fallback as an alarm: they should never reach the assembled world.
+pub fn block_color(name: &str) -> ([u8; 3], bool) {
+    let bare = crate::compiler::assembled::base_id(name);
+    let id = bare.strip_prefix("minecraft:").unwrap_or(bare);
+    if matches!(id, "jigsaw" | "structure_block") {
+        return (FALLBACK_COLOR, false);
+    }
+    let key = if bare.contains(':') {
+        bare.to_string()
+    } else {
+        format!("minecraft:{bare}")
+    };
+    match crate::compiler::view::blockcolor::PaletteTable::pinned()
+        .entries
+        .get(&key)
+    {
+        Some(a) => (a.rgb, crate::compiler::light::emission(name) > 0),
+        None => (FALLBACK_COLOR, false),
+    }
+}
 
 /// Minimum separation, in blocks, between two detected elevation bands. Below
 /// this two "floors" are really one floor with a step in it, and merging them
@@ -226,8 +258,9 @@ pub struct Chart {
 /// The world the build's proofs walked, and the corridor its critical-path
 /// routes cover in it — what the chart draws as the proven path.
 pub struct Walked {
-    /// [`crate::compiler::light::final_world`]: the assembled cells under every
-    /// premise the campaign states, relight fixtures standing in them.
+    /// [`crate::compiler::holders::final_walk`]: the assembled cells under every
+    /// premise the campaign states, relight fixtures standing in them, each
+    /// holder `collect`'s leg ending at the build's stance.
     pub world: World,
     /// Every cell of every leg of [`crate::compiler::nav::critical_path_routes`]
     /// over [`Walked::world`], on the path with the links the route proof takes
@@ -238,19 +271,24 @@ pub struct Walked {
 }
 
 /// **The one derivation of the corridor**: `delvec build` takes its world from
-/// [`crate::compiler::light::final_world`] and its routes from
+/// [`crate::compiler::holders::final_walk`] and its routes from
 /// `critical_path_routes` over the path with the links taken
 /// ([`crate::compiler::nav::with_links_taken`]); this takes the same three
 /// steps over the same entry points, so the chart's line is the route the build
-/// proved and not a route over a smaller premise set. A relight pass that
-/// refuses is the build's to raise; the world is still the one it would have
-/// walked.
+/// proved and not a route over a smaller premise set. A relight pass or a
+/// stance pass that refuses is the build's to raise; the world is still the one
+/// it would have walked. `holders` are the holder entities the placed pieces
+/// carry ([`crate::compiler::holders::placed_holders`]).
 pub fn walked_corridor(
     plan: &Plan,
     prefabs: &crate::compiler::registry::PrefabRegistry,
     assembled: &crate::compiler::assembled::Assembled,
+    holders: &[crate::compiler::holders::PlacedHolder],
 ) -> Result<Walked, crate::compiler::failure::Failure> {
-    let (world, _relight) = crate::compiler::light::final_world(plan, assembled);
+    let owned = crate::compiler::holders::own_holders(plan, holders);
+    let world = crate::compiler::holders::final_walk(plan, assembled, &owned)
+        .0
+        .world;
     let relinked = crate::compiler::nav::with_links_taken(plan, prefabs, &world)?;
     let routes =
         crate::compiler::nav::critical_path_routes(relinked.as_ref().unwrap_or(plan), &world);

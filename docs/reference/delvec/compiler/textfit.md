@@ -41,9 +41,11 @@ rendition, walked by the same `each_effect_ref` traversal and l10n keying as
 `l10n/<lang>.json#/content/<key>`, naming the exact string to shorten. Nested
 effects are covered.
 
+**Journal pages** (spec-0104 §8.8, `check_book_pages`). The same code warns when a journal page the engine writes — the compass page, each `guidance.manual` page, and each announced objective's open page with the following mark's line counted — wraps to more than the **14** lines of **114** font px a vanilla book page draws (`BOOK_LINES`, `BOOK_LINE_WIDTH`); the rest is dropped unseen. Measured in English and in every declared language, reported at `quests` or `l10n`, naming the page and the language.
+
 | Code | Meaning |
 |------|---------|
-| `DW0330` | An on-screen `narrate` string (`title` / `subtitle` / `art`) — English source or any declared-language sidecar rendition — renders wider than fits on screen. Advisory (exit 0): shorten the line. Do **not** demote a title to `chat` to silence it, and do not assume a wider monitor fixes it — the overflow scales with GUI scale, not away from it. |
+| `DW0330` | An on-screen `narrate` string (`title` / `subtitle` / `art`) — English source or any declared-language sidecar rendition — renders wider than fits on screen; or a journal page wraps to more than the 14 lines a book page draws. Advisory (exit 0): shorten the line. Do **not** demote a title to `chat` to silence it, and do not assume a wider monitor fixes it — the overflow scales with GUI scale, not away from it. |
 
 ### DW0331 — dialogue option button fit (`compiler::textfit`; **error**; exit 1)
 

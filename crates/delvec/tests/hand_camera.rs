@@ -635,6 +635,9 @@ fn a_hand_row_builds_byte_identically() {
             camp.to_str().unwrap(),
             "-o",
             scenes.to_str().unwrap(),
+            "--draft",
+            "--backend",
+            "cpu",
             "--prefabs",
             common::prefabs_dir().to_str().unwrap(),
         ]);
@@ -646,51 +649,25 @@ fn a_hand_row_builds_byte_identically() {
                 && said.contains("skies: 1 derived, 1 stated, over 2 camera(s); weathers emitted: {rain, thunder}"),
             "{said}"
         );
-        let index = scenes.join("shot-index.json");
-        let r = delvec(&[
-            "index",
-            dir.to_str().unwrap(),
-            "-o",
-            index.to_str().unwrap(),
-        ]);
-        assert!(r.status.success(), "{}", log(&r));
+        let review = dir.join("validation/review-frames.json");
         outs.push((
             std::fs::read(dir.join("render-plan.json")).unwrap(),
             json(&dir.join("manifest.json")),
-            std::fs::read(scenes.join("hello-world_camera_hero.json")).unwrap(),
-            std::fs::read(&index).unwrap(),
-            std::fs::read(scenes.join("hello-world_camera_stormy.json")).unwrap(),
+            std::fs::read(scenes.join("hello-world_camera_hero_draft.png")).unwrap(),
+            std::fs::read(&review).unwrap(),
+            std::fs::read(scenes.join("hello-world_camera_stormy_draft.png")).unwrap(),
             std::fs::read(scenes.join("worlds/at-load/region/r.0.0.mca")).unwrap(),
         ));
     }
     assert_eq!(outs[0].0, outs[1].0, "render-plan.json");
-    // Each run writes its world under its own `-o`, so the scenes differ in
-    // `world.path` alone; the worlds themselves are byte-identical.
-    let masked = |b: &[u8]| {
-        let mut v: serde_json::Value = serde_json::from_slice(b).unwrap();
-        v["world"]["path"] = serde_json::json!("<masked>");
-        v
-    };
-    assert_eq!(
-        masked(&outs[0].2),
-        masked(&outs[1].2),
-        "the hand row's scene"
-    );
-    assert_eq!(
-        masked(&outs[0].4),
-        masked(&outs[1].4),
-        "the stated-thunder scene"
+    assert_eq!(outs[0].2, outs[1].2, "the hand row's frame");
+    assert_eq!(outs[0].4, outs[1].4, "the stated-thunder frame");
+    assert_ne!(
+        outs[0].2, outs[0].4,
+        "a rain sky and a thunder sky at another hour draw different frames"
     );
     assert_eq!(outs[0].5, outs[1].5, "the written world");
-    for (what, bytes, weather) in [
-        ("derived", &outs[0].2, "rain"),
-        ("stated", &outs[0].4, "thunder"),
-    ] {
-        let v: serde_json::Value = serde_json::from_slice(bytes).unwrap();
-        assert_eq!(v["sky"]["mode"], "SKYMAP_EQUIRECTANGULAR", "{what}: {v}");
-        assert_eq!(v["delvewrightSky"]["weather"], weather, "{what}: {v}");
-    }
-    assert_eq!(outs[0].3, outs[1].3, "the shot index");
+    assert_eq!(outs[0].3, outs[1].3, "the review record");
     let inputs = &outs[0].1["inputs"];
     assert!(
         inputs.to_string().contains("design/cameras.json"),

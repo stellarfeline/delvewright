@@ -1,0 +1,15 @@
+{
+  "code": "DW1016",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/triggers/3/highlight",
+      "value": {
+        "within": 6
+      }
+    }
+  ],
+  "units": [],
+  "why": "A highlight added to the approach trigger at the vantage. An approach watches a place a body stands in, and there is no block or body for the glow to light. Refused naming the trigger, with the remedy: drop the field, or make the act a use or a strike on a block."
+}

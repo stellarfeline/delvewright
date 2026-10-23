@@ -12,6 +12,12 @@
         "prefab_pool": "pool/stone-keep"
       }
     ],
+    "horizon": {
+      "attributes": {
+        "audio/background_music": {}
+      },
+      "base": "void"
+    },
     "languages": [
       "zh-cn"
     ],

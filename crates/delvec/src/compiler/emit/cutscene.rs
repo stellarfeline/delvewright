@@ -17,25 +17,36 @@ use super::*;
 /// over the list's canonical JSON: its `cs_end_<bare>` lowers that list, so two
 /// cutscenes with one shot list and two different `then`s are two functions. An
 /// empty `then` adds nothing, so every cutscene without one keeps its name.
+///
+/// A cutscene that declares its own `music` (spec-0109 §3.6) carries the
+/// declaration's digest as a last `_m<digest>` suffix, so two cutscenes with
+/// one shot list and different scores never share a bracket; a cutscene
+/// without `music` keeps its name byte for byte.
 pub(super) fn cutscene_fn(
     shots: &[delvewright_dsl::CameraShot],
     party: delvewright_dsl::CutsceneParty,
     then: &[QuestEffect],
+    music: Option<&str>,
 ) -> String {
     let name = cutscene_shots_fn(shots);
     let name = match party {
         delvewright_dsl::CutsceneParty::Present => name,
         delvewright_dsl::CutsceneParty::Absent => format!("{name}_absent"),
     };
-    if then.is_empty() {
-        return name;
+    let name = if then.is_empty() {
+        name
+    } else {
+        let canon = serde_json::to_string(then).expect("an effect list serializes");
+        format!("{name}_then_{}", &sha256_hex(canon.as_bytes())[..8])
+    };
+    match music {
+        Some(digest) => format!("{name}_m{digest}"),
+        None => name,
     }
-    let canon = serde_json::to_string(then).expect("an effect list serializes");
-    format!("{name}_then_{}", &sha256_hex(canon.as_bytes())[..8])
 }
 
 /// [`cutscene_fn`] for a `cutscene` effect as declared: its normalized shots,
-/// its party and its `then`. `None` for any other effect and for an unshaped
+/// its party, its `then` and its `music`. `None` for any other effect and for an unshaped
 /// cutscene (`DW0199`), which emits no call.
 pub(super) fn cutscene_effect_fn(eff: &QuestEffect) -> Option<String> {
     let shots = eff.cutscene_shots().filter(|s| !s.is_empty())?;
@@ -43,7 +54,19 @@ pub(super) fn cutscene_effect_fn(eff: &QuestEffect) -> Option<String> {
         &shots,
         eff.cutscene_party().unwrap_or_default(),
         eff.cutscene_then().unwrap_or_default(),
+        cutscene_music_digest(eff).as_deref(),
     ))
+}
+
+/// The digest of a cutscene's own `music` declaration, when it declares one
+/// ([`crate::compiler::music::declaration_digest`]).
+pub(super) fn cutscene_music_digest(eff: &delvewright_dsl::QuestEffect) -> Option<String> {
+    match &eff.verb {
+        Verb::Cutscene { music: Some(m), .. } => Some(crate::compiler::music::declaration_digest(
+            &crate::compiler::music::canonical_declaration(m),
+        )),
+        _ => None,
+    }
 }
 
 /// The shot-list half of [`cutscene_fn`]: the name a `present` cutscene keeps.
@@ -58,9 +81,8 @@ pub(super) fn cutscene_shots_fn(shots: &[delvewright_dsl::CameraShot]) -> String
             // subject's id instead, so the function name stays greppable.
             head.shot_style.map(|style| {
                 let subj = match &head.subject {
-                    Some(delvewright_dsl::CameraSubject::Anchor(s)) => s.anchor.as_str(),
-                    Some(delvewright_dsl::CameraSubject::Npc(s)) => s.npc.as_str(),
-                    Some(delvewright_dsl::CameraSubject::Actor(s)) => s.actor.as_str(),
+                    Some(s) if s.is_landscape() => "landscape",
+                    Some(s) => s.id(),
                     None => "none",
                 };
                 format!(
@@ -72,7 +94,16 @@ pub(super) fn cutscene_shots_fn(shots: &[delvewright_dsl::CameraShot]) -> String
         })
         .unwrap_or_else(|| "none".to_string());
     let base = format!("cs_{first}_{}_{}", head.resolved_seconds(), head.path.len());
-    if shots.len() == 1 && head.look_at.is_none() && head.shot_style.is_none() {
+    // A bare single shot keeps the readable name alone: no `look_at`, no
+    // style, and a subject that does not aim it (a `"landscape"`, which
+    // faces along the travel — spec-0110 §4.2). Any subject that aims the
+    // camera is in the digest, so two shots down one path at two subjects
+    // never share a function.
+    let aims_nowhere = head
+        .subject
+        .as_ref()
+        .is_none_or(delvewright_dsl::CameraSubject::is_landscape);
+    if shots.len() == 1 && head.look_at.is_none() && head.shot_style.is_none() && aims_nowhere {
         return base;
     }
     format!("{base}_{}", cutscene_digest(shots))
@@ -81,7 +112,7 @@ pub(super) fn cutscene_shots_fn(shots: &[delvewright_dsl::CameraShot]) -> String
 /// A short, stable content digest of a normalized cutscene shot list: the first
 /// 8 hex chars of the sha256 of a canonical textual rendering. Deterministic
 /// (fixed algorithm, fixed field order, no hash-order iteration, ADR-0006).
-pub(super) fn cutscene_digest(shots: &[delvewright_dsl::CameraShot]) -> String {
+pub(crate) fn cutscene_digest(shots: &[delvewright_dsl::CameraShot]) -> String {
     let mut canon = String::new();
     for shot in shots {
         canon.push_str(&format!("s={};", shot.resolved_seconds()));
@@ -108,7 +139,10 @@ pub(super) fn cutscene_digest(shots: &[delvewright_dsl::CameraShot]) -> String {
         if let Some(style) = shot.shot_style {
             canon.push_str(&format!("y={};", style.token()));
         }
-        if let Some(sub) = &shot.subject {
+        // A landscape aims nowhere and frames nothing, so it adds nothing to
+        // the key: a landscape shot keeps the digest of the same shot written
+        // with no subject at all.
+        if let Some(sub) = shot.subject.as_ref().filter(|s| !s.is_landscape()) {
             canon.push_str(&format!("u={};", sub.canon()));
         }
         if let Some(sub) = &shot.subject_b {
@@ -290,6 +324,8 @@ pub(super) fn cutscene_fns(
     let ns = &plan.namespace;
     let mut out = Vec::new();
     let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    // spec-0109 §3.6: the cutscenes that declare their own music, resolved.
+    let (scores, _) = crate::compiler::music::scores(plan, moves, actor_moves);
     for (eff, ctx) in crate::compiler::camera::cutscene_units(plan.campaign) {
         let Some(shots) = eff.cutscene_shots().filter(|s| !s.is_empty()) else {
             continue;
@@ -303,7 +339,7 @@ pub(super) fn cutscene_fns(
         // distinguishing content (e.g. an explicit `seconds`).
         let party = eff.cutscene_party().unwrap_or_default();
         let then = eff.cutscene_then().unwrap_or_default();
-        let start_name = cutscene_fn(&shots, party, then);
+        let start_name = cutscene_fn(&shots, party, then, cutscene_music_digest(eff).as_deref());
         if !seen.insert(start_name.clone()) {
             continue;
         }
@@ -375,6 +411,12 @@ pub(super) fn cutscene_fns(
         // reads so it does not keep asking anything of a player who is only
         // watching (see CUTSCENE_TAG).
         start.push(format!("tag @a add {CUTSCENE_TAG}"));
+        // spec-0109 §3.6: the score is painted before the camera is taken, so
+        // the first frame already hears it.
+        let score = scores.iter().find(|s| std::ptr::eq(s.effect, eff));
+        if score.is_some() {
+            start.push(format!("function {ns}:cs_paint_{bare}"));
+        }
         start.push("gamemode spectator @a".to_string());
         for cam in ["a", "b"] {
             start.push(format!(
@@ -467,9 +509,16 @@ pub(super) fn cutscene_fns(
         let mut end: Vec<String> = vec![
             "gamemode adventure @a".to_string(),
             format!("tp @a @e[tag=dw_csmark_{bare},limit=1]"),
+        ];
+        // spec-0109 §3.6: every painted cell back to the base it wore, once the
+        // players are returned.
+        if score.is_some() {
+            end.push(format!("function {ns}:cs_unpaint_{bare}"));
+        }
+        end.extend([
             format!("kill @e[tag=dw_cam_{bare}]"),
             format!("kill @e[tag=dw_csmark_{bare}]"),
-        ];
+        ]);
         // spec-0095: the stand-ins leave as the players return, by the engine's
         // one unseen removal (no death animation where the player now stands).
         if party == delvewright_dsl::CutsceneParty::Present {
@@ -493,6 +542,15 @@ pub(super) fn cutscene_fns(
         // uses. An empty `then` adds no line.
         end.extend(emit_effect_bundle(plan, then, Audience::Scheduled));
         out.push((format!("cs_end_{bare}"), lines(&end)));
+        if let Some(score) = score {
+            let (paint, unpaint) = paint_fns(&bare, score);
+            out.push((format!("cs_paint_{bare}"), lines(&paint)));
+            out.push((format!("cs_unpaint_{bare}"), lines(&unpaint)));
+        }
+    }
+    let unpaint_tick = cutscene_unpaint_tick_body(plan);
+    if !unpaint_tick.is_empty() {
+        out.push((CS_UNPAINT_TICK.to_string(), lines(&unpaint_tick)));
     }
     if cutscene_parties(plan)
         .iter()
@@ -506,6 +564,101 @@ pub(super) fn cutscene_fns(
     out
 }
 
+/// The latch a declaring cutscene's paint holds while any cell may wear its
+/// score: `#cs_paint_<bare>` on `dw.sys` (spec-0109 §3.6).
+pub(super) fn paint_latch(bare: &str) -> String {
+    format!("#cs_paint_{bare}")
+}
+
+/// The function every `tick` runs once for a campaign with a declaring
+/// cutscene: one clause per declaring cutscene, restoring a paint that outlived
+/// its cutscene (spec-0109 §3.6).
+pub(super) const CS_UNPAINT_TICK: &str = "cs_unpaint_tick";
+
+/// The bodies of `cs_paint_<bare>` and `cs_unpaint_<bare>` (spec-0109 §3.6).
+///
+/// The paint latches first, then runs one `fillbiome <box> <variant> replace
+/// <base>` per merged box per candidate base. The restore drops the latch, then
+/// runs each line reversed under `execute store success`, re-arming the latch
+/// whenever a line fails — the one failure a restore line has is an unloaded
+/// chunk, and a restore that could not reach its cells is not done.
+pub(super) fn paint_fns(
+    bare: &str,
+    score: &crate::compiler::music::Score<'_>,
+) -> (Vec<String>, Vec<String>) {
+    let latch = paint_latch(bare);
+    let mut paint = vec![format!("scoreboard players set {latch} dw.sys 1")];
+    paint.extend(score.paint.iter().cloned());
+    let mut unpaint = vec![format!("scoreboard players set {latch} dw.sys 0")];
+    for l in &score.unpaint {
+        unpaint.push(format!("execute store success score #cs_ok dw.sys run {l}"));
+        unpaint.push(format!(
+            "execute if score #cs_ok dw.sys matches 0 run scoreboard players set {latch} dw.sys 1"
+        ));
+    }
+    (paint, unpaint)
+}
+
+/// The bare names of every cutscene that declares its own music, deduplicated
+/// exactly as [`cutscene_fns`] deduplicates them.
+pub(super) fn scored_cutscenes(plan: &Plan) -> Vec<String> {
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut out = Vec::new();
+    for (eff, _) in crate::compiler::camera::cutscene_units(plan.campaign) {
+        if !matches!(eff.verb, Verb::Cutscene { music: Some(_), .. }) {
+            continue;
+        }
+        let Some(name) = cutscene_effect_fn(eff) else {
+            continue;
+        };
+        if seen.insert(name.clone()) {
+            out.push(name.strip_prefix("cs_").unwrap_or(&name).to_string());
+        }
+    }
+    out
+}
+
+/// `cs_unpaint_tick`'s clauses: per declaring cutscene, restore a paint that is
+/// latched while its cutscene is not running — keyed on the stuck state itself,
+/// and silent otherwise. Empty for a campaign without one.
+fn cutscene_unpaint_tick_body(plan: &Plan) -> Vec<String> {
+    let ns = &plan.namespace;
+    scored_cutscenes(plan)
+        .iter()
+        .map(|bare| {
+            format!(
+                "execute if score {} dw.sys matches 1 unless score #run_{bare} dw.sys matches 1 run function {ns}:cs_unpaint_{bare}",
+                paint_latch(bare)
+            )
+        })
+        .collect()
+}
+
+/// The `tick` line that runs [`CS_UNPAINT_TICK`]; empty for a campaign without
+/// a declaring cutscene, so its `tick` stays byte-identical.
+pub(super) fn cutscene_unpaint_tick(plan: &Plan) -> Vec<String> {
+    if scored_cutscenes(plan).is_empty() {
+        return Vec::new();
+    }
+    vec![format!("function {}:{CS_UNPAINT_TICK}", plan.namespace)]
+}
+
+/// The `load` lines (spec-0109 §3.6): on every world load, latch the paint of
+/// every declaring cutscene that is not running, so a world whose chunks were
+/// saved painted while its scores were saved from before the cutscene is
+/// restored the first tick its chunks are loaded. Empty without one.
+pub(super) fn cutscene_paint_load_marks(plan: &Plan) -> Vec<String> {
+    scored_cutscenes(plan)
+        .iter()
+        .map(|bare| {
+            format!(
+                "execute unless score #run_{bare} dw.sys matches 1 run scoreboard players set {} dw.sys 1",
+                paint_latch(bare)
+            )
+        })
+        .collect()
+}
+
 /// Every cutscene's start function name with its declared party (spec-0095),
 /// deduplicated exactly as [`cutscene_fns`] deduplicates them.
 pub(super) fn cutscene_parties(plan: &Plan) -> Vec<(String, delvewright_dsl::CutsceneParty)> {
@@ -516,7 +669,12 @@ pub(super) fn cutscene_parties(plan: &Plan) -> Vec<(String, delvewright_dsl::Cut
             continue;
         };
         let party = eff.cutscene_party().unwrap_or_default();
-        let name = cutscene_fn(&shots, party, eff.cutscene_then().unwrap_or_default());
+        let name = cutscene_fn(
+            &shots,
+            party,
+            eff.cutscene_then().unwrap_or_default(),
+            cutscene_music_digest(eff).as_deref(),
+        );
         if seen.insert(name.clone()) {
             out.push((name, party));
         }

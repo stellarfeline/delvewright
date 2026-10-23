@@ -1,8 +1,8 @@
 # What `DW0379` measures on shipping content
 
-`DW0379` is the retry-cost lint: the proven walk from a rest point to the deepest beat it can respawn the party into, warned when it exceeds `RETRY_BUDGET_TICKS` (1200 ticks = 60 s = 300 blocks at the 4 t/block sprint model `DW0355` uses). Its catalogue row in `compiler.md` says the budget is a design decision rather than a compiler one. This page is the measurement that decision is made against. It recommends no threshold.
+`DW0379` is the retry-cost lint: the proven walk from a rest point to the deepest beat it can respawn the party into, warned when it exceeds `RETRY_BUDGET_TICKS` (1200 ticks = 60 s = 300 blocks at the 4 t/block sprint model `DW0355` uses). Its catalogue row in [`delvec/compiler/nav.md`](delvec/compiler/nav.md) says the budget is a design decision rather than a compiler one. This page is the measurement that decision is made against. It recommends no threshold.
 
-Column **A** below is the walk to the first beat after each rest point; column **B**, the deepest beat it covers, is what `DW0379` computes. Both are kept — the pair is the argument. Every reading here was taken at the instrument below; the engine's `main` refuses `campaigns/vesperhold` at that content revision (its documents state another `dsl_version`, `DW0102`), so the vesperhold half reproduces only at the engine revision named, and the gallery half reproduces on `main`.
+Column **A** below is the walk to the first beat after each rest point; column **B**, the deepest beat it covers, is what `DW0379` computes. Both are kept — the pair is the argument. Every reading here was taken at the instrument below; the engine's `main` refuses `campaigns/vesperhold` at that content revision (its documents state another `dsl_version`, `DW0102`), so the vesperhold half reproduces only at the engine revision named, and the gallery half only at the gallery tree named (the gallery on `main` declares other rest points).
 
 ## Instrument
 
@@ -104,7 +104,7 @@ Nothing, on every campaign that builds. Read from the diagnostic stream, not ass
 | campaign | diagnostics emitted | of which `DW0379` |
 |---|---|---|
 | `campaigns/vesperhold` | 5 warnings (`DW0351` ×3, `DW0781`, `DW0810`) | 0 of 5 |
-| `gallery` | 37 warnings (`DW0527` ×24, `DW0477` ×3, and one each of `DW0330`, `DW0351`, `DW0353`, `DW0453`, `DW0467`, `DW0475`, `DW0498`, `DW0813`, `DW0822`, `DW0889`) | 0 of 37 |
+| `gallery` | 37 warnings (`DW0527` ×24, three floor-gate coverage warnings, and one each of `DW0330`, `DW0351`, `DW0353`, `DW0453`, `DW0467`, `DW0475`, `DW0498`, `DW0813`, `DW0822`, `DW0889`) | 0 of 37 |
 
 The emission count holds on both columns, on the two campaigns that can test it: the deepest walk of the eight is 53.2 s against a 60 s budget. On column **A** the peak is 106 blocks; on column **B**, what a player walks, it is 266, close to the 300-block budget.
 

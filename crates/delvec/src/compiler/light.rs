@@ -398,68 +398,32 @@ fn lit(name: &str, default_lit: &str, bright: u8) -> u8 {
 /// walkable and opaque), so the list is gone. `every_nav_passable_block_passes_light`
 /// asserts the implication over every block the pinned registry names.
 ///
-/// The second half is this module's own: blocks a body **cannot** occupy that
-/// still pass light — glass and panes, bars, chains, lanterns, campfires, end
-/// rods, ladders, scaffolding, dripstone, cobweb, lily pads, sea pickles, the
-/// snow layers too deep to step over, and `oak_fence`.
-///
-/// ## Vanilla evidence (Minecraft Java 1.21.11)
-///
-/// A block's light opacity is its `lightBlock` / "filter light" value: 15 for a
-/// full solid-render cube, 0 for anything that is neither solid-render nor a full
-/// collision cube. Every empty-collision and thin block is in the second group;
-/// verified against the pinned `minecraft-data` block table
-/// (`harness/node_modules/minecraft-data/.../pc/1.21.9/blocks.json`, the newest
-/// vendored dump; block light opacity is unchanged across 1.21.x) for all 16
-/// `*_pressure_plate`, `tripwire`, `tripwire_hook`, all 20 carpets, `snow` (the
-/// layer block) and all 12 `*_fence_gate`, against `filterLight = 15` for the
-/// control set `stone` / `dirt` / `oak_planks` / `cobblestone` / `deepslate` /
-/// `sand` / `gravel` / `obsidian` / `snow_block`.
-///
-/// ## Deliberately still opaque
-///
-/// Vanilla also reports `filterLight = 0` for fences, walls, slabs, stairs,
-/// doors, trapdoors and chests — but the collision table calls every one of them
-/// solid or tall, so no body occupies their cell. Their opacity can only make the
-/// light gate stricter, never manufacture a false pass; correcting them is a
-/// gate-loosening accuracy change of its own. (`oak_fence` predates this rule and
-/// is left as it is.)
+/// The second half is read from the pinned jar: a block a body **cannot**
+/// occupy passes light exactly when the game's own light engine lets light
+/// through it as it lets light through air — `getLightBlock()` 0 (block light
+/// loses one a step, and sky light falls through it undiminished, as the
+/// model's sky column takes it) and no `useShapeForLightOcclusion()` (a slab, a
+/// stair and a snow layer stop light at the faces their shape covers, which a
+/// cell that passes or stops whole cannot state). Anything else stops light
+/// here: tinted glass and every full opaque cube (`getLightBlock()` 15), and,
+/// on the side that under-measures, leaves, ice and a waterlogged block
+/// (`getLightBlock()` 1, which dims sky light the model's column would carry
+/// whole) and the shaped blocks. Glass, panes, bars, chains, lanterns, fences,
+/// walls, doors and trapdoors pass. Read from
+/// [`delvewright_dsl::blockshape::light_block`], the table
+/// `tools/maintenance/dump-block-light.py` measures inside the pinned server
+/// jar, and from no list here; a block the table does not hold stops light.
+/// `every_light_passing_state_passes_light_in_the_pinned_jar` holds both halves
+/// to the table over every state the pinned registry names.
 pub fn passes_light(name: &str) -> bool {
-    use delvewright_dsl::blockshape::{Collision, collision_class};
+    use delvewright_dsl::blockshape::{Collision, collision_class, light_block};
     match collision_class(name) {
         Collision::Air | Collision::Thin(_) | Collision::FenceGate | Collision::Fluid => true,
         // A climbable is a cell a body is in (spec-0099), so it must pass light
-        // or a player holding on a ladder is measured at light 0. Vanilla agrees:
-        // `filterLight = 0` for `ladder`, `vine`, `weeping_vines`, `twisting_vines`
-        // and `cave_vines` in the same vendored `minecraft-data` table.
+        // or a player holding on a ladder is measured at light 0.
         Collision::Climbable => true,
         Collision::TallBarrier | Collision::PartialFloor(_) | Collision::FullCube => {
-            let id = base_id(name);
-            matches!(
-                id,
-                "glass"
-                    | "tinted_glass"
-                    | "iron_bars"
-                    | "chain"
-                    | "iron_chain"
-                    | "campfire"
-                    | "soul_campfire"
-                    | "lantern"
-                    | "soul_lantern"
-                    | "end_rod"
-                    | "oak_fence"
-                    | "ladder"
-                    | "scaffolding"
-                    | "pointed_dripstone"
-                    | "sea_pickle"
-                    | "cobweb"
-                    | "lily_pad"
-                    // The snow layers too deep to step over (5–8); the shallow
-                    // ones are thin and pass above.
-                    | "snow"
-            ) || id.ends_with("_stained_glass")
-                || id.ends_with("_stained_glass_pane")
-                || id == "glass_pane"
+            light_block(name).is_some_and(|l| l.light_block == 0 && !l.shape_occludes)
         }
     }
 }
@@ -635,6 +599,47 @@ impl LightModel {
     }
 }
 
+/// **The two light arrays a chunk stores** (spec-0112 §5.6), as the engine's one
+/// flood computes them: the sky term seeded at 15 at every sky-open
+/// light-passing cell with no emitter lit, and the block term seeded at every
+/// emitter with the sky dark — the two terms [`LightModel::flood`] takes the
+/// maximum of. Dense over the box they were computed over.
+pub struct LightArrays {
+    sky: LightField,
+    block: LightField,
+}
+
+impl LightArrays {
+    /// Flood both terms over the inclusive box `min..=max` holding `cells`
+    /// (every other cell of the box is air). Nothing outside the box exists, so
+    /// its top face is open sky.
+    pub fn over<'c>(
+        min: [i32; 3],
+        max: [i32; 3],
+        cells: impl Iterator<Item = ([i32; 3], &'c str)> + Clone,
+    ) -> LightArrays {
+        LightArrays {
+            sky: LightField::over(min, max, 15, false, cells.clone()),
+            block: LightField::over(min, max, 0, true, cells),
+        }
+    }
+
+    /// The sky light at a cell (15 above the box, where nothing stands; 0
+    /// beside or under it).
+    pub fn sky(&self, c: [i32; 3]) -> u8 {
+        match self.sky.index(c) {
+            Some(i) => self.sky.light[i],
+            None if c[1] >= self.sky.min[1] + self.sky.dim[1] as i32 - 2 => 15,
+            None => 0,
+        }
+    }
+
+    /// The block light at a cell (0 outside the box).
+    pub fn block(&self, c: [i32; 3]) -> u8 {
+        self.block.light_at(c)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The flooded field, densely
 // ---------------------------------------------------------------------------
@@ -701,6 +706,25 @@ impl LightField {
     /// Build and flood the field of `model` under `effective_sky`.
     fn new(model: &LightModel, effective_sky: u8) -> Self {
         let (min, max) = model.field_box();
+        Self::over(
+            min,
+            max,
+            effective_sky,
+            true,
+            model.blocks.iter().map(|(c, b)| (*c, b.as_str())),
+        )
+    }
+
+    /// Build and flood the field over the inclusive box `min..=max` holding
+    /// `cells` (every other cell is air), under `effective_sky`, with the
+    /// emitters' block light seeded when `emit` holds.
+    fn over<'c>(
+        min: [i32; 3],
+        max: [i32; 3],
+        effective_sky: u8,
+        emit: bool,
+        blocks: impl Iterator<Item = ([i32; 3], &'c str)>,
+    ) -> Self {
         let dim = [
             (max[0] - min[0]) as usize + 3,
             (max[1] - min[1]) as usize + 3,
@@ -723,11 +747,12 @@ impl LightField {
         // Resolve each DISTINCT block id once. The assembled world is overwhelmingly
         // repeated ids, and `emission`/`passes_light` are a pair of string matches.
         let mut resolved: BTreeMap<&str, u8> = BTreeMap::new();
-        for (c, name) in model.blocks.iter() {
-            let Some(i) = f.index(*c) else { continue };
-            let packed = *resolved
-                .entry(name.as_str())
-                .or_insert_with(|| Self::pack(name));
+        for (c, name) in blocks {
+            let Some(i) = f.index(c) else { continue };
+            let packed = *resolved.entry(name).or_insert_with(|| {
+                let p = Self::pack(name);
+                if emit { p } else { p & !P_EMISSION }
+            });
             f.prop[i] = packed;
         }
 
@@ -1203,11 +1228,11 @@ pub fn lit_world(
 /// **The world the build's proofs walk, derived once**: the relight pass over
 /// `assembled`, and the nav model of the same cells under the campaign's
 /// premises ([`crate::compiler::nav::Premises::of_plan`]) with the pass's
-/// fixtures standing in it ([`lit_world`]). `delvec build` and every view that
-/// draws what the proofs walked (`blocking-chart`) take their world from this
-/// one entry point, so a route read over it is the route the build proved.
-/// The caller reads `Relight::diagnostics` — a refused pass is the build's
-/// failure to raise, not this derivation's.
+/// fixtures standing in it ([`lit_world`]). The build and every reader of the
+/// critical path take it through [`crate::compiler::holders::final_walk`],
+/// which stands the holder stances in it; a view that stands a camera in the
+/// build's world (`delvec frames --campaign`, `cameras`, `written-world`,
+/// `edit`) takes it here.
 pub fn final_world(
     plan: &Plan,
     assembled: &crate::compiler::assembled::Assembled,
@@ -3215,8 +3240,8 @@ mod tests {
     ///
     /// Evidence: `filterLight` in the pinned `minecraft-data` 1.21.9 block dump
     /// (`harness/node_modules/minecraft-data/.../pc/1.21.9/blocks.json`) — 0 for
-    /// all 16 pressure plates, `tripwire`, `tripwire_hook`, all 20 carpets, `snow`
-    /// (the layer block) and all 12 fence gates; 15 for the control cubes below.
+    /// every pressure plate, `tripwire`, `tripwire_hook`, every carpet, `snow`
+    /// (the layer block) and every fence gate; 15 for the control cubes below.
     #[test]
     fn passes_light_matches_vanilla_filter_light() {
         // Trap triggers — the reported false-dark class (DW0342 needs these cells
@@ -3242,10 +3267,16 @@ mod tests {
             "minecraft:pale_moss_carpet[bottom=true]",
             "minecraft:snow",
             "minecraft:snow[layers=1]",
-            "minecraft:snow[layers=8]",
         ] {
             assert!(passes_light(id), "{id} is filterLight=0 in vanilla");
         }
+        // A full snow layer is a solid-render cube: `getLightBlock()` 15 in the
+        // pinned jar's light-block table (minecraft-data's per-block
+        // `filterLight` 0 is the default state's, one layer).
+        assert!(
+            !passes_light("minecraft:snow[layers=8]"),
+            "snow at 8 layers stops light in the pinned jar"
+        );
         // No-collision vegetation: nav-passable feet cells, all
         // filterLight=0 in vanilla — the class, not a per-generator id list.
         for id in [
@@ -3261,8 +3292,8 @@ mod tests {
         ] {
             assert!(passes_light(id), "{id} is filterLight=0 in vanilla");
         }
-        // Fence gates — open = a passable threshold, closed = passable-with-use.
-        // Previously only `oak_fence_gate` passed light; every wood does now.
+        // Fence gates — open = a passable threshold, closed = passable-with-use;
+        // every wood passes light.
         for id in [
             "minecraft:oak_fence_gate",
             "minecraft:spruce_fence_gate[open=true]",
@@ -3379,6 +3410,80 @@ mod tests {
             "occupancy leaves {} state(s) player-occupiable that the light model calls \
              opaque — a player standing there is measured at light 0 and trips a false \
              DW0210. First ten: {:?}",
+            offenders.len(),
+            &offenders[..offenders.len().min(10)]
+        );
+    }
+
+    /// **The model never passes light the pinned game stops** — the
+    /// direction a lower bound on light may not err in (`DW0210`/`DW0211` are
+    /// sound only while the model never overestimates). Over every state of
+    /// every block the pinned registry names, a state [`passes_light`] calls
+    /// light-passing has `getLightBlock()` below 15 in the pinned jar's
+    /// light-block table, and the table holds it. Tinted glass is the
+    /// specimen: looked through (`occlusion_table.rs`), and light-opaque.
+    #[test]
+    fn every_light_passing_state_passes_light_in_the_pinned_jar() {
+        use delvewright_dsl::blockshape::{light_block, light_block_row_count};
+        assert!(
+            !passes_light("minecraft:tinted_glass"),
+            "tinted glass stops light"
+        );
+        for id in [
+            "minecraft:glass",
+            "minecraft:white_stained_glass",
+            "minecraft:glass_pane",
+            "minecraft:iron_bars",
+            "minecraft:lantern",
+        ] {
+            assert!(passes_light(id), "{id} passes light in the pinned jar");
+        }
+        let registry = delvewright_dsl::blocks::BlockRegistry::v1_21_11();
+        let (mut states, mut passing) = (0usize, 0usize);
+        let mut offenders: Vec<String> = Vec::new();
+        for id in registry.ids() {
+            let props = registry.properties(id).cloned().unwrap_or_default();
+            let mut names = vec![String::new()];
+            for (k, values) in &props {
+                names = names
+                    .iter()
+                    .flat_map(|n| {
+                        values.iter().map(move |v| {
+                            let sep = if n.is_empty() { "" } else { "," };
+                            format!("{n}{sep}{k}={v}")
+                        })
+                    })
+                    .collect();
+            }
+            for state in names {
+                let name = if state.is_empty() {
+                    id.to_string()
+                } else {
+                    format!("{id}[{state}]")
+                };
+                states += 1;
+                if !passes_light(&name) {
+                    continue;
+                }
+                passing += 1;
+                if !light_block(&name).is_some_and(|l| l.light_block < 15) {
+                    offenders.push(name);
+                }
+            }
+        }
+        println!(
+            "light-passing ⇒ light-passing in the pinned jar: {passing} light-passing \
+             state(s) of {states} in the pinned registry, over {} light-block table row(s)",
+            light_block_row_count()
+        );
+        assert!(
+            states >= registry.len() && passing > 0 && light_block_row_count() > 1000,
+            "the enumeration bound {passing} of {states} state(s)"
+        );
+        assert!(
+            offenders.is_empty(),
+            "the light model passes light through {} state(s) the pinned jar stops it at \
+             (or does not hold) — a cell measured lit that the game leaves dark. First ten: {:?}",
             offenders.len(),
             &offenders[..offenders.len().min(10)]
         );

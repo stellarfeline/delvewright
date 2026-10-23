@@ -389,7 +389,7 @@ fn a_combat_free_campaign_emits_no_combat_plan() {
 fn barrow_warden() -> serde_json::Value {
     serde_json::json!({
         "id": "actor/barrow-warden",
-        "entity": "minecraft:wither_skeleton",
+        "entity": "minecraft:wither_skeleton", "answers": { "struck": "It does not stir.", "touched": "Cold, and still." },
         "name": "The Barrow Warden",
         "anchor": "anchor/wave",
         "tier": "elite",
@@ -953,6 +953,7 @@ fn an_npc_bodied_as_a_wave_mob_is_named_ambiguous_not_excluded() {
         let npc = &mut npcs["content"]["npcs"][0];
         npc.as_object_mut().unwrap().remove("skin");
         npc["base_entity"] = serde_json::json!("minecraft:zombie");
+        npc["answers"] = serde_json::json!({ "struck": "It does not stir." });
     });
     let (out, _) = build(tmp.path()).expect("the mutated campaign builds");
     let (path, _) = path_and_plan(&out);
@@ -1021,6 +1022,7 @@ fn an_ambiguity_the_npc_can_move_off_still_offers_both_moves() {
         let npc = &mut npcs["content"]["npcs"][0];
         npc.as_object_mut().unwrap().remove("skin");
         npc["base_entity"] = serde_json::json!("minecraft:zombie");
+        npc["answers"] = serde_json::json!({ "struck": "It does not stir." });
     });
     let (out, _) = build(tmp.path()).expect("the mutated campaign builds");
     let (path, _) = path_and_plan(&out);

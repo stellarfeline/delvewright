@@ -198,7 +198,7 @@ inputs = [
   { glob = "crates/**", why = "`delvec-binary` (which also reads this group) builds `delvec`, which builds the gallery and which the render, seating, whole-map and camera gates run" },
   { glob = "Cargo.toml", why = "the workspace manifest `delvec-binary`'s build resolves" },
   { glob = "gallery/**", why = "the gallery campaign, its render plan, overlays and camera record" },
-  { glob = "tools/**", why = "`check-gallery-render.py`, `check-seating-agrees.py`, `check-whole-map-render.py`, `check-gallery-post-beat.py`, `gallery_domain.py` and `tools/lib/*`" },
+  { glob = "tools/**", why = "`check-gallery-render.py`, `check-seating-agrees.py`, `check-whole-map-render.py`, `check-gallery-post-beat.py`, `check-gallery-review-frames.py`, `gallery_domain.py` and `tools/lib/*`" },
 ]
 
 [[group]]

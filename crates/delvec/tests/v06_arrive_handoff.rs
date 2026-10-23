@@ -100,7 +100,7 @@ fn quests_doc(on_arrive: &str) -> String {
       }}
     ],
     "actors": [
-      {{ "id": "actor/sleeper", "entity": "minecraft:zombie", "name": "The Sleeper",
+      {{ "id": "actor/sleeper", "entity": "minecraft:zombie", "answers": {{ "struck": "It does not stir.", "touched": "Cold, and still." }}, "name": "The Sleeper",
          "anchor": "anchor/exit", "facing": "west" }}
     ]
   }}

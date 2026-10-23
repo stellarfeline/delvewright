@@ -8,4 +8,5 @@ pub(crate) mod edit;
 pub(crate) mod l10n;
 pub(crate) mod metrics;
 pub(crate) mod report;
+mod sight_agreement;
 pub(crate) mod view;

@@ -121,8 +121,7 @@ enumerated from the constants the parser validates against.
 What the character wears and how they are groomed is **declared**, never inferred
 from the palette. Every key is optional; the defaults are a short-sleeved belted
 tunic open at the throat over bare legs, sandals, a short back and sides and a
-full beard — so a sheet that names no `wardrobe` composes exactly what it
-composed before this block existed.
+full beard — so a sheet that names no `wardrobe` composes exactly that.
 
 | key | values | reaches |
 |---|---|---|
@@ -153,8 +152,8 @@ composed before this block existed.
 
 ### The shell
 
-After the whole base is painted, the composer paints the shell — so a sheet's
-base is the base it composed before the shell existed:
+After the whole base is painted, the composer paints the shell — so the shell
+never changes a pixel of the base:
 
 - **beard** — the hat's front at the chin, mouth and lip rows, its sides at
   those rows, its whole underside; a **moustache** is the lip row. The base

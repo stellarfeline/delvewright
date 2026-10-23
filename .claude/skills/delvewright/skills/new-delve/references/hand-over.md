@@ -20,14 +20,14 @@ relative links into `media/`, small JPEGs, exterior or starting-scene shots
 only, picked from the visual-review set — never interiors or late-game
 locations. A localized `README.<code>.md` per declared language.
 
-Storybook art is Chunky — the install from step 12 — in two passes. Draft with
-`delvec snapshot` — fast, disposable, for judging *layout*: is the right thing in
-frame, from the right side, at the right distance. Then produce the shipped
-image with `$DELVEWRIGHT_ENGINE/validation/chunky.sh` from
-`$DELVEWRIGHT_ENGINE/validation/render-shots.sh`'s scene set, plus `delvec --prefabs "$DELVEWRIGHT_PREFABS" panorama <build-dir> -o
+Storybook art is drawn by `delvec` itself, in two passes. Draft with `delvec
+--prefabs "$DELVEWRIGHT_PREFABS" cameras <build-dir> --campaign campaigns/<id> -o <dir> --preview` — quick,
+disposable, for judging *layout*: is the right thing in frame, from the right
+side, at the right distance — and `--draft` for a cheap hq look. Then draw the
+shipped image with `delvec --prefabs "$DELVEWRIGHT_PREFABS" cameras <build-dir> --campaign campaigns/<id> -o <dir>`, plus `delvec --prefabs "$DELVEWRIGHT_PREFABS" panorama <build-dir> -o
 <dir>` for the whole-map hero shot every release owes (`--bearing` picks the
-corner). Never hand-edit a scene JSON: if the frame you want is not emittable,
-that is a `delvec render` gap to report, not a file to patch.
+corner). If the frame you want cannot be stated as a camera, that is a gap to
+report, not a picture to patch.
 The whole-map hero's distance and the sky: `$DELVEWRIGHT_ENGINE/docs/reference/showcase-shots.md` §2a–§2b.
 
 ## The engine-version marker
@@ -85,7 +85,8 @@ Set your render distance to at least <view_distance> chunks (Options → Video
 Settings) — the far views this delve was designed with are not drawn below it.
 ```
 
-Then prove it:
+Then prove the engine-version marker — the check reads the marker and every
+other version literal, not the render-distance line:
 
 ```sh
 "$DELVEWRIGHT_PYTHON" "$DELVEWRIGHT_ENGINE/tools/creator/check-storybook-version.py" --campaigns campaigns

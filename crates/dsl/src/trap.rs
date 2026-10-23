@@ -54,11 +54,10 @@ pub struct Trap {
     pub at: AnchorId,
     /// What springs the trap (all redstone-native).
     pub trigger: TrapTrigger,
-    /// The **legacy** redstone consequence (spec-0011): a static dispenser
-    /// payload the prefab's own wiring fires. Superseded by [`Trap::payload`]
-    /// (spec-0022) — redstone now keeps only the trigger — but kept meaningful
-    /// so existing campaigns build unchanged. Optional since spec-0022; a trap
-    /// must declare `effect`, `payload`, or both (`DW0440`).
+    /// The redstone consequence (spec-0011): a static dispenser payload the
+    /// prefab's own wiring fires. [`Trap::payload`] (spec-0022) is the command
+    /// form, where redstone keeps only the trigger. Optional; a trap declares
+    /// `effect`, `payload`, or both (`DW0440`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effect: Option<TrapEffect>,
     /// The **command payload** (spec-0022): an ordered effect list in the same
@@ -99,7 +98,7 @@ pub struct Trap {
     /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison must
     /// hold for this gate to be open. The third field of the one gate, carried by
     /// every gate consumer — never by the verb that first wanted it. Default
-    /// empty, so a pre-0.10 campaign is byte-identical.
+    /// empty: no numeric term.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requires_state: Vec<StateCompare>,
 }

@@ -139,13 +139,12 @@ jobs:
       commit: ${{ steps.id.outputs.commit }}
       version: ${{ steps.id.outputs.version }}
       targets: ${{ steps.id.outputs.targets }}
-      previous: ${{ steps.previous.outputs.previous }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.commit }}
           # `merge-base --is-ancestor` below needs real history, and needs
-          # `origin/main` to exist locally; `previous` needs every tag.
+          # `origin/main` to exist locally; the notes need every tag.
           fetch-depth: 0
       # versions.toml is the single source of truth (spec-0005). Everything the
       # rest of this workflow reads comes from it, and this is the gate that says
@@ -194,18 +193,30 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "shelf: $TARGETS"
           echo "ok: delvec $VERSION at $COMMIT; $TAG is not written yet (1 of 1 release identity)"
-      # The generated changelog runs between consecutive releases OF THIS LINE
-      # (ADR-0028 §2): the repository's last two tags may be a plugin release and
-      # a format release. Read here because this checkout carries every tag.
-      - name: the previous delvec release, for the notes
-        id: previous
+      # The notes this Release publishes: the opening this tree states and the
+      # `RELEASE-NOTES.md` entry written for this version before the release — a
+      # summary, judged here against the changes merged since the previous
+      # release OF THIS LINE (the repository's last two tags may be a plugin
+      # release and a format release), never the list of their titles. A commit
+      # whose RELEASE-NOTES.md has no entry for this version, or whose entry is that
+      # list again, is refused before anything builds. Read here because this
+      # checkout carries every tag; `shelf` publishes these bytes unchanged.
+      - name: the notes, read from the tree and judged (a summary, never the merged list)
         env:
           TAG: ${{ steps.id.outputs.tag }}
         run: |
           set -euo pipefail
-          prev="$(python3 tools/lib/release_tags.py previous "$TAG")"
-          echo "previous=$prev" >> "$GITHUB_OUTPUT"
-          echo "previous delvec release: ${prev:-(none)}"
+          python3 tools/ci/release-notes.py delvec --commit HEAD --repository "$GITHUB_REPOSITORY" > notes.md
+          {
+            echo "### notes to be published for $TAG"
+            echo ""
+            cat notes.md
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: notes.md
+          if-no-files-found: error
 
   # ---- the shelf: one archive per target ------------------------------------
   binaries:
@@ -289,6 +300,12 @@ jobs:
           pattern: shelf-*
           merge-multiple: true
           path: dist
+      # The notes `identity` read from the tree and judged, byte for byte: what
+      # the approval page shows below is what the undraft publishes.
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+          path: notes
       - name: re-verify every checksum, then state the binding count
         run: |
           set -euo pipefail
@@ -317,7 +334,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.identity.outputs.tag }}
-          PREVIOUS: ${{ needs.identity.outputs.previous }}
           COMMIT: ${{ needs.identity.outputs.commit }}
         run: |
           set -euo pipefail
@@ -331,16 +347,11 @@ jobs:
           gh release view "$TAG" --json isDraft --jq .isDraft > state.txt 2> state.err || rc=$?
           if [ "$rc" -ne 0 ]; then
             if grep -qiE 'release not found|HTTP 404' state.err; then
-              # The notes open with what the released tree says (the dsl_version the
-              # binary speaks, the crates.io page), and the changelog GitHub
-              # generates below it starts at the previous release OF THIS LINE.
-              python3 tools/ci/release-notes.py delvec --commit HEAD > notes.md
+              # The notes `identity` judged: the opening the released tree states,
+              # the RELEASE-NOTES.md entry written for this version, the compare link.
+              [ -s notes/notes.md ] || { echo "::error::the judged notes are missing or empty"; exit 1; }
               title="$(python3 tools/lib/release_tags.py title "$TAG")"
-              if [ -n "$PREVIOUS" ]; then
-                gh release create "$TAG" --draft --target "$COMMIT" --title "$title" --notes-file notes.md --generate-notes --notes-start-tag "$PREVIOUS"
-              else
-                gh release create "$TAG" --draft --target "$COMMIT" --title "$title" --notes-file notes.md
-              fi
+              gh release create "$TAG" --draft --target "$COMMIT" --title "$title" --notes-file notes/notes.md
               echo "created release $TAG ($title) as a DRAFT — nothing is public until the gated job undrafts it"
             else
               cat state.err

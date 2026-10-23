@@ -1717,7 +1717,7 @@ pub struct AssemblyBinding {
     /// no such cell.
     pub spared: Vec<(String, Option<[i32; 3]>)>,
     /// The assemblies whose blow the critical path's bot witnesses
-    /// ([`with_witness_steps`]); filled when the path is written.
+    /// (`Plan::exported_layout`'s witness entries); filled when the path is written.
     pub witnessed: Vec<String>,
 }
 
@@ -1939,29 +1939,6 @@ pub fn witness_steps(b: &AssemblyBinding) -> Vec<(String, Vec<serde_json::Value>
         out.push((id.clone(), ws));
     }
     out
-}
-
-/// Put each assembly's witness steps on the critical path, just before the
-/// first step that strikes that assembly — the last moment the thing is
-/// certainly standing. Returns the assemblies witnessed.
-pub fn with_witness_steps(
-    steps: &mut Vec<serde_json::Value>,
-    witnesses: Vec<(String, Vec<serde_json::Value>)>,
-) -> Vec<String> {
-    let mut placed = Vec::new();
-    for (id, ws) in witnesses {
-        let Some(at) = steps
-            .iter()
-            .position(|s| s["action"] == "trigger" && s["assembly"] == id.as_str())
-        else {
-            continue;
-        };
-        for (k, w) in ws.into_iter().enumerate() {
-            steps.insert(at + k, w);
-        }
-        placed.push(id);
-    }
-    placed
 }
 
 // ---------------------------------------------------------------------------
@@ -2289,6 +2266,7 @@ pub type Guard<'g> = dyn Fn(&QuestEffect, Vec<String>, &mut Vec<String>) + 'g;
 pub fn assembly_functions(
     plan: &Plan<'_>,
     locks: &Locks,
+    ranges: &[crate::compiler::framing::AssemblyRange],
     land: &dyn Fn(&QuestEffect, &mut Vec<String>),
     guard: &Guard<'_>,
 ) -> Vec<(String, String)> {
@@ -2332,16 +2310,24 @@ pub fn assembly_functions(
             )]),
         ));
         let fixture = crate::compiler::affordance::FIXTURE_TAG;
+        // spec-0110 §5.8: the distance every client draws the root and each
+        // part within — derived from the shots that frame it and the place
+        // it stands in (`framing::view_ranges`); the floor 1.0 for an
+        // assembly the derivation was not handed.
+        let view_range = ranges
+            .iter()
+            .find(|r| r.id == p.decl.id.as_str())
+            .map_or(1.0, |r| r.view_range);
         let mut summon = vec![format!("kill @e[tag={}]", tag(s))];
         summon.push(format!(
-            "summon minecraft:item_display {} {{Tags:[\"{fixture}\",\"{}\",\"{}\"]}}",
+            "summon minecraft:item_display {} {{Tags:[\"{fixture}\",\"{}\",\"{}\"],view_range:{view_range:.2}f}}",
             pos(p.mark),
             tag(s),
             root_tag(s)
         ));
         for (i, (part, t)) in p.rig.parts.iter().zip(p.spawn_pose()).enumerate() {
             summon.push(format!(
-                "summon minecraft:block_display {} {{Tags:[\"{fixture}\",\"{}\",\"{}_part\",\"{}\"],block_state:{},interpolation_duration:{spawn_tpf},transformation:{}}}",
+                "summon minecraft:block_display {} {{Tags:[\"{fixture}\",\"{}\",\"{}_part\",\"{}\"],block_state:{},interpolation_duration:{spawn_tpf},transformation:{},view_range:{view_range:.2}f}}",
                 pos(p.mark),
                 tag(s),
                 tag(s),

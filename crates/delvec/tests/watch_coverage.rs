@@ -272,6 +272,7 @@ fn the_verdict_is_deterministic() {
 fn claim(families: &[&str], declared: &[&str]) -> watch::Claim {
     watch::Claim {
         mechanic: "timed-gate",
+        kind: watch::ClaimKind::Body,
         families: families.iter().map(|s| (*s).to_string()).collect(),
         declared: declared.iter().map(|s| (*s).to_string()).collect(),
     }

@@ -1,9 +1,9 @@
-"""Anvil worlds read as the pinned Chunky core reads them — the one parse rule.
+"""Anvil worlds read as the pinned server writes them — the one parse rule.
 
-Every tool that reads a world save or a world `delvec cameras` writes reads it
+Every tool that reads a world save or a world `delvec build` writes reads it
 through here (`tools/ci/check-written-world.py`, the spec-0089 rig, the
-writer's own read-back test in `crates/delvec/tests/view_cli.rs`), so two gates
-never hold two copies of the region and chunk rules.
+writer's own read-back tests in `crates/delvec/tests/review_frame_worlds.rs`),
+so two gates never hold two copies of the region and chunk rules.
 
 The layout follows minecraft.wiki's *Region file format* and *Chunk format*: an
 8 KiB header of 1024 location entries (3 bytes sector offset, 1 byte sector
@@ -11,7 +11,11 @@ count) and 1024 timestamps, 4 KiB sectors, a chunk payload of a 4-byte length,
 a 1-byte compression scheme (1 GZip, 2 Zlib, 3 none) and the bytes; a section's
 `block_states.data` packs palette indices at max(4, ceil(log2 n)) bits, never
 across a long, absent when the palette has one entry; `biomes` the same at
-max(1, ceil(log2 n)) over 64 cells. Standard library only.
+max(1, ceil(log2 n)) over 64 cells; a section's `BlockLight` and `SkyLight`
+are 2048-byte arrays of one nibble a cell, `y`-`z`-`x` order, the low nibble
+first; a chunk's `block_entities` is a list of compounds carrying `x`, `y`,
+`z` and `id`; `entities/r.*.mca` holds per chunk an `Entities` list of
+compounds. Standard library only.
 """
 
 from __future__ import annotations
@@ -302,6 +306,73 @@ def cells(world: pathlib.Path, box=None) -> dict[tuple[int, int, int], str]:
 AIR = frozenset({"minecraft:air", "minecraft:cave_air", "minecraft:void_air"})
 
 
+# --------------------------------------------------------------------- light
+
+def light(world: pathlib.Path, cell: tuple[int, int, int]) -> tuple[int | None, int | None]:
+    """`(block light, sky light)` the save stores at `cell`, each `None` when
+    its section carries no such array (the game then computes it on load)."""
+    x, y, z = cell
+    cx, cz = x // 16, z // 16
+    chunk = load_world(world).get((cx, cz))
+    if chunk is None:
+        return (None, None)
+    for sec in chunk[2].value.get("sections", Tag(T_LIST, [])).value:
+        if sec.value["Y"].value != y // 16:
+            continue
+        i = (y % 16) * 256 + (z % 16) * 16 + (x % 16)
+
+        def nibble(key: str) -> int | None:
+            arr = sec.value.get(key)
+            if arr is None:
+                return None
+            b = arr.value[i // 2] & 0xFF
+            return (b >> 4) if i % 2 else (b & 0x0F)
+
+        return (nibble("BlockLight"), nibble("SkyLight"))
+    return (None, None)
+
+
+def light_arrays(world: pathlib.Path):
+    """`{(cx, sy, cz): (block light bytes | None, sky light bytes | None)}` over
+    every section of `world`, the arrays as the save stores them."""
+    out = {}
+    for (cx, cz), (_ts, _c, root) in load_world(world).items():
+        for sec in root.value.get("sections", Tag(T_LIST, [])).value:
+            bl = sec.value.get("BlockLight")
+            sl = sec.value.get("SkyLight")
+            out[(cx, sec.value["Y"].value, cz)] = (
+                None if bl is None else bytes(b & 0xFF for b in bl.value),
+                None if sl is None else bytes(b & 0xFF for b in sl.value),
+            )
+    return out
+
+
+# ------------------------------------------------------------ plain values
+
+def plain(t: Tag):
+    """A tag as plain Python: a compound a dict, a list a list, an array a
+    list of ints, a number or a string itself."""
+    if t.kind == T_COMPOUND:
+        return {k: plain(v) for k, v in t.value.items()}
+    if t.kind == T_LIST:
+        return [plain(v) for v in t.value]
+    if t.kind in (T_BYTE_ARRAY, T_INT_ARRAY, T_LONG_ARRAY):
+        return list(t.value)
+    return t.value
+
+
+# ---------------------------------------------------------- block entities
+
+def block_entities(world: pathlib.Path) -> dict[tuple[int, int, int], dict]:
+    """Every block entity of `world` by cell, as a plain compound."""
+    out: dict[tuple[int, int, int], dict] = {}
+    for (_cx, _cz), (_ts, _c, root) in load_world(world).items():
+        for be in root.value.get("block_entities", Tag(T_LIST, [])).value:
+            v = plain(be)
+            out[(v.get("x"), v.get("y"), v.get("z"))] = v
+    return out
+
+
 # ------------------------------------------------------------------ entities
 
 def count_tagged_entities(world: pathlib.Path, tag: str) -> int:
@@ -347,13 +418,49 @@ def item_entities(world: pathlib.Path) -> list[tuple[tuple[float, float, float],
     return out
 
 
+def entities(world: pathlib.Path) -> list[dict]:
+    """Every entity of `world/entities/*.mca` as a plain compound, in file and
+    chunk order."""
+    out = []
+    for f in sorted((world / "entities").glob("r.*.mca")):
+        for _cx, _cz, _ts, _comp, root in region_chunks(f):
+            for ent in root.value.get("Entities", Tag(T_LIST, [])).value:
+                out.append(plain(ent))
+    return out
+
+
 if __name__ == "__main__":
     import sys
 
-    if len(sys.argv) == 4 and sys.argv[1] == "count-tagged-entities":
-        world = pathlib.Path(sys.argv[2])
+    import json
+
+    def world_of(p: str) -> pathlib.Path:
+        world = pathlib.Path(p)
         if not (world / "level.dat").is_file():
             sys.exit(f"anvil: {world} is not a world save (no level.dat)")
-        print(count_tagged_entities(world, sys.argv[3]))
+        return world
+
+    if len(sys.argv) == 4 and sys.argv[1] == "count-tagged-entities":
+        print(count_tagged_entities(world_of(sys.argv[2]), sys.argv[3]))
+    elif len(sys.argv) == 6 and sys.argv[1] == "light":
+        bl, sl = light(world_of(sys.argv[2]), tuple(int(a) for a in sys.argv[3:6]))
+        print(json.dumps({"block": bl, "sky": sl}))
+    elif len(sys.argv) == 3 and sys.argv[1] == "light-census":
+        arrays = light_arrays(world_of(sys.argv[2]))
+        both = sum(1 for bl, sl in arrays.values() if bl is not None and sl is not None)
+        print(json.dumps({"sections": len(arrays), "with_both": both}))
+    elif len(sys.argv) == 9 and sys.argv[1] == "cells":
+        n = [int(a) for a in sys.argv[3:9]]
+        got = cells(world_of(sys.argv[2]), ((n[0], n[1], n[2]), (n[3], n[4], n[5])))
+        print(json.dumps({f"{x},{y},{z}": st for (x, y, z), st in sorted(got.items())}))
+    elif len(sys.argv) == 3 and sys.argv[1] == "block-entities":
+        bes = block_entities(world_of(sys.argv[2]))
+        print(json.dumps([bes[k] for k in sorted(bes)], sort_keys=True))
+    elif len(sys.argv) == 3 and sys.argv[1] == "entities":
+        print(json.dumps(entities(world_of(sys.argv[2])), sort_keys=True))
     else:
-        sys.exit("usage: anvil.py count-tagged-entities <world dir> <tag>")
+        sys.exit(
+            "usage: anvil.py count-tagged-entities <world dir> <tag> | light <world dir> <x> <y> <z>"
+            " | light-census <world dir> | cells <world dir> <x0> <y0> <z0> <x1> <y1> <z1>"
+            " | block-entities <world dir> | entities <world dir>"
+        )

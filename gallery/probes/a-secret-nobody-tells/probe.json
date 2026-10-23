@@ -35,6 +35,9 @@
           }
         ],
         "seconds": 3,
+        "subject": {
+          "anchor": "anchor/seam-west-door"
+        },
         "type": "cutscene"
       }
     },

@@ -73,8 +73,8 @@ Measurement can prove a mix is not warm; only a look decides it is right.
 
 The jar is EULA-gated and never committed (versions.toml [render]). It is
 resolved from --jar, then $DELVEWRIGHT_CLIENT_JAR, then
-~/.chunky/resources/minecraft.jar — the same order `delvec render` uses, so one
-machine setup serves both. Without it this tool **refuses**; it never reports a
+~/.delvewright/client/minecraft-1.21.11.jar (where Init I5 puts it) — the same
+order every `delvec` arm that draws uses, so one machine setup serves both. Without it this tool **refuses**; it never reports a
 partial answer as a whole one.
 """
 
@@ -1023,7 +1023,7 @@ def base_block(state: str) -> str:
 
 
 # --------------------------------------------------------------------------
-# The leaf: a swatch sheet. No GPU, no Chunky, no world.
+# The leaf: a swatch sheet. No GPU, no renderer, no world.
 #
 # The screen hands over ten to twenty survivors, and a shortlist is not a choice.
 # What decides it is seeing the material — its pattern, its scale, and how a mix
@@ -1293,7 +1293,7 @@ def resolve_jar(explicit: str | None) -> Path:
     candidates = [
         explicit,
         os.environ.get("DELVEWRIGHT_CLIENT_JAR"),
-        str(Path.home() / ".chunky" / "resources" / "minecraft.jar"),
+        str(Path.home() / ".delvewright" / "client" / "minecraft-1.21.11.jar"),
     ]
     for c in candidates:
         if c and Path(c).exists():
@@ -1301,7 +1301,7 @@ def resolve_jar(explicit: str | None) -> Path:
     raise SystemExit(
         "refusing: no client jar, so nothing here can be measured — pass "
         "--jar <1.21.11 client jar>, set $DELVEWRIGHT_CLIENT_JAR, or place it at "
-        "~/.chunky/resources/minecraft.jar (the same order delvec render uses). "
+        "~/.delvewright/client/minecraft-1.21.11.jar (the same order delvec uses). "
         "A palette answer given without the textures is a recollection, which is "
         "the failure this tool exists to remove."
     )

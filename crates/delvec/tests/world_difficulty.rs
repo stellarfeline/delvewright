@@ -156,6 +156,13 @@ static WAVE_QUESTS: LazyLock<String> = LazyLock::new(|| {
 /// A v0.6 quests doc with one scripted actor, spawned then unleashed.
 /// `{extra}` is spliced into the actor object.
 fn actor_quests(extra: &str) -> String {
+    // An inert monster-kind body in reach owes its lines (`DW1055`); a
+    // `vulnerable` one may declare none (`DW1056`).
+    let answers = if extra.contains("vulnerable") {
+        ""
+    } else {
+        r#", "answers": { "struck": "It does not stir.", "touched": "Cold, and still." }"#
+    };
     format!(
         r#"{{
   "dsl_version": "{DSL_VERSION}",
@@ -183,7 +190,7 @@ fn actor_quests(extra: &str) -> String {
     ],
     "actors": [
       {{ "id": "actor/giant", "entity": "minecraft:vindicator", "name": "The Sleeper",
-         "anchor": "spawn"{extra} }}
+         "anchor": "spawn"{answers}{extra} }}
     ]
   }}
 }}"#
@@ -279,7 +286,8 @@ fn still_actor_quests(entity: &str) -> String {
       }}
     ],
     "actors": [
-      {{ "id": "actor/the-dry-one", "entity": "{entity}", "anchor": "spawn" }}
+      {{ "id": "actor/the-dry-one", "entity": "{entity}", "anchor": "spawn",
+         "answers": {{ "struck": "Dry as dust. It does not stir.", "touched": "Sand runs from its sleeve." }} }}
     ]
   }}
 }}"#

@@ -61,26 +61,17 @@ validation/reclaim-ladder-images.sh                             # sweep, dry by 
 `--project` is **required** on every one of them; an invocation without it exits
 non-zero and says why. That is the whole protocol.
 
-### Why there is no lock any more
+### Why there is no lock
 
 `docker compose -p <project>` isolates containers, volumes and networks. It does
 **not** isolate the two things that are global to the Docker daemon: pinned
-container names and published host ports. `compose.yaml` used to carry both
-(`container_name: delvewright-server`, `127.0.0.1:25565:25565`), so every caller
-aimed at the same container and the same port and had to be serialized behind
-[`mutex.sh`](mutex.sh) — a lock over the entire validation stack.
-
-That lock cost more than it bought: worker ladders queued on each other for no
-reason, and an island worker once waited **30+ minutes** behind a holder whose
-session had **zero containers running**. The lock outlived the work and nothing
-could tell.
-
-So `compose.yaml` now pins no container name and publishes no port, and
-`tools/ci/check-compose-isolation.py` (CI) fails if one comes back. Two ladders on
-one host are independent by construction. `mutex.sh` is left guarding exactly one
-resource — host port **25565**, the owner's client address — and a worker ladder
-does not take it at all. *If you find yourself waiting on that lock to run a
-ladder, the ladder is wrong, not the lock.*
+container names and published host ports. So `compose.yaml` pins no container
+name and publishes no port, and `tools/ci/check-compose-isolation.py` (CI) fails
+if one appears. Two ladders on one host are independent by construction.
+[`mutex.sh`](mutex.sh) guards exactly one resource — host port **25565**, the
+owner's client address — and a worker ladder does not take it at all. *If you
+find yourself waiting on that lock to run a ladder, the ladder is wrong, not the
+lock.*
 
 Two files may add a global name back, both by name:
 
@@ -105,18 +96,16 @@ Never a bare `docker compose down`, never `docker rm` of a container you did not
 create. `down -v` alone is not self-verifying: it leaves `<project>_server-data`
 behind whenever an exited container of the project still holds the volume, and the
 stale world carries the scoreboard into the next run — objectives already complete,
-so the bot fails and the failure looks like a content bug (three misattributed red
-runs, island round 13). `fresh-volumes.sh` force-removes that project's containers,
+so the bot fails and the failure looks like a content bug. `fresh-volumes.sh` force-removes that project's containers,
 volumes, networks **and the images it built** and then asserts each class is
-gone. The images are the class that used to leak permanently: both tags a ladder
-mints are project-scoped by design (`delvewright/delve:<project>` and compose's
-own `<project>-bot:latest`), so nothing ever reused them and nothing removed
-them. It removes only names your ladder minted — a tag it did not mint, such as
+gone. Both image tags a ladder mints are project-scoped by design (`delvewright/delve:<project>` and compose's
+own `<project>-bot:latest`), so nothing else reuses them and nothing else
+removes them. It removes only names your ladder minted — a tag it did not mint, such as
 the shared `delvewright/delve:local`, is kept and named, as is any image a
 container still holds — and an image it cannot remove is reported rather than
-reddening your run. It has no daemon-wide mode: the old
-`--all` swept every project's world volumes and force-removed the pinned
-`delvewright-*` names, which is an outage, not a teardown. It also refuses outright
+reddening your run. It has no daemon-wide mode: sweeping every project's world
+volumes and the pinned `delvewright-*` names would be an outage, not a teardown.
+It also refuses outright
 to touch a project whose container publishes 25565 — that is an owner-facing
 session with a human possibly inside it.
 
@@ -155,13 +144,10 @@ sacred**: acquire will not wait on it or steal it, and `dw_mutex_release_named`
 refuses to free it while any container still publishes 25565. Never install a
 teardown trap before acquisition succeeds.
 
-The rules are written the way they are because of a real incident: a
-hand-rolled waiter whose "did I get the lock?" guard tested directory existence
-fell through against the owner's held lock and ran a teardown that — via the then
-pinned `container_name` — destroyed a live play session and its world volume
-mid-playtest. Isolation by construction is what makes that mistake unreachable
-today: a worker stack has no container name and no port in common with the
-owner's.
+A waiter whose "did I get the lock?" guard tests directory existence falls
+through against a held lock and runs its teardown anyway. Isolation by
+construction keeps that mistake away from the owner's session: a worker stack
+has no container name and no port in common with it.
 
 ## World fidelity (all profiles)
 
@@ -171,20 +157,19 @@ entrypoint.sh` reads `difficulty`, `level-seed`, `level-type` and
 before itzg starts. `Dockerfile.delve` bakes that script into the shipped image; the
 `packtest` service mounts the same file. No profile may hardcode those four —
 `validation/check-world-settings.sh` (CI tier 1) fails on drift or on a re-hardcoded
-value. This exists because hardcoding has twice made a server run a world the
-campaign never declared: the shipped image booting a `horizon: ocean` delve as a
-void, and the PackTest runner testing a void superflat while the delve shipped an
-ocean one.
+value. A hardcoded value makes a server run a world the campaign never
+declared: the shipped image booting a delve on an `ocean` base as a void, or the
+PackTest runner testing a void superflat while the delve ships an ocean one.
 
 ## Server bootstrap: one fetch per job, not one per boot
 
 The Mojang server jar is never baked into any image (ADR-0010, EULA), so a server on
 a fresh `/data` volume bootstraps it live at first boot. Isolation gives every ladder
-its own fresh volume — which is right — but it also meant every boot ran its own live
-bootstrap, and a `tier 2` run boots **seven** servers (the datapack-load check plus
-six PackTest suites). Seven independent chances for one Mojang blip to red a required
-status check for a reason with nothing to do with the delve. A run died exactly
-there, on the 5th of 6 suites, before any datapack was evaluated.
+its own fresh volume — which is right — and a `tier 2` run boots **fourteen**
+servers (the datapack-load check plus thirteen PackTest projects,
+`validation/packtest-matrix.py`). Bootstrapping each live would be fourteen
+independent chances for one Mojang blip to red a required status check for a
+reason with nothing to do with the delve.
 
 `validation/server-bootstrap-cache.sh` performs **one** fetch per job into
 `validation/server-cache/` (gitignored), refuses anything whose sha256 is not
@@ -197,8 +182,8 @@ under `--network none`.
 Three properties worth keeping when touching this:
 
 * **A copy, never a bind mount of the jar.** itzg and Fabric both replace the jar by
-  rename, and a rename cannot target a bind-mounted file ("Device or resource busy") —
-  the failure that killed the 2026-07-30 jar cache. The overlay is mounted read-only
+  rename, and a rename cannot target a bind-mounted file ("Device or resource busy").
+  The overlay is mounted read-only
   at `/seed` and copied into `/data`.
 * **The gate keeps its teeth.** Retries are bounded and scoped to the bootstrap fetch
   alone. Nothing here can turn a server that genuinely will not start, or a datapack
@@ -206,7 +191,7 @@ Three properties worth keeping when touching this:
   before any server boots.
 * **The seed states its binding.** `packtest-run.sh` asserts on the boot log that the
   seed was actually used, and reds if it was not. A seed that silently missed would
-  leave the ladder as fragile as before while reporting success.
+  leave every boot bootstrapping live while reporting success.
 
 ## One command (owner)
 
@@ -223,8 +208,7 @@ EULA=TRUE docker compose -f validation/compose.yaml -f validation/owner-play.yam
 can never take your port (see "Sharing the Docker host"). Then join from a vanilla
 **1.21.11** client at `localhost:25565`. Stop with `Ctrl-C`; the same command with
 `down` removes the container (the world persists in its named volume). To join with
-a real Microsoft account instead of offline mode, add `ONLINE_MODE=TRUE` (auth mode
-is still an open spec-0003 decision).
+a real Microsoft account instead of offline mode, add `ONLINE_MODE=TRUE`.
 
 If `EULA` is unset, compose fails fast with a message telling you to set it — by
 design.
@@ -255,7 +239,7 @@ no wave, and no lane anywhere in the repo's tier-2 set, so the whole souls retry
 loop (`souls_bonfire_rest`/`_reseat`/`_options`, `souls_reseat_stationed`,
 `wave_census`) and the whole TD-lane family (`souls_td_patrol_nbt`,
 `souls_td_lane_march`, `souls_td_lane_release`, `souls_td_lane_reseat`,
-`souls_td_aggro_edge`) were emitted and never executed — including the codec-trap
+`souls_td_aggro_edge`) need campaigns of their own — including the codec-trap
 test, whose entire reason to exist is that a wrong `patrol_target` key is
 invisible to every static proof. `crates/delvec/tests/fixtures/souls-bonfire`
 and `crates/delvec/tests/fixtures/souls-td-lanes` are two more. They are two fixtures and not one because `DW0478` forbids a bonfire
@@ -273,7 +257,7 @@ delvec build crates/delvec/tests/fixtures/cast-ledger \
 EULA=TRUE validation/packtest-run.sh --project dw-cast --output ./delve-output-cast
 ```
 
-There is no `PACKTEST_CONTAINER` any more: the runner pins no
+The runner pins no
 container name, so the compose project is the only name there is, and
 `--project` is required rather than defaulted. `validation/delve-output*/` is
 gitignored, so extra trees need no bookkeeping. This is exactly how CI's tier-2
@@ -320,8 +304,7 @@ cargo run -p delvec --bin delvec -- harvest \
 
 `delvec harvest` pairs each `[DelveNote]` stamp with the nearest creator chat line
 (±60s, preferring the line *after* the stamp) and resolves area→prefab and the live
-objective states into per-quest `quest_state` via the overlay's `layout.json`. The
-report is the contract input of the future `/revise-delve` skill (spec-0006 §4).
+objective states into per-quest `quest_state` via the overlay's `layout.json`.
 
 ### Machine-tested end to end
 
@@ -366,31 +349,13 @@ runs this script; wiring it into `ci.yml`'s `tier 2` job as a step (never a new 
   and there is no daemon-wide mode — a teardown that can reach another project is
   an outage, not a teardown. It reclaims the project's images too, and states
   what it examined, removed and kept.
-- **The world first**: `EULA=TRUE validation/world-save.sh <build-dir> --project
-  dw-<id>` boots the shipped delve image for that tree once, waits for the
-  datapack to report `#placed dw.sys = 1` over rcon, and copies the world save it
-  stamped into `<build-dir>/world/`. A build output carries no world — the
-  geometry is placed on the first ticks of a server boot — and a Chunky scene
-  over a missing world renders an empty sky at exit 0.
-- **Shot sets**: `validation/render-shots.sh <build-dir> [out-dir] [--delvec BIN]`
-  turns a build output into the Chunky scene set plus the shot index
-  (`delvec scene` + `index`) for visual review, including the first-person
-  player-POV shots. It refuses a tree with no `world/`, naming `world-save.sh`.
-  Its engine comes from `tools/lib/delvec-bin.sh` — a `delvec` on `PATH` only
-  when it is this engine — and it ends by saying whether the Chunky home holds
-  the pinned core (`versions.toml [render]`), by the rule `chunky.sh` refuses by.
-- **Chunky**: `validation/chunky-install.sh --java-home <JDK 17>` builds the
-  pinned core from source and installs it, then installs the pinned denoise kit
-  (the chunky-denoiser plugin and Open Image Denoise for this platform);
-  `validation/chunky.sh <Chunky args>` renders with them, denoises every
-  `-render`, and refuses a home that does not hold either
-  (`docs/reference/tools.md` §4a).
+- **The server's world**: `EULA=TRUE validation/world-save.sh <build-dir> --project dw-<id>` boots the shipped delve image for that tree once, waits for the datapack to report `#placed dw.sys = 1` over rcon, and copies the world save it stamped into `<build-dir>/world/` — the save `tools/ci/check-written-world.py` holds the engine's written load world to, cell by cell (`DW0955`) and object by object (`DW1040`).
+- **Frames**: `delvec frames <build-dir>` draws every review frame in-process from the worlds the build wrote; nothing here installs a renderer. A CI job that draws fetches the pinned client jar once with `validation/client-jar-cache.sh`, checked against `versions.toml [minecraft] client_jar_sha256` (`docs/reference/tools.md` §4a).
 
 ## Harness
 
 The mineflayer bot that the `validate` profile runs lives in [`../harness`](../harness).
 It parses the compiler's `critical-path.json` contract and drives the run; it
 contains **zero** campaign-specific logic (spec-0003). See that directory's code and
-tests. Current status: parser + sequencer + a mineflayer executor skeleton
-(`reach`/`assert-complete` implemented; `select-class`/`talk-to` stubbed pending the
-dialog-vs-`tellraw` interaction-channel decision).
+tests: `harness/src/executor.ts` and `harness/src/executor/` drive the steps the
+contract carries.

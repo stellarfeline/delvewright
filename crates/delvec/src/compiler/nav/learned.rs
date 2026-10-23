@@ -697,18 +697,22 @@ fn eye_of(e: [i32; 3], eye_height: f64) -> [f64; 3] {
     [c[0], c[1] + eye_height, c[2]]
 }
 
-/// **The one eye walk** (`docs/reference/sight-through-blocks.md` §2): from
-/// `eye` to the centre of `target`, `nav::walk_cells`, stopped by the first
-/// cell that hides strictly before the target ([`World::hides`], and nothing
-/// else). `None` when the target is seen; the hiding cell met otherwise.
-/// Every sight question of this module asks it.
-pub(super) fn eye_meets(w: &World, eye: [f64; 3], target: [i32; 3]) -> Option<[i32; 3]> {
-    let t = [
-        f64::from(target[0]) + 0.5,
-        f64::from(target[1]) + 0.5,
-        f64::from(target[2]) + 0.5,
-    ];
-    walk_cells(eye, t, |cell| cell != target && w.hides(cell))
+/// Whether the player's eye at `eye` sees the cell `target`: the one sight
+/// rule ([`crate::compiler::framing`]'s `in_sight`, spec-0110 §5.5) asked of
+/// the cell's box — nine lines, its centre and eight inset corners, stopped
+/// only by a cell that hides what is behind it ([`World::hides`], the pinned
+/// occlusion table; `docs/reference/sight-through-blocks.md` §2). `None` when
+/// some line is clear; otherwise the first hiding cell on the centre line.
+/// Every sight question of this module asks it, and it walks no line of its
+/// own.
+pub(crate) fn eye_meets(w: &World, eye: [f64; 3], target: [i32; 3]) -> Option<[i32; 3]> {
+    use crate::compiler::framing::{CellBox, in_sight};
+    let lines = in_sight(w, eye, &CellBox::cell(target), &[]);
+    if lines.seen() {
+        None
+    } else {
+        lines.centre_block
+    }
 }
 
 /// From the player's eye at `j`, whether some cell of `region` is seen
@@ -1429,7 +1433,11 @@ fn hidden_unconfirmed_words(
     if !shot_ok(way) {
         fails.push(shot_words(way));
     }
-    format!("{} is declared `hidden`, but {}", way.words, fails.join("; and "))
+    format!(
+        "{} is declared `hidden`, but {}",
+        way.words,
+        fails.join("; and ")
+    )
 }
 
 fn row(
@@ -1664,34 +1672,36 @@ mod learned_tests {
     const PLAYER_EYE: f64 = delvewright_dsl::metrics::PLAYER_EYE_HEIGHT;
 
     /// Acceptance 4: the eye is the player's, 1.62 above the junction's floor,
-    /// not the mob's 1.5. A one-high bar ten cells down the branch; a block on
-    /// the 1.5 line and off the 1.62 line, chosen by walking both.
+    /// not the mob's 1.5. A one-high bar ten cells down the branch, and
+    /// blockers across the branch that stop every one of the nine lines from
+    /// the 1.5 eye and leave one from the 1.62 eye clear — found by asking the
+    /// check itself at both heights over rows of blockers, never placed by
+    /// hand.
     #[test]
     fn the_eye_is_the_players_not_the_mobs() {
         let region = ([5, 1, 10], [5, 1, 10]);
-        let target = [5.5, 1.5, 10.5];
-        let eye = |h: f64| [5.5, 1.0 + h, 0.5];
-        let walked = |h: f64| {
-            let mut cells = BTreeSet::new();
-            walk_cells(eye(h), target, |c| {
-                cells.insert(c);
-                false
-            });
-            cells
-        };
-        let low = walked(1.5);
-        let high = walked(PLAYER_EYE);
-        let blocker = [5, 1, 5];
-        assert!(low.contains(&blocker) && !high.contains(&blocker));
-        let (base, shut) = (
-            branch(9, 1, false, &[blocker]),
-            branch(9, 1, true, &[blocker]),
-        );
         let ways = [way(region, 2, Some(Learned::Seen))];
-        let (_, at_player) = judge(&shut, &base, &ways, &[], PLAYER_EYE);
-        assert!(at_player.is_ok(), "{at_player:?}");
-        let (_, at_mob) = judge(&shut, &base, &ways, &[], 1.5);
-        assert_eq!(at_mob.expect_err("1.5 meets the block").code.id(), "DW1054");
+        let rows: Vec<Vec<[i32; 3]>> = (2..=9)
+            .flat_map(|z| (1..=2).map(move |y| (4..=6).map(|x| [x, y, z]).collect()))
+            .collect();
+        let mut found = None;
+        'search: for (i, a) in rows.iter().enumerate() {
+            for b in rows.iter().skip(i) {
+                let blockers: Vec<[i32; 3]> = a.iter().chain(b.iter()).copied().collect();
+                let (base, shut) = (
+                    branch(9, 1, false, &blockers),
+                    branch(9, 1, true, &blockers),
+                );
+                let (_, at_player) = judge(&shut, &base, &ways, &[], PLAYER_EYE);
+                let (_, at_mob) = judge(&shut, &base, &ways, &[], 1.5);
+                if let (Ok(()), Err(mob)) = (&at_player, &at_mob) {
+                    assert_eq!(mob.code.id(), "DW1054");
+                    found = Some((base, shut));
+                    break 'search;
+                }
+            }
+        }
+        let (base, shut) = found.expect("some blockers stop the 1.5 eye and not the 1.62 one");
         // The core every caller reaches is the player's eye.
         let (_, core) = verify_shut_ways(
             &ways,

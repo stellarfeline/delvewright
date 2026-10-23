@@ -379,7 +379,7 @@ pub fn take_links(plan: &Plan, world: &World) -> Result<crate::compiler::plan::L
 
 /// **The plan every reader of the path reads** (spec-0083 §3.4): `plan` with
 /// the links the route proof takes over `world` spliced in, or `None` when it
-/// takes none and `plan` is already that path. The build, the snapshot camera
+/// takes none and `plan` is already that path. The build, the review frames
 /// and the blocking chart all go through here, so a `pov/…` shot, a corridor
 /// and the proof are taken over one path. A leg nothing carries is not refused
 /// here: the walk proof refuses it in its own place.
@@ -511,6 +511,11 @@ pub struct Configuration {
 }
 
 impl Configuration {
+    /// Whether two configurations hold one region state.
+    pub fn same_state(&self, other: &Configuration) -> bool {
+        self.state == other.state
+    }
+
     /// This configuration's world: `base` with every runtime write it credits,
     /// staged volumes included, or `None` when it writes nothing.
     pub fn world(&self, base: &World) -> Option<World> {
@@ -587,6 +592,67 @@ pub fn configuration_at(
         live: world.staged_liveness(events, arrival, ancestor),
         state: world.region_state_at(events, arrival, ancestor),
     }
+}
+
+/// **The world each of `steps` is judged in** (spec-0104 §4): for every
+/// arrival, the configuration [`configuration_at`] gives it — `None` where it
+/// writes nothing and the base world stands — with arrivals under one region
+/// state sharing one world, so a sight proof over many acts builds each
+/// configuration once. Returns, per step in `steps`' order, an index into the
+/// returned worlds.
+pub fn worlds_at(
+    world: &World,
+    events: &RegionEvents,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+    steps: &[usize],
+) -> (Vec<Option<World>>, Vec<usize>) {
+    let mut states: Vec<RegionState> = Vec::new();
+    let mut worlds: Vec<Option<World>> = Vec::new();
+    let mut index = Vec::with_capacity(steps.len());
+    for &step in steps {
+        let st = world.region_state_at(events, step, ancestor);
+        let i = match states.iter().position(|s| *s == st) {
+            Some(i) => i,
+            None => {
+                worlds.push((!st.is_empty()).then(|| world.with_region_state(&st)));
+                states.push(st);
+                states.len() - 1
+            }
+        };
+        index.push(i);
+    }
+    (worlds, index)
+}
+
+/// **The configuration a walked leg is walked under** (spec-0112 §5 item 1):
+/// the region state the route proof walks the leg `from_step → to_step` in
+/// ([`World::walked_leg_region_state`]) — every write the arrival's ancestors,
+/// the start step and the start's ancestors fire — so a frame standing on the
+/// leg sees the doors the walk passed through as the walk found them.
+pub fn leg_configuration(
+    world: &World,
+    events: &RegionEvents,
+    ancestor: &dyn Fn(usize, usize) -> bool,
+    from_step: usize,
+    to_step: usize,
+) -> Configuration {
+    let fired = region::leg_fired(ancestor, from_step, to_step);
+    Configuration {
+        step: to_step,
+        live: world.staged_liveness(events, to_step, &fired),
+        state: world.walked_leg_region_state(events, ancestor, from_step, to_step),
+    }
+}
+
+/// The "has the party fired step `g`" predicate of a walked leg
+/// ([`leg_configuration`]'s), in the `(fire_step, arrival)` shape the
+/// placements ledger is asked in ([`crate::compiler::placed::rows_under`]).
+pub fn leg_fired<'a>(
+    ancestor: &'a dyn Fn(usize, usize) -> bool,
+    from_step: usize,
+    to_step: usize,
+) -> impl Fn(usize, usize) -> bool + 'a {
+    region::leg_fired(ancestor, from_step, to_step)
 }
 
 /// **The quest configurations the critical path passes**, in path order — one per

@@ -221,19 +221,26 @@ fn a_held_keeper_facing_the_wall_is_told_the_facing_that_faces_the_room() {
         message.contains("Declare `anchor/keeper-stand`'s facing `south`"),
         "{message}"
     );
+    // The remedy names a command the binary has: the anchor verb is `prefab`'s.
+    assert!(
+        message.contains("`delvec prefab anchor <piece>.nbt --name anchor/keeper-stand"),
+        "{message}"
+    );
 }
 
 #[test]
 fn a_cell_is_in_interaction_reach_by_the_eye_to_the_hitbox() {
     use delvec::compiler::approach::within_interaction_reach;
     let feet = [0.5, 64.0, 0.5];
+    let villager_box = delvec::compiler::bodies::answer_box_dims("minecraft:villager");
+    assert_eq!(villager_box, (1.0, 2.0));
     // Level, three blocks out: the eye is 2.5 from the hitbox's near face.
-    assert!(within_interaction_reach(feet, [3, 64, 0]));
+    assert!(within_interaction_reach(villager_box, feet, [3, 64, 0]));
     // Level, four blocks out: 3.5.
-    assert!(!within_interaction_reach(feet, [4, 64, 0]));
+    assert!(!within_interaction_reach(villager_box, feet, [4, 64, 0]));
     // Two blocks out and three down: the eye (1.62 up) is 1.38 below the
     // hitbox's foot and 1.5 out, about 2.04 away.
-    assert!(within_interaction_reach(feet, [2, 61, 0]));
+    assert!(within_interaction_reach(villager_box, feet, [2, 61, 0]));
     // Two blocks out and five up: the eye is 4.62 above the hitbox's top.
-    assert!(!within_interaction_reach(feet, [2, 69, 0]));
+    assert!(!within_interaction_reach(villager_box, feet, [2, 69, 0]));
 }

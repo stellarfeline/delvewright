@@ -333,7 +333,7 @@ fn a_tile_that_is_not_the_size_its_manifest_declares_is_dw0803() {
 ///
 /// `emit::build_with_warnings` protects the datapack. `cli::campaign::read_structures`
 /// is the one place every CLI consumer of prefab bytes passes through — `build`,
-/// `snapshot`, `viewer`, `blocking-chart` — and a REVIEW artifact drawn from a
+/// `frames --campaign`, `viewer`, `blocking-chart` — and a REVIEW artifact drawn from a
 /// stale tile is a picture that lies, which no later gate can catch because the
 /// picture is what a reviewer checks the world against. A check bound only to
 /// the build would have been correct and would have protected nothing here.
@@ -346,16 +346,14 @@ fn a_stale_tile_is_refused_by_the_review_commands_too_not_only_by_build() {
 
     // Honest library first: both commands succeed, so the refusals below are
     // about the stale tile and not about the fixture.
-    for cmd in ["build", "snapshot"] {
+    for cmd in ["build", "frames"] {
         let out = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
-            .args([
+            .args(review_args(
                 cmd,
-                campaign_path.to_str().unwrap(),
-                "--prefabs",
-                dir.to_str().unwrap(),
-                "--out",
-                root.join(format!("ok-{cmd}")).to_str().unwrap(),
-            ])
+                &campaign_path,
+                &dir,
+                &root.join(format!("ok-{cmd}")),
+            ))
             .output()
             .expect("run delvec");
         assert_eq!(
@@ -373,16 +371,14 @@ fn a_stale_tile_is_refused_by_the_review_commands_too_not_only_by_build() {
     )
     .unwrap();
 
-    for cmd in ["build", "snapshot"] {
+    for cmd in ["build", "frames"] {
         let out = std::process::Command::new(env!("CARGO_BIN_EXE_delvec"))
-            .args([
+            .args(review_args(
                 cmd,
-                campaign_path.to_str().unwrap(),
-                "--prefabs",
-                dir.to_str().unwrap(),
-                "--out",
-                root.join(format!("stale-{cmd}")).to_str().unwrap(),
-            ])
+                &campaign_path,
+                &dir,
+                &root.join(format!("stale-{cmd}")),
+            ))
             .output()
             .expect("run delvec");
         let text = format!(
@@ -424,4 +420,34 @@ fn a_tiled_placement_is_byte_identical_across_builds() {
     for (path, bytes) in &out_a {
         assert_eq!(bytes, &out_b[path], "{path} differs between builds");
     }
+}
+
+/// The arguments of `build` or `frames --campaign` over one campaign and
+/// library, writing under `out`.
+fn review_args(
+    cmd: &str,
+    campaign: &std::path::Path,
+    prefabs: &std::path::Path,
+    out: &std::path::Path,
+) -> Vec<String> {
+    let mut a: Vec<String> = vec![cmd.into()];
+    if cmd == "frames" {
+        a.push("--campaign".into());
+    }
+    a.push(campaign.to_string_lossy().into_owned());
+    a.extend(["--prefabs".into(), prefabs.to_string_lossy().into_owned()]);
+    if cmd == "frames" {
+        let png = out.join("frame.png");
+        a.extend([
+            "-o".into(),
+            png.to_string_lossy().into_owned(),
+            "--size".into(),
+            "32".into(),
+            "--backend".into(),
+            "cpu".into(),
+        ]);
+    } else {
+        a.extend(["--out".into(), out.to_string_lossy().into_owned()]);
+    }
+    a
 }

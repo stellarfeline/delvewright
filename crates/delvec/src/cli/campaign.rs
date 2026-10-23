@@ -364,6 +364,22 @@ pub(super) fn validate_loaded(
             diags.extend(delvec::compiler::textfit::check_option_labels(
                 &campaign, &sidecars,
             ));
+            // spec-0104 §8.8: every journal page the engine writes fits a book
+            // page (DW0330, advisory), in the English and every declared
+            // sidecar.
+            {
+                let (bd, measured) =
+                    delvec::compiler::textfit::check_book_pages(&campaign, &sidecars);
+                let widest = measured.iter().map(|m| m.2).max().unwrap_or(0);
+                examined.push(format!(
+                    "journal pages: {} page(s) measured over the source and every declared \
+                     language, the fullest {widest} of {} line(s); {} over",
+                    measured.len(),
+                    delvec::compiler::textfit::BOOK_LINES,
+                    bd.len()
+                ));
+                diags.extend(bd);
+            }
             // A dialogue option that asks a question leads to a line that can
             // answer it (DW0981), in the English source and every declared
             // sidecar. A document fact, refused where the option is written.
@@ -384,6 +400,11 @@ pub(super) fn validate_loaded(
                 let (ad, abind) = delvec::compiler::telling::check_acts(&campaign);
                 examined.push(abind.line());
                 diags.extend(ad);
+                // spec-0104 §5: a hint that names an act names this
+                // objective's — the same lexicon, a warning.
+                let (hd, hbind) = delvec::compiler::telling::check_hint_acts(&campaign);
+                examined.push(hbind.line());
+                diags.extend(hd);
             }
             // v0.6 `close-gate` gate-block declaration (DW0343): the fill block is
             // prefab metadata, so this compiler-side check runs here (validation
@@ -485,6 +506,14 @@ pub(super) fn validate_loaded(
                 let (pd, pbind) = delvec::compiler::promise::check(&campaign);
                 examined.push(pbind.line());
                 diags.extend(pd);
+                // DW1017 (spec-0104 §6.6): the compass follows only an announced
+                // objective. DW1016 (§7.5): a highlight lights a block or a body.
+                let (cd, cbind) = delvec::compiler::promise::check_compass(&campaign);
+                examined.push(cbind.line());
+                diags.extend(cd);
+                let (hd, hbind) = delvec::compiler::promise::check_highlights(&campaign);
+                examined.push(hbind.line());
+                diags.extend(hd);
             }
             // spec-0050 (DSL v0.15): the detail plan. `DW0842`-`DW0845` (the
             // binding binds, the piece is the shape of its allocation, its
@@ -718,7 +747,7 @@ pub(crate) fn read_structures(
     //
     // Bound here as well as inside `emit::build_with_warnings`, and the second
     // binding is the point: this function is the ONE place every CLI consumer
-    // of prefab bytes passes through — `build`, `snapshot`, `viewer` and
+    // of prefab bytes passes through — `build`, `frames --campaign`, `viewer` and
     // `blocking-chart` — and a review artifact drawn from a stale tile is a
     // picture that lies, which is worse than a datapack that does not build.
     // The check is pure, so running it twice on the build path costs a walk and
@@ -749,6 +778,9 @@ enum BuildKind<'a> {
     Ship(&'a Path),
     /// The derivation asked for a named defect, so its observer can be watched.
     Demonstrate(Knob, Perturb),
+    /// The build, of which only the load world (`validation/worlds/at-load`)
+    /// is written, to the directory named (`delvec written-world`).
+    LoadWorld(&'a Path),
 }
 
 pub(crate) fn run_build(
@@ -767,7 +799,34 @@ pub(crate) fn run_build(
             return ExitCode::from(1);
         }
     };
+    build_as(campaign_dir, kind, prefabs_dir, lang, json)
+}
 
+/// `delvec written-world <campaign> -o <dir>`: the build, in memory, of which
+/// the load world is written under `dir` — the world `delvec build` writes as
+/// `validation/worlds/at-load`, byte for byte, because it is that world.
+pub(crate) fn run_written_world(
+    campaign_dir: &Path,
+    out: &Path,
+    prefabs_dir: &Path,
+    json: bool,
+) -> ExitCode {
+    build_as(
+        campaign_dir,
+        BuildKind::LoadWorld(out),
+        prefabs_dir,
+        delvewright_dsl::CANONICAL_LANG,
+        json,
+    )
+}
+
+fn build_as(
+    campaign_dir: &Path,
+    kind: BuildKind<'_>,
+    prefabs_dir: &Path,
+    lang: &str,
+    json: bool,
+) -> ExitCode {
     let v = match validate_stage(campaign_dir, prefabs_dir, json) {
         Ok(v) => v,
         Err(code) => return ExitCode::from(code),
@@ -880,7 +939,7 @@ pub(crate) fn run_build(
     // a literal — so a build with no `--perturb` reaches the derivation through
     // exactly the code path it always did.
     let built = match &kind {
-        BuildKind::Ship(_) => Plan::build(&campaign, &prefabs),
+        BuildKind::Ship(_) | BuildKind::LoadWorld(_) => Plan::build(&campaign, &prefabs),
         BuildKind::Demonstrate(knob, p) => {
             eprintln!(
                 "perturbed build: the derivation is asked for `{}` ({}{}); the observer this \
@@ -984,6 +1043,7 @@ pub(crate) fn run_build(
     // than a decision not to do it.
     let out = match kind {
         BuildKind::Ship(out) => out,
+        BuildKind::LoadWorld(dir) => return write_load_world(&output, dir, json),
         BuildKind::Demonstrate(knob, p) => {
             eprintln!(
                 "perturbed build: the derivation was asked for `{}`{} and produced a datapack that \
@@ -1022,6 +1082,59 @@ pub(crate) fn run_build(
             return ExitCode::from(EXIT_INTERNAL);
         }
     }
+    ExitCode::SUCCESS
+}
+
+/// Write the load world of a build's output under `dir`: every file under
+/// `validation/worlds/at-load/`, the directory emptied of a previous world's
+/// region and entity files first.
+fn write_load_world(output: &emit::BuildOutput, dir: &Path, json: bool) -> ExitCode {
+    const PREFIX: &str = "validation/worlds/at-load/";
+    let files: Vec<(&str, &Vec<u8>)> = output
+        .iter()
+        .filter_map(|(k, v)| k.strip_prefix(PREFIX).map(|rel| (rel, v)))
+        .collect();
+    if files.is_empty() {
+        eprintln!("internal error: the build wrote no load world under {PREFIX}");
+        return ExitCode::from(EXIT_INTERNAL);
+    }
+    let write = || -> std::io::Result<()> {
+        for sub in ["region", "entities"] {
+            let d = dir.join(sub);
+            if d.is_dir() {
+                for e in std::fs::read_dir(&d)? {
+                    let p = e?.path();
+                    if p.extension().is_some_and(|x| x == "mca") {
+                        std::fs::remove_file(p)?;
+                    }
+                }
+            }
+        }
+        for (rel, bytes) in &files {
+            let p = dir.join(rel);
+            if let Some(parent) = p.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(p, bytes)?;
+        }
+        Ok(())
+    };
+    if let Err(e) = write() {
+        eprintln!("internal error: cannot write {}: {e}", dir.display());
+        return ExitCode::from(EXIT_INTERNAL);
+    }
+    let abs = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({ "world": abs.display().to_string(), "key": "at-load", "files": files.len() })
+        );
+    }
+    eprintln!(
+        "written world: at-load, {} file(s) -> {}",
+        files.len(),
+        abs.display()
+    );
     ExitCode::SUCCESS
 }
 

@@ -252,7 +252,8 @@ fn out_of_order_campaign() -> PathBuf {
             "id": "obj/ring",
             "title": "Ring the Bell",
             "hint": "The bell above the shrine still has a rope.",
-            "anchor": "anchor/gate"
+            "anchor": "anchor/gate",
+            "prop": { "block": "minecraft:torch" }
         }],
         "on_objective_complete": {},
         "on_complete": [{ "type": "campaign-complete" }]

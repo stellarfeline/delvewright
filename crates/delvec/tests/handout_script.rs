@@ -30,7 +30,9 @@ fn tempdir(name: &str) -> PathBuf {
     let p = std::env::temp_dir().join(format!("dw-handout-script-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
-    p
+    // The script prints every path canonical; the temp root is a symlink on
+    // macOS, so the expected paths are canonical too.
+    p.canonicalize().unwrap()
 }
 
 #[test]

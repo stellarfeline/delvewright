@@ -463,7 +463,7 @@ const ANCHORS: &[Anchor] = &[
     },
     Anchor {
         name: "anchor/hearth-stone",
-        pos: [6, 1, 9],
+        pos: [7, 1, 9],
         facing: Some("west"),
         trigger_block: None,
         note: "the stone beside the hearth, where the `strike` trigger hangs. \
@@ -563,8 +563,7 @@ const ANCHORS: &[Anchor] = &[
                in the wall line, so a body that walks here has crossed a line its \
                species is not allowed through — which is the whole of what a \
                `traversal` declaration answers. Off the critical path on purpose: \
-               blocking geometry on the route makes the build's render plan and \
-               the one `snapshot` derives disagree",
+               the route stays open",
         role: None,
     },
     Anchor {
@@ -2488,7 +2487,7 @@ fn skin_png(base: [u8; 3], belt: [u8; 3], model: &str) -> Vec<u8> {
 
 /// **The shore variants**: the same pieces, built to stand on an ocean.
 ///
-/// `horizon: ocean` puts every area origin at `SEA_LEVEL - 2` (the compiler's
+/// An `ocean` base puts every area origin at `SEA_LEVEL - 2` (the compiler's
 /// `OCEAN_BASE_Y`, 60, under a sea at 62), because that is the datum the island
 /// convention needs: a shore piece authors its water up to local y=2 and stands
 /// its land plane at local y=3, one block clear of the sea. A piece built with

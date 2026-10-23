@@ -187,7 +187,7 @@ fn the_surface_is_exported() {
     assert_eq!(audience, ["party", "actor"]);
     let branches = q["oneOf"].as_array().unwrap();
     // The union's size is stated once, by `v29_firework`'s
-    // `the_effect_union_names_forty_five_verbs`.
+    // `the_effect_union_names_forty_six_verbs`.
     let branch = |t: &str| {
         branches
             .iter()
@@ -401,7 +401,7 @@ fn samples() -> Vec<(&'static str, Value)> {
         ),
         (
             "cutscene",
-            json!({"type":"cutscene","seconds":2,"path":[{"anchor":"anchor/exit","offset":[0,2,0]}]}),
+            json!({"type":"cutscene","subject":"landscape","seconds":2,"path":[{"anchor":"anchor/exit","offset":[0,2,0]}]}),
         ),
         ("set-time", json!({"type":"set-time","time":"dusk"})),
         (
@@ -411,6 +411,11 @@ fn samples() -> Vec<(&'static str, Value)> {
         (
             "play-sound",
             json!({"type":"play-sound","sound":"minecraft:block.bell.use"}),
+        ),
+        // spec-0109: a cut is heard by the audience it addresses.
+        (
+            "stop-sound",
+            json!({"type":"stop-sound","category":"music"}),
         ),
         (
             "damage-players",
@@ -788,7 +793,7 @@ fn a_sound_stands_in_the_listeners_frame() {
 fn sight_timeline(seconds: u32) -> Value {
     json!({"type":"sequence","steps":[{"at_ticks":0,"effects":[
         {"type":"give-effect","effect":"minecraft:night_vision","seconds":seconds,"hide_particles":true},
-        {"type":"cutscene","seconds":10,"path":[{"anchor":"anchor/exit","offset":[0,2,0]}]}
+        {"type":"cutscene","subject":"landscape","seconds":10,"path":[{"anchor":"anchor/exit","offset":[0,2,0]}]}
     ]}]})
 }
 
@@ -806,7 +811,7 @@ fn a_sight_grant_that_ends_under_a_camera_is_dw0944() {
     // A bundle fires all at once: a timeline of one step at tick 0.
     let bundle = at_talk(vec![
         json!({"type":"give-effect","effect":"minecraft:night_vision","seconds":3}),
-        json!({"type":"cutscene","seconds":10,"path":[{"anchor":"anchor/exit","offset":[0,2,0]}]}),
+        json!({"type":"cutscene","subject":"landscape","seconds":10,"path":[{"anchor":"anchor/exit","offset":[0,2,0]}]}),
     ]);
     assert!(has(&bundle, "DW0944"), "{:#?}", codes(&bundle));
     // No cutscene in the timeline: not examined.
@@ -1037,7 +1042,7 @@ fn a_granted_sight_effect_outlasts_every_camera_it_overlaps() {
     // The mitigation half.
     let q = quests(|d| {
         common::objective_effects(d, 0, "obj/talk").push(
-            json!({"type":"cutscene","seconds":15,"path":[{"anchor":"anchor/exit","offset":[0,2,0]}]}),
+            json!({"type":"cutscene","subject":"landscape","seconds":15,"path":[{"anchor":"anchor/exit","offset":[0,2,0]}]}),
         );
     });
     let mut c = campaign(&q);

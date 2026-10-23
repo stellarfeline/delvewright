@@ -982,7 +982,7 @@ fn an_equipped_actor_coexists_with_affordance_hardware() {
     let mut q: serde_json::Value = serde_json::from_str(&loaded.raw.quests).unwrap();
     q["content"]["actors"] = serde_json::json!([{
         "id": "actor/elite",
-        "entity": "minecraft:wither_skeleton",
+        "entity": "minecraft:wither_skeleton", "answers": { "struck": "It does not stir.", "touched": "Cold, and still." },
         // NOT the bonfire's own anchor: a body standing on an affordance
         // eclipses it (`DW0359`), which is a separate, correct proof.
         "anchor": "anchor/wave",

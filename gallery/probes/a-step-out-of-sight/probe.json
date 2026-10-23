@@ -1,0 +1,22 @@
+{
+  "code": "DW0863",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "remove",
+      "path": "/content/quests/1/objectives/0/hint"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/content/obj.far-hall.answer-the-marshal.hint"
+    },
+    {
+      "doc": "l10n/zh-cn.json",
+      "op": "remove",
+      "path": "/source/obj.far-hall.answer-the-marshal.hint"
+    }
+  ],
+  "units": [],
+  "why": "The hint of the talk to the Marshal removed, with its zh-cn row. She stands at the muster line in the far hall, behind the barred wall from where the party last acted, so she cannot be seen from there; the objective's lines were the only thing saying where she is. Refused naming the walk, the previous act's cell, the target, its distance and the first cell that stops the line, with both remedies: a hint, or moving the act into sight."
+}

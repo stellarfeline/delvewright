@@ -47,6 +47,7 @@ sys.exit(98)
 
 class Rig:
     def __init__(self, root: pathlib.Path) -> None:
+        root = root.resolve()  # the script prints canonical paths
         self.root = root
         self.campaign = root / "campaign"
         shutil.copytree(FIXTURE / "campaign", self.campaign)

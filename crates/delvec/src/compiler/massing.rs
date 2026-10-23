@@ -84,7 +84,7 @@ fn has_massing_for(campaign: &Campaign, area_id: &str) -> bool {
 /// A massing application's outcome for one area.
 #[derive(Default)]
 pub struct MassingOutcome {
-    /// Each applied batch's affected world AABB (per-batch snapshot framing).
+    /// Each applied batch's affected world AABB (per-batch frame framing).
     pub bounds: BTreeMap<String, ([i32; 3], [i32; 3])>,
     /// Socket world cells whose doorways a `rewire-socket sealed` severed —
     /// the DW0306 piece-connectivity graph must not count those edges.
@@ -163,7 +163,7 @@ pub fn apply(
                                 "world-edits batch `{bid}`: `remove-piece` after a \
                                  `rewire-socket` in the same area's script — removal shifts \
                                  piece indices under the pending rewire. Order the removals \
-                                 before the rewires (re-check indices with `delvec snapshot`)"
+                                 before the rewires (re-check indices with `delvec frames --campaign`)"
                             ),
                         });
                     }
@@ -292,7 +292,7 @@ fn guard(layout: &AreaLayout, bid: &str, piece: u32, prefab: &str) -> Result<usi
     let placed = layout.pieces.get(idx).ok_or_else(|| {
         format!(
             "world-edits batch `{bid}`: piece index {idx} is out of range — the area placed \
-             {} piece(s) (0..={}). The layout has drifted; re-inspect with `delvec snapshot` \
+             {} piece(s) (0..={}). The layout has drifted; re-inspect with `delvec frames --campaign` \
              and update the verb, do NOT guess an index",
             layout.pieces.len(),
             layout.pieces.len().saturating_sub(1),
@@ -302,7 +302,7 @@ fn guard(layout: &AreaLayout, bid: &str, piece: u32, prefab: &str) -> Result<usi
         return Err(format!(
             "world-edits batch `{bid}`: piece {idx} is `{}`, not the verb's declared \
              `{prefab}` — the solved layout has drifted since this edit was authored. \
-             Re-inspect (`delvec snapshot`) and re-target; do NOT just delete the prefab guard",
+             Re-inspect (`delvec frames --campaign`) and re-target; do NOT just delete the prefab guard",
             placed.prefab_id,
         ));
     }
@@ -425,7 +425,7 @@ fn swap(
         return Err(format!(
             "world-edits batch `{bid}`: `{verb}` target piece {idx} has no mated socket — an \
              unmated piece is not part of the jigsaw graph (compiler bug or drifted layout); \
-             re-inspect with `delvec snapshot`"
+             re-inspect with `delvec frames --campaign`"
         ));
     }
     let old_bbox = (layout.pieces[idx].bbox_min, layout.pieces[idx].bbox_max);
@@ -526,7 +526,7 @@ fn insert_at(
     if host.mated.get(ci).copied().unwrap_or(false) {
         return Err(format!(
             "world-edits batch `{bid}`: `insert-piece` targets connector {ci} of piece {idx} \
-             which is already mated — pick an open (sealed) socket; `delvec snapshot` shows \
+             which is already mated — pick an open (sealed) socket; `delvec frames --campaign` shows \
              the layout"
         ));
     }

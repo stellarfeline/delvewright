@@ -23,12 +23,11 @@ fn scratch(name: &str) -> PathBuf {
     dir
 }
 
-fn run(args: &[&str]) {
-    let pf = common::prefabs_dir();
+fn run(args: &[&str], prefabs: &Path) {
     let out = Command::new(BIN)
         .args(args)
         .arg("--prefabs")
-        .arg(&pf)
+        .arg(prefabs)
         .output()
         .expect("run delvec");
     assert!(
@@ -54,21 +53,27 @@ fn cell(v: &serde_json::Value) -> [i64; 3] {
 
 /// What the chart's corridor holds against the build's routes for one campaign:
 /// `(legs, cells held to the corridor)`. Panics on any difference.
-fn agree(tag: &str, campaign: &Path) -> (usize, usize) {
+fn agree(tag: &str, campaign: &Path, prefabs: &Path) -> (usize, usize) {
     let build = scratch(&format!("chart-routes-build-{tag}"));
     let chart = scratch(&format!("chart-routes-chart-{tag}"));
-    run(&[
-        "build",
-        campaign.to_str().unwrap(),
-        "-o",
-        build.to_str().unwrap(),
-    ]);
-    run(&[
-        "blocking-chart",
-        campaign.to_str().unwrap(),
-        "-o",
-        chart.to_str().unwrap(),
-    ]);
+    run(
+        &[
+            "build",
+            campaign.to_str().unwrap(),
+            "-o",
+            build.to_str().unwrap(),
+        ],
+        prefabs,
+    );
+    run(
+        &[
+            "blocking-chart",
+            campaign.to_str().unwrap(),
+            "-o",
+            chart.to_str().unwrap(),
+        ],
+        prefabs,
+    );
 
     let index = json(&chart.join("blocking-chart.json"));
     let corridor: BTreeSet<[i64; 3]> = index["corridor"]["cells"]
@@ -133,7 +138,7 @@ fn the_charts_corridor_holds_every_cell_the_builds_routes_name() {
         ("keep-trial", common::keep_trial_dir()),
         ("hello-world", common::hello_world_dir()),
     ] {
-        let (l, h) = agree(tag, &dir);
+        let (l, h) = agree(tag, &dir, &common::prefabs_dir());
         legs += l;
         held += h;
         campaigns += 1;
@@ -142,5 +147,28 @@ fn the_charts_corridor_holds_every_cell_the_builds_routes_name() {
         "chart-routes binding: {legs} leg(s), {held} cell(s) held to the corridor over {campaigns} campaign(s)"
     );
     // The denominator: a run that compared nothing is not an agreement.
+    assert!(legs > 0 && held > 0, "no route was compared");
+}
+
+/// A leg that ends at a holder `collect` ends at the stance the build's
+/// stance pass chose (spec-0111 §5.2), so the chart's corridor is walked in
+/// the same stanced world: hello-world with its exit objective a `collect`
+/// adopting the glow frame the room carries.
+#[test]
+fn a_leg_ending_at_a_holder_ends_at_the_builds_stance_in_the_chart() {
+    let dir = scratch("chart-routes-holder");
+    let prefabs = common::holder_prefabs(&dir.join("prefabs"), vec![common::frame_entity()]);
+    let camp = dir.join("camp");
+    common::copy_dir_all(&common::hello_world_dir(), &camp);
+    common::patch_file(&camp.join("quests.json"), |q| {
+        q["content"]["quests"][0]["objectives"][1] = serde_json::json!({
+            "type": "collect", "id": "obj/exit", "item": "minecraft:map", "count": 1,
+            "anchor": "anchor/exit", "holder": "anchor/frame", "after": ["obj/talk"],
+            "title": "Take the map", "item_name": "Keeper's Map",
+            "happening": {"text": "the party takes the map", "verb": "gains"}
+        });
+    });
+    let (legs, held) = agree("holder", &camp, &prefabs);
+    eprintln!("chart-routes holder binding: {legs} leg(s), {held} cell(s) held to the corridor");
     assert!(legs > 0 && held > 0, "no route was compared");
 }

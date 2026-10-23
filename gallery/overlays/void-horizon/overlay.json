@@ -1,8 +1,6 @@
 {
   "binds": [
-    "WorldContent.horizon",
-    "HorizonBase::void",
     "Boundary.returns"
   ],
-  "note": "The default, written out. A world that DECLARES `void` and one that omits `horizon` compile to the same bytes, and only one of them has said anything — so the surface needs an author who writes it. It also states `boundary.returns: false` (spec-0092 §10): over the void nothing outside the hall can be stood on, so the build proves no body leaves the region (`DW0960`) and the boundary keeps its region and starts no clock."
+  "note": "The void ground stated by a world that also states `boundary.returns: false` (spec-0092 §10): over the void nothing outside the hall can be stood on, so the build proves no body leaves the region (`DW0960`) and the boundary keeps its region and starts no clock. The primary declares the same `void` horizon and its silent ground (spec-0109: `horizon` is required, in its object form, with the ground's music); what this point adds is the boundary that returns nobody."
 }
