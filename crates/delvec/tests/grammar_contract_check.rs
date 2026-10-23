@@ -2454,3 +2454,49 @@ fn a_step_under_a_ceiling_that_forbids_the_jump_is_not_reached() {
     let g = gate(&check(&b.model, &c, &no_anchors()), "contract-reachability").clone();
     assert!(g.passed(), "{}", g.detail);
 }
+
+// ---------------------------------------------------------------------------
+// The walk starts at the entry's way in, not everywhere in the entry space
+// ---------------------------------------------------------------------------
+
+/// One entry space, `deck`, over two platforms three wide with `gap` columns
+/// of air between them and nothing under the gap; the way in is a walk edge
+/// to `exterior` whose opening stands on the near platform's west end.
+fn split_deck(gap: i32) -> (Build, SpatialContract) {
+    let far = 5 + gap;
+    let mut b = Build::new([(far + 5) as u32, 6, 3]);
+    b.stone([0, 0, 0], [4, 1, 2]);
+    b.stone([far, 0, 0], [far + 4, 1, 2]);
+    let mut c = contract("deck");
+    c.spaces.insert(
+        "deck".to_string(),
+        space("open", vec![region([1, 2, 0], [far + 4, 5, 2])]),
+    );
+    c.edges.push(with_via(
+        edge("deck", "exterior", "walk"),
+        "gate",
+        vec![region([0, 2, 0], [0, 3, 2])],
+    ));
+    (b, c)
+}
+
+/// **A part of the entry space no way in reaches is not reached**: a platform
+/// six columns of air past the one the entry's opening stands on, which no
+/// jump clears. Seeded from every standable cell of the entry space, the walk
+/// started on the far platform too and called it reached by construction.
+#[test]
+fn a_platform_of_the_entry_space_no_way_in_reaches_is_not_reached() {
+    let (b, c) = split_deck(6);
+    let g = gate(&check(&b.model, &c, &no_anchors()), "contract-reachability").clone();
+    assert!(!g.passed(), "{}", g.detail);
+    assert!(g.detail.contains("space deck: 15 cell(s)"), "{}", g.detail);
+    assert!(
+        g.detail.contains("1 way(s) in (6 cell(s))"),
+        "the walk names where it starts: {}",
+        g.detail
+    );
+    // A gap a jump clears joins the two, and the far platform is reached.
+    let (b, c) = split_deck(2);
+    let g = gate(&check(&b.model, &c, &no_anchors()), "contract-reachability").clone();
+    assert!(g.passed(), "{}", g.detail);
+}
