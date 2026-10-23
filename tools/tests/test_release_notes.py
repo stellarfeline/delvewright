@@ -85,11 +85,11 @@ def _commit(repo: pathlib.Path, subject: str) -> None:
 @pytest.fixture
 def repo(tmp_path):
     """A repository with one released `delvec` (tagged), three merged changes since,
-    and the tree stating `delvec` 1.15.0, `delvewright-dsl` 0.57.0, plugin 1.15.0."""
+    and the tree stating `delvec` 1.15.0, `delvewright-dsl` 0.2.0, plugin 1.15.0."""
     root = tmp_path / "engine"
     root.mkdir()
     _git(root, "init", "-q", "-b", "main")
-    _write(root, "versions.toml", '[engine]\nversion = "1.14.0"\ndsl_crate_version = "0.56.0"\n')
+    _write(root, "versions.toml", '[engine]\nversion = "1.14.0"\ndsl_crate_version = "0.1.0"\n')
     _write(
         root,
         ".claude/skills/delvewright/.claude-plugin/plugin.json",
@@ -111,7 +111,7 @@ def repo(tmp_path):
     for i, subject in enumerate(SUBJECTS):
         _write(root, f"src/change-{i}.txt", subject + "\n")
         _commit(root, subject)
-    _write(root, "versions.toml", '[engine]\nversion = "1.15.0"\ndsl_crate_version = "0.57.0"\n')
+    _write(root, "versions.toml", '[engine]\nversion = "1.15.0"\ndsl_crate_version = "0.2.0"\n')
     _write(
         root,
         ".claude/skills/delvewright/.claude-plugin/plugin.json",
@@ -243,7 +243,7 @@ def test_the_notes_are_the_opening_the_entry_and_the_compare_link(repo):
     assert result.returncode == 0, result.stderr
     out = result.stdout
     assert out.startswith("**`delvec` 1.15.0**")
-    assert "speaks `dsl_version` **0.57.0**" in out
+    assert "speaks `dsl_version` **0.2.0**" in out
     assert "### Highlights" in out and "### Added" in out and "### Fixed" in out
     assert "cold\nserver" not in out and "a cold\n  server" in out  # the entry's bytes, as written
     assert out.rstrip().endswith("https://github.com/o/r/compare/delvec--v1.14.0...delvec--v1.15.0")
@@ -283,7 +283,7 @@ def test_an_entry_without_highlights_is_refused(repo):
 
 
 def test_the_first_release_of_a_line_has_no_compare_link_and_no_copy_check(repo):
-    body = "## delvewright-dsl 0.57.0\n\n### Highlights\n\n- A new format.\n\n### Added\n\n- " + SUBJECTS[2] + "\n"
+    body = "## delvewright-dsl 0.2.0\n\n### Highlights\n\n- A new format.\n\n### Added\n\n- " + SUBJECTS[2] + "\n"
     _with_changelog(repo, body)
     result = _notes(repo, "delvewright-dsl")
     assert result.returncode == 0, result.stderr
