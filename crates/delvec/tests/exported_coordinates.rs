@@ -127,10 +127,20 @@ fn every_exported_index_a_harness_document_states_is_the_step_it_names() {
             // A checkpoint an objective's completion sets: the step at its
             // index proves that objective (several checkpoints may share an
             // anchor; one of them names the step).
+            // A `reach` that completes on landing completes during the carry
+            // before it, so its checkpoint is in force after the carrier.
+            let next = steps[at as usize + 1..]
+                .iter()
+                .find(|s| s["action"] != "rest" && s["action"] != "witness-strike");
+            let names = |o: &str| {
+                step["objective"] == o
+                    || next
+                        .is_some_and(|n| n["objective"] == o && n["completed_on_landing"] == true)
+            };
             let any = fired_by
                 .iter()
                 .filter(|(a, _)| a == anchor)
-                .any(|(_, o)| step["objective"] == o.as_str());
+                .any(|(_, o)| names(o));
             judged.push(label.to_string());
             if !any {
                 bad.push(format!(

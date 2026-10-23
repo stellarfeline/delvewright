@@ -285,8 +285,9 @@ fn currency(c: &Campaign, state_id: &str) -> Value {
 /// party** — the bot tier's key for "the checkpoint that governs a death here".
 ///
 /// `-1` for the entry spawn (in force from the start). A plain `set-checkpoint`
-/// is in force once the step that fires it completes; a bonfire once the party
-/// rests at it, which is the `rest` step itself. Both indices are read off the
+/// is in force once the step that fires it completes — during the carry before
+/// it, for a `reach` that completes on landing ([`Plan::completes_at`]); a
+/// bonfire once the party rests at it, which is the `rest` step itself. Both indices are read off the
 /// exported path's layout ([`crate::compiler::plan::Plan::exported_layout`]),
 /// the one place the exported coordinates are decided — never counted here.
 /// `null` for a checkpoint a trigger sets (it moves on the party's own act, at
@@ -299,7 +300,7 @@ fn in_force_after(plan: &Plan, cp: i32, layout: &crate::compiler::plan::Exported
     match plan.checkpoints.iter().find(|k| k.index as i32 == cp) {
         Some(k) if k.trigger.is_some() => Value::Null,
         Some(k) if k.rest => layout.rest(k.index).map_or(Value::Null, |i| json!(i)),
-        Some(k) => json!(layout.step(k.fire_step)),
+        Some(k) => json!(plan.completes_at(layout, k.fire_step)),
         None => Value::Null,
     }
 }

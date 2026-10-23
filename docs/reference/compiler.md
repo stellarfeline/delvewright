@@ -3294,8 +3294,9 @@ and `minecraft:`-prefixed forms both rejected). Emitted sealing commands
     asserts the death is the gate's and the respawn is at the governing seat.
   - every `placement.seats[]` row carries `in_force_after`: the
     exported step after which the seat is where a death returns the party —
-    `-1` for the entry spawn, the exported index of the step that fires it for
-    a plain `set-checkpoint`, the index of its `rest` step for a bonfire (both
+    `-1` for the entry spawn, the exported index of the step during which the
+    beat that fires it completes for a plain `set-checkpoint` (the carrying
+    step, for a `reach` that completes on landing: `Plan::completes_at`), the index of its `rest` step for a bonfire (both
     `Plan::exported_layout`'s; `null` for a bonfire the path never rests at),
     `null` for a checkpoint a trigger sets. The governing seat after boundary `i` is
     the seat with the latest `in_force_after ≤ i`, plus every `null` seat.

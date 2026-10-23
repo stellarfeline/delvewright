@@ -587,6 +587,21 @@ impl<'a> Plan<'a> {
     }
 }
 
+impl Plan<'_> {
+    /// **The exported step during which main-path step `i` completes**: `i`'s
+    /// own index in `layout`, or — for a `reach` the carry before it completes
+    /// on landing ([`completed_on_landing`]) — the carrying step's, since the
+    /// server completes the objective on arrival, during that step. What a beat
+    /// the step's completion fires (a `set-checkpoint`) is in force after.
+    pub fn completes_at(&self, layout: &ExportedLayout, i: usize) -> usize {
+        if completed_on_landing(&self.critical_path, &self.critical_path_transport, i) {
+            layout.step(i - 1)
+        } else {
+            layout.step(i)
+        }
+    }
+}
+
 /// One entry of an exported path ([`Plan::exported_layout`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Exported {
