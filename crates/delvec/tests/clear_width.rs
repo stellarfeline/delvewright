@@ -1,5 +1,5 @@
 //! **A way is whole** (spec-0120) over a built world: the site-plan fixture's
-//! stand-ins, judged by the clear-width check (`DW1057`, `DW1058`) the way a
+//! stand-ins, judged by the clear-width check (`DW1057`) the way a
 //! build judges them — the plan, the assembled world, every runtime write.
 //!
 //! Each test is one half of a red→green pair over one declaration or one
@@ -19,7 +19,7 @@ use delvec::compiler::nav::width::{self, WidthBinding};
 use delvec::compiler::plan::Plan;
 use delvec::compiler::registry::PrefabRegistry;
 use delvewright_dsl::Campaign;
-use delvewright_dsl::siteplan::{BoxWay, Offset, PlaceNarrowing, PlanAxis};
+use delvewright_dsl::siteplan::{BoxWay, Offset, PlanAxis};
 
 fn fixture() -> Campaign {
     let dir = common::repo_root().join("crates/delvec/tests/fixtures/blockout");
@@ -97,10 +97,7 @@ fn the_fixture_is_whole_and_states_its_population() {
         line.contains("6 portal(s), 2 stair run(s), 1 contact(s), 0 way place(s), 0 piece way(s)"),
         "{line}"
     );
-    assert!(
-        line.contains("7 way(s) whole, 0 narrowed undeclared"),
-        "{line}"
-    );
+    assert!(line.contains("7 way(s) whole, 0 narrowed;"), "{line}");
     assert!(
         line.contains("0 stair run(s) undeclared by their piece"),
         "{line}"
@@ -229,8 +226,8 @@ fn a_run_laid_across_part_of_a_door_is_refused_and_one_cell_over_is_whole() {
 }
 
 /// **Criterion 10a.** A way place: one solid cell in a middle column half-way
-/// along its run is refused naming the station; declared, it is green; one
-/// column outside the declared width it is green; the box with `way` removed
+/// along its run is refused naming the station; one column outside the
+/// declared width, on the verge, it is green; the box with `way` removed
 /// is a room and the cell is not judged.
 #[test]
 fn a_way_place_is_judged_along_its_whole_length() {
@@ -252,38 +249,14 @@ fn a_way_place_is_judged_along_its_whole_length() {
     );
     assert!(f.message.contains("1 of 2"), "{}", f.message);
     assert!(
-        f.message.contains("\"along\": 8, \"across\": [1, 1]"),
+        f.message
+            .contains("[14, 64, 12] `minecraft:stone_brick_wall`"),
         "{}",
         f.message
     );
     assert_eq!(b.to_json()["way_places"], 1);
 
-    let mut c = fixture();
-    hall_way(&mut c, 2, 0);
-    {
-        let plan = &mut c.site_plan.as_mut().unwrap().content;
-        let hall = plan
-            .boxes
-            .iter_mut()
-            .find(|b| b.node.0 == "node/hall")
-            .unwrap();
-        hall.narrowed = vec![PlaceNarrowing {
-            along: 8,
-            across: [1, 1],
-            block: "minecraft:stone_brick_wall".to_string(),
-            what: "a lamp post half-way down the hall".to_string(),
-        }];
-    }
-    let (_, _, b, refused) = judged(&c, |m| post(m, 14));
-    assert!(refused.is_empty(), "{:?}", refused);
-    assert!(
-        b.line()
-            .contains("1 narrowed as declared (1 column(s) excused by 1 declaration(s))"),
-        "{}",
-        b.line()
-    );
-
-    // One column outside the declared width: green.
+    // One column outside the declared width, on the verge: green.
     let mut c = fixture();
     hall_way(&mut c, 2, 0);
     let (_, _, _, refused) = judged(&c, |m| post(m, 15));
@@ -336,69 +309,26 @@ fn plan_refusals(c: &Campaign) -> Vec<(String, String)> {
         .collect()
 }
 
-fn seam_mut<'a>(c: &'a mut Campaign, edge: &str) -> &'a mut delvewright_dsl::siteplan::Seam {
-    c.site_plan
-        .as_mut()
-        .unwrap()
-        .content
-        .seams
-        .iter_mut()
-        .find(|s| s.edge.0 == edge)
-        .unwrap()
+/// The fixture's raw documents, with `edit` applied to the site plan's JSON.
+fn raw_with_plan(edit: impl FnOnce(&mut serde_json::Value)) -> delvewright_dsl::RawCampaign {
+    let dir = common::repo_root().join("crates/delvec/tests/fixtures/blockout");
+    let mut loaded = delvec::compiler::load::load_campaign_dir(&dir).expect("readable");
+    let mut plan: serde_json::Value =
+        serde_json::from_str(loaded.raw.site_plan.as_deref().expect("a plan")).unwrap();
+    edit(&mut plan);
+    loaded.raw.site_plan = Some(plan.to_string());
+    loaded.raw
 }
 
-fn seam_entry(
-    side: delvewright_dsl::siteplan::NarrowSide,
-    across: [u32; 2],
-    what: &str,
-) -> delvewright_dsl::siteplan::SeamNarrowing {
-    delvewright_dsl::siteplan::SeamNarrowing {
-        side,
-        across,
-        course: None,
-        block: "minecraft:stone_bricks".to_string(),
-        what: what.to_string(),
-    }
-}
-
-/// **Criterion 1, the refusals.** Each shape §4 names, refused at validation
-/// with its code, and the well-formed entry beside it accepted.
+/// **Criterion 1, the refusals.** A way wider than its place is `DW0826`;
+/// a `narrowed` written on a seam or on a box — the withdrawn surface — is
+/// refused as a key the stage does not have (`DW0100`), before any world is
+/// judged.
 #[test]
 fn the_surface_refuses_each_shape_with_its_code() {
-    use delvewright_dsl::siteplan::NarrowSide;
     let c = fixture();
     assert!(plan_refusals(&c).is_empty(), "{:?}", plan_refusals(&c));
 
-    // Well formed: the landing arch's hall-side approach, its second column.
-    let mut c = fixture();
-    seam_mut(&mut c, "edge/landing-hall").narrowed =
-        vec![seam_entry(NarrowSide::B, [1, 1], "a post")];
-    assert!(plan_refusals(&c).is_empty(), "{:?}", plan_refusals(&c));
-
-    for (entry, says) in [
-        (seam_entry(NarrowSide::B, [1, 1], " "), "`what` is empty"),
-        (
-            seam_entry(NarrowSide::B, [1, 2], "a post"),
-            "of a way 2 column(s) wide",
-        ),
-        (
-            seam_entry(NarrowSide::Plane, [0, 0], "a post"),
-            "`side: plane` names a portal's opening",
-        ),
-        (
-            seam_entry(NarrowSide::Run, [0, 0], "a post"),
-            "`side: run` names a stair's course",
-        ),
-    ] {
-        let mut c = fixture();
-        seam_mut(&mut c, "edge/landing-hall").narrowed = vec![entry];
-        let r = plan_refusals(&c);
-        assert_eq!(r.len(), 1, "{r:?}");
-        assert_eq!(r[0].0, "DW0824", "{r:?}");
-        assert!(r[0].1.contains(says), "{says}: {}", r[0].1);
-    }
-
-    // A box: a way wider than its place, and a narrowing on a room.
     let mut c = fixture();
     hall_way(&mut c, 12, 1);
     let r = plan_refusals(&c);
@@ -406,37 +336,53 @@ fn the_surface_refuses_each_shape_with_its_code() {
     assert_eq!(r[0].0, "DW0826");
     assert!(r[0].1.contains("the way leaves its place"), "{}", r[0].1);
 
-    let mut c = fixture();
-    {
-        let hall = c
-            .site_plan
-            .as_mut()
-            .unwrap()
-            .content
-            .boxes
-            .iter_mut()
-            .find(|b| b.node.0 == "node/hall")
-            .unwrap();
-        hall.narrowed = vec![PlaceNarrowing {
-            along: 0,
-            across: [0, 0],
-            block: "minecraft:stone_bricks".to_string(),
-            what: "a post".to_string(),
-        }];
+    let excuse = serde_json::json!([{
+        "side": "b", "across": [1, 1],
+        "block": "minecraft:stone_bricks", "what": "a post"
+    }]);
+    for key in ["seams", "boxes"] {
+        let raw = raw_with_plan(|plan| {
+            plan["content"][key][0]["narrowed"] = excuse.clone();
+        });
+        let Err(diags) = delvewright_dsl::parse_campaign(&raw) else {
+            panic!("a `narrowed` on {key}[0] must not parse");
+        };
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.code == "DW0100" && d.message.contains("narrowed")),
+            "{key}: {:?}",
+            diags
+                .iter()
+                .map(|d| (d.code.clone(), d.message.clone()))
+                .collect::<Vec<_>>()
+        );
     }
-    let r = plan_refusals(&c);
-    assert_eq!(r.len(), 1, "{r:?}");
-    assert_eq!(r[0].0, "DW0826");
-    assert!(
-        r[0].1.contains("a box without `way` is a room"),
-        "{}",
-        r[0].1
-    );
+}
+
+/// **Criterion 6, no excuse.** Every shape of excuse the surface once
+/// carried is refused before the world is judged — on a seam, on a box (the
+/// test above), on a piece's contract edge (`grammar_contract_check.rs`) —
+/// and with no excuse written, a structure in a way is still `DW1057`.
+#[test]
+fn a_structure_in_a_way_is_refused_with_no_excuse_written() {
+    // The landing arch's hall-side approach, x 13, z 10..11 at grade 64: a
+    // post in its second column.
+    let c = fixture();
+    let (_, _, _, refused) = judged(&c, |m| {
+        m.insert([13, 64, 11], BlockState::new("minecraft:stone_bricks"));
+    });
+    let f = refused
+        .iter()
+        .find(|f| f.message.contains("edge/landing-hall"))
+        .unwrap_or_else(|| panic!("the arch's approach is narrowed: {refused:?}"));
+    assert_eq!(f.code.id(), "DW1057");
+    assert!(f.message.contains("1 of 2"), "{}", f.message);
 }
 
 /// **Criterion 1, the export.** `delvec schema --stage site-plan` exports the
-/// box's `way` and both `narrowed` lists with their fields and closed sets,
-/// and the prefab metadata export the contract edge's `narrowed`.
+/// box's `way` with its fields and no `narrowed` on a box or a seam; the
+/// prefab metadata export carries no `narrowed` on a contract edge.
 #[test]
 fn the_schema_exports_the_surface() {
     let run = |stage: &str| -> serde_json::Value {
@@ -452,26 +398,22 @@ fn the_schema_exports_the_surface() {
         serde_json::from_slice(&out.stdout).expect("a schema")
     };
     let plan = run("site-plan").to_string();
-    for needle in [
-        "\"BoxWay\"",
-        "\"PlaceNarrowing\"",
-        "\"SeamNarrowing\"",
-        "\"NarrowSide\"",
-        "\"along\"",
-        "\"across\"",
-        "\"course\"",
-        "\"clear\"",
-        "\"plane\"",
-        "\"run\"",
-    ] {
+    for needle in ["\"BoxWay\"", "\"clear\"", "\"axis\""] {
         assert!(plan.contains(needle), "site-plan schema lacks {needle}");
     }
+    for gone in ["narrowed", "Narrowing", "NarrowSide"] {
+        assert!(
+            !plan.contains(gone),
+            "site-plan schema still carries {gone}"
+        );
+    }
     let meta = run("prefab-metadata").to_string();
-    assert!(
-        meta.contains("\"EdgeNarrowing\""),
-        "prefab-metadata schema lacks EdgeNarrowing"
-    );
-    assert!(meta.contains("\"cells\""));
+    for gone in ["narrowed", "EdgeNarrowing"] {
+        assert!(
+            !meta.contains(gone),
+            "prefab-metadata schema still carries {gone}"
+        );
+    }
 }
 
 /// **Criterion 2, the zero.** A campaign with no site plan and no contract
@@ -493,7 +435,7 @@ fn a_campaign_with_no_way_writes_its_zeros() {
     let log = String::from_utf8_lossy(&r.stderr);
     assert!(r.status.success(), "{log}");
     assert!(
-        log.contains("clear width (DW1057/DW1058): 0 way(s) of 0 traversal seam(s), 0 box(es) and 0 contract edge(s)"),
+        log.contains("clear width (DW1057): 0 way(s) of 0 traversal seam(s), 0 box(es) and 0 contract edge(s)"),
         "{log}"
     );
     let j: serde_json::Value = serde_json::from_str(

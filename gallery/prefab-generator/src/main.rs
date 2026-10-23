@@ -976,11 +976,12 @@ const FLIGHT: (i32, i32, i32, i32) = (19, 20, 21, 22);
 /// exported metadata lists them in.
 const TREADS: [(i32, i32); 2] = [(1, 22), (2, 21)];
 
-/// **The newel post at the foot of the flight** (spec-0120): one column of the
-/// flight's two, at its foot, standing inside the way's clear width on purpose
-/// and declared on the flight's contract edge (`narrowed`), so the piece way's
-/// declaration is bound and the clear-width check confirms it cell for cell.
-const NEWEL: [i32; 3] = [FLIGHT.1, 1, FLIGHT.3 + 1];
+/// **The newel post at the foot of the flight** (spec-0120): on the hall floor
+/// beside the flight's foot, in the column past the flight's two, outside the
+/// stair edge's `via` — where a newel stands at the end of a real handrail. A
+/// thing meant to stand beside a way stands outside its declared width, so the
+/// piece way is whole with a post beside it.
+const NEWEL: [i32; 3] = [FLIGHT.1 + 1, 1, FLIGHT.3 + 1];
 
 /// What the newel is: a post of dark wood, a full cube a body does not step
 /// onto, so it takes its column of the way.
@@ -2224,12 +2225,7 @@ fn spatial_contract() -> serde_json::Value {
                     "boxes": treads,
                     "role": "tread",
                     "block": TREAD_BLOCK
-                },
-                "narrowed": [{
-                    "cells": [NEWEL],
-                    "block": NEWEL_BLOCK,
-                    "what": "the newel post at the foot of the mezzanine flight"
-                }]
+                }
             }
         ]
     })

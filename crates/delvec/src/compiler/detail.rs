@@ -2386,7 +2386,7 @@ mod tests {
             }),
             bar: None,
             way: None,
-            narrowed: Vec::new(),
+            extra: Default::default(),
         };
         let contract = delvewright_dsl::prefab::SpatialContract {
             entry: "strip".into(),

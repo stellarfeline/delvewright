@@ -1,0 +1,32 @@
+{
+  "code": "DW1057",
+  "patch": [
+    {
+      "doc": "programs/far-hall.json",
+      "op": "replace",
+      "path": "/rules/place/0/body/body/body/body/children/6/children/1/sizes/1",
+      "value": {
+        "blocks": {
+          "expr": "int",
+          "value": 22
+        },
+        "size": "absolute"
+      }
+    },
+    {
+      "doc": "programs/far-hall.json",
+      "op": "replace",
+      "path": "/rules/place/0/body/body/body/body/children/6/children/1/sizes/3",
+      "value": {
+        "blocks": {
+          "expr": "int",
+          "value": 9
+        },
+        "size": "absolute"
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The far hall's program edited to stand the loft stair's newel one column inward, in the third column of the stair's foot approach instead of on the floor beside it. The stair is three wide by its opening; with the post in one of its columns two of three are clear at its foot, which every route proof passes on the free columns. A way's width is not diminished along the way, and nothing excuses a structure standing in it, so the clear-width check refuses the post. It declares no unit: what must not compile is a structure of one body-cell in part of a stair."
+}

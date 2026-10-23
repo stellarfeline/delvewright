@@ -953,18 +953,7 @@ on a sightline is not writable in the first place:
 | `barred` | `rise` (default 0), **required** `bar` (`{region, block}`), optional `via` |
 | `vision` | **required** `via`; no traversal claim, so no rise |
 
-**`narrowed`** (spec-0120 §4.2) is a field of the exported prefab metadata's
-edge, never of a program's contract block: no program version names it, so an
-expanded piece writes none, and a hand-built or admitted piece writes
-`narrowed: [{cells, block, what}]` — the cells in the piece's own frame, the
-block standing there, what it is — on a `walk`, `stair`, `climb`, `drop` or
-`barred` edge, to excuse a structure it means inside that way's clear width. On
-a `vision` edge, with no cell, with an empty `what` or with a block the pinned
-registry does not know it is refused by `contract-well-formed`; on an edge that
-realizes a plan seam — an exterior edge of a piece a site plan places, or the
-flight a stair seam takes as its run — by `DW0888`, because the seam's own
-`narrowed[]` is the one authority there. The compiler's clear-width check
-(`DW1057`, `DW1058`) confirms each entry cell for cell.
+A key the metadata's edge does not model — `narrowed` among them, the excuse surface spec-0120 withdrew — is kept on read and refused by name by `contract-well-formed` (*`<key>` is not a field of a contract edge*): a contract edge is a claim the engine proves, and a claim it cannot read is never carried through as proven. Nothing excuses a structure standing inside a piece way's region; a newel or a rail stands beside it, outside the `via`.
 
 `via`, `bar.region` and `way.region` name regions some rule claims, exactly as
 `spaces` and `no_body` do. `bar.block` and `way.block` are palette roles, and a

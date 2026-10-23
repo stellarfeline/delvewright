@@ -550,10 +550,9 @@ pub(super) fn prove_world(
                     });
                 }
             }
-            // DW1057/DW1058 (spec-0120): every way's declared clear width is
-            // clear along the whole way, in every state its cells can take,
-            // and every narrowing the author declares is the one the bytes
-            // show. It reads the plan, the blocks as shipped and the runtime
+            // DW1057 (spec-0120): every way's declared clear width is clear
+            // along the whole way, in every state its cells can take, and
+            // nothing excuses a column that is not. It reads the plan, the blocks as shipped and the runtime
             // writes, never a route. The line prints before the verdict,
             // zeroes included, and the ledger is written beside it.
             {

@@ -482,14 +482,6 @@
                           },
                           {
                             "op": "call",
-                            "symbol": "lamp-post"
-                          },
-                          {
-                            "op": "call",
-                            "symbol": "room-air"
-                          },
-                          {
-                            "op": "call",
                             "symbol": "wall"
                           }
                         ],
@@ -519,21 +511,7 @@
                           {
                             "blocks": {
                               "expr": "int",
-                              "value": 3
-                            },
-                            "size": "absolute"
-                          },
-                          {
-                            "blocks": {
-                              "expr": "int",
-                              "value": 1
-                            },
-                            "size": "absolute"
-                          },
-                          {
-                            "blocks": {
-                              "expr": "int",
-                              "value": 4
+                              "value": 8
                             },
                             "size": "absolute"
                           },
@@ -790,6 +768,40 @@
                         "symbol": "room-air"
                       },
                       {
+                        "axis": "x",
+                        "children": [
+                          {
+                            "op": "call",
+                            "symbol": "lamp-post"
+                          },
+                          {
+                            "op": "call",
+                            "symbol": "room-air"
+                          }
+                        ],
+                        "op": "split",
+                        "sizes": [
+                          {
+                            "blocks": {
+                              "expr": "int",
+                              "value": 1
+                            },
+                            "size": "absolute"
+                          },
+                          {
+                            "size": "relative",
+                            "weight": {
+                              "expr": "int",
+                              "value": 1
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "room-air"
+                      },
+                      {
                         "op": "call",
                         "symbol": "wall"
                       }
@@ -813,7 +825,21 @@
                       {
                         "blocks": {
                           "expr": "int",
-                          "value": 8
+                          "value": 3
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 1
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 4
                         },
                         "size": "absolute"
                       },

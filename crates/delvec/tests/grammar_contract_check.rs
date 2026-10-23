@@ -98,7 +98,7 @@ fn edge(a: &str, b: &str, class: &str) -> ContractEdge {
         via: None,
         bar: None,
         way: None,
-        narrowed: Vec::new(),
+        extra: Default::default(),
     }
 }
 
@@ -2400,63 +2400,39 @@ fn a_leafy_scenery_crown_owes_no_floor_and_a_reached_one_does() {
     );
 }
 
-/// **A narrowing stands on a way a body passes** (spec-0120 §4.2): the hall's
-/// door may declare the structure it means inside its width, and the same
-/// entry on a sightline, with no cell, with an empty `what` or a block the
-/// registry does not know is refused by `contract-well-formed`.
+/// **No excuse on a piece way** (spec-0120 §4.2, criterion 6): a `narrowed`
+/// written on a contract edge — the withdrawn surface — is a key the edge does
+/// not have, and `contract-well-formed` refuses it by name, as it refuses any
+/// key a contract edge does not model.
 #[test]
-fn a_narrowing_on_a_way_is_well_formed_and_on_a_sightline_or_unsaid_it_is_not() {
-    use delvec::schem::prefab::EdgeNarrowing;
-    let entry = |cells: Vec<[i32; 3]>, block: &str, what: &str| EdgeNarrowing {
-        cells,
-        block: block.to_string(),
-        what: what.to_string(),
-    };
-    let (b, mut c) = hall();
-    c.edges[0].narrowed = vec![entry(vec![[0, 1, 4]], "minecraft:oak_fence", "a rail post")];
+fn a_narrowing_on_a_contract_edge_is_an_unknown_key_and_is_refused() {
+    let (b, c) = hall();
     let report = check(&b.model, &c, &no_anchors());
     let g = gate(&report, "contract-well-formed");
     assert!(g.passed(), "{}", g.detail);
 
-    for (bad, cells, block, what, says) in [
-        (
-            "vision",
-            vec![[0, 1, 4]],
-            "minecraft:oak_fence",
-            "a rail post",
-            "a sightline is no way",
-        ),
-        (
-            "walk",
-            Vec::new(),
-            "minecraft:oak_fence",
-            "a rail post",
-            "names no cell",
-        ),
-        (
-            "walk",
-            vec![[0, 1, 4]],
-            "minecraft:oak_fence",
-            " ",
-            "`what` is empty",
-        ),
-        (
-            "walk",
-            vec![[0, 1, 4]],
-            "minecraft:no_such_block",
-            "a rail post",
-            "names no block",
-        ),
-    ] {
+    for key in ["narrowed", "a_key_nobody_wrote"] {
         let (b, mut c) = hall();
-        c.edges[0].narrowed = vec![entry(cells, block, what)];
-        if bad == "vision" {
-            c.edges[0].class = "vision".to_string();
-            c.edges[0].rise = None;
-        }
+        c.edges[0].extra.insert(
+            key.to_string(),
+            serde_json::json!([{"cells": [[0, 1, 4]], "block": "minecraft:oak_fence", "what": "a rail post"}]),
+        );
         let report = check(&b.model, &c, &no_anchors());
         let g = gate(&report, "contract-well-formed");
-        assert!(!g.passed(), "{bad}: {}", g.detail);
-        assert!(g.detail.contains(says), "{bad}: {}", g.detail);
+        assert!(!g.passed(), "{key}: {}", g.detail);
+        assert!(
+            g.detail
+                .contains(&format!("`{key}` is not a field of a contract edge")),
+            "{key}: {}",
+            g.detail
+        );
     }
+
+    // Read from a document, the key lands where the gate reads it.
+    let edge: delvec::schem::prefab::ContractEdge = serde_json::from_value(serde_json::json!({
+        "a": "hall", "b": "exterior", "class": "walk",
+        "narrowed": [{"cells": [[0, 1, 4]], "block": "minecraft:oak_fence", "what": "a post"}]
+    }))
+    .expect("an edge parses");
+    assert!(edge.extra.contains_key("narrowed"), "{edge:?}");
 }

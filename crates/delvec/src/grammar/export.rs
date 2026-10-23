@@ -1065,9 +1065,7 @@ fn contract_without_faces(expansion: &Expansion) -> Option<SpatialContract> {
                     role: Some(w.role.clone()),
                     block: w.block.to_string(),
                 }),
-                // A program has no `narrowed` surface: it would need a grammar
-                // version of its own, so an expanded piece declares none.
-                narrowed: Vec::new(),
+                extra: Default::default(),
             })
             .collect(),
         faces: Vec::new(),

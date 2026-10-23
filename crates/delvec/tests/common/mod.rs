@@ -258,21 +258,6 @@ pub fn gallery_site_plan_at(dir: &Path) {
     }
     copy_dir_all(&gallery.join("overlays/site-plan"), dir);
     let _ = std::fs::remove_file(dir.join("overlay.json"));
-    // The overlay's `narrowed[]` entries name structures its own programs
-    // build (spec-0120): the far hall's newel, the causeway's lamp post. A
-    // test that masses those places, or details them from programs of its
-    // own, builds neither, and an excuse with nothing to excuse is `DW1058`.
-    // So the point a test is handed declares no narrowing.
-    patch_file(&dir.join("site-plan.json"), |plan| {
-        let content = &mut plan["content"];
-        for key in ["seams", "boxes"] {
-            for entry in content[key].as_array_mut().into_iter().flatten() {
-                if let Some(map) = entry.as_object_mut() {
-                    map.remove("narrowed");
-                }
-            }
-        }
-    });
     let pieces = dir.with_extension("generator-out");
     let _ = std::fs::remove_dir_all(&pieces);
     std::fs::create_dir_all(&pieces).unwrap();

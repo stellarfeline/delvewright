@@ -818,13 +818,6 @@ pub struct PlanBox {
     /// enters. A way wider than its place is `DW0826`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub way: Option<BoxWay>,
-    /// **The narrowings this way place means** (spec-0120 §4.1): each a
-    /// structure the author stands inside the declared clear width on
-    /// purpose, named where it stands, by its block and by what it is, and
-    /// confirmed cell for cell against the bytes (`DW1058`). Refused on a box
-    /// without `way` (`DW0826`).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub narrowed: Vec<PlaceNarrowing>,
 }
 
 /// The roof a roofed place carries above its lid (spec-0098 §3).
@@ -987,13 +980,6 @@ pub struct Seam {
     /// joins, so each designs its side of the interface knowing what meets it.
     /// Never player-facing, so never translated.
     pub form: String,
-    /// **The narrowings this seam's way means** (spec-0120 §4.1): each a
-    /// structure the author stands inside the way's declared clear width on
-    /// purpose — a newel post at a stair's foot — named by its side, its
-    /// columns, its block and what it is, and confirmed cell for cell against
-    /// the bytes (`DW1058`). Nothing else excuses a narrowing (`DW1057`).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub narrowed: Vec<SeamNarrowing>,
 }
 
 /// **A portal's opening**: a named standard, or a size the seam declares.
