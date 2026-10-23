@@ -2793,7 +2793,7 @@ fn standin_binding(stderr: &str) -> (usize, usize) {
 
 /// The place left massed in [`a_stand_in_is_not_judged_and_its_detail_is`]:
 /// a roofed box whose stand-in interior is reachable and dark.
-const DARK_STANDIN: &str = "node/hall";
+const DARK_STANDIN: &str = "node/cell";
 
 const PLACES: [&str; 7] = [
     "node/cell",
@@ -2864,27 +2864,4 @@ fn a_stand_in_is_not_judged_and_its_detail_is() {
     assert_eq!(out.status.code(), Some(2), "{s}");
     assert!(s.contains("DW0210"), "{s}");
     assert_eq!(standin_binding(&s), (0, 0), "{s}");
-}
-
-/// Exploration: the binding per massed place. Temporary.
-#[test]
-fn explore_standin_bindings() {
-    let tmp = tempdir("standin-explore");
-    let src = unlit_blockout(&tmp);
-    for x in PLACES {
-        let lit: Vec<&str> = PLACES.iter().copied().filter(|p| *p != x).collect();
-        let d = detailed_from(&src, &tmp.join(x.replace('/', "-")), &lit, &|_, _| None);
-        let out = delvec(&[
-            "--prefabs",
-            d.prefabs.to_str().unwrap(),
-            "build",
-            d.campaign.to_str().unwrap(),
-            "--out",
-            tmp.join(format!("out-{}", x.replace('/', "-"))).to_str().unwrap(),
-        ]);
-        let s = String::from_utf8_lossy(&out.stderr).to_string();
-        let line = s.lines().find(|l| l.starts_with("DW0210 binding")).unwrap_or("none");
-        let codes: Vec<&str> = s.split_whitespace().filter(|w| w.starts_with("DW")).take(4).collect();
-        println!("EXPLORE {x}: exit {:?} {line} {codes:?}", out.status.code());
-    }
 }
