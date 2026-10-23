@@ -19,8 +19,21 @@ use serde_json::{Value, json};
 /// `secret`, the keeper's beat carrying the shot, and `edit` applied to the
 /// quests document after.
 fn campaign(secret: &[&str], shot: bool, edit: impl FnOnce(&mut Value)) -> Campaign {
+    campaign_with_npcs(secret, shot, |_| {}, edit)
+}
+
+/// [`campaign`], with `npcs` applied to the NPCs document first.
+fn campaign_with_npcs(
+    secret: &[&str],
+    shot: bool,
+    npcs: impl FnOnce(&mut Value),
+    edit: impl FnOnce(&mut Value),
+) -> Campaign {
     let dir = common::repo_root().join("crates/delvec/tests/fixtures/blockout");
     let mut loaded = delvec::compiler::load::load_campaign_dir(&dir).expect("readable");
+    let mut people: Value = serde_json::from_str(&loaded.raw.npcs).unwrap();
+    npcs(&mut people);
+    loaded.raw.npcs = people.to_string();
     let mut graph: Value =
         serde_json::from_str(loaded.raw.layout_graph.as_deref().expect("a graph")).unwrap();
     for e in graph["content"]["edges"].as_array_mut().unwrap() {
@@ -205,4 +218,60 @@ fn a_hidden_way_with_no_shot_is_counted_and_not_judged() {
     let (d, b) = judged(&c, &none());
     assert!(d.is_empty(), "{d:?}");
     assert_eq!(b.no_shot, 1, "{}", b.line());
+}
+
+/// A body's answer to a blow (spec-0119) is a string the player reads, and
+/// the walk does not date it: one naming the secret is refused as read before
+/// the shot. The pair `DW1060` and `answers` share the one inventory, so a
+/// body's line is placed like any other string, with no copy of its own.
+#[test]
+fn a_secret_in_a_bodys_answer_is_told_before_the_shot() {
+    let c = campaign_with_npcs(
+        &["vault"],
+        true,
+        |n| {
+            n["content"]["npcs"][0]["answers"] =
+                json!({ "struck": "The keeper does not flinch; the vault is not yours." });
+        },
+        |q| tell_after(q, "Beyond the door, a vault."),
+    );
+    let (d, b) = judged(&c, &none());
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert_eq!(d[0].code, "DW1060");
+    let m = &d[0].message;
+    assert!(m.contains("npc.keeper.answers.struck"), "{m}");
+    assert!(
+        m.contains("before the shot (undated, read as the start)"),
+        "{m}"
+    );
+    assert_eq!(b.refused, 1, "{}", b.line());
+}
+
+/// An objective that is not announced (spec-0093, `announcement: hidden`)
+/// never puts its hint on a screen, so its hint naming the secret is not read
+/// before the shot; the same hint on the announced objective is. The one
+/// placement reads `announced` as `DW0982` does (spec-0104 §7).
+#[test]
+fn an_unannounced_objectives_hint_is_not_read() {
+    let c = campaign(&["vault"], true, |q| {
+        tell_after(q, "Beyond the door, a vault.");
+        let o = &mut q["content"]["quests"][0]["objectives"][0];
+        o["hint"] = json!("Ask the keeper for the vault.");
+        o["announcement"] = json!("hidden");
+    });
+    let (d, b) = judged(&c, &none());
+    assert!(d.is_empty(), "{d:?}");
+    assert_eq!(b.refused, 0, "{}", b.line());
+
+    let c = campaign(&["vault"], true, |q| {
+        tell_after(q, "Beyond the door, a vault.");
+        q["content"]["quests"][0]["objectives"][0]["hint"] = json!("Ask the keeper for the vault.");
+    });
+    let (d, _) = judged(&c, &none());
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert!(
+        d[0].message.contains("obj.walk-the-whole.ask.hint"),
+        "{}",
+        d[0].message
+    );
 }

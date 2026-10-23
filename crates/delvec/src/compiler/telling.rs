@@ -912,8 +912,11 @@ pub(crate) fn read_inventory(c: &Campaign) -> BTreeMap<String, String> {
 pub(crate) struct Sites {
     /// Effect string key base → the pointer of the effect that carries it.
     pub(crate) fx: BTreeMap<String, String>,
-    /// `(quest local id, objective local id)` → `(quest id, objective id, after)`.
-    objectives: BTreeMap<(String, String), (String, String, Vec<String>)>,
+    /// `(quest local id, objective local id)` → `(quest id, objective id,
+    /// after, announced)`. An objective that is not announced
+    /// (`Objective::announced`, spec-0093) never puts its title or
+    /// hint on a screen.
+    objectives: BTreeMap<(String, String), (String, String, Vec<String>, bool)>,
     /// Quest local id → quest id.
     quests: BTreeMap<String, String>,
     /// Dialogue key → `(npc id, node id, option index, pointer)`.
@@ -930,9 +933,10 @@ impl Sites {
             .map(|(_, path, kb)| (kb, path))
             .collect();
         // Objectives and quests by the local ids their keys carry.
-        let mut objectives: BTreeMap<(String, String), (String, String, Vec<String>)> =
+        let mut objectives: BTreeMap<(String, String), (String, String, Vec<String>, bool)> =
             BTreeMap::new();
         let mut quests: BTreeMap<String, String> = BTreeMap::new();
+        let guidance = &c.quests.content.guidance;
         for q in &c.quests.content.quests {
             let ql = local_id(q.id.as_str()).to_string();
             quests.insert(ql.clone(), q.id.as_str().to_string());
@@ -943,6 +947,7 @@ impl Sites {
                         q.id.as_str().to_string(),
                         o.id().as_str().to_string(),
                         o.after().iter().map(|a| a.as_str().to_string()).collect(),
+                        o.announced(guidance),
                     ),
                 );
             }
@@ -1153,8 +1158,9 @@ enum Readable {
 }
 
 /// **The one rule a key is dated by** on a walk: a dialogue string while its
-/// node or option is on screen, an objective's title and hint once its `after`
-/// is done (its item name once it is done), a quest's goal and cast while it
+/// node or option is on screen, an announced objective's title and hint once
+/// its `after` is done — an objective that is not announced never shows them
+/// (its item name once it is done), a quest's goal and cast while it
 /// runs, an effect's strings once the effect fires. Names, labels, refusals
 /// and the world's own text — and an effect outside the quests — are not
 /// dated.
@@ -1173,12 +1179,16 @@ fn when_readable(key: &str, st: &State, sites: &Sites) -> Readable {
                 .objectives
                 .get(&(segs[1].to_string(), segs[2].to_string()))
             {
-                Some((q, o, after)) => {
+                Some((q, o, after, announced)) => {
                     if segs[3] == "item_name" {
                         st.done.contains(o)
                     } else {
-                        st.active.contains(q) && after.iter().all(|a| st.done.contains(a))
-                            || st.done.contains(o)
+                        // spec-0104 §7: only an announced objective's title and
+                        // hint reach a screen (the announcement, the journal,
+                        // the compass menu).
+                        *announced
+                            && (st.active.contains(q) && after.iter().all(|a| st.done.contains(a))
+                                || st.done.contains(o))
                     }
                 }
                 None => false,
