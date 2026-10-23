@@ -62,7 +62,7 @@ fn quests_doc(interact_anchor: &str) -> String {
         "trigger": {{ "type": "campaign-start" }},
         "objectives": [
           {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
-          {{ "type": "interact", "id": "obj/pull-the-lever", "anchor": "{interact_anchor}",
+          {{ "type": "interact", "id": "obj/pull-the-lever", "anchor": "{interact_anchor}", "prop": {{ "block": "minecraft:torch" }},
              "after": ["obj/talk"], "title": "Pull the Lever",
              "hint": "The lever the Keeper never touches." }},
           {{ "type": "reach-anchor", "id": "obj/exit", "anchor": "anchor/exit",
@@ -490,7 +490,7 @@ fn two_quests_one_anchor(second_gate: &str) -> String {
         "trigger": {{ "type": "campaign-start" }},
         "objectives": [
           {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
-          {{ "type": "interact", "id": "obj/board-first", "anchor": "anchor/exit",
+          {{ "type": "interact", "id": "obj/board-first", "anchor": "anchor/exit", "prop": {{ "block": "minecraft:torch" }},
              "after": ["obj/talk"], "title": "Board", "hint": "The first way out." }}
         ],
         "on_objective_complete": {{
@@ -502,7 +502,7 @@ fn two_quests_one_anchor(second_gate: &str) -> String {
         "id": "quest/the-sail",
         "trigger": {{ "type": "quest-complete", "quest": "quest/open-the-door" }},
         "objectives": [
-          {{ "type": "interact", "id": "obj/board-second", "anchor": "anchor/exit",
+          {{ "type": "interact", "id": "obj/board-second", "anchor": "anchor/exit", "prop": {{ "block": "minecraft:torch" }},
              "title": "Board again", "hint": "The other way out."{second_gate} }}
         ],
         "on_complete": [ {{ "type": "campaign-complete" }} ]
@@ -529,9 +529,9 @@ fn one_quest_two_objectives(second_gate: &str) -> String {
         "trigger": {{ "type": "campaign-start" }},
         "objectives": [
           {{ "type": "talk-to", "id": "obj/talk", "npc": "npc/keeper" }},
-          {{ "type": "interact", "id": "obj/board-first", "anchor": "anchor/exit",
+          {{ "type": "interact", "id": "obj/board-first", "anchor": "anchor/exit", "prop": {{ "block": "minecraft:torch" }},
              "after": ["obj/talk"], "title": "Board", "hint": "The first way out." }},
-          {{ "type": "interact", "id": "obj/board-second", "anchor": "anchor/exit",
+          {{ "type": "interact", "id": "obj/board-second", "anchor": "anchor/exit", "prop": {{ "block": "minecraft:torch" }},
              "after": ["obj/talk"], "title": "Board again",
              "hint": "The other way out."{second_gate} }}
         ],

@@ -492,7 +492,7 @@ fn the_design_record_compares_clocks_not_spellings() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn a_celestial_camera_renders_its_positions_sun_and_says_the_moon_is_not_drawn() {
+fn a_celestial_camera_renders_its_positions_sun_and_its_days_moon() {
     let plan = include_bytes!("fixtures/view/render-plan-ocean.json");
     let sky = CameraSky {
         time: time(r#"{"moon":"just-risen"}"#),
@@ -524,22 +524,46 @@ fn a_celestial_camera_renders_its_positions_sun_and_says_the_moon_is_not_drawn()
         campaign_id: camera::plan_campaign_id(plan).unwrap(),
         cameras: vec![cam.clone()],
     };
-    let e = camera::emit(
-        plan,
-        &sheet,
-        &rows,
-        &camera::EmitOptions {
-            world_paths: [("moonrise".to_string(), "/abs/world".to_string())].into(),
-            ..camera::EmitOptions::default()
-        },
-    )
-    .unwrap();
-    let scene_json: serde_json::Value = serde_json::from_slice(&e.scenes[0].1).unwrap();
+    let e = camera::frames_of(plan, &sheet, &rows, &camera::EmitOptions::default()).unwrap();
+    // The frame is taken under the camera's own sky: the moonrise tick, whose
+    // sun stands where the pinned track puts it.
+    assert_eq!(e[0].sky.daytime_ticks, 12959);
+    let sun = delvec::compiler::view::frames::sun_direction(e[0].sky.daytime_ticks);
     let want = scene::sun_at(12959);
-    assert_eq!(scene_json["sun"]["altitude"], want.altitude, "{scene_json}");
-    assert_eq!(scene_json["sun"]["azimuth"], want.azimuth, "{scene_json}");
+    assert!(
+        (sun[1] - want.altitude.sin()).abs() < 1e-9,
+        "{sun:?} vs {want:?}"
+    );
+    // The ocean plan's world is `day` (day 0), and the camera states no
+    // phase: the frame stands on the world's day.
+    assert_eq!(e[0].sky.day, 0);
     let line = camera::resolve_sky(&cam, &rows).unwrap().line();
-    assert!(line.contains("moon not drawn by the renderer"), "{line}");
+    assert!(line.contains("moon drawn at its day's phase"), "{line}");
+    // A camera stating a phase stands on that phase's day, whatever the
+    // world's: the new moon is day 4.
+    let phased = Camera {
+        sky: Some(CameraSky {
+            time: time(r#"{"moon":"high","phase":"new-moon"}"#),
+            weather: WorldWeather::Clear,
+        }),
+        ..cam.clone()
+    };
+    let sheet = camera::CameraSheet {
+        campaign_id: sheet.campaign_id.clone(),
+        cameras: vec![phased],
+    };
+    let e = camera::frames_of(plan, &sheet, &rows, &camera::EmitOptions::default()).unwrap();
+    assert_eq!(e[0].sky.day, 4);
+    // Under rain the client draws no moon, and the line says so.
+    let wet = Camera {
+        sky: Some(CameraSky {
+            time: time(r#"{"moon":"just-risen"}"#),
+            weather: WorldWeather::Rain,
+        }),
+        ..cam.clone()
+    };
+    let line = camera::resolve_sky(&wet, &rows).unwrap().line();
+    assert!(line.contains("no moon under rain"), "{line}");
     // A camera under a noon sun says nothing of the moon.
     let noon = Camera {
         sky: Some(CameraSky {
@@ -549,7 +573,10 @@ fn a_celestial_camera_renders_its_positions_sun_and_says_the_moon_is_not_drawn()
         ..cam
     };
     let line = camera::resolve_sky(&noon, &rows).unwrap().line();
-    assert!(!line.contains("moon not drawn"), "{line}");
+    assert!(
+        !line.contains("moon drawn") && !line.contains("no moon"),
+        "{line}"
+    );
     // `--sky` spells a celestial time in JSON, split off the last comma.
     let parsed = CameraSky::parse(r#"{"moon":"high","phase":"new-moon"},thunder"#).unwrap();
     assert_eq!(parsed.time, time(r#"{"moon":"high","phase":"new-moon"}"#));

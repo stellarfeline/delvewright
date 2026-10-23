@@ -1,0 +1,12 @@
+{
+  "code": "DW1031",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "remove",
+      "path": "/content/atmospheres/2/attributes/audio~1background_music"
+    }
+  ],
+  "units": [],
+  "why": "One edit: `atmosphere/still-air`, the air the vantage trigger paints over the east bay, loses its `audio/background_music`. A biome that declares none inherits the overworld dimension's own `music.game`, so a camera standing in the bay would hear vanilla's calm overworld music, a track nobody chose. `DW1031` refuses it at validation and names both spellings: `{}` for silence, or a `default` track. It declares no unit: the attribute map is bound by every atmosphere of the primary."
+}

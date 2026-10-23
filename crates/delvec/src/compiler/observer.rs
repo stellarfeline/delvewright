@@ -86,6 +86,13 @@ pub const ALLOWED: &[AllowedSite] = &[
         matches: |_, line| line.contains("effect give @a[") || line.contains("effect clear @a["),
     },
     AllowedSite {
+        site: "sound cut",
+        reason: "a boxed `stopsound` (spec-0109's `stop-sound` under an `in` box) only silences \
+                 what a body hears, and a player watching a cutscene is exactly who hears the \
+                 scene; a cut is not harm",
+        matches: |_, line| line.contains("stopsound @a["),
+    },
+    AllowedSite {
         site: "ladder staged blow",
         reason: "`wave_strike_*` / `wave_chip_*` are the bot ladder's staging, run by rcon and \
                  by no campaign machinery; `by @p` only names the attacker a kill is credited to",

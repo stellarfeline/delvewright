@@ -1,0 +1,13 @@
+{
+  "code": "DW1031",
+  "patch": [
+    {
+      "doc": "world.json",
+      "op": "replace",
+      "path": "/content/horizon",
+      "value": "void"
+    }
+  ],
+  "units": [],
+  "why": "One edit: the primary's horizon written in the retired string form, `\"void\"`. The ground is the biome every cell no atmosphere paints stands in, and the shorthand has no room for its music, so the ground would inherit vanilla's calm overworld music. `DW1031` refuses the string form by name, and the remedy is the object form with `attributes.audio/background_music`. It declares no unit: `HorizonSpec.attributes` is bound by the primary."
+}

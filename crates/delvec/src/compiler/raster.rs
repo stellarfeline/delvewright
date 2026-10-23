@@ -1,6 +1,6 @@
 //! The 2D drawing surface the visual-authoring-loop renderers share
 //! (spec-0015): an RGBA byte canvas plus the handful of primitives both the
-//! perspective viewport ([`crate::compiler::snapshot`]) and the orthographic blocking
+//! review frames' labels ([`crate::compiler::view::frameset`]) and the orthographic blocking
 //! chart ([`crate::compiler::blocking`]) need — alpha blending, rectangles, and bitmap
 //! text stamped from the project's own `delve:art` glyph table.
 //!

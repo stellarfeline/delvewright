@@ -17,14 +17,22 @@ pub struct CameraEye {
     pub kind: &'static str,
     /// The integer block the eye sits in (`floor` of the eye position).
     pub cell: [i32; 3],
+    /// The key of the world the shot's frame stands in (`at-load`,
+    /// `after-<step>`, spec-0112 §7.4): the world the eye is proven clear in.
+    pub world: String,
 }
 
 /// Assert every derived camera's eye cell is clear (unoccupied) in `world` — the
-/// final assembled model the shots will be rendered from. Returns
-/// [`DW_CAMERA_EYE_OCCLUDED`] (`DW0724`) naming the first offending shot on
-/// violation. The structural guard behind the visual tier: it is impossible to
-/// ship a render plan holding a camera that looks out from inside geometry.
-pub fn verify_camera_eyes(world: &World, cameras: &[CameraEye]) -> Result<(), Failure> {
+/// world of the configuration the shot's frame stands in (spec-0112 §7.4).
+/// Returns [`DW_CAMERA_EYE_OCCLUDED`] (`DW0724`) naming the first offending
+/// shot, its cell, its world's key and the block `block_at` names there. The
+/// structural guard behind the visual tier: it is impossible to ship a render
+/// plan holding a camera that looks out from inside geometry.
+pub fn verify_camera_eyes(
+    world: &World,
+    cameras: &[CameraEye],
+    block_at: &dyn Fn([i32; 3]) -> Option<String>,
+) -> Result<(), Failure> {
     for cam in cameras {
         if world.is_clear(cam.cell) {
             continue;
@@ -33,7 +41,9 @@ pub fn verify_camera_eyes(world: &World, cameras: &[CameraEye]) -> Result<(), Fa
             shot_id,
             kind,
             cell,
+            world: key,
         } = cam;
+        let block = block_at(*cell).unwrap_or_else(|| "a block or water".to_string());
         // A `pov` eye is clear by construction (1.62 over a DW0314-proven
         // standable waypoint), so the two verdicts point at different repairs and
         // must not be blurred into one sentence.
@@ -49,9 +59,9 @@ pub fn verify_camera_eyes(world: &World, cameras: &[CameraEye]) -> Result<(), Fa
         return Err(Failure {
             code: DW_CAMERA_EYE_OCCLUDED,
             message: format!(
-                "{kind} shot `{shot_id}`: the camera eye cell {cell:?} is occupied (a solid block \
-                 or water) in the assembled world — the frame would render the inside of a block, \
-                 not the scene. {repair}"
+                "{kind} shot `{shot_id}`: the camera eye cell {cell:?} holds `{block}` in world \
+                 `{key}`, the world the frame stands in — the frame would render the inside of a \
+                 block, not the scene. {repair}"
             ),
         });
     }
@@ -68,7 +78,12 @@ mod tests {
             shot_id: shot_id.to_string(),
             kind,
             cell,
+            world: "at-load".to_string(),
         }
+    }
+
+    fn none(_: [i32; 3]) -> Option<String> {
+        None
     }
 
     #[test]
@@ -79,13 +94,14 @@ mod tests {
         let world = floored(5, 5, 65, &[]);
         assert!(world.is_clear([2, 65, 2]), "standing eye cell is clear");
         // Clear eye → ok.
-        verify_camera_eyes(&world, &[eye("pov/leg0/wp0", "pov", [2, 65, 2])])
+        verify_camera_eyes(&world, &[eye("pov/leg0/wp0", "pov", [2, 65, 2])], &none)
             .expect("clear eye ok");
         // Eye buried in the solid floor → DW0724.
-        let err = verify_camera_eyes(&world, &[eye("pov/leg0/wp1", "pov", [2, 64, 2])])
+        let err = verify_camera_eyes(&world, &[eye("pov/leg0/wp1", "pov", [2, 64, 2])], &none)
             .expect_err("occupied eye must fail");
         assert_eq!(err.code, DW_CAMERA_EYE_OCCLUDED);
         assert!(err.message.contains("pov/leg0/wp1"), "names the shot");
+        assert!(err.message.contains("world `at-load`"), "names the world");
     }
 
     /// The widening this code exists for: the identical fact about a camera that
@@ -96,9 +112,9 @@ mod tests {
     #[test]
     fn a_seam_camera_inside_a_ceiling_block_is_dw0724_too() {
         let world = floored(5, 5, 65, &[[2, 67, 2]]);
-        verify_camera_eyes(&world, &[eye("seam/keep/0", "seam", [2, 66, 2])])
+        verify_camera_eyes(&world, &[eye("seam/keep/0", "seam", [2, 66, 2])], &none)
             .expect("a clear seam eye passes");
-        let err = verify_camera_eyes(&world, &[eye("seam/keep/0", "seam", [2, 67, 2])])
+        let err = verify_camera_eyes(&world, &[eye("seam/keep/0", "seam", [2, 67, 2])], &none)
             .expect_err("a seam eye inside the hung block must fail");
         assert_eq!(err.code, DW_CAMERA_EYE_OCCLUDED);
         assert!(

@@ -68,7 +68,7 @@ this needs are subcommands of the one binary Init I3 installed.
 3. **Author a grammar program.** Read the **idiom index** first
    (`$DELVEWRIGHT_ENGINE/docs/reference/grammar.md` §2c): ten techniques with a runnable program each
    — repetition, `otherwise`, taper/arch/gable (one recursion), air-in-a-mix
-   erosion, graded erosion, surface detail, symmetry without reflection, `skip`,
+   erosion, graded erosion, surface detail, symmetry by reflection, `skip`,
    light, and arguments (`bind` — one rule called with different content). It is
    the part of the language no type signature shows, and a scene that looks
    impossible is usually one of the ten. **Never copy a rule to change its paint,
@@ -453,8 +453,7 @@ profile step that varies independently of the box, a vault bending on two axes a
 once, and terrain. **Neither a stepped arch nor a symmetric shape is on this
 list** — the first is idiom 3 (one recursion whose step is arithmetic on the
 remaining dimension, and the same program inverted is the opening), the second is
-idiom 7 (a rule body written mirrored, since `reorient` permutes and never
-mirrors). Check §2c before escalating. **Size is not on this list** either: a
+idiom 7 (one rule and its reflection, through `reorient`'s `mirror`). Check §2c before escalating. **Size is not on this list** either: a
 region of any extent expands, and one past the 48-per-axis structure-template cap
 is written as a tile set plus a manifest at `<id>.json`. Never shrink a scene to
 fit a file format. **Tiling changes nothing downstream of the export**: the
@@ -467,7 +466,7 @@ A piece that comes from **outside** — a community schematic — instead enters
 `delvec schem convert` and then the same admission chain with `resolve-jigsaw`
 before `socket`. Never place an un-audited piece: `audit` is the licence and
 code-injection gate, and the `DW0733` check that the blocks in it exist at all.
-Flags in `$DELVEWRIGHT_ENGINE/docs/reference/tools.md` §2a and §3.
+Flags in `$DELVEWRIGHT_ENGINE/docs/reference/tools.md` §2 and §3.
 
 ## The form route: a body the grammar cannot state
 

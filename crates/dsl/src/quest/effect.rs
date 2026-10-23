@@ -290,8 +290,7 @@ impl QuestEffect {
 
     /// The declared `carrier` if this is a `give-item` that states one (v0.6,
     /// spec-0018). `None` for any other effect **and** for a `give-item` that
-    /// leaves it absent — absent reads as [`Carrier::All`], and the distinction
-    /// matters only for the pre-0.6 reserved-field gate.
+    /// leaves it absent — absent reads as [`Carrier::All`].
     pub fn give_carrier(&self) -> Option<Carrier> {
         match &self.verb {
             Verb::GiveItem { carrier, .. } => *carrier,
@@ -350,6 +349,8 @@ impl QuestEffect {
             | Verb::SetTime { .. }
             | Verb::SetWeather { .. }
             | Verb::PlaySound { .. }
+            // spec-0109's `stop-sound`.
+            | Verb::StopSound { .. }
             | Verb::DamagePlayers { .. }
             | Verb::SetCheckpoint { .. }
             | Verb::Bonfire { .. }
@@ -900,11 +901,23 @@ impl QuestEffect {
                 out.push((format!("{base}look_at/anchor"), &t.anchor, None));
             }
             for (field, subject) in [("subject", &shot.subject), ("subject_b", &shot.subject_b)] {
-                if let Some(CameraSubject::Anchor(s)) = subject {
-                    out.push((format!("{base}{field}/anchor"), &s.anchor, None));
-                }
+                out.extend(subject_refs(&format!("{base}{field}/"), subject.as_ref()));
             }
             out
+        }
+        /// `(suffix, anchor, kind)` for a shot subject's anchor, under `base`: a
+        /// mark's anchor, or a region's centre (spec-0110).
+        fn subject_refs<'a>(
+            base: &str,
+            subject: Option<&'a CameraSubject>,
+        ) -> Vec<(String, &'a AnchorId, Option<StationKind>)> {
+            match subject {
+                Some(CameraSubject::Anchor(s)) => vec![(format!("{base}anchor"), &s.anchor, None)],
+                Some(CameraSubject::Region(s)) => {
+                    vec![(format!("{base}region/anchor"), &s.region.anchor, None)]
+                }
+                _ => Vec::new(),
+            }
         }
         match &self.verb {
             // The two gate verbs address a REGION that seals and clears; the
@@ -1004,6 +1017,7 @@ impl QuestEffect {
                 shots,
                 path,
                 look_at,
+                subject,
                 ..
             } => {
                 let mut out: Vec<(String, &AnchorId, Option<StationKind>)> = shots
@@ -1019,6 +1033,7 @@ impl QuestEffect {
                 if let Some(t) = look_at {
                     out.push(("look_at/anchor".to_string(), &t.anchor, None));
                 }
+                out.extend(subject_refs("subject/", subject.as_ref()));
                 out
             }
             _ => Vec::new(),
@@ -1141,6 +1156,7 @@ impl QuestEffect {
                 path,
                 seconds,
                 look_at,
+                subject,
                 ..
             } => {
                 if !shots.is_empty() {
@@ -1152,7 +1168,7 @@ impl QuestEffect {
                         seconds: Some(*secs),
                         look_at: look_at.clone(),
                         shot_style: None,
-                        subject: None,
+                        subject: subject.clone(),
                         subject_b: None,
                         dist: None,
                         degrees: None,
@@ -1198,6 +1214,7 @@ impl QuestEffect {
     pub fn sound_refs(&self) -> Vec<(&'static str, &str)> {
         match &self.verb {
             Verb::PlaySound { sound, .. } => vec![("sound", sound.as_str())],
+            Verb::StopSound { sound: Some(s), .. } => vec![("sound", s.as_str())],
             Verb::Narrate(Narration { sound: Some(s), .. }) => vec![("sound", s.as_str())],
             _ => Vec::new(),
         }

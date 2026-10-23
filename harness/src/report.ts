@@ -143,6 +143,7 @@ export class RunReport {
   private readonly pulseStations: import("./pulse.ts").StationRecord[] = [];
   /** The arrival notice's verdict (spec-0105 §5.3), when the build wrote a ledger. */
   private containerNotice: import("./containers.ts").NoticeVerdict | null = null;
+  private readonly shotSubjects: import("./shot-subjects.ts").BodyRecord[] = [];
   private readonly encounters: EncounterReport[] = [];
   private readonly rests: PerformedRest[] = [];
   private readonly namedEntityDeaths: ClassifiedDeath[] = [];
@@ -246,6 +247,11 @@ export class RunReport {
   /** A declared fact the live bodies did not carry. */
   recordMusterFinding(finding: string): void {
     this.muster.push(finding);
+  }
+
+  /** Every framed body watched through its cutscene (spec-0110 §7). */
+  recordShotSubjects(rows: readonly import("./shot-subjects.ts").BodyRecord[]): void {
+    this.shotSubjects.push(...rows);
   }
 
   /** What every pulse station heard (spec-0102 §5.3). */
@@ -812,6 +818,21 @@ export class RunReport {
                 ? { name: this.containerNotice.sound.name, pos: [...this.containerNotice.sound.pos] }
                 : null,
             },
+      // Every body a cutscene shot framed (spec-0110 §7): whether it was
+      // spawned to the bot by the shot's first tick and stayed through the
+      // shot, the shot's ticks no reading decided, and whether the body's
+      // chunk had been sent by the tick before the shot (`null`: undecided).
+      // Empty for a build whose shots frame no body.
+      shot_subjects: this.shotSubjects.map((r) => ({
+        cutscene: r.cutscene,
+        shot: r.shot,
+        subject: r.subject,
+        entity: r.entity,
+        spawned_before: r.spawnedBefore,
+        spawned_through: r.spawnedThrough,
+        unplaced_ticks: r.unplacedTicks,
+        chunk_sent: r.chunkSent,
+      })),
     };
   }
 }

@@ -110,7 +110,7 @@ flowchart TD
     HB --> WS
     SH --> IN
     HB --> IN
-    IN[["Init — one binary, delvec,<br/>client jar, Chunky, reference-image path,<br/>content symlink"]]
+    IN[["Init — one binary, delvec,<br/>client jar, reference-image path,<br/>content symlink"]]
     IN --> WS
     WS[["1 · workspace in the CONTENT repo<br/>campaigns/campaigns/id/<br/>documents + GENERATION.md + DESIGN.md"]]
 
@@ -235,7 +235,7 @@ something it does not check is how a green run ships a broken delve.
 | 11 | branch chronicle | every branch's storyline is coherent **in sequence**, and every branch-divergent dialogue line is licensed by a chronicle line, cited by number in `GENERATION.md` | anything on a branch with no rows — an empty table is a **fail**, not a pass |
 | 10 | machine ladder | PackTest green; the bot completes the critical path; it survives `die-retry`; every declared branch was walked | that a wave IS what the document says — read `encounters[].declared_facts` and `muster_findings` in the run report. `declared_facts: 0` over a campaign with waves means the muster asked nothing of any body, which is not a pass; an empty `muster_findings` beside a non-zero count is. The ladder asserts nothing about whether a fight can be won — that is the owner's hour |
 | 12 | visual review | the frame matches the shot's `expect` — **read the POV sequence in route order first**, orbit renders second | `DW0308` proves a camera path is air, not that the shot points at the subject — an inside-out cinematic is fully DW-green |
-| 13 | hand-over — staging gate and storybook marker | the staging gate has run on the build being handed over, because `owner-play.yaml` is the only file publishing 25565 and it refuses a build with no admission token minted for that exact tree; hand-over follows steps 10–12 green, so the first play is the finished first version; and the storybook's engine-version marker tells the host which engine they need, and the player which Minecraft to install | nothing mechanical. A red gate is the list of defect classes the playtester is unprotected from, drawn from every finding ever reported on any campaign; it refuses only where an object of the class is PRESENT and nothing binds to it. A campaign that contains none of a class's objects reads `INAPPLICABLE` — counted, named in the token, announced at boot, and not a refusal: absence of an optional surface is a design choice, and a required one cannot be absent from a build that compiled. The marker is verified by `tools/creator/check-storybook-version.py`, which is the thing that stops a stale one |
+| 13 | hand-over — staging gate and storybook marker | the staging gate has run on the build being handed over, because the two sanctioned 25565 binders — `tools/creator/playtest-server.sh up`, which runs the gate itself, and `validation/owner-play.yaml`, which runs `validation/staging-admission.sh` before either port-publishing service starts — both refuse a build with no admission token minted for that exact tree; hand-over follows steps 10–12 green, so the first play is the finished first version; and the storybook's engine-version marker tells the host which engine they need, and the player which Minecraft to install | nothing mechanical. A red gate is the list of defect classes the playtester is unprotected from, drawn from every finding ever reported on any campaign; it refuses only where an object of the class is PRESENT and nothing binds to it. A campaign that contains none of a class's objects reads `INAPPLICABLE` — counted, named in the token, announced at boot, and not a refusal: absence of an optional surface is a design choice, and a required one cannot be absent from a build that compiled. The marker is verified by `tools/creator/check-storybook-version.py`, which is the thing that stops a stale one |
 
 Step 11 exists because of the **decompilation principle** (spec-0025): the
 compiler renders the compiled DSL *back into natural language*
@@ -383,13 +383,7 @@ Not a proposal — an inventory.
    sequence a whole subject needs is a workflow step with its anchor and its
    per-view frame written down — but it needs a human iterating on the prompt,
    and it composes nothing.
-3. **Chunky is a separate process, not wired into CI** — storybook art is a
-   two-pass manual flow (`delvec snapshot` to judge layout, Chunky for the
-   shipped frame). The page installs it at step 12 with
-   `validation/chunky-install.sh`, which builds the pinned core from Chunky's
-   source at the pinned revision and installs it only when its content is the
-   pin's, and every render goes through `validation/chunky.sh`, which refuses a
-   Chunky home that does not hold the pin (`docs/reference/tools.md` §4a).
+3. **Storybook art is a two-pass flow the agent drives** — `delvec cameras --preview` to judge layout, then `delvec cameras` and `delvec panorama` for the shipped frames, drawn by `delvec` itself (`docs/reference/tools.md` §4a); choosing the frame is still a person's judgement, and nothing composes the page.
 4. **The ladder's project id is chosen by hand** (`dw-<campaign>-r<round>`).
    Required everywhere, defaulted nowhere — deliberately, since a shared default
    is a collision between ladders.

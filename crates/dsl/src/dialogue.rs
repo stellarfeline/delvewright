@@ -149,7 +149,7 @@ pub struct DialogueOption {
     /// Numeric gate terms (DSL v0.10, spec-0031): every listed comparison must
     /// hold for this gate to be open. The third field of the one gate, carried by
     /// every gate consumer — never by the verb that first wanted it. Default
-    /// empty, so a pre-0.10 campaign is byte-identical.
+    /// empty: no numeric term.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requires_state: Vec<StateCompare>,
     /// Effects fired when this option is chosen.

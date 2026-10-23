@@ -2,8 +2,7 @@
   "campaign_id": "gallery",
   "content": {
     "guidance": {
-      "announcements": "hidden",
-      "markers": "hidden"
+      "announcements": "hidden"
     },
     "quests": [
       {
@@ -39,7 +38,6 @@
               "verb": "arrives"
             },
             "id": "obj/far-corner",
-            "marker": "shown",
             "radius": 2,
             "type": "reach-anchor"
           },
@@ -54,7 +52,9 @@
               "verb": "opens"
             },
             "id": "obj/the-corner-stone",
-            "marker": "shown",
+            "prop": {
+              "block": "minecraft:stone_button[face=floor,facing=north]"
+            },
             "type": "interact"
           }
         ],

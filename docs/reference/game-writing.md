@@ -28,7 +28,7 @@ any game, however oblique its story.
   behind you), never by a compass point: Minecraft shows no compass, so
   `north` leaves the player guessing. `Hold the Warden's Key to the iron-bound
   door past the broken bell.` not `The keyhole is old and large.`, and not
-  `the door at the west end of the walk`. The landmark rule is **authored**; the compass half is refused in every player-facing English line by `DW1049` ([dsl/compass.md](dsl/compass.md)).
+  `the door at the west end of the walk`. The landmark rule is **authored**; the compass half is refused in every player-facing English line by `DW1049` ([dsl/compass.md](dsl/compass.md)). **Machine half:** a title opening on an act its completion does not perform is refused, and a hint naming only another act is a warning the creator adjudicates — both `DW1045` (F7); a key the act needs is named by a key span, `[[key|use]]`, never typed out (spec-0104).
   **Cited:** Microsoft Writing Style Guide, *Top 10 tips* ("start each statement
   with a verb", "get to the point fast"); Game Accessibility Guidelines, *Use
   simple clear language* (basic level; about 14% of US/UK adults read below an
@@ -216,8 +216,8 @@ names that reach dialogue, is `DW0982`: the declared names (the inventory's
 `name` and item-name rows, the fact check's set) placed in the compiler's play
 order against what has told them (N1, N3). A question without an answer is
 `DW0981`: an option that asks and opens no line. A name tag on a crowd is
-`DW0983` (N6, [`compiler::telling` § DW0983](delvec/compiler/telling.md#dw0983--a-name-tag-marks-a-person-compilertelling-error-exit-1)). An objective title headed by an act its completion does not perform is `DW1045` (F7, [`compiler::telling` § DW1045](delvec/compiler/telling.md#dw1045--an-objective-says-the-act-that-completes-it-compilertelling-error-exit-1)). All four refuse at `delvec validate` ([`compiler::telling` § DW0981/DW0982](delvec/compiler/telling.md#dw0981dw0982--what-the-dialogue-tells-the-player-compilertelling-error-exit-1)).
-The rest is not built.
+`DW0983` (N6, [`compiler::telling` § DW0983](delvec/compiler/telling.md#dw0983--a-name-tag-marks-a-person-compilertelling-error-exit-1)). An objective title headed by an act its completion does not perform is `DW1045` (F7, [`compiler::telling` § DW1045](delvec/compiler/telling.md#dw1045--an-objective-says-the-act-that-completes-it-compilertelling-error-on-a-title-exit-1-a-warning-on-a-hint-exit-0)). All four refuse at `delvec validate` ([`compiler::telling` § DW0981/DW0982](delvec/compiler/telling.md#dw0981dw0982--what-the-dialogue-tells-the-player-compilertelling-error-exit-1)).
+A hint that names an act other than its objective's is the `DW1045` warning, for the creator to adjudicate; an act the party can see from where it stands, or that is announced with a hint, is `DW0863` (spec-0104, [`compiler::promise`](delvec/compiler/promise.md)); and `DW0982` reads an announced objective's title and hint as well as dialogue. The rest is not built.
 
 | Check | What it reads | Estimated precision on Vesperhold |
 |---|---|---|
@@ -230,8 +230,9 @@ The rest is not built.
 | Calque markers (zh) | Marker list | 9 of 11 (82%); recall 9 of 23 |
 | Item tooltip without function | Shop/item tooltip with no mechanical word | 8 of 9 (89%); recall 8 of 16 |
 | Echo closer / symmetry (en) | Last sentence repeats a content word, tricolon fragment, twin short sentences | 9 of 14 (64%); recall 9 of 23 |
+| Act found (`DW0863`, built) | Every act on every walked path: announced with a hint and armed on the way to it, or one clear line of nine to it within 64 blocks from where the party stands; every place walked through before a later act: an announced objective armed on the way, or the next act in sight | Binding stated by every build |
 | Functional text without action or place | Functional keys lacking an imperative, a direction or a named object | 8 of 26 (31%) — not usable as a refusal |
-| Hint-for-statement (en) | No mechanical signal found | 6 of 16 (38%) — human review only |
+| Hint-for-statement (en) | No mechanical signal found | 6 of 16 (38%) — human review only; stays human beside the rows above |
 
 Precision is against one rater's labels and is an estimate; §6 of this page is
 the cross-check.
@@ -307,7 +308,12 @@ How a quest plan is shaped as a web rather than a chain, how an ending reads the
   object exists only so that reading it opens something. **Authored.** A glowing
   entity, floating label or beam over a target is the defect; so is a sign
   pointing at a destination, or a note, plaque or lectern whose only job is to
-  be read so that a gate opens.
+  be read so that a gate opens. **Machine half** (spec-0104 §4): every act on
+  a walked path is in sight of where the party stands — a clear line within 64
+  blocks — or its objective carries a `title` and a `hint` and is armed while
+  the party walks to it, and no leg of the walk is left with neither
+  (`DW0863`); a hint
+  names only what the party has been told (`DW0982`).
 - **L2 — Mystery comes from the telling and the events, never from obscured
   wording; whatever the text says of the world is true.** A line the player must
   decode to learn what they need is S1's defect, in every register. Dread comes
@@ -343,7 +349,7 @@ How a quest plan is shaped as a web rather than a chain, how an ending reads the
 ## Sources
 
 - Aarseth, E. From Hunt the Wumpus to EverQuest: Introduction to Quest Theory. ICEC 2005, LNCS 3711; as read in Karlsen, F. Quests in Context: A Comparative Analysis of Discworld and World of Warcraft. Game Studies 8(1), 2008.
-- bg3.wiki. *Container* (community wiki, CC BY-NC-SA; ideas and counts only, as in `docs/ACKNOWLEDGEMENTS.md`).
+- bg3.wiki. *Container* (community wiki, CC BY-NC-SA 4.0 or CC BY-SA 4.0 per its footer; ideas and counts only).
 - Callison-Burch, Fordyce, Koehn, Monz, Schroeder. (Meta-) Evaluation of Machine Translation. WMT 2007.
 - Chung, B. *Level Design: Readability*. blendogames.com.
 - Doran, J. & Parberry, I. A Prototype Quest Generator Based on a Structural Analysis of Quests from Four MMORPGs. PCGames 2011. ianparberry.com/pubs/pcg2011.pdf.

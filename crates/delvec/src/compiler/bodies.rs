@@ -93,6 +93,16 @@ pub fn answer_box_dims(entity: &str) -> (f64, f64) {
     (width as f64 / 100.0, height as f64 / 100.0)
 }
 
+/// **The interaction box a stage-2 NPC wears**: [`answer_box_dims`] of the
+/// body that ships ([`crate::compiler::nav::npc_body_entity`]). The one entry
+/// point for the size of an NPC's hitbox: the summon that stands it
+/// (`emit::npc`) and every proof that reads it (`DW1025`'s reach,
+/// [`crate::compiler::approach::within_interaction_reach`]) ask here, so the
+/// box judged is the box that ships.
+pub fn npc_hitbox_dims(n: &delvewright_dsl::Npc) -> (f64, f64) {
+    answer_box_dims(&crate::compiler::nav::npc_body_entity(n))
+}
+
 /// A box dimension as the summon NBT spells it: one decimal where one is
 /// enough (`1.0`, `2.0` — every box the constant ever wrote), two otherwise.
 pub fn dim_snbt(v: f64) -> String {
@@ -208,6 +218,9 @@ impl BodyAnswer<'_> {
             requires_state: Vec::new(),
             once: false,
             audience: delvewright_dsl::TriggerAudience::Presser,
+            // An answer is a reply to a blow, not an act the party is guided
+            // to (spec-0104 §7): nothing lights the body for it.
+            highlight: None,
             effects: vec![
                 Verb::Narrate(delvewright_dsl::Narration {
                     text: self.text.clone(),

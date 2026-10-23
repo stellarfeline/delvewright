@@ -136,7 +136,7 @@ def test_model_is_mandatory():
 
 def test_bad_model_rejected():
     with pytest.raises(ValueError, match="wide|slim"):
-        CastEntry.from_dict({"texture_id": "x", "model": "chunky", "palette": {}})
+        CastEntry.from_dict({"texture_id": "x", "model": "stout", "palette": {}})
 
 
 def test_slim_is_drawn_to_the_slim_arms():

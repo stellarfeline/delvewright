@@ -81,8 +81,18 @@ pub fn check_untranslated_literals(
 /// separately, before zipping). The compiler writes no authored string into any of
 /// these, so they are outside the `DW0185` scan; everything else must be readable
 /// text, and a new output that is neither fails the scan rather than skipping it.
+///
+/// One class of compiler-written binary joins them: the **review worlds** under
+/// `validation/worlds/` (spec-0112 §5), Anvil saves the review frames are drawn
+/// from. Every string they hold is a copy — a template's block-entity text, or
+/// a summon compound the datapack emits and this scan reads where it is
+/// emitted — and no world ships in a delve (`validation/Dockerfile.delve`
+/// copies nothing under `validation/`).
 pub(super) fn is_verbatim_binary_output(path: &str) -> bool {
-    path.ends_with(".nbt") || path.ends_with(".png") || path == "resourcepack.zip"
+    path.ends_with(".nbt")
+        || path.ends_with(".png")
+        || path == "resourcepack.zip"
+        || path.starts_with("validation/worlds/")
 }
 
 /// Escape a player-facing string as a double-quoted SNBT string. On 1.21.11
@@ -92,19 +102,6 @@ pub(super) fn is_verbatim_binary_output(path: &str) -> bool {
 pub(super) fn snbt_string(s: &str) -> String {
     let esc = s.replace('\\', "\\\\").replace('"', "\\\"");
     format!("\"{esc}\"")
-}
-
-/// The `CustomName:…,CustomNameVisible:1b,` NBT fragment (trailing comma) that
-/// labels a floating objective marker with its objective `title`. When the
-/// objective has no title, the marker carries NO name — an empty fragment — so it
-/// still glows and is findable but never surfaces the raw objective id (e.g.
-/// `obj/door`) as player-visible floating text — presentation hygiene. A titled
-/// marker carries its title verbatim.
-pub(super) fn marker_name_fields(title: Option<&str>) -> String {
-    match title {
-        Some(t) => format!("CustomName:{},CustomNameVisible:1b,", snbt_component(t)),
-        None => String::new(),
-    }
 }
 
 /// A text-component SNBT **compound** for a player-visible string:
@@ -153,6 +150,11 @@ pub(super) fn tr(s: &str) -> Value {
                     .iter()
                     .map(|g| match g {
                         delvewright_dsl::textstyle::Segment::Text(t) => json!({ "text": t }),
+                        delvewright_dsl::textstyle::Segment::Span(st, _)
+                            if st.keybind().is_some() =>
+                        {
+                            json!({ "keybind": st.keybind() })
+                        }
                         delvewright_dsl::textstyle::Segment::Span(st, t) => {
                             let mut v = json!({ "text": t });
                             let o = v.as_object_mut().expect("an object");
@@ -184,6 +186,11 @@ pub(super) fn styled_translate(key: &str, text: &str) -> Option<Value> {
         .iter()
         .enumerate()
         .map(|(i, (style, t))| {
+            // A key span (spec-0104 §8.9) is the client's own name for the
+            // viewer's bound key: it has no text to translate.
+            if let Some(k) = style.keybind() {
+                return json!({ "keybind": k });
+            }
             let mut v = json!({
                 "translate": delvewright_dsl::textstyle::span_key(key, i),
                 "fallback": t,

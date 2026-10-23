@@ -259,6 +259,7 @@ pub(super) fn dialogue_mask_watch_claims(plan: &Plan) -> Vec<crate::compiler::wa
         .iter()
         .map(|npc| crate::compiler::watch::Claim {
             mechanic: "dialogue-mask",
+            kind: crate::compiler::watch::ClaimKind::Body,
             families: vec![format!("dmask_{}_", npc.safe)],
             declared: npc
                 .options

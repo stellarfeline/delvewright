@@ -20,8 +20,8 @@ The table is vendored because a build never reaches for a jar and never
 reaches the network (ADR-0006): the jar is EULA-bound and is never committed,
 and the census carries facts about it — sizes and digests — not its pixels.
 
-The jar is REFUSED unless its sha256 is `versions.toml` `[render]
-textures_sha256`: a census of some other jar is not a census of the pin. The
+The jar is REFUSED unless its sha256 is `versions.toml` `[minecraft]
+client_jar_sha256`: a census of some other jar is not a census of the pin. The
 table states that sha256 in its header, so the file says which jar it
 describes.
 
@@ -109,11 +109,11 @@ def main() -> int:
 
     pin = versions.load()
     mc = pin["minecraft"]["version"]
-    want = pin["render"]["textures_sha256"]
+    want = pin["minecraft"]["client_jar_sha256"]
     raw = Path(args.jar).read_bytes()
     got = hashlib.sha256(raw).hexdigest()
     if got != want:
-        die(f"{args.jar} has sha256 {got}; versions.toml [render] textures_sha256 is {want}")
+        die(f"{args.jar} has sha256 {got}; versions.toml [minecraft] client_jar_sha256 is {want}")
 
     with zipfile.ZipFile(args.jar) as jar:
         rows = census(jar)

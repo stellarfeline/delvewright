@@ -67,6 +67,8 @@ pub struct PulsePlan {
     pub floor: f64,
     /// The pitch the line is written with.
     pub pitch: f64,
+    /// The category the line is written in (spec-0109; `master` by default).
+    pub category: delvewright_dsl::SoundCategory,
     /// The story stage it beats while, or `None` for a pulse that beats from
     /// world load.
     pub staged: Option<StagedGate>,
@@ -120,6 +122,7 @@ pub fn resolve(plan: &Plan) -> Vec<PulsePlan> {
                 every: p.every,
                 floor: p.floor,
                 pitch: p.pitch(),
+                category: p.category.unwrap_or_default(),
                 staged: p.when.as_ref().map(|g| StagedGate::of(c, g)),
             })
         })
@@ -252,6 +255,7 @@ impl PulseGate {
                     "every": p.every,
                     "floor": p.floor,
                     "pitch": p.pitch,
+                    "category": p.category.token(),
                     "standable_cells": r.cells,
                     "far": r.far,
                     "range": r.range,

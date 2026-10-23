@@ -57,7 +57,7 @@ fn prefabs_arg() -> String {
     common::prefabs_dir().display().to_string()
 }
 
-/// The same, for a fixture that declares `horizon: ocean`: the library with
+/// The same, for a fixture that declares an `ocean` base: the library with
 /// `hello-room` rebuilt as a piece that declares its own walk plane and a
 /// waterline its bytes bear out (`common::ocean_prefabs_dir`). The shipped room
 /// declares neither, so an ocean campaign that seats it is `DW0886` before
@@ -307,7 +307,7 @@ fn edit_breaching_the_outer_wall_is_dw0322() {
     );
 }
 
-/// Rewrite the copy's stage-1 world doc to declare `horizon: ocean` (spec-0013)
+/// Rewrite the copy's stage-1 world doc to declare an `ocean` base (spec-0013)
 /// at the given stage `dsl_version`, leaving everything else in the fixture alone.
 ///
 /// The version is a parameter because `horizon` is a **world-stage** surface with
@@ -322,14 +322,14 @@ fn set_ocean_horizon_at(dir: &Path, dsl_version: &str) {
     let mut doc: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     doc["dsl_version"] = serde_json::json!(dsl_version);
-    doc["content"]["horizon"] = serde_json::json!("ocean");
+    doc["content"]["horizon"] = common::horizon("ocean");
     // `DW0320`: an ocean horizon needs a return rule; the default margin is fine.
     doc["content"]["boundary"] = serde_json::json!({});
     std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
 }
 
 /// The world-stage version floor for `horizon` (spec-0013) and the current
-/// `DSL_VERSION` — the two ends every `horizon: ocean` proof is driven
+/// `DSL_VERSION` — the two ends every `ocean`-base proof is driven
 /// at.
 const OCEAN_VERSIONS: [&str; 2] = [DSL_VERSION, DSL_VERSION];
 
@@ -521,7 +521,7 @@ fn edit_ocean_unbreached_hull_is_green_and_says_what_it_examined() {
     );
 }
 
-/// A `horizon: void` build emits the ledger too, saying `void` and zeroes.
+/// A build on a `void` base emits the ledger too, saying `void` and zeroes.
 ///
 /// This is the shape a check goes quiet in: no sea, no file, and a later reader
 /// cannot tell "there was nothing to find" from "nobody ran it". The unedited
@@ -866,16 +866,22 @@ fn edit_apply_rejects_a_red_candidate_without_persisting() {
     );
 }
 
-/// `delvec snapshot` shows the EDITED world (view mode): the corner terrace
-/// raised by the fixture's morph batch is present in the assembled snapshot
-/// state — the loop's read half sees what the write half did.
+/// `delvec frames --campaign` shows the EDITED world (view mode): the corner
+/// terrace raised by the fixture's morph batch is present in the assembled
+/// state the frame is drawn from — the loop's read half sees what the write
+/// half did.
 #[test]
-fn snapshot_renders_the_edited_world() {
+fn a_campaign_frame_draws_the_edited_world() {
     let dir = edits_fixture_dir();
-    let png = tmp("edits-snap").with_extension("png");
+    let png = tmp("edits-snap").join("frame.png");
     let r = delvec(&[
-        "snapshot",
+        "frames",
+        "--campaign",
         dir.to_str().unwrap(),
+        "--size",
+        "48",
+        "--backend",
+        "cpu",
         "--camera",
         // Straight down over the raised outer corner (world [1..2, 65, 1..2]).
         "1.5,72,1.5,0,90",
@@ -886,7 +892,7 @@ fn snapshot_renders_the_edited_world() {
     ]);
     assert!(
         r.status.success(),
-        "snapshot failed:\n{}{}",
+        "frames failed:\n{}{}",
         String::from_utf8_lossy(&r.stdout),
         String::from_utf8_lossy(&r.stderr)
     );
@@ -1312,7 +1318,7 @@ fn edit_apply_runs_the_full_build_tier_proof_set() {
         &dir,
         quests_with(serde_json::json!({
             "on_complete": [
-                { "type": "cutscene", "seconds": 3, "path": [
+                { "type": "cutscene", "subject": "landscape", "seconds": 3, "path": [
                     { "anchor": "anchor/keeper-stand", "offset": [0, 2, 0] },
                     { "anchor": "anchor/exit", "offset": [0, 2, 0] }
                 ] },
@@ -1413,7 +1419,7 @@ fn edit_inside_a_close_gate_region_warns_dw0353() {
 
 /// **Finding 5b, now refused (`DW1002`).** `scatter` dropping flowers onto
 /// bare stone: the server pops every one of them off at the first shape
-/// update, so the dressing the author sees in `delvec snapshot` never reaches
+/// update, so the dressing the author sees in `delvec frames --campaign` never reaches
 /// players. It was an advisory (`DW0354`) the build shipped past; the build
 /// that would ship them is now refused, naming each flower's cell and the soil
 /// it lacks.

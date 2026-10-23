@@ -355,6 +355,7 @@ fn lay_interact() -> Value {
            "prop": {"block": "minecraft:lectern"}, "requires_item": "minecraft:paper",
            "takes_item": true, "after": ["obj/door"], "requires_flags": ["flag/opened"],
            "title": "Lay the roll in the loft",
+           "hint": "The lectern stands at the top of the loft stair.",
            "happening": {"text": "the roll is laid in the loft", "verb": "arrives"}})
 }
 

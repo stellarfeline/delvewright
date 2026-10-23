@@ -183,12 +183,12 @@ README_RUST_RE = re.compile(r"\*\*Rust\*\*:\s*`?(\d[\d.]*\d)`?\s+or newer")
 # other number nothing in the build owns (no version here has four parts) —
 # it no longer needs a dot-count filter to be a finding, it needed one only
 # to be COUNTED as a two- or three-part literal, which it never was.
-# `GPL-3.0-only` no longer falls out by dot-count (a real two-part literal,
+# `GPL-3.0-or-later` no longer falls out by dot-count (a real two-part literal,
 # `0.19` in a cargo dependency line, has exactly the same shape as `3.0` in
 # that license id) — it is excluded below by where it sits: immediately after
 # a hyphen that is itself immediately after a letter, the one shape an SPDX
 # license expression has and a version claim does not. Demonstrated false
-# positive: `GPL-3.0-only.` sits on both published pages today.
+# positive: `GPL-3.0-or-later.` sits on both published pages today.
 VERSION_LITERAL_RE = re.compile(r"(?<![\d.])\d+(?:\.\d+)+(?!\w)")
 
 # Version literals on a published page that are deliberately NOT one of this
@@ -344,7 +344,7 @@ def check_published_pages(
             for m in VERSION_LITERAL_RE.finditer(line):
                 literal = m.group(0)
                 start = m.start()
-                # An SPDX license expression (`GPL-3.0-only`, `Apache-2.0`)
+                # An SPDX license expression (`GPL-3.0-or-later`, `Apache-2.0`)
                 # embeds a version-shaped number inside a hyphenated
                 # identifier — immediately after a hyphen that is itself
                 # immediately after a letter — and is not a claim about the

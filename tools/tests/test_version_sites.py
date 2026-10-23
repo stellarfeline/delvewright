@@ -194,7 +194,7 @@ def test_the_sweep_states_its_binding_with_a_denominator() -> None:
     assert r.returncode == 0, r.stderr
     v = _dsl_version()
     assert f"tracked file(s) state `{v}`" in r.stdout
-    population, skipped, carriers, shapes, findings = version_sites.sweep(REPO, v)
+    population, skipped, carriers, shapes, findings, envelopes = version_sites.sweep(REPO, v)
     assert not findings
     assert 0 < carriers < population, (carriers, population)
     # Not vacuous in the other direction either: the sweep must actually be
@@ -347,3 +347,87 @@ def test_a_counter_example_inside_the_records_is_refused(scratch: Path) -> None:
     )
     assert r.returncode == 1, r.stdout
     assert rel in r.stderr and "binds to nothing" in r.stderr
+
+
+# --- a stale statement of the surface version, lower or higher --------------
+#
+# The sweep asks which files state the CURRENT number, so a fixture stating the
+# previous minor was not a carrier and was never looked at: `verify` passed on a
+# branch whose fixtures were one bump behind, and CI went red later at a
+# compile/format step. RED WITHOUT IT: the first two tests below pass on the tool
+# as it was, and fail on the fix's absence.
+
+
+def _bump(v: str, part: int, by: int) -> str:
+    n = [int(t) for t in v.split(".")]
+    n[part] += by
+    return ".".join(str(t) for t in n)
+
+
+def _plant_envelope(scratch: Path, stated: str) -> str:
+    rel = "camp/world.json"
+    doc = scratch / rel
+    doc.parent.mkdir(parents=True, exist_ok=True)
+    doc.write_text(
+        json.dumps({"dsl_version": stated, "stage": "world"}, indent=2) + "\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "-C", str(scratch), "add", "-A"], check=True)
+    return rel
+
+
+@pytest.mark.parametrize("delta", [-1, +1], ids=["lower", "higher"])
+def test_a_document_stating_another_surface_version_reds_with_file_and_line(
+    scratch: Path, delta: int
+) -> None:
+    v = _dsl_version()
+    assert run("verify", root=scratch).returncode == 0, "the scratch tree starts green"
+    minor = int(v.split(".")[1])
+    stated = _bump(v, 1, delta) if minor + delta >= 0 else _bump(v, 0, 1)
+    assert stated != v
+    rel = _plant_envelope(scratch, stated)
+    r = run("verify", root=scratch)
+    assert r.returncode == 1, r.stdout
+    # file AND line: the planted document puts the key on line 2
+    assert f"{rel}:2" in r.stderr, r.stderr
+    assert repr(stated) in r.stderr
+
+
+def test_a_nested_stale_envelope_reds_on_its_own_line(scratch: Path) -> None:
+    v = _dsl_version()
+    rel = "camp/nested.json"
+    doc = scratch / rel
+    doc.parent.mkdir(parents=True, exist_ok=True)
+    doc.write_text(
+        '{\n  "dsl_version": "%s",\n  "content": {\n    "dsl_version": "0.0.1"\n  }\n}\n' % v,
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "-C", str(scratch), "add", "-A"], check=True)
+    r = run("verify", root=scratch)
+    assert r.returncode == 1
+    assert f"{rel}:4" in r.stderr and f"{rel}:2" not in r.stderr
+
+
+def test_the_declared_older_documents_exist_and_are_the_only_ones() -> None:
+    """The exceptions are enumerated here so a new one is a visible edit to a test."""
+    assert sorted(version_sites.OLDER_DOCUMENTS) == [
+        "crates/dsl/fixtures/invalid/DW0102-bad-dsl-version.json"
+    ]
+    r = run("verify", root=REPO)
+    assert r.returncode == 0, r.stderr
+    docs, statements, current, findings = version_sites._envelopes(
+        REPO, version_sites._tracked_text(REPO), _dsl_version()
+    )
+    assert not findings
+    assert docs > 100 and statements == current + 1, (docs, statements, current)
+    assert "envelope check:" in r.stdout and f"{current} of {statements}" in r.stdout
+
+
+def test_a_declared_older_document_that_stopped_stating_it_is_reported(scratch: Path) -> None:
+    rel = "crates/dsl/fixtures/invalid/DW0102-bad-dsl-version.json"
+    path = scratch / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"dsl_version": _dsl_version()}), encoding="utf-8")
+    subprocess.run(["git", "-C", str(scratch), "add", "-A"], check=True)
+    r = run("verify", root=scratch)
+    assert r.returncode == 1
+    assert "OLDER_DOCUMENTS" in r.stderr and "no longer states" in r.stderr

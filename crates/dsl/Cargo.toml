@@ -18,7 +18,7 @@ edition = "2024"
 # stranger discovers it.
 rust-version = "1.97.1"
 description = "Staged JSON DSL types and schemas for Delvewright adventure-map campaigns — the format the delvec compiler reads."
-license = "GPL-3.0-only"
+license = "GPL-3.0-or-later"
 repository = "https://github.com/stellarfeline/delvewright"
 readme = "README.md"
 keywords = ["minecraft", "datapack", "dsl", "adventure"]

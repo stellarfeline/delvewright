@@ -6,7 +6,7 @@ Every rule is marked **cited** (read from the pinned client or another named sou
 
 ## Instrument
 
-- Client jar: `minecraft-client-1.21.11.jar`, sha256 `1473c9489ac50fda3c435049a76a70d61a10b8610db27f5ba9d8756b686cd3bd` (the `[viewer] textures_sha256` pin in `versions.toml`), sha1 `ba2df812c2d12e0219c489c4cd9a5e1f0760f5bd`, which equals piston-meta's `downloads.client.sha1` for 1.21.11.
+- Client jar: `minecraft-client-1.21.11.jar`, sha256 `1473c9489ac50fda3c435049a76a70d61a10b8610db27f5ba9d8756b686cd3bd` (the `[minecraft] client_jar_sha256` pin in `versions.toml`), sha1 `ba2df812c2d12e0219c489c4cd9a5e1f0760f5bd`, which equals piston-meta's `downloads.client.sha1` for 1.21.11.
 - Mappings: piston-meta `downloads.client_mappings` for 1.21.11, sha1 `031a68bebf55d824f66d6573d8c752f0e1bf232a`, 155819 lines.
 - Method: `javap -c -p` on the obfuscated class, with class, method and field names translated back through the ProGuard mappings. The constants passed to `CubeListBuilder.texOffs`, `addBox`, `CubeDeformation` and `LayerDefinition.create` were read in call order. No decompiler was used. Every value below is a bytecode constant, so none of it is inferred.
 - Cross-check (second method, no shared configuration): opaque-pixel counts per UV region of the vanilla textures in the same jar, compared with the box-unwrap area each model cube samples (see "Cross-check").
@@ -146,7 +146,7 @@ A sheet painted in the player layout on a model that does not have the player la
 ## What the toolchain draws (cited from the tree)
 
 - `delve_skin` composes both layers on the boxes of the model the sheet is for, read from the model-part table: a 64×64 wide-model mannequin skin, or a mob sheet for a model whose parts are the player's size (`entity`). skinpy-extended 1.0.1 defines parts only at the base origins, so the composer builds each box as a skinpy `BodyPart` at the table's own `texOffs`; the shell features (beard, hair, hood, high collar) follow recommendation 3 below (spec-0097).
-- The mannequin is summoned with `profile:{texture:"delvewright:npc/<id>/<texture_id>",model:"<wide|slim>"}`, for a skinned NPC and for an actor body, plus `hidden_layers:[…]` when the skin hides any layer.
+- The mannequin is summoned with `profile:{texture:"delvewright:npc/<texture_id>",model:"<wide|slim>"}`, for a skinned NPC and for an actor body, plus `hidden_layers:[…]` when the skin hides any layer.
 - `python -m delve_skin parts <model>` prints any model's boxes for a sheet drawn by hand.
 
 ## Recommendation (authored)

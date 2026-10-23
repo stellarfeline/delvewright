@@ -1,0 +1,13 @@
+{
+  "code": "DW1017",
+  "patch": [
+    {
+      "doc": "quests.json",
+      "op": "add",
+      "path": "/content/quests/3/objectives/0/compass",
+      "value": "shown"
+    }
+  ],
+  "units": [],
+  "why": "`compass: shown` added to the untitled arrival at the long hall's porch. Nothing announces that objective, so the compass would point at a thing the player has no name for and the line naming what is followed would have nothing to say. Refused naming the objective, with the remedy: announce it, or drop the field."
+}
