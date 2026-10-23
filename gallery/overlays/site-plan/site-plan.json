@@ -88,7 +88,13 @@
         "floor": {
           "datum": "datum/grade"
         },
-        "node": "node/exit"
+        "node": "node/exit",
+        "sides": {
+          "east": "open",
+          "north": "wall",
+          "south": "open",
+          "west": "open"
+        }
       },
       {
         "ceiling": {
@@ -102,6 +108,10 @@
           "datum": "datum/grade"
         },
         "node": "node/causeway",
+        "sides": {
+          "east": "open",
+          "west": "open"
+        },
         "way": {
           "at": 0,
           "axis": "z",
@@ -508,6 +518,23 @@
           ]
         },
         "role": "clearance"
+      },
+      {
+        "id": "volume/the-green",
+        "note": "The green the yard and the causeway stand level with: ground raised to the floor course along the yard's three open sides and both of the causeway's, so a body steps off either onto it at the walk plane. It stands as a terrace over the falling terrain, a drop of three courses or more at its edge, as the yard's plinth did.",
+        "region": {
+          "extent": [
+            24,
+            6,
+            25
+          ],
+          "min": [
+            22,
+            58,
+            38
+          ]
+        },
+        "role": "ground"
       }
     ]
   },

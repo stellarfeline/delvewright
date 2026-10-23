@@ -3544,10 +3544,11 @@ fn yard_void(p: [i32; 3]) -> bool {
 }
 
 /// A courtyard on a plinth: paving, a low stone to walk around, four corner
-/// posts — and its own outside. The plinth is faced in stone down to the
-/// terrain on the three sides it does not share, the ring above the ground is
-/// left open so a body on the yard sees sky and the far hall's wall, and the
-/// ring's ground is the whole's.
+/// posts — and its own outside. On the three sides it does not share, which
+/// the site plan declares open (spec-0123 §5), the plinth runs out under the
+/// ring to the fixed ground and the paving runs across it, level with the green
+/// the plan raises beyond; nothing stands above the paving, so a body steps
+/// off the yard onto the green. The ring's ground is the whole's.
 fn build_yard() -> Structure {
     let mut palette = Palette::new();
     let mut blocks = Vec::new();
@@ -3559,8 +3560,18 @@ fn build_yard() -> Structure {
                 let name = if yard_void([x, y, z]) {
                     "minecraft:structure_void"
                 } else if !foot(x, z) {
-                    // The ring above the ground, on the yard's free sides: open.
-                    "minecraft:air"
+                    // The ring on the yard's three free sides, which the site
+                    // plan declares open (spec-0123 §5): no wall stands in it.
+                    // The plinth runs out under it to the fixed ground and the
+                    // paving runs across it, so a body steps off the court onto
+                    // the green level with it; above the paving, nothing.
+                    if y < YARD_FLOOR - 1 {
+                        "minecraft:stone_bricks"
+                    } else if y == YARD_FLOOR - 1 {
+                        "minecraft:polished_andesite"
+                    } else {
+                        "minecraft:air"
+                    }
                 } else if y < YARD_FLOOR - 1 {
                     // The plinth, faced down to the terrain.
                     "minecraft:stone_bricks"
@@ -3638,20 +3649,18 @@ fn yard_metadata() -> serde_json::Value {
                 "note": "where a body stands when the campaign seats it in this place"
             }
         },
-        // **The sides of this piece the player is meant to see** (`DW0885`).
-        // The yard owns its outside (spec-0098): it stands as a plinth over
-        // terrain that falls away to the east, south and west, and the faces
-        // of that plinth are what a body on the ground around it looks at. The
-        // north side is the far hall's wall, and the underside sits on the
-        // ground.
+        // **The sides of this piece the player is meant to see** (`DW0885`):
+        // none. The yard owns its outside (spec-0098), a plinth over terrain
+        // that falls away to the east, south and west, and the site plan
+        // raises the green level with its paving on exactly those three sides,
+        // which it declares open (spec-0123 §5): every face of the plinth is
+        // buried by the green, the north side is the far hall's wall, and the
+        // underside sits on the ground.
         //
-        // The list is exact, never a blanket: a side declared here that the
-        // world has in fact buried is refused by the same code, so padding it
-        // out to six reds rather than passing. That is what makes this a bound
-        // declaration and not a hatch — perturb it either way and the gallery
-        // goes red, which is what `gallery/probes/a-face-nothing-stands-in-front-of`
-        // pins.
-        "shown_faces": ["east", "south", "west"],
+        // The list is exact, never a blanket: placed where nothing buries it,
+        // a piece declaring none of its seen sides is refused, which is what
+        // `gallery/probes/a-face-nothing-stands-in-front-of` pins.
+        "shown_faces": [],
         "spatial_contract": {
             "entry": "yard",
             "spaces": {

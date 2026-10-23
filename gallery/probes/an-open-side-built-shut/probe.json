@@ -1,0 +1,50 @@
+{
+  "code": "DW1065",
+  "patch": [
+    {
+      "doc": "programs/causeway.json",
+      "op": "add",
+      "path": "/palette/hedge",
+      "value": "minecraft:oak_leaves[distance=1,persistent=true,waterlogged=false]"
+    },
+    {
+      "doc": "programs/causeway.json",
+      "op": "replace",
+      "path": "/rules/place/0/body/body/children/2/children/3/children/0",
+      "value": {
+        "axis": "y",
+        "children": [
+          {
+            "material": {
+              "role": "hedge"
+            },
+            "op": "fill"
+          },
+          {
+            "op": "void"
+          }
+        ],
+        "op": "split",
+        "sizes": [
+          {
+            "blocks": {
+              "expr": "int",
+              "value": 1
+            },
+            "size": "absolute"
+          },
+          {
+            "size": "relative",
+            "weight": {
+              "expr": "int",
+              "value": 1
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "point": "site-plan",
+  "units": [],
+  "why": "The causeway's program edited to plant a leaf hedge along the whole ring of its open east side, one course high on the paving. The plan declares that side open and the clear-width check judges it as a way: with every column of its ring taken there is no width left to narrow, so the finding is not `DW1057` but the side built shut — a side open in the plan and walled in the piece — named with every leaf that takes it. (The yard, which the spec's row names, is a generated piece with no program to edit; the causeway's open side is the same declaration on a program.) It declares no unit: what must not build is an open side nobody can step across."
+}

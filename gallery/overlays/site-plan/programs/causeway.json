@@ -347,8 +347,34 @@
                 "axis": "x",
                 "children": [
                   {
-                    "op": "call",
-                    "symbol": "wall"
+                    "axis": "z",
+                    "children": [
+                      {
+                        "op": "call",
+                        "symbol": "floor"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "wall"
+                      }
+                    ],
+                    "op": "split",
+                    "sizes": [
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 24
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "size": "relative",
+                        "weight": {
+                          "expr": "int",
+                          "value": 1
+                        }
+                      }
+                    ]
                   },
                   {
                     "axis": "z",
@@ -381,8 +407,34 @@
                     ]
                   },
                   {
-                    "op": "call",
-                    "symbol": "wall"
+                    "axis": "z",
+                    "children": [
+                      {
+                        "op": "call",
+                        "symbol": "floor"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "wall"
+                      }
+                    ],
+                    "op": "split",
+                    "sizes": [
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 24
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "size": "relative",
+                        "weight": {
+                          "expr": "int",
+                          "value": 1
+                        }
+                      }
+                    ]
                   }
                 ],
                 "op": "split",
@@ -414,8 +466,33 @@
                 "axis": "x",
                 "children": [
                   {
-                    "op": "call",
-                    "symbol": "wall"
+                    "axis": "z",
+                    "children": [
+                      {
+                        "op": "void"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "wall"
+                      }
+                    ],
+                    "op": "split",
+                    "sizes": [
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 24
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "size": "relative",
+                        "weight": {
+                          "expr": "int",
+                          "value": 1
+                        }
+                      }
+                    ]
                   },
                   {
                     "axis": "x",
@@ -853,8 +930,33 @@
                     ]
                   },
                   {
-                    "op": "call",
-                    "symbol": "wall"
+                    "axis": "z",
+                    "children": [
+                      {
+                        "op": "void"
+                      },
+                      {
+                        "op": "call",
+                        "symbol": "wall"
+                      }
+                    ],
+                    "op": "split",
+                    "sizes": [
+                      {
+                        "blocks": {
+                          "expr": "int",
+                          "value": 24
+                        },
+                        "size": "absolute"
+                      },
+                      {
+                        "size": "relative",
+                        "weight": {
+                          "expr": "int",
+                          "value": 1
+                        }
+                      }
+                    ]
                   }
                 ],
                 "op": "split",
