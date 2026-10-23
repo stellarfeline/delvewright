@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regenerate the block-light tables from the PINNED Minecraft server jar.
 
-Two tables, two questions asked of one booted jar:
+Three tables, three questions asked of one booted jar:
 
 - **What a block emits.** The fixture
   `crates/delvec/tests/fixtures/light/emission-<version>.tsv` is what
@@ -15,6 +15,11 @@ Two tables, two questions asked of one booted jar:
   shape (`docs/reference/sight-through-blocks.md`). It is runtime data, so it
   lives in the DSL crate's `data/` beside the collision tables, never under a
   test directory the published crate leaves out.
+- **What a block takes from light passing through it.**
+  `crates/dsl/data/light-block-<version>.tsv` is what `light::passes_light`
+  reads (`delvewright_dsl::blockshape::light_block`): per blockstate, the
+  game's own `getLightBlock()` and `useShapeForLightOcclusion()`. Runtime data,
+  beside the occlusion table.
 
 Each is a measurement, not a table somebody typed.
 
@@ -51,6 +56,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 VERSIONS_TOML = ROOT / "versions.toml"
 JAVA_SRC = ROOT / "tools" / "maintenance" / "blocklight" / "BlockLightDump.java"
 OCCLUSION_SRC = ROOT / "tools" / "maintenance" / "blocklight" / "OcclusionDump.java"
+LIGHT_BLOCK_SRC = ROOT / "tools" / "maintenance" / "blocklight" / "LightBlockDump.java"
 FIXTURE_DIR = ROOT / "crates" / "delvec" / "tests" / "fixtures" / "light"
 DATA_DIR = ROOT / "crates" / "dsl" / "data"
 MANIFEST = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json"
@@ -216,7 +222,7 @@ def collapse(states_tsv: pathlib.Path) -> tuple[list[tuple[str, int, int]], int]
 # --------------------------------------------------------------------------
 
 
-def generate(work: pathlib.Path) -> tuple[str, str]:
+def generate(work: pathlib.Path) -> tuple[str, str, str, str]:
     pin = read_pin()
     version = pin["version"]
     work.mkdir(parents=True, exist_ok=True)
@@ -310,7 +316,8 @@ def generate(work: pathlib.Path) -> tuple[str, str]:
     body = "\n".join(f"{n}\t{l}\t{c}" for n, l, c in rows)
     emission = "\n".join(head) + "\n" + body + "\n"
     occlusion = generate_occlusion(work, version, jar, mappings, classpath, classes, maps)
-    return version, emission, occlusion
+    light_block = generate_light_block(work, version, jar, mappings, classpath, classes, maps)
+    return version, emission, occlusion, light_block
 
 
 def generate_occlusion(work, version, jar, mappings, classpath, classes, maps) -> str:
@@ -393,6 +400,74 @@ def generate_occlusion(work, version, jar, mappings, classpath, classes, maps) -
     return "\n".join(head) + "\n" + body + "\n"
 
 
+def generate_light_block(work, version, jar, mappings, classpath, classes, maps) -> str:
+    """The light-block table: per blockstate the game's own `getLightBlock()`
+    and `useShapeForLightOcclusion()`, collapsed by the one collapse
+    (`dump-collision-tops.py`'s `collapse_values`), written in the four-column
+    shape `delvewright_dsl::blockshape::pinned_rows` reads."""
+    spec = importlib.util.spec_from_file_location(
+        "dump_collision_tops", ROOT / "tools" / "maintenance" / "dump-collision-tops.py"
+    )
+    tops = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tops)
+
+    args = []
+    args += resolve(maps, CLASS_SHARED, methods=["tryDetectVersion"])
+    args += resolve(maps, CLASS_BOOTSTRAP, methods=["bootStrap"])
+    args += resolve(maps, CLASS_BLOCK, fields=["BLOCK_STATE_REGISTRY"])
+    args += resolve(maps, CLASS_STATE_BASE, methods=["getLightBlock", "useShapeForLightOcclusion"])
+    sys.stderr.write(f"  light block, resolved from the pinned mappings: {' '.join(args)}\n")
+    subprocess.run(
+        ["javac", "-nowarn", "-cp", classpath, "-d", str(classes), str(LIGHT_BLOCK_SRC)], check=True
+    )
+    states_tsv = work / "light-block-states.tsv"
+    proc = subprocess.run(
+        ["java", "-Xmx3g", "-cp", f"{classpath}:{classes}", "dw.LightBlockDump", str(states_tsv), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=work,
+    )
+    counted = re.search(r"DUMPED states=(\d+) stopping=(\d+)", proc.stdout)
+    if not counted or int(counted.group(1)) == 0 or int(counted.group(2)) == 0:
+        fail(f"the light-block dumper reported nothing to count: {proc.stdout.strip()!r}")
+    sys.stderr.write(f"  light-block dumper: {counted.group(0)}\n")
+
+    per = tops.read_states(states_tsv, 2)
+    for block, states in per.items():
+        for _, (lb, shape) in states:
+            if not lb.isdigit() or not 0 <= int(lb) <= 15 or shape not in ("true", "false"):
+                fail(f"{block}: the dumper wrote an unreadable light-block row: {lb!r} {shape!r}")
+    rows, covered = tops.collapse_values(per)
+    if covered != int(counted.group(1)):
+        fail(f"light-block collapse covered {covered} states, the dumper produced {counted.group(1)}")
+    stopping = sum(c for _, (lb, _), c in rows if int(lb) >= 15)
+    if stopping != int(counted.group(2)):
+        fail(f"light-block rows hold {stopping} stopping states, the dumper counted {counted.group(2)}")
+
+    jar_sha = hashlib.sha256(jar.read_bytes()).hexdigest()
+    map_sha = hashlib.sha1(mappings.read_bytes()).hexdigest()
+    head = [
+        f"# How much light every blockstate of Minecraft Java {version} takes from light passing through it.",
+        "#",
+        "# MEASURED, not written: `light_block` is the game's own BlockState.getLightBlock()",
+        "# inside the pinned server jar (15 stops light; below it light passes, losing",
+        "# max(1, light_block) a step), and `shape_occludes` its",
+        "# BlockState.useShapeForLightOcclusion() (the light engine also stops light at",
+        "# the faces the block's occlusion shape covers).",
+        f"#   server jar sha256 {jar_sha}",
+        f"#   server mappings sha1 {map_sha}",
+        "# Regenerate with tools/maintenance/dump-block-light.py; --check diffs against this file.",
+        "#",
+        f"# {len(rows)} rows collapse the game's {covered} blockstates onto the properties",
+        f"# that move the answer; a row names only those properties. {stopping} states stop light.",
+        "#",
+        "# block[relevant-properties]<TAB>light_block<TAB>shape_occludes<TAB>states-this-row-stands-for",
+    ]
+    body = "\n".join(f"{n}\t{lb}\t{s}\t{c}" for n, (lb, s), c in rows)
+    return "\n".join(head) + "\n" + body + "\n"
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--check", action="store_true", help="diff against the committed fixture")
@@ -405,10 +480,11 @@ def main() -> None:
         if args.work
         else pathlib.Path(tempfile.mkdtemp(prefix="dwlight-"))
     )
-    version, emission, occlusion = generate(work)
+    version, emission, occlusion, light_block = generate(work)
     tables = [
         (FIXTURE_DIR / f"emission-{version}.tsv", emission),
         (DATA_DIR / f"occlusion-{version}.tsv", occlusion),
+        (DATA_DIR / f"light-block-{version}.tsv", light_block),
     ]
 
     if args.check:
