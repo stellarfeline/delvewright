@@ -1206,7 +1206,8 @@ fn a_climb_inside_a_hung_place_proves_and_hung_scenery_states_its_zero() {
     ]);
     let t = text(&out);
     assert_eq!(code(&out), 0, "{t}");
-    assert!(t.contains("detail: 2 place(s) detailed of 2 named"), "{t}");
+    // The causeway and the beacon, and the near hall kept for its door.
+    assert!(t.contains("detail: 3 place(s) detailed of 3 named"), "{t}");
     assert!(
         t.contains("detail: the whole builds with the piece(s) this run wrote."),
         "{t}"
@@ -1467,6 +1468,7 @@ fn an_unlit_leafy_scenery_room_is_never_surveyed_for_light() {
         "detail",
         dir.to_str().unwrap(),
         "node/beacon",
+        "node/near-hall",
     ]);
     let t = text(&out);
     assert_eq!(code(&out), 0, "{t}");

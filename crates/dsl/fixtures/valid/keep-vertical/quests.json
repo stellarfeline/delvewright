@@ -109,6 +109,11 @@
               "obj/key"
             ],
             "anchor": "anchor/door",
+            "answers": {
+              "done": "Already done.",
+              "missing_item": "Your hand is empty of what this takes.",
+              "not_yet": "Not yet."
+            },
             "happening": {
               "text": "the party completes obj/door",
               "verb": "opens"
@@ -120,12 +125,7 @@
             },
             "requires_item": "minecraft:tripwire_hook",
             "title": "Open the door",
-            "type": "interact",
-            "answers": {
-              "not_yet": "Not yet.",
-              "missing_item": "Your hand is empty of what this takes.",
-              "done": "Already done."
-            }
+            "type": "interact"
           },
           {
             "after": [

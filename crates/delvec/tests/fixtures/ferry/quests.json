@@ -66,6 +66,9 @@
     ],
     "triggers": [
       {
+        "answers": {
+          "not_yet": "Not yet."
+        },
         "at": "anchor/tiller",
         "effects": [
           {
@@ -93,10 +96,7 @@
         },
         "requires_flags": [
           "flag/boarded"
-        ],
-        "answers": {
-          "not_yet": "Not yet."
-        }
+        ]
       }
     ]
   },

@@ -11,6 +11,10 @@
         "objectives": [
           {
             "anchor": "anchor/node-far",
+            "answers": {
+              "done": "Already done.",
+              "not_yet": "Not yet."
+            },
             "happening": {
               "text": "The bell's note goes back through the door the way they came.",
               "verb": "opens"
@@ -21,11 +25,7 @@
               "block": "minecraft:bell"
             },
             "title": "Ring the bell",
-            "type": "interact",
-            "answers": {
-              "not_yet": "Not yet.",
-              "done": "Already done."
-            }
+            "type": "interact"
           },
           {
             "after": [

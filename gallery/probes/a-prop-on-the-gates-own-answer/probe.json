@@ -14,8 +14,8 @@
       "op": "add",
       "path": "/content/triggers/15/answers",
       "value": {
-        "not_yet": "The gate is up.",
-        "done": "The gate is open."
+        "done": "The gate is open.",
+        "not_yet": "The gate is up."
       }
     },
     {

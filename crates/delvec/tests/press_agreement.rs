@@ -381,9 +381,24 @@ fn a_released_door_answers_nothing_once_open_and_the_chest_does() {
 /// emits no dispatch advancement of its own.
 #[test]
 fn the_blow_names_its_striker() {
-    for name in [
-        "press_strike_the_hearth",
-        "press_dw_answer_trig_strike_the_hearth_done",
+    let setup = std::fs::read_to_string(
+        gallery().join("datapack/data/gallery/function/setup_finish.mcfunction"),
+    )
+    .unwrap();
+    let hearth_box = setup
+        .lines()
+        .find(|l| {
+            l.contains("summon minecraft:interaction")
+                && l.contains("\"dw_trig_strike_the_hearth\"")
+        })
+        .expect("the hearth stone's box")
+        .to_string();
+    for (name, tag) in [
+        ("press_strike_the_hearth", "dw_trig_strike_the_hearth"),
+        (
+            "press_dw_answer_trig_strike_the_hearth_done",
+            "dw_trig_dw_answer_trig_strike_the_hearth_done",
+        ),
     ] {
         let a = advancement(name);
         assert_eq!(
@@ -394,8 +409,12 @@ fn the_blow_names_its_striker() {
             a["criteria"]["interact"]["conditions"]["entity"]["nbt"]
                 .as_str()
                 .unwrap()
-                .contains("dw_trig_strike_the_hearth"),
+                .contains(tag),
             "{name}: {a}"
+        );
+        assert!(
+            hearth_box.contains(&format!("\"{tag}\"")),
+            "the struck box carries `{tag}`: {hearth_box}"
         );
     }
     assert!(

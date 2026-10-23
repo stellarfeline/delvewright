@@ -69,6 +69,10 @@
         "objectives": [
           {
             "anchor": "anchor/latch",
+            "answers": {
+              "done": "Already done.",
+              "not_yet": "Not yet."
+            },
             "happening": {
               "text": "the party completes obj/bolt",
               "verb": "opens"
@@ -80,11 +84,7 @@
             "requires_flags": [
               "flag/flee"
             ],
-            "type": "interact",
-            "answers": {
-              "not_yet": "Not yet.",
-              "done": "Already done."
-            }
+            "type": "interact"
           }
         ],
         "on_complete": [],

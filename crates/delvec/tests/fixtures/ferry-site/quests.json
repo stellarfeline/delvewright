@@ -110,6 +110,9 @@
     ],
     "triggers": [
       {
+        "answers": {
+          "not_yet": "Not yet."
+        },
         "at": "anchor/tiller",
         "effects": [
           {
@@ -147,12 +150,12 @@
         },
         "requires_flags": [
           "flag/boarded"
-        ],
-        "answers": {
-          "not_yet": "Not yet."
-        }
+        ]
       },
       {
+        "answers": {
+          "not_yet": "Not yet."
+        },
         "at": "anchor/far-tiller",
         "effects": [
           {
@@ -190,10 +193,7 @@
         },
         "requires_flags": [
           "flag/far-shore"
-        ],
-        "answers": {
-          "not_yet": "Not yet."
-        }
+        ]
       }
     ]
   },

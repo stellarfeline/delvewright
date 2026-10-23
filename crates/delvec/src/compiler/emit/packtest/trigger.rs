@@ -135,24 +135,15 @@ pub(super) fn emit_env_trigger_packtests(plan: &Plan, out: &mut BuildOutput) {
         let answer = crate::compiler::pressable::answer_of(plan, t.id.as_str()).cloned();
         if let Some(a) = &answer {
             b.extend(answer_drive(plan, a, &sel));
-            b.push(format!(
-                "scoreboard players set {} dw.sys 0",
-                super::super::press::ans_holder(&a.owner_safe)
-            ));
         }
         b.push(format!(
             "execute as {sel} run advancement grant @s only {ns}:press_{id}"
         ));
         b.push(format!("execute as {sel} run function {ns}:press_{id}"));
-        // …and wrote its trace: the state it answered, which an action-bar line
-        // does not leave behind.
-        if let Some(a) = &answer {
-            b.push(format!(
-                "assert score {} dw.sys matches {}",
-                super::super::press::ans_holder(&a.owner_safe),
-                a.state.trace()
-            ));
-        }
+        // The owner's trace (`#ans_<owner>`) is one holder its every answer
+        // writes, so templates that run side by side in one batch cannot each
+        // assert it; the answer's own `#trig_<id>` below is the per-template
+        // proof that it dispatched in the state it was driven into.
         // 2. The DISPATCH reached the bundle. `trig_<id>`'s first line is its own
         //    ungated marker, so this separates "the reward function loaded" from
         //    "the reward function dispatched" — a `press_` whose

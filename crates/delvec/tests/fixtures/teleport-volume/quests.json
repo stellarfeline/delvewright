@@ -167,6 +167,9 @@
     ],
     "triggers": [
       {
+        "answers": {
+          "done": "Already done."
+        },
         "at": "anchor/latch",
         "effects": [
           {
@@ -180,9 +183,6 @@
         },
         "prop": {
           "block": "minecraft:stone_button[face=floor,facing=north]"
-        },
-        "answers": {
-          "done": "Already done."
         }
       }
     ]

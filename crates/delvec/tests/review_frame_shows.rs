@@ -140,6 +140,13 @@ fn a_holder_the_renderer_draws_leaves_undrawn_and_the_curator_is_drawn() {
         "{curator}"
     );
 
+    let cid = curator["id"].as_str().unwrap();
+    assert!(
+        !log.lines()
+            .any(|l| l.starts_with("DW1039") && l.contains(&format!("shot `{cid}`:"))),
+        "no DW1039 for the curator's frame `{cid}`:\n{log}"
+    );
+
     // spec-0117: no interaction point carries compiler-summoned hardware, so
     // no frame on the leg to the objective shows one.
     let frames_seen = marker_frames(&index);

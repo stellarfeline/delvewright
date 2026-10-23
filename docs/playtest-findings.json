@@ -78,9 +78,9 @@
       "finding": "interact affordances were invisible points with no hardware a player could see or aim at",
       "general_form": "every interaction point is a real block the world has, named in its prop, drawn and occluded like the world",
       "id": "hv-03",
+      "note": "Carried by `DW1059` (spec-0117 §3a): an interact, a press trigger, a shortcut unlock, a shop, a disarm and a bonfire each name the block a player presses in `prop`; with none, or a block with no outline, the campaign is refused. The compiler summons no visible stand-in.",
       "round": 1,
-      "triage": "capability",
-      "note": "Carried by `DW1059` (spec-0117 §3a): an interact, a press trigger, a shortcut unlock, a shop, a disarm and a bonfire each name the block a player presses in `prop`; with none, or a block with no outline, the campaign is refused. The compiler summons no visible stand-in."
+      "triage": "capability"
     },
     {
       "applies_when": {
@@ -1886,9 +1886,9 @@
       "finding": "a shortcut's unlock affordance shipped as an invisible interaction body with no hardware, and the delve soft-locked with the gate sealed and nothing to press",
       "general_form": "a shortcut unlock, like every interaction point, is a real block the world has, standing for the whole delve",
       "id": "bell-07",
+      "note": "Carried by `DW1059` (spec-0117 §3a): the shortcut names its unlock block in `prop`, placed at world load and never removed; a shortcut with none is refused.",
       "round": "2026-08-02",
-      "triage": "capability",
-      "note": "Carried by `DW1059` (spec-0117 §3a): the shortcut names its unlock block in `prop`, placed at world load and never removed; a shortcut with none is refused."
+      "triage": "capability"
     },
     {
       "applies_when": {

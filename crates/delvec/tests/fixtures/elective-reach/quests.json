@@ -134,6 +134,9 @@
     ],
     "triggers": [
       {
+        "answers": {
+          "done": "The bell has rung; its note is still in the stone."
+        },
         "at": "anchor/door-knock",
         "effects": [
           {
@@ -151,9 +154,6 @@
         },
         "prop": {
           "block": "minecraft:bell[attachment=floor,facing=north]"
-        },
-        "answers": {
-          "done": "The bell has rung; its note is still in the stone."
         }
       }
     ]

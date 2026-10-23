@@ -65,14 +65,14 @@
         "closed_ticks": 40,
         "crush": true,
         "disarm": {
-          "sets_flag": "flag/portcullis-jammed",
-          "via": "anchor/exit",
+          "answers": {
+            "done": "Already done."
+          },
           "prop": {
             "block": "minecraft:stone_button[face=floor,facing=north]"
           },
-          "answers": {
-            "done": "Already done."
-          }
+          "sets_flag": "flag/portcullis-jammed",
+          "via": "anchor/exit"
         },
         "gate": "anchor/door",
         "id": "timed-gate/inner-door",

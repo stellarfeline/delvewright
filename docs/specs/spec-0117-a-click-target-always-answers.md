@@ -336,7 +336,7 @@ Each departure from the text above, with its reason, and each criterion the tree
 
 **Recorded debts** (criterion: what is not yet asserted).
 - 2: the PackTest that asserts the block present before the quest is armed and after completion, and that two `interact` objectives on one cell with one block complete on one granted press.
-- 3: `verb_interact_arming` is not extended to drive one dummy through the three answers; each answer's `env_trigger_dw_answer_<owner>_<state>` template drives it in its state and asserts `#ans_<owner>`.
+- 3: `verb_interact_arming` is not extended to drive one dummy through the three answers. Each answer's `env_trigger_dw_answer_<owner>_<state>` template drives the owner into its state and asserts the answer's own `#trig_<id>`; the owner's `#ans_<owner>` trace is one holder all of an owner's answers write, so templates that run side by side in one batch do not assert it (the batch-independence rule), and the sequential read of it is the debt.
 - 4: the PackTest of three presses, the completion and a fourth press on the gallery's knocker; `path_triggers`' Rust test over the exported path; the agreement test covers the state function, the answers and the act (`tests/press_agreement.rs`) but not `path_triggers` or the flow's liveness.
 - 5, 6: not every listed shape has its own Rust assertion (the bonfire armed after step 0, the knocker with no `done`, the shortcut with no `not_yet`, `release` with no settled state); each is a branch of `dsl::trigger::press_checks` the gallery's probes and fixtures reach.
 - 15: the PackTest that writes the `interaction` record on the sealed door's box from each side.

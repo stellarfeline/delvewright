@@ -121,6 +121,11 @@
               "obj/key"
             ],
             "anchor": "anchor/door",
+            "answers": {
+              "done": "Already done.",
+              "missing_item": "Your hand is empty of what this takes.",
+              "not_yet": "Not yet."
+            },
             "happening": {
               "text": "the party completes obj/door",
               "verb": "opens"
@@ -132,12 +137,7 @@
             },
             "requires_item": "minecraft:tripwire_hook",
             "title": "Open the Inner Door",
-            "type": "interact",
-            "answers": {
-              "not_yet": "Not yet.",
-              "missing_item": "Your hand is empty of what this takes.",
-              "done": "Already done."
-            }
+            "type": "interact"
           },
           {
             "after": [
@@ -245,6 +245,9 @@
             },
             {
               "anchor": "anchor/objective",
+              "answers": {
+                "not_yet": "Not yet."
+              },
               "on_rest": [
                 {
                   "style": "chat",
@@ -256,13 +259,10 @@
                   "type": "set-flag"
                 }
               ],
-              "type": "bonfire",
               "prop": {
                 "block": "minecraft:candle[candles=4,lit=false]"
               },
-              "answers": {
-                "not_yet": "Not yet."
-              }
+              "type": "bonfire"
             },
             {
               "style": "chat",
@@ -319,6 +319,9 @@
         ]
       },
       {
+        "answers": {
+          "done": "Already done."
+        },
         "at": "spawn",
         "effects": [
           {
@@ -338,9 +341,6 @@
         "once": true,
         "prop": {
           "block": "minecraft:stone_button[face=floor,facing=north]"
-        },
-        "answers": {
-          "done": "Already done."
         }
       }
     ],

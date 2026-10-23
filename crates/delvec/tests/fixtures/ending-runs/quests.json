@@ -137,10 +137,10 @@
             "label": "A candle"
           }
         ],
-        "title": "The Stall",
         "prop": {
           "block": "minecraft:stone_button[face=floor,facing=north]"
-        }
+        },
+        "title": "The Stall"
       }
     ],
     "state": [
@@ -151,6 +151,9 @@
     ],
     "triggers": [
       {
+        "answers": {
+          "done": "Already done."
+        },
         "at": "anchor/exit",
         "effects": [
           {
@@ -166,9 +169,6 @@
         "once": true,
         "prop": {
           "block": "minecraft:bell[attachment=floor,facing=north]"
-        },
-        "answers": {
-          "done": "Already done."
         }
       }
     ]
