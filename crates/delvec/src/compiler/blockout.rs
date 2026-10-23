@@ -1704,8 +1704,8 @@ delvewright_dsl::dw_code! {
     /// `DW0877`: a contact nothing can cross (spec-0053 §6).
     ///
     /// The contact's measured crossing profile — the columns of its span a body
-    /// crosses over the assembled bytes, under the compiler's own step rule — holds
-    /// no run of body width. The author allocated a front and the massing walled it,
+    /// crosses over the assembled bytes, by the reach graph's moves — holds no run
+    /// of body width. The author allocated a front and the massing walled it,
     /// so the graph declares a hand-off the world does not have.
     ///
     /// It is the **contact's half of `DW0836`'s first claim**, and it is a different
@@ -1716,10 +1716,11 @@ delvewright_dsl::dw_code! {
     /// along it", and asking a portal's question of a front would refuse correct
     /// content, which is exactly the failure `DW0343` already carries as a lesson.
     ///
-    /// **Not a widening of the step rule**: the profile is read through
-    /// `nav::World::neighbors`, the same rule every route proof in this compiler is
-    /// taken under. A second step rule here would make this the one proof in the
-    /// compiler taken under different physics.
+    /// **No step rule of its own**: the profile is read through the reach graph
+    /// (`nav::World::body_edges`), the body every reach proof in this compiler is
+    /// taken under — the walk, the climb, every fall it survives and every jump,
+    /// declared jumps included. A second rule here would make this the one proof
+    /// in the compiler taken under different physics.
     ///
     /// Build tier (exit 3).
     pub const DW_CONTACT_UNCROSSABLE: DwCode = DwCode::new("DW0877", ExitTier::Build);
@@ -1735,16 +1736,17 @@ delvewright_dsl::dw_code! {
     /// route proof then goes round by another way and stays green, which is the
     /// shape this code exists to refuse.
     ///
-    /// **The quantifier**: some body standing in the opening steps, under
-    /// `nav::World::neighbors` at the player's footprint, onto standable ground
-    /// on **both** sides of the wall — the opening's standable cells taken as one
-    /// floor a body may walk across first (with the stairwell `DW0836` admits
-    /// beside a stair's hole, in the same wall), and measured over the world with
-    /// every bar open. A `drop` owes only its **high** side, because the far side
-    /// of a fall is what the step rule does not model (the policy `DW0877` and
-    /// `DW0837` already hold); for a hole in a floor, where nothing under the
-    /// opening holds a body up, the high side is the brink: the cell over the hole
-    /// has room for a body and a body stands level beside it.
+    /// **The quantifier**: some body in the opening has a move of the reach graph
+    /// (`nav::World::body_edges`) onto a rest state on **both** sides of the wall,
+    /// anywhere past the plane — the opening's standable cells taken as one floor
+    /// a body may move across first by the graph's moves confined to the wall's
+    /// plane (with the stairwell `DW0836` admits beside a stair's hole, in the
+    /// same wall), and measured over the world with every bar open. A `drop` owes
+    /// only its **high** side (the low side is `DW0837`'s, which reaches it by the
+    /// graph's fall, the policy `DW0877` holds too); for a hole in a floor, where
+    /// nothing under the opening holds a body up, the high side is the brink: a
+    /// body standing level beside the cell over the hole has a move that lands on
+    /// the low side.
     ///
     /// Build tier (exit 3).
     pub const DW_PORTAL_UNCROSSABLE: DwCode = DwCode::new("DW0986", ExitTier::Build);
@@ -1973,9 +1975,10 @@ fn raise(d: &mut Vec<(DwCode, Diagnostic)>, code: DwCode, diag: Diagnostic) {
 /// tests demonstrate: reddening these codes requires perturbing the
 /// **derivation**, never hand-authoring bytes.
 ///
-/// The step rule is the compiler's own ([`crate::compiler::nav::World::neighbors`]), not a
-/// second one written here — see that function for why its binding was widened
-/// rather than copied.
+/// Every question of where a body can go is the reach graph's
+/// ([`crate::compiler::nav::World::body_edges`], and its closures
+/// [`reached_from`] and [`crate::compiler::nav::World::body_flood`]), not a
+/// step rule written here.
 #[must_use]
 pub fn check(
     plan: &crate::compiler::plan::Plan,
@@ -2003,10 +2006,12 @@ pub fn check(
     //
     // The world as a body meets it once every declared way is open. `DW0836` and
     // `DW0838` are questions about GEOMETRY — is the hole the hole the plan cut,
-    // and is there a second one — so they are asked with nothing shut.
+    // and is there a second one — so they are asked with nothing shut. It
+    // carries the BODY's premises too: `DW0877`, `DW0986`, `DW0838` and the
+    // pacing legs ask where a body's moves take it, and a declared jump is one.
     let open = crate::compiler::nav::World::from_occupancy(
         crate::compiler::assembled::occupancy_over(blocks, &BTreeSet::new()),
-        crate::compiler::nav::Premises::geometry_only(),
+        crate::compiler::nav::Premises::geometry_only().with_body_of(plan),
     );
     // The world with every way the graph's own gating closure never opens sealed
     // as the plan sealed it. The base assembled model deliberately holds gate
@@ -2023,7 +2028,7 @@ pub fn check(
 
     seams_built(b, &open, &mut binding, &mut findings);
     nodes_reached(c, b, &sealed, &mut binding, &mut findings);
-    crossings(c, b, &open, &mut binding, &mut findings);
+    crossings(c, b, plan, blocks, &open, &mut binding, &mut findings);
     stitches(b, &open, &mut binding, &mut findings);
     sightlines(c, b, &open, &mut binding, &mut findings);
     identities(c, b, &open, &mut binding, &mut findings);
@@ -2093,12 +2098,14 @@ fn seal_unopened(
 /// A body stands on a standable cell of the span at the wall plane and steps out
 /// of it. For a `walk` contact it must be able to step out on **both** sides:
 /// walking ground is two-way and a front a body can only enter is not a
-/// hand-off. For a `drop` contact only the **high** side is required, because
-/// the far side of a fall is precisely what the step rule does not model — a
-/// router that could fall would prove routes a body cannot come back from; the
-/// far side is `DW0837`'s, which reaches it by the reach graph's fall.
+/// hand-off. For a `drop` contact only the **high** side is required: the far
+/// side is `DW0837`'s, which reaches it by the reach graph's fall over the
+/// world with the campaign's gating sealed.
 ///
-/// The step rule is `nav::World::neighbors`, unmodified and unwidened.
+/// A move is one edge of the reach graph out of the cell ([`steps_out`]): a
+/// walk, a climb, a fall it survives or a jump of the launch set or one the
+/// plan declares. A move onto a side lands anywhere past the plane on that
+/// side, because a jump clears more than the one cell a step takes.
 fn contact_profile(s: &PlacedSeam, world: &crate::compiler::nav::World) -> Vec<i64> {
     // The face's two in-plane axes: the one columns run along, and the one
     // scanned within a column. On a vertical face the column axis is the
@@ -2141,17 +2148,17 @@ fn contact_profile(s: &PlacedSeam, world: &crate::compiler::nav::World) -> Vec<i
             if !world.is_standable(narrow(c)) {
                 continue;
             }
-            let n = world.neighbors(narrow(c));
+            let n = steps_out(world, narrow(c));
+            // A move onto a side lands anywhere past the plane on it: a jump
+            // clears more than the one cell a step takes.
             let side = |off: i64| {
                 n.iter()
-                    .find(|x| i64::from(x[s.normal_axis]) == s.plane + off)
-                    .map(|x| i64::from(x[1]))
+                    .any(|x| (i64::from(x[s.normal_axis]) - s.plane).signum() == off.signum())
             };
-            let (on_a, on_b) = (side(a_off), side(b_off));
             let crosses = if need_both {
-                on_a.is_some() && on_b.is_some()
+                side(a_off) && side(b_off)
             } else {
-                side(high_off).is_some()
+                side(high_off)
             };
             if crosses {
                 out.push(u);
@@ -2342,8 +2349,7 @@ fn seams_built(
         }
         // ---- Claim 3, over the two places' own walk planes. Owed by every
         // seam of either kind: on a contact it is what covers a drop's far side,
-        // which the step rule does not walk to and the per-column claim above
-        // therefore does not measure.
+        // which the per-column claim above does not owe.
         let (Some(Some(pa)), Some(Some(pb))) = (
             planes.get(s.a.0.as_str()).copied(),
             planes.get(s.b.0.as_str()).copied(),
@@ -2378,20 +2384,15 @@ fn seams_built(
     }
 
     // Claim 2, per shared wall.
-    let mut walls: BTreeMap<([i64; 3], [i64; 3]), Vec<&PlacedSeam>> = BTreeMap::new();
-    for s in &b.seams {
-        walls.entry(s.shared).or_default().push(s);
-    }
-    for ((slo, shi), group) in &walls {
+    for WallOpenings {
+        shared: (slo, shi),
+        group,
+        allowed,
+        open,
+        well,
+    } in wall_openings(b, world)
+    {
         binding.walls += 1;
-        let allowed: BTreeSet<[i64; 3]> = group
-            .iter()
-            .flat_map(|s| cells_of(s.opening.0, s.opening.1))
-            .collect();
-        let open: Vec<[i64; 3]> = cells_of(*slo, *shi)
-            .filter(|c| !allowed.contains(c) && world.is_clear(narrow(*c)))
-            .collect();
-        let well = stairwell_of(&b.boxes, group, &open, world);
         binding.stairwell_cells += well.len();
         let leaks: Vec<[i64; 3]> = open.into_iter().filter(|c| !well.contains(c)).collect();
         if leaks.is_empty() {
@@ -2436,16 +2437,17 @@ fn seams_built(
 ///
 /// # Why a floor of the opening and not a column, as a contact measures
 ///
-/// A body crosses a one-cell wall by standing in it: the step rule moves one
-/// cell horizontally and at most one vertically, so every walk from one side to
-/// the other stands on a cell of the wall's plane. But it need not step in and
-/// out from the SAME cell. A stair through a floor arrives in the hole on one
-/// tread and leaves it from the next — measured on the gallery's undercroft
-/// stair, no single cell of its hole has a step both down and up, and the stair
-/// is perfectly climbable. So the opening's standable cells are taken as one
-/// floor: a body may walk across it (and into the stairwell `DW0836` admits
-/// beside a stair's hole, which lies in the same wall) before it steps out. The
-/// body's width is the step rule's own footprint, so no second width is asked.
+/// A body that walks through a one-cell wall stands in it, but it need not
+/// step in and out from the SAME cell. A stair through a floor arrives in the
+/// hole on one tread and leaves it from the next — measured on the gallery's
+/// undercroft stair, no single cell of its hole has a step both down and up,
+/// and the stair is perfectly climbable. So the opening's standable cells are
+/// taken as one floor: a body may move across it by the reach graph's moves
+/// ([`crate::compiler::nav::World::body_flood`], confined to the wall's plane,
+/// with the stairwell `DW0836` admits beside a stair's hole, which lies in the
+/// same wall) before it steps out ([`steps_out`]) onto either side, anywhere
+/// past the plane. The body's width is the graph's own player box, so no
+/// second width is asked.
 fn portal_crossing(
     s: &PlacedSeam,
     world: &crate::compiler::nav::World,
@@ -2463,7 +2465,8 @@ fn portal_crossing(
         let c = [i64::from(c[0]), i64::from(c[1]), i64::from(c[2])];
         c[s.normal_axis] == s.plane && (0..3).all(|i| c[i] >= slo[i] && c[i] <= shi[i])
     };
-    let side_of = |x: &[i32; 3]| i64::from(x[s.normal_axis]) - s.plane;
+    // Which side of the plane a cell is on: -1, 0 (in it) or 1.
+    let side_of = |x: &[i32; 3]| (i64::from(x[s.normal_axis]) - s.plane).signum();
 
     // The floor of the opening: its standable cells, and every standable cell of
     // the same wall a body walks to from them without leaving the wall's plane.
@@ -2471,37 +2474,31 @@ fn portal_crossing(
     // A `climb` is crossed on its ladder: a cell of the opening a body holds
     // on (spec-0099) is a cell it is in, and the climb moves step it out.
     let climb = s.class == "climb";
-    let mut floor: BTreeSet<[i32; 3]> = cells_of(lo, hi)
+    let seeds: Vec<[i32; 3]> = cells_of(lo, hi)
         .map(narrow)
         .filter(|c| world.is_standable(*c) || (climb && world.holds_body(*c)))
         .collect();
-    let mut frontier: Vec<[i32; 3]> = floor.iter().copied().collect();
-    while let Some(c) = frontier.pop() {
-        for n in world.neighbors(c) {
-            if in_wall(n) && floor.insert(n) {
-                frontier.push(n);
-            }
-        }
-    }
+    let floor = world.body_flood(&seeds, &|_, n| in_wall(n));
     let (mut onto_a, mut onto_b) = (0usize, 0usize);
     for c in &floor {
-        let n = world.neighbors(*c);
+        let n = steps_out(world, *c);
         onto_a += usize::from(n.iter().any(|x| side_of(x) == a_off));
         onto_b += usize::from(n.iter().any(|x| side_of(x) == b_off));
     }
     // A hole in a floor under a `drop`: nothing under the opening holds a body,
-    // so the high side is the brink — the cell over the hole has room for a
-    // body, and a body stands beside it, level, to walk in from.
+    // so the high side is the brink — a body standing level beside the cell
+    // over the hole has a move of the reach graph that lands on the low side.
     let brinks = if drop && s.normal_axis == 1 {
         cells_of(lo, hi)
             .filter(|c| {
                 let over = [c[0], c[1] + high_off, c[2]];
-                let head = [over[0], over[1] + 1, over[2]];
-                world.is_clear(narrow(over))
-                    && world.is_clear(narrow(head))
-                    && [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().any(|(dx, dz)| {
-                        world.is_standable(narrow([over[0] + dx, over[1], over[2] + dz]))
-                    })
+                [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().any(|(dx, dz)| {
+                    let beside = narrow([over[0] + dx, over[1], over[2] + dz]);
+                    world.is_standable(beside)
+                        && steps_out(world, beside)
+                            .iter()
+                            .any(|x| side_of(x) == -high_off)
+                })
             })
             .count()
     } else {
@@ -2538,8 +2535,8 @@ fn portal_crossing(
                  it is clear, at x {x0}..{x1} y {y0}..{y1} z {z0}..{z1} between `{a}` and `{b}`, \
                  and {owed}. Of the {k} cell(s) a body can stand on in the opening (with the \
                  stairwell beside it in the same wall), {na} step into `{a}` and {nb} into `{b}` \
-                 — measured under the compiler's step rule with every bar open. What stands \
-                 past the hole is massing or a fall a body cannot walk, so a party that opens \
+                 — measured by the reach graph's moves with every bar open. What stands past \
+                 the hole is massing or a gap no move of a body crosses, so a party that opens \
                  this way meets a wall, and where another way joins these places every route \
                  proof goes round by it and stays green. The repair is in the plan: move this seam along \
                  its face (`at`), or move what stands flush behind it — a stair laid in either \
@@ -2565,6 +2562,49 @@ fn portal_crossing(
             ),
         ),
     );
+}
+
+/// One shared wall as `DW0836`'s claim 2 reads it: the seams that pierce it,
+/// the cells they allocate, the cells of it that are clear outside every
+/// allocation, and of those the stairwell [`stairwell_of`] admits.
+struct WallOpenings<'a> {
+    shared: ([i64; 3], [i64; 3]),
+    group: Vec<&'a PlacedSeam>,
+    allowed: BTreeSet<[i64; 3]>,
+    open: Vec<[i64; 3]>,
+    well: BTreeSet<[i64; 3]>,
+}
+
+/// Every shared wall of the plan, read over `world` ([`WallOpenings`]): the one
+/// reading `DW0836` judges the holes by and `DW0838` deletes them by.
+fn wall_openings<'a>(
+    b: &'a Blockout,
+    world: &crate::compiler::nav::World,
+) -> Vec<WallOpenings<'a>> {
+    let mut walls: BTreeMap<([i64; 3], [i64; 3]), Vec<&PlacedSeam>> = BTreeMap::new();
+    for s in &b.seams {
+        walls.entry(s.shared).or_default().push(s);
+    }
+    walls
+        .into_iter()
+        .map(|((slo, shi), group)| {
+            let allowed: BTreeSet<[i64; 3]> = group
+                .iter()
+                .flat_map(|s| cells_of(s.opening.0, s.opening.1))
+                .collect();
+            let open: Vec<[i64; 3]> = cells_of(slo, shi)
+                .filter(|c| !allowed.contains(c) && world.is_clear(narrow(*c)))
+                .collect();
+            let well = stairwell_of(&b.boxes, &group, &open, world);
+            WallOpenings {
+                shared: (slo, shi),
+                group,
+                allowed,
+                open,
+                well,
+            }
+        })
+        .collect()
 }
 
 /// **The part of a floor's unallocated opening that is a stair's stairwell** —
@@ -2877,6 +2917,37 @@ pub(crate) fn reached_from(
     world.body_region(seeds)
 }
 
+/// **Where one move takes a body in `c`**, as `DW0877` and `DW0986` step out of
+/// a wall: the cells of every edge of the reach graph out of `c`
+/// ([`crate::compiler::nav::World::body_edge_cells`]), and nothing of this
+/// battery's own — the agreement test asks it and the graph the same cases.
+pub(crate) fn steps_out(world: &crate::compiler::nav::World, c: [i32; 3]) -> Vec<[i32; 3]> {
+    world.body_edge_cells(c)
+}
+
+/// **Every state a body reaches from `starts` while it stays in `keep`**, as
+/// `DW0838` floods a place over the world with the plan's openings deleted:
+/// the reach graph's moves ([`crate::compiler::nav::World::body_flood`]) with
+/// that one confinement, and nothing of this battery's own.
+pub(crate) fn crossing_flood(
+    world: &crate::compiler::nav::World,
+    starts: &[[i32; 3]],
+    keep: &dyn Fn([i32; 3]) -> bool,
+) -> BTreeSet<[i32; 3]> {
+    world.body_flood(starts, &|_, next| keep(next))
+}
+
+/// **Whether a body standing at `from` reaches `to`**, as the pacing legs
+/// (`DW0822`) are routed: the reach graph's answer ([`reached_from`]). How far
+/// the route is is a second question, the walk router's.
+pub(crate) fn leg_routed(
+    world: &crate::compiler::nav::World,
+    from: [i32; 3],
+    to: [i32; 3],
+) -> bool {
+    reached_from(world, &[from]).contains(&to)
+}
+
 /// **Where a body stands in this place, as the BUILT world has it.**
 ///
 /// One helper and two callers — the reachability proof and the pacing
@@ -2996,25 +3067,38 @@ fn stands_in(
 /// empty set and passes forever.
 ///
 /// So the claim is made over PATHS instead, which is the same claim and can
-/// fail: **delete every allocated opening from the world, and no two places may
-/// still be walk-connected.** That catches the multi-cell crossings the
-/// step-level form was reaching for and cannot see — a wall the massing left low
-/// enough to climb, a corner two shells did not close, a roof one open place
-/// lets a body onto and another lets it off — because none of those is a single
-/// step between two owned cells either.
+/// fail: **delete every allocated opening from the world, and no body standing
+/// in one place may still reach another.** That catches the multi-cell
+/// crossings the step-level form was reaching for and cannot see — a wall the
+/// massing left low enough to climb, a corner two shells did not close, a roof
+/// one open place lets a body onto and another lets it off, a gap a jump clears
+/// or a ledge a body falls from into the next place — because none of those is
+/// a single step between two owned cells either.
+///
+/// An opening is deleted by walling its cells (and the stairwell `DW0836`
+/// admits beside a stair's hole) with the derivation's wall block, and the
+/// body's moves are the reach graph's ([`crossing_flood`]): the walk, the
+/// climb, every fall it survives and every jump, declared ones included.
 ///
 /// Departure recorded here rather than in a list, because this is where it is
 /// made.
 fn crossings(
     c: &Campaign,
     b: &Blockout,
+    plan: &crate::compiler::plan::Plan,
+    blocks: &crate::compiler::blockstate::BlockMap,
     world: &crate::compiler::nav::World,
     binding: &mut BatteryBinding,
     d: &mut Vec<(DwCode, Diagnostic)>,
 ) {
     let n = b.boxes.len();
     binding.pairs = n * n.saturating_sub(1) / 2;
-    let seam: BTreeSet<[i32; 3]> = seam_cells(&b.seams);
+    // The ways the plan cut: every seam's opening, and the stairwell `DW0836`
+    // admits beside a stair's hole as part of it.
+    let mut seam: BTreeSet<[i32; 3]> = seam_cells(&b.seams);
+    for wall in wall_openings(b, world) {
+        seam.extend(wall.well.into_iter().map(narrow));
+    }
     // Every standable cell the whole map has, minus the ways the plan cut.
     let (rlo, rhi) = region_span(c);
     let mut open: BTreeSet<[i32; 3]> = BTreeSet::new();
@@ -3028,6 +3112,26 @@ fn crossings(
         }
     }
     binding.standable = open.len();
+    // **The world with every allocated opening deleted**: each cut cell walled
+    // with the derivation's own wall block. Deleting the openings from the walk's
+    // cells is not enough once the walk is a body's: a jump carries a body
+    // through a doorway without standing in it.
+    let deleted = {
+        let mut walled = blocks.clone();
+        for cell in &seam {
+            walled.insert(
+                *cell,
+                crate::compiler::blockstate::BlockState::new(palette::WALL),
+            );
+        }
+        crate::compiler::nav::World::from_occupancy(
+            crate::compiler::assembled::occupancy_over(&walled, &BTreeSet::new()),
+            crate::compiler::nav::Premises::geometry_only().with_body_of(plan),
+        )
+    };
+    let in_region = |cell: [i32; 3]| {
+        (0..3).all(|a| i64::from(cell[a]) >= rlo[a] && i64::from(cell[a]) <= rhi[a])
+    };
 
     // **The second shape** (spec-0098 §2c): ground outside every claim. In a
     // bounded map every cell a body can reach is inside some place, so a
@@ -3064,19 +3168,9 @@ fn crossings(
     let massed: BTreeSet<&str> = b.massed.iter().map(String::as_str).collect();
     let mut outside_reported = false;
     let flood = |starts: &[[i32; 3]], through_commons: bool| -> BTreeSet<[i32; 3]> {
-        let mut queue: std::collections::VecDeque<[i32; 3]> = starts.iter().copied().collect();
-        let mut component: BTreeSet<[i32; 3]> = starts.iter().copied().collect();
-        while let Some(cur) = queue.pop_front() {
-            for next in world.neighbors(cur) {
-                if open.contains(&next)
-                    && (through_commons || !commons.contains(&next))
-                    && component.insert(next)
-                {
-                    queue.push_back(next);
-                }
-            }
-        }
-        component
+        crossing_flood(&deleted, starts, &|next| {
+            in_region(next) && (through_commons || !commons.contains(&next))
+        })
     };
     let inside = |c: &[i32; 3], y: &PlacedBox| {
         let (ylo, yhi) = y.space();
@@ -3121,8 +3215,8 @@ fn crossings(
             let message = if binding.commons {
                 format!(
                     "`{a}` is a stand-in — the engine's closed shell, whose only openings are \
-                     the seams the plan allocated — and a body standing in it can walk to \
-                     {w:?}, ground outside every place's claim, with every allocated opening \
+                     the seams the plan allocated — and a body standing in it can reach \
+                     {w:?} by a walk, climb, fall or jump, ground outside every place's claim, with every allocated opening \
                      removed from the world. The stand-in leaks: its shell did not close. Detail \
                      the place (its own piece opens onto the commons where it means to), or \
                      find what broke the shell. {u} standable cell(s) of the commons were \
@@ -3133,10 +3227,10 @@ fn crossings(
                 )
             } else {
                 format!(
-                    "a body standing in `{a}` can walk to {w:?}, which is ground outside every \
-                     place's claim, on a site whose fill is `solid`. A solid site has no \
-                     commons: with every allocated opening removed from the world, the walk \
-                     still leaves the designed places. Close the edge — the place draws a wall \
+                    "a body standing in `{a}` can reach {w:?} by a walk, climb, fall or jump, \
+                     which is ground outside every place's claim, on a site whose fill is \
+                     `solid`. A solid site has no commons: with every allocated opening removed \
+                     from the world, a body still leaves the designed places. Close the edge — the place draws a wall \
                      on the ring it owns; make the ground a place, with seams to the places it \
                      joins; or declare the site's fill `open`, where ground outside every claim \
                      is the commons every place may open onto. {u} standable cell(s) outside \
@@ -3180,8 +3274,8 @@ fn crossings(
                             "`{a}` and `{b}` are joined by geometry the plan allocated no seam \
                              for. With every one of the {s} allocated opening(s) removed from \
                              the world, and without crossing the commons, a body standing in \
-                             `{a}` can still walk to {w:?}, which is inside `{b}`. **Seams are \
-                             allocated, not discovered**: a way that exists because a wall came \
+                             `{a}` can still reach {w:?}, which is inside `{b}`, by a walk, climb, \
+                             fall or jump. **Seams are allocated, not discovered**: a way that exists because a wall came \
                              out low, a corner did not close or a roof turned out to be \
                              standable is a connection nothing in the design agreed to and \
                              nothing downstream can name. Close the wall, or allocate a seam \
@@ -3755,7 +3849,10 @@ pub fn built_centre(
 /// The stage-3 site printed a PROJECTION — each place's long horizontal
 /// extent, summed and divided by an uncalibrated coefficient. This
 /// prints the MEASUREMENT: the A* route a body actually walks from one place's
-/// anchor to the next, over the blockout, under the compiler's own step rule. It
+/// anchor to the next, over the blockout, under the compiler's own walk router
+/// ([`crate::compiler::nav::World::find_path`]). Whether a leg is routed at all
+/// is the reach graph's answer ([`leg_routed`]); a leg a body reaches only by
+/// a fall or a jump has no walked length and is stated apart. It
 /// carries no threshold either, and for the same reason — the two numbers exist
 /// to be set side by side, which is the only way the coefficient gets calibrated
 /// at all.
@@ -3774,6 +3871,7 @@ fn pacing(
     let bound = delvewright_dsl::bound_places(c);
     let mut blocks = 0usize;
     let mut unrouted: Vec<String> = Vec::new();
+    let mut unmeasured: Vec<String> = Vec::new();
     for pair in graph.critical_path.windows(2) {
         let (Some(from), Some(to)) = (
             by_node.get(pair[0].0.as_str()).copied(),
@@ -3786,9 +3884,14 @@ fn pacing(
             seat_in(from, b, world, &bound),
             seat_in(to, b, world, &bound),
         );
+        let leg = format!("`{}` → `{}`", pair[0], pair[1]);
+        if !leg_routed(world, a, z) {
+            unrouted.push(leg);
+            continue;
+        }
         match world.find_path(a, z) {
             Some(path) => blocks += path.len().saturating_sub(1),
-            None => unrouted.push(format!("`{}` → `{}`", pair[0], pair[1])),
+            None => unmeasured.push(leg),
         }
     }
     if binding.legs == 0 {
@@ -3821,16 +3924,27 @@ fn pacing(
                 legs = binding.legs,
                 minutes = (blocks as u64).div_euclid(rate)
                     + u64::from(!(blocks as u64).is_multiple_of(rate)),
-                un = if unrouted.is_empty() {
-                    String::new()
-                } else {
-                    format!(
-                        ", with {} leg(s) the step rule could not route ({}) and which are therefore \
-                     not in the total",
-                        unrouted.len(),
-                        unrouted.join(", ")
-                    )
-                },
+                un = [
+                    (!unrouted.is_empty()).then(|| {
+                        format!(
+                            ", with {} leg(s) no move of a body could route ({}) and which are \
+                             therefore not in the total",
+                            unrouted.len(),
+                            unrouted.join(", ")
+                        )
+                    }),
+                    (!unmeasured.is_empty()).then(|| {
+                        format!(
+                            ", with {} leg(s) a body reaches only by a fall or a jump, which the \
+                             walk router does not measure ({}), not in the total",
+                            unmeasured.len(),
+                            unmeasured.join(", ")
+                        )
+                    }),
+                ]
+                .into_iter()
+                .flatten()
+                .collect::<String>(),
             ),
         ),
     );

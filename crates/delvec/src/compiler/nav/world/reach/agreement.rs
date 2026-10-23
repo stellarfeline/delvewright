@@ -3,8 +3,14 @@
 //! any difference (CLAUDE.md, "One question, one implementation").
 //!
 //! The consumers are the blockout battery's place reachability (`DW0837`,
-//! [`crate::compiler::blockout::reached_from`]) and the piece contract's
-//! `contract-reachability` walk ([`crate::grammar::contract::reached_shut`]).
+//! [`crate::compiler::blockout::reached_from`]), its unallocated-crossing
+//! flood (`DW0838`, [`crate::compiler::blockout::crossing_flood`]), the moves
+//! its contact and portal crossings step out of a wall by (`DW0877`, `DW0986`,
+//! [`crate::compiler::blockout::steps_out`]), its pacing legs (`DW0822`,
+//! [`crate::compiler::blockout::leg_routed`]) and the piece contract's
+//! `contract-reachability` walk ([`crate::grammar::contract::reached_shut`]),
+//! seeded from the entry's mouth.
+//!
 //! The cases are parkour courses: platforms three wide along `x` with gaps of
 //! zero to four columns, rises of up to two courses either way, a low ceiling
 //! that forbids a jump, a pit under the gaps, and declared jumps across some
@@ -14,13 +20,14 @@
 //!
 //! The test also reds when its cases are vacuous: when no case needs a jump of
 //! the launch set, or no case needs a declared jump, for the graph to reach
-//! more than the walk does.
+//! more than the walk does, or no step-out closure or leg needs a jump or a
+//! fall.
 
 use super::super::{Premises, World};
 use crate::grammar::block::BlockState;
 use crate::grammar::geom::Box3;
 use crate::grammar::model::VoxelModel;
-use crate::schem::prefab::{ContractEdge, ContractSpace, Region, SpatialContract};
+use crate::schem::prefab::{ContractEdge, ContractSpace, ContractVolume, Region, SpatialContract};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// One generated course: its solid cells, the cell a body starts in, and the
@@ -138,32 +145,36 @@ fn edge(a: &str, b: &str, class: &str) -> ContractEdge {
     }
 }
 
-/// A contract whose confinement never binds: the start column `x = 1` is the
-/// entry space, everything else one more, joined by a walk and a drop each way.
+/// A contract whose confinement never binds: the way in is the start column
+/// pair `x = 0..=1` (the via of the entry's edges to `exterior`, a walk and a
+/// drop each way), and the entry space is everything past it. The walk is
+/// seeded from that mouth, which is the platform cells over `x = 1`.
 fn open_contract(case: &Case) -> SpatialContract {
     let [sx, sy] = case.size;
     let (xmax, ymax) = (sx as i32 - 1, sy as i32 - 1);
     let mut spaces = BTreeMap::new();
-    for (name, from, to) in [
-        ("start", [0, 0, 0], [1, ymax, 4]),
-        ("rest", [2, 0, 0], [xmax, ymax, 4]),
-    ] {
-        spaces.insert(
-            name.to_string(),
-            ContractSpace {
-                envelope: "open".to_string(),
-                boxes: vec![region(from, to)],
-            },
-        );
-    }
+    spaces.insert(
+        "course".to_string(),
+        ContractSpace {
+            envelope: "open".to_string(),
+            boxes: vec![region([2, 0, 0], [xmax, ymax, 4])],
+        },
+    );
+    let mouth = |e: ContractEdge| ContractEdge {
+        via: Some(ContractVolume {
+            region: "mouth".to_string(),
+            boxes: vec![region([0, 0, 0], [1, ymax, 4])],
+        }),
+        ..e
+    };
     SpatialContract {
-        entry: "start".to_string(),
+        entry: "course".to_string(),
         spaces,
         no_body: BTreeMap::new(),
         edges: vec![
-            edge("start", "rest", "walk"),
-            edge("start", "rest", "drop"),
-            edge("rest", "start", "drop"),
+            mouth(edge("course", "exterior", "walk")),
+            mouth(edge("course", "exterior", "drop")),
+            mouth(edge("exterior", "course", "drop")),
         ],
         faces: Vec::new(),
         no_body_majority_ack: None,
@@ -171,13 +182,16 @@ fn open_contract(case: &Case) -> SpatialContract {
 }
 
 #[test]
-fn the_battery_and_the_contract_reach_what_the_reach_graph_reaches() {
+fn every_consumer_reaches_what_the_reach_graph_reaches() {
     const CASES: u64 = 48;
     let mut launch_needed = 0usize;
     let mut declared_needed = 0usize;
     let mut contract_launch_needed = 0usize;
+    let mut steps_needed = 0usize;
+    let mut legs_needed = 0usize;
     let mut declared = 0usize;
     let mut cells = 0usize;
+    let mut legs = 0usize;
     for seed in 0..CASES {
         let case = generate(seed);
         declared += case.jumps.len();
@@ -186,7 +200,7 @@ fn the_battery_and_the_contract_reach_what_the_reach_graph_reaches() {
         p.declared_jumps = case.jumps.clone();
         let jumping = bare.with_premises(p);
 
-        // The battery, over the world with its declared jumps.
+        // DW0837, over the world with its declared jumps.
         let graph = jumping.body_region(&[case.root]);
         let battery = crate::compiler::blockout::reached_from(&jumping, &[case.root]);
         assert_eq!(
@@ -207,12 +221,57 @@ fn the_battery_and_the_contract_reach_what_the_reach_graph_reaches() {
         }
         cells += graph.len();
 
+        // DW0838's flood, with nothing deleted and no commons: every state.
+        let states = jumping.body_reach(&[case.root]).cells();
+        let flood = crate::compiler::blockout::crossing_flood(&jumping, &[case.root], &|_| true);
+        assert_eq!(
+            flood, states,
+            "case {seed}: DW0838's flood differs from the reach graph's states"
+        );
+
+        // DW0877 and DW0986 step out of a cell: their one-move answers, taken
+        // to a fixpoint, are the graph's states.
+        let mut stepped: BTreeSet<[i32; 3]> = BTreeSet::from([case.root]);
+        let mut frontier = vec![case.root];
+        while let Some(c) = frontier.pop() {
+            for n in crate::compiler::blockout::steps_out(&jumping, c) {
+                if stepped.insert(n) {
+                    frontier.push(n);
+                }
+            }
+        }
+        assert_eq!(
+            stepped, states,
+            "case {seed}: DW0877/DW0986's moves out of a cell differ from the reach graph's"
+        );
+        if stepped
+            .iter()
+            .any(|c| !walk.contains(c) && graph.contains(c))
+        {
+            steps_needed += 1;
+        }
+
+        // DW0822's legs: from the root to every cell over a solid block.
+        for c in &case.solid {
+            let z = [c[0], c[1] + 1, c[2]];
+            legs += 1;
+            let routed = crate::compiler::blockout::leg_routed(&jumping, case.root, z);
+            assert_eq!(
+                routed,
+                graph.contains(&z),
+                "case {seed}: DW0822 routes the leg to {z:?} differently from the reach graph"
+            );
+            if routed && !walk.contains(&z) {
+                legs_needed += 1;
+            }
+        }
+
         // The contract, over the same blocks: a piece declares no jump.
         let model = model_of(&case);
         let (targets, reached) =
             crate::grammar::contract::reached_shut(&model, &open_contract(&case));
         let starts: Vec<[i32; 3]> = targets.iter().filter(|c| c[0] <= 1).copied().collect();
-        assert!(!starts.is_empty(), "case {seed}: the entry space has floor");
+        assert!(!starts.is_empty(), "case {seed}: the mouth has floor");
         let graph = bare.body_region(&starts);
         assert!(
             graph.is_subset(&targets),
@@ -228,9 +287,10 @@ fn the_battery_and_the_contract_reach_what_the_reach_graph_reaches() {
         }
     }
     eprintln!(
-        "reach agreement: {CASES} case(s), {cells} reached cell(s), {declared} declared jump(s); \
-         {launch_needed} case(s) need a launch-set jump, {declared_needed} a declared jump, \
-         {contract_launch_needed} of the contract's a launch-set jump"
+        "reach agreement: {CASES} case(s), {cells} reached cell(s), {declared} declared jump(s), \
+         {legs} leg(s); {launch_needed} case(s) need a launch-set jump, {declared_needed} a \
+         declared jump, {contract_launch_needed} of the contract's a launch-set jump, \
+         {steps_needed} of the step-out a jump or fall, {legs_needed} leg(s) a jump or fall"
     );
     assert!(
         launch_needed > 0 && contract_launch_needed > 0,
@@ -239,5 +299,9 @@ fn the_battery_and_the_contract_reach_what_the_reach_graph_reaches() {
     assert!(
         declared_needed > 0,
         "no case needs a declared jump: the agreement is vacuous"
+    );
+    assert!(
+        steps_needed > 0 && legs_needed > 0,
+        "no step-out or leg needs more than the walk: the agreement is vacuous"
     );
 }

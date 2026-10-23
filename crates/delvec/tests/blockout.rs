@@ -290,7 +290,7 @@ fn a_low_wall_reddens_dw0838() {
         .find(|m| m.contains("allocated no seam for"))
         .unwrap_or_else(|| panic!("no pair-shaped DW0838 among {:?}", errors(&b)));
     assert!(
-        pair.contains("can still walk to"),
+        pair.contains("can still reach"),
         "the refusal names both places and a witness cell: {pair}"
     );
     assert_eq!(b.binding.pairs, 21);
