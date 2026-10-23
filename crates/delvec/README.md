@@ -105,7 +105,7 @@ behind the verbs above, and `grammar`, `sculpt`, `schem`, `admit`,
 
 ```toml
 [dependencies]
-delvec = "1.14"
+delvec = "1.15"
 ```
 
 ```rust
