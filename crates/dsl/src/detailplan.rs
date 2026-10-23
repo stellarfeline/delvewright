@@ -288,6 +288,7 @@ mod tests {
             open: false,
             base: crate::siteplan::Base::Ground,
             roof: None,
+            sides: Default::default(),
         }
     }
 

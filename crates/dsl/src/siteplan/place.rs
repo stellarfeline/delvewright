@@ -93,9 +93,18 @@ pub struct PlacedBox {
     /// The roof the plan reserves over this place (spec-0098 §3), when it
     /// declares one. Never present on an open box (`DW0988`).
     pub roof: Option<super::Roof>,
+    /// Which of its four sides stand a wall (spec-0123 §5.1); every side a
+    /// wall when the plan declares none.
+    pub sides: super::Sides,
 }
 
 impl PlacedBox {
+    /// Whether this place declares `face` open (spec-0123 §5.1).
+    #[must_use]
+    pub fn side_open(&self, face: super::Face) -> bool {
+        self.sides.is_open(face)
+    }
+
     /// The play space's inclusive world AABB.
     #[must_use]
     pub fn space(&self) -> ([i64; 3], [i64; 3]) {
@@ -109,6 +118,32 @@ impl PlacedBox {
         )
     }
 
+    /// **Every side this place declares open** (spec-0123 §5.3), in the
+    /// engine's face order: the one answer the derivation, the allocation, the
+    /// clear-width check and the piece's gates read of where an open side is.
+    #[must_use]
+    pub fn open_sides(&self) -> Vec<OpenSide> {
+        let [x0, x1, z0, z1] = self.foot;
+        let (lo_y, hi_y) = (self.floor, self.floor + i64::from(self.clearance) - 1);
+        self.sides
+            .open_faces()
+            .into_iter()
+            .map(|face| {
+                let (lo, hi) = match face {
+                    super::Face::East => ([x1 + 1, lo_y, z0], [x1 + 1, hi_y, z1]),
+                    super::Face::West => ([x0 - 1, lo_y, z0], [x0 - 1, hi_y, z1]),
+                    super::Face::South => ([x0, lo_y, z1 + 1], [x1, hi_y, z1 + 1]),
+                    _ => ([x0, lo_y, z0 - 1], [x1, hi_y, z0 - 1]),
+                };
+                OpenSide {
+                    face,
+                    cells: (lo, hi),
+                    walk_y: self.floor,
+                }
+            })
+            .collect()
+    }
+
     /// The floor centre — where a body seated in this place stands.
     #[must_use]
     pub fn centre(&self) -> [i64; 3] {
@@ -117,6 +152,45 @@ impl PlacedBox {
             self.floor,
             (self.foot[2] + self.foot[3]) / 2,
         ]
+    }
+}
+
+/// One side a place declares open (spec-0123 §5.3), in world cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OpenSide {
+    /// The face.
+    pub face: super::Face,
+    /// The ring run along the face — its two corner cells excluded — from the
+    /// walk plane to the top of the play space, inclusive: the cells that hold
+    /// nothing a body cannot be in.
+    pub cells: ([i64; 3], [i64; 3]),
+    /// The walk plane's world `y`: the place's floor, continued across the run.
+    pub walk_y: i64,
+}
+
+impl OpenSide {
+    /// The axis the side is thin on: 0 for an `x` face, 2 for a `z` face.
+    #[must_use]
+    pub fn normal_axis(&self) -> usize {
+        match self.face {
+            super::Face::East | super::Face::West => 0,
+            _ => 2,
+        }
+    }
+
+    /// The axis the run lies along.
+    #[must_use]
+    pub fn along_axis(&self) -> usize {
+        2 - self.normal_axis()
+    }
+
+    /// The outward step: `+1` or `-1` on the normal axis.
+    #[must_use]
+    pub fn outward(&self) -> i64 {
+        match self.face {
+            super::Face::East | super::Face::South => 1,
+            _ => -1,
+        }
     }
 }
 
@@ -231,6 +305,7 @@ pub fn placed_boxes(c: &Campaign, reads: &mut Reads) -> Vec<PlacedBox> {
             open: matches!(p.plan.ceiling, Ceiling::Open(_)),
             base: p.plan.base,
             roof: p.plan.roof,
+            sides: p.plan.sides.unwrap_or_default(),
         })
         .collect()
 }
